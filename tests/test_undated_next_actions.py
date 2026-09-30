@@ -5,10 +5,12 @@ The whole contract, asserted at each layer that owns a piece of it:
 * **the service** — `DO` / `DEADLINE` / `target_date=NULL` writes, stays `OPEN`,
   and is not overdue; blank text is still refused; adding and clearing a date
   are ordinary replacements;
-* **the forms** — all three that capture a next step agree: a sentence alone is
-  valid, a date alone is refused on the sentence;
-* **`+ Märge`** — a step with no day saves the whole operation, in one
-  transaction, in every combination docs/adr/0105 §4 opened up;
+* **the forms** — the two that capture a next step in boxes of their own agree:
+  a sentence alone is valid, a date alone is refused on the sentence;
+* **`+ Märge`** — has no step boxes since docs/adr/0124. Its step is its own
+  activity on its own day, offered only for a day after today, so it never
+  makes an undated step; the combinations docs/adr/0105 §4 opened up still
+  save whole, with a dated step;
 * **`Minu asjad`** — an undated step is visible, counted, and not styled late;
 * **`Tähtajad` and every overdue/reporting surface** — it is absent, and it
   appears the moment a date is added.
@@ -242,22 +244,31 @@ def test_next_action_form_still_refuses_a_malformed_period(normal_matter):
     assert "next_month" in form.errors
 
 
-def test_the_progress_form_accepts_a_next_step_with_no_date(normal_matter):
-    """12, for `+ Märge`'s own block."""
-    form = MatterProgressForm({"next_text": "Helistan ministeeriumisse"})
+def test_the_progress_form_makes_no_undated_step(normal_matter):
+    """12, for `+ Märge` since docs/adr/0124: an undated activity is never a step.
+
+    The box is ignored with no day, because no day is ever ahead; the save is
+    an ordinary `Märge`. An undated step is made through `NextActionForm`.
+    """
+    form = MatterProgressForm(
+        {"title": "Helistan ministeeriumisse", "occurred_on": "", "as_next_step": "on"}
+    )
 
     assert form.is_valid(), form.errors
-    assert form.cleaned_data["next_text"] == "Helistan ministeeriumisse"
-    assert form.cleaned_data.get("next_date") is None
+    assert form.cleaned_data["as_next_step"] is False
+    assert "next_text" not in form.fields
+    assert "next_date" not in form.fields
 
 
-def test_the_progress_form_refuses_a_date_with_no_next_step(normal_matter):
-    """And it lands on `Järgmine tegevus`, never as a panel-level sentence."""
-    form = MatterProgressForm({"title": "Midagi juhtus", "next_date": "30.09.2026"})
+def test_the_progress_form_refuses_a_step_ahead_with_no_sentence(normal_matter):
+    """And it lands on `Tegevus`, never as a panel-level sentence."""
+    ahead = timezone.localdate() + dt.timedelta(days=3)
+    form = MatterProgressForm({"occurred_on": format_estonian_date(ahead), "as_next_step": "on"})
 
     assert not form.is_valid()
-    assert form.errors["next_text"] == ["Kirjuta järgmine tegevus."]
-    assert "next_date" not in form.errors
+    assert form.errors["title"] == ["Kirjuta järgmine tegevus."]
+    assert "occurred_on" not in form.errors
+    assert not form.non_field_errors()
 
 
 def test_the_composer_accepts_a_next_step_with_no_date(normal_matter):
@@ -324,50 +335,73 @@ def _pdf(name: str):
     return SimpleUploadedFile(name, b"%PDF-1.4 synthetic evidence", content_type="application/pdf")
 
 
-def test_a_marge_of_only_an_undated_next_step_saves(signed_in, normal_matter, stage):
-    """14. The exact case the brief names: no comment, no file, no state change."""
-    response = signed_in.post(_add_note(normal_matter), {"next_text": "Helistan ministeeriumisse"})
-
-    assert response.status_code == 200
-    action = NextAction.objects.get(matter=normal_matter, status=ActionStatus.OPEN)
-    assert action.text == "Helistan ministeeriumisse"
-    assert action.target_date is None
-    assert MatterProceduralDevelopment.objects.filter(matter=normal_matter).exists()
+def _ahead(days: int = 4) -> dt.date:
+    return timezone.localdate() + dt.timedelta(days=days)
 
 
-def test_a_marge_of_a_comment_and_an_undated_next_step_saves(signed_in, normal_matter, stage):
-    """15."""
+def test_a_marge_ticked_with_no_day_saves_and_makes_no_step(signed_in, normal_matter, stage):
+    """14. The `+ Märge` half of docs/adr/0106 is retired by docs/adr/0124.
+
+    What the brief named — a step and nothing else, no day — is not a `+ Märge`
+    save any more: its step is the activity on its own day, and an undated
+    activity is never ahead. The `Märge` is kept and no step is invented.
+    """
     response = signed_in.post(
         _add_note(normal_matter),
-        {"title": "Kohtusime ministeeriumiga", "next_text": "Ootan uut versiooni"},
+        {"title": "Helistan ministeeriumisse", "occurred_on": "", "as_next_step": "on"},
+    )
+
+    assert response.status_code == 200
+    assert MatterProceduralDevelopment.objects.filter(matter=normal_matter).exists()
+    assert not NextAction.objects.filter(matter=normal_matter).exists()
+
+
+def test_a_marge_ahead_and_ticked_is_the_comment_and_the_step(signed_in, normal_matter, stage):
+    """15. The sentence is both, and the step carries the `Märge`'s day."""
+    response = signed_in.post(
+        _add_note(normal_matter),
+        {
+            "title": "Ootan uut versiooni",
+            "occurred_on": format_estonian_date(_ahead()),
+            "as_next_step": "on",
+        },
     )
 
     assert response.status_code == 200
     record = MatterProceduralDevelopment.objects.get(matter=normal_matter)
-    assert record.title == "Kohtusime ministeeriumiga"
-    assert NextAction.objects.get(matter=normal_matter).target_date is None
+    assert record.title == "Ootan uut versiooni"
+    step = NextAction.objects.get(matter=normal_matter)
+    assert (step.text, step.target_date) == ("Ootan uut versiooni", _ahead())
 
 
-def test_a_marge_of_a_state_change_and_an_undated_next_step_saves(signed_in, normal_matter, stage):
+def test_a_marge_of_a_state_change_and_a_step_saves(signed_in, normal_matter, stage):
     """16. One transaction over three canonical services."""
     response = signed_in.post(
         _add_note(normal_matter),
-        {"stage": str(stage.pk), "next_text": "Ootan uut versiooni"},
+        {
+            "title": "Ootan uut versiooni",
+            "occurred_on": format_estonian_date(_ahead()),
+            "as_next_step": "on",
+            "stage": str(stage.pk),
+        },
     )
 
     assert response.status_code == 200
     normal_matter.refresh_from_db()
     assert normal_matter.stage_id == stage.pk
-    assert NextAction.objects.get(matter=normal_matter).target_date is None
+    assert NextAction.objects.get(matter=normal_matter).target_date == _ahead()
 
 
-def test_a_marge_of_a_file_and_an_undated_next_step_saves(
-    signed_in, normal_matter, stage, evidence_root
-):
+def test_a_marge_of_a_file_and_a_step_saves(signed_in, normal_matter, stage, evidence_root):
     """17."""
     response = signed_in.post(
         _add_note(normal_matter),
-        {"next_text": "Vaatan kirja üle", "attachments": [_pdf("kiri.pdf")]},
+        {
+            "title": "Vaatan kirja üle",
+            "occurred_on": format_estonian_date(_ahead()),
+            "as_next_step": "on",
+            "attachments": [_pdf("kiri.pdf")],
+        },
     )
 
     assert response.status_code == 200
@@ -375,14 +409,18 @@ def test_a_marge_of_a_file_and_an_undated_next_step_saves(
 
     record = MatterProceduralDevelopment.objects.get(matter=normal_matter)
     assert DocumentLink.objects.filter(procedural_development=record).count() == 1
-    assert NextAction.objects.get(matter=normal_matter).target_date is None
+    assert NextAction.objects.get(matter=normal_matter).target_date == _ahead()
 
 
-def test_a_marge_with_a_next_date_and_no_sentence_writes_nothing(signed_in, normal_matter, stage):
+def test_a_marge_ahead_ticked_with_no_sentence_writes_nothing(signed_in, normal_matter, stage):
     """18. Refused on the sentence, and the whole operation is unwound."""
     response = signed_in.post(
         _add_note(normal_matter),
-        {"title": "Midagi juhtus", "next_date": "30.09.2026"},
+        {
+            "occurred_on": format_estonian_date(_ahead()),
+            "as_next_step": "on",
+            "stage": str(stage.pk),
+        },
     )
 
     assert response.status_code == 400

@@ -643,7 +643,8 @@ def test_the_workspace_asks_its_questions_and_no_classification(signed_in, norma
     body = _detail(signed_in, normal_matter)
     flat = " ".join(body.split())
 
-    assert "Mis juhtus?" in flat
+    # `+ Märge` asks `Tegevus` since docs/adr/0124; `Millal?` is `Muuda`'s.
+    assert "Tegevus" in flat
     assert "Mida on vaja teha?" in flat
     assert "Millal?" in flat
     assert 'name="text"' in body
@@ -668,9 +669,12 @@ def test_the_questions_stopped_asking_for_both_at_once(signed_in, normal_matter)
     )
     body = _detail(signed_in, normal_matter)
     assert "Kirjelda, mis tegid ja mida teed edasi" not in body
-    # What happened and what happens next are two panels and two saves now, so
-    # neither box has to carry both (docs/adr/0075 §2).
-    assert "Mis juhtus?" in body
+    # The composer's one box asked for both at once, in one sentence. What is
+    # left is one *activity* per save — `Tegevus` is either what was done or
+    # what will be, and its day says which (docs/adr/0075 §2, docs/adr/0124) —
+    # and editing the open step is its own form beside it.
+    assert "Tegevus" in body
+    assert "Kirjuta, mida tegid või mis on järgmine tegevus" in body
     assert "Mida on vaja teha?" in body
 
 

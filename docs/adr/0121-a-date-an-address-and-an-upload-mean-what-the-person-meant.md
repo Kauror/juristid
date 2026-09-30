@@ -80,6 +80,10 @@ What a date *means* is decided where it is read:
 * **A `Märge` dated ahead is not evidence that a phase was reached, nor its
   date** (`recorded_phase_keys`, `legal_process_rail`) until its day comes.
 * **Nothing dated ahead becomes the next step** except through §1's rule.
+  **Narrowed on 2026-09-30 by docs/adr/0124:** a `+ Märge · Tavaline` dated ahead
+  offers `Märgi järgmiseks tegevuseks`, and the person ticking it writes an
+  ordinary `NextAction` from the same sentence and day. The `Märge` itself is
+  still never read as the step.
 * `check_domain_invariants` no longer reports `engagement-in-future`,
   `external-position-in-future` or `website-overview-published-in-future`: they
   are valid data now.

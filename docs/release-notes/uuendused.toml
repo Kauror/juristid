@@ -31,6 +31,11 @@ changes = [
   "Teema lõpetamisel saab linnukesega «Märgi töövõiduks» lisada samal ajal tavalise töövõidu koos lühikirjeldusega.",
   "Kui teemasse lisatud e-kirjast tuuakse välja mitu manust, on «Teema käigus» üks rida, näiteks «lisas 3 dokumenti». Iga e-kiri on oma real ja loetakse ainult tegelikult lisatud manuseid.",
   "Kuu, kvartali või aasta täpsusega tähtaeg on nüüd igas tähtajavaates ühtmoodi: «Osakonna» «Eesolevas», teemade nimekirja tähtajavalikutes ja «tähtaeg 30 p jooksul» arvudes ei ole see enam «Täna», «Homme» ega «sel nädalal» ainult seetõttu, et periood algab — see on «Kaugemal», nagu «Minu asjades» «Hiljem». Üle tähtaja on see alles siis, kui kogu periood on möödas.",
+  # ADR 0124, migratsioonideta: «+ Märge» küsib üht tegevust ja üht kuupäeva.
+  # Kui see väljalase ei jõua tootmisse 30.09, liiguvad need kaks rida
+  # väljalaske päeva kirjesse.
+  "«+ Märge» küsib nüüd üht «Tegevust» — kirjuta, mida tegid või mis on järgmine tegevus — ja üht kuupäeva. Eraldi «Järgmine tegevus» ja «Millal?» välju seal enam ei ole.",
+  "Kui märke kuupäev on tulevikus, ilmub selle kõrvale linnuke «Märgi järgmiseks tegevuseks». Linnukesega salvestades on sama tekst ja kuupäev ka teema järgmine tegevus; linnukeseta jääb tulevikku jääv märge lihtsalt teadmiseks ega muuda järgmist tegevust.",
 ]
 
 [[day]]

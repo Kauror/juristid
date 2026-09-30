@@ -23,7 +23,7 @@ pytestmark = pytest.mark.e2e
 
 #: `app.matters.services.DEVELOPMENT_NEEDS_SOMETHING`, written out: this module
 #: runs against a server, not against the application's import path.
-REFUSAL = "Kirjuta, mis juhtus, või lisa fail, uus hetkeseis või järgmine tegevus."
+REFUSAL = "Kirjuta tegevus, lisa fail või vali uus hetkeseis."
 
 
 def _save_stage_only(page, value: str) -> None:

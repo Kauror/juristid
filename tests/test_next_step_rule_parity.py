@@ -9,6 +9,11 @@ is visibly deliberate:
 
 * `NextActionForm` *is* the step, so a missing sentence is always refused;
 * the other two carry a step as an extra, so both boxes empty is «no step».
+
+`MatterProgressForm` has had no step boxes of its own since docs/adr/0124: its
+step is the activity itself — `Tegevus` on a day after today with `Märgi
+järgmiseks tegevuseks` ticked — so its «sentence» is `title` and its «date» is
+that ticked day ahead. The rule is the same call on the same refusal.
 """
 
 from __future__ import annotations
@@ -76,16 +81,21 @@ def _composer(shape, matter, viewer):
 
 
 def _progress(shape):
-    data = {"title": "Eelnõu jõudis Riigikokku"}
-    data.update(
-        {
-            "empty": {},
-            "sentence": {"next_text": "Vaatan eelnõu üle"},
-            "date": {"next_date": SOON.isoformat()},
-            "sentence+date": {"next_text": "Vaatan eelnõu üle", "next_date": SOON.isoformat()},
-        }[shape]
-    )
-    return MatterProgressForm(data), "next_text"
+    today = timezone.localdate().isoformat()
+    data = {
+        # No sentence and no step: a stage-free, file-free press is refused as
+        # empty, but not on the sentence, which is the only thing asked here.
+        "empty": {"occurred_on": today},
+        # A sentence on a day that is not ahead: the box is inert.
+        "sentence": {"title": "Vaatan eelnõu üle", "occurred_on": today, "as_next_step": "on"},
+        "date": {"occurred_on": SOON.isoformat(), "as_next_step": "on"},
+        "sentence+date": {
+            "title": "Vaatan eelnõu üle",
+            "occurred_on": SOON.isoformat(),
+            "as_next_step": "on",
+        },
+    }[shape]
+    return MatterProgressForm(data), "title"
 
 
 @pytest.mark.parametrize(("panel", "shape"), sorted(EXPECTED))

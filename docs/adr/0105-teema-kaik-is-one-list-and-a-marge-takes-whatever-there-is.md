@@ -165,6 +165,10 @@ whole save: a comment, a file, a new `Hetkeseis`, a next step, or any combinatio
 (`0037_development_title_optional`). The panel asks its four questions in the
 order somebody answers them — *mis juhtus, lisa failid, uus hetkeseis, järgmine
 tegevus* — with the date and `Etapp` under the sentence rather than above it.
+**Narrowed on 2026-09-30 by docs/adr/0124.** The panel asks one `Tegevus` and one
+`Kuupäev`; `Järgmine tegevus` / `Millal?` are no longer boxes on it. A day after
+today offers `Märgi järgmiseks tegevuseks`, which makes the same sentence and day
+the next step through the same service. Everything else in this section stands.
 
 **Context.** `Mis juhtus?` was declared `required=False` and then refused in
 `clean_title`, so it was optional in the contract and required in the product. A
@@ -191,6 +195,9 @@ and what a correction may leave — see the amendment at the end of this documen
 
 **The one date that stays paired is the next step's.** `Kuupäev` clears to
 «kuupäev teadmata» as it already did, and `Järgmine tegevus` still needs its day.
+**Superseded by docs/adr/0106 (the step's day became optional) and then by
+docs/adr/0124 (the panel has no separate step boxes; a step made from it takes the
+`Märge`'s own day, which is after today by construction).**
 A step with no date appears in nobody's `Tähtajad` and in nobody's `Minu asjad`;
 `set_next_action` refuses `DO`/`DEADLINE` with no date for that reason (ADR 0052
 §3, §5), and a panel that quietly wrote a shape of step the rest of the product

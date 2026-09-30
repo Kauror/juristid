@@ -4193,13 +4193,14 @@ def correct_external_position(
 #: (`app.matters.workspace.add_procedural_development`), repeated by the panel
 #: beside the controls (`MatterProgressForm.clean`).
 #:
-#: «Kirjuta, mis juhtus» rather than «mis menetluses juhtus», because the one
-#: control that writes these asks `Mis juhtus?` and is no longer only about the
-#: procedure: `+ Märge` absorbed `+ Menetluse areng` on 2026-09-20, and
-#: «Rääkisin Justiitsministeeriumiga» is a sentence it accepts (docs/adr/0097 §6).
-DEVELOPMENT_NEEDS_SOMETHING = (
-    "Kirjuta, mis juhtus, või lisa fail, uus hetkeseis või järgmine tegevus."
-)
+#: «Kirjuta tegevus» because the one control that writes these asks `Tegevus`
+#: (docs/adr/0124): it was «Kirjuta, mis juhtus», and before that «mis
+#: menetluses juhtus», each the panel's own word at the time. It no longer
+#: names «järgmine tegevus» as a fourth answer — the panel has no box of that
+#: name, and a step made from it is the sentence itself, which this already
+#: asks for. The operation still counts a separate ``next_text`` as content
+#: for the callers that pass one (docs/adr/0097 §6).
+DEVELOPMENT_NEEDS_SOMETHING = "Kirjuta tegevus, lisa fail või vali uus hetkeseis."
 #: What a `Muuda` that would take the last words off a file-less `Märge` is told.
 #:
 #: Its own sentence, because the correction form has no file control, no
@@ -4251,8 +4252,10 @@ def development_save_says_something(
 #: «istung 12.11» written down ahead of the sitting is a real note. ENG-004's
 #: refusal is gone. What the date *means* is read elsewhere — a `Märge` ahead
 #: of us is marked `Eesolev` in Teema käik, is not evidence that a phase was
-#: reached (`app.matters.legal_process`) and never becomes the next step
-#: (`app.matters.next_step`).
+#: reached (`app.matters.legal_process`) and never becomes the next step by
+#: being ahead (`app.matters.next_step`). A step is made from one only when the
+#: person ticks `Märgi järgmiseks tegevuseks`, and it is then a `NextAction` of
+#: its own, written through the ordinary service (docs/adr/0124).
 #: What a stale correction is told. The sibling of `EXTERNAL_POSITION_EDIT_CONFLICT`
 #: and deliberately the same shape of sentence.
 DEVELOPMENT_EDIT_CONFLICT = "Märget on vahepeal mujal muudetud."

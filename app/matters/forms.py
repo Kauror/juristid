@@ -70,6 +70,7 @@ from app.workflow.enums import (
 )
 from app.workflow.models import StageVocabulary
 from app.workflow.selectors import selectable_stages, stage_help_texts, stages_including
+from app.workflow.services import NEXT_STEP_NEEDS_SENTENCE
 
 
 class UserChoiceField(forms.ModelChoiceField):
@@ -1756,10 +1757,6 @@ def _display_many(model: Any, value: Any) -> str:
         for row in rows
     )
     return ", ".join(name for name in names if name) or "—"
-
-
-#: The refusal every next-step panel gives a step with no sentence.
-NEXT_STEP_NEEDS_SENTENCE = "Kirjuta järgmine tegevus."
 
 
 def clean_next_step_sentence(
@@ -6668,13 +6665,19 @@ class ProceduralDevelopmentEditForm(forms.Form):
 
     use_required_attribute = False
 
-    #: `Mis juhtus?`, and it may be emptied.
+    #: `Tegevus`, and it may be emptied.
     #:
     #: **The label is the panel's own**, so somebody correcting what they typed
-    #: reads the same question they answered. It said `Mis menetluses juhtus`,
-    #: which is the narrower wording `+ Märge` stopped using in docs/adr/0097 §6
-    #: — a correction form asking a different question from the capture form is
+    #: reads the same word they answered. It said `Mis menetluses juhtus`,
+    #: which is the narrower wording `+ Märge` stopped using in docs/adr/0097 §6,
+    #: and then `Mis juhtus?` until `+ Märge` asked `Tegevus` (docs/adr/0124) —
+    #: a correction form asking a different question from the capture form is
     #: two vocabularies for one column.
+    #:
+    #: **Only the label follows.** This editor offers no `Märgi järgmiseks
+    #: tegevuseks`: a step the save once wrote is a `NextAction` of its own,
+    #: corrected through `Muuda` in `PRAEGUNE TEGEVUS`, and correcting the
+    #: sentence here never moves it (docs/adr/0124 §4).
     #:
     #: Optional since docs/adr/0105 §4, and that is what makes this a correction
     #: rather than a one-way door: `+ Märge` writes titleless records, a record
@@ -6683,7 +6686,7 @@ class ProceduralDevelopmentEditForm(forms.Form):
     #: a way out. The row then reads `Märge` and the day, exactly as a titleless
     #: capture does.
     title = forms.CharField(
-        label="Mis juhtus?",
+        label="Tegevus",
         required=False,
         max_length=DEVELOPMENT_TITLE_MAX_LENGTH,
         widget=forms.TextInput(attrs={"class": "field__input field__input--compact"}),
@@ -7359,33 +7362,45 @@ class MatterLinkForm(ProceduralLinkCreateForm):
 
 
 class MatterProgressForm(forms.Form):
-    """`+ Märge · Tavaline` — something happened on this file, and this says what.
+    """`+ Märge · Tavaline` — one activity on this file, done or planned.
 
-    The ordinary note, and the one control a lawyer reaches for most. Four
-    questions, in the order somebody answers them: **what did I do, did I attach
-    a file, has the state changed, what is next and by when.**
+    The ordinary note, and the one control a lawyer reaches for most. **One
+    sentence and one day** (docs/adr/0124): `Tegevus` says what was done or
+    what is to be done — «Saatsin ministeeriumile kirja», «Saadan ministeeriumile
+    kirja» — and `Kuupäev` says when. There is no second pair of boxes asking
+    for the next step: it asked for the same activity again, in other words and
+    with another date, and a lawyer describing one piece of work had to split it
+    across two concepts to be understood.
 
-    **Every one of them is optional, and any one of them is a whole save**
-    (docs/adr/0105 §4). `Mis juhtus?` was required, so a lawyer whose whole answer
-    was the paper that had just arrived — or the file reaching the Riigikogu, or
-    «vaatan uue versiooni üle, 25.09» — was refused until they wrote a sentence
-    restating it. Each of those is a complete record of something and none of them
-    needs a headline over it, so a `Märge` saves with a comment, or a file, or a
-    stage, or a step, or any combination.
+    **The day says which of the two it is, and the person confirms it.** Past
+    or today, the save is the record of something done and nothing else. A day
+    after today offers `Märgi järgmiseks tegevuseks`, ticked, and a save with it
+    ticked also makes this sentence and this day the Matter's `Järgmiseks`
+    through the one service every step goes through. Unticked, a future `Märge`
+    is information — «Ministeerium avaldab tulemused 15.10» — and moves no step.
+    The day is never read as the answer on its own: the box is the answer
+    (`as_next_step`).
+
+    **Every control is optional, and any one of them is a whole save**
+    (docs/adr/0105 §4). The sentence was required, so a lawyer whose whole
+    answer was the paper that had just arrived — or the file reaching the
+    Riigikogu — was refused until they wrote a sentence restating it. Each of
+    those is a complete record of something and none of them needs a headline
+    over it, so a `Märge` saves with a sentence, or a file, or a stage, or any
+    combination.
 
     What is still refused is a press carrying **nothing at all**, and it is
-    refused as one sentence naming the four ways to answer rather than as «this
+    refused as one sentence naming the ways to answer rather than as «this
     field is required» under a box nobody touched. The rule itself belongs to
-    `app.matters.workspace.add_procedural_development`, where the four can be seen
-    together; this form repeats it so a person reads it beside the controls
+    `app.matters.workspace.add_procedural_development`, where the effects can be
+    seen together; this form repeats it so a person reads it beside the controls
     (`DEVELOPMENT_NEEDS_SOMETHING`).
 
-    **Both dates are optional too** (docs/adr/0106). `Kuupäev` clears to «kuupäev
-    teadmata», and so does `Millal?`: a step recorded with no day is
-    `DO`/`DEADLINE`/`target_date=NULL`, which reads as *no deadline yet*, shows
-    in `PRAEGUNE TEGEVUS` and in `Minu asjad`, and stays out of every deadline and
-    overdue surface until somebody adds the day. What is still refused is a day
-    with no sentence, on the sentence.
+    **`Kuupäev` is optional too.** It clears to «kuupäev teadmata», and an
+    undated `Märge` is never a step — a step made from this panel is always
+    dated, because the day is what said it was ahead. An undated step is still
+    written where a step is edited (`Muuda` in `PRAEGUNE TEGEVUS`,
+    docs/adr/0106).
 
     Why this is a `MatterProceduralDevelopment` and not an `Entry`
     -------------------------------------------------------------
@@ -7478,22 +7493,25 @@ class MatterProgressForm(forms.Form):
     #: `ProceduralDevelopmentEditForm` still offers the box on a record that has
     #: one (docs/adr/0097 §6.2).
     #:
-    #: The label is `Mis juhtus?` rather than `Mis menetluses juhtus` — this
-    #: panel is no longer only about the procedure, and the narrower wording
-    #: would now be refusing sentences it accepts.
+    #: The label is `Tegevus` (docs/adr/0124). It was `Mis menetluses juhtus`,
+    #: then `Mis juhtus?` — and «what happened» is a question about the past,
+    #: which made «Saadan ministeeriumile kirja» a sentence the box seemed to
+    #: refuse. One word that holds both tenses, and the placeholder says so.
     #:
     #: **Optional, and genuinely so since docs/adr/0105 §4.** It was declared
     #: `required=False` and then refused in `clean_title`, which is how a field
     #: ends up optional in the contract and required in the product; the refusal
     #: is gone and `MatterProceduralDevelopment.title` takes the empty string.
+    #: The one time it is asked for is when the save is also the next step:
+    #: a step is its sentence (`clean`, `NEXT_STEP_NEEDS_SENTENCE`).
     title = forms.CharField(
-        label="Mis juhtus?",
+        label="Tegevus",
         required=False,
         max_length=DEVELOPMENT_TITLE_MAX_LENGTH,
         widget=forms.TextInput(
             attrs={
                 "class": "field__input field__input--compact",
-                "placeholder": "nt Ministeerium saatis uue eelnõu versiooni",
+                "placeholder": "Kirjuta, mida tegid või mis on järgmine tegevus",
                 # What the `L` shortcut focuses once it has opened this panel.
                 # Named on the box rather than found by type: the date control
                 # is above this one and arrives already filled, so «the first
@@ -7522,31 +7540,29 @@ class MatterProgressForm(forms.Form):
         blank=True,
         widget=forms.Select(attrs={"class": "field__input field__input--compact"}),
     )
-    #: The next step, optional, through the canonical `NextAction` service.
+    #: `Märgi järgmiseks tegevuseks` — this activity is also what happens next.
     #:
-    #: A progress note frequently ends in one — «Ministeerium saatis uue
-    #: versiooni» / «Vaatan uue versiooni üle, 25.09» — and making that a second
-    #: visit to a second control is how a file ends up with a note and no plan.
+    #: **Offered only for a day after today, and ticked when it is offered.**
+    #: The common save of a planned activity is «write what I intend to do, pick
+    #: the day, save», and the step should follow from that without a second
+    #: sentence and a second date saying the same thing (docs/adr/0124 §2). It
+    #: replaces `Järgmine tegevus` and `Millal?`, which asked exactly that.
     #:
-    #: **Never invented.** A `Märge` saved with these empty creates no
-    #: `NextAction` and supersedes none: a record of something that happened is
-    #: not an instruction to a person, which is the rule docs/adr/0078 §3 and
-    #: docs/adr/0084 §1 both keep.
-    next_text = forms.CharField(
-        label="Järgmine tegevus",
+    #: **A box, not an inference.** A future day alone makes no step: «Minister
+    #: avaldab tulemused 15.10» is worth recording and is nobody's task, and
+    #: unticking says so. And the box counts only beside a future day — `clean`
+    #: drops it otherwise, and the use case asks again on its own clock — so a
+    #: value left over from a moment when the date was ahead, or put in a POST
+    #: by hand, writes nothing. The template hides and disables it on any other
+    #: day, which keeps a browser from sending it; the server is what enforces.
+    #:
+    #: Unticked in HTML is *absent*, so a POST without the key is «no step»,
+    #: never the default; `initial=True` is only what the box shows when it
+    #: first appears.
+    as_next_step = forms.BooleanField(
+        label="Märgi järgmiseks tegevuseks",
         required=False,
-        max_length=2000,
-        widget=forms.TextInput(
-            attrs={
-                "class": "field__input field__input--compact",
-                "placeholder": "nt Vaatan uue versiooni läbi",
-            }
-        ),
-    )
-    next_date = EstonianDateField(
-        label="Millal?",
-        required=False,
-        widget=EstonianDateInput(),
+        initial=True,
     )
     #: **No `Etapp`.** A `Märge` is a record of what happened, and the owner
     #: decided it is not filed under a phase of somebody else's procedure: the
@@ -7564,43 +7580,64 @@ class MatterProgressForm(forms.Form):
         #: draws this panel. Read for one thing: whether a chosen `Uus hetkeseis`
         #: moves the file at all (`clean`).
         self.phases = phases
+        #: Today on the application's clock (`TIME_ZONE`, Europe/Tallinn) — the
+        #: one day `clean` and the template compare `Kuupäev` against, so the
+        #: box the page shows and the rule the save applies cannot disagree
+        #: about where «ahead» starts. Never the browser's own date.
+        self.today = timezone.localdate()
         super().__init__(*args, **kwargs)
         # The active vocabulary, in the department's reviewed order, read
         # through the canonical selector rather than from a list in this module
         # (`app/workflow/selectors.py`, docs/adr/0091 §8).
         set_choices(self, "stage", active_stages())
+        # Not offered, not sent: a hidden box is drawn disabled so a browser
+        # leaves it out of the POST (the template hides its row). A widget
+        # attribute and not `Field.disabled`, which would make the form ignore
+        # the POST even on a day ahead.
+        if not self.next_step_offered:
+            self.fields["as_next_step"].widget.attrs["disabled"] = True
+
+    @property
+    def next_step_offered(self) -> bool:
+        """Whether `Märgi järgmiseks tegevuseks` is shown as the panel is drawn.
+
+        True when the day in the box — the default on a fresh panel, the typed
+        value on a refused one — is after `today`. A value that does not read
+        as a date is not ahead. The script re-decides on every change of the box
+        (static/js/app.js, `bindNextStepOffers`); this is the answer without it.
+        """
+        value = self["occurred_on"].value()
+        try:
+            when = self.fields["occurred_on"].to_python(value)
+        except forms.ValidationError:
+            return False
+        return when is not None and when > self.today
 
     def clean_title(self) -> str:
         return (self.cleaned_data.get("title") or "").strip()
 
     def clean(self) -> dict[str, Any]:
-        """Something has to be answered, and the step is whole.
+        """Something has to be answered, and a step made from it is whole.
 
-        **Something, and it may be any of four things.** A `Märge` is saved by a
-        sentence, by a file, by a new `Hetkeseis` or by a next step, and by any
-        combination of them — so the refusal is one sentence naming all four
-        rather than «this field is required» under whichever box the form happened
-        to check first. `add_procedural_development` raises the same sentence from
-        the same constant, because a form is not a boundary
-        (docs/adr/0105 §4, `DEVELOPMENT_NEEDS_SOMETHING`).
+        **Something, and it may be any of three things.** A `Märge` is saved by
+        a sentence, by a file, by a new `Hetkeseis`, and by any combination of
+        them — so the refusal is one sentence naming them rather than «this
+        field is required» under whichever box the form happened to check first.
+        `add_procedural_development` raises the same sentence from the same
+        constant, because a form is not a boundary (docs/adr/0105 §4,
+        `DEVELOPMENT_NEEDS_SOMETHING`).
 
         **The day may be past, today or ahead** (docs/adr/0121 §3). A `Märge`
-        dated after today used to be refused (ENG-004); it is accepted now, reads
-        `Eesolev` in Teema käik until its day, and never becomes the next step.
+        dated after today used to be refused (ENG-004); it is accepted, and reads
+        `Eesolev` in Teema käik until its day.
 
-        **A next step needs its sentence and not its day** (docs/adr/0106). A
-        date with nothing to do on it is refused, on the sentence, because
-        somebody who typed a day did ask for a step and gets told which half is
-        missing. A sentence with no day is an ordinary save: «vaatan uue
-        versiooni üle» is a whole instruction, and the day is a second fact the
-        lawyer frequently does not have yet.
-
-        This reverses what docs/adr/0105 §4 decided about this one control. The
-        reasoning then was that a dateless step appears in nobody's `Tähtajad`
-        or `Minu asjad` — true of `Tähtajad`, which is a list of dates and
-        correctly leaves it out, and **wrong about `Minu asjad`**, which has
-        rendered undated work in its own block since it was built (`my_work.
-        undated_items`).
+        **It is the next step only when the day is ahead and the box is ticked**
+        (docs/adr/0124 §2). `as_next_step` is dropped for a past, today's or
+        empty day, whatever the POST carried, so the cleaned value is the
+        answer the use case receives. Kept, the step is this sentence on this
+        day, and a step is its sentence: an empty `Tegevus` is refused on the
+        box, with the refusal every other step control gives
+        (`clean_next_step_sentence`, docs/adr/0106).
         """
         from app.matters.services import (
             DEVELOPMENT_NEEDS_SOMETHING,
@@ -7615,11 +7652,11 @@ class MatterProgressForm(forms.Form):
         cleaned["occurred_on_value"] = when
         cleaned["occurred_on_precision"] = DatePrecision.EXACT.value
 
-        next_when = cleaned.get("next_date")
-        text = clean_next_step_sentence(
-            self, cleaned, text_field="next_text", has_date=next_when is not None
-        )
-        cleaned["next_text"] = text
+        as_next_step = bool(cleaned.get("as_next_step")) and when is not None and when > self.today
+        cleaned["as_next_step"] = as_next_step
+        text = ""
+        if as_next_step and "title" not in self.errors:
+            text = clean_next_step_sentence(self, cleaned, text_field="title", has_date=True)
 
         # **Answered last, and only when nothing else has failed.** A save that
         # already carries a field error has something in it, and adding «write

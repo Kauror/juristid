@@ -36,6 +36,7 @@ Each of those is asserted against the stored value, never against the markup.
 from __future__ import annotations
 
 import re
+from datetime import timedelta
 
 import pytest
 from django.urls import reverse
@@ -516,17 +517,19 @@ def test_a_marge_can_set_the_next_action_and_otherwise_creates_none(signed_in, s
     )
     assert not NextAction.objects.filter(matter=matter, status=ActionStatus.OPEN).exists()
 
+    # The step is the activity itself, dated ahead and ticked (docs/adr/0124).
+    ahead = timezone.localdate() + timedelta(days=6)
     signed_in.post(
         add_note_url(matter),
         {
-            "title": "Teine versioon saabus",
-            "occurred_on": "19.09.2026",
-            "next_text": "Vaatan uue versiooni üle",
-            "next_date": "25.09.2026",
+            "title": "Vaatan uue versiooni üle",
+            "occurred_on": f"{ahead.day}.{ahead.month}.{ahead.year}",
+            "as_next_step": "on",
         },
     )
     action = NextAction.objects.get(matter=matter, status=ActionStatus.OPEN)
     assert action.text == "Vaatan uue versiooni üle"
+    assert action.target_date == ahead
 
 
 def test_a_crafted_precision_reaches_nothing(signed_in, specialist, stage):

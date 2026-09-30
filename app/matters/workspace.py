@@ -78,7 +78,11 @@ from app.matters.services import (
 )
 from app.workflow.enums import ActionStatus, DatePrecision
 from app.workflow.models import NextAction
-from app.workflow.services import complete_next_action, set_next_action_for_new_work
+from app.workflow.services import (
+    NEXT_STEP_NEEDS_SENTENCE,
+    complete_next_action,
+    set_next_action_for_new_work,
+)
 
 #: Refused when the step the form was rendered against is no longer the one that
 #: is open. Named because two surfaces print it and a test asserts on it.
@@ -713,6 +717,7 @@ def add_procedural_development(
     stage: Any = None,
     next_text: str = "",
     next_date: Any = None,
+    as_next_step: bool = False,
     uploads: Sequence[Any] = (),
 ) -> WorkspaceResult:
     """`+ Menetluse areng` — the procedure moved, and what the lawyer does about it.
@@ -760,6 +765,26 @@ def add_procedural_development(
     written here supersedes whatever was open, which is `NextAction`'s one-open
     invariant and not a decision this function makes.
 
+    **``as_next_step`` — the activity is itself the next step** (docs/adr/0124).
+    `+ Märge` no longer asks for a second sentence and a second date: a lawyer
+    writes one activity, dates it, and a day after today offers `Märgi
+    järgmiseks tegevuseks`. Ticked, ``title`` and ``occurred_on`` *are*
+    ``next_text`` and ``next_date``, and go through the same call above — no
+    other step is written, and nothing about the step is copied anywhere a
+    later correction of this row would have to keep in step with. Two rules
+    hold here and not only in the panel, because a form is not a boundary:
+
+    * **only a day after today makes a step**, on this module's clock
+      (`timezone.localdate()`, Europe/Tallinn). A past, today's or empty day
+      makes the flag inert — the panel hides it there, and a value left from a
+      moment the date was ahead must not quietly write one;
+    * **a step is its sentence**: ticked on an ahead day with no ``title`` is
+      refused with the refusal every step control gives, before anything is
+      written (`NEXT_STEP_NEEDS_SENTENCE`).
+
+    Naming both ``as_next_step`` and ``next_text`` is a caller's mistake — two
+    answers to one question — and raises rather than choosing between them.
+
     **What this refuses is an empty operation, and that is the only thing it
     refuses about content.** ``title`` is optional since docs/adr/0105 §4 — a
     paper that arrived, the file moving to `Riigikogus`, «vaatan uue versiooni
@@ -797,6 +822,16 @@ def add_procedural_development(
         record_procedural_development_document,
     )
 
+    if as_next_step and (next_text or "").strip():
+        raise ValueError("as_next_step makes the Märge the step; next_text names another one.")
+    step_text = next_text
+    step_date = next_date
+    if as_next_step and occurred_on is not None and occurred_on > timezone.localdate():
+        step_text = (title or "").strip()
+        step_date = occurred_on
+        if not step_text:
+            raise DomainError(NEXT_STEP_NEEDS_SENTENCE)
+
     locked_matter = lock_open_matter_for_business_write(matter.pk)
     moves_stage = stage is not None and stage.pk != locked_matter.stage_id
     if not development_save_says_something(
@@ -804,7 +839,7 @@ def add_procedural_development(
         note=note,
         has_files=bool(_uploads(uploads)),
         moves_stage=moves_stage,
-        next_text=next_text,
+        next_text=step_text,
     ):
         raise DomainError(DEVELOPMENT_NEEDS_SOMETHING)
 
@@ -831,12 +866,12 @@ def add_procedural_development(
             )
         if moves_stage:
             change_stage(matter=locked_matter, stage=stage, actor=author)
-        text = (next_text or "").strip()
+        text = (step_text or "").strip()
         if text:
             result.action = set_next_action_for_new_work(
                 matter=locked_matter,
                 text=text,
-                target_date=next_date,
+                target_date=step_date,
                 actor=author,
             )
         return result

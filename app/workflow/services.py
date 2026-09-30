@@ -138,6 +138,14 @@ def refuse_an_unsupported_precision(target_date: date | None, date_precision: st
         raise DomainError(UNDATED_ACTION_WITH_A_PRECISION)
 
 
+#: The refusal every next-step control gives a step with no sentence: a step is
+#: its sentence, and a day on its own is not one (docs/adr/0106). Here rather
+#: than in the forms because `+ Märge`'s use case gives it too, for a save ticked
+#: `Märgi järgmiseks tegevuseks` with nothing written (docs/adr/0124); the forms
+#: import it from here.
+NEXT_STEP_NEEDS_SENTENCE = "Kirjuta järgmine tegevus."
+
+
 @transaction.atomic
 def set_next_action_for_new_work(
     *,

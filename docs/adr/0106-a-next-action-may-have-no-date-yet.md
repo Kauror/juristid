@@ -93,6 +93,10 @@ told which half is missing rather than getting a save with no step in it.
 Three forms carry the rule and all three now agree: `NextActionForm`
 (`PRAEGUNE TEGEVUS` → `Muuda`, and `Uus teema`), `MatterProgressForm`'s
 `Järgmine tegevus` block inside `+ Märge`, and `ComposerForm._clean_next_action`.
+**Narrowed on 2026-09-30 by docs/adr/0124:** `+ Märge` no longer has a
+`Järgmine tegevus` block. A step made from it is its own `Tegevus` on its own day,
+offered only for a day after today, so an undated step is made through
+`NextActionForm` and not from `+ Märge`. The other two forms keep this rule.
 A *malformed* period is still refused — `Kuu` chosen with no month picked — and
 that error is still on the control it belongs to. What is no longer refused is
 the date control being **left alone**.

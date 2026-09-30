@@ -188,10 +188,12 @@ def test_the_completed_action_is_no_longer_the_current_one_after_a_refresh(
     assert "Järgmine samm on määramata" in body
     assert "Mida tegid?" not in body
     # `+ Järgmine tegevus` was the launcher's second chip and is gone: there is
-    # one ordinary way to set a next step and it is the optional box inside
-    # `+ Märge`, beside the thing that prompted it (docs/adr/0097 §8.2).
+    # one ordinary way to set a next step and it is `+ Märge` itself — the
+    # activity dated ahead, with `Märgi järgmiseks tegevuseks` ticked
+    # (docs/adr/0097 §8.2, docs/adr/0124).
     assert "+ Järgmine tegevus" not in body
-    assert 'name="next_text"' in body
+    assert 'name="as_next_step"' in body
+    assert 'name="next_text"' not in body
     # The result is in the chronology.
     assert "Vaatasin versiooni üle." in body
 
