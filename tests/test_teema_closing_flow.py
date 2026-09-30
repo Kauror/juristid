@@ -168,16 +168,18 @@ def test_the_closing_panel_asks_the_two_approved_questions(signed_in, normal_mat
     assert "sammud tühistatakse" not in body
 
 
-def test_the_three_offered_outcomes_map_onto_stored_dispositions():
-    """Three chips over one vocabulary, not a new one. `RESPONSE_COMPLETE`,
-    `NO_POSITION_FORMED`, `DUPLICATE` and `OTHER` remain valid stored values with
-    no chip — every one of them still reads, filters and reports."""
+def test_the_four_offered_outcomes_map_onto_stored_dispositions():
+    """Four chips over one vocabulary, not a new one. `Muu` is the stored
+    `OTHER` (docs/adr/0121 §8); `RESPONSE_COMPLETE`, `NO_POSITION_FORMED` and
+    `DUPLICATE` remain valid stored values with no chip — every one of them still
+    reads, filters and reports."""
     offered = dict(COMPOSER_CLOSURE_CHOICES)
 
     assert offered == {
         Disposition.COMPLETED.value: "Jõustus",
         Disposition.INITIATIVE_WITHDRAWN.value: "Menetlus lõppes",
         Disposition.MONITORING_STOPPED.value: "Loobuti",
+        Disposition.OTHER.value: "Muu",
     }
     assert Disposition.SUPERSEDED.value not in offered
     # The field itself still accepts the wider set, so a historical value is
@@ -192,7 +194,7 @@ def test_no_chip_is_selected_until_somebody_chooses():
     the defect the empty option was added to fix (pilot QA F-02)."""
     chips = ComposerForm().closure_chips
 
-    assert len(chips) == 3
+    assert len(chips) == 4
     assert not any(chip["selected"] for chip in chips)
 
 

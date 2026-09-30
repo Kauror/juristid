@@ -17,13 +17,13 @@ and says nothing about the Matter's state — deliberately, because
 controls that would publish or cancel a plan (docs/adr/0075 §12,
 docs/adr/0081 §5).
 
-**The link is the address, and the row says nothing else about it**
-(docs/adr/0105 §3). It read `Avaldatud` on one line and `Ava ülevaade või uudis`
-on the next until this round: a status the chronology already implies, and a
-label naming what a link is for in place of the one thing a reader of the row
-wants, which is *which page*. `MatterWebsiteOverview.link_display` decides how
-the address prints — no scheme, no userinfo, no trailing slash, cut at 72
-characters and marked when it is cut.
+**The link is named, and the address is behind it** (docs/adr/0121 §5,
+narrowing docs/adr/0105 §3). docs/adr/0105 put the address itself on the row in
+place of `Ava ülevaade või uudis`; with a stray «97» after it, that read as
+clutter, and the owner asked for the name alone. So the visible text is
+`MatterWebsiteOverview.link_label` and the address — `link_display`: no scheme,
+no userinfo, no trailing slash, cut at 72 characters — is the link's `title` and
+the rest of its accessible name.
 
 **`Muuda`, like every other correction on this page.** `Paranda link` was its own
 verb for the same act, on the one row that had one.
@@ -122,10 +122,18 @@ saying so, which is the same treatment every external link on this page gets.
       </p>
     </form>
   {% else %}
+    {% comment %}
+      **The name of what it opens, and the address behind it** (docs/adr/0121
+      §5). The row read the address cut at 72 characters, followed by a stray
+      «97»; the owner asked for a clean clickable name. The address is still
+      the link's hover `title` and the rest of its accessible name, so a file
+      written up three times still reads as three different pages to anybody
+      who cannot see the dates beside them.
+    {% endcomment %}
     <a class="uxtl__link" id="kodulehe-ulevaade-{{ overview.pk }}-aadress"
-       href="{{ overview.url }}"
-       target="_blank" rel="noopener noreferrer">{{ overview.link_display }}<span
-       class="visually-hidden"> — avaneb uues aknas</span></a>
+       href="{{ overview.url }}" title="{{ overview.link_display }}"
+       target="_blank" rel="noopener noreferrer">{{ overview.link_label }}<span
+       class="visually-hidden">: {{ overview.link_display }} — avaneb uues aknas</span></a>
     {% if can_write_business_content %}
       {% comment %}
         Named by reference — the button's own word, then the address beside it —

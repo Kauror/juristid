@@ -227,13 +227,9 @@ def test_cancelling_leaves_the_row_exactly_as_it_was(page, base_url):
     expect(row).not_to_contain_text("Seda ei salvestata")
 
 
-def test_a_future_date_is_refused_beside_the_control_it_was_typed_into(page, base_url):
-    """QA-07, preserved through the correction surface.
-
-    A `Menetluse areng` records something that has happened. The refusal arrives
-    in the form that is still open, holding what the person typed, rather than as
-    a page-level banner they have to go and find.
-    """
+def test_a_future_date_is_saved_and_the_row_reads_eesolev(page, base_url):
+    """docs/adr/0121 §3 through the correction surface: a `Märge` moved ahead of
+    today is saved, and its row says `Eesolev` beside the date."""
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, unique_title("Menetluse arengu katse: tulevik"))
     _file_a_development(page)
@@ -241,11 +237,9 @@ def test_a_future_date_is_refused_beside_the_control_it_was_typed_into(page, bas
     ahead = (dt.date.today() + dt.timedelta(days=30)).strftime("%d.%m.%Y")
     form = _open_the_editor(page)
     form.locator("input[name=occurred_on]").fill(ahead)
-    refused = _save(page)
-    assert refused.status == 400, f"a future date was accepted: {refused.status}"
+    saved = _save(page)
+    assert saved.status == 200, f"a future date was refused: {saved.status}"
     page.wait_for_load_state("networkidle")
 
-    expect(page.locator(".uxtl__editform")).to_have_count(1)
-    expect(page.locator(".uxtl__editform")).to_contain_text("ei saa olla tulevikus")
-    # Nothing was written, and the form still holds what the person typed.
-    assert page.locator(".uxtl__editform input[name=occurred_on]").input_value() == ahead
+    expect(page.locator(".uxtl__editform")).to_have_count(0)
+    expect(_row(page).locator(".uxtl__msahead")).to_have_text("Eesolev")

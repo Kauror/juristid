@@ -370,12 +370,12 @@ class Portfolio:
 
 
 def _earliest_actions(items: list[wi.WorkItem]) -> dict[Any, wi.WorkItem]:
-    """The earliest open dated action per Matter, from the list already read.
+    """The earliest open dated action per Matter, from a list in `sort_items` order.
 
-    `items` is `sort_items` order — oldest first — so the first one seen for a
-    Matter is the earliest. Built from the same read the bands come from rather
-    than queried again, which is what stops a row saying one thing and the
-    timeline above it another.
+    `items` is oldest first, so the first one seen for a Matter is the earliest.
+    `build_portfolio` hands it every open dated step on the person's Matters,
+    whoever carries it, because a portfolio row states the *Matter's* next
+    step — the one its own page shows (docs/adr/0121 §2).
     """
     earliest: dict[Any, wi.WorkItem] = {}
     for item in items:
@@ -420,10 +420,26 @@ def build_portfolio(
     queryset = annotate_last_activity(
         wi.open_matters(user).filter(owner=subject).select_related("stage", "owner"), user
     )
-    dated = _earliest_actions(items)
+    # **The Matter's own step, whoever carries it** (docs/adr/0121 §2). These
+    # rows are this person's *Matters*, and a Matter has at most one open
+    # `Järgmiseks` (`workflow_one_open_action_per_matter`). Reading only the
+    # steps this person is responsible for — the bands' population, `items` —
+    # left a file whose step a colleague carries reading «Järgmise tegevuseta»
+    # here while its own `PRAEGUNE TEGEVUS` showed the step and the strip's
+    # figure beside the chip, `?tegevus=puudub`, did not count it. So the
+    # row asks for the Matter's open step, reader-scoped, the way both of those
+    # do; the milestone fallback is unchanged and already per Matter.
+    dated = _earliest_actions(
+        wi.sort_items(
+            [
+                wi.action_item(action, today)
+                for action in wi.dated_actions(user).filter(matter__owner=subject)
+            ]
+        )
+    )
     milestones = _upcoming_milestones(items, today)
     undated: dict[Any, wi.WorkItem] = {}
-    for action in wi.undated_actions(user, responsible=subject).order_by("created_at"):
+    for action in wi.undated_actions(user).filter(matter__owner=subject).order_by("created_at"):
         undated.setdefault(action.matter_id, wi.action_item(action, today))
 
     rows = [

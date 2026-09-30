@@ -64,14 +64,17 @@ def test_the_closing_panel_asks_only_the_approved_questions(page, base_url):
 
     panel = open_closing_panel(page)
 
-    # Three chips with no visible heading over them, still one named group for
+    # Four chips with no visible heading over them, still one named group for
     # a screen reader: the legend is visually hidden, not removed (owner
-    # decision, 2026-09-27).
+    # decision, 2026-09-27). `Muu` is the fourth (docs/adr/0121 §8).
     group = panel.get_by_role("group", name="Kuidas lõppes")
     expect(group).to_have_count(1)
     expect(group.locator("legend")).to_have_class("visually-hidden")
-    for label in ("Jõustus", "Menetlus lõppes", "Loobuti"):
+    for label in ("Jõustus", "Menetlus lõppes", "Loobuti", "Muu"):
         expect(group.locator(".uxchip", has_text=label)).to_have_count(1)
+    # `Märgi töövõiduks` is there, unticked, and its box is hidden until ticked.
+    expect(panel.get_by_label("Märgi töövõiduks")).not_to_be_checked()
+    expect(panel.locator("[name=victory_note]")).to_be_hidden()
     expect(panel.locator("[name=closing_words]")).to_be_visible()
     expect(panel).to_contain_text("valikuline")
     # And no explanatory sentence under it.

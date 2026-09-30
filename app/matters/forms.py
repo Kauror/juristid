@@ -59,7 +59,6 @@ from app.workflow.dates import (
     InvalidPeriod,
     bounds_for,
     format_at_precision,
-    period_starts_after,
 )
 from app.workflow.enums import (
     ESTONIAN_MONTHS,
@@ -235,30 +234,6 @@ def refuse_deadline_before_engagement(form: forms.Form, cleaned: dict[str, Any])
         cleaned.get("feedback_deadline"),
     ):
         form.add_error("feedback_deadline", DEADLINE_BEFORE_ENGAGEMENT)
-
-
-def refuse_future_engagement(form: forms.Form, cleaned: dict[str, Any]) -> None:
-    """The service's future-date rule for a `Kaasamine`, under the date box (ENG-004).
-
-    `add_engagement` and `update_engagement` refuse a round whose period begins
-    after today, with the same sentence; this asks the same question earlier so
-    the person reads it beside `Kaasamise kuupäev` with everything they typed
-    still on the form. Read from the **resolved** period, like the deadline rule
-    above, and judged only when it differs from what the record stores — a round
-    filed with a future date before the rule existed stays correctable.
-    """
-    from app.matters.services import ENGAGEMENT_CANNOT_BE_FUTURE
-
-    value = cleaned.get("occurred_on_value")
-    precision = cleaned.get("occurred_on_precision") or DatePrecision.EXACT.value
-    record = getattr(form, "record", None)
-    if record is not None and (value, precision) == (
-        record.occurred_on,
-        record.occurred_on_precision,
-    ):
-        return
-    if period_starts_after(value, precision, day=timezone.localdate()):
-        form.add_error("occurred_on", ENGAGEMENT_CANNOT_BE_FUTURE)
 
 
 def assignable_users() -> Any:
@@ -2265,20 +2240,25 @@ CLOSURE_CHOICES: tuple[tuple[str, str], ...] = (
     (Disposition.OTHER.value, "Muu"),
 )
 
-#: `Kuidas lõppes` — the three outcomes the approved target offers, in its order
-#: and with its words.
+#: `Kuidas lõppes` — the four outcomes the panel offers, in its order and with
+#: its words.
 #:
-#: Three chips over one stored vocabulary, not a new one. `Jõustus` is the
+#: Four chips over one stored vocabulary, not a new one. `Jõustus` is the
 #: closure the register has always spelled «Lõpetatud või jõustunud»;
-#: `Menetlus lõppes` is the draft or initiative being dropped upstream; and
-#: `Loobuti` is Koda deciding to stop. `RESPONSE_COMPLETE`,
-#: `NO_POSITION_FORMED`, `DUPLICATE`, `SUPERSEDED` and `OTHER` remain valid
-#: stored dispositions with no chip — every one of them still reads, still
-#: filters and still reports (docs/adr/0074 §10).
+#: `Menetlus lõppes` is the draft or initiative being dropped upstream;
+#: `Loobuti` is Koda deciding to stop; and **`Muu` is `Disposition.OTHER`**, the
+#: value the vocabulary has always held for an ending none of the three names
+#: (docs/adr/0121 §8). It is stored as itself and read back as «Muu» — never
+#: mapped onto one of the other three, which would put a closure into a
+#: category somebody deliberately did not choose. `RESPONSE_COMPLETE`,
+#: `NO_POSITION_FORMED`, `DUPLICATE` and `SUPERSEDED` remain valid stored
+#: dispositions with no chip — every one of them still reads, still filters and
+#: still reports (docs/adr/0074 §10).
 COMPOSER_CLOSURE_CHOICES: tuple[tuple[str, str], ...] = (
     (Disposition.COMPLETED.value, "Jõustus"),
     (Disposition.INITIATIVE_WITHDRAWN.value, "Menetlus lõppes"),
     (Disposition.MONITORING_STOPPED.value, "Loobuti"),
+    (Disposition.OTHER.value, "Muu"),
 )
 
 
@@ -3680,8 +3660,18 @@ class EngagementForm(forms.Form):
     can have filled in.** A correction form missing a field does not leave that
     field alone — it leaves the person with a record they can read on the
     chronology and cannot fix. The fields here are therefore the stored ones a
-    person answers: `title`, `Vastuseid`, `url`, the two provider links, `note`,
-    both dates and `Saadud tagasiside`.
+    person answers: `title`, `Vastuseid`, the two provider links, both dates and
+    `Saadud tagasiside` — **exactly the fields `+ Kaasamine` asks**.
+
+    **The generic `Link` and `Märkus` are not offered, and their values are
+    kept** (docs/adr/0121 §4). They were the five-field form's (docs/adr/0027)
+    and survived only here, so editing a round showed two boxes its creation
+    never asked — and nothing on the chronology ever printed either value. The
+    editor offers what the panel can write, which is this form's rule read the
+    other way round; `url` and `note` stay on the record, in search and in the
+    audit history, and the view does not name them, so `update_engagement`'s
+    `_UNSET` leaves a stored legacy value exactly as it is on every save — the
+    shape `Liik` already has below.
 
     **`Vastuseid` is here because `+ Kaasamine` asks for it.** It was left off
     this form while the creating panel did not offer it either, and the
@@ -3717,17 +3707,11 @@ class EngagementForm(forms.Form):
             }
         ),
     )
-    url = forms.CharField(
-        label="Link",
-        required=False,
-        widget=forms.TextInput(attrs={"class": "field__input", "placeholder": "https://…"}),
-        help_text="Vabatahtlik. Kampaanial ei pruugi püsivat avalikku aadressi olla.",
-    )
     #: `Vastuseid`, corrected the way every other optional box on this form is:
     #: **an empty control clears the column.**
     #:
-    #: That is the ordinary rule here — an emptied `Märkus`, `Link` or
-    #: `Tagasisidet ootame kuni` all clear what is stored — and it is what makes
+    #: That is the ordinary rule here — an emptied provider link, `Saadud
+    #: tagasiside` or `Tagasisidet ootame kuni` all clear what is stored — and it is what makes
     #: both of this column's facts reachable. `0` is «keegi ei vastanud» and is
     #: saved, displayed and corrected as the number it is; blank is «keegi ei
     #: lugenud», which is a different fact and the only honest answer for
@@ -3812,11 +3796,6 @@ class EngagementForm(forms.Form):
         required=False,
         widget=forms.Textarea(attrs={"class": "field__input", "rows": "3"}),
     )
-    note = forms.CharField(
-        label="Märkus",
-        required=False,
-        widget=forms.Textarea(attrs={"class": "field__input", "rows": "2"}),
-    )
     #: The half of optimistic concurrency the browser owns, exactly as
     #: `EntryEditForm` carries it: the version the boxes were filled from,
     #: returned unchanged so `correct_engagement` can refuse a stale save
@@ -3889,23 +3868,8 @@ class EngagementForm(forms.Form):
         else:
             cleaned["occurred_on_value"] = None
             cleaned["occurred_on_precision"] = DatePrecision.EXACT.value
-        refuse_future_engagement(self, cleaned)
         refuse_deadline_before_engagement(self, cleaned)
         return cleaned
-
-    def clean_url(self) -> str:
-        """The same rule the service enforces, reported where somebody typed it.
-
-        Duplicated deliberately: the service is what guarantees the invariant
-        for an importer or a shell, and this is what turns a refusal into a
-        message beside the field instead of a 400 page.
-        """
-        from app.matters.services import normalize_engagement_url
-
-        try:
-            return normalize_engagement_url(self.cleaned_data.get("url"))
-        except DomainError as error:
-            raise forms.ValidationError(str(error)) from error
 
     def clean_smaily_url(self) -> str:
         return clean_provider_link(self, "smaily_url")
@@ -4522,7 +4486,6 @@ class CompactEngagementForm(forms.Form):
         cleaned = super().clean() or {}
         cleaned["occurred_on_value"] = cleaned.get("occurred_on")
         cleaned["occurred_on_precision"] = DatePrecision.EXACT.value
-        refuse_future_engagement(self, cleaned)
         # The one rule relating the two dates, under the box it is about — the
         # service's own, asked the way `EngagementForm` asks it (docs/adr/0120).
         refuse_deadline_before_engagement(self, cleaned)
@@ -4823,7 +4786,7 @@ class CompactWorkVictoryForm(forms.Form):
         cleaned = super().clean() or {}
         change = (cleaned.get("victory_change") or "").strip()
         if not change:
-            self.add_error("victory_change", "Kirjuta, mis muutus.")
+            self.add_error("victory_change", WORK_VICTORY_NEEDS_TEXT)
         won_on = cleaned.get("victory_date")
         if won_on is None:
             # `required=False` on the field and refused here, so an emptied box
@@ -4833,17 +4796,36 @@ class CompactWorkVictoryForm(forms.Form):
             if not self.has_error("victory_date"):
                 self.add_error("victory_date", "Märgi, millal see töövõit saavutati.")
             return cleaned
-        # A single day, stated as the period it is: `period_date` and
-        # `period_end` are the same date and the precision is `EXACT`. The
-        # reporting reads periods and goes on reading periods; what narrowed is
-        # what this form can produce, not what the column can hold.
-        cleaned["work_victory_kwargs"] = {
-            "title": change[:2000],
-            "period_date": won_on,
-            "period_end": won_on,
-            "date_precision": DatePrecision.EXACT.value,
-        }
+        if change:
+            cleaned["work_victory_kwargs"] = work_victory_kwargs(change, won_on)
         return cleaned
+
+
+#: What a `Töövõit` with no description is told — by `+ Märge → Töövõit` and by
+#: `Lõpeta teema → Märgi töövõiduks`, which record the same fact through the same
+#: service and so refuse it with the same sentence (docs/adr/0121 §9).
+WORK_VICTORY_NEEDS_TEXT = "Kirjuta, mis muutus."
+
+#: The longest description either form takes, the column's own bound.
+WORK_VICTORY_TEXT_MAX_LENGTH = 2000
+
+
+def work_victory_kwargs(change: str, won_on: date) -> dict[str, Any]:
+    """What a person's `Töövõit` becomes, for `add_matter_work_victory`.
+
+    A single day, stated as the period it is: `period_date` and `period_end`
+    are the same date and the precision is `EXACT`. The reporting reads periods
+    and goes on reading periods; what narrowed is what the forms can produce,
+    not what the column can hold. One function, so the win recorded from
+    `+ Märge` and the one recorded while closing a file cannot be stored two
+    different ways (docs/adr/0121 §9).
+    """
+    return {
+        "title": change[:WORK_VICTORY_TEXT_MAX_LENGTH],
+        "period_date": won_on,
+        "period_end": won_on,
+        "date_precision": DatePrecision.EXACT.value,
+    }
 
 
 class CompactWebsiteOverviewForm(forms.Form):
@@ -4973,12 +4955,8 @@ class CompactWebsiteOverviewForm(forms.Form):
         if not url:
             self.add_error("url", WEBSITE_OVERVIEW_NEEDS_LINK)
 
-        # The day the page went up cannot be tomorrow (ENG-004): the service's
-        # rule, beside the box it was typed into.
-        if published_on is not None and published_on > timezone.localdate():
-            from app.matters.services import WEBSITE_OVERVIEW_PUBLISHED_IN_FUTURE
-
-            self.add_error("published_on", WEBSITE_OVERVIEW_PUBLISHED_IN_FUTURE)
+        # Any day is a publication day — past, today or one it is scheduled
+        # for (docs/adr/0121 §3). ENG-004's «ei saa olla tulevikus» is gone.
 
         # What the view acts on: an address and the day, which is a publication.
         # The second member may still be `None` — somebody who clears the box is
@@ -5069,32 +5047,8 @@ class WebsiteOverviewLinkForm(forms.Form):
             raise forms.ValidationError(WEBSITE_OVERVIEW_NEEDS_LINK)
         return url
 
-    def __init__(self, *args: Any, stored_published_on: Any = None, **kwargs: Any) -> None:
-        """``stored_published_on`` is what the row already says, or `None`.
-
-        The one fact about the record this form is told, and only so the
-        future-date rule below can be the service's rule: a day that did not
-        move is not a new claim. Which operation the POST is still is decided by
-        the route and the record under its lock, never here (docs/adr/0081 §3).
-        """
-        super().__init__(*args, **kwargs)
-        self.stored_published_on = stored_published_on
-
-    def clean_published_on(self) -> Any:
-        """An empty box is still *unknown* (docs/adr/0089 §8); a future day is not.
-
-        It used to refuse an empty box with `WEBSITE_OVERVIEW_NEEDS_DATE`, and
-        that is not coming back. What is refused is a day after today that the
-        save would *put* on the record — the service's rule (ENG-004), under the
-        box. A publication stored with a future day before the rule existed can
-        still have its address corrected without the box refusing what it holds.
-        """
-        from app.matters.services import WEBSITE_OVERVIEW_PUBLISHED_IN_FUTURE
-
-        day = self.cleaned_data.get("published_on")
-        if day is not None and day != self.stored_published_on and day > timezone.localdate():
-            raise forms.ValidationError(WEBSITE_OVERVIEW_PUBLISHED_IN_FUTURE)
-        return day
+    # No future-date rule on `Avaldamise kuupäev` (docs/adr/0121 §3): any day is
+    # accepted, and an empty box is still *unknown* (docs/adr/0089 §8).
 
 
 def _external_position_organisation_field() -> forms.ModelChoiceField:
@@ -5460,27 +5414,7 @@ class ExternalPositionFieldsMixin:
             anchor, precision = external_position_period(cast(Any, self))
         else:
             anchor, precision = cleaned.get("stated_on"), DatePrecision.EXACT.value
-        # **Not in the future** (ENG-004), the service's rule and sentence, on the
-        # control the answer was typed into. Judged only when the period moved
-        # from what the record stores, so a position filed with a future date
-        # before the rule existed can still be corrected in everything else.
-        record = getattr(self, "record", None)
-        stored = (
-            (record.stated_on, record.stated_on_precision) if record is not None else (None, None)
-        )
-        if (anchor, precision) != stored and period_starts_after(
-            anchor, precision, day=timezone.localdate()
-        ):
-            from app.matters.services import EXTERNAL_POSITION_CANNOT_BE_FUTURE
-
-            field = (
-                _precision_controls(EXTERNAL_POSITION_PREFIX, "stated_on").get(
-                    precision, "stated_on"
-                )
-                if self.offers_precision
-                else "stated_on"
-            )
-            self.add_error(field, EXTERNAL_POSITION_CANNOT_BE_FUTURE)
+        # Any period is accepted — past, today or ahead (docs/adr/0121 §3).
         cleaned["stated_on_value"] = anchor
         cleaned["stated_on_precision"] = precision
         return cleaned
@@ -6814,42 +6748,15 @@ class ProceduralDevelopmentEditForm(forms.Form):
         return (self.cleaned_data.get("title") or "").strip()
 
     def clean(self) -> dict[str, Any]:
-        """The period, and the one refusal a correction may raise about it.
+        """The period this correction results in.
 
-        **A correction may not move the date into the future**, the same
-        invariant `+ Menetluse areng` states and the same sentence: a
-        `Menetluse areng` records something that has happened, and the product's
-        forward-looking facts are `Järgmiseks` and `+ Oluline tähtaeg`.
-
-        Guarded here on the period having actually **moved**, which is the rule
-        `correct_procedural_development` enforces under the row lock and the
-        reason this form must not simply repeat the panel's check. A row filed
-        before the invariant existed still carries its future date; refusing
-        every correction that merely *carries* it would make such a row's
-        headline permanently uncorrectable — a second, quieter way of the file
-        being unable to say what happened. So the comparison is against what the
-        record stores, and correcting only the sentence of such a row is allowed
-        through (docs/adr/0079 §2).
-
-        The refusal lands on the control the chosen precision is answered in,
-        through the same map the panel uses: «ei saa olla tulevikus» pinned to an
-        empty day box when the person stated a quarter points at the wrong field.
+        **Any period is accepted — past, today or ahead** (docs/adr/0121 §3). A
+        correction used to be refused for moving the date past today (ENG-004);
+        a `Märge` may now record something planned, and what its date *means*
+        is read where it is used (`app.matters.timeline`, `legal_process`).
         """
-        from app.matters.services import DEVELOPMENT_CANNOT_BE_FUTURE
-
         cleaned = super().clean() or {}
         anchor, precision = development_period(cast(Any, self))
-        stored_anchor = getattr(self.record, "occurred_on", None)
-        stored_precision = getattr(self.record, "occurred_on_precision", "") or ""
-        period_moved = anchor != stored_anchor or precision != stored_precision
-        if period_moved and period_starts_after(anchor, precision, day=timezone.localdate()):
-            self.add_error(
-                _precision_controls(DEVELOPMENT_PREFIX, "occurred_on").get(
-                    precision, "occurred_on"
-                ),
-                DEVELOPMENT_CANNOT_BE_FUTURE,
-            )
-            anchor = None
         cleaned["occurred_on_value"] = anchor
         cleaned["occurred_on_precision"] = precision
         return cleaned
@@ -6952,6 +6859,16 @@ class CompactClosureForm(ChipChoices, forms.Form):
     was blank; there is no shared body any more, so a closure with nothing to add
     stores an empty reason rather than borrowing a sentence from another
     operation (docs/adr/0075 §9).
+
+    **`Märgi töövõiduks` — the existing `Töövõit`, recorded in the same act**
+    (docs/adr/0121 §9). Off by default, and unchecked the panel is exactly what
+    it was. Checked, it asks the one thing `+ Märge → Töövõit` asks — what
+    changed — and refuses an empty answer with that panel's sentence
+    (`WORK_VICTORY_NEEDS_TEXT`). The day is the day of the closure, stated as
+    `+ Märge → Töövõit` states a day (`work_victory_kwargs`). There is no second
+    kind of win: the result is handed to `add_matter_work_victory`, the same
+    use case, service, record and audit event, inside the closure's own
+    transaction. A description typed and then unticked records nothing.
     """
 
     use_required_attribute = False
@@ -6974,6 +6891,23 @@ class CompactClosureForm(ChipChoices, forms.Form):
             }
         ),
     )
+    mark_work_victory = forms.BooleanField(
+        label="Märgi töövõiduks",
+        required=False,
+        widget=forms.CheckboxInput(attrs={"class": "cx-reveal__toggle"}),
+    )
+    victory_note = forms.CharField(
+        label="Töövõidu märkus",
+        required=False,
+        max_length=WORK_VICTORY_TEXT_MAX_LENGTH,
+        widget=forms.Textarea(
+            attrs={
+                "class": "field__input field__input--compact",
+                "rows": "2",
+                "placeholder": "Kirjelda lühidalt, milles töövõit seisnes…",
+            }
+        ),
+    )
 
     @property
     def closure_chips(self) -> list[dict[str, Any]]:
@@ -6984,6 +6918,19 @@ class CompactClosureForm(ChipChoices, forms.Form):
         if not disposition:
             raise forms.ValidationError("Vali, kuidas teema lõppes.")
         return disposition
+
+    def clean(self) -> dict[str, Any]:
+        cleaned = super().clean() or {}
+        cleaned["work_victory_kwargs"] = None
+        if not cleaned.get("mark_work_victory"):
+            return cleaned
+        change = (cleaned.get("victory_note") or "").strip()
+        if not change:
+            if not self.has_error("victory_note"):
+                self.add_error("victory_note", WORK_VICTORY_NEEDS_TEXT)
+            return cleaned
+        cleaned["work_victory_kwargs"] = work_victory_kwargs(change, timezone.localdate())
+        return cleaned
 
 
 class EntryEditForm(forms.Form):
@@ -7627,7 +7574,7 @@ class MatterProgressForm(forms.Form):
         return (self.cleaned_data.get("title") or "").strip()
 
     def clean(self) -> dict[str, Any]:
-        """Something has to be answered, the day may not be ahead, and the step is whole.
+        """Something has to be answered, and the step is whole.
 
         **Something, and it may be any of four things.** A `Märge` is saved by a
         sentence, by a file, by a new `Hetkeseis` or by a next step, and by any
@@ -7637,12 +7584,9 @@ class MatterProgressForm(forms.Form):
         the same constant, because a form is not a boundary
         (docs/adr/0105 §4, `DEVELOPMENT_NEEDS_SOMETHING`).
 
-        **The future-date refusal is the service's**, repeated here so a person
-        sees it beside the control they typed into rather than as a panel-level
-        banner. `record_procedural_development` is what actually enforces it,
-        and this panel cannot reach the approximate-period case the service also
-        guards — every date here is a day or nothing, so the comparison is the
-        plain one rather than `period_starts_after`.
+        **The day may be past, today or ahead** (docs/adr/0121 §3). A `Märge`
+        dated after today used to be refused (ENG-004); it is accepted now, reads
+        `Eesolev` in Teema käik until its day, and never becomes the next step.
 
         **A next step needs its sentence and not its day** (docs/adr/0106). A
         date with nothing to do on it is refused, on the sentence, because
@@ -7659,7 +7603,6 @@ class MatterProgressForm(forms.Form):
         undated_items`).
         """
         from app.matters.services import (
-            DEVELOPMENT_CANNOT_BE_FUTURE,
             DEVELOPMENT_NEEDS_SOMETHING,
             development_save_says_something,
         )
@@ -7667,9 +7610,6 @@ class MatterProgressForm(forms.Form):
         cleaned = super().clean() or {}
 
         when = cleaned.get("occurred_on")
-        if when is not None and when > timezone.localdate():
-            self.add_error("occurred_on", DEVELOPMENT_CANNOT_BE_FUTURE)
-            when = None
         # Named as the service names them, so the view hands the cleaned data
         # straight on rather than translating between two vocabularies.
         cleaned["occurred_on_value"] = when

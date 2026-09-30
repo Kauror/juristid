@@ -1219,6 +1219,7 @@ def close_matter_from_workspace(
     author: Any,
     disposition: str,
     closing_words: str = "",
+    work_victory: dict[str, Any] | None = None,
 ) -> WorkspaceResult:
     """`+ Lõpeta teema` — two questions, and nothing invented from them.
 
@@ -1238,9 +1239,24 @@ def close_matter_from_workspace(
     `close_matter`'s own job — it locks the same row and answers «Teema on juba
     suletud.» Adding the guard here would say the same thing twice and in the
     wrong sentence (R2-02).
+
+    **`Märgi töövõiduks` records the ordinary `Töövõit` first, in this same
+    transaction and operation** (docs/adr/0121 §9). ``work_victory`` is what
+    `CompactClosureForm` produced — the same keys `+ Märge → Töövõit` hands
+    `add_matter_work_victory` — and it goes to that very use case: the same
+    record, service, validation, audit event and reporting, with no files. The
+    order is the only one that can work, and the one `_apply_closure` already
+    uses: a win is recorded on an *open* file (`lock_open_matter_for_business_write`
+    refuses a closed one), so it is written first and the closure last. Either
+    refusal unwinds both — a win on a file left open, or a closed file claiming
+    a win nobody recorded, cannot be the outcome of one press.
     """
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
+        if work_victory:
+            result.record = add_matter_work_victory(
+                matter=matter, author=author, uploads=(), **work_victory
+            ).record
         close_matter(
             matter=matter,
             disposition=disposition,

@@ -26,10 +26,13 @@ gives it:
 A past milestone was valid to record and stays in `Teema käik`; it is simply not
 what happens *next*.
 
-**Among several, the earliest wins, deterministically**: the anchor, then the
-period's end, then the primary key — the model's own ordering, so a reader of
-the Matter page, a row on `Minu asjad` and the register's `?tegevus=puudub` pick
-the same record. Two stated the same way cannot tie.
+**Among several, the one due first wins, deterministically**: the period's
+end, then the anchor, then the primary key — so a reader of the Matter page and
+a row on `Minu asjad` pick the same record, and two stated the same way cannot
+tie. It is the *end* first since docs/adr/0121 §1: ranked by the anchor, «2026»
+(stored as 1 January) outranked a deadline due tomorrow, which is the stored
+first day of a period standing in for a day nobody named — the reading §7 of
+the same record removes from `Minu asjad`.
 
 Three readers, one rule:
 
@@ -64,8 +67,8 @@ def milestone_is_upcoming(*, status: str, period_end: date | None, today: date) 
 
 
 def milestone_order(date_value: date, period_end: date, pk: Any) -> tuple[date, date, str]:
-    """Earliest first: anchor, then the end of its period, then the key."""
-    return (date_value, period_end, str(pk))
+    """Due first: the end of its period, then its anchor, then the key."""
+    return (period_end, date_value, str(pk))
 
 
 def upcoming_milestone(

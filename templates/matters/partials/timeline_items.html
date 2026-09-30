@@ -185,6 +185,7 @@ record, not professional chronology (master specification 16.5).
               {% else %}
                 <span class="uxtl__msdate">{{ item.milestone.display_date }}</span>
               {% endif %}
+              {% if item.milestone.ahead %}<span class="uxtl__msahead">Eesolev</span>{% endif %}
             </p>
             {% comment %}
               `Kustuta` on the milestone rows that have no correction element of

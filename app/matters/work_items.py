@@ -1299,15 +1299,17 @@ def band_of(
     ``?kuni=`` narrows **Hiljem only**. It is that band's own control and it
     must not be able to hide something due next week.
 
-    **A period is this week's only when this week is when it is due** — its
-    last day falls in it, or it is a review whose period has begun and so has
-    come round (docs/adr/0120, UQ-09). It used to be banded on its anchor,
-    which put «oktoober 2026» under *Sel nädalal* on 29 September because the
-    first of October is a Thursday: the anchor is storage, a day nobody named,
-    and banding on it coerced a month into that day. Anything else recorded to
-    a month, a quarter, a half-year or a year and not yet ended goes to
-    **Hiljem**, the band that has never implied a day (and never to *Järgmised
-    30 päeva*, above).
+    **A period that has not ended is never this week's** (docs/adr/0121 §7). A
+    month, a quarter, a half-year or a year is not a day, and no day inside it
+    — not its first (its stored anchor), not its last — may stand in for one to
+    decide *Sel nädalal*. docs/adr/0120 banded on the last day, which still put
+    «oktoober 2026» under *Sel nädalal* in the last week of October and a
+    review under it the moment its month began: a weekly deadline made out of a
+    day nobody named. Such a period goes to **Hiljem**, the band that has never
+    implied a day (and never to *Järgmised 30 päeva*, above), and prints as the
+    period it is. Only once the whole period is behind us is it placed with
+    the other past items — overdue, or come round for a look — because then no
+    representative day is being chosen at all.
     """
     when = item.when
     if when is None:
@@ -1317,8 +1319,6 @@ def band_of(
         # Genuinely late, or merely come round. Both are now; only one is red.
         return BAND_OVERDUE if item.is_overdue else BAND_WEEK
     if item.is_approximate:
-        if end <= week_end or item.is_review_ripe:
-            return BAND_WEEK
         return BAND_LATER if horizon is None or when <= horizon else None
     if when <= week_end:
         # Today, a period already running, or a day still inside this week.

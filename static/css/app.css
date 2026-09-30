@@ -10218,6 +10218,25 @@ section:has(.pw-more[open]) tbody.uxextra {
   color: var(--text-secondary);
 }
 
+/* A box a checkbox asks for: `Lõpeta teema → Märgi töövõiduks` and its
+   `Töövõidu märkus`. Hidden until the box is ticked, and read from the checkbox
+   itself so no script can leave the two disagreeing. A refused save comes back
+   with the box still ticked, so the note and its error stay on screen
+   (docs/adr/0121 §9). */
+#teema-vaade-wrap .cx-reveal {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+#teema-vaade-wrap .cx-reveal__body {
+  display: none;
+}
+
+#teema-vaade-wrap .cx-reveal:has(.cx-reveal__toggle:checked) .cx-reveal__body {
+  display: block;
+}
+
 #teema-vaade-wrap .cx-note {
   margin: 0;
   font-size: 11.5px;
@@ -11322,6 +11341,18 @@ section:has(.pw-more[open]) tbody.uxextra {
   color: var(--text-secondary);
 }
 
+/* `Eesolev` beside the date of a record dated ahead of today (docs/adr/0121 §3):
+ * on the one line a closed row shows, so the chronology is never read as
+ * claiming a planned round or sitting has already happened. Quiet, in the
+ * status-info tone, and the same word an upcoming `Oluline tähtaeg` carries. */
+#teema-vaade-wrap .uxtl__msahead {
+  margin-left: var(--spacing-1);
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  line-height: 1.4;
+  color: var(--status-info);
+}
+
 /* -- the accordion ------------------------------------------------------------
  *
  * Every row of `Teema käik` is one line until somebody opens it: the dot, the
@@ -11566,9 +11597,14 @@ section:has(.pw-more[open]) tbody.uxextra {
 
 /* A `Kaasamine`'s provider pointers, on a row of their own under the record
  * rather than mixed in with its attachments: a file is bytes this application
- * holds and these are addresses somewhere else, and the arrow is the only thing
- * that has to say so. Same size and colour as the file links, because they are
- * the same weight of information. */
+ * holds and these are addresses somewhere else. Same size and colour as the file
+ * links, because they are the same weight of information.
+ *
+ * **The label is the whole link, with nothing after it.** An `::after` meant to
+ * draw an arrow had been saved as a control byte followed by «97», so every link
+ * here read «Smaily 97» — a number nobody could explain, beside a count of
+ * replies. The owner asked for the name alone (docs/adr/0121 §5); that the
+ * address opens elsewhere is said by the visually hidden «avaneb uues aknas». */
 #teema-vaade-wrap .uxtl__links {
   display: block;
   margin-top: 3px;
@@ -11583,12 +11619,6 @@ section:has(.pw-more[open]) tbody.uxextra {
   line-height: 1.4;
   color: var(--accent-link);
   text-decoration: none;
-}
-
-#teema-vaade-wrap .uxtl__link::after {
-  content: "97";
-  font-size: 11px;
-  opacity: 0.75;
 }
 
 #teema-vaade-wrap .uxtl__link:hover {

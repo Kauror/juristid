@@ -53,7 +53,7 @@ from app.matters.models import (
 from app.submissions.enums import RecipientRole
 from app.submissions.links import linked_submissions_by_overview
 from app.submissions.models import Submission, SubmissionRecipient
-from app.workflow.dates import format_at_precision
+from app.workflow.dates import format_at_precision, period_starts_after
 
 #: Events worth a line in the chronology. Field-level noise is deliberately
 #: absent: a lawyer scrolling six months of work does not need to see that a
@@ -193,11 +193,12 @@ SUBMISSION_MILESTONE = "Arvamus välja"
 #: published row and the cancelled one have to agree — a rename that reached one
 #: and not the other would put two names for one activity on one page.
 #:
-#: **The link beside it carries the address and no label.** `Ava ülevaade või
-#: uudis` stood there until docs/adr/0105 §3, on the argument that a raw URL is a
-#: line a reader has to parse; what it cost was the one thing a reader of this row
-#: wants — *which page* — in exchange for a sentence saying what a link is for.
-#: `MatterWebsiteOverview.link_display` decides how the address prints.
+#: **The link beside it reads `Ülevaade / uudis`, and the address is behind it**
+#: (docs/adr/0121 §5). docs/adr/0105 §3 had put the address itself there, cut at
+#: 72 characters; the owner found the row cluttered and asked for a clean name.
+#: The address is kept as the link's `title` and in its accessible name, so
+#: *which page* is still answerable (`MatterWebsiteOverview.link_label`,
+#: `link_display`).
 WEBSITE_OVERVIEW_MILESTONE = "Ülevaade / uudis"
 
 #: What a published row prints where its publication date would go, when nobody
@@ -323,6 +324,15 @@ class ChronologyMilestone:
     file_url: str = ""
     file_label: str = ""
     links: tuple[ChronologyLink, ...] = ()
+    #: **Dated ahead of today** — a `Kaasamine`, a `Väline seisukoht`, a `Märge`
+    #: or a publication recorded for a day that has not come (docs/adr/0121
+    #: §3). Such a record used to be refused, and before that hidden until its
+    #: day; it is a valid entry now, so the row is drawn and says `Eesolev`
+    #: beside its date, the word an upcoming `Oluline tähtaeg` already carries
+    #: (`UPCOMING_DATE_LABEL`), so the chronology is never read as claiming it
+    #: already happened. Decided by the record's own period
+    #: (`period_starts_after`): «september 2026» read in September is not ahead.
+    ahead: bool = False
     #: **This office's own words, and never the source's.**
     #:
     #: Set by a `Väline seisukoht` and by a `Menetluse areng`, each carrying its
@@ -802,12 +812,45 @@ class _Group:
     events: list[ChangeEvent] = field(default_factory=list)
 
 
+def documents_added_clause(count: int) -> str:
+    """«lisas dokumendi» for one file, «lisas 7 dokumenti» for seven.
+
+    One upload is one act however many files it carried (docs/adr/0121 §6), so
+    the row says how many rather than repeating itself once per file.
+    """
+    return "lisas dokumendi" if count == 1 else f"lisas {count} dokumenti"
+
+
+def _documents_added(events: list[ChangeEvent]) -> int:
+    """How many documents this operation's visible upload events filed.
+
+    Counted from the events already on the row, which `scope_change_events` has
+    narrowed to documents this reader may see and from which a removed
+    document's upload has already gone — so a restricted or removed file
+    changes neither the rows nor the number (AUTH-003, docs/adr/0120 §5).
+    Distinct documents, so a file stored in two versions by one act would count
+    once.
+    """
+    return len(
+        {
+            str((event.payload or {}).get("document") or event.object_id)
+            for event in events
+            if event.event_type == ChangeEventType.EVIDENCE_VERSION_ADDED
+        }
+    )
+
+
 def _verbs_for(entry: Entry | None, events: list[ChangeEvent]) -> tuple[str, ...]:
     seen = {event.event_type for event in events}
     verbs: list[str] = []
     if entry is not None:
         verbs.append("lisas märkuse")
-    verbs.extend(phrase for event_type, phrase in _CLAUSES if event_type in seen)
+    for event_type, phrase in _CLAUSES:
+        if event_type not in seen:
+            continue
+        if event_type == ChangeEventType.EVIDENCE_VERSION_ADDED:
+            phrase = documents_added_clause(_documents_added(events))
+        verbs.append(phrase)
     return tuple(verbs)
 
 
@@ -874,6 +917,17 @@ def _end_of_day(day: date) -> datetime:
 #: Named here because the row and its correction form are rendered from two
 #: different places and a sentence spelled twice is a sentence that drifts.
 ENGAGEMENT_DATE_UNKNOWN = "Kuupäev teadmata"
+
+
+#: What an `ahead` row says beside its date.
+AHEAD_LABEL = "Eesolev"
+
+
+def dated_ahead(value: date | None, precision: str | None, today: date | None = None) -> bool:
+    """Whether a record's whole period begins after today (docs/adr/0121 §3)."""
+    return period_starts_after(
+        value, precision or "EXACT", day=today if today is not None else timezone.localdate()
+    )
 
 
 def engagement_chronology_day(engagement: MatterEngagement) -> date:
@@ -962,6 +1016,7 @@ def engagement_milestone(engagement: MatterEngagement) -> ChronologyMilestone:
         display_date=engagement.display_date or ENGAGEMENT_DATE_UNKNOWN,
         sub=sub,
         links=links,
+        ahead=dated_ahead(engagement.occurred_on, engagement.occurred_on_precision),
     )
 
 
@@ -1120,6 +1175,7 @@ def external_position_milestone(
         display_date=position.display_date or EXTERNAL_POSITION_DATE_UNKNOWN,
         sub=sub,
         links=links,
+        ahead=dated_ahead(position.stated_on, position.stated_on_precision),
         # Its own line under its own label, never a clause in `sub`. The
         # position, what it answered and where to read it are one thing; what
         # this office thinks of it is another, and the row says so
@@ -1202,6 +1258,7 @@ def development_milestone(development: MatterProceduralDevelopment) -> Chronolog
         display_date=development.display_date or DEVELOPMENT_DATE_UNKNOWN,
         own_note=development.note,
         own_note_label=LAWYER_NOTE_LABEL,
+        ahead=dated_ahead(development.occurred_on, development.occurred_on_precision),
     )
 
 
@@ -1477,7 +1534,9 @@ def projected_milestones(
             # It is marked rather than merged into the record of what happened:
             # `Eesolev tähtaeg` is the department's own word for a deadline
             # ahead, and the row states it so the chronology is not read as
-            # claiming this already occurred.
+            # claiming this already occurred. Since docs/adr/0121 §3 it also
+            # carries `ahead`, so its closed line says `Eesolev` like every
+            # other record dated ahead — a deadline is ahead until it is due.
             add(
                 record,
                 _end_of_day(record.period_end),
@@ -1485,6 +1544,7 @@ def projected_milestones(
                     what=record.title,
                     display_date=record.display_date,
                     sub=UPCOMING_DATE_LABEL,
+                    ahead=True,
                 ),
             )
             continue
@@ -1543,7 +1603,9 @@ def projected_milestones(
     for engagement in engagements:
         answered[engagement.pk] = engagement
         when = engagement_chronology_day(engagement)
-        if when > day or (since is not None and when < since):
+        # A round dated ahead is drawn too, marked `Eesolev` by its milestone
+        # (docs/adr/0121 §3) — it used to be skipped until its day.
+        if since is not None and when < since:
             continue
         add(engagement, _end_of_day(when), engagement_milestone(engagement))
 
@@ -1560,12 +1622,9 @@ def projected_milestones(
     # this reader may not see, or one taken off the file, is simply absent
     # (ENG-047).
     for position in positions:
+        # A position dated ahead is drawn too, marked `Eesolev` by its
+        # milestone (docs/adr/0121 §3) — it used to be skipped until its day.
         when = external_position_chronology_day(position)
-        if when > day:
-            # A position dated in the future is not history yet, and the
-            # chronology reads newest-first and means *past*. The same rule the
-            # engagement above it follows.
-            continue
         add(
             position,
             _end_of_day(when),
@@ -1584,20 +1643,10 @@ def projected_milestones(
     for development in dated(
         MatterProceduralDevelopment.objects.filter(matter=matter).visible_to(user), "occurred_on"
     ):
+        # A `Märge` dated ahead is drawn too, marked `Eesolev` by its milestone
+        # (docs/adr/0121 §3). It used to be refused and, for rows filed before
+        # the refusal, skipped until its day.
         when = development_chronology_day(development)
-        if when > day:
-            # A development dated in the future is not history yet, and the
-            # chronology reads newest-first and means *past*. The same rule the
-            # two records above it follow.
-            #
-            # **Nothing new reaches this branch.** `record_procedural_development`
-            # refuses a period that begins after today, so a development written
-            # from now on is never ahead of the list it belongs to. It stays
-            # because rows filed before that rule exist, are real, and are not
-            # rewritten — a projection quietly showing them under a day they were
-            # not recorded to would be the invention docs/adr/0092 §4 refuses,
-            # and they arrive here honestly when their date does.
-            continue
         add(development, _end_of_day(when), development_milestone(development))
 
     # `Koja arvamus`: what this office actually sent, read off the record.
@@ -1669,11 +1718,8 @@ def projected_milestones(
         overview.linked_opinions = linked_opinions.get(overview.pk, [])
         if overview.is_published:
             published_on = overview.published_on
-            if published_on is not None and published_on > day:
-                # A publication date in the future is the same case as a future
-                # engagement: it is not history yet, and the chronology reads
-                # newest-first and means *past*.
-                continue
+            # A publication dated ahead is drawn too, marked `Eesolev`
+            # (docs/adr/0121 §3) — it used to be skipped until its day.
             # **Where the row sits, and what it says, are two different
             # answers.** Since docs/adr/0089 §8 a published overview may have no
             # publication date, and it must still appear — dropping it would
@@ -1685,8 +1731,6 @@ def projected_milestones(
             # the fallback places the row and never describes it
             # (docs/adr/0089 §10).
             sits_on = published_on if published_on is not None else _local_day(overview.created_at)
-            if sits_on > day:
-                continue
             add(
                 overview,
                 _end_of_day(sits_on),
@@ -1708,7 +1752,8 @@ def projected_milestones(
                     # `target="_blank"`, `rel="noopener noreferrer"` and a
                     # visually-hidden «avaneb uues aknas»
                     # (`matters/partials/website_overview_link.html`).
-                    links=(ChronologyLink(label=overview.link_display, url=overview.url),),
+                    links=(ChronologyLink(label=overview.link_label, url=overview.url),),
+                    ahead=published_on is not None and published_on > day,
                 ),
             )
             continue

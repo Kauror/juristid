@@ -20,6 +20,8 @@ from typing import Any, cast
 
 from django import forms
 
+from app.core.errors import DomainError
+from app.core.web_addresses import normalize_web_address
 from app.core.widgets import EstonianDateField, EstonianDateInput
 from app.intelligence.enums import EffectiveDateKind
 from app.workflow.dates import MAX_YEAR, MIN_YEAR, InvalidPeriod, bounds_for
@@ -64,6 +66,40 @@ HALF_CHOICES: tuple[tuple[str, str], ...] = (
     ("1", "I poolaasta"),
     ("2", "II poolaasta"),
 )
+
+
+#: The longest `Ametlik allikas` / `Viide` the two fact tables store.
+SOURCE_URL_MAX_LENGTH = 1000
+
+
+class WebAddressField(forms.CharField):
+    """A web address, typed with or without `https://` (docs/adr/0121 §5).
+
+    A `forms.URLField` rendered `<input type="url">`, and the **browser** then
+    refused `delfi.ee` before the server — whose own `assume_scheme` would have
+    accepted it — ever saw the value. A text box with the URL keyboard, checked
+    by the product's one rule (`app.core.web_addresses.normalize_web_address`):
+    a bare host is stored with `https://`, a scheme somebody typed is kept, and
+    anything that is not an http(s) host is refused under the box.
+    """
+
+    def __init__(self, *, label: str, max_length: int = SOURCE_URL_MAX_LENGTH) -> None:
+        super().__init__(
+            label=label,
+            required=False,
+            max_length=max_length,
+            widget=forms.TextInput(
+                attrs={"class": "field__input", "inputmode": "url", "autocomplete": "off"}
+            ),
+        )
+        self.web_max_length = max_length
+
+    def clean(self, value: Any) -> str:
+        text = super().clean(value)
+        try:
+            return normalize_web_address(text, max_length=self.web_max_length)
+        except DomainError as error:
+            raise forms.ValidationError(str(error)) from error
 
 
 class PeriodForm(forms.Form):
@@ -259,13 +295,7 @@ class EffectiveDateForm(PeriodForm):
             attrs={"class": "field__input", "placeholder": "Näiteks: põhiosa või osad sätted"}
         ),
     )
-    source_url = forms.URLField(
-        label="Ametlik allikas",
-        required=False,
-        assume_scheme="https",
-        max_length=1000,
-        widget=forms.URLInput(attrs={"class": "field__input", "placeholder": "https://…"}),
-    )
+    source_url = WebAddressField(label="Ametlik allikas")
     note = forms.CharField(
         label="Märkus",
         required=False,
@@ -367,13 +397,7 @@ class WorkVictoryForm(PeriodForm):
         required=False,
         widget=forms.Textarea(attrs={"class": "field__input", "rows": "3"}),
     )
-    source_url = forms.URLField(
-        label="Viide",
-        required=False,
-        assume_scheme="https",
-        max_length=1000,
-        widget=forms.URLInput(attrs={"class": "field__input", "placeholder": "https://…"}),
-    )
+    source_url = WebAddressField(label="Viide")
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)

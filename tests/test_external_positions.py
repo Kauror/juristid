@@ -354,7 +354,6 @@ def test_an_unknown_precision_is_refused_by_the_service(normal_matter, specialis
         "file:///etc/passwd",
         "ftp://example.org/fail.pdf",
         "vbscript:msgbox(1)",
-        "koda.ee/ilma-skeemita",
         "https://",
         "https://user:pw@/uudised",
     ],
@@ -581,27 +580,30 @@ def test_the_attached_file_reads_under_the_row_and_adds_no_line(
     assert [file.label for file in rows[0].files] == ["seisukoht.pdf"]
 
 
-def test_a_future_position_is_refused_rather_than_saved_and_hidden(
-    normal_matter, specialist, ministry
-):
-    """ENG-004. This test used to assert the defect: the position was stored,
-    and Teema käik left it out — with its `Muuda` and `Kustuta` — until its date
-    arrived. A position is what somebody *said*, so a future date is refused
-    where every writer passes (`tests/test_future_dated_records.py`)."""
+def test_a_future_position_is_recorded_and_drawn_ahead(normal_matter, specialist, ministry):
+    """docs/adr/0121 §3. ENG-004 refused a position dated after today; the owner
+    withdrew the refusal. It is stored, and Teema käik draws it at once, marked
+    `Eesolev` (`tests/test_future_dated_records.py`)."""
     from django.utils import timezone
 
-    from app.matters.services import EXTERNAL_POSITION_CANNOT_BE_FUTURE
+    position = _recorded(
+        normal_matter,
+        ministry,
+        specialist,
+        url=POSITION_URL,
+        stated_on=timezone.localdate() + dt.timedelta(days=30),
+    )
 
-    with pytest.raises(DomainError, match=EXTERNAL_POSITION_CANNOT_BE_FUTURE):
-        _recorded(
-            normal_matter,
-            ministry,
-            specialist,
-            url=POSITION_URL,
-            stated_on=timezone.localdate() + dt.timedelta(days=30),
-        )
+    rows = [item for item in _timeline(normal_matter, specialist) if item.record == position]
+    assert len(rows) == 1
+    assert rows[0].milestone.ahead
 
-    assert not MatterExternalPosition.objects.filter(matter=normal_matter).exists()
+
+def test_an_address_without_its_scheme_is_stored_with_https(normal_matter, specialist, ministry):
+    """docs/adr/0121 §5: `koda.ee/…` is an address; nobody types `https://`."""
+    position = _recorded(normal_matter, ministry, specialist, url="koda.ee/ilma-skeemita")
+
+    assert position.url == "https://koda.ee/ilma-skeemita"
 
 
 def test_a_reader_who_may_not_see_the_position_gets_no_row(specialist, reader, ministry):

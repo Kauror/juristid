@@ -295,6 +295,9 @@ def annotate_last_activity(queryset: QuerySet[Matter], user: Any) -> QuerySet[Ma
         return apply_scope(model._default_manager.all(), child_visibility_q(scope))
 
     people_actions = scoped(NextAction)
+    begun_engagements = scoped(MatterEngagement).filter(
+        occurred_on__isnull=False, occurred_on__lte=timezone.localdate()
+    )
     pages = MatterSourcePage.objects.filter(relationship_kind__in=CHRONOLOGY_RELATIONSHIPS)
     return queryset.annotate(
         activity_entry_at=_latest(scoped(Entry), "occurred_at"),
@@ -313,8 +316,14 @@ def annotate_last_activity(queryset: QuerySet[Matter], user: Any) -> QuerySet[Ma
         # file's last activity to today, which is the import-timestamp mistake
         # this module exists to remove, arriving by a different door
         # (Agent-F brief 29).
+        #
+        # **And only one that has begun.** A round may be dated ahead of today
+        # since docs/adr/0121 §3 — planned, not yet held — and a plan is not
+        # activity: counted, it would put the file's last activity in the future
+        # and «viimane tegevus -5 p tagasi» on the desk. A period's anchor is its
+        # first day, so `occurred_on <= today` is «its period has begun».
         activity_engagement_on=_latest(
-            scoped(MatterEngagement).filter(occurred_on__isnull=False),
+            begun_engagements,
             "occurred_on",
         ),
         # How exactly that date is known. A `Kaasamine` may be recorded to a
@@ -333,8 +342,7 @@ def annotate_last_activity(queryset: QuerySet[Matter], user: Any) -> QuerySet[Ma
         # column flickering between two spellings of the same date across
         # identical requests.
         activity_engagement_precision=Subquery(
-            scoped(MatterEngagement)
-            .filter(matter=OuterRef("pk"), occurred_on__isnull=False)
+            begun_engagements.filter(matter=OuterRef("pk"))
             .annotate(
                 _exact_first=Case(
                     When(

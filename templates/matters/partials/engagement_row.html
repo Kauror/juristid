@@ -186,30 +186,14 @@ before the closure.
         <p class="field__error" id="{{ engagement_edit_form.alchemer_url.auto_id }}_error">{{ engagement_edit_form.alchemer_url.errors|first }}</p>
       {% endif %}
 
-      <label class="cx-f" for="{{ engagement_edit_form.url.id_for_label }}">
-        <span class="cx-f__lab">{{ engagement_edit_form.url.label }}</span>
-        {{ engagement_edit_form.url }}
-      </label>
       {% comment %}
-        The field's own `help_text`, under the id Django's `aria-describedby` on
-        the box already names. Visually hidden, so the row looks exactly as it
-        did, and outside the `<label>`, so it describes the box without becoming
-        part of its name (ENG-092).
+        **No generic `Link` and no `Märkus`** (docs/adr/0121 §4). `+ Kaasamine`
+        never asks either, and nothing on this row printed them, so an editor
+        offering them was two boxes the lawyer had never filled in. A value an
+        older round stored in either column is kept: the form does not carry
+        the fields and the view does not name them, so a save leaves them as
+        they are.
       {% endcomment %}
-      <span class="visually-hidden"
-            id="{{ engagement_edit_form.url.auto_id }}_helptext">{{ engagement_edit_form.url.help_text }}</span>
-      {% if engagement_edit_form.url.errors %}
-        <p class="field__error" id="{{ engagement_edit_form.url.auto_id }}_error">{{ engagement_edit_form.url.errors|first }}</p>
-      {% endif %}
-
-      <label class="cx-f" for="{{ engagement_edit_form.note.id_for_label }}">
-        <span class="cx-f__lab">{{ engagement_edit_form.note.label }}</span>
-        {{ engagement_edit_form.note }}
-      </label>
-      {% if engagement_edit_form.note.errors %}
-        <p class="field__error" id="{{ engagement_edit_form.note.auto_id }}_error">{{ engagement_edit_form.note.errors|first }}</p>
-      {% endif %}
-
       {{ engagement_edit_form.revision }}
 
       {% if engagement_edit_error %}
@@ -272,6 +256,7 @@ before the closure.
       <p class="uxtl__ms" id="kaik-{{ engagement.pk }}-rida">
         <span class="uxtl__mswhat" id="kaasamine-{{ engagement.pk }}-pealkiri">{{ milestone.what }}</span>
         <span class="uxtl__msdate">{{ milestone.display_date }}</span>
+        {% if milestone.ahead %}<span class="uxtl__msahead">Eesolev</span>{% endif %}
       </p>
       {% if can_write_business_content and matter.is_open %}
         <div class="uxtl__editactions">
