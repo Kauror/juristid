@@ -440,6 +440,12 @@ in words:
 | today | `sort_on == today` | accent dot, ringed with `--accent-glow` |
 | ahead | `sort_on > today` | muted dot, muted rail, quieter label |
 
+**Narrowed on 2026-09-30 by docs/adr/0123 for a column recorded as a month, a
+quarter or a year:** it is reached once its period has ended and is never
+today, and a commencement sits at its period's last day. One function,
+`process_timeline.dated_state`, reads every column and every step added to the
+rail; a day reads exactly as in this table.
+
 **The connector carries today's position.** Each segment of rail is a two-colour
 gradient with one hard stop at `--tl-reach` — the fraction of *that segment's*
 calendar days that have gone. The columns are evenly spaced rather than
