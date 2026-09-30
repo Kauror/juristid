@@ -1297,6 +1297,28 @@ def test_a_letter_to_two_ministries_matches_a_row_naming_one(archive_path):
     assert proposal.competing_matter_count == 1
 
 
+def test_a_letter_to_two_ministries_joined_by_ning_matches_a_row_naming_one(archive_path):
+    """«ning» separates bodies as a comma does. It was saved as two backspace
+    bytes until docs/adr/0122 §3 and so separated nothing."""
+    register_matter(
+        year=2024,
+        number=44,
+        title="Näidisregistri seaduse muutmise seadus",
+        sent="2024-05-06",
+        counterparty="Siseministeerium",
+    )
+    item = syn.opinion(
+        date="2024-05-06",
+        recipient="Näidisministeerium ning Siseministeerium",
+        title="Arvamus näidisregistri seaduse muutmise kohta",
+    )
+    proposal = proposal_for(plan_for(archive_path([item])), item)
+
+    assert proposal.match_class == OpinionMatchClass.STRICT_MULTI_SIGNAL
+    assert OpinionSignal.EXACT_RECIPIENT in proposal.signals
+    assert proposal.competing_matter_count == 1
+
+
 def test_one_row_named_twice_by_one_letter_is_still_one_candidate(archive_path):
     """Both sides are sets now, so a row could be found once per shared name.
 

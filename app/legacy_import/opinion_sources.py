@@ -244,7 +244,14 @@ ADDRESSEE_ALIASES: dict[str, str] = {
 #: time a folded string exists. Splitting the folded form finds nothing to
 #: split on and silently returns the whole string as one body — which is the
 #: behaviour this was written to replace.
-ADDRESSEE_SEPARATOR = re.compile(r"[,;/]|ning", re.IGNORECASE)
+#:
+#: «ning» separates only as a whole word — ``\b`` either side, the pattern
+#: `register_semantics` splits the same column with — so *Kuninglik* is one
+#: body. Until 2026-09-30 the two ``\b`` were stored as raw backspace bytes
+#: (0x08), which the regex read as literal characters no recipient contains:
+#: «A ning B» stayed one body. No real addressee in the 1 September corpus
+#: contains the word, so no match changed when it was restored.
+ADDRESSEE_SEPARATOR = re.compile(r"[,;/]|\bning\b", re.IGNORECASE)
 
 
 def addressee_bodies(value: object) -> frozenset[str]:

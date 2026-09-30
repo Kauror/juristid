@@ -875,6 +875,10 @@ def upcoming_windows(today: date) -> tuple[tuple[str, str, date, date | None], .
     previous one ends and the last has no end, so a future real deadline lands
     in exactly one of them — never in two, and never in none. That is asserted
     across awkward calendars rather than assumed (`tests/test_department_page.py`).
+    A deadline recorded as a month, a quarter or a year is not a day, so it is
+    in none of the four with a last day and always in *Kaugemal* until its
+    period ends — never *Homme* because its month begins tomorrow
+    (`WorkItem.in_window`, docs/adr/0122 §2).
 
     Two boundaries carry the whole of the difficulty:
 

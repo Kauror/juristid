@@ -18,10 +18,11 @@ duration of a request handler — and the day one of them is forgotten, the
 timeline splits an action in half with nothing failing. Binding it to the
 execution context instead means a service cannot forget to pass it on.
 
-**Scope is exact.** The value is set by :func:`composer_operation` and unset
-when that block exits, including on an exception. Nothing outside such a block
-has one, so an importer, a shell session, a management command and an ordinary
-inline edit all keep writing standalone rows exactly as they do today.
+**Scope is exact.** The value is set by :func:`composer_operation` (or
+:func:`separate_operation`) and unset when that block exits, including on an
+exception. Nothing outside such a block has one, so an importer, a shell
+session, a management command and an ordinary inline edit all keep writing
+standalone rows exactly as they do today.
 
 **It changes no history.** ``operation_id`` is additive and nullable; existing
 rows keep the null they were written with, and the timeline treats a null as
@@ -63,5 +64,25 @@ def composer_operation(operation_id: uuid.UUID | None = None) -> Iterator[uuid.U
     token = _current_operation.set(value)
     try:
         yield value
+    finally:
+        _current_operation.reset(token)
+
+
+@contextmanager
+def separate_operation(operation_id: uuid.UUID) -> Iterator[uuid.UUID]:
+    """Mark everything written inside as the operation named — never the one around it.
+
+    :func:`composer_operation` joins an outer operation, because a service a
+    person's save calls is still that save. This is for the one act that must
+    not be joined: the attachments of **one e-mail** are one addition however
+    many there are, and two e-mails are two however close together they are
+    read (docs/adr/0122 §1). If the attachments of an e-mail were ever read
+    inside another operation — two messages uploaded in one press and opened in
+    the same request — joining it would fold both messages' attachments into one
+    row. The outer operation is restored when this block exits.
+    """
+    token = _current_operation.set(operation_id)
+    try:
+        yield operation_id
     finally:
         _current_operation.reset(token)

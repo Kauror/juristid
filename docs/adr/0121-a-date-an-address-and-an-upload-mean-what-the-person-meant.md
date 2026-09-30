@@ -155,6 +155,10 @@ events, which are already scoped to documents the reader may see and from which
 a removed document's upload has gone (AUTH-003, docs/adr/0120 §5). The e-mail
 worker's attachment rows are left as they are.
 
+**Superseded on 2026-09-30 by docs/adr/0122 §1 for the e-mail worker:** the
+attachments of one received e-mail are one operation, identified by the
+message's own `DocumentVersion`, and read «lisas N dokumenti» once.
+
 ## 7. Minu asjad: a broad period is never this week's
 
 docs/adr/0120 §4 banded a period by its **last day**, and a review by its
@@ -169,6 +173,11 @@ day is chosen. Exact dates band as before. Every section's count is the length
 of the row set it heads (unchanged: `WorkBand.total` before the render cap, the
 strip's figures the bands' totals). **Supersedes** docs/adr/0120 §4's
 «its last day falls this week, or it is a review whose period has begun».
+
+**Extended on 2026-09-30 by docs/adr/0122 §2** from Minu asjad to every deadline
+window — Osakond's *Eesolev*, the register's `?too=tahtaeg-*`, the Kiirvaade and
+the Ülevaade strip — through one rule (`period_in_window`): a window with a last
+day never holds a period, and the open-ended window holds it until it ends.
 
 ## 8. `Muu`
 
@@ -200,5 +209,5 @@ question» for this optional box; a win is still never inferred from a closure.
 `Document` / `DocumentVersion` immutability and the evidence rules; the
 withdrawal service; the deletion guard; the audit history, which stays
 append-only (grouping is a reading); the horizontal process timeline's phase
-logic; the e-mail worker; `Väline seisukoht` link labels; the register's other
+logic; the e-mail worker (**its attachment rows grouped by docs/adr/0122 §1**); `Väline seisukoht` link labels; the register's other
 populations; the search index.
