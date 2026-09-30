@@ -20,6 +20,8 @@ old boxes called.
    the use case. The box the page hides is disabled, so it is not sent either.
 4. **Two records stay two.** Correcting the `Märge` never moves the step it
    made; the step is corrected where every step is.
+5. **One plan is not printed twice in one row.** Teema käik leaves off the
+   folded «→» step pill while the step is the row's own activity.
 
 ---
 
@@ -112,6 +114,18 @@ moves it (the rule docs/adr/0091 §5.4 and the `Muuda` tests already held for a
 step written from the old boxes). Nothing is copied that a later correction would
 have to keep in step, and no historical record is rewritten.
 
+## 5. One plan is not printed twice in one row
+
+Teema käik folds a step a save wrote under that save's row as a «→ sentence ·
+day» pill (docs/adr/0092 §6). A step made here *is* the row's activity, so the
+row would read «Saadan kirja · 2.10 · Eesolev» and then «→ Saadan kirja 2.10»
+under it. `timeline._with_next_steps` leaves the pill off exactly while the
+step's sentence and day equal the `Märge`'s title and day
+(`_step_is_the_activity`). A row whose step was written from the old separate
+boxes, or a `Märge` corrected since, differs from its step and keeps the pill.
+Nothing else about the chronology changes: the `Märge` is drawn at once and
+marked `Eesolev` as before, and the open step is read in `PRAEGUNE TEGEVUS`.
+
 ## Consequences
 
 * A step is made from `+ Märge` only with a day after today. **A step with no day,
@@ -139,7 +153,8 @@ have to keep in step, and no historical record is rewritten.
 ## Not changed
 
 The `NextAction` model and its services, `PRAEGUNE TEGEVUS`, `Minu asjad`, the
-portfolio, the register and Statistika filters, Teema käik and `Menetluse kulg`,
+portfolio, the register and Statistika filters, Teema käik (beyond §5's pill)
+and `Menetluse kulg`,
 the three named `Märke liik` kinds, every other create or edit form, date
 precision anywhere, file upload and `DocumentLink`, grouped uploads,
 `Uus hetkeseis`, permissions and the business-write boundary, the audit trail
