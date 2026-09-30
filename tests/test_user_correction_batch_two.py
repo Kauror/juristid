@@ -418,7 +418,7 @@ def test_an_address_is_accepted_with_or_without_its_scheme(typed, stored):
     ],
 )
 def test_text_that_is_not_an_address_is_still_refused(typed):
-    with pytest.raises(DomainError):
+    with pytest.raises(DomainError, match="^Link peab "):
         normalize_web_address(typed, max_length=1000)
 
 
@@ -434,7 +434,7 @@ def test_text_that_is_not_an_address_is_still_refused(typed):
 def test_every_teema_link_family_uses_the_one_rule(normalise):
     assert normalise("www.delfi.ee/uudised") == "https://www.delfi.ee/uudised"
     assert normalise("https://www.delfi.ee") == "https://www.delfi.ee"
-    with pytest.raises(DomainError):
+    with pytest.raises(DomainError, match="(?i)link peab"):
         normalise("see ei ole aadress")
 
 
@@ -955,7 +955,7 @@ def test_a_failed_closure_leaves_no_win(specialist, monkeypatch):
         raise DomainError("Sulgemine ebaõnnestus.")
 
     monkeypatch.setattr(workspace, "close_matter", refuse)
-    with pytest.raises(DomainError):
+    with pytest.raises(DomainError, match="Sulgemine ebaõnnestus"):
         workspace.close_matter_from_workspace(
             matter=matter,
             author=specialist,
@@ -976,7 +976,7 @@ def test_a_failed_closure_leaves_no_win(specialist, monkeypatch):
 def test_a_failed_win_leaves_the_matter_open(specialist):
     matter = factories.MatterFactory(owner=specialist)
 
-    with pytest.raises(DomainError):
+    with pytest.raises(DomainError, match="Töövõidul peab olema kirjeldus"):
         workspace.close_matter_from_workspace(
             matter=matter,
             author=specialist,
