@@ -35,10 +35,12 @@ from __future__ import annotations
 
 import logging
 import posixpath
+import uuid
 from typing import Any
 
 from django.conf import settings
 
+from app.audit.operations import separate_operation
 from app.documents.derivatives import AttachmentDisposition, EmailAttachmentLink
 from app.documents.enums import DocumentRole
 from app.documents.extraction.base import ParsedAttachment
@@ -59,6 +61,26 @@ NESTED_MESSAGE_MIME_TYPES: frozenset[str] = frozenset(
     {"message/rfc822", "application/vnd.ms-outlook"}
 )
 
+#: The namespace an e-mail's intake operation is derived in. **Never change it**:
+#: the identifier of every e-mail already read is computed from it, and a new
+#: value would make an attachment registered after the change a row apart from
+#: its siblings registered before it.
+EMAIL_INTAKE_OPERATION_NAMESPACE = uuid.UUID("9b1f4c2e-6d0a-5e37-8c41-2f7a90e3d5b6")
+
+
+def email_intake_operation_id(parent_version: DocumentVersion) -> uuid.UUID:
+    """The one operation every attachment of this e-mail is added under.
+
+    **Derived from the message, not drawn at random** (docs/adr/0122 §1). The
+    message's own `DocumentVersion` is the stable identity of one received
+    e-mail — the same row `EmailAttachmentLink.parent_version` already names — so
+    two e-mails can never share an identifier however close together they are
+    read, and a later pass over the same message (a forced re-read that finds
+    one attachment the last pass skipped) adds to the same `Teema käik` row
+    rather than opening a second one for one e-mail.
+    """
+    return uuid.uuid5(EMAIL_INTAKE_OPERATION_NAMESPACE, str(parent_version.pk))
+
 
 def register_email_attachments(
     *, parent_version: DocumentVersion, attachments: tuple[ParsedAttachment, ...]
@@ -67,6 +89,16 @@ def register_email_attachments(
 
     Runs inside the orchestrator's publish transaction, so a failure part way
     leaves neither half-created documents nor a message marked extracted.
+
+    **One e-mail, one addition.** Every attachment is written inside the
+    message's own operation (:func:`email_intake_operation_id`), so `Teema käik`
+    reads «lisas 8 dokumenti» once for an e-mail carrying eight rather than
+    «lisas dokumendi» eight times — the rule an upload of several files follows
+    (docs/adr/0121 §6, docs/adr/0122 §1). Each attachment still gets its own
+    `Document`, `DocumentVersion`, `EmailAttachmentLink` and its own
+    `DOCUMENT_CREATED` / `EVIDENCE_VERSION_ADDED`; the grouping is the
+    chronology's reading of them. What is skipped below writes nothing, so the
+    count on the row is the attachments that were actually added.
     """
     existing = set(
         EmailAttachmentLink.objects.filter(parent_version=parent_version).values_list(
@@ -78,90 +110,93 @@ def register_email_attachments(
     at_depth_limit = depth >= settings.EXTRACTION_MAX_EMAIL_DEPTH
     created = 0
 
-    for ordinal, attachment in enumerate(attachments, start=1):
-        if ordinal in existing:
-            continue
-        if attachment.inline:
-            # Counted on the message's EMAIL_METADATA derivative and otherwise
-            # left alone. It is part of how the message draws itself, not
-            # something anybody sent, and it gets no Document and no link row.
-            continue
+    with separate_operation(email_intake_operation_id(parent_version)):
+        for ordinal, attachment in enumerate(attachments, start=1):
+            if ordinal in existing:
+                continue
+            if attachment.inline:
+                # Counted on the message's EMAIL_METADATA derivative and otherwise
+                # left alone. It is part of how the message draws itself, not
+                # something anybody sent, and it gets no Document and no link row.
+                continue
 
-        mime_type = _storable_mime_type(attachment)
-        if mime_type is None:
-            # The message is still evidence and still extracted; one attachment
-            # in a format the evidence store does not accept is reported and
-            # skipped rather than failing the whole intake.
-            logger.info(
-                "attachment skipped version=%s ordinal=%d reason=unsupported_type",
-                parent_version.pk,
-                ordinal,
+            mime_type = _storable_mime_type(attachment)
+            if mime_type is None:
+                # The message is still evidence and still extracted; one attachment
+                # in a format the evidence store does not accept is reported and
+                # skipped rather than failing the whole intake.
+                logger.info(
+                    "attachment skipped version=%s ordinal=%d reason=unsupported_type",
+                    parent_version.pk,
+                    ordinal,
+                )
+                continue
+
+            refusal = _attachment_refusal(attachment)
+            if refusal:
+                # The same rules `add_evidence_version` enforces, asked before any
+                # byte is written rather than raised from inside the publish
+                # transaction — where one unusable part used to fail the whole
+                # message: no body indexed, no sibling registered, and a forced
+                # re-run failing the same way (ENG-033). Only these known,
+                # per-attachment conditions are screened; anything else still
+                # fails the message as it did.
+                logger.info(
+                    "attachment skipped version=%s ordinal=%d reason=%s",
+                    parent_version.pk,
+                    ordinal,
+                    refusal,
+                )
+                continue
+
+            if at_depth_limit and mime_type in NESTED_MESSAGE_MIME_TYPES:
+                # The chain stops here. Only messages are refused: a PDF three
+                # envelopes deep is still somebody's annex and still worth having,
+                # and it cannot extend the chain because nothing opens it looking
+                # for more messages. Said out loud so the ceiling is visible to an
+                # operator rather than being a silently shorter thread.
+                logger.warning(
+                    "nested message not stored version=%s ordinal=%d depth=%d limit=%d",
+                    parent_version.pk,
+                    ordinal,
+                    depth,
+                    settings.EXTRACTION_MAX_EMAIL_DEPTH,
+                )
+                continue
+
+            # NFC, and bounded with the extension kept: `Document.title` and the
+            # stored filename are varchar(400), and a longer machine-generated name
+            # was a database error that took the whole message down (ENG-033,
+            # ENG-088). The declared name is kept as declared on the link row.
+            filename = canonical_filename(attachment.filename)
+            document = create_document(
+                matter=matter,
+                title=filename or f"Manus {ordinal}",
+                role=DocumentRole.EMAIL_ATTACHMENT,
+                created_by=parent_version.uploaded_by,
+                visibility_override=parent_version.document.visibility_override,
+                provenance_note=(
+                    f"Manus e-kirjast {parent_version.original_filename} (#{ordinal})."
+                ),
             )
-            continue
-
-        refusal = _attachment_refusal(attachment)
-        if refusal:
-            # The same rules `add_evidence_version` enforces, asked before any
-            # byte is written rather than raised from inside the publish
-            # transaction — where one unusable part used to fail the whole
-            # message: no body indexed, no sibling registered, and a forced
-            # re-run failing the same way (ENG-033). Only these known,
-            # per-attachment conditions are screened; anything else still
-            # fails the message as it did.
-            logger.info(
-                "attachment skipped version=%s ordinal=%d reason=%s",
-                parent_version.pk,
-                ordinal,
-                refusal,
+            version = add_evidence_version(
+                document=document,
+                content=attachment.content,
+                original_filename=filename or f"manus-{ordinal}",
+                mime_type=mime_type,
+                uploaded_by=parent_version.uploaded_by,
+                acquired_at=parent_version.acquired_at,
+                source_identifier=str(parent_version.pk),
             )
-            continue
-
-        if at_depth_limit and mime_type in NESTED_MESSAGE_MIME_TYPES:
-            # The chain stops here. Only messages are refused: a PDF three
-            # envelopes deep is still somebody's annex and still worth having,
-            # and it cannot extend the chain because nothing opens it looking
-            # for more messages. Said out loud so the ceiling is visible to an
-            # operator rather than being a silently shorter thread.
-            logger.warning(
-                "nested message not stored version=%s ordinal=%d depth=%d limit=%d",
-                parent_version.pk,
-                ordinal,
-                depth,
-                settings.EXTRACTION_MAX_EMAIL_DEPTH,
+            EmailAttachmentLink.objects.create(
+                parent_version=parent_version,
+                attachment_version=version,
+                ordinal=ordinal,
+                declared_filename=attachment.filename[:400],
+                content_id=attachment.content_id[:200],
+                disposition=AttachmentDisposition.ATTACHMENT,
             )
-            continue
-
-        # NFC, and bounded with the extension kept: `Document.title` and the
-        # stored filename are varchar(400), and a longer machine-generated name
-        # was a database error that took the whole message down (ENG-033,
-        # ENG-088). The declared name is kept as declared on the link row.
-        filename = canonical_filename(attachment.filename)
-        document = create_document(
-            matter=matter,
-            title=filename or f"Manus {ordinal}",
-            role=DocumentRole.EMAIL_ATTACHMENT,
-            created_by=parent_version.uploaded_by,
-            visibility_override=parent_version.document.visibility_override,
-            provenance_note=(f"Manus e-kirjast {parent_version.original_filename} (#{ordinal})."),
-        )
-        version = add_evidence_version(
-            document=document,
-            content=attachment.content,
-            original_filename=filename or f"manus-{ordinal}",
-            mime_type=mime_type,
-            uploaded_by=parent_version.uploaded_by,
-            acquired_at=parent_version.acquired_at,
-            source_identifier=str(parent_version.pk),
-        )
-        EmailAttachmentLink.objects.create(
-            parent_version=parent_version,
-            attachment_version=version,
-            ordinal=ordinal,
-            declared_filename=attachment.filename[:400],
-            content_id=attachment.content_id[:200],
-            disposition=AttachmentDisposition.ATTACHMENT,
-        )
-        created += 1
+            created += 1
 
     return created
 
