@@ -552,6 +552,14 @@ def test_no_ordinary_reading_surface_prints_a_matter_reference(page, base_url):
     enough to hide anywhere. So this looks at the text the browser actually
     exposes — which includes the accessibility tree and every title attribute —
     rather than at markup (human QA §4, §23).
+
+    The Teema page has one exception, and only one: docs/adr/0048 returned the
+    reference to the «Teema andmed» rail under the label `Teemaviide` — an
+    identity somebody looks up, not the topic's name — and said the tests
+    assert both halves. `tests/test_identifier_free_ui.py` does in markup; this
+    does in the browser. Until 0122's addendum the pattern here held two
+    backspace bytes where `\\b` was meant and matched nothing, so the old
+    «none on the Teema page» never ran and never met the rail.
     """
     sign_in(page, base_url, SANDRA)
     pattern = re.compile(r"\b(19|20)\d{2}_\d+\b")
@@ -564,7 +572,14 @@ def test_no_ordinary_reading_surface_prints_a_matter_reference(page, base_url):
 
     open_first_matter(page, base_url)
     text = page.locator("#sisu").inner_text()
-    assert not pattern.search(text), text[:400]
+    rail = page.locator("#teema-andmed .railcard__ref")
+    expect(rail).to_have_count(1)
+    reference = rail.inner_text().strip()
+    assert pattern.fullmatch(reference), reference
+    row = page.locator("#teema-andmed .railcard__row").filter(has=page.locator(".railcard__ref"))
+    expect(row).to_contain_text("Teemaviide")
+    printed = [match.group() for match in pattern.finditer(text)]
+    assert printed == [reference], printed
 
 
 def test_the_teema_crumb_is_one_level(page, base_url):

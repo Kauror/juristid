@@ -221,14 +221,26 @@ says:
 - `_SVG_GEOMETRY` — no SVG coordinate is a template variable Django would
   localize.
 
-The last is the only one that found anything. `reporting/_trend.html` drew its
-points from `Point.cx` / `Point.cy`, which were already strings formatted with a
-decimal point in Python, so no chart was ever wrong; but the guard recognises a
-Python-formatted string by its `_css` suffix — the convention `Bar.width_css`
-and `Trend.baseline_css` already follow — and these two did not carry it. They
-are `cx_css` / `cy_css` now. The guard is unchanged, and a test renders the
-partial in Estonian and reads every coordinate back, because a misspelt
-attribute renders as `""` and the browser drops the point without a word.
+Two of them found something, and neither is a defect in the product.
+
+`reporting/_trend.html` drew its points from `Point.cx` / `Point.cy`, which were
+already strings formatted with a decimal point in Python, so no chart was ever
+wrong; but the guard recognises a Python-formatted string by its `_css` suffix —
+the convention `Bar.width_css` and `Trend.baseline_css` already follow — and
+these two did not carry it. They are `cx_css` / `cy_css` now. The guard is
+unchanged, and a test renders the partial in Estonian and reads every coordinate
+back, because a misspelt attribute renders as `""` and the browser drops the
+point without a word.
+
+The browser's Matter-reference check ended by asserting that the Teema page
+prints no reference at all, and it failed on the rail's `Teemaviide`. That row
+is docs/adr/0048's decision — the reference returns to exactly one ordinary
+surface, under that label — and 0048 says the tests assert both halves;
+`tests/test_identifier_free_ui.py` does, in markup. The browser check was
+written three days before 0048 with the bytes already in it, so it had never
+run and was never updated. It now asserts 0048's rule: the four reading
+surfaces print none, and the Teema page prints exactly one, the labelled rail
+value.
 
 `test_test_source_carries_no_raw_control_byte` reads `tests/` and `e2e/` for
 the same bytes as the production guard.
