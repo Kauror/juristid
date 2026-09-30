@@ -45,7 +45,7 @@ control on this row: the row itself is the link.
      data-workrow>
   <a class="workrow2__link" href="{{ item.matter_url }}">
     <span class="workrow2__datecell">
-      <span class="workrow2__date{% if item.is_overdue %} workrow2__date--overdue{% elif item.is_review_ripe %} workrow2__date--review{% elif item.when == today %} workrow2__date--today{% endif %}">{{ item.short_date }}</span>
+      <span class="workrow2__date{% if item.is_overdue %} workrow2__date--overdue{% elif item.is_review_ripe %} workrow2__date--review{% elif item.is_today %} workrow2__date--today{% endif %}">{{ item.short_date }}</span>
       <span class="workrow2__meaning">{{ item.meaning_line }}</span>
     </span>
 

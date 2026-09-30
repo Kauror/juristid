@@ -121,7 +121,7 @@ from app.matters.models import Matter, MatterEngagement
 from app.matters.register_dates import RESPONSE_DEADLINE_LABEL
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
-from app.workflow.dates import format_at_precision
+from app.workflow.dates import format_at_precision, period_in_window
 from app.workflow.enums import (
     ActionKind,
     ActionStatus,
@@ -445,7 +445,27 @@ class WorkItem:
 
     @property
     def is_today(self) -> bool:
-        return self.when == self.today
+        """Whether this is due today — a day, never a period.
+
+        «oktoober 2026» read on 1 October is not due *today*: its anchor is the
+        first day of the month, which nobody named, and printing «täna» for it
+        names that day as firmly as ``01.10.2026`` would (docs/adr/0122 §2).
+        """
+        return self.when == self.today and not self.is_approximate
+
+    def in_window(self, start: date, end: date | None) -> bool:
+        """Whether this item belongs in the window ``start``–``end``.
+
+        The one rule (`app.workflow.dates.period_in_window`): a day by its day,
+        a period never in a window bounded in days, and a period that has not
+        ended in the open-ended window a set of windows ends in. Every deadline
+        window reads this — the bands below, the register's populations and
+        Osakond's *Eesolev* — so one record cannot be *Hiljem* on one page and
+        *Homme* on another (docs/adr/0122 §2).
+        """
+        return period_in_window(
+            self.when, self.date_precision, start=start, end=end, today=self.today
+        )
 
     @property
     def weekday_letter(self) -> str:
@@ -1318,13 +1338,13 @@ def band_of(
     if end < today:
         # Genuinely late, or merely come round. Both are now; only one is red.
         return BAND_OVERDUE if item.is_overdue else BAND_WEEK
-    if item.is_approximate:
-        return BAND_LATER if horizon is None or when <= horizon else None
-    if when <= week_end:
-        # Today, a period already running, or a day still inside this week.
+    # The two day-bounded bands through the one window rule every deadline
+    # surface reads (docs/adr/0122 §2): a day inside them is theirs, and a
+    # period never is — it falls through to *Hiljem*, the band with no last day.
+    if item.in_window(today, week_end):
         return BAND_WEEK
     next_30_end = next_30_end or today + timedelta(days=NEXT_30_DAYS)
-    if when <= next_30_end and not item.is_approximate:
+    if item.in_window(week_end + timedelta(days=1), next_30_end):
         return BAND_NEXT_30
     if horizon is None or when <= horizon:
         return BAND_LATER
@@ -1398,9 +1418,12 @@ def review_ripe_items(items: list[WorkItem]) -> list[WorkItem]:
 
 
 def week_items(items: list[WorkItem], today: date, week_end: date | None = None) -> list[WorkItem]:
-    """Dated work falling inside the current ISO week, today included."""
+    """Dated work falling inside the current ISO week, today included.
+
+    A day of this week, never a period (docs/adr/0122 §2).
+    """
     week_end = week_end or end_of_iso_week(today)
-    return [item for item in items if item.when is not None and today <= item.when <= week_end]
+    return [item for item in items if item.in_window(today, week_end)]
 
 
 def real_deadlines(items: list[WorkItem]) -> list[WorkItem]:
@@ -1528,7 +1551,9 @@ def deadline_window(key: str, today: date) -> tuple[date, date | None]:
     ``None`` as the end means "and everything after", which only the last group
     returns. Days rather than weeks past next week: *30 päeva* is the heading
     the reader sees and the horizon the group is counted to, so it is measured
-    from today and not rounded to a week boundary.
+    from today and not rounded to a week boundary. A deadline recorded as a
+    period is in the last group until its period ends — the first three are
+    ranges of days (docs/adr/0122 §2).
     """
     week_end = end_of_iso_week(today)
     next_end = week_end + timedelta(days=7)
@@ -1545,11 +1570,16 @@ def deadline_window(key: str, today: date) -> tuple[date, date | None]:
 
 
 def _deadlines_between(items: list[WorkItem], start: date, end: date | None) -> list[WorkItem]:
-    return [
-        item
-        for item in real_deadlines(items)
-        if item.when is not None and start <= item.when and (end is None or item.when <= end)
-    ]
+    """The real deadlines one window holds, by the one window rule.
+
+    Compared the stored anchor until docs/adr/0122 §2, which read a period as its
+    first day: «oktoober 2026» was *Homme* on Osakond and *Tähtaeg sel nädalal*
+    in the register on 30 September, while Minu asjad called it *Hiljem* — and a
+    period already running was in no window at all until it became overdue. A
+    period is now in the window with no last day until it ends, as it is in
+    Minu asjad's *Hiljem*.
+    """
+    return [item for item in real_deadlines(items) if item.in_window(start, end)]
 
 
 def work_population_items(

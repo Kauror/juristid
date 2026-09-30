@@ -206,6 +206,52 @@ def period_starts_after(value: date | None, precision: str, *, day: date) -> boo
     return start > day
 
 
+def period_in_window(
+    value: date | None, precision: str, *, start: date, end: date | None, today: date
+) -> bool:
+    """Does a date recorded at ``precision`` belong in the window ``start``–``end``?
+
+    **The one rule every deadline window reads** (docs/adr/0122 §2) — Minu
+    asjad's bands, the register's `?too=tahtaeg-*` populations, Osakond's
+    *Eesolev*, the strip figures that count them. Before it there were two: Minu
+    asjad banded a period as the period it is (docs/adr/0121 §7) and every other
+    window compared the stored anchor, so «oktoober 2026» was *Hiljem* on one page
+    and *Homme* on another the day before October began.
+
+    **A day** — ``EXACT`` or ``INFERRED`` — is in the window when it falls inside
+    it, both ends inclusive; ``end=None`` means "and everything after".
+
+    **A period is not a day, so a window with a last day never holds one.** A
+    window bounded in days — *Täna*, *Sel nädalal*, *Järgmine nädal*, *30 päeva
+    jooksul* — is a claim about which days, and neither end of «oktoober 2026»
+    is a day anybody named. Containment was considered and refused: it is
+    exactly the representative-day reading in another place, because whether a
+    month fits inside a window depends on where the window happens to start,
+    and «november 2026» would be *30 päeva jooksul* on the Ülevaade strip on
+    1 November while the same row is *Hiljem* in Minu asjad.
+
+    **A window with no last day is the later category**, the one every set of
+    windows ends in and the one that never implied a day. It holds every period
+    that has not ended — so a period is in exactly one of a set of consecutive
+    windows that begins today, as a day is, instead of in none while it runs —
+    and, when the window opens in the past, every period that reaches it.
+
+    **A period is behind us only once its last day is**: one that has ended is
+    in no window beginning today, and is overdue or ripe by the lateness rule
+    instead (`app.workflow.lateness`, docs/adr/0079 §4).
+
+    ``None`` is unknown, which is in no window.
+    """
+    if value is None:
+        return False
+    if not is_approximate(precision):
+        return start <= value and (end is None or value <= end)
+    if end is not None:
+        return False
+    _first, last = period_bounds(value, precision)
+    return last >= min(start, today)
+
+
 def format_at_precision(value: date | None, precision: str) -> str:
     """Write a date the way it was actually known.
 

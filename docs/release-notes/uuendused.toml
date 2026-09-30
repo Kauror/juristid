@@ -12,6 +12,9 @@ date = 2026-09-30
 basis = "deployment"
 # Omaniku teise kasutajapoolse testi (30.09) parandused, üks väljalase, ADR 0121.
 # Migratsioone ei ole. Saadetud Koja arvamuse kuupäev jääb tulevikku keelatuks.
+# Sama päeva teine väljalase, ADR 0122 (samuti migratsioonideta): e-kirja manused
+# ühe reana ja laia perioodiga tähtaeg igas tähtajavaates ühtmoodi — kaks viimast
+# rida. opinion_sources.py juhtmärgi parandus ei ole kasutajale nähtav.
 changes = [
   "Kuupäeva võib sisestada nii minevikku, tänasesse kui ka tulevikku — ka märkele, kaasamisele, teiste arvamusele, meile saadetud tagasisidele ja avaldatud ülevaatele. Tulevikku jääv kirje on «Teema käigus» kohe näha ja märgitud «Eesolev».",
   "Kaasamise muutmisel on samad väljad, mis selle lisamisel. Üldist «Link» ja «Märkus» välja seal enam ei ole; varem salvestatud väärtused jäävad alles.",
@@ -21,6 +24,8 @@ changes = [
   "«Minu asjades» ei panda kuu, kvartali ega aasta täpsusega kuupäeva enam «Sel nädalal» alla — see on «Hiljem», kuni periood on läbi. Teema, mille järgmine tegevus on kolleegil, ei ole enam «Järgmise tegevuseta».",
   "Teema lõpetamisel saab valida ka «Muu».",
   "Teema lõpetamisel saab linnukesega «Märgi töövõiduks» lisada samal ajal tavalise töövõidu koos lühikirjeldusega.",
+  "Kui teemasse lisatud e-kirjast tuuakse välja mitu manust, on «Teema käigus» üks rida, näiteks «lisas 3 dokumenti». Iga e-kiri on oma real ja loetakse ainult tegelikult lisatud manuseid.",
+  "Kuu, kvartali või aasta täpsusega tähtaeg on nüüd igas tähtajavaates ühtmoodi: «Osakonna» «Eesolevas», teemade nimekirja tähtajavalikutes ja «tähtaeg 30 p jooksul» arvudes ei ole see enam «Täna», «Homme» ega «sel nädalal» ainult seetõttu, et periood algab — see on «Kaugemal», nagu «Minu asjades» «Hiljem». Üle tähtaja on see alles siis, kui kogu periood on möödas.",
 ]
 
 [[day]]
