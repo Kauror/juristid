@@ -786,7 +786,9 @@ def test_a_future_development_is_saved_and_reads_eesolev(page, base_url):
     «Riigikogu esimene lugemine toimub …» written down before the sitting is a
     real note. The whole save lands — the note, and the stage the lawyer chose —
     and the row is on Teema käik at once, marked `Eesolev` so it is not read as
-    something that already happened.
+    something that already happened. It is somebody else's event and not the
+    lawyer's task, so `Märgi järgmiseks tegevuseks` is unticked and no step is
+    made (docs/adr/0124 §2).
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
@@ -795,6 +797,7 @@ def test_a_future_development_is_saved_and_reads_eesolev(page, base_url):
     form = panel(page, "marge-tavaline")
     form.locator("[name=title]").fill("Riigikogu esimene lugemine")
     form.locator("[name=occurred_on]").fill(_future(12))
+    form.locator("[name=as_next_step]").uncheck()
     form.locator("[name=stage]").select_option(label="Riigikogus")
     form.get_by_role("button", name="Salvesta", exact=True).click()
 

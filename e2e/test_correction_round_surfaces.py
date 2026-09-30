@@ -337,7 +337,7 @@ def test_a_panel_level_refusal_focuses_the_sentence_that_names_it(page, base_url
     page.get_by_text("+ Märge", exact=True).click()
     page.fill("#id_marge_title", "")
     page.get_by_role("button", name="Salvesta").first.click()
-    page.wait_for_selector("text=või lisa fail, uus hetkeseis või järgmine tegevus")
+    page.wait_for_selector("text=Kirjuta tegevus, lisa fail või vali uus hetkeseis.")
 
     focused = page.evaluate("() => document.activeElement && document.activeElement.className")
     assert "formerror" in (focused or ""), focused
