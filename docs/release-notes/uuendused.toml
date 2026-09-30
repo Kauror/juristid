@@ -20,6 +20,11 @@ changes = [
   "Kaasamise muutmisel on samad väljad, mis selle lisamisel. Üldist «Link» ja «Märkus» välja seal enam ei ole; varem salvestatud väärtused jäävad alles.",
   "Veebiaadressi võib kirjutada ilma «https://»-ta, näiteks www.delfi.ee või delfi.ee/uudised — see lisatakse ise. Täielik aadress jääb samaks ning aadressiks mittesobiv tekst lükatakse endiselt tagasi.",
   "«Teema käigus» on lingid puhtad: kaasamisel lihtsalt «Smaily» ja «Alchemer», ülevaatel «Ülevaade / uudis», ilma lisanumbrite ja ikoonideta.",
+  # ADR 0123, migratsioonideta: laia perioodiga jõustumine ja menetluse kulu
+  # kuupäev on läbitud alles perioodi lõpus. Kui see väljalase ei jõua tootmisse
+  # 30.09, liiguvad need kaks rida väljalaske päeva kirjesse.
+  "Kuu, kvartali või aasta täpsusega jõustumine on «Teema käigus» «Jõustub» kuni perioodi lõpuni ja «Jõustus» alles siis, kui periood on läbi. «Menetluse kulg» ja statistika loevad akti jõustunuks samal päeval.",
+  "«Menetluse kulus» ei märgita kuu, kvartali ega aasta täpsusega kuupäeva ega sellise kuupäevaga lisatud sammu enam tänaseks — see on tulevikus, kuni kogu periood on möödas.",
   "Kui uue teema loomisel lisatakse korraga mitu faili, on «Teema käigus» üks rida, näiteks «lisas 7 dokumenti». Hiljem eraldi lisatud failid on oma real.",
   "«Minu asjades» ei panda kuu, kvartali ega aasta täpsusega kuupäeva enam «Sel nädalal» alla — see on «Hiljem», kuni periood on läbi. Teema, mille järgmine tegevus on kolleegil, ei ole enam «Järgmise tegevuseta».",
   "Teema lõpetamisel saab valida ka «Muu».",

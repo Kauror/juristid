@@ -105,7 +105,9 @@ from django.utils import timezone
 
 from app.core.dates import format_estonian_date
 from app.matters.models import Matter
-from app.workflow.dates import format_at_precision
+from app.workflow.dates import format_at_precision, is_approximate
+from app.workflow.enums import DatePrecision
+from app.workflow.lateness import is_past_period
 
 #: The five labels this strip can draw. Each names an *act* or a *formal dated
 #: point*, never a stored title and never an outcome.
@@ -254,6 +256,11 @@ class ProcessStep:
     detail: str
     sort_on: date
     phase: int
+    #: The precision ``display`` was recorded at. A column read from a month, a
+    #: quarter or a year sits at the **last** day of that period and is read
+    #: against today by :func:`dated_state`, which never calls a period today
+    #: (docs/adr/0123). Every other column is a day.
+    precision: str = DatePrecision.EXACT
     #: Every step defaults to reached with a full connector, which is what a
     #: strip of purely historical milestones is. `process_steps` decides all of
     #: them against the application's own today before returning.
@@ -321,6 +328,35 @@ def _reach_to_next(step: ProcessStep, following: ProcessStep | None, today: date
     return (today - step.sort_on).days / span
 
 
+def dated_state(when: date, precision: str, today: date) -> str:
+    """Where one dated point stands against today: reached, today, or ahead.
+
+    The one reading for every dated point this strip and `Menetluse kulg`'s
+    rail draw — a column here, and a step somebody added to the rail
+    (`legal_process._added_step`) — so the two cannot disagree about one date
+    (docs/adr/0123).
+
+    **A period is reached only once it has ended.** «oktoober 2026» is ahead on
+    1 October, on 15 October and on 31 October, and reached on 1 November: the
+    lateness boundary (docs/adr/0079 §4), read through the same
+    :func:`~app.workflow.lateness.is_past_period`, and the boundary
+    `MatterEffectiveDate.has_passed` and Statistika's «jõustunud» figure
+    already use. ``when`` may be the period's anchor or its last day; both name
+    the same period.
+
+    **A period is never today.** Neither end of «oktoober 2026» is a day
+    anybody named, so neither may carry the `aria-current="date"` ring — the
+    rule docs/adr/0122 §2 states for a window with a last day. A day (`EXACT`,
+    `INFERRED`) reads exactly as it always has: reached the day after, today on
+    the day, ahead before it.
+    """
+    if is_past_period(when, precision, today):
+        return STATE_REACHED
+    if when == today and not is_approximate(precision):
+        return STATE_TODAY
+    return STATE_AHEAD
+
+
 def _read_against_today(steps: list[ProcessStep], today: date) -> list[ProcessStep]:
     """Give every column its temporal reading. Presentation only.
 
@@ -333,12 +369,7 @@ def _read_against_today(steps: list[ProcessStep], today: date) -> list[ProcessSt
     """
     decided: list[ProcessStep] = []
     for index, step in enumerate(steps):
-        if step.sort_on < today:
-            state = STATE_REACHED
-        elif step.sort_on == today:
-            state = STATE_TODAY
-        else:
-            state = STATE_AHEAD
+        state = dated_state(step.sort_on, step.precision, today)
         following = steps[index + 1] if index + 1 < len(steps) else None
         decided.append(replace(step, state=state, reach=_reach_to_next(step, following, today)))
     return decided
@@ -497,6 +528,8 @@ def process_steps(
                 detail=record.title,
                 sort_on=record.period_end,
                 phase=PHASE_TRANSPOSITION if transposition else PHASE_WATCHED,
+                # So its last day is never drawn as today (docs/adr/0123).
+                precision=record.date_precision,
             )
         )
 
@@ -552,8 +585,19 @@ def process_steps(
     #
     # An approximate precision renders through `format_at_precision`, the same
     # reading the fact section and the chronology print: «II kvartal 2026» and
-    # never a fabricated `01.04.2026`. It sorts on `date_value`, the first day
-    # of the period, which is how every other surface orders these records.
+    # never a fabricated `01.04.2026`.
+    #
+    # **It sits at `period_end`, the last day of the period, as a watched
+    # `Oluline tähtaeg` above does** (docs/adr/0123). It used to sit at
+    # `date_value`, the anchor, and that is where the column read its state
+    # from: in mid-October an «oktoober 2026» commencement read reached beside
+    # an «oktoober 2026» deadline reading ahead, while
+    # `MatterEffectiveDate.has_passed` and Statistika said it had not yet taken
+    # effect. A commencement known to a month has taken effect once the month is
+    # over, and the column now says so on the same day they do. Position and
+    # state are one date on purpose: a column placed on its anchor but read on
+    # its end would have the rail's fill run solid into a column still ahead.
+    # For a day the two are the same date and nothing moves.
     for record in facts.effective_dates:
         if record.date_value is None or record.status != FactStatus.ACTIVE:
             continue
@@ -562,8 +606,9 @@ def process_steps(
                 label=EFFECTIVE_LABEL,
                 display=format_at_precision(record.date_value, record.date_precision),
                 detail=record.description,
-                sort_on=record.date_value,
+                sort_on=record.period_end or record.date_value,
                 phase=PHASE_EFFECTIVE,
+                precision=record.date_precision,
             )
         )
 

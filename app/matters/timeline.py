@@ -54,6 +54,7 @@ from app.submissions.enums import RecipientRole
 from app.submissions.links import linked_submissions_by_overview
 from app.submissions.models import Submission, SubmissionRecipient
 from app.workflow.dates import format_at_precision, period_starts_after
+from app.workflow.lateness import is_past_period
 
 #: Events worth a line in the chronology. Field-level noise is deliberately
 #: absent: a lawyer scrolling six months of work does not need to see that a
@@ -1571,13 +1572,28 @@ def projected_milestones(
                 ),
             )
             continue
-        if record.date_value > day:
+        # **Drawn once its period has begun, «Jõustus» only once it has ended**
+        # (docs/adr/0123). «Jõustus» is a claim that the act is in force, and a
+        # commencement known only to a month is known to be in force once the
+        # month is over — the day `MatterEffectiveDate.has_passed` and
+        # Statistika's «jõustunud» figure say so, and the day the strip's column
+        # turns reached. Until then, from the period's first day, it reads
+        # «Jõustub oktoober 2026»: it takes effect during the period, which is
+        # all anybody said. A day is unchanged — «Jõustub» on the day,
+        # «Jõustus» from the next. It used to read the anchor, so «oktoober
+        # 2026» said «Jõustus» from 2 October.
+        #
+        # Still placed on its anchor like every other event in this list
+        # (`engagement_chronology_day`), and still not drawn before its period
+        # begins: a commencement ahead is on the strip, not in what happened.
+        if period_starts_after(record.date_value, record.date_precision, day=day):
             continue
+        in_force = is_past_period(record.date_value, record.date_precision, day)
         add(
             record,
             _end_of_day(record.date_value),
             ChronologyMilestone(
-                what="Jõustus" if record.date_value < day else "Jõustub",
+                what="Jõustus" if in_force else "Jõustub",
                 display_date=format_at_precision(record.date_value, record.date_precision),
                 sub=record.description,
             ),

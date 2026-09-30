@@ -157,8 +157,14 @@ window, and each is listed so the next reader does not rediscover it:
   «oktoober 2026» commencement reads *Jõustus* / REACHED beside an «oktoober
   2026» milestone reading AHEAD. The question is "has it taken effect", not
   "is it due", and changing it moves the strip and rail model (docs/adr/0119).
+  **Resolved on 2026-09-30 by docs/adr/0123** — a period `Jõustumine` reads
+  «Jõustub» / AHEAD until its period has ended and sits at the period's end
+  on the strip and the rail, as `has_passed` and Statistika already read it.
 * **An added `MatterTimelineStep` dated as a period is marked TODAY** on the
   rail on its anchor day (`legal_process._added_step`).
+  **Resolved on 2026-09-30 by docs/adr/0123** — `_added_step` takes the
+  step's state from the same period reading, so a period step is never TODAY
+  and reads AHEAD until its period has ended.
 * **`defer_action`** (`Lükka edasi`) is hidden for a period step, but the POST
   endpoint does not refuse one and computes from the anchor.
 * Dead or test-only readers still compare the anchor:
