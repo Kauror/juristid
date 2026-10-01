@@ -121,7 +121,6 @@ def edit_payload(matter: Matter, **overrides) -> dict:
 #: two forms ask exactly the same questions (docs/adr/0097 §2, §3, §4).
 SHARED_FACTS = (
     "title",
-    "brief_summary",
     "owner",
     "stage",
     "policy_areas",
@@ -148,7 +147,14 @@ CREATE_ONLY = {"notes", "uploads", "suggestion_state"}
 #:
 #: It is not a question either form asks a person, which is what §1's contract
 #: is about; it is a hidden token the page carries.
-EDIT_ONLY: set[str] = {"revision"}
+#:
+#: **`brief_summary` is the one deliberate exception to "the same questions".**
+#: `Millest teema räägib` left `Uus teema` by the owner's decision — create the
+#: dossier first, describe it later — and stays a fact `Muuda teemat` and the
+#: Teema page answer. It is named here so the asymmetry is a decision on record
+#: rather than drift (docs/adr/0130 §2, amending docs/adr/0096 §1 on this one
+#: field).
+EDIT_ONLY: set[str] = {"revision", "brief_summary"}
 
 
 def test_every_shared_fact_is_on_both_forms(specialist):
@@ -206,9 +212,9 @@ CLASSIFICATION_PARTIALS = (
     "matters/partials/oigusakt_field.html",
     # `Menetluse link` joined them on 2026-09-20. It is not a classification,
     # but it is the same claim: one question, one block of markup, included by
-    # both pages — which is what makes `Link` and `Nimetus` incapable of
-    # drifting between the page somebody files from and the page they correct
-    # from (docs/adr/0097 §5).
+    # both pages — which is what makes the address incapable of drifting
+    # between the page somebody files from and the page they correct from
+    # (docs/adr/0097 §5). Neither asks `Nimetus` since docs/adr/0130 §3.
     "matters/partials/procedural_link_create.html",
 )
 
@@ -256,8 +262,14 @@ def test_the_edit_page_states_no_questions_of_its_own(signed_in, specialist):
         assert f'name="{name}"' not in page
 
 
-def test_the_edit_page_asks_the_master_questions_in_the_master_order(signed_in, specialist):
-    """Pealkiri, kokkuvõte, Saabus, inimesed, kolm klassifikatsiooni, tähtaeg."""
+def test_the_edit_page_keeps_its_own_order(signed_in, specialist):
+    """Pealkiri, kokkuvõte, Saabus, inimesed, kolm klassifikatsiooni, tähtaeg.
+
+    This was the master's order until docs/adr/0130 §1 rearranged `Uus teema`
+    for intake. That decision was about filing a new file; the correction page
+    was deliberately left as it is, so its order is now its own and is held
+    here so that changing it is a decision rather than a side effect.
+    """
     matter = factories.MatterFactory(owner=specialist)
     page = signed_in.get(edit_url(matter)).content.decode()
 

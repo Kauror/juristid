@@ -12,15 +12,17 @@
   top of that. Nothing was subordinate to anything, so it read as a survey
   rather than as "file this".
 
-  What changed is density, not data. Every field that was here is still here,
-  still posting the same name and the same value; both disclosures are gone and
-  what they hid is on screen. The height came back from pairing rows and from
+  What changed then was density, not data: both disclosures went and what they
+  hid came on screen. (Two questions have since left the page by decision —
+  `Millest teema räägib` and the link's `Nimetus`, docs/adr/0130 — and neither
+  left the record.) The height came back from pairing rows and from
   the chip control, which is the same input with a smaller skin
   (design/mockups/Uus teema.dc.html 8a/8b/8c, Uus teema redesign §2, §3).
 
   `Menetluse link` asks for an address and nothing about it, and `Arvamuse
-  tähtaeg` is the one date and the last question, with `Järgmiseks` gone from
-  creation altogether (docs/adr/0094).
+  tähtaeg` is the one date, with `Järgmiseks` gone from creation altogether
+  (docs/adr/0094). The order of the page, and what it no longer asks —
+  `Millest teema räägib` and the link's `Nimetus` — is docs/adr/0130.
 
   **Every vocabulary is drawn at rest again.** `Valdkonnad` and `Hetkeseis`
   spent a round as `chipmenu`s — a pill carrying the answer and a panel taken
@@ -118,9 +120,21 @@
 
       This is also the page the scroll-to-the-refusal rule was written for. A
       save refused near the bottom of the form used to come back looking
-      unchanged, because the message was below the fold — `Arvamuse tähtaeg` is
-      the last block on the page and `Menetluse link` the one above it
+      unchanged, because the message was below the fold
       (static/js/ux.js `focusFirstRefusal`).
+    {% endcomment %}
+
+    {% comment %}
+      **The order is the owner's, after lawyer feedback (docs/adr/0130 §1).**
+      Pealkiri; who sent it and who owns it; the three facts that arrive with
+      the file — when Koda's opinion is due, where the proceeding lives, when
+      it arrived; then the three classifications, instrument first; then the
+      private note; then the files, last, directly above the button.
+
+      What the page no longer asks: `Millest teema räägib` and the link's
+      `Nimetus`. Both are deferred, not deleted — the summary is written on the
+      Teema page or `Muuda teemat` once the file has been read, and a stored
+      link name is kept and shown wherever one exists (docs/adr/0130 §2, §3).
     {% endcomment %}
 
     {# 1 — Pealkiri. The only field above the first rule. #}
@@ -138,21 +152,162 @@
       </label>
     </div>
 
-    {# 2 — What it is about, and what you privately think about it. #}
-    <div class="createform__row createform__pair createform__pair--summary">
-      <label class="field">
-        <span class="field__label">{{ form.brief_summary.label }}</span>
-        {{ form.brief_summary }}
-        {% if form.brief_summary.errors %}
-          <span class="field__error" id="{{ form.brief_summary.auto_id }}_error">{{ form.brief_summary.errors|first }}</span>
+    {% comment %}
+      2 — Who it came from and who owns it. Saatja on the left, Vastutaja on the
+      right (docs/adr/0130 §1).
+
+      **`--sender`, not `--people`.** `--people` is the same two fields the other
+      way round — Vastutaja's narrow track first — and `Muuda teemat` and
+      `Saabunud` still use it; this page's order is its own decision, so it has
+      its own ratio rather than a reversed copy of theirs.
+
+      Andmeklass — one checkbox reading «Testandmed» — used to be a third column
+      here. It is gone from this page entirely: ordinary `Uus teema` creates REAL
+      work, decided server-side, and a POST carrying `is_test_data=on` creates
+      REAL work too, because the form has no field to bind
+      (`app.matters.forms.MatterCreateForm.data_class`, docs/adr/0067).
+
+      Saatja is one control: a typed name reuses an exact or alias match,
+      otherwise creates the institution, and refuses a spelling that already
+      names two — inside the same transaction that creates the Teema
+      (`resolve_source_organisations`, docs/adr/0063). `quiet` is what the
+      lawyers asked for: it opens as an empty box, and typing shows the bodies
+      that match (docs/adr/0091 §2, organisation_picker.html `quiet`).
+      `sender_control.html` is the older three-part control `Saabunud` still
+      uses; it was not part of either decision.
+    {% endcomment %}
+    <div class="createform__row createform__pair createform__pair--sender">
+      <fieldset class="field senderpick">
+        <legend class="field__label">
+          {{ form.source_organisations.label }}
+          <span class="field__count" data-chipcount-for="source_organisations"></span>
+        </legend>
+        {% include "matters/partials/organisation_picker.html" with picker_id="saatja" legend=form.source_organisations.label chips=form.sender_chip_choices tail=form.sender_tail_choices typed_field=form.sender_name add_label="Lisa uus saatja" clearable=True sender_row=True typed_hook="sender" quiet=True %}
+        {% if form.source_organisations.errors %}
+          <span class="field__error" id="{{ form.source_organisations.auto_id }}_error">{{ form.source_organisations.errors|first }}</span>
+        {% elif form.source_organisations_other.errors %}
+          <span class="field__error" id="{{ form.source_organisations_other.auto_id }}_error">{{ form.source_organisations_other.errors|first }}</span>
+        {% endif %}
+      </fieldset>
+
+      <fieldset class="field">
+        <legend class="field__label">{{ form.owner.label }}</legend>
+        <div class="chiprow">
+          {% for choice in form.owner %}
+            <label class="chip">
+              {{ choice.tag }}
+              <span class="chip__name">{{ choice.choice_label }}</span>
+            </label>
+          {% endfor %}
+        </div>
+        {% if form.owner.errors %}<span class="field__error" id="{{ form.owner.auto_id }}_error">{{ form.owner.errors|first }}</span>{% endif %}
+      </fieldset>
+    </div>
+
+    {% comment %}
+      3 — The three facts that arrive with the file, on one row: when Koda's
+      opinion is due, where the proceeding lives, and when it arrived
+      (docs/adr/0130 §1). The two dates are compact and the address takes the
+      width between them.
+
+      **`Arvamuse tähtaeg` is still the one date the lawyer commits to**, and it
+      still does both things it did as the last question on the form: it
+      records `Matter.response_deadline` and establishes the canonical
+      `Koostan arvamuse` step, once, through
+      `establish_opinion_preparation_action` (app/matters/views.py,
+      docs/adr/0094 §5). Moving it up the page changed where it is asked, not
+      what it means. A blank box invents no date, creates no step and makes no
+      undated commitment (docs/adr/0078 §2, docs/adr/0091 §1.2). It is not
+      `Järgmiseks`, which is off this page entirely (docs/adr/0094 §6).
+
+      `Saabus` holds today on an unbound form, because nearly everything is
+      entered on the day it arrives; `Arvamuse tähtaeg` deliberately holds
+      nothing (`MatterCreateForm.response_deadline`).
+
+      The deadline's field keeps the `arvamuse-tahtaeg` id, because it is how
+      the refusal path and the browser suite find it.
+    {% endcomment %}
+    <div class="createform__row createform__trio createform__trio--dates">
+      <label class="field" id="arvamuse-tahtaeg">
+        <span class="field__label">{{ form.response_deadline.label }}</span>
+        {{ form.response_deadline }}
+        {% if form.response_deadline.errors %}
+          <span class="field__error" id="{{ form.response_deadline.auto_id }}_error">{{ form.response_deadline.errors|first }}</span>
         {% endif %}
       </label>
-      {% comment %}
-        Märkmed is private and stays private: `MatterPersonalNote`, scoped by
-        author, on no timeline, in no export and in no search index. Its dashed
-        border is the same "this is yours" signal it carries in the Teema rail
-        (app/matters/models.py, Teema redesign §22.4).
-      {% endcomment %}
+
+      {% include "matters/partials/procedural_link_create.html" %}
+
+      <label class="field">
+        <span class="field__label">{{ form.received_date.label }}</span>
+        {{ form.received_date }}
+        {% if form.received_date.errors %}
+          <span class="field__error" id="{{ form.received_date.auto_id }}_error">{{ form.received_date.errors|first }}</span>
+        {% endif %}
+      </label>
+    </div>
+
+    {# 4 — Õigusakt, 5 — Valdkonnad, 6 — Hetkeseis. #}
+    {% comment %}
+      The three classifications, drawn at rest, each through the partial that
+      `Muuda teemat` includes as well (docs/adr/0096 §1, §2). **Instrument
+      first**: what kind of act the file is about is the first thing a lawyer
+      knows, and it is what the `Hetkeseis` guidance below reads
+      (docs/adr/0130 §1).
+
+      What each control *is* has not moved — `Õigusakt` and `Valdkonnad` hold
+      several values and say so, `Hetkeseis` holds one and says so, and `Muu`
+      means what it meant on both of the fields that offer one.
+
+      `Menetlusliik` is still not on this page and is not written from anything
+      on it: the `Õigusakt` vocabulary names the group in the label, and
+      `Matter.track` is answered where it is known — on `Muuda teemat` and in
+      the Teema rail (docs/adr/0090 §4).
+    {% endcomment %}
+    <div class="createform__row">
+      {% include "matters/partials/oigusakt_field.html" %}
+    </div>
+
+    {% comment %}
+      **Valdkonnad are not guided by anything.** No area is dimmed, filtered,
+      suggested or ticked because of an `Õigusakt`, a title or a sender. Every
+      area is exactly as selectable as before (docs/adr/0130 §6).
+    {% endcomment %}
+    <div class="createform__row">
+      {% include "matters/partials/valdkonnad_field.html" %}
+    </div>
+
+    {% comment %}
+      `Hetkeseis`, with the `Õigusakt` guidance (docs/adr/0130 §4, §5).
+
+      Once an `Õigusakt` is ticked, the stages that do not normally fit *any*
+      ticked instrument are drawn dimmed — two states, normal and dimmed, and
+      nothing else. A dimmed chip is not disabled, not hidden and not out of
+      the tab order; choosing one is an ordinary choice and it then looks like
+      any other chosen chip. Nothing is cleared when the instruments change, and
+      the server accepts every combination exactly as before.
+
+      The matrix is `app.workflow.stage_guidance`, by stable key; the script
+      reads it from the JSON below and the keys from `data-instrument-key` and
+      `data-stage-key` on the inputs (`bindStageGuidance`, static/js/app.js).
+      With scripting off nothing is dimmed, which is the guidance missing and
+      nothing else.
+    {% endcomment %}
+    <div class="createform__row" data-stage-guidance="hetkeseis-juhis">
+      {% include "matters/partials/hetkeseis_field.html" %}
+      {{ stage_guidance|json_script:"hetkeseis-juhis" }}
+    </div>
+
+    {% comment %}
+      7 — Märkmed: private, and second-last.
+
+      `MatterPersonalNote`, scoped by author, on no timeline, in no export and in
+      no search index — unchanged. Its dashed border is the same "this is yours"
+      signal it carries in the Teema rail (app/matters/models.py, Teema redesign
+      §22.4). It used to share a row with `Millest teema räägib`; that question
+      is asked after creation now (docs/adr/0130 §2), so the note has the row.
+    {% endcomment %}
+    <div class="createform__row">
       <label class="field">
         <span class="field__label">{{ form.notes.label }}</span>
         {{ form.notes }}
@@ -160,18 +315,16 @@
       </label>
     </div>
 
-    {# 3 — The file, and the date it arrived on. #}
-    <div class="createform__row createform__pair createform__pair--file">
-      {% comment %}
-        A plain multiple file input: no library, no SPA, and it degrades to the
-        ordinary chooser everywhere. Each file becomes one Document with one
-        immutable version through the ordinary services, and the page no longer
-        says so anywhere — not in a paragraph under the control, and no longer
-        as a TÕEND badge in front of every chosen filename. A label that reads
-        the same on every row of a list is not information, and it took the
-        first words of each line to say nothing (Stage-2E.1 brief 24,
-        Uus teema redesign §7).
-      {% endcomment %}
+    {% comment %}
+      8 — Failid: the last section, directly above the button (docs/adr/0130 §1).
+
+      Moved, not changed. The same input, the same server allowlist in
+      `accept` — signed containers included (docs/adr/0125) — the same staged
+      upload island and the same refusal-held files. Each file becomes one
+      Document with one immutable version through the ordinary services, and
+      one upload is one history operation.
+    {% endcomment %}
+    <div class="createform__row">
       <fieldset class="field" id="failid">
         <legend class="field__label">
           Failid
@@ -194,10 +347,7 @@
           {% comment %}
             The input is the control and the label is its face. `for=` opens the
             file chooser natively, so hiding the box costs nothing that a
-            keyboard or a screen reader had — and the browser's own "Choose
-            Files / No file chosen", which cannot be styled and reads in the
-            browser's language rather than the page's, stops being the widest
-            thing in this row.
+            keyboard or a screen reader had.
 
             `accept` is the server's own allowlist, so the chooser offers the
             files `read_upload` takes — signed containers included — and
@@ -220,9 +370,6 @@
             input cannot be repopulated by any page, so without this the
             refusal took the attachment with it and the Teema was created
             without documents (app/documents/pending.py, `matter_create`).
-
-            Empty on every ordinary visit, so this renders nothing at all
-            unless a save has actually been refused.
           {% endcomment %}
           {% if held_files %}
             <ul class="dropzone__list" id="hoitud-failid">
@@ -246,218 +393,18 @@
           {% include "matters/partials/intake_files.html" %}
         </div>
       </fieldset>
-
-      <label class="field">
-        <span class="field__label">{{ form.received_date.label }}</span>
-        {{ form.received_date }}
-        {% if form.received_date.errors %}
-          <span class="field__error" id="{{ form.received_date.auto_id }}_error">{{ form.received_date.errors|first }}</span>
-        {% endif %}
-      </label>
-
-      {% comment %}
-        `Arvamuse tähtaeg` stood here, third on this row, and it is at the bottom
-        of the form now — the last question asked and the only date the lawyer
-        enters. It was here *and* at the bottom: this box, and a second one
-        labelled `Koostan arvamuse` that established the first step. One date
-        asked twice under two names (docs/adr/0094 §5).
-      {% endcomment %}
     </div>
 
     {% comment %}
-      3b — What the files say, once they have been read.
+      8b — What the files say, once they have been read.
 
-      Between the file that produced it and the fields it fills, which is the
-      only place it can be: a panel above the form would push Pealkiri off the
-      screen on the ordinary visit where there is no file at all, and one below
-      Valdkonnad would be under half of what it is about. It renders nothing
-      until something is staged (`intake_panel.html`, docs/adr/0064).
+      Directly under the files that produced it, which is the only place it can
+      be now that `Failid` is the last section: above the files it would be a
+      panel about something not yet on the screen. It renders nothing until
+      something is staged (`intake_panel.html`, docs/adr/0064).
     {% endcomment %}
     <div class="createform__row createform__row--intake">
       {% include "matters/partials/intake_panel.html" %}
-    </div>
-
-    {% comment %}
-      4 — Who owns it and who it came from. Two fields, not three.
-
-      Andmeklass — one checkbox reading «Testandmed» — used to be the third
-      column here. It is gone from this page entirely, and the width it was
-      holding goes to Saatja, which is the field on this row that actually
-      wanted more: a shortlist of eight chips, a disclosure and a text box in a
-      third of a row is cramped, and in two thirds it is not.
-
-      **Nothing about test data changed except who may say it here.** Ordinary
-      `Uus teema` creates REAL work, decided server-side, and a POST carrying
-      `is_test_data=on` creates REAL work too, because the form no longer has
-      the field to bind (`app.matters.forms.MatterCreateForm.data_class`).
-      `Matter.data_class`, the enum, the existing TEST records, the REAL/TEST
-      reporting filters and the purge tooling are all untouched — what is gone
-      is a control on the capture path that put a question in front of somebody
-      who had no answer to give, on the one page a lawyer uses every day
-      (task §16, docs/adr/0067).
-    {% endcomment %}
-    <div class="createform__row createform__pair createform__pair--people">
-      <fieldset class="field">
-        <legend class="field__label">{{ form.owner.label }}</legend>
-        <div class="chiprow">
-          {% for choice in form.owner %}
-            <label class="chip">
-              {{ choice.tag }}
-              <span class="chip__name">{{ choice.choice_label }}</span>
-            </label>
-          {% endfor %}
-        </div>
-        {% if form.owner.errors %}<span class="field__error" id="{{ form.owner.auto_id }}_error">{{ form.owner.errors|first }}</span>{% endif %}
-      </fieldset>
-
-      {% comment %}
-        Saatja, as one control rather than three.
-
-        `sender_control.html` still exists and still renders the shortlist, the
-        «Vali nimekirjast» disclosure and a separate «Uus saatja» box — on
-        `Saabunud`, which was not part of this decision. `Muuda teemat` was not
-        either, and has since joined this control rather than that one: the
-        argument for leaving it behind was that a form editing a saved Matter
-        arrives with its answer already given, and that turned out to be an
-        argument for prepopulating this picker rather than for keeping a second
-        one (task §26, docs/adr/0073, post-QA R2-12).
-
-        `data-sender-chips` marked the row the Adressaat default read. The
-        default is gone with the question (docs/adr/0090 §5); the attribute
-        stays because it is also what names the chip row for the picker's own
-        scripting, and nothing writes into Adressaat from here any more.
-
-        **`quiet`, and it is the whole of what the lawyers asked for here.** The
-        field used to open with a row of eight institutions under an empty box,
-        which is a list to read before a question anybody wanted to answer by
-        typing. It opens as an empty box now: type, and the bodies that match
-        appear; choose one and it is a chip, exactly as it was. Nothing about
-        what the field *means* moved — same two fields, same names, same
-        `resolve_source_organisations`, same refusal of an ambiguous spelling,
-        same catalogue — and the shortlist the form ranks is still what the
-        search ranks first and still what Adressaat defaults from
-        (docs/adr/0091 §2, organisation_picker.html `quiet`).
-
-        Adressaat below keeps its chips, and that is not an oversight: it is
-        behind a disclosure that is shut on the ordinary visit and answered by
-        the sender before anybody opens it, so it costs nothing at rest. What
-        `Uus teema` asks of the two fields is different and this round changed
-        only the one the feedback was about (task §5).
-      {% endcomment %}
-      <fieldset class="field senderpick">
-        <legend class="field__label">
-          {{ form.source_organisations.label }}
-          <span class="field__count" data-chipcount-for="source_organisations"></span>
-        </legend>
-        {% include "matters/partials/organisation_picker.html" with picker_id="saatja" legend=form.source_organisations.label chips=form.sender_chip_choices tail=form.sender_tail_choices typed_field=form.sender_name add_label="Lisa uus saatja" clearable=True sender_row=True typed_hook="sender" quiet=True %}
-        {% if form.source_organisations.errors %}
-          <span class="field__error" id="{{ form.source_organisations.auto_id }}_error">{{ form.source_organisations.errors|first }}</span>
-        {% elif form.source_organisations_other.errors %}
-          <span class="field__error" id="{{ form.source_organisations_other.auto_id }}_error">{{ form.source_organisations_other.errors|first }}</span>
-        {% endif %}
-      </fieldset>
-    </div>
-
-    {# 5 — Valdkonnad, 6 — Hetkeseis, 7 — Õigusakt. #}
-    {% comment %}
-      The three classifications, drawn at rest, each through the partial that
-      `Muuda teemat` includes as well.
-
-      They were two shapes and three copies. `Valdkonnad` and `Hetkeseis` were
-      `chipmenu`s — a pill carrying the answer and a panel taken out of flow —
-      while `Õigusakt` directly under them drew its chips permanently; and the
-      edit page drew all three again, differently, in its own markup. The
-      lawyers reviewing the live page asked for the visible chips back, and the
-      owner's rule for the round is that `Uus teema` is the master the edit page
-      follows (docs/adr/0096 §1, §2).
-
-      So: one selection language for the three vocabularies, and one file per
-      vocabulary. What each control *is* has not moved — `Valdkonnad` and
-      `Õigusakt` hold several values and say so, `Hetkeseis` holds one and says
-      so, and `Muu` means what it meant on both of the fields that offer one.
-
-      `Menetlusliik` is still not on this page, and the row it occupied is gone
-      rather than hidden: it asked a lawyer to classify one file twice, the
-      `Õigusakt` vocabulary already names the group in the label, and
-      `Matter.track` is answered where it is known — on `Muuda teemat` and in
-      the Teema rail. The field is absent from `MatterCreateForm` too, so a
-      forged `track=` is not part of this request (docs/adr/0090 §4).
-    {% endcomment %}
-    <div class="createform__row">
-      {% include "matters/partials/valdkonnad_field.html" %}
-    </div>
-
-    <div class="createform__row">
-      {% include "matters/partials/hetkeseis_field.html" %}
-    </div>
-
-    <div class="createform__row">
-      {% include "matters/partials/oigusakt_field.html" %}
-    </div>
-
-    {# 7a — Menetluse link: where the proceeding this file is about lives. #}
-    {% comment %}
-      **Open, and before the deadline.** It was a shut `<details>` at the very end
-      of the form, after the two date panels, and it asked the lawyer to classify
-      the address first — EIS, a ministry's register, an EU procedure, the
-      Riigikogu or «muu» — before it would take the thing they came to record.
-      Both are gone: the block is visible on arrival, it asks for the address and
-      optionally a name for it, and it stands where the reader is while the file is
-      still in front of them, above the one date they have to commit to
-      (docs/adr/0094 §3, §4).
-
-      What a row is stored under is `ProceduralLinkCreateForm.STORED_KIND` — the
-      enum's own `Muu menetluslink`, which is what an unclassified link truthfully
-      is. Nothing infers it from the address and no historical row was rewritten.
-
-      Still one `{% templatetag openblock %} include {% templatetag closeblock %}`:
-      `Uus teema` is worked on by more than one package at a time, and a block
-      written inline here would be a merge conflict rather than a feature
-      (docs/adr/0089 §13).
-    {% endcomment %}
-    {% include "matters/partials/procedural_link_create.html" %}
-
-    {# 7b — Arvamuse tähtaeg: the one date, and the step it establishes. #}
-    {% comment %}
-      The last question on the form, and the only date the lawyer enters.
-
-      Three things stood between `Õigusakt` and the button, and all three were
-      about the same thing. `Koostan arvamuse` — a date box, with a sentence
-      saying what step it would create and a second saying what leaving it empty
-      meant. `Järgmiseks` — a free-text first step, a `Millal?` row of four quick
-      chips and an exact-date disclosure. And `Arvamuse tähtaeg` itself, eight
-      rows further up beside `Saabus`. Two boxes asking the same question under
-      two names, plus a second way to answer it that could only ever collide with
-      the first — a Matter has one open step, so answering both was a refusal
-      (docs/adr/0091 §1.3).
-
-      One box now. `MatterCreateForm.response_deadline`, which is what this date
-      is called on the process strip, in the rail, on Minu asjad and in the
-      register — so the page and the record use one word. Entering it records the
-      obligation *and* establishes the canonical `Koostan arvamuse` step, once,
-      through `establish_opinion_preparation_action`
-      (app/matters/views.py, docs/adr/0094 §5).
-
-      **No prose.** The two sentences explaining the mechanism are gone with the
-      second box that needed them: one date, in a labelled panel, at the end of
-      the form, does not need a paragraph saying what it is for. What has not
-      changed is the rule underneath — a blank box invents no date, creates no
-      step and makes no undated commitment (docs/adr/0078 §2, docs/adr/0091 §1.2).
-
-      `Järgmiseks` is off this page entirely, controls and fields alike, so no
-      stale POST key can create a generic first step from here. It is answered
-      where a lawyer changes a plan: the Teema composer (docs/adr/0094 §6).
-    {% endcomment %}
-    <div class="createform__row createform__row--panel">
-      <div class="nextpanel" id="arvamuse-tahtaeg">
-        <label class="field createform__field--date">
-          <span class="field__label">{{ form.response_deadline.label }}</span>
-          {{ form.response_deadline }}
-          {% if form.response_deadline.errors %}
-            <span class="field__error" id="{{ form.response_deadline.auto_id }}_error">{{ form.response_deadline.errors|first }}</span>
-          {% endif %}
-        </label>
-      </div>
     </div>
 
     {# 8 — One primary action, and the promise that makes it safe to press. #}
@@ -496,7 +443,11 @@
       POST needs one. No draft Matter is created and nothing is written; the
       response is bounded to five cards.
 
-      **The trigger is the four fields that decide the answer.** Typing in
+      `brief_summary` was the fifth field and the second text trigger. It left
+      both lists when `Millest teema räägib` left this page (docs/adr/0130 §2);
+      the endpoint still reads it, for the callers that have one.
+
+      **The trigger is the fields that decide the answer.** Typing in
       `Märkmed`, picking a `Hetkeseis` or choosing a deadline recomputes
       nothing, because none of them is a matching signal — a round trip per
       keystroke on a field that cannot change the result is a round trip that
@@ -545,10 +496,9 @@
          hx-post="{% url 'related_materials:draft_suggestions' %}"
          data-similar-chips="policy_areas legal_instruments source_organisations"
          hx-trigger="input changed delay:600ms from:#id_title,
-                     input changed delay:600ms from:#id_brief_summary,
                      sarnased:chips delay:250ms,
                      sarnased:restored"
-         hx-params="title,brief_summary,policy_areas,legal_instruments,source_organisations,csrfmiddlewaretoken"
+         hx-params="title,policy_areas,legal_instruments,source_organisations,csrfmiddlewaretoken"
          hx-target="this"
          hx-swap="innerHTML"></div>
   </form>

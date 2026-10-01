@@ -141,15 +141,16 @@ def test_the_page_asks_neither_menetlusliik_nor_adressaat(page, base_url):
 
 
 def test_the_classification_block_reads_in_the_reviewed_order(page, base_url):
-    """Saatja, Valdkond, Hetkeseis, Õigusakt — measured, not read off the DOM.
+    """Saatja, Õigusakt, Valdkonnad, Hetkeseis — measured, not read off the DOM.
 
-    A row can be a later sibling and still paint above, so where somebody reads
-    it is the claim.
+    The reviewed order of docs/adr/0090 §7 as amended by docs/adr/0130 §1:
+    the instrument first. A row can be a later sibling and still paint above, so
+    where somebody reads it is the claim.
     """
     create_form(page, base_url)
 
     tops = []
-    for selector in (SENDER_FIELD, VALDKOND_FIELD, STAGE_ROW, INSTRUMENT_FIELD):
+    for selector in (SENDER_FIELD, INSTRUMENT_FIELD, VALDKOND_FIELD, STAGE_ROW):
         box = page.locator(selector).first.bounding_box()
         assert box is not None, f"{selector} has no box"
         tops.append(box["y"])

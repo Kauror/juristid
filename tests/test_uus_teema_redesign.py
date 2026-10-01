@@ -98,7 +98,6 @@ def test_the_whole_field_set_the_new_page_posts_is_accepted(signed_in, evidence_
         CREATE,
         {
             "title": "Nagu brauser saadab",
-            "brief_summary": "",
             "notes": "",
             "owner": "",
             "received_date": today,
@@ -108,7 +107,6 @@ def test_the_whole_field_set_the_new_page_posts_is_accepted(signed_in, evidence_
             "track": "",
             "addressee_organisation": "",
             "menetlus-url": "",
-            "menetlus-label": "",
             "files": upload("kaaskiri.txt", "Näidiskaaskiri.".encode(), "text/plain"),
         },
     )
@@ -137,7 +135,6 @@ def test_a_full_create_stores_exactly_what_was_entered(signed_in, specialist, ev
         CREATE,
         {
             "title": "Pakendiseaduse muutmise seaduse eelnõu",
-            "brief_summary": "Laiendaks tootjavastutust pakendiettevõtetele.",
             "notes": "Helista Tiinale enne kooskõlastusringi lõppu.",
             "owner": specialist.pk,
             "received_date": "24.8.2026",
@@ -157,7 +154,8 @@ def test_a_full_create_stores_exactly_what_was_entered(signed_in, specialist, ev
     )
 
     matter = Matter.objects.get(title="Pakendiseaduse muutmise seaduse eelnõu")
-    assert matter.brief_summary == "Laiendaks tootjavastutust pakendiettevõtetele."
+    # `Millest teema räägib` is not asked at creation (docs/adr/0130 §2).
+    assert matter.brief_summary == ""
     assert matter.owner == specialist
     assert matter.received_date == date(2026, 8, 24)
     assert matter.response_deadline == date(2026, 9, 18)
@@ -207,13 +205,24 @@ def test_the_summary_is_the_matters_own_field_and_not_an_entry(signed_in, specia
     Not `position_summary` (what Koda thinks), not `rationale_summary` (why),
     and not the first Entry (what happened on a day). None of the three can be
     made to mean this without corrupting it (Teema redesign §6).
+
+    Written on `Muuda teemat` now: `Uus teema` no longer asks it, and creates
+    the dossier with it blank (docs/adr/0130 §2).
     """
+    signed_in.post(CREATE, {"title": "Kokkuvõttega", "owner": specialist.pk})
+    matter = Matter.objects.get(title="Kokkuvõttega")
+    assert matter.brief_summary == ""
+
     signed_in.post(
-        CREATE,
-        {"title": "Kokkuvõttega", "brief_summary": "  Kaks lauset tavakeeles.  "},
+        reverse("matters:matter_edit", kwargs={"pk": matter.pk}),
+        {
+            "title": matter.title,
+            "owner": specialist.pk,
+            "brief_summary": "  Kaks lauset tavakeeles.  ",
+        },
     )
 
-    matter = Matter.objects.get(title="Kokkuvõttega")
+    matter.refresh_from_db()
     assert matter.brief_summary.strip() == "Kaks lauset tavakeeles."
     assert matter.position_summary == ""
     assert matter.rationale_summary == ""
@@ -553,7 +562,6 @@ def test_a_refused_save_gives_back_every_date_that_was_typed(signed_in):
             "title": "",
             "received_date": "7.9.2026",
             "response_deadline": "23.8.2026",
-            "brief_summary": "Mida see teema tähendab.",
             "notes": "Isiklik meeldetuletus.",
         },
     )
@@ -563,11 +571,9 @@ def test_a_refused_save_gives_back_every_date_that_was_typed(signed_in):
     assert form.errors["title"]
     assert form["received_date"].value() == "7.9.2026"
     assert form["response_deadline"].value() == "23.8.2026"
-    assert form["brief_summary"].value() == "Mida see teema tähendab."
     assert form["notes"].value() == "Isiklik meeldetuletus."
 
     body = response.content.decode()
-    assert "Mida see teema tähendab." in body
     assert "Isiklik meeldetuletus." in body
 
 

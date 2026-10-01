@@ -27,6 +27,10 @@ Packages 1–3 need no migration. Package 4 adds two nullable columns and one
 
 ## 1 — `Uus teema` is the master
 
+**Narrowed on 2026-10-01 by [0130](0130-uus-teema-is-a-lighter-intake-and-oigusakt-guides-hetkeseis.md) §2 and §8:** `brief_summary` is the one fact
+`Muuda teemat` asks and `Uus teema` does not (asked after creation), and the edit
+page keeps its own order rather than following `Uus teema`'s new one.
+
 ### Context
 
 `Uus teema` and `Muuda teemat` ask about the same record. They have been

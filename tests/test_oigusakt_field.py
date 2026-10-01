@@ -18,6 +18,7 @@ Two invariants run through nearly every test below:
 from __future__ import annotations
 
 import pytest
+from django import forms
 from django.urls import reverse
 
 from app.audit.enums import ChangeEventType
@@ -580,7 +581,9 @@ def test_the_control_is_checkboxes_over_the_whole_active_vocabulary(specialist):
     form = MatterCreateForm(viewer=specialist)
     field = form.fields["legal_instruments"]
 
-    assert field.widget.__class__.__name__ == "CheckboxSelectMultiple"
+    # Checkboxes, carrying each type's stable key for the Hetkeseis guidance
+    # (`LegalInstrumentCheckboxSelect`, docs/adr/0130).
+    assert isinstance(field.widget, forms.CheckboxSelectMultiple)
     assert not field.required
     offered = [label for _value, label in field.choices]
     assert offered == [
@@ -593,20 +596,22 @@ def test_the_control_is_checkboxes_over_the_whole_active_vocabulary(specialist):
     assert offered[5] == "Muu siseriiklik"
 
 
-def test_the_rendered_page_puts_oigusakt_last_in_the_classification_block(signed_in):
+def test_the_rendered_page_puts_oigusakt_first_in_the_classification_block(signed_in):
     """The reviewed placement, asserted on the markup the server sends.
 
     `e2e/test_oigusakt_row.py` owns the geometry; this owns the order, which is
-    the half a screenshot cannot state. Saatja · Valdkond · Hetkeseis ·
-    Õigusakt, with `Menetlusliik` and `Adressaat` no longer between any of them
-    (docs/adr/0090 §7).
+    the half a screenshot cannot state. Õigusakt · Valdkonnad · Hetkeseis since
+    docs/adr/0130 §1 — the instrument first, because it is what the lawyer knows
+    first and what the Hetkeseis guidance reads. It was last
+    (docs/adr/0090 §7); `Menetlusliik` and `Adressaat` are still not between any
+    of them.
     """
     body = signed_in.get(CREATE).content.decode()
 
     valdkond = body.index('name="policy_areas"')
     stage = body.index('name="stage"')
     oigusakt = body.index('name="legal_instruments"')
-    assert valdkond < stage < oigusakt
+    assert oigusakt < valdkond < stage
 
 
 def test_the_page_offers_no_new_component(signed_in):

@@ -6,11 +6,11 @@ had been refused correctly and said so — eleven blocks down, below the fold,
 where nobody was looking. On a long form a correct refusal that nobody can see
 is indistinguishable from a button that does nothing.
 
-`Järgmiseks` is off that page now and `Arvamuse tähtaeg` is the last question on
-it, so the refusal these scenarios provoke is a date that cannot be read rather
-than a step with no date (docs/adr/0094 §5, §6). The rule is unchanged and so is
-the shape of the case: the control that is wrong is the one nearest the bottom
-of a form taller than the window.
+`Järgmiseks` is off that page now (docs/adr/0094 §6), and since docs/adr/0130
+`Arvamuse tähtaeg` sits near the top, in the arrival row. So the scenarios use
+two refusals: a date that cannot be read, for focus and clearance wherever the
+box is, and `Valdkonnad · Muu` ticked with no text, for the case that needs a
+refused control below the fold. The rule is unchanged.
 
 Only a browser can answer this. The server tests prove the refusal happens and
 that the message is rendered beside its field; what is in doubt is whether the
@@ -39,14 +39,25 @@ from e2e.conftest import (
 pytestmark = pytest.mark.e2e
 
 #: A date `EstonianDateField` cannot read, which is the refusal `Arvamuse
-#: tähtaeg` makes on its own — and it is the last question on the form, so the
-#: message lands at the bottom of a page taller than the window. That is the
-#: shape these scenarios need; which field produces it is incidental.
+#: tähtaeg` makes on its own. Which field produces a refusal is incidental to
+#: the focus and clearance scenarios.
 BAD_DATE = "32.13.2026"
 
-#: `.topbar` is `position: sticky` and exactly this tall. The stylesheet clears
-#: it with `scroll-margin-top`; this is the number that clearance has to beat.
-TOPBAR_HEIGHT = 48
+
+def sticky_bar_height(page) -> float:
+    """How much of the top of the window the bar covers *at this width*.
+
+    `.topbar` is `position: sticky` and 48px tall on a desktop window; on a
+    phone-width window it wraps and is `static`, scrolling away with the page,
+    so it covers nothing. The clearance has to beat the bar that is actually
+    there — asserting 48px at 420px measured a bar that does not exist, which
+    only ever passed while the refused box happened to sit low in its row.
+    """
+    return page.evaluate(
+        """() => { const bar = document.querySelector('.topbar');
+                   if (!bar || getComputedStyle(bar).position !== 'sticky') return 0;
+                   return bar.getBoundingClientRect().height; }"""
+    )
 
 
 def create_form(page, base_url) -> None:
@@ -68,44 +79,44 @@ def assert_in_view(page, locator, what: str) -> None:
     """Inside the viewport, and not underneath the bar that floats over it."""
     box = box_of(locator)
     height = page.viewport_size["height"]
-    assert box["y"] >= TOPBAR_HEIGHT, (
-        f"{what} sits at y={box['y']}, underneath the {TOPBAR_HEIGHT}px sticky bar"
-    )
+    bar = sticky_bar_height(page)
+    assert box["y"] >= bar, f"{what} sits at y={box['y']}, underneath the {bar}px sticky bar"
     assert box["y"] + box["height"] <= height, (
         f"{what} sits at y={box['y']} with a {height}px viewport — still below the fold"
     )
 
 
 def test_a_refusal_below_the_fold_brings_the_person_to_it(page, base_url):
-    """**A.** The real case: `Järgmiseks` with no date, near the bottom.
+    """**A.** The real case: the control that is wrong is out of sight.
 
     Three separate claims, and the defect satisfied none of them: the control
     that is wrong has the cursor, it is inside the viewport, and it is not
     hidden behind the sticky bar.
+
+    `Valdkonnad · Muu` ticked and left without its text, because since
+    docs/adr/0130 the date sits near the top of the form and is no longer the
+    refusal a short window hides.
     """
     sign_in(page, base_url, MARTIN)
     # A window shorter than the form, because the premise is that the refused
-    # control is out of sight — and the form got 232px shorter when `Uus teema`
-    # stopped asking Menetlusliik and Adressaat (docs/adr/0090 §4, §5). At the
-    # default 900px the date box now sits at y≈873 and the test would assert
-    # nothing at all. 600px is an ordinary laptop window with the browser
-    # chrome taken off, which is the case this defect was reported from.
-    page.set_viewport_size({"width": 1440, "height": 600})
+    # control is out of sight. 500px is a laptop window with the browser chrome
+    # and a docked panel taken off.
+    page.set_viewport_size({"width": 1440, "height": 500})
     create_form(page, base_url)
 
-    page.fill("#id_title", "Loetamatu tähtaeg, mis tuleb ise üles leida")
-    page.fill("#id_response_deadline", BAD_DATE)
+    page.fill("#id_title", "Valdkond, mis tuleb ise üles leida")
+    page.locator("#valdkond-muu input").check()
+    page.evaluate("() => window.scrollTo(0, 0)")
     # Proving the field really is out of sight to start with: this is the whole
     # premise, and a window taller than the form would make the test vacuous.
-    page.evaluate("() => window.scrollTo(0, 0)")
-    assert page.locator("#id_response_deadline").bounding_box()["y"] > page.viewport_size["height"]
+    assert page.locator("#id_policy_area_other").bounding_box()["y"] > page.viewport_size["height"]
 
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
 
-    expect(page.locator("#arvamuse-tahtaeg .field__error")).to_be_visible()
-    assert focused_id(page) == "id_response_deadline", focused_id(page)
-    assert_in_view(page, page.locator("#id_response_deadline"), "the refused date box")
+    expect(page.locator("#valdkond-muu-tekst .field__error")).to_be_visible()
+    assert focused_id(page) == "id_policy_area_other", focused_id(page)
+    assert_in_view(page, page.locator("#id_policy_area_other"), "the refused Muu box")
 
 
 # `test_the_disclosure_holding_the_refused_control_is_opened` stood here, and it

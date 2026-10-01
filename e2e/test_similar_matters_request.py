@@ -26,9 +26,10 @@ pytestmark = pytest.mark.e2e
 
 CREATE_PATH = "/teemad/uus/"
 DRAFT_PATH = "/teemad/uus/sarnased/"
+#: `brief_summary` left this list with `Millest teema räägib`, which `Uus teema`
+#: no longer asks (docs/adr/0130 §2).
 ALLOWED = {
     "title",
-    "brief_summary",
     "policy_areas",
     "legal_instruments",
     "source_organisations",
@@ -95,15 +96,17 @@ def test_typing_a_private_note_asks_nothing(page, base_url):
     assert seen == []
 
 
-def test_the_summary_asks(page, base_url):
+def test_there_is_no_summary_to_ask_about(page, base_url):
+    """`Millest teema räägib` is asked after creation now (docs/adr/0130 §2)."""
     _create_form(page, base_url)
     seen = _requests(page)
 
-    page.fill("#id_brief_summary", "Pakendiettevõtjate aruandlus muutub")
+    assert page.locator("#id_brief_summary").count() == 0
+    page.fill("#id_title", "Pakendiettevõtjate aruandlus muutub")
     _settle(page)
 
     assert len(seen) == 1
-    assert _body(seen[0])["brief_summary"] == ["Pakendiettevõtjate aruandlus muutub"]
+    assert "brief_summary" not in _body(seen[0])
 
 
 @pytest.mark.parametrize("name", ["policy_areas", "legal_instruments"])
@@ -147,7 +150,13 @@ def test_a_burst_of_ticks_asks_once(page, base_url):
     assert len(_body(seen[0])["policy_areas"]) == 3
 
 
-def test_a_summary_longer_than_any_address_is_answered(page, base_url):
+def test_the_longest_title_is_answered(page, base_url):
+    """A POST, so length is the form's limit and not the address's.
+
+    This used to fill `Millest teema räägib` with ~9,000 characters; that box is
+    not on this page any more (docs/adr/0130 §2), and the title — up to 1,000
+    characters — is the longest text the request still carries.
+    """
     _create_form(page, base_url)
     statuses: list[int] = []
     page.on(
@@ -155,7 +164,7 @@ def test_a_summary_longer_than_any_address_is_answered(page, base_url):
         lambda response: statuses.append(response.status) if DRAFT_PATH in response.url else None,
     )
 
-    page.locator("#id_brief_summary").fill("Pakendiettevõtjate aruandlus. " * 300)
+    page.locator("#id_title").fill(("Pakendiettevõtjate aruandlus. " * 40)[:1000])
     _settle(page)
 
     assert statuses == [200]

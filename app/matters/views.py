@@ -272,6 +272,7 @@ from app.workflow.services import (
     establish_opinion_preparation_action,
     set_next_action_for_new_work,
 )
+from app.workflow.stage_guidance import stage_guidance_payload
 
 #: `TWO_FIRST_STEPS_REFUSAL` stood here, and is retired with the question that
 #: needed it.
@@ -1981,11 +1982,12 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                     title=data["title"],
                     actor=request.user,
                     owner=data.get("owner"),
-                    # Written on the record, not into an Entry. `brief_summary`
-                    # answers *what is this*, which no Entry, no position and no
-                    # rationale can be made to mean without corrupting it
-                    # (app/matters/models.py, Teema redesign §6).
-                    brief_summary=data.get("brief_summary") or "",
+                    # Blank, by decision rather than by omission. `Uus teema`
+                    # no longer asks «Millest teema räägib»: the dossier is
+                    # created first and described later, on the Teema page or
+                    # `Muuda teemat`, which still write `brief_summary` exactly
+                    # as before (docs/adr/0130 §2).
+                    brief_summary="",
                     stage=data.get("stage"),
                     # **Not asked and not derived.** `Menetlusliik` is a
                     # statement about the *procedure*, and no `Õigusakt` type
@@ -2082,14 +2084,17 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                     record_procedural_link(
                         matter=matter,
                         # Not asked, and not guessed either. `Uus teema` takes an
-                        # address and an optional name for it; what the row is
-                        # filed under is the enum's own value for a link nobody
-                        # has classified, and the reasoning is on the constant
+                        # address and nothing else; what the row is filed under
+                        # is the enum's own value for a link nobody has
+                        # classified, and the reasoning is on the constant
                         # (`ProceduralLinkCreateForm.STORED_KIND`,
                         # docs/adr/0094 §3).
                         kind=ProceduralLinkCreateForm.STORED_KIND,
                         url=link.get("url"),
-                        label=link.get("label") or "",
+                        # `Nimetus` is no longer asked, and nothing is made up
+                        # in its place — no title read off the address
+                        # (docs/adr/0130 §3).
+                        label="",
                         actor=request.user,
                     )
 
@@ -2268,6 +2273,10 @@ def _create_context(
         # the same question and a second spelling would be a second place for the
         # template to drift.
         "procedural_link_form": procedural_form,
+        # `Õigusakt -> Hetkeseis` guidance, for the page's script: which stages
+        # stay normal for which instrument. Presentation only — nothing on the
+        # write path reads it (app/workflow/stage_guidance.py, docs/adr/0130).
+        "stage_guidance": stage_guidance_payload(),
         # The form's own answers, so a refused save's redisplay does not propose
         # a sender over one the person has already given. On a GET the form is
         # unbound and `answered_on` is empty, which is what it was before
@@ -5061,7 +5070,12 @@ def _save_procedural_link(*, matter: Matter, form: Any, actor: Any) -> None:
             # vocabulary (docs/adr/0094 §3, docs/adr/0097 §5).
             kind=form.link.kind,
             url=url,
-            label=data.get("label") or "",
+            # The name this row already carries, carried across unchanged.
+            # `Muuda teemat` no longer asks `Nimetus`, and an absent box must
+            # not read as «empty it»: a historical name is kept until somebody
+            # corrects it deliberately through the row's own `Paranda`
+            # (docs/adr/0130 §3).
+            label=form.link.label,
             actor=actor,
             expected_revision=data.get("revision") or "",
         )
@@ -5085,7 +5099,7 @@ def _save_procedural_link(*, matter: Matter, form: Any, actor: Any) -> None:
             author=actor,
             kind=MatterLinkForm.STORED_KIND,
             url=url,
-            label=data.get("label") or "",
+            label="",
         )
 
 
