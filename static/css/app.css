@@ -4549,6 +4549,14 @@ a.barchart__row:hover {
   padding: var(--spacing-2) var(--spacing-25);
 }
 
+/* `Saabus` is the row's right-hand field, so its calendar opens leftwards —
+   anchored at the left it ran 78px past a 1024px window. Stacked, the field is
+   capped at 18rem and the panel still fits inside it. */
+.createform__trio--dates > .field:last-child .datepicker__panel {
+  left: auto;
+  right: 0;
+}
+
 /* `createform__trio--people` was here, and is gone with the field it existed
    for.
 

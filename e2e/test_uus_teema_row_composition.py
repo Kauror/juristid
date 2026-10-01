@@ -116,14 +116,16 @@ def test_vastutaja_and_saatja_share_one_row(page, base_url):
 
 
 def test_the_two_fields_read_left_to_right_in_the_intended_order(page, base_url):
+    """Saatja on the left, Vastutaja on the right — the owner's order since
+    docs/adr/0130 §1 (it was the other way round)."""
     _open(page, base_url, 1440)
 
     owner = _box(page, OWNER)
     sender = _box(page, SENDER)
 
-    assert owner["x"] + owner["width"] <= sender["x"] + 1, (
-        f"Saatja starts at {sender['x']}px, inside a Vastutaja ending at "
-        f"{owner['x'] + owner['width']}px"
+    assert sender["x"] + sender["width"] <= owner["x"] + 1, (
+        f"Vastutaja starts at {owner['x']}px, inside a Saatja ending at "
+        f"{sender['x'] + sender['width']}px"
     )
 
 
@@ -164,9 +166,9 @@ def test_the_row_holds_exactly_two_fields(page, base_url):
     expect(row.locator("> fieldset, > label")).to_have_count(2)
 
     box = _box(page, PEOPLE_ROW)
-    sender = _box(page, SENDER)
-    trailing = box["x"] + box["width"] - (sender["x"] + sender["width"])
-    assert trailing <= 2, f"{trailing}px of empty row after Saatja — a track nothing fills"
+    owner = _box(page, OWNER)
+    trailing = box["x"] + box["width"] - (owner["x"] + owner["width"])
+    assert trailing <= 2, f"{trailing}px of empty row after Vastutaja — a track nothing fills"
 
 
 # ---------------------------------------------------------------------------
@@ -174,9 +176,23 @@ def test_the_row_holds_exactly_two_fields(page, base_url):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("width", [1024, 768, 420])
+@pytest.mark.parametrize("width", [1024, 768])
+def test_the_row_stays_a_pair_down_to_tablet_width(page, base_url, width):
+    """Vastutaja is a short row of first names, so the pair holds down to 721px
+    — at 1024 there is room for both side by side (docs/adr/0130 §1)."""
+    _open(page, base_url, width)
+
+    owner = _box(page, OWNER)
+    sender = _box(page, SENDER)
+
+    assert abs(sender["y"] - owner["y"]) <= 2, (sender, owner)
+    assert sender["x"] + sender["width"] <= owner["x"] + 1, (sender, owner)
+    assert sender["width"] > owner["width"], (sender, owner)
+
+
+@pytest.mark.parametrize("width", [420])
 def test_the_row_stacks_and_saatja_keeps_the_width(page, base_url, width):
-    """Under the 1080px breakpoint the pair stops being a pair."""
+    """Under 721px the pair stops being a pair, Saatja first."""
     _open(page, base_url, width)
 
     row = _box(page, PEOPLE_ROW)
@@ -186,8 +202,8 @@ def test_the_row_stacks_and_saatja_keeps_the_width(page, base_url, width):
     assert abs(sender["width"] - row["width"]) <= 2, (
         f"Saatja is {sender['width']}px inside a {row['width']}px stacked row at {width}px"
     )
-    assert sender["y"] > owner["y"] + owner["height"] - 2, (
-        f"Saatja is still beside Vastutaja at {width}px rather than under it"
+    assert owner["y"] > sender["y"] + sender["height"] - 2, (
+        f"Vastutaja is still beside Saatja at {width}px rather than under it"
     )
 
 

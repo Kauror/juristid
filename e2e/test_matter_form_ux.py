@@ -101,7 +101,9 @@ def test_the_chip_hides_the_box_and_keeps_the_control(page, base_url):
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
 
-    chip = page.locator(".chip").first
+    # A Vastutaja chip: since docs/adr/0130 §1 Saatja comes first, and its
+    # `quiet` picker's chips are hidden until a search reveals them.
+    chip = page.locator('.chip:has(input[name="owner"])').first
     box = chip.locator("input")
     expect(box).to_be_attached()
 

@@ -729,7 +729,10 @@ def test_the_create_page_asks_for_suggestions_without_touching_the_form(client, 
 
 
 def test_the_request_carries_only_the_deciding_fields(client, specialist):
-    """ENG-026: the allow-list names five fields and the token — never `Märkmed`.
+    """ENG-026: the allow-list names four fields and the token — never `Märkmed`.
+
+    It was five: `brief_summary` left with `Millest teema räägib`, which `Uus
+    teema` no longer asks (docs/adr/0130 §2).
 
     htmx adds the enclosing form to a POST by itself, so the list is what keeps
     the private note, the deadline and everything else on the page. The token
@@ -744,7 +747,6 @@ def test_the_request_carries_only_the_deciding_fields(client, specialist):
     assert sorted(allowed) == sorted(
         [
             "title",
-            "brief_summary",
             "policy_areas",
             "legal_instruments",
             "source_organisations",
@@ -772,8 +774,9 @@ def test_the_region_listens_for_a_restored_form(client, specialist):
     region = body.split('id="sarnased-teemad"')[1][:900]
 
     assert "sarnased:restored" in region
-    for field in ("#id_title", "#id_brief_summary"):
-        assert f"from:{field}" in region
+    assert "from:#id_title" in region
+    # `Millest teema räägib` is not on this page any more (docs/adr/0130 §2).
+    assert "#id_brief_summary" not in region
     # The chips are checkboxes with an id each, so they are heard by name at
     # the form — and every name heard is one the form really renders (ENG-090).
     # The names are listed for `app.js`, which says `sarnased:chips` for them:

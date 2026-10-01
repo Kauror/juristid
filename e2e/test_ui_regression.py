@@ -1447,6 +1447,10 @@ def test_create_matter_form_with_stage_guidance(page, base_url):
     # let that answer land before the picture, so the capture is not a race.
     page.wait_for_timeout(700)
     page.wait_for_load_state("networkidle")
+    # The chosen radio keeps keyboard focus after the click, and a focused
+    # `Hetkeseis` chip opens its explanation (`:focus-within`). The picture is
+    # of the chips, not of one tooltip, so the focus goes.
+    page.evaluate("() => document.activeElement && document.activeElement.blur()")
     _at_rest(page)
     compare("uus-teema-hetkeseis-juhis", capture(page, "uus-teema-hetkeseis-juhis"))
 

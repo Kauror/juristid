@@ -62,21 +62,22 @@ def _box(page, selector: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def test_the_row_is_below_hetkeseis_and_nothing_follows_it(page, base_url):
+def test_the_row_is_the_first_classification(page, base_url):
     """The approved placement, as vertical position rather than as source order.
 
-    §15 criterion 2, as it stands after the two neighbours it named left the
-    page. Measured rather than read off the DOM because a row can be a later
-    sibling and still paint above — a CSS `order` or a grid placement would do
-    it — and where somebody reads it is the decision.
+    Õigusakt was the last classification (§15 criterion 2, docs/adr/0090 §7);
+    since docs/adr/0130 §1 it is the first, above Valdkonnad and Hetkeseis,
+    because it is what a lawyer knows first and what the Hetkeseis guidance
+    reads. Measured rather than read off the DOM because a row can be a later
+    sibling and still paint above, and where somebody reads it is the decision.
     """
     _open(page, base_url)
 
     stage = _box(page, STAGE_ROW)
     instruments = _box(page, INSTRUMENTS_ROW)
 
-    assert stage["y"] + stage["height"] <= instruments["y"] + 2, (
-        "Õigusakt does not begin below Hetkeseis"
+    assert instruments["y"] + instruments["height"] <= stage["y"] + 2, (
+        "Õigusakt does not come before Hetkeseis"
     )
     # And the two questions that used to sit either side of it are gone.
     assert page.locator('[name="track"]').count() == 0
@@ -86,9 +87,10 @@ def test_the_row_is_below_hetkeseis_and_nothing_follows_it(page, base_url):
 def test_no_existing_row_was_rearranged_to_make_room(page, base_url):
     """§15 criterion 17, as far as a browser can state it.
 
-    The classification rows still read in the intended order: Saatja, Valdkond,
-    Hetkeseis, Õigusakt (docs/adr/0090 §7). What this cannot see — that no row
-    was re-paired or re-tracked — `e2e/test_uus_teema_row_composition.py` owns.
+    The classification rows read in the intended order: Saatja, Õigusakt,
+    Valdkonnad, Hetkeseis (docs/adr/0130 §1, which amended docs/adr/0090 §7).
+    What this cannot see — that no row was re-paired or re-tracked —
+    `e2e/test_uus_teema_row_composition.py` owns.
     """
     _open(page, base_url)
 
@@ -96,9 +98,9 @@ def test_no_existing_row_was_rearranged_to_make_room(page, base_url):
         _box(page, f".createform__row:has({selector})")["y"]
         for selector in (
             'input[name="sender_name"]',
+            'input[name="legal_instruments"]',
             'input[name="policy_areas"]',
             'input[name="stage"]',
-            'input[name="legal_instruments"]',
         )
     ]
     assert tops == sorted(tops), f"the classification rows read out of order: {tops}"

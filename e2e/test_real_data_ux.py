@@ -105,7 +105,9 @@ def test_the_form_is_fillable_without_opening_a_dropdown(page, base_url, screens
     # `.chiprow` since the Uus teema redesign: the same radios and checkboxes,
     # with the label carrying the state instead of a box beside it. What this
     # asserts is unchanged — a visible row of choices, not a select.
-    expect(page.locator(".chiprow").first).to_be_visible()
+    # Vastutaja's row, by name: since docs/adr/0130 §1 Saatja comes first, and
+    # its `quiet` picker holds a chip row that stays empty until a search.
+    expect(page.locator('.chiprow:has(input[name="owner"])').first).to_be_visible()
     expect(page.locator('input[name="policy_areas"]').first).to_be_attached()
     expect(page.locator("#id_received_date")).to_be_visible()
     screenshots(page, "uus-teema")

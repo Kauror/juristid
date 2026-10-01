@@ -100,7 +100,12 @@ def test_minu_too_states_what_every_date_means(page, base_url):
     assert meanings.count() == rows.count()
 
     for index in range(meanings.count()):
-        text = meanings.nth(index).inner_text().strip()
+        # `text_content`, not `inner_text`: a band longer than its limit keeps
+        # the rest of its rows inside a shut «Näita veel» `<details>`, whose
+        # rendered text is empty although every row there carries its words.
+        # Which band overflows depends on what else the shard filed before this
+        # ran, so `inner_text` made this test a measure of the world's size.
+        text = (meanings.nth(index).text_content() or "").strip()
         assert text, "a work row rendered a date with no stated meaning"
 
 
