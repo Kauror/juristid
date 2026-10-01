@@ -2061,6 +2061,12 @@ def _open_matter_fixture(page, day: str) -> None:
         '<p class="uxtl__ms" style="display:contents">'
         '<span class="uxtl__mswhat">Kaasamine: Liikmete kaasamiskutse</span>'
         '<span class="uxtl__msdate">12.5.2026</span></p>'
+        # The facts rail's `Koja arvamus` line for the same send — «<day> ·
+        # <addressee>», the day a `<time>` stamped by the run (docs/adr/0129 §9,
+        # `RAIL_OPINION_SENT`). The real capture renders it beside the strip and
+        # the chronology, so the fixture does too.
+        '<span class="railcard__opinion" style="display:contents">'
+        f"<time>{day}</time><span> · Näidisministeerium</span></span>"
         '<span id="probe">·</span></div>'
     )
 
@@ -2080,7 +2086,8 @@ OPEN_MATTER_SCENARIOS = ("teema-ulevaade", "teema-1024")
 
 
 @pytest.mark.parametrize(
-    "selector", (*_STRIP_AND_CHRONOLOGY_RUN_DAYS, *_STRIP_AND_CHRONOLOGY_EXPECTED_DAYS)
+    "selector",
+    (*_STRIP_AND_CHRONOLOGY_RUN_DAYS, *_STRIP_AND_CHRONOLOGY_EXPECTED_DAYS, *RAIL_OPINION_SENT),
 )
 def test_the_open_matter_run_days_are_the_same_width_on_any_day(page, selector):
     """`created_at` and `sent_at`, both stamped by the run that renders them.
@@ -2105,7 +2112,8 @@ def test_the_open_matter_run_days_are_the_same_width_on_any_day(page, selector):
 
 
 @pytest.mark.parametrize(
-    "selector", (*_STRIP_AND_CHRONOLOGY_RUN_DAYS, *_STRIP_AND_CHRONOLOGY_EXPECTED_DAYS)
+    "selector",
+    (*_STRIP_AND_CHRONOLOGY_RUN_DAYS, *_STRIP_AND_CHRONOLOGY_EXPECTED_DAYS, *RAIL_OPINION_SENT),
 )
 def test_an_open_matter_run_day_really_does_move_without_the_normalisation(page, selector):
     """The hazard itself, before anything is asked to hold it still.
