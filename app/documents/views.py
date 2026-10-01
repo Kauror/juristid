@@ -115,7 +115,7 @@ class DocumentUploadForm(forms.Form):
     # into «Vali fail ja roll.», which told somebody who had chosen both to
     # choose them (ENG-089). One rule, in the validator every path shares. The
     # two templates posting here write their own `<input>`, with the same
-    # `accept` this widget carries (docs/adr/0126).
+    # `accept` this widget carries (docs/adr/0125).
     upload = forms.FileField(
         label="Fail",
         allow_empty_file=True,

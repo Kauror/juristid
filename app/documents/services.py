@@ -233,7 +233,7 @@ ALLOWED_EVIDENCE_MIME_TYPES: frozenset[str] = frozenset(
         "image/jpeg",
         "application/zip",
         # ASiC-E, as `.asice` and as `.bdoc`: through both doors since
-        # docs/adr/0126, because the Chamber sends and receives its letters in
+        # docs/adr/0125, because the Chamber sends and receives its letters in
         # them. Preserved exactly and parsed by nothing: unpacking a signed
         # container to index the document inside it would mean presenting the
         # extract as the evidence, which inverts the one relationship this

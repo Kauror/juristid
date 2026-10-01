@@ -1,4 +1,4 @@
-"""Signed containers in a real browser (JUR-CASE-01, docs/adr/0126).
+"""Signed containers in a real browser (JUR-CASE-01, docs/adr/0125).
 
 `tests/test_signed_containers.py` holds the door, the evidence and the
 alignment against the database. This file holds what only a running page can

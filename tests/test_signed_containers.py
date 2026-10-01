@@ -1,4 +1,4 @@
-"""Estonian signed containers are ordinary evidence (JUR-CASE-01, docs/adr/0126).
+"""Estonian signed containers are ordinary evidence (JUR-CASE-01, docs/adr/0125).
 
 The defect, as the living-dossier QA met it: a ministry's `.bdoc` was refused on
 `Uus teema` with «Faililaiend .bdoc ei ole lubatud», and the Chamber's own sent

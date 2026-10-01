@@ -25,7 +25,7 @@ everywhere else. They are stored, downloadable, and marked NOT_APPLICABLE
 
 `.asice` and `.bdoc` are no longer only the archive's: the upload door accepts
 them too, since the Chamber's own correspondence is sent in them
-(docs/adr/0126). So their media type is read from the upload allowlist like any
+(docs/adr/0125). So their media type is read from the upload allowlist like any
 other ordinary format's, and the table below keeps what is still the archive's
 alone — `.ddoc` among it.
 """
@@ -41,7 +41,7 @@ from app.documents.uploads import EXTENSION_MIME_TYPES
 #: accept. Each is stored as evidence and none is parsed.
 HISTORICAL_EXTENSION_MIME_TYPES: dict[str, str] = {
     # The legacy DigiDoc XML envelope. `.asice` and `.bdoc` are read from
-    # `EXTENSION_MIME_TYPES` now, under the same registered type (docs/adr/0126).
+    # `EXTENSION_MIME_TYPES` now, under the same registered type (docs/adr/0125).
     ".ddoc": "application/x-ddoc",
     # Office templates and legacy word processing.
     ".xltx": "application/vnd.openxmlformats-officedocument.spreadsheetml.template",
