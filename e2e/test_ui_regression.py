@@ -1432,6 +1432,25 @@ def test_create_matter_form(page, base_url):
     compare("uus-teema", capture(page, "uus-teema"))
 
 
+def test_create_matter_form_with_stage_guidance(page, base_url):
+    """`Hetkeseis` dimmed by an `Õigusakt`, and a dimmed stage chosen anyway.
+
+    The look docs/adr/0130 §4 decides and nothing else can hold: the EU stages
+    quieter beside `Seadus` — muted, still legible, nothing that reads as
+    unavailable — and `ELi menetluses`, chosen against the guidance, drawn as
+    an ordinary chosen chip. Read-only: nothing is submitted.
+    """
+    signed_in(page, base_url, "/teemad/uus/")
+    page.get_by_role("checkbox", name="Seadus", exact=True).check()
+    page.get_by_role("radio", name="ELi menetluses", exact=True).check()
+    # Ticking an `Õigusakt` asks `Sarnased teemad` after its 250ms debounce;
+    # let that answer land before the picture, so the capture is not a race.
+    page.wait_for_timeout(700)
+    page.wait_for_load_state("networkidle")
+    _at_rest(page)
+    compare("uus-teema-hetkeseis-juhis", capture(page, "uus-teema-hetkeseis-juhis"))
+
+
 def test_matter_edit_form(page, base_url):
     """`Muuda teemat`, which follows `Uus teema` as of docs/adr/0096 §1.
 

@@ -240,7 +240,6 @@ def test_a_refused_save_gives_back_every_answer_the_four_controls_hold(signed_in
             "policy_areas": [str(area.pk) for area in areas],
             "stage": str(stage.pk),
             "menetlus-url": "https://eelnoud.valitsus.ee/main/mount/docList/abc",
-            "menetlus-label": "Eelnõu 123 SE",
             "response_deadline": "18.9.2026",
         },
     )
@@ -263,12 +262,12 @@ def test_a_refused_save_gives_back_every_answer_the_four_controls_hold(signed_in
 
     # Menetluse link and the deadline.
     assert 'value="https://eelnoud.valitsus.ee/main/mount/docList/abc"' in page
-    assert 'value="Eelnõu 123 SE"' in page
     assert 'value="18.9.2026"' in page
 
     # And nothing the removed block used to post comes back.
     assert 'name="next-text"' not in page
     assert 'name="menetlus-kind"' not in page
+    assert 'name="menetlus-label"' not in page
 
 
 def test_unknown_stays_unknown_across_a_refusal(signed_in):

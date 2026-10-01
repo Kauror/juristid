@@ -3132,6 +3132,86 @@
     });
   }
 
+  /* ---- Õigusakt -> Hetkeseis guidance on Uus teema --------------------------
+   * Once an `Õigusakt` is ticked, the `Hetkeseis` chips that do not normally
+   * fit ANY ticked instrument get `chip--atypical`, which draws them quieter.
+   * That is all this does (app/workflow/stage_guidance.py, docs/adr/0130).
+   *
+   *  - Two states only: a chip has the class or it does not.
+   *  - Nothing is disabled, hidden, unticked or validated. A dimmed chip stays
+   *    a radio like any other, and a chosen one looks chosen — the stylesheet
+   *    stops dimming at `:checked`, so this never has to know what is chosen.
+   *  - Several instruments combine by UNION: a stage stays normal if it is
+   *    normal for at least one of them.
+   *  - Nothing ticked, or an instrument the matrix has no row for, means no
+   *    guidance at all — every chip normal.
+   *
+   * Keys, never labels: `data-instrument-key` on each `Õigusakt` input and
+   * `data-stage-key` on each `Hetkeseis` input; `Määramata` has no key and is
+   * never touched. The matrix arrives as JSON from the server, so there is one
+   * copy of it, in Python.
+   */
+  function bindStageGuidance(scope) {
+    (scope || document).querySelectorAll("[data-stage-guidance]").forEach(function (row) {
+      if (!once(row, "StageGuidance")) {
+        return;
+      }
+      var source = document.getElementById(row.getAttribute("data-stage-guidance"));
+      var form = row.closest("form");
+      if (!source || !form) {
+        return;
+      }
+      var guidance;
+      try {
+        guidance = JSON.parse(source.textContent);
+      } catch (error) {
+        return;
+      }
+      var always = guidance.always || [];
+      var byInstrument = guidance.instruments || {};
+
+      var typicalStages = function () {
+        var chosen = Array.prototype.slice
+          .call(form.querySelectorAll('input[name="legal_instruments"]:checked'))
+          .map(function (input) {
+            return input.getAttribute("data-instrument-key") || "";
+          });
+        if (!chosen.length) {
+          return null;
+        }
+        var typical = always.slice();
+        for (var i = 0; i < chosen.length; i += 1) {
+          var stages = byInstrument[chosen[i]];
+          if (!stages) {
+            return null;
+          }
+          typical = typical.concat(stages);
+        }
+        return typical;
+      };
+
+      var sync = function () {
+        var typical = typicalStages();
+        row.querySelectorAll("input[data-stage-key]").forEach(function (input) {
+          var chip = input.closest(".chip");
+          if (!chip) {
+            return;
+          }
+          var key = input.getAttribute("data-stage-key");
+          var dim = typical !== null && always.indexOf(key) === -1 && typical.indexOf(key) === -1;
+          chip.classList.toggle("chip--atypical", dim);
+        });
+      };
+
+      form.addEventListener("change", function (event) {
+        if (event.target && event.target.name === "legal_instruments") {
+          sync();
+        }
+      });
+      sync();
+    });
+  }
+
   /* ---- A primary action that says whether it can do anything --------------
    * "Loo teema" reads inactive until there is a title, and it stays a working
    * button: pressing it anyway produces the server's refusal beside the field
@@ -4497,6 +4577,7 @@
     bindOpenChosenDetails(document);
     bindChipCounts(document);
     bindStageHelp(document);
+    bindStageGuidance(document);
     bindRequiredAction(document);
     bindNextStepOffers(document);
     bindPhaseDateOffers(document);
@@ -4518,6 +4599,7 @@
     bindOpenChosenDetails(event.target.querySelector ? event.target : document);
     bindChipCounts(event.target.querySelector ? event.target : document);
     bindStageHelp(event.target.querySelector ? event.target : document);
+    bindStageGuidance(event.target.querySelector ? event.target : document);
     bindRequiredAction(event.target.querySelector ? event.target : document);
     bindNextStepOffers(event.target.querySelector ? event.target : document);
     bindPhaseDateOffers(event.target.querySelector ? event.target : document);

@@ -4525,6 +4525,30 @@ a.barchart__row:hover {
   grid-template-columns: minmax(0, 1fr) 146px;
 }
 
+/* Uus teema's counterparty row: Saatja on the left, where the picker has the
+   width it uses, Vastutaja on the right (docs/adr/0130 §1). Its own modifier
+   rather than `--people` reversed, because `Muuda teemat` and `Saabunud` keep
+   that row the other way round. */
+.createform__pair--sender {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 320px);
+}
+
+/* Uus teema's arrival row: `Arvamuse tähtaeg`, `Menetluse link`, `Saabus`. The
+   two dates keep the 146px every date on this page has, and the address takes
+   what is left (docs/adr/0130 §1). */
+.createform__trio--dates {
+  grid-template-columns: 146px minmax(0, 1fr) 146px;
+}
+
+/* The address box is compact wherever else it is drawn (the Teema page's
+   `Paranda`), and on this row it stands between two full-height date boxes, so
+   it takes their height and the whole track rather than reading as a smaller
+   kind of field. */
+.createform__trio--dates .field__input--compact {
+  width: 100%;
+  padding: var(--spacing-2) var(--spacing-25);
+}
+
 /* `createform__trio--people` was here, and is gone with the field it existed
    for.
 
@@ -4579,6 +4603,21 @@ a.barchart__row:hover {
   }
 }
 
+/* Uus teema's two new rows hold their tracks longer than the other pairs do.
+   The arrival row's outer tracks are compact dates, and Vastutaja is a short
+   row of first names, so both still fit as one row at 1024px — where two wide
+   fields side by side would not. Below 720px they stack like the rest, and the
+   18rem date cap above applies (docs/adr/0130 §1). */
+@media (min-width: 721px) and (max-width: 1080px) {
+  .createform__trio--dates {
+    grid-template-columns: 146px minmax(0, 1fr) 146px;
+  }
+
+  .createform__pair--sender {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 260px);
+  }
+}
+
 /* This page's labels are the design's: 11px, .08em, secondary rather than
    muted, because on a form a label is read and not merely noticed. */
 .createform .field__label {
@@ -4628,7 +4667,8 @@ a.barchart__row:hover {
   box-shadow: 0 0 0 3px var(--accent-halo);
 }
 
-/* Millest teema räägib: prose, so it reads as prose. */
+/* Long-form prose in a box, so it reads as prose — `Millest teema räägib`
+   wherever it is still asked (no longer on Uus teema, docs/adr/0130 §2). */
 .field__input--prose {
   min-height: 52px;
   font-size: var(--typography-size-row);
@@ -5008,6 +5048,26 @@ a.barchart__row:hover {
 .chip__input:focus-visible + .chip__name {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-offset-width);
+}
+
+/* A `Hetkeseis` that does not normally fit any chosen `Õigusakt` — guidance on
+   Uus teema, never a rule (app/workflow/stage_guidance.py, docs/adr/0130 §4).
+
+   Quieter, not unavailable: muted words and a fainter outline, both still well
+   above legible contrast, and nothing that reads as "disabled" — no strike, no
+   `not-allowed` cursor, no opacity on the whole chip. Hover and keyboard focus
+   bring it back to full strength, and a *chosen* chip is never dimmed: the
+   selector stops at `:checked`, so the ordinary selected look always wins. Set
+   by `bindStageGuidance` (static/js/app.js). */
+.chip--atypical .chip__input:not(:checked) + .chip__name {
+  color: var(--text-muted);
+  border-color: var(--border-subtle);
+}
+
+.chip--atypical:hover .chip__input:not(:checked) + .chip__name,
+.chip--atypical .chip__input:not(:checked):focus-visible + .chip__name {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
 }
 
 /* A body that does not exist yet.

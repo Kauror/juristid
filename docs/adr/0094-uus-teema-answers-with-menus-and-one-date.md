@@ -151,6 +151,10 @@ tall one costs the page nothing the reader does not already see.
 
 ### 4. `Menetluse link` — an address, and a name for it
 
+**Narrowed on 2026-10-01 by [0130](0130-uus-teema-is-a-lighter-intake-and-oigusakt-guides-hetkeseis.md) §3:** the block asks for the address only.
+`Nimetus` is no longer asked on `Uus teema` or `Muuda teemat`; stored names stay
+and are carried across a correction unchanged. The rest of this section stands.
+
 Open on arrival. No `<details>`, no summary, no `chosen_summary`, no
 `disclosure_open` — a labelled `<fieldset>` with two boxes in it and a refusal
 that is simply in the page where it happened. ADR 0088's argument was about
@@ -185,6 +189,10 @@ the enum already documents as *a real answer rather than a gap*.
   unanswered one.
 
 ### 5. One `Arvamuse tähtaeg`, and it is the last question
+
+**Placement amended on 2026-10-01 by [0130](0130-uus-teema-is-a-lighter-intake-and-oigusakt-guides-hetkeseis.md) §1:** `Arvamuse tähtaeg` now opens
+the arrival row beside `Menetluse link` and `Saabus`, and `Failid` is the last
+section. What the date records and establishes is unchanged.
 
 `MatterCreateForm.response_deadline` moves out of the file row to the bottom of
 the form, directly above `Loo teema`, and it is the only date a lawyer enters

@@ -801,13 +801,17 @@ def test_a_reader_cannot_correct_a_link_on_a_matter_they_may_not_see(
 
 
 def test_a_link_is_recorded_from_muuda_teemat(signed_in, normal_matter):
-    """The ordinary path: two boxes on the page that owns the Matter's facts."""
+    """The ordinary path: the address, on the page that owns the Matter's facts.
+
+    `Nimetus` is not asked here any more, so a posted name is not read and a
+    new row carries none (docs/adr/0130 §3).
+    """
     response = _add(signed_in, normal_matter, url=EIS_URL, label="EIS toimik")
 
     assert response.status_code == 302
     link = MatterProceduralLink.objects.get(matter=normal_matter)
     assert link.url == EIS_URL
-    assert link.label == "EIS toimik"
+    assert link.label == ""
     # Filed under the enum's own honest answer for a link nobody classified,
     # and **not** inferred from `eelnoud.valitsus.ee` (docs/adr/0097 §5).
     assert link.kind == ProceduralLinkKind.OTHER

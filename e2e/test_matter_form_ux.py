@@ -330,25 +330,30 @@ def test_the_date_box_starts_empty(page, base_url):
     expect(page.locator("#id_received_date")).not_to_have_value("")
 
 
-def test_the_deadline_is_the_last_thing_asked_before_the_button(page, base_url):
+def test_the_deadline_opens_the_arrival_row(page, base_url):
     """Order, measured rather than read off the DOM.
 
     A row can be a later sibling and still paint above, and where somebody reads
-    it is the decision. `Menetluse link` before it, `Loo teema` after it, and
-    nothing in between (docs/adr/0094 §4).
+    it is the decision. `Arvamuse tähtaeg` was the last question (docs/adr/0094
+    §4); it now opens the row it shares with `Menetluse link` and `Saabus`, and
+    `Failid` is the last section before the button (docs/adr/0130 §1).
     """
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
 
-    def top(selector: str) -> float:
-        box = page.locator(selector).first.bounding_box()
-        assert box is not None, selector
-        return box["y"]
+    def box(selector: str) -> dict:
+        found = page.locator(selector).first.bounding_box()
+        assert found is not None, selector
+        return found
 
-    link = top("#menetluse-link")
-    deadline = top("#arvamuse-tahtaeg")
-    actions = top(".createform__actions")
-    assert link < deadline < actions, (link, deadline, actions)
+    deadline = box("#arvamuse-tahtaeg")
+    link = box("#menetluse-link")
+    received = box("#id_received_date")
+    files = box("#failid")
+    actions = box(".createform__actions")
+    assert deadline["x"] < link["x"] < received["x"], (deadline, link, received)
+    assert abs(deadline["y"] - link["y"]) < 10, (deadline, link)
+    assert deadline["y"] < files["y"] < actions["y"], (deadline, files, actions)
 
 
 def test_the_typed_deadline_becomes_the_files_first_step(page, base_url):
@@ -569,9 +574,12 @@ def test_the_form_survives_a_narrow_window(page, base_url, width):
 
     assert not _document_overflows(page), f"the create form scrolls sideways at {width}px"
 
-    # The two controls a narrow window most easily strands: the last question on
-    # the form, and the action that submits it.
+    # The controls a narrow window most easily strands: the compact date at the
+    # edge of the arrival row, the file chooser at the end of the form, and the
+    # action that submits it (docs/adr/0130 §1).
     expect(page.locator("#id_response_deadline")).to_be_visible()
+    expect(page.locator("#id_received_date")).to_be_visible()
+    expect(page.locator("label.dropzone__choose")).to_be_visible()
     expect(page.get_by_role("button", name="Loo teema")).to_be_visible()
 
 
@@ -595,14 +603,12 @@ def test_the_whole_form_is_reachable_without_opening_anything(page, base_url, wi
 
     for name in (
         "title",
-        "brief_summary",
         "notes",
         "files",
         "received_date",
         "response_deadline",
         "policy_area_other_selected",
         "menetlus-url",
-        "menetlus-label",
     ):
         expect(page.locator(f'[name="{name}"]')).to_have_count(1)
     for group in ("owner", "source_organisations", "policy_areas", "stage", "legal_instruments"):
@@ -619,6 +625,9 @@ def test_the_whole_form_is_reachable_without_opening_anything(page, base_url, wi
         "next-target_date",
         "menetlus-kind",
         "arvamus-prepare_by",
+        # `Millest teema räägib` and the link's `Nimetus` (docs/adr/0130 §2, §3).
+        "brief_summary",
+        "menetlus-label",
     ):
         expect(page.locator(f'[name="{gone}"]')).to_have_count(0)
 
@@ -651,7 +660,7 @@ def test_a_refused_save_hides_nothing_it_was_given(page, base_url):
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
 
-    page.fill("#id_brief_summary", "Mida see teema ettevõtjatele tähendab.")
+    page.fill("#id_notes", "Mida see teema ettevõtjatele tähendab.")
     open_valdkond(page)
     area = page.locator('input[name="policy_areas"]').first
     area.check()
@@ -659,9 +668,7 @@ def test_a_refused_save_hides_nothing_it_was_given(page, base_url):
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
 
-    expect(page.locator("#id_brief_summary")).to_have_value(
-        "Mida see teema ettevõtjatele tähendab."
-    )
+    expect(page.locator("#id_notes")).to_have_value("Mida see teema ettevõtjatele tähendab.")
     expect(page.locator('input[name="policy_areas"]').first).to_be_checked()
     expect(page.locator(".field__error").first).to_be_visible()
 
@@ -785,21 +792,19 @@ def test_a_suggestion_never_touches_what_is_typed(page, base_url):
 
     Every control the person answered still holds its answer, and the one they
     are in the middle of still has the caret. A suggestion that cost a lawyer a
-    half-written summary would be worse than no suggestion at all.
+    half-written note would be worse than no suggestion at all.
     """
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
 
     page.fill("#id_title", SIMILAR_SUBJECT)
-    page.fill("#id_brief_summary", "Ministeerium saatis kooskõlastusringile.")
-    page.focus("#id_brief_summary")
+    page.fill("#id_notes", "Ministeerium saatis kooskõlastusringile.")
+    page.focus("#id_notes")
     _settle_suggestions(page)
 
     expect(page.locator("#id_title")).to_have_value(SIMILAR_SUBJECT)
-    expect(page.locator("#id_brief_summary")).to_have_value(
-        "Ministeerium saatis kooskõlastusringile."
-    )
-    assert page.evaluate("() => document.activeElement.id") == "id_brief_summary"
+    expect(page.locator("#id_notes")).to_have_value("Ministeerium saatis kooskõlastusringile.")
+    assert page.evaluate("() => document.activeElement.id") == "id_notes"
 
 
 def test_the_similar_section_offers_nothing_to_press(page, base_url):

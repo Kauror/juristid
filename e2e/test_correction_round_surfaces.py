@@ -187,7 +187,6 @@ def test_the_process_link_is_a_real_link_with_its_control_beside_it(page, base_u
     page.goto(f"{url}muuda/")
     page.wait_for_load_state("networkidle")
     page.fill("input[name='menetlus-url']", address)
-    page.fill("input[name='menetlus-label']", "QA eelnõu toimik")
     page.get_by_role("button", name="Salvesta").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
 
@@ -197,7 +196,8 @@ def test_the_process_link_is_a_real_link_with_its_control_beside_it(page, base_u
     assert link.get_attribute("href") == address
     assert link.get_attribute("target") == "_blank"
     assert "noopener" in (link.get_attribute("rel") or "")
-    assert link.inner_text().startswith("QA eelnõu toimik")
+    # No name is asked any more (docs/adr/0130 §3), so the row reads as its host.
+    assert link.inner_text().startswith("eelnoud.valitsus.ee")
 
     # `Muuda`, not `Paranda`, and inside the link's own value region.
     assert card.locator(".proclink__value summary.disclosure-chip").inner_text() == "Muuda"

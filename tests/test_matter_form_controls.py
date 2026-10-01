@@ -375,17 +375,23 @@ def test_the_page_asks_for_one_date_and_names_it(signed_in):
     assert "Mis kuupäevaks Koja arvamuse koostad" not in body
 
 
-def test_the_deadline_is_the_last_field_before_the_actions(signed_in):
-    """Order, measured on the document rather than assumed from the template."""
+def test_the_deadline_opens_the_arrival_row(signed_in):
+    """Order, measured on the document rather than assumed from the template.
+
+    `Arvamuse tähtaeg` was the last question on the form (docs/adr/0094 §4). The
+    owner moved it up to open the row it shares with `Menetluse link` and
+    `Saabus` — the three facts that arrive with the file — and moved `Failid`
+    to the end instead (docs/adr/0130 §1). It is still the one date.
+    """
     body = signed_in.get(CREATE).content.decode()
 
-    link = body.index('id="menetluse-link"')
     deadline = body.index('id="arvamuse-tahtaeg"')
+    link = body.index('id="menetluse-link"')
+    received = body.index('name="received_date"')
+    files = body.index('id="failid"')
     actions = body.index("createform__actions")
 
-    assert link < deadline < actions
-    # And nothing else asks a question between the deadline and the button.
-    assert 'class="field__input' not in body[deadline + 1 : actions].split("</div>")[-1]
+    assert deadline < link < received < files < actions
 
 
 def test_a_matter_can_still_be_created_with_no_date_at_all(signed_in):

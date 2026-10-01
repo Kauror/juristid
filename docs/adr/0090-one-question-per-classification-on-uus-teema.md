@@ -297,6 +297,10 @@ feedback asked for.
 
 ### 7 — What `Uus teema` asks, and in what order
 
+**Order amended on 2026-10-01 by [0130](0130-uus-teema-is-a-lighter-intake-and-oigusakt-guides-hetkeseis.md) §1:** Õigusakt · Valdkonnad · Hetkeseis,
+the instrument first, with Saatja beside Vastutaja above them. `Menetlusliik`
+and `Adressaat` stay off the page.
+
 Saatja · Valdkond · Hetkeseis · Õigusakt.
 
 Nothing between them and nothing after them but the file, the dates, the person

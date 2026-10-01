@@ -55,7 +55,6 @@ CREATE = reverse("matters:matter_create")
 
 TITLE = "Integratsioonikatse eelnõu"
 NOTE = "Ainult minu märkus, mitte kellegi teise oma."
-SUMMARY = "Muudaks teavitamiskohustust väikeettevõtetele."
 
 
 def upload(name: str, content: bytes, mime: str) -> SimpleUploadedFile:
@@ -82,7 +81,6 @@ def created(signed_in, specialist, stage):
         CREATE,
         {
             "title": TITLE,
-            "brief_summary": SUMMARY,
             "notes": NOTE,
             "owner": specialist.pk,
             "policy_areas": [area.pk],
@@ -106,7 +104,8 @@ def created(signed_in, specialist, stage):
 def test_the_form_produces_the_whole_record_in_one_go(created, specialist, stage):
     """The canonical services, and no second implementation of any of them."""
     assert created.owner == specialist
-    assert created.brief_summary == SUMMARY
+    # `Millest teema räägib` is asked after creation now (docs/adr/0130 §2).
+    assert created.brief_summary == ""
     assert created.stage == stage
     assert created.policy_areas.exists()
 

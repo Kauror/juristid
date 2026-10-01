@@ -1,0 +1,258 @@
+# 0130 — `Uus teema` is a lighter intake, and `Õigusakt` guides `Hetkeseis`
+
+**Status:** accepted
+**Date:** 2026-10-01
+
+The product owner's decisions after the latest round of lawyer feedback on the
+creation screen. **No migration**, no new model, no new `Matter` field, no new
+classification, no change to what any stored value means, and nothing rewritten
+on a historical record.
+
+1. **A new order.** Pealkiri; Saatja | Vastutaja; Arvamuse tähtaeg | Menetluse
+   link | Saabus; Õigusakt; Valdkonnad; Hetkeseis; Märkmed; Failid; the button.
+2. **`Millest teema räägib` is asked after creation, not during it.** The field
+   leaves `Uus teema`; `Matter.brief_summary` stays, and the Teema page and
+   `Muuda teemat` write it as before.
+3. **`Nimetus` is no longer asked for a `Menetluse link`.** The address is the
+   whole answer on `Uus teema` and `Muuda teemat`; `ProceduralLink.label` and
+   every stored name stay.
+4. **`Hetkeseis` gains visual guidance from `Õigusakt`** — two states, normal
+   and dimmed; nothing hidden, disabled, refused or rewritten.
+5. **The matrix is the owner's**, one reviewed table keyed by stable keys.
+6. **`Valdkonnad` are not guided by anything.**
+7. **Several instruments combine by union.**
+8. **Guidance is `Uus teema` only, and presentation only.**
+9. **Machine suggestions are a later decision**, not this one.
+
+---
+
+## Context
+
+The lawyers reported that `Uus teema` still asked more than they could answer at
+the moment a file arrives. Two questions in particular were answered badly or
+not at all at intake:
+
+* **`Millest teema räägib`** — a plain-language summary of a file nobody has
+  read yet. Written at intake it is either empty or a guess, and a guess on the
+  record is worse than a blank. The owner's rule: *create the dossier first;
+  describe it later.*
+* **`Nimetus`** beside `Menetluse link` — a second name for an address. In
+  practice it repeated the Teema's own title or the proceeding's number that the
+  address already carries, and no surface needed it to tell links apart.
+
+The order was also the product of successive rounds rather than of the intake
+itself: the files and `Saabus` near the top, the people in the middle,
+`Õigusakt` last among the classifications and `Arvamuse tähtaeg` alone at the
+very bottom. The owner rearranged the page to follow what a lawyer actually
+knows, in the order they know it.
+
+And one question had no help at all: `Hetkeseis` offers ten stages, and which
+of them are even plausible depends on the instrument. A regulation does not go
+to the Riigikogu; an EU consultation is not «Valitsuses». The lawyers asked for
+the page to show this — without stopping them from recording the real exceptions
+that do happen.
+
+## Decision
+
+### 1. The order
+
+```
+PEALKIRI                                      (full width)
+SAATJA                       | VASTUTAJA
+ARVAMUSE TÄHTAEG | MENETLUSE LINK ........ | SAABUS
+ÕIGUSAKT
+VALDKONNAD
+HETKESEIS                                     (guided, §4)
+MÄRKMED
+FAILID
+[Loo teema] [Loobu]
+```
+
+* **Saatja left, Vastutaja right** (`.createform__pair--sender`). Its own
+  modifier rather than `--people` reversed: `Muuda teemat` and `Saabunud` keep
+  `--people` the other way round, and this order is a decision about this page.
+  The organisation picker, its search, its typed-name creation and its refusal
+  of an ambiguous spelling are unchanged.
+* **The arrival row** (`.createform__trio--dates`): two compact dates and the
+  address between them, which takes the remaining width. It holds one row down
+  to 721px and stacks below that; Saatja | Vastutaja likewise.
+* **`Arvamuse tähtaeg` moves up, and means exactly what it meant.** It still
+  records `Matter.response_deadline` and still establishes the canonical
+  `Koostan arvamuse` step once (docs/adr/0094 §5); it is still not `Järgmiseks`
+  (0094 §6). What changes is where it is asked: with the other two facts that
+  arrive with the file, not as the last question.
+* **`Õigusakt` first among the classifications**, because it is what a lawyer
+  knows first and what §4 reads. This reverses 0090 §7's placement (Õigusakt
+  last) on this page.
+* **`Märkmed` second-last and `Failid` last.** `Failid` is moved, not changed:
+  the same input, the same server allowlist in `accept` (signed containers
+  included, docs/adr/0125), the same staged-upload island, the same
+  refusal-held files and one history operation per upload. The intake reader's
+  panel follows the files that produce it, directly under them.
+
+### 2. `Millest teema räägib` is deferred, not deleted
+
+* `MatterCreateForm` no longer declares `brief_summary`, so the page does not
+  render it, the form does not require it, and a forged `brief_summary=` in a
+  POST binds to nothing. `matter_create` passes `brief_summary=""` explicitly.
+* `Matter.brief_summary` is untouched: the column, its audit events, the Teema
+  page's own summary editor, `Muuda teemat`, search and the similar-matters
+  engine all read and write it exactly as before. No historical value is
+  touched.
+* The similar-matters panel on `Uus teema` stops listening to and posting a
+  field that is not on the page; the endpoint still reads `brief_summary` for
+  callers that have one.
+* **This narrows 0096 §1 on one field.** «The two forms ask exactly the same
+  questions» now has one deliberate exception: `brief_summary` is a fact
+  `Muuda teemat` asks and `Uus teema` does not
+  (`tests/test_teema_live_audit_round_2.py` `EDIT_ONLY`).
+
+### 3. `Nimetus` is not a normal product concept any more
+
+* `ProceduralLinkCreateForm` — and therefore `MatterLinkForm`, which inherits it
+  — no longer declares `label`. `Uus teema` and `Muuda teemat` draw one box,
+  labelled `Menetluse link`, from the one shared partial
+  (`procedural_link_create.html`, now a field rather than a row so each page
+  places it).
+* **Storage stays.** `ProceduralLink.label` is not dropped, emptied or
+  migrated; every historical name is still shown on the Teema page.
+* **A stored name is carried, never lost.** A correction through
+  `MatterLinkForm` passes the row's own `label` through unchanged
+  (`_save_procedural_link`), so an absent box never reads as «empty it».
+* **A new link carries no name, and none is made up** — no title read off the
+  address, no fetch, no hostname rule.
+* **The row's own correction form on the Teema page's `Menetluse lingid` card
+  keeps `Nimetus`** (`Muuda` beside each link, `ProceduralLinkEditForm`). It is the correction surface for existing rows,
+  and the one place a historical name can still be corrected or cleared
+  deliberately. Withdrawing it there, and eventually dropping the column, is a
+  separate schema decision for later; nothing in this ADR depends on it.
+* This narrows 0094 §4 («an address, and a name for it») and 0089's optional
+  name to: an address.
+
+### 4. `Õigusakt -> Hetkeseis` guidance
+
+Once an `Õigusakt` is ticked, the `Hetkeseis` chips that do not normally fit
+**any** ticked instrument are drawn dimmed.
+
+* **Exactly two visual states for an unselected chip: normal and dimmed.** No
+  «recommended», no ranking, no score, no third state.
+* **Nothing ticked: nothing dimmed.**
+* **Dimmed is not disabled.** The chip is still a radio, still in the tab order,
+  still clickable; hover and keyboard focus bring it to full strength. No
+  `disabled`, no `aria-disabled`, no `hidden`, no `tabindex="-1"`. The dimming
+  is muted text and a fainter outline at legible contrast — «less likely», not
+  «unavailable».
+* **Chosen wins.** A chosen chip looks like any chosen chip, whether or not it
+  is atypical: the stylesheet stops dimming at `:checked`
+  (`.chip--atypical .chip__input:not(:checked) + .chip__name`).
+* **Nothing is ever cleared or changed.** Ticking or unticking an instrument
+  re-dims immediately and never touches the chosen stage, including one that
+  has just become atypical.
+* **No warning, no confirmation, no validation message** when an atypical
+  stage is chosen or saved.
+* `Määramata` (no stage) and `Muu` (`other`) are never dimmed.
+* With scripting off nothing is dimmed — the guidance is absent, and the form is
+  exactly as it was.
+
+### 5. The matrix
+
+`app/workflow/stage_guidance.py` — `TYPICAL_STAGES_BY_INSTRUMENT`, a mapping of
+`LegalInstrumentType.key` to the `StageVocabulary.key`s that stay normal, as the
+owner approved it. `Määramata` and `other` are normal everywhere.
+
+| Õigusakt | Normal stages (besides `Määramata`, `other`) |
+| --- | --- |
+| `vtk` | `idea` |
+| `seadus` | `idea`, `consultation`, `government`, `parliament`, `awaiting_entry`, `in_force` |
+| `maarus` | `idea`, `consultation`, `government`, `awaiting_entry`, `in_force` |
+| `koja-ettepanek` | `idea` |
+| `strateegia-arengukava-tegevuskava` | `idea`, `consultation`, `government` |
+| `muu-siseriiklik` | `idea`, `consultation`, `government`, `parliament`, `awaiting_entry`, `in_force` |
+| `eli-konsultatsioon` | `estonian_eu_position`, `eu_procedure` |
+| `direktiiv` | `estonian_eu_position`, `eu_procedure`, `awaiting_entry`, `awaiting_transposition` |
+| `el-maarus` | `estonian_eu_position`, `eu_procedure`, `awaiting_entry`, `in_force` — **not** `awaiting_transposition`: a regulation is directly applicable |
+| `muu-eli-dokument` | `estonian_eu_position`, `eu_procedure`, `awaiting_entry`, `in_force`, `awaiting_transposition` |
+
+* **Keys, never labels.** A label can be reworded by the department without
+  touching the matrix; `tests/test_stage_guidance.py` holds the matrix to both
+  vocabularies' keys and fails first if either gains or loses one.
+* **One copy.** The server serialises the matrix into the page with
+  `json_script` (`#hetkeseis-juhis`); the inputs carry `data-instrument-key`
+  (`LegalInstrumentCheckboxSelect`) and `data-stage-key` (`StageRadioSelect`);
+  `bindStageGuidance` in `static/js/app.js` toggles `chip--atypical`. No
+  database table, no network call, no persistence, no AI.
+* **An instrument without a row dims nothing.** Missing guidance must never read
+  as guidance that something is unusual — a type added to the vocabulary later
+  is unguided until the owner gives it a row.
+
+### 6. `Valdkonnad` are not guided
+
+No policy area is dimmed, filtered, suggested, recommended or ticked because of
+an `Õigusakt`, a title or a sender. Every area is exactly as selectable as
+before.
+
+### 7. Union, not intersection
+
+A stage stays normal when it is normal for **at least one** ticked instrument,
+and is dimmed only when it is atypical for **every** one. One living Teema can
+legitimately span `ELi direktiiv` and the `Seadus` transposing it, or a `VTK`
+and the law that follows it; an intersection would dim exactly the stages such
+a file moves through.
+
+### 8. Presentation only, and `Uus teema` only
+
+* **The server accepts every valid combination exactly as before.** Nothing
+  in the matrix is imported by a form's `clean`, a service or a model; no
+  combination is refused, normalised or rewritten on save.
+* **No inference.** Nothing writes `Matter.stage` or `Matter.track` from the
+  matrix. `Õigusakt` describes the instrument and `Menetlusliik` the procedure,
+  and neither is derived from the other (docs/adr/0090 §4).
+* **`Muuda teemat` does not draw the guidance.** It is a correction surface for
+  files whose real history may be exactly the exception; the keys on its inputs
+  are inert there. Its own order is also deliberately left as it was — 0096 §1's
+  «`Uus teema` is the master» is narrowed accordingly for order: the edit page
+  keeps its order until the owner decides otherwise.
+
+### 9. Not now: machine suggestions
+
+A later generation of intake help may suggest `Õigusakt`, `Valdkonnad` or other
+classifications from the title, the sender or the uploaded documents' text. None
+of it is built here: no title keyword classifier, no sender classifier, no file
+text extraction for classification, no LLM, no auto-selection. The seam it
+would use is the same one this ADR uses — stable keys on the inputs, guidance
+as a presentation layer over a form the server validates on its own — so it can
+be added beside §4 without changing it.
+
+## Alternatives considered
+
+* **Disable or hide atypical stages.** Rejected: real files are exceptions, and
+  a lawyer who files one is right about it. A disabled chip also tells assistive
+  technology that the option does not exist.
+* **Three states (recommended / neutral / unusual).** Rejected by the owner as
+  more than the page needs; two states answer «is this likely?».
+* **Intersection for several instruments.** Rejected: it dims the stages a
+  directive-plus-transposition file actually passes through.
+* **Validate atypical combinations server-side.** Rejected: this is guidance,
+  and the data model already allows every combination for good reason.
+* **Drop `ProceduralLink.label`.** Deferred: a schema change and a historical
+  rewrite are not needed to stop asking the question.
+* **Delete `brief_summary` from the model.** Rejected: the summary is a real
+  fact about a Teema; it is asked later, not abolished.
+
+## Consequences
+
+* `Uus teema` asks two questions fewer and reads in the order a file arrives.
+* `MatterCreateForm` has no `brief_summary`; `ProceduralLinkCreateForm` and
+  `MatterLinkForm` have no `label`.
+* The visual baselines `uus-teema` and `uus-teema-viga` change by design (new
+  order, two fields fewer).
+* Amends: 0089 (the link's optional name), 0090 §7 (Õigusakt last), 0094 §4
+  (address and name) and §5 (the deadline as the last question; its meaning
+  stands), 0096 §1 (`brief_summary` edit-only; the edit page keeps its order).
+
+## Reversibility
+
+Entirely. No migration and no data changed: restoring a field to a form, or
+moving a row in a template, brings any of it back; deleting
+`app/workflow/stage_guidance.py` and the `#hetkeseis-juhis` script removes the
+guidance without touching a stored value.

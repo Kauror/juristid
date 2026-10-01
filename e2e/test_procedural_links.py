@@ -89,21 +89,35 @@ def create_block(page):
     return block
 
 
-def save_link(page, *, url: str, label: str = "") -> None:
-    """Answer the block on an open `Muuda teemat` and save the page."""
+def save_link(page, *, url: str) -> None:
+    """Answer the block on an open `Muuda teemat` and save the page.
+
+    The address only: `Nimetus` is not asked here since docs/adr/0130 §3. A
+    name is still given, where a test needs one, through the row's own
+    `Paranda` (`name_the_link`).
+    """
     edit_block(page).locator("[name='menetlus-url']").fill(url)
-    if label:
-        edit_block(page).locator("[name='menetlus-label']").fill(label)
     page.get_by_role("button", name="Salvesta").first.click()
     page.wait_for_load_state("load")
 
 
-def record_one(page, base_url, *, url: str = EIS_URL, label: str = "") -> None:
+def record_one(page, base_url, *, url: str = EIS_URL) -> None:
     """File a Matter, correct it with an address, and wait for the card."""
     a_new_matter(page, base_url)
     open_edit(page, base_url)
-    save_link(page, url=url, label=label)
+    save_link(page, url=url)
     card(page).wait_for()
+
+
+def name_the_link(page, name: str) -> None:
+    """Give the card's one link a name through its `Paranda` — the one place a
+    stored name is still written (docs/adr/0130 §3)."""
+    card(page).locator("details.proclink__fix summary").first.click()
+    form = card(page).locator("form")
+    form.wait_for(state="visible")
+    form.locator("[name=label]").fill(name)
+    form.get_by_role("button", name="Salvesta").click()
+    card(page).get_by_role("link", name=name).wait_for()
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +128,8 @@ def record_one(page, base_url, *, url: str = EIS_URL, label: str = "") -> None:
 def test_the_panel_records_a_reference_and_the_rail_shows_it(page, base_url):
     """Scenario A, in a browser: saved, visible, and openable."""
     sign_in(page, base_url, SANDRA)
-    record_one(page, base_url, label="Eelnõu 123 SE")
+    record_one(page, base_url)
+    name_the_link(page, "Eelnõu 123 SE")
 
     expect(card(page)).to_contain_text("Menetluse lingid")
     link = card(page).get_by_role("link", name="Eelnõu 123 SE")
@@ -193,7 +208,8 @@ def test_a_hostile_address_is_refused_with_the_value_returned(page, base_url):
 def test_a_reference_can_be_corrected_from_its_own_row(page, base_url):
     """`Paranda` opens on the row's values and saves in place — no second row."""
     sign_in(page, base_url, SANDRA)
-    record_one(page, base_url, label="Vale nimi")
+    record_one(page, base_url)
+    name_the_link(page, "Vale nimi")
 
     card(page).locator("details.proclink__fix summary").first.click()
     form = card(page).locator("form")
@@ -214,7 +230,7 @@ def test_an_emptied_address_is_refused_rather_than_silently_ignored(page, base_u
     still held it, which is worse than either answer (docs/adr/0084 §8).
     """
     sign_in(page, base_url, SANDRA)
-    record_one(page, base_url, label="Esimene")
+    record_one(page, base_url)
     open_edit(page, base_url)
     save_link(page, url="")
 
@@ -234,7 +250,8 @@ def test_a_reference_can_be_recorded_while_the_teema_is_created(page, base_url):
     page.fill("#id_title", unique_title("Menetluse link loomisel"))
     block = create_block(page)
     block.locator("[name='menetlus-url']").fill(EIS_URL)
-    block.locator("[name='menetlus-label']").fill("Eelnõu 123 SE")
+    # One box: `Nimetus` is not asked here since docs/adr/0130 §3.
+    expect(block.locator("[name='menetlus-label']")).to_have_count(0)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
 
@@ -246,8 +263,9 @@ def test_a_reference_can_be_recorded_while_the_teema_is_created(page, base_url):
     # every kind by name. A `not_to_contain_text("EIS")` here would be reading
     # an option nobody chose, which is the trap
     # `test_an_eu_matter_needs_no_second_european_question` documents about the
-    # rail's own editor (docs/adr/0094 §3).
-    expect(card(page).get_by_role("link", name="Eelnõu 123 SE")).to_be_visible()
+    # rail's own editor (docs/adr/0094 §3). With no name asked, the row reads
+    # as its host (docs/adr/0089, docs/adr/0130 §3).
+    expect(card(page).get_by_role("link", name="eelnoud.valitsus.ee")).to_be_visible()
 
 
 def test_creating_a_teema_without_touching_the_block_records_nothing(page, base_url):
@@ -306,17 +324,17 @@ def test_the_add_line_is_reachable_and_operable_from_the_keyboard(page, base_url
 
 
 def test_every_control_in_the_block_is_reachable_by_tabbing(page, base_url):
-    """Two boxes, and `kind` is not one of them on this surface."""
+    """One box — neither `kind` nor `Nimetus` is asked on this surface."""
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
     open_edit(page, base_url)
 
-    for name in ("menetlus-url", "menetlus-label"):
-        control = edit_block(page).locator(f"[name='{name}']").first
-        control.focus()
-        expect(control).to_be_focused()
+    control = edit_block(page).locator("[name='menetlus-url']").first
+    control.focus()
+    expect(control).to_be_focused()
 
     expect(edit_block(page).locator("[name='menetlus-kind']")).to_have_count(0)
+    expect(edit_block(page).locator("[name='menetlus-label']")).to_have_count(0)
 
 
 @pytest.mark.parametrize("width", [420, 375])
@@ -368,30 +386,29 @@ def test_the_create_block_is_on_screen_when_the_page_loads(page, base_url):
     block = page.locator("#menetluse-link")
     expect(block).to_be_visible()
     expect(block.locator("[name='menetlus-url']")).to_be_visible()
-    expect(block.locator("[name='menetlus-label']")).to_be_visible()
+    expect(block.locator("[name='menetlus-label']")).to_have_count(0)
     # Nothing to open, and nothing to classify.
     expect(block.locator("summary")).to_have_count(0)
     expect(block.locator("[name='menetlus-kind']")).to_have_count(0)
 
 
-def test_both_boxes_are_reachable_from_the_keyboard(page, base_url):
-    """Two labelled inputs in the tab order, and nothing in front of them.
+def test_the_box_is_reachable_from_the_keyboard(page, base_url):
+    """A labelled input in the tab order, and nothing in front of it.
 
-    It used to take a `<summary>` press to reach either. The block is open, so
-    the claim is simply that the boxes are real controls a keyboard can land on
-    (docs/adr/0094 §3).
+    It used to take a `<summary>` press to reach it. The block is open, so the
+    claim is simply that the box is a real control a keyboard can land on
+    (docs/adr/0094 §3) — and its name is the block's own (docs/adr/0130 §3).
     """
     sign_in(page, base_url, SANDRA)
     page.goto(f"{base_url}/teemad/uus/")
     page.wait_for_load_state("networkidle")
 
-    for name in ("menetlus-url", "menetlus-label"):
-        control = page.locator(f"#menetluse-link [name='{name}']")
-        control.focus()
-        expect(control).to_be_focused()
-        control.type("x")
-        expect(control).to_have_value("x")
-        control.fill("")
+    control = page.get_by_label("Menetluse link")
+    control.focus()
+    expect(control).to_be_focused()
+    control.type("x")
+    expect(control).to_have_value("x")
+    control.fill("")
 
 
 @pytest.mark.parametrize("width", [420, 375])

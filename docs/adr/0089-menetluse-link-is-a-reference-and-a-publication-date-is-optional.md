@@ -214,6 +214,10 @@ address has no host to name. A raw URL as a row's own text is a line a reader
 has to parse instead of read, and it is the one shape in which a look-alike
 address is believed (ADR 0081 §4).
 
+**Narrowed on 2026-10-01 by [0130](0130-uus-teema-is-a-lighter-intake-and-oigusakt-guides-hetkeseis.md) §3:**
+new links are no longer asked for a name, so the parsed host is the ordinary
+label; a stored name is still shown first.
+
 **`+ Menetluse link` is the tenth launcher chip**, second to last, before
 `+ Lõpeta teema`. The bar's stability contract is unchanged — the chip is a
 control, the form is a separate element, and the order is fixed (ADR 0078 §1).

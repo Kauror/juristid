@@ -18,10 +18,12 @@ are the ones a page cannot show:
 * **a retry is not a duplicate.**
 
 What docs/adr/0094 §3 changed is the shape of the question, not any of those. The
-block is open on arrival rather than folded, and it asks for an address and an
-optional name — the five-chip source row is withdrawn from this surface, and every
-row filed here is stored under `ProceduralLinkKind.OTHER`, which is what an
-unclassified link truthfully is. Nothing infers a kind from the address.
+block is open on arrival rather than folded — the five-chip source row is
+withdrawn from this surface, and every row filed here is stored under
+`ProceduralLinkKind.OTHER`, which is what an unclassified link truthfully is.
+Nothing infers a kind from the address. docs/adr/0130 §3 then withdrew the
+optional `Nimetus` box as well: the block asks for the address and nothing else,
+and nothing makes a name up in its place.
 
 The block's own validation — the address rule, the vocabulary, the label bound —
 is `tests/test_procedural_links.py`, which owns the record. This file owns the
@@ -58,21 +60,22 @@ def _form(client) -> str:
 
 def _block(body: str) -> str:
     start = body.index('id="menetluse-link"')
-    return body[start : body.index("</fieldset>", start)]
+    return body[start : body.index("</label>", start)]
 
 
-def test_the_block_is_on_the_form_and_asks_two_optional_questions(signed_in):
-    """One row, prefixed, and nothing on it required.
+def test_the_block_is_on_the_form_and_asks_one_optional_question(signed_in):
+    """One field, prefixed, and not required.
 
     A repeating control would put an empty table on a form whose whole design is
-    that nothing on it is required (docs/adr/0089 §7).
+    that nothing on it is required (docs/adr/0089 §7). The address is the whole
+    question since docs/adr/0130 §3.
     """
     body = _form(signed_in)
 
     assert 'id="menetluse-link"' in body
     assert "Menetluse link" in body
     assert 'name="menetlus-url"' in body
-    assert 'name="menetlus-label"' in body
+    assert 'name="menetlus-label"' not in body
     # One address box, not five.
     assert body.count('name="menetlus-url"') == 1
 
@@ -116,9 +119,10 @@ def test_the_block_arrives_open(signed_in):
     assert "<details" not in block
     assert "<summary" not in block
     assert "chipdetails" not in block
-    # A fieldset and a visible legend, which is what two boxes answering one
-    # question are.
-    assert "<legend" in block
+    # A visible label naming the one box — which is also the box's accessible
+    # name (docs/adr/0130 §3).
+    assert '<label class="field" id="menetluse-link"' in body
+    assert "Menetluse link" in block
 
 
 def test_the_explanatory_paragraph_is_gone_and_not_replaced(signed_in):
@@ -131,16 +135,16 @@ def test_the_explanatory_paragraph_is_gone_and_not_replaced(signed_in):
     assert "cx-note" not in _block(body)
 
 
-def test_nimetus_loses_the_word_valikuline_and_stays_optional(signed_in):
-    """A label change only. The field refuses nothing it did not refuse before."""
+def test_nimetus_is_no_longer_asked(signed_in):
+    """docs/adr/0130 §3. It was optional and unlabelled-as-optional (0094 §3);
+    it is gone now, and a link is complete with its address alone."""
     body = _form(signed_in)
     block = _block(body)
 
-    assert "Nimetus" in block
+    assert "Nimetus" not in block
     assert "valikuline" not in block
-    assert ProceduralLinkCreateForm().fields["label"].required is False
+    assert "label" not in ProceduralLinkCreateForm().fields
 
-    # And it really is still optional, on the write path.
     response = _create(signed_in, **{"menetlus-url": EIS_URL})
     assert response.status_code == 302
     assert MatterProceduralLink.objects.get().label == ""
@@ -158,16 +162,14 @@ def test_a_refusal_this_block_owns_is_readable_without_opening_anything(signed_i
 
 def test_creating_a_matter_with_a_link_saves_both(signed_in, specialist):
     """Scenario D. The ordinary case: one Teema, one reference, one act."""
-    response = _create(
-        signed_in,
-        **{"menetlus-url": EIS_URL, "menetlus-label": "Eelnõu 123 SE"},
-    )
+    response = _create(signed_in, **{"menetlus-url": EIS_URL})
 
     assert response.status_code == 302
     matter = Matter.objects.get(title="Pakendiseaduse muutmise eelnõu")
     link = MatterProceduralLink.objects.get(matter=matter)
     assert link.url == EIS_URL
-    assert link.label == "Eelnõu 123 SE"
+    # No name asked, none made up (docs/adr/0130 §3).
+    assert link.label == ""
     assert link.created_by == specialist
     assert ChangeEvent.objects.filter(
         matter=matter, event_type=ChangeEventType.PROCEDURAL_LINK_RECORDED
@@ -274,23 +276,18 @@ def test_a_refused_address_refuses_the_whole_save_and_creates_no_matter(signed_i
     assert not MatterProceduralLink.objects.exists()
 
 
-def test_a_refused_save_keeps_the_typed_address_and_name(signed_in):
+def test_a_refused_save_keeps_the_typed_address(signed_in):
     """Scenario D's third half. Losing it is the defect this block is prone to.
 
     A browser cannot put a value back into a box the server did not re-render,
     and the address is the one fact somebody opened this block to record. There
     is more of it to lose now that the block is on screen from the first render.
     """
-    response = _create(
-        signed_in,
-        title="",
-        **{"menetlus-url": EIS_URL, "menetlus-label": "Eelnõu 123 SE"},
-    )
+    response = _create(signed_in, title="", **{"menetlus-url": EIS_URL})
     body = response.content.decode()
 
     assert response.status_code == 400
     assert f'value="{EIS_URL}"' in body
-    assert 'value="Eelnõu 123 SE"' in body
 
 
 def test_a_refused_matter_leaves_no_orphan_link(signed_in):
@@ -412,5 +409,6 @@ def test_a_label_beside_an_untouched_address_still_refuses_nothing(signed_in):
 
     assert response.status_code == 400
     assert "Menetluse link vajab veebiaadressi." not in body
-    # What was typed into the optional box still comes back.
-    assert 'value="Eelnõu 123 SE"' in body
+    # A stale `menetlus-label` from an old tab is not a box on this page any
+    # more, so there is nothing for it to come back into (docs/adr/0130 §3).
+    assert 'value="Eelnõu 123 SE"' not in body

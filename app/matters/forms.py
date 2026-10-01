@@ -342,6 +342,49 @@ def offered_policy_areas() -> list[PolicyArea]:
     return list(selectable_policy_areas())
 
 
+class StageRadioSelect(DescribedRadioSelect):
+    """`Hetkeseis` radios, each carrying its stage's stable key as `data-stage-key`.
+
+    The key is what `Uus teema`'s `Õigusakt -> Hetkeseis` guidance reads
+    (`app.workflow.stage_guidance`, docs/adr/0130) — never the label, which the
+    department may reword. Read off the instance the choice iterator already
+    holds, as `StageSelect` does, so it costs no query. `Määramata` has no
+    instance and therefore no key, which is exactly how the guidance knows it is
+    never dimmed.
+    """
+
+    def create_option(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        option = super().create_option(*args, **kwargs)
+        instance = getattr(option.get("value"), "instance", None)
+        if instance is not None:
+            option["attrs"]["data-stage-key"] = instance.key
+        return option
+
+
+class LegalInstrumentCheckboxSelect(forms.CheckboxSelectMultiple):
+    """`Õigusakt` checkboxes, each carrying its type's stable key as `data-instrument-key`.
+
+    The rendered choices are plain ``(pk, label)`` pairs (see
+    `LegalInstrumentChoicesMixin.offer_legal_instruments` for why), so the keys
+    are handed over by that method rather than read off an instance.
+    """
+
+    #: ``{rendered value: key}``, set per form instance. Django deep-copies
+    #: widgets with `base_fields`, so this cannot leak between requests.
+    option_keys: dict[str, str]
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.option_keys = {}
+
+    def create_option(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        option = super().create_option(*args, **kwargs)
+        key = self.option_keys.get(str(option.get("value")))
+        if key:
+            option["attrs"]["data-instrument-key"] = key
+        return option
+
+
 def legal_instruments_field() -> forms.ModelMultipleChoiceField:
     """The `Õigusakt` control, defined once for the two forms that carry it.
 
@@ -358,7 +401,7 @@ def legal_instruments_field() -> forms.ModelMultipleChoiceField:
         label="Õigusakt",
         queryset=LegalInstrumentType.objects.none(),
         required=False,
-        widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
+        widget=LegalInstrumentCheckboxSelect(attrs={"class": "chip__input"}),
     )
 
 
@@ -539,6 +582,12 @@ class LegalInstrumentChoicesMixin:
         self._other_instrument_values = tuple(
             str(item.pk) for item in offered if item.key in OTHER_LEGAL_INSTRUMENT_KEYS
         )
+        # The stable key per rendered chip, for `Uus teema`'s Hetkeseis guidance
+        # (`app.workflow.stage_guidance`, docs/adr/0130). Written onto the
+        # widget, so the attribute lands on the input that is the chip.
+        cast(Any, self.fields["legal_instruments"].widget).option_keys = {
+            str(item.pk): item.key for item in offered
+        }
 
     @property
     def other_instrument_values(self) -> tuple[str, ...]:
@@ -917,25 +966,17 @@ class MatterCreateForm(
             }
         ),
     )
-    #: The plain-language answer to *what is this*, written where it is first
-    #: known. `Matter.brief_summary` and nothing else: `position_summary` says
-    #: what Koda thinks, `rationale_summary` says why, and the first `Entry`
-    #: says what happened on a day. None of the three can be made to mean this
-    #: without corrupting it (app/matters/models.py, Teema redesign §6).
+    #: `Millest teema räägib` is deliberately absent from this form.
     #:
-    #: Optional, like everything but the title. A summary written before the
-    #: file has been read is worse than none.
-    brief_summary = forms.CharField(
-        label="Millest teema räägib",
-        required=False,
-        widget=forms.Textarea(
-            attrs={
-                "class": "field__input field__input--prose",
-                "rows": "3",
-                "placeholder": "Mida see eelnõu muudab ja keda puudutab?",
-            }
-        ),
-    )
+    #: `Matter.brief_summary` is untouched — the column, its audit events,
+    #: `Muuda teemat`, the Teema page's own summary editor, search and the
+    #: similar-matters engine all read and write it as before. What is gone is
+    #: the question on the capture screen: the lawyers asked for intake to be
+    #: lighter, and a summary written before the file has been read is worse
+    #: than none. «Create the dossier first; describe it later» (docs/adr/0130
+    #: §2). A Teema filed here stores it blank, and a forged `brief_summary=` in
+    #: the POST binds to nothing because there is no field to bind it to.
+    #:
     #: The private scratch pad, on the capture screen because that is where the
     #: half-formed thought occurs. Written to `MatterPersonalNote`, which is
     #: scoped by author and read by nobody else — not a second Matter column
@@ -1011,7 +1052,7 @@ class MatterCreateForm(
         # stage saying which. The sentence is on the row; this is what points a
         # screen reader at the one belonging to *this* chip
         # (app/workflow/selectors.py, Uus teema redesign §8).
-        widget=DescribedRadioSelect(attrs={"class": "chip__input"}),
+        widget=StageRadioSelect(attrs={"class": "chip__input"}),
     )
     #: `Menetlusliik` is deliberately absent from this form, and deliberately
     #: not derived either.
@@ -1386,7 +1427,7 @@ class MatterEditForm(
         required=False,
         empty_label="Määramata",
         blank=True,
-        widget=DescribedRadioSelect(attrs={"class": "chip__input"}),
+        widget=StageRadioSelect(attrs={"class": "chip__input"}),
     )
     #: `Menetlusliik` is deliberately absent, as it is from `MatterCreateForm`.
     #:
@@ -7406,7 +7447,18 @@ class ProceduralLinkCreateForm(ProceduralLinkFieldsMixin, forms.Form):
     STORED_KIND = ProceduralLinkKind.OTHER.value
 
     url = _procedural_link_url_field()
-    label = _procedural_link_label_field()
+    #: `Nimetus` is deliberately absent — the address is the whole answer.
+    #:
+    #: The owner's decision after lawyer feedback is that a separate name for a
+    #: link is not a normal product concept any more (docs/adr/0130 §3). So this
+    #: block — on `Uus teema` and, through `MatterLinkForm`, on `Muuda teemat` —
+    #: asks for the address only, and a forged `menetlus-label=` binds to
+    #: nothing. **Storage is untouched:** `ProceduralLink.label` keeps every
+    #: historical value, the Teema page still shows one where it exists, a
+    #: correction through `MatterLinkForm` carries the stored name across
+    #: unchanged, and the per-row `Paranda` (`ProceduralLinkEditForm`) remains
+    #: the one place a historical name can still be corrected. Dropping the
+    #: column is a later, separate schema decision.
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Bound whatever happens, and **empty-permitted** — an untouched block is valid.
@@ -7418,7 +7470,7 @@ class ProceduralLinkCreateForm(ProceduralLinkFieldsMixin, forms.Form):
         *Bound*, because the block has to come back holding what was typed into
         it when the save is refused for a reason somewhere else. Leaving it
         unbound on those attempts would be the easy way to stop it refusing
-        anything, and it would silently empty the `Nimetus` box of somebody who
+        anything, and it would silently empty the address box of somebody who
         had filled it.
 
         *Empty-permitted*, because a bound form validates, and this one has
@@ -7444,10 +7496,12 @@ class ProceduralLinkCreateForm(ProceduralLinkFieldsMixin, forms.Form):
         definition of «somebody used this block» has to be, rather than beside
         a second list of field checks that could drift away from it.
 
-        Django's own answer would be `changed_data`, and it is still the wrong
-        one: `label` on its own is a name for a link that does not exist, and
-        treating it as a request to record something would put «Menetluse link
-        vajab veebiaadressi.» under an address box nobody had typed in.
+        Django's own answer would be `changed_data`, and it was the wrong one
+        while this block still asked for a `label`: a name on its own is a name
+        for a link that does not exist, and treating it as a request to record
+        something put «Menetluse link vajab veebiaadressi.» under an address box
+        nobody had typed in. The address is the only field now; the rule that
+        it alone decides stays, so the answer cannot drift if a field returns.
 
         It used to be wrong for a second reason as well — `kind` arrived with
         `EIS` selected, so a browser posted `menetlus-kind=EIS` on every save
@@ -7500,12 +7554,13 @@ class MatterLinkForm(ProceduralLinkCreateForm):
     and opinions — which is a list of events. So it moved to where the Matter's
     other facts are answered, and that means both pages that answer them.
 
-    **The same two questions `Uus teema` asks**, from the same class, so `Link`
-    and `Nimetus` cannot drift apart between the page somebody files from and
-    the page they correct from. Nothing here classifies the address: every row
-    this form writes is filed under
-    :attr:`~ProceduralLinkCreateForm.STORED_KIND`, exactly as creation does, and
-    no hostname is inspected.
+    **The same question `Uus teema` asks**, from the same class, so the two
+    pages cannot drift apart between the page somebody files from and the page
+    they correct from. Neither asks `Nimetus` any more; a stored one is carried
+    across a correction unchanged (`_save_procedural_link`, docs/adr/0130 §3).
+    Nothing here classifies the address: every row this form writes is filed
+    under :attr:`~ProceduralLinkCreateForm.STORED_KIND`, exactly as creation
+    does, and no hostname is inspected.
 
     **Bound to the Matter's first link, when it has one.** A Matter usually has
     one proceeding behind it, so the ordinary case is one address in a box that
@@ -7541,7 +7596,7 @@ class MatterLinkForm(ProceduralLinkCreateForm):
         if link is not None:
             kwargs.setdefault(
                 "initial",
-                {"url": link.url, "label": link.label, "revision": link.revision_token},
+                {"url": link.url, "revision": link.revision_token},
             )
         super().__init__(*args, **kwargs)
 

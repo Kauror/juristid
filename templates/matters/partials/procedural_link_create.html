@@ -1,5 +1,6 @@
 {% comment %}
-`MENETLUSE LINK` on `Uus teema` — where the proceeding this file is about lives.
+`MENETLUSE LINK` on `Uus teema` and `Muuda teemat` — where the proceeding this
+file is about lives.
 
 The lawyer feedback that produced docs/adr/0089 asked for this by name. A Matter
 frequently arrives *from* a proceeding: an EIS notification, a ministry's
@@ -8,137 +9,77 @@ sent. The address is on screen at the moment the file is being opened, and
 making somebody create the Teema and then go and find it again is how it ends up
 in a browser history instead of on the file.
 
-**Open, and it was folded.** docs/adr/0088 folded it, on the argument that a
-fourth permanently expanded block would re-create the complaint the fold existed
-to answer — too much on the capture screen asking for attention before a question
-had been answered. That argument was about *four* blocks. There are two now: this
-one and `Arvamuse tähtaeg`. What the fold cost instead was a click before the box
-could be typed into, on the one question whose answer is already on the reader's
-screen, and the lawyers asked for it back (docs/adr/0094 §3).
+**One box: the address.** It was a folded `<details>` (docs/adr/0088), then an
+open block with two boxes, `Link` and an optional `Nimetus` (docs/adr/0094 §3).
+`Nimetus` is gone too: the owner's decision after the next round of lawyer
+feedback is that a separate name for a link is not a normal product concept, so
+the block asks for the address and nothing about it (docs/adr/0130 §3).
+`ProceduralLink.label` itself is untouched — every historical name is kept and
+still shown on the Teema page, `Muuda teemat` carries a stored one across a
+correction unchanged, and the row's own `Paranda` on the Teema page's
+`Menetluse lingid` card is where a historical name can still be corrected.
 
-So no `<details>`, no summary, no `chosen_summary` and no `disclosure_open`. A
-labelled group with two boxes in it, visible on arrival, and a refusal that is
-simply in the page where it happened. Nothing has to be opened before it can be
-read, which was the whole of what those three properties existed to arrange.
+**No source either.** The five sources were a chip row above the boxes — `EIS`
+(pre-selected), `Ministeeriumi dokumendiregister`, `ELi menetlus`, `Riigikogu`,
+`Muu menetluslink`. What a row is stored under is
+`ProceduralLinkCreateForm.STORED_KIND` — the enum's own `Muu menetluslink`, which
+is what an unclassified link truthfully is. **Nothing infers the kind, or a
+name, from the address**: no hostname rule, no fetch, no guess. The other four
+kinds are still offered where a person states the fact deliberately — `Paranda`
+on a recorded link.
 
-**Two questions, and the source is not one of them.** The five sources were a
-chip row above these boxes — `EIS` (pre-selected), `Ministeeriumi
-dokumendiregister`, `ELi menetlus`, `Riigikogu`, `Muu menetluslink`. It is gone:
-filing a Teema, a lawyer has an address in front of them, and classifying where
-that address lives is work the form was making them do before it would accept the
-thing they came to record.
-
-What a row is stored under is `ProceduralLinkCreateForm.STORED_KIND` — the enum's
-own `Muu menetluslink`, which is what an unclassified link truthfully is, and a
-value `ProceduralLinkKind` already documents as «a real answer rather than a gap».
-No new enum value, no migration, and **nothing infers the kind from the address**:
-no hostname rule, no fetch, no guess. The other four values are untouched and are
-still offered where a person states the fact deliberately — `Paranda` on a
-recorded link, on the Teema page's `Menetluse lingid` card, which is now the one
-control that asks the question at all. Every historical row keeps what it was
-filed under, and a correction made through this block preserves the kind its row
-already carries rather than restamping it (`_save_procedural_link`).
-
-**One row, and on `Uus teema` nothing on it is required.** Both boxes empty is
-the ordinary submit there: no row is written, no event is recorded and nothing
-is mentioned anywhere. A repeating control would put an empty table on a form
-whose whole design is that nothing on it is required (docs/adr/0089 §7).
+**Optional, and silent when untouched.** An empty box is the ordinary submit:
+no row is written, no event is recorded and nothing is mentioned anywhere
+(docs/adr/0089 §7).
 
 **Two pages draw this, and the difference is which form is passed in.**
 `Uus teema` passes `ProceduralLinkCreateForm` and files a new row;
 `Muuda teemat` passes `MatterLinkForm`, which arrives holding this Matter's
 first link and corrects it under the revision the page was drawn from. The
-markup does not know which — that is the point of one partial, and it is what
-stops the two pages' idea of `Link` and `Nimetus` drifting apart
-(docs/adr/0097 §1, §5).
+markup does not know which — that is the point of one partial (docs/adr/0097 §1,
+§5).
+
+**A field, not a row.** The partial draws the field only, and each page decides
+where it stands: `Uus teema` puts it in the middle of its date row, between
+`Arvamuse tähtaeg` and `Saabus`, where the address takes the width the two
+compact dates leave (docs/adr/0130 §1); `Muuda teemat` gives it a row of its
+own, as before.
 
 **A second and third address are still recorded**, on the Teema page's
 `Menetluse lingid` card, which has held a `Paranda` per row since
-docs/adr/0089 §6. What is gone is the `+ Menetluse link` chip that stood in the
-`LISA TEEMALE` launcher: an address is not something that *happened* to a
-Matter, so a launcher of things-that-happened was the wrong list for it, and the
-route that served the chip went with it rather than being left reachable behind
-no button (docs/adr/0097 §5).
+docs/adr/0089 §6.
 
 **A `prefix`, not an `auto_id`.** This form shares a `<form>` element with
 `MatterCreateForm` or `MatterEditForm`, so the prefix namespaces the POST keys as
 well as the ids and neither form can be changed in a way that silently collides
 with a field name in the other (docs/adr/0089 §13).
 {% endcomment %}
-<div class="createform__row">
+{% comment %}
+  A `<label>` around the box, so the box's accessible name is «Menetluse link».
+  With two boxes this was a `<fieldset>` whose legend named the pair and whose
+  inner labels named each box; with one box a legend over a second label
+  reading «Link» would say the same thing twice, and a screen reader would hear
+  the shorter, vaguer of the two as the field's name.
+{% endcomment %}
+<label class="field" id="menetluse-link" for="{{ procedural_link_form.url.id_for_label }}">
+  <span class="field__label">Menetluse link</span>
+  {{ procedural_link_form.url }}
   {% comment %}
-    A `<fieldset>` and a `<legend>`, which is what two boxes answering one
-    question are. The legend is the block's name and is visible — there is no
-    summary above it any more to say the words a second time.
+    The copy this form was filled from, so a correction cannot overwrite a newer
+    one. **Only `Muuda teemat` has one**: `MatterLinkForm` declares `revision`
+    because it may be correcting a real row, and on `Uus teema` this renders as
+    nothing at all. Without it the edit page posted an empty token and every
+    save of a Matter carrying a link answered 409 — found by the test that saves
+    a corrected link (`tests/test_teema_ux_consolidation.py`).
   {% endcomment %}
-  <fieldset class="field" id="menetluse-link">
-    <legend class="field__label">Menetluse link</legend>
-    {% comment %}
-      The form's own field language — `.createform__pair`, `.field`,
-      `.field__label` — rather than the `cx-*` grid this block used while it was
-      folded away. Those classes are laid out only under `#teema-vaade-wrap`,
-      which is the Teema page: here they resolved to nothing, so the two boxes
-      rendered with their labels inline and a fraction of the width every other
-      field on the page has. Nobody had seen it, because the block was shut
-      (docs/adr/0094 §3).
-    {% endcomment %}
-    <div class="createform__pair">
-      <label class="field" for="{{ procedural_link_form.url.id_for_label }}">
-        <span class="field__label">{{ procedural_link_form.url.label }}</span>
-        {{ procedural_link_form.url }}
-      </label>
-      {% comment %}
-        `Nimetus`, and the word «valikuline» is not beside it any more.
-
-        It is still optional — `required=False`, and the mixin refuses nothing
-        about it — which is the point: on a form whose only required field is
-        `Pealkiri`, marking one optional box and not the other eleven says
-        something untrue about the eleven. The label is the label
-        (docs/adr/0094 §3).
-      {% endcomment %}
-      <label class="field" for="{{ procedural_link_form.label.id_for_label }}">
-        <span class="field__label">{{ procedural_link_form.label.label }}</span>
-        {{ procedural_link_form.label }}
-      </label>
-    </div>
-    {% comment %}
-      The copy this form was filled from, so a correction cannot overwrite a
-      newer one.
-
-      **Only `Muuda teemat` has one.** `MatterLinkForm` declares `revision`
-      because it may be correcting a real row; `ProceduralLinkCreateForm` on
-      `Uus teema` has no such field and there is nothing to correct, so this
-      renders as nothing at all there.
-
-      Its absence was a real defect for exactly one day of this branch's life:
-      without it the edit page posted an empty token, `correct_procedural_link`
-      compared that against the row's real revision, and **every** save of a
-      Matter carrying a link answered 409 — including a save that never
-      touched the address. Found by the test that saves a corrected link
-      (`tests/test_teema_ux_consolidation.py`).
-    {% endcomment %}
-    {{ procedural_link_form.revision }}
-    {% if procedural_link_form.url.errors %}
-      <span class="field__error" id="{{ procedural_link_form.url.auto_id }}_error">
-        {{ procedural_link_form.url.errors|first }}</span>
-    {% endif %}
-    {% if procedural_link_form.label.errors %}
-      <span class="field__error" id="{{ procedural_link_form.label.auto_id }}_error">
-        {{ procedural_link_form.label.errors|first }}</span>
-    {% endif %}
-    {% comment %}
-      The paragraph under the boxes is gone. It said that the address must be
-      public http:// or https://, that the link is stored as it stands and the
-      page is never opened or followed, and that it can be added later on the
-      Teema page. All three are true and none of them is something a lawyer needs
-      told every time they file: the first is what the refusal says when it
-      applies, the second is a property of the system rather than an instruction,
-      and the third is what the note beside «Loo teema» already promises about
-      everything on this form (docs/adr/0094 §3).
-
-      The rule itself is untouched — `normalize_procedural_link_url` in
-      `app.matters.services` is still what accepts or refuses an address, and it
-      still answers in its own words, under this box.
-    {% endcomment %}
-  </fieldset>
-</div>
+  {{ procedural_link_form.revision }}
+  {% comment %}
+    No paragraph under the box. The address rule is
+    `normalize_procedural_link_url` in `app.matters.services`, and it answers in
+    its own words, here, when it applies (docs/adr/0094 §3).
+  {% endcomment %}
+  {% if procedural_link_form.url.errors %}
+    <span class="field__error" id="{{ procedural_link_form.url.auto_id }}_error">
+      {{ procedural_link_form.url.errors|first }}</span>
+  {% endif %}
+</label>

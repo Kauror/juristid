@@ -259,9 +259,12 @@
 
     {# 9 — Menetluse link: where the proceeding this file is about lives. #}
     {% comment %}
-      The same block `Uus teema` draws, from the same partial and the same form
-      family, which is what stops `Link` and `Nimetus` drifting apart between
-      the page somebody files from and the page they correct from.
+      The same field `Uus teema` draws, from the same partial and the same form
+      family, which is what stops the two pages drifting apart between the page
+      somebody files from and the page they correct from. Neither asks
+      `Nimetus` any more; a stored one is carried across a correction unchanged
+      (docs/adr/0130 §3). The partial draws the field only, so this page gives
+      it its row.
 
       It renders holding this Matter's first link when it has one, and empty
       when it does not — so one control both records an address and corrects
@@ -274,7 +277,9 @@
       held a `Paranda` per row since docs/adr/0089 §6. There is no deletion,
       here or there.
     {% endcomment %}
-    {% include "matters/partials/procedural_link_create.html" %}
+    <div class="createform__row">
+      {% include "matters/partials/procedural_link_create.html" %}
+    </div>
 
     {% comment %}
       Stated, not hidden, and one line rather than a card. These are facts about
