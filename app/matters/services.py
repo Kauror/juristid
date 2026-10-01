@@ -56,6 +56,7 @@ from app.matters.models import (
     EXTERNAL_POSITION_URL_MAX_LENGTH,
     PROCEDURAL_LINK_LABEL_MAX_LENGTH,
     PROCEDURAL_LINK_URL_MAX_LENGTH,
+    WEBSITE_OVERVIEW_TITLE_MAX_LENGTH,
     WEBSITE_OVERVIEW_URL_MAX_LENGTH,
     Entry,
     EntryRevision,
@@ -2028,6 +2029,9 @@ def add_engagement(
             # maintains (Agent-F brief 26).
             "has_feedback_received": bool(engagement.feedback_received),
             "has_url": bool(engagement.url),
+            # Whether the round carries a `Märkus`, not what it says, for
+            # `has_feedback_received`'s reason (docs/adr/0127 §2).
+            "has_note": bool(engagement.note),
             "has_smaily_url": bool(engagement.smaily_url),
             "has_alchemer_url": bool(engagement.alchemer_url),
             # Whether it was counted, not what the count was. The number is on
@@ -2816,6 +2820,26 @@ def normalize_overview_news_url(value: str | None) -> str:
     )
 
 
+WEBSITE_OVERVIEW_TITLE_TOO_LONG = (
+    f"Pealkiri on liiga pikk — kuni {WEBSITE_OVERVIEW_TITLE_MAX_LENGTH} tähemärki."
+)
+
+
+def normalize_overview_title(value: Any) -> str:
+    """A published page's `Pealkiri`: trimmed, optional, bounded.
+
+    Never required — a write-up whose name nobody typed is still a write-up, and
+    demanding one would make the commonest save slower for a field that only
+    helps once a file has two (AGENTS.md, docs/adr/0127 §1). Refused rather than
+    truncated past the column's width, for `normalize_procedural_link_label`'s
+    reason: a title cut off mid-word says something its author did not write.
+    """
+    title = str(value or "").strip()
+    if len(title) > WEBSITE_OVERVIEW_TITLE_MAX_LENGTH:
+        raise DomainError(WEBSITE_OVERVIEW_TITLE_TOO_LONG)
+    return title
+
+
 class WebsiteOverviewConflict(DomainError):
     """The overview changed elsewhere between rendering this form and saving it.
 
@@ -2940,8 +2964,12 @@ def publish_website_overview(
     published_on: Any,
     actor: Any = None,
     expected_revision: str | None = None,
+    title: Any = "",
 ) -> MatterWebsiteOverview:
     """`Plaanis` → `Avaldatud`: the page exists, and this is where it is.
+
+    ``title`` is the page's optional `Pealkiri` (docs/adr/0127 §1), stored as
+    the person typed it, trimmed, or empty.
 
     The one transition that gives a record an address. It requires a public
     `http(s)` link and **nothing else**, and it refuses every other starting
@@ -2973,10 +3001,12 @@ def publish_website_overview(
         raise DomainError(WEBSITE_OVERVIEW_CANCELLED_IS_FINAL)
 
     clean_url, day = _publication_values(url, published_on)
+    clean_title = normalize_overview_title(title)
     now = timezone.now()
     locked.status = WebsiteOverviewStatus.PUBLISHED
     locked.url = clean_url
     locked.published_on = day
+    locked.title = clean_title
     locked.published_by = actor
     locked.published_at = now
     locked.status_changed_at = now
@@ -2986,6 +3016,7 @@ def publish_website_overview(
             "status",
             "url",
             "published_on",
+            "title",
             "published_by",
             "published_at",
             "status_changed_at",
@@ -2997,6 +3028,9 @@ def publish_website_overview(
         matter=locked.matter,
         actor=actor,
         obj=locked,
+        # The page's name, where it has one, so `Kõik muudatused` says *which*
+        # write-up went up rather than only that one did (docs/adr/0127 §1).
+        summary=clean_title[:200],
         payload={
             "status": locked.status,
             # The address itself, because it is the whole content of this record
@@ -3011,6 +3045,7 @@ def publish_website_overview(
             "published_on": (
                 locked.published_on.isoformat() if locked.published_on is not None else None
             ),
+            "title": locked.title,
         },
     )
     # Keep the caller's instance consistent with what was written, as
@@ -3018,6 +3053,7 @@ def publish_website_overview(
     overview.status = locked.status
     overview.url = locked.url
     overview.published_on = locked.published_on
+    overview.title = locked.title
     overview.published_at = locked.published_at
     return locked
 
@@ -3030,8 +3066,13 @@ def correct_website_overview_link(
     published_on: Any,
     actor: Any = None,
     expected_revision: str | None = None,
+    title: Any = _UNSET,
 ) -> MatterWebsiteOverview:
-    """`Avaldatud` → `Avaldatud`: the address or the day was wrong, and is now right.
+    """`Avaldatud` → `Avaldatud`: the address, the day or the name was wrong, and is now right.
+
+    ``title`` left out means *not asked about*: the stored `Pealkiri` stays as
+    it is, which is what every caller from before docs/adr/0127 relies on. Given,
+    it is the person's answer, and an empty one clears the name.
 
     **Clearing the day is a correction like any other.** Since docs/adr/0089 §8
     a published row may carry no publication date, so somebody who realises the
@@ -3071,7 +3112,8 @@ def correct_website_overview_link(
         )
 
     clean_url, day = _publication_values(url, published_on)
-    if clean_url == locked.url and day == locked.published_on:
+    clean_title = locked.title if title is _UNSET else normalize_overview_title(title)
+    if clean_url == locked.url and day == locked.published_on and clean_title == locked.title:
         return locked
     payload: dict[str, Any] = {"fields": []}
     if clean_url != locked.url:
@@ -3089,19 +3131,26 @@ def correct_website_overview_link(
         # cleared date does not spring back to today on the next save, because
         # nothing anywhere supplies one.
         payload["published_on_to"] = day.isoformat() if day is not None else None
+    if clean_title != locked.title:
+        payload["fields"].append("title")
+        payload["title_from"] = locked.title
+        payload["title_to"] = clean_title
 
     locked.url = clean_url
     locked.published_on = day
-    _save_published_address(locked, update_fields=["url", "published_on", "updated_at"])
+    locked.title = clean_title
+    _save_published_address(locked, update_fields=["url", "published_on", "title", "updated_at"])
     record_change_event(
         event_type=ChangeEventType.WEBSITE_OVERVIEW_LINK_CORRECTED,
         matter=locked.matter,
         actor=actor,
         obj=locked,
+        summary=locked.title[:200],
         payload=payload,
     )
     overview.url = locked.url
     overview.published_on = locked.published_on
+    overview.title = locked.title
     return locked
 
 

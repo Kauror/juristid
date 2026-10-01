@@ -261,6 +261,8 @@ def add_matter_engagement(
     response_count: Any = None,
     smaily_url: str = "",
     alchemer_url: str = "",
+    url: str = "",
+    note: str = "",
     occurred_on: Any = None,
     occurred_on_precision: str = DatePrecision.EXACT.value,
     feedback_deadline: Any = None,
@@ -268,6 +270,10 @@ def add_matter_engagement(
     uploads: Sequence[Any] = (),
 ) -> WorkspaceResult:
     """`+ Kaasamine` — one consultation, with the replies it produced attached.
+
+    ``url`` is `Veebileht`, the round's public page, and ``note`` is `Märkus`,
+    what the person recording it wants said about it — both optional, both the
+    columns `add_engagement` has always taken (docs/adr/0127 §2).
 
     The business model is exactly the one `add_engagement` already keeps:
     `response_count` stays nullable, blank still means *nobody counted* rather
@@ -320,6 +326,8 @@ def add_matter_engagement(
             response_count=response_count,
             smaily_url=smaily_url,
             alchemer_url=alchemer_url,
+            url=url,
+            note=note,
             feedback_deadline=feedback_deadline,
             feedback_received=feedback_received,
             actor=author,
@@ -1098,6 +1106,7 @@ def add_matter_website_overview(
     author: Any,
     url: str = "",
     published_on: Any = None,
+    title: str = "",
 ) -> WorkspaceResult:
     """`+ Ülevaade / uudis` — a plan, or a page that is already up.
 
@@ -1145,6 +1154,7 @@ def add_matter_website_overview(
                 url=url,
                 published_on=published_on,
                 actor=author,
+                title=title,
             )
         result.record = overview
         return result
@@ -1159,6 +1169,7 @@ def publish_planned_website_overview(
     url: str,
     published_on: Any,
     expected_revision: str | None = None,
+    title: str = "",
 ) -> WorkspaceResult:
     """`Avalda` — the page is up, and this is its address.
 
@@ -1181,6 +1192,7 @@ def publish_planned_website_overview(
             published_on=published_on,
             actor=author,
             expected_revision=expected_revision,
+            title=title,
         )
         return result
 
@@ -1216,8 +1228,12 @@ def correct_matter_website_overview(
     url: str,
     published_on: Any,
     expected_revision: str | None = None,
+    title: str | None = None,
 ) -> WorkspaceResult:
-    """`Paranda link` — what the file says about an existing page was wrong.
+    """`Muuda` — what the file says about an existing page was wrong.
+
+    ``title`` is `None` when the caller did not ask about the `Pealkiri`, and
+    then the stored one is left as it is (docs/adr/0127 §1).
 
     **The one operation in this module that takes no closed-Matter guard, and it
     must not.** Closure means no new business content; it has never meant that a
@@ -1232,12 +1248,14 @@ def correct_matter_website_overview(
     """
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
+        named: dict[str, Any] = {} if title is None else {"title": title}
         result.record = correct_website_overview_link(
             overview=overview,
             url=url,
             published_on=published_on,
             actor=author,
             expected_revision=expected_revision,
+            **named,
         )
         return result
 

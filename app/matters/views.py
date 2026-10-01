@@ -3665,9 +3665,11 @@ def add_engagement_view(request: HttpRequest, pk: Any) -> HttpResponse:
             # asking for (docs/adr/0086 §1).
             kind=EngagementKind.OTHER.value,
             title=form.cleaned_data["title"],
-            # No generic `url` or `note`: the form stopped offering both
-            # (docs/adr/0121 §4), so a round created here stores them empty,
-            # exactly as one created through `+ Kaasamine` does.
+            # `Veebileht` and `Märkus` again, since the form offers both
+            # (docs/adr/0127 §2) — a door that rendered a box and dropped what
+            # was typed into it would be QA-03's defect one surface along.
+            url=form.cleaned_data.get("url") or "",
+            note=form.cleaned_data.get("note") or "",
             smaily_url=form.cleaned_data.get("smaily_url") or "",
             alchemer_url=form.cleaned_data.get("alchemer_url") or "",
             # The **resolved** date. On this route it is always the day box or
@@ -3688,6 +3690,11 @@ def add_engagement_view(request: HttpRequest, pk: Any) -> HttpResponse:
         return _refused_overview(request, matter)
 
     return _render_overview(request, matter)
+
+
+def _named_engagement_context(form: EngagementForm, posted: Any) -> dict[str, str]:
+    """`url` and `note` for `correct_engagement`, each only if the POST carried its box."""
+    return {name: form.cleaned_data.get(name) or "" for name in ("url", "note") if name in posted}
 
 
 #: How `Tühista` asks for a `Kaasamine` row back in its read state.
@@ -3725,6 +3732,8 @@ def _engagement_edit_form(engagement: MatterEngagement, data: Any = None) -> Eng
     return EngagementForm(
         initial={
             "title": engagement.title,
+            "url": engagement.url,
+            "note": engagement.note,
             "smaily_url": engagement.smaily_url,
             "alchemer_url": engagement.alchemer_url,
             # `Kaasamise kuupäev`, and **only** when it is a day. A record dated
@@ -4001,10 +4010,12 @@ def update_engagement_view(request: HttpRequest, pk: Any, engagement_id: Any) ->
             # whatever is stored exactly as it is — a historical `Kaasamiskutse
             # veebis` keeps saying so (docs/adr/0086 §1).
             title=form.cleaned_data["title"],
-            # No `url` and no `note` either, for the same reason (docs/adr/0121
-            # §4): the editor stopped offering the generic `Link` and `Märkus`,
-            # and naming them here would clear a legacy value on every save.
-            # Unnamed, `_UNSET` keeps what the record holds.
+            # `Veebileht` and `Märkus`, named because the editor offers both
+            # again (docs/adr/0127 §2), so an emptied box clears the column.
+            # A POST that does not carry the box — a row opened before
+            # docs/adr/0127 was released — asked nothing about it, and leaving
+            # it unnamed keeps what the record holds (`_UNSET`).
+            **_named_engagement_context(form, request.POST),
             smaily_url=form.cleaned_data.get("smaily_url") or "",
             alchemer_url=form.cleaned_data.get("alchemer_url") or "",
             # Both dates, named explicitly on every save, so an emptied box
@@ -5837,6 +5848,7 @@ def _website_overview_link_form(
     if overview.is_published:
         initial["url"] = overview.url
         initial["published_on"] = overview.published_on
+        initial["title"] = overview.title
     return WebsiteOverviewLinkForm(initial=initial, auto_id=auto_id)
 
 
@@ -5947,6 +5959,7 @@ def add_website_overview(request: HttpRequest, pk: Any) -> HttpResponse:
             author=request.user,
             url=publication[0] if publication else "",
             published_on=publication[1] if publication else None,
+            title=form.cleaned_data.get("overview_title") or "",
         )
     except DomainError as error:
         return _workspace_refusal(
@@ -5986,6 +5999,7 @@ def publish_website_overview_view(request: HttpRequest, pk: Any, overview_id: An
             url=form.cleaned_data["url"],
             published_on=form.cleaned_data["published_on"],
             expected_revision=form.cleaned_data.get("revision") or None,
+            title=form.cleaned_data.get("title") or "",
         )
     except WebsiteOverviewConflict as conflict:
         return _website_overview_refusal(
@@ -6124,6 +6138,11 @@ def correct_website_overview_view(request: HttpRequest, pk: Any, overview_id: An
             url=form.cleaned_data["url"],
             published_on=form.cleaned_data["published_on"],
             expected_revision=form.cleaned_data.get("revision") or None,
+            # The box is on the correction form, so its answer — an emptied box
+            # included — is the person's. A POST that does not carry it (a page
+            # rendered before docs/adr/0127) asked nothing about the name, and
+            # `None` leaves the stored one where it is.
+            title=(form.cleaned_data.get("title") or "") if "title" in request.POST else None,
         )
     except WebsiteOverviewConflict as conflict:
         # 409, and nothing was written. The form stays open holding this
@@ -6666,6 +6685,10 @@ def add_engagement_compact(request: HttpRequest, pk: Any) -> HttpResponse:
             response_count=form.cleaned_data.get("response_count"),
             smaily_url=form.cleaned_data.get("smaily_url") or "",
             alchemer_url=form.cleaned_data.get("alchemer_url") or "",
+            # `Veebileht` and `Märkus`, into the record's own `url` and `note`
+            # (docs/adr/0127 §2).
+            url=form.cleaned_data.get("website_url") or "",
+            note=form.cleaned_data.get("engagement_note") or "",
             occurred_on=form.cleaned_data.get("occurred_on_value"),
             occurred_on_precision=form.cleaned_data["occurred_on_precision"],
             # Optional, and `None` when the box was left empty: no wait is opened

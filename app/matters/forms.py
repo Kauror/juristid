@@ -44,6 +44,7 @@ from app.matters.models import (
     EXTERNAL_POSITION_URL_MAX_LENGTH,
     PROCEDURAL_LINK_LABEL_MAX_LENGTH,
     PROCEDURAL_LINK_URL_MAX_LENGTH,
+    WEBSITE_OVERVIEW_TITLE_MAX_LENGTH,
     WEBSITE_OVERVIEW_URL_MAX_LENGTH,
     Matter,
 )
@@ -206,6 +207,45 @@ def clean_provider_link(form: forms.Form, field: str) -> str:
         return normalize_engagement_url(form.cleaned_data.get(field))
     except DomainError as error:
         raise forms.ValidationError(str(error)) from error
+
+
+def engagement_website_field() -> forms.CharField:
+    """`Veebileht` — the public page of the round, stored in `MatterEngagement.url`.
+
+    The Chamber's own «Hetkel käsil» page on koda.ee, or wherever else the
+    consultation is published. **A third pointer, not a reuse of the two
+    provider ones**: a Smaily link says a newsletter went out and an Alchemer
+    link says there is a survey, so a koda.ee page in either box would claim a
+    channel the round did not use (JUR-CASE-08, docs/adr/0127 §2).
+
+    The column is the one docs/adr/0027 always had and docs/adr/0121 §4 took off
+    the editor; this puts it back on both surfaces under its real name, through
+    the same `normalize_engagement_url` the provider links use — so
+    `www.koda.ee/...` gains its `https://` the same way.
+    """
+    return provider_link_field("Veebileht", "nt https://www.koda.ee/…")
+
+
+def engagement_note_field() -> forms.CharField:
+    """`Märkus` — what the person recording the round wants said *about* it.
+
+    `MatterEngagement.note`, whose purpose has always been this: where the list
+    came from, why it was sent late, what an attached file does and does not
+    prove. **Not** `Saadud tagasiside`, which is what the people asked said
+    back, and not `Keda kaasati`, which names the audience and is what every
+    work list reads (JUR-CASE-09, docs/adr/0127 §2).
+    """
+    return forms.CharField(
+        label="Märkus",
+        required=False,
+        widget=forms.Textarea(
+            attrs={
+                "class": "field__input field__input--compact",
+                "rows": "2",
+                "placeholder": "nt Fail on sihtrühma tööloend, mitte saajate nimekiri.",
+            }
+        ),
+    )
 
 
 def refuse_deadline_before_engagement(form: forms.Form, cleaned: dict[str, Any]) -> None:
@@ -3658,18 +3698,18 @@ class EngagementForm(forms.Form):
     can have filled in.** A correction form missing a field does not leave that
     field alone — it leaves the person with a record they can read on the
     chronology and cannot fix. The fields here are therefore the stored ones a
-    person answers: `title`, `Vastuseid`, the two provider links, both dates and
-    `Saadud tagasiside` — **exactly the fields `+ Kaasamine` asks**.
+    person answers: `title`, `Vastuseid`, `Veebileht`, the two provider links,
+    both dates, `Saadud tagasiside` and `Märkus` — **exactly the fields
+    `+ Kaasamine` asks**.
 
-    **The generic `Link` and `Märkus` are not offered, and their values are
-    kept** (docs/adr/0121 §4). They were the five-field form's (docs/adr/0027)
-    and survived only here, so editing a round showed two boxes its creation
-    never asked — and nothing on the chronology ever printed either value. The
-    editor offers what the panel can write, which is this form's rule read the
-    other way round; `url` and `note` stay on the record, in search and in the
-    audit history, and the view does not name them, so `update_engagement`'s
-    `_UNSET` leaves a stored legacy value exactly as it is on every save — the
-    shape `Liik` already has below.
+    **`Veebileht` and `Märkus` are back, on both surfaces** (docs/adr/0127 §2,
+    reversing docs/adr/0121 §4). docs/adr/0121 §4 took the generic `Link` and
+    `Märkus` off this editor because `+ Kaasamine` never asked them and nothing
+    on the chronology printed them. The living-dossier QA showed what they are
+    for — the public koda.ee page of the round, and a caveat about what an
+    attached list proves — so the panel now asks both, the chronology prints
+    both, and this editor offers them again under those names. The columns are
+    the ones docs/adr/0027 always had; no stored value was ever lost.
 
     **`Vastuseid` is here because `+ Kaasamine` asks for it.** It was left off
     this form while the creating panel did not offer it either, and the
@@ -3722,8 +3762,13 @@ class EngagementForm(forms.Form):
     #: The same two provider pointers the workspace panel asks for, so a
     #: correction made through this form round-trips them rather than dropping
     #: what `+ Kaasamine` stored (docs/adr/0027, amended 2026-09-12).
+    #: `Veebileht`, into `url` — the round's public page (docs/adr/0127 §2). An
+    #: emptied box clears the column, like every other link here.
+    url = engagement_website_field()
     smaily_url = provider_link_field("Smaily link", "https://sendsmaily.net/…")
     alchemer_url = provider_link_field("Alchemer link", "https://survey.alchemer.eu/…")
+    #: `Märkus`, into `note` (docs/adr/0127 §2). An emptied box clears it.
+    note = engagement_note_field()
     #: `Kaasamise kuupäev`, as an exact day — the one precision the simplified
     #: panel writes and therefore the one this editor offers (docs/adr/0086 §1).
     #:
@@ -3868,6 +3913,12 @@ class EngagementForm(forms.Form):
             cleaned["occurred_on_precision"] = DatePrecision.EXACT.value
         refuse_deadline_before_engagement(self, cleaned)
         return cleaned
+
+    def clean_url(self) -> str:
+        return clean_provider_link(self, "url")
+
+    def clean_note(self) -> str:
+        return (self.cleaned_data.get("note") or "").strip()
 
     def clean_smaily_url(self) -> str:
         return clean_provider_link(self, "smaily_url")
@@ -4448,8 +4499,15 @@ class CompactEngagementForm(forms.Form):
     #: What this panel can write, `Muuda` can fix — including back to blank
     #: (`engagement_response_count_field`, QA-03).
     response_count = engagement_response_count_field()
+    #: `Veebileht` and `Märkus` (docs/adr/0127 §2), the same definitions
+    #: `EngagementForm` corrects them with. Named `website_url` and
+    #: `engagement_note` rather than `url` and `note` because this panel keeps
+    #: Django's default ids on a page whose `+ Ülevaade / uudis` panel already
+    #: draws `id_url`.
+    website_url = engagement_website_field()
     smaily_url = provider_link_field("Smaily link", "https://sendsmaily.net/…")
     alchemer_url = provider_link_field("Alchemer link", "https://survey.alchemer.eu/…")
+    engagement_note = engagement_note_field()
     #: **The date the panel never asked for**, and now an exact day.
     #:
     #: The view used to stamp `timezone.localdate()` on every row it wrote, so a
@@ -4507,6 +4565,12 @@ class CompactEngagementForm(forms.Form):
         if not audience:
             raise forms.ValidationError("Kirjuta, keda kaasati.")
         return audience
+
+    def clean_website_url(self) -> str:
+        return clean_provider_link(self, "website_url")
+
+    def clean_engagement_note(self) -> str:
+        return (self.cleaned_data.get("engagement_note") or "").strip()
 
     def clean_smaily_url(self) -> str:
         return clean_provider_link(self, "smaily_url")
@@ -4871,6 +4935,32 @@ def work_victory_kwargs(change: str, won_on: date) -> dict[str, Any]:
     }
 
 
+def overview_title_field() -> forms.CharField:
+    """`Pealkiri` on an `Ülevaade / uudis`, the same box on every form that asks it."""
+    return forms.CharField(
+        label="Pealkiri",
+        required=False,
+        max_length=WEBSITE_OVERVIEW_TITLE_MAX_LENGTH,
+        widget=forms.TextInput(
+            attrs={
+                "class": "field__input field__input--compact",
+                "autocomplete": "off",
+                "placeholder": "nt Koja seisukoht eelnõu kohta",
+            }
+        ),
+    )
+
+
+def _clean_overview_title(value: Any) -> str:
+    """The service's own rule, reported under the box it was typed into."""
+    from app.matters.services import normalize_overview_title
+
+    try:
+        return normalize_overview_title(value)
+    except DomainError as error:
+        raise forms.ValidationError(str(error)) from error
+
+
 class CompactWebsiteOverviewForm(forms.Form):
     """`+ Ülevaade / uudis` — the day, the address, and a published page.
 
@@ -4904,10 +4994,11 @@ class CompactWebsiteOverviewForm(forms.Form):
     is a record this column has been able to hold since that decision and still
     can (docs/adr/0078 §2).
 
-    Still no title, no description, no attachment and **no kind selector**. The
-    record's content is the address and the day; which of the two kinds of
-    publication it is, is what the address says (docs/adr/0081 §2,
-    docs/adr/0085 §1).
+    **And an optional `Pealkiri`** since docs/adr/0127 §1, which narrows the
+    «no title» of docs/adr/0081 §2 and docs/adr/0085 §1: a file written up twice
+    read as two identical lines in `Teema käik`. Still no description, no
+    attachment and **no kind selector** — which of the two kinds of publication
+    it is, is what the address says.
     """
 
     use_required_attribute = False
@@ -4959,6 +5050,14 @@ class CompactWebsiteOverviewForm(forms.Form):
         widget=EstonianDateInput(),
         initial=timezone.localdate,
     )
+    #: `Pealkiri`, optional (docs/adr/0127 §1). The page's own name, so the
+    #: `Teema käik` line can tell two write-ups of one file apart. Named
+    #: `overview_title` rather than `title` for `deadline_title`'s reason: this
+    #: panel keeps Django's default ids on a page holding several forms.
+    overview_title = overview_title_field()
+
+    def clean_overview_title(self) -> str:
+        return _clean_overview_title(self.cleaned_data.get("overview_title"))
 
     def clean(self) -> dict[str, Any]:
         """Nothing, an address, or a refusal naming the address that is missing.
@@ -5067,7 +5166,14 @@ class WebsiteOverviewLinkForm(forms.Form):
         widget=EstonianDateInput(),
         help_text="Kui kuupäev ei ole teada, jäta tühjaks.",
     )
+    #: `Pealkiri`, optional, on publication and on correction alike — the
+    #: `Muuda` that opens on a published row offers what `+ Ülevaade / uudis`
+    #: asked (docs/adr/0127 §1). An emptied box clears the name.
+    title = overview_title_field()
     revision = forms.CharField(required=False, widget=forms.HiddenInput())
+
+    def clean_title(self) -> str:
+        return _clean_overview_title(self.cleaned_data.get("title"))
 
     def clean_url(self) -> str:
         """The service's own rule, reported under the box somebody typed it in.
