@@ -97,6 +97,7 @@ from app.matters import (
 from app.matters import person_work as person_workspace
 from app.matters.deletion import delete_matter, plan_matter_deletion
 from app.matters.department_dashboard import SeisFigure
+from app.matters.document_context import related_records
 from app.matters.enums import EngagementKind, MatterOrigin, RecordMode
 from app.matters.forms import (
     ENGAGEMENT_UNCHANGED,
@@ -3412,11 +3413,16 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
     evidence_total = evidence.count()
     visible_evidence = list(evidence if show_all else evidence[:DOCUMENT_PAGE_SIZE])
 
+    # `Seotud kirje` — the record each file on this page was captured with, from
+    # the explicit links and nothing else, read once for the page and through
+    # both ends' visibility (JUR-CASE-12, docs/adr/0129 §10).
+    contexts = related_records(visible_evidence, viewer=request.user)
     for document in visible_evidence:
         # Resolved per row here rather than in the template, so the page cannot
         # start asking the database a question of its own inside a loop.
         document.is_opinion = document.pk in opinion_ids
         document.opinion_send = sends.get(document.pk)
+        document.related_records = contexts.get(document.pk, [])
         document.role_label = (
             "Arvamus"
             if document.role == DocumentRole.KODA_SUBMISSION_FINAL

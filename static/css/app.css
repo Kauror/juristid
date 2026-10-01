@@ -6879,6 +6879,18 @@ button.accordion__action:focus-visible {
   overflow-wrap: anywhere;
 }
 
+/* `Seotud kirje` — the record a file came in with (docs/adr/0129 §10). The same
+   quiet meta line as `.doctable__sent`: context about the row above it, never a
+   second heading, and allowed to break inside a long title rather than widen
+   the cell at 375px. */
+.doctable__context {
+  display: block;
+  margin-top: var(--spacing-1);
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
 /* The per-row `...` disclosure.
 
    In flow, not a floating popup, and that is not a style preference: every
