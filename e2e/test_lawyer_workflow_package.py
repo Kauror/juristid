@@ -395,7 +395,7 @@ def test_the_lawyer_note_renders_as_its_own_labelled_line(page, base_url):
 def _record_koda_opinion(page, base_url: str, *, sent_on: str, summary: str = "") -> None:
     open_add_panel(page, "arvamus-koja")
     form = panel(page, "arvamus-koja")
-    form.locator("input[type=file]").set_input_files(
+    form.locator("input[name=upload]").set_input_files(
         {"name": "koja_arvamus.pdf", "mimeType": "application/pdf", "buffer": b"%PDF-1.4 arvamus"}
     )
     form.locator("[name=sent_on]").fill(sent_on)

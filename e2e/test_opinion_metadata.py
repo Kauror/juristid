@@ -62,7 +62,7 @@ def an_opinion(page, base_url: str) -> str:
     matter_url = a_new_matter(page, base_url)
     open_add_panel(page, "arvamus-koja")
     panel = page.locator("#arvamus-koja")
-    panel.locator("input[type=file]").set_input_files(
+    panel.locator("input[name=upload]").set_input_files(
         {"name": OPINION_FILE, "mimeType": "application/pdf", "buffer": b"%PDF-1.4 e2e"}
     )
     choose_organisation(page, "koja-adressaat")

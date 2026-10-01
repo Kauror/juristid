@@ -97,6 +97,7 @@ from app.matters import (
 from app.matters import person_work as person_workspace
 from app.matters.deletion import delete_matter, plan_matter_deletion
 from app.matters.department_dashboard import SeisFigure
+from app.matters.document_context import related_records
 from app.matters.enums import EngagementKind, MatterOrigin, RecordMode
 from app.matters.forms import (
     ENGAGEMENT_UNCHANGED,
@@ -124,6 +125,7 @@ from app.matters.forms import (
     MatterLinkForm,
     MatterProgressForm,
     NextActionForm,
+    OpinionWorkingDocumentsForm,
     OtherOpinionForm,
     PersonalNoteForm,
     PositionForm,
@@ -254,7 +256,7 @@ from app.submissions.opinions import (
     OPINION_ROLE_FILTER,
     open_drafts,
     opinion_document_ids,
-    opinion_documents,
+    opinion_rail,
     sent_submission_by_document,
     unregistered_opinion_documents,
 )
@@ -3091,8 +3093,9 @@ def _header_context(
         "note_saved_at": note_record.updated_at if note_record is not None else None,
         "can_write": can_write,
         # The rail renders on every Matter surface, so what the rail reads is
-        # read here rather than three times over.
-        "opinion_documents": opinion_documents(matter, viewer=request.user),
+        # read here rather than three times over. Each opinion file with the
+        # send that tells it apart and its working documents (docs/adr/0129 §9).
+        "opinion_rail": opinion_rail(matter, viewer=request.user),
         "today": timezone.localdate(),
     }
 
@@ -3421,11 +3424,16 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
     evidence_total = evidence.count()
     visible_evidence = list(evidence if show_all else evidence[:DOCUMENT_PAGE_SIZE])
 
+    # `Seotud kirje` — the record each file on this page was captured with, from
+    # the explicit links and nothing else, read once for the page and through
+    # both ends' visibility (JUR-CASE-12, docs/adr/0129 §10).
+    contexts = related_records(visible_evidence, viewer=request.user)
     for document in visible_evidence:
         # Resolved per row here rather than in the template, so the page cannot
         # start asking the database a question of its own inside a loop.
         document.is_opinion = document.pk in opinion_ids
         document.opinion_send = sends.get(document.pk)
+        document.related_records = contexts.get(document.pk, [])
         document.role_label = (
             "Arvamus"
             if document.role == DocumentRole.KODA_SUBMISSION_FINAL
@@ -7404,6 +7412,10 @@ def add_koda_opinion(request: HttpRequest, pk: Any) -> HttpResponse:
             # somebody chose, rather than a headline cut out of the summary
             # (docs/adr/0095 §2).
             summary=form.cleaned_data.get("summary") or "",
+            # `Töödokumendid`: the editable file the letter was drafted in,
+            # filed as `Töödokument` under this same opinion and never as what
+            # was sent (docs/adr/0129 §2).
+            working_uploads=form.cleaned_data.get("working_files") or [],
         )
     except (DomainError, UploadRejected) as error:
         return _workspace_refusal(
@@ -7971,6 +7983,9 @@ def _evidence_refusal(
     context = _overview_context(request, matter)
     context.update(_header_context(request, matter))
     context[key] = form
+    # The reopened `+ Lisa töödokument` picker's `Tühista` re-reads the row, as
+    # it does when the row drew the picker itself (`_sent_opinion_row`).
+    context["sent_opinion_read_query"] = ENGAGEMENT_READ_QUERY
     body = render_to_string("matters/partials/overview.html", context, request=request)
     if not matter.is_open:
         context["header_out_of_band"] = True
@@ -8073,6 +8088,7 @@ def _sent_opinion_row(
     submission: Any,
     *,
     form: SentOpinionEditForm | None = None,
+    working_documents_form: OpinionWorkingDocumentsForm | None = None,
     error: str = "",
     conflict: Any = None,
     status: int = 200,
@@ -8083,6 +8099,11 @@ def _sent_opinion_row(
     `_external_position_row` and `_development_row` already use, and the reason
     a correction cannot move the row or turn into a second line in the
     chronology.
+
+    ``working_documents_form`` is the third thing the region can hold: the
+    `+ Lisa töödokument` picker. A separate argument rather than a mode, for
+    `_development_row`'s reason — correcting what the row says and adding the
+    file the letter was drafted in are two acts (docs/adr/0129 §7).
 
     The milestone is rebuilt through `submission_milestone`, the same function
     the chronology itself renders from, so a corrected row cannot come back
@@ -8104,6 +8125,7 @@ def _sent_opinion_row(
             "submission": submission,
             "milestone": milestone_of(submission),
             "sent_opinion_edit_form": form,
+            "opinion_working_documents_form": working_documents_form,
             "sent_opinion_edit_error": error,
             "sent_opinion_conflict_milestone": (
                 milestone_of(conflict) if conflict is not None else None
@@ -8237,6 +8259,67 @@ def update_sent_opinion_view(request: HttpRequest, pk: Any, submission_id: Any) 
 
     submission.refresh_from_db()
     return _sent_opinion_row(request, matter, submission)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["GET", "POST"])
+def add_opinion_working_documents_view(
+    request: HttpRequest, pk: Any, submission_id: Any
+) -> HttpResponse:
+    """`+ Lisa töödokument` — the file a sent opinion was drafted in, filed under it.
+
+    GET opens the picker in the opinion's row; POST captures what was chosen.
+    One route, the shape `add_development_evidence_view` has, and the picker
+    replaces the same region `Muuda` does, so a row cannot be correcting and
+    capturing at once.
+
+    **It adds, and it does not touch the send.** The letter that went out, its
+    date, its addressees and its status are left exactly as they were: this is
+    maintaining the opinion's record, not a second opinion and not a
+    correction (`add_opinion_working_documents`, docs/adr/0129 §7).
+
+    **The answer is the whole column**, for `add_development_evidence_view`'s
+    reason: the files are drawn by the chronology around the row, so the row
+    alone would come back looking as it did. A refusal reopens the picker on
+    this row only, through `_evidence_refusal`.
+
+    The opinion is resolved through its **own** `visible_to` and the rows the
+    chronology draws (`_sent_opinion_for_correction`), so a restricted letter
+    or a draft is a 404 rather than a picker. Every rule — a closed Matter, a
+    send that is not a send, a refused file — is the service's, under the
+    Matter's row lock.
+    """
+    matter = get_visible_matter(request, pk)
+    submission = _sent_opinion_for_correction(request, matter, submission_id)
+
+    if request.method == "GET":
+        # `Tühista` is a re-read, exactly as it is for `Muuda` beside it.
+        if request.GET.get(ENGAGEMENT_READ_PARAM) == ENGAGEMENT_READ_VALUE:
+            return _sent_opinion_row(request, matter, submission)
+        return _sent_opinion_row(
+            request,
+            matter,
+            submission,
+            working_documents_form=OpinionWorkingDocumentsForm(record=submission),
+        )
+
+    form = OpinionWorkingDocumentsForm(request.POST, request.FILES, record=submission)
+    if not form.is_valid():
+        return _evidence_refusal(request, matter, key="opinion_working_documents_form", form=form)
+
+    try:
+        workspace.add_opinion_working_documents(
+            submission=submission,
+            author=request.user,
+            uploads=form.cleaned_data["attachments"],
+        )
+    except (DomainError, UploadRejected) as error:
+        return _evidence_refusal(
+            request, matter, key="opinion_working_documents_form", form=form, error=str(error)
+        )
+
+    return _render_overview(request, matter)
 
 
 @login_required

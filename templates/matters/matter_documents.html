@@ -8,7 +8,7 @@ opinions live.
 
 Two groups, and they look like opposites on purpose. `Failid` are immutable
 evidence: solid rows, the person who captured them, and the Chamber's own
-letters badged ARVAMUS. `Töödokumendid` are living SharePoint links: dashed,
+letters badged ARVAMUS. `SharePointi viited` are living SharePoint links: dashed,
 arrowed, captioned with when SharePoint last saw them, and explicitly not proof
 of anything (master specification 8.6, 15.3; Teema redesign §23).
 
@@ -117,7 +117,7 @@ finds again (§23.5).
         {% comment %}
           Both add panels sit here, under the toolbar, and both start hidden.
           They are revealed from the toolbar, from the empty card and from the
-          Töödokumendid accordion — one panel per thing to add, however many
+          `SharePointi viited` accordion — one panel per thing to add, however many
           controls point at it. Rendering the SharePoint form inside the
           accordion made the empty state's button hide a form nobody could see.
 
@@ -401,6 +401,25 @@ finds again (§23.5).
                           </span>
                         {% endif %}
                         {% comment %}
+                          `Seotud kirje` — the record this file came in with:
+                          «Koja arvamus · 26.9.2026 · Justiits- ja
+                          Digiministeerium», «Kaasamine · 17.9.2026 · liikmed»,
+                          «Märge · 15.9.2026 · …» (JUR-CASE-12).
+
+                          **Read from the explicit link and nothing else** — never
+                          from an upload minute, a filename or a next step — and
+                          through both ends' visibility, so a file tied to a
+                          record this reader may not see prints no line at all
+                          rather than a line naming it. A file with no link,
+                          which is every plain upload, prints nothing. The upload
+                          day in `Kuupäev` and the order of the list are not
+                          touched by it (app/matters/document_context.py,
+                          docs/adr/0129 §10).
+                        {% endcomment %}
+                        {% for context in document.related_records %}
+                          <span class="doctable__context">Seotud kirje: {{ context }}</span>
+                        {% endfor %}
+                        {% comment %}
                           The way from here to the text a search matched, and
                           nothing about how it got there. The extraction state
                           used to be a chip beside every filename, which meant
@@ -494,11 +513,19 @@ finds again (§23.5).
           references somebody consults while drafting, not the record of what
           Koda sent, and giving them the same weight as evidence is exactly the
           confusion the two styles exist to prevent.
+
+          **Headed `SharePointi viited`, not `Töödokumendid`** (docs/adr/0129
+          §11). This block holds links to files that live in SharePoint and
+          nothing else, while an opinion's uploaded working documents are rows in
+          the table above with the `Roll` `Töödokument` — and a heading reading
+          «Töödokumendid · Viiteid ei ole» directly under such a row told the
+          reader the file they had just seen did not exist. The anchor id stays,
+          so no saved link moves.
         {% endcomment %}
         <details class="accordion accordion--working" id="toodokumendid">
           <summary class="accordion__head">
             <span class="accordion__caret" aria-hidden="true"></span>
-            <h2 class="accordion__title">Töödokumendid</h2>
+            <h2 class="accordion__title">SharePointi viited</h2>
             <span class="accordion__summary">
               {% if working_documents %}
                 {{ working_documents|length }} viidet · SharePointi failid
@@ -540,7 +567,7 @@ finds again (§23.5).
                 {% endif %}
               </p>
             {% empty %}
-              <p class="empty">Töödokumente ei ole seotud.</p>
+              <p class="empty">SharePointi viiteid ei ole lisatud.</p>
             {% endfor %}
 
             {% if can_write %}

@@ -42,6 +42,8 @@ why the document queryset is scoped as well as the submission queryset.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from datetime import date
 from typing import Any
 
 from django.db.models import Q
@@ -49,7 +51,7 @@ from django.db.models import Q
 from app.documents.enums import DocumentRole
 from app.documents.models import Document
 from app.submissions.enums import RecipientRole, SubmissionStatus
-from app.submissions.models import Submission, addressee_prefetch
+from app.submissions.models import ADDRESSEE_ROWS, Submission, addressee_prefetch
 
 #: The query-string value the Dokumendid role filter uses for the union above.
 #:
@@ -102,6 +104,116 @@ def opinion_documents(matter: Any, *, viewer: Any) -> list[Document]:
         .select_related("current_version")
         .order_by("-created_at")
     )
+
+
+@dataclass(frozen=True)
+class RailOpinion:
+    """One line of the `Koja arvamus` rail card: the letter, and what tells it apart.
+
+    ``sent_on`` and ``detail`` are the send it is the letter of, as a reader
+    distinguishes two opinions on one file — the day it went, then who it went
+    to plus «tagasi võetud» or «asendatud» on one that no longer stands. The day
+    is its own field so the template can put it in a `<time>`: it is a date on a
+    line with other words, and the visual suite holds a date still by its
+    element (`e2e/test_ui_regression.py`). Both empty for an opinion file no
+    visible send accounts for, which reads as it always did.
+
+    ``working`` is that send's working documents (docs/adr/0129 §9), read
+    through `DocumentLink.visible_to`, so a reader is never shown a working file
+    of a letter or a document they may not see.
+    """
+
+    document: Document
+    sent_on: date | None = None
+    detail: str = ""
+    working: tuple[Document, ...] = ()
+
+    @property
+    def sent_label(self) -> str:
+        """The day as Estonian text, `j.n.Y`."""
+        from app.core.dates import format_estonian_date
+
+        return format_estonian_date(self.sent_on)
+
+    @property
+    def label(self) -> str:
+        """The whole line as one string — «8.9.2026 · Justiits- ja Digiministeerium»."""
+        return " · ".join(part for part in (self.sent_label, self.detail) if part)
+
+
+def opinion_rail(matter: Any, *, viewer: Any) -> list[RailOpinion]:
+    """The rail's opinions, each told apart by its send — UQ-28, docs/adr/0129 §9.
+
+    The **same files** `opinion_documents` lists, in the same order: this adds
+    to each line and removes none. Two opinions on one file used to be two bare
+    filenames — `koda_opinion.asice` and `koda_opinion.asice` — and the rail
+    could not say which letter was which without opening both.
+
+    The label comes from the send whose `final_version` is that file — any
+    send that **went out**, as `historically_sent` defines it, so a withdrawn
+    letter says so instead of reading like one that stands. Several sends of one
+    file (a resend of the same text) read as the latest. Both sides scoped:
+    the Submission through its own `visible_to`, so a restricted send names no
+    day and no addressee; the working documents through the link's.
+
+    Two queries for the sends and their addressees, one for the working
+    documents, and **none at all** on a Matter with no opinion — the commonest
+    page by far.
+    """
+    from app.documents.links import DocumentLink
+    from app.matters.timeline import submission_chronology_day
+
+    documents = opinion_documents(matter, viewer=viewer)
+    if not documents:
+        return []
+
+    by_document: dict[Any, Submission] = {}
+    sends = (
+        Submission.objects.filter(
+            matter=matter, final_version__document_id__in=[document.pk for document in documents]
+        )
+        .visible_to(viewer)
+        .historically_sent()
+        .select_related("final_version")
+        .prefetch_related(addressee_prefetch())
+        .order_by("sent_at", "created_at", "pk")
+    )
+    for submission in sends:
+        by_document[submission.final_version.document_id] = submission
+
+    working: dict[Any, list[Document]] = {}
+    if by_document:
+        for link in (
+            DocumentLink.objects.filter(
+                submission_id__in=[submission.pk for submission in by_document.values()]
+            )
+            .visible_to(viewer)
+            .select_related("document__current_version")
+            .order_by("created_at", "pk")
+        ):
+            working.setdefault(link.submission_id, []).append(link.document)
+
+    lines = []
+    for document in documents:
+        submission = by_document.get(document.pk)
+        if submission is None:
+            lines.append(RailOpinion(document=document))
+            continue
+        parts = []
+        addressees = getattr(submission, ADDRESSEE_ROWS, [])
+        if addressees:
+            parts.append(", ".join(row.organisation.name for row in addressees))
+        if submission.status != SubmissionStatus.SENT:
+            parts.append(str(submission.get_status_display()).lower())
+        lines.append(
+            RailOpinion(
+                document=document,
+                sent_on=submission_chronology_day(submission),
+                detail=" · ".join(parts),
+                working=tuple(working.get(submission.pk, ())),
+            )
+        )
+    return lines
 
 
 def opinion_document_ids(matter: Any, *, viewer: Any) -> set[Any]:

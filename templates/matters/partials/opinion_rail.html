@@ -28,26 +28,53 @@ A Matter may have several opinions and all of them are listed. There is no
 `Matter.final_opinion` and there is not going to be one: an initial opinion, a
 supplementary letter and a later joint submission are three files, and a
 single-valued shortcut could only ever name one of them.
+
+**Each line says which send it is** (UQ-28, docs/adr/0129 §9). Two opinions on
+one file were two bare filenames, often the same one, and nothing told them
+apart without opening both. So a letter that went out reads its day and who it
+went to above the link — «8.9.2026 · Justiits- ja Digiministeerium» — and «tagasi
+võetud» where it no longer stands. That is the send's own record, read through
+its own visibility; an opinion file no visible send accounts for reads as it
+always did. Its working documents, where it has any, follow as quieter links
+named `Töödokument`, so the editable file the lawyer reuses is one click away
+without the rail becoming a second file list.
 {% endcomment %}
 <div class="railcard" id="koja-arvamus">
   <span class="railcard__label">Koja arvamus</span>
 
-  {% for document in opinion_documents %}
-    <div class="railcard__row railcard__row--file">
+  {% for line in opinion_rail %}
+    <div class="railcard__row railcard__row--file{% if line.sent_on or line.working %} railcard__row--opinion{% endif %}">
+      {% if line.sent_on %}
+        {% comment %}
+          The day in a `<time>`: a date on a line with other words, which the
+          visual suite holds still by this element (RAIL_OPINION_SENT).
+        {% endcomment %}
+        <span class="railcard__opinion"><time datetime="{{ line.sent_on|date:'Y-m-d' }}">{{ line.sent_label }}</time>{% if line.detail %} · {{ line.detail }}{% endif %}</span>
+      {% endif %}
       {% comment %}
         The version, not the document: `documents:download` is keyed on the
         exact bytes, which is what makes a link to evidence a link to evidence.
         A document whose first version failed to save has none, and a link to
         nothing is worse than a name.
       {% endcomment %}
-      {% if document.current_version %}
+      {% if line.document.current_version %}
         <a class="railcard__file"
-           href="{% url 'documents:download' pk=document.current_version.pk %}">
-          {{ document.current_version.original_filename }} ↗
+           href="{% url 'documents:download' pk=line.document.current_version.pk %}">
+          {{ line.document.current_version.original_filename }} ↗
         </a>
       {% else %}
-        <span class="railcard__file muted">{{ document.title }}</span>
+        <span class="railcard__file muted">{{ line.document.title }}</span>
       {% endif %}
+      {% for working in line.working %}
+        {% if working.current_version %}
+          {% comment %}
+            The kind outside the link, so the link's name is the file's name
+            alone — what a screen reader announces and what is underlined.
+          {% endcomment %}
+          <span class="railcard__file"><span class="railcard__filekind">Töödokument</span>
+            <a href="{% url 'documents:download' pk=working.current_version.pk %}">{{ working.current_version.original_filename }} ↗</a></span>
+        {% endif %}
+      {% endfor %}
     </div>
   {% empty %}
     {% comment %}

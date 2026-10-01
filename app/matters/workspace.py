@@ -64,7 +64,10 @@ from app.documents.models import Document
 from app.documents.services import capture_supporting_evidence
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import EngagementKind, ExternalPositionProvenance
-from app.matters.locks import lock_open_matter_for_business_write
+from app.matters.locks import (
+    lock_open_matter_for_business_write,
+    lock_submission_for_evidence_integrity,
+)
 from app.matters.models import Entry, Matter
 from app.matters.services import (
     add_engagement,
@@ -650,6 +653,7 @@ def add_matter_koda_opinion(
     title: str = "",
     summary: str = "",
     complete_action_id: Any = None,
+    working_uploads: Sequence[Any] = (),
 ) -> WorkspaceResult:
     """`+ Koja arvamus` — the Chamber's opinion went out, with the file that went.
 
@@ -721,12 +725,34 @@ def add_matter_koda_opinion(
     row for the act: «Arvamus välja», with the finished step folded under it.
     Nothing is inferred from the opinion's title, summary, date or recipients;
     unticked (``None``), no step moves.
+
+    **``working_uploads`` — the opinion's working documents** (docs/adr/0129 §2).
+    The editable file the letter was drafted in, which the lawyer reuses later:
+    each becomes an ordinary `Document` + `DocumentVersion` filed as
+    `Töödokument` — the box it was put in says so, nothing is guessed from the
+    bytes — and is tied to this exact `Submission` by a `DocumentLink`. They are
+    **never evidence**: the send still stands on the one `Saadetud fail` and its
+    pinned `final_version`, and nothing here can make a working document satisfy
+    it. Restricted with the opinion when the opinion is restricted.
+
+    **Validated before anything is written.** Every working document is read and
+    checked before the sent letter's bytes reach the evidence store, so a refused
+    DOCX refuses the whole save — no opinion, no letter, no completed step and no
+    orphaned bytes (ENG-086). Then one transaction and one operation: the save is
+    still one «Arvamus välja» row with these files under it, never a «lisas
+    dokumendi» row per file (docs/adr/0092 §5).
     """
     from datetime import datetime, time
 
     from app.documents.enums import DocumentRole as _Role
-    from app.documents.services import add_evidence_version, create_document
-    from app.documents.uploads import read_upload
+    from app.documents.services import (
+        OPINION_WORKING_DOCUMENT_ROLE,
+        add_evidence_version,
+        capture_accepted_evidence,
+        create_document,
+        read_uploads,
+    )
+    from app.documents.uploads import UploadRejected, read_upload
     from app.submissions.enums import SentAtPrecision
     from app.submissions.services import register_sent_opinion_on_open_matter
 
@@ -749,6 +775,14 @@ def add_matter_koda_opinion(
         # same immutability — and the role is the one the product already has for
         # Koda's own opinion.
         accepted = read_upload(upload)
+        # The working documents too, and before the letter is stored: a refusal
+        # here must leave no evidence bytes behind (docs/adr/0129 §6). Prefixed
+        # with the box's own name, so a person told «file content does not
+        # match its extension» knows it was the DOCX and not the letter.
+        try:
+            working = read_uploads(_uploads(working_uploads))
+        except UploadRejected as error:
+            raise UploadRejected(f"Töödokumendid: {error}") from error
         document = create_document(
             matter=locked_matter,
             title=(title or "").strip() or accepted.filename,
@@ -781,8 +815,93 @@ def add_matter_koda_opinion(
             sent_at=moment,
             sent_at_precision=SentAtPrecision.DATE,
         )
+        result.documents += capture_accepted_evidence(
+            matter=locked_matter,
+            record=result.record,
+            accepted=working,
+            actor=author,
+            role=OPINION_WORKING_DOCUMENT_ROLE,
+            visibility_override=result.record.visibility_override,
+        )
         if named is not None:
             result.action = complete_next_action(action=named, actor=author)
+        return result
+
+
+#: What `+ Lisa töödokument` answers for anything but a letter that went out.
+OPINION_WORKING_DOCUMENTS_NEED_A_SEND = (
+    "Töödokumendi saab lisada ainult välja saadetud Koja arvamusele."
+)
+
+
+@transaction.atomic
+def add_opinion_working_documents(
+    *,
+    submission: Any,
+    author: Any,
+    uploads: Sequence[Any] = (),
+) -> WorkspaceResult:
+    """`+ Lisa töödokument` — the DOCX an opinion was drafted in, filed after the send.
+
+    A lawyer registers the signed letter and only then thinks to keep the
+    editable file beside it. This files it **under that exact opinion**: an
+    ordinary `Document` + `DocumentVersion` with the role `Töödokument`, tied to
+    the `Submission` by a `DocumentLink` (docs/adr/0129 §2, §7).
+
+    **Additive, and that is the whole of it** — the act `add_development_evidence`
+    performs, on the record a letter is. No second `Koja arvamus`, no change to
+    the sent file, the send date, the addressees, the `Kokkuvõte` or the status:
+    those are `Muuda` and `Võta tagasi`, acts with their own events. The opinion's
+    evidence is not read here, so nothing can replace or detach it, and nothing
+    here can make a working document count as what was sent (docs/adr/0129 §5).
+
+    **One operation, and no chronology row of its own.** The files read under
+    the opinion's «Arvamus välja» row; the upload is not a «lisas dokumendi» line
+    beside it, because attaching the opinion's own working file is maintaining
+    that record rather than a new act on the file (`_versions_shown_on_their_record`).
+
+    **Only a letter that went out.** Sent, or withdrawn or superseded since — a
+    withdrawn opinion's working file is still that letter's history. A draft is
+    refused: it has no row to read the files under, and «the file this opinion
+    was drafted in» is not yet a fact about a send.
+
+    **Restricted with the opinion.** A `Submission` restricted below its Matter
+    gives its working documents the same restriction, so the files cannot be
+    listed to somebody who may not see the letter they belong to.
+
+    **Refused on a closed Matter**, under the Matter's row lock, the rule every
+    addition on this workspace keeps (docs/adr/0076 §2). All or none: one refused
+    file refuses the save, before any bytes are stored.
+    """
+    from app.documents.services import OPINION_WORKING_DOCUMENT_ROLE
+    from app.submissions.models import Submission
+
+    files = _uploads(uploads)
+    if not files:
+        # Stated here as well as on the form: a form is not a boundary, and an
+        # operation that wrote nothing and succeeded would be the page telling
+        # somebody their file was kept.
+        raise DomainError("Vali vähemalt üks fail.")
+    locked_matter = lock_open_matter_for_business_write(submission.matter_id)
+    # Re-read under the lock and against the locked Matter: «this opinion is on
+    # this Teema and went out» is the one claim the link cannot make for itself.
+    if not Submission.objects.filter(pk=submission.pk, matter=locked_matter).exists():
+        raise DomainError("Seda Koja arvamust ei ole sellel teemal.")
+    current = lock_submission_for_evidence_integrity(submission.pk)
+    if not Submission.objects.filter(pk=current.pk).historically_sent().exists():
+        raise DomainError(OPINION_WORKING_DOCUMENTS_NEED_A_SEND)
+
+    with composer_operation() as operation_id:
+        result = WorkspaceResult(operation_id=operation_id)
+        result.record = current
+        result.documents = capture_supporting_evidence(
+            matter=locked_matter,
+            record=current,
+            uploads=files,
+            actor=author,
+            role=OPINION_WORKING_DOCUMENT_ROLE,
+            visibility_override=current.visibility_override,
+        )
         return result
 
 

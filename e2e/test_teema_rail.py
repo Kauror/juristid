@@ -532,7 +532,7 @@ def upload_an_opinion(page, url: str) -> None:
     page.wait_for_load_state("networkidle")
     open_add_panel(page, "arvamus-koja")
     panel = page.locator("#arvamus-koja")
-    panel.locator("input[type=file]").set_input_files(OPINION_PDF)
+    panel.locator("input[name=upload]").set_input_files(OPINION_PDF)
     choose_organisation(page, "koja-adressaat")
     # Waited for by its own response: navigating away the moment the button is
     # pressed can abandon the save before the server has it.

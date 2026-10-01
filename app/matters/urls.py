@@ -293,6 +293,18 @@ urlpatterns = [
         views.update_sent_opinion_view,
         name="update_sent_opinion",
     ),
+    # `+ Lisa töödokument` on a sent `Koja arvamus`: the editable file the
+    # letter was drafted in, filed under that exact opinion after the send.
+    #
+    # Unlike `Muuda` above it **does** take the open-Matter lock: a new file is
+    # new business content on the Teema, which a closed file does not accept
+    # (docs/adr/0076 §2, docs/adr/0129 §7). GET opens the picker in the row and
+    # POST captures — the shape `add_development_evidence` has.
+    path(
+        "teemad/<uuid:pk>/koja-arvamus/<uuid:submission_id>/lisa-toodokument/",
+        views.add_opinion_working_documents_view,
+        name="add_opinion_working_documents",
+    ),
     # `Kustuta` on a user-created block of `Teema käik`.
     #
     # **One route for eight families**, keyed by the Estonian word the row

@@ -18,7 +18,7 @@ from app.audit.services import record_change_event
 from app.core.enums import Visibility, most_restrictive, validate_visibility_override
 from app.core.errors import DomainError
 from app.documents.enums import DocumentRole
-from app.documents.models import Document, DocumentVersion
+from app.documents.models import Document, DocumentLink, DocumentVersion
 from app.documents.services import add_evidence_version, create_document
 from app.matters.locks import (
     lock_matter_for_evidence_integrity,
@@ -113,6 +113,13 @@ def create_submission(
 #: stand on (docs/adr/0120).
 REMOVED_DOCUMENT_IS_NOT_EVIDENCE = "Teemalt eemaldatud dokumenti ei saa arvamuse tõendiks valida."
 
+#: An opinion's working document is never what an opinion was sent as
+#: (docs/adr/0129 §5).
+WORKING_DOCUMENT_IS_NOT_EVIDENCE = (
+    "See fail on Koja arvamuse töödokument. Töödokumenti ei saa arvamuse saadetud "
+    "failiks valida; saadetud fail lisatakse eraldi."
+)
+
 
 def check_evidence_is_usable(
     *,
@@ -148,6 +155,14 @@ def check_evidence_is_usable(
     # binding both take the Matter's row lock, and this is read after it.
     if type(document)._base_manager.filter(pk=document.pk, removed_at__isnull=False).exists():
         raise DomainError(REMOVED_DOCUMENT_IS_NOT_EVIDENCE)
+    # **Not an opinion's working document** (docs/adr/0129 §5). The DOCX filed
+    # under a `Koja arvamus` as the file it was drafted in is the editable
+    # source, and the evidence-before-SENT rule is about the exact bytes that
+    # went out. Letting one stand in for the other would make the `SENT` check
+    # satisfiable by a file nobody sent. Asked of every binding — attach,
+    # select and the send's own re-check — because they all come through here.
+    if DocumentLink.objects.filter(document_id=document.pk, submission__isnull=False).exists():
+        raise DomainError(WORKING_DOCUMENT_IS_NOT_EVIDENCE)
 
     if matter_visibility is None:
         matter_visibility = submission.matter.visibility

@@ -194,7 +194,7 @@ def _record_development(page, *, title: str, occurred_on: str | None, **extra) -
 def _record_koda_opinion(page, *, sent_on: str, filename: str) -> None:
     open_add_panel(page, "arvamus-koja")
     form = panel(page, "arvamus-koja")
-    form.locator("input[type=file]").set_input_files(
+    form.locator("input[name=upload]").set_input_files(
         {"name": filename, "mimeType": "application/pdf", "buffer": b"%PDF-1.4 arvamus"}
     )
     form.locator("[name=sent_on]").fill(sent_on)

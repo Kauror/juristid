@@ -167,6 +167,12 @@ and a normal document on a restricted fact contributes none either.
 button a file arrived through is not a business role; the link is what answers
 that question.
 
+**Narrowed on 2026-10-01 by [0129](0129-an-opinion-keeps-its-working-documents-and-a-file-says-which-record-it-belongs-to.md) §2:**
+a `Koja arvamus`'s `Töödokumendid` box files its uploads as `Töödokument`, because
+there the input itself names what the file is — the reasoning `Väline seisukoht`
+already applies to its `EXTERNAL_POSITION` files. Every other panel keeps `OTHER`,
+and the link gained an eighth target, `submission`.
+
 ## 7. Atomicity of fact and file
 
 Every operation that takes files validates the form, validates **every** upload,

@@ -315,7 +315,7 @@ def register_a_send(page, matter_url: str, *, filename: str, sent_on: str) -> No
 
     open_add_panel(page, "arvamus-koja")
     form = page.locator("#arvamus-koja")
-    form.locator("input[type=file]").set_input_files(
+    form.locator("input[name=upload]").set_input_files(
         {"name": filename, "mimeType": "application/pdf", "buffer": b"%PDF-1.4 arvamus"}
     )
     form.locator("[name=sent_on]").fill(sent_on)

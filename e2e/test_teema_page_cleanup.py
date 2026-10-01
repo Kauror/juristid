@@ -92,7 +92,7 @@ def record_koja_arvamus(page, *, sent_on: str) -> None:
     """One sent `Koja arvamus`, through `+ Arvamus / tagasiside`."""
     open_add_panel(page, "arvamus-koja")
     form = page.locator("#arvamus-koja")
-    form.locator("input[type=file]").set_input_files(
+    form.locator("input[name=upload]").set_input_files(
         {"name": f"arvamus-{sent_on}.pdf", "mimeType": "application/pdf", "buffer": b"%PDF-1.4"}
     )
     form.locator("[name=sent_on]").fill(sent_on)

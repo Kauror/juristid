@@ -517,6 +517,26 @@
   color: var(--text-muted);
 }
 
+/* A sent opinion's files in two labelled groups — the letter that went out and
+   the editable files it was drafted in — each on a line of its own, so the two
+   kinds never read as one list (docs/adr/0129 §8). The label is the
+   `Juristi märkus` label's shape: small, upper case and muted, so it reads the
+   same to somebody who cannot see a tint. Drawn only on an opinion that has
+   working documents; every other row keeps its plain file list. */
+.uxtl__filegroup {
+  display: block;
+  margin-top: 3px;
+}
+
+.uxtl__filegrouplabel {
+  margin-right: var(--spacing-15);
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
 /* The chip reads exactly like `Muuda` — same size, same muted colour, same
    restraint — and takes the danger colour only on hover and focus, which is
    the moment it is actually being reached for. A red word in every row of a

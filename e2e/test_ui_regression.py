@@ -430,6 +430,15 @@ PORTFOLIO_WHEN = (".pw-matter__when",)
 #: markup moved, not that the world happened to be quiet.
 OPINION_ROW_SENT = (".doctable__sent time",)
 
+#: The rail's `Koja arvamus` line — «<send day> · <addressee>» (docs/adr/0129 §9).
+#:
+#: Normalised for `OPINION_ROW_SENT`'s reason: the addressee follows the day on
+#: the same line, so the day's width is the addressee's position, and the seeded
+#: opinion on `OPEN_TITLE` is sent on the run's own day — `j.n.Y`, proportional
+#: figures, a different width on the first of every month. Required on the two
+#: captures that render the open Matter's facts rail with that opinion in it.
+RAIL_OPINION_SENT = (".railcard__opinion time",)
+
 #: The Dokumendid table's `Kuupäev` cell — `Document.created_at`, in `j.n.Y`.
 #:
 #: `created_at` is `auto_now_add`, so on the seeded world this is the wall clock
@@ -660,6 +669,7 @@ NORMALISED_TEXT: tuple[tuple[str, str], ...] = (
     (MONTH_VIEW_CHIP[0], "Tähtaeg sel kuul · 1"),
     (CLOSED_ON[0], "(29.8.2026)"),
     (OPINION_ROW_SENT[0], "29.8.2026 19:35"),
+    (RAIL_OPINION_SENT[0], "29.8.2026"),
     # Eight characters, because that is what the committed baselines hold and
     # tabular figures make the count the whole of it. A ten-character canonical
     # would be exactly as stable and would move two baselines to get there.
@@ -838,8 +848,16 @@ REQUIRED_NORMALISATIONS: dict[str, tuple[str, ...]] = {
     "teema-kaik": (*STRIP_RUN_DAY, *STRIP_EXPECTED_DAY),
     "teema-ajajoon": (*CHRONOLOGY_RUN_DAY, *CHRONOLOGY_EXPECTED_DAY),
     "teema-ajajoon-avatud": (*CHRONOLOGY_RUN_DAY, *CHRONOLOGY_EXPECTED_DAY),
-    "teema-ulevaade": (*_STRIP_AND_CHRONOLOGY_RUN_DAYS, *_STRIP_AND_CHRONOLOGY_EXPECTED_DAYS),
-    "teema-1024": (*_STRIP_AND_CHRONOLOGY_RUN_DAYS, *_STRIP_AND_CHRONOLOGY_EXPECTED_DAYS),
+    "teema-ulevaade": (
+        *_STRIP_AND_CHRONOLOGY_RUN_DAYS,
+        *_STRIP_AND_CHRONOLOGY_EXPECTED_DAYS,
+        *RAIL_OPINION_SENT,
+    ),
+    "teema-1024": (
+        *_STRIP_AND_CHRONOLOGY_RUN_DAYS,
+        *_STRIP_AND_CHRONOLOGY_EXPECTED_DAYS,
+        *RAIL_OPINION_SENT,
+    ),
     # The archive row draws no process strip and has sent no opinion, so
     # «Teema loodud» is the whole of what it renders from the run's clock.
     "teema-arhiiv": (CHRONOLOGY_RUN_DAY[0],),
@@ -2043,6 +2061,12 @@ def _open_matter_fixture(page, day: str) -> None:
         '<p class="uxtl__ms" style="display:contents">'
         '<span class="uxtl__mswhat">Kaasamine: Liikmete kaasamiskutse</span>'
         '<span class="uxtl__msdate">12.5.2026</span></p>'
+        # The facts rail's `Koja arvamus` line for the same send — «<day> ·
+        # <addressee>», the day a `<time>` stamped by the run (docs/adr/0129 §9,
+        # `RAIL_OPINION_SENT`). The real capture renders it beside the strip and
+        # the chronology, so the fixture does too.
+        '<span class="railcard__opinion" style="display:contents">'
+        f"<time>{day}</time><span> · Näidisministeerium</span></span>"
         '<span id="probe">·</span></div>'
     )
 
@@ -2062,7 +2086,8 @@ OPEN_MATTER_SCENARIOS = ("teema-ulevaade", "teema-1024")
 
 
 @pytest.mark.parametrize(
-    "selector", (*_STRIP_AND_CHRONOLOGY_RUN_DAYS, *_STRIP_AND_CHRONOLOGY_EXPECTED_DAYS)
+    "selector",
+    (*_STRIP_AND_CHRONOLOGY_RUN_DAYS, *_STRIP_AND_CHRONOLOGY_EXPECTED_DAYS, *RAIL_OPINION_SENT),
 )
 def test_the_open_matter_run_days_are_the_same_width_on_any_day(page, selector):
     """`created_at` and `sent_at`, both stamped by the run that renders them.
@@ -2087,7 +2112,8 @@ def test_the_open_matter_run_days_are_the_same_width_on_any_day(page, selector):
 
 
 @pytest.mark.parametrize(
-    "selector", (*_STRIP_AND_CHRONOLOGY_RUN_DAYS, *_STRIP_AND_CHRONOLOGY_EXPECTED_DAYS)
+    "selector",
+    (*_STRIP_AND_CHRONOLOGY_RUN_DAYS, *_STRIP_AND_CHRONOLOGY_EXPECTED_DAYS, *RAIL_OPINION_SENT),
 )
 def test_an_open_matter_run_day_really_does_move_without_the_normalisation(page, selector):
     """The hazard itself, before anything is asked to hold it still.

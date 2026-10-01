@@ -6879,6 +6879,18 @@ button.accordion__action:focus-visible {
   overflow-wrap: anywhere;
 }
 
+/* `Seotud kirje` — the record a file came in with (docs/adr/0129 §10). The same
+   quiet meta line as `.doctable__sent`: context about the row above it, never a
+   second heading, and allowed to break inside a long title rather than widen
+   the cell at 375px. */
+.doctable__context {
+  display: block;
+  margin-top: var(--spacing-1);
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
 /* The per-row `...` disclosure.
 
    In flow, not a floating popup, and that is not a style preference: every
@@ -7534,6 +7546,30 @@ button.accordion__action:focus-visible {
 .railcard__file {
   min-width: 0;
   overflow-wrap: break-word;
+}
+
+/* An opinion told apart by its send (docs/adr/0129 §9): the day and the
+   addressee over the letter, its working documents under it — stacked, because
+   three facts side by side in a 300px column wrap into one another. Only on a
+   line that has them; a bare opinion file keeps the row above unchanged. */
+.railcard__row--opinion {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 3px 0;
+}
+
+.railcard__opinion {
+  color: var(--text-muted);
+}
+
+.railcard__filekind {
+  margin-right: var(--spacing-1);
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 
 .railcard__none {
