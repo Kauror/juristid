@@ -45,12 +45,14 @@ from app.documents.links import TARGET_FIELDS, DocumentLink, _removable_target_f
 from app.documents.models import Document, DocumentVersion
 from app.documents.services import (
     OPINION_EVIDENCE_IS_NOT_A_WORKING_DOCUMENT,
+    SENT_OPINION_EVIDENCE,
     add_evidence_version,
     add_version_on_open_matter,
     create_document,
     link_document_to_record,
 )
 from app.documents.uploads import UploadRejected
+from app.matters.locks import CLOSED_MATTER_REFUSAL
 from app.matters.services import close_matter
 from app.matters.timeline import OPINION_SENT_FILE, OPINION_WORKING_FILE, matter_timeline
 from app.matters.workspace import (
@@ -71,6 +73,7 @@ from app.workflow.enums import ActionStatus, Disposition
 from app.workflow.models import NextAction
 from app.workflow.services import set_next_action_for_new_work
 from tests import factories
+from tests.refusals import refused
 from tests.synthetic_containers import signed_container
 
 pytestmark = pytest.mark.django_db
@@ -255,10 +258,10 @@ def test_a_working_document_cannot_be_chosen_as_what_was_sent(matter, specialist
         matter=matter, title="Teine arvamus", actor=specialist, recipients=[organisation]
     )
 
-    with pytest.raises(DomainError) as refused:
+    with pytest.raises(DomainError) as refusal:
         select_final_evidence(submission=draft, version=working.current_version, actor=specialist)
 
-    assert str(refused.value) == WORKING_DOCUMENT_IS_NOT_EVIDENCE
+    assert str(refusal.value) == WORKING_DOCUMENT_IS_NOT_EVIDENCE
     draft.refresh_from_db()
     assert draft.final_version_id is None
     assert draft.status == SubmissionStatus.DRAFT
@@ -280,12 +283,12 @@ def test_a_sent_letter_cannot_be_filed_as_a_working_document(matter, specialist,
     first = _opinion(matter, specialist, organisation).record
     second = _opinion(matter, specialist, organisation, upload=_pdf("Teine.pdf")).record
 
-    with pytest.raises(DomainError) as refused:
+    with pytest.raises(DomainError) as refusal:
         link_document_to_record(
             document=first.final_version.document, record=second, actor=specialist
         )
 
-    assert str(refused.value) == OPINION_EVIDENCE_IS_NOT_A_WORKING_DOCUMENT
+    assert str(refusal.value) == OPINION_EVIDENCE_IS_NOT_A_WORKING_DOCUMENT
     assert not DocumentLink.objects.filter(submission=second).exists()
 
 
@@ -306,7 +309,7 @@ def test_a_file_bound_as_evidence_under_another_role_is_refused_as_well(
     select_final_evidence(submission=draft, version=version, actor=specialist)
     other = _opinion(matter, specialist, organisation).record
 
-    with pytest.raises(DomainError):
+    with refused(OPINION_EVIDENCE_IS_NOT_A_WORKING_DOCUMENT):
         link_document_to_record(document=incoming, record=other, actor=specialist)
 
 
@@ -398,17 +401,17 @@ def test_an_empty_picker_is_refused_and_writes_nothing(signed_in, matter, specia
     assert response.status_code == 400
     assert "Vali vähemalt üks fail." in response.content.decode()
     assert not _working_links(submission).exists()
-    with pytest.raises(DomainError):
+    with refused("Vali vähemalt üks fail."):
         add_opinion_working_documents(submission=submission, author=specialist, uploads=[])
 
 
 def test_a_draft_is_refused(matter, specialist, organisation):
     draft = create_submission(matter=matter, title="Mustand", actor=specialist)
 
-    with pytest.raises(DomainError) as refused:
+    with pytest.raises(DomainError) as refusal:
         add_opinion_working_documents(submission=draft, author=specialist, uploads=[_docx()])
 
-    assert str(refused.value) == OPINION_WORKING_DOCUMENTS_NEED_A_SEND
+    assert str(refusal.value) == OPINION_WORKING_DOCUMENTS_NEED_A_SEND
     assert not Document.objects.filter(matter=matter, role=DocumentRole.WORKING_DOCUMENT).exists()
 
 
@@ -425,7 +428,7 @@ def test_a_closed_matter_refuses_a_new_working_document(matter, specialist, orga
     submission = _opinion(matter, specialist, organisation).record
     close_matter(matter=matter, disposition=Disposition.OTHER, actor=specialist)
 
-    with pytest.raises(DomainError):
+    with refused(CLOSED_MATTER_REFUSAL):
         add_opinion_working_documents(submission=submission, author=specialist, uploads=[_docx()])
 
     assert not _working_links(submission).exists()
@@ -515,7 +518,7 @@ def test_a_working_document_versions_like_any_file_and_keeps_its_opinion(
 def test_the_letter_still_refuses_a_new_version(matter, specialist, organisation):
     submission = _opinion(matter, specialist, organisation, working=[_docx()]).record
 
-    with pytest.raises(DomainError):
+    with refused(SENT_OPINION_EVIDENCE):
         add_version_on_open_matter(
             document=submission.final_version.document,
             content=signed_container(),
@@ -606,7 +609,7 @@ def test_a_refused_working_document_refuses_everything(
     """No opinion, no letter, no completed step and no stored bytes (docs/adr/0129 §6)."""
     step = _step(matter, specialist)
 
-    with pytest.raises(UploadRejected) as refused:
+    with pytest.raises(UploadRejected) as refusal:
         _opinion(
             matter,
             specialist,
@@ -615,8 +618,8 @@ def test_a_refused_working_document_refuses_everything(
             complete_action_id=step.pk,
         )
 
-    assert str(refused.value).startswith("Töödokumendid:")
-    assert "katki.docx" in str(refused.value)
+    assert str(refusal.value).startswith("Töödokumendid:")
+    assert "katki.docx" in str(refusal.value)
     assert not Submission.objects.filter(matter=matter).exists()
     assert not Document.objects.filter(matter=matter).exists()
     step.refresh_from_db()

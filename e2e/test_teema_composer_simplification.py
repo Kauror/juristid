@@ -145,7 +145,12 @@ def test_the_koja_panel_reads_as_the_four_answers_it_asks(page, base_url):
     open_add_panel(page, "arvamus-koja")
 
     panel = page.locator("#arvamus-koja")
-    expect(panel.locator("input[type=file]")).to_have_count(1)
+    # One `Saadetud fail`, and beside it the optional `Töödokumendid` box the
+    # opinion's editable files go into (docs/adr/0129 §2) — two kinds of file,
+    # each in its own control.
+    expect(panel.locator("input[name=upload]")).to_have_count(1)
+    expect(panel.locator("input[name=working_files]")).to_have_count(1)
+    expect(panel.locator("input[type=file]")).to_have_count(2)
     expect(panel.locator("[name=sent_on]")).to_be_visible()
     expect(panel.locator("#koja-adressaat-otsi")).to_be_visible()
     expect(panel.locator("textarea[name=summary]")).to_be_visible()
