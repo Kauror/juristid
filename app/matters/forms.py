@@ -27,6 +27,7 @@ from app.core.richtext import plain_text
 from app.core.widgets import DescribedRadioSelect, EstonianDateField, EstonianDateInput
 from app.documents.enums import DocumentRole
 from app.documents.limits import WORKING_DOCUMENT_URL_MAX_LENGTH
+from app.documents.uploads import UPLOAD_ACCEPT
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import (
     COMPOSER_ENGAGEMENT_KINDS,
@@ -2920,7 +2921,7 @@ class ComposerForm(forms.Form):
     attachment = forms.FileField(
         label="Manus",
         required=False,
-        widget=forms.ClearableFileInput(attrs={"class": "field__input"}),
+        widget=forms.ClearableFileInput(attrs={"class": "field__input", "accept": UPLOAD_ACCEPT}),
     )
 
     # -- JÄRGMISEKS --------------------------------------------------------
@@ -4174,6 +4175,11 @@ class MultipleFileInput(forms.FileInput):
     """
 
     allow_multiple_selected = True
+
+    def __init__(self, attrs: dict[str, Any] | None = None) -> None:
+        # The chooser offers what `read_upload` accepts, from the same list,
+        # on every panel that renders one of these (docs/adr/0125).
+        super().__init__({"accept": UPLOAD_ACCEPT, **(attrs or {})})
 
 
 class MultipleFileField(forms.FileField):
@@ -5980,11 +5986,20 @@ class KodaOpinionForm(forms.Form):
     #: A plain `FileField` rather than `workspace_attachments`: the other panels
     #: capture *supporting evidence for something*, where any number of files is
     #: ordinary. This is the thing itself.
+    #:
+    #: **A signed container is an ordinary answer**, and `accept` offers it:
+    #: what went out of the Chamber is often the `.asice` itself, and that
+    #: container — not a PDF taken out of it — is the record of what was sent
+    #: (docs/adr/0125).
     upload = forms.FileField(
         label="Saadetud fail",
         required=False,
         widget=forms.ClearableFileInput(
-            attrs={"class": "visually-hidden", "id": "id_koja_arvamus_fail"}
+            attrs={
+                "class": "visually-hidden",
+                "id": "id_koja_arvamus_fail",
+                "accept": UPLOAD_ACCEPT,
+            }
         ),
     )
     #: `Kokkuvõte` — what this opinion says, in the lawyer's own words.

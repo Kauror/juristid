@@ -8,6 +8,7 @@ from django.utils import timezone
 from django.utils.formats import date_format
 
 from app.core.widgets import EstonianDateField, EstonianDateInput
+from app.documents.uploads import UPLOAD_ACCEPT
 from app.matters.forms import set_choices
 from app.matters.models import EXTERNAL_POSITION_SUMMARY_MAX_LENGTH, MatterWebsiteOverview
 from app.organisations.models import Organisation
@@ -87,7 +88,13 @@ class FinalEvidenceForm(forms.Form):
     Both paths end at the same immutable DocumentVersion.
     """
 
-    upload = forms.FileField(label="Lõplik fail", required=False)
+    # `Lõpetamata arvamused` writes its own `<input>` with the same `accept`
+    # (docs/adr/0125).
+    upload = forms.FileField(
+        label="Lõplik fail",
+        required=False,
+        widget=forms.ClearableFileInput(attrs={"accept": UPLOAD_ACCEPT}),
+    )
     # A UUID field, not text: the value is a primary key, and `abc` reached
     # `get_object_or_404` as typed and was a 500 (ENG-046). Not a UUID is now
     # the same refusal as no choice at all.

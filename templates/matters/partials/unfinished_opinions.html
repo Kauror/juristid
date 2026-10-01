@@ -1,3 +1,4 @@
+{% load evidence_uploads %}
 {% comment %}
 `Lõpetamata arvamused` on Dokumendid — only what an older workflow left half done.
 
@@ -124,7 +125,8 @@ Matter's row lock — hiding them is courtesy, not the boundary
               <label class="field field--inline draftrow__file">
                 <span class="field__label">Vali fail</span>
                 <input class="field__input field__input--compact" type="file" name="upload"
-                       required aria-label="Vali lõplik saadetud fail – {{ draft.title }}">
+                       required accept="{% upload_accept %}"
+                       aria-label="Vali lõplik saadetud fail – {{ draft.title }}">
               </label>
               <button class="button button--tiny" type="submit">Lisa fail</button>
             </form>

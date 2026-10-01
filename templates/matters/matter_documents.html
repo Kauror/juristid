@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load counts %}
+{% load counts evidence_uploads %}
 {% block title %}Dokumendid · {{ matter.title|truncatechars:60 }} · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -134,9 +134,11 @@ finds again (§23.5).
               <div class="formgrid">
                 <label class="field">
                   <span class="field__label">Fail</span>
-                  <input class="field__input" type="file" name="upload" required>
+                  <input class="field__input" type="file" name="upload" required
+                         accept="{% upload_accept %}">
                   <span class="field__help">
-                    Lubatud on tavalised dokumendi-, e-kirja- ja pildivormingud.
+                    Lubatud on tavalised dokumendi-, e-kirja- ja pildivormingud ning
+                    digiallkirjastatud ümbrikud (.asice, .bdoc).
                   </span>
                 </label>
                 <label class="field">

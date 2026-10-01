@@ -58,7 +58,7 @@ from app.documents.services import (
     remove_document,
     role_change_refusal,
 )
-from app.documents.uploads import UploadRejected, read_upload
+from app.documents.uploads import UPLOAD_ACCEPT, UploadRejected, read_upload
 from app.matters.views import get_visible_matter
 
 logger = logging.getLogger(__name__)
@@ -113,8 +113,14 @@ class DocumentUploadForm(forms.Form):
     # An empty file is let through the form on purpose, so that `read_upload`
     # refuses it with its own sentence. The form's default refusal was folded
     # into «Vali fail ja roll.», which told somebody who had chosen both to
-    # choose them (ENG-089). One rule, in the validator every path shares.
-    upload = forms.FileField(label="Fail", allow_empty_file=True)
+    # choose them (ENG-089). One rule, in the validator every path shares. The
+    # two templates posting here write their own `<input>`, with the same
+    # `accept` this widget carries (docs/adr/0125).
+    upload = forms.FileField(
+        label="Fail",
+        allow_empty_file=True,
+        widget=forms.ClearableFileInput(attrs={"accept": UPLOAD_ACCEPT}),
+    )
 
 
 @login_required
