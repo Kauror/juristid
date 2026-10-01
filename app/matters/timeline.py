@@ -418,6 +418,18 @@ class ChronologyFile:
     #: them, while the stored bytes were correct and distinct all along —
     #: display ambiguity, fixed in the display (QA-016, `_disambiguate_files`).
     detail: str = ""
+    #: What this file is **to the row's record**, where that is not obvious:
+    #: on a sent opinion's row, the letter that went out
+    #: (:data:`OPINION_SENT_FILE`) or one of the opinion's working documents
+    #: (:data:`OPINION_WORKING_FILE`). Empty on every other file, whose row
+    #: already says what it is (docs/adr/0129 §8).
+    kind: str = ""
+
+
+#: A sent opinion's own letter — `Submission.final_version`, the exact bytes.
+OPINION_SENT_FILE = "saadetud"
+#: One of a sent opinion's working documents — a `DocumentLink` to the send.
+OPINION_WORKING_FILE = "toodokument"
 
 
 @dataclass(frozen=True)
@@ -513,6 +525,21 @@ class TimelineItem:
         from app.submissions.models import Submission
 
         return self.record if isinstance(self.record, Submission) else None
+
+    @property
+    def opinion_sent_files(self) -> tuple[ChronologyFile, ...]:
+        """On a sent opinion's row: the letter that went out."""
+        return tuple(file for file in self.files if file.kind == OPINION_SENT_FILE)
+
+    @property
+    def opinion_working_files(self) -> tuple[ChronologyFile, ...]:
+        """On a sent opinion's row: its working documents, never the letter.
+
+        The row groups its files under `Saadetud` and `Töödokumendid` exactly
+        when this is not empty — so an opinion without working documents reads
+        as it always has (docs/adr/0129 §8).
+        """
+        return tuple(file for file in self.files if file.kind == OPINION_WORKING_FILE)
 
     @property
     def procedural_development(self) -> Any:
@@ -2569,6 +2596,11 @@ def _with_files(page: list[TimelineItem], user: Any) -> list[TimelineItem]:
     resolved = []
     for item in page:
         files = tuple(found[key] for key in versions_of(item) if key in found)
+        if files and item.submission is not None:
+            # The letter that went out, said so: on a row that may also carry
+            # the opinion's working documents, «which of these was sent» is
+            # the question, and the answer is this column (docs/adr/0129 §8).
+            files = tuple(replace(file, kind=OPINION_SENT_FILE) for file in files)
         resolved.append(replace(item, files=files) if files else item)
     return resolved
 
@@ -2833,6 +2865,10 @@ def _with_linked_files(page: list[TimelineItem], user: Any) -> list[TimelineItem
                 label=version.original_filename,
                 url=reverse("documents:download", kwargs={"pk": version.pk}),
                 detail=_file_size(version),
+                # A link to a sent opinion is one of its working documents, and
+                # never the letter: that is `final_version`, which `_with_files`
+                # attached above (docs/adr/0129 §5, §8).
+                kind=OPINION_WORKING_FILE if field == "submission" else "",
             )
         )
     if not found:

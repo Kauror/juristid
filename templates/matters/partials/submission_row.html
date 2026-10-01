@@ -140,6 +140,44 @@ anything changed.
                 hx-swap="outerHTML">Tühista</button>
       </p>
     </form>
+  {% elif opinion_working_documents_form and opinion_working_documents_form.record.pk == submission.pk %}
+    {% comment %}
+      `+ Lisa töödokument`. The picker, and nothing else: the editable file the
+      letter was drafted in, filed under this opinion after the send. The send
+      itself — the letter, the day, the addressees — is not on the form, so
+      this cannot become a correction or a second opinion (docs/adr/0129 §7).
+
+      **It swaps `#teema-vaade` rather than this element**, for
+      `development_row.html`'s reason: the files are drawn by the chronology
+      around this element, so this element alone would come back looking as it
+      did before the file arrived.
+
+      A refusal reopens this picker on this row only, with its sentence under
+      it — the form carries the record it belongs to and this branch compares
+      it with the row (ENG-036).
+    {% endcomment %}
+    <form class="uxtl__editform" aria-label="Töödokumendi lisamine Koja arvamusele"
+          hx-post="{% url 'matters:add_opinion_working_documents' pk=matter.pk submission_id=submission.pk %}"
+          hx-target="#teema-vaade" hx-swap="outerHTML"
+          hx-encoding="multipart/form-data">
+      {% csrf_token %}
+      <p class="uxtl__ms">
+        <span class="uxtl__mswhat">{{ milestone.what }}</span>
+        <span class="uxtl__msdate">{{ milestone.display_date }}</span>
+      </p>
+      <p class="uxtl__formhint">
+        Muudetav fail, millest arvamus koostati (nt DOCX). Salvestatakse
+        töödokumendina selle arvamuse juurde; saadetud fail jääb samaks.
+      </p>
+      {% include "matters/partials/add_files.html" with field=opinion_working_documents_form.attachments describe_errors=True %}
+      <p class="uxtl__editactions">
+        <button class="button button--quiet button--tiny" type="submit">Lisa töödokument</button>
+        <button class="button button--quiet button--tiny" type="button"
+                hx-get="{% url 'matters:add_opinion_working_documents' pk=matter.pk submission_id=submission.pk %}{{ sent_opinion_read_query }}"
+                hx-target="#koja-arvamus-{{ submission.pk }}-sisu"
+                hx-swap="outerHTML">Tühista</button>
+      </p>
+    </form>
   {% else %}
     {% comment %}
       The headline, the day and `Muuda`, on **one line**. An `Arvamus välja` read
@@ -177,6 +215,25 @@ anything changed.
                   hx-get="{% url 'matters:update_sent_opinion' pk=matter.pk submission_id=submission.pk %}"
                   hx-target="#koja-arvamus-{{ submission.pk }}-sisu"
                   hx-swap="outerHTML">Muuda</button>
+          {% comment %}
+            `+ Lisa töödokument` — the editable file the letter was drafted in,
+            filed under this opinion after the send (docs/adr/0129 §7). Beside
+            `Muuda` and not inside it: adding a file and correcting what the
+            row says are two acts with two audit trails.
+
+            **Only on an open Teema.** Unlike `Muuda`, which corrects what the
+            file wrote down, this adds new content, and a closed file accepts
+            none (docs/adr/0076 §2) — the service refuses it under the lock
+            whatever this condition draws.
+          {% endcomment %}
+          {% if matter.is_open %}
+            <button class="uxtl__edit" type="button"
+                    id="koja-arvamus-{{ submission.pk }}-toodokument"
+                    aria-labelledby="koja-arvamus-{{ submission.pk }}-toodokument koja-arvamus-{{ submission.pk }}-pealkiri"
+                    hx-get="{% url 'matters:add_opinion_working_documents' pk=matter.pk submission_id=submission.pk %}"
+                    hx-target="#koja-arvamus-{{ submission.pk }}-sisu"
+                    hx-swap="outerHTML">+ Lisa töödokument</button>
+          {% endif %}
           {% comment %}
             There is deliberately **no `Kustuta`** here, and it is the one
             user-created chronology row without one. A sent opinion is a letter

@@ -6042,6 +6042,24 @@ class KodaOpinionForm(forms.Form):
             }
         ),
     )
+    #: `Töödokumendid` — the editable file the opinion was drafted in, which the
+    #: lawyer reuses, edits and searches later (docs/adr/0129 §2).
+    #:
+    #: **Not the letter.** What went out is `Saadetud fail` above, and only that
+    #: is the opinion's evidence; these are filed as `Töödokument` — the box says
+    #: so, nothing is guessed from the bytes — and tied to the same `Submission`
+    #: by a `DocumentLink`. Several are ordinary (the DOCX and a table it cites),
+    #: so this is the multi-file control every other panel uses.
+    #:
+    #: Optional, and blank is exactly what the panel saved before: an opinion
+    #: whose working file somebody keeps elsewhere is still a whole record.
+    working_files = MultipleFileField(
+        label="Töödokumendid",
+        required=False,
+        widget=MultipleFileInput(
+            attrs={"class": "visually-hidden", "id": "id_koja_arvamus_toodokumendid"}
+        ),
+    )
     #: `Kokkuvõte` — what this opinion says, in the lawyer's own words.
     #:
     #: **It replaces `Pealkiri` and it is not a headline.** A lawyer who has just
@@ -6906,6 +6924,18 @@ class ExternalPositionEvidenceForm(RecordEvidenceForm):
     """
 
     slug = "valine_seisukoht"
+
+
+class OpinionWorkingDocumentsForm(RecordEvidenceForm):
+    """`+ Lisa töödokument` on a sent `Koja arvamus` (docs/adr/0129 §7).
+
+    The opinion's editable working file, filed after the letter was registered.
+    Files and nothing else, for `RecordEvidenceForm`'s reason: the send itself —
+    its date, addressees, `Kokkuvõte` and the letter that went — is not in
+    question here, and the surface that corrects it is `Muuda`.
+    """
+
+    slug = "koja_arvamus"
 
 
 class CompactClosureForm(ChipChoices, forms.Form):

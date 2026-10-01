@@ -335,18 +335,45 @@ record, not professional chronology (master specification 16.5).
           of its own, no line of its own, no contribution to the count — the
           record already has a row and these belong under it
           (app/matters/timeline.py `_with_linked_files`, brief §25).
+
+          **A sent opinion with working documents says which file went out.**
+          The letter (`Saadetud`) and the editable files it was drafted in
+          (`Töödokumendid`) are two different things to the same record, and a
+          row listing `koda_opinion.asice` beside `arvamus.docx` with nothing
+          between them would leave «which of these was sent» to a guess. Each
+          group carries its label; an opinion without working documents reads
+          exactly as it always has (docs/adr/0129 §8).
         {% endcomment %}
-        {% for file in item.files %}
-          {% comment %}
-            `file.detail` is set on nothing whose name is unique under this row
-            and carries the size — or, for two files of one name *and* one size,
-            an ordinal — on the ones that are otherwise indistinguishable. Two
-            papers both called `lisa.pdf` rendered as `lisa.pdf lisa.pdf`
-            (QA-016, `_disambiguate_files`).
-          {% endcomment %}
-          <a class="uxtl__file" href="{{ file.url }}">{{ file.label }}{% if file.detail %}<span
-            class="uxtl__filedetail"> · {{ file.detail }}</span>{% endif %}</a>
-        {% endfor %}
+        {% if item.opinion_working_files %}
+          {% if item.opinion_sent_files %}
+            <span class="uxtl__filegroup">
+              <span class="uxtl__filegrouplabel">Saadetud</span>
+              {% for file in item.opinion_sent_files %}
+                <a class="uxtl__file" href="{{ file.url }}">{{ file.label }}{% if file.detail %}<span
+                  class="uxtl__filedetail"> · {{ file.detail }}</span>{% endif %}</a>
+              {% endfor %}
+            </span>
+          {% endif %}
+          <span class="uxtl__filegroup">
+            <span class="uxtl__filegrouplabel">Töödokumendid</span>
+            {% for file in item.opinion_working_files %}
+              <a class="uxtl__file" href="{{ file.url }}">{{ file.label }}{% if file.detail %}<span
+                class="uxtl__filedetail"> · {{ file.detail }}</span>{% endif %}</a>
+            {% endfor %}
+          </span>
+        {% else %}
+          {% for file in item.files %}
+            {% comment %}
+              `file.detail` is set on nothing whose name is unique under this row
+              and carries the size — or, for two files of one name *and* one size,
+              an ordinal — on the ones that are otherwise indistinguishable. Two
+              papers both called `lisa.pdf` rendered as `lisa.pdf lisa.pdf`
+              (QA-016, `_disambiguate_files`).
+            {% endcomment %}
+            <a class="uxtl__file" href="{{ file.url }}">{{ file.label }}{% if file.detail %}<span
+              class="uxtl__filedetail"> · {{ file.detail }}</span>{% endif %}</a>
+          {% endfor %}
+        {% endif %}
       {% else %}
         {% comment %}
           The meta line is one baseline-aligned row: who, what they did, and

@@ -75,6 +75,28 @@
         {% endif %}
 
         {% comment %}
+          `Töödokumendid` — the editable file the letter was drafted in, beside
+          the letter and visibly not it (docs/adr/0129 §2).
+
+          **What went out is `Saadetud fail` above, and only that.** These are
+          filed as `Töödokument` — the box says so, nothing is read off the
+          bytes — and tied to this same opinion, so next year's lawyer finds the
+          DOCX under the letter it became instead of as a stray upload on
+          Dokumendid. They are never the opinion's evidence and cannot be.
+
+          Optional and several, the multi-file control every other panel uses;
+          the hint says in one line what the box is for, because «Saadetud fail»
+          and «Töödokumendid» next to each other is exactly where a person
+          wonders which file goes where.
+        {% endcomment %}
+        <div class="cx-f">
+          <span class="cx-f__lab">{{ koda_opinion_form.working_files.label }}
+            <span class="cx-f__opt">valikuline</span></span>
+          {% include "matters/partials/add_files.html" with field=koda_opinion_form.working_files %}
+          <p class="uxtl__formhint">Muudetav fail, millest arvamus koostati (nt DOCX). Ei ole saadetud fail.</p>
+        </div>
+
+        {% comment %}
           `Adressaadid` — the shared picker, searchable, and opening on the
           Teema's own `Saatja`.
 

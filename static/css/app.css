@@ -7536,6 +7536,30 @@ button.accordion__action:focus-visible {
   overflow-wrap: break-word;
 }
 
+/* An opinion told apart by its send (docs/adr/0129 §9): the day and the
+   addressee over the letter, its working documents under it — stacked, because
+   three facts side by side in a 300px column wrap into one another. Only on a
+   line that has them; a bare opinion file keeps the row above unchanged. */
+.railcard__row--opinion {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 3px 0;
+}
+
+.railcard__opinion {
+  color: var(--text-muted);
+}
+
+.railcard__filekind {
+  margin-right: var(--spacing-1);
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
 .railcard__none {
   font-size: 12.5px;
   color: var(--text-muted);
