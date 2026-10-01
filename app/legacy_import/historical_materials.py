@@ -22,6 +22,12 @@ extracting a document *out of* the thing that attests to it, and presenting the
 extract as the evidence — which is the inversion this codebase refuses
 everywhere else. They are stored, downloadable, and marked NOT_APPLICABLE
 (Stage-2D brief 24, 74).
+
+`.asice` and `.bdoc` are no longer only the archive's: the upload door accepts
+them too, since the Chamber's own correspondence is sent in them
+(docs/adr/0125). So their media type is read from the upload allowlist like any
+other ordinary format's, and the table below keeps what is still the archive's
+alone — `.ddoc` among it.
 """
 
 from __future__ import annotations
@@ -34,9 +40,8 @@ from app.documents.uploads import EXTENSION_MIME_TYPES
 #: Formats the archive contains that the interactive upload path does not
 #: accept. Each is stored as evidence and none is parsed.
 HISTORICAL_EXTENSION_MIME_TYPES: dict[str, str] = {
-    # Estonian digitally signed containers. The registered types.
-    ".asice": "application/vnd.etsi.asic-e+zip",
-    ".bdoc": "application/vnd.etsi.asic-e+zip",
+    # The legacy DigiDoc XML envelope. `.asice` and `.bdoc` are read from
+    # `EXTENSION_MIME_TYPES` now, under the same registered type (docs/adr/0125).
     ".ddoc": "application/x-ddoc",
     # Office templates and legacy word processing.
     ".xltx": "application/vnd.openxmlformats-officedocument.spreadsheetml.template",

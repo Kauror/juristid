@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load document_state %}
+{% load document_state evidence_uploads %}
 {% block title %}{{ document.title }} · {{ matter.title }} · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -73,7 +73,8 @@
           {% csrf_token %}
           <label class="field">
             <span class="field__label">Lisa uus versioon</span>
-            <input class="field__input" type="file" name="upload" required>
+            <input class="field__input" type="file" name="upload" required
+                   accept="{% upload_accept %}">
             <span class="field__help">
               Parandatud fail saab kehtivaks versiooniks. Eelmised versioonid jäävad
               muutumatuna alles versioonide ajalukku.

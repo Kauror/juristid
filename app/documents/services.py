@@ -213,9 +213,9 @@ def _locked_document(document: Document) -> Document:
 # Two lists guard two different doors, and conflating them would be a mistake in
 # one direction or the other. `app/documents/uploads.py` decides what a *browser*
 # may push at us and stays narrow. This one decides what the evidence store will
-# hold, and the historical corpus adds formats to it — signed containers, Office
-# templates, legacy word processing — that arrived from an archive whose every
-# byte was hashed before this code ran. Storing them is not the same as
+# hold, and the historical corpus adds formats to it — Office templates, legacy
+# word processing, the old DigiDoc envelope — that arrived from an archive whose
+# every byte was hashed before this code ran. Storing them is not the same as
 # accepting them from a stranger (docs/adr/0015).
 ALLOWED_EVIDENCE_MIME_TYPES: frozenset[str] = frozenset(
     {
@@ -232,12 +232,15 @@ ALLOWED_EVIDENCE_MIME_TYPES: frozenset[str] = frozenset(
         "image/png",
         "image/jpeg",
         "application/zip",
-        # -- the historical corpus ----------------------------------------
-        # Preserved exactly, parsed by nothing. ASiC-E and BDoc especially:
-        # unpacking a signed container to index the document inside it would
-        # mean presenting the extract as the evidence, which inverts the one
-        # relationship this system is built on (Stage-2D brief 24).
+        # ASiC-E, as `.asice` and as `.bdoc`: through both doors since
+        # docs/adr/0125, because the Chamber sends and receives its letters in
+        # them. Preserved exactly and parsed by nothing: unpacking a signed
+        # container to index the document inside it would mean presenting the
+        # extract as the evidence, which inverts the one relationship this
+        # system is built on (Stage-2D brief 24).
         "application/vnd.etsi.asic-e+zip",
+        # -- the historical corpus ----------------------------------------
+        # Preserved exactly, parsed by nothing.
         "application/x-ddoc",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.template",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.template",

@@ -13,10 +13,16 @@ basis = "deployment"
 # Reaalajas töövoog sama järgmise tegevuse peal, ADR 0126. Migratsioone ei ole,
 # uut mudelit ei ole. Kui see väljalase ei jõua tootmisse 01.10, liiguvad need
 # read väljalaske päeva kirjesse.
+# Sama päeva teine väljalase: JUR-CASE-01 Juristieksami elava toimiku QA-st,
+# ADR 0125, samuti migratsioonideta — digiallkirjastatud ümbrikud, kolm viimast
+# rida. Kui see ei jõua tootmisse 01.10, liiguvad need read väljalaske päeva alla.
 changes = [
   "Kui teemal ei ole järgmist tegevust, saab selle määrata otse «Praeguses tegevuses»: «+ Määra järgmine tegevus». Selleks ei pea enam lisama tulevikku jäävat märget; kuupäeva võib jätta tühjaks või anda kuu, kvartali või aasta täpsusega.",
   "Koja arvamuse registreerimisel ja kaasamise lõpetamisel saab linnukesega «Märgi praegune tegevus tehtuks» märkida samal ajal tehtuks teema praeguse tegevuse. Linnuke ei ole vaikimisi märgitud ja selle kõrval on kirjas, milline tegevus tehtuks märgitakse; eraldi «Mida tegid?» kirjet ei ole vaja.",
   "Nii tehtuks märgitud tegevus on «Teema käigus» sama rea all — näiteks «Arvamus välja» ja selle all «Tehtud» koos tegevuse tekstiga —, mitte eraldi real. Pärast seda pakub «Praegune tegevus» kohe «+ Määra järgmine tegevus».",
+  "Digiallkirjastatud ümbrikke (.asice ja .bdoc) saab nüüd lisada otse, ilma ZIP-faili pakkimata: uut teemat luues, «Lae dokument» kaudu, märkele ja teistele lisamistele ning Koja arvamuse «Saadetud failina».",
+  "Ümbrik jääb alles täpselt sellisena, nagu see saabus, ja laaditakse alla sama nime ja laiendiga; selle sisu ei avata ja allkirju Juristid ei kontrolli.",
+  "Faili valimise aken pakub vaikimisi ainult neid failitüüpe, mida Juristid vastu võtab.",
 ]
 
 [[day]]

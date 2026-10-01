@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load evidence_uploads %}
 {% block title %}Uus teema · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -197,8 +198,13 @@
             Files / No file chosen", which cannot be styled and reads in the
             browser's language rather than the page's, stops being the widest
             thing in this row.
+
+            `accept` is the server's own allowlist, so the chooser offers the
+            files `read_upload` takes — signed containers included — and
+            nothing it would refuse once sent (docs/adr/0125).
           {% endcomment %}
-          <input class="visually-hidden" type="file" name="files" id="id_files" multiple>
+          <input class="visually-hidden" type="file" name="files" id="id_files" multiple
+                 accept="{% upload_accept %}">
           <label class="dropzone__choose" for="id_files">Vali failid</label>
           <span class="dropzone__hint">või lohista need siia</span>
           {% comment %}
