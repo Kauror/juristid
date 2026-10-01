@@ -145,28 +145,32 @@ def test_the_extension_is_read_whatever_its_case():
 
 
 @pytest.mark.parametrize(
-    ("description", "content"),
+    "content",
     [
-        ("a PDF renamed", b"%PDF-1.4 a letter, not a container"),
-        ("an ordinary ZIP", plain_zip()),
-        ("a Word file", signed_container(first_entry="[Content_Types].xml", media_type=b"<x/>")),
-        (
-            "an OpenDocument file",
-            signed_container(media_type=b"application/vnd.oasis.opendocument.text"),
+        pytest.param(b"%PDF-1.4 a letter, not a container", id="a PDF renamed"),
+        pytest.param(plain_zip(), id="an ordinary ZIP"),
+        pytest.param(
+            signed_container(first_entry="[Content_Types].xml", media_type=b"<x/>"),
+            id="a Word file",
         ),
-        ("an ASiC-S container", signed_container(media_type=b"application/vnd.etsi.asic-s+zip")),
-        ("a truncated container", signed_container()[:24]),
-        ("an executable", b"MZ\x90\x00" + b"\x00" * 64),
+        pytest.param(
+            signed_container(media_type=b"application/vnd.oasis.opendocument.text"),
+            id="an OpenDocument file",
+        ),
+        pytest.param(
+            signed_container(media_type=b"application/vnd.etsi.asic-s+zip"),
+            id="an ASiC-S container",
+        ),
+        pytest.param(signed_container()[:24], id="a truncated container"),
+        pytest.param(b"MZ\x90\x00" + b"\x00" * 64, id="an executable"),
     ],
 )
 @pytest.mark.parametrize("extension", [".asice", ".bdoc"])
-def test_a_file_that_is_not_a_signed_container_is_refused_in_words(
-    extension, description, content
-):
+def test_a_file_that_is_not_a_signed_container_is_refused_in_words(extension, content):
     with pytest.raises(UploadRejected) as refusal:
         read_upload(upload(f"arvamus{extension}", content))
 
-    assert str(refusal.value) == container_refusal(extension), description
+    assert str(refusal.value) == container_refusal(extension)
 
 
 def test_a_deflated_first_entry_that_does_not_inflate_is_refused():
@@ -194,28 +198,47 @@ def test_a_format_nobody_decided_on_is_still_refused(name):
     assert ".asice" in message and ".bdoc" in message
 
 
+#: Every format the door took before this change, with bytes that pass its check.
+ORDINARY_FILES = [
+    ("kiri.pdf", b"%PDF-1.4 kiri", "application/pdf"),
+    ("andmed.csv", b"a;b\n1;2\n", "text/csv"),
+    (
+        "eelnou.docx",
+        b"PK\x03\x04 docx",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ),
+    (
+        "tabel.xlsx",
+        b"PK\x03\x04 xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ),
+    (
+        "slaidid.pptx",
+        b"PK\x03\x04 pptx",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ),
+    ("vana.doc", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1 doc", "application/msword"),
+    ("vana.xls", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1 xls", "application/vnd.ms-excel"),
+    ("kiri.msg", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1 msg", "application/vnd.ms-outlook"),
+    ("kiri.eml", b"Subject: tere\r\n\r\nsisu", "message/rfc822"),
+    ("pilt.png", b"\x89PNG\r\n\x1a\n pilt", "image/png"),
+    ("pilt.jpg", b"\xff\xd8\xff pilt", "image/jpeg"),
+    ("pilt.jpeg", b"\xff\xd8\xff pilt", "image/jpeg"),
+    ("markmed.txt", b"tekst", "text/plain"),
+    ("pakett.zip", plain_zip(), "application/zip"),
+]
+
+
+def test_the_ordinary_list_is_every_format_but_the_two_containers():
+    """So the test below cannot quietly skip a format the door accepts."""
+    covered = {name[name.rindex(".") :] for name, _, _ in ORDINARY_FILES}
+    assert covered == set(EXTENSION_MIME_TYPES) - {".asice", ".bdoc"}
+
+
 @pytest.mark.parametrize(
     ("name", "content", "mime_type"),
-    [
-        ("kiri.pdf", b"%PDF-1.4 kiri", "application/pdf"),
-        (
-            "eelnou.docx",
-            b"PK\x03\x04 docx",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        ),
-        (
-            "tabel.xlsx",
-            b"PK\x03\x04 xlsx",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        ),
-        ("vana.doc", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1 doc", "application/msword"),
-        ("kiri.msg", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1 msg", "application/vnd.ms-outlook"),
-        ("kiri.eml", b"Subject: tere\r\n\r\nsisu", "message/rfc822"),
-        ("pilt.png", b"\x89PNG\r\n\x1a\n pilt", "image/png"),
-        ("pilt.jpg", b"\xff\xd8\xff pilt", "image/jpeg"),
-        ("markmed.txt", b"tekst", "text/plain"),
-        ("pakett.zip", plain_zip(), "application/zip"),
-    ],
+    ORDINARY_FILES,
+    ids=[name for name, _, _ in ORDINARY_FILES],
 )
 def test_the_formats_accepted_before_are_accepted_exactly_as_before(name, content, mime_type):
     accepted = read_upload(upload(name, content))
@@ -248,9 +271,7 @@ def test_one_media_type_for_both_extensions_and_the_archive_agrees():
 # ---------------------------------------------------------------------------
 
 
-def test_lae_dokument_stores_the_container_and_hands_back_the_same_bytes(
-    signed_in, normal_matter
-):
+def test_lae_dokument_stores_the_container_and_hands_back_the_same_bytes(signed_in, normal_matter):
     content = signed_container()
 
     signed_in.post(

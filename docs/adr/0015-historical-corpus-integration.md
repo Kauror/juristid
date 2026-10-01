@@ -144,6 +144,14 @@ Widening `ALLOWED_EVIDENCE_MIME_TYPES` to accept `.asice`, `.bdoc`, `.xltx`,
 one: refusing to *store* a file the extraction stack cannot parse would lose the
 original for no gain.
 
+**Narrowed on 2026-10-01 by docs/adr/0125:** `.asice` and `.bdoc` are no longer
+the archive's alone. The interactive upload door accepts them too, recorded as
+the same `application/vnd.etsi.asic-e+zip`, because the Chamber's present-day
+correspondence arrives and leaves in them; the door checks the media type the
+container declares in its first entry and still never unpacks, verifies or
+previews one. Every other historical format — `.ddoc` included — stays the
+archive's, and so does everything else this section says.
+
 ### Old material is not less confidential for being old
 
 Every read goes through `matter_visibility_q` on the owning Matter, exactly like
