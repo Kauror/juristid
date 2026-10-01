@@ -30,8 +30,8 @@
       `website_overviews.html`, and `plan_website_overview` still writes one.
       What is gone is a silent way to create one from this panel.
 
-      Still no title, no description and no attachment: the record's content is
-      the address and the day (docs/adr/0081 §2). It is not a `+ Märge`, it is
+      An optional `Pealkiri` since docs/adr/0127 §1 (narrowing docs/adr/0081
+      §2), and still no description and no attachment. It is not a `+ Märge`, it is
       not a `+ Töövõit`, and it is not a deadline — a write-up that is owed
       makes no `NextAction`, no work item and no badge, so a Matter carrying one
       never reads as late (docs/adr/0081 §4).
@@ -71,8 +71,12 @@
             clearing it still stores `NULL` and still reads «kuupäev teadmata»
             (docs/adr/0078 §2).
 
-            The two are one row, as they always were: `cx-grid--links` is the
-            same pairing `+ Koja arvamus` uses for its file and its day.
+            **`Kuupäev`, `Pealkiri`, `Link`.** The optional `Pealkiri` shares
+            the day's row (`cx-grid--links`, the pairing `+ Koja arvamus` uses
+            for its file and its day) and the address has the full width below:
+            it is the one required answer and usually the longest. The title is
+            what the `Teema käik` line reads, so a file written up twice says
+            which write-up is which without opening either (docs/adr/0127 §1).
           {% endcomment %}
           <div class="cx-grid cx-grid--links">
             <label class="cx-f cx-f--date"
@@ -80,14 +84,23 @@
               <span class="cx-f__lab">{{ website_overview_form.published_on.label }}</span>
               {{ website_overview_form.published_on }}
             </label>
-            <label class="cx-f" for="{{ website_overview_form.url.id_for_label }}">
-              <span class="cx-f__lab">{{ website_overview_form.url.label }}</span>
-              {{ website_overview_form.url }}
+            <label class="cx-f" for="{{ website_overview_form.overview_title.id_for_label }}">
+              <span class="cx-f__lab">{{ website_overview_form.overview_title.label }}
+                <span class="cx-f__opt">valikuline</span></span>
+              {{ website_overview_form.overview_title }}
             </label>
           </div>
+          <label class="cx-f" for="{{ website_overview_form.url.id_for_label }}">
+            <span class="cx-f__lab">{{ website_overview_form.url.label }}</span>
+            {{ website_overview_form.url }}
+          </label>
           {% if website_overview_form.published_on.errors %}
             <p class="field__error" id="{{ website_overview_form.published_on.auto_id }}_error">
               {{ website_overview_form.published_on.errors|first }}</p>
+          {% endif %}
+          {% if website_overview_form.overview_title.errors %}
+            <p class="field__error" id="{{ website_overview_form.overview_title.auto_id }}_error">
+              {{ website_overview_form.overview_title.errors|first }}</p>
           {% endif %}
           {% if website_overview_form.url.errors %}
             <p class="field__error" id="{{ website_overview_form.url.auto_id }}_error">

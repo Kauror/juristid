@@ -102,6 +102,7 @@ what somebody managing an opinion is asking about (§12, §28, §29).
                 <span class="opinionmenu__overview">
                   {{ overview.get_status_display }}
                   {% if overview.is_published %}
+                    {% if overview.title %}· {{ overview.title }}{% endif %}
                     · {{ overview.chronology_date }}
                     {% if overview.url %}
                       · <a class="quietlink" href="{{ overview.url }}"

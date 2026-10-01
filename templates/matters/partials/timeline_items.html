@@ -169,7 +169,13 @@ record, not professional chronology (master specification 16.5).
           {% endcomment %}
           <div class="uxtl__head">
             <p class="uxtl__ms" id="kaik-{{ item.row_key }}-rida">
-              <span class="uxtl__mswhat">{{ item.milestone.what }}</span>
+              {% comment %}
+                An `Ülevaade / uudis` headline carries the page's `Pealkiri`, and
+                `Muuda` can change it, so the line has an id the correction's
+                answer swaps out of band — the date cell's reasoning, below
+                (docs/adr/0127 §1).
+              {% endcomment %}
+              <span {% if item.website_overview %}id="kodulehe-ulevaade-{{ item.website_overview.pk }}-pealkiri" {% endif %}class="uxtl__mswhat">{{ item.milestone.what }}</span>
               {% comment %}
                 An `Ülevaade / uudis` row names its date cell, and nothing else
                 does. `Muuda` swaps only the link region — deliberately, so a

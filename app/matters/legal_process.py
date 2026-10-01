@@ -50,10 +50,12 @@ The rail says where the procedure stands and a separate sentence says what Koda
 is doing about it, which is the separation ADR 0032 made and this does not
 reopen.
 
-**No dates on a node.** A node carries a label and a state.
+**No dates on a node from the stage history.** A node carries a label and a state.
 `MATTER_STAGE_CHANGED` proves a stage was recorded and its `occurred_at` is the
 moment somebody typed it in — so printing that beside `Kooskõlastusring` would
 date a step of somebody else's procedure to a day in this application's own life.
+A phase's date is its roadmap row's, which a person writes (docs/adr/0100 §2,
+docs/adr/0128 §1).
 The dates that *are* real read beside the rail under `Kirjas olevad kuupäevad`,
 off the records that own them (docs/adr/0092 §4, §13).
 
@@ -91,11 +93,14 @@ from app.audit.models import ChangeEvent
 from app.audit.visibility import scope_change_events
 from app.matters.models import Matter
 from app.matters.process_phases import (
+    CONFIRMABLE_STAGE_KEYS,
     PHASE_JOUSTUMINE,
     PHASE_KEYS,
     PHASE_ULEVOTMINE,
     ProcessPattern,
+    confirmable_phase,
     pattern_for,
+    phase_date_bounds,
     phase_label,
 )
 from app.matters.process_timeline import (
@@ -300,6 +305,60 @@ def phase_context(*, matter: Matter, instrument_keys: frozenset[str] | None = No
     )
 
 
+@dataclass(frozen=True)
+class PhaseDateOffer:
+    """`Märgi ka menetluse kulgu: <phase> <day>` — what one stage move may also date.
+
+    One per stage the `+ Märge` select offers whose move would date an undated
+    phase (docs/adr/0128 §1). ``earliest`` and ``latest`` are the days the
+    roadmap's order rule allows, ``None`` where nothing bounds a side; the day
+    itself must also not be after today, which the form and the service check on
+    their own clock.
+    """
+
+    stage_key: str
+    phase_key: str
+    phase_label: str
+    earliest: date | None = None
+    latest: date | None = None
+
+    def allows(self, day: date | None, today: date) -> bool:
+        if day is None or day > today:
+            return False
+        if self.earliest is not None and day < self.earliest:
+            return False
+        return not (self.latest is not None and day > self.latest)
+
+
+def phase_date_offers(*, phases: PhaseContext, rows: dict[str, Any]) -> dict[str, PhaseDateOffer]:
+    """For each stage a `+ Märge` could move this file to, the phase it may also date.
+
+    A read over the pattern, the stage the file stands on, and the phase rows
+    already read (:func:`timeline_step_rows`). A stage is offered only where
+    :func:`~app.matters.process_phases.confirmable_phase` names a phase **and that
+    phase carries no date yet** — an existing date is never overwritten, and a
+    date is never offered as though it were unset (docs/adr/0128 §1).
+    """
+    pattern = phases.pattern
+    if pattern is None:
+        return {}
+    dated = {key: row.occurs_on for key, row in rows.items() if row.occurs_on is not None}
+    offers: dict[str, PhaseDateOffer] = {}
+    for stage_key in sorted(CONFIRMABLE_STAGE_KEYS):
+        phase_key = confirmable_phase(pattern, from_stage=phases.stage_key, to_stage=stage_key)
+        if not phase_key or phase_key in dated:
+            continue
+        earliest, latest = phase_date_bounds(pattern, phase_key, dated)
+        offers[stage_key] = PhaseDateOffer(
+            stage_key=stage_key,
+            phase_key=phase_key,
+            phase_label=phase_label(phase_key),
+            earliest=earliest,
+            latest=latest,
+        )
+    return offers
+
+
 # ---------------------------------------------------------------------------
 # Reading the evidence
 # ---------------------------------------------------------------------------
@@ -417,6 +476,7 @@ def legal_process_rail(
     user: Any,
     instrument_keys: frozenset[str] | None = None,
     context: PhaseContext | None = None,
+    step_rows: tuple[dict[str, Any], list[Any]] | None = None,
 ) -> LegalProcessRail | None:
     """One Matter's `Menetluse kulg`, or ``None`` when nothing can be said.
 
@@ -428,6 +488,8 @@ def legal_process_rail(
 
     ``context`` is the resolved pattern and stage, passed in by the Matter page so
     the rail and the grouped history below it cannot disagree about one file.
+    ``step_rows`` is :func:`timeline_step_rows`, likewise read once by the page
+    and handed to `matter_rail` too.
     """
     facts = (
         context
@@ -442,6 +504,10 @@ def legal_process_rail(
 
     recorded = recorded_stage_keys(matter=matter, user=user)
     recorded_phases = recorded_phase_keys(matter=matter, user=user)
+    phase_rows, _added = (
+        step_rows if step_rows is not None else timeline_step_rows(matter=matter, user=user)
+    )
+    today = timezone.localdate()
     # The stage the file is standing on is evidence for its own node and for no
     # other. It is removed from `recorded` so the current node reads `Praegu`
     # rather than `Kirjas` — one node, one state, and the strongest true one.
@@ -455,6 +521,22 @@ def legal_process_rail(
     # A recorded *stage* is a column having been moved, which is the thing a
     # person can get wrong and correct — see the demotion below.
     step_indexes = {index for index, node in enumerate(nodes) if node.phase_key in recorded_phases}
+    # **A third kind: a phase somebody dated, on a day that has come.** An
+    # explicit roadmap date is a person stating when this part of the procedure
+    # happened — the same statement `_keep_recorded_phases` already accepts for a
+    # phase the pattern no longer draws (docs/adr/0119 §4). Reading it as
+    # anything but reached put «VTK 1.9 · Tulevikus» on a file whose
+    # väljatöötamiskavatsus went out on the first: `VTK` maps no stage, so on a
+    # file still on `Idee` nothing else could ever mark it (JUR-CASE-10, UQ-05,
+    # docs/adr/0128 §3). Like a recorded step it is an act, not a column, so the
+    # stage demotion below does not touch it — and it is not the current node:
+    # the file's position is still `Hetkeseis`. A hidden row is not evidence, and
+    # a date still ahead is a plan.
+    step_indexes |= {
+        index
+        for index, node in enumerate(nodes)
+        if _reached_by_its_date(phase_rows.get(node.phase_key), today)
+    }
     stage_indexes = {
         index
         for index, node in enumerate(nodes)
@@ -638,6 +720,48 @@ class RailStep:
         return f"{round(self.reach * 100, 1):g}%"
 
 
+def _reached_by_its_date(row: Any, today: date) -> bool:
+    """Whether a phase row is a person's statement that the phase has happened.
+
+    Shown, dated, and that date has come — read through the strip's own
+    `dated_state`, so a period is reached only once it has ended and a plan is
+    never evidence (docs/adr/0123, docs/adr/0128 §3).
+    """
+    if row is None or row.hidden or row.occurs_on is None:
+        return False
+    return dated_state(row.occurs_on, row.occurs_on_precision, today) in (
+        STATE_REACHED,
+        STATE_TODAY,
+    )
+
+
+def _last_dated_phase_not_after(steps: list[RailStep], when: date, *, start: int) -> int | None:
+    """The furthest phase from ``start`` on whose explicit date is not after ``when``.
+
+    Only phases a person dated count — an undated one makes no claim about
+    when anything happened. Explicit dates run in the procedure's order
+    (docs/adr/0100 §5), so this is the last phase a point dated ``when`` is
+    known to follow.
+    """
+    found = None
+    for index in range(start, len(steps)):
+        step = steps[index]
+        if step.is_phase and step.sort_on is not None and step.sort_on <= when:
+            found = index
+    return found
+
+
+def timeline_step_rows(*, matter: Matter, user: Any) -> tuple[dict[str, Any], list[Any]]:
+    """This Matter's own timeline rows, read once for every surface that needs them.
+
+    The rail's state (`legal_process_rail`), its placement (`matter_rail`) and
+    the `+ Märge` offer to date a phase (`phase_date_offers`) all read the same
+    rows; the Matter page reads them here once and hands them to each, so the
+    page's query budget does not grow with the readers.
+    """
+    return _step_rows(matter=matter, user=user)
+
+
 def _step_rows(*, matter: Matter, user: Any) -> tuple[dict[str, Any], list[Any]]:
     """This Matter's own timeline rows: phase rows by key, and added steps.
 
@@ -736,6 +860,7 @@ def matter_rail(
     user: Any,
     rail: LegalProcessRail | None,
     milestones: Any = (),
+    step_rows: tuple[dict[str, Any], list[Any]] | None = None,
 ) -> list[RailStep]:
     """The one rail `Menetluse kulg` draws, phases and dated points together.
 
@@ -798,7 +923,9 @@ def matter_rail(
     **Added steps go where a person put them**, after everything the file itself
     places (docs/adr/0119 §2).
     """
-    rows, added = _step_rows(matter=matter, user=user)
+    rows, added = (
+        step_rows if step_rows is not None else timeline_step_rows(matter=matter, user=user)
+    )
     steps: list[RailStep] = []
 
     if rail is not None:
@@ -884,6 +1011,20 @@ def matter_rail(
             high = min(current + 1, len(steps))
             while high < len(steps) and not steps[high].is_phase:
                 high += 1
+            # **And on over every phase a person dated no later than this
+            # point.** An explicit roadmap date is an anchor that sorts by date
+            # (docs/adr/0100, amended 2026-09-27, rule 1) — but the window used
+            # to stop one past the current phase, so on a file still on `Idee`
+            # an anchor `VTK 1.9` was never scanned and `Tagasiside tähtaeg 6.9`
+            # and `Koja arvamus 8.9` were drawn *before* it (JUR-CASE-10,
+            # docs/adr/0128 §4). The window now reaches the last such phase,
+            # and the dated points already placed after it; past that, an
+            # undated phase or one dated later bounds it, as before.
+            dated_reach = _last_dated_phase_not_after(steps, milestone.sort_on, start=high)
+            if dated_reach is not None:
+                high = dated_reach + 1
+                while high < len(steps) and not steps[high].is_phase:
+                    high += 1
             # Just before the current phase, but never before the beginning:
             # on a file still on its first phase, the point reads inside it.
             beginning = _beginning_slot(steps, rail)
@@ -968,11 +1109,7 @@ def _keep_recorded_phases(
         if rail is not None
         else frozenset(recorded_phase_keys(matter=matter, user=user))
     )
-    dated = {
-        key
-        for key, row in rows.items()
-        if not row.hidden and row.occurs_on is not None and row.occurs_on <= today
-    }
+    dated = {key for key, row in rows.items() if _reached_by_its_date(row, today)}
     kept = [key for key in PHASE_KEYS if key in (recorded | dated) and key not in drawn]
     if not kept:
         return

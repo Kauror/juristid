@@ -63,7 +63,8 @@ def test_files_chosen_together_are_one_teema_kaik_line(page, base_url, tmp_path)
 
 
 def test_a_kaasamine_edits_what_it_asked_and_its_links_read_as_names(page, base_url):
-    """No generic `Link` or `Märkus` on `Muuda`; a bare host is saved with
+    """`Muuda` asks what `+ Kaasamine` asks — since docs/adr/0127 §2 that
+    includes `Veebileht` and `Märkus` again; a bare host is saved with
     `https://`; the links read «Smaily» and «Alchemer» and nothing else (§4, §5)."""
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, unique_title("Kaasamise väljad"))
@@ -93,5 +94,7 @@ def test_a_kaasamine_edits_what_it_asked_and_its_links_read_as_names(page, base_
     edit.wait_for()
     expect(edit.locator("[name=feedback_deadline]")).to_be_visible()
     expect(edit.locator("[name=smaily_url]")).to_be_visible()
-    expect(edit.locator("[name=url]")).to_have_count(0)
-    expect(edit.locator("[name=note]")).to_have_count(0)
+    # `Veebileht` and `Märkus` are back on `Muuda`, as on `+ Kaasamine`
+    # (docs/adr/0127 §2, reversing docs/adr/0121 §4's removal).
+    expect(edit.locator("[name=url]")).to_be_visible()
+    expect(edit.locator("[name=note]")).to_be_visible()

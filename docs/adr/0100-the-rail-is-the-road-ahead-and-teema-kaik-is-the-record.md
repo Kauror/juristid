@@ -70,6 +70,9 @@ also made the dates non-monotonic, because a file that goes forward and comes
 back is a loop and a rail is a line (QA-006).
 
 A node now carries an explicit `MatterTimelineStep` date and otherwise nothing.
+*(Unchanged by docs/adr/0128 §1, which adds a second way to write that date: a
+confirmed `+ Märge` stage move. The node is still dated by its roadmap row and
+by nothing else.)*
 
 **Consequence for the panel:** `Muuda` offers a date box on every phase. It used
 to withhold one wherever a `Märge` already dated the phase — correct while the
@@ -204,6 +207,9 @@ A phase node marks where its phase **begins**. A dated point reads after every
 phase it is known to follow and before every phase it is not.
 
 1. **An explicit roadmap date is an anchor and sorts by date**, as before.
+   *Made true across the current node on 2026-10-01 (docs/adr/0128 §4): a
+   reached point's window used to stop one past the current phase, so a dated
+   phase ahead of it was never scanned.*
 2. **The pattern's first phase is the one undated phase every act is known to
    follow.** It is the beginning (§1), and an act on the file belongs to a
    procedure that has begun. An undated past point therefore never reads before

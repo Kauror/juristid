@@ -496,10 +496,20 @@ and never marks the first three complete. Only explicit recorded evidence promot
 an earlier node, and the word «tehtud» does not appear in this component's
 vocabulary at all.
 
+**Narrowed on 2026-10-01 by docs/adr/0128 §3:** a shown phase row a person dated
+on a day that has come is evidence too, read as `Kirjas` wherever the node sits;
+the stage demotion below still applies to stage evidence only, and the current
+node is still the one `Hetkeseis` places.
+
 **Recorded means recorded.** The evidence is the Matter's current stage and the
 explicit `MATTER_STAGE_CHANGED` history, and nothing else. Not a title, not a
 filename, not an organisation's name, not a `MatterProceduralLink`'s kind, not a
 URL host, not the current date and not a node's position in the list.
+
+**Narrowed on 2026-10-01 by docs/adr/0128 §1:** a stage-change event's
+`occurred_at` still dates nothing. A `+ Märge` moving the stage may, when the
+person ticks `Märgi ka menetluse kulgu`, write that `Märge`'s business day as the
+phase's roadmap date — the person's statement, not the event's clock.
 
 **No dates on the rail.** A stage-change event proves that a stage was recorded and
 its `occurred_at` is the moment somebody typed it in — so printing that beside

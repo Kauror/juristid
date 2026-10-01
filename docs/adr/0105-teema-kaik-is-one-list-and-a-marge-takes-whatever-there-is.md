@@ -351,6 +351,9 @@ and its default is still a claim nobody made. Where the procedure stands is
   control, label or hidden input, and `workspace.add_procedural_development` has
   no `process_phase` parameter. A crafted `process_phase` in the POST reaches a
   form that never cleans it and a use case that cannot accept it.
+- **Unchanged by docs/adr/0128** for `Etapp`: no phase is stored on a `Märge`.
+  A phase *date* the person confirms with `Märgi ka menetluse kulgu` is written
+  to the roadmap row, not to the `Märge`, and is not an inference.
 - **Nothing is inferred in its place** — not from `Hetkeseis`, the chosen stage,
   `Õigusakt`, the words or the date. A new row stores the column's empty value.
 - `Muuda` offers `Etapp` only on a row that already stores a phase, opening on

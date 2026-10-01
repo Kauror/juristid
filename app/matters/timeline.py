@@ -1064,11 +1064,19 @@ def engagement_milestone(engagement: MatterEngagement) -> ChronologyMilestone:
     # state one fact twice on one row (docs/adr/0086 §3, §4).
     sub = " · ".join(parts)
     # Read off the row already in hand — no second query, and nothing here
-    # for an engagement that carries neither address, so a row that has no
-    # links renders no empty container for them.
+    # for an engagement that carries no address, so a row that has no links
+    # renders no empty container for them.
+    #
+    # **`Veebileht` first**: the round's public page, the one a reader outside
+    # the mailing would follow, then the two tools (docs/adr/0127 §2). An
+    # imported `Kirjade voor` stored its mailing's preview in the same column
+    # (`app/legacy_import/register_outreach.py`), and that is not a web page
+    # about the round, so on that stored channel the link is the generic
+    # `Link` docs/adr/0027 always called it.
     links = tuple(
         ChronologyLink(label=label, url=url)
         for label, url in (
+            (engagement_url_label(engagement), engagement.url),
             ("Smaily", engagement.smaily_url),
             ("Alchemer", engagement.alchemer_url),
         )
@@ -1086,7 +1094,28 @@ def engagement_milestone(engagement: MatterEngagement) -> ChronologyMilestone:
         sub=sub,
         links=links,
         ahead=dated_ahead(engagement.occurred_on, engagement.occurred_on_precision),
+        # `Märkus` — what the person recording the round said about it, on its
+        # own labelled line and never folded into `sub` or the headline: the
+        # headline is the audience and is what every work list reads
+        # (docs/adr/0127 §2, the `own_note` contract above).
+        own_note=engagement.note,
+        own_note_label=ENGAGEMENT_NOTE_LABEL if engagement.note else "",
     )
+
+
+#: The label `Märkus` reads under on a `Kaasamine` row (docs/adr/0127 §2).
+ENGAGEMENT_NOTE_LABEL = "Märkus"
+#: What a `Kaasamine`'s `url` reads as: the round's public page.
+ENGAGEMENT_WEBSITE_LABEL = "Veebileht"
+#: …except on an imported mailing, whose `url` holds the mailing's own preview.
+ENGAGEMENT_MAILING_LINK_LABEL = "Link"
+
+
+def engagement_url_label(engagement: MatterEngagement) -> str:
+    """`Veebileht`, or `Link` on a stored `Kirjade voor` (see `engagement_milestone`)."""
+    if engagement.kind == EngagementKind.EMAIL_CAMPAIGN:
+        return ENGAGEMENT_MAILING_LINK_LABEL
+    return ENGAGEMENT_WEBSITE_LABEL
 
 
 #: What the chronology prints where a `Väline seisukoht` has no date of its own.
@@ -1819,7 +1848,11 @@ def projected_milestones(
                 overview,
                 _end_of_day(sits_on),
                 ChronologyMilestone(
-                    what=WEBSITE_OVERVIEW_MILESTONE,
+                    # The kind and, where the record has one, the page's own
+                    # name: a closed row shows only this line and its day, so
+                    # two write-ups of one file are told apart here or nowhere
+                    # (docs/adr/0127 §1).
+                    what=overview.headline,
                     display_date=(
                         format_estonian_date(published_on)
                         if published_on is not None
@@ -1853,7 +1886,7 @@ def projected_milestones(
                 overview,
                 _end_of_day(cancelled_on),
                 ChronologyMilestone(
-                    what=WEBSITE_OVERVIEW_MILESTONE,
+                    what=overview.headline,
                     display_date=format_estonian_date(cancelled_on),
                     sub=str(overview.get_status_display()),
                 ),

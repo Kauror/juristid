@@ -16,6 +16,9 @@ basis = "deployment"
 # Sama päeva teine väljalase: JUR-CASE-01 Juristieksami elava toimiku QA-st,
 # ADR 0125, samuti migratsioonideta — digiallkirjastatud ümbrikud, kolm viimast
 # rida. Kui see ei jõua tootmisse 01.10, liiguvad need read väljalaske päeva alla.
+# Sama päeva kolmas väljalase: JUR-CASE-07/08/09/10, ADR 0127 ja 0128, üks
+# migratsioon (matters/0041) — neli viimast rida. Kui see ei jõua tootmisse
+# 01.10, liiguvad need read väljalaske päeva kirjesse.
 changes = [
   "Kui teemal ei ole järgmist tegevust, saab selle määrata otse «Praeguses tegevuses»: «+ Määra järgmine tegevus». Selleks ei pea enam lisama tulevikku jäävat märget; kuupäeva võib jätta tühjaks või anda kuu, kvartali või aasta täpsusega.",
   "Koja arvamuse registreerimisel ja kaasamise lõpetamisel saab linnukesega «Märgi praegune tegevus tehtuks» märkida samal ajal tehtuks teema praeguse tegevuse. Linnuke ei ole vaikimisi märgitud ja selle kõrval on kirjas, milline tegevus tehtuks märgitakse; eraldi «Mida tegid?» kirjet ei ole vaja.",
@@ -23,7 +26,11 @@ changes = [
   "Digiallkirjastatud ümbrikke (.asice ja .bdoc) saab nüüd lisada otse, ilma ZIP-faili pakkimata: uut teemat luues, «Lae dokument» kaudu, märkele ja teistele lisamistele ning Koja arvamuse «Saadetud failina».",
   "Ümbrik jääb alles täpselt sellisena, nagu see saabus, ja laaditakse alla sama nime ja laiendiga; selle sisu ei avata ja allkirju Juristid ei kontrolli.",
   "Faili valimise aken pakub vaikimisi ainult neid failitüüpe, mida Juristid vastu võtab.",
-  # JUR-CASE-06 ja JUR-CASE-12, ADR 0129: arvamuse töödokumendid ja «Seotud
+  "Ülevaatele või uudisele saab lisada pealkirja. «Teema käigus» on see rea pealkirjas — «Ülevaade / uudis: Koja seisukoht …» —, nii et mitu ülevaadet on eristatavad ilma linke avamata. Pealkirja saab hiljem muuta «Muuda» kaudu; pealkirjata ülevaated on endiselt sellised nagu varem.",
+  "Kaasamisel on taas väljad «Veebileht» ja «Märkus», nii lisamisel kui ka muutmisel. Veebileht (näiteks koda.ee «Hetkel käsil» leht) on «Teema käigus» klikitav link Smaily ja Alchemeri kõrval ja märkus on kaasamise all oma real; töölehtedel ja «Praeguses tegevuses» on endiselt see, keda kaasati.",
+  "Kui märge muudab hetkeseisu — näiteks «Kooskõlastusringil» —, pakub see linnukest «Märgi ka menetluse kulgu: Kooskõlastusring» koos märke kuupäevaga. Linnukesega salvestades on sama kuupäev ka «Menetluse kulus» ja seda ei pea teist korda sisestama. Linnukest pakutakse ainult siis, kui sellel etapil kuupäeva veel ei ole ja märke kuupäev ei ole tulevikus; olemasolevat kuupäeva ei muudeta.",
+  "«Menetluse kulus» on etapp, mille kuupäev on käes või möödas — näiteks «VTK 1.9» —, nüüd kirjas toimununa, mitte «tulevikus», ja sellele järgnevad tähtajad ja arvamused on selle järel kuupäevade järjekorras. Praegune hetkeseis on endiselt eraldi esile tõstetud.",
+  # Sama päeva neljas väljalase: JUR-CASE-06 ja -12, ADR 0129 — arvamuse töödokumendid ja «Seotud
   # kirje». Kaks migratsiooni (documents/0013, documents/0014). Kui see
   # väljalase ei jõua tootmisse 01.10, liiguvad need read väljalaske päeva alla.
   "Koja arvamusele saab lisada «Töödokumendid» — muudetava faili (näiteks DOCX), millest arvamus koostati. Need salvestatakse liigiga «Töödokument» sama arvamuse juurde; välja saadetud fail on endiselt ainult «Saadetud fail».",

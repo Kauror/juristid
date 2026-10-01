@@ -93,6 +93,10 @@ why `+ Kodulehe ülevaade` is a panel with one button and no fields. A title box
 here would be asking somebody to invent a headline that the real page contradicts
 a week later; a date box would be asking them to commit to a day nobody has
 agreed. Both would then sit on the file looking like facts.
+**Narrowed on 2026-10-01 by docs/adr/0127 §1:** a *published* write-up may carry
+an optional `Pealkiri`, asked with the page — on publication and on correction —
+and read as the `Teema käik` headline. A plan is still asked nothing, for the
+reason above.
 
 **`Avaldatud` requires both**, and the database says so rather than only the
 service: a `PUBLISHED` row has a non-empty `url` and a `published_on`, and a row

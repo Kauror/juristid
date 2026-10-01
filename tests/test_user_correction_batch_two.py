@@ -235,25 +235,32 @@ def test_an_important_deadline_saves_past_and_future_at_every_precision(
 # 3 — Kaasamine: create and edit ask the same things
 # ---------------------------------------------------------------------------
 
-#: What a person is asked on `+ Kaasamine`, by field name.
+#: What a person is asked on `+ Kaasamine`, by field name. `Veebileht` and
+#: `Märkus` joined it with docs/adr/0127 §2, under panel-specific names because
+#: the panel keeps Django's default ids on a page that already draws `id_url`.
 CREATE_FIELDS = {
     "audience",
     "response_count",
     "occurred_on",
     "feedback_deadline",
     "feedback_received",
+    "website_url",
     "smaily_url",
     "alchemer_url",
+    "engagement_note",
 }
-#: The same questions on `Muuda` — `title` is `audience` under its stored name.
+#: The same questions on `Muuda` — `title` is `audience`, `url` is `website_url`
+#: and `note` is `engagement_note`, each under its stored name.
 EDIT_FIELDS = {
     "title",
     "response_count",
     "occurred_on",
     "feedback_deadline",
     "feedback_received",
+    "url",
     "smaily_url",
     "alchemer_url",
+    "note",
 }
 
 
@@ -263,9 +270,11 @@ def test_create_and_edit_ask_the_same_questions():
 
     assert create == CREATE_FIELDS
     assert edit == EDIT_FIELDS
-    assert "url" not in edit and "note" not in edit
-    labels = {name: field.label for name, field in EngagementForm().fields.items()}
-    assert "Link" not in labels.values() and "Märkus" not in labels.values()
+    # The same words on both surfaces (docs/adr/0127 §2).
+    create_labels = {name: field.label for name, field in CompactEngagementForm().fields.items()}
+    edit_labels = {name: field.label for name, field in EngagementForm().fields.items()}
+    assert create_labels["website_url"] == edit_labels["url"] == "Veebileht"
+    assert create_labels["engagement_note"] == edit_labels["note"] == "Märkus"
 
 
 def _round(matter, actor, **kwargs):
@@ -285,20 +294,25 @@ def _edit_url(matter, engagement):
     )
 
 
-def test_the_edit_form_renders_no_generic_link_or_note(signed_in, specialist):
+def test_the_edit_form_renders_veebileht_and_markus(signed_in, specialist):
+    """`Muuda` offers what `+ Kaasamine` asks, filled from the record (docs/adr/0127 §2)."""
     matter = factories.MatterFactory(owner=specialist)
-    engagement = _round(matter, specialist)
+    engagement = _round(
+        matter, specialist, url="https://www.koda.ee/hetkel-kasil/x", note="Tööloend."
+    )
 
     html = signed_in.get(_edit_url(matter, engagement), **HX).content.decode()
 
     assert 'name="smaily_url"' in html and 'name="alchemer_url"' in html
     assert 'name="feedback_deadline"' in html
-    assert 'name="url"' not in html
-    assert 'name="note"' not in html
+    assert 'name="url"' in html and 'value="https://www.koda.ee/hetkel-kasil/x"' in html
+    assert 'name="note"' in html and "Tööloend.</textarea>" in html
+    assert ">Veebileht" in html and ">Märkus" in html
 
 
-def test_a_legacy_link_and_note_survive_an_edit(signed_in, specialist):
-    """Stored by the old five-field form, shown nowhere, and never cleared."""
+def test_a_legacy_link_and_note_survive_an_edit_that_does_not_carry_them(signed_in, specialist):
+    """A `Muuda` posted from a row drawn before docs/adr/0127 has no `url` or
+    `note` box, so it asked nothing about either — and clears neither."""
     matter = factories.MatterFactory(owner=specialist)
     engagement = _round(
         matter, specialist, url="https://vana.example/kampaania", note="Vana märkus."
@@ -339,8 +353,10 @@ def test_a_round_created_with_every_field_reads_back_at_once(signed_in, speciali
             "occurred_on": today.strftime("%d.%m.%Y"),
             "feedback_deadline": (today + timedelta(days=7)).strftime("%d.%m.%Y"),
             "feedback_received": "Kolm arvamust.",
+            "website_url": "www.koda.ee/hetkel-kasil/juristieksam",
             "smaily_url": "www.sendsmaily.net/kampaania",
             "alchemer_url": "survey.alchemer.eu/s3/123",
+            "engagement_note": "  Fail on sihtrühma tööloend, mitte saajate nimekiri.  ",
         },
         **HX,
     )
@@ -352,7 +368,11 @@ def test_a_round_created_with_every_field_reads_back_at_once(signed_in, speciali
     assert engagement.feedback_received == "Kolm arvamust."
     assert engagement.smaily_url == "https://www.sendsmaily.net/kampaania"
     assert engagement.alchemer_url == "https://survey.alchemer.eu/s3/123"
-    assert engagement.url == "" and engagement.note == ""
+    # `Veebileht` into `url`, through the same rule: the bare host gains its
+    # scheme. `Märkus` into `note`, trimmed (docs/adr/0127 §2).
+    assert engagement.url == "https://www.koda.ee/hetkel-kasil/juristieksam"
+    assert engagement.note == "Fail on sihtrühma tööloend, mitte saajate nimekiri."
+    assert engagement.title == "liikmed"
     assert wi.open_feedback_waits(specialist).filter(pk=engagement.pk).exists()
 
 

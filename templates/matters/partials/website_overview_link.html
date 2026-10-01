@@ -39,6 +39,15 @@ saying so, which is the same treatment every external link on this page gets.
           hx-target="#kodulehe-ulevaade-{{ overview.pk }}-link"
           hx-swap="outerHTML">
       {% csrf_token %}
+      {% comment %}
+        `Pealkiri` first, as on `+ Ülevaade / uudis`: the correction offers what
+        the panel asked (docs/adr/0127 §1). Optional, and an emptied box clears
+        the name.
+      {% endcomment %}
+      <label class="cx-f">
+        <span class="cx-f__lab">{{ website_overview_link_form.title.label }}</span>
+        {{ website_overview_link_form.title }}
+      </label>
       <label class="cx-f">
         <span class="cx-f__lab">{{ website_overview_link_form.url.label }}</span>
         {{ website_overview_link_form.url }}
@@ -64,6 +73,10 @@ saying so, which is the same treatment every external link on this page gets.
         refused, both controls point at their own sentence, and a sentence that
         was not rendered is a pointer to nothing (ENG-092).
       {% endcomment %}
+      {% if website_overview_link_form.title.errors %}
+        <p class="formerror" role="alert"
+           id="{{ website_overview_link_form.title.auto_id }}_error">{{ website_overview_link_form.title.errors|first }}</p>
+      {% endif %}
       {% if website_overview_link_form.url.errors %}
         <p class="formerror" role="alert"
            id="{{ website_overview_link_form.url.auto_id }}_error">{{ website_overview_link_form.url.errors|first }}</p>
@@ -73,7 +86,7 @@ saying so, which is the same treatment every external link on this page gets.
            id="{{ website_overview_link_form.published_on.auto_id }}_error">
           {{ website_overview_link_form.published_on.errors|first }}</p>
       {% endif %}
-      {% if website_overview_link_error and not website_overview_link_form.url.errors and not website_overview_link_form.published_on.errors %}
+      {% if website_overview_link_error and not website_overview_link_form.title.errors and not website_overview_link_form.url.errors and not website_overview_link_form.published_on.errors %}
         <p class="formerror" role="alert">{{ website_overview_link_error }}</p>
       {% endif %}
 
@@ -97,7 +110,7 @@ saying so, which is the same treatment every external link on this page gets.
             the one place that decides which (docs/adr/0089 §10).
           {% endcomment %}
           <p class="uxtl__conflictnote">
-            {{ website_overview_link_conflict.url }}
+            {% if website_overview_link_conflict.title %}{{ website_overview_link_conflict.title }} · {% endif %}{{ website_overview_link_conflict.url }}
             · {{ website_overview_link_conflict.chronology_date }}
           </p>
           <p class="uxtl__conflictnote">
@@ -179,4 +192,12 @@ drift.
 {% if website_overview_oob %}
   <span class="uxtl__msdate" hx-swap-oob="true"
         id="kodulehe-ulevaade-{{ overview.pk }}-kuupaev">{{ overview.chronology_date }}</span>
+  {% comment %}
+    The headline travels the same way, for the same reason: a correction may
+    rename the page, and the closed row's one line must not go on reading the
+    old `Pealkiri` (docs/adr/0127 §1). The row's toggle is named by this line
+    (`aria-labelledby`), so it is renamed with it.
+  {% endcomment %}
+  <span id="kodulehe-ulevaade-{{ overview.pk }}-pealkiri" class="uxtl__mswhat"
+        hx-swap-oob="true">{{ overview.headline }}</span>
 {% endif %}

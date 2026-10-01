@@ -110,6 +110,12 @@ form does not carry the fields and the view does not name them, so
 the shape `Liik` already has (docs/adr/0086 §1). They stay in search and in the
 audit history. The compatibility create door stops writing them too.
 
+**Reversed on 2026-10-01 by docs/adr/0127 §2** for the two columns, and only for
+them: the living-dossier QA showed what they are for — the round's public koda.ee
+page and a caveat about what an attached list proves. `+ Kaasamine` and `Muuda`
+both ask them now, as `Veebileht` and `Märkus`, and the open row prints both. The
+parity rule above — the editor offers exactly what the panel asks — stands.
+
 ## 5. Web addresses and how a link reads
 
 **One rule** — `app/core/web_addresses.py`, `normalize_web_address` — for every
