@@ -744,7 +744,9 @@ def test_the_engagement_panel_asks_no_kind_and_keeps_its_two_questions(signed_in
     that no chip of it reaches the panel a person actually uses.
 
     The two questions the approved target asked for — `Keda kaasati` and
-    `Vastuseid` — are unchanged, and the old five-field form is still gone.
+    `Vastuseid` — are unchanged. The old five-field form's `Pealkiri` is still
+    gone; its `Link` and `Märkus` are back as `Veebileht` and `Märkus`, under
+    the panel's own names (docs/adr/0127 §2).
     """
     body = _detail(signed_in, normal_matter)
     # To `+ Arvamus / tagasiside`, the family after `+ Kaasamine`.
@@ -758,9 +760,11 @@ def test_the_engagement_panel_asks_no_kind_and_keeps_its_two_questions(signed_in
         assert f">{label}<" not in panel
     assert "Keda kaasati" in panel
     assert "Vastuseid" in panel
-    # And none of the old five-field form.
-    for gone in ("Pealkiri", "Märkus"):
-        assert gone not in panel
+    # The old five-field form's headline box is still gone…
+    assert "Pealkiri" not in panel
+    # …and the round's page and note are asked again (docs/adr/0127 §2).
+    assert 'name="website_url"' in panel and 'name="engagement_note"' in panel
+    assert "Veebileht" in panel and "Märkus" in panel
 
 
 @pytest.mark.parametrize(

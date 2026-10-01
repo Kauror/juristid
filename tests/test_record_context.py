@@ -22,6 +22,7 @@ Asserted here:
 from __future__ import annotations
 
 import datetime as dt
+import re
 
 import pytest
 from django.urls import reverse
@@ -40,6 +41,7 @@ from app.matters.models import (
     MatterWebsiteOverview,
 )
 from app.matters.services import (
+    WEBSITE_OVERVIEW_TITLE_TOO_LONG,
     add_engagement,
     correct_website_overview_link,
     engagement_revision_token,
@@ -261,7 +263,7 @@ def test_an_overlong_title_is_refused_beside_the_box_and_nothing_is_written(
     edit = WebsiteOverviewLinkForm({"title": title, "url": VTK_PAGE, "published_on": ""})
     assert not edit.is_valid() and "title" in edit.errors
 
-    with pytest.raises(DomainError):
+    with pytest.raises(DomainError, match=re.escape(WEBSITE_OVERVIEW_TITLE_TOO_LONG)):
         _published(normal_matter, url=VTK_PAGE, title=title)
     assert not MatterWebsiteOverview.objects.filter(matter=normal_matter, status="PUBLISHED")
 
