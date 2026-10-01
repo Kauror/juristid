@@ -25,14 +25,7 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import (
-    SANDRA,
-    create_matter,
-    give_first_step,
-    open_add_panel,
-    sign_in,
-    unique_title,
-)
+from e2e.conftest import SANDRA, give_first_step, open_add_panel, sign_in, unique_title
 from tests.synthetic_containers import plain_zip, signed_container
 
 pytestmark = pytest.mark.e2e
@@ -46,6 +39,22 @@ NOT_ALLOWED = "ei ole lubatud"
 def _past(days: int) -> str:
     on = date.today() - timedelta(days=days)
     return f"{on.day}.{on.month}.{on.year}"
+
+
+def _new_teema(page, base_url: str, title: str) -> str:
+    """A Teema filed through `Uus teema` with its first step.
+
+    Not `create_matter`: every Teema this suite leaves behind owes an open step,
+    or it joins the «järgmise tegevuseta» list other files read
+    (`give_first_step`, e2e/conftest.py).
+    """
+    page.goto(f"{base_url}/teemad/uus/")
+    page.wait_for_load_state("networkidle")
+    page.locator("#id_title").fill(title)
+    give_first_step(page)
+    page.get_by_role("button", name="Loo teema").click()
+    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    return page.url
 
 
 def _offered(page, selector: str) -> set[str]:
@@ -175,7 +184,7 @@ def test_uus_teema_names_a_file_that_only_calls_itself_a_container(page, base_ur
 
 def test_koja_arvamus_registers_an_asice_as_the_file_that_went_out(page, base_url, screenshots):
     sign_in(page, base_url, SANDRA)
-    create_matter(page, base_url, unique_title("Allkirjastatud arvamus"))
+    _new_teema(page, base_url, unique_title("Allkirjastatud arvamus"))
     content = signed_container()
 
     open_add_panel(page, "arvamus-koja")
@@ -198,7 +207,7 @@ def test_koja_arvamus_refuses_a_false_container_in_words_and_registers_nothing(
     page, base_url, screenshots
 ):
     sign_in(page, base_url, SANDRA)
-    create_matter(page, base_url, unique_title("Vale arvamuse ümbrik"))
+    _new_teema(page, base_url, unique_title("Vale arvamuse ümbrik"))
 
     answer = _register_koja_arvamus(page, "Koja arvamus.asice", plain_zip())
 
