@@ -2686,7 +2686,9 @@ class MatterTimelineStep(VisibilityInheritingModel):
 
     **Nothing is inferred.** Not from a title, a filename, an organisation, a
     link's host or today's date. Every row here was written by a person pressing
-    `Salvesta` on the one panel that writes it.
+    `Salvesta` — on `Muuda kulgu`, or, for one phase's date only, on a `+ Märge`
+    whose stage move they confirmed with `Märgi ka menetluse kulgu`
+    (`record_confirmed_phase_date`, docs/adr/0128 §1).
 
     **It creates no work.** Hiding a phase makes no Matter late; a date here is
     not a `NextAction`, not an `Oluline tähtaeg` and not a deadline anybody is

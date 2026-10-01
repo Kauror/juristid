@@ -1105,9 +1105,7 @@ def test_an_engagement_recorded_before_the_columns_existed_still_reads(normal_ma
         if item.is_milestone and item.milestone.what.startswith("Kaasamine:")
     ]
     assert len(rows) == 1
-    assert [(link.label, link.url) for link in rows[0].milestone.links] == [
-        ("Veebileht", KODA_URL)
-    ]
+    assert [(link.label, link.url) for link in rows[0].milestone.links] == [("Veebileht", KODA_URL)]
 
 
 def test_a_correction_round_trips_the_provider_links(normal_matter, specialist):

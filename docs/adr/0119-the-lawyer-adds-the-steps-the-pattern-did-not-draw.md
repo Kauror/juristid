@@ -121,6 +121,10 @@ same hole from the other side, for a hide set before the file got there.
 
 ## 4 — A phase the file recorded survives reclassification
 
+*Since docs/adr/0128 §3 the dated-row evidence below also marks a phase the
+pattern* does *draw: a shown phase row dated on a day that has come reads
+`Kirjas` wherever it sits, through the same `dated_state` reading.*
+
 A phase with explicit evidence that the current pattern does not draw is still
 drawn, `recorded`, in the vocabulary's order, just before where the file stands.
 Evidence is what 0092 §13 already accepts and nothing more: a `Menetluse areng`

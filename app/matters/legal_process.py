@@ -50,10 +50,12 @@ The rail says where the procedure stands and a separate sentence says what Koda
 is doing about it, which is the separation ADR 0032 made and this does not
 reopen.
 
-**No dates on a node.** A node carries a label and a state.
+**No dates on a node from the stage history.** A node carries a label and a state.
 `MATTER_STAGE_CHANGED` proves a stage was recorded and its `occurred_at` is the
 moment somebody typed it in — so printing that beside `Kooskõlastusring` would
 date a step of somebody else's procedure to a day in this application's own life.
+A phase's date is its roadmap row's, which a person writes (docs/adr/0100 §2,
+docs/adr/0128 §1).
 The dates that *are* real read beside the rail under `Kirjas olevad kuupäevad`,
 off the records that own them (docs/adr/0092 §4, §13).
 
