@@ -128,7 +128,7 @@ def _named_open_action(*, locked_matter: Matter, action_id: Any) -> NextAction:
     Every save that finishes the current step names it, and this is the one
     place that name is checked. `Mida tegid?` has always carried a hidden
     `action_id`; `Registreeri arvamus` and `Salvesta ja lõpeta` carry one when
-    the person ticks `Märgi praegune tegevus tehtuks` (docs/adr/0125 §2).
+    the person ticks `Märgi praegune tegevus tehtuks` (docs/adr/0126 §2).
 
     **Named, never found.** A stale tab still showing a step a colleague has
     since finished or replaced would otherwise complete *whatever is open now* —
@@ -363,7 +363,7 @@ def add_engagement_feedback(
     operation id it cannot render.
 
     **`complete_action_id` finishes the current step with it, when the person
-    says so** (docs/adr/0125 §2). A round that was the step — «Kaasa liikmed ja
+    says so** (docs/adr/0126 §2). A round that was the step — «Kaasa liikmed ja
     koonda nende seisukohad» — ends here, and asking the lawyer to write a
     second `Mida tegid?` saying the same thing is the duplicate this exists to
     remove. Nothing infers it: the wait on this row is not a `NextAction`, and
@@ -698,7 +698,7 @@ def add_matter_koda_opinion(
     `DocumentVersion` is touched — a revised opinion is a new letter and new bytes,
     which is what the immutable evidence store is for (docs/adr/0091 §6.4, §7).
 
-    **`complete_action_id` — and sending it was the step** (docs/adr/0125 §2).
+    **`complete_action_id` — and sending it was the step** (docs/adr/0126 §2).
     «Vormista ja saada Koja seisukoht» is finished by exactly this save, and
     asking the lawyer to write `Mida tegid?` afterwards would put a second,
     generic record of the same act on the file. When the person ticks

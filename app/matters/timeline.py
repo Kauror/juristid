@@ -104,7 +104,7 @@ TIMELINE_EVENT_TYPES: tuple[str, ...] = (
 #: here, and adding one would be manufacturing a relationship nobody recorded
 #: (docs/adr/0092 §6).
 #:
-#: **Two more since docs/adr/0125 §4**, each the act that can finish the open
+#: **Two more since docs/adr/0126 §4**, each the act that can finish the open
 #: step: `SUBMISSION_SENT` ties a sent `Koja arvamus` to the save that sent it,
 #: and `ENGAGEMENT_FEEDBACK_CLOSED` ties a `Kaasamine` to the save that ended its
 #: wait. Neither has ever been a row — the send is read off its `Submission` and
@@ -128,7 +128,7 @@ RECORD_OPERATION_EVENT_TYPES: tuple[str, ...] = (
 #: it is, and which says nothing about a record nobody may read
 #: (AUTH-003, docs/adr/0092 §7).
 #:
-#: **And a step the save finished** (docs/adr/0125 §4). «Arvamus välja» saved
+#: **And a step the save finished** (docs/adr/0126 §4). «Arvamus välja» saved
 #: with `Märgi praegune tegevus tehtuks` finished the step it was, and the
 #: completion is that act's consequence — the same reasoning, the same fold. Read
 #: alone it was a muted «märkis eelmise sammu tehtuks» row beside the opinion:
@@ -146,7 +146,7 @@ OPERATION_EFFECT_EVENT_TYPES: tuple[str, ...] = (
 #: finished wait fold the one thing either can do to the step — finish it — and
 #: nothing else: a stage moved, or a step set, inside one of those operations
 #: (none does today) would stand as its own row rather than be quietly absorbed
-#: by a fold nobody decided (docs/adr/0125 §4).
+#: by a fold nobody decided (docs/adr/0126 §4).
 FOLDED_EFFECTS: dict[str, frozenset[str]] = {
     ChangeEventType.PROCEDURAL_DEVELOPMENT_RECORDED.value: frozenset(
         {ChangeEventType.MATTER_STAGE_CHANGED.value, ChangeEventType.NEXT_ACTION_SET.value}
@@ -443,7 +443,7 @@ class TimelineItem:
     next_step: TimelineNextStep | None = None
     #: The step this act finished, when it was saved with `Märgi praegune
     #: tegevus tehtuks` — on a sent opinion's row or a finished round's, and on
-    #: no other (docs/adr/0125 §4). Read off the `NextAction` like
+    #: no other (docs/adr/0126 §4). Read off the `NextAction` like
     #: ``next_step``, in the same query.
     completed_step: TimelineNextStep | None = None
     #: Set on a milestone row and on nothing else. It decides what the row
@@ -2075,7 +2075,7 @@ class _ChronologySources:
         developments not in the future; sends visible, historically sent and not
         after today, on the day they went; every visible `Kaasamine`, a round
         dated ahead included, on its own day or the day it was recorded
-        (docs/adr/0092 §6, docs/adr/0125 §4).
+        (docs/adr/0092 §6, docs/adr/0126 §4).
         """
         visible = {"matter": self.matter}
         return (
@@ -2101,7 +2101,7 @@ class _ChronologySources:
 
         A stage move or next step saved with a development, and a step finished
         by a send or by the end of a wait, read on that record's row and are
-        never rows of their own (docs/adr/0092 §6, docs/adr/0125 §4). Which
+        never rows of their own (docs/adr/0092 §6, docs/adr/0126 §4). Which
         effects each family folds is `FOLDED_EFFECTS`, so an event this does not
         name stays an anchor exactly as `_assemble_timeline` keeps it a row.
         ``None`` when nothing can fold at all.
@@ -2322,7 +2322,7 @@ def _assemble_timeline(
     # A list per record, and each operation carrying which effects it may fold:
     # a `Kaasamine` is tied to the save that ended its wait, a sent opinion to
     # the save that sent it, and what either may fold is narrower than what a
-    # `Märge` does (`FOLDED_EFFECTS`, docs/adr/0125 §4).
+    # `Märge` does (`FOLDED_EFFECTS`, docs/adr/0126 §4).
     record_operations: dict[Any, list[tuple[uuid.UUID, frozenset[str]]]] = {}
     for event in events:
         if event.event_type in RECORD_OPERATION_EVENT_TYPES and event.operation_id is not None:
@@ -2644,7 +2644,7 @@ def _with_next_steps(page: list[TimelineItem], user: Any) -> list[TimelineItem]:
     def completed_of(item: TimelineItem) -> Any:
         # Only where a completion was *folded* — a projected record's row. A
         # `Mida tegid?` save keeps its «märkis eelmise sammu tehtuks» clause on
-        # its note's row exactly as before (docs/adr/0125 §4).
+        # its note's row exactly as before (docs/adr/0126 §4).
         if item.record is None:
             return None
         return next(
@@ -2687,7 +2687,7 @@ def _with_next_steps(page: list[TimelineItem], user: Any) -> list[TimelineItem]:
         if finished is not None:
             # The sentence alone. The step's planned day is not when it was
             # done, and printed under «Arvamus välja 25.9» it would read as a
-            # second date for the same act (docs/adr/0125 §4).
+            # second date for the same act (docs/adr/0126 §4).
             changes["completed_step"] = TimelineNextStep(
                 text=finished.text, date_label="", date_value=""
             )

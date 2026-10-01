@@ -39,7 +39,7 @@ uses beside an open step. One form in two states of one zone: `Muuda` while a
 step is open, `+ Määra järgmine tegevus` while none is, and never both. A lawyer
 who has just finished something sets what comes next where they read what comes
 next, without having to file a `+ Märge` dated ahead to do it
-(docs/adr/0125 §1).
+(docs/adr/0126 §1).
 {% endcomment %}
 <section class="curact{% if matter.is_open and current_action.is_overdue %} curact--overdue{% endif %}"
          id="praegune-tegevus" tabindex="-1" aria-labelledby="praegune-pealkiri">
@@ -271,7 +271,7 @@ next, without having to file a `+ Märge` dated ahead to do it
         file carries, and none of them is a `NextAction`: the lawyer has not yet
         said what *they* will do. So the control is offered under each of them,
         and choosing it never turns one of them into a step — it writes only
-        what is typed into it (docs/adr/0120 §2, docs/adr/0125 §1).
+        what is typed into it (docs/adr/0120 §2, docs/adr/0126 §1).
 
         **The same form and the same act as `Muuda`.** One partial, one
         endpoint, one service, and one panel id — `#lisa-jargmine` is the

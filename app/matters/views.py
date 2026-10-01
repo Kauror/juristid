@@ -3932,7 +3932,7 @@ def _engagement_row(
             # The open step this reader may see, for `Lõpeta kaasamine`'s
             # `Märgi praegune tegevus tehtuks` — the same question the page
             # render answers for the same row, so the box cannot appear on one
-            # path and not the other (docs/adr/0125 §2).
+            # path and not the other (docs/adr/0126 §2).
             "current_action": selectors.current_action_of(matter, request.user),
             # `Ootan tagasisidet`'s quick spans, resolved to real days here so
             # each chip can print the one it lands on. Also on the workspace
@@ -4188,7 +4188,7 @@ def complete_engagement_feedback_view(
         # swapping only this row would leave the zone above still asking about a
         # task that is done. Retargeted per response, the way `Muuda kulgu`
         # answers, so the form keeps its own row as the target for every other
-        # outcome (docs/adr/0125 §3).
+        # outcome (docs/adr/0126 §3).
         response = _render_overview(request, matter)
         response["HX-Retarget"] = "#teema-vaade"
         response["HX-Reswap"] = "outerHTML"
@@ -4206,7 +4206,7 @@ def _named_action_id(request: HttpRequest, matter: Matter, form: Any) -> Any:
     answer a guessed one gets, rather than a refusal that confirms it exists
     (AUTH-003). Whether the visible step is still *the open one* is not asked
     here; the use case asks it under the Matter's row lock
-    (`workspace._named_open_action`, docs/adr/0125 §2).
+    (`workspace._named_open_action`, docs/adr/0126 §2).
     """
     named = form.cleaned_data.get("complete_action")
     if named is None:
@@ -4232,7 +4232,7 @@ def set_action(request: HttpRequest, pk: Any) -> HttpResponse:
     # the difference stopped being cosmetic when `+ Järgmine tegevus` left the
     # launcher (docs/adr/0097 §8.2): a refusal could name a panel the page did
     # not render. `#lisa-jargmine` is drawn on every open Matter again since
-    # docs/adr/0125 §1 — `Muuda` beside a step, `+ Määra järgmine tegevus`
+    # docs/adr/0126 §1 — `Muuda` beside a step, `+ Määra järgmine tegevus`
     # without one — and the shared helper still falls back to the
     # workspace-level slot for a Matter closed meanwhile, bringing its header.
     #
@@ -4242,7 +4242,7 @@ def set_action(request: HttpRequest, pk: Any) -> HttpResponse:
     # and the service supersedes it. Either way it is the one canonical
     # `set_next_action_for_new_work` that `+ Märge`'s ticked day ahead and
     # `Uus teema` call too — there is no second way to write a step
-    # (docs/adr/0124 §2, docs/adr/0125 §1).
+    # (docs/adr/0124 §2, docs/adr/0126 §1).
     if not form.is_valid():
         return _workspace_refusal(request, matter, key="action_form", form=form)
 
@@ -6264,7 +6264,7 @@ def workspace_forms(
     renders it while one exists is `Muuda` — an editor, and an editor that opens
     empty is asking somebody to retype what is already on the screen. With no
     open step the same form is `+ Määra järgmine tegevus` and has nothing to
-    prefill from (docs/adr/0125 §1). A bound form ignores `initial` either way,
+    prefill from (docs/adr/0126 §1). A bound form ignores `initial` either way,
     so a refused save still comes back carrying what was typed (brief §9, §15).
 
     **The institution catalogue is read once for the whole bar.** Three of these
@@ -6444,7 +6444,7 @@ def _workspace_refusal(
     `+ Lõpeta teema` and the next-step editor included, after the Matter was
     closed elsewhere, where `overview.html` renders no launcher at all. `Muuda`
     beside a finished step was a third from docs/adr/0097 §8.2 until
-    docs/adr/0125 §1: its `#lisa-jargmine` is now drawn on a file with no step
+    docs/adr/0126 §1: its `#lisa-jargmine` is now drawn on a file with no step
     too, as `+ Määra järgmine tegevus`, so its refusal has a panel again.
 
     Put the sentence in the panel and the browser
@@ -6470,7 +6470,7 @@ def _workspace_refusal(
     context[key] = form
     # The forms that live beside the current task and nowhere else: the
     # completion box and `Vaatasin üle`. `action_form` was one of them from
-    # docs/adr/0097 §8.2 until docs/adr/0125 §1: its panel, `#lisa-jargmine`, is
+    # docs/adr/0097 §8.2 until docs/adr/0126 §1: its panel, `#lisa-jargmine`, is
     # `Muuda` beside an open step and `+ Määra järgmine tegevus` on a file with
     # none, so it is on every open Matter's column and its refusal reopens it.
     needs_current_action = {"current_action_form", "review_form"}
@@ -7325,7 +7325,7 @@ def add_koda_opinion(request: HttpRequest, pk: Any) -> HttpResponse:
             # ticked: fetched through `visible_to` first, so an identifier for a
             # step this reader may not see answers 404 rather than confirming it
             # exists, and whether it is still the open one is the use case's
-            # question under the lock (docs/adr/0125 §2).
+            # question under the lock (docs/adr/0126 §2).
             complete_action_id=_named_action_id(request, matter, form),
             matter=matter,
             author=request.user,

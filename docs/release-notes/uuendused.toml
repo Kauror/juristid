@@ -10,7 +10,7 @@
 [[day]]
 date = 2026-10-01
 basis = "deployment"
-# Reaalajas töövoog sama järgmise tegevuse peal, ADR 0125. Migratsioone ei ole,
+# Reaalajas töövoog sama järgmise tegevuse peal, ADR 0126. Migratsioone ei ole,
 # uut mudelit ei ole. Kui see väljalase ei jõua tootmisse 01.10, liiguvad need
 # read väljalaske päeva kirjesse.
 changes = [

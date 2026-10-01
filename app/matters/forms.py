@@ -4307,7 +4307,7 @@ class CompleteCurrentActionForm(forms.Form):
 
 #: The label of the box that finishes the current step from a substantive save.
 #: One sentence for every form that offers it, so a lawyer meets one control
-#: wherever the act that finishes their step is recorded (docs/adr/0125 §2).
+#: wherever the act that finishes their step is recorded (docs/adr/0126 §2).
 COMPLETES_CURRENT_ACTION_LABEL = "Märgi praegune tegevus tehtuks"
 
 
@@ -4326,7 +4326,7 @@ def completes_current_action_field() -> forms.UUIDField:
     or may not be what the step asked for, and nothing on either record says
     which — no text, date or kind is compared. The template draws the box
     unticked and names the step beside it; the person decides
-    (docs/adr/0125 §2).
+    (docs/adr/0126 §2).
 
     A factory rather than a mixin, because the two forms that carry it already
     have their own bases, and a field declared on a non-`Form` mixin is not
@@ -4615,7 +4615,7 @@ class EngagementFeedbackForm(forms.Form):
     revision = forms.CharField(required=False, widget=forms.HiddenInput())
     #: `Märgi praegune tegevus tehtuks`, offered while the Matter has an open
     #: step the reader can see. The wait this form ends is not a `NextAction`,
-    #: so ending it finishes none unless the person ticks this (docs/adr/0125 §2).
+    #: so ending it finishes none unless the person ticks this (docs/adr/0126 §2).
     complete_action = completes_current_action_field()
 
 
@@ -6090,7 +6090,7 @@ class KodaOpinionForm(forms.Form):
     #: `Märgi praegune tegevus tehtuks` — when sending this opinion was the open
     #: step, the save finishes it (COMPLETED, never superseded) rather than
     #: leaving the lawyer to write a second `Mida tegid?` about the same act.
-    #: Unticked unless the person ticks it (docs/adr/0125 §2).
+    #: Unticked unless the person ticks it (docs/adr/0126 §2).
     complete_action = completes_current_action_field()
     sent_on = EstonianDateField(
         label="Saatmise kuupäev",

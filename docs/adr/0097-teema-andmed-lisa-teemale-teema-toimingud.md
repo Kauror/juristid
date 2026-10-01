@@ -403,7 +403,7 @@ otherwise the optional `Järgmine tegevus` inside `+ Märge`, beside the thing t
 prompted it. Two controls both offering to set «the next action» is how a lawyer
 ends up believing they have two.
 
-**Narrowed on 2026-10-01 by [0125](0125-the-next-step-is-set-where-it-is-read-and-the-act-can-finish-it.md) §1:**
+**Narrowed on 2026-10-01 by [0126](0126-the-next-step-is-set-where-it-is-read-and-the-act-can-finish-it.md) §1:**
 the chip stays out of the launcher. With no open step, `PRAEGUNE TEGEVUS` draws
 `+ Määra järgmine tegevus` — `Muuda`'s own form in its other state — and a
 ticked future `+ Märge` (0124) remains a second door onto the same service,

@@ -469,13 +469,13 @@ def set_next_step(page, text: str, when: str) -> None:
     activity, dated ahead, with `Märgi järgmiseks tegevuseks` ticked
     (docs/adr/0097 §8.2, docs/adr/0124). That save also records the `Märge`,
     which `Teema käik` draws as an `Eesolev` row carrying the same sentence —
-    and the files written before docs/adr/0125 read that row, so this door is
+    and the files written before docs/adr/0126 read that row, so this door is
     kept. The direct `+ Määra järgmine tegevus` the zone now also offers is
     driven by `e2e/test_direct_next_action_workflow.py`.
 
     **Which host is decided by the completion form**, `#praegune-tegevus-vorm`,
     which is drawn only beside an open step. `#lisa-jargmine` is not the signal
-    any more: since docs/adr/0125 §1 it is on every open Matter, as `Muuda` or
+    any more: since docs/adr/0126 §1 it is on every open Matter, as `Muuda` or
     as `+ Määra järgmine tegevus`.
 
     `when` is an Estonian date as the box takes it, and on the `+ Märge` host
@@ -503,7 +503,7 @@ def open_next_action_form(page) -> None:
 
     One form, two hosts: while a step is open it is the `Muuda` disclosure
     beside the task, and once none is it is `+ Määra järgmine tegevus` in the
-    same zone (docs/adr/0125 §1). Both are `next_action_panel.html`, with the
+    same zone (docs/adr/0126 §1). Both are `next_action_panel.html`, with the
     same `#lisa-jargmine` id, which is what lets one helper open either.
 
     The date box used to sit behind a «Kuupäev…» `<details>` and was opened

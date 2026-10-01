@@ -86,7 +86,7 @@ def test_the_current_action_loop_from_task_to_result_to_the_next_one(page, base_
     # separate deliberate act. It is offered right here, though — the zone that
     # asked about the finished task now draws `+ Määra järgmine tegevus`, closed,
     # and the launcher still has no chip for it (docs/adr/0075 §5,
-    # docs/adr/0097 §8.2, docs/adr/0125 §1, §3).
+    # docs/adr/0097 §8.2, docs/adr/0126 §1, §3).
     cta = page.locator("#praegune-tegevus #lisa-jargmine")
     expect(cta).to_have_count(1)
     expect(cta.locator("> summary")).to_have_text("+ Määra järgmine tegevus")

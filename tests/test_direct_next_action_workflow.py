@@ -1,4 +1,4 @@
-"""The real-time loop on the one canonical `NextAction` (docs/adr/0125).
+"""The real-time loop on the one canonical `NextAction` (docs/adr/0126).
 
 *Set the next step → do the work → record the real event → finish the step →
 set the next one.* Asserted here, each where it is decided:
@@ -303,7 +303,7 @@ def test_editing_through_muuda_supersedes_and_leaves_one_open_step(signed_in, ma
 
 
 def test_direct_and_future_marge_steps_are_the_same_canonical_record(specialist):
-    """ADR 0124 and ADR 0125 are two doors onto one service, not two records."""
+    """ADR 0124 and ADR 0126 are two doors onto one service, not two records."""
     direct = factories.MatterFactory(owner=specialist)
     via_marge = factories.MatterFactory(owner=specialist)
     day = _day(8)

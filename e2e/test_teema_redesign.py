@@ -553,7 +553,7 @@ def test_the_current_action_zone_offers_muuda_and_the_launcher_does_not(page, ba
     There is no launcher chip for the next step at all since docs/adr/0097
     §8.2: two controls both offering to set «the next action» is how a lawyer
     ends up believing they have two. With no step, the one editor is
-    `+ Määra järgmine tegevus` in `PRAEGUNE TEGEVUS` (docs/adr/0125 §1), and
+    `+ Määra järgmine tegevus` in `PRAEGUNE TEGEVUS` (docs/adr/0126 §1), and
     once a step exists the same editor is `Muuda` beside the task, prefilled
     with what is there (docs/adr/0075 §10).
     """

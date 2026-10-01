@@ -1,4 +1,4 @@
-"""The real-time lawyer loop, in a browser (docs/adr/0125).
+"""The real-time lawyer loop, in a browser (docs/adr/0126).
 
 `tests/test_direct_next_action_workflow.py` holds the whole contract. This file
 holds what only a rendered page settles: that a lawyer can walk the loop with
