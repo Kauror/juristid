@@ -502,6 +502,10 @@ def legal_process_rail(
 
     recorded = recorded_stage_keys(matter=matter, user=user)
     recorded_phases = recorded_phase_keys(matter=matter, user=user)
+    phase_rows, _added = (
+        step_rows if step_rows is not None else timeline_step_rows(matter=matter, user=user)
+    )
+    today = timezone.localdate()
     # The stage the file is standing on is evidence for its own node and for no
     # other. It is removed from `recorded` so the current node reads `Praegu`
     # rather than `Kirjas` — one node, one state, and the strongest true one.
@@ -515,6 +519,22 @@ def legal_process_rail(
     # A recorded *stage* is a column having been moved, which is the thing a
     # person can get wrong and correct — see the demotion below.
     step_indexes = {index for index, node in enumerate(nodes) if node.phase_key in recorded_phases}
+    # **A third kind: a phase somebody dated, on a day that has come.** An
+    # explicit roadmap date is a person stating when this part of the procedure
+    # happened — the same statement `_keep_recorded_phases` already accepts for a
+    # phase the pattern no longer draws (docs/adr/0119 §4). Reading it as
+    # anything but reached put «VTK 1.9 · Tulevikus» on a file whose
+    # väljatöötamiskavatsus went out on the first: `VTK` maps no stage, so on a
+    # file still on `Idee` nothing else could ever mark it (JUR-CASE-10, UQ-05,
+    # docs/adr/0128 §3). Like a recorded step it is an act, not a column, so the
+    # stage demotion below does not touch it — and it is not the current node:
+    # the file's position is still `Hetkeseis`. A hidden row is not evidence, and
+    # a date still ahead is a plan.
+    step_indexes |= {
+        index
+        for index, node in enumerate(nodes)
+        if _reached_by_its_date(phase_rows.get(node.phase_key), today)
+    }
     stage_indexes = {
         index
         for index, node in enumerate(nodes)
@@ -989,6 +1009,20 @@ def matter_rail(
             high = min(current + 1, len(steps))
             while high < len(steps) and not steps[high].is_phase:
                 high += 1
+            # **And on over every phase a person dated no later than this
+            # point.** An explicit roadmap date is an anchor that sorts by date
+            # (docs/adr/0100, amended 2026-09-27, rule 1) — but the window used
+            # to stop one past the current phase, so on a file still on `Idee`
+            # an anchor `VTK 1.9` was never scanned and `Tagasiside tähtaeg 6.9`
+            # and `Koja arvamus 8.9` were drawn *before* it (JUR-CASE-10,
+            # docs/adr/0128 §4). The window now reaches the last such phase,
+            # and the dated points already placed after it; past that, an
+            # undated phase or one dated later bounds it, as before.
+            dated_reach = _last_dated_phase_not_after(steps, milestone.sort_on, start=high)
+            if dated_reach is not None:
+                high = dated_reach + 1
+                while high < len(steps) and not steps[high].is_phase:
+                    high += 1
             # Just before the current phase, but never before the beginning:
             # on a file still on its first phase, the point reads inside it.
             beginning = _beginning_slot(steps, rail)
@@ -1073,11 +1107,7 @@ def _keep_recorded_phases(
         if rail is not None
         else frozenset(recorded_phase_keys(matter=matter, user=user))
     )
-    dated = {
-        key
-        for key, row in rows.items()
-        if not row.hidden and row.occurs_on is not None and row.occurs_on <= today
-    }
+    dated = {key for key, row in rows.items() if _reached_by_its_date(row, today)}
     kept = [key for key in PHASE_KEYS if key in (recorded | dated) and key not in drawn]
     if not kept:
         return
