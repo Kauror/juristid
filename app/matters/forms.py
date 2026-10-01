@@ -8,6 +8,7 @@ by adding another view (master specification 12.4, 23.4).
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -22,6 +23,7 @@ from app.accounts.models import User
 from app.accounts.naming import disambiguated_names
 from app.accounts.selectors import assignable_business_users, assignable_including
 from app.core.authorization import scoped_count
+from app.core.dates import format_estonian_date
 from app.core.errors import DomainError
 from app.core.richtext import plain_text
 from app.core.widgets import DescribedRadioSelect, EstonianDateField, EstonianDateInput
@@ -7527,6 +7529,23 @@ class MatterLinkForm(ProceduralLinkCreateForm):
         return super().has_changed()
 
 
+class StageSelect(forms.Select):
+    """The `Uus hetkeseis` select, with each option's stage *key* on the option.
+
+    The option's value is the row's primary key, which is what the form posts;
+    the key is what `Märgi ka menetluse kulgu` is offered by
+    (`MatterProgressForm.phase_offers_json`, docs/adr/0128 §1). Read off the
+    instance the choice iterator already holds, so drawing it costs no query.
+    """
+
+    def create_option(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        option = super().create_option(*args, **kwargs)
+        instance = getattr(option.get("value"), "instance", None)
+        if instance is not None:
+            option["attrs"]["data-stage-key"] = instance.key
+        return option
+
+
 class MatterProgressForm(forms.Form):
     """`+ Märge · Tavaline` — one activity on this file, done or planned.
 
@@ -7704,7 +7723,24 @@ class MatterProgressForm(forms.Form):
         required=False,
         empty_label="Jätan muutmata",
         blank=True,
-        widget=forms.Select(attrs={"class": "field__input field__input--compact"}),
+        widget=StageSelect(attrs={"class": "field__input field__input--compact"}),
+    )
+    #: `Märgi ka menetluse kulgu: <faas> <päev>` — the stage move is also the day
+    #: that phase began (docs/adr/0128 §1).
+    #:
+    #: **Offered only where the move means one phase and that phase is still
+    #: undated**, ticked when it appears, and never inferred: the box is the
+    #: person's statement, and unticked the stage moves and no phase is dated.
+    #: Which moves qualify is `confirmable_phase`'s, and which are still open on
+    #: this file is `phase_date_offers` (handed in as ``phase_offers``); the day
+    #: must have come and keep the roadmap in order (`PhaseDateOffer.allows`).
+    #: `clean` drops it otherwise and the use case asks again on the locked row,
+    #: so a tick left from a moment it applied, or put in a POST by hand, writes
+    #: nothing — the shape `as_next_step` has.
+    date_phase = forms.BooleanField(
+        label="Märgi ka menetluse kulgu",
+        required=False,
+        initial=True,
     )
     #: `Märgi järgmiseks tegevuseks` — this activity is also what happens next.
     #:
@@ -7740,12 +7776,18 @@ class MatterProgressForm(forms.Form):
     #: `Hetkeseis` (docs/adr/0105, amended 2026-09-27).
     attachments = workspace_attachments("id_marge_failid")
 
-    def __init__(self, *args: Any, phases: Any = None, **kwargs: Any) -> None:
+    def __init__(
+        self, *args: Any, phases: Any = None, phase_offers: Any = None, **kwargs: Any
+    ) -> None:
         kwargs.setdefault("auto_id", "id_marge_%s")
         #: The file's current stage as the page drew it, resolved by the view that
         #: draws this panel. Read for one thing: whether a chosen `Uus hetkeseis`
         #: moves the file at all (`clean`).
         self.phases = phases
+        #: Stage key → `PhaseDateOffer`: the moves that may also date a phase on
+        #: this file now (`legal_process.phase_date_offers`). Empty means none is
+        #: offered — the box is never drawn on a guess.
+        self.phase_offers = dict(phase_offers or {})
         #: Today on the application's clock (`TIME_ZONE`, Europe/Tallinn) — the
         #: one day `clean` and the template compare `Kuupäev` against, so the
         #: box the page shows and the rule the save applies cannot disagree
@@ -7762,6 +7804,62 @@ class MatterProgressForm(forms.Form):
         # the POST even on a day ahead.
         if not self.next_step_offered:
             self.fields["as_next_step"].widget.attrs["disabled"] = True
+        # The same for `Märgi ka menetluse kulgu`: hidden is disabled. The
+        # script enables it when the chosen stage and day call for it.
+        if self.phase_offer is None:
+            self.fields["date_phase"].widget.attrs["disabled"] = True
+
+    def _drawn_stage_key(self) -> str:
+        """The stage key the panel is drawn holding — only ever on a refused save."""
+        if not self.is_bound:
+            return ""
+        stage = getattr(self, "cleaned_data", {}).get("stage")
+        return getattr(stage, "key", "") or ""
+
+    def _drawn_day(self) -> Any:
+        value = self["occurred_on"].value()
+        try:
+            return self.fields["occurred_on"].to_python(value)
+        except forms.ValidationError:
+            return None
+
+    @property
+    def phase_offer(self) -> Any:
+        """The offer `Märgi ka menetluse kulgu` is drawn with, or ``None``.
+
+        For the stage and the day the panel holds as it is drawn: none on a fresh
+        panel, whose select says «Jätan muutmata». The script re-decides on every
+        change (static/js/app.js, `bindPhaseDateOffers`); this is the answer
+        without it.
+        """
+        offer = self.phase_offers.get(self._drawn_stage_key())
+        if offer is None or not offer.allows(self._drawn_day(), self.today):
+            return None
+        return offer
+
+    @property
+    def phase_offer_text(self) -> str:
+        """«Kooskõlastusring 15.9.2026» — what the box's label names, as drawn."""
+        offer = self.phase_offer
+        if offer is None:
+            return ""
+        return f"{offer.phase_label} {format_estonian_date(self._drawn_day())}"
+
+    @property
+    def phase_offers_json(self) -> str:
+        """The offers for the script, by stage key, as one JSON attribute value."""
+        return json.dumps(
+            {
+                key: {
+                    "label": offer.phase_label,
+                    "earliest": offer.earliest.isoformat() if offer.earliest else "",
+                    "latest": offer.latest.isoformat() if offer.latest else "",
+                }
+                for key, offer in self.phase_offers.items()
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
 
     @property
     def next_step_offered(self) -> bool:
@@ -7844,6 +7942,21 @@ class MatterProgressForm(forms.Form):
         stage = cleaned.get("stage")
         drawn_at = getattr(self.phases, "stage_key", None) if self.phases is not None else None
         moves_stage = stage is not None and (drawn_at is None or stage.key != drawn_at)
+        # `Märgi ka menetluse kulgu` counts only beside a move it was offered for
+        # and a day that offer allows — dropped otherwise, whatever the POST
+        # carried, so the cleaned value is the answer the use case receives
+        # (docs/adr/0128 §1). The use case asks again on the locked Matter.
+        offer = self.phase_offers.get(stage.key) if stage is not None else None
+        cleaned["date_phase"] = bool(
+            cleaned.get("date_phase")
+            and moves_stage
+            and offer is not None
+            and offer.allows(when, self.today)
+        )
+        # A refused save is drawn again holding this stage and day, so the box
+        # is enabled again exactly when it is drawn shown (`phase_offer`).
+        if self.phase_offer is not None:
+            self.fields["date_phase"].widget.attrs.pop("disabled", None)
         if not self.errors and not development_save_says_something(
             title=cleaned.get("title"),
             note="",

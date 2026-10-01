@@ -142,6 +142,30 @@ and what still offers it (`Muuda` on the record, which decides per row).
     </label>
   </div>
   {% comment %}
+    **The stage move is also the phase's day — when the person says so**
+    (docs/adr/0128 §1). Choosing `Kooskõlastusringil` on a `Märge` dated today
+    used to leave `Menetluse kulg` undated, so the same transition had to be
+    typed again in `Muuda kulgu`. This box offers to write it once:
+    «Märgi ka menetluse kulgu: Kooskõlastusring 15.9.2026», ticked when it
+    appears and naming exactly what it will write.
+
+    It appears only for a move `confirmable_phase` accepts onto a phase this file
+    has not dated, on a day that has come and keeps the roadmap in order — the
+    offers are the server's (`data-phase-offers`, keyed by the stage key each
+    option carries), and the script only shows the one that applies. **Hidden is
+    disabled**, so it is not sent; the form and the use case decide again
+    whatever arrives. Nothing is inferred from the stage alone: unticked, the
+    stage moves and no phase is dated.
+  {% endcomment %}
+  <label class="cx-check" for="{{ progress_form.date_phase.id_for_label }}"
+         data-phase-date-choice
+         data-phase-offers="{{ progress_form.phase_offers_json }}"
+         data-today="{{ progress_form.today|date:'Y-m-d' }}"
+         {% if not progress_form.phase_offer %}hidden{% endif %}>
+    {{ progress_form.date_phase }}
+    <span>{{ progress_form.date_phase.label }}: <span data-phase-date-text>{{ progress_form.phase_offer_text }}</span></span>
+  </label>
+  {% comment %}
     The refusal that belongs to the whole panel rather than to any one box: a
     press carrying no sentence, no file and no stage. `add_to_matter.html`
     prints `workspace_error` above this form for the service's own refusals; this

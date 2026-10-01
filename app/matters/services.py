@@ -4621,6 +4621,87 @@ def set_timeline_steps(
     return len(changed) + len(step_changes)
 
 
+@transaction.atomic
+def record_confirmed_phase_date(
+    *,
+    matter: Matter,
+    pattern: Any,
+    phase_key: str,
+    day: Any,
+    actor: Any = None,
+) -> bool:
+    """`Märgi ka menetluse kulgu` — the day a confirmed stage move began its phase.
+
+    The second writer of a phase row's date, beside `Muuda kulgu`, and only ever
+    on a person's word: `add_procedural_development` calls it when the `+ Märge`
+    that moved the file's `Hetkeseis` carried the ticked box, inside that save's
+    Matter lock and `composer_operation`. Nothing calls it from a bare stage
+    edit, from `Uus teema`, from a page load or from the stage history — the
+    rail is still dated by the roadmap and never by history; this is the
+    roadmap, stated once instead of twice (JUR-CASE-10, docs/adr/0128 §1).
+
+    **Writes nothing, and says so by returning `False`, unless all of it
+    holds**, re-read here under the row lock because a form is not a boundary:
+
+    * a day that has come — a day ahead is a plan, and a phase is not reached by
+      somebody choosing a future date;
+    * the phase carries **no date yet**: an explicit date is never overwritten,
+      whoever set it and whenever (docs/adr/0100 §5);
+    * the day keeps the roadmap in the procedure's order against the dates the
+      other phases carry — the rule `Muuda kulgu` refuses on its own boxes.
+
+    Inert rather than refusing, as a stale `Märgi järgmiseks tegevuseks` is
+    (docs/adr/0124 §3): the `Märge` and the stage move are what the person
+    saved, and a phase somebody dated in another tab meanwhile is not a reason
+    to throw either away.
+
+    The row is a phase row like any other — the same table, the same
+    `TIMELINE_STEPS_CHANGED` event, corrected and cleared in `Muuda kulgu`. It is
+    not a `Teema käik` row (`app/matters/timeline.py`), and correcting the
+    `Märge` or the stage later never moves it (docs/adr/0124 §4's rule).
+    """
+    from app.matters.models import MatterTimelineStep
+    from app.matters.process_phases import phase_date_bounds
+
+    if pattern is None or not phase_key or day is None or day > timezone.localdate():
+        return False
+    rows = {
+        row.phase_key: row
+        for row in MatterTimelineStep.objects.select_for_update(no_key=True).filter(matter=matter)
+        if not row.is_added
+    }
+    existing = rows.get(phase_key)
+    if existing is not None and existing.occurs_on is not None:
+        return False
+    dated = {key: row.occurs_on for key, row in rows.items() if row.occurs_on is not None}
+    earliest, latest = phase_date_bounds(pattern, phase_key, dated)
+    if (earliest is not None and day < earliest) or (latest is not None and day > latest):
+        return False
+    MatterTimelineStep.objects.update_or_create(
+        matter=matter,
+        phase_key=phase_key,
+        # `hidden` is not named: a new row is shown, and an existing one keeps
+        # what a person chose — a phase the file now stands on is drawn either
+        # way (docs/adr/0119 §3).
+        defaults={
+            "occurs_on": day,
+            "occurs_on_precision": DatePrecision.EXACT.value,
+            "updated_by": actor,
+        },
+    )
+    record_change_event(
+        event_type=ChangeEventType.TIMELINE_STEPS_CHANGED,
+        matter=matter,
+        actor=actor,
+        obj=matter,
+        summary=phase_key,
+        # `phases` as `Muuda kulgu` writes it, and which save wrote it: the
+        # `Märge` sharing this event's `operation_id` is the act it came from.
+        payload={"phases": [phase_key], "occurs_on": day.isoformat(), "via": "hetkeseis"},
+    )
+    return True
+
+
 #: The words an added step's audit line uses for what happened to it.
 ADDED_STEP_ADDED = "lisatud"
 ADDED_STEP_CHANGED = "muudetud"

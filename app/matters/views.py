@@ -2731,9 +2731,12 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # Built before the dict because two entries read it: the strip renders them
     # and `matter_rail` merges the dated points into the rail.
     steps = process_steps(matter=matter, user=request.user, intelligence=intelligence)
+    # The rail's own rows, read once: the rail's states, its placement and the
+    # `+ Märge` offer to date a phase all read them (docs/adr/0128).
+    step_rows = legal_process.timeline_step_rows(matter=matter, user=request.user)
     # Built once and read twice: the rail draws its nodes and `matter_rail`
     # merges the dated points into them.
-    rail = legal_process_rail(matter=matter, user=request.user, context=phases)
+    rail = legal_process_rail(matter=matter, user=request.user, context=phases, step_rows=step_rows)
     return {
         # `Menetluse kulg` — where the external procedure stands, which one to
         # three phases may follow, and the dated points the file actually holds.
@@ -2748,7 +2751,9 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # ordered list — the second strip is gone and its content is here, still
         # read by `process_timeline.process_steps` and handed over rather than
         # read again (app/matters/legal_process.py `matter_rail`).
-        "rail_steps": matter_rail(matter=matter, user=request.user, rail=rail, milestones=steps),
+        "rail_steps": matter_rail(
+            matter=matter, user=request.user, rail=rail, milestones=steps, step_rows=step_rows
+        ),
         "matter": matter,
         "current_action": current_action,
         "upcoming_step": upcoming_step,
@@ -2779,7 +2784,13 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # `LISA TEEMALE` takes the rest; a refused save replaces exactly one of
         # them with its bound self and opens that panel alone
         # (docs/adr/0075 §2, `workspace_forms`).
-        **workspace_forms(current_action, matter=matter, viewer=request.user, phases=phases),
+        **workspace_forms(
+            current_action,
+            matter=matter,
+            viewer=request.user,
+            phases=phases,
+            phase_offers=_phase_date_offers(request, matter, phases, step_rows),
+        ),
         # The superseded composer, still built for the endpoint that still
         # accepts it. Nothing on this page renders it any more
         # (docs/adr/0075 §11).
@@ -6273,6 +6284,7 @@ def workspace_forms(
     matter: Any = None,
     viewer: Any = None,
     phases: Any = None,
+    phase_offers: Any = None,
 ) -> dict[str, Any]:
     """One unbound form per write intention, for an ordinary render.
 
@@ -6312,7 +6324,7 @@ def workspace_forms(
         # chips asking the same question with different amounts of ceremony, and
         # `MatterProgressForm` says at length why the survivor writes the
         # structured record rather than the prose one (docs/adr/0097 §6).
-        "progress_form": MatterProgressForm(phases=phases),
+        "progress_form": MatterProgressForm(phases=phases, phase_offers=phase_offers),
         # The period travels with the text. Reopening the editor on `Täpne
         # päev` / `01.10.2026` for a step recorded as *oktoober 2026* would
         # invite somebody to save the invented day back, which is the whole
@@ -6623,8 +6635,15 @@ def add_note(request: HttpRequest, pk: Any) -> HttpResponse:
     # `Uus hetkeseis` moves the file. The form has no `Etapp`: a crafted
     # `process_phase` reaches a form that never cleans it and a use case with no
     # parameter for it (docs/adr/0105, amended 2026-09-27).
+    phases = legal_process.phase_context(matter=matter)
     form = MatterProgressForm(
-        request.POST, request.FILES, phases=legal_process.phase_context(matter=matter)
+        request.POST,
+        request.FILES,
+        phases=phases,
+        # Which stage moves may also date their phase on this file now, so the
+        # form keeps `Märgi ka menetluse kulgu` only beside one of them
+        # (docs/adr/0128 §1). The use case asks again on the locked row.
+        phase_offers=_phase_date_offers(request, matter, phases),
     )
     if not form.is_valid():
         return _workspace_refusal(request, matter, key="progress_form", form=form)
@@ -6652,11 +6671,30 @@ def add_note(request: HttpRequest, pk: Any) -> HttpResponse:
             # again on its own clock and writes the step through the ordinary
             # service (docs/adr/0124).
             as_next_step=form.cleaned_data["as_next_step"],
+            # `Märgi ka menetluse kulgu`: the same day also dates the phase the
+            # stage move places the file on — only where it was offered, ticked
+            # and still applies (docs/adr/0128 §1).
+            date_phase=form.cleaned_data["date_phase"],
             uploads=form.cleaned_data["attachments"],
         )
     except (DomainError, UploadRejected) as error:
         return _workspace_refusal(request, matter, key="progress_form", form=form, error=str(error))
     return _render_overview(request, matter)
+
+
+def _phase_date_offers(
+    request: HttpRequest,
+    matter: Matter,
+    phases: Any,
+    rows: tuple[dict[str, Any], list[Any]] | None = None,
+) -> dict[str, Any]:
+    """`legal_process.phase_date_offers` for this page, from rows already read if given."""
+    phase_rows, _added = (
+        rows
+        if rows is not None
+        else legal_process.timeline_step_rows(matter=matter, user=request.user)
+    )
+    return legal_process.phase_date_offers(phases=phases, rows=phase_rows)
 
 
 @login_required

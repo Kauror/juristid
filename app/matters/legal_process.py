@@ -91,11 +91,14 @@ from app.audit.models import ChangeEvent
 from app.audit.visibility import scope_change_events
 from app.matters.models import Matter
 from app.matters.process_phases import (
+    CONFIRMABLE_STAGE_KEYS,
     PHASE_JOUSTUMINE,
     PHASE_KEYS,
     PHASE_ULEVOTMINE,
     ProcessPattern,
+    confirmable_phase,
     pattern_for,
+    phase_date_bounds,
     phase_label,
 )
 from app.matters.process_timeline import (
@@ -300,6 +303,60 @@ def phase_context(*, matter: Matter, instrument_keys: frozenset[str] | None = No
     )
 
 
+@dataclass(frozen=True)
+class PhaseDateOffer:
+    """`Märgi ka menetluse kulgu: <phase> <day>` — what one stage move may also date.
+
+    One per stage the `+ Märge` select offers whose move would date an undated
+    phase (docs/adr/0128 §1). ``earliest`` and ``latest`` are the days the
+    roadmap's order rule allows, ``None`` where nothing bounds a side; the day
+    itself must also not be after today, which the form and the service check on
+    their own clock.
+    """
+
+    stage_key: str
+    phase_key: str
+    phase_label: str
+    earliest: date | None = None
+    latest: date | None = None
+
+    def allows(self, day: date | None, today: date) -> bool:
+        if day is None or day > today:
+            return False
+        if self.earliest is not None and day < self.earliest:
+            return False
+        return not (self.latest is not None and day > self.latest)
+
+
+def phase_date_offers(*, phases: PhaseContext, rows: dict[str, Any]) -> dict[str, PhaseDateOffer]:
+    """For each stage a `+ Märge` could move this file to, the phase it may also date.
+
+    A read over the pattern, the stage the file stands on, and the phase rows
+    already read (:func:`timeline_step_rows`). A stage is offered only where
+    :func:`~app.matters.process_phases.confirmable_phase` names a phase **and that
+    phase carries no date yet** — an existing date is never overwritten, and a
+    date is never offered as though it were unset (docs/adr/0128 §1).
+    """
+    pattern = phases.pattern
+    if pattern is None:
+        return {}
+    dated = {key: row.occurs_on for key, row in rows.items() if row.occurs_on is not None}
+    offers: dict[str, PhaseDateOffer] = {}
+    for stage_key in sorted(CONFIRMABLE_STAGE_KEYS):
+        phase_key = confirmable_phase(pattern, from_stage=phases.stage_key, to_stage=stage_key)
+        if not phase_key or phase_key in dated:
+            continue
+        earliest, latest = phase_date_bounds(pattern, phase_key, dated)
+        offers[stage_key] = PhaseDateOffer(
+            stage_key=stage_key,
+            phase_key=phase_key,
+            phase_label=phase_label(phase_key),
+            earliest=earliest,
+            latest=latest,
+        )
+    return offers
+
+
 # ---------------------------------------------------------------------------
 # Reading the evidence
 # ---------------------------------------------------------------------------
@@ -417,6 +474,7 @@ def legal_process_rail(
     user: Any,
     instrument_keys: frozenset[str] | None = None,
     context: PhaseContext | None = None,
+    step_rows: tuple[dict[str, Any], list[Any]] | None = None,
 ) -> LegalProcessRail | None:
     """One Matter's `Menetluse kulg`, or ``None`` when nothing can be said.
 
@@ -428,6 +486,8 @@ def legal_process_rail(
 
     ``context`` is the resolved pattern and stage, passed in by the Matter page so
     the rail and the grouped history below it cannot disagree about one file.
+    ``step_rows`` is :func:`timeline_step_rows`, likewise read once by the page
+    and handed to `matter_rail` too.
     """
     facts = (
         context
@@ -638,6 +698,48 @@ class RailStep:
         return f"{round(self.reach * 100, 1):g}%"
 
 
+def _reached_by_its_date(row: Any, today: date) -> bool:
+    """Whether a phase row is a person's statement that the phase has happened.
+
+    Shown, dated, and that date has come — read through the strip's own
+    `dated_state`, so a period is reached only once it has ended and a plan is
+    never evidence (docs/adr/0123, docs/adr/0128 §3).
+    """
+    if row is None or row.hidden or row.occurs_on is None:
+        return False
+    return dated_state(row.occurs_on, row.occurs_on_precision, today) in (
+        STATE_REACHED,
+        STATE_TODAY,
+    )
+
+
+def _last_dated_phase_not_after(steps: list[RailStep], when: date, *, start: int) -> int | None:
+    """The furthest phase from ``start`` on whose explicit date is not after ``when``.
+
+    Only phases a person dated count — an undated one makes no claim about
+    when anything happened. Explicit dates run in the procedure's order
+    (docs/adr/0100 §5), so this is the last phase a point dated ``when`` is
+    known to follow.
+    """
+    found = None
+    for index in range(start, len(steps)):
+        step = steps[index]
+        if step.is_phase and step.sort_on is not None and step.sort_on <= when:
+            found = index
+    return found
+
+
+def timeline_step_rows(*, matter: Matter, user: Any) -> tuple[dict[str, Any], list[Any]]:
+    """This Matter's own timeline rows, read once for every surface that needs them.
+
+    The rail's state (`legal_process_rail`), its placement (`matter_rail`) and
+    the `+ Märge` offer to date a phase (`phase_date_offers`) all read the same
+    rows; the Matter page reads them here once and hands them to each, so the
+    page's query budget does not grow with the readers.
+    """
+    return _step_rows(matter=matter, user=user)
+
+
 def _step_rows(*, matter: Matter, user: Any) -> tuple[dict[str, Any], list[Any]]:
     """This Matter's own timeline rows: phase rows by key, and added steps.
 
@@ -736,6 +838,7 @@ def matter_rail(
     user: Any,
     rail: LegalProcessRail | None,
     milestones: Any = (),
+    step_rows: tuple[dict[str, Any], list[Any]] | None = None,
 ) -> list[RailStep]:
     """The one rail `Menetluse kulg` draws, phases and dated points together.
 
@@ -798,7 +901,9 @@ def matter_rail(
     **Added steps go where a person put them**, after everything the file itself
     places (docs/adr/0119 §2).
     """
-    rows, added = _step_rows(matter=matter, user=user)
+    rows, added = (
+        step_rows if step_rows is not None else timeline_step_rows(matter=matter, user=user)
+    )
     steps: list[RailStep] = []
 
     if rail is not None:
