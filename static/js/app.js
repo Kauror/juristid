@@ -3206,6 +3206,63 @@
     });
   }
 
+  /* ---- «Märgi ka menetluse kulgu» on + Märge --------------------------------
+   * Shown when the chosen «Uus hetkeseis» is one the server offered
+   * (`data-phase-offers`, by the stage key each option carries) and the day has
+   * come and keeps the roadmap in order; its label names the phase and the day
+   * it will write. Re-ticked each time it appears, and hidden means disabled,
+   * so a tick left from a moment it applied is not sent. The form and the use
+   * case decide again on the server (docs/adr/0128 §1).
+   */
+  function bindPhaseDateOffers(scope) {
+    (scope || document).querySelectorAll("[data-phase-date-choice]").forEach(function (choice) {
+      if (!once(choice, "PhaseDateOffer")) {
+        return;
+      }
+      var form = choice.closest("form");
+      var box = choice.querySelector("input[type=checkbox]");
+      var text = choice.querySelector("[data-phase-date-text]");
+      var select = form ? form.querySelector("select[name=stage]") : null;
+      var date = form ? form.querySelector("[data-next-step-offer] input[data-datepicker]") : null;
+      var today = parseEstonian(choice.getAttribute("data-today"));
+      var offers;
+      try {
+        offers = JSON.parse(choice.getAttribute("data-phase-offers") || "{}");
+      } catch (error) {
+        offers = {};
+      }
+      if (!box || !select || !date || !today) {
+        return;
+      }
+      var sync = function () {
+        var option = select.options[select.selectedIndex];
+        var offer = option ? offers[option.getAttribute("data-stage-key") || ""] : null;
+        var when = parseEstonian(date.value);
+        var earliest = offer ? parseEstonian(offer.earliest) : null;
+        var latest = offer ? parseEstonian(offer.latest) : null;
+        var applies =
+          !!offer &&
+          !!when &&
+          when <= today &&
+          (!earliest || when >= earliest) &&
+          (!latest || when <= latest);
+        if (applies && choice.hidden) {
+          box.checked = true;
+        }
+        if (applies && text) {
+          text.textContent =
+            offer.label + " " + when.getDate() + "." + (when.getMonth() + 1) + "." + when.getFullYear();
+        }
+        choice.hidden = !applies;
+        box.disabled = !applies;
+      };
+      select.addEventListener("change", sync);
+      date.addEventListener("input", sync);
+      date.addEventListener("change", sync);
+      sync();
+    });
+  }
+
   /* ---- «Kasuta» on Dokumendist leitud --------------------------------------
    * A suggestion the person chooses is written into the real form control
    * beside it — the title box, the deadline box, the Menetlusliik radio, a
@@ -4442,6 +4499,7 @@
     bindStageHelp(document);
     bindRequiredAction(document);
     bindNextStepOffers(document);
+    bindPhaseDateOffers(document);
     bindSuggestionUse(document);
     bindPersonaMenu(document);
     focusFragmentTarget();
@@ -4462,6 +4520,7 @@
     bindStageHelp(event.target.querySelector ? event.target : document);
     bindRequiredAction(event.target.querySelector ? event.target : document);
     bindNextStepOffers(event.target.querySelector ? event.target : document);
+    bindPhaseDateOffers(event.target.querySelector ? event.target : document);
     bindSuggestionUse(event.target.querySelector ? event.target : document);
     bindPersonaMenu(event.target.querySelector ? event.target : document);
   });

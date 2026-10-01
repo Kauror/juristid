@@ -1087,8 +1087,9 @@ def test_a_provider_link_does_not_make_an_engagement_valid_on_its_own(normal_mat
 
 
 def test_an_engagement_recorded_before_the_columns_existed_still_reads(normal_matter, specialist):
-    """**G.** No backfill, so every historical row answers `''` — which renders
-    as the row it always was rather than as an empty link."""
+    """**G.** No backfill, so every historical row answers `''` for the provider
+    links — which render nothing rather than an empty link. The row's own `url`
+    has read as `Veebileht` since docs/adr/0127 §2."""
     add_engagement(
         matter=normal_matter,
         kind=EngagementKind.SURVEY,
@@ -1104,7 +1105,7 @@ def test_an_engagement_recorded_before_the_columns_existed_still_reads(normal_ma
         if item.is_milestone and item.milestone.what.startswith("Kaasamine:")
     ]
     assert len(rows) == 1
-    assert rows[0].milestone.links == ()
+    assert [(link.label, link.url) for link in rows[0].milestone.links] == [("Veebileht", KODA_URL)]
 
 
 def test_a_correction_round_trips_the_provider_links(normal_matter, specialist):

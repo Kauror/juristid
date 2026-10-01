@@ -106,6 +106,9 @@ class WorkspaceResult:
     record: Any = None
     documents: list[Document] = field(default_factory=list)
     closed: bool = False
+    #: Whether a confirmed stage move also dated its phase on `Menetluse kulg`
+    #: (`add_procedural_development(date_phase=True)`, docs/adr/0128 §1).
+    phase_dated: bool = False
 
 
 def _uploads(raw: Any) -> list[Any]:
@@ -261,6 +264,8 @@ def add_matter_engagement(
     response_count: Any = None,
     smaily_url: str = "",
     alchemer_url: str = "",
+    url: str = "",
+    note: str = "",
     occurred_on: Any = None,
     occurred_on_precision: str = DatePrecision.EXACT.value,
     feedback_deadline: Any = None,
@@ -268,6 +273,10 @@ def add_matter_engagement(
     uploads: Sequence[Any] = (),
 ) -> WorkspaceResult:
     """`+ Kaasamine` — one consultation, with the replies it produced attached.
+
+    ``url`` is `Veebileht`, the round's public page, and ``note`` is `Märkus`,
+    what the person recording it wants said about it — both optional, both the
+    columns `add_engagement` has always taken (docs/adr/0127 §2).
 
     The business model is exactly the one `add_engagement` already keeps:
     `response_count` stays nullable, blank still means *nobody counted* rather
@@ -320,6 +329,8 @@ def add_matter_engagement(
             response_count=response_count,
             smaily_url=smaily_url,
             alchemer_url=alchemer_url,
+            url=url,
+            note=note,
             feedback_deadline=feedback_deadline,
             feedback_received=feedback_received,
             actor=author,
@@ -788,9 +799,22 @@ def add_procedural_development(
     next_text: str = "",
     next_date: Any = None,
     as_next_step: bool = False,
+    date_phase: bool = False,
     uploads: Sequence[Any] = (),
 ) -> WorkspaceResult:
     """`+ Menetluse areng` — the procedure moved, and what the lawyer does about it.
+
+    **`date_phase` — the stage move is also the phase's day, when the person
+    says so** (docs/adr/0128 §1). A `Märge` that moves `Hetkeseis` onto a phase
+    it alone places the file on — `Kooskõlastusringil` onto `Kooskõlastusring`,
+    `Valitsuses`, `Riigikogus` and the two European ones — may carry the ticked
+    `Märgi ka menetluse kulgu: <faas> <päev>`, and then the same save writes this
+    `Märge`'s day as that phase's roadmap date, so the one transition is entered
+    once. Decided on the locked Matter and its stage *before* the move
+    (`confirmable_phase`), and written by `record_confirmed_phase_date`, which
+    writes nothing for a phase already dated, a day still ahead or a day out of
+    the procedure's order. Without the tick, or for any other move, the stage
+    moves exactly as it always did and no phase is dated.
 
     The operation the file had no way to record, and the reason a Matter used to
     end at «Arvamus saadetud» with nothing to press. A ministry sends a revised
@@ -888,6 +912,7 @@ def add_procedural_development(
         DEVELOPMENT_NEEDS_SOMETHING,
         change_stage,
         development_save_says_something,
+        record_confirmed_phase_date,
         record_procedural_development,
         record_procedural_development_document,
     )
@@ -935,7 +960,31 @@ def add_procedural_development(
                 development=development, document=document, actor=author
             )
         if moves_stage:
+            # The phase this move may date, read on the locked row *before* it
+            # moves: «forward» is a question about where the file stood.
+            pattern, phase_to_date = None, ""
+            if (
+                date_phase
+                and occurred_on is not None
+                and (occurred_on_precision == DatePrecision.EXACT.value)
+            ):
+                from app.matters.legal_process import phase_context
+                from app.matters.process_phases import confirmable_phase
+
+                facts = phase_context(matter=locked_matter)
+                pattern = facts.pattern
+                phase_to_date = confirmable_phase(
+                    pattern, from_stage=facts.stage_key, to_stage=stage.key
+                )
             change_stage(matter=locked_matter, stage=stage, actor=author)
+            if phase_to_date:
+                result.phase_dated = record_confirmed_phase_date(
+                    matter=locked_matter,
+                    pattern=pattern,
+                    phase_key=phase_to_date,
+                    day=occurred_on,
+                    actor=author,
+                )
         text = (step_text or "").strip()
         if text:
             result.action = set_next_action_for_new_work(
@@ -1098,6 +1147,7 @@ def add_matter_website_overview(
     author: Any,
     url: str = "",
     published_on: Any = None,
+    title: str = "",
 ) -> WorkspaceResult:
     """`+ Ülevaade / uudis` — a plan, or a page that is already up.
 
@@ -1145,6 +1195,7 @@ def add_matter_website_overview(
                 url=url,
                 published_on=published_on,
                 actor=author,
+                title=title,
             )
         result.record = overview
         return result
@@ -1159,6 +1210,7 @@ def publish_planned_website_overview(
     url: str,
     published_on: Any,
     expected_revision: str | None = None,
+    title: str = "",
 ) -> WorkspaceResult:
     """`Avalda` — the page is up, and this is its address.
 
@@ -1181,6 +1233,7 @@ def publish_planned_website_overview(
             published_on=published_on,
             actor=author,
             expected_revision=expected_revision,
+            title=title,
         )
         return result
 
@@ -1216,8 +1269,12 @@ def correct_matter_website_overview(
     url: str,
     published_on: Any,
     expected_revision: str | None = None,
+    title: str | None = None,
 ) -> WorkspaceResult:
-    """`Paranda link` — what the file says about an existing page was wrong.
+    """`Muuda` — what the file says about an existing page was wrong.
+
+    ``title`` is `None` when the caller did not ask about the `Pealkiri`, and
+    then the stored one is left as it is (docs/adr/0127 §1).
 
     **The one operation in this module that takes no closed-Matter guard, and it
     must not.** Closure means no new business content; it has never meant that a
@@ -1232,12 +1289,14 @@ def correct_matter_website_overview(
     """
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
+        named: dict[str, Any] = {} if title is None else {"title": title}
         result.record = correct_website_overview_link(
             overview=overview,
             url=url,
             published_on=published_on,
             actor=author,
             expected_revision=expected_revision,
+            **named,
         )
         return result
 

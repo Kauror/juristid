@@ -11,6 +11,8 @@ taken rather than on an untouched form. Everything else those two decided —
 three states, two columns, both-or-neither, no title, no attachment, no work
 item, the closed-Matter rules, the audit vocabulary, the optimistic
 concurrency — stands exactly as written.
+**Narrowed on 2026-10-01 by docs/adr/0127 §1:** «no title» — a published
+write-up may carry an optional `Pealkiri`; a plan still has none.
 
 ADR 0083's own 2026-09-16 amendment (the primary action `Lisa ülevaade`) is
 undisturbed in substance and is restated in §3: the button now reads

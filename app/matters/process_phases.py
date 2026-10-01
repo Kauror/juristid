@@ -55,6 +55,7 @@ two such records contains the act — and for no other reason (docs/adr/0092 §6
 
 from __future__ import annotations
 
+import datetime as dt
 from dataclasses import dataclass
 
 from app.taxonomy.legal_instruments import (
@@ -511,7 +512,88 @@ def phase_choices(pattern: ProcessPattern | None) -> list[tuple[str, str]]:
     return [(node.phase_key, node.label) for node in pattern.nodes]
 
 
+# ---------------------------------------------------------------------------
+# One transition, entered once
+# ---------------------------------------------------------------------------
+
+#: The `Hetkeseis` moves that may also date the phase they place the file on —
+#: **when the person confirms it**, on the `+ Märge` that moves the stage
+#: (docs/adr/0128 §1).
+#:
+#: Only the moves whose phase means one thing. `consultation`, `government`,
+#: `parliament`, `estonian_eu_position` and `eu_procedure` each begin exactly the
+#: part of the procedure they name. Deliberately **not**:
+#:
+#: * `idea` — it places the file on the *beginning*, and an `Algus` date
+#:   re-anchors every point the file holds (docs/adr/0100, amended 2026-09-27);
+#:   it is also never `VTK`, which maps no stage at all (docs/adr/0098 §2);
+#: * `awaiting_entry` / `in_force` — the move happens on adoption, and
+#:   `Jõustumine` is owned by the commencement record (`MatterEffectiveDate`);
+#: * `awaiting_transposition` — anchored by the transposition deadline;
+#: * `other` — it maps nothing.
+#:
+#: And a stage that shares its phase with another — `consultation` on a European
+#: file, where `ELi konsultatsioon` also holds `idea` — is excluded by
+#: :func:`confirmable_phase` itself: the phase began before this move, so the
+#: move's day is not its beginning.
+CONFIRMABLE_STAGE_KEYS: frozenset[str] = frozenset(
+    {"consultation", "government", "parliament", "estonian_eu_position", "eu_procedure"}
+)
+
+
+def confirmable_phase(pattern: ProcessPattern | None, *, from_stage: str, to_stage: str) -> str:
+    """The phase a deliberate move from ``from_stage`` to ``to_stage`` may also date.
+
+    ``""`` — offer nothing — unless every one of these holds:
+
+    * the file reads against a pattern at all;
+    * ``to_stage`` is one of :data:`CONFIRMABLE_STAGE_KEYS`, and on this pattern
+      it is the *only* stage its phase holds;
+    * the move is **forward** on this pattern: the file stood on an earlier
+      phase, or had no `Hetkeseis` yet. A move back, a move onto the phase it
+      already stands on, or a move from a stage this pattern cannot place
+      (`Muu`) is a correction or a history the rail does not draw, and a date
+      written from it would be the claim docs/adr/0100 §5 refuses.
+
+    A pure reading of the vocabulary: it never looks at a date, a row or the
+    clock, and it writes nothing. Whether the phase is still undated and the day
+    fits is the caller's question (`app/matters/legal_process.py`
+    `phase_date_offers`, `app/matters/services.py` `record_confirmed_phase_date`).
+    """
+    if pattern is None or to_stage not in CONFIRMABLE_STAGE_KEYS:
+        return ""
+    target = next((node for node in pattern.nodes if to_stage in node.stage_keys), None)
+    if target is None or target.stage_keys != frozenset({to_stage}):
+        return ""
+    target_index = pattern.index_of_phase(target.phase_key)
+    if from_stage:
+        from_phase = pattern.phase_for_stage(from_stage)
+        from_index = pattern.index_of_phase(from_phase) if from_phase else None
+        if from_index is None or target_index is None or from_index >= target_index:
+            return ""
+    return target.phase_key
+
+
+def phase_date_bounds(
+    pattern: ProcessPattern, phase_key: str, dated: dict[str, dt.date]
+) -> tuple[dt.date | None, dt.date | None]:
+    """The earliest and latest day ``phase_key`` may take beside the dates set.
+
+    The roadmap's own order rule (docs/adr/0100 §5, `TimelineStepsForm.clean`):
+    explicit phase dates run in the procedure's order, compared only with each
+    other. So a date for this phase may not be earlier than any earlier phase's
+    date nor later than any later phase's. ``None`` on a side nothing bounds.
+    """
+    index = pattern.index_of_phase(phase_key)
+    if index is None:
+        return None, None
+    earlier = [dated[n.phase_key] for n in pattern.nodes[:index] if n.phase_key in dated]
+    later = [dated[n.phase_key] for n in pattern.nodes[index + 1 :] if n.phase_key in dated]
+    return (max(earlier) if earlier else None, min(later) if later else None)
+
+
 __all__ = [
+    "CONFIRMABLE_STAGE_KEYS",
     "DIRECTIVE_PATTERN",
     "DOMESTIC_PATTERN",
     "EU_CONSULTATION_PATTERN",
@@ -538,7 +620,9 @@ __all__ = [
     "PatternNode",
     "ProcessPattern",
     "ProcessPhase",
+    "confirmable_phase",
     "pattern_for",
     "phase_choices",
+    "phase_date_bounds",
     "phase_label",
 ]

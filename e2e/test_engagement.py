@@ -87,7 +87,9 @@ def test_the_panel_opens_from_the_launcher_and_asks_the_four_simplified_question
     optional count and the two provider pointers, which cost a reader nothing
     when they are empty (docs/adr/0027, amended 2026-09-12).
 
-    The old five-field form is still not back: no generic `Link`, no `Märkus`.
+    `Veebileht` and `Märkus` are back since docs/adr/0127 §2, under this
+    panel's own names (`website_url`, `engagement_note`); the bare `url` and
+    `note` the old five-field form posted are still not here.
     """
     sign_in(page, base_url, SANDRA)
     open_scratch_matter(page, base_url)
@@ -100,6 +102,8 @@ def test_the_panel_opens_from_the_launcher_and_asks_the_four_simplified_question
     expect(panel(page).locator("[name=feedback_received]")).to_be_visible()
     expect(panel(page).locator("[name=smaily_url]")).to_be_visible()
     expect(panel(page).locator("[name=alchemer_url]")).to_be_visible()
+    expect(panel(page).locator("[name=website_url]")).to_be_visible()
+    expect(panel(page).locator("[name=engagement_note]")).to_be_visible()
     # The two retired controls, and the questions the target never asked. `url`
     # in particular: the two named pointers are beside the generic one, not a
     # rename of it.

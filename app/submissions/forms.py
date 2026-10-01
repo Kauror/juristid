@@ -284,11 +284,12 @@ def _document_label(document: Any) -> str:
 class WebsiteOverviewChoiceField(forms.ModelMultipleChoiceField):
     """`Ülevaade / uudis` as a chip a person can actually tell apart.
 
-    The model has **no title** — deliberately, since a plan does not have one yet
-    and inventing one would put a name nobody chose beside the real page
-    (docs/adr/0081 §1). So `__str__` is `«Avaldatud: <matter id>»`, which is right
-    for a log line and useless in a list where several rows differ only in which
-    page they point at.
+    A plan has **no title** — deliberately, since it has no page yet and inventing
+    one would put a name nobody chose beside the real page (docs/adr/0081 §1); a
+    published row may carry the optional `Pealkiri` somebody typed
+    (docs/adr/0127 §1), and the label uses it when it is there. `__str__` is
+    `«Avaldatud: <matter id>»`, which is right for a log line and useless in a
+    list where several rows differ only in which page they point at.
 
     The label is therefore built from the facts the row really carries: its state,
     the day it states, and — for a published row — its address. Nothing is
@@ -308,6 +309,10 @@ class WebsiteOverviewChoiceField(forms.ModelMultipleChoiceField):
         state = str(obj.get_status_display())
         if obj.status == WebsiteOverviewStatus.PUBLISHED:
             parts = [state, obj.chronology_date]
+            # The page's own name, where it was given one, is what tells two
+            # write-ups apart before the address does (docs/adr/0127 §1).
+            if obj.title:
+                parts.insert(1, obj.title)
             if obj.url:
                 parts.append(obj.url if len(obj.url) <= 70 else obj.url[:69] + "…")
             return " · ".join(parts)

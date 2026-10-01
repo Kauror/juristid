@@ -158,6 +158,10 @@ file has both, the fact wins and the expectation is simply no longer interesting
 late; a date here is not a `NextAction`, not an `Oluline tähtaeg` and not a
 deadline anybody is measured against. One audit row per save, and none at all for
 a save that moved nothing.
+**Extended on 2026-10-01 by docs/adr/0128 §1:** this panel is no longer the only
+writer of a phase's date. A `+ Märge` that moves `Hetkeseis` onto an undated phase
+writes the same row when the person ticks `Märgi ka menetluse kulgu` — never
+otherwise, never over an existing date. Still nothing inferred.
 
 The panel offers **the pattern's own phases and no others** — a `Määrus` is not
 offered `Riigikogus` — and the checkbox means *show*, because a ticked box that

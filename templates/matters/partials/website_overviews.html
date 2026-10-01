@@ -64,6 +64,16 @@ controls and every write route still refuses it under the row lock
                       hx-post="{% url 'matters:publish_website_overview' pk=matter.pk overview_id=overview.pk %}"
                       hx-target="#teema-vaade" hx-swap="outerHTML">
                   {% csrf_token %}
+                  {% comment %}
+                    The page's optional `Pealkiri`, asked when the plan becomes
+                    a publication — the moment a page exists to be named
+                    (docs/adr/0127 §1).
+                  {% endcomment %}
+                  <label class="cx-f">
+                    <span class="cx-f__lab">{{ publish_form.title.label }}
+                      <span class="cx-f__opt">valikuline</span></span>
+                    {{ publish_form.title }}
+                  </label>
                   <div class="cx-grid cx-grid--links">
                     <label class="cx-f">
                       <span class="cx-f__lab">{{ publish_form.url.label }}</span>
@@ -90,6 +100,10 @@ controls and every write route still refuses it under the row lock
                     a refused control already points at; without them the pointer
                     dangles (the same pairing `+ Kaasamine` makes).
                   {% endcomment %}
+                  {% if publish_form.title.errors %}
+                    <p class="field__error" id="{{ publish_form.title.auto_id }}_error">
+                      {{ publish_form.title.errors|first }}</p>
+                  {% endif %}
                   {% if publish_form.url.errors %}
                     <p class="field__error" id="{{ publish_form.url.auto_id }}_error">
                       {{ publish_form.url.errors|first }}</p>

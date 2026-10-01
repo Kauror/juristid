@@ -854,6 +854,11 @@ ENGAGEMENT_URL_MAX_LENGTH = 1000
 #: than truncating, and the column stays the defence behind it.
 WEBSITE_OVERVIEW_URL_MAX_LENGTH = 1000
 
+#: How long an `Ülevaade / uudis` page's `Pealkiri` may be. A headline, not a
+#: summary: room for a long Estonian news title, short enough that a chronology
+#: line stays a line. `normalize_overview_title` refuses rather than truncates.
+WEBSITE_OVERVIEW_TITLE_MAX_LENGTH = 300
+
 #: The same bound again, on the public address a `Väline seisukoht` points at.
 #:
 #: Stated separately for the reason the two above it are: they are three
@@ -1508,6 +1513,28 @@ class MatterWebsiteOverview(VisibilityInheritingModel, RemovableRecord):
     #: provenance that distinguishes those from a date somebody typed, so
     #: nothing guesses (docs/adr/0089 §9).
     published_on = models.DateField(null=True, blank=True, verbose_name="avaldamise kuupäev")
+    #: `Pealkiri` — what the published page is called, in the person's words.
+    #:
+    #: **Optional, and empty is the ordinary value.** One file is often written
+    #: up more than once — «Koja seisukoht … VTK kohta», then «… eelnõu kohta» —
+    #: and a closed `Teema käik` row shows only its headline and its day, so two
+    #: write-ups used to read as two identical `Ülevaade / uudis` lines until
+    #: somebody followed the links (JUR-CASE-07, docs/adr/0127 §1, narrowing
+    #: docs/adr/0081 §2 and docs/adr/0085 §1).
+    #:
+    #: Asked when a page is recorded as published and when it is corrected,
+    #: never on a plan: a plan has no page yet, so a name for it would be a name
+    #: for nothing. Nothing derives it — not from the address, the page or the
+    #: Matter — and no stored row is backfilled. A database default as well as a
+    #: Python one: the release still serving while this column is added inserts
+    #: plans without naming it.
+    title = models.CharField(
+        max_length=WEBSITE_OVERVIEW_TITLE_MAX_LENGTH,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="pealkiri",
+    )
 
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -1701,16 +1728,37 @@ class MatterWebsiteOverview(VisibilityInheritingModel, RemovableRecord):
 
     #: What the link on the `Teema käik` row says (docs/adr/0121 §5).
     #:
-    #: The record has no title of its own, so the link carries the name of what
-    #: it opens — the way a `Kaasamine`'s reads `Smaily` and `Alchemer` — rather
-    #: than a path cut at 72 characters. The address is not lost: it is the
-    #: link's `title`, the rest of its accessible name (so three write-ups on
-    #: one file are still told apart, docs/adr/0105 §3) and the box `Muuda`
-    #: opens with.
+    #: The link carries the name of what it opens — the way a `Kaasamine`'s
+    #: reads `Smaily` and `Alchemer` — rather than a path cut at 72 characters.
+    #: A `Pealkiri`, where the record has one, is the row's headline
+    #: (`headline`), not the link's text: the link still says what kind of page
+    #: it opens, and the title is not printed twice on one row (docs/adr/0127 §1).
+    #: The address is not lost: it is the link's `title`, the rest of its
+    #: accessible name (so three write-ups on one file are still told apart,
+    #: docs/adr/0105 §3) and the box `Muuda` opens with.
     LINK_LABEL = "Ülevaade / uudis"
 
     @property
     def link_label(self) -> str:
+        return self.LINK_LABEL
+
+    @property
+    def headline(self) -> str:
+        """What the `Teema käik` row's one line says: the kind, and the page's name.
+
+        ``Ülevaade / uudis: <pealkiri>`` when the record has a title, and the
+        kind alone when it has none — which is every row recorded before
+        docs/adr/0127, unchanged. The same `Kind: name` shape a `Kaasamine`
+        headline has, because a closed row shows nothing but this line and its
+        day, and two write-ups of one file must be told apart there without
+        opening either (JUR-CASE-07).
+
+        A property on the record, for `chronology_date`'s reason: the chronology
+        builds the row with it and `website_overview_link.html` swaps the same
+        line out of band after a correction renames the page.
+        """
+        if self.title:
+            return f"{self.LINK_LABEL}: {self.title}"
         return self.LINK_LABEL
 
     #: How long the printed address may run before it is cut.
@@ -2638,7 +2686,9 @@ class MatterTimelineStep(VisibilityInheritingModel):
 
     **Nothing is inferred.** Not from a title, a filename, an organisation, a
     link's host or today's date. Every row here was written by a person pressing
-    `Salvesta` on the one panel that writes it.
+    `Salvesta` — on `Muuda kulgu`, or, for one phase's date only, on a `+ Märge`
+    whose stage move they confirmed with `Märgi ka menetluse kulgu`
+    (`record_confirmed_phase_date`, docs/adr/0128 §1).
 
     **It creates no work.** Hiding a phase makes no Matter late; a date here is
     not a `NextAction`, not an `Oluline tähtaeg` and not a deadline anybody is
