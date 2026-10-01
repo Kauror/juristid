@@ -95,11 +95,11 @@ def _register_koja_arvamus(page, name: str, content: bytes):
     """
     open_add_panel(page, "arvamus-koja")
     form = page.locator("#arvamus-koja")
-    form.locator("input[type=file]").set_input_files(
+    form.locator("input[name=upload]").set_input_files(
         {"name": name, "mimeType": "application/vnd.etsi.asic-e+zip", "buffer": content}
     )
     # Chosen and shown before anything is sent: no complaint from the page.
-    expect(form.locator("[data-filedrop-text]")).to_have_text(name)
+    expect(form.locator("label:has(input[name=upload]) [data-filedrop-text]")).to_have_text(name)
     form.locator("[name=sent_on]").fill(_past(1))
     _choose_ministry(page)
     with page.expect_response(re.compile(r"/lisa/koja-arvamus/$")) as answer:

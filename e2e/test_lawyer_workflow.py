@@ -99,7 +99,7 @@ def record_opinion(page, filename: str) -> None:
     panel = page.locator("#arvamus-koja")
     expect(panel.locator("[name=sent_on]")).not_to_have_value("")
     expect(panel.get_by_role("checkbox", name="Näidisministeerium")).to_be_checked()
-    panel.locator("input[type=file]").set_input_files(
+    panel.locator("input[name=upload]").set_input_files(
         {
             "name": filename,
             "mimeType": "application/pdf",
@@ -422,10 +422,12 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     page.locator(".tabs__tab", has_text="Dokumendid").click()
     expect(page.get_by_role("heading", name="Failid")).to_be_visible()
     expect(page.get_by_text("koja-arvamus.pdf").first).to_be_visible()
-    # Working references are an accordion, closed, and visibly not evidence.
+    # SharePoint references are an accordion, closed, and visibly not evidence —
+    # headed `SharePointi viited` since docs/adr/0129 §11, so it no longer shares
+    # a name with the `Töödokument` files in the table above.
     working = page.locator("#toodokumendid")
     expect(working).not_to_have_attribute("open", "")
-    expect(working.get_by_text("Töödokumendid")).to_be_visible()
+    expect(working.get_by_text("SharePointi viited")).to_be_visible()
     screenshots(page, "07-dokumendid")
 
     # -- Timeline order --------------------------------------------------

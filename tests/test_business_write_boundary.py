@@ -630,6 +630,17 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
             .get(pk=w["sent_submission"].pk)
         ),
     ),
+    # `+ Lisa töödokument` on a sent `Koja arvamus` — the editable file the
+    # letter was drafted in, filed under that exact opinion after the send. New
+    # business content on an open Matter like every other evidence capture, and
+    # an unauthorized caller must be refused it (docs/adr/0129 §7).
+    WriteRoute(
+        name="matters:add_opinion_working_documents",
+        label="Töödokumendi lisamine Koja arvamusele",
+        request=lambda w: ({"pk": w["matter"].pk, "submission_id": w["sent_submission"].pk}, {}),
+        files=lambda: {"attachments": _pdf("loata-toodokument.pdf")},
+        probe=lambda w: DocumentLink.objects.filter(submission=w["sent_submission"]).count(),
+    ),
     # `Kustuta` on a user-created block of `Teema käik`. One route for eight
     # record families, so one entry here: what a forbidden actor must not be
     # able to do is take a record off somebody else's file, and the family they

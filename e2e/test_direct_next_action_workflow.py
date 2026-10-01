@@ -85,7 +85,7 @@ def _choose_recipient(page) -> None:
 def _register_opinion(page, *, finish_step: bool) -> None:
     open_add_panel(page, "arvamus-koja")
     form = page.locator("#arvamus-koja")
-    form.locator("input[type=file]").set_input_files(
+    form.locator("input[name=upload]").set_input_files(
         {"name": "Koja_arvamus.pdf", "mimeType": "application/pdf", "buffer": b"%PDF-1.4 arvamus"}
     )
     form.locator("[name=sent_on]").fill(_day(0))
