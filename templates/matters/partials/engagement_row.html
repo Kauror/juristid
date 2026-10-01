@@ -169,6 +169,20 @@ before the closure.
         <p class="field__error" id="{{ engagement_edit_form.feedback_received.auto_id }}_error">{{ engagement_edit_form.feedback_received.errors|first }}</p>
       {% endif %}
 
+      {% comment %}
+        `Veebileht`, `Smaily link`, `Alchemer link` and `Märkus` — what
+        `+ Kaasamine` asks, in the same order (docs/adr/0127 §2, reversing the
+        «no generic `Link` and no `Märkus`» of docs/adr/0121 §4). An emptied
+        box clears the column.
+      {% endcomment %}
+      <label class="cx-f" for="{{ engagement_edit_form.url.id_for_label }}">
+        <span class="cx-f__lab">{{ engagement_edit_form.url.label }}
+          <span class="cx-f__opt">valikuline</span></span>
+        {{ engagement_edit_form.url }}
+      </label>
+      {% if engagement_edit_form.url.errors %}
+        <p class="field__error" id="{{ engagement_edit_form.url.auto_id }}_error">{{ engagement_edit_form.url.errors|first }}</p>
+      {% endif %}
       <div class="cx-grid cx-grid--links">
         <label class="cx-f" for="{{ engagement_edit_form.smaily_url.id_for_label }}">
           <span class="cx-f__lab">{{ engagement_edit_form.smaily_url.label }}</span>
@@ -185,15 +199,15 @@ before the closure.
       {% if engagement_edit_form.alchemer_url.errors %}
         <p class="field__error" id="{{ engagement_edit_form.alchemer_url.auto_id }}_error">{{ engagement_edit_form.alchemer_url.errors|first }}</p>
       {% endif %}
+      <label class="cx-f" for="{{ engagement_edit_form.note.id_for_label }}">
+        <span class="cx-f__lab">{{ engagement_edit_form.note.label }}
+          <span class="cx-f__opt">valikuline</span></span>
+        {{ engagement_edit_form.note }}
+      </label>
+      {% if engagement_edit_form.note.errors %}
+        <p class="field__error" id="{{ engagement_edit_form.note.auto_id }}_error">{{ engagement_edit_form.note.errors|first }}</p>
+      {% endif %}
 
-      {% comment %}
-        **No generic `Link` and no `Märkus`** (docs/adr/0121 §4). `+ Kaasamine`
-        never asks either, and nothing on this row printed them, so an editor
-        offering them was two boxes the lawyer had never filled in. A value an
-        older round stored in either column is kept: the form does not carry
-        the fields and the view does not name them, so a save leaves them as
-        they are.
-      {% endcomment %}
       {{ engagement_edit_form.revision }}
 
       {% if engagement_edit_error %}
@@ -336,6 +350,18 @@ before the closure.
     {% endif %}
     {% if engagement.feedback_received %}
       <p class="uxtl__feedback">{{ engagement.feedback_received|linebreaksbr }}</p>
+    {% endif %}
+    {% comment %}
+      `Märkus` — the recorder's own words about the round, under its label and
+      apart from `Saadud tagasiside` above, which is what the people asked said
+      back. Only in the open row: the closed line and every work list read the
+      audience, never this (docs/adr/0127 §2).
+    {% endcomment %}
+    {% if milestone.own_note %}
+      <span class="uxtl__msnote">
+        <span class="uxtl__msnotelabel">{{ milestone.own_note_label }}</span>
+        {{ milestone.own_note|linebreaksbr }}
+      </span>
     {% endif %}
     {% comment %}
       `Ootan tagasisidet` — the act that starts this round waiting.
