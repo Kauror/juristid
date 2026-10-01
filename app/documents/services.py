@@ -552,7 +552,36 @@ LINK_FIELD_BY_MODEL: dict[str, str] = {
     "intelligence.MatterWorkVictory": "work_victory",
     "matters.MatterExternalPosition": "external_position",
     "matters.MatterProceduralDevelopment": "procedural_development",
+    "submissions.Submission": "submission",
 }
+
+#: What a working document is filed as on a `Koja arvamus` (docs/adr/0129 §2).
+#:
+#: Not inferred: the person put the file in the opinion's `Töödokumendid` box,
+#: which says exactly this, so the role is the input's meaning rather than a
+#: guess about the bytes. `KODA_SUBMISSION_FINAL` is the letter that went out
+#: and is never this.
+OPINION_WORKING_DOCUMENT_ROLE = DocumentRole.WORKING_DOCUMENT
+
+#: Why an opinion's own letter may not also be filed as its working document.
+OPINION_EVIDENCE_IS_NOT_A_WORKING_DOCUMENT = (
+    "See fail on arvamuse saadetud fail, mitte töödokument. Saadetud fail jääb "
+    "arvamuse juurde tõendina; töödokumendiks lisa muudetav fail eraldi."
+)
+
+
+def is_opinion_evidence(document: Document) -> bool:
+    """Whether ``document`` is, or is filed as, the Chamber's sent letter.
+
+    Either the role says so or some Submission's `final_version` is one of its
+    versions. Asked of the plain manager and unscoped: it decides whether a link
+    may be written at all, never what a reader is shown.
+    """
+    from app.submissions.models import Submission
+
+    if document.role == DocumentRole.KODA_SUBMISSION_FINAL:
+        return True
+    return Submission.objects.filter(final_version__document_id=document.pk).exists()
 
 
 @transaction.atomic
@@ -582,6 +611,12 @@ def link_document_to_record(*, document: Document, record: Any, actor: Any = Non
     record_matter = getattr(record, "matter_id", None)
     if record_matter is None or record_matter != document.matter_id:
         raise DomainError("Dokumendi ja kirje teema peavad olema samad.")
+    # **A working document is never the letter that went out** (docs/adr/0129
+    # §5). An opinion's evidence stays where the send pins it, and filing the
+    # same bytes as its working copy would let one file read as both «what we
+    # sent» and «what we edit» — the confusion the two concepts exist to avoid.
+    if field == "submission" and is_opinion_evidence(document):
+        raise DomainError(OPINION_EVIDENCE_IS_NOT_A_WORKING_DOCUMENT)
 
     link, _created = DocumentLink.objects.get_or_create(
         document=document,
@@ -589,6 +624,77 @@ def link_document_to_record(*, document: Document, record: Any, actor: Any = Non
         **{field: record},
     )
     return link
+
+
+def read_uploads(uploads: Sequence[Any]) -> list[Any]:
+    """Validate every uploaded file before any of them is stored — or refuse all.
+
+    The first half of :func:`capture_supporting_evidence`, public for the one
+    caller that has to ask it *before* writing something else: `Koja arvamus`
+    stores its sent letter and its working documents in one press, and a
+    refused working document must refuse the whole save before the letter's
+    bytes reach the evidence store, not after (docs/adr/0129 §6, ENG-086).
+
+    Returns the accepted files (`app.documents.uploads.AcceptedUpload`) in the
+    order they came. The refusal names every unusable file at once, each by
+    name when there is more than one to tell apart.
+    """
+    # Imported here rather than at module scope: `app.documents.uploads` reads
+    # `ALLOWED_EVIDENCE_MIME_TYPES` from this module, so the two may not import
+    # each other on the way in.
+    from app.documents.uploads import UploadRejected, read_upload
+
+    accepted_files = []
+    refusals: list[str] = []
+    for upload in uploads:
+        try:
+            accepted_files.append(read_upload(upload))
+        except UploadRejected as error:
+            # Named only when there is more than one file to tell apart.
+            name = getattr(upload, "name", "") if len(uploads) > 1 else ""
+            refusals.append(f"{name} — {error}" if name else str(error))
+    if refusals:
+        raise UploadRejected(" ".join(refusals))
+    return accepted_files
+
+
+@transaction.atomic
+def capture_accepted_evidence(
+    *,
+    matter: Matter,
+    record: Any,
+    accepted: Sequence[Any],
+    actor: Any = None,
+    role: str = DocumentRole.OTHER,
+    visibility_override: str = "",
+) -> list[Document]:
+    """The second half: store files :func:`read_uploads` accepted, each tied to ``record``.
+
+    ``visibility_override`` is the record's own restriction where the file must
+    carry it too — an opinion restricted below its Matter has working documents
+    restricted with it, decided here at creation rather than left for a caller
+    to remember (docs/adr/0129 §4). Empty, the document inherits the Matter's,
+    which is what every other workspace panel has always written.
+    """
+    captured: list[Document] = []
+    for file in accepted:
+        document = create_document(
+            matter=matter,
+            title=file.filename,
+            role=role,
+            created_by=actor,
+            visibility_override=visibility_override,
+        )
+        add_evidence_version(
+            document=document,
+            content=file.content,
+            original_filename=file.filename,
+            mime_type=file.mime_type,
+            uploaded_by=actor,
+        )
+        link_document_to_record(document=document, record=record, actor=actor)
+        captured.append(document)
+    return captured
 
 
 @transaction.atomic
@@ -599,6 +705,7 @@ def capture_supporting_evidence(
     uploads: Sequence[Any],
     actor: Any = None,
     role: str = DocumentRole.OTHER,
+    visibility_override: str = "",
 ) -> list[Document]:
     """Capture every uploaded file as evidence and tie each to ``record``.
 
@@ -621,43 +728,21 @@ def capture_supporting_evidence(
     ``role`` stays ``OTHER`` for every caller on the Teema workspace. The button
     a file arrived through is not a business role — a PDF attached to a work
     victory is not a new kind of document — and inventing one to record where it
-    came from is what the link exists to avoid (brief §23).
+    came from is what the link exists to avoid (brief §23). The one exception is
+    an opinion's `Töödokumendid` box, whose input itself names the role
+    (`OPINION_WORKING_DOCUMENT_ROLE`, docs/adr/0129 §2).
+
+    Two halves, :func:`read_uploads` and :func:`capture_accepted_evidence`, so a
+    caller that writes other bytes in the same press can validate these first.
     """
-    # Imported here rather than at module scope: `app.documents.uploads` reads
-    # `ALLOWED_EVIDENCE_MIME_TYPES` from this module, so the two may not import
-    # each other on the way in.
-    from app.documents.uploads import UploadRejected, read_upload
-
-    accepted_files = []
-    refusals: list[str] = []
-    for upload in uploads:
-        try:
-            accepted_files.append(read_upload(upload))
-        except UploadRejected as error:
-            # Named only when there is more than one file to tell apart.
-            name = getattr(upload, "name", "") if len(uploads) > 1 else ""
-            refusals.append(f"{name} — {error}" if name else str(error))
-    if refusals:
-        raise UploadRejected(" ".join(refusals))
-
-    captured: list[Document] = []
-    for accepted in accepted_files:
-        document = create_document(
-            matter=matter,
-            title=accepted.filename,
-            role=role,
-            created_by=actor,
-        )
-        add_evidence_version(
-            document=document,
-            content=accepted.content,
-            original_filename=accepted.filename,
-            mime_type=accepted.mime_type,
-            uploaded_by=actor,
-        )
-        link_document_to_record(document=document, record=record, actor=actor)
-        captured.append(document)
-    return captured
+    return capture_accepted_evidence(
+        matter=matter,
+        record=record,
+        accepted=read_uploads(uploads),
+        actor=actor,
+        role=role,
+        visibility_override=visibility_override,
+    )
 
 
 # ---------------------------------------------------------------------------

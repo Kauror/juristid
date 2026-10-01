@@ -27,10 +27,10 @@ foreign key, the database refuses a row that names two records or none, and one
 ``select_related`` reads every kind at once.
 
 The cost is that each new kind of linkable record is a migration — the sixth,
-``external_position``, and the seventh, ``procedural_development``, are exactly
-that (docs/adr/0084 §3, docs/adr/0091 §5). That is the correct cost — what
-evidence may be attached to is a product decision, not a shape a caller invents
-at run time.
+``external_position``, the seventh, ``procedural_development``, and the eighth,
+``submission``, are exactly that (docs/adr/0084 §3, docs/adr/0091 §5,
+docs/adr/0129 §2). That is the correct cost — what evidence may be attached to
+is a product decision, not a shape a caller invents at run time.
 
 Why the Matter is not stored here
 ---------------------------------
@@ -58,6 +58,16 @@ readable exactly when **both** of its ends are, which is what
 two, never the document's alone. A restricted document linked to a normal note
 contributes no row, and a normal document linked to a restricted fact
 contributes none either.
+
+The eighth kind, a sent `Koja arvamus`
+--------------------------------------
+A `Submission` link says *this file is one of the opinion's working
+documents* — the DOCX the lawyer drafted it in and will reuse — and nothing
+more. It is never the opinion's evidence: what was sent is
+``Submission.final_version``, a pinned immutable version, and a working
+document can neither stand in for it nor become it (docs/adr/0129 §1, §5). The
+dormant ``Submission.working_document`` column is not this relation: it holds one
+file, sits outside every clause below, and nothing has ever written it.
 """
 
 from __future__ import annotations
@@ -83,7 +93,28 @@ TARGET_FIELDS: tuple[str, ...] = (
     "work_victory",
     "external_position",
     "procedural_development",
+    "submission",
 )
+
+
+def _removable_target_fields() -> tuple[str, ...]:
+    """The target columns whose record can be taken off the file.
+
+    Read off the models rather than listed, so the removal clause in
+    :meth:`DocumentLinkQuerySet.visible_to` can neither name a column whose
+    model has no ``removed_at`` — a ``FieldError`` on every read — nor forget a
+    removable kind added later. Seven of the eight are `RemovableRecord`s; a
+    `Submission` is not, because a letter that went out is withdrawn, never
+    taken off the file (docs/adr/0102 §4).
+    """
+    from app.core.models import RemovableRecord
+
+    removable = []
+    for field in TARGET_FIELDS:
+        model = DocumentLink._meta.get_field(field).related_model
+        if isinstance(model, type) and issubclass(model, RemovableRecord):
+            removable.append(field)
+    return tuple(removable)
 
 
 def _exactly_one_target() -> models.Q:
@@ -144,10 +175,13 @@ class DocumentLinkQuerySet(models.QuerySet):
         # not there. Active reference and retained evidence are two different
         # things, and this is the line between them (OWNER-04, docs/adr/0102).
         #
-        # Unconditional, unlike the visibility clauses above: every target
-        # column names a removable model, so there is no reader for whom the
-        # filter is empty and no `Q()` to collapse.
-        for field in TARGET_FIELDS:
+        # Unconditional, unlike the visibility clauses above: there is no
+        # reader for whom the filter is empty and no `Q()` to collapse. Asked
+        # only of the columns whose model *can* be removed — a sent opinion
+        # cannot, it is withdrawn and stays on the file as history, and a
+        # `removed_at` clause naming it would raise rather than filter
+        # (docs/adr/0129 §4).
+        for field in _removable_target_fields():
             condition &= models.Q(**{f"{field}__isnull": True}) | models.Q(
                 **{f"{field}__removed_at__isnull": True}
             )
@@ -169,7 +203,7 @@ class DocumentLink(BaseModel):
         verbose_name="dokument",
     )
 
-    # -- exactly one of the six below ----------------------------------------
+    # -- exactly one of the eight below --------------------------------------
     entry = models.ForeignKey(
         "matters.Entry",
         on_delete=models.CASCADE,
@@ -236,6 +270,24 @@ class DocumentLink(BaseModel):
         blank=True,
         related_name="document_links",
         verbose_name="menetluse areng",
+    )
+    #: The eighth kind: one of a sent `Koja arvamus`'s **working documents** —
+    #: the editable file the opinion was drafted in, which the lawyer reuses,
+    #: searches and versions later (docs/adr/0129 §2).
+    #:
+    #: **Never its evidence.** What went out is `Submission.final_version`, the
+    #: exact pinned version the `SENT` check stands on; a link here satisfies
+    #: nothing about a send and `link_document_to_record` refuses to point one
+    #: at an opinion's own letter. `CASCADE` like every column above: the link
+    #: is a statement about two records, and a Submission only goes when its
+    #: Matter does.
+    submission = models.ForeignKey(
+        "submissions.Submission",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="document_links",
+        verbose_name="koja arvamus",
     )
 
     created_by = models.ForeignKey(
