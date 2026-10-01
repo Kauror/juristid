@@ -10,7 +10,7 @@
 [[day]]
 date = 2026-10-01
 basis = "deployment"
-# JUR-CASE-01 Juristieksami elava toimiku QA-st, ADR 0125. Migratsioone ei ole.
+# JUR-CASE-01 Juristieksami elava toimiku QA-st, ADR 0126. Migratsioone ei ole.
 # Kui see väljalase ei jõua tootmisse 01.10, liigub kirje väljalaske päeva alla.
 changes = [
   "Digiallkirjastatud ümbrikke (.asice ja .bdoc) saab nüüd lisada otse, ilma ZIP-faili pakkimata: uut teemat luues, «Lae dokument» kaudu, märkele ja teistele lisamistele ning Koja arvamuse «Saadetud failina».",

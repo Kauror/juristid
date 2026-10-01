@@ -144,7 +144,7 @@ Widening `ALLOWED_EVIDENCE_MIME_TYPES` to accept `.asice`, `.bdoc`, `.xltx`,
 one: refusing to *store* a file the extraction stack cannot parse would lose the
 original for no gain.
 
-**Narrowed on 2026-10-01 by docs/adr/0125:** `.asice` and `.bdoc` are no longer
+**Narrowed on 2026-10-01 by docs/adr/0126:** `.asice` and `.bdoc` are no longer
 the archive's alone. The interactive upload door accepts them too, recorded as
 the same `application/vnd.etsi.asic-e+zip`, because the Chamber's present-day
 correspondence arrives and leaves in them; the door checks the media type the

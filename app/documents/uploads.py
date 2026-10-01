@@ -21,7 +21,7 @@ thing, which was a separate container asking clamd about every file and a
 column recording its answer; what is left is a refusal at the door, computed
 from the bytes themselves, with nothing to deploy and nothing to keep running.
 
-**A signed container is ordinary evidence at this door** (docs/adr/0125). An
+**A signed container is ordinary evidence at this door** (docs/adr/0126). An
 `.asice` or `.bdoc` is what the Chamber actually sends and receives, and the
 exact container — not a PDF taken out of it — is the record of what went. It is
 stored as the bytes that arrived and opened by nothing: no unpacking, no
@@ -71,7 +71,7 @@ EXTENSION_MIME_TYPES: dict[str, str] = {
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
     ".zip": "application/zip",
-    # Estonian digitally signed containers (docs/adr/0125).
+    # Estonian digitally signed containers (docs/adr/0126).
     ".asice": SIGNED_CONTAINER_MIME_TYPE,
     ".bdoc": SIGNED_CONTAINER_MIME_TYPE,
 }
@@ -79,7 +79,7 @@ EXTENSION_MIME_TYPES: dict[str, str] = {
 #: The same list, spelled the way a file input's `accept` attribute wants it.
 #: Every evidence picker in the application carries exactly this, so the
 #: browser offers what this module accepts and nothing it would refuse after
-#: the file has been sent (docs/adr/0125, `tests/test_signed_containers.py`).
+#: the file has been sent (docs/adr/0126, `tests/test_signed_containers.py`).
 UPLOAD_ACCEPT: str = ",".join(sorted(EXTENSION_MIME_TYPES))
 
 #: Leading bytes that must match when the format has a stable signature.

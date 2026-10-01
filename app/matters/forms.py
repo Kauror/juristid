@@ -4178,7 +4178,7 @@ class MultipleFileInput(forms.FileInput):
 
     def __init__(self, attrs: dict[str, Any] | None = None) -> None:
         # The chooser offers what `read_upload` accepts, from the same list,
-        # on every panel that renders one of these (docs/adr/0125).
+        # on every panel that renders one of these (docs/adr/0126).
         super().__init__({"accept": UPLOAD_ACCEPT, **(attrs or {})})
 
 
@@ -5990,7 +5990,7 @@ class KodaOpinionForm(forms.Form):
     #: **A signed container is an ordinary answer**, and `accept` offers it:
     #: what went out of the Chamber is often the `.asice` itself, and that
     #: container — not a PDF taken out of it — is the record of what was sent
-    #: (docs/adr/0125).
+    #: (docs/adr/0126).
     upload = forms.FileField(
         label="Saadetud fail",
         required=False,

@@ -89,7 +89,7 @@ class FinalEvidenceForm(forms.Form):
     """
 
     # `Lõpetamata arvamused` writes its own `<input>` with the same `accept`
-    # (docs/adr/0125).
+    # (docs/adr/0126).
     upload = forms.FileField(
         label="Lõplik fail",
         required=False,

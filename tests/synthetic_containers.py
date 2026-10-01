@@ -7,7 +7,7 @@ first entry is `mimetype`, holding the container's own media type — and the
 inner layout DigiDoc writes beside it (a document, `META-INF/manifest.xml`, a
 `signatures0.xml`), so a file built here is what an `.asice` looks like to
 everything in Juristid that does not verify signatures, which is everything
-(docs/adr/0125).
+(docs/adr/0126).
 
 Three variants, because the Chamber's own 1,049 historical containers hold all
 three (measured read-only, 2026-10-01): the standard layout, a `mimetype` entry
