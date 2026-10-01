@@ -227,6 +227,12 @@ One server-validated act ends a wait, and it is offered on the round's own
 chronology row: a textarea pre-filled with whatever feedback is already
 recorded, the ordinary file control, and a `Lõpeta kaasamine` button.
 
+**Extended on 2026-10-01 by [0126](0126-the-next-step-is-set-where-it-is-read-and-the-act-can-finish-it.md) §2:**
+while the Matter has an open step, the form also offers `Märgi praegune tegevus
+tehtuks`, unticked and naming the step; ticked, the same save finishes that step
+(COMPLETED). The wait itself is still not a `NextAction` and still ends only
+here or with the Matter.
+
 * **Nothing is required.** An empty box records that the round is over and
   nothing came back, which is a real and common outcome. A completion that
   demanded prose would make «keegi ei vastanud» the one result a lawyer could

@@ -110,6 +110,11 @@ A successful save leaves the Entry in the chronology, the action COMPLETED, and
 **no new step opened**. The person may have finished what they needed to do;
 naming the next one is a deliberate act through `+ Järgmine tegevus`.
 
+**Narrowed on 2026-10-01 by [0126](0126-the-next-step-is-set-where-it-is-read-and-the-act-can-finish-it.md) §1:**
+no step is opened for the person still, and the deliberate act is
+`+ Määra järgmine tegevus`, drawn in `PRAEGUNE TEGEVUS` under the one compact
+line below — the same form and service as `Muuda`.
+
 A Matter with no open action renders one compact line — `Järgmine samm on
 määramata`, or the register's own Excel instruction where it carries one — and
 **no textarea**. A large empty `Mida tegid?` with no task above it is a form
@@ -198,6 +203,11 @@ the task in `PRAEGUNE TEGEVUS`, prefilled, posting to `matters:set_action` — t
 existing service, which supersedes what it replaces. Once the step is finished
 the chip appears. `Muuda` means *change what the task is or when it is due*; it
 never means *record that I did it*.
+
+**Narrowed on 2026-10-01 by [0126](0126-the-next-step-is-set-where-it-is-read-and-the-act-can-finish-it.md) §1:**
+the chip left the launcher (0097 §8.2); once the step is finished the same form
+appears in `PRAEGUNE TEGEVUS` as `+ Määra järgmine tegevus` — one disclosure,
+`#lisa-jargmine`, in two states.
 
 The same form partial hosts both, rendered in whichever place the situation calls
 for, rather than a button opening a panel elsewhere on the page — which would do

@@ -30,8 +30,16 @@ app/matters/workspace.py).
 
 **Nothing is offered when there is nothing to complete.** A Matter with no open
 step shows one compact line and no textarea: a large empty `Mida tegid?` with no
-task above it is a form asking about work nobody has named. The route to work is
-`+ Järgmine tegevus` under `LISA TEEMALE` (brief §8).
+task above it is a form asking about work nobody has named (brief §8).
+
+**But the next step is set right here.** Under that line sits
+`+ Määra järgmine tegevus` — the same `next_action_form.html`, the same
+`matters:set_action` and the same `set_next_action_for_new_work` that `Muuda`
+uses beside an open step. One form in two states of one zone: `Muuda` while a
+step is open, `+ Määra järgmine tegevus` while none is, and never both. A lawyer
+who has just finished something sets what comes next where they read what comes
+next, without having to file a `+ Märge` dated ahead to do it
+(docs/adr/0126 §1).
 {% endcomment %}
 <section class="curact{% if matter.is_open and current_action.is_overdue %} curact--overdue{% endif %}"
          id="praegune-tegevus" tabindex="-1" aria-labelledby="praegune-pealkiri">
@@ -124,17 +132,7 @@ task above it is a form asking about work nobody has named. The route to work is
           no siblings to displace and nothing to be chosen *instead of*, so a
           native disclosure is still the honest markup for it.
         {% endcomment %}
-        <details class="cx-panel curact__edit" id="lisa-jargmine" data-addpanel
-                 data-draft-host data-draft-state="{{ current_action.pk }}"
-                 {% if open_panel == "lisa-jargmine" %}open{% endif %}>
-          <summary class="disclosure-chip disclosure-chip--quiet">Muuda</summary>
-          <div class="cx-panel__body">
-            {% if open_panel == "lisa-jargmine" and workspace_error %}
-              <p class="formerror" role="alert">{{ workspace_error }}</p>
-            {% endif %}
-            {% include "matters/partials/next_action_form.html" %}
-          </div>
-        </details>
+        {% include "matters/partials/next_action_panel.html" with summary="Muuda" quiet=True extra_class="" draft_state=current_action.pk %}
       {% endif %}
     </div>
 
@@ -263,6 +261,35 @@ task above it is a form asking about work nobody has named. The route to work is
       surface at all (matters/partials/feedback_waits.html, docs/adr/0086 §3).
     {% endcomment %}
     {% include "matters/partials/feedback_waits.html" %}
+
+    {% if can_write %}
+      {% comment %}
+        `+ Määra järgmine tegevus` — the direct way to say what comes next.
+
+        **Whatever the line above says.** An upcoming `Oluline tähtaeg`, the
+        register's Excel instruction and a waiting round are all things this
+        file carries, and none of them is a `NextAction`: the lawyer has not yet
+        said what *they* will do. So the control is offered under each of them,
+        and choosing it never turns one of them into a step — it writes only
+        what is typed into it (docs/adr/0120 §2, docs/adr/0126 §1).
+
+        **The same form and the same act as `Muuda`.** One partial, one
+        endpoint, one service, and one panel id — `#lisa-jargmine` is the
+        next-step editor wherever it is drawn, so a refusal comes back opened
+        here exactly as it does beside a task (`WORKSPACE_PANELS`). With no step
+        to replace, `NextActionForm` writes new work: `DO` / `DEADLINE`, at the
+        precision chosen, and with no day at all when none is known
+        (docs/adr/0052 §3, docs/adr/0106).
+
+        A full chip rather than `Muuda`'s quiet one: here it is the one thing
+        the zone offers, and it is the act the page is waiting for.
+        `data-draft-state` is empty because there is no step for a draft to
+        belong to — a save elsewhere that sets one replaces this host with
+        `Muuda`, whose state is that step, and the unsaved sentence is then
+        shown read-only rather than posted against it (docs/adr/0107).
+      {% endcomment %}
+      {% include "matters/partials/next_action_panel.html" with summary="+ Määra järgmine tegevus" quiet=False extra_class="curact__set" draft_state="" %}
+    {% endif %}
   {% endif %}
 
 </section>

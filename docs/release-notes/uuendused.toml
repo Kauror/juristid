@@ -8,6 +8,18 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-10-01
+basis = "deployment"
+# Reaalajas töövoog sama järgmise tegevuse peal, ADR 0126. Migratsioone ei ole,
+# uut mudelit ei ole. Kui see väljalase ei jõua tootmisse 01.10, liiguvad need
+# read väljalaske päeva kirjesse.
+changes = [
+  "Kui teemal ei ole järgmist tegevust, saab selle määrata otse «Praeguses tegevuses»: «+ Määra järgmine tegevus». Selleks ei pea enam lisama tulevikku jäävat märget; kuupäeva võib jätta tühjaks või anda kuu, kvartali või aasta täpsusega.",
+  "Koja arvamuse registreerimisel ja kaasamise lõpetamisel saab linnukesega «Märgi praegune tegevus tehtuks» märkida samal ajal tehtuks teema praeguse tegevuse. Linnuke ei ole vaikimisi märgitud ja selle kõrval on kirjas, milline tegevus tehtuks märgitakse; eraldi «Mida tegid?» kirjet ei ole vaja.",
+  "Nii tehtuks märgitud tegevus on «Teema käigus» sama rea all — näiteks «Arvamus välja» ja selle all «Tehtud» koos tegevuse tekstiga —, mitte eraldi real. Pärast seda pakub «Praegune tegevus» kohe «+ Määra järgmine tegevus».",
+]
+
+[[day]]
 date = 2026-09-30
 basis = "deployment"
 # Omaniku teise kasutajapoolse testi (30.09) parandused, üks väljalase, ADR 0121.

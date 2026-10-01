@@ -4305,6 +4305,42 @@ class CompleteCurrentActionForm(forms.Form):
         return require_written_body(self.cleaned_data.get("body"), "Kirjelda, mida tegid.")
 
 
+#: The label of the box that finishes the current step from a substantive save.
+#: One sentence for every form that offers it, so a lawyer meets one control
+#: wherever the act that finishes their step is recorded (docs/adr/0126 §2).
+COMPLETES_CURRENT_ACTION_LABEL = "Märgi praegune tegevus tehtuks"
+
+
+def completes_current_action_field() -> forms.UUIDField:
+    """`Märgi praegune tegevus tehtuks` — the save that did the step, finishing it.
+
+    **The step's own identifier, posted only when ticked.** The box carries the
+    primary key of the open step it was drawn beside, exactly as `Mida tegid?`
+    carries its hidden `action_id`: unticked in HTML is *absent*, so a POST
+    without the key changes no step, and a ticked box names one step rather
+    than asking the service for «whatever is open» (docs/adr/0075 §4). Whether
+    the named step is still the open one is the use case's question, under the
+    Matter's lock (`workspace._named_open_action`).
+
+    **Never ticked for the person.** A Koja arvamus or a finished Kaasamine may
+    or may not be what the step asked for, and nothing on either record says
+    which — no text, date or kind is compared. The template draws the box
+    unticked and names the step beside it; the person decides
+    (docs/adr/0126 §2).
+
+    A factory rather than a mixin, because the two forms that carry it already
+    have their own bases, and a field declared on a non-`Form` mixin is not
+    collected by Django's metaclass. The template renders the box itself
+    (`matters/partials/complete_current_action_option.html`), because its label
+    has to carry the step's text and its id has to be unique per row.
+    """
+    return forms.UUIDField(
+        label=COMPLETES_CURRENT_ACTION_LABEL,
+        required=False,
+        widget=forms.HiddenInput(),
+    )
+
+
 class ReviewActionForm(forms.Form):
     """`Vaatasin üle` — I looked, and this is when I look again.
 
@@ -4577,6 +4613,10 @@ class EngagementFeedbackForm(forms.Form):
     #: refused by the service against a real row rather than by a field error
     #: that says nothing about what went wrong.
     revision = forms.CharField(required=False, widget=forms.HiddenInput())
+    #: `Märgi praegune tegevus tehtuks`, offered while the Matter has an open
+    #: step the reader can see. The wait this form ends is not a `NextAction`,
+    #: so ending it finishes none unless the person ticks this (docs/adr/0126 §2).
+    complete_action = completes_current_action_field()
 
 
 class CompactImportantDateForm(forms.Form):
@@ -6047,6 +6087,11 @@ class KodaOpinionForm(forms.Form):
         required=False,
         widget=OrganisationCheckboxSelect(attrs={"class": "chip__input"}),
     )
+    #: `Märgi praegune tegevus tehtuks` — when sending this opinion was the open
+    #: step, the save finishes it (COMPLETED, never superseded) rather than
+    #: leaving the lawyer to write a second `Mida tegid?` about the same act.
+    #: Unticked unless the person ticks it (docs/adr/0126 §2).
+    complete_action = completes_current_action_field()
     sent_on = EstonianDateField(
         label="Saatmise kuupäev",
         required=False,

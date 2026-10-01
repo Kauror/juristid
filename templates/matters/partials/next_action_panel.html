@@ -1,0 +1,31 @@
+{% comment %}
+The next-step editor's disclosure — `#lisa-jargmine` — in the one place it is
+written.
+
+Two hosts in `PRAEGUNE TEGEVUS`, and never both on one render: `Muuda` beside an
+open step, and `+ Määra järgmine tegevus` on a file with none
+(docs/adr/0126 §1). One partial so that the two are one control in two states —
+one id, one form, one endpoint and one refusal slot — rather than two
+disclosures that drift.
+
+    summary       the chip's words
+    quiet         `Muuda`'s quiet chip, beside a task; the full chip otherwise
+    extra_class   the host's own placement class, if any
+    draft_state   the step a draft typed here belongs to: the open step's id,
+                  or empty with none (static/js/app.js, docs/adr/0107)
+
+`#lisa-jargmine` is the panel `_workspace_refusal` reopens for `action_form`
+(`WORKSPACE_PANELS`), so a refused save comes back opened in whichever host the
+fresh column draws.
+{% endcomment %}
+<details class="cx-panel curact__edit{% if extra_class %} {{ extra_class }}{% endif %}" id="lisa-jargmine" data-addpanel
+         data-draft-host data-draft-state="{{ draft_state }}"
+         {% if open_panel == "lisa-jargmine" %}open{% endif %}>
+  <summary class="disclosure-chip{% if quiet %} disclosure-chip--quiet{% endif %}">{{ summary }}</summary>
+  <div class="cx-panel__body">
+    {% if open_panel == "lisa-jargmine" and workspace_error %}
+      <p class="formerror" role="alert">{{ workspace_error }}</p>
+    {% endif %}
+    {% include "matters/partials/next_action_form.html" %}
+  </div>
+</details>

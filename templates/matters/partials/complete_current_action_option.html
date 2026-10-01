@@ -1,0 +1,43 @@
+{% comment %}
+`Märgi praegune tegevus tehtuks` — the save that did the step, finishing it.
+
+Included by the forms whose save can *be* the work the open step asked for:
+`+ Arvamus / tagasiside · Koja arvamus` and a round's `Lõpeta kaasamine`. One
+partial so the two read and behave as one control (docs/adr/0126 §2).
+
+    field       the form's `complete_action` bound field (for a refused save)
+    option_id   the checkbox's id — unique per row, since a chronology can hold
+                several waiting rounds and two boxes sharing an id is a label
+                reaching the wrong one
+
+**Drawn only when there is a step to finish.** `current_action` is the open step
+this reader may see — `selectors.current_action_of`, the same one `PRAEGUNE
+TEGEVUS` prints — so a file with no step, or whose only open step is restricted
+below the reader, gets no box at all rather than a box that completes nothing or
+something they cannot see. An upcoming `Oluline tähtaeg`, the register's Excel
+instruction and a waiting round are not steps and offer nothing here.
+
+**Unticked, and named.** The box never arrives ticked: nothing on an opinion or
+a round says whether it is what the step asked for, and a guess that completed
+somebody's task in their name is the one mistake this must not make. The step's
+own sentence and date are printed in the label, so what the box finishes is
+read before it is ticked — and is the checkbox's accessible name.
+
+**It posts the step's own id, and only when ticked.** The use case checks under
+the Matter's lock that the named step is still the open one and refuses the
+whole save otherwise (`workspace._named_open_action`). A refused save comes back
+ticked only if it named the step still open now; a step that changed in the
+meantime is shown unticked, so the person decides again about the one in front
+of them.
+{% endcomment %}
+{% if current_action and matter.is_open %}
+  <label class="cx-check cx-check--action" for="{{ option_id }}">
+    <input type="checkbox" name="{{ field.html_name }}" id="{{ option_id }}"
+           value="{{ current_action.pk }}"
+           {% if field.value|stringformat:"s" == current_action.pk|stringformat:"s" %}checked{% endif %}>
+    <span>{{ field.label }}: <span class="cx-check__task">{{ current_action.text }}</span><span class="cx-check__date"> · {{ current_action.date_display }}</span></span>
+  </label>
+  {% if field.errors %}
+    <p class="field__error" id="{{ option_id }}_error">{{ field.errors|first }}</p>
+  {% endif %}
+{% endif %}
