@@ -23,6 +23,13 @@ changes = [
   "Digiallkirjastatud ümbrikke (.asice ja .bdoc) saab nüüd lisada otse, ilma ZIP-faili pakkimata: uut teemat luues, «Lae dokument» kaudu, märkele ja teistele lisamistele ning Koja arvamuse «Saadetud failina».",
   "Ümbrik jääb alles täpselt sellisena, nagu see saabus, ja laaditakse alla sama nime ja laiendiga; selle sisu ei avata ja allkirju Juristid ei kontrolli.",
   "Faili valimise aken pakub vaikimisi ainult neid failitüüpe, mida Juristid vastu võtab.",
+  # JUR-CASE-06 ja JUR-CASE-12, ADR 0129: arvamuse töödokumendid ja «Seotud
+  # kirje». Kaks migratsiooni (documents/0013, documents/0014). Kui see
+  # väljalase ei jõua tootmisse 01.10, liiguvad need read väljalaske päeva alla.
+  "Koja arvamusele saab lisada «Töödokumendid» — muudetava faili (näiteks DOCX), millest arvamus koostati. Need salvestatakse liigiga «Töödokument» sama arvamuse juurde; välja saadetud fail on endiselt ainult «Saadetud fail».",
+  "Juba saadetud arvamusele saab töödokumendi lisada hiljem: «Teema käigus» arvamuse real «+ Lisa töödokument». Saadetud fail, kuupäev ja adressaadid jäävad samaks ning uut rida ei teki.",
+  "Töödokumentidega arvamuse all on failid «Teema käigus» kahes grupis, «Saadetud» ja «Töödokumendid». Paremas veerus on iga Koja arvamuse juures saatmise kuupäev ja adressaat, nii et kaks arvamust on teineteisest eristatavad.",
+  "«Dokumentide» nimekirjas on teema kirjega koos lisatud faili all «Seotud kirje», näiteks «Koja arvamus · 26.9.2026 · ministeerium», «Kaasamine · …» või «Märge · …». Faili lisamise kuupäev ja nimekirja järjekord ei muutu. SharePointi linkide plokk on nüüd «SharePointi viited».",
 ]
 
 [[day]]
