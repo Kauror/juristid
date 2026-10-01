@@ -852,6 +852,15 @@ def _rail_block(body: str) -> str:
     return rest if end == -1 else rest[:end]
 
 
+def _rail_text(body: str) -> str:
+    """The rail card as a reader sees it: markup stripped, whitespace collapsed.
+
+    The send day is a `<time>` inside its line, so the line's words are only
+    contiguous once the tags are gone.
+    """
+    return " ".join(re.sub(r"<[^>]+>", " ", _rail_block(body)).split())
+
+
 def test_two_opinions_are_told_apart_in_the_rail(signed_in, matter, specialist, organisation):
     ministry = factories.OrganisationFactory(name="Justiits- ja Digiministeerium")
     committee = factories.OrganisationFactory(name="Riigikogu õiguskomisjon")
@@ -873,7 +882,7 @@ def test_two_opinions_are_told_apart_in_the_rail(signed_in, matter, specialist, 
         working_uploads=[_docx("teine.docx")],
     ).record
 
-    block = _rail_block(_teema(signed_in, matter))
+    block = _rail_text(_teema(signed_in, matter))
 
     from app.core.dates import format_estonian_date
 
@@ -994,7 +1003,7 @@ def test_an_imported_dated_opinion_reads_its_day_and_addressee(
 
     body = _teema(signed_in, matter)
 
-    assert f"14.5.2019 · {organisation.name}" in _rail_block(body)
+    assert f"14.5.2019 · {organisation.name}" in _rail_text(body)
     kaik = body[body.index('id="ajajoon"') :]
     assert "2019_arvamus.asice" in kaik
     assert "uxtl__filegroup" not in kaik

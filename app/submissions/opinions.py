@@ -43,6 +43,7 @@ why the document queryset is scoped as well as the submission queryset.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from typing import Any
 
 from django.db.models import Q
@@ -109,10 +110,13 @@ def opinion_documents(matter: Any, *, viewer: Any) -> list[Document]:
 class RailOpinion:
     """One line of the `Koja arvamus` rail card: the letter, and what tells it apart.
 
-    ``label`` is the send it is the letter of, as a reader distinguishes two
-    opinions on one file — the day it went and who it went to, plus «tagasi
-    võetud» or «asendatud» on one that no longer stands. Empty for an opinion
-    file no visible send accounts for, which reads as it always did.
+    ``sent_on`` and ``detail`` are the send it is the letter of, as a reader
+    distinguishes two opinions on one file — the day it went, then who it went
+    to plus «tagasi võetud» or «asendatud» on one that no longer stands. The day
+    is its own field so the template can put it in a `<time>`: it is a date on a
+    line with other words, and the visual suite holds a date still by its
+    element (`e2e/test_ui_regression.py`). Both empty for an opinion file no
+    visible send accounts for, which reads as it always did.
 
     ``working`` is that send's working documents (docs/adr/0129 §9), read
     through `DocumentLink.visible_to`, so a reader is never shown a working file
@@ -120,8 +124,21 @@ class RailOpinion:
     """
 
     document: Document
-    label: str = ""
+    sent_on: date | None = None
+    detail: str = ""
     working: tuple[Document, ...] = ()
+
+    @property
+    def sent_label(self) -> str:
+        """The day as Estonian text, `j.n.Y`."""
+        from app.core.dates import format_estonian_date
+
+        return format_estonian_date(self.sent_on)
+
+    @property
+    def label(self) -> str:
+        """The whole line as one string — «8.9.2026 · Justiits- ja Digiministeerium»."""
+        return " · ".join(part for part in (self.sent_label, self.detail) if part)
 
 
 def opinion_rail(matter: Any, *, viewer: Any) -> list[RailOpinion]:
@@ -143,7 +160,6 @@ def opinion_rail(matter: Any, *, viewer: Any) -> list[RailOpinion]:
     documents, and **none at all** on a Matter with no opinion — the commonest
     page by far.
     """
-    from app.core.dates import format_estonian_date
     from app.documents.links import DocumentLink
     from app.matters.timeline import submission_chronology_day
 
@@ -183,7 +199,7 @@ def opinion_rail(matter: Any, *, viewer: Any) -> list[RailOpinion]:
         if submission is None:
             lines.append(RailOpinion(document=document))
             continue
-        parts = [format_estonian_date(submission_chronology_day(submission))]
+        parts = []
         addressees = getattr(submission, ADDRESSEE_ROWS, [])
         if addressees:
             parts.append(", ".join(row.organisation.name for row in addressees))
@@ -192,7 +208,8 @@ def opinion_rail(matter: Any, *, viewer: Any) -> list[RailOpinion]:
         lines.append(
             RailOpinion(
                 document=document,
-                label=" · ".join(parts),
+                sent_on=submission_chronology_day(submission),
+                detail=" · ".join(parts),
                 working=tuple(working.get(submission.pk, ())),
             )
         )

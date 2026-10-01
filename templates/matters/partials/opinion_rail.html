@@ -43,9 +43,13 @@ without the rail becoming a second file list.
   <span class="railcard__label">Koja arvamus</span>
 
   {% for line in opinion_rail %}
-    <div class="railcard__row railcard__row--file{% if line.label or line.working %} railcard__row--opinion{% endif %}">
-      {% if line.label %}
-        <span class="railcard__opinion">{{ line.label }}</span>
+    <div class="railcard__row railcard__row--file{% if line.sent_on or line.working %} railcard__row--opinion{% endif %}">
+      {% if line.sent_on %}
+        {% comment %}
+          The day in a `<time>`: a date on a line with other words, which the
+          visual suite holds still by this element (RAIL_OPINION_SENT).
+        {% endcomment %}
+        <span class="railcard__opinion"><time datetime="{{ line.sent_on|date:'Y-m-d' }}">{{ line.sent_label }}</time>{% if line.detail %} · {{ line.detail }}{% endif %}</span>
       {% endif %}
       {% comment %}
         The version, not the document: `documents:download` is keyed on the
