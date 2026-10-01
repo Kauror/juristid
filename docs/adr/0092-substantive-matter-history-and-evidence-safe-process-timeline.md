@@ -281,6 +281,12 @@ fact about *how* something was written, not a property of the fact
 its own `PROCEDURAL_DEVELOPMENT_RECORDED` event, read and rendered nowhere —
 exactly the role `ENTRY_ADDED` already plays for a note.
 
+**Extended on 2026-10-01 by [0125](0125-the-next-step-is-set-where-it-is-read-and-the-act-can-finish-it.md) §4:**
+`SUBMISSION_SENT` and `ENGAGEMENT_FEEDBACK_CLOSED` play the same role for a sent
+`Koja arvamus` and a finished round, and the only effect either folds is a step
+the same save finished (`✓ Tehtud <step>`). Grouping is still `operation_id`
+and nothing else.
+
 The stage clause is the stage-change event's own summary, which is the stage's
 label at the time it was recorded. It is **not** read off `Matter.stage`: that is
 where the file stands *now*, which is a different claim from what this act did to

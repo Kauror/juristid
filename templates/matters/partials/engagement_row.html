@@ -455,6 +455,16 @@ before the closure.
               <p class="field__error" id="{{ engagement.feedback_form.feedback_received.auto_id }}_error">{{ engagement.feedback_form.feedback_received.errors|first }}</p>
             {% endif %}
             {% include "matters/partials/add_files.html" with field=engagement.feedback_form.attachments %}
+            {% comment %}
+              The round may have been the open step — «Kaasa liikmed ja koonda
+              nende seisukohad» — and finishing it can finish that step too, if
+              the person says so. The wait itself is not a `NextAction`, so
+              nothing here is inferred from it (docs/adr/0125 §2). Per-row id,
+              for the reason the file control above carries one.
+            {% endcomment %}
+            {% with row_pk=engagement.pk|stringformat:"s" %}
+              {% include "matters/partials/complete_current_action_option.html" with field=engagement.feedback_form.complete_action option_id="id_kaasamine_"|add:row_pk|add:"_tegevus_tehtud" %}
+            {% endwith %}
             {{ engagement.feedback_form.revision }}
             {% comment %}
               The version that beat this one, read-only and under the box.

@@ -103,7 +103,18 @@ TIMELINE_EVENT_TYPES: tuple[str, ...] = (
 #: and not a matching filename. There is no time window and no prose matching
 #: here, and adding one would be manufacturing a relationship nobody recorded
 #: (docs/adr/0092 §6).
-RECORD_OPERATION_EVENT_TYPES: tuple[str, ...] = (ChangeEventType.PROCEDURAL_DEVELOPMENT_RECORDED,)
+#:
+#: **Two more since docs/adr/0125 §4**, each the act that can finish the open
+#: step: `SUBMISSION_SENT` ties a sent `Koja arvamus` to the save that sent it,
+#: and `ENGAGEMENT_FEEDBACK_CLOSED` ties a `Kaasamine` to the save that ended its
+#: wait. Neither has ever been a row — the send is read off its `Submission` and
+#: the closure off its round — so being read and never rendered changes nothing
+#: about either.
+RECORD_OPERATION_EVENT_TYPES: tuple[str, ...] = (
+    ChangeEventType.PROCEDURAL_DEVELOPMENT_RECORDED,
+    ChangeEventType.SUBMISSION_SENT,
+    ChangeEventType.ENGAGEMENT_FEEDBACK_CLOSED,
+)
 
 #: What a save decided **as a consequence of the record it was saved with**.
 #:
@@ -116,10 +127,35 @@ RECORD_OPERATION_EVENT_TYPES: tuple[str, ...] = (ChangeEventType.PROCEDURAL_DEVE
 #: alone exactly as a stage change recorded from the header does — which is what
 #: it is, and which says nothing about a record nobody may read
 #: (AUTH-003, docs/adr/0092 §7).
+#:
+#: **And a step the save finished** (docs/adr/0125 §4). «Arvamus välja» saved
+#: with `Märgi praegune tegevus tehtuks` finished the step it was, and the
+#: completion is that act's consequence — the same reasoning, the same fold. Read
+#: alone it was a muted «märkis eelmise sammu tehtuks» row beside the opinion:
+#: a second line for one act, naming no step.
 OPERATION_EFFECT_EVENT_TYPES: tuple[str, ...] = (
     ChangeEventType.MATTER_STAGE_CHANGED,
     ChangeEventType.NEXT_ACTION_SET,
+    ChangeEventType.NEXT_ACTION_COMPLETED,
 )
+
+#: **Which effects fold onto which kind of row**, keyed by the event that ties
+#: the row's record to its operation.
+#:
+#: A development keeps exactly the two it has always folded. A send and a
+#: finished wait fold the one thing either can do to the step — finish it — and
+#: nothing else: a stage moved, or a step set, inside one of those operations
+#: (none does today) would stand as its own row rather than be quietly absorbed
+#: by a fold nobody decided (docs/adr/0125 §4).
+FOLDED_EFFECTS: dict[str, frozenset[str]] = {
+    ChangeEventType.PROCEDURAL_DEVELOPMENT_RECORDED.value: frozenset(
+        {ChangeEventType.MATTER_STAGE_CHANGED.value, ChangeEventType.NEXT_ACTION_SET.value}
+    ),
+    ChangeEventType.SUBMISSION_SENT.value: frozenset({ChangeEventType.NEXT_ACTION_COMPLETED.value}),
+    ChangeEventType.ENGAGEMENT_FEEDBACK_CLOSED.value: frozenset(
+        {ChangeEventType.NEXT_ACTION_COMPLETED.value}
+    ),
+}
 
 
 #: An entry the composer just created also produces an ENTRY_ADDED change event.
@@ -405,6 +441,11 @@ class TimelineItem:
     #: What this save decided, when it decided anything. Attached after the
     #: page is assembled, in one query for the whole page.
     next_step: TimelineNextStep | None = None
+    #: The step this act finished, when it was saved with `Märgi praegune
+    #: tegevus tehtuks` — on a sent opinion's row or a finished round's, and on
+    #: no other (docs/adr/0125 §4). Read off the `NextAction` like
+    #: ``next_step``, in the same query.
+    completed_step: TimelineNextStep | None = None
     #: Set on a milestone row and on nothing else. It decides what the row
     #: *says* — a headline and a date with no clock time, and the milestone's
     #: own correction element — and not how loudly it is drawn: the dot and the
@@ -2012,10 +2053,9 @@ class _ChronologySources:
                 object_id__in=self.shown_on_their_record,
             )
         if self.only != TIMELINE_FILTER_ENTRIES:
-            anchor &= ~models.Q(
-                event_type__in=OPERATION_EFFECT_EVENT_TYPES,
-                operation_id__in=self._development_operations(),
-            )
+            folded = self._folded_effects()
+            if folded is not None:
+                anchor &= ~folded
         self.anchor_q = anchor
 
     def _developments(self) -> Any:
@@ -2027,23 +2067,59 @@ class _ChronologySources:
             .filter(chronology_day__lte=self.day)
         )
 
-    def _development_operations(self, before: date | None = None) -> Any:
-        """The operations that wrote a drawn development — before a day, if given.
+    def _folding_records(self) -> tuple[tuple[str, Any], ...]:
+        """Each kind of drawn record an effect can fold onto, by the event tying it to its save.
 
-        A stage move or next step saved with a development folds onto that
-        development's row and is never a row of its own (docs/adr/0092 §6).
+        Exactly the rows `projected_milestones` draws for these three families,
+        each annotated with the `chronology_day` its row is placed by:
+        developments not in the future; sends visible, historically sent and not
+        after today, on the day they went; every visible `Kaasamine`, a round
+        dated ahead included, on its own day or the day it was recorded
+        (docs/adr/0092 §6, docs/adr/0125 §4).
         """
-        developments = self._developments()
-        if before is not None:
-            developments = developments.filter(chronology_day__lt=before)
+        visible = {"matter": self.matter}
         return (
-            self.event_scope.filter(
-                event_type__in=RECORD_OPERATION_EVENT_TYPES,
-                object_id__in=developments.values("pk"),
-            )
-            .exclude(operation_id=None)
-            .values("operation_id")
+            (ChangeEventType.PROCEDURAL_DEVELOPMENT_RECORDED.value, self._developments()),
+            (
+                ChangeEventType.SUBMISSION_SENT.value,
+                Submission.objects.filter(**visible)
+                .visible_to(self.user)
+                .historically_sent()
+                .filter(sent_at__lt=_start_of_day(self.day + timedelta(days=1)))
+                .annotate(chronology_day=_local_date("sent_at")),
+            ),
+            (
+                ChangeEventType.ENGAGEMENT_FEEDBACK_CLOSED.value,
+                MatterEngagement.objects.filter(**visible)
+                .visible_to(self.user)
+                .annotate(chronology_day=_dated_day("occurred_on")),
+            ),
         )
+
+    def _folded_effects(self, before: date | None = None) -> models.Q | None:
+        """The effect events that fold onto a drawn record — before a day, if given.
+
+        A stage move or next step saved with a development, and a step finished
+        by a send or by the end of a wait, read on that record's row and are
+        never rows of their own (docs/adr/0092 §6, docs/adr/0125 §4). Which
+        effects each family folds is `FOLDED_EFFECTS`, so an event this does not
+        name stays an anchor exactly as `_assemble_timeline` keeps it a row.
+        ``None`` when nothing can fold at all.
+        """
+        condition: models.Q | None = None
+        for record_type, records in self._folding_records():
+            if before is not None:
+                records = records.filter(chronology_day__lt=before)
+            operations = (
+                self.event_scope.filter(event_type=record_type, object_id__in=records.values("pk"))
+                .exclude(operation_id=None)
+                .values("operation_id")
+            )
+            clause = models.Q(
+                event_type__in=FOLDED_EFFECTS[record_type], operation_id__in=operations
+            )
+            condition = clause if condition is None else condition | clause
+        return condition
 
     def bound(self, batch: int) -> datetime | None:
         """The key of the `batch`-th newest possible row anchor, or ``None``.
@@ -2194,13 +2270,13 @@ class _ChronologySources:
             | models.Q(operation_id__in=operations)
         )
         if self.only != TIMELINE_FILTER_ENTRIES:
-            # Except what folds onto a development read no further than here:
-            # those effects belong to a row before `since`, and read without
-            # their development they would stand as rows of their own.
-            wanted = wanted.exclude(
-                event_type__in=OPERATION_EFFECT_EVENT_TYPES,
-                operation_id__in=self._development_operations(before=since),
-            )
+            # Except what folds onto a record read no further than here — a
+            # development, a send, a finished wait: those effects belong to a
+            # row before `since`, and read without their record they would
+            # stand as rows of their own.
+            folded = self._folded_effects(before=since)
+            if folded is not None:
+                wanted = wanted.exclude(folded)
         events = list(wanted.select_related("actor").order_by(*order))
         entries: list[Entry] = []
         if self.entry_scope is not None:
@@ -2242,11 +2318,17 @@ def _assemble_timeline(
     # authored: the row saying which operation wrote it is fetched and never
     # rendered. `RECORD_OPERATION_EVENT_TYPES` explains why the record cannot
     # carry the identifier itself.
-    record_operations: dict[Any, uuid.UUID] = {
-        event.object_id: event.operation_id
-        for event in events
-        if event.event_type in RECORD_OPERATION_EVENT_TYPES and event.operation_id is not None
-    }
+    #
+    # A list per record, and each operation carrying which effects it may fold:
+    # a `Kaasamine` is tied to the save that ended its wait, a sent opinion to
+    # the save that sent it, and what either may fold is narrower than what a
+    # `Märge` does (`FOLDED_EFFECTS`, docs/adr/0125 §4).
+    record_operations: dict[Any, list[tuple[uuid.UUID, frozenset[str]]]] = {}
+    for event in events:
+        if event.event_type in RECORD_OPERATION_EVENT_TYPES and event.operation_id is not None:
+            record_operations.setdefault(event.object_id, []).append(
+                (event.operation_id, FOLDED_EFFECTS[event.event_type])
+            )
     suppressed = frozenset(SUPPRESSED_WHEN_ENTRY_SHOWN) | frozenset(RECORD_OPERATION_EVENT_TYPES)
     renderable = [event for event in events if event.event_type not in suppressed]
 
@@ -2263,24 +2345,21 @@ def _assemble_timeline(
     # One operation, one act, one row. `record_operations` says which operation
     # wrote each canonical record; this says which operations wrote a record
     # **that is on this page**, which is the only thing an effect may fold onto.
-    folded_operations: dict[uuid.UUID, int] = {}
+    folded_operations: dict[uuid.UUID, tuple[int, frozenset[str]]] = {}
     for index, item in enumerate(projected):
         if item.record is None:
             continue
-        operation = record_operations.get(item.record.pk)
-        if operation is not None:
-            folded_operations[operation] = index
+        for record_operation, allowed in record_operations.get(item.record.pk, ()):
+            folded_operations[record_operation] = (index, allowed)
 
     effects: dict[uuid.UUID, list[ChangeEvent]] = {}
     if folded_operations:
         kept: list[ChangeEvent] = []
         for event in renderable:
-            if (
-                event.event_type in OPERATION_EFFECT_EVENT_TYPES
-                and event.operation_id is not None
-                and event.operation_id in folded_operations
-            ):
-                effects.setdefault(event.operation_id, []).append(event)
+            effect_operation = event.operation_id
+            fold = folded_operations.get(effect_operation) if effect_operation is not None else None
+            if fold is not None and effect_operation is not None and event.event_type in fold[1]:
+                effects.setdefault(effect_operation, []).append(event)
                 continue
             kept.append(event)
         renderable = kept
@@ -2394,18 +2473,27 @@ def _assemble_timeline(
     # stands *now* rather than what this act did to it — and the next step is
     # attached by `_with_next_steps` from the same `events` tuple, so it prints
     # at the precision the action was recorded to (docs/adr/0092 §6).
-    for operation, index in folded_operations.items():
-        folded = effects.get(operation)
+    for folded_operation, (index, _allowed) in folded_operations.items():
+        folded = effects.get(folded_operation)
         if not folded:
             continue
         stage = next(
             (event for event in folded if event.event_type == ChangeEventType.MATTER_STAGE_CHANGED),
             None,
         )
+        # Added to what the row already folded rather than replacing it: a
+        # record may be tied to more than one operation — a `Kaasamine` to the
+        # save that ended its wait — and each one's effects belong under it.
+        row = projected[index]
         projected[index] = replace(
-            projected[index],
-            events=tuple(sorted(folded, key=lambda event: (event.occurred_at, event.created_at))),
-            stage_effect=(stage.summary or "") if stage is not None else "",
+            row,
+            events=tuple(
+                sorted(
+                    [*row.events, *folded],
+                    key=lambda event: (event.occurred_at, event.created_at),
+                )
+            ),
+            stage_effect=row.stage_effect or ((stage.summary or "") if stage is not None else ""),
         )
     items.extend(projected)
 
@@ -2553,7 +2641,24 @@ def _with_next_steps(page: list[TimelineItem], user: Any) -> list[TimelineItem]:
             None,
         )
 
-    wanted = {key for key in (action_of(item) for item in page) if key is not None}
+    def completed_of(item: TimelineItem) -> Any:
+        # Only where a completion was *folded* — a projected record's row. A
+        # `Mida tegid?` save keeps its «märkis eelmise sammu tehtuks» clause on
+        # its note's row exactly as before (docs/adr/0125 §4).
+        if item.record is None:
+            return None
+        return next(
+            (
+                event.object_id
+                for event in item.events
+                if event.event_type == ChangeEventType.NEXT_ACTION_COMPLETED and event.object_id
+            ),
+            None,
+        )
+
+    wanted = {
+        key for item in page for key in (action_of(item), completed_of(item)) if key is not None
+    }
     if not wanted:
         return page
 
@@ -2575,7 +2680,18 @@ def _with_next_steps(page: list[TimelineItem], user: Any) -> list[TimelineItem]:
         step = steps.get(key)
         if step is not None and _step_is_the_activity(item.record, actions[key]):
             step = None
-        resolved.append(replace(item, next_step=step) if step is not None else item)
+        finished = actions.get(completed_of(item))
+        changes: dict[str, Any] = {}
+        if step is not None:
+            changes["next_step"] = step
+        if finished is not None:
+            # The sentence alone. The step's planned day is not when it was
+            # done, and printed under «Arvamus välja 25.9» it would read as a
+            # second date for the same act (docs/adr/0125 §4).
+            changes["completed_step"] = TimelineNextStep(
+                text=finished.text, date_label="", date_value=""
+            )
+        resolved.append(replace(item, **changes) if changes else item)
     return resolved
 
 

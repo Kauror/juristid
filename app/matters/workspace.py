@@ -122,6 +122,38 @@ def _uploads(raw: Any) -> list[Any]:
     return [raw]
 
 
+def _named_open_action(*, locked_matter: Matter, action_id: Any) -> NextAction:
+    """The open step **this form was drawn against**, under the Matter's lock — or a refusal.
+
+    Every save that finishes the current step names it, and this is the one
+    place that name is checked. `Mida tegid?` has always carried a hidden
+    `action_id`; `Registreeri arvamus` and `Salvesta ja lõpeta` carry one when
+    the person ticks `Märgi praegune tegevus tehtuks` (docs/adr/0125 §2).
+
+    **Named, never found.** A stale tab still showing a step a colleague has
+    since finished or replaced would otherwise complete *whatever is open now* —
+    a task the author never saw, marked done in their name. So the open step is
+    re-read with a row lock inside the caller's transaction, after the Matter
+    row, in the order `set_next_action` and `close_matter` take them, and
+    anything but the named one is refused outright with nothing written
+    (docs/adr/0075 §4).
+
+    **Asked before the caller writes anything.** A Koja arvamus stores its bytes
+    in the evidence store as it goes, and a refusal raised after that would roll
+    the database back and leave the bytes behind. Holding the Matter's lock from
+    here to the completion means the answer cannot change in between: every
+    path that moves a step locks the same row.
+    """
+    current = (
+        NextAction.objects.select_for_update(no_key=True)
+        .filter(matter=locked_matter, status=ActionStatus.OPEN)
+        .first()
+    )
+    if current is None or str(current.pk) != str(action_id):
+        raise DomainError(STALE_ACTION_REFUSAL)
+    return current
+
+
 @transaction.atomic
 def complete_current_action(
     *,
@@ -168,14 +200,7 @@ def complete_current_action(
     # `DocumentVersion`, several `ChangeEvent`s — which is precisely the shape
     # that turns a plain `FOR UPDATE` into a deadlock.
     locked_matter = lock_open_matter_for_business_write(matter.pk)
-
-    current = (
-        NextAction.objects.select_for_update(no_key=True)
-        .filter(matter=locked_matter, status=ActionStatus.OPEN)
-        .first()
-    )
-    if current is None or str(current.pk) != str(action_id):
-        raise DomainError(STALE_ACTION_REFUSAL)
+    current = _named_open_action(locked_matter=locked_matter, action_id=action_id)
 
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
@@ -316,6 +341,7 @@ def add_engagement_feedback(
     feedback_received: str = "",
     uploads: Sequence[Any] = (),
     expected_revision: str | None = None,
+    complete_action_id: Any = None,
 ) -> Any:
     """`Lõpeta kaasamine` — the round is finished, with its answers attached.
 
@@ -335,20 +361,43 @@ def add_engagement_feedback(
     Returns the completed engagement rather than a `WorkspaceResult`, because
     the caller swaps that one row back into the chronology and has no use for an
     operation id it cannot render.
+
+    **`complete_action_id` finishes the current step with it, when the person
+    says so** (docs/adr/0125 §2). A round that was the step — «Kaasa liikmed ja
+    koonda nende seisukohad» — ends here, and asking the lawyer to write a
+    second `Mida tegid?` saying the same thing is the duplicate this exists to
+    remove. Nothing infers it: the wait on this row is not a `NextAction`, and
+    no text, date or kind is compared. The step is the one the form named
+    (`_named_open_action`), checked under the Matter's lock before anything is
+    written, and finished through `complete_next_action` — **COMPLETED**, never
+    superseded. ``None``, the default, leaves every step exactly as it was.
+
+    One operation for the whole act — the closure, its files and the
+    completion — so `Teema käik` reads it as one row: the round's own, with the
+    finished step under it (docs/adr/0092 §6).
     """
-    completed = complete_engagement_feedback(
-        engagement=engagement,
-        feedback_received=feedback_received,
-        actor=author,
-        expected_revision=expected_revision,
-    )
+    named: NextAction | None = None
+    if complete_action_id is not None:
+        # Before the closure writes anything; the lock is held to the end.
+        named = _named_open_action(
+            locked_matter=lock_open_matter_for_business_write(engagement.matter_id),
+            action_id=complete_action_id,
+        )
     with composer_operation():
+        completed = complete_engagement_feedback(
+            engagement=engagement,
+            feedback_received=feedback_received,
+            actor=author,
+            expected_revision=expected_revision,
+        )
         capture_supporting_evidence(
             matter=completed.matter,
             record=completed,
             uploads=_uploads(uploads),
             actor=author,
         )
+        if named is not None:
+            complete_next_action(action=named, actor=author)
     return completed
 
 
@@ -589,6 +638,7 @@ def add_matter_koda_opinion(
     sent_on: Any,
     title: str = "",
     summary: str = "",
+    complete_action_id: Any = None,
 ) -> WorkspaceResult:
     """`+ Koja arvamus` — the Chamber's opinion went out, with the file that went.
 
@@ -647,6 +697,19 @@ def add_matter_koda_opinion(
     supersedes an earlier opinion, and no earlier `Submission`, `Document` or
     `DocumentVersion` is touched — a revised opinion is a new letter and new bytes,
     which is what the immutable evidence store is for (docs/adr/0091 §6.4, §7).
+
+    **`complete_action_id` — and sending it was the step** (docs/adr/0125 §2).
+    «Vormista ja saada Koja seisukoht» is finished by exactly this save, and
+    asking the lawyer to write `Mida tegid?` afterwards would put a second,
+    generic record of the same act on the file. When the person ticks
+    `Märgi praegune tegevus tehtuks`, the form names the open step it showed,
+    and that step — and no other — is checked under the Matter's lock **before**
+    the file is stored (`_named_open_action`) and completed through
+    `complete_next_action` after the send, in the same transaction and
+    operation. It ends COMPLETED, never SUPERSEDED, and the chronology keeps one
+    row for the act: «Arvamus välja», with the finished step folded under it.
+    Nothing is inferred from the opinion's title, summary, date or recipients;
+    unticked (``None``), no step moves.
     """
     from datetime import datetime, time
 
@@ -663,6 +726,11 @@ def add_matter_koda_opinion(
         raise DomainError("Saatmise registreerimiseks on vaja saatmise kuupäeva.")
 
     locked_matter = lock_open_matter_for_business_write(matter.pk)
+    named = (
+        _named_open_action(locked_matter=locked_matter, action_id=complete_action_id)
+        if complete_action_id is not None
+        else None
+    )
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
         # Read first, so a rejected file refuses before anything is written. The
@@ -702,6 +770,8 @@ def add_matter_koda_opinion(
             sent_at=moment,
             sent_at_precision=SentAtPrecision.DATE,
         )
+        if named is not None:
+            result.action = complete_next_action(action=named, actor=author)
         return result
 
 

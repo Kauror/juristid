@@ -2,11 +2,12 @@
 `Järgmine tegevus` — two questions and one save, in one partial with two hosts.
 
 The same form is `Muuda` inside `PRAEGUNE TEGEVUS` when a step is open, and
-`+ Järgmine tegevus` under `LISA TEEMALE` when none is. One markup, one
-endpoint, one service: `matters:set_action` → `set_next_action_for_new_work`,
-which supersedes whatever it replaces, so *setting* a step and *changing* one
-are the same canonical act and there are never two competing controls for it
-(brief §15).
+`+ Määra järgmine tegevus` in the same zone when none is (docs/adr/0125 §1 —
+it was `+ Järgmine tegevus` under `LISA TEEMALE` until docs/adr/0097 §8.2 took
+that chip away). One markup, one endpoint, one service: `matters:set_action` →
+`set_next_action_for_new_work`, which supersedes whatever it replaces, so
+*setting* a step and *changing* one are the same canonical act and there are
+never two competing controls for it (brief §15).
 
 Rendered in two places rather than reached from one by script, because a
 `<details>` is the disclosure and a button that opens a panel elsewhere on the

@@ -440,6 +440,22 @@ record, not professional chronology (master specification 16.5).
         </span>
       {% endif %}
       {% comment %}
+        **The step this act finished**, when it was saved with `Märgi praegune
+        tegevus tehtuks` — «Arvamus välja», and under it the task it was
+        (docs/adr/0125 §4). The opinion is the record of what happened; the
+        completion is what that did to the plan, so it is a pill under the row
+        rather than a second «märkis eelmise sammu tehtuks» row beside it, and
+        nothing pretends the opinion was a note. The sentence alone: the step's
+        planned day is not when it was done.
+      {% endcomment %}
+      {% if item.completed_step %}
+        <span class="uxtl__next">
+          <span class="uxtl__nextmode" aria-hidden="true">✓</span>
+          <span class="uxtl__nextlabel">Tehtud</span>
+          <span class="uxtl__nexttext">{{ item.completed_step.text }}</span>
+        </span>
+      {% endif %}
+      {% comment %}
         What the save decided. Its own pill rather than its own line: it is the
         consequence of the thing above it, and a reader scrolling for "what did
         we agree to do" is looking for exactly this.

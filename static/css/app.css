@@ -10237,6 +10237,31 @@ section:has(.pw-more[open]) tbody.uxextra {
   min-height: 34px;
 }
 
+/* `Märgi praegune tegevus tehtuks` — the box a Koja arvamus or a finished
+   Kaasamine offers while the file has an open step. The step's own sentence is
+   part of the label, so it reads in the body colour and weight the step has in
+   `PRAEGUNE TEGEVUS`: what the box finishes is read before it is ticked. Top-
+   aligned, because a long sentence wraps and the box belongs to its first line
+   (docs/adr/0125 §2). */
+#teema-vaade-wrap .cx-check--action {
+  align-items: flex-start;
+  margin-top: var(--spacing-2);
+}
+
+#teema-vaade-wrap .cx-check--action input {
+  margin-top: 2px;
+}
+
+#teema-vaade-wrap .cx-check__task {
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-body);
+  overflow-wrap: anywhere;
+}
+
+#teema-vaade-wrap .cx-check__date {
+  font-variant-numeric: tabular-nums;
+}
+
 /* `display: flex` above outranks the user agent's `[hidden] { display: none }`,
    so a hidden checkbox row has to be hidden here — otherwise the offer for a
    day ahead would show beside today's date too. */
@@ -11957,6 +11982,14 @@ section:has(.pw-more[open]) tbody.uxextra {
 .teemamain .curact__edit {
   display: block;
   margin: 0 0 var(--spacing-3);
+}
+
+/* `+ Määra järgmine tegevus` — the same editor, on a file with no open step.
+ * It sits under the «Järgmine samm on määramata» line (or the milestone or
+ * waits drawn there) rather than beside a task, so it takes a little air above
+ * and none below: it is the last thing in the zone (docs/adr/0125 §1). */
+.teemamain .curact__set {
+  margin: var(--spacing-2) 0 0;
 }
 
 .disclosure-chip--quiet {

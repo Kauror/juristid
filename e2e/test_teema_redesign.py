@@ -552,19 +552,22 @@ def test_the_current_action_zone_offers_muuda_and_the_launcher_does_not(page, ba
 
     There is no launcher chip for the next step at all since docs/adr/0097
     §8.2: two controls both offering to set «the next action» is how a lawyer
-    ends up believing they have two, so the *only* ordinary way to set the
-    first one is the optional box inside `+ Märge`, and once a step exists
-    `Muuda` beside the task is the way to change it, prefilled with what is
-    there (docs/adr/0075 §10).
+    ends up believing they have two. With no step, the one editor is
+    `+ Määra järgmine tegevus` in `PRAEGUNE TEGEVUS` (docs/adr/0125 §1), and
+    once a step exists the same editor is `Muuda` beside the task, prefilled
+    with what is there (docs/adr/0075 §10).
     """
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Fookuse brauserikatse")
 
     expect(page.locator("#praegune-tegevus")).to_contain_text("Järgmine samm on määramata")
     expect(page.get_by_role("button", name="Määra allpool ↓")).to_have_count(0)
-    expect(page.get_by_text("+ Järgmine tegevus")).to_have_count(0)
-    # And no editor either, because there is no task for one to sit beside.
-    expect(page.locator("#lisa-jargmine")).to_have_count(0)
+    expect(page.get_by_text("+ Järgmine tegevus", exact=True)).to_have_count(0)
+    # The editor is in the zone, as the direct control — once, and nowhere else.
+    expect(page.locator("#lisa-jargmine")).to_have_count(1)
+    expect(page.locator("#praegune-tegevus #lisa-jargmine > summary")).to_have_text(
+        "+ Määra järgmine tegevus"
+    )
 
     set_next_step(page, "Koostada arvamuse mustand", _future(4))
 

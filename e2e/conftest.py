@@ -378,8 +378,9 @@ def open_add_panel(page, panel_id: str) -> None:
 
     **And it reads the page the server last sent.** A workspace save swaps
     `#teema-vaade` wholesale and `#lisa-jargmine` crosses hosts on exactly the
-    save this test suite makes it cross: the launcher chip, while no step is
-    open, and the `Muuda` disclosure once one is. Measured against the previous
+    save this test suite makes it cross: `+ Määra järgmine tegevus` (once the
+    launcher chip) while no step is open, and the `Muuda` disclosure once one
+    is. Measured against the previous
     version of this helper, with the save still on the wire: it read the panel
     that was about to be thrown away, called it open, returned in 0.04s, and
     the replacement then arrived closed — so the form was hidden, the next line
@@ -464,18 +465,23 @@ def set_next_step(page, text: str, when: str) -> None:
 
     **Two hosts, and which one exists is a fact about the Matter.** While a
     task is open the control is `Muuda` inside `PRAEGUNE TEGEVUS`. While none
-    is, there is no control of its own at all: `+ Järgmine tegevus` left the
-    launcher on 2026-09-20, because two controls both offering to set «the next
-    action» is how a lawyer ends up believing they have two — and the one
-    ordinary way to set the first step is `+ Märge` itself: the activity,
-    dated ahead, with `Märgi järgmiseks tegevuseks` ticked (docs/adr/0097 §8.2,
-    docs/adr/0124). That save also records the `Märge`, which `Teema käik`
-    draws as an `Eesolev` row carrying the same sentence.
+    is, this helper sets the first step through `+ Märge` itself: the
+    activity, dated ahead, with `Märgi järgmiseks tegevuseks` ticked
+    (docs/adr/0097 §8.2, docs/adr/0124). That save also records the `Märge`,
+    which `Teema käik` draws as an `Eesolev` row carrying the same sentence —
+    and the files written before docs/adr/0125 read that row, so this door is
+    kept. The direct `+ Määra järgmine tegevus` the zone now also offers is
+    driven by `e2e/test_direct_next_action_workflow.py`.
 
-    `when` is an Estonian date as the box takes it, and on this host it has to
-    be **after today**: a past or today's `Märge` offers no step.
+    **Which host is decided by the completion form**, `#praegune-tegevus-vorm`,
+    which is drawn only beside an open step. `#lisa-jargmine` is not the signal
+    any more: since docs/adr/0125 §1 it is on every open Matter, as `Muuda` or
+    as `+ Määra järgmine tegevus`.
+
+    `when` is an Estonian date as the box takes it, and on the `+ Märge` host
+    it has to be **after today**: a past or today's `Märge` offers no step.
     """
-    if page.locator("#lisa-jargmine").count():
+    if page.locator("#praegune-tegevus-vorm").count():
         open_next_action_form(page)
         page.locator("#lisa-jargmine [name='text']").fill(text)
         page.locator("#id_target_date").fill(when)
@@ -493,10 +499,11 @@ def set_next_step(page, text: str, when: str) -> None:
 
 
 def open_next_action_form(page) -> None:
-    """`Muuda` or `+ Järgmine tegevus`, whichever this Matter is showing.
+    """`Muuda` or `+ Määra järgmine tegevus`, whichever this Matter is showing.
 
     One form, two hosts: while a step is open it is the `Muuda` disclosure
-    beside the task, and once none is it is the launcher chip. Both carry the
+    beside the task, and once none is it is `+ Määra järgmine tegevus` in the
+    same zone (docs/adr/0125 §1). Both are `next_action_panel.html`, with the
     same `#lisa-jargmine` id, which is what lets one helper open either.
 
     The date box used to sit behind a «Kuupäev…» `<details>` and was opened

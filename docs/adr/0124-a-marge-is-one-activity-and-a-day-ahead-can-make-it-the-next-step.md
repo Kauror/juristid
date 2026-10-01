@@ -133,6 +133,10 @@ marked `Eesolev` as before, and the open step is read in `PRAEGUNE TEGEVUS`.
   edited (`Muuda` beside an open step, docs/adr/0106) or on `Uus teema`. This
   follows directly from «do not show the next-activity box for a past or today's
   date», and is recorded here so it is not rediscovered as a gap.
+  **Narrowed on 2026-10-01 by [0125](0125-the-next-step-is-set-where-it-is-read-and-the-act-can-finish-it.md)
+  §1:** it is also made with `+ Määra järgmine tegevus` in `PRAEGUNE TEGEVUS`
+  on a file with no open step — the gap this bullet recorded. This decision's
+  own rule is unchanged.
 * `Oluline tähtaeg`, `Jõustumine` and `Töövõit` are untouched: their own forms,
   endpoints, services, validation and reporting. A future one of them is still
   never a `NextAction`; an upcoming `Oluline tähtaeg` is still *surfaced* as the
