@@ -383,14 +383,14 @@ def test_koda_stopping_is_not_a_node_and_does_not_move_the_rail(specialist):
     assert "Koda" not in " ".join(node.label for node in rail.nodes)
 
 
-def test_joustunud_does_not_close_the_matter(specialist):
-    """ADR 0032's separation, read from the rail's side."""
+def test_joustunud_closes_the_matter_and_the_rail_still_reads_it(specialist):
+    """«Jõustunud» closes the Matter since docs/adr/0131 §10; the rail reads it the same."""
     matter = factories.MatterFactory(owner=specialist, track=Track.DOMESTIC.value)
     change_stage(matter=matter, stage=_stage("in_force"), actor=specialist)
 
     matter.refresh_from_db()
-    assert matter.is_open is True
-    assert matter.disposition == ""
+    assert matter.is_open is False
+    assert matter.disposition == "COMPLETED"
     rail = _rail(matter, specialist)
     assert _states(rail)["joustumine"] == STATE_CURRENT
     assert rail.koda_stopped is False

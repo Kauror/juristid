@@ -36,7 +36,7 @@ import pytest
 from django.urls import reverse
 from django.utils import timezone
 
-from app.intelligence.enums import EffectiveDateKind
+from app.intelligence.enums import EffectiveDateKind, ImportantDateKind
 from app.intelligence.models import MatterEffectiveDate
 from app.intelligence.services import add_effective_date, add_important_date
 from app.matters.legal_process import (
@@ -54,6 +54,7 @@ from app.matters.process_timeline import (
     STATE_AHEAD,
     STATE_REACHED,
     STATE_TODAY,
+    TRANSPOSITION_DEADLINE_LABEL,
     dated_state,
     process_steps,
 )
@@ -272,19 +273,25 @@ def test_the_reported_contradiction_is_gone(specialist, pin_day):
     anchor = PERIODS[DatePrecision.MONTH]
     _commencement(matter, specialist, DatePrecision.MONTH, anchor)
     start, end = period_bounds(anchor, DatePrecision.MONTH)
+    # A transposition deadline: the one `Oluline tähtaeg` the rail still draws
+    # since docs/adr/0131 §13, so the two readings still meet on one strip.
     add_important_date(
         matter=matter,
         title="Ministeeriumi otsus",
         date_value=start,
         period_end=end,
         date_precision=DatePrecision.MONTH,
+        kind=ImportantDateKind.TRANSPOSITION_DEADLINE,
         actor=specialist,
     )
 
     for day in (start, date(2026, 10, 15), end):
         pin_day(day)
         states = {step.label: step.state for step in process_steps(matter=matter, user=specialist)}
-        assert states == {EFFECTIVE_LABEL: STATE_AHEAD, "Ministeeriumi otsus": STATE_AHEAD}, day
+        assert states == {
+            EFFECTIVE_LABEL: STATE_AHEAD,
+            TRANSPOSITION_DEADLINE_LABEL: STATE_AHEAD,
+        }, day
 
     # And once October is over the commencement is reached, while the deadline —
     # a past one — has left the strip for the chronology, as it always did.
@@ -327,6 +334,7 @@ def test_a_deadline_period_is_not_today_on_its_last_day(specialist, pin_day):
         date_value=start,
         period_end=end,
         date_precision=DatePrecision.QUARTER,
+        kind=ImportantDateKind.TRANSPOSITION_DEADLINE,
         actor=specialist,
     )
     pin_day(end)

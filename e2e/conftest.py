@@ -730,6 +730,43 @@ def open_matter(page, base_url: str, title: str) -> str:
 #: no box of its own.
 KAIK_ROW = "#ajalugu-loend article.uxtl__item"
 
+#: A `Hetkeseis` period of `Teema käik` (docs/adr/0131 §7): a native `<details>`.
+KAIK_PERIOD = "#ajalugu-loend details.kaikstage"
+
+
+def open_kaik_period(node) -> None:
+    """Open the `Hetkeseis` period a row sits in, the way a reader does.
+
+    Since docs/adr/0131 `Teema käik` is grouped by period: the current one is
+    open and every earlier one is closed. A row in an earlier period is in the
+    page but out of sight until its period is opened — so anything that reads
+    or presses inside it opens the period first. A row on the flat chronology
+    (a Matter with no period) has no period and is left as it is. Idempotent.
+    """
+    period = node.locator("xpath=ancestor-or-self::details[contains(@class,'kaikstage')]")
+    if not period.count():
+        return
+    period = period.first
+    if period.get_attribute("open") is None:
+        period.locator("xpath=./summary").click()
+
+
+def close_through_stage(page, stage: str = "Rohkem ei tegele", title: str = "") -> None:
+    """End the Matter the one ordinary way there is: a `Hetkeseis` that ends it.
+
+    `+ Lõpeta teema` is gone (docs/adr/0131 §11). «Jõustunud» and «Rohkem ei
+    tegele» close the Matter on `Salvesta`, and their option says so —
+    «… — lõpetab teema». ``title`` is the `Märge`'s own sentence, optional like
+    every other control on the panel.
+    """
+    open_composer(page)
+    if title:
+        page.fill("#id_marge_title", title)
+    page.select_option("#id_marge_stage", label=f"{stage} — lõpetab teema")
+    page.locator("#marge-tavaline button[type=submit]").click()
+    page.wait_for_load_state("networkidle")
+    page.locator(".banner--closed").wait_for(state="visible")
+
 
 def open_kaik_row(row) -> None:
     """Open one `Teema käik` row the way a reader does — with its toggle.
@@ -751,6 +788,7 @@ def open_kaik_row(row) -> None:
     is rather than pressed.
     """
     article = row.locator("xpath=ancestor-or-self::article[contains(@class,'uxtl__item')]").first
+    open_kaik_period(article)
     toggle = article.locator(".uxtl__toggle").first
     toggle.wait_for(state="attached")
     if toggle.is_hidden():

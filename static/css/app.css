@@ -12461,3 +12461,102 @@ section:has(.pw-more[open]) tbody.uxextra {
   color: var(--status-danger);
   font-weight: var(--typography-weight-semibold);
 }
+
+
+/* -- Teema käik by Hetkeseis period (docs/adr/0131 §7) --------------------
+ *
+ * One quiet heading per period: the stage, its compact period and a count —
+ * nothing else, because the rows inside already carry every detail. Native
+ * `<details>`, so any number are open at once. The current period is told
+ * apart by weight and by the accent bar the page already uses for «this one»,
+ * not by a new colour; a closed earlier period reads one tone down. */
+.kaikstages {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+}
+
+.kaikstage__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-25);
+  padding: var(--spacing-15) var(--spacing-2);
+  min-height: 28px;
+  cursor: pointer;
+  list-style: none;
+  border-left: 2px solid transparent;
+  border-radius: var(--radius-sm);
+}
+
+.kaikstage__head::-webkit-details-marker {
+  display: none;
+}
+
+.kaikstage__head:hover {
+  background: var(--surface-hover);
+}
+
+.kaikstage__head:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: calc(var(--focus-ring-offset-width) * -1);
+}
+
+.kaikstage--current > .kaikstage__head {
+  border-left-color: var(--accent-primary);
+}
+
+.kaikstage__caret {
+  flex: none;
+  align-self: center;
+  width: 0;
+  height: 0;
+  border-left: 5px solid var(--text-secondary);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform var(--motion-duration-fast) var(--motion-easing-standard);
+}
+
+.kaikstage[open] > .kaikstage__head .kaikstage__caret {
+  transform: rotate(90deg);
+}
+
+.kaikstage__stage {
+  font-size: 13px;
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-secondary);
+}
+
+.kaikstage--current > .kaikstage__head .kaikstage__stage {
+  color: var(--text-primary);
+}
+
+/* «Varasem tegevus» and «Hetkeseis määramata» are not stages, and do not
+   read as one. */
+.kaikstage--unplaced > .kaikstage__head .kaikstage__stage {
+  font-weight: var(--typography-weight-regular);
+  color: var(--text-muted);
+}
+
+.kaikstage__repeat,
+.kaikstage__period {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.kaikstage__count {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.kaikstage__body {
+  padding: var(--spacing-2) 0 var(--spacing-3) var(--spacing-2);
+}
+
+/* «Ava uuesti» with the stage the file is reopened in, on one line. */
+.banner__reopen {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}

@@ -48,18 +48,12 @@ from app.documents.services import (
     link_working_document,
     remove_document,
 )
-from app.intelligence.enums import WorkVictoryStatus
 from app.intelligence.forms import EffectiveDateForm, WorkVictoryForm
-from app.intelligence.models import MatterWorkVictory
 from app.intelligence.services import add_important_date
 from app.matters import services, workspace
 from app.matters import work_items as wi
 from app.matters.forms import (
-    COMPOSER_CLOSURE_CHOICES,
-    WORK_VICTORY_NEEDS_TEXT,
-    CompactClosureForm,
     CompactEngagementForm,
-    CompactWorkVictoryForm,
     EngagementForm,
 )
 from app.matters.models import Matter, MatterEngagement, MatterWebsiteOverview
@@ -74,6 +68,7 @@ from app.matters.services import (
 from app.matters.timeline import documents_added_clause, matter_timeline
 from app.workflow.dates import period_bounds
 from app.workflow.enums import DatePrecision, Disposition
+from app.workflow.models import StageVocabulary
 from app.workflow.services import set_next_action
 from tests import factories
 
@@ -827,209 +822,28 @@ def test_the_rendered_band_heading_matches_its_rendered_rows(signed_in, speciali
 
 
 # ---------------------------------------------------------------------------
-# 8 — Lõpeta teema → Muu
+# 8 and 9 — `Lõpeta teema` is retired (docs/adr/0131 §11)
 # ---------------------------------------------------------------------------
+#
+# The panel these sections drove — four outcomes, «Muu», `Märgi töövõiduks` —
+# is gone: a Matter ends when its `Hetkeseis` says so, and a win is recorded from
+# `+ Märge → Töövõit`. What still holds of section 8 is that a closure recorded
+# as «Muu» reads back on the banner, and that reopening works — now into a stage
+# (tests/test_stage_episodes.py owns the rest).
 
 
-def test_the_panel_offers_four_outcomes_and_muu_is_its_own():
-    assert dict(COMPOSER_CLOSURE_CHOICES) == {
-        Disposition.COMPLETED.value: "Jõustus",
-        Disposition.INITIATIVE_WITHDRAWN.value: "Menetlus lõppes",
-        Disposition.MONITORING_STOPPED.value: "Loobuti",
-        Disposition.OTHER.value: "Muu",
-    }
-    chips = CompactClosureForm().closure_chips
-    assert [chip["label"] for chip in chips] == ["Jõustus", "Menetlus lõppes", "Loobuti", "Muu"]
-    assert not any(chip["selected"] for chip in chips)
-
-
-def _close(client, matter, **fields):
-    return client.post(
-        reverse("matters:close_from_workspace", kwargs={"pk": matter.pk}), fields, **HX
+def test_a_muu_closure_reads_back_and_reopens_into_a_stage(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    services.close_matter(
+        matter=matter, disposition=Disposition.OTHER.value, actor=specialist, reason="Teine põhjus."
     )
 
-
-@pytest.mark.parametrize("disposition", [value for value, _label in COMPOSER_CLOSURE_CHOICES])
-def test_every_outcome_closes_the_matter(signed_in, specialist, disposition):
-    matter = factories.MatterFactory(owner=specialist)
-
-    response = _close(signed_in, matter, disposition=disposition, closing_words="Lõpp.")
-
-    assert response.status_code == 200, response.content.decode()[:1500]
-    matter.refresh_from_db()
-    assert not matter.is_open
-    assert matter.disposition == disposition
-
-
-def test_muu_closes_reads_back_and_reopens(signed_in, specialist):
-    matter = factories.MatterFactory(owner=specialist)
-
-    _close(signed_in, matter, disposition=Disposition.OTHER.value, closing_words="Teine põhjus.")
-
-    matter.refresh_from_db()
-    assert (matter.disposition, matter.disposition_reason) == ("OTHER", "Teine põhjus.")
-    closed = ChangeEvent.objects.get(matter=matter, event_type=ChangeEventType.MATTER_CLOSED)
-    assert closed.payload["disposition"] == "OTHER"
     body = _matter_page(signed_in, matter)
     banner = re.search(r'<div class="banner banner--closed">.*?</div>', body, re.S).group(0)
     assert "Muu" in banner and "Teine põhjus." in banner
 
-    signed_in.post(reverse("matters:reopen", kwargs={"pk": matter.pk}))
+    idea = StageVocabulary.objects.get(key="idea")
+    signed_in.post(reverse("matters:reopen", kwargs={"pk": matter.pk}), {"stage": str(idea.pk)})
     matter.refresh_from_db()
     assert matter.is_open and matter.disposition == ""
-
-
-# ---------------------------------------------------------------------------
-# 9 — Lõpeta teema → Märgi töövõiduks
-# ---------------------------------------------------------------------------
-
-
-def _victories(matter):
-    return MatterWorkVictory.objects.filter(matter=matter)
-
-
-def test_unchecked_closes_and_records_no_win(signed_in, specialist):
-    matter = factories.MatterFactory(owner=specialist)
-
-    _close(
-        signed_in,
-        matter,
-        disposition=Disposition.COMPLETED.value,
-        victory_note="Kirjutatud, aga linnuke puudub.",
-    )
-
-    matter.refresh_from_db()
-    assert not matter.is_open
-    assert not _victories(matter).exists()
-
-
-def test_checked_closes_and_records_the_ordinary_win(signed_in, specialist):
-    matter = factories.MatterFactory(owner=specialist)
-
-    response = _close(
-        signed_in,
-        matter,
-        disposition=Disposition.COMPLETED.value,
-        closing_words="Seadus jõustus.",
-        mark_work_victory="on",
-        victory_note="Üleminekuaeg pikendati 2028. aastani.",
-    )
-
-    assert response.status_code == 200, response.content.decode()[:1500]
-    matter.refresh_from_db()
-    assert not matter.is_open
-    victory = _victories(matter).get()
-    assert victory.status == WorkVictoryStatus.CONFIRMED
-    assert victory.title == "Üleminekuaeg pikendati 2028. aastani."
-    assert victory.confirmed_by == specialist
-    today = timezone.localdate()
-    assert (victory.period_date, victory.period_end, victory.date_precision) == (
-        today,
-        today,
-        DatePrecision.EXACT,
-    )
-    # One operation: the win and the closure are one act in the history.
-    won = ChangeEvent.objects.get(matter=matter, event_type=ChangeEventType.WORK_VICTORY_CONFIRMED)
-    closed = ChangeEvent.objects.get(matter=matter, event_type=ChangeEventType.MATTER_CLOSED)
-    assert won.operation_id == closed.operation_id is not None
-    # And it is the ordinary Töövõit everywhere a Töövõit is read.
-    listed = signed_in.get(reverse("matters:matter_list"), {"olek": "koik", "toovoit": "on"})
-    assert matter.title in listed.content.decode()
-
-
-def test_the_win_is_the_same_record_the_marge_panel_writes(specialist):
-    """Same keys, same service: `+ Märge → Töövõit` and the closure agree."""
-    today = timezone.localdate()
-    marge = CompactWorkVictoryForm(
-        {"victory_change": "Muudatus", "victory_date": today.strftime("%d.%m.%Y")}
-    )
-    close = CompactClosureForm(
-        {"disposition": "COMPLETED", "mark_work_victory": "on", "victory_note": "Muudatus"}
-    )
-
-    assert marge.is_valid() and close.is_valid()
-    assert close.cleaned_data["work_victory_kwargs"] == marge.cleaned_data["work_victory_kwargs"]
-
-
-def test_checked_with_no_description_is_refused_like_the_marge_panel(signed_in, specialist):
-    matter = factories.MatterFactory(owner=specialist)
-
-    response = _close(
-        signed_in, matter, disposition=Disposition.COMPLETED.value, mark_work_victory="on"
-    )
-
-    assert response.status_code == 400
-    assert WORK_VICTORY_NEEDS_TEXT in response.content.decode()
-    matter.refresh_from_db()
-    assert matter.is_open
-    assert not _victories(matter).exists()
-    marge = CompactWorkVictoryForm({"victory_change": "", "victory_date": "01.09.2026"})
-    assert not marge.is_valid()
-    assert marge.errors["victory_change"] == [WORK_VICTORY_NEEDS_TEXT]
-
-
-def test_a_failed_closure_leaves_no_win(specialist, monkeypatch):
-    matter = factories.MatterFactory(owner=specialist)
-
-    def refuse(**kwargs):
-        raise DomainError("Sulgemine ebaõnnestus.")
-
-    monkeypatch.setattr(workspace, "close_matter", refuse)
-    with pytest.raises(DomainError, match="Sulgemine ebaõnnestus"):
-        workspace.close_matter_from_workspace(
-            matter=matter,
-            author=specialist,
-            disposition="COMPLETED",
-            work_victory={
-                "title": "Võit",
-                "period_date": timezone.localdate(),
-                "period_end": timezone.localdate(),
-                "date_precision": "EXACT",
-            },
-        )
-
-    matter.refresh_from_db()
-    assert matter.is_open
-    assert not _victories(matter).exists()
-
-
-def test_a_failed_win_leaves_the_matter_open(specialist):
-    matter = factories.MatterFactory(owner=specialist)
-
-    with pytest.raises(DomainError, match="Töövõidul peab olema kirjeldus"):
-        workspace.close_matter_from_workspace(
-            matter=matter,
-            author=specialist,
-            disposition="COMPLETED",
-            work_victory={
-                "title": "   ",
-                "period_date": timezone.localdate(),
-                "period_end": timezone.localdate(),
-                "date_precision": "EXACT",
-            },
-        )
-
-    matter.refresh_from_db()
-    assert matter.is_open
-    assert not _victories(matter).exists()
-    assert not ChangeEvent.objects.filter(
-        matter=matter, event_type=ChangeEventType.MATTER_CLOSED
-    ).exists()
-
-
-def test_the_panel_renders_the_checkbox_and_its_box(signed_in, specialist):
-    matter = factories.MatterFactory(owner=specialist)
-
-    body = _matter_page(signed_in, matter)
-    panel = re.search(r'<div class="cx-panel" id="teema-lopeta".*?</form>', body, re.S).group(0)
-
-    assert 'name="mark_work_victory"' in panel
-    assert "Märgi töövõiduks" in panel
-    assert 'name="victory_note"' in panel and "Töövõidu märkus" in panel
-    assert re.search(r'name="mark_work_victory"(?![^>]*checked)', panel)
-    assert re.findall(r'data-chipvalue="[A-Z_]+">([^<]+)<', panel) == [
-        "Jõustus",
-        "Menetlus lõppes",
-        "Loobuti",
-        "Muu",
-    ]
+    assert matter.stage == idea

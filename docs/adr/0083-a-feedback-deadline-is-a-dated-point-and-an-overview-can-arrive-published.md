@@ -28,6 +28,8 @@ decided — no title, no description, no attachment, no Uus teema option — sta
 
 ## 1 — A reply-by date was only readable by scrolling
 
+**The rail column is retired by docs/adr/0131 §13** (2026-10-02): `Menetluse kulg` keeps the procedure and the opinions that went out, and a round's reply-by date reads on the round's own row in `Teema käik`. `MatterEngagement.feedback_deadline` and everything that reads it are unchanged.
+
 ADR 0078 §3 gave `Kaasamine` a `feedback_deadline` and put it on the
 engagement's own chronology row, which is where the fact belongs. In use that
 turned out to be the only place it is, and the chronology is below the fold: a

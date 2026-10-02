@@ -193,20 +193,18 @@ def test_the_shared_facts_are_asked_in_the_same_words(specialist):
         assert create[name].label == edit[name].label, name
 
 
-#: The one fact both pages ask in different words, by decision rather than by
-#: drift: `Uus teema` heads `policy_areas` «Valdkond», in the singular, and
-#: `Muuda teemat` keeps «Valdkonnad» until that page is decided on its own
-#: (docs/adr/0130, amendment of 2026-10-02). Same field, same control, same
-#: several values — only the heading differs, and this names it.
-CREATE_ONLY_WORDING = {"policy_areas": ("Valdkond", "Valdkonnad")}
+#: The facts both pages ask in different words, by decision rather than by
+#: drift — none since docs/adr/0131 §14. `policy_areas` was the one: `Uus teema`
+#: said «Valdkond» and `Muuda teemat` «Valdkonnad» until the edit page was
+#: decided too (docs/adr/0130, amendment of 2026-10-02).
+CREATE_ONLY_WORDING: dict[str, tuple[str, str]] = {}
 
 
-def test_the_one_wording_difference_is_the_recorded_one(specialist):
+def test_valdkond_is_asked_in_one_word_on_both_pages(specialist):
     create = MatterCreateForm(viewer=specialist).fields
     edit = MatterEditForm(viewer=specialist).fields
 
-    for name, (create_label, edit_label) in CREATE_ONLY_WORDING.items():
-        assert (create[name].label, edit[name].label) == (create_label, edit_label)
+    assert create["policy_areas"].label == edit["policy_areas"].label == "Valdkond"
 
 
 def test_the_shared_facts_use_the_same_kind_of_control(specialist):

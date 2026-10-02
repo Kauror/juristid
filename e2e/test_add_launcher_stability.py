@@ -39,9 +39,8 @@ pytestmark = pytest.mark.e2e
 #: *kind of thing* is being recorded and the rest is asked second, inside the
 #: family chosen (docs/adr/0097 §8).
 #:
-#: `+ Lõpeta teema` is back at the end of it (docs/adr/0099 §5), which makes it
-#: this file's business again: it is in the row, so it has to hold still like
-#: everything else in the row, and opening it must not shift the four.
+#: `+ Lõpeta teema` stood at the end of it until docs/adr/0131 §11 retired it:
+#: a Matter ends through its `Hetkeseis` now.
 #:
 #: The geometry contract itself is unchanged and is exactly what this file
 #: exists to hold: fewer chips is allowed, more chips is allowed, a chip that
@@ -51,7 +50,6 @@ CANONICAL = [
     "+ Kaasamine",
     "+ Arvamus / tagasiside",
     "+ Ülevaade / uudis",
-    "+ Lõpeta teema",
 ]
 
 #: The top-level panels, which is what the chips above open.
@@ -60,7 +58,6 @@ PANEL_IDS = [
     "lisa-kaasamine",
     "lisa-arvamus",
     "lisa-koduleht",
-    "teema-lopeta",
 ]
 
 #: The sub-choices, and which family each is inside. Opening one of these is the
@@ -169,9 +166,7 @@ def test_no_launcher_control_moves_when_a_form_is_opened(page, base_url):
     the first — not merely where it was before *that* click, which a launcher
     that drifted one row at a time would also satisfy.
 
-    `+ Lõpeta teema` is among them. Its panel is the tallest in the row and it
-    is the one chip whose own rule (`--last`) gives it different spacing, which
-    makes it the likeliest to push the row around (docs/adr/0099 §5).
+    `+ Lõpeta teema` was among them until docs/adr/0131 §11 retired it.
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)

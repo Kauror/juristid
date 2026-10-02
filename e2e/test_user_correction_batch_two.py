@@ -13,7 +13,6 @@ from playwright.sync_api import expect
 
 from e2e.conftest import MARTIN, create_matter, open_kaik_row, sign_in, unique_title
 from e2e.test_engagement import open_panel as open_kaasamine
-from e2e.test_teema_closing_flow import open_closing_panel
 from e2e.test_uus_teema_files import PDF_BYTES, create_with_files
 
 pytestmark = pytest.mark.e2e
@@ -23,28 +22,9 @@ def chronology(page):
     return page.locator("#ajalugu-loend")
 
 
-def test_closing_with_muu_records_the_ordinary_work_win(page, base_url):
-    """`Muu`, `Lõppsõna` and `Märgi töövõiduks` in one press (§8, §9)."""
-    sign_in(page, base_url, MARTIN)
-    create_matter(page, base_url, unique_title("Lõpetamine muu ja töövõiduga"))
-
-    panel = open_closing_panel(page)
-    note = panel.locator("[name=victory_note]")
-    expect(note).to_be_hidden()
-    panel.get_by_label("Märgi töövõiduks").check()
-    expect(note).to_be_visible()
-    panel.locator(".uxchip", has_text="Muu").click()
-    panel.locator("[name=closing_words]").fill("Lõpetatud muul põhjusel.")
-    note.fill("Üleminekuaeg pikendati 2028. aastani.")
-    panel.get_by_role("button", name="Salvesta", exact=True).click()
-    page.wait_for_load_state("networkidle")
-
-    banner = page.locator(".banner--closed")
-    expect(banner).to_contain_text("Teema on suletud.")
-    expect(banner).to_contain_text("Muu")
-    expect(banner).to_contain_text("Lõpetatud muul põhjusel.")
-    expect(chronology(page)).to_contain_text("Töövõit")
-    expect(chronology(page)).to_contain_text("Üleminekuaeg pikendati 2028. aastani.")
+# `test_closing_with_muu_records_the_ordinary_work_win` drove `+ Lõpeta teema`,
+# retired by docs/adr/0131 §11; the browser proof of closing is
+# `e2e/test_teema_closing_flow.py`, and a win is `+ Märge → Töövõit`.
 
 
 def test_files_chosen_together_are_one_teema_kaik_line(page, base_url, tmp_path):

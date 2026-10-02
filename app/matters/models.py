@@ -36,6 +36,7 @@ from app.matters.enums import (
     MatterOrigin,
     ProceduralLinkKind,
     RecordMode,
+    StageEpisodeOrigin,
     TagAssignmentSource,
     WebsiteOverviewStatus,
 )
@@ -3259,6 +3260,127 @@ class MatterAssignmentNotice(BaseModel):
 
     def __str__(self) -> str:
         return f"assignment notice {self.matter_id} → {self.recipient_id}"
+
+
+class MatterStageEpisode(BaseModel):
+    """One period in which a Matter held one `Hetkeseis` (docs/adr/0131).
+
+    `Matter.stage` is still *where the file stands now*, and still the only
+    place that is read for that. This is the history beside it: every time the
+    stage moves, the period that was current ends and a new one begins — so a
+    file that went `Idee → Kooskõlastusringil → Valitsuses → Kooskõlastusringil`
+    has four rows, and the second consultation is a row of its own rather than
+    the first one reopened. Nothing is unique on ``(matter, stage)`` for exactly
+    that reason.
+
+    **What a row records is Juristid's own transition, never a business date.**
+    ``started_at`` and ``ended_at`` are the moments this system recorded the
+    move. When the ministry actually sent the draft to the round is a procedural
+    date a lawyer states on `Menetluse kulg`, and it is never derived from here
+    (docs/adr/0131 §2).
+
+    **A period whose start is unknown says so.** A stage a Matter already held
+    when episodes were introduced, or one an importer wrote, began at some moment
+    nobody recorded; ``started_at`` stays empty and ``origin`` says why, rather
+    than stating the day of the migration or the day the Matter was created
+    (`StageEpisodeOrigin`, docs/adr/0131 §3).
+
+    **No stage, no period.** `Määramata` is the absence of a stage and never a
+    row: ``stage`` is required.
+
+    **Never rewritten.** The one change a row ever takes is its end — ``ended_at``
+    and ``is_current`` — written by the transition that starts the next one. A
+    backward move opens a new row; it does not reopen an old one
+    (`app.matters.services.change_stage`).
+
+    Activity is tied to a period through the audit seam, not through a column on
+    every record: `ChangeEvent.stage_episode` says which period was current when
+    a person did the work (`app.audit.services.record_change_event`).
+    """
+
+    matter = models.ForeignKey(
+        "matters.Matter",
+        on_delete=models.PROTECT,
+        related_name="stage_episodes",
+        verbose_name="teema",
+    )
+    stage = models.ForeignKey(
+        "workflow.StageVocabulary",
+        on_delete=models.PROTECT,
+        related_name="matter_episodes",
+        verbose_name="hetkeseis",
+    )
+    #: 1, 2, 3 … per Matter, in the order the periods began.
+    sequence = models.PositiveIntegerField(verbose_name="järjekorranumber")
+    origin = models.CharField(
+        max_length=16,
+        choices=StageEpisodeOrigin.choices,
+        default=StageEpisodeOrigin.RECORDED,
+        verbose_name="päritolu",
+    )
+    started_at = models.DateTimeField(null=True, blank=True, verbose_name="algus")
+    #: Empty while current, and empty on a past period whose end was written by
+    #: an importer rather than recorded here.
+    ended_at = models.DateTimeField(null=True, blank=True, verbose_name="lõpp")
+    is_current = models.BooleanField(default=True, verbose_name="kehtiv")
+
+    class Meta:
+        verbose_name = "hetkeseisu etapp"
+        verbose_name_plural = "hetkeseisu etapid"
+        ordering = ["matter", "sequence"]
+        constraints = [
+            # At most one current period per Matter — the database's answer,
+            # not only the service's, because two concurrent transitions that
+            # both read «no current period» must not both write one.
+            models.UniqueConstraint(
+                fields=["matter"],
+                condition=models.Q(is_current=True),
+                name="matters_one_current_stage_episode",
+            ),
+            models.UniqueConstraint(
+                fields=["matter", "sequence"],
+                name="matters_stage_episode_sequence_unique",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(is_current=False) | models.Q(ended_at__isnull=True),
+                name="matters_current_stage_episode_has_no_end",
+            ),
+            # A recorded transition has its moment; a found period has none.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(origin=StageEpisodeOrigin.RECORDED, started_at__isnull=False)
+                    | (
+                        models.Q(
+                            origin__in=[
+                                StageEpisodeOrigin.CARRIED_OVER,
+                                StageEpisodeOrigin.IMPORTED,
+                            ]
+                        )
+                        & models.Q(started_at__isnull=True)
+                    )
+                ),
+                name="matters_stage_episode_start_matches_origin",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(started_at__isnull=True)
+                    | models.Q(ended_at__isnull=True)
+                    | models.Q(ended_at__gte=models.F("started_at"))
+                ),
+                name="matters_stage_episode_ends_after_it_starts",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(sequence__gte=1),
+                name="matters_stage_episode_sequence_positive",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.matter_id} #{self.sequence} {self.stage_id}"
+
+    @property
+    def start_known(self) -> bool:
+        return self.started_at is not None
 
 
 # The pre-creation intake tables live in their own module because they obey the

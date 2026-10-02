@@ -168,6 +168,24 @@
           to finish, unticked, and naming it (docs/adr/0126 §2).
         {% endcomment %}
         {% include "matters/partials/complete_current_action_option.html" with field=koda_opinion_form.complete_action option_id="id_koja_arvamus_tegevus_tehtud" %}
+        {% comment %}
+          **Has the file moved on** (docs/adr/0131 §5). The same `Uus hetkeseis`
+          `+ Märge` offers, in the same order. The opinion stays in the period it
+          was written in — `Teema käik` reads it under the stage the file was in
+          when it went out — and the new period begins after it. Left on «Jätan
+          muutmata» nothing moves.
+        {% endcomment %}
+        <div class="cx-grid">
+          <label class="cx-f" for="{{ koda_opinion_form.stage.id_for_label }}">
+            <span class="cx-f__lab">{{ koda_opinion_form.stage.label }}
+              <span class="cx-f__opt">valikuline</span></span>
+            {{ koda_opinion_form.stage }}
+            {% if koda_opinion_form.stage.errors %}
+              <p class="field__error" id="{{ koda_opinion_form.stage.auto_id }}_error">
+                {{ koda_opinion_form.stage.errors|first }}</p>
+            {% endif %}
+          </label>
+        </div>
         <div class="addform__actions">
           <button class="button button--primary" type="submit">Registreeri arvamus</button>
         </div>

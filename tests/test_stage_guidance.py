@@ -73,7 +73,16 @@ def test_the_expected_keys_are_the_current_vocabularies():
         "eu_procedure",
         "awaiting_transposition",
         "other",
+        # Version 3.0 (docs/adr/0131 §9): never dimmed, like «Muu».
+        "monitoring_stopped",
     }
+
+
+def test_monitoring_stopped_is_never_dimmed():
+    """«Rohkem ei tegele» fits every instrument: Koda may stop on any file."""
+    assert "monitoring_stopped" in ALWAYS_TYPICAL_STAGE_KEYS
+    for instrument in OFFERED_LEGAL_INSTRUMENT_KEYS:
+        assert not is_stage_dimmed("monitoring_stopped", [instrument])
 
 
 def test_every_offered_instrument_has_a_row_and_nothing_else_does():
@@ -90,7 +99,7 @@ def test_every_stage_named_is_a_real_stage_key():
 # ---------------------------------------------------------------------------
 
 EU_ONLY = {"estonian_eu_position", "eu_procedure", "awaiting_transposition"}
-EVERYTHING_BUT = lambda *normal: set(STAGES) - set(normal) - {"other"}  # noqa: E731
+EVERYTHING_BUT = lambda *normal: set(STAGES) - set(normal) - ALWAYS_TYPICAL_STAGE_KEYS  # noqa: E731
 
 
 @pytest.mark.parametrize(
@@ -245,7 +254,7 @@ def test_the_payload_is_the_matrix_and_is_deterministic():
     payload = stage_guidance_payload()
 
     assert json.dumps(payload) == json.dumps(stage_guidance_payload())
-    assert payload["always"] == ["other"]
+    assert payload["always"] == ["monitoring_stopped", "other"]
     assert {key: set(stages) for key, stages in payload["instruments"].items()} == {
         key: set(stages) for key, stages in TYPICAL_STAGES_BY_INSTRUMENT.items()
     }

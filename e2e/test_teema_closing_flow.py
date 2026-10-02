@@ -1,20 +1,17 @@
-"""Closing a Teema, in a real browser.
+"""Closing a Teema, in a real browser — through `Hetkeseis` (docs/adr/0131 §10–§12).
 
-The domain suite proves the rules; this proves that a person can actually
-perform them.
+The domain suite proves the rules (`tests/test_stage_episodes.py`); this proves
+that a person can perform them.
 
-**The panel asks two questions since the approved Teema target**: `Kuidas lõppes`
-— three chips, whose name is left to assistive technology since 2026-09-27 —
-and an optional `Lõppsõna`. Seven-new-recipients-in-one-save and the chip that
-removes a mistyped one went with the sent-opinion half of the closure — closing a
-Matter is not a claim that an opinion was sent, and requiring the PDF made the
-commonest closure impossible to record honestly (docs/adr/0074 §10). Both are
-still proven through `compose_update` in `tests/test_teema_closing_flow.py`,
-which is where that half of the contract now lives.
+**There is no `+ Lõpeta teema` any more.** A file ends when its `Hetkeseis`
+says so: «Jõustunud» or «Rohkem ei tegele», chosen as `Uus hetkeseis` in
+`+ Märge`, and the option says so in its own words — «… — lõpetab teema».
+«Jõustumise ootel» does not end it. A closed file is reopened into a stage the
+person names, and the stage it ended in stays in `Teema käik` as history.
 
-What is left is what only a browser can show: that the panel opens, that its
-chips are a single-select group over the field the server validates, that one
-`Salvesta` closes the file, and that a refusal comes back where the reader is.
+What only a browser can show: that the choice is in the panel, that one
+`Salvesta` closes the file and moves the header, the banner and the workspace
+together, and that reopening opens a new period with the old one kept.
 
 Everything here is synthetic.
 """
@@ -25,10 +22,10 @@ import pytest
 from playwright.sync_api import expect
 
 from e2e.conftest import (
+    KAIK_PERIOD,
     MARTIN,
-    add_panel_is_open,
+    close_through_stage,
     create_matter,
-    open_add_panel,
     open_composer,
     sign_in,
 )
@@ -36,116 +33,70 @@ from e2e.conftest import (
 pytestmark = pytest.mark.e2e
 
 
-def open_closing_panel(page):
-    open_add_panel(page, "teema-lopeta")
-    panel = page.locator("#teema-lopeta")
-    assert add_panel_is_open(page, "teema-lopeta")
-    # No confirmation box to tick. Answering the panel is the request to close,
-    # and the panel's own `Salvesta` commits that and nothing else — there is no
-    # shared save left to mean six things (pilot QA F-02, docs/adr/0075 §2).
-    expect(page.locator("#id_close_matter")).to_have_count(0)
-    return panel
-
-
-def save_and_expect_ok(page):
-    with page.expect_response(
-        lambda response: "/lisa/lopeta/" in response.url and response.request.method == "POST"
-    ) as caught:
-        page.locator("#teema-lopeta button[type=submit]").click()
-    saved = caught.value
-    assert saved.status == 200, f"the closure save was refused: {saved.status}"
-    page.wait_for_load_state("networkidle")
-
-
-def test_the_closing_panel_asks_only_the_approved_questions(page, base_url):
-    """Two questions, and none of the four the target retired."""
-    sign_in(page, base_url, MARTIN)
-    create_matter(page, base_url, "Lõpetamise brauserikatse: küsimused")
-
-    panel = open_closing_panel(page)
-
-    # Four chips with no visible heading over them, still one named group for
-    # a screen reader: the legend is visually hidden, not removed (owner
-    # decision, 2026-09-27). `Muu` is the fourth (docs/adr/0121 §8).
-    group = panel.get_by_role("group", name="Kuidas lõppes")
-    expect(group).to_have_count(1)
-    expect(group.locator("legend")).to_have_class("visually-hidden")
-    for label in ("Jõustus", "Menetlus lõppes", "Loobuti", "Muu"):
-        expect(group.locator(".uxchip", has_text=label)).to_have_count(1)
-    # `Märgi töövõiduks` is there, unticked, and its box is hidden until ticked.
-    expect(panel.get_by_label("Märgi töövõiduks")).not_to_be_checked()
-    expect(panel.locator("[name=victory_note]")).to_be_hidden()
-    expect(panel.locator("[name=closing_words]")).to_be_visible()
-    expect(panel).to_contain_text("valikuline")
-    # And no explanatory sentence under it.
-    expect(panel).not_to_contain_text("Teema läheb arhiivi")
-    expect(panel).not_to_contain_text("sammud tühistatakse")
-
-    # And the four that went with the sent-opinion half.
-    for gone in ("[name=final_file]", "[name=final_sent_on]", "[name=work_victory]"):
-        expect(page.locator(gone)).to_have_count(0)
-
-
-def test_nothing_is_chosen_until_somebody_chooses(page, base_url):
-    """An unanswered `Kuidas lõppes` has to be representable, or opening the
-    panel would post a closure from the next ordinary save (pilot QA F-02)."""
-    sign_in(page, base_url, MARTIN)
-    create_matter(page, base_url, "Lõpetamise brauserikatse: vastamata")
-
-    panel = open_closing_panel(page)
-
-    expect(panel.locator("input[name=disposition]")).to_have_value("")
-    expect(panel.locator(".uxchip.is-selected")).to_have_count(0)
-
-    panel.locator(".uxchip", has_text="Loobuti").click()
-
-    expect(panel.locator("input[name=disposition]")).to_have_value("MONITORING_STOPPED")
-    expect(panel.locator(".uxchip.is-selected")).to_have_count(1)
-
-
-def test_one_save_closes_the_file_and_leaves_a_readable_past(page, base_url):
-    sign_in(page, base_url, MARTIN)
-    create_matter(page, base_url, "Lõpetamise brauserikatse: üks salvestus")
-
-    # The narrative first, as its own save, because the closure no longer
-    # borrows a body from another operation (docs/adr/0075 §9).
+def move_stage(page, label: str, title: str = "") -> None:
     open_composer(page)
-    page.locator("#id_marge_title").fill("Menetlus lõppes ministeeriumis.")
+    if title:
+        page.fill("#id_marge_title", title)
+    page.select_option("#id_marge_stage", label=label)
     page.locator("#marge-tavaline button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
-    panel = open_closing_panel(page)
-    panel.locator(".uxchip", has_text="Menetlus lõppes").click()
-    panel.locator("[name=closing_words]").fill("Eelnõu langes ära.")
 
-    save_and_expect_ok(page)
-
-    # The file is closed, and says so beside its own title.
-    expect(page.locator(".badge--state")).to_contain_text("Suletud")
-    # There is no writable workspace on a closed Matter…
-    expect(page.locator("#lisa-teemale")).to_have_count(0)
-    expect(page.get_by_text("Mida tegid?", exact=True)).to_have_count(0)
-    # …and the history is still readable.
-    expect(page.locator("#ajalugu-loend")).to_contain_text("Menetlus lõppes ministeeriumis")
-
-
-def test_a_refused_closure_comes_back_in_an_open_panel(page, base_url):
-    """`Lõppsõna` alone is an answer only a closure is asked, so it asks to
-    close — and the missing half is refused where the reader is looking."""
+def test_there_is_no_closing_panel_and_the_stage_says_what_ends_the_file(page, base_url):
     sign_in(page, base_url, MARTIN)
-    create_matter(page, base_url, "Lõpetamise brauserikatse: keeldumine")
+    create_matter(page, base_url, "Lõpetamise brauserikatse: valikud", stage="Riigikogus")
 
-    panel = open_closing_panel(page)
-    panel.locator("[name=closing_words]").fill("Midagi juhtus.")
-    page.locator("#teema-lopeta button[type=submit]").click()
+    expect(page.locator("#teema-lopeta")).to_have_count(0)
+    expect(page.get_by_text("+ Lõpeta teema", exact=True)).to_have_count(0)
+    open_composer(page)
+    options = page.locator("#id_marge_stage option").all_inner_texts()
+    assert "Jõustunud — lõpetab teema" in options
+    assert "Rohkem ei tegele — lõpetab teema" in options
+    assert "Jõustumise ootel" in options
+
+
+def test_joustumise_ootel_keeps_the_file_open_and_joustunud_closes_it(page, base_url):
+    """Flow E."""
+    sign_in(page, base_url, MARTIN)
+    create_matter(page, base_url, "Lõpetamise brauserikatse: jõustumine", stage="Riigikogus")
+
+    move_stage(page, "Jõustumise ootel", title="Riigikogu võttis seaduse vastu.")
+    expect(page.locator(".badge--state")).to_contain_text("Avatud")
+    expect(page.locator("#lisa-teemale")).to_have_count(1)
+
+    move_stage(page, "Jõustunud — lõpetab teema")
+    expect(page.locator(".badge--state")).to_contain_text("Suletud")
+    expect(page.locator(".banner--closed")).to_contain_text("Lõpetatud või jõustunud")
+    expect(page.locator("#lisa-teemale")).to_have_count(0)
+    # The work from before stays in its period.
+    expect(page.locator("#ajalugu-loend")).to_contain_text("Riigikogu võttis seaduse vastu.")
+
+
+def test_rohkem_ei_tegele_closes_with_koda_stopping(page, base_url):
+    """Flow F."""
+    sign_in(page, base_url, MARTIN)
+    create_matter(page, base_url, "Lõpetamise brauserikatse: ei tegele", stage="Idee")
+
+    close_through_stage(page, "Rohkem ei tegele", title="Koda otsustas mitte sekkuda.")
+
+    expect(page.locator(".banner--closed")).to_contain_text("Koda lõpetas jälgimise")
+    current = page.locator(f"{KAIK_PERIOD}.kaikstage--current")
+    expect(current.locator(".kaikstage__stage")).to_have_text("Rohkem ei tegele")
+
+
+def test_reopening_names_the_stage_and_keeps_the_ended_period(page, base_url):
+    """Flow G."""
+    sign_in(page, base_url, MARTIN)
+    create_matter(page, base_url, "Lõpetamise brauserikatse: taasavamine", stage="Riigikogus")
+    move_stage(page, "Jõustunud — lõpetab teema")
+    expect(page.locator(".badge--state")).to_contain_text("Suletud")
+
+    banner = page.locator(".banner--closed")
+    banner.locator("select[name=stage]").select_option(label="Idee")
+    banner.get_by_role("button", name="Ava uuesti").click()
     page.wait_for_load_state("networkidle")
 
-    expect(page.locator("#teema-lopeta")).to_be_visible()
-    expect(page.locator("#teema-lopeta")).to_contain_text("Vali, kuidas teema lõppes")
-    # Its own panel and no other: a refusal answers itself (docs/adr/0075 §2).
-    # `#marge-tavaline`, not `#lisa-marge`: the sub-choice is *inside* the
-    # family, so `+ Märge` staying visible is the nesting working rather
-    # than a panel that failed to close (docs/adr/0097 §8).
-    expect(page.locator("#marge-tavaline")).not_to_be_visible()
-    expect(page.locator("#teema-lopeta [name=closing_words]")).to_have_value("Midagi juhtus.")
     expect(page.locator(".badge--state")).to_contain_text("Avatud")
+    stages = page.locator(f"{KAIK_PERIOD} .kaikstage__stage").all_inner_texts()
+    assert stages[:3] == ["Idee", "Jõustunud", "Riigikogus"], stages
+    expect(page.locator(f"{KAIK_PERIOD}.kaikstage--current .kaikstage__stage")).to_have_text("Idee")

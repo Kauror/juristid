@@ -311,8 +311,10 @@ def test_a_dated_vtk_reads_reached_and_the_points_after_it_keep_order(page, base
     labels = [
         text.strip() for text in page.locator(".lprail .tl-strip .tl-step__what").all_inner_texts()
     ]
-    assert labels.index("VTK") < labels.index("Tagasiside tähtaeg"), labels
-    assert labels.index("Tagasiside tähtaeg") < labels.index("Kooskõlastusring"), labels
+    # The round's reply-by date no longer draws a column (docs/adr/0131 §13);
+    # the procedure's own points keep their order around the dated VTK.
+    assert "Tagasiside tähtaeg" not in labels, labels
+    assert labels.index("VTK") < labels.index("Kooskõlastusring"), labels
     # The current marker is still the `Hetkeseis`'s.
     expect(_rail_step(page, "Algus")).to_have_class(re.compile(r"tl-step--current"))
     screenshots(page, "rail-vtk-jarjekord")

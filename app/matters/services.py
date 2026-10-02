@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import hashlib
 import uuid
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
 
@@ -19,7 +20,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
-from app.audit.operations import composer_operation
+from app.audit.operations import composer_operation, pin_stage_episode
 from app.audit.services import record_change_event
 from app.core.enums import Visibility, most_restrictive, validate_visibility_override
 from app.core.errors import DomainError
@@ -38,6 +39,7 @@ from app.matters.enums import (
     MatterOrigin,
     ProceduralLinkKind,
     RecordMode,
+    StageEpisodeOrigin,
     TagAssignmentSource,
     WebsiteOverviewStatus,
 )
@@ -68,6 +70,7 @@ from app.matters.models import (
     MatterProceduralDevelopment,
     MatterProceduralLink,
     MatterReferenceSequence,
+    MatterStageEpisode,
     MatterWebsiteOverview,
     TagAssignment,
 )
@@ -79,6 +82,8 @@ from app.workflow.services import (
     end_open_action_for_closure,
     set_next_action_for_new_work,
 )
+from app.workflow.stage_flow import TERMINAL_DISPOSITIONS
+from app.workflow.stage_flow import is_terminal as is_terminal_stage
 
 #: Distinguishes "leave this field alone" from "set this field to None".
 _UNSET: Any = object()
@@ -269,6 +274,20 @@ def create_matter(
         matter.legal_instruments.set(legal_instruments)
     if senders:
         matter.source_organisations.set(senders)
+
+    # **A Matter created holding a `Hetkeseis` begins its first period now**,
+    # before `Teema loodud` is written, so the creation reads inside it. One
+    # created with no stage begins none: `Määramata` is not a period, and the
+    # first one starts when the first stage is chosen (docs/adr/0131 §2). An
+    # imported Matter's stage was written by the register at some moment nobody
+    # recorded, so its period has no start rather than the import's.
+    if matter.stage_id is not None:
+        _open_stage_episode(
+            matter=matter,
+            stage=matter.stage,
+            origin=_episode_origin_for_creation(origin),
+            at=matter.created_at,
+        )
 
     record_change_event(
         event_type=ChangeEventType.MATTER_CREATED,
@@ -690,18 +709,101 @@ def assign_matter(
     return matter
 
 
-@transaction.atomic
-def change_stage(*, matter: Matter, stage: Any, actor: Any = None) -> Matter:
-    """Record where the external process now stands.
+def current_stage_episode(matter: Any) -> MatterStageEpisode | None:
+    """The `Hetkeseis` period this Matter is in now, or ``None``."""
+    return MatterStageEpisode.objects.filter(
+        matter_id=getattr(matter, "pk", matter), is_current=True
+    ).first()
 
-    A stage change says nothing about whether Koda is finished. `jõustunud`
-    means the act entered into force, not that the file is closed; closure is a
-    separate, deliberate decision (master specification 3.4).
+
+def _episode_origin_for_creation(origin: str) -> str:
+    """A Matter created here records its first period; an imported one found it."""
+    return (
+        StageEpisodeOrigin.RECORDED
+        if origin == MatterOrigin.NATIVE
+        else StageEpisodeOrigin.IMPORTED
+    )
+
+
+def _open_stage_episode(*, matter: Matter, stage: Any, origin: str, at: Any) -> MatterStageEpisode:
+    """Start a new period — always a new row, never an old one reopened."""
+    last = (
+        MatterStageEpisode.objects.filter(matter=matter)
+        .order_by("-sequence")
+        .values_list("sequence", flat=True)
+        .first()
+    )
+    return MatterStageEpisode.objects.create(
+        matter=matter,
+        stage=stage,
+        sequence=(last or 0) + 1,
+        origin=origin,
+        started_at=at if origin == StageEpisodeOrigin.RECORDED else None,
+        is_current=True,
+    )
+
+
+def _turn_stage_episode(
+    *, matter: Matter, stage: Any, origin: str
+) -> tuple[MatterStageEpisode | None, MatterStageEpisode | None]:
+    """End the current period and begin the next one. The caller holds the Matter's lock.
+
+    Returns ``(outgoing, incoming)``; either may be ``None`` — no period was
+    current, or the move is to no stage at all.
     """
-    previous = matter.stage
-    if previous == stage:
-        return matter
+    now = timezone.now()
+    outgoing = (
+        MatterStageEpisode.objects.select_for_update(no_key=True)
+        .filter(matter=matter, is_current=True)
+        .first()
+    )
+    if outgoing is not None:
+        # **The act and the move in one save belong to the period the act was
+        # done in** (docs/adr/0131 §5). Pinned before the period ends, so every
+        # row this save writes — before this call or after it — names it.
+        pin_stage_episode(matter.pk, outgoing.pk)
+        outgoing.is_current = False
+        # An importer's move is a fact about the register, not a moment this
+        # system saw: its end is as unknown as its start.
+        outgoing.ended_at = now if origin == StageEpisodeOrigin.RECORDED else None
+        outgoing.save(update_fields=["is_current", "ended_at", "updated_at"])
 
+    incoming = None
+    if stage is not None:
+        incoming = _open_stage_episode(matter=matter, stage=stage, origin=origin, at=now)
+        if outgoing is None:
+            # Nothing was current, so there is no earlier period to have done
+            # the work in: a first `Hetkeseis` chosen together with an act binds
+            # the act to the period it opens (docs/adr/0131 §5).
+            pin_stage_episode(matter.pk, incoming.pk)
+    return outgoing, incoming
+
+
+@dataclass
+class StageMove:
+    """What one `change_stage` did. ``moved`` is False for the same stage again."""
+
+    moved: bool = False
+    outgoing: MatterStageEpisode | None = None
+    incoming: MatterStageEpisode | None = None
+    #: Whether the new stage ends the Matter and the Matter was still open.
+    closes: bool = False
+
+
+def _move_stage(*, matter: Matter, stage: Any, actor: Any, origin: str) -> StageMove:
+    """Matter.stage, the period it ends, the period it starts and the event — one write.
+
+    The row is locked and its stage re-read under the lock: «is this a move at
+    all» is a question about the committed row, never about the instance the
+    caller fetched before somebody else's save.
+    """
+    locked = Matter.objects.select_for_update(no_key=True).get(pk=matter.pk)
+    previous = locked.stage
+    if previous == stage:
+        matter.stage = previous
+        return StageMove()
+
+    outgoing, incoming = _turn_stage_episode(matter=locked, stage=stage, origin=origin)
     matter.stage = stage
     matter.save(update_fields=["stage", "updated_at"])
 
@@ -711,6 +813,9 @@ def change_stage(*, matter: Matter, stage: Any, actor: Any = None) -> Matter:
         actor=actor,
         obj=matter,
         summary=getattr(stage, "label_et", "") or "",
+        # The boundary itself belongs to the period it opens — or, moving to no
+        # stage at all, to the one it ends.
+        stage_episode=incoming if incoming is not None else outgoing,
         payload={
             "from_label": getattr(previous, "label_et", None),
             "to_label": getattr(stage, "label_et", None),
@@ -731,6 +836,86 @@ def change_stage(*, matter: Matter, stage: Any, actor: Any = None) -> Matter:
             "to_key": getattr(stage, "key", None),
         },
     )
+    return StageMove(
+        moved=True,
+        outgoing=outgoing,
+        incoming=incoming,
+        closes=locked.is_open and is_terminal_stage(getattr(stage, "key", None)),
+    )
+
+
+def close_matter_for_terminal_stage(*, matter: Matter, actor: Any = None) -> bool:
+    """Close an open Matter whose `Hetkeseis` ends it. Returns whether it closed.
+
+    «Jõustunud» closes with `COMPLETED` and «Rohkem ei tegele» with
+    `MONITORING_STOPPED` (`app.workflow.stage_flow.TERMINAL_DISPOSITIONS`),
+    through `close_matter` and nothing beside it: the open step is cancelled,
+    planned write-ups and feedback waits end, and `MATTER_CLOSED` is written —
+    in the period that stage began, so `Teema käik` reads the closure under
+    «Jõustunud» rather than under the stage before it (docs/adr/0131 §10).
+    """
+    key = getattr(matter.stage, "key", None)
+    if key is None or not is_terminal_stage(key) or not matter.is_open:
+        return False
+    closed = close_matter(
+        matter=matter,
+        disposition=TERMINAL_DISPOSITIONS[key],
+        actor=actor,
+        stage_episode=current_stage_episode(matter),
+    )
+    for name in ("is_open", "disposition", "disposition_reason", "closed_at", "closed_by"):
+        setattr(matter, name, getattr(closed, name))
+    return True
+
+
+@contextmanager
+def stage_transition(
+    *,
+    matter: Matter,
+    stage: Any,
+    actor: Any = None,
+    origin: str = StageEpisodeOrigin.RECORDED,
+) -> Iterator[StageMove]:
+    """Move `Hetkeseis`, let the caller record the act, then close if the stage ends the Matter.
+
+    **The one way `Matter.stage` changes** (docs/adr/0131 §6). The period ends
+    and begins and the event is written on entry; whatever the caller writes
+    inside the block belongs to the period that was current before the move,
+    because that is the period the work was done in; and a stage that ends the
+    Matter closes it on the way out, in the same transaction, so a closure never
+    precedes the act it was recorded with — the order `_apply_closure` has always
+    kept. A refusal anywhere inside rolls back all of it.
+    """
+    with transaction.atomic():
+        move = _move_stage(matter=matter, stage=stage, actor=actor, origin=origin)
+        yield move
+        if move.closes:
+            close_matter_for_terminal_stage(matter=matter, actor=actor)
+
+
+@transaction.atomic
+def change_stage(
+    *,
+    matter: Matter,
+    stage: Any,
+    actor: Any = None,
+    origin: str = StageEpisodeOrigin.RECORDED,
+) -> Matter:
+    """Record where the external process now stands, as a new `Hetkeseis` period.
+
+    `stage_transition` with nothing recorded inside it — the shape every
+    surface that only moves the stage uses: `Muuda teemat`, the header's own
+    control, the register refresh.
+
+    **Superseded in part on 2026-10-02 by docs/adr/0131 §10.** This used to
+    say that a stage change says nothing about whether Koda is finished, and
+    that `jõustunud` never closes the file. Two stages now do: «Jõustunud» and
+    «Rohkem ei tegele» close an open Matter in the same transaction, and
+    «Jõustumise ootel» still does not. Every other stage is exactly what it
+    was — where the external process stands.
+    """
+    with stage_transition(matter=matter, stage=stage, actor=actor, origin=origin):
+        pass
     return matter
 
 
@@ -4985,8 +5170,15 @@ def close_matter(
     actor: Any = None,
     reason: str = "",
     successor: Matter | None = None,
+    stage_episode: MatterStageEpisode | None = None,
 ) -> Matter:
     """Stop active work on the Matter, for a stated reason.
+
+    **The ordinary way here is a `Hetkeseis` that ends the Matter**
+    (`close_matter_for_terminal_stage`, docs/adr/0131 §10–§11), which passes
+    ``stage_episode`` — the period that stage began — so `MATTER_CLOSED` reads
+    under it. Every other caller leaves it alone and the closure is written in
+    whatever period is current, like any other write.
 
     Closure answers "why is Koda no longer working on this", which is a
     different question from where the external process stands. An act can enter
@@ -5085,6 +5277,9 @@ def close_matter(
     # makes a Matter inactive calls (ENG-006).
     end_live_work_for_closure(matter=matter, actor=actor)
 
+    episode_binding: dict[str, Any] = {}
+    if stage_episode is not None:
+        episode_binding["stage_episode"] = stage_episode
     record_change_event(
         event_type=ChangeEventType.MATTER_CLOSED,
         matter=matter,
@@ -5095,6 +5290,7 @@ def close_matter(
             "disposition": disposition,
             "successor": str(successor.pk) if successor is not None else None,
         },
+        **episode_binding,
     )
     return matter
 
@@ -5109,9 +5305,81 @@ SUCCESSOR_DELETED_REFUSAL = (
 )
 
 
+def ensure_current_stage_episode(*, matter: Matter) -> MatterStageEpisode | None:
+    """Give an active Matter holding a stage a current period, if it has none.
+
+    Only a Matter that held its stage before periods existed can lack one —
+    every write since opens a period with the stage it writes. Its period began
+    at a moment nobody recorded, so it carries no start (`CARRIED_OVER`) rather
+    than the moment this happened to be asked (docs/adr/0131 §3).
+    """
+    if matter.stage_id is None:
+        return None
+    current = current_stage_episode(matter)
+    if current is not None:
+        return current
+    return _open_stage_episode(
+        matter=matter, stage=matter.stage, origin=StageEpisodeOrigin.CARRIED_OVER, at=None
+    )
+
+
+#: What reopening without a real stage is told (docs/adr/0131 §12).
+REOPEN_NEEDS_A_STAGE = "Vali hetkeseis, millega teema uuesti avatakse."
+
+#: What reopening into a stage that would close it again is told.
+REOPEN_INTO_TERMINAL_STAGE = (
+    "Teemat ei saa avada hetkeseisuga, mis selle kohe uuesti lõpetaks. Vali muu hetkeseis."
+)
+
+
 @transaction.atomic
-def reopen_matter(*, matter: Matter, actor: Any = None, reason: str = "") -> Matter:
+def reopen_matter_into_stage(*, matter: Matter, stage: Any, actor: Any = None) -> Matter:
+    """«Ava uuesti» — a closed Matter becomes current work again, in a stage the person names.
+
+    **One act, so the file is never open while still reading «Jõustunud».** The
+    stage moves first, while the Matter is still closed — the terminal period
+    ends and a new one begins — and then the closure is cleared through
+    `reopen_matter`, whose `MATTER_REOPENED` is written in the new period. A
+    refusal anywhere leaves the Matter closed and its periods as they were
+    (docs/adr/0131 §12).
+
+    **The terminal period is history and stays exactly as it was**, ended at
+    this moment like any period the next one follows. A reopened file that later
+    reaches «Jõustunud» again has two «Jõustunud» periods.
+
+    Refused: no stage (`Määramata` is not a period), and a stage that ends a
+    Matter. Reopening into the stage the file already holds — a file closed
+    before `Hetkeseis` could close it — continues that stage's period rather
+    than splitting it, because nothing moved.
+    """
+    if stage is None:
+        raise DomainError(REOPEN_NEEDS_A_STAGE)
+    if is_terminal_stage(getattr(stage, "key", None)):
+        raise DomainError(REOPEN_INTO_TERMINAL_STAGE)
+    locked = Matter.objects.select_for_update(no_key=True).get(pk=matter.pk)
+    if locked.is_open:
+        raise DomainError("Teema on juba avatud.")
+
+    move = _move_stage(matter=matter, stage=stage, actor=actor, origin=StageEpisodeOrigin.RECORDED)
+    episode = move.incoming if move.moved else ensure_current_stage_episode(matter=matter)
+    return reopen_matter(matter=matter, actor=actor, stage_episode=episode)
+
+
+@transaction.atomic
+def reopen_matter(
+    *,
+    matter: Matter,
+    actor: Any = None,
+    reason: str = "",
+    stage_episode: MatterStageEpisode | None = None,
+) -> Matter:
     """Make a closed Matter current work again.
+
+    **A person reopens through `reopen_matter_into_stage`**, which names the
+    stage the file is reopened in (docs/adr/0131 §12). What calls this directly
+    is the register's own reactivation, which moves no stage; a Matter that
+    held its stage from before periods existed is given its current period here,
+    so an active file holding a stage always has one.
 
     The row is locked and re-read before the question is answered, exactly as
     `close_matter` does on the way in. Reading ``matter.is_open`` off the
@@ -5159,12 +5427,15 @@ def reopen_matter(*, matter: Matter, actor: Any = None, reason: str = "") -> Mat
         ]
     )
 
+    if stage_episode is None:
+        stage_episode = ensure_current_stage_episode(matter=matter)
     record_change_event(
         event_type=ChangeEventType.MATTER_REOPENED,
         matter=matter,
         actor=actor,
         obj=matter,
         summary=reason[:200],
+        stage_episode=stage_episode,
     )
     return matter
 
@@ -5429,6 +5700,16 @@ def refresh_matter_from_register(
 
     if senders is not None:
         matter.source_organisations.set(senders)
+
+    if "stage" in changed:
+        # The register moved `Hetkeseis`, so a period ends and one begins — as
+        # an import: neither the end nor the start is a moment this system saw,
+        # and neither is stored (docs/adr/0131 §3). Under the Matter's lock,
+        # like every other period change; the refresh keeps its one event, and
+        # an imported stage never closes a Matter here — retiring imported work
+        # is the register cutover's decision, not a side effect of a refresh.
+        locked = Matter.objects.select_for_update(no_key=True).get(pk=matter.pk)
+        _turn_stage_episode(matter=locked, stage=matter.stage, origin=StageEpisodeOrigin.IMPORTED)
 
     scalar_fields = [field for field in changed if field != "source_organisations"]
     matter.save(update_fields=[*scalar_fields, "updated_at"])

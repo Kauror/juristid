@@ -88,11 +88,15 @@ def test_a_populated_section_still_renders(signed_in, specialist):
     # was true only of a horizon, and a Matter whose deadline sat past that
     # horizon showed the record on no surface at all (docs/adr/0074 §12, §15,
     # as amended by QA-001).
+    #
+    # Since docs/adr/0131 §13 the rail keeps the procedure and Koda's sent
+    # opinions only, so a watched date ahead reads in `Teema käik`, marked
+    # «Eesolev tähtaeg», and not on the rail.
     page = _text(signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})))
     assert 'id="teema-faktid"' not in page
-    assert "tl-strip" in page
-    strip = page[page.index("tl-strip") : page.index('id="ajalugu-loend"')]
-    assert "Kooskõlastusringi lõpp" in strip
+    history = page[page.index('id="ajalugu-loend"') :]
+    assert "Kooskõlastusringi lõpp" in history
+    assert "Eesolev tähtaeg" in history
 
     # The fragment route still serves the section, with its own scoped read.
     body = _text(signed_in.get(_add_effective(matter), headers={"HX-Request": "true"}))

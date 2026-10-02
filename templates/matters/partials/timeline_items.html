@@ -512,7 +512,11 @@ record, not professional chronology (master specification 16.5).
     can see it — a section whose heading and whose empty state name it
     differently reads as two components.
   {% endcomment %}
-  <p class="uxtl__none">Teema käik on tühi. Esimene sissekanne ilmub siia.</p>
+  {% if stage_group %}
+    <p class="uxtl__none">Selle hetkeseisu ajal pole tegevust salvestatud.</p>
+  {% else %}
+    <p class="uxtl__none">Teema käik on tühi. Esimene sissekanne ilmub siia.</p>
+  {% endif %}
 {% endfor %}
 {% comment %}
   The continuation control, at the **bottom** of the list where the list runs

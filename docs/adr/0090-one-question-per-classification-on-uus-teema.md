@@ -96,6 +96,8 @@ and the department's own description of it is transcribed unaltered.
 
 #### `Rohkem ei tegele` is not a stage, and is not added
 
+**Superseded on 2026-10-02 by docs/adr/0131 §9.** «Rohkem ei tegele» is a current stage (`monitoring_stopped`) that closes the Matter with `Disposition.MONITORING_STOPPED`; the register's historical «rohkem pole tegevusi plaanis» is still read as the disposition. The reasoning below is kept as it was decided.
+
 The feedback asked for it as a Hetkeseis. It is not one, and the product
 already implements the concept.
 

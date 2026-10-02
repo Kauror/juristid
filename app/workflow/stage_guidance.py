@@ -45,7 +45,11 @@ from typing import Any
 #: The stage keys that are never dimmed, whatever is ticked. `Määramata` is the
 #: absence of a stage and has no key, so it is not in this set: a chip without a
 #: stage key is simply never touched.
-ALWAYS_TYPICAL_STAGE_KEYS: frozenset[str] = frozenset({"other"})
+#:
+#: «Rohkem ei tegele» joined «Muu» with version 3.0 of the vocabulary
+#: (docs/adr/0131 §9): Koda deciding to stop is an honest answer for every
+#: instrument, not one that fits some procedures and not others.
+ALWAYS_TYPICAL_STAGE_KEYS: frozenset[str] = frozenset({"other", "monitoring_stopped"})
 
 _DOMESTIC_LAW_STAGES = frozenset(
     {"idea", "consultation", "government", "parliament", "awaiting_entry", "in_force"}

@@ -115,7 +115,10 @@ def _action(matter, actor, *, days: int = 7):
 
 
 def test_the_metaline_holds_the_five_target_items_in_order(signed_in, normal_matter, stage):
-    """`Vastutaja · Valdkond · Hetkeseis · Saabus · Tähtaeg`.
+    """`Vastutaja · Valdkond · Hetkeseis · Saabus · Arvamuse tähtaeg`.
+
+    «Arvamuse tähtaeg» rather than «Tähtaeg» since docs/adr/0131 §14 — the same
+    words its own editor and both Teema forms use.
 
     `Saabus` is position 4 and `Tähtaeg` is immediately after it. Arrival and
     response deadline are read as a pair — together they say how much time is
@@ -133,11 +136,11 @@ def test_the_metaline_holds_the_five_target_items_in_order(signed_in, normal_mat
 
     order = [
         label
-        for label in ("Vastutaja", "Valdkond", "Hetkeseis", "Saabus", "Tähtaeg")
+        for label in ("Vastutaja", "Valdkond", "Hetkeseis", "Saabus", "Arvamuse tähtaeg")
         if label in metaline
     ]
-    assert order == ["Vastutaja", "Valdkond", "Hetkeseis", "Saabus", "Tähtaeg"]
-    assert metaline.index("Saabus") < metaline.index("Tähtaeg")
+    assert order == ["Vastutaja", "Valdkond", "Hetkeseis", "Saabus", "Arvamuse tähtaeg"]
+    assert metaline.index("Saabus") < metaline.index("Arvamuse tähtaeg")
 
 
 def test_saabus_moved_out_of_the_rail_and_kept_its_write_path(signed_in, normal_matter):
@@ -231,7 +234,7 @@ def test_a_matter_with_no_response_deadline_offers_one(signed_in, normal_matter)
 
     body = _detail(signed_in, normal_matter)
 
-    assert "+ Tähtaeg" in body
+    assert "+ Arvamuse tähtaeg" in body
     assert "metaline__item--deadline" not in body
 
 
@@ -421,15 +424,12 @@ def test_lisa_teemale_offers_thirteen_choices_and_opens_none_of_them(signed_in, 
         "Teiste arvamus",
         "Koja arvamus",
         "+ Ülevaade / uudis",
-        # Back among the ordinary actions, and visibly last: a section of
-        # its own put the one action a lawyer finishing a file came for
-        # below everything they had just been adding.
-        "+ Lõpeta teema",
     ]
     assert [chip for chip in expected if f">{chip}<" in panels] == expected
-    # Twelve panels: eleven capture operations and `Lõpeta teema`, which is a
-    # peer chip in the same exclusive group again (docs/adr/0097 §9, amended).
-    assert panels.count('class="cx-panel"') + panels.count("cx-panel cx-panel--last") == 12
+    # `+ Lõpeta teema` is retired (docs/adr/0131 §11): a file ends through its
+    # `Hetkeseis`, so eleven capture panels and no closing one.
+    assert ">+ Lõpeta teema<" not in panels
+    assert panels.count('class="cx-panel"') + panels.count("cx-panel cx-panel--last") == 11
     # All closed on arrival: nothing in this zone is a form until it is chosen.
     assert "data-addpanel\n             open" not in panels
     assert 'cx-panel" open' not in panels
@@ -501,8 +501,9 @@ def test_each_operation_carries_its_own_save_and_there_is_no_global_one(
     # recorded draws no rail at all, so the heading this used to slice on is
     # not always in the document. Both boundaries sit after the launcher and
     # before anything else with a save, which is what the count is about.
+    # `Lõpeta teema`'s own save went with it (docs/adr/0131 §11): nine.
     panels = body[body.index('id="lisa-teemale"') : _after_the_launcher(body)]
-    assert panels.count('type="submit"') == 10
+    assert panels.count('type="submit"') == 9
     # And the composer's single global save is gone from the page entirely.
     assert "composer__actions" not in workspace
 
@@ -1111,6 +1112,10 @@ def test_an_important_date_draws_a_milestone_only_while_it_is_ahead(
     chronology row either, so «no column» meant the record was invisible on its
     own Matter — saved, audited, and nowhere a lawyer looks. It draws a column
     while it is ahead, and the chronology now carries it marked as still ahead.
+
+    **Narrowed by docs/adr/0131 §13:** the rail keeps the procedure and the
+    opinions that went out, so a watched deadline draws no column at all now —
+    the chronology's «Eesolev tähtaeg» row is where it reads.
     """
     ahead = timezone.localdate() + timedelta(days=21)
     behind = timezone.localdate() - timedelta(days=21)
@@ -1125,14 +1130,9 @@ def test_an_important_date_draws_a_milestone_only_while_it_is_ahead(
             created_by=specialist,
         )
 
-    assert [step.label for step in process_steps(matter=normal_matter, user=specialist)] == [
-        "Tulevane tähtaeg",
-    ]
+    assert [step.label for step in process_steps(matter=normal_matter, user=specialist)] == []
 
     body = _detail(signed_in, normal_matter)
-    strip = _strip(body)
-    assert "Tulevane tähtaeg" in strip
-    assert "Möödunud tähtaeg" not in strip
     # Not deleted, and both read in the chronology: the one that has happened
     # as history, the one still ahead marked as still ahead.
     assert MatterImportantDate.objects.filter(matter=normal_matter).count() == 2
@@ -2408,6 +2408,9 @@ def test_a_dated_fact_reaches_the_chronology_only_once_it_has_happened(
     on each: a roadmap column ahead of the current phase, and a chronology row
     that names itself `Eesolev tähtaeg` rather than pretending to be history
     (docs/adr/0074 §12, §15, as amended by QA-001).
+
+    The roadmap column is gone since docs/adr/0131 §13 — a watched deadline is
+    not a step of the procedure — and the chronology row is unchanged.
     """
     ahead = timezone.localdate() + timedelta(days=30)
     behind = timezone.localdate() - timedelta(days=30)
@@ -2426,7 +2429,7 @@ def test_a_dated_fact_reaches_the_chronology_only_once_it_has_happened(
     chronology = body[body.index('id="ajalugu-loend"') :]
     strip = _strip(body)
 
-    assert "Riigikogu I lugemine" in strip
+    assert "Riigikogu I lugemine" not in strip
     assert "Riigikogu I lugemine" in chronology
     # And it is marked as still ahead rather than read as something that
     # happened, which is the distinction this test was written to protect.

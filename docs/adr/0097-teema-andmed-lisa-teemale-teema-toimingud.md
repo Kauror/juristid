@@ -426,6 +426,8 @@ Nothing errors and nothing logs.
 
 ## 9 — `TEEMA TOIMINGUD` is a separate region
 
+**`Lõpeta teema` is retired by docs/adr/0131 §11** (2026-10-02): a Matter ends when its `Hetkeseis` says so — «Jõustunud» or «Rohkem ei tegele» — and `close_matter` behind it is unchanged.
+
 ### Context
 
 `+ Lõpeta teema` was a chip at the end of the launcher row and `Kustuta teema`

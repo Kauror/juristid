@@ -498,13 +498,16 @@ def test_a_dated_vtk_reads_as_recorded_not_ahead(vtk_file, specialist):
 def test_the_exact_order_the_qa_found_broken(vtk_file, specialist):
     steps = _rail(vtk_file, specialist)
 
-    assert [(step.label, step.display_date) for step in steps][:5] == [
+    # No `Tagasiside tähtaeg` column since docs/adr/0131 §13: the round and its
+    # reply-by day read in `Teema käik`, and the rail keeps the procedure and the
+    # opinion that went out.
+    assert [(step.label, step.display_date) for step in steps][:4] == [
         ("Algus", ""),
         ("VTK", "1.9.2026"),
-        (FEEDBACK_DEADLINE_LABEL, "6.9.2026"),
         (SENT_LABEL, "8.9.2026"),
         ("Kooskõlastusring", ""),
     ]
+    assert FEEDBACK_DEADLINE_LABEL not in [step.label for step in steps]
 
 
 def test_the_current_marker_stays_the_hetkeseis(vtk_file, specialist):

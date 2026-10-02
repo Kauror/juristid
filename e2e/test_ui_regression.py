@@ -563,7 +563,9 @@ CHRONOLOGY_RUN_DAY = (
 
 #: The open Matter's one exact *future* date, which the run's clock stamps too.
 #: `seed_e2e_data` adds «Eelnõu eeldatav kooskõlastusring» at today + 45 days,
-#: and both the process strip and the chronology print it. It drifted in
+#: and the chronology prints it. (The process strip did too, until
+#: docs/adr/0131 §13 narrowed it to the procedure and the sent opinions; a
+#: watched date draws no column any more.) It drifted in
 #: silence because only its digits moved — `6.11.2026` on the morning the four
 #: Teema baselines were taken, `9.11.2026` three days later — until the day grew
 #: a digit, `10.11.2026` widened the strip's column, and `teema-kaik` went past
@@ -572,9 +574,6 @@ CHRONOLOGY_RUN_DAY = (
 #: Named by its label for the reason `STRIP_RUN_DAY` is: the same two classes
 #: carry the commencements and the Kaasamine, which are content.
 EXPECTED_DAY_TITLE = "Eelnõu eeldatav kooskõlastusring"
-STRIP_EXPECTED_DAY = (
-    f'.tl-step:has(.tl-step__what:text-is("{EXPECTED_DAY_TITLE}")) .tl-step__date',
-)
 CHRONOLOGY_EXPECTED_DAY = (
     f'.uxtl__ms:has(.uxtl__mswhat:text-is("{EXPECTED_DAY_TITLE}")) .uxtl__msdate',
 )
@@ -609,6 +608,9 @@ CANONICAL_EXPECTED_DAY = "6.11.2026"
 #: already hold, so holding it keeps them valid rather than retaking them for
 #: the calendar.
 CURRENT_ACTION_DAY: tuple[str, ...] = (".curact__date",)
+
+#: The compact period on a `Teema käik` period heading — «alates 10.26».
+KAIK_PERIOD_LABEL: tuple[str, ...] = (".kaikstage__period",)
 CANONICAL_CURRENT_ACTION_DAY = "31.10.2026"
 _CURRENT_ACTION_HELD = ((CURRENT_ACTION_DAY[0], CANONICAL_CURRENT_ACTION_DAY),)
 
@@ -688,6 +690,12 @@ NORMALISED_TEXT: tuple[tuple[str, str], ...] = (
     # tabular figures make the count the whole of it. A ten-character canonical
     # would be exactly as stable and would move two baselines to get there.
     (EVIDENCE_DATE[0], "6.9.2026"),
+    # A `Teema käik` period heading (docs/adr/0131 §8). Every seeded Matter
+    # begins its period in the seeding transaction, so the heading reads
+    # «alates <the run's month>» — «alates 9.26» is narrower than «alates 10.26»
+    # and every row under it would move on the first of the month. Held at a
+    # value the product really prints for a period begun in October.
+    (KAIK_PERIOD_LABEL[0], "alates 10.26"),
 )
 
 #: The same mechanism, for a value whose *selector* is not scenario-specific.
@@ -730,7 +738,8 @@ NORMALISED_TEXT: tuple[tuple[str, str], ...] = (
 #: `NORMALISED_TEXT` above, where it is one list to read; this table is for the
 #: case where the page renders one class in two meanings at once.
 _STRIP_AND_CHRONOLOGY_RUN_DAYS = (*STRIP_RUN_DAY, *CHRONOLOGY_RUN_DAY)
-_STRIP_AND_CHRONOLOGY_EXPECTED_DAYS = (*STRIP_EXPECTED_DAY, *CHRONOLOGY_EXPECTED_DAY)
+#: The expected date is the chronology's alone since docs/adr/0131 §13.
+_STRIP_AND_CHRONOLOGY_EXPECTED_DAYS = CHRONOLOGY_EXPECTED_DAY
 
 
 def _held_still(
@@ -767,7 +776,7 @@ SCENARIO_NORMALISED_TEXT: dict[str, tuple[tuple[str, str], ...]] = {
     # clip carries only the slots that are inside it, so a selector declared
     # here is a selector that capture really renders — which is what lets
     # `REQUIRED_NORMALISATIONS` insist on all of them.
-    "teema-kaik": _held_still(STRIP_RUN_DAY, STRIP_EXPECTED_DAY),
+    "teema-kaik": _held_still(STRIP_RUN_DAY, ()),
     "teema-ajajoon": _held_still(CHRONOLOGY_RUN_DAY, CHRONOLOGY_EXPECTED_DAY),
     # The same clip with the one outcome opened (docs/adr/0074 §14, amended
     # 2026-09-27): the same two rows are on it, closed or open.
@@ -865,7 +874,7 @@ REQUIRED_NORMALISATIONS: dict[str, tuple[str, ...]] = {
     #
     # The expected date joins them on the same four, and for the same reason:
     # the seed adds it to this Matter on every run.
-    "teema-kaik": (*STRIP_RUN_DAY, *STRIP_EXPECTED_DAY),
+    "teema-kaik": STRIP_RUN_DAY,
     "teema-ajajoon": (*CHRONOLOGY_RUN_DAY, *CHRONOLOGY_EXPECTED_DAY),
     "teema-ajajoon-avatud": (*CHRONOLOGY_RUN_DAY, *CHRONOLOGY_EXPECTED_DAY),
     "teema-ulevaade": (
@@ -2090,9 +2099,6 @@ def _open_matter_fixture(page, day: str) -> None:
         # against a page that does not exist.
         '<span class="tl-step" style="display:contents">'
         f'<span class="tl-step__what">Koja arvamus</span>'
-        f'<span class="tl-step__date">{day}</span></span>'
-        '<span class="tl-step" style="display:contents">'
-        f'<span class="tl-step__what">{EXPECTED_DAY_TITLE}</span>'
         f'<span class="tl-step__date">{day}</span></span>'
         '<span class="tl-step" style="display:contents">'
         '<span class="tl-step__what">Jõustumine</span>'

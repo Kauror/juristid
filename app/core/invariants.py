@@ -77,6 +77,11 @@ SERVICE_RULES = frozenset(
         "external-position-crosses-matter",
         "change-event-on-another-matter",
         "closed-matter-without-closure-event",
+        "stage-episode-stage-mismatch",
+        "stage-episode-missing",
+        "stage-episode-without-matter-stage",
+        "terminal-stage-on-open-matter",
+        "change-event-episode-on-another-matter",
     }
 )
 
@@ -113,6 +118,24 @@ EXPLANATIONS: dict[str, str] = {
     ),
     "closed-matter-without-closure-event": (
         "A closed FULL Matter has no MATTER_CLOSED event: it was closed around close_matter"
+    ),
+    # docs/adr/0131. At most one current period per Matter, a start before an
+    # end and a stage on every period are CHECK/UNIQUE constraints; these are the
+    # rules only the services keep.
+    "stage-episode-stage-mismatch": (
+        "A Matter's current MatterStageEpisode names a different stage than Matter.stage"
+    ),
+    "stage-episode-missing": (
+        "An open FULL Matter holds a stage but has no current MatterStageEpisode"
+    ),
+    "stage-episode-without-matter-stage": (
+        "A Matter with no stage (Määramata) still has a current MatterStageEpisode"
+    ),
+    "terminal-stage-on-open-matter": (
+        "An open Matter's recorded current period is a stage that ends a Matter"
+    ),
+    "change-event-episode-on-another-matter": (
+        "A ChangeEvent is bound to a MatterStageEpisode of a different Matter"
     ),
 }
 
@@ -386,6 +409,79 @@ def _unrecorded_closure_findings() -> list[Finding]:
     ]
 
 
+def _stage_episode_findings() -> list[Finding]:
+    """`Hetkeseis` periods out of step with `Matter.stage` (docs/adr/0131).
+
+    The database already refuses two current periods, an end before a start and
+    a period with no stage. What only the transition service keeps is that the
+    current period *is* the Matter's stage, that an open Matter holding a stage
+    has one, and that a recorded move to a stage which ends a Matter closed it.
+
+    **A carried-over period is not a finding for the last rule.** An open Matter
+    that already stood in «Jõustunud» before stages could close a file is
+    truthful legacy data, carried over as it was; only a period this system
+    *recorded* as terminal on a file still open is reported.
+    """
+    from app.matters.enums import RecordMode, StageEpisodeOrigin
+    from app.workflow.stage_flow import TERMINAL_STAGE_KEYS
+
+    matter = apps.get_model("matters", "Matter")
+    episode = apps.get_model("matters", "MatterStageEpisode")
+    event = apps.get_model("audit", "ChangeEvent")
+    current = episode.objects.filter(is_current=True)
+
+    findings = [
+        Finding(kind="stage-episode-stage-mismatch", subject=str(pk), detail=f"matter={owner}")
+        for pk, owner in current.filter(matter__stage__isnull=False)
+        .exclude(stage_id=F("matter__stage_id"))
+        .order_by("pk")
+        .values_list("pk", "matter_id")
+    ]
+    findings.extend(
+        Finding(
+            kind="stage-episode-without-matter-stage", subject=str(pk), detail=f"matter={owner}"
+        )
+        for pk, owner in current.filter(matter__stage__isnull=True)
+        .order_by("pk")
+        .values_list("pk", "matter_id")
+    )
+    findings.extend(
+        Finding(kind="stage-episode-missing", subject=str(pk), detail="")
+        for pk in matter._base_manager.filter(
+            deleted_at__isnull=True,
+            is_open=True,
+            record_mode=RecordMode.FULL,
+            stage__isnull=False,
+        )
+        .exclude(Exists(current.filter(matter_id=OuterRef("pk"))))
+        .order_by("pk")
+        .values_list("pk", flat=True)
+    )
+    findings.extend(
+        Finding(kind="terminal-stage-on-open-matter", subject=str(pk), detail=f"matter={owner}")
+        for pk, owner in current.filter(
+            matter__is_open=True,
+            matter__deleted_at__isnull=True,
+            origin=StageEpisodeOrigin.RECORDED,
+            stage__key__in=TERMINAL_STAGE_KEYS,
+        )
+        .order_by("pk")
+        .values_list("pk", "matter_id")
+    )
+    findings.extend(
+        Finding(
+            kind="change-event-episode-on-another-matter",
+            subject=str(pk),
+            detail=f"matter={owner}",
+        )
+        for pk, owner in event.objects.filter(stage_episode__isnull=False)
+        .exclude(stage_episode__matter_id=F("matter_id"))
+        .order_by("pk")
+        .values_list("pk", "matter_id")
+    )
+    return findings
+
+
 def check_domain_invariants(*, today: datetime.date | None = None) -> InvariantReport:
     """Every row breaking one of the rules above. Reads; never writes."""
     day = today or timezone.localdate()
@@ -396,4 +492,5 @@ def check_domain_invariants(*, today: datetime.date | None = None) -> InvariantR
     report.findings.extend(_closed_matter_findings())
     report.findings.extend(_cross_matter_findings())
     report.findings.extend(_unrecorded_closure_findings())
+    report.findings.extend(_stage_episode_findings())
     return report

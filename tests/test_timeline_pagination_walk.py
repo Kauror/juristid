@@ -103,9 +103,12 @@ def _created_is_reachable(items) -> None:
 
 
 def _stages() -> tuple[StageVocabulary, StageVocabulary]:
+    # Two stages that leave the file open. «Jõustunud» was the second until
+    # docs/adr/0131 §10 made it close the Matter; these walks move the stage
+    # back and forth on a file that keeps working.
     return (
         StageVocabulary.objects.get(key="consultation"),
-        StageVocabulary.objects.get(key="in_force"),
+        StageVocabulary.objects.get(key="government"),
     )
 
 

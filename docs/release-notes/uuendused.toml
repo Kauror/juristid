@@ -21,6 +21,18 @@ changes = [
   # Sama päeva teine väljalase: ADR 0130 täiendus, migratsioonideta.
   "Hetkeseis on kohe õigusakti all, nii et õigusakti valides on kohe näha, millised hetkeseisud on tavapärased. Valdkonna pealkiri on ainsuses — «Valdkond» —, kuid valida saab endiselt mitu.",
   "Õigusaktiga tavaliselt mittesobivad hetkeseisud on varasemast selgelt tuhmimad. Neid saab endiselt valida, ja valitud hetkeseis näeb välja nagu iga teine valitud hetkeseis.",
+  # Sama päeva kolmas väljalase: hetkeseisu etapid, ADR 0131. Kolm migratsiooni
+  # ja üks andmemigratsioon (matters/0042, matters/0043, audit/0031,
+  # workflow/0010). Kui see väljalase ei jõua tootmisse 02.10 (Tallinna aja
+  # järgi), liiguvad need read väljalaske päeva kirjesse.
+  "«Teema käik» on jaotatud hetkeseisude kaupa: iga hetkeseisu all on see, mida selle hetkeseisu ajal tehti. Praegune hetkeseis on avatud ja selle saab kokku panna; varasemad on kokku pandud ja neid saab avada, ka mitu korraga. Pealkirjas on hetkeseis ja aeg, näiteks «Kooskõlastusringil 5.26–10.26».",
+  "Kui hetkeseis muutub, jääb seni tehtu eelmise hetkeseisu alla ja edasine töö läheb uue alla. Märge või Koja arvamus, mis salvestatakse koos uue hetkeseisuga, jääb selle hetkeseisu alla, mille ajal see tehti.",
+  "Kui teema läheb tagasi varasemasse hetkeseisu — näiteks teist korda kooskõlastusringile —, tekib uus eraldi plokk ja varasem jääb alles. Enne seda muudatust tehtu on plokis «Varasem tegevus».",
+  "Märke ja Koja arvamuse «Uus hetkeseis» pakub kõigepealt tõenäolisemaid järgmisi hetkeseise. «ELi õiguse ülevõtmise ootel» hetkeseisust saab sama teema all liikuda edasi «Idee» või «Kooskõlastusringil» hetkeseisu. Kõik varasemad hetkeseisud on endiselt valitavad.",
+  "Uus hetkeseis «Rohkem ei tegele». «Jõustunud» ja «Rohkem ei tegele» lõpetavad teema salvestamisel; «Jõustumise ootel» teemat ei lõpeta. Eraldi nuppu «Lõpeta teema» enam ei ole.",
+  "Suletud teema avatakse uuesti koos hetkeseisuga, millega töö jätkub. Varasem hetkeseis, näiteks «Jõustunud», jääb «Teema käiku» alles.",
+  "«Menetluse kulus» on menetluse etapid ja tähtajad ning Koja välja saadetud arvamused, ka hiljem tagasi võetud arvamus. Kaasamiste tagasiside tähtajad ja muud jälgitavad tähtajad on «Teema käigus».",
+  "Sõnastus on ühtlustatud: «Valdkond» ka lehel «Muuda teemat» ja teema päises «Arvamuse tähtaeg».",
 ]
 
 [[day]]

@@ -38,10 +38,7 @@ has every field and every button, and its POST reaches a server with no memory
 of which page it came from. Hiding the forms on a fresh GET is the right thing
 to do and it decides nothing (docs/adr/0075 §12, R2-02).
 
-Two operations here do not take that guard, and neither of them may.
-`close_matter_from_workspace` is the act that *produces* the closed state, so
-refusing it on a closed Matter is `close_matter`'s own job — it takes the same
-row itself and answers «Teema on juba suletud.». And
+One operation here does not take that guard, and may not.
 `correct_matter_website_overview` corrects an address the file already records:
 closure means no new business content, never that a fact recorded wrongly must
 stay wrong, which is the rule `edit_entry` has kept since docs/adr/0075 §12.
@@ -73,7 +70,6 @@ from app.matters.services import (
     add_engagement,
     add_entry,
     cancel_website_overview,
-    close_matter,
     complete_engagement_feedback,
     correct_website_overview_link,
     plan_website_overview,
@@ -86,11 +82,18 @@ from app.workflow.services import (
     complete_next_action,
     set_next_action_for_new_work,
 )
+from app.workflow.stage_flow import is_terminal as is_terminal_stage
 
 #: Refused when the step the form was rendered against is no longer the one that
 #: is open. Named because two surfaces print it and a test asserts on it.
 STALE_ACTION_REFUSAL = (
     "Praegune tegevus on vahepeal muutunud. Värskenda lehte ja vaata, mis on nüüd pooleli."
+)
+
+#: Refused when one save both names a next step and a `Hetkeseis` that ends the
+#: Matter — the closure would cancel the step it was written with (docs/adr/0131 §10).
+TERMINAL_STAGE_MAKES_NO_STEP = (
+    "Lõpetava hetkeseisuga ei saa järgmist tegevust määrata: teema lõpetatakse."
 )
 
 
@@ -654,8 +657,16 @@ def add_matter_koda_opinion(
     summary: str = "",
     complete_action_id: Any = None,
     working_uploads: Sequence[Any] = (),
+    stage: Any = None,
 ) -> WorkspaceResult:
     """`+ Koja arvamus` — the Chamber's opinion went out, with the file that went.
+
+    **`stage` — `Uus hetkeseis`, and the opinion stays in the period it was
+    written in** (docs/adr/0131 §5). An opinion on the idea that moves the file
+    to its consultation round reads under «Idee» in `Teema käik`, and
+    «Kooskõlastusringil» begins after it: the move is made through
+    `stage_transition`, which pins the period current before it, and a stage
+    that ends the Matter closes it after the send is recorded.
 
     **Composition, and the fourth caller of a service that already exists.** Koda's
     own opinion is a `Submission` and has been since the foundational schema;
@@ -762,14 +773,23 @@ def add_matter_koda_opinion(
         # docs/adr/0061's amendment exists to prevent.
         raise DomainError("Saatmise registreerimiseks on vaja saatmise kuupäeva.")
 
+    from app.matters.services import stage_transition
+
     locked_matter = lock_open_matter_for_business_write(matter.pk)
     named = (
         _named_open_action(locked_matter=locked_matter, action_id=complete_action_id)
         if complete_action_id is not None
         else None
     )
-    with composer_operation() as operation_id:
-        result = WorkspaceResult(operation_id=operation_id)
+    with (
+        composer_operation() as operation_id,
+        stage_transition(
+            matter=locked_matter,
+            stage=stage if stage is not None else locked_matter.stage,
+            actor=author,
+        ) as move,
+    ):
+        result = WorkspaceResult(operation_id=operation_id, closed=move.closes)
         # Read first, so a rejected file refuses before anything is written. The
         # ordinary evidence pipeline — same reader, same scan gate, same checksum,
         # same immutability — and the role is the one the product already has for
@@ -1029,15 +1049,22 @@ def add_procedural_development(
     """
     from app.matters.services import (
         DEVELOPMENT_NEEDS_SOMETHING,
-        change_stage,
         development_save_says_something,
         record_confirmed_phase_date,
         record_procedural_development,
         record_procedural_development_document,
+        stage_transition,
     )
 
     if as_next_step and (next_text or "").strip():
         raise ValueError("as_next_step makes the Märge the step; next_text names another one.")
+    # **A stage that ends the Matter makes no step** (docs/adr/0131 §10). The
+    # save closes the file, and the closure cancels any open step — so a step
+    # written by the same press would be an instruction born cancelled. The
+    # flag is inert here exactly as it is on a day that is not ahead.
+    closes = is_terminal_stage(getattr(stage, "key", None))
+    if closes:
+        as_next_step = False
     step_text = next_text
     step_date = next_date
     if as_next_step and occurred_on is not None and occurred_on > timezone.localdate():
@@ -1045,6 +1072,8 @@ def add_procedural_development(
         step_date = occurred_on
         if not step_text:
             raise DomainError(NEXT_STEP_NEEDS_SENTENCE)
+    if closes and (step_text or "").strip():
+        raise DomainError(TERMINAL_STAGE_MAKES_NO_STEP)
 
     locked_matter = lock_open_matter_for_business_write(matter.pk)
     moves_stage = stage is not None and stage.pk != locked_matter.stage_id
@@ -1057,45 +1086,53 @@ def add_procedural_development(
     ):
         raise DomainError(DEVELOPMENT_NEEDS_SOMETHING)
 
+    # The phase this move may date, read on the locked row *before* it moves:
+    # «forward» is a question about where the file stood.
+    pattern, phase_to_date = None, ""
+    if (
+        moves_stage
+        and date_phase
+        and occurred_on is not None
+        and (occurred_on_precision == DatePrecision.EXACT.value)
+    ):
+        from app.matters.legal_process import phase_context
+        from app.matters.process_phases import confirmable_phase
+
+        facts = phase_context(matter=locked_matter)
+        pattern = facts.pattern
+        phase_to_date = confirmable_phase(pattern, from_stage=facts.stage_key, to_stage=stage.key)
+
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
-        development = record_procedural_development(
-            matter=locked_matter,
-            title=title,
-            occurred_on=occurred_on,
-            occurred_on_precision=occurred_on_precision,
-            note=note,
-            actor=author,
-        )
-        result.record = development
-        result.documents = capture_supporting_evidence(
-            matter=locked_matter,
-            record=development,
-            uploads=_uploads(uploads),
-            actor=author,
-        )
-        for document in result.documents:
-            record_procedural_development_document(
-                development=development, document=document, actor=author
+        # **The move is made first and the `Märge` is still the old period's**
+        # (docs/adr/0131 §5). `stage_transition` pins the period that was
+        # current before the move, so the record, its files and its step are
+        # written in it — the work was done there and the stage moves after it.
+        # A file with no stage yet binds them to the first period this opens.
+        # And a stage that ends the Matter closes it on the way out of the
+        # block, after the record it was saved with.
+        with stage_transition(
+            matter=locked_matter, stage=stage if moves_stage else locked_matter.stage, actor=author
+        ) as move:
+            development = record_procedural_development(
+                matter=locked_matter,
+                title=title,
+                occurred_on=occurred_on,
+                occurred_on_precision=occurred_on_precision,
+                note=note,
+                actor=author,
             )
-        if moves_stage:
-            # The phase this move may date, read on the locked row *before* it
-            # moves: «forward» is a question about where the file stood.
-            pattern, phase_to_date = None, ""
-            if (
-                date_phase
-                and occurred_on is not None
-                and (occurred_on_precision == DatePrecision.EXACT.value)
-            ):
-                from app.matters.legal_process import phase_context
-                from app.matters.process_phases import confirmable_phase
-
-                facts = phase_context(matter=locked_matter)
-                pattern = facts.pattern
-                phase_to_date = confirmable_phase(
-                    pattern, from_stage=facts.stage_key, to_stage=stage.key
+            result.record = development
+            result.documents = capture_supporting_evidence(
+                matter=locked_matter,
+                record=development,
+                uploads=_uploads(uploads),
+                actor=author,
+            )
+            for document in result.documents:
+                record_procedural_development_document(
+                    development=development, document=document, actor=author
                 )
-            change_stage(matter=locked_matter, stage=stage, actor=author)
             if phase_to_date:
                 result.phase_dated = record_confirmed_phase_date(
                     matter=locked_matter,
@@ -1104,14 +1141,15 @@ def add_procedural_development(
                     day=occurred_on,
                     actor=author,
                 )
-        text = (step_text or "").strip()
-        if text:
-            result.action = set_next_action_for_new_work(
-                matter=locked_matter,
-                text=text,
-                target_date=step_date,
-                actor=author,
-            )
+            text = (step_text or "").strip()
+            if text:
+                result.action = set_next_action_for_new_work(
+                    matter=locked_matter,
+                    text=text,
+                    target_date=step_date,
+                    actor=author,
+                )
+        result.closed = move.closes
         return result
 
 
@@ -1495,56 +1533,8 @@ def correct_matter_procedural_link(
         return result
 
 
-@transaction.atomic
-def close_matter_from_workspace(
-    *,
-    matter: Matter,
-    author: Any,
-    disposition: str,
-    closing_words: str = "",
-    work_victory: dict[str, Any] | None = None,
-) -> WorkspaceResult:
-    """`+ Lõpeta teema` — two questions, and nothing invented from them.
-
-    The simplified closure of docs/adr/0074 §10, unchanged: how it ended, an
-    optional last word, and no claim that an opinion was sent, that a win was
-    won or that anything commenced. `close_matter` still cancels the open step
-    through `end_open_action_for_closure`, which is the one place that decides
-    what a closure does to `Järgmiseks` (brief §20).
-
-    No file control. Closure gained no attachment requirement in this round, and
-    giving it one would quietly reintroduce the final-evidence precondition the
-    previous round removed.
-
-    **No closed-Matter guard, deliberately.** Every other operation in this
-    module takes `lock_open_matter_for_business_write` first; this one is the
-    act that produces the closed state, so refusing it on a closed Matter is
-    `close_matter`'s own job — it locks the same row and answers «Teema on juba
-    suletud.» Adding the guard here would say the same thing twice and in the
-    wrong sentence (R2-02).
-
-    **`Märgi töövõiduks` records the ordinary `Töövõit` first, in this same
-    transaction and operation** (docs/adr/0121 §9). ``work_victory`` is what
-    `CompactClosureForm` produced — the same keys `+ Märge → Töövõit` hands
-    `add_matter_work_victory` — and it goes to that very use case: the same
-    record, service, validation, audit event and reporting, with no files. The
-    order is the only one that can work, and the one `_apply_closure` already
-    uses: a win is recorded on an *open* file (`lock_open_matter_for_business_write`
-    refuses a closed one), so it is written first and the closure last. Either
-    refusal unwinds both — a win on a file left open, or a closed file claiming
-    a win nobody recorded, cannot be the outcome of one press.
-    """
-    with composer_operation() as operation_id:
-        result = WorkspaceResult(operation_id=operation_id)
-        if work_victory:
-            result.record = add_matter_work_victory(
-                matter=matter, author=author, uploads=(), **work_victory
-            ).record
-        close_matter(
-            matter=matter,
-            disposition=disposition,
-            actor=author,
-            reason=closing_words.strip(),
-        )
-        result.closed = True
-        return result
+# **No `close_matter_from_workspace` since docs/adr/0131 §11.** `+ Lõpeta teema`
+# was its only caller. A Matter ends when its `Hetkeseis` says so: `+ Märge` and
+# `+ Koja arvamus` move the stage through `stage_transition`, which closes the
+# Matter through `close_matter_for_terminal_stage` after the act it was saved
+# with — the order this use case kept (the win first, the closure last).

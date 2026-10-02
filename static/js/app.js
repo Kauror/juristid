@@ -4523,9 +4523,70 @@
       }
     }
     var row = node && node.closest ? node.closest("article.uxtl__item") : null;
+    if (row) {
+      revealKaikPeriod(row);
+    }
     if (row && !row.classList.contains(KAIK_OPEN)) {
       openKaikRow(row, true);
     }
+  }
+
+  /* ---- Teema käik: Hetkeseis periods (docs/adr/0131 §7) ------------------
+   * Each period is a native `<details>`: the current one renders open, earlier
+   * ones closed, and any number may be open at once — nothing here closes one
+   * because another opened. Two things this adds:
+   *
+   *   - a row that has to be seen — a link's target, a row holding a form —
+   *     opens the period it sits in first, or it would open out of sight;
+   *   - a column re-rendered around a save keeps each period as the person
+   *     left it, open or closed, keyed by the period, like the rows above. */
+  var etappCarried = null;
+
+  function revealKaikPeriod(node) {
+    var period = node && node.closest ? node.closest("details.kaikstage") : null;
+    if (period && !period.open) {
+      period.open = true;
+    }
+  }
+
+  document.body.addEventListener("htmx:beforeSwap", function (event) {
+    var detail = event.detail || {};
+    var target = detail.target;
+    if (!target || !target.querySelectorAll) {
+      return;
+    }
+    var states = {};
+    var any = false;
+    target.querySelectorAll("details.kaikstage[data-kaik-etapp]").forEach(function (period) {
+      states[period.getAttribute("data-kaik-etapp")] = {
+        open: period.open,
+        current: period.classList.contains("kaikstage--current")
+      };
+      any = true;
+    });
+    etappCarried = any ? { xhr: detail.xhr, states: states } : null;
+  });
+
+  function syncKaikPeriods(detail) {
+    var carried = etappCarried && detail && etappCarried.xhr === detail.xhr ? etappCarried.states : {};
+    if (detail) {
+      etappCarried = null;
+    }
+    document.querySelectorAll("details.kaikstage[data-kaik-etapp]").forEach(function (period) {
+      var key = period.getAttribute("data-kaik-etapp");
+      var before = Object.prototype.hasOwnProperty.call(carried, key) ? carried[key] : null;
+      /* Only a period whose standing did not change keeps the reader's choice:
+         the period a save just ended renders closed, and the one it began
+         renders open, exactly as the server drew them. */
+      if (before && before.current === period.classList.contains("kaikstage--current")) {
+        period.open = before.open;
+      }
+    });
+    document.querySelectorAll("article.uxtl__item").forEach(function (row) {
+      if (kaikHoldsInput(row)) {
+        revealKaikPeriod(row);
+      }
+    });
   }
 
   /* Which rows were open, taken before a swap that replaces rows: the column
@@ -4562,10 +4623,12 @@
 
   document.body.addEventListener("htmx:afterSwap", function (event) {
     syncKaik(event.detail || {});
+    syncKaikPeriods(event.detail || {});
   });
 
   document.addEventListener("DOMContentLoaded", function () {
     syncKaik(null);
+    syncKaikPeriods(null);
     openKaikTarget();
     bind(document);
     bindLiveSearch(document);

@@ -423,11 +423,13 @@ def test_the_events_a_folded_run_used_to_hide_are_all_on_the_page(client, specia
     assert "uxtl__sysrow" not in body, "the folded run is not part of the approved target"
     assert "näita ▸" not in body
 
-    # Both things that happened *to the file* are readable on the page, each as
-    # its own row.
+    # Both things that happened *to the file* are readable on the page: the
+    # creation as its own row, and the stage move as the `Hetkeseis` period it
+    # began — a heading rather than a «Hetkeseis: …» row since docs/adr/0131 §7.
     chronology = body.split('id="ajalugu-loend"')[1]
     assert "Teema loodud" in chronology
-    assert "Hetkeseis:" in chronology
+    assert "Hetkeseis:" not in chronology
+    assert 'class="kaikstage__stage"' in chronology
     # And the third — the step that save set — reads where an open instruction
     # is read and acted on, which is the row above the chronology rather than a
     # «määras järgmise sammu» line inside it (docs/adr/0092 §8).
@@ -718,7 +720,7 @@ def test_a_refused_save_comes_back_in_its_own_open_panel(client, specialist) -> 
     )
     assert "Kirjuta järgmine tegevus." in html
     # And no other panel was opened on its behalf.
-    for other in ("lisa-marge", "lisa-kaasamine", "marge-toovoit", "teema-lopeta"):
+    for other in ("lisa-marge", "lisa-kaasamine", "marge-toovoit"):
         assert not _panel_is_open(html, other), other
 
 

@@ -125,10 +125,7 @@ def test_a_marge_while_a_task_is_open_leaves_the_task_alone(page, base_url):
 
 #: One panel per operation this zone offers, families and sub-choices alike.
 #:
-#: `teema-lopeta` is included and is **not** in `LISA TEEMALE`: it renders in
-#: `TEEMA TOIMINGUD`, which is a radio group of its own, so opening it does not
-#: close a capture panel. The tests below that are about one-at-a-time say so
-#: where they need it (docs/adr/0097 §8, §9).
+#: `teema-lopeta` is gone with `+ Lõpeta teema` (docs/adr/0131 §11).
 PANELS = (
     "marge-tavaline",
     "marge-tahtaeg",
@@ -246,7 +243,7 @@ def test_a_refused_panel_reopens_itself_and_no_other(page, base_url):
     # `lisa-marge` stays open: `Töövõit` is a choice *inside* it, so the family
     # holding its refused child open is the nesting working (docs/adr/0097 §8).
     assert add_panel_is_open(page, "lisa-marge")
-    for other in ("marge-tavaline", "lisa-kaasamine", "marge-tahtaeg", "teema-lopeta"):
+    for other in ("marge-tavaline", "lisa-kaasamine", "marge-tahtaeg"):
         assert not add_panel_is_open(page, other), other
 
 

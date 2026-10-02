@@ -343,10 +343,11 @@ def test_oluline_tahtaeg_keeps_its_name(specialist, today):
 
 
 def test_the_teema_header_deadline_is_still_arvamuse_tahtaeg(signed_in, specialist, today):
-    """The metaline reads `Tähtaeg`, and it means Koda's own opinion deadline.
+    """The metaline reads `Arvamuse tähtaeg`, and it means Koda's own opinion deadline.
 
-    ADR 0050 and ADR 0059 both rest on that reading, so this is the one place
-    the word must survive a change whose whole subject is the word.
+    ADR 0050 and ADR 0059 both rest on that reading. It read the short
+    «Tähtaeg» until docs/adr/0131 §14 gave it the words its editor and both
+    Teema forms already used.
     """
     matter = create_matter(
         title="Päisega teema",
@@ -356,7 +357,7 @@ def test_the_teema_header_deadline_is_still_arvamuse_tahtaeg(signed_in, speciali
     )
     body = body_of(signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})))
 
-    assert '<span class="metaline__label">Tähtaeg</span>' in body
+    assert '<span class="metaline__label">Arvamuse tähtaeg</span>' in body
 
 
 # ---------------------------------------------------------------------------

@@ -70,7 +70,9 @@ when somebody asks for it.
       docs/adr/0092 §2: collapsing `Teema käik` must not take the answer to the
       other question away with it.
 
-      **And neither are phase headings, since docs/adr/0105 §1.** For one round
+      **And neither are phase headings, since docs/adr/0105 §1** — the
+      `Hetkeseis` periods below are a different grouping, recorded rather than
+      inferred (docs/adr/0131 §7). For one round
       this section drew a heading per recorded phase and `Etapiga sidumata` at
       its foot, which stopped the list being chronological: the rows arrived
       newest-phase-first, and everything nobody had placed sat in a group at the
@@ -84,8 +86,41 @@ when somebody asks for it.
       swaps its own button for the next batch *in place*, so the older lines
       arrive inside the same grid and the vertical rule stays continuous.
     {% endcomment %}
-    <div id="ajalugu-loend" class="uxtl">
-      {% include "matters/partials/timeline_items.html" with timeline_items=timeline_items timeline_has_more=timeline_has_more next_offset=30 matter=matter timeline_only=timeline_only %}
+    <div id="ajalugu-loend" class="{% if timeline_groups %}kaikstages{% else %}uxtl{% endif %}">
+    {% if timeline_groups %}
+      {% comment %}
+        **Grouped by `Hetkeseis` period** (docs/adr/0131 §7). One accordion per
+        period, newest first: the current one open, every earlier one closed,
+        and any number of them open at once — they are native `<details>`, so
+        opening one closes nothing. Each heading is the stage and its compact
+        period, and nothing else; the rows inside are the chronology's own, in
+        its own order.
+
+        **This brings headings back into this section, and it is not the
+        retired phase grouping** (docs/adr/0105 §1). Those headings were the
+        *procedure's* phases, inferred per row; these are the periods in which
+        the file held each `Hetkeseis`, recorded at the moment each act was
+        done. A repeated stage is a second accordion, never the first reopened.
+      {% endcomment %}
+        {% for group in timeline_groups %}
+          <details class="kaikstage{% if group.is_current %} kaikstage--current{% endif %}{% if not group.episode %} kaikstage--unplaced{% endif %}"
+                   id="{{ group.dom_id }}" data-kaik-etapp="{{ group.key }}"{% if group.is_open %} open{% endif %}>
+            <summary class="kaikstage__head">
+              <span class="kaikstage__caret" aria-hidden="true"></span>
+              <span class="kaikstage__stage">{{ group.label }}</span>
+              {% if group.repeat > 1 %}<span class="kaikstage__repeat">{{ group.repeat }}. kord</span>{% endif %}
+              {% if group.period %}<span class="kaikstage__period">{{ group.period }}</span>{% endif %}
+              {% if group.is_current %}<span class="visually-hidden">(praegune hetkeseis)</span>{% endif %}
+              <span class="kaikstage__count">{{ group.items|length|counted:"kirje,kirjet" }}</span>
+            </summary>
+            <div class="uxtl kaikstage__body">
+              {% include "matters/partials/timeline_items.html" with timeline_items=group.items timeline_has_more=False matter=matter timeline_only=timeline_only stage_group=group %}
+            </div>
+          </details>
+        {% endfor %}
+    {% else %}
+        {% include "matters/partials/timeline_items.html" with timeline_items=timeline_items timeline_has_more=timeline_has_more next_offset=30 matter=matter timeline_only=timeline_only %}
+    {% endif %}
     </div>
 
     {% comment %}

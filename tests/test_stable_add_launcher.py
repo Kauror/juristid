@@ -61,13 +61,10 @@ SUBCHOICES = {
     "lisa-arvamus": ["Meile saadetud tagasiside", "Teiste arvamus", "Koja arvamus"],
 }
 
-#: Every panel in the zone: family, sub-choice and closure alike.
+#: Every panel in the zone: family and sub-choice alike.
 #:
-#: `teema-lopeta` is among them again. It sat in a `TEEMA TOIMINGUD` section of
-#: its own between docs/adr/0097 §9 and docs/adr/0099 §5 — the reading that
-#: closure is not capture stands, but a heading over one control cost more than
-#: the complaint did, and what keeps the distinction now is `--last` and the
-#: chip's own prefix.
+#: `teema-lopeta` is gone: `+ Lõpeta teema` was retired by docs/adr/0131 §11,
+#: and a file ends through its `Hetkeseis`.
 #:
 #: `lisa-jargmine` is **not** among them: `+ Järgmine tegevus` left the row, and
 #: the one ordinary way to set a next step while none is open is the optional
@@ -86,17 +83,14 @@ PANEL_IDS = [
     "arvamus-teiste",
     "arvamus-koja",
     "lisa-koduleht",
-    "teema-lopeta",
 ]
 
 #: The four kinds of thing a file can have **added** to it.
 FAMILY_IDS = ["lisa-marge", "lisa-kaasamine", "lisa-arvamus", "lisa-koduleht"]
 
-#: Everything in `name="lisa-valik"`: the four families and the control that
-#: ends the file. One group, so the browser enforces one-open-at-a-time across
-#: the whole row — including between a capture panel and closure, which is the
-#: half docs/adr/0099 §5 deliberately changed back.
-EXCLUSIVE_IDS = [*FAMILY_IDS, "teema-lopeta"]
+#: Everything in `name="lisa-valik"`: the four families. One group, so the
+#: browser enforces one-open-at-a-time across the whole row.
+EXCLUSIVE_IDS = [*FAMILY_IDS]
 
 
 def _zone(client, matter) -> str:
@@ -190,20 +184,11 @@ def test_the_open_step_control_is_not_in_the_launcher(signed_in, specialist):
     assert "lisa-jargmine" not in zone
 
 
-def test_closure_is_the_last_chip_and_deletion_is_in_the_header(signed_in, specialist):
-    """`TEEMA TOIMINGUD` is retired, and its two controls moved apart.
+def test_there_is_no_closing_chip_and_deletion_is_in_the_header(signed_in, specialist):
+    """`TEEMA TOIMINGUD` is retired, and so is `+ Lõpeta teema` (docs/adr/0131 §11).
 
-    docs/adr/0097 §9 put both in a section of their own, on the reading that
-    neither adds content to the Matter and a row mixing «write this down» with
-    «this file is finished» makes the most consequential control look like the
-    most routine one. That reading stands; the cure was a heading over one
-    control (docs/adr/0099 §5).
-
-    So the distinction is carried by position and class rather than by a region:
-    closure is **last** and marked `--last`, it is not addressed by the `lisa-`
-    prefix the four capture families share, and deletion is not in this row at
-    all — it is beside `Muuda teemat` in the header, where «this record is
-    wrong» is answered.
+    A file ends through its `Hetkeseis`; deletion is beside `Muuda teemat` in the
+    header, where «this record is wrong» is answered.
     """
     matter = factories.MatterFactory(owner=specialist)
     body = signed_in.get(
@@ -212,13 +197,8 @@ def test_closure_is_the_last_chip_and_deletion_is_in_the_header(signed_in, speci
     zone = _zone(signed_in, matter)
 
     assert 'id="teema-toimingud"' not in body
-
-    # Last, and the only chip in the row carrying `--last`.
-    assert _chip_ids(zone)[-1] == "teema-lopeta"
-    assert zone.count("disclosure-chip--last") == 1
-    assert 'for="teema-lopeta-valik"' in zone
-    # Not a fifth family: it keeps its own id prefix and it is not offered as
-    # something to add.
+    assert "teema-lopeta" not in zone
+    assert "disclosure-chip--last" not in zone
     assert _family_chips(zone) == CANONICAL
 
     # Deletion left the launcher and did not come back to it.
@@ -324,11 +304,9 @@ def test_every_chip_is_a_control_and_its_form_is_a_separate_element(signed_in, s
 def test_each_group_is_its_own_radio_group_so_only_one_form_can_be_open(signed_in, specialist):
     """Three groups, and which one a chip is in is what makes the nesting work.
 
-    The four families **and closure** share `lisa-valik`, so the browser enforces
+    The four families share `lisa-valik`, so the browser enforces
     one-open-at-a-time across the whole row with scripting off. `Lõpeta teema`
-    had a group of its own while it was a section of its own, which meant it
-    could stand open beside a capture panel; back in the row, sharing the group
-    is the point — picking it closes whatever was open (docs/adr/0099 §5).
+    shared it too until docs/adr/0131 §11 retired it.
 
     Each family's sub-choices are a group of their **own** — `marke-liik`,
     `arvamuse-liik` — because putting them in `lisa-valik` would make choosing

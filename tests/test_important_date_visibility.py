@@ -61,11 +61,11 @@ def _chronology(matter, specialist):
     return items
 
 
-def test_a_future_deadline_draws_its_own_column(normal_matter, specialist):
-    """The name the lawyer typed, not a label saying one exists."""
+def test_a_future_deadline_draws_no_column(normal_matter, specialist):
+    """A watched deadline reads in the chronology, not on the rail (docs/adr/0131 §13)."""
     _record(normal_matter, when=datetime.date.today() + datetime.timedelta(days=60))
 
-    assert TITLE in _labels(normal_matter, specialist)
+    assert TITLE not in _labels(normal_matter, specialist)
 
 
 def test_a_future_deadline_reads_in_the_chronology_as_still_ahead(normal_matter, specialist):
@@ -88,7 +88,8 @@ def test_a_deadline_beyond_every_horizon_is_still_on_its_own_matter(normal_matte
     """
     _record(normal_matter, when=datetime.date.today() + datetime.timedelta(days=400))
 
-    assert TITLE in _labels(normal_matter, specialist)
+    # On the chronology, marked as still ahead; the rail keeps the procedure
+    # only since docs/adr/0131 §13.
     assert any(
         item.milestone and item.milestone.what == TITLE
         for item in _chronology(normal_matter, specialist)

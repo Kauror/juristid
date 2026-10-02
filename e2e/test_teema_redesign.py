@@ -26,6 +26,7 @@ from e2e.conftest import (
     create_matter,
     open_add_panel,
     open_composer,
+    open_kaik_period,
     open_matter,
     set_next_step,
     sign_in,
@@ -206,34 +207,21 @@ def test_closing_happens_in_lisa_teemale_and_leaves_a_readable_past(page, base_u
     page.locator("#marge-tavaline button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
-    # Closing is a `LISA TEEMALE` panel, not a box in the rail.
+    # Closing is a `Hetkeseis` since docs/adr/0131 §11 — not a box in the rail
+    # and not a panel of its own.
     expect(page.locator(".rail").get_by_text("Sulge teema")).to_have_count(0)
-    open_add_panel(page, "teema-lopeta")
-    expect(page.locator("#teema-lopeta")).to_be_visible()
-
-    # No confirmation box: answering the panel is the request (pilot QA F-02).
-    expect(page.locator("#id_close_matter")).to_have_count(0)
-    expect(page.locator("#teema-lopeta button[type=submit]")).to_have_text("Salvesta")
-
-    # `Kuidas lõppes` is three chips over the field the server validates, and
-    # nothing is chosen until somebody chooses (docs/adr/0074 §10).
-    page.locator("#teema-lopeta .uxchip", has_text="Jõustus").click()
-    expect(page.locator("#teema-lopeta input[name=disposition]")).to_have_value("COMPLETED")
-    # No confirmation box, no second narrative box, and no work-victory
-    # decision: closing a file is not a claim that anything was won, and
-    # `+ Töövõit` records a win without closing anything.
-    expect(page.locator("#id_closure_reason")).to_have_count(0)
-    expect(page.locator("[name=work_victory]")).to_have_count(0)
-    page.locator("#teema-lopeta [name=closing_words]").fill("Menetlus lõppes; töö on tehtud.")
+    expect(page.locator("#teema-lopeta")).to_have_count(0)
+    open_composer(page)
+    page.select_option("#id_marge_stage", label="Jõustunud — lõpetab teema")
     # The server's own answer, not what the page looks like afterwards. A save
     # that is refused and a save that quietly did nothing leave an identical
     # screen, and the difference is the whole question here.
     with page.expect_response(
-        lambda response: "/lisa/lopeta/" in response.url and response.request.method == "POST"
+        lambda response: "/lisa/marge/" in response.url and response.request.method == "POST"
     ) as caught:
-        page.locator("#teema-lopeta button[type=submit]").click()
+        page.locator("#marge-tavaline button[type=submit]").click()
     saved = caught.value
-    assert saved.status == 200, f"the closure save was refused: {saved.status}"
+    assert saved.status == 200, f"the closing save was refused: {saved.status}"
     page.wait_for_load_state("networkidle")
     expect(page.locator(".formerror")).to_have_count(0)
     expect(page.locator(".addzone .field__error")).to_have_count(0)
@@ -246,19 +234,16 @@ def test_closing_happens_in_lisa_teemale_and_leaves_a_readable_past(page, base_u
     # -- E. the closed Matter -------------------------------------------
     page.goto(url)
     expect(page.locator(".badge--closed")).to_be_visible()
-    # The banner quotes the one narrative the save carried, not a second box.
-    expect(page.locator(".banner--closed")).to_contain_text("Menetlus lõppes; töö on tehtud.")
+    expect(page.locator(".banner--closed")).to_contain_text("Lõpetatud või jõustunud")
     expect(page.locator("#praegune-tegevus")).to_contain_text("teema on suletud")
     # No writable next step and no workspace at all (docs/adr/0075, brief §31).
     expect(page.locator("#lisa-teemale")).to_have_count(0)
     expect(page.get_by_text("Mida tegid?", exact=True)).to_have_count(0)
-    # The past stays readable, and is open on arrival. Scoped to the chronology
-    # row's headline: the closing banner quotes the same sentence above it, and
-    # the `Märge` itself is a `MatterProceduralDevelopment` rather than the
-    # `Entry` prose this used to read (docs/adr/0074 §16, docs/adr/0097 §6).
-    expect(
-        page.locator(".uxtl__mswhat").get_by_text("Märge: Menetlus lõppes; töö on tehtud.")
-    ).to_be_visible()
+    # The past stays readable — in the period it was written in, which is
+    # closed until somebody opens it (docs/adr/0131 §7).
+    headline = page.locator(".uxtl__mswhat").get_by_text("Märge: Menetlus lõppes; töö on tehtud.")
+    open_kaik_period(headline)
+    expect(headline).to_be_visible()
 
 
 # ---------------------------------------------------------------------------

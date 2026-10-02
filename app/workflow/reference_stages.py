@@ -41,8 +41,12 @@ this module carries no ``RETIRED_STAGE_KEYS``. The mechanism exists and works �
 ``app.workflow.selectors.stages_including`` and docs/adr/0032 §Amendment — and
 this round simply has no use for it.
 
-Why ``Rohkem ei tegele`` is not a stage
----------------------------------------
+Why ``Rohkem ei tegele`` was not a stage — superseded by version 3.0
+--------------------------------------------------------------------
+
+**Superseded on 2026-10-02 by docs/adr/0131 §9 — see «Version 3.0» below.** The
+reasoning is kept as it was written: it was the decision until the owner made
+`Hetkeseis` the one ordinary way a Matter moves and ends.
 
 The feedback asked for it as a Hetkeseis, and it is not one.
 
@@ -62,6 +66,26 @@ the historical reading and the current vocabulary disagree about the same words.
 
 **Nothing is remapped either.** No Matter is moved and no historical mapping is
 re-pointed; the concept was already implemented and stays where it was.
+
+Version 3.0 — `Rohkem ei tegele` becomes a current stage
+--------------------------------------------------------
+
+The owner's workflow decision of 2026-10-02 (docs/adr/0131 §9). A Matter now
+moves through `Hetkeseis` periods, and the separate «Lõpeta teema» action is
+gone: the ordinary way a file ends is a `Hetkeseis` that ends it. Two do —
+``in_force`` («Jõustunud»), as before, and the new ``monitoring_stopped``
+(«Rohkem ei tegele»), which closes the Matter with
+``Disposition.MONITORING_STOPPED``. Koda stopping is still a disposition; the
+stage is how a lawyer says so (app/workflow/stage_flow.py).
+
+**One row is added and nothing else moves.** Every version-2.0 key, label and
+sort order is unchanged; ``monitoring_stopped`` sorts last, after «Muu».
+
+**History is not reread.** The workbook's ``rohkem pole tegevusi plaanis`` is
+still read as the *disposition* it was read as, by ``workflow/0004`` and by
+``app.workflow.vocabulary``: the register never had this stage, and an import
+that suddenly found it in 2016 rows would be inventing a fact about 2016. The
+new key is a current product decision, going forward only.
 """
 
 from __future__ import annotations
@@ -71,7 +95,7 @@ from dataclasses import dataclass
 #: Bumped when the *set* or the *wording* of the offered stages changes. Pinned
 #: by `tests/test_reference_stages.py`, so rewording the vocabulary is a
 #: decision somebody made rather than a diff that slipped through.
-REFERENCE_STAGE_VERSION = "2.0"
+REFERENCE_STAGE_VERSION = "3.0"
 
 #: Where version 1.0 came from, and when.
 STAGE_SOURCE_TITLE = "Tööd eelnõudega.xlsx — veerg HETKESEIS"
@@ -139,9 +163,18 @@ REFERENCE_STAGES_V2: tuple[ReferenceStage, ...] = tuple(
     for stage in REFERENCE_STAGES_V1
 )
 
-#: The name the rest of the codebase imports. No stage was retired and none was
-#: added, so this is every row the vocabulary has.
-REFERENCE_STAGES: tuple[ReferenceStage, ...] = REFERENCE_STAGES_V2
+#: The stage version 3.0 adds (docs/adr/0131 §9). Its explanation is the row's
+#: `help_text`, written by `workflow/0010`.
+MONITORING_STOPPED_STAGE = ReferenceStage(
+    key="monitoring_stopped", label_et="Rohkem ei tegele", sort_order=110
+)
+
+#: Version 3.0 — version 2.0 unchanged, plus `Rohkem ei tegele` last.
+REFERENCE_STAGES_V3: tuple[ReferenceStage, ...] = (*REFERENCE_STAGES_V2, MONITORING_STOPPED_STAGE)
+
+#: The name the rest of the codebase imports. No stage was ever retired, so this
+#: is every row the vocabulary has.
+REFERENCE_STAGES: tuple[ReferenceStage, ...] = REFERENCE_STAGES_V3
 
 #: The stable keys, in reviewed order.
 REFERENCE_STAGE_KEYS: tuple[str, ...] = tuple(stage.key for stage in REFERENCE_STAGES)
