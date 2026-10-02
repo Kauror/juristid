@@ -1878,19 +1878,6 @@ th[aria-sort="descending"] .colhead__mark::after {
  * Composer
  * ==================================================================== */
 
-.composer {
-  background: var(--surface-raised);
-  border: 1px solid var(--border-control);
-  border-radius: var(--radius-card);
-  display: flex;
-  flex-direction: column;
-}
-
-.composer:focus-within {
-  border-color: var(--accent-border);
-  box-shadow: 0 0 0 3px var(--accent-halo);
-}
-
 /* Collapsed, the composer is one line. It grows when somebody reaches for it,
    which is the whole adoption argument: a routine update has to be cheaper
    than editing a spreadsheet row. Nothing is hidden — the type, the
@@ -1926,15 +1913,6 @@ th[aria-sort="descending"] .colhead__mark::after {
 .curact__form .composer__body:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-offset-width);
-}
-
-/* `:focus-within` on the card, not `:focus` on the field. Keyed to the field,
-   the composer collapsed the moment focus moved to the type select or the
-   Järgmiseks toggle beside it — so the page reflowed under the pointer while
-   somebody was still working in it. It closes when focus leaves the composer,
-   which is when it should. */
-.composer:focus-within .composer__body {
-  height: 108px;
 }
 
 .composer__body::placeholder {
@@ -1979,16 +1957,6 @@ th[aria-sort="descending"] .colhead__mark::after {
   border: 1px solid var(--border-control);
   border-radius: var(--radius-chip);
   padding: 0 4px;
-}
-
-/* ====================================================================
- * Timeline
- * ==================================================================== */
-
-.timeline {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-1);
 }
 
 
@@ -2962,7 +2930,6 @@ fieldset.field > legend {
 }
 
 .table tbody tr,
-.entrycard,
 .submission,
 .fragment,
 /* The register's results region, and the Ulevaade list a figure that counts
@@ -4514,17 +4481,6 @@ a.barchart__row:hover {
 }
 
 
-/* The file row, which is a pair again.
- *
- * It was `--trio`: the dropzone, `Saabus` and `Arvamuse tähtaeg`. The deadline
- * has moved to the bottom of the form, where it is the last question asked and
- * the only date the lawyer enters — so the row is two tracks, not three with
- * one standing empty (docs/adr/0094 §4). The dropzone keeps the 146px and the
- * gap, which is the field on this row with something to do with it. */
-.createform__pair--file {
-  grid-template-columns: minmax(0, 1fr) 146px;
-}
-
 /* Uus teema's counterparty row: Saatja on the left, where the picker has the
    width it uses, Vastutaja on the right (docs/adr/0130 §1). Its own modifier
    rather than `--people` reversed, because `Muuda teemat` and `Saabunud` keep
@@ -4587,9 +4543,7 @@ a.barchart__row:hover {
      reason other than sharing a row with a checkbox that genuinely is small.
      A field is compact because of what it holds, never because of what it sits
      beside, so the cap is now named on the fields that want it. */
-  .createform__trio .field:has(.dateinput),
-  .createform__pair--file .field:has(.dateinput),
-  .createform__field--compact {
+  .createform__trio .field:has(.dateinput) {
     max-width: 18rem;
   }
 
@@ -5561,33 +5515,6 @@ a.barchart__row:hover {
   padding-top: var(--spacing-4);
 }
 
-.nextpanel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-2);
-  padding: var(--spacing-3) var(--spacing-4);
-  background: var(--surface-capture);
-  border: 1px solid var(--accent-border);
-  border-left: 2px solid var(--accent-primary);
-  border-radius: var(--radius-md);
-}
-
-
-/* Two stacked questions, and nothing laid out beside them.
-
-   The panel used to be two `__line` rows, each pairing a group of chips with a
-   box: the mode chips beside the sentence, the meaning chips beside the date.
-   Both chip groups are retired from native creation, and with them the reason
-   the panel needed a horizontal grammar of its own. What is left — a label, a
-   sentence and the `Millal?` row — is the composer's own shape, laid out by
-   the composer's own `.uxcomp__row` (ADR 0052, static/css/ux.css).
-
-   `.modechip` and `.modeselect` were kept below this for one round, on the
-   reasoning that a surface showing a historical `WAIT` or `MONITOR` might want
-   the shape language back. No surface may: the stored kind is not a user-facing
-   concept anywhere in the product, so the rules are gone with their last
-   renderer (ADR 0054). */
-
 /* -- the actions ------------------------------------------------------------ */
 
 .createform__actions {
@@ -5658,9 +5585,7 @@ a.barchart__row:hover {
  * `focusFirstRefusal`). */
 .field,
 fieldset,
-.nextpanel,
 .cx-f,
-.uxcomp__row,
 .createform__row,
 .formerror {
   /* The bar's own height is `html`'s `scroll-padding-top` now (ENG-097), and
@@ -5996,13 +5921,6 @@ fieldset,
 .matrix__row--unknown th[scope="row"] {
   color: var(--text-muted);
   font-style: italic;
-}
-
-/* A comparison card. Deliberately no red and no green: neither direction of a
-   volume change is good news, and a colour that implied one would be a
-   judgement the data does not support (brief 34). */
-.comparison {
-  gap: var(--spacing-2);
 }
 
 
@@ -6447,20 +6365,6 @@ fieldset,
 
 /* -- the composer ----------------------------------------------------- */
 
-.teema .composer {
-  background: var(--surface-capture);
-  border: 0;
-  border-top: 1px solid var(--border-subtle);
-  border-bottom: 1px solid var(--border-subtle);
-  border-left: 2px solid var(--accent-primary);
-  border-radius: 0;
-  padding: var(--spacing-4) var(--spacing-8) 18px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-25);
-}
-
-
 .teema .composer__body {
   width: 100%;
   min-height: 62px;
@@ -6473,12 +6377,6 @@ fieldset,
   resize: vertical;
 }
 
-
-/* `+ Lõpeta teema` is visually last and quieter than its neighbours: finishing
-   a file is not a routine capture. */
-.disclosure-chip--last {
-  color: var(--text-muted);
-}
 
 
 /* -- Koja seisukoht --------------------------------------------------- */
@@ -7051,10 +6949,6 @@ button.accordion__action:focus-visible {
   color: var(--text-primary);
 }
 
-.opinionmenu__form {
-  margin: 0;
-}
-
 /* `Võta tagasi` in the opinion's menu is the shared confirmation disclosure
    (templates/submissions/partials/withdraw_confirm.html, docs/adr/0120 §6).
    Among a row's document actions it keeps the 24px target the one-press
@@ -7283,7 +7177,6 @@ button.accordion__action:focus-visible {
 
   .teema .matterhead,
   .uxnext,
-  .teema .composer,
   .historicalrow,
   .webrow,
   .accordion__head,
@@ -8787,7 +8680,6 @@ button.accordion__action:focus-visible {
   .workrow2__link,
   .interrow__link,
   .arealine,
-  .feedrow,
   .entryline {
     grid-template-columns: minmax(0, 1fr);
     gap: 2px;
@@ -10044,30 +9936,6 @@ section:has(.pw-more[open]) tbody.uxextra {
     0 0 0 3px var(--status-danger-halo);
 }
 
-/* The composer's own 2px left border and its focus ring are suppressed so the
- * pair carries one edge rather than three outlines. */
-.teemamain .composer {
-  border-left: 0;
-  border-top: 0;
-  box-shadow: inset 3px 0 0 var(--accent-border);
-}
-
-.teemamain .composer:focus-within,
-.teemamain .composer[open] {
-  border-color: var(--border-subtle);
-  box-shadow: inset 3px 0 0 var(--accent-border);
-}
-
-
-/* Two lines at rest instead of three. `.composer__body` is `height` rather
- * than `min-height` precisely so it can be shrunk, and it still grows on
- * focus (handoff §18). */
-.teemamain .composer[open] .composer__body,
-.teemamain .composer:focus-within .composer__body {
-  height: 60px;
-  min-height: 60px;
-}
-
 /* -- one heading treatment -------------------------------------------------
  *
  * Every section label on the page — main column and rail — at one size, one
@@ -10381,25 +10249,6 @@ section:has(.pw-more[open]) tbody.uxextra {
   display: none;
 }
 
-/* A box a checkbox asks for: `Lõpeta teema → Märgi töövõiduks` and its
-   `Töövõidu märkus`. Hidden until the box is ticked, and read from the checkbox
-   itself so no script can leave the two disagreeing. A refused save comes back
-   with the box still ticked, so the note and its error stay on screen
-   (docs/adr/0121 §9). */
-#teema-vaade-wrap .cx-reveal {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-}
-
-#teema-vaade-wrap .cx-reveal__body {
-  display: none;
-}
-
-#teema-vaade-wrap .cx-reveal:has(.cx-reveal__toggle:checked) .cx-reveal__body {
-  display: block;
-}
-
 #teema-vaade-wrap .cx-note {
   margin: 0;
   font-size: 11.5px;
@@ -10550,11 +10399,6 @@ section:has(.pw-more[open]) tbody.uxextra {
  * The whole box is a `<label>` over a visually hidden file input, so it works
  * as a picker with no script at all. */
 
-#teema-vaade-wrap .uxcomp__row {
-  position: relative;
-  padding-top: var(--spacing-2);
-}
-
 #teema-vaade-wrap .cx-drop {
   display: inline-flex;
   align-items: center;
@@ -10626,8 +10470,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 
 /* Hierarchy inverted: the entry body is what a reader came for, the actor and
  * the timestamp are how they place it (handoff §13). */
-.teemamain .uxtl .richtext,
-.teemamain .uxtl .uxtl__text {
+.teemamain .uxtl .richtext {
   font-size: var(--typography-size-base);
   color: var(--text-primary);
 }
@@ -10780,7 +10623,6 @@ section:has(.pw-more[open]) tbody.uxextra {
   padding-right: 0;
 }
 
-.teema .rail .relatedmaterials__hint,
 .teema .rail .relatedmaterials__empty,
 .teema .rail .relatedmaterials__group,
 .teema .rail .relatedmaterials__more {
@@ -11871,22 +11713,6 @@ section:has(.pw-more[open]) tbody.uxextra {
     padding-right: var(--layout-gutter);
   }
 
-  /* **The 420px drop-zone defect, fixed rather than reproduced.**
-
-     At desktop `.cx-drop--corner` is absolutely positioned to the right end of
-     the `Millal?` row, which is where the approved design wants it. In
-     `TEEMA_TARGET_420.png` it is still absolute and lands on top of «+1 nädal»
-     and «+2 nädalat» — a prototype defect `TEEMA_TARGET_SPEC` §H names as such
-     and asks to be fixed: below this breakpoint the drop area leaves the corner
-     and becomes a normal-flow, full-width row directly under the chips.
-
-     `order` is what puts it *after* them while it stays first in the DOM, where
-     it belongs for a reader who tabs through the row (docs/adr/0074 §19). */
-  #teema-vaade-wrap .uxcomp__row {
-    flex-wrap: wrap;
-  }
-
-
   /* A two-column field grid does not fit beside a 12px gutter. */
   #teema-vaade-wrap .cx-grid {
     grid-template-columns: minmax(0, 1fr);
@@ -11946,17 +11772,6 @@ section:has(.pw-more[open]) tbody.uxextra {
   box-shadow:
     inset 3px 0 0 var(--accent-border),
     0 0 0 3px var(--status-danger-halo);
-}
-
-.teemamain .curact .rowlabel {
-  display: block;
-  margin: 0 0 var(--spacing-2);
-  font-size: 12px;
-  font-weight: var(--typography-weight-bold);
-  letter-spacing: var(--typography-tracking-label);
-  line-height: 1.2;
-  text-transform: uppercase;
-  color: var(--text-secondary);
 }
 
 /* The task itself: the sentence, then the date, on one baseline. */
@@ -12219,17 +12034,6 @@ section:has(.pw-more[open]) tbody.uxextra {
   border-bottom: 1px solid var(--border-subtle);
 }
 
-.teemamain .workplan .rowlabel {
-  display: block;
-  margin: 0 0 var(--spacing-2);
-  font-size: 12px;
-  font-weight: var(--typography-weight-bold);
-  letter-spacing: var(--typography-tracking-label);
-  line-height: 1.2;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-}
-
 .workplan__list,
 .planedit {
   list-style: none;
@@ -12406,6 +12210,10 @@ section:has(.pw-more[open]) tbody.uxextra {
   border-bottom: 1px solid var(--border-subtle);
 }
 
+/* The three Teema zone headings — Praegune tegevus, Tööplaan, Lisa teemale —
+ * read as one label style. */
+.teemamain .curact .rowlabel,
+.teemamain .workplan .rowlabel,
 .teemamain .addzone .rowlabel {
   display: block;
   margin: 0 0 var(--spacing-2);

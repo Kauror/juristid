@@ -260,11 +260,10 @@
   align-items: center;
 }
 
+/* Size and offset: `#teema-vaade-wrap .uxtl__dot` in app.css — the Teema page
+   is the only one that renders the dot. */
 .uxtl__dot {
-  width: 10px;
-  height: 10px;
   border-radius: 50%;
-  margin-top: 4px;
   flex: none;
 }
 
@@ -343,16 +342,10 @@
 }
 
 
-/* What one save decided, on its own strip under what it said. */
+/* What one save decided, on its own strip under what it said. The pill's box
+   is `#teema-vaade-wrap .uxtl__next` in app.css (the only page rendering it). */
 .uxtl__next {
-  margin-top: 8px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 10px;
   background: var(--surface-capture);
-  border: 1px solid var(--accent-border);
-  border-radius: 5px;
   flex-wrap: wrap;
 }
 
@@ -769,14 +762,6 @@
 /* ====================================================================
  * 1d — the composer, closed by default
  * ==================================================================== */
-
-
-.uxcomp__row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
 
 .uxcomp__q {
   font: 600 12px/1.3 var(--typography-font-sans);
@@ -1249,7 +1234,6 @@ a.uxstat__row:hover {
     grid-template-columns: 46px 108px minmax(0, 1fr) 24px;
   }
 
-  .uxnext__menu,
   .uxassign__menu {
     /* Right-anchored so a control near the right edge cannot push its popover
        off-screen. Measured at 375px, where the register's owner cell is the

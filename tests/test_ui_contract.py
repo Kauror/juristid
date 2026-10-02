@@ -267,9 +267,12 @@ def test_no_remote_asset_is_fetched_at_runtime() -> None:
 def test_focus_is_never_removed() -> None:
     """`outline: none` is only acceptable where something else shows focus.
 
-    Two selectors are allowed, and both are the same shape: a borderless
+    Two selectors are allowed. `.pw-note textarea:focus` is a borderless
     textarea inside a card whose `:focus-within` gives the card a brand border
     and a halo — so focus is visible, on the surface a person is looking at.
+    `.composer__body:focus` no longer sits in a card (the `.composer` card is
+    retired); the one place it renders, `.curact__form`, gives the field its
+    own ring back on `:focus-visible` (ENG-096).
     Anything else removing an outline is removing focus.
     """
     allowed = {".composer__body:focus", ".pw-note textarea:focus"}
@@ -282,10 +285,12 @@ def test_focus_is_never_removed() -> None:
     assert offenders <= allowed, (
         f"focus removed without a replacement: {sorted(offenders - allowed)}"
     )
-    for card in (".composer:focus-within", ".pw-note:focus-within"):
-        assert re.search(re.escape(card) + r"\s*\{", all_css()), (
-            f"{card} removes its field's outline and must show focus on the card instead"
-        )
+    assert re.search(r"\.pw-note:focus-within\s*\{", all_css()), (
+        ".pw-note:focus-within removes its field's outline and must show focus on the card instead"
+    )
+    assert re.search(r"\.curact__form \.composer__body:focus-visible\s*\{", all_css()), (
+        ".composer__body:focus removes its outline and .curact__form must give it back"
+    )
 
 
 def test_every_form_control_in_a_template_has_a_label() -> None:
