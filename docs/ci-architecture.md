@@ -69,11 +69,11 @@ suite reaches it.
 The command in the workflow is the whole mechanism, so it works anywhere:
 
 ```bash
-uv run pytest --shard-count=12 --shard-index=3
+uv run pytest --shard-count=7 --shard-index=3
 ```
 
 ```bash
-uv run pytest e2e --ignore=e2e/test_ui_regression.py --shard-count=12 --shard-index=2 --browser chromium
+uv run pytest e2e --ignore=e2e/test_ui_regression.py --shard-count=7 --shard-index=2 --browser chromium
 ```
 
 To see which files a shard holds without running them, add `--collect-only -q`.
@@ -402,7 +402,7 @@ alone is 225s of the PostgreSQL suite's 1998s, and at nine shards it *is* a
 shard. The numbers were simulated out to nine and ten and are in the pull
 request that made this change; the answer was six and seven.
 
-### 2026-10-02: twelve and twelve, because the round is what costs
+### 2026-10-02: the round is what costs, and twenty jobs is the ceiling
 
 The bar above priced a runner in *runner-minutes*, and both of its premises
 have moved. The repository is public now, so standard runners cost nothing; and
@@ -430,16 +430,28 @@ Scored the held-out way (partitioned with a table refreshed from run
 | 14 | 233s | 262s |
 | 16 | 202s | 240s |
 
-Twelve and twelve, with ~85s of per-job overhead on top, predicts ~6–6.5
-minutes per job and a round of ~7.5 instead of ~11.5. The granularity floor is
-`e2e/test_process_strip.py` at ~185s; twelve stays clear of it.
+**Twelve and twelve was tried and measured, and the account's ceiling decided
+it.** PR run 36968364017 ran 12+12: every shard took the predicted ~5–6
+minutes, and the round took **12.6** — worse. Exactly twenty jobs started in the
+first four seconds and the other ten queued, starting up to five minutes late as
+slots freed. The account runs **20 concurrent jobs** (GitHub Free; Pro is 40,
+Team 60), shared with every other repository's workflows.
 
-**The ceiling is concurrency, not arithmetic.** A round starts every job at
-once — six fixed jobs plus the shards — and an account's concurrent-job limit
-queues whatever does not fit, which makes a round *slower*. 6 + 12 + 12 = 30
-jobs. If the first rounds show shards starting late, the counts come down
-until they all start together; the job start times in any run's jobs list are
-the measurement.
+So the shard counts are chosen to fit, not to minimise per-shard time. Six fixed
+jobs (quality, migration safety, dependency scan, compose, backup rehearsal,
+visual) hold six slots for the first ~2–3 minutes; **7 + 7 shards fill the
+other fourteen and everything starts at once**. Packing more shards into the
+slots the fixed jobs free was modelled (9 + 11: six shards starting 2–3 minutes
+late) and came out no faster.
+
+With 7 + 7 the critical path is the slowest browser shard, ~521s held-out plus
+~85s of job overhead: a round of roughly ten minutes, against the eleven and a
+half before — the refreshed table and the OCR cache, not the count.
+
+**On a 40-job plan, 12 + 12 is the setting** (measured above: ~5.5–6.5 minutes a
+shard, so a round of ~7–7.5). It is a one-line change per matrix plus the two
+`--shard-count`s and the gate messages; `tests/test_ci_sharding.py` holds the
+matrix and the count to each other.
 
 The OCR runtime is now installed from `.deb` files cached per runner image. The
 step was 18s when Ubuntu's mirror was quick and up to four minutes when it was

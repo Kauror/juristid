@@ -166,8 +166,8 @@ jobs:
     # It moved because it is not per-shard work. Migrating from zero, stepping a
     # deployment's state backwards and forwards, and asserting that the OCR
     # engine is really installed are claims about the repository, not about a
-    # subset of it — running them again in each of the 12 shards would
-    # multiply a minute of setup by 12 and prove nothing further. Nothing here
+    # subset of it — running them again in each of the 7 shards would
+    # multiply a minute of setup by 7 and prove nothing further. Nothing here
     # was removed, weakened or reordered; the steps are the ones that stood in
     # the `tests` job, with their reasoning intact.
     services:
@@ -348,9 +348,9 @@ jobs:
           rm -f isolation.log
 
   tests:
-    name: "PostgreSQL tests, shard ${{ matrix.shard }} of 12"
+    name: "PostgreSQL tests, shard ${{ matrix.shard }} of 7"
     runs-on: ubuntu-latest
-    # Was 25 for the whole serial suite. A shard is roughly a 12th of it, and
+    # Was 25 for the whole serial suite. A shard is roughly a 7th of it, and
     # the same reasoning applies at the smaller size: generous slack so that a
     # slow runner is never mistaken for a broken branch, and a number that gets
     # noticed if the suite ever grows into it.
@@ -362,13 +362,13 @@ jobs:
       # re-runs.
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        shard: [1, 2, 3, 4, 5, 6, 7]
 
     # A whole PostgreSQL of its own per shard, which is the point of sharding
     # here rather than reaching for `pytest -n`. Each runner gets its own
     # database server, its own filesystem, its own process environment and its
     # own port space, so the isolation the suite already relies on is not
-    # weakened by running it in 12 places at once — and the assignment is a
+    # weakened by running it in 7 places at once — and the assignment is a
     # pure function of the collected files rather than of which worker happened
     # to be free (ci_sharding.py, docs/ci-architecture.md).
     services:
@@ -468,7 +468,7 @@ jobs:
         # number (docs/ci-architecture.md).
         run: >-
           uv run pytest
-          --shard-count=12 --shard-index=${{ matrix.shard }}
+          --shard-count=7 --shard-index=${{ matrix.shard }}
           --cov --cov-report=
           --junitxml=artifacts/junit-tests-${{ matrix.shard }}.xml
 
@@ -518,7 +518,7 @@ jobs:
               exit 1
             fi
           done
-          echo "all 12 shards and the safety checks passed"
+          echo "all 7 shards and the safety checks passed"
 
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -571,14 +571,14 @@ jobs:
         run: uvx pip-audit --strict --no-deps --requirement requirements.txt
 
   browser:
-    name: "Browser, shard ${{ matrix.shard }} of 12"
+    name: "Browser, shard ${{ matrix.shard }} of 7"
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        shard: [1, 2, 3, 4, 5, 6, 7]
 
     services:
       postgres:
@@ -699,13 +699,13 @@ jobs:
 
       # This runner's slice of the browser suite. Whole files, chosen by
       # measured cost, against this runner's own database, its own two servers
-      # and its own Chromium — which is what makes 12 of these safe when
-      # 12 pytest workers sharing one server would not be. The visual
+      # and its own Chromium — which is what makes 7 of these safe when
+      # 7 pytest workers sharing one server would not be. The visual
       # scenarios are not here; they have a job of their own below.
       - name: Browser workflow
         run: >-
           uv run pytest e2e --ignore=e2e/test_ui_regression.py
-          --shard-count=12 --shard-index=${{ matrix.shard }}
+          --shard-count=7 --shard-index=${{ matrix.shard }}
           --browser chromium
           --tracing retain-on-failure
           --output artifacts/playwright
@@ -907,7 +907,7 @@ jobs:
               exit 1
             fi
           done
-          echo "all 12 browser shards and the visual suite passed"
+          echo "all 7 browser shards and the visual suite passed"
 
   shard-balance:
     # What this run's shards were predicted to take, beside what they took
