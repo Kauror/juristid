@@ -33,7 +33,7 @@ from app.core.authorization import (
 from app.core.http import content_disposition
 from app.documents.inline import may_open_inline
 from app.documents.models import Document
-from app.legacy_import.historical_apply import index_source_link, is_empty_at_source
+from app.legacy_import.historical_apply import is_empty_at_source
 from app.legacy_import.opinion_views import MATTER_NOT_FOUND, queue_rows
 from app.legacy_import.source_pages import (
     CandidateClass,
@@ -354,7 +354,7 @@ def _link_to_matter(candidate: HistoricalMatchCandidate, request: HttpRequest) -
         # they may act on: linking would write onto it and the answer would name
         # it (ENG-067). The same sentence as for a Matter that is not there.
         raise ValueError(MATTER_NOT_FOUND)
-    link, _ = MatterSourcePage.objects.get_or_create(
+    MatterSourcePage.objects.get_or_create(
         matter=candidate.matter,
         source_page=candidate.source_page,
         defaults={
@@ -366,7 +366,6 @@ def _link_to_matter(candidate: HistoricalMatchCandidate, request: HttpRequest) -
             "reviewed_at": timezone.now(),
         },
     )
-    index_source_link(link)
     _mark(candidate, request, CandidateState.LINKED, matter=candidate.matter)
     return (
         f"Leht seoti teemaga {candidate.matter.display_reference or candidate.matter.title[:40]}."
@@ -395,7 +394,7 @@ def _create_matter_from_page(candidate: HistoricalMatchCandidate, request: HttpR
         reporting_year=page.source_created_at.year if page.source_created_at else None,
         is_open=False,
     )
-    link = MatterSourcePage.objects.create(
+    MatterSourcePage.objects.create(
         matter=matter,
         source_page=page,
         relationship_kind=SourceRelationshipKind.PRIMARY,
@@ -405,7 +404,6 @@ def _create_matter_from_page(candidate: HistoricalMatchCandidate, request: HttpR
         reviewed_by=reviewer,
         reviewed_at=timezone.now(),
     )
-    index_source_link(link)
     _mark(candidate, request, CandidateState.MATTER_CREATED, matter=matter)
     return f"Loodi ajalooline teema „{matter.title[:50]}“."
 

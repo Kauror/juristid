@@ -238,7 +238,6 @@ def indexable_matters() -> QuerySet[Matter]:
     see would silently differ between operators.
     """
     return Matter.objects.select_related("addressee_organisation").prefetch_related(
-        "engagements",
         "source_organisations",
         "source_organisations__aliases",
         "addressee_organisation__aliases",

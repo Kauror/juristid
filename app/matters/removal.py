@@ -102,12 +102,6 @@ class RemovableKind:
     #: rather than derived, because Estonian declension is not a string
     #: operation and a template that guessed would be wrong on most of these.
     genitive: str
-    #: Whether taking this record off the file also takes it out of the search
-    #: corpus. Four kinds have a row of their own there; the structured facts
-    #: and the overview have never been projected at all, so there is nothing
-    #: to withdraw and claiming otherwise in a comment would be worse than
-    #: saying nothing.
-    reindexes: bool = False
 
     @property
     def rows(self) -> Any:
@@ -150,7 +144,6 @@ def _table() -> tuple[RemovableKind, ...]:
             event_type=ChangeEventType.ENTRY_REMOVED,
             label="sissekanne",
             genitive="sissekande",
-            reindexes=True,
         ),
         RemovableKind(
             key="marge",
@@ -158,7 +151,6 @@ def _table() -> tuple[RemovableKind, ...]:
             event_type=ChangeEventType.PROCEDURAL_DEVELOPMENT_REMOVED,
             label="märge",
             genitive="märke",
-            reindexes=True,
         ),
         RemovableKind(
             key="kaasamine",
@@ -166,7 +158,6 @@ def _table() -> tuple[RemovableKind, ...]:
             event_type=ChangeEventType.ENGAGEMENT_REMOVED,
             label="kaasamine",
             genitive="kaasamise",
-            reindexes=True,
         ),
         RemovableKind(
             key="seisukoht",
@@ -174,7 +165,6 @@ def _table() -> tuple[RemovableKind, ...]:
             event_type=ChangeEventType.EXTERNAL_POSITION_REMOVED,
             label="seisukoht",
             genitive="seisukoha",
-            reindexes=True,
         ),
         RemovableKind(
             key="ulevaade",
@@ -294,6 +284,10 @@ def remove_matter_record(
 
     current.removed_at = timezone.now()
     current.removed_by = actor
+    # The search corpus follows from this save: the four kinds with a row of
+    # their own there (Sissekanne, Märge, Kaasamine, Seisukoht) re-project on
+    # post_save (`app.search.signals`), and a refresh that reads `removed_at`
+    # deletes the row and inserts nothing. The other kinds were never indexed.
     current.save(update_fields=["removed_at", "removed_by", "updated_at"])
 
     record_change_event(
@@ -303,8 +297,6 @@ def remove_matter_record(
         obj=current,
         summary=removal_summary(kind, current),
     )
-    if kind.reindexes:
-        _reproject(current)
     return current
 
 
@@ -321,25 +313,3 @@ def removal_summary(kind: RemovableKind, record: Any) -> str:
         if value:
             return value[:200]
     return kind.label
-
-
-def _reproject(record: Any) -> None:
-    """Withdraw the record from the search corpus, on the write that removed it.
-
-    Synchronous and per-write, the rule `refresh_engagement` established: «found
-    only after an operator runs a command» is the same defect as «not indexed»
-    with a longer fuse. The refresh functions read the row, see `removed_at`
-    set, delete the projection and insert nothing — so this needs no branch of
-    its own and a restore, if this product ever grows one, would converge
-    through the same call.
-    """
-    from app.search import indexing
-
-    if isinstance(record, Entry):
-        indexing.refresh_entry(record)
-    elif isinstance(record, MatterProceduralDevelopment):
-        indexing.refresh_development(record)
-    elif isinstance(record, MatterEngagement):
-        indexing.refresh_engagement(record)
-    elif isinstance(record, MatterExternalPosition):
-        indexing.refresh_external_position(record)
