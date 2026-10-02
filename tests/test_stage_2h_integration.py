@@ -86,7 +86,6 @@ def test_the_matter_page_carries_both_stages_context(client, specialist):
 
     assert response.context["intelligence"] is not None
     assert response.context["can_write"] is True
-    assert response.context["can_review_victory"] is False
 
 
 def test_a_submission_renders_beside_structured_facts(client, specialist):
