@@ -33,6 +33,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.functional import cached_property
 from django.views.decorators.http import require_http_methods
 
 from app.accounts.models import User
@@ -639,7 +640,6 @@ def inbox(request: HttpRequest) -> HttpResponse:
             "unassigned_total": unassigned_total,
             "recent": recent,
             "seis": inbox_figures(request.user, today),
-            "intake_form": IncomingIntakeForm(viewer=request.user),
             "source_instructions": source_instructions_for([*unassigned, *recent]),
             "source_snapshot": snapshot_label(),
             "nav_active": "saabunud",
@@ -1415,10 +1415,31 @@ def _matches_elsewhere(request: HttpRequest, params: Any, queryset: Any) -> dict
     widened["olek"] = "koik"
     widened.pop("leht", None)
     total = register_filters.apply_register_filters(queryset, request.user, widened)[0]
-    count = total.distinct().count()
+    count = _count_matters(total)
     if not count:
         return None
     return {"count": count, "query": widened.urlencode(), "label": ELSEWHERE_LINK}
+
+
+def _count_matters(queryset: Any) -> int:
+    """How many distinct Matters a register queryset holds.
+
+    Counted on the primary key alone. The register's queryset carries the eight
+    correlated subqueries `matter_list_queryset` annotates for its columns, and
+    `queryset.distinct().count()` makes the database evaluate all of them for
+    every matching row just to count rows — about half a second per page for a
+    reader on 5,000 Matters, against a few milliseconds this way. The filters
+    stay: an annotation the WHERE clause refers to is kept under `values()`.
+    """
+    return queryset.order_by().values("pk").distinct().count()
+
+
+class _RegisterPaginator(Paginator):
+    """`Paginator`, counting the way `_count_matters` does and slicing as before."""
+
+    @cached_property
+    def count(self) -> int:
+        return _count_matters(self.object_list)
 
 
 @login_required
@@ -1462,7 +1483,7 @@ def matter_list(request: HttpRequest) -> HttpResponse:
     queryset = _ordered(queryset, sort, request.user)
 
     per_page, page_size_key = page_size_from(params.get(PAGE_SIZE_PARAM))
-    paginator = Paginator(queryset.distinct(), per_page)
+    paginator = _RegisterPaginator(queryset.distinct(), per_page)
     page = paginator.get_page(params.get("leht"))
 
     query_without_page = params.copy()
@@ -1574,15 +1595,6 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         **register_columns(params),
     }
 
-    # Only on the full page. The chips sit above the filter bar, outside the
-    # results region a keystroke swaps, and four extra counts per keystroke
-    # would be four queries for something the reader cannot even see move
-    # (Stage-2E.1 brief 14).
-    context["saved_views"] = register_filters.saved_views(request.user, params)
-    # The view *is* the address. «Salvesta praegune filter vaatena» offers this
-    # link; there is nothing else to save, and nothing is stored.
-    context["current_view_url"] = request.build_absolute_uri()
-
     if _wants_fragment(request):
         # The whole results surface, not a patched piece of it: one render from
         # one queryset cannot disagree with itself about how many rows there are
@@ -1594,6 +1606,15 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         # (brief 14). The three the column headings share are above, because
         # the headings *are* in this fragment.
         return render(request, "matters/partials/register_results.html", context)
+
+    # Only on the full page, so after the fragment has returned. The chips sit
+    # above the filter bar, outside the results region a keystroke swaps, and
+    # four extra counts per keystroke would be four queries for something the
+    # reader cannot even see move (Stage-2E.1 brief 14).
+    context["saved_views"] = register_filters.saved_views(request.user, params)
+    # The view *is* the address. «Salvesta praegune filter vaatena» offers this
+    # link; there is nothing else to save, and nothing is stored.
+    context["current_view_url"] = request.build_absolute_uri()
 
     context |= {
         "tracks": Track.choices,
