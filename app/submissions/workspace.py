@@ -192,13 +192,9 @@ def sent_queryset(user: Any, filters: SentFilters) -> QuerySet[Submission]:
     )
 
 
-#: The one `?olek=` value that means "being written now".
-#:
-#: Named here so the Ülevaade figure and the tab it opens cannot drift apart:
-#: the figure counts :func:`drafting`, the destination is
-#: :data:`DRAFTING_QUERY`, and the view builds the same ``SentFilters`` from it.
+#: The one status that means "being written now", which :func:`drafting`
+#: counts.
 DRAFTING_STATUS = SubmissionStatus.DRAFT
-DRAFTING_QUERY = f"olek={SubmissionStatus.DRAFT}"
 
 
 def drafting(user: Any, visible: QuerySet[Submission] | None = None) -> QuerySet[Submission]:

@@ -50,9 +50,6 @@ class MatterQuerySet(models.QuerySet):
         """The only supported entry point for reading Matters."""
         return apply_scope(self, matter_visibility_q(scope_for_user(user)))
 
-    def active(self) -> MatterQuerySet:
-        return self.filter(is_open=True)
-
     def full_records(self) -> MatterQuerySet:
         return self.filter(record_mode=RecordMode.FULL)
 
@@ -3406,10 +3403,6 @@ class MatterStageEpisode(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.matter_id} #{self.sequence} {self.stage_id}"
-
-    @property
-    def start_known(self) -> bool:
-        return self.started_at is not None
 
 
 # The pre-creation intake tables live in their own module because they obey the

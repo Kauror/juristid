@@ -161,7 +161,3 @@ class PlanStepOperation(models.TextChoices):
     WEBSITE_OVERVIEW = "WEBSITE_OVERVIEW", "Ülevaade / uudis"
     ENGAGEMENT = "ENGAGEMENT", "Kaasamine"
     SUBMISSION = "SUBMISSION", "Koja arvamus"
-
-
-#: The steps that can still be ordered, edited, skipped or started.
-OPEN_PLAN_STATES = (PlanStepState.SUGGESTED, PlanStepState.PLANNED)

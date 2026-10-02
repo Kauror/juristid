@@ -27,7 +27,6 @@ from app.intelligence.enums import EffectiveDateKind
 from app.workflow.dates import MAX_YEAR, MIN_YEAR, InvalidPeriod, bounds_for
 from app.workflow.enums import ESTONIAN_MONTHS, ROMAN_QUARTERS, DatePrecision
 
-TEXT_WIDGET = forms.TextInput(attrs={"class": "field__input"})
 SELECT_WIDGET = forms.Select(attrs={"class": "field__input field__input--compact"})
 DATE_WIDGET = EstonianDateInput()
 
