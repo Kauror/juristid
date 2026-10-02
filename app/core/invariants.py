@@ -274,7 +274,7 @@ def _closed_matter_findings() -> list[Finding]:
         Finding(kind="closed-matter-open-feedback-wait", subject=str(pk), detail=f"matter={matter}")
         for pk, matter in engagement.objects.filter(
             matter__is_open=False,
-            feedback_deadline__isnull=False,
+            lifecycle_tracked=True,
             feedback_closed_at__isnull=True,
         )
         .order_by("pk")

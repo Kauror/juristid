@@ -29,7 +29,7 @@ from app.core.dates import format_estonian_date
 from app.matters.enums import EngagementKind
 from app.matters.forms import EngagementForm
 from app.matters.models import MatterEngagement
-from app.matters.services import add_engagement, engagement_revision_token, update_engagement
+from app.matters.services import add_engagement, update_engagement
 from app.matters.timeline import matter_timeline
 from tests import factories
 
@@ -260,12 +260,12 @@ def test_a_refused_save_hands_both_cleared_boxes_back_empty(signed_in, specialis
 
 
 def test_the_panel_stores_no_deadline_at_all(signed_in, specialist):
-    """docs/adr/0091 §2. The panel does not ask, so it cannot answer.
+    """docs/adr/0120 §3, docs/adr/0132. An untouched box stores no deadline.
 
     Asserted on the *column* rather than on the rendered box, because that is the
-    claim that matters: an ordinary new round is a completed act on the file and
-    not an open activity on somebody's desk. Nothing in the view or the service
-    supplies a day the form did not send, and the form no longer has one to send.
+    claim that matters: nothing in the view or the service supplies a day the
+    form did not send. The round is still open — the deadline is a due date on
+    it, not what opens it.
     """
     matter = factories.MatterFactory(owner=specialist)
 
@@ -274,7 +274,7 @@ def test_the_panel_stores_no_deadline_at_all(signed_in, specialist):
     assert response.status_code == 200
     engagement = MatterEngagement.objects.get()
     assert engagement.feedback_deadline is None
-    assert engagement.has_feedback_wait is False
+    assert engagement.has_open_feedback_wait is True
 
 
 # ---------------------------------------------------------------------------
@@ -388,29 +388,16 @@ def test_the_feedback_deadline_is_optional_and_blank_stores_null(signed_in, spec
 def test_the_feedback_deadline_is_stored_and_read_back_exactly(signed_in, specialist):
     """**§7.F.** Stored, re-read, and shown where the engagement is read.
 
-    Written through `Ootan tagasisidet` since docs/adr/0091 §2, which is the one
-    surface that opens a wait. The column, its storage and its rendering are
-    untouched — only the door changed.
+    Written through the panel's own optional box (docs/adr/0120 §3), in the same
+    save that records the round.
     """
     matter = factories.MatterFactory(owner=specialist)
     deadline = timezone.localdate() + dt.timedelta(days=8)
 
-    assert _post(signed_in, matter).status_code == 200
-    engagement = MatterEngagement.objects.get()
-    response = signed_in.post(
-        reverse(
-            "matters:open_engagement_wait",
-            kwargs={"pk": matter.pk, "engagement_id": engagement.pk},
-        ),
-        {
-            "revision": engagement_revision_token(engagement),
-            "feedback_deadline": format_estonian_date(deadline),
-        },
-        headers={"HX-Request": "true"},
-    )
+    response = _post(signed_in, matter, feedback_deadline=format_estonian_date(deadline))
 
     assert response.status_code == 200, response.content.decode()[:2000]
-    engagement.refresh_from_db()
+    engagement = MatterEngagement.objects.get()
     assert engagement.feedback_deadline == deadline
     assert MatterEngagement.objects.get(pk=engagement.pk).feedback_deadline == deadline
 
@@ -454,37 +441,24 @@ def _round(client, matter, **fields):
     return MatterEngagement.objects.get()
 
 
-def _wait(client, engagement, deadline):
-    """`Ootan tagasisidet` — the one surface that opens a wait on a new round."""
-    return client.post(
-        reverse(
-            "matters:open_engagement_wait",
-            kwargs={"pk": engagement.matter_id, "engagement_id": engagement.pk},
-        ),
-        {
-            "revision": engagement_revision_token(engagement),
-            "feedback_deadline": format_estonian_date(deadline),
-        },
-        headers={"HX-Request": "true"},
-    )
-
-
 @pytest.mark.parametrize("offset", [0, 1, 400])
 def test_a_deadline_on_or_after_the_engagement_date_is_accepted(signed_in, specialist, offset):
     """**§7.G.** Same day is «vastake tänaseks», later is the normal case.
 
-    Asked through `Ootan tagasisidet` since docs/adr/0091 §2 — the rule is
-    unchanged, and so is the surface it now has to be true of.
+    No minimum lead time and no maximum (docs/adr/0132).
     """
     matter = factories.MatterFactory(owner=specialist)
     when = timezone.localdate() - dt.timedelta(days=10)
-    engagement = _round(signed_in, matter, occurred_on=format_estonian_date(when))
 
-    response = _wait(signed_in, engagement, when + dt.timedelta(days=offset))
+    engagement = _round(
+        signed_in,
+        matter,
+        occurred_on=format_estonian_date(when),
+        feedback_deadline=format_estonian_date(when + dt.timedelta(days=offset)),
+    )
 
-    assert response.status_code == 200, response.content.decode()[:2000]
-    engagement.refresh_from_db()
     assert engagement.feedback_deadline == when + dt.timedelta(days=offset)
+    assert engagement.has_open_feedback_wait is True
 
 
 def test_a_deadline_before_the_engagement_is_refused(signed_in, specialist):
@@ -496,14 +470,17 @@ def test_a_deadline_before_the_engagement_is_refused(signed_in, specialist):
     """
     matter = factories.MatterFactory(owner=specialist)
     when = timezone.localdate()
-    engagement = _round(signed_in, matter, occurred_on=format_estonian_date(when))
 
-    response = _wait(signed_in, engagement, when - dt.timedelta(days=1))
+    response = _post(
+        signed_in,
+        matter,
+        occurred_on=format_estonian_date(when),
+        feedback_deadline=format_estonian_date(when - dt.timedelta(days=1)),
+    )
 
     assert response.status_code == 400
     assert "Tagasiside tähtaeg ei saa olla enne kaasamise kuupäeva." in response.content.decode()
-    engagement.refresh_from_db()
-    assert engagement.feedback_deadline is None
+    assert not MatterEngagement.objects.exists()
 
 
 def test_the_correction_form_names_the_refusal_on_the_deadline():
@@ -528,12 +505,11 @@ def test_a_deadline_with_no_engagement_date_is_accepted(signed_in, specialist):
     """**§7.G.** Somebody may remember what they asked for and not when."""
     matter = factories.MatterFactory(owner=specialist)
     deadline = timezone.localdate() + dt.timedelta(days=6)
-    engagement = _round(signed_in, matter, occurred_on="")
 
-    response = _wait(signed_in, engagement, deadline)
+    engagement = _round(
+        signed_in, matter, occurred_on="", feedback_deadline=format_estonian_date(deadline)
+    )
 
-    assert response.status_code == 200, response.content.decode()[:2000]
-    engagement.refresh_from_db()
     assert engagement.occurred_on is None
     assert engagement.feedback_deadline == deadline
 
@@ -604,7 +580,11 @@ def test_a_feedback_deadline_creates_no_work_and_moves_no_chronology_date(signed
 
 
 def test_an_engagement_with_no_feedback_deadline_reads_exactly_as_it_did(signed_in, specialist):
-    """**§7.H.** Every row in production is this row."""
+    """**§7.H.** Every row in production is this row.
+
+    Filed as history, which is what `matters/0044` makes of every stored round
+    with neither a deadline nor a closure (docs/adr/0132).
+    """
     matter = factories.MatterFactory(owner=specialist)
     engagement = add_engagement(
         matter=matter,
@@ -612,6 +592,7 @@ def test_an_engagement_with_no_feedback_deadline_reads_exactly_as_it_did(signed_
         title="Liikmed",
         occurred_on=dt.date(2020, 2, 3),
         response_count=7,
+        lifecycle_tracked=False,
         actor=specialist,
     )
 
@@ -622,7 +603,7 @@ def test_an_engagement_with_no_feedback_deadline_reads_exactly_as_it_did(signed_
     assert "Vastuseid 7" in body
     # The row says nothing about a deadline it never had — no «Määramata», no
     # «—», no «Tähtaeg puudub». What the row *does* offer is the act that would
-    # open one; the panel's own box is empty (docs/adr/0120 §3).
+    # start its lifecycle, `Ootan tagasisidet` (docs/adr/0132).
     assert "Ootame tagasisidet kuni" not in body
     assert "Ootan tagasisidet" in body, "the round offers no way to start waiting"
 

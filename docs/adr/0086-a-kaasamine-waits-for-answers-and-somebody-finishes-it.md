@@ -143,6 +143,13 @@ record puts it back.
 
 ### 3. An open feedback wait is work
 
+**Narrowed on 2026-10-02 by [0132](0132-a-kaasamine-is-open-until-it-is-finished-and-its-deadline-is-optional.md):**
+a round is open from the moment it is recorded, with a deadline or without one.
+The deadline is an optional due date on that work and no longer what opens it;
+an open round with no deadline reads «Tähtaeg määramata» and is never overdue.
+§6's refusal of a round with no deadline and «clearing the deadline clears the
+closure» are superseded by the same record.
+
 A `Kaasamine` on an open `FULL` Matter carrying a `feedback_deadline` and no
 completion is an **open waiting activity**, and it draws exactly one
 `WorkItem` — a fourth source in `app/matters/work_items.py`, beside the open

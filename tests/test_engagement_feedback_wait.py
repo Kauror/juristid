@@ -1,8 +1,11 @@
 """`Kaasamine` waits for answers, and somebody finishes it.
 
-docs/adr/0086 turns `MatterEngagement.feedback_deadline` from a recorded fact
-into a state. A round that asked members to answer by the 22nd is an **open
-waiting activity**: it shows on `PRAEGUNE TEGEVUS`, it shows as work on the
+docs/adr/0086 turned `MatterEngagement.feedback_deadline` from a recorded fact
+into a state; docs/adr/0132 moved the state onto the round itself, so every
+round is open from the moment it is recorded and the deadline is an optional
+due date on it (`tests/test_kaasamine_deadline_is_optional.py` holds that
+rule). A round that asked members to answer by the 22nd is an **open waiting
+activity**: it shows on `PRAEGUNE TEGEVUS`, it shows as work on the
 responsible lawyer's Minu asjad, it turns due on the day it named, and it ends
 only when somebody presses `Lõpeta kaasamine` — or when the Matter closes
 underneath it.
@@ -113,12 +116,18 @@ def _row(client, matter, engagement) -> str:
 
 
 def _plain(matter, *, actor=None, **extra):
-    """A round nobody is waiting on — the shape `+ Kaasamine` now always writes."""
+    """A round filed as history — neither open nor completed.
+
+    The one shape `Ootan tagasisidet` is still offered on since docs/adr/0132:
+    every round a person records is open, and only the register importer files
+    a consultation without a lifecycle.
+    """
     return add_engagement(
         matter=matter,
         kind=EngagementKind.SURVEY,
         title="liikmed",
         occurred_on=timezone.localdate() - dt.timedelta(days=1),
+        lifecycle_tracked=False,
         actor=actor,
         **extra,
     )
@@ -179,16 +188,17 @@ def test_a_feedback_deadline_creates_one_work_item_for_the_matters_owner(special
     assert item.is_overdue is False
 
 
-def test_a_round_with_no_deadline_is_not_work(specialist):
-    """§3. What draws the item is the dated point, never the act.
-
-    Every consultation the department has ever recorded predates the column, and
-    none of them appears anywhere as work.
-    """
+def test_a_round_with_no_deadline_is_undated_work_not_dated_work(specialist):
+    """docs/adr/0132, narrowing §3. A round with no deadline is open work with no
+    due date: it is in the undated selector and never in the dated read model,
+    so it can never be late."""
     matter = factories.MatterFactory(owner=specialist)
-    add_engagement(matter=matter, kind=EngagementKind.SURVEY, title="liikmed", actor=specialist)
+    engagement = add_engagement(
+        matter=matter, kind=EngagementKind.SURVEY, title="liikmed", actor=specialist
+    )
 
     assert _waits(specialist) == []
+    assert list(wi.undated_feedback_waits(specialist)) == [engagement]
 
 
 def test_an_archive_row_never_reaches_a_work_surface(specialist):
@@ -612,12 +622,12 @@ def test_the_completion_is_audited_as_a_decision(specialist):
     assert "Liikmed toetasid." not in str(event.payload)
 
 
-def test_a_round_nobody_is_waiting_on_cannot_be_finished(specialist):
-    """§6. There is no wait to end, and inventing one would date the file."""
+def test_a_round_filed_as_history_cannot_be_finished(specialist):
+    """§6 as narrowed by docs/adr/0132. A round with no lifecycle has nothing to
+    end; a round with merely no deadline is open and *can* be finished
+    (`tests/test_kaasamine_deadline_is_optional.py`)."""
     matter = factories.MatterFactory(owner=specialist)
-    engagement = add_engagement(
-        matter=matter, kind=EngagementKind.SURVEY, title="liikmed", actor=specialist
-    )
+    engagement = _plain(matter, actor=specialist)
 
     with pytest.raises(DomainError) as refusal:
         complete_engagement_feedback(engagement=engagement, actor=specialist)
@@ -808,13 +818,10 @@ def test_feedback_stays_correctable_after_the_round_is_closed(signed_in, special
     assert engagement.feedback_closed_at == closed_at, "correcting the words reopened the wait"
 
 
-def test_clearing_the_deadline_takes_the_closure_with_it(specialist):
-    """§6. A wait that no longer exists cannot stay completed.
-
-    The `CHECK` says so and the service normalises to it, so the row cannot end
-    up as a closure of nothing — a state `has_open_feedback_wait` would read as
-    neither open nor closed.
-    """
+def test_clearing_the_deadline_leaves_a_completed_round_completed(specialist):
+    """docs/adr/0132, superseding §6's «clearing the deadline clears the
+    closure». The deadline is not the lifecycle, so removing it neither reopens
+    nor un-completes anything."""
     matter = factories.MatterFactory(owner=specialist)
     engagement = _waiting(matter, actor=specialist)
     complete_engagement_feedback(engagement=engagement, actor=specialist)
@@ -823,18 +830,15 @@ def test_clearing_the_deadline_takes_the_closure_with_it(specialist):
 
     engagement.refresh_from_db()
     assert engagement.feedback_deadline is None
-    assert engagement.feedback_closed_at is None
-    assert engagement.feedback_closed_by is None
-    assert engagement.has_feedback_wait is False
+    assert engagement.feedback_closed_at is not None
+    assert engagement.feedback_closed_by == specialist
+    assert engagement.feedback_wait_is_closed is True
     assert _waits(specialist) == []
 
 
-def test_setting_a_deadline_on_an_undated_round_opens_a_new_wait(specialist):
-    """§6. The inverse, and it is deliberately not symmetrical.
-
-    A correction cannot *reopen* a wait somebody closed — the deadline it was
-    closed against is still there, so the clearing branch is never reached.
-    """
+def test_setting_a_deadline_on_an_open_round_gives_it_a_due_date(specialist):
+    """docs/adr/0132. The round was already open; the date only moves it from the
+    undated surfaces to the dated ones. No second round, no new lifecycle."""
     matter = factories.MatterFactory(owner=specialist)
     engagement = add_engagement(
         matter=matter, kind=EngagementKind.SURVEY, title="liikmed", actor=specialist
@@ -1003,9 +1007,10 @@ def test_the_ordinary_panel_asks_for_a_reply_by_date_with_no_default(signed_in, 
     assert 'value="' not in box.group(0) or 'value=""' in box.group(0)
 
 
-def test_an_ordinary_new_engagement_creates_no_work_item(signed_in, specialist):
-    """docs/adr/0091 §2. Recording that Koda asked somebody something is a
-    completed act, and must put no row on anybody's desk by itself."""
+def test_an_ordinary_new_engagement_is_one_open_undated_work_item(signed_in, specialist):
+    """docs/adr/0132, narrowing docs/adr/0091 §2. A round recorded with no
+    reply-by date is open, on the owner's desk with no due date, and never dated
+    or late work."""
     matter = factories.MatterFactory(owner=specialist)
 
     response = signed_in.post(
@@ -1017,8 +1022,9 @@ def test_an_ordinary_new_engagement_creates_no_work_item(signed_in, specialist):
     assert response.status_code == 200, response.content.decode()[:2000]
     engagement = MatterEngagement.objects.get()
     assert engagement.feedback_deadline is None
-    assert engagement.has_feedback_wait is False
+    assert engagement.has_open_feedback_wait is True
     assert _waits(specialist) == []
+    assert list(wi.undated_feedback_waits(specialist, owner=specialist)) == [engagement]
 
 
 def test_a_reply_by_date_on_the_panel_opens_the_one_wait(signed_in, specialist):
@@ -1088,7 +1094,7 @@ def test_a_historical_round_stays_readable_and_completable(signed_in, specialist
 
 
 # ===========================================================================
-# F — `Ootan tagasisidet`: the one act that opens a wait
+# F — `Ootan tagasisidet`: opening a round filed as history (docs/adr/0132)
 # ===========================================================================
 
 
@@ -1118,22 +1124,25 @@ def test_the_act_is_audited_as_a_change_to_the_round(signed_in, specialist):
     event = ChangeEvent.objects.filter(
         matter=matter, event_type=ChangeEventType.ENGAGEMENT_CHANGED
     ).latest("occurred_at")
-    assert event.payload["fields"] == ["feedback_deadline"]
+    assert event.payload["fields"] == ["feedback_deadline", "lifecycle_tracked"]
     assert event.payload["wait_opened"] is True
 
 
-def test_the_explicit_act_refuses_an_empty_day(signed_in, specialist):
-    """docs/adr/0091 §2. This form exists only to open a wait, so a blank day is
-    a press that would do nothing — refused rather than quietly accepted."""
+def test_the_explicit_act_accepts_an_empty_day(signed_in, specialist):
+    """docs/adr/0132, reversing docs/adr/0091 §2's «required here». Nothing
+    requires a deadline before a round can become open: a blank day opens it
+    with no due date."""
     matter = factories.MatterFactory(owner=specialist)
     engagement = _plain(matter, actor=specialist)
 
     response = _open_wait(signed_in, engagement, feedback_deadline="")
 
-    assert response.status_code == 400
+    assert response.status_code == 200, response.content.decode()[:2000]
     engagement.refresh_from_db()
     assert engagement.feedback_deadline is None
+    assert engagement.has_open_feedback_wait is True
     assert _waits(specialist) == []
+    assert list(wi.undated_feedback_waits(specialist)) == [engagement]
 
 
 def test_the_act_keeps_the_date_order_rule(signed_in, specialist):

@@ -371,7 +371,8 @@ def test_a_round_created_with_every_field_reads_back_at_once(signed_in, speciali
     assert wi.open_feedback_waits(specialist).filter(pk=engagement.pk).exists()
 
 
-def test_a_round_created_without_a_deadline_opens_no_wait(signed_in, specialist):
+def test_a_round_created_without_a_deadline_is_open_with_no_due_date(signed_in, specialist):
+    """docs/adr/0132: the deadline is optional and is not the lifecycle."""
     matter = factories.MatterFactory(owner=specialist)
 
     response = signed_in.post(
@@ -383,7 +384,8 @@ def test_a_round_created_without_a_deadline_opens_no_wait(signed_in, specialist)
     assert response.status_code == 200
     engagement = MatterEngagement.objects.get(matter=matter)
     assert engagement.feedback_deadline is None
-    assert not wi.open_feedback_waits(specialist).filter(pk=engagement.pk).exists()
+    assert wi.undated_feedback_waits(specialist).filter(pk=engagement.pk).exists()
+    assert not wi.dated_feedback_waits(specialist).filter(pk=engagement.pk).exists()
 
 
 # ---------------------------------------------------------------------------

@@ -213,17 +213,28 @@ def quiet_matters(
 def undated_items(
     user: Any, subject: Any, limit: int = RAIL_LIMIT
 ) -> tuple[list[wi.WorkItem], int]:
-    """The subject's open actions carrying no date at all — TEEN, OOTAN and JÄLGIN together.
+    """The subject's open work carrying no date at all — TEEN, OOTAN and JÄLGIN together.
 
     Not split into separate Ootan and Jälgin blocks. "No idea when" is one
     condition whatever the mode, and three short lists of two rows each is three
     headings for six facts.
+
+    **An open `Kaasamine` with no reply-by date is one of them** (docs/adr/0132):
+    open consultation work with no due date, on the desk of whoever owns the
+    Matter, never overdue. Without it such a round would reach no work surface
+    at all — the failure docs/adr/0086 was written to end.
     """
-    queryset = wi.undated_actions(user, responsible=subject)
-    total = queryset.count()
+    actions = wi.undated_actions(user, responsible=subject)
+    rounds = wi.undated_feedback_waits(user, owner=subject)
+    total = actions.count() + rounds.count()
     today = timezone.localdate()
-    rows = [wi.action_item(action, today) for action in queryset.order_by("matter__title")[:limit]]
-    return rows, total
+    rows = [wi.action_item(action, today) for action in actions.order_by("matter__title")[:limit]]
+    rows += [
+        wi.feedback_wait_item(engagement, today)
+        for engagement in rounds.order_by("matter__title", "pk")[:limit]
+    ]
+    rows.sort(key=lambda item: (item.matter.title, item.source_type, item.object_id))
+    return rows[:limit], total
 
 
 def recent_entries(user: Any, subject: Any, limit: int = ENTRY_LIMIT) -> list[Entry]:

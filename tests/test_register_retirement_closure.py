@@ -204,14 +204,26 @@ def test_close_matter_still_ends_them_through_the_same_helper(normal_matter, spe
             ),
             ReviewReason.AUTHORED_RECORDS,
         ),
+        # A round a person records is open from the moment it is saved, with
+        # or without a deadline (docs/adr/0132), so it holds as an open wait;
+        # once finished it is authored history like any other record.
         (
             lambda m, a: services.add_engagement(
                 matter=m, kind=EngagementKind.SURVEY, title="Sünteetiline ring", actor=a
             ),
+            ReviewReason.OPEN_FEEDBACK_WAIT,
+        ),
+        (
+            lambda m, a: services.complete_engagement_feedback(
+                engagement=services.add_engagement(
+                    matter=m, kind=EngagementKind.SURVEY, title="Sünteetiline ring", actor=a
+                ),
+                actor=a,
+            ),
             ReviewReason.AUTHORED_RECORDS,
         ),
     ],
-    ids=["feedback-wait", "planned-overview", "marge", "native-kaasamine"],
+    ids=["feedback-wait", "planned-overview", "marge", "native-kaasamine", "finished-kaasamine"],
 )
 def test_native_work_holds_a_retirement_back_for_review(world, reviewed, make, reason) -> None:
     matter = world[RETIRING_NO_PLANS]
@@ -230,7 +242,11 @@ def test_a_round_the_register_outreach_filed_is_not_native_work(world, reviewed)
     """An imported `Kaasamine` is the register's, not a person's — it does not hold."""
     matter = world[RETIRING_NO_PLANS]
     engagement = services.add_engagement(
-        matter=matter, kind=EngagementKind.EMAIL_CAMPAIGN, title="Sünteetiline kampaania"
+        matter=matter,
+        kind=EngagementKind.EMAIL_CAMPAIGN,
+        title="Sünteetiline kampaania",
+        # As `register_outreach` files it: history, not an open round.
+        lifecycle_tracked=False,
     )
     RegisterEngagementImport.objects.create(
         engagement=engagement,

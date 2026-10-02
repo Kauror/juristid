@@ -475,14 +475,22 @@ The rail holds only what has no honest place on a timeline.
         Every open step with no date, in one list. "No idea when" is one
         condition whatever the stored kind, and three two-row lists would be
         three headings for six facts.
+
+        An open `Kaasamine` with no reply-by date is listed here too, saying
+        what it is and «Tähtaeg määramata», and its link opens the round's own
+        chronology row, where `Lõpeta kaasamine` is (docs/adr/0132).
       {% endcomment %}
       <section class="railblock" aria-label="Kuupäevata">
         <h2 class="railblock__label">
           Kuupäevata <span class="railblock__count">{{ work.undated_total }}</span>
         </h2>
         {% for item in work.undated %}
-          <a class="undatedrow" href="{{ item.matter_url }}">
-            <span class="undatedrow__action">{{ item.text }}</span>
+          <a class="undatedrow" href="{{ item.record_url }}">
+            {% if item.is_feedback_wait %}
+              <span class="undatedrow__action">Ootame tagasisidet · {{ item.date_display }}: {{ item.text }}</span>
+            {% else %}
+              <span class="undatedrow__action">{{ item.text }}</span>
+            {% endif %}
             <span class="undatedrow__matter">
               {{ item.matter.title }}
             </span>

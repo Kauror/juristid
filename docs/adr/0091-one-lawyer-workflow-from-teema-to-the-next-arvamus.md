@@ -209,6 +209,9 @@ defaults it, so nothing else that calls that helper had to change.
 
 ## 2 — A new `Kaasamine` does not ask about a wait at all
 
+**Narrowed on 2026-10-02 by docs/adr/0132:** a new round is open from the
+moment it is recorded, deadline or not, and `Ootan tagasisidet` remains only for
+rounds filed as history, with an **optional** date.
 **Superseded on 2026-09-29 for «not asked at all» — see docs/adr/0120 §3.**
 `+ Kaasamine` asks `Tagasisidet ootame kuni` again, optional and with **no
 default**, through the same field, rule and service parameter as `Muuda`; the

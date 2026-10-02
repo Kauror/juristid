@@ -260,19 +260,25 @@ def test_a_correction_that_moves_neither_date_is_not_blocked_by_an_old_row(
 
 
 def test_opening_a_wait_uses_the_same_period_rule(normal_matter, specialist):
-    """`Ootan tagasisidet` had its own copy comparing the raw anchor. One rule now."""
+    """`Ootan tagasisidet` had its own copy comparing the raw anchor. One rule now.
+
+    On rounds filed as history, the one kind the act opens (docs/adr/0132).
+    """
     engagement = _add(
         normal_matter,
         specialist,
         occurred_on=datetime.date(2025, 10, 20),
         occurred_on_precision=DatePrecision.MONTH,
+        lifecycle_tracked=False,
     )
 
     matter_services.open_engagement_feedback_wait(
         engagement=engagement, deadline=datetime.date(2025, 10, 5), actor=specialist
     )
 
-    other = _add(normal_matter, specialist, occurred_on=datetime.date(2025, 10, 20))
+    other = _add(
+        normal_matter, specialist, occurred_on=datetime.date(2025, 10, 20), lifecycle_tracked=False
+    )
     with pytest.raises(DomainError) as refusal:
         matter_services.open_engagement_feedback_wait(
             engagement=other, deadline=datetime.date(2025, 10, 19), actor=specialist

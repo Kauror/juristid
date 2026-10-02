@@ -551,13 +551,13 @@ def native_activity(matter_ids: list[Any]) -> NativeActivity:
         native_submissions=matters_of(
             Submission.objects.filter(matter_id__in=matter_ids, archive_imports__isnull=True)
         ),
-        # Any wait, imported round or not: a reply-by date is opened by a
-        # person (`open_engagement_feedback_wait`), and the outreach never
-        # writes one.
+        # Any open round, imported or not, deadline or not: a round is open
+        # because a person recorded or opened it, and the outreach files its
+        # rounds as history, never open (docs/adr/0132).
         open_feedback_waits=matters_of(
             MatterEngagement.objects.filter(
                 matter_id__in=matter_ids,
-                feedback_deadline__isnull=False,
+                lifecycle_tracked=True,
                 feedback_closed_at__isnull=True,
             )
         ),

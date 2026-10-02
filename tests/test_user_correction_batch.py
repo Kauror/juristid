@@ -392,7 +392,9 @@ def test_a_round_created_without_a_deadline_invents_none(signed_in, specialist):
     assert response.status_code == 200
     engagement = MatterEngagement.objects.get(matter=matter)
     assert engagement.feedback_deadline is None
-    assert not engagement.has_open_feedback_wait
+    # Open, with no due date invented for it: it is never dated work, so it can
+    # never be late (docs/adr/0132).
+    assert engagement.has_open_feedback_wait
     assert not [
         item
         for item in wi.work_items(specialist, today=timezone.localdate())

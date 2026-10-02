@@ -126,7 +126,7 @@ def live_work(matter_ids: list[Any]) -> dict[Any, str]:
             ReviewReason.OPEN_FEEDBACK_WAIT,
             MatterEngagement.objects.filter(
                 matter_id__in=matter_ids,
-                feedback_deadline__isnull=False,
+                lifecycle_tracked=True,
                 feedback_closed_at__isnull=True,
             ),
         ),

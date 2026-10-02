@@ -2106,6 +2106,7 @@ def add_engagement(
     feedback_deadline: Any = None,
     feedback_received: str = "",
     response_count: Any = None,
+    lifecycle_tracked: bool = True,
     actor: Any = None,
 ) -> MatterEngagement:
     """Record one act of asking members or stakeholders for input.
@@ -2134,13 +2135,21 @@ def add_engagement(
     docs/adr/0079 §11's list, because a reply-by date is a day somebody named to
     other people.
 
-    Naming it **opens a feedback wait**, and the wait is work until somebody
-    finishes it (:func:`complete_engagement_feedback`). What that does *not* do
-    is create anything: no `NextAction`, no `MatterImportantDate`, no
-    `Matter.response_deadline`, no deadline row and no count. The wait is a
-    *reading* of this record by `app/matters/work_items.py`, which is why
-    closing it is one column on this table rather than a state machine
-    somewhere else (docs/adr/0086 §3).
+    **The round is OPEN whether or not it names one** (docs/adr/0132). It is
+    work until somebody finishes it (:func:`complete_engagement_feedback`), and
+    the deadline only says when that work falls due: blank, today, tomorrow and
+    a month out are all ordinary, and nothing here supplies one. What an open
+    round does *not* do is create anything: no `NextAction`, no
+    `MatterImportantDate`, no `Matter.response_deadline`, no deadline row and no
+    count. The open round is a *reading* of this record by
+    `app/matters/work_items.py`, which is why closing it is one column on this
+    table rather than a state machine somewhere else (docs/adr/0086 §3).
+
+    ``lifecycle_tracked`` is `False` for exactly one caller: the register
+    outreach importer, which files past consultations as history and must not
+    turn a decade of them into open work (`MatterEngagement.lifecycle_tracked`).
+    A deadline given alongside it still starts the lifecycle, because a reply-by
+    date on a round nobody is waiting for is not a statement anybody can make.
 
     ``feedback_received`` is `Saadud tagasiside / arvamused`, and it is
     independent of the deadline: a round recorded after the fact may arrive
@@ -2186,6 +2195,7 @@ def add_engagement(
         feedback_deadline=feedback_deadline,
         feedback_received=(feedback_received or "").strip(),
         response_count=_engagement_response_count(response_count),
+        lifecycle_tracked=bool(lifecycle_tracked) or feedback_deadline is not None,
         created_by=actor,
     )
     record_change_event(
@@ -2196,6 +2206,9 @@ def add_engagement(
         summary=engagement.title[:200],
         payload={
             "kind": engagement.kind,
+            # Whether this save opened a round, so the history can tell a
+            # round somebody started from a consultation filed as history.
+            "lifecycle_tracked": engagement.lifecycle_tracked,
             "occurred_on": engagement.occurred_on.isoformat() if engagement.occurred_on else None,
             # The precision beside the value, never on its own. The stored date
             # is a period's first day, so an audit row carrying `2026-10-01`
@@ -2374,24 +2387,19 @@ def update_engagement(
             proposed.get("occurred_on_precision", locked.occurred_on_precision),
         )
 
-    # A wait that no longer exists cannot stay completed. Clearing
-    # `Tagasisidet ootame kuni` on a round whose wait somebody had already
-    # finished would otherwise leave a closure timestamp with nothing behind
-    # it — a row the `matters_engagement_feedback_closure_needs_deadline`
-    # check refuses and `has_open_feedback_wait` could read as neither open nor
-    # closed. So the two closure columns are normalised against the deadline
-    # this save *results in*, in the service, where the refusal is a sentence
-    # rather than an `IntegrityError` out of a composer transaction.
+    # **The deadline is a due date on the round, not its lifecycle**
+    # (docs/adr/0132). Adding, moving or clearing it on an open round leaves the
+    # round open, on a completed one leaves it completed, and never opens a
+    # second round — so nothing here touches the closure columns.
     #
-    # The other direction is deliberately not symmetrical: **setting** a
-    # deadline on a round that has none opens a new wait and leaves the closure
-    # columns exactly as they are, which for every such row is `NULL`. A
-    # correction cannot reopen a wait somebody closed, because the deadline it
-    # was closed against is still there and this branch is not reached.
-    if proposed.get("feedback_deadline", locked.feedback_deadline) is None:
-        if locked.feedback_closed_at is not None:
-            proposed["feedback_closed_at"] = None
-            proposed["feedback_closed_by_id"] = None
+    # The one thing a deadline does to the lifecycle is start it on a round that
+    # had none: a historical row the register importer filed is neither open nor
+    # completed, and a reply-by date on it is a wait somebody has now decided
+    # on (`matters_engagement_deadline_needs_lifecycle`). Clearing that date
+    # again does not end the round it started — ending is `Lõpeta kaasamine`.
+    if proposed.get("feedback_deadline", locked.feedback_deadline) is not None:
+        if not locked.lifecycle_tracked:
+            proposed["lifecycle_tracked"] = True
 
     changed = [field for field, value in proposed.items() if getattr(locked, field) != value]
     if not changed:
@@ -2431,12 +2439,10 @@ def update_engagement(
         # Whether the field is now filled, never its contents. Feedback runs to
         # paragraphs and lives on the record where it can be corrected.
         payload["feedback_received_filled"] = bool(proposed["feedback_received"])
-    if "feedback_closed_at" in changed:
-        # Only ever a clearance: this function never *sets* the timestamp —
-        # `complete_engagement_feedback` does — so reaching here means a
-        # correction removed the deadline the wait hung off, and the history has
-        # to say that the completed wait stopped existing.
-        payload["feedback_wait_reopened"] = True
+    if "lifecycle_tracked" in changed:
+        # A historical round given a reply-by date has started a lifecycle; the
+        # history says so, as `open_engagement_feedback_wait` does for the act.
+        payload["wait_opened"] = True
     # **No `response_count_from`/`_to`, deliberately.** `ENGAGEMENT_ADDED` files
     # this column as `has_response_count` — «whether it was counted, not what the
     # count was» — on brief 26's reasoning that the number belongs on the record,
@@ -2556,9 +2562,12 @@ def correct_engagement(
 # Every rule is here rather than on a form, because a form is what one browser
 # was shown and a POST is what arrives.
 
-#: What a completion aimed at a round nobody is waiting on is told.
+#: What a completion aimed at a round with no lifecycle is told — a
+#: consultation filed as history, which is neither open nor completed. Never
+#: what a round with no deadline is told: that round is open and completes
+#: like any other (docs/adr/0132).
 ENGAGEMENT_FEEDBACK_NOT_AWAITED = (
-    "Sellel kaasamisel ei ole tagasiside tähtaega, nii et ootamist ei ole vaja lõpetada."
+    "See kaasamine on salvestatud ajaloona ega ole avatud, nii et seda ei saa lõpetada."
 )
 #: What a second completion is told. Named, because the view prints it and the
 #: tests assert on it, and a sentence spelled twice drifts.
@@ -2669,8 +2678,10 @@ def complete_engagement_feedback(
     The two refusals below are the state machine, and both are asked of the
     locked row rather than of the instance the caller arrived with:
 
-    * a round with no `Tagasisidet ootame kuni` has no wait to finish —
-      :data:`ENGAGEMENT_FEEDBACK_NOT_AWAITED`;
+    * a round filed as history has no lifecycle to finish —
+      :data:`ENGAGEMENT_FEEDBACK_NOT_AWAITED`. A round with no
+      `Tagasisidet ootame kuni` is **not** refused: it is open, and the
+      deadline was never what made it so (docs/adr/0132);
     * a wait somebody already finished is not finished twice —
       :data:`ENGAGEMENT_FEEDBACK_ALREADY_CLOSED`. A second press writes no
       second audit row and does not move the timestamp, so «who ended this round
@@ -2691,7 +2702,7 @@ def complete_engagement_feedback(
 
     if expected_revision is not None and engagement_revision_token(current) != expected_revision:
         raise EngagementEditConflict(current)
-    if current.feedback_deadline is None:
+    if not current.lifecycle_tracked:
         raise DomainError(ENGAGEMENT_FEEDBACK_NOT_AWAITED)
     if current.feedback_closed_at is not None:
         raise DomainError(ENGAGEMENT_FEEDBACK_ALREADY_CLOSED)
@@ -2712,10 +2723,8 @@ def complete_engagement_feedback(
     return closed
 
 
-#: Refused when somebody opens a wait on a round that is already waiting.
+#: Refused when somebody opens a round that is already open or completed.
 ENGAGEMENT_FEEDBACK_ALREADY_AWAITED = "Sellel kaasamisel on tagasiside ootus juba olemas."
-#: Refused when the explicit wait action arrives with no day on it.
-ENGAGEMENT_FEEDBACK_NEEDS_A_DAY = "Vali kuupäev, milleni tagasisidet ootad."
 
 
 @transaction.atomic
@@ -2726,33 +2735,25 @@ def open_engagement_feedback_wait(
     actor: Any = None,
     expected_revision: str | None = None,
 ) -> MatterEngagement:
-    """`Ootan tagasisidet` — the one act that starts a round waiting.
+    """`Ootan tagasisidet` — start the lifecycle of a round filed as history.
 
-    **Opening a wait is a decision somebody makes, not a field on a form they
-    were already filling in.** docs/adr/0086 §2 asked for the reply-by date on
-    `+ Kaasamine` itself and docs/adr/0091 §2 emptied its default; using it on
-    real files showed that neither went far enough. Recording «19.09 — kaasati
-    234 tööstusettevõtet» is a completed act, and a *question* about a reply-by
-    date sitting in the middle of that form is the complexity the department
-    asked to have removed — an empty box is still a box that has to be read,
-    understood and skipped, every time (lawyer feedback 11, docs/adr/0091 §2 as
-    narrowed).
+    **Since docs/adr/0132 every round is open from the moment it is recorded**,
+    so this act has one remaining job: a consultation the register importer
+    filed as history (`MatterEngagement.lifecycle_tracked` `False`) is neither
+    open nor completed, and a lawyer who decides that the file is in fact
+    waiting on it says so here. Afterwards it is an ordinary open round —
+    on the work surfaces, completed by `Lõpeta kaasamine`, ended with the Matter.
 
-    So the column, the wait, the work item and `Lõpeta kaasamine` all stay
-    exactly as docs/adr/0086 §3 and §6 built them, and what changes is *where the
-    wait comes from*: a named act on the round's own chronology row, taken by
-    somebody who has decided that this file is waiting on an answer. That
-    statement has a name on it, which is what the whole machinery is for.
+    **``deadline`` is optional**, like everywhere else it is asked
+    (docs/adr/0132, reversing docs/adr/0091 §2's «required here»). ``None`` opens
+    the round with no due date, which is a first-class state: open, never
+    overdue, until somebody finishes it. Moving the deadline of a round that is
+    already open is a correction and lives on `Muuda`.
 
-    **``deadline`` is required here**, unlike the field it replaces. This
-    function exists only to start a wait; an empty day would be an act that does
-    nothing, and the caller that means «no wait» simply does not call it.
-    Clearing an existing one is still `update_engagement`, which is the
-    correction surface and is where the historical rows are edited.
-
-    **Two refusals, both read from the locked row.** A round already waiting is
-    not started twice — that would silently move a deadline somebody else set —
-    and a closed Matter refuses the act entirely, under
+    **Two refusals, both read from the locked row.** A round that already has a
+    lifecycle — open or completed — is not started again: that would silently
+    move a deadline somebody else set or reopen a round somebody finished. And a
+    closed Matter refuses the act entirely, under
     `lock_open_matter_for_business_write`, because a page is not a boundary
     (R2-02).
 
@@ -2763,13 +2764,10 @@ def open_engagement_feedback_wait(
     reason and in the same shape.
 
     Writes `ENGAGEMENT_CHANGED`, not an event of its own. The round is one
-    record and this moves one column on it; a second event type for «the wait
+    record and this moves its columns; a second event type for «the round
     opened» would be a second history of the same fact, and the payload already
-    names the column that moved.
+    names what moved.
     """
-    if deadline is None:
-        raise DomainError(ENGAGEMENT_FEEDBACK_NEEDS_A_DAY)
-
     locked_matter = lock_open_matter_for_business_write(engagement.matter_id)
     try:
         current = MatterEngagement.objects.select_for_update(no_key=True).get(
@@ -2780,7 +2778,7 @@ def open_engagement_feedback_wait(
 
     if expected_revision is not None and engagement_revision_token(current) != expected_revision:
         raise EngagementEditConflict(current)
-    if current.feedback_deadline is not None:
+    if current.lifecycle_tracked:
         raise DomainError(ENGAGEMENT_FEEDBACK_ALREADY_AWAITED)
 
     # The one relationship between the two dates, and the same rule every other
@@ -2790,8 +2788,10 @@ def open_engagement_feedback_wait(
     # month whose value had not been normalised to the month's first day.
     _refuse_deadline_before_engagement(current.occurred_on, current.occurred_on_precision, deadline)
 
+    current.lifecycle_tracked = True
     current.feedback_deadline = deadline
-    current.save(update_fields=["feedback_deadline", "updated_at"])
+    current.save(update_fields=["lifecycle_tracked", "feedback_deadline", "updated_at"])
+    engagement.lifecycle_tracked = True
     engagement.feedback_deadline = deadline
 
     record_change_event(
@@ -2801,9 +2801,11 @@ def open_engagement_feedback_wait(
         obj=current,
         summary=current.title[:200],
         payload={
-            "fields": ["feedback_deadline"],
+            "fields": ["feedback_deadline", "lifecycle_tracked"]
+            if deadline is not None
+            else ["lifecycle_tracked"],
             "feedback_deadline_from": None,
-            "feedback_deadline_to": deadline.isoformat(),
+            "feedback_deadline_to": deadline.isoformat() if deadline is not None else None,
             # Named so a reader of the history can tell this act apart from a
             # correction that happened to move the same column.
             "wait_opened": True,
@@ -2837,12 +2839,15 @@ def close_open_feedback_waits_for_closure(
 
     **Reopening does not reopen them**, exactly as it does not revive a
     cancelled `NextAction` or an abandoned website plan. A reopened file that is
-    genuinely still waiting gets a new deadline from somebody who has decided it
-    is still waiting, which is a statement with a name on it.
+    genuinely still consulting records a new round, which is a statement with a
+    name on it.
+
+    **Every open round, with a deadline or without** (docs/adr/0132): an open
+    round with no due date is as unfinishable on a closed file as one with.
     """
     waiting = (
         MatterEngagement.objects.select_for_update(no_key=True)
-        .filter(matter=matter, feedback_deadline__isnull=False, feedback_closed_at__isnull=True)
+        .filter(matter=matter, lifecycle_tracked=True, feedback_closed_at__isnull=True)
         .order_by("created_at", "id")
     )
     return [

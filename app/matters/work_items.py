@@ -185,6 +185,12 @@ MEANING_RESPONSE = "ARVAMUSE TÄHTAEG"
 #: late, because the *reading* is what is late: after the day it asked for, the
 #: round is a thing whose answers are sitting unread (docs/adr/0086 §4).
 MEANING_FEEDBACK_WAIT = "OOTAME TAGASISIDET"
+#: What an open round with no reply-by date says where a dated row prints its
+#: day. Not «Kuupäev määramata», which `NextAction` uses for a step whose *date*
+#: is unknown (docs/adr/0106): what this round lacks is precisely its
+#: `Tagasiside tähtaeg`, the column's own name on every surface that shows it.
+#: Never today's date, never overdue (docs/adr/0132).
+FEEDBACK_NO_DEADLINE_LABEL = "Tähtaeg määramata"
 
 _SEMANTICS_MEANING: dict[str, str] = {
     DateSemantics.DEADLINE.value: MEANING_DEADLINE,
@@ -315,6 +321,8 @@ class WorkItem:
         """
         from app.workflow.models import NO_DATE_LABEL
 
+        if self.is_feedback_wait:
+            return self.display_date or FEEDBACK_NO_DEADLINE_LABEL
         return self.display_date or NO_DATE_LABEL
 
     @property
@@ -746,7 +754,7 @@ def _response_deadline_item(matter: Matter, today: date) -> WorkItem:
     )
 
 
-def _feedback_wait_item(engagement: MatterEngagement, today: date) -> WorkItem:
+def feedback_wait_item(engagement: MatterEngagement, today: date) -> WorkItem:
     """One open `Kaasamine` feedback wait, as a row of work.
 
     ``object_id`` is the engagement's own primary key, because the consultation
@@ -775,6 +783,12 @@ def _feedback_wait_item(engagement: MatterEngagement, today: date) -> WorkItem:
     looking at them. Nothing about the membership's own timeliness is stated
     anywhere, and a wait still inside its window is simply upcoming
     (docs/adr/0086 §4).
+
+    **An open round with no deadline is an item too** (docs/adr/0132): ``when``
+    and ``display_date`` are empty rather than today, it is never overdue, and
+    :attr:`WorkItem.date_display` says «Tähtaeg määramata». It belongs to the
+    undated surfaces (:func:`undated_feedback_waits`), never to the dated read
+    model, exactly as an undated `NextAction` does.
     """
     deadline = engagement.feedback_deadline
     return WorkItem(
@@ -800,7 +814,14 @@ def _feedback_wait_item(engagement: MatterEngagement, today: date) -> WorkItem:
 
 
 def open_feedback_waits(user: Any, *, owner: Any = None) -> QuerySet[MatterEngagement]:
-    """Unfinished consultation rounds on open Matters, scoped to the reader.
+    """OPEN consultation rounds on open Matters, scoped to the reader.
+
+    **With a deadline or without** (docs/adr/0132). The round's lifecycle is
+    `lifecycle_tracked` and `feedback_closed_at`; the deadline is only when the
+    work falls due, so a round with none is selected here like any other. The
+    dated read model takes :func:`dated_feedback_waits` and the undated
+    surfaces :func:`undated_feedback_waits` — the split `dated_actions` and
+    `undated_actions` already make for steps.
 
     ``visible_to`` is the engagement's **own** scope, not the Matter's. A
     `Kaasamine` may carry a stricter visibility override than the file it hangs
@@ -821,7 +842,7 @@ def open_feedback_waits(user: Any, *, owner: Any = None) -> QuerySet[MatterEngag
     queryset = (
         MatterEngagement.objects.visible_to(user)
         .filter(
-            feedback_deadline__isnull=False,
+            lifecycle_tracked=True,
             feedback_closed_at__isnull=True,
             matter__is_open=True,
             matter__record_mode=RecordMode.FULL,
@@ -831,6 +852,22 @@ def open_feedback_waits(user: Any, *, owner: Any = None) -> QuerySet[MatterEngag
     if owner is not None:
         queryset = queryset.filter(matter__owner=owner)
     return queryset
+
+
+def dated_feedback_waits(user: Any, *, owner: Any = None) -> QuerySet[MatterEngagement]:
+    """Open rounds carrying a reply-by date — the ones the dated read model reads."""
+    return open_feedback_waits(user, owner=owner).filter(feedback_deadline__isnull=False)
+
+
+def undated_feedback_waits(user: Any, *, owner: Any = None) -> QuerySet[MatterEngagement]:
+    """Open rounds with no reply-by date — open work with no due date.
+
+    Read by Minu asjad's *Kuupäevata* rail and its `?too=kuupaevata` population
+    beside `undated_actions`, so such a round stays on a work surface without
+    a date being made up for it. Never overdue and never *Vajab sekkumist* for
+    having no date: neither reads this selector (docs/adr/0132).
+    """
+    return open_feedback_waits(user, owner=owner).filter(feedback_deadline__isnull=True)
 
 
 def dated_actions(user: Any, *, responsible: Any = None) -> QuerySet[NextAction]:
@@ -1249,7 +1286,7 @@ def work_items(
     actions = dated_actions(user, responsible=responsible)
     deadlines = important_deadlines(user, owner=responsible)
     responses = outstanding_response_deadlines(user, owner=responsible)
-    waits = open_feedback_waits(user, owner=responsible)
+    waits = dated_feedback_waits(user, owner=responsible)
     if latest is not None:
         actions = actions.filter(target_date__lte=latest)
         deadlines = deadlines.filter(date_value__lte=latest)
@@ -1259,7 +1296,7 @@ def work_items(
     items = [action_item(action, today) for action in actions]
     items += [_deadline_item(record, today) for record in deadlines]
     items += [_response_deadline_item(matter, today) for matter in responses]
-    items += [_feedback_wait_item(engagement, today) for engagement in waits]
+    items += [feedback_wait_item(engagement, today) for engagement in waits]
     return sort_items(items)
 
 
@@ -1676,11 +1713,19 @@ def work_population_ids(
         # asked twice. `undated_actions(responsible=None)` means *anyone*, so
         # the unassigned half is its own filter rather than that argument.
         undated = undated_actions(user)
+        # An open round with no reply-by date is undated work too, and its
+        # responsible person is the Matter's owner, as for every round
+        # (docs/adr/0086 §4, docs/adr/0132).
+        rounds = undated_feedback_waits(user)
         if responsible is None:
             undated = undated.filter(responsible__isnull=True)
+            rounds = rounds.filter(matter__owner__isnull=True)
         elif responsible is not ANY_PERSON:
             undated = undated.filter(responsible=responsible)
-        return set(undated.values_list("matter_id", flat=True))
+            rounds = rounds.filter(matter__owner=responsible)
+        return set(undated.values_list("matter_id", flat=True)) | set(
+            rounds.values_list("matter_id", flat=True)
+        )
     if items is None:
         items = work_items(user, today=today)
     ids = {item.matter_id for item in work_population_items(items, key, today, window=window)}
@@ -1817,8 +1862,10 @@ __all__ = [
     "band_items",
     "band_of",
     "dated_actions",
+    "dated_feedback_waits",
     "deadline_window",
     "end_of_iso_week",
+    "feedback_wait_item",
     "full_matters",
     "important_deadlines",
     "matters_without_action",
@@ -1837,6 +1884,7 @@ __all__ = [
     "sort_items",
     "start_of_iso_week",
     "undated_actions",
+    "undated_feedback_waits",
     "week_items",
     "work_items",
     "work_population_ids",

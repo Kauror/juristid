@@ -121,8 +121,14 @@ def world(normal_matter, specialist) -> dict[str, Any]:
         feedback_deadline=timezone.localdate() + timedelta(days=7),
         actor=specialist,
     )
+    # Filed as history: the one kind of round `Ootan tagasisidet` is offered on
+    # since docs/adr/0132 — every round a person records is already open.
     quiet_engagement = add_engagement(
-        matter=matter, kind=EngagementKind.SURVEY, title="Ootuseta kaasamine", actor=specialist
+        matter=matter,
+        kind=EngagementKind.SURVEY,
+        title="Ootuseta kaasamine",
+        lifecycle_tracked=False,
+        actor=specialist,
     )
     external_position = record_external_position(
         matter=matter,
