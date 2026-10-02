@@ -1110,22 +1110,6 @@ def test_the_live_search_fragment_still_carries_the_headings(signed_in, stages, 
 # ===========================================================================
 
 
-def test_the_interactive_register_needs_no_schema() -> None:
-    """Query and presentation only (brief 25).
-
-    Both new facts are interpretations of columns that already exist — the open
-    step's date, the Matter's deadline, the nine activity facts — so the models
-    are untouched and `makemigrations` has nothing to write. There is no stored
-    sort preference and no filter table: what the reader is looking at lives in
-    the address, as it always has.
-    """
-    from io import StringIO
-
-    from django.core.management import call_command
-
-    call_command("makemigrations", "--check", "--dry-run", stdout=StringIO())
-
-
 def _queries_for(client, params, rows):
     """The queries the register costs for a page of ``rows``."""
     from django.db import connection

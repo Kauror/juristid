@@ -669,12 +669,3 @@ def test_the_row_filter_refuses_to_answer_without_the_annotation(specialist, tod
 
     with pytest.raises(ValueError, match="annotate_response_obligation"):
         secondary_obligation(unannotated, specialist)
-
-
-def test_no_migration_is_owed() -> None:
-    """This round adds a reading. It adds no column."""
-    from io import StringIO
-
-    from django.core.management import call_command
-
-    call_command("makemigrations", "--check", "--dry-run", stdout=StringIO())

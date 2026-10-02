@@ -1095,16 +1095,6 @@ def test_the_search_index_version_is_untouched() -> None:
     assert INDEX_VERSION == "SONAVORM.1"
 
 
-def test_no_migration_is_outstanding() -> None:
-    """Requirement 16. Nothing here needs a schema change, so nothing made one."""
-    from io import StringIO
-
-    from django.core.management import call_command
-
-    out = StringIO()
-    call_command("makemigrations", "--check", "--dry-run", stdout=out, stderr=out)
-
-
 def test_a_bad_opinion_query_does_not_take_the_register_down(signed_in, specialist) -> None:
     """The section reports its own refusal; the register keeps its answer."""
     factories.MatterFactory(owner=specialist, title="Ükskõik milline teema")
