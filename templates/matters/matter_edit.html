@@ -245,10 +245,10 @@
         <span class="field__label">{{ form.response_deadline.label }}</span>
         {{ form.response_deadline }}
         {% comment %}
-          The date and nothing else. On `Uus teema` entering it also establishes
-          the canonical `Koostan arvamuse` step, because a Matter being filed has
-          no steps yet; here the Matter's own workflow is on the Teema page and
-          a correction to the deadline is a correction to the deadline
+          The date and nothing else, here as on `Uus teema` since
+          docs/adr/0133 §8: the obligation is a fact about the file, and the
+          work towards it is the Teema page's `Tööplaan` and current step. A
+          correction to the deadline is a correction to the deadline
           (docs/adr/0091 §1.2, app/matters/views.py `matter_edit`).
         {% endcomment %}
         {% if form.response_deadline.errors %}

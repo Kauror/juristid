@@ -110,10 +110,19 @@ TIMELINE_EVENT_TYPES: tuple[str, ...] = (
 #: wait. Neither has ever been a row — the send is read off its `Submission` and
 #: the closure off its round — so being read and never rendered changes nothing
 #: about either.
+#:
+#: **And two more since docs/adr/0133 §7**, each the record a `Tööplaan` step
+#: started from `PRAEGUNE TEGEVUS` is finished by: `ENGAGEMENT_ADDED` ties a new
+#: `Kaasamine` to the save that asked the members, and
+#: `WEBSITE_OVERVIEW_PUBLISHED` ties a published `Ülevaade / uudis` to the save
+#: that recorded it. Neither was ever a row; the round and the overview are
+#: read off their records.
 RECORD_OPERATION_EVENT_TYPES: tuple[str, ...] = (
     ChangeEventType.PROCEDURAL_DEVELOPMENT_RECORDED,
     ChangeEventType.SUBMISSION_SENT,
     ChangeEventType.ENGAGEMENT_FEEDBACK_CLOSED,
+    ChangeEventType.ENGAGEMENT_ADDED,
+    ChangeEventType.WEBSITE_OVERVIEW_PUBLISHED,
 )
 
 #: What a save decided **as a consequence of the record it was saved with**.
@@ -153,6 +162,15 @@ FOLDED_EFFECTS: dict[str, frozenset[str]] = {
     ),
     ChangeEventType.SUBMISSION_SENT.value: frozenset({ChangeEventType.NEXT_ACTION_COMPLETED.value}),
     ChangeEventType.ENGAGEMENT_FEEDBACK_CLOSED.value: frozenset(
+        {ChangeEventType.NEXT_ACTION_COMPLETED.value}
+    ),
+    # A round asked from `Kaasa liikmeid` and an overview published from
+    # `Koosta kodulehe ülevaade` each finish the step they were started from,
+    # and nothing else (docs/adr/0133 §7).
+    ChangeEventType.ENGAGEMENT_ADDED.value: frozenset(
+        {ChangeEventType.NEXT_ACTION_COMPLETED.value}
+    ),
+    ChangeEventType.WEBSITE_OVERVIEW_PUBLISHED.value: frozenset(
         {ChangeEventType.NEXT_ACTION_COMPLETED.value}
     ),
 }
@@ -2130,14 +2148,22 @@ class _ChronologySources:
     def _folding_records(self) -> tuple[tuple[str, Any], ...]:
         """Each kind of drawn record an effect can fold onto, by the event tying it to its save.
 
-        Exactly the rows `projected_milestones` draws for these three families,
+        Exactly the rows `projected_milestones` draws for these four families,
         each annotated with the `chronology_day` its row is placed by:
         developments not in the future; sends visible, historically sent and not
         after today, on the day they went; every visible `Kaasamine`, a round
-        dated ahead included, on its own day or the day it was recorded
-        (docs/adr/0092 §6, docs/adr/0126 §4).
+        dated ahead included, on its own day or the day it was recorded — once
+        by the save that ended its wait and once by the save that recorded it;
+        and every visible published `Ülevaade / uudis`, on its publication day
+        or the day it was recorded (docs/adr/0092 §6, docs/adr/0126 §4,
+        docs/adr/0133 §7).
         """
         visible = {"matter": self.matter}
+        engagements = (
+            MatterEngagement.objects.filter(**visible)
+            .visible_to(self.user)
+            .annotate(chronology_day=_dated_day("occurred_on"))
+        )
         return (
             (ChangeEventType.PROCEDURAL_DEVELOPMENT_RECORDED.value, self._developments()),
             (
@@ -2148,11 +2174,17 @@ class _ChronologySources:
                 .filter(sent_at__lt=_start_of_day(self.day + timedelta(days=1)))
                 .annotate(chronology_day=_local_date("sent_at")),
             ),
+            (ChangeEventType.ENGAGEMENT_FEEDBACK_CLOSED.value, engagements),
+            # The same rounds, by the save that recorded them (docs/adr/0133 §7).
+            (ChangeEventType.ENGAGEMENT_ADDED.value, engagements),
+            # Published overviews, on the day their row is placed by.
             (
-                ChangeEventType.ENGAGEMENT_FEEDBACK_CLOSED.value,
-                MatterEngagement.objects.filter(**visible)
+                ChangeEventType.WEBSITE_OVERVIEW_PUBLISHED.value,
+                MatterWebsiteOverview.objects.filter(
+                    status=WebsiteOverviewStatus.PUBLISHED, **visible
+                )
                 .visible_to(self.user)
-                .annotate(chronology_day=_dated_day("occurred_on")),
+                .annotate(chronology_day=_dated_day("published_on")),
             ),
         )
 

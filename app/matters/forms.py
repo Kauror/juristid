@@ -9,6 +9,7 @@ by adding another view (master specification 12.4, 23.4).
 from __future__ import annotations
 
 import json
+import uuid
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -73,6 +74,7 @@ from app.workflow.enums import (
     DatePrecision,
     DateSemantics,
     Disposition,
+    PlanStepOperation,
 )
 from app.workflow.models import StageVocabulary
 from app.workflow.selectors import selectable_stages, stage_help_texts, stages_including
@@ -1178,16 +1180,19 @@ class MatterCreateForm(
     #: inside the product (docs/adr/0094 §5).
     #:
     #: So this field moved to the bottom of the form, where it is the last
-    #: question asked, and a date entered here now does both things: it records
-    #: the obligation on `Matter.response_deadline`, as it always did, and it
-    #: establishes the canonical `Koostan arvamuse` step through
-    #: `establish_opinion_preparation_action`, exactly once and with no special
-    #: case anywhere downstream.
+    #: question asked, and a date entered here did both things: it recorded the
+    #: obligation on `Matter.response_deadline`, and it established the
+    #: canonical `Koostan arvamuse` step through
+    #: `establish_opinion_preparation_action`.
     #:
-    #: **Still no `initial`, and now for two reasons rather than one.** A blank
-    #: box records no obligation *and* creates no step: «saving the Teema
-    #: establishes the next action» is not «invent the date», and an undated
-    #: commitment is not the answer either (docs/adr/0078 §2, docs/adr/0091 §1.2).
+    #: **Since docs/adr/0133 §8 it does the first only.** The deadline is a
+    #: long-term obligation, not the current task: a new Teema gets the faint
+    #: standard `Tööplaan` instead of a step from this date, so a deadline
+    #: three months away no longer occupies `PRAEGUNE TEGEVUS` while the real
+    #: work before it happens. Steps written before that are untouched.
+    #:
+    #: **Still no `initial`.** A blank box records no obligation: an undated
+    #: commitment is not the answer (docs/adr/0078 §2, docs/adr/0091 §1.2).
     response_deadline = EstonianDateField(
         label="Arvamuse tähtaeg",
         required=False,
@@ -1982,6 +1987,15 @@ class NextActionForm(forms.Form):
         widget=SELECT_WIDGET,
         help_text="Tühjaks jättes vastutab teema vastutaja.",
     )
+    #: The open step `Muuda` was drawn beside, when it is `Muuda`.
+    #:
+    #: Hidden and optional. Present, it makes the save an *edit of that step*:
+    #: the replacement keeps the step's `Tööplaan` relation, and a step that is
+    #: no longer the open one refuses with nothing written — the stale-tab rule
+    #: `Mida tegid?` has always kept (`workspace.change_current_action`,
+    #: docs/adr/0133 §4). Absent — `+ Määra järgmine tegevus`, or a caller
+    #: that never sent one — the save is new work, exactly as before.
+    action_id = forms.UUIDField(required=False, widget=forms.HiddenInput())
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         #: The open step this save replaces, when there is one.
@@ -2932,13 +2946,12 @@ def attach_organisation_picker(
 #: `MatterCreateForm.response_deadline`, eight rows further up — and the lawyers
 #: read the two as one question asked twice. They are one question now: one box,
 #: named `Arvamuse tähtaeg` because that is what the date is called everywhere
-#: else in the product, and it both records the obligation and establishes the
-#: step (docs/adr/0094 §5).
+#: else in the product (docs/adr/0094 §5).
 #:
-#: `establish_opinion_preparation_action` is untouched and still the only way the
-#: step is written, so what a lawyer reads before saving and what lands on their
-#: Minu asjad are still one string. What is gone is the second box and the two
-#: paragraphs that had to explain which of them was which.
+#: Since docs/adr/0133 §8 that box records the obligation and nothing else: a
+#: new Teema's first work comes from its faint `Tööplaan`, started when the
+#: lawyer starts it. `establish_opinion_preparation_action` is untouched and no
+#: longer called by `Uus teema`; every step it wrote stays exactly as it is.
 
 
 class ComposerForm(forms.Form):
@@ -4412,9 +4425,177 @@ class CompleteCurrentActionForm(forms.Form):
         ),
     )
     attachments = workspace_attachments("id_praegune_failid")
+    #: `Järgmisena` — what comes next, chosen in the same save (docs/adr/0133 §4).
+    #:
+    #: Three answers, rendered as one radio group by the template: a `Tööplaan`
+    #: step still ahead (its id), `Muu tegevus` (:data:`NEXT_OTHER`), or
+    #: `Praegu ei määra` (empty, the default). **Never preselected to a step**:
+    #: the plan's next suggestion is guidance, and starting it is the person's
+    #: decision — one click, but theirs. Whether the step named is on this
+    #: Matter and still ahead is the use case's question, under the lock.
+    next_choice = forms.CharField(required=False, max_length=64)
+    #: `Muu tegevus` — the next step in the person's words, tied to no plan step.
+    next_text = forms.CharField(
+        label="Järgmine tegevus",
+        required=False,
+        max_length=2000,
+        widget=forms.TextInput(
+            attrs={
+                "class": "field__input",
+                "id": "id_praegune_jargmine_tekst",
+                "placeholder": "Näiteks: Kohtun ministeeriumiga",
+            }
+        ),
+    )
+    #: The next step's day, if it is known. Optional, never defaulted, and an
+    #: exact day: a step that belongs *in October* is given its period through
+    #: `Muuda` afterwards, which is where the precision control lives
+    #: (docs/adr/0106, docs/adr/0079).
+    next_date = EstonianDateField(
+        label="Millal?",
+        required=False,
+        widget=EstonianDateInput(attrs={"id": "id_praegune_jargmine_kuupaev"}),
+    )
 
     def clean_body(self) -> str:
         return require_written_body(self.cleaned_data.get("body"), "Kirjelda, mida tegid.")
+
+    def clean(self) -> dict[str, Any]:
+        """`Järgmisena`, read into the one shape the use case takes.
+
+        ``next_step_id`` is a step's id or ``None``; ``next_text`` is a sentence
+        only for `Muu tegevus`, where it is required — a `Muu tegevus` with no
+        words is a next step nobody stated, and is refused on the box rather than
+        quietly read as «Praegu ei määra». A day with no next step is dropped:
+        it would be a date for nothing.
+        """
+        cleaned = super().clean() or {}
+        choice = (cleaned.get("next_choice") or "").strip()
+        cleaned["next_step_id"] = None
+        if choice == NEXT_OTHER:
+            text = (cleaned.get("next_text") or "").strip()
+            if not text:
+                self.add_error("next_text", NEXT_STEP_NEEDS_SENTENCE)
+            cleaned["next_text"] = text
+        elif choice:
+            try:
+                cleaned["next_step_id"] = uuid.UUID(choice)
+            except ValueError:
+                self.add_error("next_choice", NEXT_CHOICE_UNKNOWN)
+            cleaned["next_text"] = ""
+        else:
+            cleaned["next_text"] = ""
+            cleaned["next_date"] = None
+        return cleaned
+
+
+#: `Järgmisena` → `Muu tegevus`'s value. Not a UUID, so it cannot name a step.
+NEXT_OTHER = "muu"
+
+#: A `Järgmisena` value that is neither a step, `Muu tegevus` nor empty — only
+#: reachable by a crafted POST.
+NEXT_CHOICE_UNKNOWN = "Vali järgmine samm uuesti."
+
+
+class StartPlanStepForm(forms.Form):
+    """`Alusta` — start a `Tööplaan` step as the Matter's current action.
+
+    The step's own words are the action unless the person changes them, and the
+    day is optional and never filled in for them (docs/adr/0133 §4). An exact
+    day only; a period is given afterwards through `Muuda`, which is where the
+    precision control is. One-click from a plan row posts neither box.
+    """
+
+    use_required_attribute = False
+
+    text = forms.CharField(
+        label="Mida on vaja teha?",
+        required=False,
+        max_length=2000,
+        widget=forms.TextInput(attrs={"class": "field__input"}),
+    )
+    target_date = EstonianDateField(label="Millal?", required=False, widget=DATE_WIDGET)
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("auto_id", "id_alusta_%s")
+        super().__init__(*args, **kwargs)
+
+
+class PlanRevisionForm(forms.Form):
+    """The one question every `Muuda plaani` control asks: which plan was this drawn from.
+
+    Optional at the field so that a POST without it reaches the service and is
+    refused there with the sentence a person can act on, rather than with a
+    form error under a control they cannot see.
+    """
+
+    use_required_attribute = False
+
+    revision = forms.CharField(required=False, max_length=64, widget=forms.HiddenInput())
+
+    @property
+    def expected_revision(self) -> str:
+        return self.cleaned_data.get("revision") or ""
+
+
+class PlanMoveForm(PlanRevisionForm):
+    """`↑` / `↓`. The direction is the button's own value."""
+
+    direction = forms.ChoiceField(choices=[("up", "Üles"), ("down", "Alla")])
+
+
+class PlanStepForm(PlanRevisionForm):
+    """`+ Lisa samm` and a future step's `Muuda` — the words, and which operation does it.
+
+    **`Seotud toiming` is asked, never inferred** (docs/adr/0133 §6). New steps
+    default to `Tavaline tegevus`; a typed one is a person's explicit choice,
+    and the editor shows the choice beside the words so a rename cannot leave a
+    hidden mismatch behind. No date and no responsible person: a future step is
+    neither (docs/adr/0133 §4).
+
+    ``steps`` are the steps still ahead, for `Lisa enne`; ``step`` is the one
+    being edited, whose own ids keep two editors on one page apart.
+    """
+
+    title = forms.CharField(
+        label="Tegevus",
+        required=False,
+        max_length=300,
+        widget=forms.TextInput(
+            attrs={"class": "field__input", "placeholder": "Näiteks: Kohtun ministeeriumiga"}
+        ),
+    )
+    operation = forms.ChoiceField(
+        label="Seotud toiming",
+        choices=PlanStepOperation.choices,
+        initial=PlanStepOperation.GENERIC,
+        required=False,
+        widget=forms.RadioSelect(attrs={"class": "chip__input"}),
+    )
+    before = forms.ChoiceField(label="Asukoht", required=False, widget=SELECT_WIDGET)
+
+    def __init__(
+        self, *args: Any, steps: Sequence[Any] = (), step: Any = None, **kwargs: Any
+    ) -> None:
+        self.step = step
+        kwargs.setdefault("auto_id", f"id_samm_{step.pk}_%s" if step is not None else "id_samm_%s")
+        super().__init__(*args, **kwargs)
+        if step is not None:
+            del self.fields["before"]
+        else:
+            cast(forms.ChoiceField, self.fields["before"]).choices = [
+                ("", "Plaani lõppu"),
+                *((str(item.pk), f"Enne: {item.title}") for item in steps),
+            ]
+
+    def clean_title(self) -> str:
+        title = " ".join((self.cleaned_data.get("title") or "").split())
+        if not title:
+            raise forms.ValidationError("Kirjuta, mis samm see on.")
+        return title
+
+    def clean_operation(self) -> str:
+        return self.cleaned_data.get("operation") or PlanStepOperation.GENERIC.value
 
 
 #: The label of the box that finishes the current step from a substantive save.
@@ -8081,3 +8262,33 @@ class MatterProgressForm(forms.Form):
         ):
             self.add_error(None, DEVELOPMENT_NEEDS_SOMETHING)
         return cleaned
+
+
+class PlanLaunchForm(forms.Form):
+    """The current `Tööplaan` step a typed save was drawn under (docs/adr/0133 §6).
+
+    Two hidden ids, posted only by the form drawn beside the current step: the
+    open action and its plan step. Their absence is the ordinary `LISA TEEMALE`
+    save, which completes nothing it was not told to complete.
+    """
+
+    plan_action = forms.UUIDField(widget=forms.HiddenInput())
+    plan_step = forms.UUIDField(widget=forms.HiddenInput())
+
+
+def drawn_under_the_current_step(form: forms.Form, slug: str) -> forms.Form:
+    """A `LISA TEEMALE` form, made fit to be drawn a second time under the current step.
+
+    `+ Ülevaade / uudis`, `+ Kaasamine` and `+ Koja arvamus` are drawn twice on a
+    Teema whose current step is theirs: once in the launcher, as always, and
+    once under `PRAEGUNE TEGEVUS`, where saving also finishes the step. The
+    POST keys stay the same — it is the same endpoint and the same use case —
+    and every id moves: the form's own (``auto_id`` from the caller) and the
+    ids some widgets carry in their ``attrs``, which ``auto_id`` does not reach
+    (the reasoning `OtherOpinionForm` gives for its drop zone). Two controls
+    sharing an id is a label reaching the wrong box.
+    """
+    for name, field in form.fields.items():
+        if field.widget.attrs.get("id"):
+            field.widget.attrs["id"] = f"id_{slug}_{name}"
+    return form
