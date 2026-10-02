@@ -32,6 +32,18 @@ from datetime import date
 from app.core.dates import format_estonian_date
 from app.workflow.enums import ESTONIAN_MONTHS, ROMAN_QUARTERS, DatePrecision
 
+#: The month, quarter and half-year a period control offers, in Estonian. One
+#: copy for both precision-date forms (`app.matters.forms`,
+#: `app.intelligence.forms`), built from the same vocabulary `format_at_precision`
+#: prints, so a period is chosen in the words it is later shown in.
+MONTH_CHOICES: tuple[tuple[str, str], ...] = tuple(
+    (str(number), name.capitalize()) for number, name in enumerate(ESTONIAN_MONTHS, start=1)
+)
+QUARTER_CHOICES: tuple[tuple[str, str], ...] = tuple(
+    (str(number), f"{numeral} kvartal") for number, numeral in enumerate(ROMAN_QUARTERS, start=1)
+)
+HALF_CHOICES: tuple[tuple[str, str], ...] = (("1", "I poolaasta"), ("2", "II poolaasta"))
+
 #: Roman numerals for the two halves of a year, indexed from zero.
 ROMAN_HALVES: tuple[str, ...] = ("I", "II")
 

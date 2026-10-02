@@ -60,6 +60,7 @@ from app.core.dates import (
 from app.core.decorators import business_write_required
 from app.core.enums import Visibility
 from app.core.errors import DomainError
+from app.core.middleware import is_htmx
 from app.core.request_params import bounded_int, safe_local_path
 from app.documents import pending as pending_uploads
 from app.documents.enums import DocumentRole, ExtractionState
@@ -1376,10 +1377,7 @@ def _wants_fragment(request: HttpRequest) -> bool:
     again; answering that with a fragment would replace the document with a bare
     table (Stage-2E.1 brief 7).
     """
-    return (
-        request.headers.get("HX-Request") == "true"
-        and request.headers.get("HX-History-Restore-Request") != "true"
-    )
+    return is_htmx(request) and request.headers.get("HX-History-Restore-Request") != "true"
 
 
 #: What the empty register offers when the matches are simply somewhere else.

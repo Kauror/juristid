@@ -61,15 +61,16 @@ from app.taxonomy.vocabulary import (
     selectable_policy_areas,
 )
 from app.workflow.dates import (
+    HALF_CHOICES,
     MAX_YEAR,
     MIN_YEAR,
+    MONTH_CHOICES,
+    QUARTER_CHOICES,
     InvalidPeriod,
     bounds_for,
     format_at_precision,
 )
 from app.workflow.enums import (
-    ESTONIAN_MONTHS,
-    ROMAN_QUARTERS,
     ActionKind,
     DatePrecision,
     DateSemantics,
@@ -2310,14 +2311,6 @@ def kept_precision_choice(value: date | None, precision: str) -> tuple[str, str]
         return None
     return (precision, f"Muutmata: {format_at_precision(value, precision)}")
 
-
-MONTH_CHOICES: tuple[tuple[str, str], ...] = tuple(
-    (str(number), name.capitalize()) for number, name in enumerate(ESTONIAN_MONTHS, start=1)
-)
-QUARTER_CHOICES: tuple[tuple[str, str], ...] = tuple(
-    (str(number), f"{numeral} kvartal") for number, numeral in enumerate(ROMAN_QUARTERS, start=1)
-)
-HALF_CHOICES: tuple[tuple[str, str], ...] = (("1", "I poolaasta"), ("2", "II poolaasta"))
 
 #: The closure reasons the composer offers, in the order they are read.
 #:
