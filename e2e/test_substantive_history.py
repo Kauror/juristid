@@ -45,6 +45,7 @@ from playwright.sync_api import expect
 
 from e2e.conftest import (
     SANDRA,
+    choose_organisation,
     close_through_stage,
     create_matter,
     open_add_panel,
@@ -128,14 +129,6 @@ def history(page):
 
 def rail(page):
     return page.locator(".lprail")
-
-
-def choose_organisation(page, picker: str, name: str = MINISTRY) -> None:
-    box = page.locator(f"#{picker}-otsi")
-    box.click()
-    box.fill("")
-    box.type(name[:8], delay=20)
-    page.locator(f"#{picker}-tulemused").get_by_role("option", name=name, exact=True).click()
 
 
 def a_new_matter(page, base_url: str, *, stage: str | None = None) -> str:

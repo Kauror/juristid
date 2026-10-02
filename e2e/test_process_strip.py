@@ -39,13 +39,14 @@ from playwright.sync_api import expect
 
 from e2e.conftest import (
     MARTIN,
+    choose_organisation,
     close_through_stage,
     create_matter,
     open_add_panel,
     open_matter,
     sign_in,
 )
-from e2e.test_teema_page_cleanup import choose_organisation
+from e2e.conftest import document_overflows as overflows
 
 pytestmark = pytest.mark.e2e
 
@@ -93,12 +94,6 @@ RETIRED = [
     "Kaasamiskutse veebis",
     "Jõustub",
 ]
-
-
-def overflows(page) -> bool:
-    return page.evaluate(
-        "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
-    )
 
 
 def strip(page):

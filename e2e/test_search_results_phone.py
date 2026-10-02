@@ -16,16 +16,11 @@ from __future__ import annotations
 import pytest
 
 from e2e.conftest import MARTIN, sign_in
+from e2e.conftest import document_overflows as _overflows
 
 QUERY = "/otsing/?q=eeln%C3%B5u"
 PHONE = (320, 375, 420)
 DESKTOP = (768, 1024, 1440)
-
-
-def _overflows(page) -> bool:
-    return page.evaluate(
-        "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
-    )
 
 
 def _title_metrics(page) -> dict:

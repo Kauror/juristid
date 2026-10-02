@@ -24,7 +24,7 @@ import pytest
 from playwright.sync_api import expect
 
 from app.core.management.commands.seed_e2e_data import OPEN_TITLE
-from e2e.conftest import SANDRA, open_composer, sign_in
+from e2e.conftest import SANDRA, document_overflows, open_composer, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -57,12 +57,6 @@ SECONDARY = ["Statistika"]
 
 #: What the bar reads, left to right, for somebody who is signed in.
 NAVIGATION_ORDER = [*PRIMARY, *SECONDARY]
-
-
-def document_overflows(page) -> bool:
-    return page.evaluate(
-        "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
-    )
 
 
 def open_register(page, base_url: str) -> None:

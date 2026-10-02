@@ -26,9 +26,15 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import SANDRA, create_matter, open_add_panel, sign_in, unique_title
+from e2e.conftest import (
+    SANDRA,
+    choose_organisation,
+    create_matter,
+    open_add_panel,
+    sign_in,
+    unique_title,
+)
 from e2e.legacy_opinions import leave_a_draft
-from e2e.test_teema_page_cleanup import choose_organisation
 
 pytestmark = pytest.mark.e2e
 

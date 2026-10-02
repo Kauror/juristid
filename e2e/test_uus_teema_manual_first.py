@@ -20,6 +20,7 @@ import pytest
 from playwright.sync_api import expect
 
 from e2e.conftest import MARTIN, VALDKONNAD_FIELD, open_valdkond, sign_in
+from e2e.conftest import document_overflows as overflows
 
 pytestmark = pytest.mark.e2e
 
@@ -35,12 +36,6 @@ def create_form(page, base_url, viewport=None) -> None:
     page.set_viewport_size(viewport or {"width": 1440, "height": 900})
     page.goto(f"{base_url}{CREATE_PATH}")
     expect(page.get_by_role("heading", name="Uus teema")).to_be_visible()
-
-
-def overflows(page) -> bool:
-    return page.evaluate(
-        "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
-    )
 
 
 def on_screen(page, locator, *, width: int) -> bool:

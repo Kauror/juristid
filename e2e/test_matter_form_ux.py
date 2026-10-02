@@ -32,6 +32,7 @@ from e2e.conftest import (
     start_first_step,
     unique_title,
 )
+from e2e.conftest import document_overflows as _document_overflows
 
 pytestmark = pytest.mark.e2e
 
@@ -545,17 +546,6 @@ def test_a_stage_tooltip_never_opens_off_the_screen(page, base_url, width):
 # ---------------------------------------------------------------------------
 # Narrow windows
 # ---------------------------------------------------------------------------
-
-
-def _document_overflows(page) -> bool:
-    """Mirrors `e2e/test_ui_shell.py`, because the rule is the same one.
-
-    Wide content scrolls inside its own container; the document itself never
-    scrolls sideways.
-    """
-    return page.evaluate(
-        "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
-    )
 
 
 @pytest.mark.parametrize("width", [1440, 1280, 1024, 768, 420])

@@ -29,6 +29,7 @@ from e2e.conftest import (
     open_next_action_form,
     sign_in,
 )
+from e2e.conftest import document_overflows as overflows
 
 pytestmark = pytest.mark.e2e
 
@@ -38,12 +39,6 @@ pytestmark = pytest.mark.e2e
 WIDTHS = (1440, 1366, 1280, 1024, 900, 720, 480, 375)
 
 PAGES = ("/osakond/", "/minu-asjad/", "/teemad/")
-
-
-def overflows(page) -> bool:
-    return page.evaluate(
-        "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
-    )
 
 
 def open_matter_by_clicking(page, base_url: str, title: str) -> None:

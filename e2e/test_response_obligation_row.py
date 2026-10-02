@@ -30,7 +30,7 @@ from app.core.management.commands.seed_e2e_data import (
     SUPERSEDED_DEADLINE_DAYS,
     SUPERSEDED_DEADLINE_TITLE,
 )
-from e2e.conftest import SANDRA, sign_in
+from e2e.conftest import SANDRA, document_overflows, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -74,12 +74,6 @@ def open_seeded_teema(page, base_url: str) -> None:
     assert href, "the seeded row has no title link"
     page.goto(f"{base_url}{href}")
     page.wait_for_load_state("networkidle")
-
-
-def document_overflows(page) -> bool:
-    return page.evaluate(
-        "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
-    )
 
 
 # ---------------------------------------------------------------------------

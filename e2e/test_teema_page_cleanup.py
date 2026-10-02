@@ -31,6 +31,7 @@ from playwright.sync_api import expect
 
 from e2e.conftest import (
     SANDRA,
+    choose_organisation,
     open_add_panel,
     open_hetkeseis,
     open_kaik_row,
@@ -40,22 +41,11 @@ from e2e.conftest import (
 
 pytestmark = pytest.mark.e2e
 
-MINISTRY = "Näidisministeerium"
-
 #: Three opinions a season apart, all behind us on any day this suite runs, so
 #: the rail they draw does not depend on the calendar.
 OPINION_DAYS = ("10.02.2025", "15.05.2025", "01.09.2025")
 
 WIDTHS = (1440, 768, 375)
-
-
-def choose_organisation(page, picker: str, name: str = MINISTRY) -> None:
-    """Through the picker's own search, as `e2e/test_substantive_history.py` does."""
-    box = page.locator(f"#{picker}-otsi")
-    box.click()
-    box.fill("")
-    box.type(name[:8], delay=20)
-    page.locator(f"#{picker}-tulemused").get_by_role("option", name=name, exact=True).click()
 
 
 def a_procedure_matter(

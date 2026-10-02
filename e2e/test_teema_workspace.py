@@ -18,6 +18,7 @@ from playwright.sync_api import expect
 from e2e.conftest import (
     MARTIN,
     add_panel_is_open,
+    chronology,
     create_matter,
     finish_current_action,
     open_add_panel,
@@ -52,10 +53,6 @@ def set_step(page, text: str, days: int = 7) -> None:
     """
     set_next_step(page, text, _future(days))
     expect(page.locator(".curact__text")).to_have_text(text)
-
-
-def chronology(page):
-    return page.locator("#ajalugu-loend")
 
 
 # ---------------------------------------------------------------------------

@@ -29,6 +29,7 @@ import pytest
 from playwright.sync_api import expect
 
 from e2e.conftest import MARTIN, SANDRA, create_matter, open_add_panel, open_matter, sign_in
+from e2e.conftest import document_overflows as overflows
 from e2e.legacy_opinions import strand_an_opinion_upload
 
 NARROW = {"width": 420, "height": 900}
@@ -40,12 +41,6 @@ OPEN_TITLE = (
     "Tavaline avatud teema kõigile nähtav — pakendiseaduse ja sellega seonduvalt "
     "teiste seaduste muutmise seaduse eelnõu väljatöötamiskavatsus"
 )
-
-
-def overflows(page) -> bool:
-    return page.evaluate(
-        "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
-    )
 
 
 def inside(page, locator, *, width: int = 420) -> bool:
