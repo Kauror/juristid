@@ -489,3 +489,39 @@ def test_an_archive_matter_is_not_current_work(portfolio: Portfolio) -> None:
     former = portfolio.people.former
     titles = {matter.title for matter in my_active_matters(former)}
     assert HISTORICAL not in titles, "an archive record is history, not a work queue"
+
+
+def test_the_change_window_is_whole_local_days(specialist, department_head):
+    """`Muutusi` counts files touched on the window's local days, at both edges.
+
+    The window is a half-open range of moments so the index can answer it; what
+    must not move with that is which day an event belongs to. 23:30 on
+    31 December in Tallinn is still 2026, and ten past midnight is 2027.
+    """
+    from zoneinfo import ZoneInfo
+
+    from app.audit.enums import ChangeEventType
+    from app.audit.models import ChangeEvent
+    from app.matters.department_dashboard import _matters_changed_by_owner
+
+    tallinn = ZoneInfo("Europe/Tallinn")
+    late = factories.MatterFactory(owner=specialist)
+    early = factories.MatterFactory(owner=specialist)
+    for matter, moment in (
+        (late, dt.datetime(2026, 12, 31, 23, 30, tzinfo=tallinn)),
+        (early, dt.datetime(2027, 1, 1, 0, 10, tzinfo=tallinn)),
+    ):
+        # Created with its moment rather than updated: the table is append-only.
+        ChangeEvent.objects.create(
+            matter=matter,
+            actor=specialist,
+            event_type=ChangeEventType.MATTER_STAGE_CHANGED,
+            occurred_at=moment,
+            summary="Menetlusetapp muutus",
+        )
+
+    last_day = dt.date(2026, 12, 31)
+    assert _matters_changed_by_owner(department_head, last_day, last_day) == {specialist.pk: 1}
+    first_day = dt.date(2027, 1, 1)
+    assert _matters_changed_by_owner(department_head, first_day, first_day) == {specialist.pk: 1}
+    assert _matters_changed_by_owner(department_head, last_day, first_day) == {specialist.pk: 2}

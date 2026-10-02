@@ -31,9 +31,10 @@ from __future__ import annotations
 
 import calendar
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import NamedTuple
 
+from django.utils import timezone
 from django.utils.dateparse import parse_date
 
 #: What ``forms.DateField`` accepts. Order matters only for ambiguity, and none
@@ -182,6 +183,21 @@ def weekday_letter(value: date | None) -> str:
 def short_day_month(value: date | None) -> str:
     """``28.08``. Zero-padded, because these are read in a column."""
     return "" if value is None else f"{value.day:02d}.{value.month:02d}"
+
+
+def start_of_local_day(value: date) -> datetime:
+    """The first moment of a local (Europe/Tallinn) day, as an aware datetime.
+
+    What a day-granular bound on a timestamp column compares against:
+    ``occurred_at >= start_of_local_day(first)`` and
+    ``occurred_at < start_of_local_day(last + 1 day)`` is exactly «on a local
+    day from first to last», and unlike ``occurred_at__date`` it is a plain
+    range the column's index can answer — the ``__date`` spelling casts every
+    row to a local date first, and the planner cannot estimate that.
+
+    Local midnight always exists here: daylight saving changes at 03:00/04:00.
+    """
+    return timezone.make_aware(datetime.combine(value, time.min))
 
 
 def end_of_month(value: date) -> date:
