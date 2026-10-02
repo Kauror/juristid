@@ -15,6 +15,7 @@ Two conventions worth knowing:
 
 from __future__ import annotations
 
+import functools
 import unicodedata
 import uuid
 from collections.abc import Sequence
@@ -3076,7 +3077,16 @@ def _header_context(
         # nobody else is shown the control, so nobody else pays for the walk. The
         # route keeps every refusal it had; hiding the link is an offer withheld,
         # not the guard (docs/adr/0096 §4).
-        "can_delete": can_write and not plan_matter_deletion(matter).is_blocked,
+        #
+        # **A callable, so the walk runs only where the control is drawn.** The
+        # plan is most of this page's queries (≈150 of ≈210 on a busy file),
+        # and most re-renders of this context — every HTMX save and refusal in
+        # the column — never render `header.html` at all. The template calls it
+        # once, from `{% if can_delete %}`, and `cache` keeps a second reference
+        # from walking again.
+        "can_delete": functools.cache(
+            lambda: can_write and not plan_matter_deletion(matter).is_blocked
+        ),
         # No `submission_count`. The tab that displayed it is gone, and a count
         # nothing renders is a query nothing needs.
         "document_count": Document.objects.filter(matter=matter).visible_to(request.user).count(),
