@@ -139,5 +139,5 @@ def test_an_ordinary_matter_visit_opens_no_panel(page, base_url):
 
     expect(panel).not_to_be_visible()
     # And it opens from its own chip, which is what makes it a choice.
-    page.locator('label[for="lisa-marge-valik"]').click()
+    page.locator('#lisa-teemale label[for="lisa-marge-valik"]').click()
     expect(panel).to_be_visible()

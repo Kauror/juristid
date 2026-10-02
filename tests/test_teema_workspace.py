@@ -138,7 +138,10 @@ def test_there_is_exactly_one_save_and_no_separate_completion_control(
 
     assert completion.count('type="submit"') == 1
     assert "Salvesta" in completion
-    for gone in ("Märgi tehtuks", "✓ Tehtud", "Tehtud</button>", "/valmis/"):
+    # `✓ Tehtud` (docs/adr/0133 §4) only opens this form: a `<summary>`, not a
+    # control that completes anything by itself.
+    assert '<summary class="disclosure-chip">✓ Tehtud</summary>' in zone
+    for gone in ("Märgi tehtuks", "Tehtud</button>", "/valmis/"):
         assert gone not in zone, gone
 
 

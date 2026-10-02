@@ -75,8 +75,9 @@ from app.matters.services import (
     plan_website_overview,
     publish_website_overview,
 )
-from app.workflow.enums import ActionStatus, DatePrecision
-from app.workflow.models import NextAction
+from app.workflow import plan as work_plan
+from app.workflow.enums import ActionStatus, DatePrecision, PlanStepOperation
+from app.workflow.models import MatterPlanStep, NextAction
 from app.workflow.services import (
     NEXT_STEP_NEEDS_SENTENCE,
     complete_next_action,
@@ -88,6 +89,26 @@ from app.workflow.stage_flow import is_terminal as is_terminal_stage
 #: is open. Named because two surfaces print it and a test asserts on it.
 STALE_ACTION_REFUSAL = (
     "Praegune tegevus on vahepeal muutunud. Värskenda lehte ja vaata, mis on nüüd pooleli."
+)
+
+#: Refused when a save launched from the current `Tööplaan` step arrives after
+#: that step stopped being current — finished, replaced or never started from
+#: here. Nothing is written: the record would otherwise finish a step nobody
+#: chose (docs/adr/0133 §6).
+PLAN_STEP_NOT_CURRENT = (
+    "Tööplaani samm ei ole enam praegune tegevus. Värskenda lehte ja vaata, mis on nüüd pooleli."
+)
+
+#: Refused when a typed save names a current step whose linked operation is a
+#: different one: an overview never finishes `Saada Koja arvamus`.
+PLAN_STEP_WRONG_OPERATION = "See salvestus ei tee praeguse tööplaani sammu tööd."
+
+#: `Järgmisena` named the step this very save is finishing.
+NEXT_IS_THE_CURRENT_STEP = "Seda sammu märgid praegu tehtuks. Vali järgmiseks mõni teine samm."
+
+#: An overview step is finished by a publication, never by a plan.
+OVERVIEW_STEP_NEEDS_A_PUBLICATION = (
+    "Kodulehe ülevaate samm on tehtud siis, kui ülevaade on avaldatud. Lisa ülevaate link."
 )
 
 #: Refused when one save both names a next step and a `Hetkeseis` that ends the
@@ -163,6 +184,38 @@ def _named_open_action(*, locked_matter: Matter, action_id: Any) -> NextAction:
     return current
 
 
+def _named_plan_action(
+    *, locked_matter: Matter, action_id: Any, plan_step_id: Any, operation: str
+) -> NextAction:
+    """The open step a typed save was **launched from** — or a refusal, before any write.
+
+    `+ Ülevaade / uudis`, `+ Kaasamine` and `+ Koja arvamus` drawn under the
+    current `Tööplaan` step post the action and the plan step they were drawn
+    against. That launch is the whole relationship: nothing compares the record
+    with the step's words (docs/adr/0133 §6). So every part of it is checked
+    here, under the Matter's lock and before the caller writes anything:
+
+    * the Matter is open and locked (the caller's `lock_open_matter_for_business_write`);
+    * the named action is still the open one (`_named_open_action`, the stale-tab rule);
+    * it belongs to the named plan step — not a different one, not none;
+    * that step is on this Matter and its operation is the one this save performs.
+
+    Anything else refuses the whole save. A colleague who finished the step in
+    another tab, or swapped it for different work, has made the launch stale;
+    writing the record and leaving the step alone would be a guess in the other
+    direction, so neither happens and the person decides again.
+    """
+    current = _named_open_action(locked_matter=locked_matter, action_id=action_id)
+    if current.plan_step_id is None or str(current.plan_step_id) != str(plan_step_id):
+        raise DomainError(PLAN_STEP_NOT_CURRENT)
+    step = MatterPlanStep.objects.filter(pk=current.plan_step_id, matter=locked_matter).first()
+    if step is None:
+        raise DomainError(PLAN_STEP_NOT_CURRENT)
+    if step.operation != operation:
+        raise DomainError(PLAN_STEP_WRONG_OPERATION)
+    return current
+
+
 @transaction.atomic
 def complete_current_action(
     *,
@@ -171,6 +224,9 @@ def complete_current_action(
     action_id: Any,
     body: str,
     uploads: Sequence[Any] = (),
+    next_step_id: Any = None,
+    next_text: str = "",
+    next_date: Any = None,
 ) -> WorkspaceResult:
     """`PRAEGUNE TEGEVUS` — what I did, and therefore that the step is done.
 
@@ -198,6 +254,27 @@ def complete_current_action(
     body regardless. A file is supplementary evidence and never a substitute for
     the description — filing "arvamus.pdf" as an account of what somebody did is
     the application putting words in a lawyer's mouth (docs/adr/0075 §3).
+
+    **`Järgmisena` — and what comes next, in the same save** (docs/adr/0133 §4).
+    Optional, and three answers:
+
+    * ``next_step_id`` — a `Tööplaan` step still ahead. Started through
+      `app.workflow.plan` exactly as `Alusta` starts it: the canonical
+      `NextAction`, linked to the step, with the step's own words and the day
+      in ``next_date`` if one was given and none if not;
+    * ``next_text`` — `Muu tegevus`, an ordinary step in the person's words,
+      through `set_next_action_for_new_work`, tied to no plan step;
+    * neither — `Praegu ei määra`, and no step is opened. Nothing is ever
+      chosen for the person: the plan's next suggestion is not started because
+      this one finished (docs/adr/0133 §4).
+
+    **One transaction, checked before it writes.** The next step is asked for
+    under the Matter's lock *before* the note is written — on this Matter, still
+    ahead, not the step being finished — so a stale choice refuses the whole save
+    and nothing lands half-done. Then the note, its files, the completion (which
+    completes the current plan step through `complete_next_action`) and the new
+    step, in one operation, so `Teema käik` reads it as one row: what was done,
+    with the next step under it.
     """
     # The lock, and the question closure answers, through the one helper every
     # operation in this module now uses. This function had its own copy of both
@@ -210,6 +287,12 @@ def complete_current_action(
     # that turns a plain `FOR UPDATE` into a deadlock.
     locked_matter = lock_open_matter_for_business_write(matter.pk)
     current = _named_open_action(locked_matter=locked_matter, action_id=action_id)
+    following: MatterPlanStep | None = None
+    if next_step_id is not None:
+        following = work_plan.startable_step(locked_matter, next_step_id)
+        if following.pk == current.plan_step_id:
+            raise DomainError(NEXT_IS_THE_CURRENT_STEP)
+    next_text = (next_text or "").strip()
 
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
@@ -225,8 +308,42 @@ def complete_current_action(
             uploads=_uploads(uploads),
             actor=author,
         )
-        result.action = complete_next_action(action=current, actor=author)
+        complete_next_action(action=current, actor=author)
+        if following is not None:
+            result.action = work_plan.start_checked_step(
+                locked_matter=locked_matter,
+                step=following,
+                actor=author,
+                target_date=next_date,
+            )
+        elif next_text:
+            result.action = set_next_action_for_new_work(
+                matter=locked_matter, text=next_text, target_date=next_date, actor=author
+            )
+        else:
+            result.action = None
         return result
+
+
+@transaction.atomic
+def change_current_action(*, matter: Matter, actor: Any, action_id: Any, **step: Any) -> NextAction:
+    """`Muuda` beside the open step — the same work, said differently.
+
+    The canonical `set_next_action_for_new_work`, which supersedes the open row
+    with a new one, and **carries its `Tööplaan` step onto the replacement**:
+    changing the words or the day of «Küsin Johnilt seisukohta» does not take it
+    out of the plan (docs/adr/0133 §4).
+
+    Named, like `Mida tegid?`: the editor posts the step it was drawn beside, and
+    a step that is no longer the open one refuses with `STALE_ACTION_REFUSAL`
+    and writes nothing — otherwise a stale tab would carry *another* step's plan
+    relation onto words written about the old one.
+    """
+    locked_matter = lock_open_matter_for_business_write(matter.pk)
+    _named_open_action(locked_matter=locked_matter, action_id=action_id)
+    return set_next_action_for_new_work(
+        matter=locked_matter, actor=actor, carry_plan_step=True, **step
+    )
 
 
 @transaction.atomic
@@ -277,6 +394,8 @@ def add_matter_engagement(
     feedback_deadline: Any = None,
     feedback_received: str = "",
     uploads: Sequence[Any] = (),
+    plan_action_id: Any = None,
+    plan_step_id: Any = None,
 ) -> WorkspaceResult:
     """`+ Kaasamine` — one consultation, with the replies it produced attached.
 
@@ -323,8 +442,27 @@ def add_matter_engagement(
     the importer and the register enrichment do carry periods, and because an
     existing approximate row must be able to travel back through the same
     service unchanged (docs/adr/0082, narrowed by docs/adr/0086 §1).
+
+    **Started from the current `Tööplaan` step** (``plan_action_id`` and
+    ``plan_step_id``, docs/adr/0133 §6): asking the members *is* the step
+    «Kaasa liikmeid», so the same save completes it — the action COMPLETED and
+    its plan step with it, in this one operation, so `Teema käik` reads one
+    row: the round, with `✓ Tehtud` under it. The round itself stays **open**
+    (docs/adr/0132): sending the question is done, collecting the answers is
+    not, and no «Ootan tagasisidet» step is invented for the wait. Checked under
+    the lock before anything is written (`_named_plan_action`).
     """
     locked_matter = lock_open_matter_for_business_write(matter.pk)
+    named = (
+        _named_plan_action(
+            locked_matter=locked_matter,
+            action_id=plan_action_id,
+            plan_step_id=plan_step_id,
+            operation=PlanStepOperation.ENGAGEMENT,
+        )
+        if plan_action_id is not None
+        else None
+    )
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
         result.record = add_engagement(
@@ -348,6 +486,8 @@ def add_matter_engagement(
             uploads=_uploads(uploads),
             actor=author,
         )
+        if named is not None:
+            result.action = complete_next_action(action=named, actor=author)
         return result
 
 
@@ -659,6 +799,7 @@ def add_matter_koda_opinion(
     complete_action_id: Any = None,
     working_uploads: Sequence[Any] = (),
     stage: Any = None,
+    plan_step_id: Any = None,
 ) -> WorkspaceResult:
     """`+ Koja arvamus` — the Chamber's opinion went out, with the file that went.
 
@@ -753,6 +894,15 @@ def add_matter_koda_opinion(
     orphaned bytes (ENG-086). Then one transaction and one operation: the save is
     still one «Arvamus välja» row with these files under it, never a «lisas
     dokumendi» row per file (docs/adr/0092 §5).
+
+    **``plan_step_id`` — started from `Saada Koja arvamus`** (docs/adr/0133 §6).
+    The panel drawn under the current `Tööplaan` step posts the step and its
+    action as ``complete_action_id``, with no checkbox: the launch says the
+    send is the step. Checked as a typed launch (`_named_plan_action`) rather
+    than as a tick, so an action of another step, or an action no longer
+    current, refuses before a byte is stored. The completion is the same
+    `complete_next_action` either way, and so is everything about the
+    `Submission`.
     """
     from datetime import datetime, time
 
@@ -777,11 +927,17 @@ def add_matter_koda_opinion(
     from app.matters.services import stage_transition
 
     locked_matter = lock_open_matter_for_business_write(matter.pk)
-    named = (
-        _named_open_action(locked_matter=locked_matter, action_id=complete_action_id)
-        if complete_action_id is not None
-        else None
-    )
+    if plan_step_id is not None:
+        named: NextAction | None = _named_plan_action(
+            locked_matter=locked_matter,
+            action_id=complete_action_id,
+            plan_step_id=plan_step_id,
+            operation=PlanStepOperation.SUBMISSION,
+        )
+    elif complete_action_id is not None:
+        named = _named_open_action(locked_matter=locked_matter, action_id=complete_action_id)
+    else:
+        named = None
     with (
         composer_operation() as operation_id,
         stage_transition(
@@ -1306,6 +1462,8 @@ def add_matter_website_overview(
     url: str = "",
     published_on: Any = None,
     title: str = "",
+    plan_action_id: Any = None,
+    plan_step_id: Any = None,
 ) -> WorkspaceResult:
     """`+ Ülevaade / uudis` — a plan, or a page that is already up.
 
@@ -1336,8 +1494,28 @@ def add_matter_website_overview(
     every other operation in this module: a closed Teema renders no launcher,
     and that decides nothing about a POST arriving from a tab that was open
     before it was closed (R2-02).
+
+    **Started from `Koosta kodulehe ülevaade`** (``plan_action_id`` and
+    ``plan_step_id``, docs/adr/0133 §6): the step is done when the write-up is
+    *published*, so only a save carrying an address completes it, and then in
+    this same operation — one «Ülevaade / uudis» row in `Teema käik` with
+    `✓ Tehtud` under it, and no `Mida tegid?` note repeating it. A plan alone
+    finishes nothing: an addressless save from the current step is refused
+    rather than filed as a plan that leaves the step looking done. An overview
+    recorded from `LISA TEEMALE`, or published from a planned row's own
+    `Avalda`, is not this launch and completes no step.
     """
     locked_matter = lock_open_matter_for_business_write(matter.pk)
+    named = None
+    if plan_action_id is not None:
+        named = _named_plan_action(
+            locked_matter=locked_matter,
+            action_id=plan_action_id,
+            plan_step_id=plan_step_id,
+            operation=PlanStepOperation.WEBSITE_OVERVIEW,
+        )
+        if not url:
+            raise DomainError(OVERVIEW_STEP_NEEDS_A_PUBLICATION)
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
         overview = plan_website_overview(matter=locked_matter, actor=author)
@@ -1356,6 +1534,8 @@ def add_matter_website_overview(
                 title=title,
             )
         result.record = overview
+        if named is not None:
+            result.action = complete_next_action(action=named, actor=author)
         return result
 
 

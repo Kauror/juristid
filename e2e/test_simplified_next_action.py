@@ -32,6 +32,7 @@ from e2e.conftest import (
     create_matter,
     finish_current_action,
     open_composer,
+    open_done_form,
     open_matter,
     open_next_action_form,
     set_next_step,
@@ -75,10 +76,11 @@ def test_state_a_the_page_shows_the_step_its_date_and_one_way_to_finish_it(page,
     expect(zone.locator(".curact__text")).to_have_text("Vaadata uus eelnõu versioon üle")
     expect(zone.locator(".curact__date")).to_be_visible()
     # One question, one button, and no second control that completes without an
-    # answer to it (docs/adr/0075 §3).
+    # answer to it (docs/adr/0075 §3). `✓ Tehtud` opens that question rather
+    # than answering it (docs/adr/0133 §4).
+    open_done_form(page)
     expect(zone.get_by_text("Mida tegid?", exact=True)).to_be_visible()
     expect(zone.locator(".curact__form button[type=submit]")).to_have_count(1)
-    expect(zone.get_by_role("button", name="✓ Tehtud")).to_have_count(0)
     expect(zone.get_by_role("button", name="Märgi tehtuks")).to_have_count(0)
 
     # Read off the **step's own line**, which is where every one of these words
@@ -131,7 +133,8 @@ def test_a_blank_result_is_refused_and_the_step_stays_open(page, base_url):
     create_matter(page, base_url, "Tühja tulemuse brauserikatse")
     set_step(page, "Saata kiri ministeeriumile", 5)
 
-    page.locator("#praegune-tegevus button[type=submit]").last.click()
+    open_done_form(page)
+    page.locator("#praegune-tegevus-vorm button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
     expect(page.get_by_text("Kirjelda, mida tegid.")).to_be_visible()
@@ -169,7 +172,7 @@ def test_the_current_action_zone_carries_only_the_targets_controls(page, base_ur
     # `Muuda` is a native `<summary>` rather than a button, which is what
     # keeps it operable with scripting off (brief §33).
     expect(zone.get_by_text("Muuda", exact=True)).to_be_visible()
-    expect(zone.get_by_text("Mida tegid?", exact=True)).to_be_visible()
+    expect(zone.locator("#tehtud > summary")).to_have_text("✓ Tehtud")
     expect(page.locator("summary.uxnext__defersum")).to_have_count(0)
     assert "Lükka edasi" not in zone.inner_text()
     # And the launcher does not offer a second way to set the same one step.
@@ -240,7 +243,7 @@ def test_a_seeded_wait_reads_as_a_sentence_and_a_date(page, base_url):
     # here. This file shares one seeded world with the rest of the browser
     # suite, and a test that completed the seeded WAIT would decide what every
     # later reader of this Matter sees.
-    expect(zone.get_by_text("Mida tegid?", exact=True)).to_be_visible()
+    expect(zone.locator("#tehtud > summary")).to_have_text("✓ Tehtud")
 
 
 # ---------------------------------------------------------------------------
@@ -318,6 +321,7 @@ def test_the_teema_surface_does_not_scroll_sideways(page, base_url, width):
 
     # The completion box, its file control and its save are all reachable at
     # every width, and none of them leaves the viewport (brief §38).
+    open_done_form(page)
     for control in (
         "#praegune-tegevus .composer__body",
         "#praegune-tegevus .cx-drop",

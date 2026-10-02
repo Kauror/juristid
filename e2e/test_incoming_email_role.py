@@ -22,7 +22,7 @@ import re
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, give_first_step, sign_in, unique_title
+from e2e.conftest import MARTIN, give_first_step, sign_in, start_first_step, unique_title
 
 pytestmark = pytest.mark.e2e
 
@@ -38,8 +38,14 @@ EML_BYTES = (
 PDF_BYTES = b"%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n"
 
 
-def file_a_teema_with(page, base_url: str, title: str, paths: list[str]) -> None:
-    """Uus teema, the files chosen, «Loo teema», and the Teema it opened."""
+def file_a_teema_with(
+    page, base_url: str, title: str, paths: list[str], *, start: bool = True
+) -> str:
+    """Uus teema, the files chosen, «Loo teema», and the Teema it opened.
+
+    ``start=False`` leaves the first `Tööplaan` step unstarted, for a page with
+    scripting off: `Alusta` is a workspace save, and those are HTMX posts.
+    """
     page.goto(f"{base_url}/teemad/uus/")
     expect(page.get_by_role("heading", name="Uus teema")).to_be_visible()
     page.locator("#id_title").fill(title)
@@ -50,6 +56,10 @@ def file_a_teema_with(page, base_url: str, title: str, paths: list[str]) -> None
     give_first_step(page)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    url = page.url
+    if start:
+        start_first_step(page)
+    return url
 
 
 def document_row(page, filename: str):
@@ -83,7 +93,7 @@ def test_an_email_chosen_on_uus_teema_is_the_original_email(page, base_url, tmp_
 
 
 def test_an_email_posted_with_the_form_is_the_original_email_too(
-    base_url, browser, browser_context_args, tmp_path
+    page, base_url, browser, browser_context_args, tmp_path
 ):
     """The path the defect lived on: no script, the file in the form post itself."""
     email, memo = write_files(tmp_path)
@@ -91,18 +101,26 @@ def test_an_email_posted_with_the_form_is_the_original_email_too(
     # The suite's own viewport, locale and time zone, with scripting off.
     context = browser.new_context(**browser_context_args, java_script_enabled=False)
     try:
-        page = context.new_page()
+        scriptless = context.new_page()
         # The development sign-in is an ordinary form post, so it needs no
         # script (e2e/test_substantive_history.py does the same).
-        page.goto(f"{base_url}/konto/arendus-sisselogimine/")
-        page.get_by_label(MARTIN.display_name, exact=False).check()
-        page.get_by_role("button", name="Logi sisse").click()
-        page.wait_for_url(f"{base_url}/minu-asjad/")
+        scriptless.goto(f"{base_url}/konto/arendus-sisselogimine/")
+        scriptless.get_by_label(MARTIN.display_name, exact=False).check()
+        scriptless.get_by_role("button", name="Logi sisse").click()
+        scriptless.wait_for_url(f"{base_url}/minu-asjad/")
 
-        file_a_teema_with(page, base_url, unique_title("Kiri skriptita"), [email, memo])
-        open_documents(page)
+        url = file_a_teema_with(
+            scriptless, base_url, unique_title("Kiri skriptita"), [email, memo], start=False
+        )
+        open_documents(scriptless)
 
-        expect(document_row(page, "kiri.eml")).to_contain_text("Algne e-kiri")
-        expect(document_row(page, "memo.pdf")).to_contain_text("Saabunud ametlik dokument")
+        expect(document_row(scriptless, "kiri.eml")).to_contain_text("Algne e-kiri")
+        expect(document_row(scriptless, "memo.pdf")).to_contain_text("Saabunud ametlik dokument")
     finally:
         context.close()
+
+    # The Teema leaves the department with an open step like every other file
+    # this suite files; `Alusta` is a workspace save, so a scripted page does it.
+    sign_in(page, base_url, MARTIN)
+    page.goto(url)
+    start_first_step(page)

@@ -31,6 +31,15 @@ October*, which until now had to be filed as the 1st.
       hx-target="#teema-vaade"
       hx-swap="outerHTML">
   {% csrf_token %}
+  {% comment %}
+    **`Muuda` names the step it edits** (docs/adr/0133 §4): the replacement
+    keeps the step's `Tööplaan` relation, and a step that is no longer the open
+    one refuses with nothing written. `+ Määra järgmine tegevus`, with no step
+    open, posts none and writes new work.
+  {% endcomment %}
+  {% if current_action %}
+    <input type="hidden" name="action_id" value="{{ current_action.pk }}">
+  {% endif %}
   <label class="cx-f" for="{{ action_form.text.id_for_label }}">
     <span class="cx-f__lab">Mida on vaja teha?</span>
     {{ action_form.text }}

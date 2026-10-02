@@ -248,7 +248,9 @@ def test_the_current_action_zone_no_longer_carries_the_defer_control(
 
     zone = html.split('id="praegune-tegevus"')[1].split('id="lisa-teemale"')[0]
     assert "Lükka edasi" not in html
-    assert "✓ Tehtud" not in zone
+    # `✓ Tehtud` is back since docs/adr/0133 §4 — as the disclosure that opens
+    # `Mida tegid?`, never as a completion with nothing recorded.
+    assert "Tehtud</button>" not in zone
     assert "Mida tegid?" in zone
     assert "Muuda" in zone
 

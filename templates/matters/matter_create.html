@@ -210,14 +210,12 @@
       (docs/adr/0130 §1). The two dates are compact and the address takes the
       width between them.
 
-      **`Arvamuse tähtaeg` is still the one date the lawyer commits to**, and it
-      still does both things it did as the last question on the form: it
-      records `Matter.response_deadline` and establishes the canonical
-      `Koostan arvamuse` step, once, through
-      `establish_opinion_preparation_action` (app/matters/views.py,
-      docs/adr/0094 §5). Moving it up the page changed where it is asked, not
-      what it means. A blank box invents no date, creates no step and makes no
-      undated commitment (docs/adr/0078 §2, docs/adr/0091 §1.2). It is not
+      **`Arvamuse tähtaeg` is the obligation, and only that** (docs/adr/0133
+      §8). It records `Matter.response_deadline`, which stays visible on the
+      Teema until a sent opinion discharges it. Until docs/adr/0133 it also
+      established `Koostan arvamuse` as the first step; a new Teema now gets
+      the faint standard `Tööplaan` instead, and nothing is started for the
+      lawyer. A blank box invents no date (docs/adr/0078 §2). It is not
       `Järgmiseks`, which is off this page entirely (docs/adr/0094 §6).
 
       `Saabus` holds today on an unbound form, because nearly everything is

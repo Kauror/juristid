@@ -32,6 +32,7 @@ from e2e.conftest import (
     create_matter,
     finish_current_action,
     open_add_panel,
+    open_done_form,
     open_kaik_row,
     pass_the_gate,
     set_next_step,
@@ -262,6 +263,7 @@ def test_a_failed_note_autosave_never_says_saved(page, base_url):
 
 def test_a_refused_and_then_a_saved_marge_keep_the_half_written_task(page, base_url):
     _teema(page, base_url)
+    open_done_form(page)
     page.fill(COMPOSER, "Helistasin, pooleli kirjeldus")
 
     # A refusal stays inline on its own panel.
@@ -280,7 +282,8 @@ def test_a_refused_and_then_a_saved_marge_keep_the_half_written_task(page, base_
     assert _duplicate_ids(page) == []
 
     # The carried form still posts, with a token the server accepts.
-    page.locator("#praegune-tegevus button[type=submit]").last.click()
+    open_done_form(page)
+    page.locator("#praegune-tegevus-vorm button[type=submit]").click()
     wait_for_htmx(page)
     assert "Helistasin, pooleli kirjeldus" in _history(page)
 
@@ -289,8 +292,10 @@ def test_a_task_save_keeps_an_open_marge_draft_open(page, base_url):
     _teema(page, base_url)
     open_add_panel(page, "marge-tavaline")
     page.fill("#id_marge_title", "Märke mustand")
+    open_done_form(page)
     page.fill(COMPOSER, "Helistasin")
-    page.locator("#praegune-tegevus button[type=submit]").last.click()
+    open_done_form(page)
+    page.locator("#praegune-tegevus-vorm button[type=submit]").click()
     wait_for_htmx(page)
 
     assert "Helistasin" in _history(page)
@@ -371,6 +376,7 @@ def test_a_draft_about_a_task_that_moved_on_is_shown_not_reposted(browser, base_
     try:
         page = context.new_page()
         url = _teema(page, base_url)
+        open_done_form(page)
         page.fill(COMPOSER, "Minu pooleli kirjeldus")
 
         other = context.new_page()

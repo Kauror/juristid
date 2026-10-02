@@ -31,7 +31,15 @@ from datetime import date, timedelta
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import SANDRA, create_matter, open_add_panel, open_kaik_row, sign_in, unique_title
+from e2e.conftest import (
+    SANDRA,
+    create_matter,
+    open_add_panel,
+    open_kaik_row,
+    sign_in,
+    start_first_step,
+    unique_title,
+)
 
 pytestmark = pytest.mark.e2e
 
@@ -90,31 +98,37 @@ def choose_organisation(page, picker: str, name: str = MINISTRY) -> None:
 # The box was `Koostan arvamuse` under an `arvamus-` prefix. `Uus teema` asked
 # the same date twice under two names — that box and `Arvamuse tähtaeg` beside
 # `Saabus` — and the lawyers read them as one question, so it is one box:
-# `response_deadline`, at the end of the form, recording the obligation and
-# establishing this step (docs/adr/0094 §5). Every rule below is docs/adr/0091
-# §1's; only the key moved.
+# `response_deadline`, recording the obligation (docs/adr/0094 §5). It
+# established `Koostan arvamuse` too until docs/adr/0133 §8; a new Teema now
+# gets the faint `Tööplaan` instead.
 
 
-def test_the_preparation_date_becomes_the_files_first_step(page, base_url):
-    """One box, one date, and the step exists — with nobody typing the sentence.
+def test_the_deadline_is_the_obligation_and_the_plan_is_the_path(page, base_url):
+    """One box, one date — the obligation — and the faint plan, with nobody typing.
 
-    The whole of lawyer feedback 9 in a browser: before this, the ordinary
-    journey was file the Teema, open `Lisa teemale`, choose `+ Järgmine tegevus`,
-    and enter the same information a second time.
+    Until docs/adr/0133 §8 this date also established `Koostan arvamuse` as the
+    file's first step. A deadline three months away then filled `PRAEGUNE
+    TEGEVUS` while every task before it had nowhere to be, so the date is the
+    obligation only: it reads in the header, nothing is current, and the
+    standard `Tööplaan` offers the first real step to start.
     """
     sign_in(page, base_url, SANDRA)
     page.goto(f"{base_url}/teemad/uus/")
     page.wait_for_load_state("networkidle")
 
     prepare_by = _future(8)
-    page.fill("#id_title", unique_title("Koostan arvamuse"))
+    page.fill("#id_title", unique_title("Arvamuse tähtaeg ja plaan"))
     page.fill("#id_response_deadline", prepare_by)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
 
     current = page.locator("#praegune-tegevus")
-    expect(current).to_contain_text("Koostan arvamuse")
-    expect(current).to_contain_text(prepare_by)
+    expect(current).not_to_contain_text("Koostan arvamuse")
+    expect(current).to_contain_text("Soovitatud järgmisena")
+    expect(current).to_contain_text("Tutvu materjaliga")
+    expect(page.locator("#tooplaan")).to_contain_text("Saada Koja arvamus")
+    expect(page.locator(".metaline").first).to_contain_text(prepare_by)
+    start_first_step(page)
 
 
 def test_the_preparation_box_opens_empty_and_says_what_it_will_create(page, base_url):
@@ -633,7 +647,10 @@ def test_one_consultation_runs_from_teema_to_the_next_round(page, base_url):
     page.fill("#id_response_deadline", _future(8))
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
-    expect(page.locator("#praegune-tegevus")).to_contain_text("Koostan arvamuse")
+    # The deadline is the obligation; the first step is started from the plan
+    # (docs/adr/0133 §8).
+    start_first_step(page)
+    expect(page.locator("#praegune-tegevus")).to_contain_text("Tutvu materjaliga")
 
     # Kaasamine: a completed act, and no wait acquired by default.
     open_add_panel(page, "lisa-kaasamine")

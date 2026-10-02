@@ -145,6 +145,20 @@
     return true;
   }
 
+  /* `✓ Tehtud`, opened, and the `Mida tegid?` box inside it — or `null` on a
+     Matter with no open step or for a reader who may not write. By id: the
+     current step's own typed form, drawn before it, has a textarea too
+     (docs/adr/0133 §4, §6). */
+  function openDoneForm() {
+    var panel = document.getElementById("tehtud");
+    var box = document.getElementById("id_praegune_body");
+    if (!panel || !box) {
+      return null;
+    }
+    panel.open = true;
+    return box;
+  }
+
   function focusQuietly(element) {
     /* The scroll is ours, just above; focusing again would fight it. */
     try {
@@ -183,11 +197,13 @@
       return;
     }
     /* `PRAEGUNE TEGEVUS`. The control this link promised is the box that
-       records what was done, so that is what takes the cursor; a Matter with no
+       records what was done, so that is what takes the cursor — behind
+       `✓ Tehtud` since docs/adr/0133, which is opened first; a Matter with no
        open task, or a reader who may not write, renders no box and the zone
        itself is focused through its `tabindex="-1"`. */
+    var done = openDoneForm();
     target.scrollIntoView({ block: "center", behavior: "auto" });
-    focusQuietly(target.querySelector("textarea") || target);
+    focusQuietly(done || target);
   }
 
   /* Any control that sends the reader to a collapsed disclosure has to open it
@@ -218,7 +234,7 @@
        with a current task that is `Mida tegid?`; on one without, there is
        nothing to complete, so it opens `+ Märge` instead. It used to open the
        composer, which was both of those and is gone (docs/adr/0075 §3). */
-    var box = document.querySelector("#praegune-tegevus textarea");
+    var box = openDoneForm();
     if (box) {
       event.preventDefault();
       box.focus();
@@ -534,6 +550,64 @@
     });
   }
 
+  /* ---- PRAEGUNE TEGEVUS: `Lisa märge` brings the composer into view --------
+   * `Lisa märge` is a `<label>` for `+ Märge`'s radio in `LISA TEEMALE`, so
+   * choosing it opens the ordinary composer with no script at all
+   * (docs/adr/0133 §4). What a label cannot do is take the person there: the
+   * composer is further down the page. This scrolls it into view and puts the
+   * caret in its first box — after the browser has checked the radio, which is
+   * why it waits a frame.
+   */
+  function bindOpenNote(scope) {
+    scope.querySelectorAll("[data-open-note]").forEach(function (label) {
+      if (!once(label, "OpenNote")) {
+        return;
+      }
+      label.addEventListener("click", function () {
+        var targetId = label.getAttribute("data-open-note");
+        window.requestAnimationFrame(function () {
+          var field = document.getElementById(targetId);
+          if (!field) {
+            return;
+          }
+          field.scrollIntoView({ block: "center" });
+          try {
+            field.focus({ preventScroll: true });
+          } catch (error) {
+            field.focus();
+          }
+        });
+      });
+    });
+  }
+
+  /* ---- Tööplaan: a rewritten typed step falls back to `Tavaline tegevus` -----
+   * A step's linked operation is stored exactly as chosen and never inferred
+   * from its words (docs/adr/0133 §6). But a person rewriting «Koosta kodulehe
+   * ülevaade» into «Kohtun ministeeriumiga» is very rarely keeping the overview
+   * behind it, so when the words move away from the saved ones the choice moves
+   * to `Tavaline tegevus`, visibly, where it can be chosen back. Without
+   * scripting the radio simply stays where it was, in plain view.
+   */
+  function bindPlanStepEditors(scope) {
+    scope.querySelectorAll("[data-plan-step-editor]").forEach(function (editor) {
+      if (!once(editor, "PlanStepEditor")) {
+        return;
+      }
+      var original = editor.getAttribute("data-original-title") || "";
+      var title = editor.querySelector("input[name=title]");
+      var generic = editor.querySelector('input[name=operation][value="GENERIC"]');
+      if (!title || !generic || !original) {
+        return;
+      }
+      title.addEventListener("input", function () {
+        if (title.value.trim() !== original.trim() && !generic.checked) {
+          generic.checked = true;
+        }
+      });
+    });
+  }
+
   /* ---- The file affordance -----------------------------------------------
    * The dashed box is a `<label>` over a hidden file input, so choosing a file
    * works with no script at all. This adds the two things a script can add:
@@ -844,6 +918,8 @@
     bindComposerToggle(root);
     bindChipGroups(root);
     bindAddPanels(root);
+    bindOpenNote(root);
+    bindPlanStepEditors(root);
     bindFileDrop(root);
     bindWorkRows(root);
     bindExclusivePopovers(root);

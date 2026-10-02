@@ -314,6 +314,17 @@ MATTER_LEVEL_EVENT_TYPES: frozenset[str] = frozenset(
         ChangeEventType.TAG_ASSIGNED,
         ChangeEventType.TAG_REMOVED,
         ChangeEventType.IMPORT_APPLIED,
+        # `Tööplaan` (docs/adr/0133). A plan step has no visibility of its own
+        # — it is guidance on the Matter, read only on the Matter's page — so
+        # its audit rows are exactly as visible as the Matter.
+        ChangeEventType.PLAN_SEEDED,
+        ChangeEventType.PLAN_STEP_ADDED,
+        ChangeEventType.PLAN_STEP_CHANGED,
+        ChangeEventType.PLAN_STEP_MOVED,
+        ChangeEventType.PLAN_STEP_SKIPPED,
+        ChangeEventType.PLAN_STEP_RESTORED,
+        ChangeEventType.PLAN_STEP_ACTIVATED,
+        ChangeEventType.PLAN_STEP_COMPLETED,
     }
 )
 

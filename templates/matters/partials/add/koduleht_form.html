@@ -1,0 +1,84 @@
+{% comment %}
+The `koduleht` form, in the one place it is written — drawn by the `LISA TEEMALE`
+panel and, when the current `Tööplaan` step is this operation, a second time
+under `PRAEGUNE TEGEVUS` (docs/adr/0133 §6).
+
+    form          the bound or unbound form instance; the step's instance has
+                  its own ids (`drawn_under_the_current_step`)
+    plan_launch   true under the current step: posts the step and its action
+{% endcomment %}
+        <form class="addform" data-addform
+              hx-post="{% url 'matters:add_website_overview' pk=matter.pk %}"
+              hx-target="#teema-vaade" hx-swap="outerHTML">
+          {% csrf_token %}
+          {% if plan_launch %}
+            {% comment %}
+              Drawn under the current `Tööplaan` step: the step and its open
+              action ride with the save, and they are the whole relationship —
+              the use case checks both under the Matter's lock and finishes the
+              step with the record (docs/adr/0133 §6).
+            {% endcomment %}
+            <input type="hidden" name="plan_action" value="{{ current_action.pk }}">
+            <input type="hidden" name="plan_step" value="{{ work_plan.current.pk }}">
+          {% endif %}
+          {% comment %}
+            The day and the address, and nothing else on the panel.
+
+            **This records a page that exists.** The empty save that used to
+            file a plan is gone: pressing `Salvesta` on a panel that looks
+            untouched is a save whose meaning the person has to know in advance,
+            and what it filed was a row they then had to publish from a second
+            control (docs/adr/0095 §5).
+
+            `PLANNED` and `CANCELLED` are untouched in the domain. Every stored
+            plan still reads, still carries `Avalda` and `Tühista` in
+            `website_overviews.html`, and `plan_website_overview` is still the
+            service that writes one.
+
+            **The date opens on today**, which narrows docs/adr/0089 §8 for this
+            box. That decision refused a default because the commonest save was
+            an address pasted with no known publication day — but what it
+            refused specifically was a date appearing *in response to a paste*,
+            unread. This one is in the box before anything is typed, and
+            clearing it still stores `NULL` and still reads «kuupäev teadmata»
+            (docs/adr/0078 §2).
+
+            **`Kuupäev`, `Pealkiri`, `Link`.** The optional `Pealkiri` shares
+            the day's row (`cx-grid--links`, the pairing `+ Koja arvamus` uses
+            for its file and its day) and the address has the full width below:
+            it is the one required answer and usually the longest. The title is
+            what the `Teema käik` line reads, so a file written up twice says
+            which write-up is which without opening either (docs/adr/0127 §1).
+          {% endcomment %}
+          <div class="cx-grid cx-grid--links">
+            <label class="cx-f cx-f--date"
+                   for="{{ form.published_on.id_for_label }}">
+              <span class="cx-f__lab">{{ form.published_on.label }}</span>
+              {{ form.published_on }}
+            </label>
+            <label class="cx-f" for="{{ form.overview_title.id_for_label }}">
+              <span class="cx-f__lab">{{ form.overview_title.label }}
+                <span class="cx-f__opt">valikuline</span></span>
+              {{ form.overview_title }}
+            </label>
+          </div>
+          <label class="cx-f" for="{{ form.url.id_for_label }}">
+            <span class="cx-f__lab">{{ form.url.label }}</span>
+            {{ form.url }}
+          </label>
+          {% if form.published_on.errors %}
+            <p class="field__error" id="{{ form.published_on.auto_id }}_error">
+              {{ form.published_on.errors|first }}</p>
+          {% endif %}
+          {% if form.overview_title.errors %}
+            <p class="field__error" id="{{ form.overview_title.auto_id }}_error">
+              {{ form.overview_title.errors|first }}</p>
+          {% endif %}
+          {% if form.url.errors %}
+            <p class="field__error" id="{{ form.url.auto_id }}_error">
+              {{ form.url.errors|first }}</p>
+          {% endif %}
+          <div class="addform__actions">
+            <button class="button button--primary" type="submit">Lisa ülevaade / uudis</button>
+          </div>
+        </form>

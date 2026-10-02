@@ -315,10 +315,13 @@ def test_a_restricted_step_is_not_visible_to_a_reader_who_may_not_see_it(
 # `MatterCreateForm.response_deadline` rather than a second form under an
 # `arvamus-` prefix. `Uus teema` asked the same date twice under two names —
 # `Arvamuse tähtaeg` beside `Saabus` and `Koostan arvamuse` at the bottom — and
-# the lawyers read them as one question, so it is one box: it records the
-# obligation and establishes this step (docs/adr/0094 §5).
+# the lawyers read them as one question, so it is one box (docs/adr/0094 §5).
 #
-# Every rule below is the one docs/adr/0091 §1 wrote. Only the key moved.
+# **Since docs/adr/0133 §8 the box records the obligation only.** A new Teema
+# gets the faint standard `Tööplaan` and no `Koostan arvamuse` step: a deadline
+# months away is not the current task. `establish_opinion_preparation_action`
+# itself is unchanged and still tested above; `Uus teema` simply stopped calling
+# it.
 
 
 def _create_payload(**extra):
@@ -330,7 +333,11 @@ def _create_payload(**extra):
     return payload
 
 
-def test_uus_teema_creates_the_initial_action_from_the_date_box(client, specialist):
+def test_uus_teema_makes_no_step_from_the_date_box(client, specialist):
+    """The deadline is the obligation, and the plan is the path (docs/adr/0133 §8)."""
+    from app.matters.models import Matter
+    from app.workflow.models import MatterPlanStep
+
     client.force_login(specialist)
     response = client.post(
         reverse("matters:matter_create"),
@@ -338,19 +345,14 @@ def test_uus_teema_creates_the_initial_action_from_the_date_box(client, speciali
     )
 
     assert response.status_code == 302
-    action = NextAction.objects.get(status=ActionStatus.OPEN)
-    assert action.text == OPINION_PREPARATION_TEXT
-    assert action.target_date == PREPARE_BY
-    assert action.responsible_id == specialist.pk
+    matter = Matter.objects.get()
+    assert not NextAction.objects.exists()
+    assert matter.response_deadline == PREPARE_BY
+    assert MatterPlanStep.objects.filter(matter=matter).count() == 5
 
 
-def test_the_same_date_also_lands_on_the_matter_as_the_obligation(client, specialist):
-    """One box, two facts, and they cannot disagree.
-
-    `Matter.response_deadline` is what Koda owes and the step is the lawyer's own
-    plan for meeting it. They were two boxes and are one question; what the page
-    stopped asking twice, it still records twice (docs/adr/0094 §5).
-    """
+def test_the_date_lands_on_the_matter_as_the_obligation_only(client, specialist):
+    """One box, one fact. What the page asks once it records once."""
     from app.matters.models import Matter
 
     client.force_login(specialist)
@@ -361,7 +363,7 @@ def test_the_same_date_also_lands_on_the_matter_as_the_obligation(client, specia
 
     matter = Matter.objects.get()
     assert matter.response_deadline == PREPARE_BY
-    assert NextAction.objects.get(matter=matter).target_date == PREPARE_BY
+    assert not NextAction.objects.filter(matter=matter).exists()
 
 
 def test_uus_teema_creates_nothing_when_the_date_box_is_empty(client, specialist):
@@ -397,7 +399,9 @@ def test_a_refused_create_leaves_no_step_and_keeps_the_typed_date(client, specia
     assert "25.09.2026" in response.content.decode()
 
 
-def test_correcting_the_refusal_and_saving_once_leaves_exactly_one_step(client, specialist):
+def test_correcting_the_refusal_and_saving_once_leaves_exactly_one_plan(client, specialist):
+    from app.workflow.models import MatterPlanStep
+
     client.force_login(specialist)
     client.post(reverse("matters:matter_create"), {"title": "", "response_deadline": "25.09.2026"})
     response = client.post(
@@ -405,15 +409,16 @@ def test_correcting_the_refusal_and_saving_once_leaves_exactly_one_step(client, 
     )
 
     assert response.status_code == 302
-    assert NextAction.objects.count() == 1
+    assert not NextAction.objects.exists()
+    assert MatterPlanStep.objects.count() == 5
 
 
 def test_there_is_no_second_first_step_box_to_collide_with(client, specialist):
     """`TWO_FIRST_STEPS_REFUSAL` was here, and the collision it arbitrated is gone.
 
     `Järgmiseks` is off the creation page altogether, so a POST carrying its old
-    keys is stale form state and must not become a step. One date, one step, and
-    the Teema saves (docs/adr/0094 §6).
+    keys is stale form state and must not become a step. The Teema saves, with
+    the obligation and no step at all (docs/adr/0094 §6, docs/adr/0133 §8).
     """
     from app.matters.models import Matter
 
@@ -431,9 +436,8 @@ def test_there_is_no_second_first_step_box_to_collide_with(client, specialist):
 
     assert response.status_code == 302
     assert Matter.objects.count() == 1
-    action = NextAction.objects.get()
-    assert action.text == OPINION_PREPARATION_TEXT
-    assert action.target_date == PREPARE_BY
+    assert not NextAction.objects.exists()
+    assert Matter.objects.get().response_deadline == PREPARE_BY
 
 
 def test_a_stale_free_text_step_creates_nothing_on_its_own(client, specialist):

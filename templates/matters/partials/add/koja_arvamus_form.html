@@ -1,0 +1,175 @@
+{% comment %}
+The `koja-arvamus` form, in the one place it is written — drawn by the `LISA TEEMALE`
+panel and, when the current `Tööplaan` step is this operation, a second time
+under `PRAEGUNE TEGEVUS` (docs/adr/0133 §6).
+
+    form          the bound or unbound form instance; the step's instance has
+                  its own ids (`drawn_under_the_current_step`)
+    plan_launch   true under the current step: posts the step and its action
+    picker_id     the recipients picker's own id
+{% endcomment %}
+      <form class="addform" data-addform
+            hx-post="{% url 'matters:add_koda_opinion' pk=matter.pk %}"
+            hx-target="#teema-vaade" hx-swap="outerHTML"
+            hx-encoding="multipart/form-data">
+        {% csrf_token %}
+          {% if plan_launch %}
+            {% comment %}
+              Drawn under the current `Tööplaan` step: the step and its open
+              action ride with the save, and they are the whole relationship —
+              the use case checks both under the Matter's lock and finishes the
+              step with the record (docs/adr/0133 §6).
+            {% endcomment %}
+            <input type="hidden" name="plan_action" value="{{ current_action.pk }}">
+            <input type="hidden" name="plan_step" value="{{ work_plan.current.pk }}">
+          {% endif %}
+        {% comment %}
+          What went out and when, paired on one row: they are the two halves of
+          one fact and a lawyer answers them together.
+
+          The date opens on today, visibly, because an opinion is written up on
+          the day it goes out far more often than not — and a cleared box is a
+          refusal naming the missing day rather than a stamp. `Registreeri
+          saatmine` learned that the hard way: a blank meant `now`, and the
+          outbound register reported `Arvamus välja <today>` about letters
+          nobody had dated (R2-01).
+        {% endcomment %}
+        <div class="cx-grid cx-grid--links">
+          <div class="cx-f">
+            <span class="cx-f__lab">{{ form.upload.label }}</span>
+            {% include "matters/partials/add_files.html" with field=form.upload drop_text="Lohista fail siia või " %}
+          </div>
+          <label class="cx-f cx-f--date"
+                 for="{{ form.sent_on.id_for_label }}">
+            <span class="cx-f__lab">{{ form.sent_on.label }}</span>
+            {{ form.sent_on }}
+          </label>
+        </div>
+        {% if form.sent_on.errors %}
+          <p class="field__error" id="{{ form.sent_on.auto_id }}_error">
+            {{ form.sent_on.errors|first }}</p>
+        {% endif %}
+
+        {% comment %}
+          `Töödokumendid` — the editable file the letter was drafted in, beside
+          the letter and visibly not it (docs/adr/0129 §2).
+
+          **What went out is `Saadetud fail` above, and only that.** These are
+          filed as `Töödokument` — the box says so, nothing is read off the
+          bytes — and tied to this same opinion, so next year's lawyer finds the
+          DOCX under the letter it became instead of as a stray upload on
+          Dokumendid. They are never the opinion's evidence and cannot be.
+
+          Optional and several, the multi-file control every other panel uses;
+          the hint says in one line what the box is for, because «Saadetud fail»
+          and «Töödokumendid» next to each other is exactly where a person
+          wonders which file goes where.
+        {% endcomment %}
+        <div class="cx-f">
+          <span class="cx-f__lab">{{ form.working_files.label }}
+            <span class="cx-f__opt">valikuline</span></span>
+          {% include "matters/partials/add_files.html" with field=form.working_files %}
+          <p class="uxtl__formhint">Muudetav fail, millest arvamus koostati (nt DOCX). Ei ole saadetud fail.</p>
+        </div>
+
+        {% comment %}
+          `Adressaadid` — the shared picker, searchable, and opening on the
+          Teema's own `Saatja`.
+
+          **This reverses docs/adr/0091 §6.3 twice, deliberately.** That
+          decision drew the whole catalogue as a chip row and refused a
+          default, on two arguments. The first — that registering a letter
+          Koda sent is not the moment to invent the institution it went to —
+          was an argument against a picker whose `+` creates carelessly, and
+          what it produced was a panel where a body genuinely missing had to be
+          added on another page and the person had to come back. The second —
+          that an opinion at second reading goes to a committee rather than to
+          the ministry that sent the draft — is true, and is an argument
+          against a *silent* default rather than against a visible one.
+
+          So the control is the one every other institution question on the
+          page uses, `quiet` like `Uus teema`'s `Saatja`: one line reading
+          «Otsi või lisa asutus…» and the bodies actually chosen. The Teema's
+          senders are ticked in it before anything is saved, where they can be
+          read, removed, replaced and added to — a suggestion somebody accepts
+          rather than a recipient applied behind their back
+          (docs/adr/0078 §2, docs/adr/0095 §1).
+
+          **Several, still.** One letter really does go to two bodies at once,
+          which is what `SubmissionRecipient` has always held — and the control
+          never has to be told, because a checkbox already behaves as «several»
+          where a radio behaves as «one».
+
+          **And the default is a form default.** `Matter.source_organisations`
+          is not written by this save, is not read back from it, and a letter
+          sent to three committees leaves the Teema's `Saatja` exactly as it
+          was. Two facts, two columns (docs/adr/0095 §1).
+        {% endcomment %}
+        {% include "matters/partials/organisation_picker.html" with picker_id=picker_id legend=form.recipients.label chips=form.recipients_chip_choices tail=form.recipients_tail_choices typed_field=form.recipient_name add_label="Lisa uus adressaat" clearable=True quiet=True only %}
+        {% if form.recipients.errors %}
+          <p class="field__error" id="{{ form.recipients.auto_id }}_error">
+            {{ form.recipients.errors|first }}</p>
+        {% endif %}
+
+        {% comment %}
+          `Kokkuvõte` last, optional, and a box with room in it.
+
+          **It is not the old `Pealkiri` renamed.** That field asked for a
+          name, and what it got was the file's name, nothing, or a sentence
+          trimmed to fit a heading — while the thing a colleague opening the
+          file next year actually wants is what the Chamber argued. So the
+          question changed, and the answer has its own column: a paragraph in
+          `Submission.summary`, never in `title` (docs/adr/0095 §2).
+
+          **The record still has an identity, and nothing invents one.**
+          `Submission.title` is the uploaded file's own name, which is where
+          `add_matter_koda_opinion` has taken it from whenever this panel's
+          title box was blank since the panel was written. Nothing is read out
+          of the file's contents, nothing is generated, and no headline is cut
+          from the first characters of this box.
+        {% endcomment %}
+        <label class="cx-f" for="{{ form.summary.id_for_label }}">
+          <span class="cx-f__lab">{{ form.summary.label }}
+            <span class="cx-f__opt">valikuline</span></span>
+          {{ form.summary }}
+        </label>
+        {% if form.summary.errors %}
+          <p class="field__error" id="{{ form.summary.auto_id }}_error">
+            {{ form.summary.errors|first }}</p>
+        {% endif %}
+        {% comment %}
+          **When sending this was the step, say so here** — once, beside the
+          button that records it, rather than in a second `Mida tegid?` that
+          repeats the opinion as a note. Drawn only while there is an open step
+          to finish, unticked, and naming it (docs/adr/0126 §2).
+        {% endcomment %}
+        {% comment %}
+          **Not under the current step** (docs/adr/0133 §6): there the launch is
+          the relationship, and the form says which step it finishes above its
+          fields. One way to finish the step per form, never two in one.
+        {% endcomment %}
+        {% if not plan_launch %}
+          {% include "matters/partials/complete_current_action_option.html" with field=form.complete_action option_id="id_koja_arvamus_tegevus_tehtud" %}
+        {% endif %}
+        {% comment %}
+          **Has the file moved on** (docs/adr/0131 §5). The same `Uus hetkeseis`
+          `+ Märge` offers, in the same order. The opinion stays in the period it
+          was written in — `Teema käik` reads it under the stage the file was in
+          when it went out — and the new period begins after it. Left on «Jätan
+          muutmata» nothing moves.
+        {% endcomment %}
+        <div class="cx-grid">
+          <label class="cx-f" for="{{ form.stage.id_for_label }}">
+            <span class="cx-f__lab">{{ form.stage.label }}
+              <span class="cx-f__opt">valikuline</span></span>
+            {{ form.stage }}
+            {% if form.stage.errors %}
+              <p class="field__error" id="{{ form.stage.auto_id }}_error">
+                {{ form.stage.errors|first }}</p>
+            {% endif %}
+          </label>
+        </div>
+        <div class="addform__actions">
+          <button class="button button--primary" type="submit">Registreeri arvamus</button>
+        </div>
+      </form>

@@ -2594,3 +2594,41 @@ def test_menetluse_kulg_with_several_opinions(page, base_url):
     a_matter_with_three_opinions(page, base_url)
     _at_rest(page)
     compare("teema-kulg-arvamused", capture(page, "teema-kulg-arvamused", clip_to=".lprail"))
+
+
+@pytest.mark.writes_last
+def test_the_work_plan_on_a_teema_filed_today(page, base_url):
+    """`TÖÖPLAAN` and the work centre above it (docs/adr/0133).
+
+    Three claims a baseline holds and an assertion does not:
+
+    * **faint is quieter, not disabled** — five suggestions at the page's
+      secondary text colour, each with its hollow marker and its printed
+      `Soovitus`, beside the controls that act on them;
+    * **the current step leads** — once started, its row is the one in the body
+      colour, and the finished ones carry their tick;
+    * **`✓ Tehtud` opens one compact form** — `Mida tegid?`, the files, and
+      `Järgmisena` as a row of plain choices with the next step's words and day
+      under them, not a second toolbar.
+
+    A Teema of its own, filed through `Uus teema` so it carries the standard
+    plan, and run last because it writes. Clipped to the two sections, neither
+    of which renders a clock value: the step is started with no day.
+    """
+    import re
+
+    signed_in(page, base_url, "/teemad/uus/")
+    page.fill("#id_title", "Tööplaani visuaalne teema")
+    page.get_by_role("button", name="Loo teema").click()
+    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    page.wait_for_load_state("networkidle")
+    _at_rest(page)
+    compare("tooplaan-soovitused", capture(page, "tooplaan-soovitused", clip_to="#tooplaan"))
+
+    page.get_by_role("button", name="Alusta: Tutvu materjaliga").click()
+    page.wait_for_load_state("networkidle")
+    page.locator("#tehtud > summary").click()
+    page.locator("#muuda-plaani > summary").click()
+    _at_rest(page)
+    compare("tooplaan-tehtud", capture(page, "tooplaan-tehtud", clip_to="#praegune-tegevus"))
+    compare("tooplaan-muuda", capture(page, "tooplaan-muuda", clip_to="#tooplaan"))

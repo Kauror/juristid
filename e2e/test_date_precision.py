@@ -319,7 +319,7 @@ def test_a_precision_can_be_stated_with_scripting_off(browser, base_url, javascr
         # rather than a peer of it — and both levels are `:checked` CSS, so
         # they work with scripting off, which is the point of this test
         # (docs/adr/0097 §8).
-        page.locator('label[for="lisa-marge-valik"]').click()
+        page.locator('#lisa-teemale label[for="lisa-marge-valik"]').click()
         page.locator('label[for="marge-tahtaeg-valik"]').click()
         page.locator("#marge-tahtaeg [name=deadline_title]").fill("Ülevõtmise tähtaeg")
 

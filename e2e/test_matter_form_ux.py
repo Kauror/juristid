@@ -29,6 +29,7 @@ from e2e.conftest import (
     open_hetkeseis,
     open_valdkond,
     sign_in,
+    start_first_step,
     unique_title,
 )
 
@@ -358,13 +359,13 @@ def test_the_deadline_opens_the_arrival_row(page, base_url):
     assert deadline["y"] < files["y"] < actions["y"], (deadline, files, actions)
 
 
-def test_the_typed_deadline_becomes_the_files_first_step(page, base_url):
-    """One box, two facts — and the step a lawyer actually sees.
+def test_the_typed_deadline_is_the_obligation_and_starts_nothing(page, base_url):
+    """One box, one fact: the obligation (docs/adr/0133 §8).
 
-    The date is `Matter.response_deadline` and it establishes `Koostan
-    arvamuse`, which is the sentence `PRAEGUNE TEGEVUS` prints. The service's own
-    constant is what both the page and the record use, so a lawyer who is shown
-    one string does not find another on their Minu asjad (docs/adr/0094 §5).
+    The date is `Matter.response_deadline` and it reads in the header and on the
+    current step's secondary line once there is one. It no longer establishes
+    `Koostan arvamuse`: a new Teema opens with its faint `Tööplaan` and the
+    first step is started from it.
     """
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
@@ -376,10 +377,10 @@ def test_the_typed_deadline_becomes_the_files_first_step(page, base_url):
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
 
-    expect(page.locator(".curact__text")).to_have_text("Koostan arvamuse")
-    # `.curact__date` rather than the whole row: the row also carries the
-    # «Lükka edasi» menu, whose options print dates of their own.
-    expect(page.locator(".curact__date")).to_contain_text(wanted)
+    expect(page.locator(".curact__suggesttext")).to_have_text("Tutvu materjaliga")
+    expect(page.locator(".metaline").first).to_contain_text(wanted)
+    start_first_step(page)
+    expect(page.locator(".curact__owed")).to_contain_text("Arvamuse tähtaeg")
 
 
 def test_a_blank_deadline_leaves_the_file_with_no_step(page, base_url):
@@ -414,8 +415,11 @@ def test_the_step_takes_the_owner_chosen_on_the_same_form(page, base_url):
     page.fill("#id_response_deadline", typed_date(21))
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
+    # The first step is started from the plan (docs/adr/0133 §8), and it is
+    # the owner's like any other.
+    start_first_step(page)
 
-    expect(page.locator(".curact__text")).to_have_text("Koostan arvamuse")
+    expect(page.locator("#praegune-tegevus .curact__text")).to_have_text("Tutvu materjaliga")
     go_to(page, "Minu asjad")
     expect(page.locator(".workrow2").filter(has_text=title).first).to_be_visible()
 

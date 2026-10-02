@@ -38,7 +38,6 @@ from app.matters import overview as ov
 from app.matters.models import Matter, MatterPersonalNote
 from app.submissions.models import Submission
 from app.taxonomy.models import PolicyArea
-from app.workflow.enums import ActionKind
 from app.workflow.models import NextAction
 from tests import factories
 from tests.test_overview_drilldowns import (
@@ -86,9 +85,9 @@ def created(signed_in, specialist, stage):
             "policy_areas": [area.pk],
             "stage": stage.pk,
             "files": upload("kaaskiri.pdf", b"%PDF-1.4 integratsioon", "application/pdf"),
-            # The first step comes from `Arvamuse tähtaeg` — one box, which both
-            # records the obligation and establishes `Koostan arvamuse`.
-            # `Järgmiseks` is off this page (docs/adr/0094 §5, §6).
+            # `Arvamuse tähtaeg` — the obligation, which the overview counts as
+            # work by itself; it no longer makes a `Koostan arvamuse` step
+            # (docs/adr/0133 §8). `Järgmiseks` is off this page (docs/adr/0094 §6).
             "response_deadline": tomorrow.strftime("%d.%m.%Y"),
         },
     )
@@ -110,9 +109,10 @@ def test_the_form_produces_the_whole_record_in_one_go(created, specialist, stage
     assert created.policy_areas.exists()
 
     assert DocumentVersion.objects.filter(document__matter=created).count() == 1
-    # Created natively, so DO — which is what the Ülevaade figures below count
-    # and what `is_overdue` is defined over (ADR 0052 §3).
-    assert NextAction.objects.get(matter=created).kind == ActionKind.DO
+    # No step is made from the deadline, and none is started from the plan the
+    # page seeded: guidance is not work (docs/adr/0133 §4, §8).
+    assert not NextAction.objects.filter(matter=created).exists()
+    assert created.plan_steps.count() == 5
     assert MatterPersonalNote.objects.filter(matter=created, author=specialist).exists()
 
 

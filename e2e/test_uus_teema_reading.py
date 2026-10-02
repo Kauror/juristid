@@ -35,7 +35,7 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import SANDRA, give_first_step, needs_intake_reading, sign_in
+from e2e.conftest import SANDRA, give_first_step, needs_intake_reading, sign_in, start_first_step
 
 #: Every scenario in this file is about the reading, which `Uus teema` no
 #: longer offers by default. The marker, and the switch that runs them, are
@@ -258,6 +258,7 @@ def test_the_letter_is_read_on_the_create_form_and_the_teema_keeps_what_was_conf
     complaints = page.locator(".field__error, .formerror, .message--error").all_inner_texts()
     assert not complaints, f"the form refused: {complaints}"
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    start_first_step(page)
     matter_url = page.url
 
     # -- 5. exactly one Teema, carrying what was confirmed -----------------
@@ -333,6 +334,7 @@ def test_the_letter_names_its_own_kind_and_the_teema_keeps_it(page, base_url, le
     complaints = page.locator(".field__error, .formerror, .message--error").all_inner_texts()
     assert not complaints, f"the form refused: {complaints}"
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    start_first_step(page)
 
     # And it is what the record now holds, read back off the edit form rather
     # than out of a database this suite deliberately cannot reach.
@@ -441,6 +443,7 @@ def test_a_file_taken_back_off_stops_suggesting_and_is_not_filed(
     name_a_next_step(page)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    start_first_step(page)
 
     open_documents(page)
     expect(page.get_by_role("link", name="lisa.pdf", exact=True)).to_be_visible()
@@ -476,6 +479,7 @@ def test_a_refused_save_keeps_the_staged_file_and_what_was_found(
     name_a_next_step(page)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    start_first_step(page)
 
     open_documents(page)
     expect(page.get_by_role("link", name="kaaskiri.pdf", exact=True)).to_be_visible()
@@ -571,6 +575,7 @@ def test_a_refused_save_does_not_apply_a_sender_over_one_the_person_typed(
     name_a_next_step(page)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    start_first_step(page)
 
     body = page.locator("body").inner_text()
     assert typed_sender in body, body[:400]
@@ -663,6 +668,7 @@ def test_the_file_is_still_there_and_the_teema_can_still_be_created(
     name_a_next_step(page)
     submit.click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    start_first_step(page)
 
     open_documents(page)
     expect(page.get_by_role("link", name="kaaskiri.pdf", exact=True)).to_be_visible()
@@ -774,6 +780,7 @@ def test_a_file_that_cannot_be_read_does_not_stop_the_teema(
     name_a_next_step(page)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    start_first_step(page)
 
     open_documents(page)
     expect(page.get_by_role("link", name="katkine.pdf", exact=True)).to_be_visible()
@@ -800,6 +807,7 @@ def test_three_initial_files_become_three_documents(
     name_a_next_step(page)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    start_first_step(page)
     expect(page.locator(".message").first).to_contain_text("3 failiga")
 
     open_documents(page)
@@ -831,6 +839,7 @@ def test_uploading_a_document_later_starts_no_reading_workflow(
     typed_deadline = f"{ahead.day}.{ahead.month}.{ahead.year}"
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    start_first_step(page)
     matter_url = page.url
 
     open_documents(page)

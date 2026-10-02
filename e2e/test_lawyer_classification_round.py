@@ -35,6 +35,7 @@ from e2e.conftest import (
     open_hetkeseis,
     open_valdkond,
     sign_in,
+    start_first_step,
     unique_title,
 )
 
@@ -109,11 +110,10 @@ def file_it(page, title: str) -> None:
     """Save the form with a first step, because every Teema this suite leaves
     behind is somebody else's fixture (`e2e/test_unified_organisation_picker.py`).
 
-    `Arvamuse tähtaeg` is how a Teema gets its first step now: `Järgmiseks` and
-    its `Millal?` chips are off this page, and the one date establishes
-    `Koostan arvamuse` (docs/adr/0094 §5, §6). Typed rather than picked from a
-    chip, because there is no chip — and a fixed future date keeps this
-    independent of the day the suite runs.
+    The first step is started from the new Teema's `Tööplaan`
+    (`start_first_step`): `Arvamuse tähtaeg` records the obligation only since
+    docs/adr/0133 §8. The date is still typed — a fixed future one, independent
+    of the day the suite runs.
     """
     page.locator("#id_title").fill(title)
     page.fill("#id_response_deadline", "31.12.2027")
@@ -122,6 +122,7 @@ def file_it(page, title: str) -> None:
     complaints = page.locator(".field__error, .formerror").all_inner_texts()
     assert not complaints, f"the form refused: {complaints}"
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    start_first_step(page)
 
 
 # ---------------------------------------------------------------------------

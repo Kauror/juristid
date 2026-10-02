@@ -1657,6 +1657,13 @@ def test_the_matter_page_does_not_explode_into_queries(
     now asks too, so a phase it went through before it lost its pattern stays
     on the rail rather than vanishing with the field that changed. One read,
     flat in the population.
+
+    **Measured at 53 since docs/adr/0133**, and the one it added is
+    `Tööplaan`: the Matter's plan steps, read once and decided in Python
+    (`app.matters.plan_view`). Which step is current is answered from the open
+    action the page already reads, so it costs nothing more; the step editors
+    and the current step's typed form are built from rows already in hand. Flat
+    in the population, and flat in the plan's length.
     """
     matter = factories.MatterFactory(owner=specialist, source_organisations=[organisation])
     for index in range(12):
@@ -1682,5 +1689,5 @@ def test_the_matter_page_does_not_explode_into_queries(
     with CaptureQueriesContext(connection) as plan:
         plan_matter_deletion(matter)
 
-    with django_assert_max_num_queries(52 + len(plan)):
+    with django_assert_max_num_queries(53 + len(plan)):
         signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk}))

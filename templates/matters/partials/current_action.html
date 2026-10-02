@@ -40,6 +40,18 @@ step is open, `+ Määra järgmine tegevus` while none is, and never both. A law
 who has just finished something sets what comes next where they read what comes
 next, without having to file a `+ Märge` dated ahead to do it
 (docs/adr/0126 §1).
+
+**Since docs/adr/0133 the zone is the work centre**, and three things changed in
+it. `Mida tegid?` is behind an explicit `✓ Tehtud`, because the act is
+finishing the step and the note is what it says about it — still required,
+still the one form, still named by `action_id`. It carries `Järgmisena`, so the
+step that follows is chosen in the same save: a `Tööplaan` step still ahead,
+`Muu tegevus`, or `Praegu ei määra`, never preselected. `Lisa märge` beside the
+step opens the ordinary `+ Märge` for something that happened while the step
+stays open. And when the current step is a typed `Tööplaan` step — an overview,
+a consultation, the opinion — the canonical form that does its work is drawn
+here too, and saving it finishes the step. With no step open, the plan's next
+suggestion is offered with `Alusta`, and nothing is started for anybody.
 {% endcomment %}
 <section class="curact{% if matter.is_open and current_action.is_overdue %} curact--overdue{% endif %}"
          id="praegune-tegevus" tabindex="-1" aria-labelledby="praegune-pealkiri">
@@ -86,6 +98,69 @@ next, without having to file a `+ Märge` dated ahead to do it
         {{ current_action.date_display }}{% if current_action.is_overdue %} · {{ current_action.days_late }} p{% endif %}
       </span>
 
+      {% if can_write %}
+        {% comment %}
+          **The current `Tööplaan` step's own form, when a canonical record does
+          its work** (docs/adr/0133 §6). `Koosta kodulehe ülevaade`, `Kaasa
+          liikmeid` and `Saada Koja arvamus` are finished by publishing the
+          overview, asking the members and registering the send — so the form
+          that records each is drawn here, beside the step it finishes, and
+          posts the step and its action with the save. The same form in
+          `LISA TEEMALE` stays what it was: it finishes nothing it is not told to.
+          First on the line, because for such a step it is the ordinary thing
+          to do; `✓ Tehtud` beside it stays for work done some other way.
+        {% endcomment %}
+        {% if work_plan.typed_operation %}
+          <details class="cx-panel curact__edit curact__typed" id="samm-toiming" data-addpanel
+                   data-draft-host data-draft-state="{{ current_action.pk }}"
+                   {% if open_panel == "samm-toiming" %}open{% endif %}>
+            <summary class="disclosure-chip">{{ work_plan.typed_action_label }}</summary>
+            <div class="cx-panel__body">
+              <p class="curact__typedhint">Salvestamine märgib praeguse tegevuse tehtuks.</p>
+              {% if open_panel == "samm-toiming" and workspace_error %}
+                <p class="formerror" role="alert">{{ workspace_error }}</p>
+              {% endif %}
+              {% if work_plan.typed_operation == "WEBSITE_OVERVIEW" %}
+                {% include "matters/partials/add/koduleht_form.html" with form=plan_website_overview_form plan_launch=True %}
+              {% elif work_plan.typed_operation == "ENGAGEMENT" %}
+                {% include "matters/partials/add/kaasamine_form.html" with form=plan_engagement_form plan_launch=True %}
+              {% elif work_plan.typed_operation == "SUBMISSION" %}
+                {% include "matters/partials/add/koja_arvamus_form.html" with form=plan_koda_opinion_form picker_id="samm-adressaat" plan_launch=True %}
+              {% endif %}
+            </div>
+          </details>
+        {% endif %}
+        {% comment %}
+          `✓ Tehtud` — the step is done, and this says what was done.
+
+          An explicit act rather than a box that is always open (docs/adr/0133
+          §4): the step is the line above, finishing it is this control, and
+          opening it reveals the one completion form there has always been —
+          `Mida tegid?` required, files optional, and `Järgmisena`. Not a bare
+          checkbox: a result nobody wrote is a history that says only that a
+          button was pressed (docs/adr/0075 §3).
+        {% endcomment %}
+        <details class="cx-panel curact__edit curact__done" id="tehtud" data-addpanel
+                 data-draft-host data-draft-state="{{ current_action.pk }}"
+                 {% if open_panel == "tehtud" %}open{% endif %}>
+          <summary class="disclosure-chip">✓ Tehtud</summary>
+          <div class="cx-panel__body">
+            {% include "matters/partials/current_action_form.html" %}
+          </div>
+        </details>
+        {% comment %}
+          `Lisa märge` — something happened on this work, and it is not finished.
+
+          Not a comment on the task and not a second note model: the label
+          chooses `+ Märge` in `LISA TEEMALE`, the ordinary composer, which
+          writes ordinary history and leaves this step exactly as it is
+          (docs/adr/0133 §4, docs/adr/0075 §7). Quiet, because it is the
+          secondary act here. `ux.js` brings the opened composer into view; with
+          scripting off the label still opens it, further down the page.
+        {% endcomment %}
+        <label class="disclosure-chip disclosure-chip--quiet curact__note"
+               for="lisa-marge-valik" data-open-note="id_marge_title">Lisa märge</label>
+      {% endif %}
       {% if can_write and current_action.is_review_kind %}
         {% comment %}
           `Vaatasin üle` — only beside a step that waits on somebody else.
@@ -166,55 +241,6 @@ next, without having to file a `+ Märge` dated ahead to do it
 
     {% include "matters/partials/feedback_waits.html" %}
 
-    {% if can_write %}
-      <form class="curact__form" data-composer id="praegune-tegevus-vorm"
-            data-draft-host data-draft-state="{{ current_action.pk }}"
-            hx-post="{% url 'matters:complete_current_action' pk=matter.pk %}"
-            hx-target="#teema-vaade"
-            hx-swap="outerHTML"
-            hx-encoding="multipart/form-data">
-        {% csrf_token %}
-        <input type="hidden" name="action_id" value="{{ current_action.pk }}">
-
-        {% if workspace_error and not open_panel %}
-          <p class="formerror" role="alert">{{ workspace_error }}</p>
-        {% endif %}
-        <label class="uxcomp__q" for="{{ current_action_form.body.id_for_label }}">
-          Mida tegid?
-        </label>
-        {{ current_action_form.body }}
-        {% if current_action_form.body.errors %}
-          <p class="field__error" id="{{ current_action_form.body.auto_id }}_error">{{ current_action_form.body.errors|first }}</p>
-        {% endif %}
-        {% if current_action_form.action_id.errors %}
-          <p class="field__error" id="{{ current_action_form.action_id.auto_id }}_error">{{ current_action_form.action_id.errors|first }}</p>
-        {% endif %}
-
-        <div class="curact__row">
-          {% comment %}
-            The same file affordance every `LISA TEEMALE` form uses, from the
-            same partial — one accessible name, one drop contract, one place to
-            change either. Here it shares the row with `Salvesta`, which is the
-            only difference (templates/matters/partials/add_files.html).
-          {% endcomment %}
-          {% include "matters/partials/add_files.html" with field=current_action_form.attachments %}
-          <span class="curact__spacer"></span>
-          {% comment %}
-            `Salvesta tegevus`, not a bare `Salvesta`.
-
-            This button and an opinion panel's can be on screen together, and
-            both read `Salvesta` — two primary actions, identical words, saving
-            two different records. QA-024 found it the way anybody would: by
-            pressing the wrong one. Every other panel already names what it
-            saves (`Salvesta tagasiside`, `Salvesta arvamus`, `Registreeri
-            arvamus`); this one did not.
-          {% endcomment %}
-          <button class="button button--primary" type="submit" data-composer-submit>
-            Salvesta tegevus
-          </button>
-        </div>
-      </form>
-    {% endif %}
   {% else %}
     {% comment %}
       No open step. The register's own `JÄRGMISEKS` still reads here where a
@@ -262,6 +288,53 @@ next, without having to file a `+ Märge` dated ahead to do it
     {% endcomment %}
     {% include "matters/partials/feedback_waits.html" %}
 
+    {% if can_write and work_plan.next_suggestion %}
+      {% comment %}
+        **`Soovitatud järgmisena` — the plan's next step, offered, not started**
+        (docs/adr/0133 §4). With nothing current, the first `Tööplaan` step
+        still ahead is named here with `Alusta`: one deliberate click, opening
+        the step's own words and an optional day. It is not a `NextAction`, not
+        a work item and not late; until somebody starts it, it is guidance.
+      {% endcomment %}
+      <div class="curact__task curact__suggest">
+        <span class="curact__flag">Soovitatud järgmisena</span>
+        {% comment %}
+          Its own class, not `.curact__text`: that names the current step
+          everywhere, and a suggestion is not one.
+        {% endcomment %}
+        <span class="curact__suggesttext">{{ work_plan.next_suggestion.title }}</span>
+        <details class="cx-panel curact__edit" id="alusta-samm" data-addpanel
+                 {% if open_panel == "alusta-samm" %}open{% endif %}>
+          <summary class="disclosure-chip">Alusta</summary>
+          <div class="cx-panel__body">
+            {% if open_panel == "alusta-samm" and workspace_error %}
+              <p class="formerror" role="alert">{{ workspace_error }}</p>
+            {% endif %}
+            <form class="addform" data-addform
+                  hx-post="{% url 'matters:start_plan_step' pk=matter.pk step_id=work_plan.next_suggestion.pk %}"
+                  hx-target="#teema-vaade" hx-swap="outerHTML">
+              {% csrf_token %}
+              <label class="cx-f" for="{{ start_plan_form.text.id_for_label }}">
+                <span class="cx-f__lab">{{ start_plan_form.text.label }}</span>
+                {{ start_plan_form.text }}
+              </label>
+              <label class="cx-f cx-f--date" for="{{ start_plan_form.target_date.id_for_label }}">
+                <span class="cx-f__lab">{{ start_plan_form.target_date.label }}
+                  <span class="cx-f__opt">valikuline</span></span>
+                {{ start_plan_form.target_date }}
+              </label>
+              {% if start_plan_form.target_date.errors %}
+                <p class="field__error" id="{{ start_plan_form.target_date.auto_id }}_error">{{ start_plan_form.target_date.errors|first }}</p>
+              {% endif %}
+              <div class="addform__actions">
+                <button class="button button--primary" type="submit">Alusta</button>
+              </div>
+            </form>
+          </div>
+        </details>
+      </div>
+    {% endif %}
+
     {% if can_write %}
       {% comment %}
         `+ Määra järgmine tegevus` — the direct way to say what comes next.
@@ -293,3 +366,5 @@ next, without having to file a `+ Märge` dated ahead to do it
   {% endif %}
 
 </section>
+
+{% include "matters/partials/work_plan.html" %}
