@@ -75,14 +75,13 @@
   /* ---- Arriving at the next step from another page ----------------------
    * `Määra` on Minu asjad, and `Muuda` / `Märgi tehtuks` / `Vaatasin üle…` in a
    * work row's menu, are the product's most repeated request — and all four are
-   * links to *another* page, so the `[data-focus]` click handler below can
-   * never run for them. They used to name `#jargmiseks`, which is not an id
-   * anything renders; the browser found nothing, and arrival left the reader at
-   * the top of the document with the composer shut (UX-003).
+   * links to *another* page, so nothing bound on this page runs for them. They
+   * used to name `#jargmiseks`, which is not an id anything renders; the
+   * browser found nothing, and arrival left the reader at the top of the
+   * document with the composer shut (UX-003).
    *
-   * They now name the two elements that actually exist, and this reproduces on
-   * arrival exactly what clicking a `[data-focus]` control produces on the page
-   * itself — one behaviour, not two implementations of it.
+   * They now name the two elements that actually exist, and this opens the
+   * destination, scrolls it into view and puts the cursor in it on arrival.
    *
    * The two destinations are not interchangeable, because the control each link
    * promises lives in a different place: recording that a task is done is
@@ -181,9 +180,8 @@
       /* Opened before scrolling, so the box is its real height when it is
          centred, and so the field inside it is focusable at all. */
       target.scrollIntoView({ block: "center", behavior: "auto" });
-      /* `[data-composer-focus]` first, then the same query app.js uses for
-         `[data-focus]`. Not `input` in general: every form here opens with a
-         hidden CSRF token.
+      /* `[data-composer-focus]` first, then the first visible control. Not
+         `input` in general: every form here opens with a hidden CSRF token.
 
          The attribute matters on `+ Märge`, whose first control is a date box
          that arrives already filled — the caret belongs in `Tegevus`, which
@@ -205,23 +203,6 @@
     target.scrollIntoView({ block: "center", behavior: "auto" });
     focusQuietly(done || target);
   }
-
-  /* Any control that sends the reader to a collapsed disclosure has to open it
-     first. app.js focuses the first field inside a `[data-focus]` target, and a
-     field inside a closed <details> is not focusable — «Muuda» on the
-     Järgmiseks row would scroll to a shut box and leave the cursor where it
-     was. Capture phase, so this runs before that handler. */
-  document.addEventListener(
-    "click",
-    function (event) {
-      var trigger = event.target.closest ? event.target.closest("[data-focus]") : null;
-      if (!trigger) {
-        return;
-      }
-      revealDisclosure(document.getElementById(trigger.getAttribute("data-focus")));
-    },
-    true
-  );
 
   document.addEventListener("keydown", function (event) {
     if (event.ctrlKey || event.metaKey || event.altKey || isEditing(event.target)) {
@@ -309,85 +290,6 @@
    * knows is nothing at all.
    */
 
-  /* ---- The Järgmiseks row opens the composer -----------------------------
-   * The row says what is owed and the box below it is where the answer is
-   * written, so reaching one from the other should not need aim: a click
-   * anywhere on the row toggles the composer, and opening it focuses the first
-   * textarea.
-   *
-   * Clicks on a button, a link or a form inside the row do nothing here. Those
-   * are «✓ Tehtud» and «Muuda», which have their own jobs — and «✓ Tehtud»
-   * swapping this row while the click also collapsed the composer underneath
-   * would throw away whatever somebody had typed into it (ADR 0052 §8).
-   *
-   * Bound per row rather than on the document, because the row is an HTMX swap
-   * target: a delegated listener would survive the swap, and `once` on the new
-   * element is what keeps one listener per rendering.
-   */
-  function bindComposerToggle(scope) {
-    scope.querySelectorAll("[data-koostaja-toggle]").forEach(function (row) {
-      if (!once(row, "KoostajaToggle")) {
-        return;
-      }
-      row.addEventListener("click", function (event) {
-        if (event.target.closest && event.target.closest("button, a, form, label, input, select, textarea")) {
-          return;
-        }
-        var main = row.closest(".teemamain");
-        var composer = main && main.querySelector("details.composer");
-        if (!composer) {
-          return;
-        }
-        composer.open = !composer.open;
-        if (composer.open) {
-          var box = composer.querySelector("textarea");
-          if (box) {
-            box.focus();
-          }
-        }
-      });
-    });
-  }
-
-  /* ---- Single-select chip groups inside the composer panels --------------
-   * `Täpsus`, `Liik` and `Kuidas lõppes` are chips over a hidden input, which
-   * is the field that is actually submitted and validated — the chip is a
-   * faster way to choose a value and nothing more, exactly like the quick
-   * dates above it.
-   *
-   * With no script the hidden input still carries whatever the server rendered:
-   * `EXACT` for a precision, the first kind for an engagement, and nothing at
-   * all for a closure, which is the value that means «nobody has answered».
-   */
-  function bindChipGroups(scope) {
-    scope.querySelectorAll("[data-chipgroup]").forEach(function (group) {
-      if (!once(group, "ChipGroup")) {
-        return;
-      }
-      var name = group.getAttribute("data-chipgroup");
-      var field = group.querySelector("input[name='" + name + "']");
-      if (!field) {
-        return;
-      }
-      var chips = group.querySelectorAll("[data-chipvalue]");
-      var sync = function () {
-        chips.forEach(function (chip) {
-          var chosen = chip.getAttribute("data-chipvalue") === field.value;
-          chip.classList.toggle("is-selected", chosen);
-          chip.setAttribute("aria-pressed", chosen ? "true" : "false");
-        });
-      };
-      chips.forEach(function (chip) {
-        chip.addEventListener("click", function () {
-          field.value = chip.getAttribute("data-chipvalue");
-          field.dispatchEvent(new Event("change", { bubbles: true }));
-          sync();
-        });
-      });
-      sync();
-    });
-  }
-
   /* ---- A refused save takes the person to the thing that needs fixing ----
    * A save can be refused correctly and still leave nobody any the wiser. Two
    * ways it happened:
@@ -413,8 +315,7 @@
   /* The container conventions this application renders an error inside. The
      error is written *after* the control it belongs to everywhere, so the
      container is the reliable way back to it. */
-  var FIELD_CONTAINERS = "label, .field, fieldset, .cx-f, .nextpanel, .uxcomp__row, " +
-    ".createform__row, .addform";
+  var FIELD_CONTAINERS = "label, .field, fieldset, .cx-f, .createform__row, .addform";
 
   function controlForError(problem, form) {
     /* Inside the same field wrapper, which is the common case and the exact
@@ -915,8 +816,6 @@
   function bindAll(scope) {
     var root = scope && scope.querySelectorAll ? scope : document;
     bindQuickDates(root);
-    bindComposerToggle(root);
-    bindChipGroups(root);
     bindAddPanels(root);
     bindOpenNote(root);
     bindPlanStepEditors(root);
