@@ -26,7 +26,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import F, Q
+from django.db.models import Count, F, Q
 from django.db.models.functions import ExtractYear
 from django.http import Http404, HttpRequest, HttpResponse, HttpResponseRedirect, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
@@ -933,13 +933,25 @@ STATUS_SEGMENTS = (
 )
 
 
-def _segment_queryset(user: Any, key: str) -> Any:
-    """The population one segment counts, scoped before the count is taken."""
-    return Matter.objects.visible_to(user).filter(register_filters.status_q(key))
+def _segment_counts(user: Any) -> dict[str, int]:
+    """Every segment's count in one statement, scoped before anything is counted.
+
+    One filtered `COUNT(DISTINCT id)` per segment over the reader's own
+    population, each segment's condition being `register_filters.status_q` —
+    the one the list it opens is filtered by. Distinct, because the scope joins
+    the collaborators table (`app.core.authorization.scoped_count`).
+    """
+    counts = {
+        key: Count("id", distinct=True, filter=register_filters.status_q(key))
+        for key, _label in STATUS_SEGMENTS
+        if key != "koik"
+    }
+    return Matter.objects.visible_to(user).aggregate(koik=Count("id", distinct=True), **counts)
 
 
 def _status_options(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
     current = params.get("olek", "avatud")
+    counts = _segment_counts(request.user)
     options = []
     for key, label in STATUS_SEGMENTS:
         query = params.copy()
@@ -950,7 +962,7 @@ def _status_options(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
                 "key": key,
                 "label": label,
                 "active": current == key,
-                "count": _segment_queryset(request.user, key).count(),
+                "count": counts[key],
                 "query": query.urlencode(),
             }
         )
@@ -1403,7 +1415,7 @@ def _matches_elsewhere(request: HttpRequest, params: Any, queryset: Any) -> dict
     arrives from `matter_list_queryset` through `visible_to` and through the
     free-text projection, so a restricted Matter cannot make the sentence
     appear. A count computed before authorization would be exactly the leak
-    `_segment_queryset` is careful about: «there is something you cannot see»
+    `_segment_counts` is careful about: «there is something you cannot see»
     is a disclosure.
 
     It does **not** widen the filter on the reader's behalf. It says a wider

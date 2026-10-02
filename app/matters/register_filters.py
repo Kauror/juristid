@@ -602,7 +602,7 @@ def status_q(key: str) -> Q:
     """The condition behind one `?olek=` value — and behind its segment's count.
 
     One answer for the list and for the number on the segment that opens it, so
-    the two cannot drift apart (`views._segment_queryset`). An unknown value is
+    the two cannot drift apart (`views._segment_counts`). An unknown value is
     no condition, as `koik` is.
     """
     if key == "avatud":
