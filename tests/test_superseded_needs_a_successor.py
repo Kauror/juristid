@@ -229,3 +229,42 @@ def test_the_live_closure_still_closes(signed_in, specialist):
     matter.refresh_from_db()
     assert not matter.is_open
     assert matter.disposition == Disposition.COMPLETED
+
+
+def test_seotud_names_no_end_of_the_chain_the_reader_may_not_open(client, specialist, reader):
+    """`Seotud` reads both ends through the reader's own scope.
+
+    Closing a file as superseded checks the successor against the closing
+    person's sight only, so a NORMAL Matter can continue under a RESTRICTED one.
+    A reader of the earlier file then gets 404 on the later one, and the rail
+    must not print its title on the way there — nor, read the other way, the
+    title of a restricted file this one continued.
+    """
+    hidden = "Konfidentsiaalne jätkuteema"
+    earlier = factories.MatterFactory(owner=specialist, title="Avalik varasem teema")
+    later = factories.MatterFactory(
+        owner=specialist, visibility=Visibility.RESTRICTED, title=hidden
+    )
+    close_matter(
+        matter=earlier, disposition=Disposition.SUPERSEDED, actor=specialist, successor=later
+    )
+    shown = factories.MatterFactory(owner=specialist, title="Avalik jätkuteema")
+    secret_earlier = factories.MatterFactory(
+        owner=specialist, visibility=Visibility.RESTRICTED, title="Konfidentsiaalne eelkäija"
+    )
+    close_matter(
+        matter=secret_earlier,
+        disposition=Disposition.SUPERSEDED,
+        actor=specialist,
+        successor=shown,
+    )
+
+    client.force_login(reader)
+    assert client.get(f"/teemad/{later.pk}/").status_code == 404
+    assert hidden not in client.get(f"/teemad/{earlier.pk}/").content.decode()
+    assert "Konfidentsiaalne eelkäija" not in client.get(f"/teemad/{shown.pk}/").content.decode()
+
+    # The person who may read both still sees the chain.
+    client.force_login(specialist)
+    assert hidden in client.get(f"/teemad/{earlier.pk}/").content.decode()
+    assert "Konfidentsiaalne eelkäija" in client.get(f"/teemad/{shown.pk}/").content.decode()
