@@ -196,6 +196,13 @@ holds custom steps, the missing template steps are **appended** after them in
 the template's order; nothing a person wrote is reordered, renamed or removed.
 `+ Lisa tavapärane tööplaan` disappears once every template step is present.
 
+**No plan is not an empty section.** A Matter without a plan draws no
+`Tööplaan` heading and no «none yet» sentence: a writer on an open, full record
+sees one quiet row with `+ Lisa tavapärane tööplaan` and `+ Lisa samm`; a
+reader sees nothing; an archive register row (`RecordMode.ARCHIVE`) is offered
+nothing at all — it is history until it is promoted to active work
+(TEEMA_TARGET_SPEC §F).
+
 **Versioned copies.** Each seeded step stores its own title and operation with
 the template key and version as provenance. A later version reaches no
 existing Matter — no rename, no new step, no removal. A second template

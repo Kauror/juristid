@@ -326,6 +326,27 @@ def test_an_existing_matter_gains_the_plan_only_when_a_writer_asks(signed_in, sp
     assert "+ Lisa tavapärane tööplaan" not in _teema(signed_in, matter)
 
 
+def test_no_plan_is_not_an_empty_section(signed_in, client, reader, specialist):
+    """A Matter without a plan draws one quiet offer, never a heading over nothing.
+
+    A writer on an open, full record is offered the two ways to start one; a
+    reader is shown nothing; an archive register row is history and is offered
+    nothing at all (TEEMA_TARGET_SPEC §F, docs/adr/0133 §5).
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    body = _teema(signed_in, matter)
+    assert 'id="tooplaan"' in body
+    assert "workplan--offer" in body
+    assert '<h2 class="visually-hidden" id="tooplaan-pealkiri">Tööplaan</h2>' in body
+    assert "Muuda plaani" not in _plan_zone(body)
+
+    archive = factories.ArchiveMatterFactory()
+    assert 'id="tooplaan"' not in _teema(signed_in, archive)
+
+    client.force_login(reader)
+    assert 'id="tooplaan"' not in _teema(client, matter)
+
+
 # ---------------------------------------------------------------------------
 # 2. Starting a step
 # ---------------------------------------------------------------------------

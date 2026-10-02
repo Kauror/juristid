@@ -12310,10 +12310,15 @@ section:has(.pw-more[open]) tbody.uxextra {
   order: 1;
 }
 
-.workplan__empty {
-  margin: 0;
-  font-size: var(--typography-size-sm);
-  color: var(--text-secondary);
+/* A Matter with no plan: one quiet row of offers under the current step, not a
+ * section of its own with a heading over nothing (docs/adr/0133 §9). */
+#teema-vaade-wrap .workplan--offer {
+  padding-top: var(--spacing-1);
+  padding-bottom: var(--spacing-2);
+}
+
+.workplan--offer .workplan__actions {
+  margin-top: 0;
 }
 
 /* A text button: the row controls of the plan and its editor. Quiet, but the

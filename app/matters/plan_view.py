@@ -17,6 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.matters.enums import RecordMode
 from app.workflow.enums import PlanStepOperation
 from app.workflow.models import MatterPlanStep
 from app.workflow.plan import STANDARD_PLAN, has_template, plan_revision, plan_steps_of
@@ -89,6 +90,11 @@ class WorkPlanView:
     #: when nothing is current. Guidance only: never started for anybody.
     next_suggestion: MatterPlanStep | None = None
 
+    #: Whether this Matter may be offered a plan it does not have: an open, full
+    #: record. An archive register row is history until it is promoted to
+    #: active work, and is offered nothing (docs/adr/0133 §5).
+    may_adopt: bool = False
+
     @property
     def is_empty(self) -> bool:
         return not self.rows
@@ -135,4 +141,5 @@ def work_plan_for(matter: Any, current_action: Any) -> WorkPlanView:
         has_standard=has_template(steps, STANDARD_PLAN),
         current=current,
         next_suggestion=ahead[0].step if ahead else None,
+        may_adopt=bool(matter.is_open) and matter.record_mode == RecordMode.FULL,
     )

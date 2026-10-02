@@ -54,7 +54,7 @@ def test_a_file_with_nothing_on_its_rail_adds_edits_and_removes_a_step(page, bas
     assert page.locator(".lprail .tl-strip").count() == 0
 
     _open_panel(page)
-    page.get_by_text("+ Lisa samm", exact=True).click()
+    page.locator("#menetluse-kulg-muuda").get_by_text("+ Lisa samm", exact=True).click()
     page.fill("input[name='uus__title']", "Komisjoni istung")
     page.fill("input[name='uus_date']", "12.03.2026")
     _save_panel(page)
@@ -106,7 +106,7 @@ def test_a_step_placed_between_phases_and_a_removed_phase_takes_nothing_with_it(
     assert "Kooskõlastusring" in before and "Valitsuses" in before
 
     _open_panel(page)
-    page.get_by_text("+ Lisa samm", exact=True).click()
+    page.locator("#menetluse-kulg-muuda").get_by_text("+ Lisa samm", exact=True).click()
     page.fill("input[name='uus__title']", "Teine kooskõlastusring")
     page.select_option("select[name='uus__after']", label="Pärast: Kooskõlastusring")
     _save_panel(page)

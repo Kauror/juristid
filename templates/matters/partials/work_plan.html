@@ -23,11 +23,19 @@ Drawn for every reader who may open the Matter, when there is a plan. The
 controls — `Alusta`, `+ Lisa samm`, `Muuda plaani`, `+ Lisa tavapärane
 tööplaan` — only for a writer on an open Matter. A closed Matter's plan stays
 readable and offers nothing.
+
+**No plan is not an empty section.** A Matter without one — every Matter filed
+before docs/adr/0133 — draws no heading and no «none yet» sentence, only one
+quiet row offering the two ways to start one, to a writer on an open, full
+record. An archive register row is offered nothing: it is history until it is
+promoted to active work. There are no permanently visible empty sections on this
+page (TEEMA_TARGET_SPEC §F).
 {% endcomment %}
 {% with plan=work_plan writable=can_write %}
-{% if plan.rows or writable and matter.is_open %}
-<section class="workplan" id="tooplaan" aria-labelledby="tooplaan-pealkiri">
-  <h2 class="rowlabel" id="tooplaan-pealkiri">Tööplaan</h2>
+{% if plan.rows or writable and plan.may_adopt %}
+<section class="workplan{% if not plan.rows %} workplan--offer{% endif %}" id="tooplaan"
+         aria-labelledby="tooplaan-pealkiri">
+  <h2 class="{% if plan.rows %}rowlabel{% else %}visually-hidden{% endif %}" id="tooplaan-pealkiri">Tööplaan</h2>
 
   {% if plan.compact_rows %}
     <ol class="workplan__list">
@@ -53,8 +61,6 @@ readable and offers nothing.
         </li>
       {% endfor %}
     </ol>
-  {% elif not plan.rows %}
-    <p class="workplan__empty">Tööplaani pole.</p>
   {% endif %}
 
   {% if writable and matter.is_open %}
