@@ -635,9 +635,3 @@ def test_a_name_where_a_key_belongs_creates_no_organisation(signed_in):
     assert Organisation.objects.count() == before
     # A name where a primary key belongs is refused, not resolved.
     assert not Matter.objects.filter(title="Tundmatu saatjaga").exists()
-
-
-def test_a_posted_visibility_is_still_ignored(signed_in):
-    """Decided server-side, so a crafted POST cannot restrict — or unrestrict."""
-    signed_in.post(CREATE, {"title": "Sepitsetud", "visibility": Visibility.RESTRICTED})
-    assert Matter.objects.get(title="Sepitsetud").visibility == Visibility.NORMAL

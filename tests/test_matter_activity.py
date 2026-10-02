@@ -252,16 +252,6 @@ def test_the_received_date_is_a_fallback_and_never_the_answer_when_later_work_ex
     assert _fact(matter, specialist).basis == ActivityBasis.ENTRY
 
 
-def test_nothing_known_is_reported_as_nothing_known(specialist):
-    """An archive row with no dates has no activity.
-
-    Today, the import date and a dash that looks like a date would each be an
-    invention.
-    """
-    matter = _touched_in(_imported(received_date=None), 2026)
-    assert _fact(matter, specialist) is None
-
-
 # -- next actions -----------------------------------------------------------
 
 
@@ -312,6 +302,11 @@ def test_a_native_matter_falls_back_to_its_own_row_timestamp(specialist):
 
 
 def test_an_imported_matter_never_falls_back_to_its_row_timestamp(specialist):
+    """An archive row with no dates has no activity.
+
+    Today, the import date and a dash that looks like a date would each be an
+    invention.
+    """
     matter = _touched_in(_imported(received_date=None), 2026)
     assert _fact(matter, specialist) is None
 

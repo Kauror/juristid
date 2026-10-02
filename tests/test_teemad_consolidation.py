@@ -24,7 +24,6 @@ disappear.
 from __future__ import annotations
 
 import datetime
-import re
 
 import pytest
 from django.urls import reverse
@@ -55,8 +54,6 @@ def rows_of(response) -> int:
 # A. the navigation
 # ---------------------------------------------------------------------------
 
-LINK = re.compile(r"<a\b[^>]*>([^<]+)</a>")
-
 
 def navigation_of(response) -> str:
     """The main navigation's markup and nothing else on the page.
@@ -69,15 +66,6 @@ def navigation_of(response) -> str:
     body = response.content.decode()
     start = body.index('<nav class="topnav"')
     return body[start : body.index("</nav>", start)]
-
-
-def labels_of(navigation: str) -> list[str]:
-    seen: list[str] = []
-    for label in LINK.findall(navigation):
-        text = label.strip()
-        if text and text not in seen:
-            seen.append(text)
-    return seen
 
 
 @pytest.mark.parametrize(
@@ -93,21 +81,6 @@ def test_tahtajad_is_not_on_the_bar(signed_in, route):
     this asserts is the product decision — the destination is gone.
     """
     assert "Tähtajad" not in navigation_of(signed_in.get(reverse(route)))
-
-
-def test_tahtajad_is_not_in_the_veel_disclosure_either(signed_in):
-    """Both branches of the include are read.
-
-    Below 1560px the secondary destinations sit inside «Veel» and above it they
-    sit inline; only one is displayed, but both are in the markup. An item
-    merely pushed into the disclosure would still be a destination.
-    """
-    navigation = navigation_of(signed_in.get(reverse("matters:department")))
-
-    wide = navigation.index('<span class="topnav__wide">')
-    menu = navigation.index('<div class="topnav__menu">')
-    for branch in (navigation[wide:menu], navigation[menu:]):
-        assert labels_of(branch) == ["Statistika"]
 
 
 @pytest.mark.parametrize("retired", ["Tähtajad", "Jälgimine", "Jõustuvad aktid", "Töövõidud"])

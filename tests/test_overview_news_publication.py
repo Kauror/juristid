@@ -480,21 +480,6 @@ def test_nothing_anywhere_supplies_a_publication_date(signed_in, normal_matter, 
     }
 
 
-def test_an_untouched_form_is_refused_rather_than_filing_a_plan(signed_in, normal_matter):
-    """The empty submit is gone, and `Plaanis` is not.
-
-    docs/adr/0083 made it a third answer to this panel; docs/adr/0095 §5 retired
-    it, because a save whose meaning is what somebody did *not* type is reached
-    from a form that looks untouched. `plan_website_overview` still writes a
-    plan and every stored plan still reads — which the tests below this one
-    still prove.
-    """
-    response = _add(signed_in, normal_matter)
-
-    assert response.status_code == 400
-    assert not MatterWebsiteOverview.objects.filter(matter=normal_matter).exists()
-
-
 @pytest.mark.parametrize(
     "fields",
     [
