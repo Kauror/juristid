@@ -935,14 +935,7 @@ STATUS_SEGMENTS = (
 
 def _segment_queryset(user: Any, key: str) -> Any:
     """The population one segment counts, scoped before the count is taken."""
-    base = Matter.objects.visible_to(user)
-    if key == "avatud":
-        return base.filter(is_open=True)
-    if key == "suletud":
-        return base.filter(is_open=False)
-    if key == "arhiiv":
-        return base.filter(record_mode=RecordMode.ARCHIVE)
-    return base
+    return Matter.objects.visible_to(user).filter(register_filters.status_q(key))
 
 
 def _status_options(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
