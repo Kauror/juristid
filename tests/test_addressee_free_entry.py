@@ -522,6 +522,59 @@ def test_a_late_failure_on_muuda_teemat_leaves_no_institution_behind(
     assert Organisation.objects.count() == 1
 
 
+def test_a_late_failure_on_the_feedback_panel_leaves_no_institution_behind(
+    signed_in, specialist, monkeypatch
+):
+    """The panel resolves the typed name while it builds the use case's arguments.
+
+    That is before the use case's own transaction opens, so the view holds one
+    around both; a refusal under the lock — a stale tab on a file somebody has
+    since closed — must take the new institution with it.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+
+    def refuse(**kwargs):
+        raise DomainError("Teema on suletud.")
+
+    monkeypatch.setattr("app.matters.workspace.add_matter_external_position", refuse)
+
+    response = signed_in.post(
+        _feedback(matter), _feedback_payload(organisation_name="Uus tundmatu selts")
+    )
+
+    assert response.status_code == 400
+    assert not Organisation.objects.filter(name="Uus tundmatu selts").exists()
+
+
+def test_a_late_failure_on_koja_arvamus_leaves_no_institution_behind(
+    signed_in, specialist, monkeypatch
+):
+    """`+ Koja arvamus` names a typed recipient the same way, with the same guarantee."""
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    matter = factories.MatterFactory(owner=specialist)
+
+    def refuse(**kwargs):
+        raise DomainError("Teema on suletud.")
+
+    monkeypatch.setattr("app.matters.workspace.add_matter_koda_opinion", refuse)
+
+    response = signed_in.post(
+        reverse("matters:add_koda_opinion", kwargs={"pk": matter.pk}),
+        {
+            "upload": SimpleUploadedFile(
+                "Koja_arvamus.pdf", b"%PDF-1.4 arvamus", content_type="application/pdf"
+            ),
+            "recipient_name": "Uus tundmatu ministeerium",
+            "sent_on": "14.03.2026",
+            "summary": "Toetame eelnõu.",
+        },
+    )
+
+    assert response.status_code == 400
+    assert not Organisation.objects.filter(name="Uus tundmatu ministeerium").exists()
+
+
 # ---------------------------------------------------------------------------
 # Query discipline
 # ---------------------------------------------------------------------------
