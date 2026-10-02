@@ -39,6 +39,14 @@ changes = [
   "Kaasamine jääb avatuks seni, kuni vajutad «Lõpeta kaasamine», ka siis, kui tagasiside tähtaega ei ole määratud.",
   "«Tagasisidet ootame kuni» on kaasamisel valikuline: tähtaeg võib olla samal päeval, järgmisel päeval, hiljem või üldse puududa. Tähtaja puudumine ei tee kaasamist üle tähtaja läinuks ega «Vajab sekkumist» kirjeks.",
   "Ilma tähtajata avatud kaasamine on teema lehel «Praegune tegevus» all ja lehel «Minu töö» endiselt näha, märkega «Tähtaeg määramata».",
+  # Sama päeva viies väljalase: tööplaan, ADR 0133 (PR #361). Kaks migratsiooni
+  # (workflow/0011, audit/0032), andmemigratsiooni ei ole. Kui see väljalase ei
+  # jõua tootmisse 02.10 (Tallinna aja järgi), liiguvad need read väljalaske
+  # päeva kirjesse.
+  "Uuel teemal on tavapärane tööplaan: «Tutvu materjaliga», «Koosta kodulehe ülevaade», «Kaasa liikmeid / küsi tagasisidet», «Koonda tagasiside ja kujunda Koja seisukoht» ja «Saada Koja arvamus». Need on soovitused: ükski samm ei ole praegune tegevus enne, kui vajutad selle juures «Alusta».",
+  "«✓ Tehtud» juures kirjutad, mida tegid, ja valid samas salvestuses järgmise sammu: tööplaani sammu, muu tegevuse või selle, et järgmist tegevust ei ole.",
+  "Uue teema «Arvamuse tähtaeg» on endiselt kohustus, kuid see ei loo enam automaatselt praeguseks tegevuseks «Koostan arvamuse».",
+  "Kui avaldad kodulehe ülevaate, lood kaasamise või saadad Koja arvamuse praegusest tööplaani sammust, märgitakse see samm tehtuks. «Lisa märge» sammu tehtuks ei märgi. Varem avatud teemale saab tavapärase tööplaani lisada nupuga «+ Lisa tavapärane tööplaan».",
 ]
 
 [[day]]
