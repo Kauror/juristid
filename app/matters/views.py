@@ -152,7 +152,7 @@ from app.matters.forms import (
     read_organisation_choices,
     visible_engagements_of,
 )
-from app.matters.intake import register_incoming, role_for, validate_uploads
+from app.matters.intake import file_incoming, register_incoming, validate_uploads
 from app.matters.intake_suggestions import (
     CurrentValues,
     SuggestedField,
@@ -2670,21 +2670,17 @@ def _attach_incoming_file(matter: Any, upload: Any, *, actor: Any) -> None:
     was classified by the path it happened to take — the direct post, which is
     the form without scripting, and every file held through a refused save
     (ENG-066). Documents stored before that are left as they were.
-    """
-    from app.documents.services import add_evidence_version, create_document
 
-    document = create_document(
+    A name of its own here, delegating to `app.matters.intake.file_incoming`,
+    because it is the seam the creation tests replace to fail one file of
+    several (tests/test_matter_create_form.py).
+    """
+    file_incoming(
         matter=matter,
-        title=upload.filename,
-        role=role_for(upload.filename),
-        created_by=actor,
-    )
-    add_evidence_version(
-        document=document,
+        filename=upload.filename,
         content=upload.content,
-        original_filename=upload.filename,
         mime_type=upload.mime_type,
-        uploaded_by=actor,
+        actor=actor,
     )
 
 
