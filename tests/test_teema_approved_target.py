@@ -480,8 +480,11 @@ def test_each_operation_carries_its_own_save_and_there_is_no_global_one(
     # The current action's own save, and one only. `Muuda` is beside it with a
     # save of its own — a different operation, which is the distinction this
     # round exists to make (brief §9).
-    zone = body[body.index('id="praegune-tegevus"') : body.index('id="lisa-teemale"')]
+    # `PRAEGUNE TEGEVUS` ends where `TÖÖPLAAN` begins (docs/adr/0133), whose
+    # own controls are plan edits rather than saves of this zone.
+    zone = body[body.index('id="praegune-tegevus"') : body.index('id="tooplaan"')]
     completion = zone[zone.index('class="curact__form"') :]
+    completion = completion[: completion.index("</form>")]
     assert completion.count('type="submit"') == 1
     assert zone.count('type="submit"') == 2
 
@@ -2776,8 +2779,11 @@ def test_the_current_action_zone_holds_the_task_and_exactly_one_way_to_finish_it
     assert "Mida tegid?" in zone
     assert "Muuda" in zone
     # **The whole point of the round.** Completion is the result being saved,
-    # so there is no second control that completes without one.
-    for gone in ("✓ Tehtud", "Märgi tehtuks", "Tehtud</button>"):
+    # so there is no second control that completes without one. `✓ Tehtud`
+    # since docs/adr/0133 §4 is the disclosure that *opens* that one form — a
+    # `<summary>`, not a button and not a request.
+    assert '<summary class="disclosure-chip">✓ Tehtud</summary>' in zone
+    for gone in ("Märgi tehtuks", "Tehtud</button>", "/valmis/"):
         assert gone not in zone
     # And not the retired controls or vocabulary.
     assert "Lükka edasi" not in body

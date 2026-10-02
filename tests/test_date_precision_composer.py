@@ -797,7 +797,13 @@ def test_uus_teema_keeps_the_narrower_contract_it_had(signed_in):
     """
     from app.matters.forms import NextActionForm
 
-    assert set(NextActionForm(prefix="next").fields) == {"text", "target_date", "responsible"}
+    # `action_id` names the step `Muuda` edits (docs/adr/0133 §4); not a period.
+    assert set(NextActionForm(prefix="next").fields) == {
+        "text",
+        "target_date",
+        "responsible",
+        "action_id",
+    }
     assert "next_precision" in NextActionForm(periods=True).fields
 
     crafted = NextActionForm(

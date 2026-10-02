@@ -448,8 +448,10 @@ def test_completion_is_the_result_being_saved_and_swaps_the_whole_column(
     assert "/praegune/" in row, "the zone no longer offers the completion route"
     assert 'hx-target="#teema-vaade"' in row
     # The two-save shape is gone: no completion route that writes no result.
+    # `✓ Tehtud` is the disclosure around that one form (docs/adr/0133 §4),
+    # never a button posting somewhere of its own.
     assert "/valmis/" not in row
-    assert "✓ Tehtud" not in row
+    assert "Tehtud</button>" not in row
 
 
 # ---------------------------------------------------------------------------
@@ -701,10 +703,12 @@ def test_the_current_step_shows_its_text_its_date_and_tehtud(signed_in, normal_m
 
     assert "Vaadata uus eelnõu versioon üle" in flat
     assert action.display_date in flat
-    # **Not «Tehtud».** State A is the task, its date, and the box that finishes
-    # it by recording what was done (docs/adr/0075 §3).
+    # **Not a bare «Tehtud».** State A is the task, its date, and the box that
+    # finishes it by recording what was done (docs/adr/0075 §3) — behind the
+    # `✓ Tehtud` disclosure since docs/adr/0133 §4, which opens it and
+    # completes nothing on its own.
     assert "Mida tegid?" in flat
-    assert "Tehtud" not in flat
+    assert "Tehtud</button>" not in flat
     for word in RETIRED_WORDS:
         assert word not in flat
 

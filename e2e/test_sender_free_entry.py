@@ -28,7 +28,7 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, give_first_step, sign_in
+from e2e.conftest import MARTIN, give_first_step, sign_in, start_first_step
 
 pytestmark = pytest.mark.e2e
 
@@ -142,6 +142,7 @@ def test_a_sender_can_be_named_on_uus_teema(page, base_url):
     give_first_step(page)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
+    start_first_step(page)
 
     complaints = page.locator(".field__error, .formerror, .message--error").all_inner_texts()
     assert not complaints, f"the form refused: {complaints}"
@@ -171,6 +172,7 @@ def test_a_sender_named_here_is_afterwards_in_the_one_catalogue(page, base_url):
     give_first_step(page)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
+    start_first_step(page)
 
     page.get_by_role("link", name="Muuda", exact=False).first.click()
     page.wait_for_load_state("networkidle")

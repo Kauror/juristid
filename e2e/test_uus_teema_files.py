@@ -17,7 +17,7 @@ import re
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, give_first_step, open_valdkond, sign_in
+from e2e.conftest import MARTIN, give_first_step, open_valdkond, sign_in, start_first_step
 
 pytestmark = pytest.mark.e2e
 
@@ -59,6 +59,7 @@ def create_with_files(page, base_url: str, title: str, paths: list[str]) -> str:
     assert not complaints, f"the form refused: {complaints}"
 
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    start_first_step(page)
     return page.url
 
 
@@ -161,6 +162,7 @@ def test_loo_teema_pressed_while_uploading_files_each_file_once(page, base_url, 
     route, response = held.pop()
     route.fulfill(response=response)
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    start_first_step(page)
     said = confirmation(page)
     open_documents(page)
 
@@ -190,6 +192,7 @@ def test_a_file_taken_back_off_does_not_arrive(page, base_url, tmp_path):
     name_a_next_step(page)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    start_first_step(page)
     open_documents(page)
 
     expect(file_row(page, "alles.pdf")).to_be_visible()
@@ -277,6 +280,7 @@ def test_a_refused_save_does_not_throw_the_chosen_file_away(page, base_url, tmp_
     name_a_next_step(page)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    start_first_step(page)
     open_documents(page)
 
     expect(page.get_by_text("Sellel teemal ei ole veel dokumente.")).to_have_count(0)
@@ -368,6 +372,7 @@ def test_a_dropped_file_reaches_dokumendid(page, base_url, tmp_path):
     name_a_next_step(page)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    start_first_step(page)
     open_documents(page)
 
     expect(file_row(page, "lohistatud.pdf")).to_be_visible()

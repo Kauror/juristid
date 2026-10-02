@@ -25,7 +25,14 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import SANDRA, give_first_step, open_add_panel, sign_in, unique_title
+from e2e.conftest import (
+    SANDRA,
+    give_first_step,
+    open_add_panel,
+    sign_in,
+    start_first_step,
+    unique_title,
+)
 from tests.synthetic_containers import plain_zip, signed_container
 
 pytestmark = pytest.mark.e2e
@@ -54,6 +61,7 @@ def _new_teema(page, base_url: str, title: str) -> str:
     give_first_step(page)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    start_first_step(page)
     return page.url
 
 
@@ -145,6 +153,7 @@ def test_uus_teema_takes_a_bdoc_and_an_asice_and_files_them_as_themselves(
     give_first_step(page)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    start_first_step(page)
     complaints = page.locator(".field__error, .formerror, .message--error").all_inner_texts()
     assert not complaints, f"the form refused: {complaints}"
 

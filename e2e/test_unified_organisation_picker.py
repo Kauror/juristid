@@ -64,7 +64,7 @@ import uuid
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, give_first_step, sign_in
+from e2e.conftest import MARTIN, give_first_step, sign_in, start_first_step
 
 pytestmark = pytest.mark.e2e
 
@@ -248,6 +248,7 @@ def file_the_teema(page, title: str) -> None:
     complaints = page.locator(".field__error, .formerror").all_inner_texts()
     assert not complaints, f"the form refused: {complaints}"
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    start_first_step(page)
 
 
 # ---------------------------------------------------------------------------

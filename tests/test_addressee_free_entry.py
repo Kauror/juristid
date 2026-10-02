@@ -461,12 +461,13 @@ def test_a_late_failure_on_uus_teema_leaves_no_institution_behind(signed_in, mon
         raise DomainError("Järgmine samm ei kõlba.")
 
     # The last service `matter_create` calls, which is what makes this a *late*
-    # failure. It used to be `set_next_action_for_new_work` behind `Järgmiseks`;
-    # that block is off the page and the step is established from `Arvamuse
-    # tähtaeg` instead (docs/adr/0094 §5). The guarantee under test — one
-    # transaction, so a refusal after the institution was resolved takes it with
-    # it — is unchanged, and it is still asserted against the last thing to run.
-    monkeypatch.setattr("app.matters.views.establish_opinion_preparation_action", refuse)
+    # failure. It was `set_next_action_for_new_work` behind `Järgmiseks`, then
+    # `establish_opinion_preparation_action` from `Arvamuse tähtaeg`
+    # (docs/adr/0094 §5); since docs/adr/0133 §8 it is seeding the `Tööplaan`.
+    # The guarantee under test — one transaction, so a refusal after the
+    # institution was resolved takes it with it — is unchanged, and it is still
+    # asserted against the last thing to run.
+    monkeypatch.setattr("app.matters.views.seed_standard_plan", refuse)
 
     response = signed_in.post(
         CREATE,

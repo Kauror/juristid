@@ -1022,13 +1022,12 @@ def test_submitting_the_form_untouched_stores_no_deadline(signed_in, specialist,
 def test_a_deadline_somebody_typed_is_kept_and_counted_at_once(signed_in, specialist):
     """D and E. Entered deliberately, stored exactly, and immediately work.
 
-    **It arrives as the step rather than as the obligation, and that is
-    docs/adr/0050 working.** Since docs/adr/0094 §5 the one date this page asks
-    for does two things: it writes `Matter.response_deadline` and it establishes
-    `Koostan arvamuse` for the same day. An open `NextAction` is the lawyer's
-    current instruction, and the rule this whole file is built on says the
-    surfaces show that instead of the deadline underneath it — so the file is
-    one row, not two rows about the same day.
+    **It arrives as the obligation, and a step started later outranks it —
+    docs/adr/0050 working.** Since docs/adr/0133 §8 the one date this page asks
+    for writes `Matter.response_deadline` and nothing else, so the file is one
+    row, the obligation, from the moment it is saved. Once the lawyer starts a
+    step from the plan, that open `NextAction` is their current instruction and
+    the surfaces show it instead of the deadline underneath — still one row.
 
     Nothing about the *stored* column moved, and the assertions below say so
     from both sides: the date is exactly what was typed, the Matter is in the
@@ -1054,8 +1053,19 @@ def test_a_deadline_somebody_typed_is_kept_and_counted_at_once(signed_in, specia
     matter = Matter.objects.get(title="Sisestatud tähtajaga teema")
     assert matter.response_deadline == due
 
-    # One row for the file, and it is the step the lawyer was shown before they
-    # pressed the button.
+    # One row for the file at once: the obligation itself.
+    (item,) = [
+        entry for entry in wi.work_items(specialist, today=anchor) if entry.matter_id == matter.pk
+    ]
+    assert item.meaning == wi.MEANING_RESPONSE
+    assert item.when == due
+
+    # The lawyer starts the plan's first step, dated: one row still, the step.
+    from app.workflow.plan import activate_plan_step, plan_steps_of
+
+    activate_plan_step(
+        matter=matter, step=plan_steps_of(matter)[0], actor=specialist, target_date=due
+    )
     (item,) = [
         entry for entry in wi.work_items(specialist, today=anchor) if entry.matter_id == matter.pk
     ]
@@ -1078,12 +1088,14 @@ def test_a_deadline_somebody_typed_is_kept_and_counted_at_once(signed_in, specia
 def test_completing_the_step_hands_the_row_back_to_the_deadline(signed_in, specialist):
     """The other half of the suppression, and the proof it is not a deletion.
 
-    `Koostan arvamuse` done, and `Arvamuse tähtaeg` is what the file is standing
-    on again — same day, same column, never rewritten. That is what makes the
+    The step done, and `Arvamuse tähtaeg` is what the file is standing on
+    again — same day, same column, never rewritten. That is what makes the
     assertion above a statement about *display order* rather than about the
-    record (docs/adr/0050, docs/adr/0094 §5).
+    record (docs/adr/0050). The step is the plan's first, started as a lawyer
+    starts it, since a new Teema no longer gets `Koostan arvamuse`
+    (docs/adr/0133 §8).
     """
-    from app.workflow.models import NextAction
+    from app.workflow.plan import activate_plan_step, plan_steps_of
     from app.workflow.services import complete_next_action
 
     anchor = _wednesday()
@@ -1097,7 +1109,10 @@ def test_completing_the_step_hands_the_row_back_to_the_deadline(signed_in, speci
         },
     )
     matter = Matter.objects.get(title="Lõpetatud sammuga teema")
-    complete_next_action(action=NextAction.objects.get(matter=matter), actor=specialist)
+    step = activate_plan_step(
+        matter=matter, step=plan_steps_of(matter)[0], actor=specialist, target_date=due
+    )
+    complete_next_action(action=step, actor=specialist)
 
     (item,) = [
         entry

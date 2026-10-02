@@ -327,6 +327,10 @@ def test_matter_detail_query_count_is_bounded(signed_in, specialist):
     # the phases it recorded a step in, so a phase it went through before it
     # lost its pattern stays on the rail. One read, flat in the population.
     #
+    # **54 since docs/adr/0133**: `Tööplaan` reads the Matter's plan steps once,
+    # and decides which is current from the open action already read. One read,
+    # flat in the population and in the plan's length.
+    #
     # **Plus the deletion plan, measured rather than guessed (docs/adr/0120 §7).**
     # A writer's header asks `plan_matter_deletion` whether `Kustuta` can
     # succeed, and the plan walks the ownership graph — a cost that belongs to
@@ -335,7 +339,7 @@ def test_matter_detail_query_count_is_bounded(signed_in, specialist):
     # as tight as it was.
     with CaptureQueriesContext(connection) as plan:
         plan_matter_deletion(matter)
-    assert len(captured) < 53 + len(plan)
+    assert len(captured) < 54 + len(plan)
 
 
 def test_selectors_reuse_the_prefetched_open_action(specialist):

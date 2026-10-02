@@ -18,7 +18,7 @@ import pytest
 from playwright.sync_api import expect
 
 from app.core.management.commands.seed_e2e_data import OPEN_TITLE
-from e2e.conftest import SANDRA, open_matter, sign_in
+from e2e.conftest import SANDRA, open_done_form, open_matter, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -51,6 +51,7 @@ def test_the_mida_tegid_box_shows_that_it_has_focus(page, base_url):
     sign_in(page, base_url, SANDRA)
     page.set_viewport_size(DESKTOP)
     open_matter(page, base_url, OPEN_TITLE)
+    open_done_form(page)
     box = page.locator("#id_praegune_body")
     expect(box).to_be_visible()
     box.scroll_into_view_if_needed()

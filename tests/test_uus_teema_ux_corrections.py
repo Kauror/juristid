@@ -308,8 +308,8 @@ def test_unknown_stays_unknown_across_a_refusal(signed_in):
 # ---------------------------------------------------------------------------
 
 
-def test_the_deadline_establishes_the_opinion_step_exactly_once(signed_in, specialist):
-    """One date, one obligation, one step — and no second step beside it."""
+def test_the_deadline_is_one_obligation_and_no_step(signed_in, specialist):
+    """One date, one obligation — and no step made from it (docs/adr/0133 §8)."""
     response = signed_in.post(
         CREATE,
         {"title": "Üks kuupäev", "owner": str(specialist.pk), "response_deadline": "18.9.2026"},
@@ -319,10 +319,8 @@ def test_the_deadline_establishes_the_opinion_step_exactly_once(signed_in, speci
     matter = Matter.objects.get(title="Üks kuupäev")
     assert matter.response_deadline == date(2026, 9, 18)
 
-    actions = list(NextAction.objects.filter(matter=matter))
-    assert len(actions) == 1
-    assert actions[0].text == "Koostan arvamuse"
-    assert actions[0].target_date == date(2026, 9, 18)
+    assert not NextAction.objects.filter(matter=matter).exists()
+    assert matter.plan_steps.count() == 5
 
 
 def test_a_blank_deadline_invents_nothing(signed_in):

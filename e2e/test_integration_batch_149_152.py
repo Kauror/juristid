@@ -35,7 +35,15 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import KAIK_ROW, SANDRA, give_first_step, open_add_panel, open_kaik_row, sign_in
+from e2e.conftest import (
+    KAIK_ROW,
+    SANDRA,
+    give_first_step,
+    open_add_panel,
+    open_kaik_row,
+    sign_in,
+    start_first_step,
+)
 
 pytestmark = pytest.mark.e2e
 
@@ -100,6 +108,7 @@ def create_with_a_staged_file(page, base_url: str, title: str, pdf: Path) -> str
     give_first_step(page)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    start_first_step(page)
     return page.url
 
 

@@ -42,7 +42,7 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, give_first_step, needs_intake_reading, sign_in
+from e2e.conftest import MARTIN, give_first_step, needs_intake_reading, sign_in, start_first_step
 from e2e.test_uus_teema_reading import (
     LETTER,
     REPOSITORY_ROOT,
@@ -211,6 +211,7 @@ def test_a_body_typed_as_saatja_is_immediately_filterable_in_teemad(page, base_u
     complaints = page.locator(".field__error, .formerror, .message--error").all_inner_texts()
     assert not complaints, f"the form refused: {complaints}"
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    start_first_step(page)
 
     # -- offered by all three institution controls -------------------------
     page.goto(f"{base_url}/teemad/?olek=koik")

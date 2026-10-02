@@ -146,6 +146,22 @@ def _matter(world) -> Matter:
     return world["matter"]
 
 
+def _plan_steps(matter):
+    from app.workflow.models import MatterPlanStep
+
+    return MatterPlanStep.objects.filter(matter=matter)
+
+
+def _plan_step(world, key: str):
+    return _plan_steps(world["planned"]).get(template_step_key=key)
+
+
+def _plan_revision(matter) -> str:
+    from app.workflow.plan import plan_revision, plan_steps_of
+
+    return plan_revision(plan_steps_of(matter))
+
+
 WRITE_ROUTES: tuple[WriteRoute, ...] = (
     WriteRoute(
         name="matters:matter_create",
@@ -964,6 +980,94 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         ),
         probe=lambda w: RelatedSuggestionDismissal.objects.count(),
     ),
+    # -- `Tööplaan` (docs/adr/0133) ---------------------------------------
+    #
+    # Fired at `planned`, a Matter carrying the standard plan with one step
+    # done, one skipped and nothing current, so every act has something real to
+    # change; seeding is fired at `matter`, which has no plan. Each shape edit
+    # posts the plan's revision as it stands, so a refusal is the boundary's and
+    # never the stale-plan rule's.
+    WriteRoute(
+        name="matters:seed_plan",
+        label="Tavapärase tööplaani lisamine",
+        request=lambda w: ({"pk": w["matter"].pk}, {"revision": _plan_revision(w["matter"])}),
+        probe=lambda w: _plan_steps(w["matter"]).count(),
+        events=(ChangeEventType.PLAN_SEEDED,),
+    ),
+    WriteRoute(
+        name="matters:add_plan_step",
+        label="Tööplaani sammu lisamine",
+        request=lambda w: (
+            {"pk": w["planned"].pk},
+            {"title": "Loata lisatud samm", "revision": _plan_revision(w["planned"])},
+        ),
+        probe=lambda w: _plan_steps(w["planned"]).filter(title="Loata lisatud samm").count(),
+        events=(ChangeEventType.PLAN_STEP_ADDED,),
+    ),
+    WriteRoute(
+        name="matters:edit_plan_step",
+        label="Tööplaani sammu muutmine",
+        request=lambda w: (
+            {"pk": w["planned"].pk, "step_id": _plan_step(w, "website-overview").pk},
+            {
+                "title": "Loata muudetud samm",
+                "operation": "GENERIC",
+                "revision": _plan_revision(w["planned"]),
+            },
+        ),
+        probe=lambda w: _plan_step(w, "website-overview").title,
+        events=(ChangeEventType.PLAN_STEP_CHANGED,),
+    ),
+    WriteRoute(
+        name="matters:start_plan_step",
+        label="Tööplaani sammu alustamine",
+        request=lambda w: (
+            {"pk": w["planned"].pk, "step_id": _plan_step(w, "consult-members").pk},
+            {},
+        ),
+        probe=lambda w: w["planned"].next_actions.filter(status=ActionStatus.OPEN).count(),
+        events=(ChangeEventType.PLAN_STEP_ACTIVATED, ChangeEventType.NEXT_ACTION_SET),
+    ),
+    WriteRoute(
+        name="matters:skip_plan_step",
+        label="Tööplaani sammu vahelejätmine",
+        request=lambda w: (
+            {"pk": w["planned"].pk, "step_id": _plan_step(w, "send-opinion").pk},
+            {"revision": _plan_revision(w["planned"])},
+        ),
+        probe=lambda w: _plan_step(w, "send-opinion").state,
+        events=(ChangeEventType.PLAN_STEP_SKIPPED,),
+    ),
+    WriteRoute(
+        name="matters:restore_plan_step",
+        label="Tööplaani sammu taastamine",
+        request=lambda w: (
+            {"pk": w["planned"].pk, "step_id": _plan_step(w, "form-position").pk},
+            {"revision": _plan_revision(w["planned"])},
+        ),
+        probe=lambda w: _plan_step(w, "form-position").state,
+        events=(ChangeEventType.PLAN_STEP_RESTORED,),
+    ),
+    WriteRoute(
+        name="matters:repeat_plan_step",
+        label="Tööplaani sammu kordamine",
+        request=lambda w: (
+            {"pk": w["planned"].pk, "step_id": _plan_step(w, "read-material").pk},
+            {"revision": _plan_revision(w["planned"])},
+        ),
+        probe=lambda w: _plan_steps(w["planned"]).count(),
+        events=(ChangeEventType.PLAN_STEP_ADDED,),
+    ),
+    WriteRoute(
+        name="matters:move_plan_step",
+        label="Tööplaani järjekorra muutmine",
+        request=lambda w: (
+            {"pk": w["planned"].pk, "step_id": _plan_step(w, "send-opinion").pk},
+            {"direction": "up", "revision": _plan_revision(w["planned"])},
+        ),
+        probe=lambda w: _plan_step(w, "send-opinion").position,
+        events=(ChangeEventType.PLAN_STEP_MOVED,),
+    ),
 )
 
 
@@ -1135,8 +1239,34 @@ def _build_world():
         owner=None, title="Vastutajata teema", reference_year=2099, reference_number=911
     )
 
+    # A Matter carrying the standard `Tööplaan` (docs/adr/0133), with one step
+    # done, one skipped and nothing current — so starting, skipping, restoring,
+    # repeating, moving and editing each have a real step to act on.
+    from app.matters.workspace import complete_current_action
+    from app.workflow import plan as work_plan
+
+    planned = factories.MatterFactory(
+        owner=author, title="Tööplaaniga teema", reference_year=2099, reference_number=912
+    )
+    work_plan.seed_standard_plan(matter=planned, actor=author)
+    first = work_plan.activate_plan_step(
+        matter=planned,
+        step=work_plan.plan_steps_of(planned)[0],
+        actor=author,
+    )
+    complete_current_action(
+        matter=planned, author=author, action_id=first.pk, body="Lugesin materjali läbi."
+    )
+    work_plan.skip_plan_step(
+        step=next(
+            s for s in work_plan.plan_steps_of(planned) if s.template_step_key == "form-position"
+        ),
+        actor=author,
+    )
+
     return {
         "matter": matter,
+        "planned": planned,
         "entry": entry,
         "waiting_engagement": waiting_engagement,
         "quiet_engagement": quiet_engagement,

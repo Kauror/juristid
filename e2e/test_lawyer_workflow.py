@@ -29,16 +29,16 @@ from e2e.conftest import (
     open_next_action_form,
     sign_in,
     sign_out,
+    start_first_step,
 )
 
-#: The step `Uus teema` gives a file, in the department's own words.
+#: The first step of a new file, in the department's own words.
 #:
-#: Not typed by the lawyer any more: the walkthrough used to write «Koosta ja
-#: saada koja arvamus» into `Järgmiseks`, and that block is off the creation
-#: page — `Arvamuse tähtaeg` establishes this step instead, from the service's
-#: own constant, so that what a person reads before saving and what lands on
-#: their Minu asjad are one string (`app.workflow.services`, docs/adr/0094 §5).
-FIRST_STEP = "Koostan arvamuse"
+#: Not typed by the lawyer: `Uus teema` seeds the faint standard `Tööplaan`, and
+#: the walkthrough starts its first suggestion with `Alusta` — the plan's own
+#: words become the step (docs/adr/0133 §4). Until docs/adr/0133 §8 it was
+#: `Koostan arvamuse`, established from `Arvamuse tähtaeg`.
+FIRST_STEP = "Tutvu materjaliga"
 
 pytestmark = pytest.mark.e2e
 
@@ -184,10 +184,9 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     page.get_by_role("radio", name="Kooskõlastusringil", exact=True).check()
     page.get_by_role("checkbox", name="Seadus", exact=True).check()
 
-    # One date, and it does both things. `Arvamuse tähtaeg` records what Koda
-    # owes *and* establishes the file's first step — `Koostan arvamuse`, which
-    # the walkthrough names further down. `Järgmiseks` was a second box here and
-    # is off this page (docs/adr/0094 §5, §6).
+    # One date: what Koda owes. It no longer makes a step (docs/adr/0133 §8);
+    # the file's first step is started from its `Tööplaan` once it exists.
+    # `Järgmiseks` was a second box here and is off this page (docs/adr/0094 §6).
     page.locator("#id_response_deadline").fill(_future(21))
     screenshots(page, "02-uus-teema")
 
@@ -203,7 +202,8 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     expect(crumbs.get_by_role("link", name="Teemad")).to_be_visible()
     assert not re.search(r"\d{4}_\d+", crumbs.inner_text()), crumbs.inner_text()
 
-    expect(page.locator(".curact__text")).to_have_text(FIRST_STEP)
+    start_first_step(page)
+    expect(page.locator("#praegune-tegevus .curact__text")).to_have_text(FIRST_STEP)
     # The step and its date, and no word saying which of three categories it
     # is. The classification the composer used to demand went with the composer
     # question that demanded it (ADR 0052 §6).
@@ -223,7 +223,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # step is on the page as its own sentence — and with no classification chip
     # in front of it, on this surface any more than on the Teema (ADR 0054).
     page.locator(".topnav__link", has_text="Minu asjad").click()
-    row = page.locator(".workrow2").filter(has_text=FIRST_STEP)
+    row = page.locator(".workrow2").filter(has_text=FIRST_STEP).filter(has_text=MATTER_TITLE)
     expect(row).to_have_count(1)
     expect(row.locator(".mode")).to_have_count(0)
     for retired in ("TEEN", "OOTAN", "JÄLGIN"):

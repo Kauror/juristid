@@ -29,7 +29,6 @@ from app.matters.forms import MatterCreateForm
 from app.matters.models import Matter, MatterPersonalNote
 from app.submissions.models import Submission
 from app.taxonomy.models import LegalInstrumentType, PolicyArea
-from app.workflow.enums import ActionKind, DatePrecision, DateSemantics
 from app.workflow.models import NextAction
 from tests import factories
 from tests import synthetic_corpus as corpus
@@ -184,19 +183,12 @@ def test_a_full_create_stores_exactly_what_was_entered(signed_in, specialist, ev
     assert link.url == "https://eelnoud.valitsus.ee/main/mount/docList/abc"
     assert link.kind == ProceduralLinkKind.OTHER
 
-    action = NextAction.objects.get(matter=matter)
-    # Nobody chose these three. A step created natively is DO / DEADLINE /
-    # EXACT, because on this surface the date is the day the work gets done
-    # (ADR 0052 §3).
-    assert action.kind == ActionKind.DO
-    assert action.date_semantics == DateSemantics.DEADLINE
-    assert action.date_precision == DatePrecision.EXACT
-    # The step is `Koostan arvamuse` and its day is `Arvamuse tähtaeg` — the
-    # same date the Matter carries, from the one box that asked for it.
-    assert action.text == "Koostan arvamuse"
-    assert action.target_date == date(2026, 9, 18)
-    # No responsible control on the page; the step inherits the Matter's owner.
-    assert action.responsible == specialist
+    # **No step from the deadline** (docs/adr/0133 §8): the date is the
+    # obligation on the Matter, and the work towards it is the faint standard
+    # `Tööplaan`, none of it started.
+    assert not NextAction.objects.filter(matter=matter).exists()
+    assert matter.response_deadline == date(2026, 9, 18)
+    assert matter.plan_steps.count() == 5
 
 
 def test_the_summary_is_the_matters_own_field_and_not_an_entry(signed_in, specialist):

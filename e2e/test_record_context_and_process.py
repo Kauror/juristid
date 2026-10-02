@@ -35,6 +35,7 @@ from e2e.conftest import (
     open_hetkeseis,
     open_kaik_row,
     sign_in,
+    start_first_step,
     unique_title,
 )
 
@@ -66,6 +67,7 @@ def _new_matter(page, base_url: str, prefix: str, *, stage: str | None = None, l
     give_first_step(page)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    start_first_step(page)
     url = page.url
     if law:
         page.goto(f"{url}muuda/")

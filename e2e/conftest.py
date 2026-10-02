@@ -584,16 +584,17 @@ def open_hetkeseis(page) -> None:
 
 
 def give_first_step(page, *, days: int = 7) -> None:
-    """Fill `Arvamuse tähtaeg` on an open `Uus teema`, which gives the Teema a step.
+    """Fill `Arvamuse tähtaeg` on an open `Uus teema` — the obligation, not a step.
 
     Every Teema this suite leaves behind without an open step is a permanent row
     in the department's «järgmise tegevuseta» list, which other files read — so a
     file that creates Matters owes each of them one.
 
-    It used to be four lines per caller: type a sentence into `Järgmiseks` and
-    press the `+1 nädal` chip. Neither control is on this page any more. The one
-    date the form asks for establishes the canonical `Koostan arvamuse` step, so
-    this is the whole of it (docs/adr/0094 §5, §6).
+    Until docs/adr/0133 §8 the one date the form asks for also established the
+    canonical `Koostan arvamuse` step, so this was the whole of it. It now
+    records the obligation only, and the new Teema opens with its faint
+    `Tööplaan` and no current step: the caller follows the creation with
+    :func:`start_first_step`, which is what a lawyer does next.
 
     Relative to today rather than a fixed future date: a constant eventually
     becomes a date in the past, and then every Teema this suite files is overdue
@@ -602,6 +603,24 @@ def give_first_step(page, *, days: int = 7) -> None:
     """
     when = date.today() + timedelta(days=days)
     page.fill("#id_response_deadline", f"{when.day}.{when.month}.{when.year}")
+
+
+def start_first_step(page, *, days: int = 7) -> None:
+    """Start a new Teema's first `Tööplaan` step, dated ``days`` from today.
+
+    The browser twin of what a lawyer does on a fresh Teema since docs/adr/0133:
+    `Soovitatud järgmisena · Tutvu materjaliga` → `Alusta`, with a day. It leaves
+    the Teema with an open step, dated, which is what `give_first_step` used to
+    leave behind through `Koostan arvamuse` — so the department's «järgmise
+    tegevuseta» list other files read is no longer than it was.
+    """
+    zone = page.locator("#praegune-tegevus")
+    zone.locator("#alusta-samm > summary").click()
+    when = date.today() + timedelta(days=days)
+    zone.locator("#id_alusta_target_date").fill(f"{when.day}.{when.month}.{when.year}")
+    zone.locator("#alusta-samm button[type=submit]").click()
+    wait_for_htmx(page)
+    zone.locator("#tehtud").wait_for(state="attached")
 
 
 def open_composer(page) -> None:
@@ -623,15 +642,29 @@ def open_composer(page) -> None:
     page.locator("#id_marge_title").wait_for(state="visible")
 
 
+def open_done_form(page) -> None:
+    """`✓ Tehtud` — open the completion form beside the current step.
+
+    Behind an explicit disclosure since docs/adr/0133 §4; the form inside is the
+    one `Mida tegid?` has always been. Looked at before clicking, so a form a
+    refusal reopened is not shut by the act of asking for it.
+    """
+    panel = page.locator("#tehtud")
+    if panel.get_attribute("open") is None:
+        panel.locator("> summary").click()
+    page.locator("#id_praegune_body").wait_for(state="visible")
+
+
 def finish_current_action(page, text: str) -> None:
     """Record what was done about the current task, which completes it.
 
     One operation and one button: there is no `Märgi tehtuks` on this page
-    (docs/adr/0075 §3).
+    (docs/adr/0075 §3). The form is behind `✓ Tehtud` (docs/adr/0133 §4).
     """
     zone = page.locator("#praegune-tegevus")
+    open_done_form(page)
     zone.locator(".composer__body").fill(text)
-    zone.locator("button[type=submit]").last.click()
+    zone.locator("#praegune-tegevus-vorm button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
 

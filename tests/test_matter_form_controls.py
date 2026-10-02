@@ -284,7 +284,9 @@ def test_the_form_has_no_kind_and_no_date_meaning(signed_in):
 
     assert "kind" not in fields
     assert "date_semantics" not in fields
-    assert set(fields) == {"text", "target_date", "responsible"}
+    # `action_id` is the hidden name of the step `Muuda` edits
+    # (docs/adr/0133 §4) — an identity, not a classification.
+    assert set(fields) == {"text", "target_date", "responsible", "action_id"}
 
 
 def test_the_whole_jargmiseks_block_is_off_the_creation_page(signed_in):

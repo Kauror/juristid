@@ -22,6 +22,7 @@ from e2e.conftest import (
     finish_current_action,
     open_add_panel,
     open_composer,
+    open_done_form,
     set_next_step,
     sign_in,
 )
@@ -71,9 +72,12 @@ def test_the_current_action_loop_from_task_to_result_to_the_next_one(page, base_
     set_step(page, "Vaadata uus eelnõu versioon üle")
 
     zone = page.locator("#praegune-tegevus")
+    open_done_form(page)
     zone.locator(".composer__body").fill("Vaatasin versiooni üle ja tegin märkused.")
-    zone.locator("input[type=file]").set_input_files(_pdf(tmp_path, "markused.pdf"))
-    zone.locator("button[type=submit]").last.click()
+    zone.locator("#praegune-tegevus-vorm input[type=file]").set_input_files(
+        _pdf(tmp_path, "markused.pdf")
+    )
+    zone.locator("#praegune-tegevus-vorm button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
     # The task is gone, its result is on the chronology, and the file is under
@@ -115,7 +119,8 @@ def test_a_marge_while_a_task_is_open_leaves_the_task_alone(page, base_url):
 
     expect(chronology(page)).to_contain_text("Ministeerium helistas reedel")
     expect(page.locator(".curact__text")).to_have_text("Oodata ministeeriumi vastust")
-    expect(page.locator("#praegune-tegevus").get_by_text("Mida tegid?", exact=True)).to_be_visible()
+    # The step is still open, and `✓ Tehtud` still offers to finish it.
+    expect(page.locator("#praegune-tegevus #tehtud > summary")).to_have_text("✓ Tehtud")
 
 
 # ---------------------------------------------------------------------------
@@ -252,7 +257,8 @@ def test_a_blank_result_is_refused_beside_the_field_it_belongs_to(page, base_url
     create_matter(page, base_url, "Töölaua brauserikatse: tühi tulemus")
     set_step(page, "Saata kiri ministeeriumile")
 
-    page.locator("#praegune-tegevus button[type=submit]").last.click()
+    open_done_form(page)
+    page.locator("#praegune-tegevus-vorm button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
     expect(page.locator("#praegune-tegevus")).to_contain_text("Kirjelda, mida tegid.")
@@ -319,6 +325,7 @@ def test_the_workspace_is_operable_at_every_width(page, base_url, width):
 
     zone = page.locator("#praegune-tegevus")
     expect(zone.locator(".curact__text")).to_be_visible()
+    open_done_form(page)
     for control in (
         ".composer__body",
         ".curact__form .cx-drop",

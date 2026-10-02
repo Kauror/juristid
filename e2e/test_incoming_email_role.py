@@ -22,7 +22,7 @@ import re
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, give_first_step, sign_in, unique_title
+from e2e.conftest import MARTIN, give_first_step, sign_in, start_first_step, unique_title
 
 pytestmark = pytest.mark.e2e
 
@@ -50,6 +50,7 @@ def file_a_teema_with(page, base_url: str, title: str, paths: list[str]) -> None
     give_first_step(page)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    start_first_step(page)
 
 
 def document_row(page, filename: str):

@@ -463,8 +463,10 @@ def test_a_full_creation_writes_one_matter_with_every_answer(signed_in, speciali
     assert list(matter.policy_areas.all()) == [area]
     assert matter.brief_summary == ""
     assert MatterProceduralLink.objects.filter(matter=matter, url=EIS_URL, label="").count() == 1
-    # The deadline still establishes the opinion step, once (docs/adr/0094 §5).
-    assert NextAction.objects.filter(matter=matter).count() == 1
+    # The deadline is the obligation only, and the faint plan is the path
+    # (docs/adr/0133 §8): no step is made from it.
+    assert NextAction.objects.filter(matter=matter).count() == 0
+    assert matter.plan_steps.count() == 5
 
 
 # ---------------------------------------------------------------------------
