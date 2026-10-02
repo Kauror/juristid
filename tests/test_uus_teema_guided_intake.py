@@ -69,7 +69,9 @@ def stage(key: str) -> StageVocabulary:
 # 1 — The order
 # ---------------------------------------------------------------------------
 
-#: One marker per section, each unique in the form, in the owner's order.
+#: One marker per section, each unique in the form, in the owner's order —
+#: Hetkeseis directly under the Õigusakt that guides it, then Valdkond
+#: (docs/adr/0130 §1 and its 2026-10-02 amendment).
 ORDER = [
     ('name="title"', "Pealkiri"),
     ('name="sender_name"', "Saatja"),
@@ -78,8 +80,8 @@ ORDER = [
     ('name="menetlus-url"', "Menetluse link"),
     ('name="received_date"', "Saabus"),
     ('name="legal_instruments"', "Õigusakt"),
-    ('name="policy_areas"', "Valdkonnad"),
     ('name="stage"', "Hetkeseis"),
+    ('name="policy_areas"', "Valdkond"),
     ('name="notes"', "Märkmed"),
     ('name="files"', "Failid"),
     ("createform__actions", "Loo teema"),
@@ -100,9 +102,9 @@ def test_the_sections_are_in_the_owners_order(signed_in):
         ("Saatja", "Vastutaja"),
         ("Arvamuse tähtaeg", "Menetluse link"),
         ("Menetluse link", "Saabus"),
-        ("Õigusakt", "Valdkonnad"),
-        ("Valdkonnad", "Hetkeseis"),
-        ("Hetkeseis", "Märkmed"),
+        ("Õigusakt", "Hetkeseis"),
+        ("Hetkeseis", "Valdkond"),
+        ("Valdkond", "Märkmed"),
         ("Märkmed", "Failid"),
         ("Failid", "Loo teema"),
     ],
@@ -463,3 +465,59 @@ def test_a_full_creation_writes_one_matter_with_every_answer(signed_in, speciali
     assert MatterProceduralLink.objects.filter(matter=matter, url=EIS_URL, label="").count() == 1
     # The deadline still establishes the opinion step, once (docs/adr/0094 §5).
     assert NextAction.objects.filter(matter=matter).count() == 1
+
+
+# ---------------------------------------------------------------------------
+# 6 — «Valdkond», in the singular, and still several values
+#     (docs/adr/0130, amendment of 2026-10-02)
+# ---------------------------------------------------------------------------
+
+
+def _valdkond_legend(body: str) -> str:
+    """The text of the `<legend>` that heads the `policy_areas` group."""
+    before = body[: body.index('name="policy_areas"')]
+    start = before.rindex("<legend")
+    legend = body[start : body.index("</legend>", start)]
+    text = re.sub(r"<[^>]+>", " ", legend)
+    return " ".join(text.split())
+
+
+def test_the_heading_is_valdkond_in_the_singular(signed_in):
+    body = form_body(page(signed_in))
+
+    assert _valdkond_legend(body) == "Valdkond"
+    assert "Valdkonnad" not in body
+
+
+def test_valdkond_is_still_a_multi_select(signed_in, specialist):
+    field = MatterCreateForm(viewer=specialist).fields["policy_areas"]
+    body = form_body(page(signed_in))
+
+    assert field.__class__.__name__ == "ModelMultipleChoiceField"
+    assert 'data-chipcount-for="policy_areas"' in body
+    assert body.count('type="checkbox" name="policy_areas"') == (
+        PolicyArea.objects.filter(is_active=True).count()
+    )
+
+
+def test_several_valdkond_values_are_saved(signed_in):
+    areas = list(PolicyArea.objects.filter(is_active=True).order_by("pk")[:3])
+    assert len(areas) == 3
+
+    response = signed_in.post(
+        CREATE,
+        {"title": "Kolm valdkonda", "policy_areas": [area.pk for area in areas]},
+    )
+
+    assert response.status_code == 302
+    matter = Matter.objects.get(title="Kolm valdkonda")
+    assert sorted(matter.policy_areas.values_list("pk", flat=True)) == sorted(
+        area.pk for area in areas
+    )
+
+
+def test_muuda_teemat_keeps_its_own_heading(signed_in, specialist):
+    """Only `Uus teema` changed its wording; the edit page was not decided."""
+    matter = factories.MatterFactory(owner=specialist)
+
+    assert _valdkond_legend(page(signed_in, edit_url(matter))) == "Valdkonnad"

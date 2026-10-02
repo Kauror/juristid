@@ -1280,6 +1280,12 @@ class MatterCreateForm(
         set_choices(self, "source_organisations_other", everything)
 
         set_choices(self, "policy_areas", selectable_policy_areas())
+        # «Valdkond», in the singular, on this page's heading — the owner's
+        # wording for the question (docs/adr/0130, amendment of 2026-10-02).
+        # A label and nothing else: the field is still `policy_areas`, still
+        # several values, still a count beside the heading, and `Muuda teemat`
+        # keeps the shared label until that page is decided on its own.
+        self.fields["policy_areas"].label = "Valdkond"
         # The active vocabulary, in the department's reviewed order. New work is
         # filed under what is offered today; the edit form is the one that also
         # has to accept what a Matter already carries.

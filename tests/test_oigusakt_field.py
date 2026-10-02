@@ -600,18 +600,18 @@ def test_the_rendered_page_puts_oigusakt_first_in_the_classification_block(signe
     """The reviewed placement, asserted on the markup the server sends.
 
     `e2e/test_oigusakt_row.py` owns the geometry; this owns the order, which is
-    the half a screenshot cannot state. Õigusakt · Valdkonnad · Hetkeseis since
-    docs/adr/0130 §1 — the instrument first, because it is what the lawyer knows
-    first and what the Hetkeseis guidance reads. It was last
-    (docs/adr/0090 §7); `Menetlusliik` and `Adressaat` are still not between any
-    of them.
+    the half a screenshot cannot state. Õigusakt · Hetkeseis · Valdkond since
+    docs/adr/0130 §1 and its 2026-10-02 amendment — the instrument first,
+    because it is what the lawyer knows first, and the stage it guides directly
+    under it. It was last (docs/adr/0090 §7); `Menetlusliik` and `Adressaat` are
+    still not between any of them.
     """
     body = signed_in.get(CREATE).content.decode()
 
     valdkond = body.index('name="policy_areas"')
     stage = body.index('name="stage"')
     oigusakt = body.index('name="legal_instruments"')
-    assert oigusakt < valdkond < stage
+    assert oigusakt < stage < valdkond
 
 
 def test_the_page_offers_no_new_component(signed_in):

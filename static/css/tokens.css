@@ -203,6 +203,12 @@
   --text-body: var(--primitive-neutral-100);
   --text-secondary: var(--primitive-neutral-200);
   --text-muted: var(--primitive-neutral-300);
+  /* A `Hetkeseis` the chosen `Õigusakt` does not normally fit: `--text-muted`
+     (#7d8b99) taken 20% further down, because the muted step alone read too
+     close to an ordinary chip (docs/adr/0130, amendment of 2026-10-02). Its own
+     token rather than a primitive, because nothing else on the page is this
+     quiet and nothing else should borrow it. */
+  --text-atypical: #646f7a;
   --text-inverse: var(--primitive-brand-ink);
 
   --accent-primary: var(--primitive-brand-500);
@@ -289,6 +295,8 @@
   --text-body: #2c343c;
   --text-secondary: #4d5964;
   --text-muted: #63707c;
+  /* The light theme's equivalent: `--text-muted` taken 20% towards the page. */
+  --text-atypical: #828d96;
   --text-inverse: var(--primitive-neutral-0);
 
   --accent-primary: #0079a6;

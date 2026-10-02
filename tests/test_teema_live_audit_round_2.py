@@ -188,7 +188,25 @@ def test_the_shared_facts_are_asked_in_the_same_words(specialist):
     edit = MatterEditForm(viewer=specialist).fields
 
     for name in SHARED_FACTS:
+        if name in CREATE_ONLY_WORDING:
+            continue
         assert create[name].label == edit[name].label, name
+
+
+#: The one fact both pages ask in different words, by decision rather than by
+#: drift: `Uus teema` heads `policy_areas` «Valdkond», in the singular, and
+#: `Muuda teemat` keeps «Valdkonnad» until that page is decided on its own
+#: (docs/adr/0130, amendment of 2026-10-02). Same field, same control, same
+#: several values — only the heading differs, and this names it.
+CREATE_ONLY_WORDING = {"policy_areas": ("Valdkond", "Valdkonnad")}
+
+
+def test_the_one_wording_difference_is_the_recorded_one(specialist):
+    create = MatterCreateForm(viewer=specialist).fields
+    edit = MatterEditForm(viewer=specialist).fields
+
+    for name, (create_label, edit_label) in CREATE_ONLY_WORDING.items():
+        assert (create[name].label, edit[name].label) == (create_label, edit_label)
 
 
 def test_the_shared_facts_use_the_same_kind_of_control(specialist):

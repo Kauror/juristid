@@ -598,6 +598,20 @@ CANONICAL_RUN_DAY = "12.9.2026"
 #: really renders.
 CANONICAL_EXPECTED_DAY = "6.11.2026"
 
+#: The open Matter's `PRAEGUNE TEGEVUS` date — «Jälgi menetluse käiku», which
+#: `seed_e2e_data` plans for *today + 30 days*. Masked from the start (it is in
+#: `CLOCK_DEPENDENT`), and still not held still: a mask hides the glyphs, not
+#: the width, and `j.n.Y` drops leading zeros. On 2026-10-02 it went from
+#: «31.10.2026» to «1.11.2026», the masked box lost 7px, and «Vaatasin üle» and
+#: «Muuda» beside it moved with it — 808 pixels on `teema-ulevaade`,
+#: `teema-1024` and `teema-praegune` alike, on a pull request that touched
+#: none of them. «31.10.2026» is the string those three committed baselines
+#: already hold, so holding it keeps them valid rather than retaking them for
+#: the calendar.
+CURRENT_ACTION_DAY: tuple[str, ...] = (".curact__date",)
+CANONICAL_CURRENT_ACTION_DAY = "31.10.2026"
+_CURRENT_ACTION_HELD = ((CURRENT_ACTION_DAY[0], CANONICAL_CURRENT_ACTION_DAY),)
+
 #: The Ajajoon summary's «29.8», the `<time>` the timeline preview leads with.
 #:
 #: The `Ajajoon` head's preview quote and its date are both gone: the approved
@@ -764,10 +778,16 @@ SCENARIO_NORMALISED_TEXT: dict[str, tuple[tuple[str, str], ...]] = {
     # smaller fraction of a full page than of a 1,400×120 strip. A stale
     # baseline nobody can see is worse than a red one: the cost lands on
     # whoever's unrelated change finally pushes the total past the limit.
-    "teema-ulevaade": _held_still(
-        _STRIP_AND_CHRONOLOGY_RUN_DAYS, _STRIP_AND_CHRONOLOGY_EXPECTED_DAYS
+    "teema-ulevaade": (
+        *_held_still(_STRIP_AND_CHRONOLOGY_RUN_DAYS, _STRIP_AND_CHRONOLOGY_EXPECTED_DAYS),
+        *_CURRENT_ACTION_HELD,
     ),
-    "teema-1024": _held_still(_STRIP_AND_CHRONOLOGY_RUN_DAYS, _STRIP_AND_CHRONOLOGY_EXPECTED_DAYS),
+    "teema-1024": (
+        *_held_still(_STRIP_AND_CHRONOLOGY_RUN_DAYS, _STRIP_AND_CHRONOLOGY_EXPECTED_DAYS),
+        *_CURRENT_ACTION_HELD,
+    ),
+    # The `PRAEGUNE TEGEVUS` clip of the same Matter: only its date is in it.
+    "teema-praegune": _CURRENT_ACTION_HELD,
     # The archive row, which has one of the three and only one. It draws no
     # process strip at all and it never sent an opinion, so neither strip slot
     # is on it. What it does have is the `MATTER_CREATED` event this seeding
@@ -852,12 +872,17 @@ REQUIRED_NORMALISATIONS: dict[str, tuple[str, ...]] = {
         *_STRIP_AND_CHRONOLOGY_RUN_DAYS,
         *_STRIP_AND_CHRONOLOGY_EXPECTED_DAYS,
         *RAIL_OPINION_SENT,
+        *CURRENT_ACTION_DAY,
     ),
     "teema-1024": (
         *_STRIP_AND_CHRONOLOGY_RUN_DAYS,
         *_STRIP_AND_CHRONOLOGY_EXPECTED_DAYS,
         *RAIL_OPINION_SENT,
+        *CURRENT_ACTION_DAY,
     ),
+    # The seed plans the open Matter's step on every run, so its date is in
+    # this clip every time (`CANONICAL_CURRENT_ACTION_DAY`).
+    "teema-praegune": CURRENT_ACTION_DAY,
     # The archive row draws no process strip and has sent no opinion, so
     # «Teema loodud» is the whole of what it renders from the run's clock.
     "teema-arhiiv": (CHRONOLOGY_RUN_DAY[0],),
@@ -2041,7 +2066,7 @@ def test_a_closed_matter_day_really_does_move_without_the_normalisation(page, se
 
 
 def _open_matter_fixture(page, day: str) -> None:
-    """The open Matter's eight date slots, in the two shapes the page renders.
+    """The open Matter's nine date slots, in the two shapes the page renders.
 
     Every slot, not only the varying ones, because the scoping is the thing
     under test: a fixture holding just the two run-day dates would pass under a
@@ -2088,6 +2113,9 @@ def _open_matter_fixture(page, day: str) -> None:
         # <addressee>», the day a `<time>` stamped by the run (docs/adr/0129 §9,
         # `RAIL_OPINION_SENT`). The real capture renders it beside the strip and
         # the chronology, so the fixture does too.
+        # `PRAEGUNE TEGEVUS`'s date: planned from the same clock (today + 30),
+        # so it is drawn with `day` too (`CANONICAL_CURRENT_ACTION_DAY`).
+        f'<span class="curact__date">{day}</span>'
         '<span class="railcard__opinion" style="display:contents">'
         f"<time>{day}</time><span> · Näidisministeerium</span></span>"
         '<span id="probe">·</span></div>'
@@ -2110,7 +2138,12 @@ OPEN_MATTER_SCENARIOS = ("teema-ulevaade", "teema-1024")
 
 @pytest.mark.parametrize(
     "selector",
-    (*_STRIP_AND_CHRONOLOGY_RUN_DAYS, *_STRIP_AND_CHRONOLOGY_EXPECTED_DAYS, *RAIL_OPINION_SENT),
+    (
+        *_STRIP_AND_CHRONOLOGY_RUN_DAYS,
+        *_STRIP_AND_CHRONOLOGY_EXPECTED_DAYS,
+        *RAIL_OPINION_SENT,
+        *CURRENT_ACTION_DAY,
+    ),
 )
 def test_the_open_matter_run_days_are_the_same_width_on_any_day(page, selector):
     """`created_at` and `sent_at`, both stamped by the run that renders them.
@@ -2136,7 +2169,12 @@ def test_the_open_matter_run_days_are_the_same_width_on_any_day(page, selector):
 
 @pytest.mark.parametrize(
     "selector",
-    (*_STRIP_AND_CHRONOLOGY_RUN_DAYS, *_STRIP_AND_CHRONOLOGY_EXPECTED_DAYS, *RAIL_OPINION_SENT),
+    (
+        *_STRIP_AND_CHRONOLOGY_RUN_DAYS,
+        *_STRIP_AND_CHRONOLOGY_EXPECTED_DAYS,
+        *RAIL_OPINION_SENT,
+        *CURRENT_ACTION_DAY,
+    ),
 )
 def test_an_open_matter_run_day_really_does_move_without_the_normalisation(page, selector):
     """The hazard itself, before anything is asked to hold it still.

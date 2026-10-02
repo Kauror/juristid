@@ -117,18 +117,19 @@ def test_neither_question_is_drawn_on_the_page(signed_in):
 
 
 def test_the_classification_rows_are_in_the_reviewed_order(signed_in):
-    """Saatja · Õigusakt · Valdkonnad · Hetkeseis, and nothing between them.
+    """Saatja · Õigusakt · Hetkeseis · Valdkond, and nothing between them.
 
-    The instrument first since docs/adr/0130 §1 (it was last, docs/adr/0090 §7).
+    The instrument first since docs/adr/0130 §1 (it was last, docs/adr/0090 §7),
+    and the stage it guides directly under it since the 2026-10-02 amendment.
     """
     page = signed_in.get(CREATE).content.decode()
     positions = [
         page.index('id="saatja-valik"'),
         page.index('name="legal_instruments"'),
-        # The Valdkonnad chip row. It was `data-valdkond-disclosure` on a fold,
+        page.index('name="stage"'),
+        # The Valdkond chip row. It was `data-valdkond-disclosure` on a fold,
         # then a menu's trigger; it is a plain chip row again (docs/adr/0096 §2).
         page.index('name="policy_areas"'),
-        page.index('name="stage"'),
     ]
     assert positions == sorted(positions)
 

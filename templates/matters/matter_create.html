@@ -128,8 +128,8 @@
       **The order is the owner's, after lawyer feedback (docs/adr/0130 §1).**
       Pealkiri; who sent it and who owns it; the three facts that arrive with
       the file — when Koda's opinion is due, where the proceeding lives, when
-      it arrived; then the three classifications, instrument first; then the
-      private note; then the files, last, directly above the button.
+      it arrived; then the three classifications — the instrument, the stage it
+      guides, the subject area; then the private note; then the files, last, directly above the button.
 
       What the page no longer asks: `Millest teema räägib` and the link's
       `Nimetus`. Both are deferred, not deleted — the summary is written on the
@@ -247,13 +247,13 @@
       </label>
     </div>
 
-    {# 4 — Õigusakt, 5 — Valdkonnad, 6 — Hetkeseis. #}
+    {# 4 — Õigusakt, 5 — Hetkeseis, 6 — Valdkond. #}
     {% comment %}
       The three classifications, drawn at rest, each through the partial that
       `Muuda teemat` includes as well (docs/adr/0096 §1, §2). **Instrument
       first**: what kind of act the file is about is the first thing a lawyer
-      knows, and it is what the `Hetkeseis` guidance below reads
-      (docs/adr/0130 §1).
+      knows, and it is what the `Hetkeseis` guidance directly below it reads
+      (docs/adr/0130 §1 and its 2026-10-02 amendment).
 
       What each control *is* has not moved — `Õigusakt` and `Valdkonnad` hold
       several values and say so, `Hetkeseis` holds one and says so, and `Muu`
@@ -266,15 +266,6 @@
     {% endcomment %}
     <div class="createform__row">
       {% include "matters/partials/oigusakt_field.html" %}
-    </div>
-
-    {% comment %}
-      **Valdkonnad are not guided by anything.** No area is dimmed, filtered,
-      suggested or ticked because of an `Õigusakt`, a title or a sender. Every
-      area is exactly as selectable as before (docs/adr/0130 §6).
-    {% endcomment %}
-    <div class="createform__row">
-      {% include "matters/partials/valdkonnad_field.html" %}
     </div>
 
     {% comment %}
@@ -296,6 +287,21 @@
     <div class="createform__row" data-stage-guidance="hetkeseis-juhis">
       {% include "matters/partials/hetkeseis_field.html" %}
       {{ stage_guidance|json_script:"hetkeseis-juhis" }}
+    </div>
+
+    {% comment %}
+      `Valdkond` — after `Hetkeseis` since the 2026-10-02 amendment of
+      docs/adr/0130: the guided field sits directly under the field that guides
+      it, and the subject area comes after both.
+
+      Headed «Valdkond», in the singular, on this page only
+      (`MatterCreateForm.__init__`); it is still `policy_areas`, still several
+      values and still a count beside the heading. **Not guided by anything**:
+      no area is dimmed, filtered, suggested or ticked because of an
+      `Õigusakt`, a title or a sender (docs/adr/0130 §6).
+    {% endcomment %}
+    <div class="createform__row">
+      {% include "matters/partials/valdkonnad_field.html" %}
     </div>
 
     {% comment %}

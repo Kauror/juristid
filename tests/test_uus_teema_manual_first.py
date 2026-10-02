@@ -236,7 +236,8 @@ def test_valdkond_is_drawn_at_rest_and_names_itself(signed_in):
     assert "chipmenu" not in block
     assert "<details" not in block
     assert "<summary" not in block
-    assert "Valdkonnad" in block
+    # «Valdkond», in the singular, on this page (docs/adr/0130, 2026-10-02).
+    assert "Valdkond" in block[: block.index("</legend>")]
     # The legend is visible again: it was `visually-hidden` only because the
     # menu's trigger directly above already said the word.
     assert "visually-hidden" not in block[: block.index("</legend>")]
