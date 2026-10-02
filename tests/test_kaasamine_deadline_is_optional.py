@@ -39,6 +39,7 @@ from app.matters.enums import EngagementKind, ExternalPositionProvenance
 from app.matters.models import MatterEngagement, MatterExternalPosition
 from app.matters.services import (
     DEADLINE_BEFORE_ENGAGEMENT,
+    ENGAGEMENT_FEEDBACK_ALREADY_AWAITED,
     ENGAGEMENT_FEEDBACK_NOT_AWAITED,
     add_engagement,
     close_matter,
@@ -590,7 +591,7 @@ def test_ootan_tagasisidet_does_not_restart_an_open_round(specialist):
     matter = factories.MatterFactory(owner=specialist)
     engagement = _round(matter, specialist)
 
-    with pytest.raises(DomainError):
+    with pytest.raises(DomainError, match=ENGAGEMENT_FEEDBACK_ALREADY_AWAITED):
         open_engagement_feedback_wait(engagement=engagement, deadline=None, actor=specialist)
 
 
