@@ -5061,15 +5061,23 @@ a.barchart__row:hover {
 /* A `Hetkeseis` that does not normally fit any chosen `Õigusakt` — guidance on
    Uus teema, never a rule (app/workflow/stage_guidance.py, docs/adr/0130 §4).
 
-   Quieter, not unavailable: muted words and a fainter outline, both still well
-   above legible contrast, and nothing that reads as "disabled" — no strike, no
-   `not-allowed` cursor, no opacity on the whole chip. Hover and keyboard focus
+   Quieter, not unavailable: muted words and a fainter outline, and nothing
+   that reads as "disabled" — no strike, no `not-allowed` cursor, no opacity on
+   the whole chip. `--text-atypical` is `--text-muted` taken 20% further down,
+   because the first version read too close to an ordinary chip at a glance
+   (docs/adr/0130, amendment of 2026-10-02). Hover and keyboard focus
    bring it back to full strength, and a *chosen* chip is never dimmed: the
    selector stops at `:checked`, so the ordinary selected look always wins. Set
    by `bindStageGuidance` (static/js/app.js). */
 .chip--atypical .chip__input:not(:checked) + .chip__name {
-  color: var(--text-muted);
+  color: var(--text-atypical);
   border-color: var(--border-subtle);
+}
+
+/* The «i» marker of an explained chip follows its words down, or it would be
+   the brightest thing on a chip that is meant to read as quieter. */
+.chip--atypical.chip--explained:has(.chip__input:not(:checked))::after {
+  color: var(--text-atypical);
 }
 
 .chip--atypical:hover .chip__input:not(:checked) + .chip__name,

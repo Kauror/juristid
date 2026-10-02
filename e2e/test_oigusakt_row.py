@@ -88,7 +88,8 @@ def test_no_existing_row_was_rearranged_to_make_room(page, base_url):
     """§15 criterion 17, as far as a browser can state it.
 
     The classification rows read in the intended order: Saatja, Õigusakt,
-    Valdkonnad, Hetkeseis (docs/adr/0130 §1, which amended docs/adr/0090 §7).
+    Hetkeseis, Valdkond (docs/adr/0130 §1 and its 2026-10-02 amendment, which
+    amended docs/adr/0090 §7).
     What this cannot see — that no row was re-paired or re-tracked —
     `e2e/test_uus_teema_row_composition.py` owns.
     """
@@ -99,8 +100,8 @@ def test_no_existing_row_was_rearranged_to_make_room(page, base_url):
         for selector in (
             'input[name="sender_name"]',
             'input[name="legal_instruments"]',
-            'input[name="policy_areas"]',
             'input[name="stage"]',
+            'input[name="policy_areas"]',
         )
     ]
     assert tops == sorted(tops), f"the classification rows read out of order: {tops}"

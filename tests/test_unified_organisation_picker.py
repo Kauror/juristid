@@ -512,7 +512,10 @@ def test_no_usage_count_reaches_the_picker(signed_in, crowded, specialist):
         factories.MatterFactory(owner=specialist, source_organisations=[busy])
 
     page = scripted(signed_in.get(CREATE).content.decode())
-    field = page[page.index("senderpick") : page.index("Valdkonnad")]
+    # Saatja's own field: from the picker to Vastutaja, which follows it on the
+    # same row since docs/adr/0130 §1.
+    start = page.index("senderpick")
+    field = page[start : page.index('name="owner"', start)]
 
     assert "data-usage" not in field
     assert not re.search(r"\(\d+ teemat\)", field)

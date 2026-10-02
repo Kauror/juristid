@@ -122,7 +122,9 @@ def test_a_the_order_and_what_is_no_longer_asked(page, base_url, screenshots):
     assert abs(deadline["y"] - link["y"]) < 10 and abs(link["y"] - received["y"]) < 10
     assert link["width"] > deadline["width"] and link["width"] > received["width"]
     # And down the page, in the owner's order.
-    rows = [title, sender, deadline, oigusakt, valdkonnad, hetkeseis, notes, files, button]
+    # Hetkeseis directly under the Õigusakt that guides it, then Valdkond
+    # (docs/adr/0130, amendment of 2026-10-02).
+    rows = [title, sender, deadline, oigusakt, hetkeseis, valdkonnad, notes, files, button]
     tops = [row["y"] for row in rows]
     assert tops == sorted(tops), tops
 
@@ -131,6 +133,13 @@ def test_a_the_order_and_what_is_no_longer_asked(page, base_url, screenshots):
     expect(page.locator('[name="menetlus-label"]')).to_have_count(0)
     expect(page.locator("#menetluse-link")).not_to_contain_text("Nimetus")
     expect(page.get_by_label("Menetluse link")).to_be_visible()
+
+    # «Valdkond», in the singular, directly after Hetkeseis — and still a
+    # group of checkboxes (docs/adr/0130, amendment of 2026-10-02).
+    valdkond = page.locator('fieldset:has(input[name="policy_areas"]) > legend')
+    assert (valdkond.text_content() or "").split()[0] == "Valdkond"
+    expect(page.get_by_text("Valdkonnad", exact=True)).to_have_count(0)
+    assert page.locator('input[name="policy_areas"][type="checkbox"]').count() > 1
 
     # Nothing ticked: nothing dimmed.
     assert _dimmed(page) == set()
@@ -158,6 +167,14 @@ def test_b_seadus_dims_the_eu_stages_and_a_dimmed_stage_still_saves(page, base_u
     normal_colour = _name_colour(page, "Riigikogus")
     dim_colour = _name_colour(page, "ELi menetluses")
     assert normal_colour != dim_colour
+    # The dimmed words are `--text-atypical`, the token the 2026-10-02
+    # amendment introduced — `--text-muted` taken 20% further down.
+    assert dim_colour == page.evaluate(
+        """() => { const probe = document.createElement('span');
+                   probe.style.color = 'var(--text-atypical)';
+                   document.body.appendChild(probe);
+                   const c = getComputedStyle(probe).color; probe.remove(); return c; }"""
+    )
     screenshots(page, "uus-teema-guided-seadus")
 
     # Dimmed is not disabled: it is in the tab order and it takes a click.
@@ -272,7 +289,11 @@ def test_f_a_full_creation_with_files(page, base_url, screenshots):
     give_first_step(page, days=14)
     page.fill('input[name="menetlus-url"]', EIS_URL)
     _instrument(page, "ELi direktiiv").check()
-    page.locator('input[name="policy_areas"]').first.check()
+    # Several Valdkond values, as before — the heading is singular, the field
+    # is not.
+    page.locator('input[name="policy_areas"]').nth(0).check()
+    page.locator('input[name="policy_areas"]').nth(1).check()
+    expect(page.locator('[data-chipcount-for="policy_areas"]')).to_contain_text("2")
     _stage(page, "ELi menetluses").check()
     page.fill("#id_notes", "Sünteetiline QA märge.")
     page.locator("#id_files").set_input_files(
@@ -296,7 +317,14 @@ def test_f_a_full_creation_with_files(page, base_url, screenshots):
     assert title in body
     expect(page.locator(f'a[href="{EIS_URL}"]').first).to_be_attached()
 
+    matter_url = page.url
     page.get_by_role("link", name=re.compile(r"^Dokumendid")).click()
     page.wait_for_load_state("networkidle")
     expect(page.get_by_role("link", name="QA kaaskiri.pdf", exact=True)).to_be_visible()
     expect(page.get_by_role("link", name="QA pakett.asice", exact=True)).to_be_visible()
+
+    # Both Valdkond values were stored, and the atypical stage as chosen.
+    page.goto(matter_url + "muuda/")
+    page.wait_for_load_state("networkidle")
+    expect(page.locator('input[name="policy_areas"]:checked')).to_have_count(2)
+    expect(_stage(page, "ELi menetluses")).to_be_checked()

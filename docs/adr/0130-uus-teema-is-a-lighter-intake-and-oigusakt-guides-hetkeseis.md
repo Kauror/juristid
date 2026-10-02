@@ -1,6 +1,6 @@
 # 0130 — `Uus teema` is a lighter intake, and `Õigusakt` guides `Hetkeseis`
 
-**Status:** accepted
+**Status:** accepted, amended 2026-10-02
 **Date:** 2026-10-01
 
 The product owner's decisions after the latest round of lawyer feedback on the
@@ -68,6 +68,10 @@ FAILID
 [Loo teema] [Loobu]
 ```
 
+**Superseded on 2026-10-02 for the order of the classifications — see the
+amendment at the end of this document.** `HETKESEIS` now comes directly after
+`ÕIGUSAKT`, and the subject-area row follows it, headed `VALDKOND`.
+
 * **Saatja left, Vastutaja right** (`.createform__pair--sender`). Its own
   modifier rather than `--people` reversed: `Muuda teemat` and `Saabunud` keep
   `--people` the other way round, and this order is a decision about this page.
@@ -83,7 +87,8 @@ FAILID
   arrive with the file, not as the last question.
 * **`Õigusakt` first among the classifications**, because it is what a lawyer
   knows first and what §4 reads. This reverses 0090 §7's placement (Õigusakt
-  last) on this page.
+  last) on this page. *(Amended 2026-10-02: `Hetkeseis` is now directly under
+  it.)*
 * **`Märkmed` second-last and `Failid` last.** `Failid` is moved, not changed:
   the same input, the same server allowlist in `accept` (signed containers
   included, docs/adr/0125), the same staged-upload island, the same
@@ -142,6 +147,9 @@ Once an `Õigusakt` is ticked, the `Hetkeseis` chips that do not normally fit
   `disabled`, no `aria-disabled`, no `hidden`, no `tabindex="-1"`. The dimming
   is muted text and a fainter outline at legible contrast — «less likely», not
   «unavailable».
+  **Superseded on 2026-10-02 for the strength of the dimming — see the
+  amendment at the end of this document.** The words are now
+  `--text-atypical`, 20% darker than `--text-muted`.
 * **Chosen wins.** A chosen chip looks like any chosen chip, whether or not it
   is atypical: the stylesheet stops dimming at `:checked`
   (`.chip--atypical .chip__input:not(:checked) + .chip__name`).
@@ -256,3 +264,64 @@ Entirely. No migration and no data changed: restoring a field to a form, or
 moving a row in a template, brings any of it back; deleting
 `app/workflow/stage_guidance.py` and the `#hetkeseis-juhis` script removes the
 guidance without touching a stored value.
+
+---
+
+## Amendment, 2026-10-02 — Hetkeseis under Õigusakt, «Valdkond», and a stronger dim
+
+- Status: accepted, amending §1's order of the classifications, §4's
+  «muted text … at legible contrast», and §2's both-forms consequence for one
+  more field's wording.
+- Scope: `Uus teema` only. Presentation only — no field, model, key, rule,
+  migration or stored value changes.
+
+### What was decided before
+
+The classifications read `Õigusakt · Valdkonnad · Hetkeseis` (§1). A dimmed
+`Hetkeseis` chip used `--text-muted` (#7d8b99, 5.31:1 against the page) with
+the subtle border (§4). Both forms headed `policy_areas` «Valdkonnad».
+
+### Why it is superseded
+
+The owner reviewed the deployed page. `Hetkeseis` is the field the `Õigusakt`
+answer guides, and with `Valdkonnad` between them the guidance appeared a whole
+row away from the click that caused it. And the dimmed chips read too close to
+ordinary ones at a glance — the distinction §4 exists to make was there, but
+had to be looked for.
+
+### What is decided now
+
+1. **`Õigusakt · Hetkeseis · Valdkond`.** The guided field sits directly under
+   the field that guides it; the subject area follows. A lawyer chooses the
+   instrument and immediately sees which stages read normal and which dimmed.
+2. **«Valdkond», in the singular,** as the heading on `Uus teema`
+   (`MatterCreateForm.__init__` sets the label; it is the owner's wording for
+   the question). The field is still `policy_areas`, still several values,
+   still a count beside the heading; nothing is renamed below the label.
+   `Muuda teemat` keeps «Valdkonnad» until that page is decided on its own —
+   recorded as the one wording difference in
+   `tests/test_teema_live_audit_round_2.py` (`CREATE_ONLY_WORDING`).
+3. **The dimmed state is 20% stronger.** A new token, `--text-atypical`
+   (#646f7a dark, #828d96 light), is `--text-muted` taken 20% further down; the
+   «i» marker of an unselected dimmed chip follows its words. The normal chip,
+   the chosen chip, hover, focus, cursor, hit area and the subtle border are
+   unchanged. **The contrast falls from 5.31:1 to 3.61:1** against the page —
+   readable, and restored to full strength on hover and keyboard focus, but
+   below WCAG AA's 4.5:1 for text of this size. That is the owner's deliberate
+   trade for an at-a-glance difference on an option that is still offered, and
+   it is recorded here so that it is revisited as a decision rather than found
+   as a defect.
+
+### What this amendment does not change
+
+- The matrix, its stable keys, union semantics, `Määramata` and `Muu` never
+  dimmed, and the rule that missing guidance dims nothing (§4–§7).
+- No option disabled, hidden, refused, cleared or rewritten; the server accepts
+  every combination (§8); no `Matter.stage` or `Matter.track` inference.
+- A chosen chip looks exactly like any chosen chip — the dimming still stops at
+  `:checked`.
+- `Valdkond` is not guided, filtered, suggested or inferred (§6), and it stays
+  a multi-select over the same governed vocabulary with the same `Muu`.
+- Every other §1 placement: Pealkiri; Saatja | Vastutaja; Arvamuse tähtaeg |
+  Menetluse link | Saabus; `Märkmed` then `Failid` last. §2 and §3 stand.
+- No migration.

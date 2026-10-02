@@ -190,7 +190,8 @@ def test_each_vocabulary_is_a_named_group_for_a_screen_reader(signed_in):
     factories.StageFactory(label_et="Kooskõlastusringil")
     page = _page(signed_in)
 
-    for name, label in (("policy_areas", "Valdkonnad"), ("stage", "Hetkeseis")):
+    # «Valdkond», in the singular, on this page (docs/adr/0130, 2026-10-02).
+    for name, label in (("policy_areas", "Valdkond"), ("stage", "Hetkeseis")):
         block = _fieldset(page, name=name)
         legend = re.search(r"<legend[^>]*>(.*?)</legend>", block, re.S)
         assert legend is not None
