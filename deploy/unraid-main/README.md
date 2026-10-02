@@ -984,8 +984,10 @@ operator's memory, is what keeps the contract.
 full 40-character one to build, and the full 40-character one production runs
 now — checks out exactly the first, refuses a dirty tree, refuses a commit that
 is not one of main's own revisions (on main's first-parent history: the merge
-commit, never the pull request's head) or whose own push-to-main CI run has not
-passed in every job (ENG-015), refuses a payload the
+commit, never the pull request's head) or that CI has not passed on in every
+job (ENG-015) — main's own push run, or, while that is absent or still running
+and never over one that finished red, the merged pull request's run when the
+tree it recorded as tested is exactly this commit's tree — refuses a payload the
 Chamber's lawyers will notice that has no entry in
 `docs/release-notes/uuendused.toml` (see `docs/release-notes/README.md` for the
 rule and the waiver), builds `linux/amd64` with `GIT_SHA` baked in, asks the

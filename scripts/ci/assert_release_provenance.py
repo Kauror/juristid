@@ -19,12 +19,25 @@ It needs `GH_TOKEN` (the workflow's own token, with `actions: read`).
    accepted: it is a revision main really was, which is what a rebuild for
    rollback needs; the workflow's own `previous_sha` check refuses going
    backwards past what production runs.
-2. *Main's CI passed on exactly this commit.* The latest run of `ci.yml` for a
-   **push to main** with this **head SHA** has completed, concluded `success`,
-   and every job in its latest attempt concluded `success`. A pull request's
-   run is not main's run; a run for another SHA is not this commit's; a run
-   still in progress has proved nothing yet; and a run where "the required
-   jobs" passed while another was skipped or cancelled is not a green run.
+2. *CI passed on exactly the bytes being released.* Either of two proofs:
+
+   a. **Main's own run.** The latest run of `ci.yml` for a **push to main**
+      with this **head SHA** has completed, concluded `success`, and every job
+      in its latest attempt concluded `success`. A run for another SHA is not
+      this commit's; a run where "the required jobs" passed while another was
+      skipped or cancelled is not a green run.
+   b. **The pull request's run, on the identical tree** (added 2026-10-02, so a
+      release does not wait ~11 minutes for main to re-test what the pull
+      request already tested). Tried only while main's own run is *absent or
+      still running* — a main run that finished red always refuses. The commit
+      must be a merge with exactly two parents; the latest `ci.yml` run for a
+      **pull request** whose head is the **second parent** must be completed,
+      `success`, green in every job; and the tree that run recorded as tested
+      (its `tested-tree` artifact: `HEAD^{tree}` of its checkout, which for a
+      pull request is GitHub's test merge) must equal this commit's tree. Equal
+      trees are equal bytes, so this proves what (a) proves about the release.
+      Branch protection's "up to date" rule is what makes the two coincide; the
+      tree comparison is what makes relying on it safe.
 
 Fails closed: anything it cannot establish — no run, an API error, a missing
 ref — is a refusal, not a pass.
@@ -38,12 +51,14 @@ Standard library only: it runs on the bare runner before `uv` exists.
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import subprocess
 import sys
 import urllib.error
 import urllib.request
+import zipfile
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -154,6 +169,102 @@ def ci_verdict(
     return Verdict(True, f"main's CI passed on {target}, all {len(jobs)} jobs: {url}")
 
 
+def main_run_state(target: str, runs: Sequence[dict[str, Any]], workflow: str = "ci.yml") -> str:
+    """``absent``, ``running`` or ``finished`` — whether proof (b) may be tried at all."""
+    candidates = main_push_runs(target, runs, workflow)
+    if not candidates:
+        return "absent"
+    latest = max(candidates, key=lambda run: (run.get("run_number", 0), run.get("id", 0)))
+    return "finished" if latest.get("status") == "completed" else "running"
+
+
+def pull_request_runs(head: str, runs: Sequence[dict[str, Any]], workflow: str) -> list[dict]:
+    """The `ci.yml` runs for a pull request whose head is ``head``, and nothing else."""
+    return [
+        run
+        for run in runs
+        if run.get("head_sha") == head
+        and run.get("event") == "pull_request"
+        and str(run.get("path", "")).endswith(WORKFLOW_PATH_SUFFIX + workflow)
+    ]
+
+
+def pull_request_verdict(
+    target: str,
+    target_tree: str,
+    parents: Sequence[str],
+    runs: Sequence[dict[str, Any]],
+    jobs_for: Callable[[dict[str, Any]], Sequence[dict[str, Any]]],
+    tested_tree_for: Callable[[dict[str, Any]], str | None],
+    workflow: str = "ci.yml",
+) -> Verdict:
+    """Proof (b): a green pull-request run that tested exactly this commit's tree."""
+    if len(parents) != 2:
+        return Verdict(
+            False,
+            f"{target} is not a two-parent merge, so no pull request's run can stand in "
+            "for main's own",
+        )
+    head = parents[1]
+    candidates = pull_request_runs(head, runs, workflow)
+    if not candidates:
+        return Verdict(False, f"no {workflow} pull-request run for the merged head {head}")
+    latest = max(candidates, key=lambda run: (run.get("run_number", 0), run.get("id", 0)))
+    url = latest.get("html_url", f"run {latest.get('id')}")
+    if latest.get("status") != "completed" or latest.get("conclusion") != "success":
+        return Verdict(
+            False,
+            f"the pull request's CI for {head} is {latest.get('status')}/"
+            f"{latest.get('conclusion')}, not a completed success: {url}",
+        )
+    jobs = list(jobs_for(latest))
+    if not jobs:
+        return Verdict(False, f"the pull request's CI for {head} reports no jobs: {url}")
+    not_green = sorted(
+        f"{job.get('name')} ({job.get('conclusion') or job.get('status')})"
+        for job in jobs
+        if job.get("conclusion") != "success"
+    )
+    if not_green:
+        return Verdict(
+            False,
+            f"the pull request's CI for {head} was not green in every job: "
+            f"{', '.join(not_green)}: {url}",
+        )
+    tested = tested_tree_for(latest)
+    if not tested:
+        return Verdict(
+            False,
+            f"the pull request's CI for {head} recorded no tested tree, so what it tested "
+            f"is not known: {url}",
+        )
+    if tested != target_tree:
+        return Verdict(
+            False,
+            f"the pull request's CI tested tree {tested}, but {target} has tree "
+            f"{target_tree} — main moved after the run, or the merge differs: {url}",
+        )
+    return Verdict(
+        True,
+        f"the pull request's CI passed on {target}'s exact tree {target_tree}, all "
+        f"{len(jobs)} jobs: {url}",
+    )
+
+
+def commit_parents_and_tree(target: str, git_dir: Path) -> tuple[list[str], str]:
+    """The commit's parents, in order, and its tree."""
+    result = subprocess.run(  # noqa: S603 - fixed git arguments, no shell
+        ["git", "-C", str(git_dir), "log", "-1", "--format=%P%n%T", target],  # noqa: S607
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"cannot read {target}: {result.stderr.strip()}")
+    lines = [*result.stdout.splitlines(), "", ""]
+    return lines[0].split(), lines[1].strip()
+
+
 # ---------------------------------------------------------------------------
 # The GitHub API, as little of it as this needs
 # ---------------------------------------------------------------------------
@@ -173,12 +284,61 @@ def _get(url: str, token: str) -> dict[str, Any]:
         return json.load(response)
 
 
-def fetch_runs(repository: str, workflow: str, target: str, token: str) -> list[dict]:
+class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
+    """An artifact download redirects to blob storage, which refuses a bearer token."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[no-untyped-def]
+        new = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new is not None:
+            new.remove_header("Authorization")
+        return new
+
+
+def _get_bytes(url: str, token: str) -> bytes:
+    request = urllib.request.Request(  # noqa: S310 - a fixed https API base
+        url,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "juristid-release-provenance",
+        },
+    )
+    opener = urllib.request.build_opener(_StripAuthOnRedirect)
+    with opener.open(request, timeout=60) as response:
+        return response.read()
+
+
+def parse_tested_tree(text: str) -> str | None:
+    """The ``tree <sha>`` line `ci.yml` wrote, or nothing."""
+    for line in text.splitlines():
+        key, _, value = line.partition(" ")
+        if key == "tree" and len(value.strip()) == 40:
+            return value.strip()
+    return None
+
+
+def fetch_tested_tree(repository: str, run: dict[str, Any], token: str) -> str | None:
+    body = _get(
+        f"{API}/repos/{repository}/actions/runs/{run['id']}/artifacts?name=tested-tree&per_page=10",
+        token,
+    )
+    artifacts = [a for a in body.get("artifacts", []) if not a.get("expired")]
+    if not artifacts:
+        return None
+    archive = _get_bytes(artifacts[0]["archive_download_url"], token)
+    with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
+        return parse_tested_tree(bundle.read("tested-tree.txt").decode("utf-8"))
+
+
+def fetch_runs(
+    repository: str, workflow: str, target: str, token: str, event: str = "push"
+) -> list[dict]:
     runs: list[dict] = []
+    branch = "&branch=main" if event == "push" else ""
     for page in range(1, 11):
         body = _get(
             f"{API}/repos/{repository}/actions/workflows/{workflow}/runs"
-            f"?head_sha={target}&event=push&branch=main&per_page=100&page={page}",
+            f"?head_sha={target}&event={event}{branch}&per_page=100&page={page}",
             token,
         )
         batch = body.get("workflow_runs", [])
@@ -232,15 +392,44 @@ def main(argv: Sequence[str] | None = None) -> int:
         if not token:
             raise RuntimeError("no GH_TOKEN: main's CI result cannot be read, so it is not assumed")
         runs = fetch_runs(args.repository, args.workflow, target, token)
-        verdicts.append(
-            ci_verdict(
+        main_proof = ci_verdict(
+            target,
+            runs,
+            lambda run: fetch_jobs(args.repository, run, token),
+            workflow=args.workflow,
+        )
+        if main_proof.ok or main_run_state(target, runs, args.workflow) == "finished":
+            verdicts.append(main_proof)
+        else:
+            parents, tree = commit_parents_and_tree(target, args.git_dir)
+            pr_runs = (
+                fetch_runs(args.repository, args.workflow, parents[1], token, event="pull_request")
+                if len(parents) == 2
+                else []
+            )
+            pr_proof = pull_request_verdict(
                 target,
-                runs,
+                tree,
+                parents,
+                pr_runs,
                 lambda run: fetch_jobs(args.repository, run, token),
+                lambda run: fetch_tested_tree(args.repository, run, token),
                 workflow=args.workflow,
             )
-        )
-    except (RuntimeError, OSError, urllib.error.URLError, ValueError, KeyError) as error:
+            verdicts.append(
+                pr_proof
+                if pr_proof.ok
+                else Verdict(False, f"{main_proof.detail}; and {pr_proof.detail}")
+            )
+    except (
+        RuntimeError,
+        OSError,
+        urllib.error.URLError,
+        ValueError,
+        KeyError,
+        IndexError,
+        zipfile.BadZipFile,
+    ) as error:
         verdicts.append(Verdict(False, f"could not establish provenance: {error}"))
 
     for verdict in verdicts:

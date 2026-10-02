@@ -23,6 +23,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # What this run is testing, named by the tree it checked out.
+      #
+      # For a pull request that is GitHub's test merge of the branch into main,
+      # not the branch head — the tree the merge button will produce when the
+      # branch is up to date, which branch protection requires. The release
+      # gate (`scripts/ci/assert_release_provenance.py`) accepts a pull
+      # request's green run as the proof for the merge commit only when this
+      # recorded tree is byte-for-byte the merge commit's own; without the
+      # artifact it accepts nothing but main's own run, as it always did.
+      - name: Record the tree this run tests
+        run: |
+          set -euo pipefail
+          mkdir -p tested
+          {
+            echo "tree $(git rev-parse 'HEAD^{tree}')"
+            echo "commit $(git rev-parse HEAD)"
+            echo "event $GITHUB_EVENT_NAME"
+          } > tested/tested-tree.txt
+          cat tested/tested-tree.txt
+
+      - name: Upload the tested tree
+        uses: actions/upload-artifact@v4
+        with:
+          name: tested-tree
+          path: tested/tested-tree.txt
+          if-no-files-found: error
+          retention-days: 30
+
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
@@ -138,8 +166,8 @@ jobs:
     # It moved because it is not per-shard work. Migrating from zero, stepping a
     # deployment's state backwards and forwards, and asserting that the OCR
     # engine is really installed are claims about the repository, not about a
-    # subset of it — running them again in each of the 6 shards would
-    # multiply a minute of setup by 6 and prove nothing further. Nothing here
+    # subset of it — running them again in each of the 12 shards would
+    # multiply a minute of setup by 12 and prove nothing further. Nothing here
     # was removed, weakened or reordered; the steps are the ones that stood in
     # the `tests` job, with their reasoning intact.
     services:
@@ -179,10 +207,46 @@ jobs:
 
       - run: uv sync --frozen
 
+      # The OCR runtime, from packages cached per runner image.
+      #
+      # `apt-get update` against Ubuntu's mirrors is what made this step cost
+      # 18s on a good day and up to four minutes on a bad one — and a slow
+      # mirror on one shard is the whole round waiting for it. The .deb files
+      # are kept under a key naming the runner image, so a new image (whose
+      # installed libraries the cached packages were resolved against) starts
+      # a fresh cache rather than installing stale ones over it. Anything that
+      # goes wrong on the cached path falls back to the plain apt install this
+      # step always was, and the languages are checked either way.
+      - name: Runner image identity
+        id: runner-image
+        run: echo "key=${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the OCR packages
+        uses: actions/cache@v4
+        with:
+          path: ~/ocr-debs
+          key: ocr-debs-${{ steps.runner-image.outputs.key }}-v1
+
       - name: Install the OCR runtime
         run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends --yes tesseract-ocr tesseract-ocr-est tesseract-ocr-eng
+          set -euo pipefail
+          packages="tesseract-ocr tesseract-ocr-est tesseract-ocr-eng"
+          cache="$HOME/ocr-debs"
+          if compgen -G "$cache/*.deb" > /dev/null && sudo dpkg -i "$cache"/*.deb > /dev/null; then
+            echo "installed from the cached packages"
+          else
+            echo "no usable cache; installing from the mirror"
+            rm -rf "$cache" && mkdir -p "$cache/partial"
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends --yes --download-only -o Dir::Cache::archives="$cache" $packages
+            sudo dpkg -i "$cache"/*.deb > /dev/null || sudo apt-get install --no-install-recommends --yes $packages
+            sudo rm -rf "$cache/partial" "$cache/lock"
+            sudo chown -R "$(id -u):$(id -g)" "$cache"
+          fi
+          langs="$(tesseract --list-langs 2>&1)"
+          for lang in est eng; do
+            grep -qx "$lang" <<<"$langs" || { echo "tesseract has no '$lang'"; echo "$langs"; exit 1; }
+          done
 
       - name: Migrations are complete
         run: uv run python manage.py makemigrations --check --dry-run
@@ -284,9 +348,9 @@ jobs:
           rm -f isolation.log
 
   tests:
-    name: "PostgreSQL tests, shard ${{ matrix.shard }} of 6"
+    name: "PostgreSQL tests, shard ${{ matrix.shard }} of 12"
     runs-on: ubuntu-latest
-    # Was 25 for the whole serial suite. A shard is roughly a 6th of it, and
+    # Was 25 for the whole serial suite. A shard is roughly a 12th of it, and
     # the same reasoning applies at the smaller size: generous slack so that a
     # slow runner is never mistaken for a broken branch, and a number that gets
     # noticed if the suite ever grows into it.
@@ -298,13 +362,13 @@ jobs:
       # re-runs.
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
     # A whole PostgreSQL of its own per shard, which is the point of sharding
     # here rather than reaching for `pytest -n`. Each runner gets its own
     # database server, its own filesystem, its own process environment and its
     # own port space, so the isolation the suite already relies on is not
-    # weakened by running it in 6 places at once — and the assignment is a
+    # weakened by running it in 12 places at once — and the assignment is a
     # pure function of the collected files rather than of which worker happened
     # to be free (ci_sharding.py, docs/ci-architecture.md).
     services:
@@ -344,19 +408,55 @@ jobs:
 
       - run: uv sync --frozen
 
+      # The OCR runtime, from packages cached per runner image.
+      #
+      # `apt-get update` against Ubuntu's mirrors is what made this step cost
+      # 18s on a good day and up to four minutes on a bad one — and a slow
+      # mirror on one shard is the whole round waiting for it. The .deb files
+      # are kept under a key naming the runner image, so a new image (whose
+      # installed libraries the cached packages were resolved against) starts
+      # a fresh cache rather than installing stale ones over it. Anything that
+      # goes wrong on the cached path falls back to the plain apt install this
+      # step always was, and the languages are checked either way.
+      - name: Runner image identity
+        id: runner-image
+        run: echo "key=${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the OCR packages
+        uses: actions/cache@v4
+        with:
+          path: ~/ocr-debs
+          key: ocr-debs-${{ steps.runner-image.outputs.key }}-v1
+
       - name: Install the OCR runtime
         run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends --yes tesseract-ocr tesseract-ocr-est tesseract-ocr-eng
+          set -euo pipefail
+          packages="tesseract-ocr tesseract-ocr-est tesseract-ocr-eng"
+          cache="$HOME/ocr-debs"
+          if compgen -G "$cache/*.deb" > /dev/null && sudo dpkg -i "$cache"/*.deb > /dev/null; then
+            echo "installed from the cached packages"
+          else
+            echo "no usable cache; installing from the mirror"
+            rm -rf "$cache" && mkdir -p "$cache/partial"
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends --yes --download-only -o Dir::Cache::archives="$cache" $packages
+            sudo dpkg -i "$cache"/*.deb > /dev/null || sudo apt-get install --no-install-recommends --yes $packages
+            sudo rm -rf "$cache/partial" "$cache/lock"
+            sudo chown -R "$(id -u):$(id -g)" "$cache"
+          fi
+          langs="$(tesseract --list-langs 2>&1)"
+          for lang in est eng; do
+            grep -qx "$lang" <<<"$langs" || { echo "tesseract has no '$lang'"; echo "$langs"; exit 1; }
+          done
 
       # The suite, partitioned. `--shard-count` and the matrix above are held to
       # each other by tests/test_ci_sharding.py, and the union is proved to be
       # the whole suite by the quality job.
       #
       # Coverage is measured per shard and combined by the gate below, so the
-      # instrumentation cost is divided by 5 along with everything else and
+      # instrumentation cost is divided by the shard count along with everything else and
       # the report still describes the whole suite. `--cov-report=` here on
-      # purpose: a partial report printed 5 times reads as a coverage
+      # purpose: a partial report printed once per shard reads as a coverage
       # collapse.
       - name: Test suite
         env:
@@ -368,7 +468,7 @@ jobs:
         # number (docs/ci-architecture.md).
         run: >-
           uv run pytest
-          --shard-count=6 --shard-index=${{ matrix.shard }}
+          --shard-count=12 --shard-index=${{ matrix.shard }}
           --cov --cov-report=
           --junitxml=artifacts/junit-tests-${{ matrix.shard }}.xml
 
@@ -418,7 +518,7 @@ jobs:
               exit 1
             fi
           done
-          echo "all 6 shards and the safety checks passed"
+          echo "all 12 shards and the safety checks passed"
 
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -471,14 +571,14 @@ jobs:
         run: uvx pip-audit --strict --no-deps --requirement requirements.txt
 
   browser:
-    name: "Browser, shard ${{ matrix.shard }} of 7"
+    name: "Browser, shard ${{ matrix.shard }} of 12"
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
     services:
       postgres:
@@ -599,13 +699,13 @@ jobs:
 
       # This runner's slice of the browser suite. Whole files, chosen by
       # measured cost, against this runner's own database, its own two servers
-      # and its own Chromium — which is what makes 6 of these safe when
-      # 6 pytest workers sharing one server would not be. The visual
+      # and its own Chromium — which is what makes 12 of these safe when
+      # 12 pytest workers sharing one server would not be. The visual
       # scenarios are not here; they have a job of their own below.
       - name: Browser workflow
         run: >-
           uv run pytest e2e --ignore=e2e/test_ui_regression.py
-          --shard-count=7 --shard-index=${{ matrix.shard }}
+          --shard-count=12 --shard-index=${{ matrix.shard }}
           --browser chromium
           --tracing retain-on-failure
           --output artifacts/playwright
@@ -807,7 +907,7 @@ jobs:
               exit 1
             fi
           done
-          echo "all 7 browser shards and the visual suite passed"
+          echo "all 12 browser shards and the visual suite passed"
 
   shard-balance:
     # What this run's shards were predicted to take, beside what they took
