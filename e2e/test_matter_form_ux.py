@@ -377,9 +377,7 @@ def test_the_typed_deadline_is_the_obligation_and_starts_nothing(page, base_url)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
 
-    expect(page.locator(".curact__suggesttext")).to_have_text(
-        "Tutvu materjaliga"
-    )
+    expect(page.locator(".curact__suggesttext")).to_have_text("Tutvu materjaliga")
     expect(page.locator(".metaline").first).to_contain_text(wanted)
     start_first_step(page)
     expect(page.locator(".curact__owed")).to_contain_text("Arvamuse tähtaeg")
