@@ -3608,7 +3608,7 @@ class ComposerForm(forms.Form):
             # No `occurred_on_precision` either, for the same reason: an
             # unknown date has no precision, and `add_engagement` normalises a
             # `NULL` date to `EXACT` whatever a caller names
-            # (`app/matters/services.py`, `_engagement_precision`).
+            # (`app/matters/services.py`, `_normalised_precision`).
             "occurred_on": None,
         }
 
@@ -3962,7 +3962,7 @@ class EngagementForm(forms.Form):
         * **an empty box anywhere else, or `Kustuta salvestatud kuupäev`** —
           `None` at `EXACT`, which is «kuupäev teadmata». An unknown date has no
           precision, and the service normalises it back to `EXACT` on every path
-          besides (`app.matters.services._engagement_precision`).
+          besides (`app.matters.services._normalised_precision`).
 
         The order matters: the deadline rule compares against the *resolved*
         date, which for a preserved period is not in the day box at all
