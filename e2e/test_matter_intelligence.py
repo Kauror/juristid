@@ -246,8 +246,12 @@ def test_an_exact_milestone_can_be_added_in_a_few_fields(page, base_url):
     # in `Teema käik`, not in the header. A date beyond `Minu asjad`' horizon
     # was in the technical audit log and in no working surface, and the only
     # proof the save had worked was that log (QA-001).
-    expect(page.locator(".tl-strip")).to_be_visible()
-    expect(page.locator(".tl-step__what", has_text="Kooskõlastusringi lõpp")).to_have_count(1)
+    #
+    # **And off it again since docs/adr/0131 §13**: the rail keeps the procedure
+    # and Koda's sent opinions, and a watched date reads in `Teema käik` as
+    # «Eesolev tähtaeg» — the place QA-001's answer has lived since.
+    expect(page.locator(".tl-step__what", has_text="Kooskõlastusringi lõpp")).to_have_count(0)
+    expect(page.locator("#ajalugu-loend")).to_contain_text("Kooskõlastusringi lõpp")
 
     # And still in its own fact section, which is what the rest of this
     # scenario opens: the strip says where the file is going, the section is

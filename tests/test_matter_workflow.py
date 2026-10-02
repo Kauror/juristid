@@ -201,14 +201,20 @@ def test_closing_and_reopening_round_trip(normal_matter, specialist):
     assert {ChangeEventType.MATTER_CLOSED, ChangeEventType.MATTER_REOPENED} <= types
 
 
-def test_a_stage_change_does_not_close_the_matter(normal_matter, specialist):
-    """`jõustunud` is where the process is, not whether Koda is finished."""
+def test_an_ordinary_stage_change_does_not_close_the_matter(normal_matter, specialist):
+    """«Jõustumise ootel» is where the process is, not whether Koda is finished.
+
+    «Jõustunud» used to be the example here; since docs/adr/0131 §10 it and
+    «Rohkem ei tegele» close the Matter, and every other stage still does not.
+    """
     from app.workflow.models import StageVocabulary
 
-    in_force = StageVocabulary.objects.get(key="in_force")
-    change_stage(matter=normal_matter, stage=in_force, actor=specialist)
-    normal_matter.refresh_from_db()
-    assert normal_matter.is_open is True
+    for key in ("awaiting_entry", "parliament", "other"):
+        change_stage(
+            matter=normal_matter, stage=StageVocabulary.objects.get(key=key), actor=specialist
+        )
+        normal_matter.refresh_from_db()
+        assert normal_matter.is_open is True, key
 
 
 # -- query cost -------------------------------------------------------------

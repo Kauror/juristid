@@ -144,12 +144,11 @@ def test_an_undated_future_phase_anchors_nothing(specialist):
     assert [step.label for step in steps].index("Arvamuse tähtaeg") < steps.index(ahead[0])
 
 
-def test_a_feedback_deadline_reads_beside_the_current_phase_too(specialist):
-    """`Tagasiside tähtaeg` is the same kind of fact and takes the same rule.
+def test_a_feedback_deadline_draws_no_point_on_the_rail(specialist):
+    """`Tagasiside tähtaeg` is gone from the rail since docs/adr/0131 §13.
 
     What Koda asked its members to answer by is not a step of the ministry's
-    procedure either. Two kinds share the rule, which is why it is written on
-    the *absence* of a phase rather than as a special case for one label.
+    procedure; it reads on the round's own row in `Teema käik`.
     """
     from app.matters.enums import EngagementKind
     from app.matters.services import add_engagement
@@ -163,11 +162,9 @@ def test_a_feedback_deadline_reads_beside_the_current_phase_too(specialist):
         actor=specialist,
     )
 
-    steps = _rail(matter, specialist)
-    labels = [step.label for step in steps]
-    current = _current(steps)
+    labels = [step.label for step in _rail(matter, specialist)]
 
-    assert labels[current + 1] == "Tagasiside tähtaeg"
+    assert "Tagasiside tähtaeg" not in labels
 
 
 # ---------------------------------------------------------------------------

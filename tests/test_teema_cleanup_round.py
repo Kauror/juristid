@@ -115,13 +115,8 @@ def test_kustuta_sits_beside_muuda_in_the_header(signed_in, specialist):
     assert "hx-confirm" not in head
 
 
-def test_lopeta_is_a_peer_chip_that_closes_whatever_was_open(signed_in, specialist):
-    """§B. Back in the row, and in the row's own exclusive group.
-
-    A second radio group would mean two panels standing open at once, and the
-    row's whole contract is that it is a choice until one is picked
-    (docs/adr/0075 §2).
-    """
+def test_lopeta_is_retired_from_the_row(signed_in, specialist):
+    """§B stood until docs/adr/0131 §11: a file ends through its `Hetkeseis` now."""
     matter = _matter(specialist)
     page = _page(signed_in, matter)
     # The zone ends at `Menetluse kulg` where there is one and at `Teema käik`
@@ -134,10 +129,9 @@ def test_lopeta_is_a_peer_chip_that_closes_whatever_was_open(signed_in, speciali
     )
     zone = page[page.index('id="lisa-teemale"') : end]
 
-    assert "+ Lõpeta teema" in zone
-    assert 'name="lisa-valik" id="teema-lopeta-valik"' in zone
-    # Visibly last, which is what keeps closure from looking like capture.
-    assert "disclosure-chip--last" in zone
+    assert "+ Lõpeta teema" not in zone
+    assert 'id="teema-lopeta-valik"' not in zone
+    assert "disclosure-chip--last" not in zone
 
 
 def test_the_teema_toimingud_section_is_gone(signed_in, specialist):

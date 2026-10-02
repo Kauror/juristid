@@ -661,11 +661,9 @@ def test_no_retired_source_has_left_a_label_on_the_strip(page, base_url, width):
     # so the rail read `Jõustumine · Jõustumine 27.9.2027` — two adjacent
     # columns with one name (QA-005, docs/adr/0100 §3). The commencements are
     # folded onto that node as visible notes, asserted just below.
-    assert dated_labels(page) == [
-        "Koja arvamus",
-        "Eelnõu eeldatav kooskõlastusring",
-        "Eeldatav VTK avalikustamine",
-    ]
+    # **And the watched dates are gone again** (docs/adr/0131 §13): the rail is
+    # the procedure and what Koda sent; they read in `Teema käik`.
+    assert dated_labels(page) == ["Koja arvamus"]
     assert labels(page).count("Jõustumine") == 1
     notes = page.locator(".tl-step__note").all_inner_texts()
     assert len(notes) == 2, notes

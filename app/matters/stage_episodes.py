@@ -43,7 +43,10 @@ def _in_order(keys: list[str], stages: list[StageVocabulary]) -> list[StageVocab
 
 
 def offered_next_stages(
-    matter: Matter, *, episodes: list[MatterStageEpisode] | None = None
+    matter: Matter,
+    *,
+    episodes: list[MatterStageEpisode] | None = None,
+    instrument_keys: Any = None,
 ) -> list[StageVocabulary]:
     """`+ Märge → Uus hetkeseis`, most likely first (`stage_flow.next_stage_keys`).
 
@@ -56,14 +59,19 @@ def offered_next_stages(
     keys = next_stage_keys(
         current_key=getattr(matter.stage, "key", None),
         history_keys=history_stage_keys(held),
-        instrument_keys=_instrument_keys(matter),
+        instrument_keys=(
+            instrument_keys if instrument_keys is not None else _instrument_keys(matter)
+        ),
         available_keys=[stage.key for stage in stages],
     )
     return _in_order(keys, stages)
 
 
 def offered_reopening_stages(
-    matter: Matter, *, episodes: list[MatterStageEpisode] | None = None
+    matter: Matter,
+    *,
+    episodes: list[MatterStageEpisode] | None = None,
+    instrument_keys: Any = None,
 ) -> list[StageVocabulary]:
     """«Ava uuesti» — the stages a closed Matter may be reopened into.
 
@@ -75,7 +83,9 @@ def offered_reopening_stages(
     keys = reopening_stage_keys(
         current_key=getattr(matter.stage, "key", None),
         history_keys=history_stage_keys(held),
-        instrument_keys=_instrument_keys(matter),
+        instrument_keys=(
+            instrument_keys if instrument_keys is not None else _instrument_keys(matter)
+        ),
         available_keys=[stage.key for stage in stages],
     )
     return _in_order(keys, stages)

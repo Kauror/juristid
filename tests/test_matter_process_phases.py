@@ -1201,8 +1201,15 @@ def test_a_future_transposition_deadline_is_visible_and_drawn_as_future(speciali
     assert column.display == format_estonian_date(ahead)
 
 
-def test_an_ordinary_future_deadline_draws_a_column_under_its_own_name(specialist):
-    """§12.1's retirement is now narrower than it was, and deliberately.
+def test_an_ordinary_future_deadline_draws_no_column(specialist):
+    """**Superseded by docs/adr/0131 §13**: a watched deadline draws no column again.
+
+    The QA-001 reasoning below held while a future deadline read nowhere else.
+    It reads in `Teema käik` now, marked «Eesolev tähtaeg», and the owner
+    narrowed the rail to the procedure and the opinions Koda sent. Kept as it
+    was written:
+
+    §12.1's retirement is now narrower than it was, and deliberately.
 
     It said a watched expectation is not a procedural act, which is true, and
     concluded that it draws no column — with one kind added back later. The
@@ -1228,7 +1235,7 @@ def test_an_ordinary_future_deadline_draws_a_column_under_its_own_name(specialis
 
     labels = [step.label for step in process_steps(matter=matter, user=specialist)]
     assert TRANSPOSITION_DEADLINE_LABEL not in labels
-    assert "Komisjoni istung" in labels
+    assert "Komisjoni istung" not in labels
 
 
 def test_a_passed_ordinary_deadline_still_draws_no_column(specialist):

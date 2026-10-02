@@ -3,7 +3,8 @@
 Both are docs/adr/0083, and both narrow a decision the Teema page already
 carried rather than replacing it.
 
-**`Tagasiside tähtaeg` on the process strip.** ADR 0078 §3 put the engagement's
+**`Tagasiside tähtaeg` on the process strip** — retired from the strip by
+docs/adr/0131 §13; §A now holds its absence. ADR 0078 §3 put the engagement's
 reply-by date on its own chronology row, which is below the fold, so a lawyer
 opening a file could not see that members owe answers by the 22nd without
 scrolling. It now draws a strip column — as a *dated point the file is heading
@@ -78,98 +79,38 @@ def _labels(matter, user):
 
 
 # ===========================================================================
-# A — the column exists, says the right thing, and is told apart
+# A — the column is retired by docs/adr/0131 §13
 # ===========================================================================
+#
+# ADR 0083 §1 drew a reply-by date on the strip so it could be read without
+# scrolling. The owner narrowed the rail to the procedure's own points and the
+# opinions Koda sent; the reply-by date reads on the round's own row in
+# `Teema käik`, and the record is untouched.
 
 
-def test_a_reply_by_date_draws_its_own_strip_column(normal_matter, specialist):
-    """ADR 0083 §1. The point of the whole fix: visible without scrolling."""
+def test_a_reply_by_date_draws_no_strip_column(normal_matter, specialist):
     _round(normal_matter, deadline=dt.date(2026, 3, 22))
-
-    steps = process_steps(matter=normal_matter, user=specialist)
-    feedback = [s for s in steps if s.label == FEEDBACK_DEADLINE_LABEL]
-
-    assert len(feedback) == 1
-    assert feedback[0].display == "22.3.2026"
-    assert feedback[0].detail == "liikmed"
-
-
-def test_a_round_with_no_reply_by_date_draws_nothing(normal_matter, specialist):
-    """ADR 0074 §12.1 stands: the engagement is not a milestone.
-
-    What draws a column is the dated point. A consultation without one is a
-    chronology row and nothing else, however many of them a file has run.
-    """
-    _round(normal_matter, deadline=None)
-    _round(normal_matter, deadline=None, title="töögrupp")
+    _round(normal_matter, deadline=dt.date(2026, 5, 4), title="kaubandusvaldkonna töögrupp")
 
     assert FEEDBACK_DEADLINE_LABEL not in _labels(normal_matter, specialist)
 
 
-def test_several_rounds_draw_several_columns_told_apart_by_who_was_asked(normal_matter, specialist):
-    """Several per Matter is ordinary, and «Keda kaasati» is what separates them."""
-    _round(normal_matter, deadline=dt.date(2026, 3, 22), title="liikmed")
-    _round(normal_matter, deadline=dt.date(2026, 5, 4), title="kaubandusvaldkonna töögrupp")
-
-    feedback = [
-        s
-        for s in process_steps(matter=normal_matter, user=specialist)
-        if s.label == FEEDBACK_DEADLINE_LABEL
-    ]
-
-    assert [s.display for s in feedback] == ["22.3.2026", "4.5.2026"]
-    assert [s.detail for s in feedback] == ["liikmed", "kaubandusvaldkonna töögrupp"]
-
-
-def test_two_rounds_due_on_one_day_are_ordered_deterministically(normal_matter, specialist):
-    """A same-day collision must not be placed by whatever order the database returned."""
-    same = dt.date(2026, 3, 22)
-    _round(normal_matter, deadline=same, title="liikmed")
-    _round(normal_matter, deadline=same, title="töögrupp")
-
-    first = [
-        s.detail
-        for s in process_steps(matter=normal_matter, user=specialist)
-        if s.label == FEEDBACK_DEADLINE_LABEL
-    ]
-    second = [
-        s.detail
-        for s in process_steps(matter=normal_matter, user=specialist)
-        if s.label == FEEDBACK_DEADLINE_LABEL
-    ]
-
-    assert first == second == ["liikmed", "töögrupp"]
-
-
-def test_the_two_deadlines_are_separate_columns_with_separate_words(specialist):
-    """ADR 0083 §1. What this office owes, and what it asked of other people.
-
-    They can fall on one day and are still two facts; a strip that merged them
-    would turn an internal collection date into an official obligation.
-    """
+def test_the_official_deadline_still_draws_beside_a_round(specialist):
     same = dt.date(2026, 3, 22)
     matter = factories.MatterFactory(owner=specialist, response_deadline=same)
     _round(matter, deadline=same)
 
-    labels = _labels(matter, specialist)
-
-    assert FEEDBACK_DEADLINE_LABEL in labels
-    assert DEADLINE_LABEL in labels
-    assert FEEDBACK_DEADLINE_LABEL != DEADLINE_LABEL
-    # Members answer Koda before Koda answers the ministry, so a same-day tie
-    # puts the collection date first.
-    assert labels.index(FEEDBACK_DEADLINE_LABEL) < labels.index(DEADLINE_LABEL)
+    assert _labels(matter, specialist) == [DEADLINE_LABEL]
 
 
-def test_the_column_reaches_the_rendered_page(signed_in, normal_matter):
-    """The strip a lawyer actually sees, not only the read model behind it."""
-    _round(normal_matter, deadline=dt.date(2026, 3, 22))
+def test_the_rendered_strip_names_no_round(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist, response_deadline=dt.date(2026, 3, 22))
+    _round(matter, deadline=dt.date(2026, 3, 20))
 
-    strip = _strip(_detail(signed_in, normal_matter))
+    strip = _strip(_detail(signed_in, matter))
 
-    assert FEEDBACK_DEADLINE_LABEL in strip
-    assert "22.3.2026" in strip
-    assert 'title="liikmed"' in strip
+    assert FEEDBACK_DEADLINE_LABEL not in strip
+    assert 'title="liikmed"' not in strip
 
 
 def test_a_matter_with_no_rounds_draws_the_strip_it_always_did(signed_in, specialist):
@@ -180,29 +121,6 @@ def test_a_matter_with_no_rounds_draws_the_strip_it_always_did(signed_in, specia
 
     assert FEEDBACK_DEADLINE_LABEL not in labels
     assert DEADLINE_LABEL in labels
-
-
-def test_a_restricted_round_cannot_change_the_strip_for_a_reader_who_may_not_see_it(
-    normal_matter, specialist, reader
-):
-    """AUTH-003. Scoped before the strip is derived, never filtered afterwards.
-
-    A column count, a connector count or a spacing that moved would announce the
-    restricted round's existence to somebody who cannot open it.
-
-    `reader` and not a second specialist: since docs/adr/0042 a colleague in the
-    department is not an outsider and sees restricted work by role, so a test
-    written against `other_specialist` would pass for the wrong reason — it
-    would be asserting that somebody who *may* see the round does see it.
-    """
-    from app.core.enums import Visibility
-
-    engagement = _round(normal_matter, deadline=dt.date(2026, 3, 22))
-    engagement.visibility_override = Visibility.RESTRICTED
-    engagement.save(update_fields=["visibility_override", "updated_at"])
-
-    assert FEEDBACK_DEADLINE_LABEL in _labels(normal_matter, specialist)
-    assert FEEDBACK_DEADLINE_LABEL not in _labels(normal_matter, reader)
 
 
 # ===========================================================================
@@ -250,16 +168,8 @@ def test_a_passed_reply_by_date_writes_no_record_and_the_strip_says_nothing(
     normal_matter.refresh_from_db()
     assert normal_matter.response_deadline is None
 
-    # And the strip itself asserts no urgency: no countdown, no «üle», no
-    # «praegu» — the words are the label and the date.
-    step = next(
-        s
-        for s in process_steps(matter=normal_matter, user=specialist)
-        if s.label == FEEDBACK_DEADLINE_LABEL
-    )
-    assert step.date_line == "1.1.2020"
-    assert "p üle" not in step.date_line
-    assert "praegu" not in step.date_line
+    # And the strip draws nothing for it since docs/adr/0131 §13.
+    assert FEEDBACK_DEADLINE_LABEL not in _labels(normal_matter, specialist)
 
 
 def test_a_reply_by_date_reaches_no_search_or_watched_deadline_surface(signed_in, specialist):

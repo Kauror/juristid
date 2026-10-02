@@ -414,10 +414,11 @@ def test_teema_toimingud_is_gone_and_both_controls_moved(signed_in, specialist, 
     assert 'id="teema-toimingud"' not in page
     assert "Teema toimingud" not in page
 
-    # `Lõpeta teema` is a peer chip in the launcher, and visibly the last of them.
+    # `Lõpeta teema` was a peer chip in the launcher until docs/adr/0131 §11
+    # retired it: a file ends through its `Hetkeseis`.
     zone = launcher(page)
-    assert "+ Lõpeta teema" in zone
-    assert "disclosure-chip--last" in zone
+    assert "+ Lõpeta teema" not in zone
+    assert "disclosure-chip--last" not in zone
 
     # `Kustuta` is in the header, beside `Muuda teemat`, and not in the launcher.
     head = page[: page.index('id="lisa-teemale"')]

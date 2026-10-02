@@ -442,50 +442,41 @@ def test_the_create_form_offers_neither_retired_value():
 
 
 # ---------------------------------------------------------------------------
-# 4 — stage is not disposition
+# 4 — stage and disposition, after docs/adr/0131 §9–§10
 # ---------------------------------------------------------------------------
+#
+# This round drew «stage is not disposition» (ADR 0032) and asserted that
+# «Rohkem ei tegele» was no stage and that «Jõustunud» closed nothing. The
+# owner's workflow decision of 2026-10-02 supersedes both, going forward: the
+# stages below are how a lawyer ends a file, and the closure they write is
+# still a `Disposition`.
 
 
-def test_rohkem_ei_tegele_is_offered_as_a_closure_reason_not_as_a_stage(signed_in, specialist):
-    """Scenario D, against the architecture ADR 0032 draws.
-
-    *Koda no longer intends active work* is `Disposition.MONITORING_STOPPED` and
-    has been since the vocabulary was seeded. It is a statement about this
-    office; `Hetkeseis` is a statement about the external process. Recording one
-    as the other would leave every surface reading the column unable to tell
-    which had been answered.
-    """
+def test_closing_as_monitoring_stopped_still_records_the_disposition(signed_in, specialist):
+    """The disposition outlives the panel: `close_matter` still records it."""
     matter = factories.MatterFactory(title="Jälgitav teema", owner=specialist)
     close_matter(matter=matter, disposition=Disposition.MONITORING_STOPPED, actor=specialist)
 
     matter.refresh_from_db()
     assert matter.disposition == Disposition.MONITORING_STOPPED
     assert matter.is_open is False
-    # And the stage is whatever it was: closing says nothing about where the
-    # external process stands.
-    assert matter.stage == factories.MatterFactory._meta.model.objects.get(pk=matter.pk).stage
-
-    assert not StageVocabulary.objects.filter(label_et="Rohkem ei tegele").exists()
 
 
-def test_the_stage_control_offers_no_closure_disguised_as_a_stage(signed_in):
-    """The create form's Hetkeseis row is ten external-process answers.
-
-    Nothing on it says anything about whether Koda continues, which is the
-    boundary this round was asked to preserve rather than cross.
-    """
+def test_the_stage_control_offers_rohkem_ei_tegele_as_a_stage(signed_in):
+    """Vocabulary 3.0: eleven reviewed stages on `Uus teema`, the last «Rohkem ei tegele»."""
     page = signed_in.get(CREATE).content.decode()
-    assert "Rohkem ei tegele" not in page
+    assert "Rohkem ei tegele" in page
 
     offered = [str(label) for _value, label in MatterCreateForm().fields["stage"].choices]
-    assert "Rohkem ei tegele" not in offered
+    assert offered[-1] == "Rohkem ei tegele"
     assert "Koda ei tegele edasi" not in offered
-    # Django's named blank option, then the ten reviewed stages.
-    assert len(offered) == 11
+    # Django's named blank option, then the eleven reviewed stages.
+    assert len(offered) == 12
+    assert StageVocabulary.objects.filter(key="monitoring_stopped").exists()
 
 
-def test_choosing_joustunud_does_not_close_the_matter(signed_in, ministry):
-    """Scenario E. Monitoring implementation is ordinary work."""
+def test_choosing_joustunud_on_uus_teema_files_the_teema_closed(signed_in, ministry):
+    """Scenario E, as decided on 2026-10-02: «Jõustunud» ends the file."""
     signed_in.post(
         CREATE,
         {
@@ -498,6 +489,22 @@ def test_choosing_joustunud_does_not_close_the_matter(signed_in, ministry):
     matter = Matter.objects.get(title="Jõustunud seadus")
 
     assert matter.stage is not None and matter.stage.key == "in_force"
+    assert matter.is_open is False
+    assert matter.disposition == Disposition.COMPLETED
+
+
+def test_choosing_joustumise_ootel_keeps_the_teema_open(signed_in, ministry):
+    signed_in.post(
+        CREATE,
+        {
+            "title": "Jõustumise ootel seadus",
+            "source_organisations": [str(ministry.pk)],
+            "stage": str(stage("awaiting_entry").pk),
+            "legal_instruments": [str(instrument("seadus").pk)],
+        },
+    )
+    matter = Matter.objects.get(title="Jõustumise ootel seadus")
+
     assert matter.is_open is True
     assert matter.disposition == ""
 

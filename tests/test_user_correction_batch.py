@@ -375,7 +375,8 @@ def test_a_round_created_with_a_deadline_is_waiting_at_once(signed_in, specialis
     assert [item.meaning for item in waits] == [wi.MEANING_FEEDBACK_WAIT]
 
     page = _matter_page(signed_in, matter)
-    assert "Tagasiside tähtaeg" in page
+    # The reply-by day reads on the round's row; the rail column is retired
+    # (docs/adr/0131 §13).
     assert "Ootame tagasisidet kuni" in page
 
 

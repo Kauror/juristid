@@ -130,7 +130,10 @@ def _row(page):
     amended 2026-09-27); everything this file presses is behind the toggle.
     """
     row = page.locator(".uxtl__ms-body").first
-    row.wait_for()
+    # Attached, not visible: on a file whose `Hetkeseis` has since moved the row
+    # sits in an earlier period, closed until opened (docs/adr/0131 §7), and
+    # `open_kaik_row` opens the period before the row.
+    row.wait_for(state="attached")
     open_kaik_row(row)
     return row
 

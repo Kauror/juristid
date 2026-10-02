@@ -823,7 +823,7 @@ def test_the_reopen_action_stays_inside_the_closed_banner(page, base_url):
     if not banner.count():
         pytest.skip("this Matter is not closed")
     outer = banner.bounding_box()
-    button = banner.get_by_role("button", name="Ava uuesti…").bounding_box()
+    button = banner.get_by_role("button", name="Ava uuesti").bounding_box()
     assert outer["y"] <= button["y"], "the reopen button escaped its banner"
     assert button["y"] + button["height"] <= outer["y"] + outer["height"] + 1
 

@@ -516,8 +516,8 @@ def test_several_valdkond_values_are_saved(signed_in):
     )
 
 
-def test_muuda_teemat_keeps_its_own_heading(signed_in, specialist):
-    """Only `Uus teema` changed its wording; the edit page was not decided."""
+def test_muuda_teemat_now_says_valdkond_too(signed_in, specialist):
+    """The edit page was decided on 2026-10-02: one fact, one word (docs/adr/0131 §14)."""
     matter = factories.MatterFactory(owner=specialist)
 
-    assert _valdkond_legend(page(signed_in, edit_url(matter))) == "Valdkonnad"
+    assert _valdkond_legend(page(signed_in, edit_url(matter))) == "Valdkond"

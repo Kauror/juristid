@@ -54,8 +54,16 @@ def add_stage(apps, schema_editor):
 
 
 def remove_stage(apps, schema_editor):
+    """A raw delete, so the database's own foreign keys decide — not the ORM's collector.
+
+    `.delete()` would walk every model that points at the row through the
+    migration state of *other* apps, rewound to wherever they happen to be —
+    which is how `migrate workflow zero` died here in CI, the failure
+    `workflow/0007`'s docstring describes. The foreign keys are still in the
+    database and still refuse a row in use.
+    """
     StageVocabulary = apps.get_model("workflow", "StageVocabulary")
-    StageVocabulary.objects.filter(key=KEY).delete()
+    StageVocabulary.objects.filter(key=KEY)._raw_delete(schema_editor.connection.alias)
 
 
 class Migration(migrations.Migration):

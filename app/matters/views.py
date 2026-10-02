@@ -237,7 +237,11 @@ from app.matters.services import (
     set_timeline_steps,
     timeline_steps_revision_token,
 )
-from app.matters.stage_episodes import offered_next_stages, offered_reopening_stages
+from app.matters.stage_episodes import (
+    episodes_of,
+    offered_next_stages,
+    offered_reopening_stages,
+)
 from app.matters.timeline import (
     TIMELINE_FILTER_ALL,
     TIMELINE_FILTERS,
@@ -2724,8 +2728,13 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # differently scoped answers to that on one page would be a row appearing or
     # vanishing for reasons a reader could not see (docs/adr/0092 §8).
     current_action = selectors.current_action_of(matter, request.user)
+    # The file's `Õigusakt` and its `Hetkeseis` periods, read **once** for the
+    # rail's pattern, the grouped chronology and the next-stage order — three
+    # readers of the same two facts (docs/adr/0131 §7).
+    instrument_keys = frozenset(matter.legal_instruments.values_list("key", flat=True))
+    episodes = episodes_of(matter)
     # The file's pattern and current stage, resolved **once** for both surfaces.
-    phases = legal_process.phase_context(matter=matter)
+    phases = legal_process.phase_context(matter=matter, instrument_keys=instrument_keys)
     # `Teema käik`, under the `Hetkeseis` period each act was done in
     # (docs/adr/0131 §7) — or, for a Matter that has never had a period, the
     # flat chronology paged exactly as before.
@@ -2735,6 +2744,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         only=timeline_only,
         intelligence=intelligence,
         current_action=current_action,
+        episodes=episodes,
     )
     if episode_timeline is None:
         items, has_more = matter_timeline(
@@ -2777,7 +2787,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # merges the dated points into them.
     rail = legal_process_rail(matter=matter, user=request.user, context=phases, step_rows=step_rows)
     return {
-        **_reopen_context(matter),
+        **_reopen_context(matter, episodes=episodes, instrument_keys=instrument_keys),
         # `Menetluse kulg` — where the external procedure stands, which one to
         # three phases may follow, and the dated points the file actually holds.
         # A deterministic read-only projection over `Hetkeseis`, the explicit
@@ -2832,6 +2842,11 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
             viewer=request.user,
             phases=phases,
             phase_offers=_phase_date_offers(request, matter, phases, step_rows),
+            next_stages=(
+                offered_next_stages(matter, episodes=episodes, instrument_keys=instrument_keys)
+                if matter.is_open
+                else []
+            ),
         ),
         # The superseded composer, still built for the endpoint that still
         # accepts it. Nothing on this page renders it any more
@@ -3592,11 +3607,14 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
     return render(request, "matters/matter_documents.html", context)
 
 
-def _reopen_context(matter: Matter) -> dict[str, Any]:
+def _reopen_context(
+    matter: Matter, *, episodes: Any = None, instrument_keys: Any = None
+) -> dict[str, Any]:
     """«Ava uuesti»'s stage picker, for the closed banner — and nothing for an open Matter."""
     if matter.is_open:
         return {"reopen_form": None}
-    return {"reopen_form": ReopenForm(offered=offered_reopening_stages(matter))}
+    offered = offered_reopening_stages(matter, episodes=episodes, instrument_keys=instrument_keys)
+    return {"reopen_form": ReopenForm(offered=offered)}
 
 
 # ---------------------------------------------------------------------------
@@ -6384,6 +6402,7 @@ def workspace_forms(
     viewer: Any = None,
     phases: Any = None,
     phase_offers: Any = None,
+    next_stages: Any = None,
 ) -> dict[str, Any]:
     """One unbound form per write intention, for an ordinary render.
 
@@ -6413,8 +6432,10 @@ def workspace_forms(
     # nothing about the authorization boundary is shared or weakened (AUTH-003).
     engagements = visible_engagements_of(matter, viewer)
     # `Uus hetkeseis`, in the file's likely order, read once for the two panels
-    # that offer it (docs/adr/0131 §7).
-    next_stages = offered_next_stages(matter) if matter is not None else None
+    # that offer it (docs/adr/0131 §7) — handed in by a caller that has already
+    # read the Matter's periods.
+    if next_stages is None and matter is not None:
+        next_stages = offered_next_stages(matter)
     return {
         "current_action_form": CompleteCurrentActionForm(),
         # `+ Märge · Tavaline`. What happened, when, optionally the stage it

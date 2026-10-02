@@ -105,6 +105,24 @@ REFUSAL_TEXT: dict[str, str] = {
     ),
 }
 
+#: Rows retained under the tombstone beside the audit trail, though they are
+#: not append-only themselves.
+#:
+#: `matters.MatterStageEpisode` is the file's `Hetkeseis` history, and
+#: `ChangeEvent.stage_episode` points at it under `PROTECT` — so the audit rows
+#: the tombstone must keep would keep these alive anyway, and deleting them
+#: would be the database refusing halfway (docs/adr/0131 §4). They are history
+#: of the same kind and stay with it.
+RETAINED_WITH_AUDIT: frozenset[str] = frozenset({"matters.MatterStageEpisode"})
+
+
+def _retained(model: type[models.Model], label: str, owned: _Owned) -> bool:
+    """Whether an owned row stays under the tombstone rather than being deleted."""
+    if label in RETAINED_WITH_AUDIT:
+        return True
+    return issubclass(model, AppendOnlyModel) and label in owned.direct
+
+
 #: The refusal a caller sees when it asks to delete a Matter that is blocked.
 #: Named because the view prints it and the tests assert on it.
 DELETION_REFUSED = "Teemat ei saa kustutada."
@@ -546,7 +564,7 @@ def plan_matter_deletion(matter: Matter) -> DeletionPlan:
         if model is Matter:
             continue
         group = RowGroup(label=label, count=len(owned.ids[label]))
-        if issubclass(model, AppendOnlyModel) and label in owned.direct:
+        if _retained(model, label, owned):
             retained.append(group)
         else:
             removed.append(group)
@@ -668,10 +686,10 @@ def delete_matter(*, matter: Matter, actor: Any = None) -> DeletionPlan:
         with suspend_indexing():
             for label in _deletion_order(owned):
                 model = owned.models[label]
-                if issubclass(model, AppendOnlyModel):
+                if issubclass(model, AppendOnlyModel) or label in RETAINED_WITH_AUDIT:
                     # Retained under the tombstone. Only the direct audit
-                    # children reach this line; anything else append-only was a
-                    # blocker.
+                    # children — and the `Hetkeseis` periods they point at —
+                    # reach this line; anything else append-only was a blocker.
                     continue
                 ids = sorted(owned.ids[label], key=str)
                 for chunk in _chunked(ids):

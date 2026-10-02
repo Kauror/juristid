@@ -254,9 +254,10 @@ def test_two_saves_write_the_note_and_the_engagement_separately(page, base_url):
     # It used to be checked by looking for `Alustatud`, which every Matter had
     # because it was `Matter.created_at`. That milestone is retired
     # (docs/adr/0100 §1), so what proves the strip is still there has to be a
-    # date somebody recorded — and on this Matter the one that is always there,
-    # whatever else the file's tests have written, is the seeded important date.
-    expect(page.locator(".tl-step__what", has_text="Konfidentsiaalne tähtaeg")).to_have_count(1)
+    # date somebody recorded. That was the seeded important date until
+    # docs/adr/0131 §13 narrowed the strip to the procedure and the sent
+    # opinions; what is always there now is the current `Hetkeseis` column.
+    expect(page.locator(".lprail .tl-strip .tl-step--current")).to_have_count(1)
 
 
 def test_an_engagement_with_no_audience_is_refused_with_the_panel_open(page, base_url):

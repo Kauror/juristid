@@ -275,8 +275,12 @@ def test_the_timeline_draws_one_spine(page, base_url):
 
     # Open on arrival since the v2 rebuild (02-EKRAANID §C), so there is
     # nothing to click before the spine is on screen.
-    expect(page.locator("#ajalugu-loend.uxtl")).to_be_visible()
-    expect(page.locator(".uxtl__dot").first).to_be_visible()
+    # One spine per `Hetkeseis` period since docs/adr/0131 §7; the current
+    # period is open on arrival, so its spine is on screen.
+    expect(page.locator("#ajalugu-loend")).to_be_visible()
+    current = page.locator("#ajalugu-loend details.kaikstage--current")
+    expect(current.locator(".uxtl")).to_be_visible()
+    expect(current.locator(".uxtl__dot").first).to_be_visible()
 
 
 # =========================================================================

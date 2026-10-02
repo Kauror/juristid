@@ -279,7 +279,13 @@ def test_an_important_deadline_alone_still_saves(signed_in, normal_matter):
 
 
 def test_closing_the_matter_still_works_with_neither_box(signed_in, normal_matter, specialist):
-    """F, part three. Closure is its own path and this change does not touch it."""
+    """F, part three. Closure is its own path — a `Hetkeseis` since docs/adr/0131 §11.
+
+    The old composer's closure answer is refused now; a `+ Märge` choosing
+    «Jõustunud» closes the file and ends the step exactly as a closure did.
+    """
+    from app.workflow.models import StageVocabulary
+
     set_next_action(
         matter=normal_matter,
         text="Saata kiri",
@@ -289,19 +295,19 @@ def test_closing_the_matter_still_works_with_neither_box(signed_in, normal_matte
         actor=specialist,
     )
 
-    response = _post(
-        signed_in,
-        normal_matter,
-        body="<p>Menetlus lõppes.</p>",
-        next_text="",
-        next_date="",
-        disposition=Disposition.COMPLETED,
-        work_victory="EI",
+    response = signed_in.post(
+        reverse("matters:add_note", kwargs={"pk": normal_matter.pk}),
+        {
+            "title": "Menetlus lõppes.",
+            "stage": str(StageVocabulary.objects.get(key="in_force").pk),
+        },
+        HTTP_HX_REQUEST="true",
     )
     assert response.status_code == 200, response.content.decode()[:2000]
 
     normal_matter.refresh_from_db()
     assert not normal_matter.is_open
+    assert normal_matter.disposition == Disposition.COMPLETED
     assert current_next_action(normal_matter) is None
 
 

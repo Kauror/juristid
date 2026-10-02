@@ -398,7 +398,7 @@ def test_the_empty_deadline_editor_opens_blank(signed_in, specialist):
     matter = factories.MatterFactory(owner=specialist, response_deadline=None)
 
     body = detail(signed_in, matter)
-    editor = body[body.index("+ Tähtaeg") :].split("</details>")[0]
+    editor = body[body.index("+ Arvamuse tähtaeg") :].split("</details>")[0]
 
     assert 'name="response_deadline" value=""' in editor
 

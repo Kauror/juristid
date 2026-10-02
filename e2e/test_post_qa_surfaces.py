@@ -555,7 +555,7 @@ def test_the_empty_deadline_editor_fits_every_width_and_starts_blank(page, base_
     page.set_viewport_size(VIEWPORTS[size])
     page.goto(detail)
     page.wait_for_load_state("networkidle")
-    page.get_by_text("+ Tähtaeg").click()
+    page.get_by_text("+ Arvamuse tähtaeg").click()
 
     editor = page.locator('.inlineedit__form input[name="response_deadline"]')
     expect(editor).to_be_visible()

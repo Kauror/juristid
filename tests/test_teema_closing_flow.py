@@ -73,8 +73,23 @@ def _composer_html(client, matter) -> str:
     return client.get(url).content.decode()
 
 
-def _post(client, matter, **fields):
-    """One composer save, with the fields every POST carries filled in."""
+class _Saved:
+    """What `_post` answers when the save is a closure: the form and the service ran."""
+
+    status_code = 200
+    content = b""
+
+
+def _post(client, matter, *, through_route: bool = False, **fields):
+    """One composer save, with the fields every POST carries filled in.
+
+    **A closure goes through the form and the service, not the route.** The
+    superseded composer route refuses a closure answer since docs/adr/0131 §11 —
+    a Matter ends through its `Hetkeseis` — while `ComposerForm` and
+    `compose_update` keep the closure contract these tests hold. So a save
+    carrying a `disposition` is validated by the form and handed to the service
+    exactly as the route used to hand it; every other save still posts.
+    """
     payload = {
         "body": "",
         "next_text": "",
@@ -84,6 +99,11 @@ def _post(client, matter, **fields):
         "deadline_precision": DatePrecision.EXACT,
     }
     payload.update(fields)
+    if payload.get("disposition") and not through_route:
+        form = ComposerForm(payload, matter=matter, viewer=matter.owner)
+        assert form.is_valid(), form.errors
+        compose_update(matter=matter, author=matter.owner, **form.as_service_kwargs())
+        return _Saved()
     return client.post(
         reverse("matters:compose", kwargs={"pk": matter.pk}),
         payload,
@@ -135,37 +155,23 @@ def test_the_closing_section_no_longer_renders_a_retired_field(signed_in, normal
     assert f'name="{name}"' not in _composer_html(signed_in, normal_matter)
 
 
-def test_the_closing_panel_asks_the_two_approved_questions(signed_in, normal_matter):
+def test_there_is_no_closing_panel_and_the_route_refuses_a_closure(signed_in, normal_matter):
+    """`+ Lõpeta teema` is retired (docs/adr/0131 §11), and the old composer route
+    refuses the closure answer it used to accept; the form keeps the vocabulary."""
     body = _composer_html(signed_in, normal_matter)
 
-    # The panel, behind its own chip, and no confirmation box inside it.
-    assert 'id="teema-lopeta"' in body
-    assert "+ Lõpeta teema" in body
-    assert "Lõpeta see teema" not in body
+    assert 'id="teema-lopeta"' not in body
+    assert "+ Lõpeta teema" not in body
+    assert 'name="closing_words"' not in body
 
-    # Three chips over one hidden field, so an unanswered question is
-    # representable and a crafted POST still validates against the whole stored
-    # vocabulary. `Kuidas lõppes` names the group for assistive technology only
-    # (owner decision, 2026-09-27): a visually hidden legend, never a visible
-    # label.
-    panel = body[body.index('id="teema-lopeta"') :]
-    assert '<legend class="visually-hidden">Kuidas lõppes</legend>' in panel
-    assert '<span class="cx-f__lab">Kuidas lõppes</span>' not in panel
-    assert 'name="disposition"' in body
-    for label in ("Jõustus", "Menetlus lõppes", "Loobuti"):
-        assert f">{label}<" in body
-
-    # `Lõppsõna`, optional.
-    assert 'name="closing_words"' in body
-    assert "Lõppsõna" in body
-    assert "valikuline" in body
-    assert "Mis sellest teemast lõpuks sai?" in body
-
-    # And no explanatory note under it: the owner took «Teema läheb arhiivi.
-    # Avatud järgmised sammud tühistatakse.» off the panel on 2026-09-27. What
-    # closing does is unchanged (`close_matter`); only the sentence is gone.
-    assert "Teema läheb arhiivi" not in body
-    assert "sammud tühistatakse" not in body
+    response = signed_in.post(
+        reverse("matters:compose", kwargs={"pk": normal_matter.pk}),
+        {"body": "<p>Lõpp.</p>", "disposition": Disposition.COMPLETED},
+        headers={"HX-Request": "true"},
+    )
+    assert response.status_code == 400
+    normal_matter.refresh_from_db()
+    assert normal_matter.is_open
 
 
 def test_the_four_offered_outcomes_map_onto_stored_dispositions():
@@ -734,6 +740,7 @@ def test_a_reader_cannot_close_a_matter(client, normal_matter):
     response = _post(
         client,
         normal_matter,
+        through_route=True,
         body="<p>Katse.</p>",
         disposition=Disposition.COMPLETED,
     )
@@ -764,6 +771,7 @@ def test_a_closure_on_an_invisible_matter_is_a_404(client, restricted_matter):
     response = _post(
         client,
         restricted_matter,
+        through_route=True,
         body="<p>Katse.</p>",
         disposition=Disposition.COMPLETED,
     )

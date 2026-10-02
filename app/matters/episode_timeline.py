@@ -187,6 +187,7 @@ def matter_episode_timeline(
     only: str = TIMELINE_FILTER_ALL,
     intelligence: Any = None,
     current_action: Any = _ASK,
+    episodes: list[MatterStageEpisode] | None = None,
 ) -> EpisodeTimeline | None:
     """The chronology grouped by period, or ``None`` for a Matter that has never had one.
 
@@ -195,7 +196,8 @@ def matter_episode_timeline(
     had: one group called «Varasem tegevus» over every row would be a heading
     saying nothing.
     """
-    episodes = episodes_of(matter)
+    if episodes is None:
+        episodes = episodes_of(matter)
     if not episodes:
         return None
 

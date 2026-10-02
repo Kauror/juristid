@@ -59,6 +59,8 @@ STAGES = (
     "ELi menetluses",
     "ELi õiguse ülevõtmise ootel",
     "Muu",
+    # Vocabulary 3.0 (docs/adr/0131 §9).
+    "Rohkem ei tegele",
 )
 
 #: The reviewed Õigusakt vocabulary, likewise.
@@ -171,24 +173,16 @@ def test_the_reviewed_vocabularies_are_what_the_page_offers(page, base_url):
     assert tuple(chip_names(page, INSTRUMENT_FIELD)) == INSTRUMENTS
 
 
-def test_the_stage_row_offers_no_closure_disguised_as_a_stage(page, base_url):
-    """`Hetkeseis` answers where the *external* process stands, and only that.
-
-    The feedback asked for «Rohkem ei tegele» here. It belongs to
-    `Disposition.MONITORING_STOPPED` — a statement about this office rather than
-    about the process — and ADR 0032 keeps the two apart on purpose. A chip
-    meaning the second would put two questions in one column
-    (docs/adr/0090 §1).
+def test_the_stage_row_offers_rohkem_ei_tegele_as_a_stage(page, base_url):
+    """«Rohkem ei tegele» is a stage since docs/adr/0131 §9 — the last chip.
 
     Read off the chip *names*, not the fieldset's text: every chip carries the
-    department's own explanation as a tooltip, and the sentence about `Idee`
-    ends «…me rohkem ei tegele selle teemaga edasi» — so a substring search over
-    the whole row finds those words in a chip that is not about them.
+    department's own explanation as a tooltip.
     """
     create_form(page, base_url)
 
     names = chip_names(page, STAGE_FIELD)
-    assert "Rohkem ei tegele" not in names
+    assert names[-1] == "Rohkem ei tegele"
     assert "Koda ei tegele edasi" not in names
 
 
