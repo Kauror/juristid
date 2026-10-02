@@ -606,7 +606,16 @@ def _for_information_of(submission: Submission) -> list[Any]:
 def withdraw_submission(
     *, submission: Submission, actor: Any = None, reason: str = ""
 ) -> Submission:
-    """Withdraw a sent submission. The evidence of what was sent stays."""
+    """Withdraw a sent submission. The evidence of what was sent stays.
+
+    **Decided on the locked row** (docs/adr/0110), in the Matter-then-Submission
+    order `correct_sent_opinion` uses. Two presses, or two tabs, each holding a
+    SENT copy would otherwise both pass the check and write two
+    `SUBMISSION_WITHDRAWN` rows — two withdrawals in `Teema käik` for one act.
+    Callers must use the returned instance.
+    """
+    matter = lock_matter_for_evidence_integrity(submission.matter_id)
+    submission = lock_submission_for_evidence_integrity(submission.pk)
     if submission.status != SubmissionStatus.SENT:
         raise DomainError("Tagasi võtta saab ainult saadetud arvamust.")
 
@@ -615,7 +624,7 @@ def withdraw_submission(
 
     record_change_event(
         event_type=ChangeEventType.SUBMISSION_WITHDRAWN,
-        matter=submission.matter,
+        matter=matter,
         actor=actor,
         obj=submission,
         summary=submission.title[:200],
