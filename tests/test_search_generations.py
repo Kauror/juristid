@@ -54,7 +54,6 @@ from app.search.generations import active_generation, building_generation, proje
 from app.search.indexing import (
     RebuildAlreadyRunning,
     RebuildResult,
-    discard_dead_generations,
     rebuild_all,
     refresh_matters,
 )
@@ -558,7 +557,10 @@ def test_11_a_crash_after_the_swap_leaves_the_new_generation_in_use(corpus, monk
     assert "Vanad põlvkonnad" in {finding.label for finding in report.findings}
     assert report.dead_rows == SearchDocument.objects.filter(generation=old).count()
 
-    assert discard_dead_generations() > 0
+    # The next rebuild is the recovery: it discards every dead generation
+    # before it builds (`_discard_unfinished`).
+    rebuild_all()
+    assert not SearchDocument.objects.filter(generation=old).exists()
     assert build_report().ok
 
 

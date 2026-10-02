@@ -1057,16 +1057,6 @@ DISCARD_BATCH = 5000
 KEPT_GENERATION_RECORDS = 20
 
 
-def discard_dead_generations() -> int:
-    """Delete the rows of every generation that is neither active nor building.
-
-    What a rebuild does after its swap, exposed for an operator whose rebuild
-    stopped between the swap and this step. Safe at any time: a live
-    generation's rows are never touched.
-    """
-    return _discard_generations(keep=set())
-
-
 def _by_generation() -> QuerySet[SearchDocument]:
     """Rows as the rebuild looks them up by generation: through the unique index.
 
