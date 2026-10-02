@@ -282,16 +282,6 @@ SURFACES: tuple[Surface, ...] = (
         editor=False,
     ),
     Surface(
-        "lõpeta",
-        "matters:close_from_workspace",
-        _on_matter,
-        lambda w: {},
-        editor=False,
-        # `Lahendus` is a radio group, described by its legend: Django gives a
-        # fieldset widget no `aria-describedby`, so there is no error id to ask for.
-        describes_an_error=False,
-    ),
-    Surface(
         "järgmine tegevus",
         "matters:set_action",
         _on_matter,

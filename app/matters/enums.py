@@ -45,6 +45,21 @@ REGISTER_YEAR_ORIGINS: tuple[str, ...] = (
 )
 
 
+class StageEpisodeOrigin(models.TextChoices):
+    """How Juristid came to know one `Hetkeseis` period, and so what its start means.
+
+    Only ``RECORDED`` has a start: Juristid itself recorded the transition that
+    began it, at ``started_at``. The other two are periods Juristid *found* —
+    a stage a Matter already held when episodes were introduced, and a stage an
+    importer wrote — and the moment that stage really began is not known, so
+    none is stored (docs/adr/0131 §3). A date is never invented to fill it.
+    """
+
+    RECORDED = "RECORDED", "Salvestatud üleminek"
+    CARRIED_OVER = "CARRIED_OVER", "Varasem hetkeseis, algus teadmata"
+    IMPORTED = "IMPORTED", "Imporditud hetkeseis, algus teadmata"
+
+
 class DataQualityTier(models.TextChoices):
     """How much of this record has been verified (master specification 19.6)."""
 

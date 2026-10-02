@@ -44,7 +44,7 @@ from app.accounts.selectors import (
     owner_filter_choices,
 )
 from app.audit.models import ChangeEvent
-from app.audit.operations import composer_operation
+from app.audit.operations import composer_operation, stage_episode_scope
 from app.audit.visibility import change_log_event_types, scope_change_events
 from app.core.authorization import (
     may_review_work_victory,
@@ -99,10 +99,10 @@ from app.matters.deletion import delete_matter, plan_matter_deletion
 from app.matters.department_dashboard import SeisFigure
 from app.matters.document_context import related_records
 from app.matters.enums import EngagementKind, MatterOrigin, RecordMode
+from app.matters.episode_timeline import matter_episode_timeline
 from app.matters.forms import (
     ENGAGEMENT_UNCHANGED,
     BriefSummaryForm,
-    CompactClosureForm,
     CompactEffectiveDateForm,
     CompactEngagementForm,
     CompactImportantDateForm,
@@ -133,6 +133,7 @@ from app.matters.forms import (
     ProceduralLinkCreateForm,
     ProceduralLinkEditForm,
     ReceivedFeedbackForm,
+    ReopenForm,
     ReviewActionForm,
     TimelineStepsForm,
     WebsiteOverviewLinkForm,
@@ -186,6 +187,7 @@ from app.matters.removal import (
 )
 from app.matters.services import (
     GUARDED_MATTER_FIELDS,
+    REOPEN_NEEDS_A_STAGE,
     EngagementEditConflict,
     EntryEditConflict,
     ExternalPositionConflict,
@@ -199,6 +201,7 @@ from app.matters.services import (
     acknowledge_assignment_notice,
     assign_matter,
     change_stage,
+    close_matter_for_terminal_stage,
     compose_update,
     correct_engagement,
     correct_external_position,
@@ -217,7 +220,7 @@ from app.matters.services import (
     personal_note_revision,
     record_engagement,
     record_procedural_link,
-    reopen_matter,
+    reopen_matter_into_stage,
     resolve_addressee,
     resolve_source_organisations,
     save_personal_note,
@@ -234,6 +237,7 @@ from app.matters.services import (
     set_timeline_steps,
     timeline_steps_revision_token,
 )
+from app.matters.stage_episodes import offered_next_stages, offered_reopening_stages
 from app.matters.timeline import (
     TIMELINE_FILTER_ALL,
     TIMELINE_FILTERS,
@@ -272,6 +276,7 @@ from app.workflow.services import (
     establish_opinion_preparation_action,
     set_next_action_for_new_work,
 )
+from app.workflow.stage_flow import is_terminal as is_terminal_stage
 from app.workflow.stage_guidance import stage_guidance_payload
 
 #: `TWO_FIRST_STEPS_REFUSAL` stood here, and is retired with the question that
@@ -2129,7 +2134,14 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                 # today, not the arrival date, not an undated commitment
                 # (docs/adr/0078 §2, docs/adr/0091 §1.2).
                 prepare_by = data.get("response_deadline")
-                if prepare_by is not None:
+                # **A Teema filed as «Jõustunud» or «Rohkem ei tegele» is filed
+                # closed** (docs/adr/0131 §10): the same rule every other place
+                # a `Hetkeseis` is chosen keeps, closed last in this same
+                # transaction so the files and the link above are written on an
+                # open Matter. It gets no first step, because the closure would
+                # cancel it in the same press.
+                ends_on_creation = is_terminal_stage(getattr(data.get("stage"), "key", None))
+                if prepare_by is not None and not ends_on_creation:
                     establish_opinion_preparation_action(
                         matter=matter,
                         prepare_by=prepare_by,
@@ -2139,6 +2151,8 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                         # file new work on a departed colleague (ADR 0036 §5).
                         responsible=data.get("owner"),
                     )
+                if ends_on_creation:
+                    close_matter_for_terminal_stage(matter=matter, actor=request.user)
 
         except _FormAlreadySubmitted as replay:
             return _answer_repeated_create(request, replay.session)
@@ -2712,14 +2726,28 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     current_action = selectors.current_action_of(matter, request.user)
     # The file's pattern and current stage, resolved **once** for both surfaces.
     phases = legal_process.phase_context(matter=matter)
-    items, has_more = matter_timeline(
+    # `Teema käik`, under the `Hetkeseis` period each act was done in
+    # (docs/adr/0131 §7) — or, for a Matter that has never had a period, the
+    # flat chronology paged exactly as before.
+    episode_timeline = matter_episode_timeline(
         matter=matter,
         user=request.user,
-        limit=TIMELINE_PAGE_SIZE,
         only=timeline_only,
         intelligence=intelligence,
         current_action=current_action,
     )
+    if episode_timeline is None:
+        items, has_more = matter_timeline(
+            matter=matter,
+            user=request.user,
+            limit=TIMELINE_PAGE_SIZE,
+            only=timeline_only,
+            intelligence=intelligence,
+            current_action=current_action,
+        )
+    else:
+        items = [item for group in episode_timeline.groups for item in group.items]
+        has_more = False
     # Each `Kaasamine` row on the chronology gets its own `Lõpeta kaasamine`
     # form, with its own ids and its own revision token. Here rather than in the
     # template because a template must not build a form, and on the record
@@ -2749,6 +2777,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # merges the dated points into them.
     rail = legal_process_rail(matter=matter, user=request.user, context=phases, step_rows=step_rows)
     return {
+        **_reopen_context(matter),
         # `Menetluse kulg` — where the external procedure stands, which one to
         # three phases may follow, and the dated points the file actually holds.
         # A deterministic read-only projection over `Hetkeseis`, the explicit
@@ -2771,6 +2800,8 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "source_instruction": source_instruction,
         "source_snapshot": snapshot_label() if source_instruction else "",
         "timeline_items": items,
+        # The same rows in their `Hetkeseis` periods, or `None` for the flat list.
+        "timeline_groups": episode_timeline.groups if episode_timeline is not None else None,
         # `Teema käik` — the file's course above the chronology that explains
         # it: `Tagasiside tähtaeg`, `Koja arvamus`, `Arvamuse tähtaeg`,
         # `Jõustumine`, `Lõpetatud`, the pattern's own phases, and nothing else.
@@ -3555,9 +3586,17 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
             # without the corpus gets no rows, no count and no hint there are any
             # (docs/adr/0028, docs/adr/0056).
             "archive_letters": archive_letters_for_matter(matter, reader=request.user),
+            **_reopen_context(matter),
         }
     )
     return render(request, "matters/matter_documents.html", context)
+
+
+def _reopen_context(matter: Matter) -> dict[str, Any]:
+    """«Ava uuesti»'s stage picker, for the closed banner — and nothing for an open Matter."""
+    if matter.is_open:
+        return {"reopen_form": None}
+    return {"reopen_form": ReopenForm(offered=offered_reopening_stages(matter))}
 
 
 # ---------------------------------------------------------------------------
@@ -3632,7 +3671,15 @@ def compose(request: HttpRequest, pk: Any) -> HttpResponse:
         return render(request, "matters/partials/overview.html", context, status=400)
 
     try:
-        compose_update(matter=matter, author=request.user, **form.as_service_kwargs())
+        kwargs = form.as_service_kwargs()
+        if kwargs.get("closure"):
+            # **No closure through the old composer either** (docs/adr/0131 §11).
+            # Nothing renders this form any more, and the one ordinary way a
+            # Matter ends is its `Hetkeseis` — a stale page must not keep a
+            # second, parallel door open. `compose_update` itself still closes
+            # for the callers that are not a person at a page.
+            raise DomainError(CLOSURE_IS_A_STAGE)
+        compose_update(matter=matter, author=request.user, **kwargs)
     except (DomainError, UploadRejected) as error:
         context = _overview_context(request, matter)
         context.update(_header_context(request, matter))
@@ -3656,6 +3703,10 @@ def compose(request: HttpRequest, pk: Any) -> HttpResponse:
     # form must own, and a response that also replaced the header would re-render
     # every inline editor on every note somebody writes.
     return _render_overview(request, matter, header_out_of_band=not matter.is_open)
+
+
+#: What a closure posted anywhere but a `Hetkeseis` is told (docs/adr/0131 §11).
+CLOSURE_IS_A_STAGE = "Teema lõpetatakse hetkeseisuga: vali «Jõustunud» või «Rohkem ei tegele»."
 
 
 def _refused_overview(request: HttpRequest, matter: Matter) -> HttpResponse:
@@ -4714,7 +4765,10 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
 
     data = form.cleaned_data
     try:
-        with transaction.atomic():
+        # One save, one `Hetkeseis` period: every correction below is written in
+        # the period current when the page was saved, and a stage change — made
+        # last — begins the next one after them (docs/adr/0131 §5).
+        with transaction.atomic(), stage_episode_scope():
             # First, and inside the transaction: this page posts every field it
             # holds, so a copy filled before somebody else's save would
             # otherwise write thirteen stale values over thirteen fresh ones
@@ -4727,7 +4781,6 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
                 matter=matter, value=data.get("brief_summary") or "", actor=request.user
             )
             assign_matter(matter=matter, owner=data.get("owner"), actor=request.user)
-            change_stage(matter=matter, stage=data.get("stage"), actor=request.user)
             # No `change_track`. `Menetlusliik` is off this page, so there is no
             # cleaned value to pass and the service is not called with a default
             # either — a Matter's track survives every save of this form
@@ -4788,6 +4841,12 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
             # and a Matter's tags and its visibility survive every save of this
             # form untouched (docs/adr/0096 §3, docs/adr/0097 §2).
             _save_procedural_link(matter=matter, form=link_form, actor=request.user)
+            # **`Hetkeseis` last.** The general correction surface offers the
+            # whole vocabulary and goes through the one transition every surface
+            # uses: a new period, and — for «Jõustunud» or «Rohkem ei tegele» on
+            # an open Matter — the closure, after every other field on this page
+            # has been written to the open file (docs/adr/0131 §6, §10).
+            change_stage(matter=matter, stage=data.get("stage"), actor=request.user)
     except MatterEditConflict as conflict:
         # Somebody else changed this Matter between the page opening and this
         # save. Refused rather than applied, and the page comes back with every
@@ -5186,6 +5245,7 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
         return render(request, surface, context, status=400)
 
     value = form.cleaned_data.get(field)
+    was_open = matter.is_open
     try:
         with transaction.atomic():
             if field in GUARDED_MATTER_FIELDS:
@@ -5215,7 +5275,14 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
     # Each field re-renders the surface it lives on. `Muu valdkond` sits in the
     # facts rail rather than the header strip, and swapping the header for it
     # would leave the value on screen unchanged while claiming it had saved.
-    return render(request, surface, _header_context(request, matter))
+    response = render(request, surface, _header_context(request, matter))
+    if was_open and not matter.is_open:
+        # «Jõustunud» or «Rohkem ei tegele» chosen here closed the Matter
+        # (docs/adr/0131 §10). The banner, the workspace and `Teema käik` all
+        # change, and none of them is the header — so the whole page is
+        # reloaded rather than three fragments guessed at.
+        response["HX-Refresh"] = "true"
+    return response
 
 
 def _apply_inline_field(
@@ -5517,9 +5584,23 @@ def add_working_document(request: HttpRequest, pk: Any) -> HttpResponse:
 @business_write_required
 @require_http_methods(["POST"])
 def reopen(request: HttpRequest, pk: Any) -> HttpResponse:
+    """«Ava uuesti» — the closed Matter becomes current work again, in the stage named.
+
+    One act (`reopen_matter_into_stage`): the terminal period ends, the named
+    stage's period begins and the closure is cleared, so the file is never open
+    while still reading «Jõustunud» (docs/adr/0131 §12).
+    """
     matter = get_visible_matter(request, pk)
+    form = ReopenForm(request.POST, offered=offered_reopening_stages(matter))
+    if not form.is_valid():
+        messages.error(
+            request, " ".join(str(e) for e in form.errors.get("stage", [])) or REOPEN_NEEDS_A_STAGE
+        )
+        return redirect("matters:matter_detail", pk=matter.pk)
     try:
-        reopen_matter(matter=matter, actor=request.user)
+        reopen_matter_into_stage(
+            matter=matter, stage=form.cleaned_data["stage"], actor=request.user
+        )
         messages.success(request, "Teema on taasavatud.")
     except DomainError as error:
         messages.error(request, str(error))
@@ -6246,11 +6327,7 @@ WORKSPACE_PANELS: dict[str, tuple[str, str]] = {
     "koda_opinion_form": ("lisa-arvamus", "arvamus-koja"),
     # `+ Ülevaade / uudis` — one question, no sub-choice.
     "website_overview_form": ("lisa-koduleht", ""),
-    # `TEEMA TOIMINGUD` — not content, and not in the launcher at all. Its panel
-    # lives in its own section and is named here so a refused closure still
-    # reopens the control it came from (docs/adr/0097 §9).
-    "closure_form": ("teema-lopeta", ""),
-    # `PRAEGUNE TEGEVUS` → `Muuda`, which is not in the launcher either.
+    # `PRAEGUNE TEGEVUS` → `Muuda`, which is not in the launcher.
     "action_form": ("lisa-jargmine", ""),
     # `PRAEGUNE TEGEVUS` → `Vaatasin üle`, beside a step that waits (ENG-021).
     "review_form": ("vaatasin-ule", ""),
@@ -6335,6 +6412,9 @@ def workspace_forms(
     # The *queryset* each field validates against is still set per form, so
     # nothing about the authorization boundary is shared or weakened (AUTH-003).
     engagements = visible_engagements_of(matter, viewer)
+    # `Uus hetkeseis`, in the file's likely order, read once for the two panels
+    # that offer it (docs/adr/0131 §7).
+    next_stages = offered_next_stages(matter) if matter is not None else None
     return {
         "current_action_form": CompleteCurrentActionForm(),
         # `+ Märge · Tavaline`. What happened, when, optionally the stage it
@@ -6346,7 +6426,9 @@ def workspace_forms(
         # chips asking the same question with different amounts of ceremony, and
         # `MatterProgressForm` says at length why the survivor writes the
         # structured record rather than the prose one (docs/adr/0097 §6).
-        "progress_form": MatterProgressForm(phases=phases, phase_offers=phase_offers),
+        "progress_form": MatterProgressForm(
+            phases=phases, phase_offers=phase_offers, next_stages=next_stages
+        ),
         # The period travels with the text. Reopening the editor on `Täpne
         # päev` / `01.10.2026` for a step recorded as *oktoober 2026* would
         # invite somebody to save the invented day back, which is the whole
@@ -6419,13 +6501,12 @@ def workspace_forms(
         # than a Matter child: Koda's own opinion is what the product has always
         # called a submission, and this is a second door onto it rather than a
         # second record of it (docs/adr/0091 §6).
-        "koda_opinion_form": KodaOpinionForm(matter=matter, viewer=viewer, choices=organisations),
-        # `Lõpeta teema`, which is no longer one of these at all: closing a
-        # Matter is an operation on the record rather than content added to it,
-        # so it renders under `TEEMA TOIMINGUD` and not in the launcher. It is
-        # still built here because the refusal machinery is shared
-        # (docs/adr/0097 §9).
-        "closure_form": CompactClosureForm(),
+        "koda_opinion_form": KodaOpinionForm(
+            matter=matter, viewer=viewer, choices=organisations, next_stages=next_stages
+        ),
+        # **No `closure_form`** (docs/adr/0131 §11). `+ Lõpeta teema` is gone:
+        # a Matter ends when its `Hetkeseis` says so — «Jõustunud» or «Rohkem ei
+        # tegele» — and `close_matter` behind it is unchanged.
         "open_panel": "",
         "open_choice": "",
         **_workspace_choices(""),
@@ -6666,11 +6747,14 @@ def add_note(request: HttpRequest, pk: Any) -> HttpResponse:
         # form keeps `Märgi ka menetluse kulgu` only beside one of them
         # (docs/adr/0128 §1). The use case asks again on the locked row.
         phase_offers=_phase_date_offers(request, matter, phases),
+        # The order a refused save is drawn back in; validation is the whole
+        # active vocabulary either way (docs/adr/0131 §7).
+        next_stages=offered_next_stages(matter),
     )
     if not form.is_valid():
         return _workspace_refusal(request, matter, key="progress_form", form=form)
     try:
-        workspace.add_procedural_development(
+        result = workspace.add_procedural_development(
             matter=matter,
             author=request.user,
             title=form.cleaned_data["title"],
@@ -6701,6 +6785,12 @@ def add_note(request: HttpRequest, pk: Any) -> HttpResponse:
         )
     except (DomainError, UploadRejected) as error:
         return _workspace_refusal(request, matter, key="progress_form", form=form, error=str(error))
+    if result.closed:
+        # «Jõustunud» or «Rohkem ei tegele» ended the Matter (docs/adr/0131 §10):
+        # the header's state badge moves, so it rides along as a closure always
+        # has (`close_from_workspace` did exactly this).
+        matter.refresh_from_db()
+        return _render_overview(request, matter, header_out_of_band=True)
     return _render_overview(request, matter)
 
 
@@ -7399,11 +7489,17 @@ def add_koda_opinion(request: HttpRequest, pk: Any) -> HttpResponse:
     the difference between correcting a refusal and starting again (QA-02).
     """
     matter = get_visible_matter(request, pk)
-    form = KodaOpinionForm(request.POST, request.FILES, matter=matter, viewer=request.user)
+    form = KodaOpinionForm(
+        request.POST,
+        request.FILES,
+        matter=matter,
+        viewer=request.user,
+        next_stages=offered_next_stages(matter),
+    )
     if not form.is_valid():
         return _workspace_refusal(request, matter, key="koda_opinion_form", form=form)
     try:
-        workspace.add_matter_koda_opinion(
+        result = workspace.add_matter_koda_opinion(
             # The step `Märgi praegune tegevus tehtuks` named, when it was
             # ticked: fetched through `visible_to` first, so an identifier for a
             # step this reader may not see answers 404 rather than confirming it
@@ -7430,11 +7526,17 @@ def add_koda_opinion(request: HttpRequest, pk: Any) -> HttpResponse:
             # filed as `Töödokument` under this same opinion and never as what
             # was sent (docs/adr/0129 §2).
             working_uploads=form.cleaned_data.get("working_files") or [],
+            # `Uus hetkeseis`: the file moves on after the opinion, which stays
+            # in the period it was written in (docs/adr/0131 §5).
+            stage=form.cleaned_data.get("stage"),
         )
     except (DomainError, UploadRejected) as error:
         return _workspace_refusal(
             request, matter, key="koda_opinion_form", form=form, error=str(error)
         )
+    if result.closed:
+        matter.refresh_from_db()
+        return _render_overview(request, matter, header_out_of_band=True)
     return _render_overview(request, matter)
 
 
@@ -8334,34 +8436,3 @@ def add_opinion_working_documents_view(
         )
 
     return _render_overview(request, matter)
-
-
-@login_required
-@business_write_required
-@require_http_methods(["POST"])
-def close_from_workspace(request: HttpRequest, pk: Any) -> HttpResponse:
-    """`+ Lõpeta teema` — two questions, and the header follows out of band.
-
-    The workspace swaps `#teema-vaade`, which is deliberately not the header
-    band: re-rendering it on every note would rebuild five inline editors. A
-    closure is the one write here that the header states — the state badge said
-    `Avatud` beside an archived Matter until this was added — so the header
-    rides along on this response and on no other (docs/adr/0074 §10).
-    """
-    matter = get_visible_matter(request, pk)
-    form = CompactClosureForm(request.POST)
-    if not form.is_valid():
-        return _workspace_refusal(request, matter, key="closure_form", form=form)
-    try:
-        workspace.close_matter_from_workspace(
-            matter=matter,
-            author=request.user,
-            disposition=form.cleaned_data["disposition"],
-            closing_words=form.cleaned_data.get("closing_words") or "",
-            work_victory=form.cleaned_data.get("work_victory_kwargs"),
-        )
-    except DomainError as error:
-        return _workspace_refusal(request, matter, key="closure_form", form=form, error=str(error))
-
-    matter.refresh_from_db()
-    return _render_overview(request, matter, header_out_of_band=not matter.is_open)

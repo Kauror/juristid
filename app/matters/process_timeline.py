@@ -10,6 +10,12 @@ heading for. Five of them exist today:
     Lõpetatud
 
 and a Matter draws only the ones it really has. That is the whole vocabulary.
+
+**Narrowed on 2026-10-02 by docs/adr/0131 §13.** The strip keeps the procedure's
+own points and every Koja arvamus that actually went out — a withdrawn one
+included, with its status as the detail. `Tagasiside tähtaeg` and the
+lawyer-named watched `Oluline tähtaeg` columns are gone from it; both read in
+`Teema käik`. What follows is the reasoning as it stood before that.
 There was a sixth, `Alustatud`, and the long note in `process_steps` says why
 it is gone: it was `Matter.created_at`, a fact about this database rather than
 about a procedure (docs/adr/0100 §1, OWNER-03).
@@ -393,7 +399,7 @@ def process_steps(
     """
     from app.intelligence.enums import FactStatus, ImportantDateKind
     from app.intelligence.selectors import matter_intelligence
-    from app.matters.models import MatterEngagement
+    from app.submissions.enums import SubmissionStatus
     from app.submissions.models import Submission
 
     facts = intelligence if intelligence is not None else matter_intelligence(matter, user)
@@ -450,22 +456,14 @@ def process_steps(
     # (AUTH-003, docs/adr/0074 §13). Ordered by `(feedback_deadline, pk)` so two
     # rounds due on one day cannot be placed by whatever order the database
     # returned.
-    feedback_rounds = (
-        MatterEngagement.objects.filter(matter=matter)
-        .visible_to(user)
-        .filter(feedback_deadline__isnull=False)
-        .order_by("feedback_deadline", "pk")
-    )
-    for engagement in feedback_rounds:
-        steps.append(
-            ProcessStep(
-                label=FEEDBACK_DEADLINE_LABEL,
-                display=format_estonian_date(engagement.feedback_deadline),
-                detail=engagement.title,
-                sort_on=engagement.feedback_deadline,
-                phase=PHASE_FEEDBACK,
-            )
-        )
+    #
+    # **Superseded on 2026-10-02 by docs/adr/0131 §13 — no column any more.**
+    # The owner narrowed the strip to the procedure's own points and the
+    # opinions Koda actually sent; a consultation round and the day its answers
+    # are due are work this office organises, and they read on the round's own
+    # row in `Teema käik` — which shows `Tagasiside tähtaeg` — and in the wait it
+    # opens. The record is untouched; only the column is gone. `PHASE_FEEDBACK`
+    # stays defined and unused, for the reason `0` is retired rather than reused.
 
     # `Arvamuse tähtaeg` — one Matter-level column whenever the column holds a
     # date. This is the *formal* deadline: the day an answer is due to whoever
@@ -507,27 +505,32 @@ def process_steps(
     # Read off `MatterImportantDate.kind` and never off the title, and scoped
     # through the record's own `visible_to` like every other source here, so a
     # restricted deadline draws no column and moves no spacing (AUTH-003).
+    #
+    # **Only the transposition deadline, since docs/adr/0131 §13.** Every other
+    # `Oluline tähtaeg` still ahead used to draw a column named by the lawyer
+    # who recorded it (QA-001), because a future deadline then read nowhere
+    # else. It reads in `Teema käik` now, marked `Eesolev tähtaeg`, and the
+    # owner narrowed this rail to the procedure's own points: a date this office
+    # is watching is not a step of the procedure. `PHASE_WATCHED` stays defined
+    # and unused.
     for record in facts.upcoming_dates:
         if record.status != FactStatus.ACTIVE:
             # A cancelled expectation is history and reads as history, in the
             # chronology. It is not somewhere this file is still heading.
             continue
-        transposition = record.kind == ImportantDateKind.TRANSPOSITION_DEADLINE
+        if record.kind != ImportantDateKind.TRANSPOSITION_DEADLINE:
+            continue
         steps.append(
             ProcessStep(
-                # The transposition deadline keeps the short name a 150 px
-                # column can hold, because the vocabulary already names that
-                # act. Every other watched date is named by the lawyer who
-                # recorded it, and the name they chose is the information: a
-                # column reading `Oluline tähtaeg` would say only that one
-                # exists (QA-001).
-                label=TRANSPOSITION_DEADLINE_LABEL if transposition else record.title,
+                # The short name a 150 px column can hold, because the
+                # vocabulary already names that act.
+                label=TRANSPOSITION_DEADLINE_LABEL,
                 # The period at the precision it was recorded to. A deadline
                 # known only to a quarter prints as a quarter.
                 display=record.display_date,
                 detail=record.title,
                 sort_on=record.period_end,
-                phase=PHASE_TRANSPOSITION if transposition else PHASE_WATCHED,
+                phase=PHASE_TRANSPOSITION,
                 # So its last day is never drawn as today (docs/adr/0123).
                 precision=record.date_precision,
             )
@@ -546,8 +549,19 @@ def process_steps(
     # made on one day to the stable sort in reverse. `pk` closes the last tie,
     # so the geometry can never be decided by the row order the database
     # happened to return.
+    #
+    # **Every opinion that went out, withdrawn ones included** (docs/adr/0131
+    # §13). This read `.sent()` — the opinions that currently *stand* — so a
+    # letter withdrawn afterwards vanished from the rail as if it had never been
+    # sent. Sending was an act on a day, and `historically_sent` is the
+    # population `Teema käik` already reads (docs/adr/0092 §3); the withdrawal
+    # is a second act and reads as the column's detail, «Tagasi võetud», rather
+    # than by removing the first.
     sent_opinions = (
-        Submission.objects.filter(matter=matter).visible_to(user).sent().order_by("sent_at", "pk")
+        Submission.objects.filter(matter=matter)
+        .visible_to(user)
+        .historically_sent()
+        .order_by("sent_at", "pk")
     )
     for submission in sent_opinions:
         if submission.sent_at is None:
@@ -557,7 +571,11 @@ def process_steps(
             ProcessStep(
                 label=SENT_LABEL,
                 display=format_estonian_date(sent_on),
-                detail="",
+                detail=(
+                    submission.get_status_display()
+                    if submission.status != SubmissionStatus.SENT
+                    else ""
+                ),
                 sort_on=sent_on,
                 phase=PHASE_SENT,
             )

@@ -34,6 +34,7 @@ from playwright.sync_api import expect
 from e2e.conftest import (
     MARTIN,
     READER,
+    close_through_stage,
     create_matter,
     open_add_panel,
     open_kaik_row,
@@ -344,14 +345,9 @@ def test_a_closed_teema_offers_no_correction(page, base_url):
     create_matter(page, base_url, unique_title("Kaasamise paranduse katse: suletud"))
     _file_an_engagement(page)
 
-    open_add_panel(page, "teema-lopeta")
-    page.locator("#teema-lopeta .uxchip", has_text="Menetlus lõppes").click()
-    with page.expect_response(
-        lambda response: "/lisa/lopeta/" in response.url and response.request.method == "POST"
-    ) as caught:
-        page.locator("#teema-lopeta button[type=submit]").click()
-    assert caught.value.status == 200
-    page.wait_for_load_state("networkidle")
+    # Close it the one ordinary way there is: a `Hetkeseis` that ends it
+    # (docs/adr/0131 §11).
+    close_through_stage(page)
 
     expect(page.locator(".badge--state")).to_contain_text("Suletud")
     expect(page.locator("#lisa-teemale")).to_have_count(0)

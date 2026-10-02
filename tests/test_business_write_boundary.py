@@ -709,14 +709,8 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         ),
         events=(ChangeEventType.WEBSITE_OVERVIEW_LINK_CORRECTED,),
     ),
-    WriteRoute(
-        name="matters:close_from_workspace",
-        label="Teema lõpetamine töölaualt",
-        request=lambda w: ({"pk": w["matter"].pk}, {"disposition": "INITIATIVE_WITHDRAWN"}),
-        probe=lambda w: (
-            w["matter"].__class__.objects.values_list("is_open", flat=True).get(pk=w["matter"].pk)
-        ),
-    ),
+    # No `matters:close_from_workspace` since docs/adr/0131 §11: a Matter closes
+    # through its `Hetkeseis`, which `matters:add_note` and the edit page carry.
     WriteRoute(
         name="matters:compose",
         label="Sissekande lisamine",

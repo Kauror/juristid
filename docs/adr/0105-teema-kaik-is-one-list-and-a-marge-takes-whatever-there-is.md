@@ -15,6 +15,8 @@ field becomes optional, and everything else is presentation.
 
 ## 1. `Teema käik` is one chronological list
 
+**Narrowed on 2026-10-02 by docs/adr/0131 §7.** `Teema käik` is grouped again — by the `Hetkeseis` periods each act was *recorded* in, not by procedure phases inferred from dates. What this section rejected, inferred grouping, stays rejected; within each period the list is still one chronological list.
+
 **Decision.** The chronology renders every row in one list, newest first, with no
 phase headings and no `Etapiga sidumata`. `app/matters/phase_history.py` is
 deleted, along with `UNPLACED_LABEL`, `TimelineItem.phase`, `.opens_phase`,

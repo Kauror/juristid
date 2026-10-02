@@ -276,7 +276,7 @@ rather than read.
           {# The set this box was rendered with; a stale save is refused (ENG-028). #}
           <input type="hidden" name="revision" value="{{ policy_areas_revision }}">
           <fieldset class="inlineform__group">
-            <legend class="visually-hidden">Valdkonnad</legend>
+            <legend class="visually-hidden">Valdkond</legend>
             {% for area in policy_area_choices %}
               <label class="checkitem">
                 <input class="checkitem__input" type="checkbox"
@@ -403,8 +403,13 @@ rather than read.
       has stopped counting it (ADR 0059).
     {% endcomment %}
     {% if response_deadline %}
+      {% comment %}
+        «Arvamuse tähtaeg», not «Tähtaeg» (docs/adr/0131 §14): the editor below
+        and both forms that ask it say «Arvamuse tähtaeg», and one fact reads
+        one way on every surface that shows it.
+      {% endcomment %}
       <span class="metaline__item metaline__item--deadline">
-        <span class="metaline__label">Tähtaeg</span>
+        <span class="metaline__label">Arvamuse tähtaeg</span>
         <details class="inlineedit">
           <summary class="inlineedit__trigger">
             <span class="metaline__value metaline__value--deadline"
@@ -435,7 +440,7 @@ rather than read.
       <span class="metaline__item">
         <details class="inlineedit">
           <summary class="inlineedit__trigger">
-            <span class="metaline__add">+ Tähtaeg</span>
+            <span class="metaline__add">+ Arvamuse tähtaeg</span>
           </summary>
           <form class="inlineedit__form inlineform"
                 hx-post="{% url 'matters:update_field' pk=matter.pk field='response_deadline' %}"

@@ -91,7 +91,7 @@ from django.utils import timezone
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.audit.visibility import scope_change_events
-from app.matters.models import Matter
+from app.matters.models import Matter, MatterStageEpisode
 from app.matters.process_phases import (
     CONFIRMABLE_STAGE_KEYS,
     PHASE_JOUSTUMINE,
@@ -113,6 +113,7 @@ from app.matters.process_timeline import (
 from app.workflow.dates import period_starts_after
 from app.workflow.enums import Disposition
 from app.workflow.lateness import period_end_for
+from app.workflow.stage_flow import MONITORING_STOPPED
 
 # ---------------------------------------------------------------------------
 # The four states
@@ -290,6 +291,20 @@ def phase_context(*, matter: Matter, instrument_keys: frozenset[str] | None = No
     if snapshot is None:  # pragma: no cover - the caller holds a saved Matter
         return PhaseContext()
     stage_key, stage_label, track, disposition = snapshot
+    if stage_key == MONITORING_STOPPED:
+        # **«Rohkem ei tegele» says where Koda stands, not where the procedure
+        # does** (docs/adr/0131 §9). It is a `Hetkeseis` since vocabulary 3.0,
+        # but it is still not a node: the rail's current position is the stage
+        # of the period before it, read from the recorded periods — and
+        # `koda_stopped` draws «Koda ei tegele edasi» beside it, as it always did.
+        earlier = (
+            MatterStageEpisode.objects.filter(matter_id=matter.pk)
+            .exclude(stage__key=MONITORING_STOPPED)
+            .order_by("-sequence")
+            .values_list("stage__key", "stage__label_et")
+            .first()
+        )
+        stage_key, stage_label = earlier if earlier is not None else ("", "")
     track = track or ""
     # `Õigusakt` is a many-to-many and therefore a query of its own. It is read
     # only when it can still change the answer.

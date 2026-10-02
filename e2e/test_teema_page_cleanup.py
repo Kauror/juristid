@@ -163,19 +163,8 @@ def test_the_panels_are_compact_and_fit(page, base_url, width):
     assert geometry["sameRow"] and geometry["inside"], geometry
     assert_no_sideways_scroll(page)
 
-    # `+ Lõpeta teema`: straight onto the chips, then `Lõppsõna`.
-    open_add_panel(page, "teema-lopeta")
-    closing = page.locator("#teema-lopeta")
-    body_top = closing.locator(".cx-panel__body").evaluate("el => el.getBoundingClientRect().top")
-    first_chip = closing.locator(".uxchip").first
-    chip_top = first_chip.evaluate("el => el.getBoundingClientRect().top")
-    # The body's own padding and nothing else: no label row above the chips.
-    assert chip_top - body_top <= 20, (body_top, chip_top)
-    # Four outcomes since docs/adr/0121 §8; the row wraps rather than scrolling.
-    expect(closing.locator(".uxchip")).to_have_count(4)
-    expect(closing.locator("[name=closing_words]")).to_be_visible()
-    expect(closing).not_to_contain_text("Teema läheb arhiivi")
-    assert_no_sideways_scroll(page)
+    # `+ Lõpeta teema` is retired (docs/adr/0131 §11): no third panel to fit.
+    expect(page.locator("#teema-lopeta")).to_have_count(0)
 
 
 # ---------------------------------------------------------------------------

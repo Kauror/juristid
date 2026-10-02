@@ -39,7 +39,7 @@ from playwright.sync_api import expect
 
 from e2e.conftest import (
     MARTIN,
-    add_panel_is_open,
+    close_through_stage,
     create_matter,
     open_add_panel,
     open_kaik_row,
@@ -286,18 +286,9 @@ def add_a_commencement(page, *, what: str, when: str) -> None:
     page.wait_for_load_state("networkidle")
 
 
-def close_the_matter(page, label: str = "Menetlus lõppes") -> None:
-    """Close the open Matter through the panel a person uses."""
-    open_add_panel(page, "teema-lopeta")
-    panel = page.locator("#teema-lopeta")
-    assert add_panel_is_open(page, "teema-lopeta")
-    panel.locator(".uxchip", has_text=label).click()
-    with page.expect_response(
-        lambda response: "/lisa/lopeta/" in response.url and response.request.method == "POST"
-    ) as caught:
-        page.locator("#teema-lopeta button[type=submit]").click()
-    assert caught.value.status == 200, f"the closure was refused: {caught.value.status}"
-    page.wait_for_load_state("networkidle")
+def close_the_matter(page) -> None:
+    """Close the open Matter the one ordinary way: «Rohkem ei tegele» (docs/adr/0131 §11)."""
+    close_through_stage(page)
     expect(page.locator(".badge--state")).to_contain_text("Suletud")
 
 
@@ -408,12 +399,12 @@ def test_a_closed_matter_draws_two_columns(page, base_url, width):
     for outcome in ("Menetlus lõppes", "Jõustus", "Loobuti"):
         expect(page.locator(".tl-step__what", has_text=outcome)).to_have_count(0)
     # The `title` carries the **stored** vocabulary's own label, which is what
-    # `matter_banner.html` and `rail.html` already print for a closure. The chip
-    # a person clicks says `Menetlus lõppes`; the `Disposition` it writes is
-    # `INITIATIVE_WITHDRAWN`, whose canonical label is `Algataja loobus`
-    # (docs/adr/0074 §10). One reading of a closure, not a strip-local second
+    # `matter_banner.html` and `rail.html` already print for a closure. The stage
+    # a person chooses says «Rohkem ei tegele»; the `Disposition` it writes is
+    # `MONITORING_STOPPED`, whose canonical label is `Koda lõpetas jälgimise`
+    # (docs/adr/0131 §10). One reading of a closure, not a strip-local second
     # one.
-    expect(page.locator('.tl-step[title="Algataja loobus"]')).to_have_count(1)
+    expect(page.locator('.tl-step[title="Koda lõpetas jälgimise"]')).to_have_count(1)
     assert_fits(page, width)
 
 
@@ -842,7 +833,7 @@ def test_the_temporal_rail_survives_the_narrow_scroller(page, base_url, width):
 
 
 # ---------------------------------------------------------------------------
-# docs/adr/0083 — `Tagasiside tähtaeg`, the sixth label
+# docs/adr/0083 — `Tagasiside tähtaeg`, retired from the rail by docs/adr/0131 §13
 # ---------------------------------------------------------------------------
 
 
@@ -893,12 +884,11 @@ def record_a_round(page, matter_url: str, *, audience: str, deadline: str) -> No
 
 
 @pytest.mark.parametrize("width", WIDTHS)
-def test_a_reply_by_date_draws_its_own_column(page, base_url, width):
-    """The whole point of docs/adr/0083 §1: visible without scrolling.
+def test_a_reply_by_date_draws_no_column(page, base_url, width):
+    """docs/adr/0131 §13: the rail is the procedure and what Koda sent.
 
-    A round that asked members to answer by a named day is a dated point the
-    file is heading for, exactly as `Arvamuse tähtaeg` is — and until this it
-    could only be read by scrolling into the chronology.
+    A round's reply-by day reads on the round's own row in `Teema käik`; the
+    rail keeps `Arvamuse tähtaeg` and nothing a consultation adds.
     """
     sign_in(page, base_url, MARTIN)
     page.set_viewport_size({"width": width, "height": 900})
@@ -906,42 +896,10 @@ def test_a_reply_by_date_draws_its_own_column(page, base_url, width):
         page, base_url, f"Käiguriba tagasiside {width}", deadline=et(40)
     )
     record_a_round(page, matter_url, audience="liikmed", deadline=et(14))
-
-    assert labels(page) == ["Tagasiside tähtaeg", "Arvamuse tähtaeg"]
-    # Two deadlines, two different words: what was asked of members, and what
-    # Koda owes. A strip that merged them would promote one into the other.
-    assert "Tagasiside tähtaeg" in strip(page).inner_text()
-    assert "Arvamuse tähtaeg" in strip(page).inner_text()
-    # No urgency asserted, exactly as for every other column.
-    assert not COUNTDOWN.search(strip(page).inner_text()), "the strip counts down"
-    assert_fits(page, width)
-
-
-@pytest.mark.parametrize("width", WIDTHS)
-def test_several_rounds_draw_several_columns_and_still_fit(page, base_url, width):
-    """Several per Matter is ordinary — a file runs more than one round.
-
-    The columns are told apart by «Keda kaasati» in the `title`, which is the
-    same mechanism that separates two `Jõustumine` columns and costs the strip
-    no extra width.
-    """
-    sign_in(page, base_url, MARTIN)
-    page.set_viewport_size({"width": width, "height": 900})
-    matter_url = create_matter_with_deadline(
-        page, base_url, f"Käiguriba mitu vooru {width}", deadline=et(40)
-    )
-    record_a_round(page, matter_url, audience="liikmed", deadline=et(10))
     record_a_round(page, matter_url, audience="töögrupp", deadline=et(20))
 
-    assert labels(page) == [
-        "Tagasiside tähtaeg",
-        "Tagasiside tähtaeg",
-        "Arvamuse tähtaeg",
-    ]
-    titles = page.locator(".tl-step[title]").evaluate_all(
-        "nodes => nodes.map(node => node.getAttribute('title'))"
-    )
-    assert "liikmed" in titles and "töögrupp" in titles, titles
+    assert labels(page) == ["Arvamuse tähtaeg"]
+    assert "Tagasiside tähtaeg" not in strip(page).inner_text()
     assert_fits(page, width)
 
 

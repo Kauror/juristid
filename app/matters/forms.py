@@ -9,13 +9,14 @@ by adding another view (master specification 12.4, 23.4).
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Any, cast
 
 from django import forms
 from django.db.models import QuerySet
+from django.forms.models import ModelChoiceIterator
 from django.utils import timezone
 from django.utils.functional import cached_property
 
@@ -50,6 +51,7 @@ from app.matters.models import (
     WEBSITE_OVERVIEW_URL_MAX_LENGTH,
     Matter,
 )
+from app.matters.stage_episodes import stage_choice_label
 from app.organisations.models import Organisation, OrganisationAlias
 from app.taxonomy.legal_instruments import OTHER_LEGAL_INSTRUMENT_KEYS
 from app.taxonomy.models import LegalInstrumentType, PolicyArea, Tag
@@ -75,6 +77,7 @@ from app.workflow.enums import (
 from app.workflow.models import StageVocabulary
 from app.workflow.selectors import selectable_stages, stage_help_texts, stages_including
 from app.workflow.services import NEXT_STEP_NEEDS_SENTENCE
+from app.workflow.stage_flow import TERMINAL_STAGE_KEYS
 
 
 class UserChoiceField(forms.ModelChoiceField):
@@ -454,7 +457,13 @@ def clean_legal_instrument_answer(form: forms.Form, cleaned: dict[str, Any]) -> 
 
 
 def policy_areas_field() -> forms.ModelMultipleChoiceField:
-    """The `Valdkonnad` control, defined once for the two forms that carry it.
+    """The `Valdkond` control, defined once for the two forms that carry it.
+
+    **«Valdkond», in the singular, on every surface that asks or shows it**
+    (docs/adr/0131 §14). `Uus teema` took the owner's word on 2026-10-02 and
+    `Muuda teemat` kept «Valdkonnad» until the two pages were decided together;
+    one fact now reads one way on both, and on the Teema page. A label and
+    nothing else: the field is still `policy_areas`, still several values.
 
     Checkboxes because a Matter really can belong to several areas, and a
     multi-select hides that behind a modifier key nobody uses (brief 19).
@@ -465,7 +474,7 @@ def policy_areas_field() -> forms.ModelMultipleChoiceField:
     since-retired area does not lose it to an unrelated correction.
     """
     return forms.ModelMultipleChoiceField(
-        label="Valdkonnad",
+        label="Valdkond",
         queryset=PolicyArea.objects.none(),
         required=False,
         widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
@@ -1280,12 +1289,9 @@ class MatterCreateForm(
         set_choices(self, "source_organisations_other", everything)
 
         set_choices(self, "policy_areas", selectable_policy_areas())
-        # «Valdkond», in the singular, on this page's heading — the owner's
-        # wording for the question (docs/adr/0130, amendment of 2026-10-02).
-        # A label and nothing else: the field is still `policy_areas`, still
-        # several values, still a count beside the heading, and `Muuda teemat`
-        # keeps the shared label until that page is decided on its own.
-        self.fields["policy_areas"].label = "Valdkond"
+        # «Valdkond» is the shared field's own label since docs/adr/0131 §14,
+        # so this page no longer sets it for itself (docs/adr/0130's amendment
+        # of 2026-10-02 set it here first).
         # The active vocabulary, in the department's reviewed order. New work is
         # filed under what is offered today; the edit form is the one that also
         # has to accept what a Matter already carries.
@@ -1769,9 +1775,9 @@ def matter_edit_conflict_changes(
         "brief_summary": "Lühikokkuvõte",
         "owner": "Vastutaja",
         "stage": "Hetkeseis",
-        "received_date": "Saabumise kuupäev",
+        "received_date": "Saabus",
         "response_deadline": "Arvamuse tähtaeg",
-        "policy_areas": "Valdkonnad",
+        "policy_areas": "Valdkond",
         "policy_area_other": "Valdkond — muu",
         "legal_instruments": "Õigusakt",
         "legal_instrument_other": "Õigusakt — muu",
@@ -6095,6 +6101,101 @@ def set_external_position_engagements(
         ]
 
 
+class StageSelect(forms.Select):
+    """The `Uus hetkeseis` select, with each option's stage *key* on the option.
+
+    The option's value is the row's primary key, which is what the form posts;
+    the key is what `Märgi ka menetluse kulgu` is offered by
+    (`MatterProgressForm.phase_offers_json`, docs/adr/0128 §1). Read off the
+    instance the choice iterator already holds, so drawing it costs no query.
+    """
+
+    def create_option(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        option = super().create_option(*args, **kwargs)
+        instance = getattr(option.get("value"), "instance", None)
+        if instance is not None:
+            option["attrs"]["data-stage-key"] = instance.key
+        return option
+
+
+class _OfferedStageIterator(ModelChoiceIterator):
+    """The field's offered stages, in the order offered — or the queryset when none was given."""
+
+    def __iter__(self) -> Iterator[Any]:
+        offered = getattr(self.field, "offered", None)
+        if offered is None:
+            yield from super().__iter__()
+            return
+        if self.field.empty_label is not None:
+            yield ("", self.field.empty_label)
+        for stage in offered:
+            yield self.choice(stage)
+
+    def __len__(self) -> int:
+        offered = getattr(self.field, "offered", None)
+        if offered is None:
+            return super().__len__()
+        return len(offered) + (1 if self.field.empty_label is not None else 0)
+
+
+class NextStageChoiceField(forms.ModelChoiceField):
+    """`Uus hetkeseis` — offered in the file's likely order, accepted from the whole vocabulary.
+
+    The order is `app.matters.stage_episodes.offered_next_stages`: where the
+    file is heading first, the road back last (docs/adr/0131 §7). It is an
+    order and nothing more. Validation is over every active stage, so a list
+    drawn before a colleague moved the file can never refuse a correct answer,
+    and an unusual move is still one save rather than a trip to `Muuda teemat`.
+
+    A stage that ends the Matter says so in its own option — «Jõustunud —
+    lõpetab teema» — because pressing `Salvesta` on it closes the file
+    (docs/adr/0131 §10). No dialog, no second confirmation.
+    """
+
+    iterator = _OfferedStageIterator
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.offered: list[Any] | None = None
+
+    def offer(self, stages: list[Any] | None) -> None:
+        self.offered = None if stages is None else list(stages)
+        self.widget.choices = self.choices
+
+    def label_from_instance(self, obj: Any) -> str:
+        return stage_choice_label(obj)
+
+
+class ReopenForm(forms.Form):
+    """«Ava uuesti» — which `Hetkeseis` the reopened Matter is in (docs/adr/0131 §12).
+
+    **Required, and never `Määramata`**: a reopened file is current work, and a
+    current period always names its stage. Offered in the order
+    `offered_reopening_stages` gives — the file's own procedure from its start —
+    and a stage that would close the Matter again is neither offered nor
+    accepted; the service refuses it as well, because a form is not a boundary.
+    """
+
+    stage = NextStageChoiceField(
+        label="Uus hetkeseis",
+        queryset=StageVocabulary.objects.none(),
+        required=True,
+        empty_label="Vali hetkeseis",
+        error_messages={"required": "Vali hetkeseis, millega teema uuesti avatakse."},
+        widget=forms.Select(attrs={"class": "field__input field__input--compact"}),
+    )
+
+    def __init__(self, *args: Any, offered: list[Any] | None = None, **kwargs: Any) -> None:
+        kwargs.setdefault("auto_id", "id_taasava_%s")
+        super().__init__(*args, **kwargs)
+        set_choices(
+            self,
+            "stage",
+            active_stages().exclude(key__in=TERMINAL_STAGE_KEYS),
+        )
+        cast(NextStageChoiceField, self.fields["stage"]).offer(offered)
+
+
 class KodaOpinionForm(forms.Form):
     """`+ Koja arvamus` — the Chamber's own opinion went out, and here it is.
 
@@ -6280,6 +6381,20 @@ class KodaOpinionForm(forms.Form):
     #: leaving the lawyer to write a second `Mida tegid?` about the same act.
     #: Unticked unless the person ticks it (docs/adr/0126 §2).
     complete_action = completes_current_action_field()
+    #: `Uus hetkeseis` — the file moves on once the opinion is out (docs/adr/0131 §5).
+    #:
+    #: Optional, and the same control `+ Märge` offers, in the same order. The
+    #: opinion was written in the period the file was in, so it reads there in
+    #: `Teema käik` and the new period begins after it — an opinion on the idea
+    #: is not an opinion «in» the consultation it triggered.
+    stage = NextStageChoiceField(
+        label="Uus hetkeseis",
+        queryset=StageVocabulary.objects.none(),
+        required=False,
+        empty_label="Jätan muutmata",
+        blank=True,
+        widget=StageSelect(attrs={"class": "field__input field__input--compact"}),
+    )
     sent_on = EstonianDateField(
         label="Saatmise kuupäev",
         required=False,
@@ -6299,11 +6414,14 @@ class KodaOpinionForm(forms.Form):
         matter: Any = None,
         viewer: Any = None,
         choices: OrganisationChoices | None = None,
+        next_stages: list[Any] | None = None,
         **kwargs: Any,
     ) -> None:
         kwargs.setdefault("auto_id", "id_koja_arvamus_%s")
         super().__init__(*args, **kwargs)
         self.matter = matter
+        set_choices(self, "stage", active_stages())
+        cast(NextStageChoiceField, self.fields["stage"]).offer(next_stages)
         # Validation against the whole catalogue; the rendered order is the
         # **page's own** reading, which is the same usage ranking the `Saatja`
         # and `Adressaat` controls already use — so a ministry this reader writes
@@ -7093,92 +7211,13 @@ class OpinionWorkingDocumentsForm(RecordEvidenceForm):
     slug = "koja_arvamus"
 
 
-class CompactClosureForm(ChipChoices, forms.Form):
-    """`+ Lõpeta teema` — two questions, and nothing invented from them.
-
-    The simplified closure of docs/adr/0074 §10, unchanged. Closing a Matter is
-    not a claim that an opinion was sent: no final evidence, no send date, no
-    recipients, no work-victory question. The six-question flow is not coming
-    back, and the canonical rules behind each of those facts are untouched —
-    `mark_submission_sent` still refuses a submission without its exact final
-    evidence, and a `Töövõit` is still recorded from its own panel (brief §20).
-
-    `Lõppsõna` is optional. The composer used to fall back to its body when it
-    was blank; there is no shared body any more, so a closure with nothing to add
-    stores an empty reason rather than borrowing a sentence from another
-    operation (docs/adr/0075 §9).
-
-    **`Märgi töövõiduks` — the existing `Töövõit`, recorded in the same act**
-    (docs/adr/0121 §9). Off by default, and unchecked the panel is exactly what
-    it was. Checked, it asks the one thing `+ Märge → Töövõit` asks — what
-    changed — and refuses an empty answer with that panel's sentence
-    (`WORK_VICTORY_NEEDS_TEXT`). The day is the day of the closure, stated as
-    `+ Märge → Töövõit` states a day (`work_victory_kwargs`). There is no second
-    kind of win: the result is handed to `add_matter_work_victory`, the same
-    use case, service, record and audit event, inside the closure's own
-    transaction. A description typed and then unticked records nothing.
-    """
-
-    use_required_attribute = False
-
-    disposition = forms.ChoiceField(
-        label="Kuidas lõppes",
-        choices=(("", "Vali põhjus…"), *CLOSURE_CHOICES),
-        required=False,
-        widget=forms.HiddenInput(),
-    )
-    closing_words = forms.CharField(
-        label="Lõppsõna",
-        required=False,
-        max_length=2000,
-        widget=forms.Textarea(
-            attrs={
-                "class": "field__input field__input--compact",
-                "rows": "2",
-                "placeholder": "Mis sellest teemast lõpuks sai?",
-            }
-        ),
-    )
-    mark_work_victory = forms.BooleanField(
-        label="Märgi töövõiduks",
-        required=False,
-        widget=forms.CheckboxInput(attrs={"class": "cx-reveal__toggle"}),
-    )
-    victory_note = forms.CharField(
-        label="Töövõidu märkus",
-        required=False,
-        max_length=WORK_VICTORY_TEXT_MAX_LENGTH,
-        widget=forms.Textarea(
-            attrs={
-                "class": "field__input field__input--compact",
-                "rows": "2",
-                "placeholder": "Kirjelda lühidalt, milles töövõit seisnes…",
-            }
-        ),
-    )
-
-    @property
-    def closure_chips(self) -> list[dict[str, Any]]:
-        return self.chips("disposition", COMPOSER_CLOSURE_CHOICES, "")
-
-    def clean_disposition(self) -> str:
-        disposition = self.cleaned_data.get("disposition") or ""
-        if not disposition:
-            raise forms.ValidationError("Vali, kuidas teema lõppes.")
-        return disposition
-
-    def clean(self) -> dict[str, Any]:
-        cleaned = super().clean() or {}
-        cleaned["work_victory_kwargs"] = None
-        if not cleaned.get("mark_work_victory"):
-            return cleaned
-        change = (cleaned.get("victory_note") or "").strip()
-        if not change:
-            if not self.has_error("victory_note"):
-                self.add_error("victory_note", WORK_VICTORY_NEEDS_TEXT)
-            return cleaned
-        cleaned["work_victory_kwargs"] = work_victory_kwargs(change, timezone.localdate())
-        return cleaned
+#: **No `CompactClosureForm` since docs/adr/0131 §11.** `+ Lõpeta teema` asked
+#: how the file ended and for a last word; a Matter now ends when its
+#: `Hetkeseis` says so — «Jõustunud» or «Rohkem ei tegele» — through the
+#: `Uus hetkeseis` control every stage surface already has. The closure
+#: vocabulary (`CLOSURE_CHOICES`, `Disposition`) and `close_matter` behind it
+#: are unchanged; only the separate panel went. A `Töövõit` is recorded from
+#: `+ Märge → Töövõit`, which is what this panel's own box handed it to.
 
 
 class EntryEditForm(forms.Form):
@@ -7620,23 +7659,6 @@ class MatterLinkForm(ProceduralLinkCreateForm):
         return super().has_changed()
 
 
-class StageSelect(forms.Select):
-    """The `Uus hetkeseis` select, with each option's stage *key* on the option.
-
-    The option's value is the row's primary key, which is what the form posts;
-    the key is what `Märgi ka menetluse kulgu` is offered by
-    (`MatterProgressForm.phase_offers_json`, docs/adr/0128 §1). Read off the
-    instance the choice iterator already holds, so drawing it costs no query.
-    """
-
-    def create_option(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
-        option = super().create_option(*args, **kwargs)
-        instance = getattr(option.get("value"), "instance", None)
-        if instance is not None:
-            option["attrs"]["data-stage-key"] = instance.key
-        return option
-
-
 class MatterProgressForm(forms.Form):
     """`+ Märge · Tavaline` — one activity on this file, done or planned.
 
@@ -7808,7 +7830,12 @@ class MatterProgressForm(forms.Form):
     #: **Nothing is inferred.** An empty answer changes no stage. No text is
     #: read, no keyword is matched, and there is no model anywhere near this —
     #: «Riigikogu võttis seaduse vastu» moves nothing unless somebody says so.
-    stage = forms.ModelChoiceField(
+    #:
+    #: **Offered in the file's likely order** (docs/adr/0131 §7,
+    #: `NextStageChoiceField`): where it is heading first, `Määramata` never —
+    #: «Jätan muutmata» is not a stage. «Jõustunud» and «Rohkem ei tegele» say
+    #: in their own option that the save ends the Matter.
+    stage = NextStageChoiceField(
         label="Uus hetkeseis",
         queryset=StageVocabulary.objects.none(),
         required=False,
@@ -7868,7 +7895,12 @@ class MatterProgressForm(forms.Form):
     attachments = workspace_attachments("id_marge_failid")
 
     def __init__(
-        self, *args: Any, phases: Any = None, phase_offers: Any = None, **kwargs: Any
+        self,
+        *args: Any,
+        phases: Any = None,
+        phase_offers: Any = None,
+        next_stages: list[Any] | None = None,
+        **kwargs: Any,
     ) -> None:
         kwargs.setdefault("auto_id", "id_marge_%s")
         #: The file's current stage as the page drew it, resolved by the view that
@@ -7885,10 +7917,12 @@ class MatterProgressForm(forms.Form):
         #: about where «ahead» starts. Never the browser's own date.
         self.today = timezone.localdate()
         super().__init__(*args, **kwargs)
-        # The active vocabulary, in the department's reviewed order, read
-        # through the canonical selector rather than from a list in this module
-        # (`app/workflow/selectors.py`, docs/adr/0091 §8).
+        # The active vocabulary, read through the canonical selector rather than
+        # from a list in this module, is what a save may choose
+        # (`app/workflow/selectors.py`, docs/adr/0091 §8); `next_stages` is the
+        # order the panel draws it in (docs/adr/0131 §7).
         set_choices(self, "stage", active_stages())
+        cast(NextStageChoiceField, self.fields["stage"]).offer(next_stages)
         # Not offered, not sent: a hidden box is drawn disabled so a browser
         # leaves it out of the POST (the template hides its row). A widget
         # attribute and not `Field.disabled`, which would make the form ignore

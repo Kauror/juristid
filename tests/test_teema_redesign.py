@@ -1040,9 +1040,12 @@ def test_closing_needs_business_write(client, normal_matter):
     reader = factories.ReaderFactory()
     client.force_login(reader)
 
+    # Closing is a `Hetkeseis` since docs/adr/0131 §11, through `+ Märge`.
+    from app.workflow.models import StageVocabulary
+
     response = client.post(
-        reverse("matters:close_from_workspace", kwargs={"pk": normal_matter.pk}),
-        {"disposition": Disposition.COMPLETED},
+        reverse("matters:add_note", kwargs={"pk": normal_matter.pk}),
+        {"stage": str(StageVocabulary.objects.get(key="in_force").pk)},
     )
 
     assert response.status_code == 404

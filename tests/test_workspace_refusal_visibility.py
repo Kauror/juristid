@@ -110,7 +110,13 @@ def test_a_stale_completion_on_a_closed_matter_still_shows_the_refusal(
 def test_a_second_closure_from_a_stale_tab_still_shows_the_refusal(
     signed_in, normal_matter, specialist
 ):
-    """Tab A closes the Matter. Tab B's `+ Lõpeta teema` is still open and is saved."""
+    """Tab A closes the Matter. Tab B's `+ Märge` choosing «Rohkem ei tegele» is saved.
+
+    The second closure arrives the way a closure arrives since docs/adr/0131 §11:
+    as a `Hetkeseis` that ends the Matter, refused on a file already closed.
+    """
+    from app.workflow.models import StageVocabulary
+
     close_matter(matter=normal_matter, disposition=Disposition.COMPLETED, actor=specialist)
     events_before = ChangeEvent.objects.filter(
         event_type=ChangeEventType.MATTER_CLOSED, matter=normal_matter
@@ -118,14 +124,17 @@ def test_a_second_closure_from_a_stale_tab_still_shows_the_refusal(
 
     response = _post(
         signed_in,
-        "matters:close_from_workspace",
+        "matters:add_note",
         normal_matter,
-        {"disposition": "INITIATIVE_WITHDRAWN", "closing_words": "Teist korda."},
+        {
+            "title": "Teist korda.",
+            "stage": str(StageVocabulary.objects.get(key="monitoring_stopped").pk),
+        },
     )
 
     html = response.content.decode()
     assert response.status_code == 400
-    assert "Teema on juba suletud." in html
+    assert CLOSED_MATTER_REFUSAL in html
     # The stale tab's header still said «Avatud»; the refusal brings the closed
     # header with it, out of band, as the successful closure does.
     assert 'id="teema-pais" hx-swap-oob="true"' in html

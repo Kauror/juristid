@@ -214,13 +214,18 @@ def test_a_crafted_post_to_the_old_address_closes_nothing(signed_in, working_mat
 
 
 def test_the_live_closure_still_closes(signed_in, specialist):
+    """The live closure is a `Hetkeseis` since docs/adr/0131 §10–§11."""
+    from app.workflow.models import StageVocabulary
+
     matter = factories.MatterFactory(owner=specialist)
 
     response = signed_in.post(
-        reverse("matters:close_from_workspace", kwargs={"pk": matter.pk}),
-        {"disposition": Disposition.COMPLETED},
+        reverse("matters:add_note", kwargs={"pk": matter.pk}),
+        {"title": "", "stage": str(StageVocabulary.objects.get(key="in_force").pk)},
+        HTTP_HX_REQUEST="true",
     )
 
     assert response.status_code == 200
     matter.refresh_from_db()
     assert not matter.is_open
+    assert matter.disposition == Disposition.COMPLETED

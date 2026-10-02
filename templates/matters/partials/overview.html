@@ -112,12 +112,11 @@ next step and no history renders as a short, deliberate page.
     {% endif %}
 
     {% comment %}
-      `TEEMA TOIMINGUD` is gone, and both of its controls moved rather than
-      retired: `Lõpeta teema` is back among the launcher's chips, and
-      `Kustuta` is beside `Muuda teemat` in the header, where the errand
-      «this record is wrong» is answered. A section holding one control under a
-      heading of its own was the clutter this round is about
-      (docs/adr/0097 §9, amended).
+      `TEEMA TOIMINGUD` is gone. `Kustuta` is beside `Muuda teemat` in the
+      header, where the errand «this record is wrong» is answered
+      (docs/adr/0097 §9, amended). `Lõpeta teema`, which moved into the
+      launcher, is retired altogether: a file ends when its `Hetkeseis` says so
+      (docs/adr/0131 §11).
     {% endcomment %}
 
     {% comment %}

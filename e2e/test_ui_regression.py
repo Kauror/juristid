@@ -609,6 +609,9 @@ CANONICAL_EXPECTED_DAY = "6.11.2026"
 #: already hold, so holding it keeps them valid rather than retaking them for
 #: the calendar.
 CURRENT_ACTION_DAY: tuple[str, ...] = (".curact__date",)
+
+#: The compact period on a `Teema käik` period heading — «alates 10.26».
+KAIK_PERIOD_LABEL: tuple[str, ...] = (".kaikstage__period",)
 CANONICAL_CURRENT_ACTION_DAY = "31.10.2026"
 _CURRENT_ACTION_HELD = ((CURRENT_ACTION_DAY[0], CANONICAL_CURRENT_ACTION_DAY),)
 
@@ -688,6 +691,12 @@ NORMALISED_TEXT: tuple[tuple[str, str], ...] = (
     # tabular figures make the count the whole of it. A ten-character canonical
     # would be exactly as stable and would move two baselines to get there.
     (EVIDENCE_DATE[0], "6.9.2026"),
+    # A `Teema käik` period heading (docs/adr/0131 §8). Every seeded Matter
+    # begins its period in the seeding transaction, so the heading reads
+    # «alates <the run's month>» — «alates 9.26» is narrower than «alates 10.26»
+    # and every row under it would move on the first of the month. Held at a
+    # value the product really prints for a period begun in October.
+    (KAIK_PERIOD_LABEL[0], "alates 10.26"),
 )
 
 #: The same mechanism, for a value whose *selector* is not scenario-specific.

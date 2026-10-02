@@ -64,6 +64,29 @@ class ChangeEvent(AppendOnlyModel):
         db_index=True,
         verbose_name="tegevuse tunnus",
     )
+    #: Which `Hetkeseis` period was current when this was written (docs/adr/0131 §4).
+    #:
+    #: The one place activity is tied to a stage episode. `Teema käik` groups
+    #: its rows under the period each act was done in, and that has to be a
+    #: fact written at the moment of the act — reading it back from today's
+    #: `Matter.stage` would move every old row whenever the stage moved.
+    #:
+    #: **On the audit row, not on every record.** Every act on the chronology
+    #: already writes a `ChangeEvent` naming its record and its operation, so
+    #: one column here ties a note, an opinion, a consultation and a file to
+    #: their period at once — the seam `operation_id` already is — where a
+    #: column per business model would be twelve columns saying one thing.
+    #:
+    #: Empty for everything written before periods existed, and for work done
+    #: while a Matter had no `Hetkeseis` at all. Neither is guessed afterwards.
+    stage_episode = models.ForeignKey(
+        "matters.MatterStageEpisode",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="change_events",
+        verbose_name="hetkeseisu etapp",
+    )
 
     class Meta:
         verbose_name = "muudatussündmus"

@@ -167,21 +167,13 @@ def test_every_advanced_composer_field_is_still_reachable(page, base_url):
         )
     expect(page.locator("#marge-tahtaeg").get_by_text("Poolaasta")).to_have_count(0)
 
-    # `Lõpeta teema` is a peer chip in the launcher again and shares its radio
-    # group, so opening it closes whatever was open — one form at a time across
-    # the whole row, closure included. It had a group of its own while it was a
-    # section of its own, which let it stand open beside a capture panel; back
-    # in the row that would mean two open forms in one choice
-    # (docs/adr/0099 §5, amending docs/adr/0097 §9).
-    open_add_panel(page, "teema-lopeta")
-    expect(page.locator("#teema-lopeta")).to_be_visible()
-    expect(page.locator("#teema-lopeta [name=closing_words]")).to_be_visible()
-    expect(page.locator("#marge-tahtaeg")).not_to_be_visible()
+    # `+ Lõpeta teema` is retired (docs/adr/0131 §11); one form at a time across
+    # the four capture chips is what remains.
+    expect(page.locator("#teema-lopeta")).to_have_count(0)
 
     # And the rule holds in the other direction too.
     open_add_panel(page, "lisa-kaasamine")
     expect(page.locator("#lisa-kaasamine")).to_be_visible()
-    expect(page.locator("#teema-lopeta")).not_to_be_visible()
     expect(page.locator("#lisa-marge")).not_to_be_visible()
     expect(page.locator("#marge-tahtaeg")).not_to_be_visible()
 

@@ -428,9 +428,9 @@ def test_the_launcher_offers_its_choices_and_opens_none_of_them(signed_in, norma
     sub-choices inside two of them do not, and nothing is open until somebody
     chooses.
 
-    `+ Lõpeta teema` is at the end of the row again (docs/adr/0099 §5). It is
-    still not a fifth family — it adds nothing to the file — so it is named here
-    separately rather than joining the four.
+    `+ Lõpeta teema` stood at the end of the row until docs/adr/0131 §11: a
+    file ends through its `Hetkeseis` now, so the row is the four and nothing
+    else.
     """
     body = _detail(signed_in, normal_matter)
     zone = body[
@@ -457,20 +457,19 @@ def test_the_launcher_offers_its_choices_and_opens_none_of_them(signed_in, norma
     for gone in ("+ Järgmine tegevus", "+ Menetluse areng", "+ Menetluse link"):
         assert gone not in zone, gone
 
-    # Present, last, and marked as the one control that is not a capture.
-    assert "+ Lõpeta teema" in zone
-    assert zone.index("+ Lõpeta teema") > zone.index("+ Ülevaade / uudis")
-    assert "disclosure-chip--last" in zone
+    # No closing chip: «Jõustunud» and «Rohkem ei tegele» end the file.
+    assert "+ Lõpeta teema" not in zone
+    assert "disclosure-chip--last" not in zone
 
     assert 'cx-panel" open' not in zone
-    # Nine capture operations, nine saves, plus closure's own — ten. There is no
-    # shared save left.
+    # Nine capture operations, nine saves. There is no shared save left, and
+    # closure's own went with `+ Lõpeta teema` (docs/adr/0131 §11).
     #
     # The organisation picker inside each feedback panel contributes no
     # `type="submit"`: its `+` is an explicit `type="button"`, precisely so that
     # naming a body the catalogue does not hold cannot submit the panel
     # (docs/adr/0073, `organisation_picker.html`).
-    assert zone.count('type="submit"') == 10
+    assert zone.count('type="submit"') == 9
     assert "composer__actions" not in zone
 
 
@@ -620,19 +619,25 @@ def test_a_work_victory_is_confirmed_and_closes_nothing(signed_in, normal_matter
 
 
 def test_closing_writes_a_closure_and_fabricates_nothing(signed_in, normal_matter, specialist):
+    """Closing is a `Hetkeseis` since docs/adr/0131 §10: «Rohkem ei tegele»."""
+    from app.workflow.models import StageVocabulary
+
     action = _action(normal_matter, specialist)
 
     response = _post(
         signed_in,
-        "matters:close_from_workspace",
+        "matters:add_note",
         normal_matter,
-        {"disposition": "INITIATIVE_WITHDRAWN", "closing_words": "Menetlus lõppes."},
+        {
+            "title": "Menetlus lõppes.",
+            "stage": str(StageVocabulary.objects.get(key="monitoring_stopped").pk),
+        },
     )
 
     assert response.status_code == 200
     normal_matter.refresh_from_db()
     assert not normal_matter.is_open
-    assert normal_matter.disposition_reason == "Menetlus lõppes."
+    assert normal_matter.disposition == "MONITORING_STOPPED"
     # Nothing invented from a closure.
     assert not MatterWorkVictory.objects.filter(matter=normal_matter).exists()
     assert not normal_matter.submissions.exists()
@@ -1218,8 +1223,8 @@ def test_the_compatibility_composer_cannot_append_to_a_closed_matter(
     assert Entry.objects.filter(matter=normal_matter).count() == 0
 
 
-def test_the_composer_still_closes_an_open_matter(signed_in, specialist, normal_matter):
-    """The guard must not refuse the one thing closure *is*."""
+def test_the_composer_no_longer_closes_and_says_how(signed_in, specialist, normal_matter):
+    """A closure posted to the old composer is refused visibly (docs/adr/0131 §11)."""
     response = signed_in.post(
         reverse("matters:compose", kwargs={"pk": normal_matter.pk}),
         {"body": "<p>Töö on tehtud.</p>", "disposition": "COMPLETED"},
@@ -1227,8 +1232,9 @@ def test_the_composer_still_closes_an_open_matter(signed_in, specialist, normal_
     )
 
     normal_matter.refresh_from_db()
-    assert response.status_code == 200, response.status_code
-    assert normal_matter.is_open is False
+    assert response.status_code == 400, response.status_code
+    assert "Teema lõpetatakse hetkeseisuga" in response.content.decode()
+    assert normal_matter.is_open is True
 
 
 def test_a_reopened_matter_accepts_writes_again(signed_in, specialist, normal_matter):

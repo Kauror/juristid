@@ -181,16 +181,16 @@ def test_kustuta_is_not_rendered_anywhere_below_the_page(page, base_url: str):
 
 
 # ---------------------------------------------------------------------------
-# 2 — `Lõpeta teema` is a peer of the capture chips
+# 2 — the launcher is four capture chips; `Lõpeta teema` is retired
 # ---------------------------------------------------------------------------
 
 
-def test_lopeta_is_in_the_same_launcher_region_as_the_capture_chips(page, base_url: str):
-    """One row of choices, and closure visibly last inside it.
+def test_the_launcher_is_four_capture_chips_in_one_group(page, base_url: str):
+    """One row of choices, one radio group — and no closure chip in it.
 
-    Same region and the *same radio group* — which is the part a screenshot
-    cannot show. A second group would leave two panels standing open at once,
-    and the row's whole contract is that it is a choice until one is picked.
+    `+ Lõpeta teema` stood last in this row until docs/adr/0131 §11: a Matter
+    ends through its `Hetkeseis` now. What stays is the row's own contract — one
+    exclusive group, so it is a choice until one is picked.
     """
     sign_in(page, base_url, MARTIN)
     _matter(page, base_url)
@@ -200,12 +200,9 @@ def test_lopeta_is_in_the_same_launcher_region_as_the_capture_chips(page, base_u
         expect(
             row.locator("label.disclosure-chip", has_text=re.compile(rf"^{re.escape(chip)}$"))
         ).to_have_count(1)
-    lopeta = row.locator("label.disclosure-chip--last")
-    expect(lopeta).to_have_count(1)
-    expect(lopeta).to_have_text("+ Lõpeta teema")
+    expect(row.locator("label.disclosure-chip--last")).to_have_count(0)
+    expect(page.locator("#teema-lopeta-valik")).to_have_count(0)
 
-    # The same exclusive group as its four neighbours.
-    #
     # **Direct children of the outer row only.** `Märke liik` and
     # `Kelle arvamus` are `.cx-panels` too — the same construction one level in
     # — so an unscoped selector collects their radios as well and reports three
@@ -214,7 +211,6 @@ def test_lopeta_is_in_the_same_launcher_region_as_the_capture_chips(page, base_u
         "nodes => [...new Set(nodes.map(n => n.name))]"
     )
     assert groups == ["lisa-valik"], groups
-    expect(page.locator("#teema-lopeta-valik")).to_have_attribute("name", "lisa-valik")
 
 
 # ---------------------------------------------------------------------------

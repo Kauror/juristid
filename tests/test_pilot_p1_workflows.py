@@ -76,13 +76,13 @@ def _compose(client, matter, **fields):
 
 
 def test_closure_answers_are_never_accepted_and_then_dropped(signed_in, normal_matter):
-    """The pilot reproduction, on the approved target's panel.
+    """F-02, after docs/adr/0131 §11: a closure posted to the old composer is refused.
 
-    Every question the panel asks, answered, and Salvesta pressed. F-02 was that
-    a filled-in closing section could return 200, write an ordinary Entry and
-    silently discard the rest because a seventh control nobody noticed had not
-    been ticked. Answering the section *is* the request to close, and it still is
-    now that the section asks two things instead of six (docs/adr/0074 §10).
+    F-02 was that a filled-in closing section could return 200, write an ordinary
+    Entry and silently discard the rest. Closing is a `Hetkeseis` now, and the
+    superseded composer refuses its closure answers outright — visibly, and with
+    nothing written — rather than either closing through a second door or
+    dropping them.
     """
     response = _compose(
         signed_in,
@@ -91,40 +91,23 @@ def test_closure_answers_are_never_accepted_and_then_dropped(signed_in, normal_m
         disposition=Disposition.COMPLETED,
         closing_words="Seadus jõustus 1. jaanuaril.",
     )
-    assert response.status_code == 200, response.content.decode()[:2000]
-    normal_matter.refresh_from_db()
-    assert not normal_matter.is_open
-    assert normal_matter.disposition == Disposition.COMPLETED
-    assert normal_matter.disposition_reason == "Seadus jõustus 1. jaanuaril."
-
-
-def _close(client, matter, **fields):
-    """One `+ Lõpeta teema` save, through the panel's own endpoint.
-
-    The closure rules below were written against the composer's shared save and
-    they are the same rules; what changed is that closing is now its own
-    operation with its own form, so a refused closure can no longer take an
-    ordinary note down with it (docs/adr/0075 §2).
-    """
-    payload = {"disposition": "", "closing_words": ""}
-    payload.update(fields)
-    return client.post(
-        reverse("matters:close_from_workspace", kwargs={"pk": matter.pk}),
-        payload,
-        headers={"HX-Request": "true"},
-    )
-
-
-def test_a_final_word_alone_still_asks_to_close(signed_in, normal_matter):
-    """`Lõppsõna` without `Kuidas lõppes` is refused on the control that is
-    missing, rather than stored as a closure nobody chose a reason for."""
-    response = _close(signed_in, normal_matter, closing_words="Menetlus lõppes.")
-
     assert response.status_code == 400
-    assert "Vali, kuidas teema lõppes" in response.content.decode()
+    assert "Teema lõpetatakse hetkeseisuga" in response.content.decode()
     normal_matter.refresh_from_db()
     assert normal_matter.is_open
     assert not Entry.objects.filter(matter=normal_matter).exists()
+
+
+def test_the_lopeta_teema_route_is_gone(signed_in, normal_matter):
+    """`+ Lõpeta teema` and its endpoint went together (docs/adr/0131 §11)."""
+    response = signed_in.post(
+        f"/teemad/{normal_matter.pk}/lisa/lopeta/",
+        {"disposition": "COMPLETED", "closing_words": "Menetlus lõppes."},
+        headers={"HX-Request": "true"},
+    )
+    assert response.status_code == 404
+    normal_matter.refresh_from_db()
+    assert normal_matter.is_open
 
 
 def test_the_old_confirmation_box_is_gone_from_the_form_and_the_page(signed_in, normal_matter):
@@ -136,24 +119,6 @@ def test_the_old_confirmation_box_is_gone_from_the_form_and_the_page(signed_in, 
         reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk})
     ).content.decode()
     assert 'name="close_matter"' not in html
-
-
-def test_an_unanswered_reason_is_representable_and_refused(signed_in, normal_matter):
-    """`Kuidas lõppes` had no empty option once, so every POST carried
-    `COMPLETED`: its own refusal could never fire, and a reason nobody chose was
-    stored as if they had. The chips open on nothing for exactly this reason."""
-    response = _close(
-        signed_in,
-        normal_matter,
-        disposition="",
-        closing_words="Menetlus lõppes.",
-    )
-
-    assert response.status_code == 400
-    assert "Vali, kuidas teema lõppes" in response.content.decode()
-    normal_matter.refresh_from_db()
-    assert normal_matter.is_open
-    assert not Entry.objects.filter(matter=normal_matter).exists()
 
 
 def test_a_partial_closure_refuses_the_whole_save(signed_in, normal_matter):
@@ -173,23 +138,6 @@ def test_a_partial_closure_refuses_the_whole_save(signed_in, normal_matter):
     assert normal_matter.is_open
     assert not Entry.objects.filter(matter=normal_matter).exists()
     assert not NextAction.objects.filter(matter=normal_matter).exists()
-
-
-def test_a_refused_closure_comes_back_with_the_closing_panel_open(signed_in, normal_matter):
-    """An error inside a panel nobody can see is an error nobody reads."""
-    response = _close(signed_in, normal_matter, closing_words="Menetlus lõppes.")
-    html = response.content.decode()
-
-    assert response.status_code == 400
-    assert 'id="teema-lopeta"' in html
-    # The chosen state is on the panel's radio: the launcher's controls and its
-    # forms have been separate elements since 2026-09-14, so that a chip cannot
-    # move when the form it opens grows.
-    opening = html.split('id="teema-lopeta-valik"', 1)[1].split(">", 1)[0]
-    assert "checked" in opening
-    # And no other panel was opened on its behalf (brief §33).
-    for other in ("lisa-marge", "marge-toovoit"):
-        assert "checked" not in html.split(f'id="{other}-valik"', 1)[1].split(">", 1)[0]
 
 
 def test_a_rejected_upload_leaves_nothing_behind(signed_in, normal_matter):

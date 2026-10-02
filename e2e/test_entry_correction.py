@@ -30,9 +30,9 @@ from playwright.sync_api import expect
 from e2e.conftest import (
     MARTIN,
     READER,
+    close_through_stage,
     create_matter,
     finish_current_action,
-    open_add_panel,
     open_kaik_row,
     open_matter,
     set_next_step,
@@ -177,15 +177,9 @@ def test_a_closed_teema_takes_the_correction_and_no_new_work(page, base_url):
     create_matter(page, base_url, unique_title("Paranduse brauserikatse: suletud"))
     _file_an_entry(page, ORIGINAL)
 
-    # Close it through the real panel, the way `test_teema_closing_flow` does.
-    open_add_panel(page, "teema-lopeta")
-    page.locator("#teema-lopeta .uxchip", has_text="Menetlus lõppes").click()
-    with page.expect_response(
-        lambda response: "/lisa/lopeta/" in response.url and response.request.method == "POST"
-    ) as caught:
-        page.locator("#teema-lopeta button[type=submit]").click()
-    assert caught.value.status == 200
-    page.wait_for_load_state("networkidle")
+    # Close it the one ordinary way there is: a `Hetkeseis` that ends it
+    # (docs/adr/0131 §11).
+    close_through_stage(page)
 
     # The page reads as closed, and offers nothing that would add to it.
     expect(page.locator(".badge--state")).to_contain_text("Suletud")

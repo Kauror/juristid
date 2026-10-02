@@ -36,10 +36,19 @@ paragraph. The banner's own action slot keeps it inside and at the right.
       regardless — that is the boundary, and it is in `app/core/decorators.py` —
       but a reader should not be shown a button whose only answer is 404.
     {% endcomment %}
-    {% if can_write %}
-      <form class="banner__actions" method="post" action="{% url 'matters:reopen' pk=matter.pk %}">
+    {% comment %}
+      **Reopening names the stage the file is reopened in** (docs/adr/0131 §12).
+      One press: the closing period ends, a new one begins in the stage chosen
+      here, and the closure is cleared — so the file is never open while still
+      reading «Jõustunud». Never `Määramata`, and never a stage that would close
+      it again (`offered_reopening_stages`).
+    {% endcomment %}
+    {% if can_write and reopen_form %}
+      <form class="banner__actions banner__reopen" method="post" action="{% url 'matters:reopen' pk=matter.pk %}">
         {% csrf_token %}
-        <button class="button button--quiet" type="submit">Ava uuesti…</button>
+        <label class="visually-hidden" for="{{ reopen_form.stage.id_for_label }}">Uus hetkeseis</label>
+        {{ reopen_form.stage }}
+        <button class="button button--quiet" type="submit">Ava uuesti</button>
       </form>
     {% endif %}
   </div>

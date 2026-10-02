@@ -8,8 +8,9 @@ The owner's feedback of 2026-09-27, six changes that read as one pass:
 2. **`Kuupäev` is the width of a date** under `+ Märge` and under
    `+ Arvamus / tagasiside` (`.cx-f--solo`; the width itself is measured in the
    browser lane, `e2e/test_teema_page_cleanup.py`);
-3. **`+ Lõpeta teema` shows three chips and `Lõppsõna`**, with `Kuidas lõppes`
-   left to assistive technology and the archive sentence gone;
+3. **`+ Lõpeta teema` showed three chips and `Lõppsõna`** (retired by
+   docs/adr/0131 §11), with `Kuidas lõppes` left to assistive technology and the
+   archive sentence gone;
 4. **`Menetluse kulg` draws one solid run** — reached, then the current phase,
    then everything ahead muted — however many opinions a file sent
    (`legal_process._one_backbone`);
@@ -312,50 +313,19 @@ def test_the_compact_date_rule_is_a_cap_not_a_width():
 
 
 # ---------------------------------------------------------------------------
-# C — `+ Lõpeta teema`
+# C — `+ Lõpeta teema`, retired by docs/adr/0131 §11
 # ---------------------------------------------------------------------------
 
 
-def _closing_panel(body: str) -> str:
-    start = body.index('id="teema-lopeta"')
-    return body[start : body.index("</form>", start)]
+def test_there_is_no_closing_panel_and_the_stage_says_how_a_file_ends(signed_in, normal_matter):
+    """C16–C21 described a panel that is gone: a file ends through `Hetkeseis`."""
+    body = signed_in.get(_teema(normal_matter)).content.decode()
 
-
-def test_the_closing_panel_is_four_chips_and_lopposona(signed_in, normal_matter):
-    """C16–C20. The words gone from the screen; the group still named. `Muu` is
-    the fourth chip since docs/adr/0121 §8."""
-    panel = _closing_panel(signed_in.get(_teema(normal_matter)).content.decode())
-
-    assert '<span class="cx-f__lab">Kuidas lõppes</span>' not in panel
-    assert "Teema läheb arhiivi" not in panel
-    assert "sammud tühistatakse" not in panel
-    assert 'class="cx-note"' not in panel
-
-    group = panel[panel.index("<fieldset") : panel.index("</fieldset>")]
-    assert 'data-chipgroup="disposition"' in group
-    assert '<legend class="visually-hidden">Kuidas lõppes</legend>' in group
-    chips = re.findall(r'data-chipvalue="([A-Z_]+)">([^<]+)<', group)
-    assert [label for _value, label in chips] == ["Jõustus", "Menetlus lõppes", "Loobuti", "Muu"]
-    assert 'name="disposition"' in group
-
-    assert "Lõppsõna" in panel
-    assert 'name="closing_words"' in panel
-
-
-def test_closing_from_the_panel_still_closes_the_file(signed_in, normal_matter):
-    """C21. The POST and what it does are untouched."""
-    from app.workflow.enums import Disposition
-
-    response = signed_in.post(
-        reverse("matters:close_from_workspace", kwargs={"pk": normal_matter.pk}),
-        {"disposition": Disposition.COMPLETED.value, "closing_words": "Jõustus muudatustega."},
-    )
-
-    assert response.status_code == 200
-    normal_matter.refresh_from_db()
-    assert normal_matter.is_open is False
-    assert normal_matter.disposition == Disposition.COMPLETED.value
-    assert normal_matter.disposition_reason == "Jõustus muudatustega."
+    assert 'id="teema-lopeta"' not in body
+    assert "+ Lõpeta teema" not in body
+    assert 'name="closing_words"' not in body
+    assert "Jõustunud — lõpetab teema" in body
+    assert "Rohkem ei tegele — lõpetab teema" in body
 
 
 # ---------------------------------------------------------------------------

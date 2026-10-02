@@ -45,6 +45,7 @@ from playwright.sync_api import expect
 
 from e2e.conftest import (
     SANDRA,
+    close_through_stage,
     create_matter,
     open_add_panel,
     open_hetkeseis,
@@ -579,19 +580,16 @@ def test_an_explicitly_recorded_earlier_stage_reads_kirjas(page, base_url):
 
 
 def test_koda_stopping_reads_beside_the_rail_and_not_on_it(page, base_url):
-    """Scenario G. `Rohkem ei tegele` is a disposition, never a legal node."""
+    """Scenario G. «Rohkem ei tegele» ends Koda's work, and is never a legal node.
+
+    It is a `Hetkeseis` since docs/adr/0131 §9 and closes the Matter with
+    `Disposition.MONITORING_STOPPED`; the rail still reads the procedure's last
+    position — the period before it — and says «Koda ei tegele edasi» beside it.
+    """
     sign_in(page, base_url, SANDRA)
     url = _matter_with_instrument(page, base_url, "Seadus", stage="Riigikogus")
 
-    # `Loobuti` is what `+ Lõpeta teema` calls `Disposition.MONITORING_STOPPED`;
-    # `Koda ei tegele edasi` is what the rail calls the same value. Two surfaces,
-    # one stored answer, and this test is about the second reading the first
-    # (app/matters/forms.py `COMPOSER_CLOSURE_CHOICES`, docs/adr/0032).
-    open_add_panel(page, "teema-lopeta")
-    closing = panel(page, "teema-lopeta")
-    closing.get_by_role("button", name="Loobuti", exact=True).click()
-    closing.locator("button[type=submit]").click()
-    page.wait_for_load_state("networkidle")
+    close_through_stage(page, "Rohkem ei tegele")
     page.goto(url)
     page.wait_for_load_state("networkidle")
 

@@ -13,6 +13,11 @@ moved, no row was deleted, no row was added, no Matter was reclassified, and
 is asserted rather than described, because every one of them is a way this
 change could have destroyed somebody's record or blurred a boundary the product
 draws on purpose.
+
+**Version 3.0 (docs/adr/0131 §9)** adds one row, `monitoring_stopped` —
+«Rohkem ei tegele» — and moves nothing else. The register's own words are still
+read as the disposition they always were: the new stage is a current product
+decision, never a rereading of history.
 """
 
 from __future__ import annotations
@@ -28,6 +33,7 @@ from app.workflow.reference_stages import (
     REFERENCE_STAGE_VERSION,
     REFERENCE_STAGES,
     REFERENCE_STAGES_V1,
+    REFERENCE_STAGES_V2,
     REWORDED_STAGE_LABELS_V2,
     STAGE_REVIEW_VERIFIED_ON,
     STAGE_SOURCE_TITLE,
@@ -40,6 +46,10 @@ from app.workflow.vocabulary import RAW_LABEL_TO_DISPOSITION, RAW_LABEL_TO_STAGE
 #: for the taxonomy ones.
 REVIEW_MIGRATION = importlib.import_module(
     "app.workflow.migrations.0007_lawyer_reviewed_stage_vocabulary"
+)
+#: `workflow/0010`, which adds version 3.0's one row.
+MONITORING_STOPPED_MIGRATION = importlib.import_module(
+    "app.workflow.migrations.0010_monitoring_stopped_stage"
 )
 
 #: Version 1.0 — key, label, sort order, restated by hand. A test that looped
@@ -71,6 +81,12 @@ REVIEWED_V2: tuple[tuple[str, str, int], ...] = (
     ("other", "Muu", 100),
 )
 
+#: Version 3.0 — version 2.0 unchanged and «Rohkem ei tegele» last, 2026-10-02.
+REVIEWED_V3: tuple[tuple[str, str, int], ...] = (
+    *REVIEWED_V2,
+    ("monitoring_stopped", "Rohkem ei tegele", 110),
+)
+
 
 # ---------------------------------------------------------------------------
 # The manifest
@@ -81,11 +97,14 @@ def test_the_manifest_holds_both_reviewed_versions() -> None:
     assert [(stage.key, stage.label_et, stage.sort_order) for stage in REFERENCE_STAGES_V1] == list(
         REVIEWED_V1
     )
-    assert [(stage.key, stage.label_et, stage.sort_order) for stage in REFERENCE_STAGES] == list(
+    assert [(stage.key, stage.label_et, stage.sort_order) for stage in REFERENCE_STAGES_V2] == list(
         REVIEWED_V2
     )
-    assert REFERENCE_STAGE_KEYS == tuple(key for key, _label, _order in REVIEWED_V2)
-    assert REFERENCE_STAGE_VERSION == "2.0"
+    assert [(stage.key, stage.label_et, stage.sort_order) for stage in REFERENCE_STAGES] == list(
+        REVIEWED_V3
+    )
+    assert REFERENCE_STAGE_KEYS == tuple(key for key, _label, _order in REVIEWED_V3)
+    assert REFERENCE_STAGE_VERSION == "3.0"
 
 
 def test_the_provenance_is_stated() -> None:
@@ -93,17 +112,27 @@ def test_the_provenance_is_stated() -> None:
     assert STAGE_REVIEW_VERIFIED_ON == "2026-09-17"
 
 
-def test_version_two_is_the_same_ten_keys() -> None:
-    """Nothing retired and nothing added — three labels moved, and that is all.
+def test_version_three_keeps_the_ten_and_adds_one() -> None:
+    """Nothing retired; version 3.0 adds «Rohkem ei tegele» and nothing else.
 
     The retirement mechanism exists and works (`stages_including`,
-    docs/adr/0032 §Amendment) and this round has no use for it. A vocabulary
-    change that quietly dropped a stage would strand every Matter standing in
-    it; one that quietly added a *disposition* as a stage would put two
-    different questions in one column.
+    docs/adr/0032 §Amendment) and no round has used it. A vocabulary change that
+    quietly dropped a stage would strand every Matter standing in it.
     """
-    assert set(REFERENCE_STAGE_KEYS) == {key for key, _label, _order in REVIEWED_V1}
-    assert len(REFERENCE_STAGE_KEYS) == 10
+    assert set(REFERENCE_STAGE_KEYS) == {key for key, _label, _order in REVIEWED_V1} | {
+        "monitoring_stopped"
+    }
+    assert len(REFERENCE_STAGE_KEYS) == 11
+
+
+def test_the_monitoring_stopped_migration_is_the_manifest() -> None:
+    """`workflow/0010`'s frozen copy agrees with the manifest, and touches `workflow` alone."""
+    assert MONITORING_STOPPED_MIGRATION.KEY == "monitoring_stopped"
+    assert MONITORING_STOPPED_MIGRATION.LABEL == "Rohkem ei tegele"
+    assert MONITORING_STOPPED_MIGRATION.SORT_ORDER == 110
+    assert MONITORING_STOPPED_MIGRATION.Migration.dependencies == [
+        ("workflow", "0009_next_action_values_are_checked")
+    ]
 
 
 def test_exactly_three_labels_were_reworded_and_no_key_moved() -> None:
@@ -143,9 +172,9 @@ def test_the_migration_baseline_is_the_manifest() -> None:
 
 
 @pytest.mark.django_db
-def test_the_offered_vocabulary_is_the_reviewed_ten_in_order() -> None:
+def test_the_offered_vocabulary_is_the_reviewed_eleven_in_order() -> None:
     offered = list(selectable_stages())
-    assert [(stage.key, stage.label_et, stage.sort_order) for stage in offered] == list(REVIEWED_V2)
+    assert [(stage.key, stage.label_et, stage.sort_order) for stage in offered] == list(REVIEWED_V3)
 
 
 @pytest.mark.django_db
@@ -171,42 +200,34 @@ def test_the_reworded_stages_kept_their_key_row_and_explanation() -> None:
 
 
 @pytest.mark.django_db
-def test_rohkem_ei_tegele_is_a_disposition_and_never_a_stage() -> None:
-    """The boundary ADR 0032 draws, asserted where it could have been crossed.
+def test_rohkem_ei_tegele_is_a_stage_now_and_history_is_not_reread() -> None:
+    """docs/adr/0131 §9 supersedes the boundary ADR 0032 drew here — going forward only.
 
-    The feedback asked for «Rohkem ei tegele» as a Hetkeseis. `Hetkeseis` says
-    where the *external* process stands; *Koda has stopped working on this* is a
-    statement about this office, and the product models it as
-    `Disposition.MONITORING_STOPPED`. A stage meaning the second would put two
-    questions in one column and leave every surface reading it unable to tell
-    which had been answered.
-
-    The workbook has agreed since 2011: its own `rohkem pole tegevusi plaanis`
-    is read as that disposition by `workflow/0004` and not as a stage.
+    «Rohkem ei tegele» is a current stage, `monitoring_stopped`, and choosing it
+    closes the Matter with `Disposition.MONITORING_STOPPED`. The workbook's own
+    `rohkem pole tegevusi plaanis` is still read by `workflow/0004` as that
+    disposition and not as the stage: an import that suddenly found the stage in
+    2016 rows would be inventing a fact about 2016.
     """
-    assert not StageVocabulary.objects.filter(key="no_further_work").exists()
-    labels = set(StageVocabulary.objects.values_list("label_et", flat=True))
-    assert "Rohkem ei tegele" not in labels
+    stage = StageVocabulary.objects.get(key="monitoring_stopped")
+    assert (stage.label_et, stage.sort_order, stage.is_active) == ("Rohkem ei tegele", 110, True)
+    assert stage.help_text.strip()
 
     mapping = resolve_legacy_status("rohkem pole tegevusi plaanis")
     assert mapping is not None
     assert mapping.stage is None
     assert mapping.disposition == Disposition.MONITORING_STOPPED
     assert RAW_LABEL_TO_DISPOSITION == {"rohkem pole tegevusi plaanis": "MONITORING_STOPPED"}
-    assert "no_further_work" not in RAW_LABEL_TO_STAGE.values()
+    assert "monitoring_stopped" not in RAW_LABEL_TO_STAGE.values()
 
 
 @pytest.mark.django_db
-def test_the_concept_already_has_a_lawyer_facing_action() -> None:
-    """«Koda ei tegele edasi» on `Lõpeta teema`, «Loobuti» in the composer.
-
-    Implemented against disposition rather than Hetkeseis, which is the point:
-    there was no gap for this round to fill, only a boundary to leave alone.
-    """
-    from app.matters.forms import CLOSURE_CHOICES, COMPOSER_CLOSURE_CHOICES
+def test_the_disposition_vocabulary_is_unchanged_beside_it() -> None:
+    """The closure vocabulary is not retired with `Lõpeta teema` (docs/adr/0131 §11)."""
+    from app.matters.forms import CLOSURE_CHOICES
 
     assert (Disposition.MONITORING_STOPPED.value, "Koda ei tegele edasi") in CLOSURE_CHOICES
-    assert (Disposition.MONITORING_STOPPED.value, "Loobuti") in COMPOSER_CLOSURE_CHOICES
+    assert Disposition.MONITORING_STOPPED.label == "Koda lõpetas jälgimise"
 
 
 @pytest.mark.django_db
