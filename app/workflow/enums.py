@@ -112,3 +112,56 @@ OVERDUE_SEMANTICS = DateSemantics.DEADLINE
 
 #: These are due for a look, never "missed".
 REVIEW_KINDS = (ActionKind.WAIT, ActionKind.MONITOR)
+
+
+# -- the work plan (docs/adr/0133) ------------------------------------------
+#
+# `Tööplaan` answers a fourth question beside the four above: *what will I
+# probably have to do after the current thing?* It is guidance, not a queue.
+# Only `NextAction` is work, and a step becomes work only when somebody starts it.
+
+
+class PlanStepState(models.TextChoices):
+    """Where one occurrence of a plan step stands.
+
+    **There is no stored «current».** A step is current exactly when an OPEN
+    `NextAction` points at it, and `workflow_one_open_action_per_matter` already
+    makes that at most one step per Matter. A second column saying the same thing
+    would be a second truth that can disagree with the first (docs/adr/0133 §3).
+    """
+
+    #: A faint placeholder copied from the code-managed template. Nobody has
+    #: accepted it yet, and it is not work.
+    SUGGESTED = "SUGGESTED", "Soovitus"
+    #: A person added it, accepted it, edited it, restored it or started it.
+    PLANNED = "PLANNED", "Plaanis"
+    #: This occurrence was done: its `NextAction` was completed.
+    COMPLETED = "COMPLETED", "Tehtud"
+    #: Deliberately not needed. Kept, restorable, and out of the compact plan.
+    SKIPPED = "SKIPPED", "Vahele jäetud"
+
+
+class PlanStepSource(models.TextChoices):
+    """Where a step came from. Provenance, never behaviour."""
+
+    TEMPLATE = "TEMPLATE", "Tavapärane tööplaan"
+    CUSTOM = "CUSTOM", "Lisatud käsitsi"
+
+
+class PlanStepOperation(models.TextChoices):
+    """Which canonical Juristid operation, if any, does this step's work.
+
+    Stable keys, never inferred from the step's words. A `GENERIC` step is
+    finished by `Mida tegid?`; the other three are finished by registering the
+    canonical record they name — but only when that record is entered *from the
+    current step* (docs/adr/0133 §6).
+    """
+
+    GENERIC = "GENERIC", "Tavaline tegevus"
+    WEBSITE_OVERVIEW = "WEBSITE_OVERVIEW", "Ülevaade / uudis"
+    ENGAGEMENT = "ENGAGEMENT", "Kaasamine"
+    SUBMISSION = "SUBMISSION", "Koja arvamus"
+
+
+#: The steps that can still be ordered, edited, skipped or started.
+OPEN_PLAN_STATES = (PlanStepState.SUGGESTED, PlanStepState.PLANNED)

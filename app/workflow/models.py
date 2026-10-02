@@ -28,6 +28,9 @@ from app.workflow.enums import (
     DatePrecision,
     DateSemantics,
     Disposition,
+    PlanStepOperation,
+    PlanStepSource,
+    PlanStepState,
     Track,
 )
 from app.workflow.lateness import (
@@ -297,6 +300,30 @@ class NextAction(VisibilityInheritingModel):
         related_name="replaces",
         verbose_name="asendatud tegevusega",
     )
+    #: The `Tööplaan` step this action is an occurrence of, when it was started
+    #: from one (docs/adr/0133 §4).
+    #:
+    #: **An explicit relation, never an inference.** Not the text, not the date,
+    #: not the order and not a timestamp: a step and an action are connected
+    #: exactly when somebody started the one from the other. Imported, legacy
+    #: and ordinary actions carry ``NULL`` and always will — nothing backfills it.
+    #:
+    #: Many actions may name one step: `Muuda` replaces the open row with a new
+    #: one and carries this forward, so an edited step keeps its plan. The one
+    #: OPEN action decides which step is current; a SUPERSEDED or CANCELLED row
+    #: leaves its step as it was, and only a COMPLETED one completes it.
+    #:
+    #: ``PROTECT``: a plan step is never hard-deleted while work points at it.
+    #: Skipping is how a step leaves the plan, and a Teema's deletion removes
+    #: the actions before the steps (`app.matters.deletion._deletion_order`).
+    plan_step = models.ForeignKey(
+        "workflow.MatterPlanStep",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="actions",
+        verbose_name="tööplaani samm",
+    )
 
     objects = NextActionQuerySet.as_manager()
 
@@ -511,3 +538,185 @@ class NextAction(VisibilityInheritingModel):
             DateSemantics.EXPECTED_AROUND.value: "Oodatav",
         }
         return labels.get(self.date_semantics, "")
+
+
+class MatterPlanStep(BaseModel):
+    """One step of a Matter's `Tööplaan` — guidance about the work likely to follow.
+
+    **Not a task.** A step has no date, no responsible person, no lateness and
+    no reminder. It enters no work surface, no count and no statistic, and it is
+    not a chronology row. It becomes work in exactly one way: somebody starts it,
+    and starting it writes the Matter's one canonical `NextAction` through the
+    ordinary service, with ``NextAction.plan_step`` pointing back here
+    (docs/adr/0133 §2, §4).
+
+    **A durable copy.** A step seeded from the code-managed template keeps the
+    template's key, version and step key as provenance, and its own title and
+    operation. A later template change reaches no existing Matter: there is no
+    live relation that could rename, add or remove a step retroactively
+    (docs/adr/0133 §5).
+
+    **No visibility of its own.** A plan is read only on its Matter's page, after
+    the Matter has been found visible, and holds nothing more sensitive than the
+    Matter's own guidance. A future restricted step would be a
+    `VisibilityInheritingModel`; none is needed today.
+    """
+
+    matter = models.ForeignKey(
+        "matters.Matter",
+        on_delete=models.CASCADE,
+        related_name="plan_steps",
+        verbose_name="teema",
+    )
+    #: Order within the Matter's plan. Dense from zero after every structural
+    #: change, and deliberately not unique: a reorder swaps two rows, and a
+    #: unique index would refuse the half-way state of that swap.
+    position = models.PositiveIntegerField(default=0, verbose_name="järjekord")
+    title = models.CharField(max_length=300, verbose_name="samm")
+    source = models.CharField(
+        max_length=16,
+        choices=PlanStepSource.choices,
+        default=PlanStepSource.CUSTOM,
+        verbose_name="päritolu",
+    )
+    operation = models.CharField(
+        max_length=32,
+        choices=PlanStepOperation.choices,
+        default=PlanStepOperation.GENERIC,
+        verbose_name="seotud toiming",
+    )
+    state = models.CharField(
+        max_length=16,
+        choices=PlanStepState.choices,
+        default=PlanStepState.PLANNED,
+        db_index=True,
+        verbose_name="olek",
+    )
+    #: Which code-managed template, which version of it, and which of its steps
+    #: this was copied from. Blank on a step a person added. Provenance only:
+    #: nothing reads the template back through these (docs/adr/0133 §5).
+    template_key = models.CharField(max_length=64, blank=True, default="")
+    template_version = models.PositiveSmallIntegerField(null=True, blank=True)
+    template_step_key = models.CharField(max_length=64, blank=True, default="")
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="created_plan_steps",
+    )
+    completed_at = models.DateTimeField(null=True, blank=True, verbose_name="tehtud")
+    completed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="completed_plan_steps",
+    )
+    skipped_at = models.DateTimeField(null=True, blank=True, verbose_name="vahele jäetud")
+    skipped_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="skipped_plan_steps",
+    )
+
+    class Meta:
+        verbose_name = "tööplaani samm"
+        verbose_name_plural = "tööplaani sammud"
+        ordering = ["matter", "position", "created_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(state__in=PlanStepState.values),
+                name="workflow_plan_step_state_vocabulary",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(source__in=PlanStepSource.values),
+                name="workflow_plan_step_source_vocabulary",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(operation__in=PlanStepOperation.values),
+                name="workflow_plan_step_operation_vocabulary",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(title=""),
+                name="workflow_plan_step_title_required",
+            ),
+            # A completion is stamped exactly when the step is COMPLETED, and a
+            # skip exactly when it is SKIPPED. Restoring clears the skip; the
+            # audit trail keeps that it happened.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(state=PlanStepState.COMPLETED, completed_at__isnull=False)
+                    | (
+                        ~models.Q(state=PlanStepState.COMPLETED)
+                        & models.Q(completed_at__isnull=True)
+                    )
+                ),
+                name="workflow_plan_step_completion_stamped",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(state=PlanStepState.SKIPPED, skipped_at__isnull=False)
+                    | (~models.Q(state=PlanStepState.SKIPPED) & models.Q(skipped_at__isnull=True))
+                ),
+                name="workflow_plan_step_skip_stamped",
+            ),
+            # Template provenance is all three keys or none of them.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        source=PlanStepSource.TEMPLATE,
+                        template_version__isnull=False,
+                    )
+                    & ~models.Q(template_key="")
+                    & ~models.Q(template_step_key="")
+                )
+                | models.Q(
+                    source=PlanStepSource.CUSTOM,
+                    template_key="",
+                    template_version__isnull=True,
+                    template_step_key="",
+                ),
+                name="workflow_plan_step_template_provenance",
+            ),
+            # **Seeding is idempotent in the database too.** One copy of each
+            # template step per Matter. A person repeating a step creates a
+            # CUSTOM occurrence, which this does not touch: there is deliberately
+            # no uniqueness on the operation or on the title (docs/adr/0133 §8).
+            models.UniqueConstraint(
+                fields=["matter", "template_key", "template_step_key"],
+                condition=models.Q(source=PlanStepSource.TEMPLATE),
+                name="workflow_plan_step_template_once",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["matter", "position"], name="workflow_plan_step_order"),
+        ]
+
+    def __str__(self) -> str:
+        return self.title[:80]
+
+    @property
+    def is_open(self) -> bool:
+        """Still ahead: may be ordered, edited, skipped or started."""
+        return self.state in (PlanStepState.SUGGESTED, PlanStepState.PLANNED)
+
+    @property
+    def is_suggested(self) -> bool:
+        return self.state == PlanStepState.SUGGESTED
+
+    @property
+    def is_completed(self) -> bool:
+        return self.state == PlanStepState.COMPLETED
+
+    @property
+    def is_skipped(self) -> bool:
+        return self.state == PlanStepState.SKIPPED
+
+    @property
+    def is_typed(self) -> bool:
+        """Whether a canonical record, rather than `Mida tegid?`, finishes it."""
+        return self.operation != PlanStepOperation.GENERIC

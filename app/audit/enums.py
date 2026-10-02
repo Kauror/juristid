@@ -408,6 +408,31 @@ class ChangeEventType(models.TextChoices):
     EFFECTIVE_DATE_REMOVED = "EFFECTIVE_DATE_REMOVED", "Jõustumine eemaldatud"
     WORK_VICTORY_REMOVED = "WORK_VICTORY_REMOVED", "Töövõidu kirje eemaldatud"
 
+    # -- the work plan (docs/adr/0133) --------------------------------------
+    #
+    # **Audit, never chronology.** Planning is business state, so a change to it
+    # is recorded — who seeded the standard plan, added, moved, skipped,
+    # restored, started or finished a step — and every one of these is absent
+    # from `matters.timeline.TIMELINE_EVENT_TYPES`. `Teema käik` shows what was
+    # *done*: the note that finished a step, the overview, the round, the
+    # opinion. A history that also said «lisas plaani sammu» and «liigutas
+    # sammu» would bury the work under the planning of it (docs/adr/0133 §7).
+    #
+    # Matter-level for visibility (`app.audit.visibility.MATTER_LEVEL_EVENT_TYPES`):
+    # a plan step has no visibility of its own, so `Kõik muudatused` shows these
+    # to exactly the readers who may open the Matter.
+    #
+    # Repeating a step is `PLAN_STEP_ADDED` with the step it repeats in the
+    # payload: one new occurrence, which is all that happened.
+    PLAN_SEEDED = "PLAN_SEEDED", "Tavapärane tööplaan lisatud"
+    PLAN_STEP_ADDED = "PLAN_STEP_ADDED", "Tööplaani samm lisatud"
+    PLAN_STEP_CHANGED = "PLAN_STEP_CHANGED", "Tööplaani sammu muudetud"
+    PLAN_STEP_MOVED = "PLAN_STEP_MOVED", "Tööplaani järjekorda muudetud"
+    PLAN_STEP_SKIPPED = "PLAN_STEP_SKIPPED", "Tööplaani samm jäeti vahele"
+    PLAN_STEP_RESTORED = "PLAN_STEP_RESTORED", "Tööplaani samm taastati"
+    PLAN_STEP_ACTIVATED = "PLAN_STEP_ACTIVATED", "Tööplaani samm alustati"
+    PLAN_STEP_COMPLETED = "PLAN_STEP_COMPLETED", "Tööplaani samm tehtud"
+
 
 class SecurityEventType(models.TextChoices):
     """Access, permission and administrative trace, separate from the timeline."""
