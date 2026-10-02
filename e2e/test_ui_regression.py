@@ -2066,7 +2066,7 @@ def test_a_closed_matter_day_really_does_move_without_the_normalisation(page, se
 
 
 def _open_matter_fixture(page, day: str) -> None:
-    """The open Matter's eight date slots, in the two shapes the page renders.
+    """The open Matter's nine date slots, in the two shapes the page renders.
 
     Every slot, not only the varying ones, because the scoping is the thing
     under test: a fixture holding just the two run-day dates would pass under a
@@ -2113,6 +2113,9 @@ def _open_matter_fixture(page, day: str) -> None:
         # <addressee>», the day a `<time>` stamped by the run (docs/adr/0129 §9,
         # `RAIL_OPINION_SENT`). The real capture renders it beside the strip and
         # the chronology, so the fixture does too.
+        # `PRAEGUNE TEGEVUS`'s date: planned from the same clock (today + 30),
+        # so it is drawn with `day` too (`CANONICAL_CURRENT_ACTION_DAY`).
+        f'<span class="curact__date">{day}</span>'
         '<span class="railcard__opinion" style="display:contents">'
         f"<time>{day}</time><span> · Näidisministeerium</span></span>"
         '<span id="probe">·</span></div>'
@@ -2135,7 +2138,12 @@ OPEN_MATTER_SCENARIOS = ("teema-ulevaade", "teema-1024")
 
 @pytest.mark.parametrize(
     "selector",
-    (*_STRIP_AND_CHRONOLOGY_RUN_DAYS, *_STRIP_AND_CHRONOLOGY_EXPECTED_DAYS, *RAIL_OPINION_SENT),
+    (
+        *_STRIP_AND_CHRONOLOGY_RUN_DAYS,
+        *_STRIP_AND_CHRONOLOGY_EXPECTED_DAYS,
+        *RAIL_OPINION_SENT,
+        *CURRENT_ACTION_DAY,
+    ),
 )
 def test_the_open_matter_run_days_are_the_same_width_on_any_day(page, selector):
     """`created_at` and `sent_at`, both stamped by the run that renders them.
@@ -2161,7 +2169,12 @@ def test_the_open_matter_run_days_are_the_same_width_on_any_day(page, selector):
 
 @pytest.mark.parametrize(
     "selector",
-    (*_STRIP_AND_CHRONOLOGY_RUN_DAYS, *_STRIP_AND_CHRONOLOGY_EXPECTED_DAYS, *RAIL_OPINION_SENT),
+    (
+        *_STRIP_AND_CHRONOLOGY_RUN_DAYS,
+        *_STRIP_AND_CHRONOLOGY_EXPECTED_DAYS,
+        *RAIL_OPINION_SENT,
+        *CURRENT_ACTION_DAY,
+    ),
 )
 def test_an_open_matter_run_day_really_does_move_without_the_normalisation(page, selector):
     """The hazard itself, before anything is asked to hold it still.
