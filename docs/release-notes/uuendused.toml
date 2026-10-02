@@ -33,6 +33,12 @@ changes = [
   "Suletud teema avatakse uuesti koos hetkeseisuga, millega töö jätkub. Varasem hetkeseis, näiteks «Jõustunud», jääb «Teema käiku» alles.",
   "«Menetluse kulus» on menetluse etapid ja tähtajad ning Koja välja saadetud arvamused, ka hiljem tagasi võetud arvamus. Kaasamiste tagasiside tähtajad ja muud jälgitavad tähtajad on «Teema käigus».",
   "Sõnastus on ühtlustatud: «Valdkond» ka lehel «Muuda teemat» ja teema päises «Arvamuse tähtaeg».",
+  # Sama päeva neljas väljalase: kaasamise valikuline tähtaeg, ADR 0132 (PR
+  # #359). Üks migratsioon (matters/0044). Kui see väljalase ei jõua tootmisse
+  # 02.10 (Tallinna aja järgi), liiguvad need read väljalaske päeva kirjesse.
+  "Kaasamine jääb avatuks seni, kuni vajutad «Lõpeta kaasamine», ka siis, kui tagasiside tähtaega ei ole määratud.",
+  "«Tagasisidet ootame kuni» on kaasamisel valikuline: tähtaeg võib olla samal päeval, järgmisel päeval, hiljem või üldse puududa. Tähtaja puudumine ei tee kaasamist üle tähtaja läinuks ega «Vajab sekkumist» kirjeks.",
+  "Ilma tähtajata avatud kaasamine on teema lehel «Praegune tegevus» all ja lehel «Minu töö» endiselt näha, märkega «Tähtaeg määramata».",
 ]
 
 [[day]]
