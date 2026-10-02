@@ -16,6 +16,7 @@ run, *finished*, or *green in every job*.
 from __future__ import annotations
 
 import importlib.util
+import io
 import os
 import pathlib
 import shutil
@@ -23,6 +24,7 @@ import stat
 import subprocess
 import sys
 import urllib.error
+import zipfile
 from typing import Any
 
 import pytest
@@ -281,21 +283,48 @@ def test_the_latest_run_decides() -> None:
 @pytest.fixture
 def api(monkeypatch):
     """GitHub, as fixtures: runs per SHA and jobs per run id."""
-    state: dict[str, Any] = {"runs": {}, "jobs": {}, "error": None}
+    state: dict[str, Any] = {"runs": {}, "jobs": {}, "trees": {}, "error": None}
 
     def fake_get(url: str, token: str) -> dict[str, Any]:
         assert token == FIXTURE_TOKEN
         if state["error"]:
             raise state["error"]
+        if "/artifacts?" in url:
+            run_id = int(url.split("/runs/")[1].split("/")[0])
+            if run_id not in state["trees"]:
+                return {"artifacts": []}
+            return {
+                "artifacts": [
+                    {
+                        "name": "tested-tree",
+                        "expired": False,
+                        "archive_download_url": f"zip:{run_id}",
+                    }
+                ]
+            }
         if "/jobs?" in url:
             run_id = int(url.split("/runs/")[1].split("/")[0])
             return {"jobs": state["jobs"].get(run_id, [])}
         sha = url.split("head_sha=")[1].split("&")[0]
         return {"workflow_runs": state["runs"].get(sha, [])}
 
+    def fake_get_bytes(url: str, token: str) -> bytes:
+        assert token == FIXTURE_TOKEN
+        return zipped_tested_tree(state["trees"][int(url.split(":")[1])])
+
     monkeypatch.setattr(gate, "_get", fake_get)
+    monkeypatch.setattr(gate, "_get_bytes", fake_get_bytes)
     monkeypatch.setenv("GH_TOKEN", FIXTURE_TOKEN)
     return state
+
+
+def zipped_tested_tree(tree: str) -> bytes:
+    """The artifact `ci.yml` uploads, as the API hands it back: a zip."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as bundle:
+        lines = [f"tree {tree}", f"commit {'c' * 40}", "event pull_request", ""]
+        bundle.writestr("tested-tree.txt", "\n".join(lines))
+    return buffer.getvalue()
 
 
 def invoke(history, target: str, tmp_path, *extra: str) -> tuple[int, str]:
@@ -373,6 +402,168 @@ def test_without_a_token_nothing_is_assumed(history, api, tmp_path, monkeypatch)
 @pytest.mark.parametrize("target", ["main", "abc1234", "HEAD", "g" * 40])
 def test_anything_but_a_full_commit_id_is_refused(history, api, tmp_path, target: str) -> None:
     assert invoke(history, target, tmp_path)[0] == 1
+
+
+# ---------------------------------------------------------------------------
+# Proof (b): the pull request's green run, on the identical tree (2026-10-02)
+# ---------------------------------------------------------------------------
+#
+# Main's own run re-tests the tree the pull request already tested, and the
+# release used to wait ~11 minutes for it. The pull request's run stands in
+# only when it recorded *exactly* the merge commit's tree, only for a two-parent
+# merge whose second parent is that run's head, and never over a main run that
+# finished red.
+
+
+def _merge_facts(history: dict[str, Any]) -> tuple[str, str, str]:
+    """The tip merge: its tree, and the pull request's head (second parent)."""
+    tree = git(history["repo"], "rev-parse", f"{history['tip']}^{{tree}}")
+    head = git(history["repo"], "rev-parse", f"{history['tip']}^2")
+    return history["tip"], tree, head
+
+
+def pr_run(head: str, **overrides: Any) -> dict[str, Any]:
+    return run(head_sha=head, event="pull_request", head_branch="feature/two") | overrides
+
+
+def _verdict(tree: str, parents: list[str], runs: list[dict], tested: str | None, jobs=None):
+    return gate.pull_request_verdict(
+        "t" * 40,
+        tree,
+        parents,
+        runs,
+        lambda _run: GREEN_JOBS if jobs is None else jobs,
+        lambda _run: tested,
+    )
+
+
+def test_a_green_pull_request_run_on_the_identical_tree_is_proof() -> None:
+    verdict = _verdict(SHA, [OTHER, "h" * 40], [pr_run("h" * 40)], tested=SHA)
+    assert verdict.ok, verdict.detail
+    assert "exact tree" in verdict.detail
+
+
+def test_a_different_tested_tree_is_refused() -> None:
+    """Main moved after the run: what was tested is not what is released."""
+    verdict = _verdict(SHA, [OTHER, "h" * 40], [pr_run("h" * 40)], tested="d" * 40)
+    assert not verdict.ok
+    assert "main moved" in verdict.detail
+
+
+def test_a_run_that_recorded_no_tree_proves_nothing() -> None:
+    verdict = _verdict(SHA, [OTHER, "h" * 40], [pr_run("h" * 40)], tested=None)
+    assert not verdict.ok
+    assert "recorded no tested tree" in verdict.detail
+
+
+@pytest.mark.parametrize("parents", [[OTHER], [OTHER, "h" * 40, "i" * 40], []])
+def test_only_a_two_parent_merge_can_use_a_pull_requests_run(parents: list[str]) -> None:
+    runs = [pr_run(parents[1])] if len(parents) > 1 else []
+    assert not _verdict(SHA, parents, runs, tested=SHA).ok
+
+
+def test_a_run_for_another_head_or_event_is_not_this_pull_requests() -> None:
+    runs = [
+        pr_run("x" * 40),
+        run(head_sha="h" * 40, event="push"),
+        pr_run("h" * 40, path=".github/workflows/release-image.yml"),
+    ]
+    assert not _verdict(SHA, [OTHER, "h" * 40], runs, tested=SHA).ok
+
+
+@pytest.mark.parametrize(
+    ("status", "conclusion"),
+    [("completed", "failure"), ("completed", "cancelled"), ("in_progress", None)],
+)
+def test_a_pull_request_run_that_is_not_a_finished_success_is_refused(
+    status: str, conclusion: Any
+) -> None:
+    runs = [pr_run("h" * 40, status=status, conclusion=conclusion)]
+    assert not _verdict(SHA, [OTHER, "h" * 40], runs, tested=SHA).ok
+
+
+def test_a_pull_request_run_with_one_job_not_green_is_refused() -> None:
+    jobs = [*GREEN_JOBS, {"name": "Visual regression", "conclusion": "skipped"}]
+    assert not _verdict(SHA, [OTHER, "h" * 40], [pr_run("h" * 40)], SHA, jobs=jobs).ok
+
+
+def test_the_latest_pull_request_run_decides() -> None:
+    runs = [
+        pr_run("h" * 40, id=1, run_number=1),
+        pr_run("h" * 40, id=2, run_number=2, conclusion="failure"),
+    ]
+    assert not _verdict(SHA, [OTHER, "h" * 40], runs, tested=SHA).ok
+
+
+@pytest.mark.parametrize(
+    ("runs", "state"),
+    [
+        ([], "absent"),
+        ([run(status="in_progress", conclusion=None)], "running"),
+        ([run(conclusion="failure")], "finished"),
+        ([run()], "finished"),
+    ],
+)
+def test_main_run_state(runs: list[dict], state: str) -> None:
+    assert gate.main_run_state(SHA, runs) == state
+
+
+def test_the_tested_tree_line_is_read_and_nothing_else() -> None:
+    assert gate.parse_tested_tree(f"tree {SHA}\ncommit {OTHER}\n") == SHA
+    assert gate.parse_tested_tree("tree short\n") is None
+    assert gate.parse_tested_tree("") is None
+
+
+def test_merge_released_on_its_pull_requests_run_while_main_has_not_run(
+    history, api, tmp_path
+) -> None:
+    tip, tree, head = _merge_facts(history)
+    api["runs"][head] = [pr_run(head, id=20)]
+    api["jobs"][20] = GREEN_JOBS
+    api["trees"][20] = tree
+
+    rc, env = invoke(history, tip, tmp_path)
+
+    assert rc == 0, env
+    assert "pull request's CI passed" in env
+
+
+def test_merge_released_on_its_pull_requests_run_while_main_is_still_running(
+    history, api, tmp_path
+) -> None:
+    tip, tree, head = _merge_facts(history)
+    api["runs"][tip] = [run(id=21, head_sha=tip, status="in_progress", conclusion=None)]
+    api["runs"][head] = [pr_run(head, id=22)]
+    api["jobs"][22] = GREEN_JOBS
+    api["trees"][22] = tree
+
+    assert invoke(history, tip, tmp_path)[0] == 0
+
+
+def test_a_main_run_that_finished_red_is_never_overridden(history, api, tmp_path) -> None:
+    tip, tree, head = _merge_facts(history)
+    api["runs"][tip] = [run(id=23, head_sha=tip, conclusion="failure")]
+    api["runs"][head] = [pr_run(head, id=24)]
+    api["jobs"][24] = GREEN_JOBS
+    api["trees"][24] = tree
+
+    assert invoke(history, tip, tmp_path)[0] == 1
+
+
+def test_a_pull_request_run_on_another_tree_does_not_release_the_merge(
+    history, api, tmp_path
+) -> None:
+    tip, _tree, head = _merge_facts(history)
+    api["runs"][head] = [pr_run(head, id=25)]
+    api["jobs"][25] = GREEN_JOBS
+    api["trees"][25] = "e" * 40
+
+    assert invoke(history, tip, tmp_path)[0] == 1
+
+
+def test_a_direct_push_cannot_use_a_pull_requests_run(history, api, tmp_path) -> None:
+    """One parent, so there is no pull request whose run could stand in."""
+    assert invoke(history, history["direct"], tmp_path)[0] == 1
 
 
 # ---------------------------------------------------------------------------

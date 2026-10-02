@@ -20,15 +20,20 @@ name: Release image
 # after the transfer: it is the only thing that proves the bytes the host loads
 # are the bytes this job built.
 #
-# **Only an accepted revision of main, with main's CI green on it, is built**
-# (ENG-015). Before anything else the job proves both: that the commit is on
-# main's first-parent history — the merge commits main recorded, not a merged
-# pull request's own head, which is an ancestor with the same tree and green
-# checks of its own and is still not what main accepted (2026-09-09) — and that
-# the latest `ci.yml` run for a push to main at exactly that commit completed
-# with every job green. The decision is `scripts/ci/assert_release_provenance.py`,
-# read from this workflow's own revision of main rather than from the commit
-# being judged, and it fails closed.
+# **Only an accepted revision of main, with CI green on its exact bytes, is
+# built** (ENG-015). Before anything else the job proves both: that the commit
+# is on main's first-parent history — the merge commits main recorded, not a
+# merged pull request's own head, which is an ancestor with the same tree and
+# green checks of its own and is still not what main accepted (2026-09-09) —
+# and that CI passed on exactly this commit's tree. That is main's own `ci.yml`
+# run for this commit, green in every job; or, while main's run is absent or
+# still running (never over one that finished red), the merged pull request's
+# green run, when the tree it recorded as tested is byte-for-byte this merge
+# commit's tree (2026-10-02 — a release no longer waits ~11 minutes for main to
+# re-test what the pull request already tested). The decision is
+# `scripts/ci/assert_release_provenance.py`, read from this workflow's own
+# revision of main rather than from the commit being judged, and it fails
+# closed.
 #
 # `previous_sha` is what makes this a release rather than a build: the two
 # commits bound the payload that reaches the Chamber's lawyers, and the gate
@@ -91,7 +96,7 @@ jobs:
           echo "SHORT=${head:0:12}" >> "$GITHUB_ENV"
           echo "FULL=$head" >> "$GITHUB_ENV"
 
-      # Main's own, and green on main (ENG-015). Before the release note and
+      # Main's own, and CI-green on its exact tree (ENG-015). Before the release note and
       # long before a layer is built.
       #
       # The gate's code comes from this workflow's own commit — main, checked
@@ -99,7 +104,7 @@ jobs:
       # must not be able to bring its own judge. Written to RUNNER_TEMP, so the
       # checkout stays exactly the requested commit and nothing extra can reach
       # the build context.
-      - name: The commit is main's own, and main's CI passed on it
+      - name: The commit is main's own, and CI passed on its exact tree
         env:
           GH_TOKEN: ${{ github.token }}
           TARGET: ${{ inputs.sha }}

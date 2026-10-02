@@ -298,6 +298,17 @@ def report_durations(
                     f"    {name:<10} slowest / median {slowest:.0f}s / {median:.0f}s "
                     f"= {slowest / median:.2f}"
                 )
+        # The spread, beside the ratio. «slowest / median 1.04» read as
+        # balanced on 2026-10-02 while the same run's PostgreSQL shards took
+        # 312s to 525s: with most shards slow, the median sits with them and
+        # hides the idle ones. The round waits for the slowest; the fastest
+        # says how much of that wait better balance could take back.
+        took = list(actual.values())
+        if took and min(took) > 0:
+            print(
+                f"    actual     slowest / fastest {max(took):.0f}s / {min(took):.0f}s "
+                f"= {max(took) / min(took):.2f}"
+            )
 
 
 def main() -> int:

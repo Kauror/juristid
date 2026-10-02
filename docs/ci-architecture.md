@@ -69,7 +69,7 @@ suite reaches it.
 The command in the workflow is the whole mechanism, so it works anywhere:
 
 ```bash
-uv run pytest --shard-count=6 --shard-index=3
+uv run pytest --shard-count=7 --shard-index=3
 ```
 
 ```bash
@@ -401,6 +401,61 @@ arithmetic: whole files are the unit, `tests/test_business_write_boundary.py`
 alone is 225s of the PostgreSQL suite's 1998s, and at nine shards it *is* a
 shard. The numbers were simulated out to nine and ten and are in the pull
 request that made this change; the answer was six and seven.
+
+### 2026-10-02: the round is what costs, and twenty jobs is the ceiling
+
+The bar above priced a runner in *runner-minutes*, and both of its premises
+have moved. The repository is public now, so standard runners cost nothing; and
+the owner works in rapid UI rounds where every change pays the whole round two
+or three times (a visible change needs a candidate round and a confirming one),
+so the round's wall clock is the cost that accumulates. A runner is worth it if
+it takes time off the critical path, whatever it adds to the total.
+
+Measured before the change, on PR run 36963869282 and main run 36965662372: a
+round was **10.8–11.9 minutes**, the critical path was the slowest PostgreSQL
+shard (Test suite 566s) and the slowest browser shard (500s), and the
+PostgreSQL shards ran **312s to 525s** in one run on a five-day-old table — a
+spread `slowest / median 1.04` did not show, because with most shards slow the
+median sits with them. The health report now prints `slowest / fastest` beside
+it.
+
+Scored the held-out way (partitioned with a table refreshed from run
+36965662372, scored with run 36963869282's JUnit seconds):
+
+| shards | PostgreSQL slowest | Browser slowest |
+| --- | --- | --- |
+| 6 / 7 (before) | 510s | 521s |
+| 10 | 319s | 371s |
+| **12** | **279s** | **318s** |
+| 14 | 233s | 262s |
+| 16 | 202s | 240s |
+
+**Twelve and twelve was tried and measured, and the account's ceiling decided
+it.** PR run 36968364017 ran 12+12: every shard took the predicted ~5–6
+minutes, and the round took **12.6** — worse. Exactly twenty jobs started in the
+first four seconds and the other ten queued, starting up to five minutes late as
+slots freed. The account runs **20 concurrent jobs** (GitHub Free; Pro is 40,
+Team 60), shared with every other repository's workflows.
+
+So the shard counts are chosen to fit, not to minimise per-shard time. Six fixed
+jobs (quality, migration safety, dependency scan, compose, backup rehearsal,
+visual) hold six slots for the first ~2–3 minutes; **7 + 7 shards fill the
+other fourteen and everything starts at once**. Packing more shards into the
+slots the fixed jobs free was modelled (9 + 11: six shards starting 2–3 minutes
+late) and came out no faster.
+
+With 7 + 7 the critical path is the slowest browser shard, ~521s held-out plus
+~85s of job overhead: a round of roughly ten minutes, against the eleven and a
+half before — the refreshed table and the OCR cache, not the count.
+
+**On a 40-job plan, 12 + 12 is the setting** (measured above: ~5.5–6.5 minutes a
+shard, so a round of ~7–7.5). It is a one-line change per matrix plus the two
+`--shard-count`s and the gate messages; `tests/test_ci_sharding.py` holds the
+matrix and the count to each other.
+
+The OCR runtime is now installed from `.deb` files cached per runner image. The
+step was 18s when Ubuntu's mirror was quick and up to four minutes when it was
+not, and one slow shard is the whole round waiting.
 
 ### The slow files, and why none of them were touched
 
