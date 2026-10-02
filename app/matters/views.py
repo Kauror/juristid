@@ -8089,30 +8089,29 @@ def _timeline_steps_form(
     withholding the box would leave a phase with no date and no way to give it
     one (QA-006, QA-007).
     """
-    from app.matters.models import MatterTimelineStep
-
     phases = legal_process.phase_context(matter=matter)
-    visible = list(
-        MatterTimelineStep.objects.filter(matter=matter)
-        .visible_to(request.user)
-        .order_by("created_at", "id")
-    )
-    rows = {row.phase_key: row for row in visible if not row.is_added}
+    # The step rows read once and handed to both rail helpers, as the Matter
+    # page does (`_overview_context`); each re-read them on its own before.
+    step_rows = legal_process.timeline_step_rows(matter=matter, user=request.user)
+    rows, added_rows = step_rows
     # **`+ Lisa samm` places a step after something the person can see**, so the
     # panel reads the rail exactly as the page draws it — the same three reads,
     # the same merge — and offers its items, in its order (docs/adr/0119 §2).
     drawn = matter_rail(
         matter=matter,
         user=request.user,
-        rail=legal_process_rail(matter=matter, user=request.user, context=phases),
+        rail=legal_process_rail(
+            matter=matter, user=request.user, context=phases, step_rows=step_rows
+        ),
         milestones=process_steps(matter=matter, user=request.user),
+        step_rows=step_rows,
     )
     placed_after = {
         step.key: (drawn[index - 1].key if index else "")
         for index, step in enumerate(drawn)
         if step.kind == legal_process.KIND_STEP
     }
-    by_key = {row.rail_key: row for row in visible if row.is_added}
+    by_key = {row.rail_key: row for row in added_rows}
     added = [by_key[step.key] for step in drawn if step.key in by_key]
     return TimelineStepsForm(
         data,
