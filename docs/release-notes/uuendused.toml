@@ -14,12 +14,12 @@ basis = "deployment"
 # Migratsioone ei ole. Kui see väljalase jõuab tootmisse veel 01.10 (Tallinna
 # aja järgi), liiguvad need read 01.10 kirjesse ja see kirje kaob.
 changes = [
-  "«Uus teema» on lühem ja uues järjekorras: pealkiri; saatja ja vastutaja kõrvuti; arvamuse tähtaeg, menetluse link ja saabumise kuupäev ühel real; seejärel õigusakt, valdkonnad, hetkeseis, märkmed ja viimasena failid.",
+  "«Uus teema» on lühem ja uues järjekorras: pealkiri; saatja ja vastutaja kõrvuti; arvamuse tähtaeg, menetluse link ja saabumise kuupäev ühel real; seejärel õigusakt, hetkeseis, valdkond, märkmed ja viimasena failid.",
   "«Millest teema räägib» uue teema loomisel enam ei küsita — selle saab kirjutada hiljem teema lehel või «Muuda teemat» kaudu. Varem kirjutatud kokkuvõtted jäävad alles.",
   "Menetluse lingile ei küsita enam eraldi nimetust, piisab aadressist. Varem sisestatud nimetused jäävad alles ja on teema lehel näha.",
   "Kui uut teemat luues valida õigusakt, on need hetkeseisud, mis selle õigusaktiga tavaliselt ei sobi, tuhmimad. Neid saab endiselt valida ja salvestada; mitme õigusakti korral jääb tavaliseks iga hetkeseis, mis sobib vähemalt ühega neist. Valdkondi see ei mõjuta.",
   # Sama päeva teine väljalase: ADR 0130 täiendus, migratsioonideta.
-  "«Uus teemas» on hetkeseis nüüd kohe õigusakti all, nii et õigusakti valides on kohe näha, millised hetkeseisud on tavapärased. Valdkond tuleb selle järel ja selle pealkiri on ainsuses — «Valdkond» —, kuid valida saab endiselt mitu.",
+  "Hetkeseis on kohe õigusakti all, nii et õigusakti valides on kohe näha, millised hetkeseisud on tavapärased. Valdkonna pealkiri on ainsuses — «Valdkond» —, kuid valida saab endiselt mitu.",
   "Õigusaktiga tavaliselt mittesobivad hetkeseisud on varasemast selgelt tuhmimad. Neid saab endiselt valida, ja valitud hetkeseis näeb välja nagu iga teine valitud hetkeseis.",
 ]
 
