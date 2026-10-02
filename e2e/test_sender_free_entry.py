@@ -186,7 +186,7 @@ def test_a_sender_named_here_is_afterwards_in_the_one_catalogue(page, base_url):
     labels = offered.evaluate_all(
         "nodes => nodes.map(node => {"
         "  const label = node.closest('label');"
-        "  return label ? label.textContent.replace(/\s+/g, ' ').trim() : '';"
+        r"  return label ? label.textContent.replace(/\s+/g, ' ').trim() : '';"
         "})"
     )
     assert any(TYPED_SENDER in label for label in labels), (

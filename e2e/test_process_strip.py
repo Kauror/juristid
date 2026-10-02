@@ -690,7 +690,7 @@ def test_no_retired_source_has_left_a_label_on_the_strip(page, base_url, width):
 def states(page) -> list[str]:
     """Each column's drawn temporal state, in the order they are drawn."""
     return page.locator(".tl-step").evaluate_all(
-        "nodes => nodes.map(node => (node.className.match(/tl-step--(\w+)/) || [null, 'none'])[1])"
+        r"nodes => nodes.map(node => (node.className.match(/tl-step--(\w+)/) || [null, 'none'])[1])"
     )
 
 
