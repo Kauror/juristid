@@ -356,6 +356,12 @@ class Command(BaseCommand):
             url="https://www.koda.ee/kaasamine/naidis",
             note="Sünteetiline näidiskirje.",
             occurred_on=date(2026, 5, 12),
+            # Filed as history, the shape the register importer writes for a
+            # published call: neither open nor completed, so the screenshot
+            # shows the section without an open round (docs/adr/0132). The
+            # open-with-no-deadline state is exercised by the interactive
+            # tests on their own Matters.
+            lifecycle_tracked=False,
             actor=martin,
         )
         add_entry(

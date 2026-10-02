@@ -562,7 +562,11 @@ def test_a_reply_by_date_given_on_the_panel_opens_the_wait(client, specialist, n
 
 def test_the_explicit_act_opens_exactly_one_wait(client, specialist, normal_matter):
     """ADR 0086 §3 is narrowed on where the deadline comes from and on nothing
-    else: one named decision, one `WorkItem`, ended by `Lõpeta kaasamine`."""
+    else: one named decision, one `WorkItem`, ended by `Lõpeta kaasamine`.
+
+    On a round filed as history, the one kind the act is still for since
+    docs/adr/0132 — every round a person records is already open.
+    """
     from app.matters.services import engagement_revision_token
 
     engagement = add_engagement(
@@ -570,6 +574,7 @@ def test_the_explicit_act_opens_exactly_one_wait(client, specialist, normal_matt
         kind=EngagementKind.OTHER,
         title="liikmed",
         occurred_on=dt.date(2026, 9, 19),
+        lifecycle_tracked=False,
         actor=specialist,
     )
 

@@ -301,10 +301,11 @@ def add_matter_engagement(
     somebody wrote it down. The panel now asks `Kaasamise kuupäev`, pre-filled
     with today because that is the common case, and an answer of *blank* is
     stored as blank. ``feedback_deadline`` is `Tagasisidet ootame kuni`:
-    optional and undefaulted, and given, it opens the round's wait exactly as
-    `Ootan tagasisidet` on the row would — one `OOTAME TAGASISIDET` work item for
-    the Matter's owner and «Tagasiside tähtaeg» on the rail (docs/adr/0086 §3,
-    docs/adr/0120).
+    optional and undefaulted. **The round is open either way** — one
+    `OOTAME TAGASISIDET` work item for the Matter's owner, ended by
+    `Lõpeta kaasamine` — and the date only says when it falls due: blank is
+    «Tähtaeg määramata», never today and never overdue (docs/adr/0086 §3,
+    docs/adr/0120, docs/adr/0132).
 
     ``kind`` defaults to `Muu` because the panel stopped asking. It stays a
     parameter for the importer and for the shell, which do know which channel a

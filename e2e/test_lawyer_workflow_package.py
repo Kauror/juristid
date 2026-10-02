@@ -152,9 +152,9 @@ def test_the_capture_panel_asks_the_reply_by_date_empty(page, base_url):
     """An empty box, no default and no spans.
 
     docs/adr/0120 §3 narrows docs/adr/0091 §2: the reply-by date is asked again
-    so a round can be recorded as waiting in one save (UQ-10), but it opens empty
-    — a round recorded as a completed act acquires no wait — and the quick spans
-    stay with `Ootan tagasisidet` on the round's own row.
+    so a round can be given a due date in one save (UQ-10), but it opens empty —
+    no default, no «today + N» (docs/adr/0132) — and the quick spans stay with
+    `Ootan tagasisidet` on a round filed as history.
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
@@ -169,35 +169,26 @@ def test_the_capture_panel_asks_the_reply_by_date_empty(page, base_url):
     expect(form.locator("[name=occurred_on]")).not_to_have_value("")
 
 
-def test_the_explicit_wait_is_where_the_spans_went(page, base_url):
-    """`Ootan tagasisidet` — one question, and asking still costs one click.
+def test_a_reply_by_date_on_the_panel_is_the_open_rounds_due_date(page, base_url):
+    """One save: the round is open and its row names the day it asked for.
 
-    The spans travelled with the question they answer, which is the half that
-    makes the narrowing affordable (docs/adr/0091 §2).
+    docs/adr/0132: the date is a due date on the open round, not what opens it,
+    so `Ootan tagasisidet` is not offered and `Lõpeta kaasamine` is.
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
     open_add_panel(page, "lisa-kaasamine")
     panel(page, "lisa-kaasamine").locator("[name=audience]").fill("liikmed")
+    panel(page, "lisa-kaasamine").locator("[name=feedback_deadline]").fill(_future(7))
     panel(page, "lisa-kaasamine").locator("button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
-    row = page.locator("#ajalugu-loend .uxtl__ms-body").filter(has_text="Kaasamine: liikmed")
-    expect(row).to_have_count(1)
-    open_kaik_row(row)
-    row.get_by_text("Ootan tagasisidet", exact=True).click()
-
-    box = row.locator("[name=feedback_deadline]")
-    expect(box).to_have_value("")
-    row.get_by_role("button", name="1 nädal").click()
-    expect(box).to_have_value(_future(7))
-
-    row.get_by_role("button", name="Salvesta ootus").click()
-    page.wait_for_load_state("networkidle")
-
     waiting = page.locator("#ajalugu-loend .uxtl__ms-body").filter(has_text="Kaasamine: liikmed")
+    expect(waiting).to_have_count(1)
+    open_kaik_row(waiting)
     expect(waiting).to_contain_text("Ootame tagasisidet kuni")
     expect(waiting.get_by_text("Ootan tagasisidet", exact=True)).to_have_count(0)
+    expect(waiting.get_by_text("Lõpeta kaasamine", exact=True)).to_have_count(1)
 
 
 # ---------------------------------------------------------------------------

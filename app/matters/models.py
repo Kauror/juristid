@@ -1087,35 +1087,55 @@ class MatterEngagement(VisibilityInheritingModel, RemovableRecord):
         default=DatePrecision.EXACT,
         verbose_name="kuupäeva täpsus",
     )
+    #: Whether this round has an open/completed lifecycle at all.
+    #:
+    #: **A `Kaasamine` is a consultation round, and a round is OPEN from the
+    #: moment it is recorded until somebody presses `Lõpeta kaasamine`**
+    #: (docs/adr/0132). Open is :attr:`feedback_closed_at` being `NULL`;
+    #: completed is it being set. Neither reading consults
+    #: :attr:`feedback_deadline`, which is an optional due date on the round and
+    #: never what opens, keeps open or ends it.
+    #:
+    #: `False` only for a round recorded **as history**: the register outreach
+    #: importer files decades of past consultations, and making each of them
+    #: open work would invent a state nobody chose, while completing them would
+    #: invent a closure nobody made. Such a row is neither open nor completed —
+    #: it says that a consultation happened. `Ootan tagasisidet` is the one act
+    #: that starts its lifecycle, and setting a reply-by date on it does the same.
+    #:
+    #: `True` by default, in Python and in the database: every interactive door
+    #: opens a round, and the release still serving while `migrate` runs inserts
+    #: through `add_engagement` without naming the column (`matters/0044`).
+    lifecycle_tracked = models.BooleanField(
+        default=True, db_default=True, verbose_name="avatud või lõpetatud kaasamisvoor"
+    )
     #: `Tagasisidet ootame kuni` — the day the lawyer asked people to answer by.
     #:
-    #: A consultation that starts today almost always names a reply-by date in
-    #: the same breath — «ootan vastuseid kuni 22.09» — and until now there was
-    #: nowhere on the file to put it, so it lived in the mailing and in
-    #: somebody's memory.
+    #: **Optional, and it does not define the round's lifecycle** (docs/adr/0132,
+    #: narrowing docs/adr/0086 §3 and §6). A round with no deadline is open work
+    #: exactly as one with a deadline is; what the date adds is a due date on
+    #: that work. Before it the round is waiting, on and after it the round is
+    #: due — and the day passing still completes nothing. Adding, moving or
+    #: clearing the date never opens a second round and never opens or closes
+    #: this one; the one exception is a historical row
+    #: (:attr:`lifecycle_tracked` `False`), which a deadline starts the lifecycle
+    #: of, because a reply-by date on a round nobody is waiting for is not a
+    #: statement anybody can make.
     #:
-    #: **Set, it opens a wait, and the wait is work** (docs/adr/0086 §3).
-    #: docs/adr/0078 §3 made this column inert - no work item, no badge, no
-    #: reading of lateness - on a rule that is right about the *fact* and wrong
-    #: about the *state*: what was asked of a ministry is indeed not an
-    #: obligation this office owes anybody, but a lawyer who asked for answers
-    #: by the 22nd has a thing to do on the 22nd, which is to read what came
-    #: back and write it down. So the deadline still creates no `NextAction`,
-    #: is still not `Matter.response_deadline`, is still not a
-    #: `MatterImportantDate` and still contributes to no response-deadline
-    #: statistic, no work-victory metric, no search row and no archive
-    #: projection - and it now draws one `WorkItem` of its own, which
-    #: :attr:`feedback_closed_at` ends (`app/matters/work_items.py`).
+    #: The deadline still creates no `NextAction`, is still not
+    #: `Matter.response_deadline`, is still not a `MatterImportantDate` and still
+    #: contributes to no response-deadline statistic, no work-victory metric, no
+    #: search row and no archive projection (docs/adr/0086 §3).
     #:
-    #: The historical-row objection docs/adr/0078 §3 raised is answered by
-    #: *where* the wait is read rather than by keeping the column inert: only
-    #: an **open FULL** Matter reaches a work surface, and a decade of imported
-    #: consultations are `ARCHIVE` rows no work source has ever looked at.
+    #: The one chronological rule: when both dates are known, this may not fall
+    #: before the start of `Kaasamise kuupäev`'s period
+    #: (`app.matters.services.feedback_deadline_precedes_engagement`). Same day
+    #: and any later day are valid, and there is no minimum lead time.
     #:
     #: Null for every row that predates the question and for every row somebody
     #: leaves blank. Nothing is inferred from `occurred_on`, `created_at`, the
     #: note or the provider links — a date guessed from a neighbouring column is
-    #: a date nobody chose.
+    #: a date nobody chose, and no form or service supplies a default.
     #:
     #: Not indexed. The work source reads it through the Matter it hangs off,
     #: which is the index this table already carries.
@@ -1149,11 +1169,12 @@ class MatterEngagement(VisibilityInheritingModel, RemovableRecord):
     #: When the wait was closed - the moment a person said «this round is
     #: finished», or the moment the Matter closed underneath it.
     #:
-    #: `NULL` while the wait is open and for every row that never had a
-    #: deadline. Paired with :attr:`feedback_deadline` by
-    #: `matters_engagement_feedback_closure_needs_deadline`: a wait that does
-    #: not exist cannot be completed, so clearing the deadline clears the
-    #: closure with it (`app.matters.services.update_engagement`).
+    #: `NULL` while the round is open and for every historical row that never
+    #: had a lifecycle. Paired with :attr:`lifecycle_tracked` by
+    #: `matters_engagement_closure_needs_lifecycle`; **not** with the deadline
+    #: any more — a round with no reply-by date is completed like any other, and
+    #: clearing the date of a completed round leaves it completed
+    #: (docs/adr/0132).
     #:
     #: A timestamp rather than a date, because the act is a save somebody made
     #: at a moment and the audit row beside it says so to the microsecond. What
@@ -1205,15 +1226,19 @@ class MatterEngagement(VisibilityInheritingModel, RemovableRecord):
                 condition=models.Q(occurred_on_precision__in=DatePrecision.values),
                 name="matters_engagement_occurred_precision_vocabulary",
             ),
-            # A wait that does not exist cannot be completed. `feedback_deadline`
-            # is what opens the wait, so a closure timestamp without one would be
-            # a row claiming to have finished waiting for something nobody asked
-            # for - and `has_open_feedback_wait` would read it as neither open
-            # nor closed (docs/adr/0086 §6).
+            # Only a round with a lifecycle can be completed or carry a due date.
+            # A historical row is neither open nor completed, so a closure on
+            # one would be a decision about a round nobody was running — and a
+            # reply-by date on one is a wait nobody is in (docs/adr/0132).
             models.CheckConstraint(
                 condition=models.Q(feedback_closed_at__isnull=True)
-                | models.Q(feedback_deadline__isnull=False),
-                name="matters_engagement_feedback_closure_needs_deadline",
+                | models.Q(lifecycle_tracked=True),
+                name="matters_engagement_closure_needs_lifecycle",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(feedback_deadline__isnull=True)
+                | models.Q(lifecycle_tracked=True),
+                name="matters_engagement_deadline_needs_lifecycle",
             ),
             models.CheckConstraint(
                 condition=models.Q(
@@ -1261,43 +1286,47 @@ class MatterEngagement(VisibilityInheritingModel, RemovableRecord):
 
     @property
     def has_feedback_wait(self) -> bool:
-        """Whether a reply-by date was ever named on this round.
+        """Whether this round has a lifecycle — open or completed.
 
         The question `has_open_feedback_wait` and `feedback_wait_is_closed`
-        partition. A round with no deadline is in neither state, which is what
-        every row written before docs/adr/0078 §3 is and what most rows will
-        always be.
+        partition. `False` only for a round recorded as history
+        (:attr:`lifecycle_tracked`), never for a round merely lacking a
+        deadline: «we are collecting feedback and no due date was recorded» is
+        an ordinary open round (docs/adr/0132).
         """
-        return self.feedback_deadline is not None
+        return self.lifecycle_tracked
 
     @property
     def has_open_feedback_wait(self) -> bool:
-        """Whether this round is still waiting for the answers it asked for.
+        """Whether this round is OPEN — still collecting what it asked for.
 
         The one predicate the work surfaces, the Teema page and the completion
         service all read, so «is this still open» cannot be answered two ways.
-        A deadline that has gone by is still *open* — the day passing is not a
-        result, and nothing closes a wait except somebody saying so or the
-        Matter shutting underneath it (docs/adr/0086 §4, §6).
+        **The deadline is not part of it.** A round with no deadline is open; a
+        deadline that has gone by is still open — the day passing is not a
+        result, and nothing closes a round except somebody pressing
+        `Lõpeta kaasamine` or the Matter shutting underneath it
+        (docs/adr/0086 §4, §6; docs/adr/0132).
         """
-        return self.feedback_deadline is not None and self.feedback_closed_at is None
+        return self.lifecycle_tracked and self.feedback_closed_at is None
 
     @property
     def feedback_wait_is_closed(self) -> bool:
-        """Whether a wait that existed has been completed."""
-        return self.feedback_deadline is not None and self.feedback_closed_at is not None
+        """Whether a round that had a lifecycle has been completed."""
+        return self.lifecycle_tracked and self.feedback_closed_at is not None
 
     def feedback_wait_is_due(self, today: date | None = None) -> bool:
-        """Whether an open wait has reached the day it asked to be answered by.
+        """Whether an open round has reached the day it asked to be answered by.
 
         Inclusive of the day itself: «vastake 22. septembriks» is a thing to
         look at *on* the 22nd, not on the 23rd. Before that day the round is
         waiting and says so; from it, it is the lawyer's to finish
         (docs/adr/0086 §4).
 
-        `False` for a closed wait and for a round that never had a deadline,
-        so a caller can ask this without asking `has_open_feedback_wait` first
-        and get the honest answer either way.
+        `False` for a completed round and for an open round with no deadline:
+        a round with no due date is never due and never overdue, however long it
+        stays open (docs/adr/0132). Presentation only — being due changes no
+        lifecycle.
         """
         if not self.has_open_feedback_wait or self.feedback_deadline is None:
             return False

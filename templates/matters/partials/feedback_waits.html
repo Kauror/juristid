@@ -25,6 +25,10 @@ Nothing renders on a closed Matter, and not because the list is filtered twice:
 closed Teema has none (docs/adr/0086 §7). The guard is here because a page must
 not depend on a service having been correct.
 
+An open round with no reply-by date is listed too, with «Tähtaeg määramata»
+where the day would be, never in the overdue colour and never as today: it is
+open work with no due date (docs/adr/0132).
+
 The wording and the colour change at the deadline. Before it, the file is
 waiting; on the day and after, the answers are sitting unread and reading them is
 this office's job. Neither reading says anything about whether the people who
@@ -39,7 +43,11 @@ keeps.
   {% for wait in feedback_waits %}
     <p class="curact__owed curact__owed--wait">
       <span class="curact__owedlabel">Ootame tagasisidet</span>
-      <span class="curact__oweddate{% if wait.feedback_wait_is_due %} curact__oweddate--overdue{% endif %}">kuni {{ wait.feedback_deadline|date:"j.n.Y" }}</span>
+      {% if wait.feedback_deadline %}
+        <span class="curact__oweddate{% if wait.feedback_wait_is_due %} curact__oweddate--overdue{% endif %}">kuni {{ wait.feedback_deadline|date:"j.n.Y" }}</span>
+      {% else %}
+        <span class="curact__oweddate">Tähtaeg määramata</span>
+      {% endif %}
       <a class="curact__owedlink" href="#kaasamine-{{ wait.pk }}-sisu">{{ wait.title }}</a>
     </p>
   {% endfor %}

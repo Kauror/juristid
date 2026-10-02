@@ -2968,10 +2968,13 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # Beside the open step rather than instead of it. Both are true, both
         # are the reader's, and a page that showed one of them would be choosing
         # which of two facts about their day to withhold.
+        #
+        # A round with no deadline is listed too, after the dated ones: it is
+        # open work with no due date, never a date of today (docs/adr/0132).
         "feedback_waits": list(
             work_items.open_feedback_waits(request.user)
             .filter(matter=matter)
-            .order_by("feedback_deadline", "pk")
+            .order_by(F("feedback_deadline").asc(nulls_last=True), "pk")
         ),
         "response_obligation": work_items.secondary_response_obligation(
             matter,
@@ -3928,16 +3931,17 @@ def attach_wait_form(
     one loop, and a single context variable would give every row the same form
     with the same ids and the same revision token.
 
-    ``None`` for a round that is **already** waiting and for one somebody has
-    finished — starting a wait is an act you take once, and offering it on a row
-    that has one would be offering to move a deadline somebody else set. That is a
-    correction, and it lives on `Muuda` (docs/adr/0091 §2).
+    Offered only on a round **filed as history** — the one kind that is neither
+    open nor completed (docs/adr/0132). ``None`` for every round with a
+    lifecycle: an open one is already waiting, with or without a deadline, and
+    moving or adding its deadline is a correction that lives on `Muuda`; a
+    completed one is not reopened from here.
 
     The `row_id` is the record's own primary key, so two waiting-eligible rounds
     on one page do not share `id_ootus_feedback_deadline` — the duplicate-id
     defect docs/adr/0086 §6 names for the completion form.
     """
-    offered = engagement.feedback_deadline is None and engagement.feedback_closed_at is None
+    offered = not engagement.lifecycle_tracked
     engagement.wait_form = (  # type: ignore[attr-defined]
         (
             form
@@ -3976,9 +3980,10 @@ def attach_feedback_form(
     through here, and the fragment view does the same for the one row it is
     answering, so a row cannot mean different things on the two paths.
 
-    ``None`` for a round that is not waiting — a wait nobody opened and one
+    ``None`` for a round that is not open — a round filed as history and one
     somebody finished both get no control, and the template asks this rather
-    than re-deriving the state.
+    than re-deriving the state. An open round with no deadline gets it like any
+    other (docs/adr/0132).
     """
     engagement.feedback_form = (  # type: ignore[attr-defined]
         form

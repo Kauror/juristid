@@ -4651,20 +4651,18 @@ class CompactEngagementForm(forms.Form):
 
 
 class EngagementWaitForm(forms.Form):
-    """`Ootan tagasisidet` — one date, and the decision that opens a wait.
+    """`Ootan tagasisidet` — open a round that was filed as history.
 
-    The whole of the reply-by question, moved off `+ Kaasamine` and onto the
-    round's own chronology row. Recording that Koda asked somebody something is a
-    completed act; deciding that the file is *waiting* on an answer is a second
-    act, and only the second one puts a row on somebody's desk
-    (lawyer feedback 11, docs/adr/0091 §2).
+    Every round recorded through `+ Kaasamine` is open from the moment it is
+    saved (docs/adr/0132), so this form is offered only on a consultation the
+    register importer filed as history, where it starts the lifecycle: the round
+    then reads on the work surfaces and on `PRAEGUNE TEGEVUS`, and is ended by
+    `Lõpeta kaasamine` (docs/adr/0086 §3, §6).
 
-    **The date is required here**, unlike the field this replaces. This form
-    exists only to start a wait, so an empty box would be a save that does
-    nothing — and the person who means «no wait» simply does not open the
-    disclosure. Nothing about the wait itself changed: it is still one `WorkItem`,
-    still read on `PRAEGUNE TEGEVUS`, still ended by `Lõpeta kaasamine`
-    (docs/adr/0086 §3, §6).
+    **The date is optional here, as it is everywhere it is asked**
+    (docs/adr/0132, reversing docs/adr/0091 §2's «required here»). An empty box
+    opens the round with no due date — open, never overdue, until somebody
+    finishes it.
 
     The three quick spans stay with it, so asking for the commonest wait is still
     one click. They write into the box beside them and store nothing of their own,
@@ -4685,21 +4683,13 @@ class EngagementWaitForm(forms.Form):
     revision = forms.CharField(required=False, widget=forms.HiddenInput())
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        #: Its own ids, because a chronology may hold several waiting rounds and
-        #: each renders this form. Two of them sharing `id_feedback_deadline`
+        #: Its own ids, because a chronology may hold several historical rounds
+        #: and each renders this form. Two of them sharing `id_feedback_deadline`
         #: would put duplicate ids in the document and make a `<label for>` reach
         #: the wrong row's box (docs/adr/0086 §6, `attach_feedback_form`).
         self.row_id = kwargs.pop("row_id", "")
         kwargs.setdefault("auto_id", f"id_ootus{self.row_id}_%s")
         super().__init__(*args, **kwargs)
-
-    def clean_feedback_deadline(self) -> Any:
-        from app.matters.services import ENGAGEMENT_FEEDBACK_NEEDS_A_DAY
-
-        value = self.cleaned_data.get("feedback_deadline")
-        if value is None:
-            raise forms.ValidationError(ENGAGEMENT_FEEDBACK_NEEDS_A_DAY)
-        return value
 
 
 class EngagementFeedbackForm(forms.Form):

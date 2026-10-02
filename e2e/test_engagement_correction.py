@@ -83,43 +83,22 @@ def _file_an_engagement(
 ) -> None:
     """Record one consultation through the real `+ Kaasamine` panel.
 
-    ``reply_by`` defaults to **empty**, which is now simply what the panel does:
-    since docs/adr/0091 §2 it does not ask about a reply-by date at all, so every
-    round filed here is one nobody is waiting on. A fixture that *is* waiting
-    asks for it afterwards through `Ootan tagasisidet`, which is the one surface
-    that opens a wait — see :func:`_open_a_wait` below.
+    ``reply_by`` defaults to **empty**, and either way the round is open from the
+    moment it is saved (docs/adr/0132): the date is the panel's own optional
+    `Tagasisidet ootame kuni`, a due date on that open round and nothing more.
     """
     open_add_panel(page, "lisa-kaasamine")
     page.locator("#lisa-kaasamine input[name=audience]").fill(AUDIENCE)
     page.locator("#lisa-kaasamine input[name=occurred_on]").fill(occurred_on)
     if response_count:
         page.locator("#lisa-kaasamine input[name=response_count]").fill(response_count)
+    if reply_by:
+        page.locator("#lisa-kaasamine input[name=feedback_deadline]").fill(reply_by)
     with page.expect_response(
         lambda response: "/lisa/kaasamine/" in response.url and response.request.method == "POST"
     ) as caught:
         page.locator("#lisa-kaasamine button[type=submit]").click()
     assert caught.value.status == 200, f"the consultation was refused: {caught.value.status}"
-    page.wait_for_load_state("networkidle")
-    if reply_by:
-        _open_a_wait(page, reply_by)
-
-
-def _open_a_wait(page, reply_by: str) -> None:
-    """`Ootan tagasisidet` on the round's own row — the act that starts a wait.
-
-    Its own step rather than a field on the panel above, because that is what it
-    is now: filing a consultation and deciding the file is waiting on an answer
-    are two acts, and only the second puts a row on somebody's desk
-    (docs/adr/0091 §2).
-    """
-    row = _row(page)
-    row.get_by_text("Ootan tagasisidet", exact=True).click()
-    row.locator("input[name=feedback_deadline]").fill(reply_by)
-    with page.expect_response(
-        lambda response: "/ootus/" in response.url and response.request.method == "POST"
-    ) as caught:
-        row.get_by_role("button", name="Salvesta ootus").click()
-    assert caught.value.status == 200, f"the wait was refused: {caught.value.status}"
     page.wait_for_load_state("networkidle")
 
 
@@ -438,13 +417,27 @@ def test_a_waiting_round_is_finished_on_its_own_row(page, base_url):
     expect(_row(page)).to_contain_text("Tagasiside ootamine lõpetatud")
 
 
-def test_a_round_nobody_is_waiting_on_offers_no_finish_control(page, base_url):
-    """§3. What draws the control is the dated point, never the act."""
+def test_a_round_with_no_deadline_offers_the_finish_control(page, base_url):
+    """docs/adr/0132. The deadline is optional and is not the lifecycle: a round
+    filed with no reply-by date is open, says so without a date, and is finished
+    with `Lõpeta kaasamine` like any other."""
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, unique_title("Kaasamine ilma tähtajata"))
     _file_an_engagement(page)
 
-    expect(_row(page)).not_to_contain_text("Ootame tagasisidet")
+    expect(_row(page)).to_contain_text("Ootame tagasisidet · tähtaeg määramata")
+    expect(_finish_panel(page)).to_have_count(1)
+
+    panel = _finish_panel(page)
+    panel.locator("summary").click()
+    with page.expect_response(
+        lambda response: "/lopeta/" in response.url and response.request.method == "POST"
+    ) as caught:
+        panel.locator("button[type=submit]").click()
+    assert caught.value.status == 200, f"the completion was refused: {caught.value.status}"
+    page.wait_for_load_state("networkidle")
+
+    expect(_row(page)).to_contain_text("Tagasiside ootamine lõpetatud")
     expect(_finish_panel(page)).to_have_count(0)
 
 

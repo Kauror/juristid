@@ -356,12 +356,15 @@ def test_clearing_a_feedback_deadline_stores_null(signed_in, normal_matter, spec
     assert response.status_code == 200
     engagement.refresh_from_db()
     assert engagement.feedback_deadline is None
-    # The row stops saying it is waiting. It *does* offer `Ootan tagasisidet`
-    # again, because the round is now one nobody is waiting on — which is the
-    # state that act exists for (docs/adr/0091 §2).
+    # The round is still open — clearing the date is not completing it — and
+    # now says so without a date (docs/adr/0132). `Ootan tagasisidet` is not
+    # offered: it is for rounds filed as history, and this one is open.
     body = response.content.decode()
     assert "Ootame tagasisidet kuni" not in body
-    assert "Ootan tagasisidet" in body
+    assert "Ootame tagasisidet · tähtaeg määramata" in body
+    assert "Lõpeta kaasamine" in body
+    assert "Ootan tagasisidet" not in body
+    assert engagement.has_open_feedback_wait is True
 
 
 def test_a_partial_correction_does_not_clear_the_feedback_deadline(normal_matter, specialist):

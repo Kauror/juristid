@@ -734,6 +734,11 @@ def apply_mapping(
                 url=link.url,
                 note=link.note,
                 occurred_on=link.occurred_on,
+                # Filed as history, not opened: the register says a
+                # consultation happened, not that anybody is still collecting
+                # its answers, and a decade of open rounds would be work
+                # nobody took on (docs/adr/0132).
+                lifecycle_tracked=False,
                 # No actor. Nobody signed in decided this; what did is the
                 # mapping digest recorded beside it.
                 actor=actor,
