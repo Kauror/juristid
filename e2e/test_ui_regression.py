@@ -563,7 +563,9 @@ CHRONOLOGY_RUN_DAY = (
 
 #: The open Matter's one exact *future* date, which the run's clock stamps too.
 #: `seed_e2e_data` adds «Eelnõu eeldatav kooskõlastusring» at today + 45 days,
-#: and both the process strip and the chronology print it. It drifted in
+#: and the chronology prints it. (The process strip did too, until
+#: docs/adr/0131 §13 narrowed it to the procedure and the sent opinions; a
+#: watched date draws no column any more.) It drifted in
 #: silence because only its digits moved — `6.11.2026` on the morning the four
 #: Teema baselines were taken, `9.11.2026` three days later — until the day grew
 #: a digit, `10.11.2026` widened the strip's column, and `teema-kaik` went past
@@ -572,9 +574,6 @@ CHRONOLOGY_RUN_DAY = (
 #: Named by its label for the reason `STRIP_RUN_DAY` is: the same two classes
 #: carry the commencements and the Kaasamine, which are content.
 EXPECTED_DAY_TITLE = "Eelnõu eeldatav kooskõlastusring"
-STRIP_EXPECTED_DAY = (
-    f'.tl-step:has(.tl-step__what:text-is("{EXPECTED_DAY_TITLE}")) .tl-step__date',
-)
 CHRONOLOGY_EXPECTED_DAY = (
     f'.uxtl__ms:has(.uxtl__mswhat:text-is("{EXPECTED_DAY_TITLE}")) .uxtl__msdate',
 )
@@ -739,7 +738,8 @@ NORMALISED_TEXT: tuple[tuple[str, str], ...] = (
 #: `NORMALISED_TEXT` above, where it is one list to read; this table is for the
 #: case where the page renders one class in two meanings at once.
 _STRIP_AND_CHRONOLOGY_RUN_DAYS = (*STRIP_RUN_DAY, *CHRONOLOGY_RUN_DAY)
-_STRIP_AND_CHRONOLOGY_EXPECTED_DAYS = (*STRIP_EXPECTED_DAY, *CHRONOLOGY_EXPECTED_DAY)
+#: The expected date is the chronology's alone since docs/adr/0131 §13.
+_STRIP_AND_CHRONOLOGY_EXPECTED_DAYS = CHRONOLOGY_EXPECTED_DAY
 
 
 def _held_still(
@@ -776,7 +776,7 @@ SCENARIO_NORMALISED_TEXT: dict[str, tuple[tuple[str, str], ...]] = {
     # clip carries only the slots that are inside it, so a selector declared
     # here is a selector that capture really renders — which is what lets
     # `REQUIRED_NORMALISATIONS` insist on all of them.
-    "teema-kaik": _held_still(STRIP_RUN_DAY, STRIP_EXPECTED_DAY),
+    "teema-kaik": _held_still(STRIP_RUN_DAY, ()),
     "teema-ajajoon": _held_still(CHRONOLOGY_RUN_DAY, CHRONOLOGY_EXPECTED_DAY),
     # The same clip with the one outcome opened (docs/adr/0074 §14, amended
     # 2026-09-27): the same two rows are on it, closed or open.
@@ -874,7 +874,7 @@ REQUIRED_NORMALISATIONS: dict[str, tuple[str, ...]] = {
     #
     # The expected date joins them on the same four, and for the same reason:
     # the seed adds it to this Matter on every run.
-    "teema-kaik": (*STRIP_RUN_DAY, *STRIP_EXPECTED_DAY),
+    "teema-kaik": STRIP_RUN_DAY,
     "teema-ajajoon": (*CHRONOLOGY_RUN_DAY, *CHRONOLOGY_EXPECTED_DAY),
     "teema-ajajoon-avatud": (*CHRONOLOGY_RUN_DAY, *CHRONOLOGY_EXPECTED_DAY),
     "teema-ulevaade": (
@@ -2099,9 +2099,6 @@ def _open_matter_fixture(page, day: str) -> None:
         # against a page that does not exist.
         '<span class="tl-step" style="display:contents">'
         f'<span class="tl-step__what">Koja arvamus</span>'
-        f'<span class="tl-step__date">{day}</span></span>'
-        '<span class="tl-step" style="display:contents">'
-        f'<span class="tl-step__what">{EXPECTED_DAY_TITLE}</span>'
         f'<span class="tl-step__date">{day}</span></span>'
         '<span class="tl-step" style="display:contents">'
         '<span class="tl-step__what">Jõustumine</span>'
