@@ -55,7 +55,7 @@ from app.matters.models import (
 from app.matters.stage_episodes import stage_choice_label
 from app.organisations.models import Organisation, OrganisationAlias
 from app.taxonomy.legal_instruments import OTHER_LEGAL_INSTRUMENT_KEYS
-from app.taxonomy.models import LegalInstrumentType, PolicyArea, Tag
+from app.taxonomy.models import LegalInstrumentType, PolicyArea
 from app.taxonomy.vocabulary import (
     selectable_legal_instrument_types,
     selectable_policy_areas,
@@ -4109,14 +4109,6 @@ class WorkingDocumentForm(forms.Form):
         ),
         help_text="Valikuline. Aitab lugejal aru saada, kus fail SharePointis asub.",
     )
-
-
-class TagAssignmentForm(forms.Form):
-    tag = forms.ModelChoiceField(label="Silt", queryset=Tag.objects.none(), widget=SELECT_WIDGET)
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        set_choices(self, "tag", Tag.objects.filter(is_active=True).order_by("name_et"))
 
 
 class IncomingIntakeForm(forms.Form):
