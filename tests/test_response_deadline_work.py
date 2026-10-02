@@ -52,18 +52,13 @@ from app.matters.models import Matter
 from app.matters.my_work import build_my_work
 from app.matters.register_filters import register_population
 from app.matters.services import assign_matter, close_matter, create_matter, set_matter_dates
-from app.submissions.services import (
-    attach_final_evidence,
-    create_submission,
-    mark_submission_sent,
-)
+from app.submissions.services import create_submission
 from app.workflow.enums import ActionKind, ActionStatus, DateSemantics, Disposition
 from app.workflow.models import NextAction
 from app.workflow.services import set_next_action
+from tests.factories import send_opinion_through_services as _send_opinion
 
 pytestmark = pytest.mark.django_db
-
-PDF = b"%PDF-1.4 arvamus"
 
 TITLE = "Sünteetiline tähtajaga teema"
 
@@ -97,25 +92,6 @@ def _matter(owner, *, deadline, title=TITLE, **kwargs):
         response_deadline=deadline,
         **kwargs,
     )
-
-
-def _send_opinion(matter, actor):
-    """Discharge the response obligation the way the product actually does it.
-
-    Through the submission services rather than by writing a status, because
-    the fulfilment test the read model applies is the one the old dashboard
-    applies, and both mean *this exact text went out*.
-    """
-    submission = create_submission(matter=matter, title="Arvamus", actor=actor)
-    attach_final_evidence(
-        submission=submission,
-        content=PDF,
-        original_filename="arvamus.pdf",
-        mime_type="application/pdf",
-        actor=actor,
-    )
-    submission.refresh_from_db()
-    return mark_submission_sent(submission=submission, actor=actor)
 
 
 def _mine(user, today, subject=None):
