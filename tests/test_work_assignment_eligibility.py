@@ -379,50 +379,6 @@ def test_an_omitted_responsible_is_refused_when_the_owner_is_an_administrator(
     assert not NextAction.objects.filter(matter=matter).exists()
 
 
-def test_the_composer_refuses_a_new_step_on_a_departed_colleagues_matter(
-    client, specialist, former
-):
-    """The other native path, and the one that reaches this most often.
-
-    The composer never sends a `responsible` at all — the field is not on that
-    surface — so every step it creates takes the fallback. A guard placed only
-    on `NextActionForm` would have left this open.
-    """
-    matter = factories.MatterFactory(owner=former)
-    client.force_login(specialist)
-
-    response = client.post(
-        reverse("matters:compose", kwargs={"pk": matter.pk}),
-        {
-            "body": "<p>Ministeerium lubas vastata.</p>",
-            "next_text": "Kontrollida, kas ministeerium vastas",
-            "next_date": format_estonian_date(timezone.localdate() + timedelta(days=7)),
-        },
-    )
-
-    assert response.status_code == 400
-    assert not NextAction.objects.filter(matter=matter).exists()
-
-
-def test_the_composer_still_creates_a_step_when_the_owner_is_assignable(
-    client, specialist, normal_matter
-):
-    """The same path, unchanged, on an ordinary Matter."""
-    client.force_login(specialist)
-
-    response = client.post(
-        reverse("matters:compose", kwargs={"pk": normal_matter.pk}),
-        {
-            "body": "<p>Ministeerium lubas vastata.</p>",
-            "next_text": "Kontrollida, kas ministeerium vastas",
-            "next_date": format_estonian_date(timezone.localdate() + timedelta(days=7)),
-        },
-    )
-
-    assert response.status_code == 200
-    assert NextAction.objects.get(matter=normal_matter).responsible == specialist
-
-
 def test_a_matter_with_no_owner_at_all_still_takes_a_step(client, specialist):
     """Not the case this correction is about, and deliberately not changed.
 

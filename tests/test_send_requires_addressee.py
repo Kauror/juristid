@@ -106,15 +106,12 @@ def _assert_still_a_draft(draft, *, roles) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_a_draft_may_be_created_with_no_recipient(signed_in, specialist):
+def test_a_draft_may_be_created_with_no_recipient(specialist):
+    """The domain rule, on the service: a draft is addressed when it is sent."""
     matter = factories.MatterFactory(owner=specialist)
 
-    response = signed_in.post(
-        reverse("submissions:create", kwargs={"matter_id": matter.pk}),
-        {"arvamus-title": "Koja arvamus eelnõule", "arvamus-kind": "FORMAL_OPINION"},
-    )
+    create_submission(matter=matter, title="Koja arvamus eelnõule", actor=specialist)
 
-    assert response.status_code == 302
     draft = Submission.objects.get(matter=matter)
     assert draft.status == SubmissionStatus.DRAFT
     assert _roles(draft) == set()

@@ -59,7 +59,7 @@ from app.matters.my_work import build_my_work
 from app.matters.next_step import upcoming_milestone, without_next_step
 from app.matters.removal import remove_matter_record
 from app.matters.selectors import MISSING, filter_by_next_action
-from app.matters.services import compose_update, edit_entry
+from app.matters.services import add_entry, edit_entry
 from app.search.models import SearchDocument, SearchSourceKind
 from app.submissions.enums import SentAtPrecision, SubmissionStatus
 from app.submissions.models import Submission
@@ -928,7 +928,7 @@ def test_a_deletable_matter_offers_kustuta(signed_in, specialist):
 
 def test_a_matter_whose_history_is_kept_offers_no_kustuta(signed_in, specialist):
     matter = factories.MatterFactory(owner=specialist)
-    compose_update(matter=matter, author=specialist, body="<p>Märge</p>")
+    add_entry(matter=matter, author=specialist, body="<p>Märge</p>")
     entry = matter.entries.first()
     edit_entry(entry=entry, body="Parandatud märge", actor=specialist)
     assert plan_matter_deletion(matter).is_blocked

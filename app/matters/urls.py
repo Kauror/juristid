@@ -54,15 +54,6 @@ urlpatterns = [
         views.open_assignment_notice,
         name="open_assignment_notice",
     ),
-    # One click to done, from the list rather than from the Matter. Its own
-    # route because it ends where the reader was rather than on a Matter page,
-    # and it calls the same service the Matter page's «✓ Tehtud» calls
-    # (design handoff 1e).
-    path(
-        "minu-too/valmis/<uuid:action_id>/",
-        views.complete_work_item,
-        name="complete_work_item",
-    ),
     path("saabunud/", views.inbox, name="inbox"),
     path("saabunud/lisa/", views.intake, name="intake"),
     path("teemad/", views.matter_list, name="matter_list"),
@@ -439,10 +430,9 @@ urlpatterns = [
     # The route predates this round and is unchanged (brief §15).
     # HTMX surfaces
     #
-    # `sissekanne/` is the superseded composer. Kept because it still serves its
-    # form and its tests, and no longer posted to by any page
-    # (docs/adr/0075 §11, brief §29).
-    path("teemad/<uuid:pk>/sissekanne/", views.compose, name="compose"),
+    # No `sissekanne/` of its own. The superseded composer posted there; it was
+    # retired with ENG-050A2 (docs/adr/0075 §11, amended), and only the
+    # correction route below still lives under the entry.
     # `Muuda` on a filed Sissekanne. Under the entry rather than under the
     # Teema, because the thing being corrected is the entry and the route says
     # so; the Matter is still in the path so the view can prove the two belong
@@ -458,7 +448,6 @@ urlpatterns = [
         name="edit_entry",
     ),
     path("teemad/<uuid:pk>/jargmiseks/", views.set_action, name="set_action"),
-    path("teemad/<uuid:pk>/kaasamine/", views.add_engagement_view, name="add_engagement"),
     # `Muuda` on a filed Kaasamine, under the record rather than under the
     # Teema, and spelled the way `edit_entry` is — one address for the form and
     # the save, GET opening the box in the chronology row and POST writing it.
@@ -492,24 +481,9 @@ urlpatterns = [
         name="complete_engagement_feedback",
     ),
     path(
-        "teemad/<uuid:pk>/jargmiseks/<uuid:action_id>/valmis/",
-        views.complete_action,
-        name="complete_action",
-    ),
-    path(
         "teemad/<uuid:pk>/jargmiseks/<uuid:action_id>/vaadatud/",
         views.review_action,
         name="review_action",
-    ),
-    # `Lükka edasi`. Its own route rather than a flag on the two above it,
-    # because it is one gesture whose meaning depends on the step: a deadline
-    # moves by superseding the instruction, and a review date moves by
-    # acknowledging the review. The view branches; the caller does not have to
-    # know which service it is asking for (design handoff 1c).
-    path(
-        "teemad/<uuid:pk>/jargmiseks/<uuid:action_id>/lukka/",
-        views.defer_action,
-        name="defer_action",
     ),
     path("teemad/<uuid:pk>/vali/<str:field>/", views.update_field, name="update_field"),
     path("teemad/<uuid:pk>/luhikokkuvote/", views.update_summary, name="update_summary"),
