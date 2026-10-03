@@ -702,10 +702,6 @@ class MatterPlanStep(BaseModel):
         return self.state in (PlanStepState.SUGGESTED, PlanStepState.PLANNED)
 
     @property
-    def is_suggested(self) -> bool:
-        return self.state == PlanStepState.SUGGESTED
-
-    @property
     def is_completed(self) -> bool:
         return self.state == PlanStepState.COMPLETED
 

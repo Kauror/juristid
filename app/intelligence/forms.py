@@ -35,7 +35,6 @@ from app.workflow.dates import (
 )
 from app.workflow.enums import DatePrecision
 
-TEXT_WIDGET = forms.TextInput(attrs={"class": "field__input"})
 SELECT_WIDGET = forms.Select(attrs={"class": "field__input field__input--compact"})
 DATE_WIDGET = EstonianDateInput()
 

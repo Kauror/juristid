@@ -69,17 +69,6 @@ from app.matters.models import Matter
 logger = logging.getLogger(__name__)
 
 
-def index_source_link(link: MatterSourcePage) -> None:
-    """Make a newly linked page findable in the same breath as linking it.
-
-    Imported inside the function because the search app imports the legacy
-    models, and importing it at module scope closes the circle.
-    """
-    from app.search.indexing import refresh_source_link
-
-    refresh_source_link(link)
-
-
 #: Page XML lives in its own storage class. It is source evidence — kept byte
 #: for byte, hashed, never rendered — but it is not a Document, and mixing it
 #: into the evidence store would put rows in the document tables that no
@@ -318,7 +307,7 @@ def _apply_exact_links(plan: HistoricalPlan, *, batch: ImportBatch, report: Appl
         if matter is None:
             report.exact_links_unmatched.append(link.excel_reference)
             continue
-        record, created = MatterSourcePage.objects.get_or_create(
+        _, created = MatterSourcePage.objects.get_or_create(
             matter=matter,
             source_page=page,
             defaults={
@@ -330,7 +319,6 @@ def _apply_exact_links(plan: HistoricalPlan, *, batch: ImportBatch, report: Appl
         )
         if created:
             report.exact_links_created += 1
-            index_source_link(record)
 
 
 def _matter_by_reference(reference: str) -> Matter | None:
@@ -381,7 +369,7 @@ def _create_onenote_matters(
                     is_open=False,
                     visibility=Visibility.NORMAL,
                 )
-                record = MatterSourcePage.objects.create(
+                MatterSourcePage.objects.create(
                     matter=matter,
                     source_page=page,
                     relationship_kind=SourceRelationshipKind.PRIMARY,
@@ -389,7 +377,6 @@ def _create_onenote_matters(
                     match_class=SourceMatchClass.EXACT,
                     source_audit_reference=f"unmatched-onenote.csv:{page.page_key}",
                 )
-                index_source_link(record)
             report.onenote_matters_created += 1
         except Exception as error:
             logger.exception("Creating a OneNote-only Matter for %s failed", page.page_key)

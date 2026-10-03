@@ -55,7 +55,7 @@ from app.matters.models import (
 from app.matters.stage_episodes import stage_choice_label
 from app.organisations.models import Organisation, OrganisationAlias
 from app.taxonomy.legal_instruments import OTHER_LEGAL_INSTRUMENT_KEYS
-from app.taxonomy.models import LegalInstrumentType, PolicyArea, Tag
+from app.taxonomy.models import LegalInstrumentType, PolicyArea
 from app.taxonomy.vocabulary import (
     selectable_legal_instrument_types,
     selectable_policy_areas,
@@ -137,7 +137,6 @@ def set_choices(form: forms.Form, name: str, queryset: QuerySet) -> None:
 #: date input renders in the *browser's* locale and showed `mm/dd/yyyy` on an
 #: otherwise Estonian form (app/core/widgets.py).
 DATE_WIDGET = EstonianDateInput()
-TEXT_WIDGET = forms.TextInput(attrs={"class": "field__input"})
 SELECT_WIDGET = forms.Select(attrs={"class": "field__input"})
 
 
@@ -1547,11 +1546,12 @@ class MatterEditForm(
     #: governed taxonomy turns into personal shorthand (docs/adr/0097 §2).
     #:
     #: **Nothing about tags is deleted.** `Tag`, `MatterTag`, `set_tags`,
-    #: `TagAssignmentForm`, the audit event and every stored assignment are
-    #: untouched. What is gone is this page's claim to have an answer: the field
-    #: does not exist, so a crafted `tags=` POST binds to nothing, the view
-    #: calls no service, and a Matter carrying historical tags keeps every one
-    #: of them through every save here.
+    #: the audit event and every stored assignment are untouched
+    #: (`TagAssignmentForm` itself went later, having no caller). What is gone
+    #: is this page's claim to have an answer: the field does not exist, so a
+    #: crafted `tags=` POST binds to nothing, the view calls no service, and a
+    #: Matter carrying historical tags keeps every one of them through every
+    #: save here.
     #: `Nähtavus` is deliberately absent from this form, as it is from
     #: `MatterCreateForm` and from `IncomingIntakeForm`.
     #:
@@ -4104,14 +4104,6 @@ class WorkingDocumentForm(forms.Form):
     )
 
 
-class TagAssignmentForm(forms.Form):
-    tag = forms.ModelChoiceField(label="Silt", queryset=Tag.objects.none(), widget=SELECT_WIDGET)
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        set_choices(self, "tag", Tag.objects.filter(is_active=True).order_by("name_et"))
-
-
 class IncomingIntakeForm(forms.Form):
     """Filing material that has just arrived.
 
@@ -4355,31 +4347,6 @@ def workspace_attachments(field_id: str) -> MultipleFileField:
         required=False,
         widget=MultipleFileInput(attrs={"class": "visually-hidden", "id": field_id}),
     )
-
-
-class ChipChoices:
-    """Chip rendering for a bound-or-unbound hidden choice field.
-
-    The chips write into a hidden input, which is the field that is submitted
-    and validated, so the server sees one value however it was chosen and the
-    form works with the chips ignored entirely. Read from ``self.data`` rather
-    than ``cleaned_data`` for the reason the composer's own version gives: the
-    save that most needs its chips back is the one that did not validate.
-    """
-
-    def chosen_chip(self, name: str, fallback: str) -> str:
-        if getattr(self, "is_bound", False):
-            return str(self.data.get(name) or "")  # type: ignore[attr-defined]
-        return fallback
-
-    def chips(
-        self, name: str, options: Sequence[tuple[str, str]], fallback: str
-    ) -> list[dict[str, Any]]:
-        chosen = self.chosen_chip(name, fallback)
-        return [
-            {"value": value, "label": label, "selected": value == chosen}
-            for value, label in options
-        ]
 
 
 class CompleteCurrentActionForm(forms.Form):
@@ -4693,7 +4660,7 @@ class CompactEngagementForm(forms.Form):
     möödus» from the start. `Ootan tagasisidet` on the row stays for a round
     recorded without one.
 
-    **`Liik` is gone from this panel and no longer a `ChipChoices` question.**
+    **`Liik` is gone from this panel and no longer a chip question.**
     `Küsitlus` / `Koosolek` / `Kirjade voor` was a classification the department
     never read back: the chronology printed it, no surface filtered on it and no
     statistic counted it, so the panel's first control was a decision with no

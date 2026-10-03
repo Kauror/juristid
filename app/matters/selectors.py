@@ -251,8 +251,8 @@ def open_action_prefetch(user: Any) -> Prefetch:
     the Matter it belongs to, and this prefetch decorates rows of a register
     whose Matters are visible by definition. Unscoped, it printed a restricted
     step's text and the colleague responsible for it onto a row anybody could
-    read — the exact condition `work_items.no_next_action_q` already warns about
-    two files away, where it says such an action "is invisible to most readers"
+    read: an action restricted below its Matter is invisible to most readers,
+    so every read of it goes through `NextAction.objects.visible_to`
     (AUTH-003).
     """
     return Prefetch(

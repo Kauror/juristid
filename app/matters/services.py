@@ -25,7 +25,7 @@ from app.audit.services import record_change_event
 from app.core.enums import Visibility, most_restrictive, validate_visibility_override
 from app.core.errors import DomainError
 from app.core.richtext import excerpt, is_empty, sanitize_entry_html
-from app.core.web_addresses import WEB_SCHEMES, normalize_web_address
+from app.core.web_addresses import normalize_web_address
 from app.documents.enums import DocumentRole
 from app.documents.services import add_evidence_version, create_document
 from app.documents.uploads import read_upload
@@ -1842,11 +1842,6 @@ def add_source_derived_policy_areas(
     return missing
 
 
-#: The only schemes an engagement link may use — the product's one web-scheme
-#: allow-list, kept under this name for the callers that import it.
-ENGAGEMENT_URL_SCHEMES: frozenset[str] = WEB_SCHEMES
-
-
 def _normalize_public_link(
     value: str | None,
     *,
@@ -2024,7 +2019,6 @@ def _refuse_deadline_before_engagement(
 #: (`app.matters.activity`), and only the reply-by rule relates the two dates.
 
 
-@transaction.atomic
 def _engagement_response_count(value: Any) -> int | None:
     """`Vastuseid`, or nothing at all.
 

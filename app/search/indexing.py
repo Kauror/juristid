@@ -238,7 +238,6 @@ def indexable_matters() -> QuerySet[Matter]:
     see would silently differ between operators.
     """
     return Matter.objects.select_related("addressee_organisation").prefetch_related(
-        "engagements",
         "source_organisations",
         "source_organisations__aliases",
         "addressee_organisation__aliases",
@@ -1056,16 +1055,6 @@ DISCARD_BATCH = 5000
 #: How many finished generations' records are kept for the history. Their rows
 #: are always deleted; this is only the bookkeeping.
 KEPT_GENERATION_RECORDS = 20
-
-
-def discard_dead_generations() -> int:
-    """Delete the rows of every generation that is neither active nor building.
-
-    What a rebuild does after its swap, exposed for an operator whose rebuild
-    stopped between the swap and this step. Safe at any time: a live
-    generation's rows are never touched.
-    """
-    return _discard_generations(keep=set())
 
 
 def _by_generation() -> QuerySet[SearchDocument]:

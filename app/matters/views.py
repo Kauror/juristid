@@ -49,7 +49,6 @@ from app.audit.models import ChangeEvent
 from app.audit.operations import composer_operation, stage_episode_scope
 from app.audit.visibility import change_log_event_types, scope_change_events
 from app.core.authorization import (
-    may_review_work_victory,
     may_write_business_content,
 )
 from app.core.dates import (
@@ -282,7 +281,7 @@ from app.taxonomy.legal_instruments import OTHER_LEGAL_INSTRUMENT_KEYS
 from app.taxonomy.models import PolicyArea
 from app.taxonomy.vocabulary import selectable_policy_areas
 from app.workflow import plan as work_plan
-from app.workflow.enums import REVIEW_KINDS, Disposition, PlanStepOperation, Track
+from app.workflow.enums import REVIEW_KINDS, PlanStepOperation, Track
 from app.workflow.models import MatterPlanStep, NextAction, StageVocabulary
 from app.workflow.plan import seed_standard_plan
 from app.workflow.selectors import stages_including
@@ -2331,7 +2330,6 @@ def _create_context(
         # more, and `Arvamuse tähtaeg` is a field on `form` — so the page has one
         # form for the Teema and one for the link, and nothing on it can be handed
         # somebody else's (docs/adr/0094 §5, §6).
-        "frequent_senders": getattr(form, "frequent_senders", []),
         # `secondary_fields` is gone with the disclosure it fed. The template
         # named the primary fields and looped this tuple for the rest, which was
         # the right shape while the rest were hidden behind "+ Täpsusta teema
@@ -2955,14 +2953,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "procedural_link_open": "",
         "procedural_link_error": "",
         "can_write": may_write_business_content(request.user),
-        "can_review_victory": may_review_work_victory(request.user),
-        # «Lükka edasi», with the day each option lands on. Offered only on an
-        # exact date: deferring a step recorded as *september 2026* by a day
-        # would turn a period somebody deliberately left vague into a day they
-        # never named (master specification 3.5).
-        "defer_choices": defer_choices(defer_base(current_action, timezone.localdate())),
         "quick_dates": quick_date_choices(timezone.localdate()),
-        "can_defer": current_action is not None and not current_action.is_approximate,
         "today": timezone.localdate(),
         # The official `Arvamuse tähtaeg`, where `PRAEGUNE TEGEVUS` is showing a
         # plan instead of it. An open `Järgmiseks` is the current work and stays
@@ -3017,14 +3008,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
 def matter_detail(request: HttpRequest, pk: Any) -> HttpResponse:
     matter = get_visible_matter(request, pk)
     context = _overview_context(request, matter)
-    intelligence = context["intelligence"]
-    context.update(
-        _header_context(
-            request,
-            matter,
-            milestones=[*intelligence.upcoming_dates, *intelligence.past_dates],
-        )
-    )
+    context.update(_header_context(request, matter))
     context["tab"] = "teema"
     context["nav_active"] = "teemad"
     return render(request, "matters/matter_detail.html", context)
@@ -3075,9 +3059,7 @@ def _legal_instrument_line(matter: Matter) -> list[str]:
     return labels
 
 
-def _header_context(
-    request: HttpRequest, matter: Matter, *, milestones: Any = None
-) -> dict[str, Any]:
+def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # One read for the private note: its body fills the box and its `updated_at`
     # fills `Salvestatud HH:mm`.
     note_record = personal_note_record(matter=matter, author=request.user)
@@ -3106,7 +3088,6 @@ def _header_context(
         # No `submission_count`. The tab that displayed it is gone, and a count
         # nothing renders is a query nothing needs.
         "document_count": Document.objects.filter(matter=matter).visible_to(request.user).count(),
-        "dispositions": Disposition.choices,
         # The inline owner control. Current department workers plus this
         # Matter's own owner, so a file held by a departed colleague still says
         # who holds it and can still be handed to somebody who is here — the
@@ -3146,20 +3127,12 @@ def _header_context(
         "summary_revision": matter_field_revision(matter, "brief_summary"),
         "matter_policy_areas": list(matter.policy_areas.all()),
         "matter_legal_instruments": _legal_instrument_line(matter),
-        # The one deadline the header shows, chosen by the rule in §5.5 rather
-        # than by the template picking whichever field is non-empty.
-        # `milestones` when the caller has already read them, which the Matter
-        # page has: `Olulised tähtajad` renders from the same rows.
         # **The header's `Tähtaeg` is `Arvamuse tähtaeg`, and only that.** The
         # approved target reads `Saabus` and `Tähtaeg` as a pair — when it
         # arrived, when Koda's answer is due — so the slot cannot be filled by
         # whichever `MatterImportantDate` happens to be nearest
-        # (TEEMA_TARGET_SPEC §B, docs/adr/0074 §2).
-        #
-        # `active_deadline` is untouched and still answers the broader question
-        # for the surfaces that want it; `milestones` is still passed so it costs
-        # no second query where it is read.
-        "active_deadline": selectors.active_deadline(matter, request.user, milestones=milestones),
+        # (TEEMA_TARGET_SPEC §B, docs/adr/0074 §2). `selectors.active_deadline`
+        # still answers that broader question for the surfaces that ask it.
         "response_deadline": selectors.response_deadline_of(matter, request.user),
         "summary_form": BriefSummaryForm(initial={"brief_summary": matter.brief_summary}),
         # The rail travels with the header — it is on all three Matter surfaces
@@ -3573,7 +3546,6 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
             "working_documents": working,
             "document_roles": _role_filter_choices(),
             "upload_roles": _upload_role_choices(),
-            "opinion_role_filter": OPINION_ROLE_FILTER,
             # Only the years this Matter actually has files from. A dropdown
             # offering ten empty years is a dropdown that teaches people the
             # filter does not work.
@@ -3684,14 +3656,7 @@ def _render_overview(
     # `locked_matter`, and this one would render the stage it had before.
     matter.refresh_from_db(fields=["stage"])
     context = _overview_context(request, matter)
-    intelligence = context["intelligence"]
-    context.update(
-        _header_context(
-            request,
-            matter,
-            milestones=[*intelligence.upcoming_dates, *intelligence.past_dates],
-        )
-    )
+    context.update(_header_context(request, matter))
     body = render_to_string("matters/partials/overview.html", context, request=request)
     if header_out_of_band:
         context["header_out_of_band"] = True
@@ -4068,7 +4033,6 @@ def _engagement_row(
             "milestone": engagement_milestone(engagement),
             "engagement_edit_form": form,
             "engagement_edit_error": error,
-            "engagement_conflict": conflict,
             "engagement_conflict_milestone": (
                 engagement_milestone(conflict) if conflict is not None else None
             ),
@@ -5415,9 +5379,7 @@ _FIELD_SURFACES = {
     # claiming it had saved, which is the exact failure this mapping exists to
     # prevent (post-QA R2-07, `templates/matters/partials/header.html`).
     "policy_area_other": "matters/partials/header.html",
-    "track": "matters/partials/rail.html",
     "source_organisations": "matters/partials/rail.html",
-    "addressee_organisation": "matters/partials/rail.html",
     # **`received_date` renders the header now.** It moved into the metaline
     # with the approved target, so the surface it re-renders has to move with
     # it — a control that swaps `#teema-pais` with the rail replaces the header
@@ -6364,10 +6326,6 @@ def correct_website_overview_view(request: HttpRequest, pk: Any, overview_id: An
 
     overview.refresh_from_db()
     return _website_overview_link_row(request, matter, overview)
-
-
-def matter_url(matter: Matter) -> str:
-    return reverse("matters:matter_detail", kwargs={"pk": matter.pk})
 
 
 # ---------------------------------------------------------------------------

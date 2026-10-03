@@ -242,20 +242,6 @@ _MILESTONE_LABELS: dict[str, str] = {
 #: not what it is called (app/matters/process_timeline.py `SENT_LABEL`).
 SUBMISSION_MILESTONE = "Arvamus välja"
 
-#: What a published or cancelled `Ülevaade / uudis` is called on the chronology.
-#:
-#: Named here rather than written into `projected_milestones` twice, because the
-#: published row and the cancelled one have to agree — a rename that reached one
-#: and not the other would put two names for one activity on one page.
-#:
-#: **The link beside it reads `Ülevaade / uudis`, and the address is behind it**
-#: (docs/adr/0121 §5). docs/adr/0105 §3 had put the address itself there, cut at
-#: 72 characters; the owner found the row cluttered and asked for a clean name.
-#: The address is kept as the link's `title` and in its accessible name, so
-#: *which page* is still answerable (`MatterWebsiteOverview.link_label`,
-#: `link_display`).
-WEBSITE_OVERVIEW_MILESTONE = "Ülevaade / uudis"
-
 #: What a published row prints where its publication date would go, when nobody
 #: knows what that date is.
 #:
@@ -360,8 +346,7 @@ class ChronologyMilestone:
     6 px muted dot (docs/adr/0074 §14, amended 2026-09-27).
 
     ``what`` is the headline — `Töövõit`, `Hetkeseis: Valitsuses`,
-    `Kaasamine: liikmed`. ``sub`` is the optional second line, and ``file_url``
-    turns part of it into a link to the exact bytes.
+    `Kaasamine: liikmed`. ``sub`` is the optional second line.
 
     Milestones carry a **date, never a clock time**. A work entry says when
     somebody wrote it because two notes on one afternoon need separating; a
@@ -376,8 +361,6 @@ class ChronologyMilestone:
     what: str
     display_date: str
     sub: str = ""
-    file_url: str = ""
-    file_label: str = ""
     links: tuple[ChronologyLink, ...] = ()
     #: **Dated ahead of today** — a `Kaasamine`, a `Väline seisukoht`, a `Märge`
     #: or a publication recorded for a day that has not come (docs/adr/0121
