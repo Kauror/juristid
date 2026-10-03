@@ -37,7 +37,7 @@ from django.db.models import Q
 
 from app.accounts.models import BreakGlassGrant, User
 from app.audit.models import ChangeEvent, SecurityAuditEvent
-from app.audit.visibility import scope_change_events
+from app.audit.visibility import change_log_event_types, scope_change_events
 from app.core.authorization import apply as apply_scope
 from app.core.authorization import matter_visibility_q, scope_for_user
 from app.documents.models import Document, DocumentVersion
@@ -220,11 +220,24 @@ class ChangeEventAdmin(ReadOnlyAdmin):
         about a restricted Matter — or about a restricted child of a readable
         one — is as much restricted content as the Matter itself
         (`app.audit.visibility`).
+
+        A row on a readable Matter is listed only when its family is in the
+        vocabulary `Kõik muudatused` renders. `scope_change_events` passes an
+        unclassified family through as Matter-level, which is safe only for a
+        caller that names its own vocabulary — and a relation event on a
+        readable Matter names its *other* Matter, restricted or not, in its
+        summary and payload.
         """
         events = (
             super()
             .get_queryset(request)
-            .filter(Q(matter__isnull=True) | Q(matter__in=readable_matters(request)))
+            .filter(
+                Q(matter__isnull=True)
+                | Q(
+                    matter__in=readable_matters(request),
+                    event_type__in=change_log_event_types(),
+                )
+            )
         )
         return scope_change_events(events, request.user)
 

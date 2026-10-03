@@ -357,7 +357,6 @@ def get_visible_matter(request: HttpRequest, pk: Any) -> Matter:
             "owner",
             "stage",
             "addressee_organisation",
-            "superseded_by",
             # The derived register row. Joined rather than reached for, because
             # the page asks it two separate questions — what the register's own
             # JÄRGMISEKS says, and what it observed around the outreach — and a
@@ -370,9 +369,6 @@ def get_visible_matter(request: HttpRequest, pk: Any) -> Matter:
             "policy_areas",
             "tags",
             "collaborators",
-            # `Seotud` reads the successor chain in both directions, and the
-            # reverse side is a relation rather than a column.
-            "supersedes",
         )
     )
     return get_object_or_404(queryset, pk=pk)
