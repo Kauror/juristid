@@ -1775,10 +1775,11 @@ def quiet_matters(user: Any, today: date | None = None, *, days: int = QUIET_DAY
     """Open work whose last known activity is older than ``days``, as ids.
 
     *Muutusteta 30 p*, and the reason it is not a queryset. The last-activity
-    fact is a **precedence** over six candidate dates — a closure, a sent
-    opinion, an entry, an action, a consultation, an archived page — resolved in
-    Python by :func:`app.matters.activity.activity_of` so that two facts on the
-    same day pick the more canonical one. Reproducing that ordering as SQL would
+    fact is a **precedence** over the candidate dates `app.matters.activity`
+    owns — a closure, a sent opinion, an entry, an action, a consultation, a
+    `Märge`, a published overview, an external position, an archived page —
+    resolved in Python by :func:`app.matters.activity.activity_of` so that two
+    facts on the same day pick the more canonical one. Reproducing that ordering as SQL would
     be a second definition of "last activity" beside the one every register row
     already prints, and the two would disagree on the day they were most likely
     to be compared.
@@ -1793,7 +1794,7 @@ def quiet_matters(user: Any, today: date | None = None, *, days: int = QUIET_DAY
 
     today = today or timezone.localdate()
     cutoff = today - timedelta(days=days)
-    # No `.only()`. `activity_of` reads six annotations *and* four stored
+    # No `.only()`. `activity_of` reads every annotation *and* four stored
     # columns — the closure date, the received date, the origin and
     # `updated_at` — so deferring anything here turns one query into one per
     # row, silently, and looks fine on a development database with twelve

@@ -57,9 +57,10 @@ def _register_state(matter, *, sent_recorded: bool) -> None:
     Both derivations of ``VÄLJA`` are set, and a check constraint requires it:
     presence and the four-way reading describe one cell, so a row saying
     "something is recorded" and "nothing is written" at once is a state the
-    database refuses. Which of the three non-blank readings this is does not
-    matter to the cards — they ask about presence — so the fixture writes the
-    one that claims least (ADR 0045).
+    database refuses. A marked row reads ``DATE``: «Arvamus saadetud» asks
+    whether the register says the opinion went out, which only a date says —
+    «ei saatnud» and an unreadable mark are marked too, and are not sent
+    (RULE-04, ADR 0045).
     """
     reference = factories.MatterSourceReferenceFactory(matter=matter)
     CurrentRegisterState.objects.create(
@@ -70,9 +71,8 @@ def _register_state(matter, *, sent_recorded: bool) -> None:
         source_row_number=reference.source_row_number,
         currency=RegisterCurrency.CURRENT,
         opinion_sent_recorded=sent_recorded,
-        opinion_sent_state=(
-            OpinionSentState.RECORDED_OTHER if sent_recorded else OpinionSentState.BLANK
-        ),
+        opinion_sent_state=OpinionSentState.DATE if sent_recorded else OpinionSentState.BLANK,
+        opinion_sent_date=timezone.localdate() if sent_recorded else None,
         observed_at=timezone.now(),
     )
 

@@ -3118,6 +3118,13 @@ def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # hint renders nothing at all rather than a placeholder.
         "note_saved_at": note_record.updated_at if note_record is not None else None,
         "can_write": can_write,
+        # **The header's `Hetkeseis` control is for an open file** (RULE-03).
+        # `can_write` says what this person may do; a closed Matter keeps its
+        # stage until `Ava uuesti`, which the closed banner offers, and the
+        # service refuses any other move — so the closed header states the
+        # stage rather than inviting a save that can only be refused. Not
+        # `can_write` itself: other corrections on a closed file stay allowed.
+        "can_change_stage": can_write and matter.is_open,
         # The rail renders on every Matter surface, so what the rail reads is
         # read here rather than three times over. Each opinion file with the
         # send that tells it apart and its working documents (docs/adr/0129 §9).
