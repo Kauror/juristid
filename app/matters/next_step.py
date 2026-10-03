@@ -37,7 +37,8 @@ the same record removes from `Minu asjad`.
 Three readers, one rule:
 
 * `upcoming_milestone` — records already read (the Matter page has them from
-  `matter_intelligence`, so choosing costs no query);
+  `matter_intelligence`, so choosing costs no query; a register row has them
+  from `upcoming_milestone_prefetch`, one query for the page);
 * `milestone_is_upcoming` / `milestone_order` — the same test and the same order
   over values, for `Minu asjad`'s work items, which carry no record;
 * `without_next_step` — the SQL form, for every «järgmine tegevus puudub»
@@ -52,7 +53,7 @@ from collections.abc import Iterable
 from datetime import date
 from typing import Any
 
-from django.db.models import Exists, OuterRef, QuerySet
+from django.db.models import Exists, OuterRef, Prefetch, QuerySet
 from django.utils import timezone
 
 from app.intelligence.enums import FactStatus
@@ -100,6 +101,42 @@ def upcoming_milestones(user: Any, today: date) -> QuerySet[MatterImportantDate]
     return MatterImportantDate.objects.visible_to(user).filter(
         status=FactStatus.ACTIVE, period_end__gte=today
     )
+
+
+#: Where `upcoming_milestone_prefetch` leaves each Matter's upcoming milestones.
+UPCOMING_MILESTONES = "upcoming_important_dates"
+
+
+def upcoming_milestone_prefetch(user: Any, today: date | None = None) -> Prefetch:
+    """`upcoming_milestones`, attached to every Matter of a list in one query.
+
+    For the register row, whose `Järgmiseks` cell must name the same milestone
+    the Matter page does when no step is open — and must not say «Järgmine samm
+    puudub» about a file `without_next_step` keeps out of `?tegevus=puudub`
+    (RULE-01). Reader-scoped through `upcoming_milestones`, so a milestone
+    restricted below its visible Matter is never attached, and therefore never
+    named, dated or counted on the row.
+    """
+    day = today or timezone.localdate()
+    return Prefetch(
+        "important_dates", queryset=upcoming_milestones(user, day), to_attr=UPCOMING_MILESTONES
+    )
+
+
+def prefetched_upcoming_milestone(matter: Any) -> MatterImportantDate | None:
+    """`upcoming_milestone` over what `upcoming_milestone_prefetch` attached.
+
+    **The prefetch is required, not preferred**, like the other derived values a
+    register row reads: falling back to a query here would be one per row, and
+    a list that forgot the prefetch would quietly pay it on every page.
+    """
+    records = getattr(matter, UPCOMING_MILESTONES, None)
+    if records is None:
+        raise ValueError(
+            "prefetched_upcoming_milestone needs next_step.upcoming_milestone_prefetch "
+            "on the queryset; selectors.matter_list_queryset applies it."
+        )
+    return upcoming_milestone(records)
 
 
 def without_next_step(
