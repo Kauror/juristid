@@ -25,13 +25,13 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
 from app.matters import timeline
+from app.matters.services import add_entry
 from app.matters.timeline import matter_timeline
 from app.matters.views import TIMELINE_PAGE_SIZE
 from app.matters.workspace import (
     add_matter_engagement,
     add_matter_external_position,
     add_matter_koda_opinion,
-    add_matter_note,
     add_matter_website_overview,
     add_procedural_development,
     cancel_matter_website_overview,
@@ -82,7 +82,7 @@ def _every_family(matter, author, *, rounds: int, start: date) -> None:
             next_text=f"Edasi {index:02d}",
             uploads=[_file(f"d{index:02d}.pdf")],
         )
-        add_matter_note(matter=matter, author=author, body=f"Märge {index:02d}")
+        add_entry(matter=matter, author=author, body=f"Märge {index:02d}")
         if index % 3 == 0:
             add_matter_koda_opinion(
                 matter=matter,
@@ -155,7 +155,7 @@ def _dense(specialist, count: int):
             stage=first if index % 2 else second,
             next_text=f"Järgmine {index:03d}",
         )
-        add_matter_note(matter=matter, author=specialist, body=f"Märge {index:03d}")
+        add_entry(matter=matter, author=specialist, body=f"Märge {index:03d}")
     return matter
 
 

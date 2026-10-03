@@ -519,46 +519,16 @@ def test_the_service_refuses_to_store_a_precision_on_a_date_that_does_not_exist(
     assert engagement.occurred_on_precision == DatePrecision.EXACT
 
 
-def test_an_unknown_date_stays_unknown_through_the_superseded_composer(signed_in, specialist):
-    """`teemad/<pk>/sissekanne/` — a live route with no date box at all.
-
-    It cannot ask, so it must not answer: not today, and not a year either. The
-    route rather than the form helper, because a stale tab reaches the route.
-    """
-    matter = factories.MatterFactory(owner=specialist)
-
-    response = signed_in.post(
-        reverse("matters:compose", kwargs={"pk": matter.pk}),
-        {
-            "body": "Küsisime liikmetelt arvamust.",
-            "engagement_kind": EngagementKind.SURVEY,
-            "engagement_audience": "liikmed",
-        },
-    )
-    assert response.status_code == 200
-
-    engagement = MatterEngagement.objects.get()
-    assert engagement.occurred_on is None
-    assert engagement.occurred_on_precision == DatePrecision.EXACT
-    assert engagement.occurred_on != timezone.localdate()
-
-
 def test_no_live_write_path_invents_a_period_for_an_unknown_date(signed_in, specialist):
-    """All three doors at once, so none can regress while another is watched."""
+    """Both live doors at once, so neither can regress while the other is watched.
+
+    The superseded composer was the third; it was retired with ENG-050A2.
+    """
     panel_matter = factories.MatterFactory(owner=specialist)
-    composer_matter = factories.MatterFactory(owner=specialist)
     edit_matter = factories.MatterFactory(owner=specialist)
     engagement = _stored(edit_matter, DatePrecision.MONTH, dt.date(2025, 10, 1))
 
     _add(signed_in, panel_matter, occurred_on="")
-    signed_in.post(
-        reverse("matters:compose", kwargs={"pk": composer_matter.pk}),
-        {
-            "body": "Küsisime liikmetelt arvamust.",
-            "engagement_kind": EngagementKind.SURVEY,
-            "engagement_audience": "liikmed",
-        },
-    )
     _edit(signed_in, engagement, clear_occurred_on="on")
 
     for created in MatterEngagement.objects.all():

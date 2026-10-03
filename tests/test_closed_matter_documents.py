@@ -80,7 +80,6 @@ from app.submissions.enums import SentAtPrecision, SubmissionKind, SubmissionSta
 from app.submissions.models import Submission, SubmissionRecipient
 from app.submissions.services import (
     attach_final_evidence_on_open_matter,
-    create_opinion_draft_on_open_matter,
     create_submission,
     mark_submission_sent_on_open_matter,
     register_sent_opinion_on_open_matter,
@@ -197,7 +196,7 @@ def test_a_closed_matters_documents_page_offers_no_opinion_write(signed_in, spec
 
     assert "+ Uus arvamus" not in body
     assert "+ Registreeri saatmine" not in body
-    assert reverse("submissions:create", kwargs={"matter_id": matter.pk}) not in body
+    assert f"/arvamused/teema/{matter.pk}/uus/" not in body  # retired, ENG-050A
     assert reverse("submissions:register_sent", kwargs={"matter_id": matter.pk}) not in body
 
 
@@ -308,47 +307,30 @@ def test_a_further_version_of_an_existing_file_is_refused_too(specialist, eviden
 
 
 # ===========================================================================
-# C. A stale «+ Uus arvamus» is refused and leaves no Submission
+# C. A stale «+ Uus arvamus» finds no door and leaves no Submission
 # ===========================================================================
 
 
-def test_a_stale_new_opinion_is_refused(signed_in, specialist, organisation, evidence_root):
+@pytest.mark.parametrize("closed", [False, True], ids=["open", "closed"])
+def test_a_stale_new_opinion_is_refused(signed_in, specialist, organisation, evidence_root, closed):
+    """The route is retired (ENG-050A), so an old tab's POST is a 404, on any file."""
     matter = factories.MatterFactory(owner=specialist)
-    _close(matter, specialist)
+    if closed:
+        _close(matter, specialist)
     census = Census(matter, evidence_root)
 
     response = signed_in.post(
-        reverse("submissions:create", kwargs={"matter_id": matter.pk}),
+        f"/arvamused/teema/{matter.pk}/uus/",
         {
             "arvamus-title": "Hiline arvamus",
             "arvamus-kind": SubmissionKind.FORMAL_OPINION,
             "arvamus-recipients": [str(organisation.pk)],
             "arvamus-channel": "EIS",
         },
-        follow=True,
     )
 
-    assert response.status_code == 200
-    assert CLOSED_MATTER_REFUSAL in response.content.decode()
+    assert response.status_code == 404
     assert not Submission.objects.filter(matter=matter).exists()
-    census.assert_unchanged()
-
-
-def test_a_stale_new_opinion_writes_no_recipients_and_no_event(specialist, evidence_root):
-    matter = factories.MatterFactory(owner=specialist)
-    organisation = factories.OrganisationFactory()
-    _close(matter, specialist)
-    census = Census(matter, evidence_root)
-
-    with pytest.raises(DomainError) as refusal:
-        create_opinion_draft_on_open_matter(
-            matter=matter,
-            title="Hiline arvamus",
-            actor=specialist,
-            recipients=[organisation],
-        )
-
-    assert str(refusal.value) == CLOSED_MATTER_REFUSAL
     census.assert_unchanged()
 
 

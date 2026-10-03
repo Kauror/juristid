@@ -24,7 +24,7 @@ import pytest
 from django.urls import reverse
 
 from app.documents.enums import DocumentRole
-from app.matters.enums import COMPOSER_ENGAGEMENT_KINDS, EngagementKind
+from app.matters.enums import EngagementKind
 from app.matters.forms import MatterEditForm, edit_initial
 from app.matters.models import Matter
 from app.matters.services import (
@@ -114,13 +114,10 @@ def test_the_enum_is_the_one_dictionary_for_email_campaign():
     The value had three labels: the enum's «E-kiri või kampaania», the composer
     chips' «Kirjade voor» and `EngagementForm`'s «Otsepostitus». Everything that
     renders this kind goes through `get_kind_display`, so fixing the enum is
-    what fixes the chronology and the process strip; the two write surfaces now
-    read their labels off it rather than carrying their own.
+    what fixes the chronology and the process strip. (The composer and its chip
+    list went with ENG-050A2; the enum is the one spelling left to hold.)
     """
     assert EngagementKind.EMAIL_CAMPAIGN.label == "Kirjade voor"
-
-    offered = dict(COMPOSER_ENGAGEMENT_KINDS)
-    assert offered[EngagementKind.EMAIL_CAMPAIGN.value] == "Kirjade voor"
 
 
 def test_the_stored_value_did_not_move_with_the_label():

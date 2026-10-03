@@ -327,7 +327,13 @@ def opinion_state_q(user: Any, value: str) -> Q:
     exception applies to the register half only.
 
     **saadetud** — a SENT Submission this reader may see, **or** a CURRENT
-    register row with something written in VÄLJA.
+    register row whose VÄLJA is a date (``recorded_sent``). Not «something is
+    written in VÄLJA»: that includes **ei saatnud**, a decision not to send, and
+    marks nobody can read, and listing those under «Arvamus saadetud» said the
+    opposite of the register (RULE-04). Nor is it «the opinion work is
+    finished» — ``OPINION_WORK_COMPLETE_STATES`` answers that, and «ei saatnud»
+    finishes the work (ADR 0059) without having sent anything. A canonical send
+    needs no register agreement: a SENT Submission is sent whatever VÄLJA says.
 
     The two may both hold for one Matter (sent once, drafting again), and a
     Matter satisfying either half of one of them is one row: both halves are
@@ -353,10 +359,12 @@ def opinion_state_q(user: Any, value: str) -> Q:
     written. The lifecycle half — open, FULL, visible — is the caller's, asked
     by the register's ordinary parameters or by ``active_matters``.
 
-    ``VÄLJA`` is read for presence (``opinion_sent_recorded``), never for
-    whether it parses as a date: fourteen current Matters in the approved
-    snapshot hold something the parser cannot read, and treating those as
-    unsent put them all back into this population (ADR 0021).
+    For **koostamisel** ``VÄLJA`` is read for presence (``opinion_sent_recorded``),
+    never for whether it parses as a date: fourteen current Matters in the
+    approved snapshot hold something the parser cannot read, and treating those
+    as unsent put them all back into the drafting population (ADR 0021). For
+    **saadetud** it is read for what it says (``opinion_sent_state``), because
+    presence is not a send.
 
     An unknown ``value`` matches nothing.
     """
@@ -371,7 +379,7 @@ def opinion_state_q(user: Any, value: str) -> Q:
     register = CurrentRegisterState.objects.filter(matter=OuterRef("pk"))
     sent_here = Q(Exists(readable.sent()))
     if value == OPINION_SENT:
-        return sent_here | Q(Exists(register.current().filter(opinion_sent_recorded=True)))
+        return sent_here | Q(Exists(register.recorded_sent()))
     # `drafting()` on both sides: the Submission population /arvamused/ counts,
     # and the register rows the cutover counts — imported, not restated.
     return Q(Exists(drafting(user, visible=readable))) | (

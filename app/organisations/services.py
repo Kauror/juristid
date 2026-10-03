@@ -246,10 +246,12 @@ def resolve_recipients(
 ) -> list[Organisation]:
     """The recipient set of one letter, from a shortlist and from typed names.
 
-    The closing composer lets somebody tick the bodies Koda usually writes to
-    and type the ones it does not — seven political parties on one opinion is a
-    real case, and creating them somewhere else first is not a workflow anybody
-    would use (Teema closing redesign §7).
+    A person ticks the bodies Koda usually writes to and types the ones it does
+    not — seven political parties on one opinion is a real case, and creating
+    them somewhere else first is not a workflow anybody would use (Teema closing
+    redesign §7, where the superseded closing composer first asked it). The
+    senders of `Uus teema` and `Muuda teemat` resolve through it too
+    (`matters.services.resolve_source_organisations`).
 
     Two rules do the work here, and both are about identity rather than
     convenience:

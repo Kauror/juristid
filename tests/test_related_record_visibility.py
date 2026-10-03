@@ -350,34 +350,6 @@ def test_a_historical_page_names_no_attachment_its_reader_may_not_read(
 # -- ENG-047: a removed row is not the file's current fact ------------------------
 
 
-def test_a_removed_commencement_is_not_reused_by_a_closure(normal_matter, specialist):
-    from app.intelligence.enums import EffectiveDateKind
-    from app.intelligence.models import MatterEffectiveDate
-    from app.intelligence.services import add_effective_date
-    from app.matters.services import _closure_commencement
-
-    day = dt.date(2026, 1, 1)
-    removed = add_effective_date(
-        matter=normal_matter,
-        actor=specialist,
-        kind=EffectiveDateKind.KNOWN_DATE,
-        date_value=day,
-        period_end=day,
-    )
-    MatterEffectiveDate.objects.filter(pk=removed.pk).update(
-        removed_at=timezone.now(), removed_by=specialist
-    )
-
-    kept = _closure_commencement(
-        matter=normal_matter,
-        author=specialist,
-        effective={"date_value": day, "period_end": day},
-    )
-
-    assert kept.pk != removed.pk
-    assert kept.removed_at is None
-
-
 # -- ENG-067: the reconciliation queues -------------------------------------------
 
 

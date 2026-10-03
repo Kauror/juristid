@@ -469,12 +469,12 @@ def test_two_files_of_one_name_under_one_row_are_told_apart(normal_matter, speci
     from django.core.files.uploadedfile import SimpleUploadedFile
 
     from app.matters.timeline import matter_timeline
-    from app.matters.workspace import add_matter_note
+    from app.matters.workspace import add_procedural_development
 
-    add_matter_note(
+    add_procedural_development(
         matter=normal_matter,
         author=specialist,
-        body="<p>Kaks lisa.</p>",
+        title="Kaks lisa.",
         uploads=[
             SimpleUploadedFile("lisa.pdf", b"%PDF-1.4 esimene"),
             SimpleUploadedFile("lisa.pdf", b"%PDF-1.4 teine, tunduvalt pikem sisu siin"),
@@ -495,12 +495,12 @@ def test_a_single_file_carries_no_detail(normal_matter, specialist):
     from django.core.files.uploadedfile import SimpleUploadedFile
 
     from app.matters.timeline import matter_timeline
-    from app.matters.workspace import add_matter_note
+    from app.matters.workspace import add_procedural_development
 
-    add_matter_note(
+    add_procedural_development(
         matter=normal_matter,
         author=specialist,
-        body="<p>Üks lisa.</p>",
+        title="Üks lisa.",
         uploads=[SimpleUploadedFile("lisa.pdf", b"%PDF-1.4 ainus")],
     )
 

@@ -27,7 +27,6 @@ from app.core.enums import Visibility
 from app.intelligence.forms import EffectiveDateForm
 from app.matters import selectors
 from app.matters.forms import (
-    ComposerForm,
     EngagementForm,
     IncomingIntakeForm,
     MatterCreateForm,
@@ -37,7 +36,7 @@ from app.matters.forms import (
 from app.matters.models import Matter
 from app.matters.services import assign_matter, set_policy_areas
 from app.taxonomy.models import PolicyArea
-from app.workflow.enums import ActionKind, ActionStatus, DateSemantics, Disposition
+from app.workflow.enums import ActionKind, ActionStatus, DateSemantics
 from app.workflow.models import NextAction
 from app.workflow.services import set_next_action
 from tests import factories
@@ -567,24 +566,10 @@ def test_a_posted_date_always_beats_the_default():
     assert form.cleaned_data["received_date"].isoformat() == "2026-08-03"
 
 
-def test_a_composer_save_is_recorded_as_now_and_not_as_midnight(normal_matter, specialist):
-    """The composer stopped asking `Toimus` with the approved target — a person
-    writing up this afternoon's call is not also classifying when it happened —
-    so every entry it creates is stamped by `add_entry` with the moment of the
-    save, and never with a midnight the form invented (docs/adr/0074 §6).
-    """
-    form = ComposerForm({"body": "Märkus"})
-    assert form.is_valid(), form.errors
-    assert "occurred_on" not in form.fields
-    assert form.as_service_kwargs()["occurred_at"] is None
-
-
 @pytest.mark.parametrize(
     ("form_class", "field"),
     [
-        (ComposerForm, "next_date"),
         (NextActionForm, "target_date"),
-        (ComposerForm, "deadline_date"),
         (EffectiveDateForm, "exact_date"),
         (MatterCreateForm, "response_deadline"),
     ],
@@ -596,7 +581,8 @@ def test_a_date_box_whose_emptiness_is_a_signal_never_defaults(form_class, field
     are read for *emptiness*:
 
     * `next_date` — a step with no date is refused, and a default answers that
-      refusal with a deadline nobody chose;
+      refusal with a deadline nobody chose (the superseded composer's box, which
+      went with it in ENG-050A2; the same reasoning holds on every box below);
     * `NextActionForm.target_date` — the same box on Uus teema, and it moved
       here from the defaulting list above. It defaulted to today while the page
       also asked for a kind and a date meaning, on the reasoning that today is
@@ -604,7 +590,6 @@ def test_a_date_box_whose_emptiness_is_a_signal_never_defaults(form_class, field
       refused for: a blank new-Teema form silently carrying today is a factual
       next-action date nobody stated, and it turned "you forgot the date" into
       a date the form chose (ADR 0052 addendum);
-    * `deadline_date` — the same control, which also offers a quarter;
     * `final_sent_on` — a send date with no chosen file is an opinion claimed
       without its evidence, so a default refuses every ordinary closure;
     * `PeriodForm.exact_date` — `Jõustub üldises korras` means the date is not
@@ -626,44 +611,6 @@ def test_a_date_box_whose_emptiness_is_a_signal_never_defaults(form_class, field
     A default in any of these does not save typing. It states a fact nobody gave.
     """
     assert form_class()[field].initial is None
-
-
-def test_a_closure_without_a_sent_opinion_is_accepted(normal_matter, specialist):
-    """What the `final_sent_on` default broke, end to end."""
-    form = ComposerForm(
-        {
-            "body": "Menetlus lõppes.",
-            "disposition": Disposition.COMPLETED,
-            "work_victory": "EI",
-        }
-    )
-    assert form.is_valid(), form.errors
-
-
-def test_a_next_step_without_a_date_is_accepted(normal_matter):
-    """docs/adr/0106. The refusal this replaced was «this next step needs a date».
-
-    The reason `next_date` keeps no default is unchanged and is in fact the same
-    reason this is now accepted: the application does not decide when a lawyer
-    will do their own work. It used to refuse the save instead, which left the
-    person typing a day to get past it.
-    """
-    form = ComposerForm({"body": "Koosta arvamus", "next_text": "Koosta arvamus"})
-    assert form.is_valid(), form.errors
-    assert form.cleaned_data["next_action_kwargs"]["target_date"] is None
-
-
-def test_a_date_with_no_next_step_is_still_refused_on_the_sentence(normal_matter):
-    """The refusal that stays, and the control it belongs to.
-
-    Somebody who pressed `Homme` and then wrote nothing did ask for a step, so
-    they are told which half is missing rather than getting a save with no step
-    in it — and the message points at the box they left empty.
-    """
-    form = ComposerForm({"body": "Koosta arvamus", "next_date": "30.09.2026"})
-    assert not form.is_valid()
-    assert form.errors["next_text"] == ["Kirjuta järgmine tegevus."]
-    assert "next_date" not in form.errors
 
 
 def test_the_edit_page_invents_no_date_for_a_matter_that_has_none(specialist):
@@ -737,36 +684,16 @@ def test_lisa_teemale_is_the_one_kaasamine_path(signed_in, normal_matter):
     assert "+ Lisa kaasamine" not in body
 
 
-def test_the_composer_form_asks_the_target_engagement_questions():
-    """`Liik`, `Keda kaasati`, `Vastuseid` — and, since 2026-09-12, the two
-    optional provider pointers beside them (docs/adr/0074 §9.1).
-
-    Pinned as an exact list rather than a containment check: the point of the
-    assertion is that the old five-field form has not crept back, and a
-    containment check would not notice `note` or `occurred_on` returning.
-    """
-    assert [name for name in ComposerForm().fields if name.startswith("engagement")] == [
-        "engagement_kind",
-        "engagement_audience",
-        "engagement_responses",
-        "engagement_smaily_url",
-        "engagement_alchemer_url",
-    ]
-
-    # An ordinary save that answered none of them sends the service nothing.
-    bound = ComposerForm({"body": "Märkus"})
-    assert bound.is_valid(), bound.errors
-    assert bound.as_service_kwargs()["engagement"] is None
-
-
 def test_the_one_kaasamine_path_still_works(signed_in, normal_matter, specialist):
     """Removing the duplicate removed nothing a person could do."""
+    # `+ Kaasamine`, the one path left (ENG-050A retired the pre-launcher door).
     response = signed_in.post(
-        reverse("matters:add_engagement", kwargs={"pk": normal_matter.pk}),
-        {"title": "Liikmete küsitlus", "kind": "SURVEY", "occurred_on": "5.8.2026"},
+        reverse("matters:add_engagement_compact", kwargs={"pk": normal_matter.pk}),
+        {"audience": "Liikmete küsitlus", "occurred_on": "5.8.2026"},
+        headers={"HX-Request": "true"},
     )
-    assert response.status_code in (200, 302)
-    assert normal_matter.engagements.filter(title="Liikmete küsitlus").exists()
+    assert response.status_code == 200
+    assert normal_matter.engagements.filter(occurred_on="2026-08-05").exists()
 
 
 # ---------------------------------------------------------------------------

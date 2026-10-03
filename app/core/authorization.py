@@ -30,6 +30,7 @@ from typing import Any
 
 from django.apps import apps
 from django.db.models import Case, CharField, Count, Q, QuerySet, Value, When
+from django.db.models.sql.datastructures import Join
 from django.utils import timezone
 
 from app.accounts.enums import UserRole
@@ -375,7 +376,18 @@ def restricted_participation_q(
     owner_field: str = "owner",
     collaborators_field: str = "collaborators",
 ) -> Q:
-    """The Matter participation that unlocks RESTRICTED content."""
+    """The Matter participation that unlocks RESTRICTED content.
+
+    **One rule, now one SQL shape** (QRY-05). The collaborator half used to be
+    ``Q(collaborators=user)``, a ``LEFT OUTER JOIN`` on the through table that
+    fans one Matter out into a row per collaborator, which :func:`apply` then
+    collapsed with ``SELECT DISTINCT`` on every reader's and administrator's
+    query. It is :func:`restricted_participation_subquery_q` now — the same two
+    facts, the same refusal for a scope that knows nobody, and an uncorrelated
+    ``matter_id IN (…)`` that cannot multiply a row, so nothing needs
+    de-duplicating. The rows selected are the same by construction
+    (`tests/test_participation_one_shape.py`).
+    """
     if not scope.is_authenticated or scope.user is None:
         # Without a user there is no participation to test, and building the
         # clause anyway would be worse than useless: `Q(owner=None)` compiles to
@@ -383,6 +395,11 @@ def restricted_participation_q(
         # the RESTRICTED ones. A scope that knows nobody must see nothing extra,
         # not everything nobody owns.
         return NOTHING
+    if owner_field == "owner" and collaborators_field == "collaborators":
+        return restricted_participation_subquery_q(
+            scope, prefix=prefix, matter_field=prefix.removesuffix("__") or "pk"
+        )
+    # A caller naming other fields gets the literal join form; none does today.
     return Q(**{f"{prefix}{owner_field}": scope.user}) | Q(
         **{f"{prefix}{collaborators_field}": scope.user}
     )
@@ -555,23 +572,47 @@ def effective_visibility_expression(
 
 
 def apply[QuerySetT: QuerySet](queryset: QuerySetT, condition: Q) -> QuerySetT:
-    """Apply a visibility condition, collapsing the many-to-many join fan-out."""
+    """Apply a visibility condition, de-duplicating only where rows can repeat.
+
+    The visibility conditions no longer join anything multi-valued (QRY-05:
+    participation is an uncorrelated subquery), so a filtered queryset holds each
+    row once and a ``SELECT DISTINCT`` over every selected column would only cost
+    the planner and the executor. It is kept exactly when the filtered query does
+    fan out — a one-to-many or many-to-many join, from the condition or already
+    on the queryset — which is where it changes a result. A scope that sees all
+    restricted work (``Q()``) never had it, which is how every caller already
+    reads a scoped queryset that may or may not be distinct.
+    """
     if not condition.children and not condition.negated:
         return queryset
-    return queryset.filter(condition).distinct()
+    filtered = queryset.filter(condition)
+    return filtered.distinct() if _fans_out(filtered) else filtered
+
+
+def _fans_out(queryset: QuerySet) -> bool:
+    """Whether the query joins a one-to-many or many-to-many relation."""
+    return any(
+        isinstance(alias, Join)
+        and (
+            getattr(alias.join_field, "one_to_many", False)
+            or getattr(alias.join_field, "many_to_many", False)
+        )
+        for alias in queryset.query.alias_map.values()
+    )
 
 
 def scoped_count() -> Count:
     """``Count("id", distinct=True)`` — the only counter safe over a scoped set.
 
     The companion to :func:`apply`, and it lives here because the reason for it
-    lives here. ``matter_visibility_q`` reaches RESTRICTED work through the
-    ``collaborators`` many-to-many, so applying it emits a ``LEFT OUTER JOIN``
-    on the through table: one Matter with three collaborators is three rows.
-    ``apply`` answers that with ``.distinct()``, which fixes ``.count()`` and
-    every row it hands back — and does **nothing** for an aggregate, because
-    ``COUNT(id)`` inside a ``GROUP BY`` counts join rows before the outer
-    ``DISTINCT`` is ever reached.
+    lives here. ``matter_visibility_q`` reached RESTRICTED work through the
+    ``collaborators`` many-to-many as a ``LEFT OUTER JOIN`` on the through table:
+    one Matter with three collaborators was three rows. ``apply`` answered that
+    with ``.distinct()``, which fixed ``.count()`` and every row it handed back —
+    and did **nothing** for an aggregate, because ``COUNT(id)`` inside a
+    ``GROUP BY`` counts join rows before the outer ``DISTINCT`` is ever reached.
+    Participation is a subquery now (QRY-05) and no longer fans out, but a
+    caller's own join still can, so counting distinctly stays the safe rule.
 
     So a scoped queryset has two counting rules, not one, and only the second
     needs remembering. Every ``values(...).annotate(...)`` over anything that

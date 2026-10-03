@@ -34,12 +34,10 @@ from app.documents.uploads import UploadRejected, read_upload
 from app.matters.views import get_visible_matter, opinions_url
 from app.submissions.enums import SentAtPrecision, SubmissionStatus
 from app.submissions.forms import (
-    CREATE_PREFIX,
     REGISTER_PREFIX,
     FinalEvidenceForm,
     MarkSentForm,
     RegisterSentOpinionForm,
-    SubmissionCreateForm,
     SubmissionMetadataForm,
 )
 from app.submissions.links import linked_website_overviews
@@ -47,7 +45,6 @@ from app.submissions.models import Submission
 from app.submissions.opinions import unregistered_opinion_documents
 from app.submissions.services import (
     attach_final_evidence_on_open_matter,
-    create_opinion_draft_on_open_matter,
     mark_submission_sent_on_open_matter,
     register_sent_opinion_on_open_matter,
     select_final_evidence_on_open_matter,
@@ -84,40 +81,6 @@ def _back(submission: Submission) -> HttpResponse:
     if submission.status == SubmissionStatus.DRAFT:
         return redirect(opinions_url(submission.matter, anchor=f"arvamus-{submission.pk}"))
     return redirect(opinions_url(submission.matter))
-
-
-@login_required
-@business_write_required
-@require_http_methods(["POST"])
-def create(request: HttpRequest, matter_id: Any) -> HttpResponse:
-    matter = get_visible_matter(request, matter_id)
-    form = SubmissionCreateForm(request.POST, prefix=CREATE_PREFIX)
-
-    if not form.is_valid():
-        messages.error(request, "Arvamuse loomine ebaõnnestus. Kontrolli välju.")
-        return redirect(opinions_url(matter))
-
-    try:
-        submission = create_opinion_draft_on_open_matter(
-            matter=matter,
-            title=form.cleaned_data["title"],
-            kind=form.cleaned_data["kind"],
-            actor=request.user,
-            recipients=list(form.cleaned_data["recipients"]),
-            for_information=list(form.cleaned_data["for_information"]),
-            joint_submitters=list(form.cleaned_data["joint_submitters"]),
-            channel=form.cleaned_data["channel"],
-        )
-    except DomainError as error:
-        # A closed Matter, most often — the panel this posted from is not
-        # rendered on one, so the page that carried it was stale. Nothing was
-        # written: the refusal happens under the Matter lock before the
-        # Submission row exists (app/submissions/services.py).
-        messages.error(request, str(error))
-        return redirect(opinions_url(matter))
-
-    messages.success(request, f"Arvamus „{submission.title}“ on loodud.")
-    return _back(submission)
 
 
 @login_required
@@ -321,8 +284,8 @@ def _refusal_detail(form: RegisterSentOpinionForm) -> str:
 def as_midnight(value: Any) -> Any:
     """A chosen day, as the aware midnight a submission stores.
 
-    The same reading `app/matters/forms.py` gives the closing composer's
-    `Saatmise kuupäev`, and for the same reason: `timezone.now()` would stamp
+    The reading the superseded closing composer gave its `Saatmise kuupäev`,
+    and for the same reason: `timezone.now()` would stamp
     today onto a letter that went out last month.
 
     Public, because the chronology's own `Muuda` on a recorded send has to read

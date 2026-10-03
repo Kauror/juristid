@@ -1,14 +1,14 @@
-"""One next-step rule, three panels, the differences kept on purpose (ENG-127).
+"""One next-step rule, two panels, the differences kept on purpose (ENG-127).
 
-`NextActionForm` (PRAEGUNE TEGEVUS), `ComposerForm` (the compatibility save) and
-`MatterProgressForm` (+ Märge) each restated «a date with no sentence is refused
-on the sentence». The rule now lives once (`forms.clean_next_step_sentence`),
-and the table below pins what each panel does with the same five inputs, so a
-change to the shared rule shows up in all three and a difference between them
-is visibly deliberate:
+`NextActionForm` (PRAEGUNE TEGEVUS) and `MatterProgressForm` (+ Märge) each
+restated «a date with no sentence is refused on the sentence», and so did the
+superseded composer's form until ENG-050A2 retired it. The rule now lives once
+(`forms.clean_next_step_sentence`), and the table below pins what each panel
+does with the same five inputs, so a change to the shared rule shows up in both
+and a difference between them is visibly deliberate:
 
 * `NextActionForm` *is* the step, so a missing sentence is always refused;
-* the other two carry a step as an extra, so both boxes empty is «no step».
+* `+ Märge` carries a step as an extra, so both boxes empty is «no step».
 
 `MatterProgressForm` has had no step boxes of its own since docs/adr/0124: its
 step is the activity itself — `Tegevus` on a day after today with `Märgi
@@ -23,9 +23,8 @@ from datetime import timedelta
 import pytest
 from django.utils import timezone
 
-from app.matters.forms import ComposerForm, MatterProgressForm, NextActionForm
+from app.matters.forms import MatterProgressForm, NextActionForm
 from app.workflow.enums import DatePrecision
-from tests import factories
 
 pytestmark = pytest.mark.django_db
 
@@ -39,10 +38,6 @@ EXPECTED = {
     ("next_action", "date"): True,
     ("next_action", "sentence+date"): False,
     ("next_action", "sentence+period"): False,
-    ("composer", "empty"): False,
-    ("composer", "sentence"): False,
-    ("composer", "date"): True,
-    ("composer", "sentence+date"): False,
     ("progress", "empty"): False,
     ("progress", "sentence"): False,
     ("progress", "date"): True,
@@ -67,19 +62,6 @@ def _next_action(shape):
     return form, "text"
 
 
-def _composer(shape, matter, viewer):
-    data = {"body": "Ministeerium helistas."}
-    data.update(
-        {
-            "empty": {},
-            "sentence": {"next_text": "Vaatan eelnõu üle"},
-            "date": {"next_date": SOON.isoformat()},
-            "sentence+date": {"next_text": "Vaatan eelnõu üle", "next_date": SOON.isoformat()},
-        }[shape]
-    )
-    return ComposerForm(data, matter=matter, viewer=viewer), "next_text"
-
-
 def _progress(shape):
     today = timezone.localdate().isoformat()
     data = {
@@ -99,12 +81,9 @@ def _progress(shape):
 
 
 @pytest.mark.parametrize(("panel", "shape"), sorted(EXPECTED))
-def test_each_panel_applies_the_rule_as_the_table_says(specialist, panel, shape):
-    matter = factories.MatterFactory(owner=specialist)
+def test_each_panel_applies_the_rule_as_the_table_says(panel, shape):
     if panel == "next_action":
         form, field = _next_action(shape)
-    elif panel == "composer":
-        form, field = _composer(shape, matter, specialist)
     else:
         form, field = _progress(shape)
 
@@ -114,10 +93,3 @@ def test_each_panel_applies_the_rule_as_the_table_says(specialist, panel, shape)
     if not refused:
         # Nothing else about the step refused it either.
         assert field not in form.errors, (panel, shape, form.errors)
-
-
-def test_the_composer_reads_both_empty_as_no_step(specialist):
-    matter = factories.MatterFactory(owner=specialist)
-    form, _ = _composer("empty", matter, specialist)
-    assert form.is_valid(), form.errors
-    assert form.cleaned_data["next_action_kwargs"] is None
