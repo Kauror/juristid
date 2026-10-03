@@ -37,6 +37,7 @@ from app.core.enums import Visibility
 from app.documents.models import Document
 from app.matters.models import Matter
 from app.organisations.models import Organisation
+from app.related_materials.services import link_related_matters
 from app.taxonomy.models import Tag
 from tests import factories
 
@@ -285,6 +286,24 @@ def test_the_admin_opens_no_restricted_record(admin_client, secret_world):
         body = response.content.decode()
         assert HIDDEN_TITLE not in body, url
         assert HIDDEN_FILE not in body, url
+
+
+def test_an_event_on_a_readable_matter_does_not_name_a_restricted_one(
+    admin_client, specialist, secret, ordinary
+):
+    """A relation event lives on the readable Matter and names the other one.
+
+    Relating two Matters is the ordinary product act, and the event it writes
+    carries the counterpart's reference and title in its summary. The row's own
+    Matter is readable, so only the event vocabulary keeps it off the admin.
+    """
+    link_related_matters(matter=ordinary, other=secret, actor=specialist)
+    event = ChangeEvent.objects.get(matter=ordinary, event_type="MATTER_RELATION_ADDED")
+    assert HIDDEN_TITLE in event.summary
+
+    for url in ("/admin/audit/changeevent/", f"/admin/audit/changeevent/{event.pk}/change/"):
+        body = admin_client.get(url, follow=True).content.decode()
+        assert HIDDEN_TITLE not in body, url
 
 
 def test_a_break_glass_grant_is_what_opens_it(admin_client, superuser, department_head, secret):

@@ -598,6 +598,22 @@ def filter_by_work_state(
     return queryset.filter(pk__in=ids)
 
 
+def status_q(key: str) -> Q:
+    """The condition behind one `?olek=` value — and behind its segment's count.
+
+    One answer for the list and for the number on the segment that opens it, so
+    the two cannot drift apart (`views._segment_counts`). An unknown value is
+    no condition, as `koik` is.
+    """
+    if key == "avatud":
+        return Q(is_open=True)
+    if key == "suletud":
+        return Q(is_open=False)
+    if key == "arhiiv":
+        return Q(record_mode=RecordMode.ARCHIVE)
+    return Q()
+
+
 def apply_register_filters(
     queryset: QuerySet[Matter],
     user: Any,
@@ -616,13 +632,7 @@ def apply_register_filters(
     ``shared_items`` is forwarded untouched to :func:`filter_by_work_state`,
     which documents what it must be. It is read only when `?too=` is present.
     """
-    status = params.get("olek", "avatud")
-    if status == "avatud":
-        queryset = queryset.filter(is_open=True)
-    elif status == "suletud":
-        queryset = queryset.filter(is_open=False)
-    elif status == "arhiiv":
-        queryset = queryset.filter(record_mode=RecordMode.ARCHIVE)
+    queryset = queryset.filter(status_q(params.get("olek", "avatud")))
 
     if params.get("ulatus", "koik") == "minu":
         queryset = queryset.filter(Q(owner=user) | Q(collaborators=user))

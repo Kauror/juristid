@@ -443,8 +443,14 @@ def document_detail(request: HttpRequest, pk: Any) -> HttpResponse:
             "preview": build_preview(version) if version is not None else None,
             # Provenance in both directions: what this file arrived inside, and
             # what arrived inside it.
-            "parent_email": parent_email_of(version) if version is not None else None,
-            "attachments": attachments_of(version) if version is not None else [],
+            "parent_email": (
+                parent_email_of(version, viewer=viewer_for(request))
+                if version is not None
+                else None
+            ),
+            "attachments": (
+                attachments_of(version, viewer=viewer_for(request)) if version is not None else []
+            ),
             "nav_active": "teemad",
         },
     )
