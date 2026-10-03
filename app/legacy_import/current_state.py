@@ -87,6 +87,19 @@ class CurrentRegisterStateQuerySet(models.QuerySet):
         """
         return self.current().filter(opinion_sent_recorded=False)
 
+    def recorded_sent(self) -> CurrentRegisterStateQuerySet:
+        """Current rows whose ``VÄLJA`` says the opinion went out — a date.
+
+        The register half of «Arvamus saadetud» (RULE-04). Asked of
+        ``opinion_sent_state``, never of ``opinion_sent_recorded``: presence
+        includes **ei saatnud**, a decision not to send, and a mark nobody can
+        read (``RECORDED_OTHER``), and neither says anything went out. Whether
+        the opinion *work* is finished is another question with another answer
+        — ``register_semantics.OPINION_WORK_COMPLETE_STATES`` (ADR 0059), where
+        «ei saatnud» does count.
+        """
+        return self.current().filter(opinion_sent_state=OpinionSentState.DATE)
+
 
 class CurrentRegisterState(BaseModel):
     """One Matter's standing in the final approved register snapshot."""
@@ -129,6 +142,10 @@ class CurrentRegisterState(BaseModel):
         help_text="Allika sõnastuses, tõlgendamata.",
     )
     #: Whether ``VÄLJA`` holds anything at all — the fact the portfolio reads.
+    #:
+    #: Presence only, and so **not** proof that an opinion was sent: «ei saatnud»
+    #: and an unreadable mark are present too. «Sent» is ``opinion_sent_state``
+    #: reading ``DATE`` (:meth:`CurrentRegisterStateQuerySet.recorded_sent`).
     #:
     #: Separate from the parsed date below, and that separation is the whole
     #: point. ``VÄLJA`` answers *has the drafting step been recorded as

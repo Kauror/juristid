@@ -1606,6 +1606,17 @@ class MatterEditForm(
         self.stage_help = stage_help_texts(offered_stages)
         cast(Any, self.fields["stage"].widget).descriptions = self.stage_help
 
+        # **A closed file's stage is stated, not offered** (RULE-03). It stays in
+        # the period it was closed in until `Ava uuesti`, so the page shows it
+        # read-only and posts it back unchanged — the one value the service
+        # accepts on a closed Matter. The field stays bound rather than
+        # `disabled`: a crafted or stale stage must reach the service and refuse
+        # the whole save, not be dropped while the title beside it is written.
+        from app.matters.services import CLOSED_MATTER_STAGE_REFUSAL
+
+        self.stage_held = matter is not None and not matter.is_open
+        self.stage_held_note = CLOSED_MATTER_STAGE_REFUSAL
+
         # Every organisation is a *valid* answer; only the offered chips are
         # narrowed. Validation therefore runs against the whole catalogue —
         # narrowing it to the visible few would reject a correct answer given

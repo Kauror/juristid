@@ -78,21 +78,18 @@ from django.urls import reverse
 from django.utils import timezone
 
 from app.accounts.selectors import department_workers
-from app.audit.enums import ChangeEventType
-from app.audit.models import ChangeEvent
-from app.audit.visibility import scope_change_events
 from app.core.dates import (
     end_of_month,
     format_estonian_date,
     parse_flexible_date,
     short_day_month,
     short_range,
-    start_of_local_day,
     weekday_name,
 )
 from app.intelligence.enums import WorkVictoryStatus
 from app.intelligence.models import MatterWorkVictory
 from app.matters import work_items as wi
+from app.matters.activity import work_activity_between
 from app.matters.dashboard import (
     active_matters,
     drafting_matters,
@@ -108,7 +105,6 @@ from app.matters.register_filters import (
     register_population,
 )
 from app.matters.selectors import MISSING
-from app.matters.timeline import TIMELINE_EVENT_TYPES
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
 
@@ -423,14 +419,6 @@ TEAM_COLUMNS: tuple[tuple[str, str, str, bool], ...] = (
 #: says what it counts.
 _COLUMN_TONE: dict[str, str] = {"overdue": "bad", "week": "warn"}
 
-#: Events that mean somebody worked on a file. `ENTRY_ADDED` is added to the
-#: timeline's own list because an entry is the commonest change of all and the
-#: timeline renders it from the `Entry` rather than from the event.
-_ACTIVITY_EVENT_TYPES: tuple[str, ...] = (
-    *TIMELINE_EVENT_TYPES,
-    ChangeEventType.ENTRY_ADDED,
-)
-
 
 def previous_week(today: date) -> tuple[date, date]:
     """Monday to Sunday of the week before the one ``today`` falls in."""
@@ -453,36 +441,33 @@ def reporting_year(today: date) -> tuple[date, date]:
 
 
 def _matters_changed_by_owner(user: Any, start: date, end: date) -> dict[Any, int]:
-    """How many of each person's files something happened to, in one window.
+    """How many of each person's files had substantive work done in one window.
 
-    Distinct **Matters**, not events: a file somebody wrote three notes on moved
-    once as far as this column is concerned. Scoped through
-    `scope_change_events`, because a change event about a restricted child may
-    be stricter than the Matter it hangs off (AUTH-003).
+    «Teemades muudatusi · eelmine nädal». The one work-activity vocabulary
+    `app.matters.activity` owns — the facts «Viimane tegevus» and «Muutusteta
+    30 p» read — asked as *existence in the window* rather than as the latest
+    date (`activity.work_activity_between`, docs/adr/0134). It used to borrow
+    `Teema käik`'s event list, which answers what belongs in the history: that
+    counted a standalone `Hetkeseis` change, a document upload, an importer's
+    step and a later-removed entry as work, and missed a dated `Kaasamine` and a
+    `+ Märge`, so one Matter could be «changed last week» in this table and
+    «Muutusteta 30 p» in the rail beside it (RULE-02).
+
+    Distinct **Matters**, not acts: a file somebody wrote three notes on moved
+    once as far as this column is concerned. Every source is scoped to this
+    reader before it is counted, so a record restricted below a visible Matter
+    adds nothing.
 
     Grouped by the Matter's owner, like every other column here. This table
-    answers "who is carrying what", so a change on a colleague's file counts for
+    answers "who is carrying what", so work on a colleague's file counts for
     whoever carries it — the alternative would be a second, actor-based table
     beside an owner-based one, reading almost the same and disagreeing.
     """
-    events = scope_change_events(
-        ChangeEvent.objects.filter(
-            event_type__in=_ACTIVITY_EVENT_TYPES,
-            # A half-open range of moments rather than `occurred_at__date`: the
-            # same local days, but one the `occurred_at` index answers. The
-            # `__date` cast made the planner expect 68 rows of 12,658 and
-            # nested-loop the whole table — 1.3 s of this page on 60k events.
-            occurred_at__gte=start_of_local_day(start),
-            occurred_at__lt=start_of_local_day(end + timedelta(days=1)),
-        ),
-        user,
-    )
     grouped = (
-        Matter.objects.filter(pk__in=events.values("matter_id"))
-        .filter(pk__in=Matter.objects.visible_to(user).values("pk"))
+        work_activity_between(Matter.objects.visible_to(user), user, start, end)
         .order_by()
         .values("owner_id")
-        .annotate(total=Count("id"))
+        .annotate(total=Count("id", distinct=True))
     )
     return {row["owner_id"]: row["total"] for row in grouped}
 

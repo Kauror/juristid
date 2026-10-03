@@ -815,14 +815,19 @@ def test_joustunud_alone_does_not_close_the_matter(normal_matter, specialist):
 
 
 def test_a_stage_change_never_reopens_a_closed_matter(normal_matter, specialist):
-    from app.matters.services import change_stage
+    """Nor moves it: a closed file's stage changes only through `Ava uuesti` (RULE-03)."""
+    from app.core.errors import DomainError
+    from app.matters.services import CLOSED_MATTER_STAGE_REFUSAL, change_stage
 
     close_matter(matter=normal_matter, disposition=Disposition.COMPLETED, actor=specialist)
+    held = normal_matter.stage_id
     later = factories.StageFactory(key="riigikogus", label_et="Riigikogus")
-    change_stage(matter=normal_matter, stage=later, actor=specialist)
+    with pytest.raises(DomainError, match=CLOSED_MATTER_STAGE_REFUSAL):
+        change_stage(matter=normal_matter, stage=later, actor=specialist)
 
     normal_matter.refresh_from_db()
     assert not normal_matter.is_open
+    assert normal_matter.stage_id == held
 
 
 def test_closing_needs_business_write(client, normal_matter):
