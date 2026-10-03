@@ -34,6 +34,7 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 from app.core.authorization import may_write_business_content
 from app.core.decorators import business_write_required
 from app.core.errors import DomainError
+from app.core.middleware import is_htmx
 from app.legacy_import.opinion_access import may_read_archive
 from app.legacy_import.opinion_binary import OpinionArchiveBinary
 from app.matters.models import Matter
@@ -95,10 +96,6 @@ def _target_binary(viewer: Any, value: Any) -> OpinionArchiveBinary:
     if not may_read_archive(viewer):
         raise Http404("Sellist kirjet ei ole.")
     return get_object_or_404(OpinionArchiveBinary, pk=_uuid(value))
-
-
-def _is_htmx(request: HttpRequest) -> bool:
-    return request.headers.get("HX-Request") == "true"
 
 
 def _flag(source: Any, name: str) -> bool:
@@ -182,7 +179,7 @@ def _after_write(
     swaps the explanation in rather than discarding it (static/js/app.js). A
     plain form gets a message and a redirect back to the section.
     """
-    if _is_htmx(request):
+    if is_htmx(request):
         context = section_context(
             request,
             matter,
@@ -215,7 +212,7 @@ def section(request: HttpRequest, pk: Any) -> HttpResponse:
         limit=_limit(request.GET),
         query=clean_query(request.GET.get("q") or ""),
     )
-    template = SECTION_TEMPLATE if _is_htmx(request) else PAGE_TEMPLATE
+    template = SECTION_TEMPLATE if is_htmx(request) else PAGE_TEMPLATE
     return render(request, template, context)
 
 

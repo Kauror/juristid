@@ -48,6 +48,7 @@ from django.views.decorators.http import require_http_methods
 from app.core.authorization import may_review_work_victory, may_write_business_content
 from app.core.decorators import business_write_required
 from app.core.errors import DomainError
+from app.core.middleware import is_htmx
 from app.intelligence import selectors, services
 from app.intelligence.forms import (
     EffectiveDateForm,
@@ -143,7 +144,7 @@ def _inline(request: HttpRequest) -> bool:
     somebody pasted into a browser produce a bare fragment with no shell around
     it, and the standalone page is precisely what that reader should get.
     """
-    return request.headers.get("HX-Request") == "true"
+    return is_htmx(request)
 
 
 def _facts_fragment(

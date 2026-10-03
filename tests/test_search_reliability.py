@@ -167,10 +167,11 @@ def linked_page(specialist):
 def test_a_linked_page_is_searchable_by_its_text(linked_page, specialist) -> None:
     """The fixture creates the link and calls nothing else, on purpose.
 
-    Five production call sites create these rows and all five remembered to
-    call `index_source_link` — which is precisely the fragility: the projection
-    was correct only until somebody wrote a sixth. A page attached to a Matter
-    and absent from search looks exactly like a page that was never attached.
+    Five production call sites create these rows and none of them refreshes
+    search itself any more: the post_save handler is the only mechanism. An
+    explicit call per site was the fragility — the projection was correct only
+    until somebody wrote a sixth. A page attached to a Matter and absent from
+    search looks exactly like a page that was never attached.
     """
     _, _, link = linked_page
     results = search(query="koosolekul", user=specialist)

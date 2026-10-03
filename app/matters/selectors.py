@@ -24,11 +24,9 @@ from app.matters.next_step import without_next_step
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
 from app.workflow.enums import (
-    ActionKind,
     ActionStatus,
-    DateSemantics,
 )
-from app.workflow.lateness import overdue_date_q, review_due_q
+from app.workflow.lateness import overdue_q, review_due_q
 from app.workflow.models import NextAction
 
 HORIZON_DAYS = 7
@@ -204,11 +202,7 @@ def _open_action_condition(value: str, today: date) -> Q:
         # `overdue_date_q` rather than `target_date__lt`: an approximate plan is
         # late once its period has ended, and the register's own «Üle aja» chip
         # must hold exactly the rows the row styling beside it calls late.
-        return (
-            open_now
-            & Q(kind=ActionKind.DO, date_semantics=DateSemantics.DEADLINE)
-            & overdue_date_q(today)
-        )
+        return open_now & overdue_q(today)
     if value == REVIEW_DUE:
         # `review_due_q`, the rule `is_review_ripe` reads on every work surface:
         # a review comes round when its recorded period begins, so this chip,
@@ -257,8 +251,8 @@ def open_action_prefetch(user: Any) -> Prefetch:
     the Matter it belongs to, and this prefetch decorates rows of a register
     whose Matters are visible by definition. Unscoped, it printed a restricted
     step's text and the colleague responsible for it onto a row anybody could
-    read — the exact condition `work_items.no_next_action_q` already warns about
-    two files away, where it says such an action "is invisible to most readers"
+    read: an action restricted below its Matter is invisible to most readers,
+    so every read of it goes through `NextAction.objects.visible_to`
     (AUTH-003).
     """
     return Prefetch(

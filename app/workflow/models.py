@@ -37,7 +37,7 @@ from app.workflow.lateness import (
     days_past_period,
     is_past_period,
     is_review_due,
-    overdue_date_q,
+    overdue_q,
     review_due_q,
 )
 
@@ -184,16 +184,13 @@ class NextActionQuerySet(models.QuerySet):
         is due for a look, not missed, and calling it overdue would make the
         whole list untrustworthy.
 
-        The date half is :func:`~app.workflow.lateness.overdue_date_q`, so an
+        The rule is :func:`~app.workflow.lateness.overdue_q`, whose date half is
+        :func:`~app.workflow.lateness.overdue_date_q`, so an
         approximate plan goes late only once its whole period has ended — and
         this queryset returns exactly the rows ``is_overdue`` below says are
         late, rather than a wider set the page then has to disagree with.
         """
-        return self.open().filter(
-            overdue_date_q(today or timezone.localdate()),
-            kind=OVERDUE_KIND,
-            date_semantics=OVERDUE_SEMANTICS,
-        )
+        return self.open().filter(overdue_q(today or timezone.localdate()))
 
     def due_for_review(self, today: date | None = None) -> NextActionQuerySet:
         """Open reviews that have come round — exactly the rows
@@ -703,10 +700,6 @@ class MatterPlanStep(BaseModel):
     def is_open(self) -> bool:
         """Still ahead: may be ordered, edited, skipped or started."""
         return self.state in (PlanStepState.SUGGESTED, PlanStepState.PLANNED)
-
-    @property
-    def is_suggested(self) -> bool:
-        return self.state == PlanStepState.SUGGESTED
 
     @property
     def is_completed(self) -> bool:

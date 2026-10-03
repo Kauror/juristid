@@ -46,9 +46,8 @@ from django.utils import timezone
 from app.core.errors import DomainError
 from app.core.ids import uuid7
 from app.documents.enums import ExtractionState
-from app.documents.services import add_evidence_version, create_document
 from app.documents.uploads import AcceptedUpload
-from app.matters.intake import MAX_INTAKE_FILES, role_for
+from app.matters.intake import MAX_INTAKE_FILES, file_incoming, role_for
 from app.matters.staging import MatterIntakeFile, MatterIntakeSession
 
 logger = logging.getLogger(__name__)
@@ -402,25 +401,19 @@ def promote_intake_files(
                 f"Faili „{staged.original_filename}” sisu on muutunud. Vali see uuesti."
             )
 
-        # The role is `role_for`'s, asked again of the same name rather than
-        # read back from the staged row. The staged copy is the same answer,
-        # kept for the analyser's ranking; asking the rule itself leaves no
-        # second rule behind — the fallback this replaced filed a row with a
-        # blank role as `INCOMING_AUTHORITY` whatever it was — and keeps every
-        # path that turns an incoming file into a Document on one classifier
-        # (ENG-066).
-        document = create_document(
+        # The role is `role_for`'s (inside `file_incoming`), asked again of the
+        # same name rather than read back from the staged row. The staged copy
+        # is the same answer, kept for the analyser's ranking; asking the rule
+        # itself leaves no second rule behind — the fallback this replaced
+        # filed a row with a blank role as `INCOMING_AUTHORITY` whatever it
+        # was — and keeps every path that turns an incoming file into a
+        # Document on one classifier (ENG-066).
+        file_incoming(
             matter=matter,
-            title=staged.original_filename,
-            role=role_for(staged.original_filename),
-            created_by=actor,
-        )
-        add_evidence_version(
-            document=document,
+            filename=staged.original_filename,
             content=content,
-            original_filename=staged.original_filename,
             mime_type=staged.mime_type,
-            uploaded_by=actor,
+            actor=actor,
             extraction_state=promoted_extraction_state(staged.extraction_state),
         )
         promoted.append(staged)

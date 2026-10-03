@@ -24,10 +24,17 @@ from app.core.errors import DomainError
 from app.core.web_addresses import normalize_web_address
 from app.core.widgets import EstonianDateField, EstonianDateInput
 from app.intelligence.enums import EffectiveDateKind
-from app.workflow.dates import MAX_YEAR, MIN_YEAR, InvalidPeriod, bounds_for
-from app.workflow.enums import ESTONIAN_MONTHS, ROMAN_QUARTERS, DatePrecision
+from app.workflow.dates import (
+    HALF_CHOICES,
+    MAX_YEAR,
+    MIN_YEAR,
+    MONTH_CHOICES,
+    QUARTER_CHOICES,
+    InvalidPeriod,
+    bounds_for,
+)
+from app.workflow.enums import DatePrecision
 
-TEXT_WIDGET = forms.TextInput(attrs={"class": "field__input"})
 SELECT_WIDGET = forms.Select(attrs={"class": "field__input field__input--compact"})
 DATE_WIDGET = EstonianDateInput()
 
@@ -54,17 +61,6 @@ NO_PERIOD = ""
 VICTORY_PRECISION_CHOICES: tuple[tuple[str, str], ...] = (
     *PRECISION_CHOICES,
     (NO_PERIOD, "Teadmata periood"),
-)
-
-MONTH_CHOICES: tuple[tuple[str, str], ...] = tuple(
-    (str(number), name.capitalize()) for number, name in enumerate(ESTONIAN_MONTHS, start=1)
-)
-QUARTER_CHOICES: tuple[tuple[str, str], ...] = tuple(
-    (str(number), f"{numeral} kvartal") for number, numeral in enumerate(ROMAN_QUARTERS, start=1)
-)
-HALF_CHOICES: tuple[tuple[str, str], ...] = (
-    ("1", "I poolaasta"),
-    ("2", "II poolaasta"),
 )
 
 
