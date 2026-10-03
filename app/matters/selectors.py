@@ -20,7 +20,7 @@ from app.core.dates import format_estonian_date
 from app.matters.activity import annotate_last_activity
 from app.matters.enums import REGISTER_YEAR_ORIGINS, MatterDataClass, RecordMode
 from app.matters.models import Matter
-from app.matters.next_step import without_next_step
+from app.matters.next_step import upcoming_milestone_prefetch, without_next_step
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
 from app.workflow.enums import (
@@ -283,6 +283,11 @@ def matter_list_queryset(user: Any) -> QuerySet[Matter]:
     without it rather than quietly paying per row (docs/adr/0050, PR #205).
 
     Eight correlated subqueries, evaluated once for the page, not per row.
+
+    ``upcoming_milestone_prefetch`` is the `Järgmiseks` cell's, for the same
+    reason: with no open step, the row names the nearest upcoming `Oluline
+    tähtaeg` the reader may see, exactly as the Matter page and `?tegevus=puudub`
+    read it (docs/adr/0120, RULE-01) — one reader-scoped query for the page.
     """
     from app.matters.work_items import annotate_response_obligation
 
@@ -290,7 +295,12 @@ def matter_list_queryset(user: Any) -> QuerySet[Matter]:
         annotate_last_activity(
             Matter.objects.visible_to(user)
             .select_related("owner", "stage", "addressee_organisation")
-            .prefetch_related(open_action_prefetch(user), "source_organisations", "policy_areas"),
+            .prefetch_related(
+                open_action_prefetch(user),
+                upcoming_milestone_prefetch(user),
+                "source_organisations",
+                "policy_areas",
+            ),
             user,
         ),
         user,
