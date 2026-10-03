@@ -45,7 +45,7 @@ from app.documents.derivatives import AttachmentDisposition, EmailAttachmentLink
 from app.documents.enums import DocumentRole
 from app.documents.extraction.base import ParsedAttachment
 from app.documents.filenames import canonical_filename
-from app.documents.models import DocumentVersion
+from app.documents.models import Document, DocumentVersion
 from app.documents.services import add_evidence_version, create_document
 from app.documents.uploads import EXTENSION_MIME_TYPES
 
@@ -257,29 +257,35 @@ def _storable_mime_type(attachment: ParsedAttachment) -> str | None:
     return None
 
 
-def parent_email_of(version: DocumentVersion) -> EmailAttachmentLink | None:
+def parent_email_of(version: DocumentVersion, *, viewer: Any) -> EmailAttachmentLink | None:
     """The message this exact binary arrived in, if it arrived in one.
 
-    Not one taken off its Matter (docs/adr/0120): the line would link to a page
-    that no longer opens.
+    Only one this reader may open, through `Document.visible_to` — the same
+    rule as the page it links to. That excludes one taken off its Matter
+    (docs/adr/0120), and one whose own visibility is stricter than the
+    attachment's: intake copies the message's restriction onto each
+    attachment, but a stored copy is not the rule (`app.core.authorization`).
     """
     return (
         EmailAttachmentLink.objects.filter(
-            attachment_version=version, parent_version__document__removed_at__isnull=True
+            attachment_version=version,
+            parent_version__document__in=Document.objects.visible_to(viewer),
         )
         .select_related("parent_version", "parent_version__document")
         .first()
     )
 
 
-def attachments_of(version: DocumentVersion) -> Any:
+def attachments_of(version: DocumentVersion, *, viewer: Any) -> Any:
     return (
         EmailAttachmentLink.objects.filter(
             parent_version=version,
             disposition=AttachmentDisposition.ATTACHMENT,
-            # An attachment removed as a mistaken file is not listed under its
-            # message either (docs/adr/0120).
-            attachment_version__document__removed_at__isnull=True,
+            # Only attachments this reader may open: not one removed as a
+            # mistaken file (docs/adr/0120), and not one whose own visibility
+            # is stricter than the message's. Its filename and size are what
+            # this list shows, and a filename is restricted content.
+            attachment_version__document__in=Document.objects.visible_to(viewer),
         )
         .select_related("attachment_version", "attachment_version__document")
         .order_by("ordinal")

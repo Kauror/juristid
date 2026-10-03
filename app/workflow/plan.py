@@ -43,6 +43,7 @@ from django.utils import timezone
 from app.audit.enums import ChangeEventType
 from app.audit.services import record_change_event
 from app.core.errors import DomainError
+from app.matters.enums import RecordMode
 from app.workflow.enums import (
     ActionKind,
     ActionStatus,
@@ -125,6 +126,9 @@ PLAN_TEMPLATES: dict[str, PlanTemplate] = {STANDARD_PLAN.key: STANDARD_PLAN}
 
 #: The editor was drawn from a plan somebody has changed since.
 STALE_PLAN_REFUSAL = "Tööplaani on vahepeal muudetud. Värskenda lehte ja vaata plaan uuesti üle."
+#: An archive register row is offered no plan at all (docs/adr/0133 §5). The
+#: page draws no control for one; this is the same rule for a crafted POST.
+ARCHIVE_HAS_NO_PLAN = "Arhiivikirjele tööplaani ei koostata."
 #: A step id that is not a step of this Matter's plan.
 STEP_NOT_ON_MATTER = "Seda sammu selle teema tööplaanis ei ole."
 #: Starting a step while another action is open would replace it silently.
@@ -210,6 +214,19 @@ def _lock(matter: Any) -> Any:
     from app.matters.locks import lock_open_matter_for_business_write
 
     return lock_open_matter_for_business_write(getattr(matter, "pk", matter))
+
+
+def _lock_for_new_steps(matter: Any) -> Any:
+    """`_lock`, for the two acts that put a step on a plan: seeding and `+ Lisa samm`.
+
+    Refused for an archive register row under the lock, not only by the page
+    hiding the controls (`plan_view.WorkPlanView.may_adopt`): a page is not a
+    boundary, and an open ARCHIVE Matter exists (docs/adr/0133 §5).
+    """
+    locked_matter = _lock(matter)
+    if locked_matter.record_mode != RecordMode.FULL:
+        raise DomainError(ARCHIVE_HAS_NO_PLAN)
+    return locked_matter
 
 
 def _locked_steps(locked_matter: Any) -> list[MatterPlanStep]:
@@ -307,7 +324,7 @@ def seed_standard_plan(
     chronology row. One `PLAN_SEEDED` audit event, and only when something was
     added.
     """
-    locked_matter = _lock(matter)
+    locked_matter = _lock_for_new_steps(matter)
     steps = _locked_steps(locked_matter)
     _check_revision(steps, expected_revision)
     present = {
@@ -370,7 +387,7 @@ def add_plan_step(
     """
     cleaned = _clean_title(title)
     _check_operation(operation)
-    locked_matter = _lock(matter)
+    locked_matter = _lock_for_new_steps(matter)
     steps = _locked_steps(locked_matter)
     _check_revision(steps, expected_revision)
     index = len(steps)
@@ -688,9 +705,13 @@ def _start(
         actor=actor,
         plan_step=step,
     )
+    # Saved whether or not the state changes. Starting a step changes which
+    # steps the editor may move, so it must move `plan_revision`; a PLANNED step
+    # left unsaved kept the old token, and a stale `↑/↓` then swapped a
+    # neighbour the editor had never shown (docs/adr/0133 §10).
     if step.state == PlanStepState.SUGGESTED:
         step.state = PlanStepState.PLANNED
-        step.save(update_fields=["state", "updated_at"])
+    step.save(update_fields=["state", "updated_at"])
     _record(
         ChangeEventType.PLAN_STEP_ACTIVATED,
         matter=locked_matter,

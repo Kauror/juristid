@@ -295,12 +295,18 @@ def annotate_last_activity(queryset: QuerySet[Matter], user: Any) -> QuerySet[Ma
         return apply_scope(model._default_manager.all(), child_visibility_q(scope))
 
     people_actions = scoped(NextAction)
+    # Removal is filtered here as well as visibility. `apply_scope` is the
+    # visibility half of `EntryQuerySet.visible_to` and
+    # `MatterEngagementQuerySet.visible_to`, which is where a removed row is
+    # otherwise kept out of every list and count (docs/adr/0102): a Märge filed
+    # on the wrong Matter and taken off it is not that Matter's last activity.
+    entries = scoped(Entry).filter(removed_at__isnull=True)
     begun_engagements = scoped(MatterEngagement).filter(
-        occurred_on__isnull=False, occurred_on__lte=timezone.localdate()
+        removed_at__isnull=True, occurred_on__isnull=False, occurred_on__lte=timezone.localdate()
     )
     pages = MatterSourcePage.objects.filter(relationship_kind__in=CHRONOLOGY_RELATIONSHIPS)
     return queryset.annotate(
-        activity_entry_at=_latest(scoped(Entry), "occurred_at"),
+        activity_entry_at=_latest(entries, "occurred_at"),
         # Any submission that carries a send date. A submission later withdrawn
         # or superseded was still genuinely sent on that day, and the withdrawal
         # does not un-happen the work.

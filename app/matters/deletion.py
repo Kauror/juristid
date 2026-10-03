@@ -198,6 +198,21 @@ class _Owned:
     #: about the Matter survives under the tombstone; an audit row about a
     #: business child would keep that child alive and is a refusal instead.
     direct: set[str] = field(default_factory=set)
+    #: Every `_referring_ids` answer this walk has already asked for, keyed by
+    #: the relation and the exact id list. `_outside_references` asks every
+    #: reverse relation of every owned model, and for the owning ones that is
+    #: the same question `_collect_owned` asked on the way down — a third of
+    #: the plan's queries were those repeats. One plan, one snapshot: the plan
+    #: `delete_matter` rebuilds under the row lock starts from an empty memo.
+    referring: dict[tuple[str, str, tuple[Any, ...]], frozenset[Any]] = field(
+        default_factory=dict, repr=False
+    )
+
+    def referring_ids(self, relation: Any, ids: Sequence[Any]) -> frozenset[Any]:
+        key = (relation.related_model._meta.label, relation.field.name, tuple(ids))
+        if key not in self.referring:
+            self.referring[key] = frozenset(_referring_ids(relation, ids))
+        return self.referring[key]
 
 
 def _chunked(values: Sequence[Any], size: int = CHUNK) -> Iterable[Sequence[Any]]:
@@ -243,7 +258,7 @@ def _collect_owned(matter: Matter) -> _Owned:
             if child is Matter:
                 continue
             child_label = child._meta.label
-            found = _referring_ids(relation, ids)
+            found = owned.referring_ids(relation, ids)
             if not found:
                 continue
             if model is Matter:
@@ -365,7 +380,7 @@ def _outside_references(owned: _Owned) -> list[DeletionBlocker]:
             continue
         for relation in _reverse_relations(model):
             child_label = relation.related_model._meta.label
-            outside = _referring_ids(relation, target) - owned.ids.get(child_label, set())
+            outside = owned.referring_ids(relation, target) - owned.ids.get(child_label, set())
             if not outside:
                 continue
             blockers.append(
