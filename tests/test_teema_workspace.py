@@ -32,7 +32,7 @@ from app.intelligence.models import MatterEffectiveDate, MatterImportantDate, Ma
 from app.matters import workspace
 from app.matters.locks import CLOSED_MATTER_REFUSAL
 from app.matters.models import Entry, MatterEngagement, MatterProceduralDevelopment
-from app.matters.services import close_matter, compose_update
+from app.matters.services import close_matter
 from app.matters.timeline import matter_timeline
 from app.workflow.enums import ActionKind, ActionStatus, DatePrecision, DateSemantics
 from app.workflow.models import NextAction
@@ -1203,43 +1203,6 @@ def test_a_stale_next_action_form_opens_no_step_on_a_closed_matter(
     )
 
 
-def test_the_compatibility_composer_cannot_append_to_a_closed_matter(
-    signed_in, specialist, normal_matter
-):
-    """A. The route docs/adr/0075 deliberately keeps, and the hole it was.
-
-    Nothing on the Teema page posts to `matters:compose` any more — which is
-    exactly why it matters: the pages that *do* post to it are the old ones
-    still open in somebody's browser, and an old page is a page rendered before
-    the closure. Deleting the route would have closed the hole and broken the
-    compatibility it exists for.
-    """
-    _close_elsewhere(normal_matter, specialist)
-
-    response = signed_in.post(
-        reverse("matters:compose", kwargs={"pk": normal_matter.pk}),
-        {"body": "<p>Vana vormi sissekanne.</p>"},
-        headers={"HX-Request": "true"},
-    )
-
-    assert response.status_code == 400
-    assert Entry.objects.filter(matter=normal_matter).count() == 0
-
-
-def test_the_composer_no_longer_closes_and_says_how(signed_in, specialist, normal_matter):
-    """A closure posted to the old composer is refused visibly (docs/adr/0131 §11)."""
-    response = signed_in.post(
-        reverse("matters:compose", kwargs={"pk": normal_matter.pk}),
-        {"body": "<p>Töö on tehtud.</p>", "disposition": "COMPLETED"},
-        headers={"HX-Request": "true"},
-    )
-
-    normal_matter.refresh_from_db()
-    assert response.status_code == 400, response.status_code
-    assert "Teema lõpetatakse hetkeseisuga" in response.content.decode()
-    assert normal_matter.is_open is True
-
-
 def test_a_reopened_matter_accepts_writes_again(signed_in, specialist, normal_matter):
     """The refusal is about the state, not about the Matter."""
     from app.matters.services import reopen_matter
@@ -1268,7 +1231,6 @@ def test_the_refusal_is_stated_where_the_write_is_decided(specialist, normal_mat
     _close_elsewhere(normal_matter, specialist)
 
     for call in (
-        lambda: workspace.add_matter_note(matter=normal_matter, author=specialist, body="<p>x</p>"),
         lambda: workspace.add_matter_engagement(
             matter=normal_matter, author=specialist, kind="SURVEY", audience="Liikmed"
         ),
@@ -1280,7 +1242,6 @@ def test_the_refusal_is_stated_where_the_write_is_decided(specialist, normal_mat
             period_end=date(2026, 12, 31),
             date_precision="YEAR",
         ),
-        lambda: compose_update(matter=normal_matter, author=specialist, body="<p>x</p>"),
     ):
         with refused(CLOSED_MATTER_REFUSAL):
             call()
@@ -1294,17 +1255,6 @@ def test_the_refusal_is_stated_where_the_write_is_decided(specialist, normal_mat
 #: records this rule is about. They are separate doors onto the same file, and
 #: a stale page posting to one of them is the same defect wearing another URL.
 STALE_OTHER_ROUTE_WRITES = [
-    (
-        # `SURVEY`, not `WEB_CALL`. The latter is a valid *stored* value that
-        # `EngagementForm` deliberately no longer offers (Teema redesign §14),
-        # so a payload carrying it is refused by the form on an open Matter too
-        # — and a closed-Matter test written on top of that refusal would be
-        # asserting nothing at all.
-        "matters:add_engagement",
-        {"pk": None},
-        {"kind": "SURVEY", "title": "Hiline kaasamine"},
-        lambda m: m.engagements.count(),
-    ),
     (
         "intelligence:add_important_date",
         {"matter_id": None},

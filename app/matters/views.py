@@ -73,7 +73,6 @@ from app.documents.services import (
     offered_document_roles,
 )
 from app.documents.uploads import UploadRejected
-from app.intelligence.models import MatterImportantDate
 from app.intelligence.selectors import (
     VISIBLE_VICTORY_STATUS,
     matter_intelligence,
@@ -100,7 +99,7 @@ from app.matters import person_work as person_workspace
 from app.matters.deletion import delete_matter, plan_matter_deletion
 from app.matters.department_dashboard import SeisFigure
 from app.matters.document_context import related_records
-from app.matters.enums import EngagementKind, MatterOrigin, RecordMode
+from app.matters.enums import MatterOrigin, RecordMode
 from app.matters.episode_timeline import matter_episode_timeline
 from app.matters.forms import (
     ENGAGEMENT_UNCHANGED,
@@ -111,7 +110,6 @@ from app.matters.forms import (
     CompactWebsiteOverviewForm,
     CompactWorkVictoryForm,
     CompleteCurrentActionForm,
-    ComposerForm,
     DevelopmentEvidenceForm,
     EngagementFeedbackForm,
     EngagementForm,
@@ -211,7 +209,6 @@ from app.matters.services import (
     assign_matter,
     change_stage,
     close_matter_for_terminal_stage,
-    compose_update,
     correct_engagement,
     correct_external_position,
     correct_procedural_development,
@@ -227,7 +224,6 @@ from app.matters.services import (
     open_engagement_feedback_wait,
     personal_note_record,
     personal_note_revision,
-    record_engagement,
     record_procedural_link,
     reopen_matter_into_stage,
     resolve_addressee,
@@ -281,13 +277,12 @@ from app.taxonomy.legal_instruments import OTHER_LEGAL_INSTRUMENT_KEYS
 from app.taxonomy.models import PolicyArea
 from app.taxonomy.vocabulary import selectable_policy_areas
 from app.workflow import plan as work_plan
-from app.workflow.enums import REVIEW_KINDS, PlanStepOperation, Track
+from app.workflow.enums import PlanStepOperation, Track
 from app.workflow.models import MatterPlanStep, NextAction, StageVocabulary
 from app.workflow.plan import seed_standard_plan
 from app.workflow.selectors import stages_including
 from app.workflow.services import (
     acknowledge_review,
-    complete_next_action,
     set_next_action_for_new_work,
 )
 from app.workflow.stage_flow import is_terminal as is_terminal_stage
@@ -546,41 +541,6 @@ def save_scratchpad(request: HttpRequest) -> HttpResponse:
             "scratchpad_saved_revision": person_workspace.scratchpad_revision(row),
         },
     )
-
-
-@login_required
-@business_write_required
-@require_http_methods(["POST"])
-def complete_work_item(request: HttpRequest, action_id: Any) -> HttpResponse:
-    """Mark one step done from Minu töö, without opening its Matter.
-
-    The whole gesture the ✓ on the row is: the same service the Matter page's
-    «✓ Tehtud» calls, with the same authorization, the same refusal and the same
-    audit row. What is different is only where the reader ends up — back on the
-    list they were working through, with the window they had chosen still in the
-    address (`?kuni=`).
-
-    Reached through `visible_to`, so an action restricted below its Matter is a
-    404 here exactly as it is everywhere else — and `.open()`, because a step
-    somebody has already finished in another tab must not be finished twice
-    (design handoff 1e).
-    """
-    action = get_object_or_404(
-        NextAction.objects.visible_to(request.user).open().select_related("matter"),
-        pk=action_id,
-    )
-    # The Matter itself, through the same gate any other route uses. An action
-    # is only reachable if its Matter is, and asking twice costs nothing.
-    get_visible_matter(request, action.matter_id)
-
-    try:
-        complete_next_action(action=action, actor=request.user)
-    except DomainError as error:
-        messages.error(request, str(error))
-    else:
-        messages.success(request, "Tegevus on märgitud tehtuks.")
-
-    return HttpResponseRedirect(_safe_next(request) or reverse("matters:my_work"))
 
 
 def _safe_next(request: HttpRequest) -> str:
@@ -2882,10 +2842,6 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
                 else []
             ),
         ),
-        # The superseded composer, still built for the endpoint that still
-        # accepts it. Nothing on this page renders it any more
-        # (docs/adr/0075 §11).
-        "composer_form": ComposerForm(matter=matter, viewer=request.user),
         # `summary_form` and `note_form` are deliberately absent: the header
         # context carries them, it is merged over this one, and reading the
         # private note twice per page is two queries for one answer.
@@ -3168,6 +3124,13 @@ def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # hint renders nothing at all rather than a placeholder.
         "note_saved_at": note_record.updated_at if note_record is not None else None,
         "can_write": can_write,
+        # **The header's `Hetkeseis` control is for an open file** (RULE-03).
+        # `can_write` says what this person may do; a closed Matter keeps its
+        # stage until `Ava uuesti`, which the closed banner offers, and the
+        # service refuses any other move — so the closed header states the
+        # stage rather than inviting a save that can only be refused. Not
+        # `can_write` itself: other corrections on a closed file stay allowed.
+        "can_change_stage": can_write and matter.is_open,
         # The rail renders on every Matter surface, so what the rail reads is
         # read here rather than three times over. Each opinion file with the
         # send that tells it apart and its working documents (docs/adr/0129 §9).
@@ -3685,121 +3648,6 @@ def _render_overview(
         body += render_to_string("matters/partials/header_stage.html", context, request=request)
         body += render_to_string("matters/partials/tabs.html", context, request=request)
     return HttpResponse(body, status=status)
-
-
-@login_required
-@business_write_required
-@require_http_methods(["POST"])
-def compose(request: HttpRequest, pk: Any) -> HttpResponse:
-    """The unified composer save. Entry and `Järgmiseks` land together."""
-    matter = get_visible_matter(request, pk)
-    form = ComposerForm(request.POST, request.FILES, matter=matter, viewer=request.user)
-
-    if not form.is_valid():
-        context = _overview_context(request, matter)
-        context.update(_header_context(request, matter))
-        context["composer_form"] = form
-        return render(request, "matters/partials/overview.html", context, status=400)
-
-    try:
-        kwargs = form.as_service_kwargs()
-        if kwargs.get("closure"):
-            # **No closure through the old composer either** (docs/adr/0131 §11).
-            # Nothing renders this form any more, and the one ordinary way a
-            # Matter ends is its `Hetkeseis` — a stale page must not keep a
-            # second, parallel door open. `compose_update` itself still closes
-            # for the callers that are not a person at a page.
-            raise DomainError(CLOSURE_IS_A_STAGE)
-        compose_update(matter=matter, author=request.user, **kwargs)
-    except (DomainError, UploadRejected) as error:
-        context = _overview_context(request, matter)
-        context.update(_header_context(request, matter))
-        context["composer_form"] = form
-        context["composer_error"] = str(error)
-        return render(request, "matters/partials/overview.html", context, status=400)
-
-    matter.refresh_from_db()
-    # **The header follows a closure out of band.**
-    #
-    # The composer swaps `#teema-vaade`, which is the action row, the chronology
-    # and the rail — and deliberately not the header band, because a save that
-    # only wrote a note has no business re-rendering the title, the metaline and
-    # its five inline editors. A closure is the one thing this save does that the
-    # header states: the state badge says `Avatud`, and it kept saying it beside
-    # a Matter that had just been archived. A page showing contradictory state
-    # after its own save is the defect HTMX swaps exist to avoid
-    # (implementation brief §57, docs/adr/0074 §10).
-    #
-    # Out of band rather than by widening the target: `#teema-vaade` is what the
-    # form must own, and a response that also replaced the header would re-render
-    # every inline editor on every note somebody writes.
-    return _render_overview(request, matter, header_out_of_band=not matter.is_open)
-
-
-#: What a closure posted anywhere but a `Hetkeseis` is told (docs/adr/0131 §11).
-CLOSURE_IS_A_STAGE = "Teema lõpetatakse hetkeseisuga: vali «Jõustunud» või «Rohkem ei tegele»."
-
-
-def _refused_overview(request: HttpRequest, matter: Matter) -> HttpResponse:
-    """400, and the overview column as it actually stands."""
-    context = _overview_context(request, matter)
-    context.update(_header_context(request, matter))
-    return render(request, "matters/partials/overview.html", context, status=400)
-
-
-@login_required
-@business_write_required
-@require_http_methods(["POST"])
-def add_engagement_view(request: HttpRequest, pk: Any) -> HttpResponse:
-    """Record one `Kaasamine` on this Matter. A compatibility door.
-
-    What a person uses is `+ Kaasamine`, whose refusals come back inside the
-    panel they were typed in (`_workspace_refusal`). This route survives for
-    the browsers still posting to it, and the standing `Kaasamine` section that
-    used to render its bound form went with docs/adr/0074 §9 — so a refusal
-    here is 400 and the column as it actually stands, which tells a stale tab
-    that the save did not land rather than showing it a success it did not get.
-    """
-    matter = get_visible_matter(request, pk)
-    form = EngagementForm(request.POST)
-    if not form.is_valid():
-        return _refused_overview(request, matter)
-
-    try:
-        record_engagement(
-            matter=matter,
-            # The vocabulary's own default, because this form no longer asks.
-            # `Liik` was a classification nothing read back, and a door that
-            # kept writing `Küsitlus` on rounds nobody described that way would
-            # be the one surface still manufacturing the fact the panel stopped
-            # asking for (docs/adr/0086 §1).
-            kind=EngagementKind.OTHER.value,
-            title=form.cleaned_data["title"],
-            # `Veebileht` and `Märkus` again, since the form offers both
-            # (docs/adr/0127 §2) — a door that rendered a box and dropped what
-            # was typed into it would be QA-03's defect one surface along.
-            url=form.cleaned_data.get("url") or "",
-            note=form.cleaned_data.get("note") or "",
-            smaily_url=form.cleaned_data.get("smaily_url") or "",
-            alchemer_url=form.cleaned_data.get("alchemer_url") or "",
-            # The **resolved** date. On this route it is always the day box or
-            # nothing, because a create has no stored period to preserve
-            # (`app/matters/forms.py`, `EngagementForm.clean`).
-            occurred_on=form.cleaned_data.get("occurred_on_value"),
-            occurred_on_precision=form.cleaned_data["occurred_on_precision"],
-            feedback_deadline=form.cleaned_data.get("feedback_deadline"),
-            feedback_received=form.cleaned_data.get("feedback_received") or "",
-            # Named here for the reason this door exists to serve: the form it
-            # posts now carries `Vastuseid`, and a route that rendered a box and
-            # dropped what was typed into it would be the defect QA-03 fixed,
-            # one surface along.
-            response_count=form.cleaned_data.get("response_count"),
-            actor=request.user,
-        )
-    except DomainError:
-        return _refused_overview(request, matter)
-
-    return _render_overview(request, matter)
 
 
 def _named_engagement_context(form: EngagementForm, posted: Any) -> dict[str, str]:
@@ -4395,78 +4243,6 @@ def set_action(request: HttpRequest, pk: Any) -> HttpResponse:
     return _render_overview(request, matter)
 
 
-def _next_action_row_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
-    """Everything `next_action_row.html` reads, and nothing else.
-
-    A deliberately small slice of `_overview_context`. The Järgmiseks row is the
-    one surface that re-renders on its own, and building the whole overview to
-    answer it would run the timeline, the engagement list and the intelligence
-    selectors for a fragment that shows none of them.
-
-    Scoped like `_overview_context`, and for the same reason: this fragment
-    renders the same row, so a second reader of the same fact must not answer a
-    different question about it.
-    """
-    current_action = selectors.current_action_of(matter, request.user)
-    # The same rule `_overview_context` asks, so this row and `PRAEGUNE
-    # TEGEVUS` cannot name different next steps (docs/adr/0120).
-    upcoming_step = (
-        None
-        if current_action
-        else upcoming_milestone(
-            MatterImportantDate.objects.filter(matter=matter).visible_to(request.user)
-        )
-    )
-    source_instruction = "" if current_action or upcoming_step else source_instruction_for(matter)
-    return {
-        "matter": matter,
-        "current_action": current_action,
-        "upcoming_step": upcoming_step,
-        "source_instruction": source_instruction,
-        "source_snapshot": snapshot_label() if source_instruction else "",
-        "can_write": may_write_business_content(request.user),
-        "can_defer": current_action is not None and not current_action.is_approximate,
-        "defer_choices": defer_choices(defer_base(current_action, timezone.localdate())),
-    }
-
-
-@login_required
-@business_write_required
-@require_http_methods(["POST"])
-def complete_action(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse:
-    """`✓ Tehtud` — the step is done, and that is the whole save.
-
-    **It writes no entry.** The completion is already evidence: the canonical
-    `NEXT_ACTION_COMPLETED` event says who finished what and when, and the
-    action itself stays in the history. Manufacturing a note that reads
-    "Helistasin ministeeriumisse" would be the application writing a lawyer's
-    record for them. Something worth recording goes in the composer, in their
-    own words, and that is a separate save (ADR 0052 §7).
-
-    **It swaps the Järgmiseks row and nothing else.** This used to re-render
-    `#teema-vaade`, which is the row *and the open composer under it* — so
-    finishing a step threw away every unsaved character somebody had typed
-    about it, which is exactly the moment they are most likely to be typing.
-    The write is persisted before the response either way; the chronology
-    catches up on the next render of the page (ADR 0052 §8, §9).
-    """
-    matter = get_visible_matter(request, pk)
-    action = get_object_or_404(
-        NextAction.objects.visible_to(request.user), pk=action_id, matter=matter
-    )
-    try:
-        complete_next_action(action=action, actor=request.user)
-    except DomainError as error:
-        # The refusal comes back inside the row, because the row is what the
-        # response replaces. Rendering the whole overview into a target that
-        # holds one row would nest the page inside itself.
-        context = _next_action_row_context(request, matter)
-        context["next_action_error"] = str(error)
-        return render(request, "matters/partials/next_action_row.html", context, status=400)
-    context = _next_action_row_context(request, matter)
-    return render(request, "matters/partials/next_action_row.html", context)
-
-
 @login_required
 @business_write_required
 @require_http_methods(["POST"])
@@ -4584,154 +4360,6 @@ def feedback_deadline_choices(today: date) -> list[dict[str, Any]]:
         }
         for when, label in spans
     ]
-
-
-#: What «Lükka edasi» offers, and how far each option moves the date.
-DEFER_OPTIONS: tuple[tuple[int, str], ...] = ((1, "+1 päev"), (7, "+1 nädal"))
-
-#: How far the free-date box will accept a deferral. Two years is well past any
-#: planning horizon the department has and short of the typo that would file a
-#: live instruction in 2226.
-DEFER_MAX_DAYS = 730
-
-
-def defer_base(action: Any, today: date) -> date:
-    """The day a deferral counts from.
-
-    **A step already dated in the future moves from its own date.** The pilot
-    found this the hard way: a review due 30.09, deferred by a day on 31.08,
-    became 01.09 — a date in the *past* relative to the plan it replaced, and
-    four weeks earlier than the day the lawyer was looking at. «+1 päev» means
-    one day later than the day the step is on, not one day later than the day
-    somebody happened to press the button (pilot QA F-05).
-
-    **An overdue step moves from today.** Somebody deferring a deadline that
-    passed six days ago means "give me another week", not "make it a day later
-    than the day I already missed" (design handoff 1c). `max` is the whole rule:
-    the base is the later of today and the date on the step.
-
-    **An undated historical row moves from today**, because there is no other
-    day to count from. It is the only case where the base is not a date somebody
-    chose, and it is the one case where today is the honest answer.
-    """
-    target = getattr(action, "target_date", None) if action is not None else None
-    return max(today, target) if target else today
-
-
-def defer_choices(base: date) -> list[dict[str, Any]]:
-    """The quick options, with the day each one actually lands on.
-
-    Resolved here, in Europe/Tallinn, and rendered on the control. A chip that
-    said only "+1 nädal" would leave the reader to do the arithmetic, and one
-    that worked it out in the browser would answer in the reader's timezone
-    rather than in the department's.
-
-    `base` is :func:`defer_base` for the step being offered, never today: the
-    label and the write have to agree, and a chip reading «+1 päev · K 02.09»
-    over a step dated 30.09 is the defect it is supposed to prevent.
-    """
-    return [
-        {
-            "days": days,
-            "label": label,
-            "when": f"{weekday_letter(base + timedelta(days=days))} "
-            f"{short_day_month(base + timedelta(days=days))}",
-        }
-        for days, label in DEFER_OPTIONS
-    ]
-
-
-@login_required
-@business_write_required
-@require_http_methods(["POST"])
-def defer_action(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse:
-    """Move the current step's date, by the service the step's kind requires.
-
-    Two different acts wearing one control. A **DO** carries a commitment Koda
-    made, and moving it is a new instruction that supersedes the old one — which
-    is what `set_next_action_for_new_work` does, chain and audit row included. A
-    **WAIT** or **MONITOR** carries a review date, and moving that is
-    acknowledging the review: the Matter is still waiting on the same thing, so
-    the action keeps its identity and only its date moves.
-
-    Nothing new is decided here. Both services validate, both write their own
-    change event, and both refuse a closed Matter — this view chooses between
-    them and computes no business rule of its own (app/workflow/services.py).
-
-    **It swaps the Järgmiseks row and nothing else**, exactly as «✓ Tehtud»
-    does. This used to re-render the whole overview column — the row *and the
-    open composer under it* — so deferring a step threw away every unsaved
-    character somebody had typed about it, which is the same defect ADR 0052 §8
-    fixed on the completion control and missed here (pilot QA F-04).
-
-    **It counts from the day the step is on**, not from today. See
-    :func:`defer_base` (pilot QA F-05).
-    """
-    matter = get_visible_matter(request, pk)
-    action = get_object_or_404(
-        NextAction.objects.visible_to(request.user).open(), pk=action_id, matter=matter
-    )
-
-    today = timezone.localdate()
-    # The day the delta is added to. Not today: a step already dated in the
-    # future moves from its own date, which is the whole of F-05
-    # (:func:`defer_base`).
-    base = defer_base(action, today)
-    raw_days = (request.POST.get("paevad") or "").strip()
-    raw_date = (request.POST.get("kuupaev") or "").strip()
-    target: date | None = None
-    if raw_days:
-        try:
-            days = int(raw_days)
-        except ValueError:
-            days = 0
-        if 0 < days <= DEFER_MAX_DAYS:
-            target = base + timedelta(days=days)
-    elif raw_date:
-        # A typed date names a day. Nothing is added to it — the box is the
-        # answer to "when instead", not to "how much later".
-        target = parse_flexible_date(raw_date)
-
-    if target is None or target > base + timedelta(days=DEFER_MAX_DAYS):
-        return _next_action_error(request, matter, "Kirjuta kuupäev kujul 7.9.2026.")
-
-    try:
-        if action.kind in REVIEW_KINDS:
-            acknowledge_review(action=action, actor=request.user, next_review_date=target)
-        else:
-            # The same person stays responsible. Left to the default it would
-            # fall back to the Matter's owner, quietly moving somebody else's
-            # instruction onto the owner's queue (app/workflow/services.py,
-            # `responsible_for_new_work`).
-            set_next_action_for_new_work(
-                matter=matter,
-                text=action.text,
-                kind=action.kind,
-                date_semantics=action.date_semantics,
-                target_date=target,
-                responsible=action.responsible,
-                actor=request.user,
-            )
-    except DomainError as error:
-        return _next_action_error(request, matter, str(error))
-
-    context = _next_action_row_context(request, matter)
-    return render(request, "matters/partials/next_action_row.html", context)
-
-
-def _next_action_error(request: HttpRequest, matter: Matter, message: str) -> HttpResponse:
-    """The Järgmiseks row again, with the refusal inside it.
-
-    400 with the re-rendered fragment, so somebody pressing a button that could
-    not do what it said reads why (static/js/app.js, `responseHandling`). The
-    *row*, because the row is what the response replaces: rendering the whole
-    overview into a target that holds one row would nest the page inside itself,
-    and re-rendering the column is what threw away the open composer
-    (pilot QA F-04).
-    """
-    context = _next_action_row_context(request, matter)
-    context["next_action_error"] = message
-    return render(request, "matters/partials/next_action_row.html", context, status=400)
 
 
 FIELD_SERVICES = {

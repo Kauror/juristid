@@ -31,7 +31,7 @@ from django.utils import timezone
 
 from app.core.dates import format_estonian_date
 from app.matters import my_work, selectors, work_items
-from app.matters.forms import ComposerForm, MatterProgressForm, NextActionForm
+from app.matters.forms import MatterProgressForm, NextActionForm
 from app.matters.models import MatterProceduralDevelopment
 from app.workflow.enums import ActionKind, ActionStatus, DatePrecision, DateSemantics
 from app.workflow.models import NO_DATE_LABEL, NextAction
@@ -269,14 +269,6 @@ def test_the_progress_form_refuses_a_step_ahead_with_no_sentence(normal_matter):
     assert form.errors["title"] == ["Kirjuta järgmine tegevus."]
     assert "occurred_on" not in form.errors
     assert not form.non_field_errors()
-
-
-def test_the_composer_accepts_a_next_step_with_no_date(normal_matter):
-    """The third form that carries the rule."""
-    form = ComposerForm({"body": "Kohtusime ministeeriumiga", "next_text": "Ootan uut versiooni"})
-
-    assert form.is_valid(), form.errors
-    assert form.cleaned_data["next_action_kwargs"]["target_date"] is None
 
 
 def test_editing_an_existing_action_can_clear_its_date(signed_in, normal_matter, specialist):
@@ -641,22 +633,6 @@ def test_the_prepare_by_flow_still_invents_no_action(normal_matter, specialist):
             matter=normal_matter, prepare_by=None, actor=specialist
         )
     assert not NextAction.objects.filter(matter=normal_matter).exists()
-
-
-def test_the_defer_base_counts_from_today_for_an_undated_step(normal_matter, specialist):
-    """The one place an undated step meets date arithmetic.
-
-    `Lükka edasi` no longer renders on the Teema page and its route survives, so
-    the base has to stay defined: for a step with no day there is no other day to
-    count from, and today is the honest answer rather than an error.
-    """
-    from app.matters.views import defer_base
-
-    action = _undated(normal_matter, specialist)
-    today = timezone.localdate()
-
-    assert defer_base(action, today) == today
-    assert defer_base(None, today) == today
 
 
 def test_historical_wait_and_monitor_semantics_are_untouched(normal_matter, specialist):

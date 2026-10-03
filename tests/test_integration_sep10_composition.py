@@ -194,8 +194,9 @@ def test_the_owner_still_sees_their_own_restricted_step(composed):
 def test_no_other_matter_route_answers_what_the_page_refuses(composed):
     """The same fact is reachable from more than one address.
 
-    #160 scoped `_overview_context` and `_next_action_row_context` together for
-    this reason. These are the reader-reachable `GET`s on a Matter; a scoping
+    #160 scoped `_overview_context` and the Järgmiseks row's own context
+    together for this reason (the row and its context were retired by ENG-050A).
+    These are the reader-reachable `GET`s on a Matter; a scoping
     that covered the page and not its neighbours would leave the answer one URL
     away.
     """

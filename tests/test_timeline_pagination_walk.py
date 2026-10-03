@@ -27,13 +27,12 @@ import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 
-from app.matters.services import create_matter
+from app.matters.services import add_entry, create_matter
 from app.matters.timeline import matter_timeline
 from app.matters.views import TIMELINE_PAGE_SIZE
 from app.matters.workspace import (
     add_engagement_feedback,
     add_matter_engagement,
-    add_matter_note,
     add_procedural_development,
 )
 from app.workflow.models import StageVocabulary
@@ -119,7 +118,7 @@ def test_one_kaasamine_with_many_reply_files(specialist):
     """The audit's first reproduction: 95 reply files on one round, five rows,
     one of them reachable, «Teema loodud» never."""
     matter = _new_matter(specialist)
-    add_matter_note(matter=matter, author=specialist, body="Enne kaasamist")
+    add_entry(matter=matter, author=specialist, body="Enne kaasamist")
     engagement = add_matter_engagement(
         matter=matter,
         author=specialist,
@@ -133,7 +132,7 @@ def test_one_kaasamine_with_many_reply_files(specialist):
         feedback_received="Vastused",
         uploads=[_file(f"vastus-{index:03d}.pdf") for index in range(95)],
     )
-    add_matter_note(matter=matter, author=specialist, body="Pärast kaasamist")
+    add_entry(matter=matter, author=specialist, body="Pärast kaasamist")
 
     full = _assert_walk_is_the_whole_chronology(matter, specialist)
     _created_is_reachable(full)
@@ -188,7 +187,7 @@ def test_backdated_records_are_neither_repeated_nor_skipped(specialist):
             uploads=[_file(f"b{index:02d}.pdf")],
         )
         if index % 5 == 0:
-            add_matter_note(matter=matter, author=specialist, body=f"Märkus {index:02d}")
+            add_entry(matter=matter, author=specialist, body=f"Märkus {index:02d}")
     add_procedural_development(matter=matter, author=specialist, title="Liigub edasi", stage=first)
 
     full = _assert_walk_is_the_whole_chronology(matter, specialist)
@@ -202,10 +201,11 @@ def test_a_mixed_file_over_many_pages(specialist):
     day = date(2025, 3, 3)
     for index in range(30):
         day += timedelta(days=2)
-        add_matter_note(
+        add_procedural_development(
             matter=matter,
             author=specialist,
-            body=f"Märge {index:02d}",
+            title=f"Märge {index:02d}",
+            occurred_on=day,
             uploads=[_file(f"m{index:02d}.pdf")] if index % 3 == 0 else [],
         )
         add_procedural_development(
@@ -246,7 +246,7 @@ def test_the_filtered_views_walk_the_same_way(specialist, only):
     matter = _new_matter(specialist)
     first, second = _stages()
     for index in range(35):
-        add_matter_note(matter=matter, author=specialist, body=f"Märge {index:02d}")
+        add_entry(matter=matter, author=specialist, body=f"Märge {index:02d}")
         add_procedural_development(
             matter=matter,
             author=specialist,
@@ -327,7 +327,7 @@ def test_the_first_page_does_not_read_the_whole_history(specialist, monkeypatch)
 
     matter = _new_matter(specialist)
     for index in range(300):
-        add_matter_note(matter=matter, author=specialist, body=f"Märge {index:03d}")
+        add_entry(matter=matter, author=specialist, body=f"Märge {index:03d}")
 
     loaded: list[tuple[int, int]] = []
     original = timeline._ChronologySources.load

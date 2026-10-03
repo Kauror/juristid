@@ -27,8 +27,10 @@ them writes a model field: `complete_next_action`, `set_next_action_for_new_work
 invariants, audit rows and authorization. What is new is the orchestration —
 that a fact, its files and the links between them land together or not at all.
 
-`compose_update` is untouched and still exported; it is simply no longer what
-the Teema page posts to (docs/adr/0075 §11).
+These operations replaced the single composer save, which wrote any mix of an
+entry, a step, a closure and the rest in one transaction. `compose_update`, its
+form and its route were retired with ENG-050A2 (docs/adr/0075 §11, amended);
+the primitives above are what these operations call.
 
 **Every operation that adds content starts by locking the Matter and refusing a
 closed one** (`lock_open_matter_for_business_write`). Not because the page shows
@@ -122,8 +124,8 @@ TERMINAL_STAGE_MAKES_NO_STEP = (
 class WorkspaceResult:
     """What one workspace operation wrote.
 
-    A dataclass rather than a tuple for the reason :class:`ComposerResult` is
-    one: these grow a field when an operation learns to write something else,
+    A dataclass rather than a tuple: these grow a field when an operation
+    learns to write something else,
     and a caller unpacking positionally would silently take the wrong one.
     """
 
@@ -347,37 +349,6 @@ def change_current_action(*, matter: Matter, actor: Any, action_id: Any, **step:
 
 
 @transaction.atomic
-def add_matter_note(
-    *,
-    matter: Matter,
-    author: Any,
-    body: str,
-    uploads: Sequence[Any] = (),
-) -> WorkspaceResult:
-    """`+ Märge` — something happened, and it is not the current task finishing.
-
-    The route for "the ministry rang to say the new version comes on Friday"
-    while the step that is open stays open. It writes an `Entry` and its
-    evidence and touches `Järgmiseks` in no way at all: not completing it, not
-    superseding it, not creating one. That separation is the whole reason this
-    operation exists beside the one above (docs/adr/0075 §7).
-    """
-    locked_matter = lock_open_matter_for_business_write(matter.pk)
-    with composer_operation() as operation_id:
-        result = WorkspaceResult(operation_id=operation_id)
-        result.entry = add_entry(
-            matter=locked_matter, body=body, author=author, kind=EntryKind.NOTE
-        )
-        result.documents = capture_supporting_evidence(
-            matter=locked_matter,
-            record=result.entry,
-            uploads=_uploads(uploads),
-            actor=author,
-        )
-        return result
-
-
-@transaction.atomic
 def add_matter_engagement(
     *,
     matter: Matter,
@@ -514,7 +485,7 @@ def add_engagement_feedback(
     all the service's, taken under the Matter's row lock; nothing is re-asked
     here. The evidence is captured **after** the completion, so a refused upload
     unwinds a completion that has already been written rather than the other way
-    round — the order `add_matter_engagement` and `add_matter_note` already use.
+    round — the order `add_matter_engagement` already uses.
 
     Returns the completed engagement rather than a `WorkspaceResult`, because
     the caller swaps that one row back into the chronology and has no use for an

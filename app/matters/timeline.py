@@ -38,6 +38,7 @@ from django.utils import timezone
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.audit.visibility import scope_change_events
+from app.core.authorization import ROLES_WITH_RESTRICTED_ACCESS
 from app.core.dates import format_estonian_date, start_of_local_day
 from app.matters import selectors
 from app.matters.entry_enums import EntryKind
@@ -1984,11 +1985,27 @@ def matter_timeline(
     # step's text — and a restricted document properly hidden from Dokumendid
     # was still naming itself here, because the row describing it was selected
     # by the Matter alone (AUTH-003, app/audit/visibility.py).
-    event_scope = scope_change_events(ChangeEvent.objects.filter(matter=matter), user).filter(
+    scoped_events = scope_change_events(ChangeEvent.objects.filter(matter=matter), user).filter(
         models.Q(event_type__in=TIMELINE_EVENT_TYPES)
         | models.Q(event_type__in=SUPPRESSED_WHEN_ENTRY_SHOWN)
         | models.Q(event_type__in=RECORD_OPERATION_EVENT_TYPES)
     )
+    # **Read once, then named by id, for a reader the rule narrows** (QRY-04).
+    # The scope is one correlated `EXISTS` per child family, and `bound`, `load`
+    # and every doubling round inlined it three or four times per statement —
+    # 113 KB of SQL for a reader, planned at five times the cost of running it.
+    # Which events such a reader may see on this one Matter is a set bounded by
+    # the Matter's own history, so it is answered once and every later statement
+    # filters on the ids. Same rows: the ids come from the same scoped queryset.
+    #
+    # Not for the legal-department roles, whose visibility predicate is empty:
+    # their statements stay small, and the same id list repeated through every
+    # statement measured slower than the scope it replaced.
+    event_scope = scoped_events
+    if getattr(user, "role", "") not in ROLES_WITH_RESTRICTED_ACCESS:
+        event_scope = ChangeEvent.objects.filter(
+            matter=matter, pk__in=list(scoped_events.values_list("pk", flat=True))
+        )
 
     # The structured facts, as their own rows, **before** the events are
     # assembled. Which effects fold onto which row depends on which records this

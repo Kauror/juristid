@@ -31,9 +31,6 @@ from django.utils import timezone
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.core.dates import format_estonian_date
-from app.documents.enums import DocumentRole
-from app.intelligence.models import MatterImportantDate
-from app.matters.forms import ComposerForm
 from app.matters.models import Entry
 from app.workflow.enums import ActionKind, ActionStatus, DatePrecision, DateSemantics, Disposition
 from app.workflow.models import NextAction
@@ -69,18 +66,31 @@ def _jargmiseks_row(body: str) -> str:
     return " ".join(body[start : body.index('id="lisa-teemale"', start)].split())
 
 
-def _compose_url(matter) -> str:
-    return reverse("matters:compose", kwargs={"pk": matter.pk})
-
-
 def _detail(client, matter) -> str:
     return client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
 
 
-def _post(client, matter, **fields):
-    payload = {"kind": "NOTE", "attachment_role": DocumentRole.OTHER}
-    payload.update(fields)
-    return client.post(_compose_url(matter), payload, headers={"HX-Request": "true"})
+def _set_step(client, matter, *, text="", target_date="", **extra):
+    """`+ Järgmine tegevus` / `Muuda` — `matters:set_action`, the step's own door.
+
+    This file posted to the superseded composer, which wrote the description
+    and the step in one save; it was retired with ENG-050A2 (docs/adr/0075).
+    """
+    payload = {"text": text, "target_date": target_date, **extra}
+    return client.post(
+        reverse("matters:set_action", kwargs={"pk": matter.pk}),
+        payload,
+        headers={"HX-Request": "true"},
+    )
+
+
+def _marge(client, matter, title):
+    """`+ Märge` — something happened, and the open step is not part of it."""
+    return client.post(
+        reverse("matters:add_note", kwargs={"pk": matter.pk}),
+        {"title": title, "occurred_on": format_estonian_date(timezone.localdate())},
+        headers={"HX-Request": "true"},
+    )
 
 
 def _in_a_week() -> str:
@@ -105,10 +115,9 @@ def test_a_body_alone_writes_an_entry_and_leaves_the_current_step_alone(
         actor=specialist,
     )
 
-    response = _post(signed_in, normal_matter, body="<p>Ministeerium lubas uue versiooni.</p>")
+    response = _marge(signed_in, normal_matter, "Ministeerium lubas uue versiooni.")
     assert response.status_code == 200, response.content.decode()[:2000]
 
-    assert Entry.objects.filter(matter=normal_matter).count() == 1
     existing.refresh_from_db()
     assert existing.status == ActionStatus.OPEN
     assert existing.text == "Helistada Kliimaministeeriumisse"
@@ -122,12 +131,8 @@ def test_a_next_action_alone_writes_no_empty_entry(signed_in, normal_matter):
     so recording only what happens next was impossible: it always dragged an
     entry along saying the same sentence.
     """
-    response = _post(
-        signed_in,
-        normal_matter,
-        body="",
-        next_text="Vaadata uus eelnõu versioon üle",
-        next_date=_in_a_week(),
+    response = _set_step(
+        signed_in, normal_matter, text="Vaadata uus eelnõu versioon üle", target_date=_in_a_week()
     )
     assert response.status_code == 200, response.content.decode()[:2000]
 
@@ -135,32 +140,6 @@ def test_a_next_action_alone_writes_no_empty_entry(signed_in, normal_matter):
     action = current_next_action(normal_matter)
     assert action is not None
     assert action.text == "Vaadata uus eelnõu versioon üle"
-
-
-def test_a_body_and_a_next_action_are_two_different_records(signed_in, normal_matter):
-    """C. The whole point of the change, in one save.
-
-    What happened and what happens next are different sentences, and neither is
-    derived from the other in either direction.
-    """
-    response = _post(
-        signed_in,
-        normal_matter,
-        body="<p>Ministeerium lubas saata uue versiooni nädala lõpuks.</p>",
-        next_text="Vaadata uus eelnõu versioon üle",
-        next_date=_in_a_week(),
-    )
-    assert response.status_code == 200, response.content.decode()[:2000]
-
-    entry = Entry.objects.get(matter=normal_matter)
-    action = current_next_action(normal_matter)
-    assert action is not None
-
-    assert "Ministeerium lubas" in entry.body
-    assert action.text == "Vaadata uus eelnõu versioon üle"
-    # Neither leaked into the other. No splitting, no copying, no summarising.
-    assert "Ministeerium" not in action.text
-    assert "Vaadata uus eelnõu versioon üle" not in entry.body
 
 
 # ---------------------------------------------------------------------------
@@ -177,13 +156,7 @@ def test_a_next_action_without_a_date_is_saved_and_never_filed_for_today(signed_
     and the step are both written now, and the date stays `NULL` rather than
     becoming today.
     """
-    response = _post(
-        signed_in,
-        normal_matter,
-        body="<p>Käisin koosolekul.</p>",
-        next_text="Vaadata uus versioon üle",
-        next_date="",
-    )
+    response = _set_step(signed_in, normal_matter, text="Vaadata uus versioon üle")
     assert response.status_code == 200, response.content.decode()[:2000]
 
     action = NextAction.objects.get(matter=normal_matter)
@@ -192,90 +165,13 @@ def test_a_next_action_without_a_date_is_saved_and_never_filed_for_today(signed_
     assert action.kind == ActionKind.DO
     assert action.date_semantics == DateSemantics.DEADLINE
     assert action.status == ActionStatus.OPEN
-    # Nothing was invented, on either side of the save.
+    # Nothing was invented.
     assert action.target_date != timezone.localdate()
-    assert Entry.objects.filter(matter=normal_matter).exists()
-
-
-def test_a_date_without_a_next_action_is_refused_on_the_text(signed_in, normal_matter):
-    """E. A date on its own is asking for a step, so it is answered as one."""
-    response = _post(
-        signed_in,
-        normal_matter,
-        body="<p>Käisin koosolekul.</p>",
-        next_text="",
-        next_date=_in_a_week(),
-    )
-    assert response.status_code == 400
-
-    form = response.context["composer_form"]
-    assert form.errors["next_text"] == ["Kirjuta järgmine tegevus."]
-    assert "next_date" not in form.errors
-    assert not NextAction.objects.filter(matter=normal_matter).exists()
-
-
-def test_a_date_alone_is_not_reported_as_an_empty_save(signed_in, normal_matter):
-    """The refusal has to point at the box, not say "you typed nothing".
-
-    Something *was* typed. Falling through to the composer's empty-save guard
-    would raise a non-field error that says the opposite and names no control.
-    """
-    response = _post(signed_in, normal_matter, body="", next_text="", next_date=_in_a_week())
-    assert response.status_code == 400
-    form = response.context["composer_form"]
-    assert not form.non_field_errors()
-    assert "next_text" in form.errors
 
 
 # ---------------------------------------------------------------------------
 # 6-8. The other composer paths still save on their own
 # ---------------------------------------------------------------------------
-
-
-def test_an_attachment_alone_still_saves(signed_in, normal_matter, pdf_bytes):
-    """F, part one. No body, no next step — a file, and it lands."""
-    from django.core.files.uploadedfile import SimpleUploadedFile
-
-    response = signed_in.post(
-        _compose_url(normal_matter),
-        {
-            "body": "",
-            "next_text": "",
-            "next_date": "",
-            "kind": "NOTE",
-            "attachment": SimpleUploadedFile("kiri.pdf", pdf_bytes, content_type="application/pdf"),
-            "attachment_role": DocumentRole.OTHER,
-        },
-        headers={"HX-Request": "true"},
-    )
-    assert response.status_code == 200, response.content.decode()[:2000]
-    assert normal_matter.documents.count() == 1
-    assert not NextAction.objects.filter(matter=normal_matter).exists()
-
-
-def test_an_important_deadline_alone_still_saves(signed_in, normal_matter):
-    """F, part two — and the period control it keeps.
-
-    `Oluline tähtaeg` is the surface where "in the autumn" is a real answer, so
-    it keeps the precision group the next step gave up (ADR 0052 §4).
-    """
-    response = _post(
-        signed_in,
-        normal_matter,
-        body="",
-        next_text="",
-        next_date="",
-        deadline_title="Kooskõlastusring lõpeb",
-        deadline_precision=DatePrecision.QUARTER,
-        deadline_quarter="3",
-        deadline_year=str(timezone.localdate().year),
-    )
-    assert response.status_code == 200, response.content.decode()[:2000]
-
-    deadline = MatterImportantDate.objects.get(matter=normal_matter)
-    assert deadline.title == "Kooskõlastusring lõpeb"
-    assert deadline.date_precision == DatePrecision.QUARTER
-    assert not NextAction.objects.filter(matter=normal_matter).exists()
 
 
 def test_closing_the_matter_still_works_with_neither_box(signed_in, normal_matter, specialist):
@@ -311,12 +207,6 @@ def test_closing_the_matter_still_works_with_neither_box(signed_in, normal_matte
     assert current_next_action(normal_matter) is None
 
 
-def test_nothing_at_all_is_still_refused(signed_in, normal_matter):
-    response = _post(signed_in, normal_matter, body="", next_text="", next_date="")
-    assert response.status_code == 400
-    assert response.context["composer_form"].non_field_errors()
-
-
 # ---------------------------------------------------------------------------
 # 9-10. Superseding, completing, and the difference between them
 # ---------------------------------------------------------------------------
@@ -340,12 +230,12 @@ def test_a_new_step_supersedes_the_open_one_rather_than_completing_it(
         actor=specialist,
     )
 
-    _post(
+    _set_step(
         signed_in,
         normal_matter,
-        body="",
-        next_text="Helistada ministeeriumile",
-        next_date=_in_a_week(),
+        text="Helistada ministeeriumile",
+        target_date=_in_a_week(),
+        action_id=str(first.pk),
     )
 
     first.refresh_from_db()
@@ -358,71 +248,6 @@ def test_a_new_step_supersedes_the_open_one_rather_than_completing_it(
     assert not ChangeEvent.objects.filter(
         matter=normal_matter, event_type=ChangeEventType.NEXT_ACTION_COMPLETED
     ).exists()
-
-
-def test_tehtud_completes_the_step_and_writes_no_entry(signed_in, normal_matter, specialist):
-    """10 + ADR 0052 §7. The system already knows what was completed.
-
-    Manufacturing "Helistasin Kliimaministeeriumisse" as a note would be the
-    application writing a lawyer's record for them under their name.
-    """
-    action = set_next_action(
-        matter=normal_matter,
-        text="Helistada Kliimaministeeriumisse",
-        kind=ActionKind.DO,
-        date_semantics=DateSemantics.DEADLINE,
-        target_date=timezone.localdate() + timedelta(days=1),
-        actor=specialist,
-    )
-
-    response = signed_in.post(
-        reverse("matters:complete_action", kwargs={"pk": normal_matter.pk, "action_id": action.pk}),
-        headers={"HX-Request": "true"},
-    )
-    assert response.status_code == 200
-
-    action.refresh_from_db()
-    assert action.status == ActionStatus.COMPLETED
-    assert action.ended_by == specialist
-    assert ChangeEvent.objects.filter(
-        matter=normal_matter,
-        event_type=ChangeEventType.NEXT_ACTION_COMPLETED,
-        object_id=action.pk,
-    ).exists()
-
-    # The whole of it. No entry, and no replacement step.
-    assert not Entry.objects.filter(matter=normal_matter).exists()
-    assert current_next_action(normal_matter) is None
-    assert NextAction.objects.filter(matter=normal_matter).count() == 1
-
-
-def test_tehtud_answers_with_the_row_and_not_the_whole_column(signed_in, normal_matter, specialist):
-    """ADR 0052 §9 — the server half of "do not lose unsaved composer content".
-
-    The browser half is `e2e/test_simplified_next_action.py`. What is asserted
-    here is that the response is a fragment small enough not to contain the
-    composer at all: a response that carried `#teema-vaade` would replace the
-    open form however the target was written.
-    """
-    action = set_next_action(
-        matter=normal_matter,
-        text="Saata kiri ministeeriumile",
-        kind=ActionKind.DO,
-        date_semantics=DateSemantics.DEADLINE,
-        target_date=timezone.localdate() + timedelta(days=1),
-        actor=specialist,
-    )
-
-    response = signed_in.post(
-        reverse("matters:complete_action", kwargs={"pk": normal_matter.pk, "action_id": action.pk}),
-        headers={"HX-Request": "true"},
-    )
-    body = response.content.decode()
-
-    assert 'id="jargmiseks-rida"' in body
-    assert 'id="teema-vaade"' not in body
-    assert 'id="teema-koostaja"' not in body
-    assert "composer__body" not in body
 
 
 def test_completion_is_the_result_being_saved_and_swaps_the_whole_column(
@@ -510,14 +335,22 @@ def test_a_historical_action_can_still_be_completed_from_the_teema_page(
         actor=specialist,
     )
 
+    # `PRAEGUNE TEGEVUS` → `Salvesta`, the one completion door (ENG-050A retired
+    # `matters:complete_action`, which this used to post to).
     response = signed_in.post(
-        reverse("matters:complete_action", kwargs={"pk": normal_matter.pk, "action_id": action.pk}),
+        reverse("matters:complete_current_action", kwargs={"pk": normal_matter.pk}),
+        {"action_id": str(action.pk), "body": "Eelnõu menetlus on lõppenud."},
         headers={"HX-Request": "true"},
     )
     assert response.status_code == 200
 
     action.refresh_from_db()
     assert action.status == ActionStatus.COMPLETED
+    assert ChangeEvent.objects.filter(
+        matter=normal_matter,
+        event_type=ChangeEventType.NEXT_ACTION_COMPLETED,
+        object_id=action.pk,
+    ).exists()
     # Completing it did not rewrite what it was.
     assert action.kind == kind
     assert action.date_semantics == DateSemantics.REVIEW_ON
@@ -562,12 +395,11 @@ def test_an_approximate_historical_action_keeps_its_period_wording(
 
 def test_a_native_step_is_stored_do_deadline_exact(signed_in, normal_matter):
     target = timezone.localdate() + timedelta(days=7)
-    _post(
+    _set_step(
         signed_in,
         normal_matter,
-        body="",
-        next_text="Vaadata uus versioon üle",
-        next_date=format_estonian_date(target),
+        text="Vaadata uus versioon üle",
+        target_date=format_estonian_date(target),
     )
 
     action = current_next_action(normal_matter)
@@ -578,55 +410,32 @@ def test_a_native_step_is_stored_do_deadline_exact(signed_in, normal_matter):
     assert action.target_date == target
 
 
-def test_the_composer_has_no_field_for_a_kind_or_a_date_meaning(normal_matter, specialist):
-    """Removed, not hidden.
-
-    A form that still declares the field accepts it however the page renders,
-    so this is the assertion that stops the classification returning through a
-    crafted POST (ADR 0052 §3).
-    """
-    form = ComposerForm(matter=normal_matter, viewer=specialist)
-    for gone in (
-        "next_kind",
-        "next_date_semantics",
-        "next_precision",
-        "next_month",
-        "next_quarter",
-        "next_half",
-        "next_year",
-    ):
-        assert gone not in form.fields, f"{gone} is still a composer field"
-    # The deadline keeps its whole period group; it is the surface that needs it.
-    for kept in ("deadline_precision", "deadline_month", "deadline_quarter", "deadline_year"):
-        assert kept in form.fields
-
-
 def test_a_crafted_post_cannot_choose_a_kind_or_a_date_meaning(signed_in, normal_matter):
-    _post(
+    # A precision is a real answer on this form (`periods=True`); a kind and a
+    # date meaning are not, and a crafted one binds to nothing (ADR 0054).
+    _set_step(
         signed_in,
         normal_matter,
-        body="",
-        next_text="Kontrollida, kas ministeerium vastas",
-        next_date=_in_a_week(),
+        text="Kontrollida, kas ministeerium vastas",
+        target_date=_in_a_week(),
+        kind=ActionKind.WAIT,
+        date_semantics=DateSemantics.EXPECTED_AROUND,
         next_kind=ActionKind.WAIT,
         next_date_semantics=DateSemantics.EXPECTED_AROUND,
-        next_precision=DatePrecision.MONTH,
     )
 
     action = current_next_action(normal_matter)
     assert action is not None
     assert action.kind == ActionKind.DO
     assert action.date_semantics == DateSemantics.DEADLINE
-    assert action.date_precision == DatePrecision.EXACT
 
 
 def test_the_next_action_text_is_stored_exactly_as_typed(signed_in, normal_matter):
-    _post(
+    _set_step(
         signed_in,
         normal_matter,
-        body="<p>Ministeerium lubas vastata.</p>",
-        next_text="  Kontrollida, kas ministeerium vastas  ",
-        next_date=_in_a_week(),
+        text="  Kontrollida, kas ministeerium vastas  ",
+        target_date=_in_a_week(),
     )
     action = current_next_action(normal_matter)
     assert action is not None
@@ -848,51 +657,3 @@ def test_a_reader_sees_the_step_but_not_tehtud_and_not_the_composer(
     assert "Tehtud" not in body
     assert 'name="next_text"' not in body
     assert 'id="teema-koostaja"' not in body
-
-
-def test_a_reader_cannot_complete_a_step(client, reader, normal_matter, specialist):
-    action = set_next_action(
-        matter=normal_matter,
-        text="Vaadata uus versioon üle",
-        kind=ActionKind.DO,
-        date_semantics=DateSemantics.DEADLINE,
-        target_date=timezone.localdate() + timedelta(days=3),
-        actor=specialist,
-    )
-    client.force_login(reader)
-    response = client.post(
-        reverse("matters:complete_action", kwargs={"pk": normal_matter.pk, "action_id": action.pk})
-    )
-    assert response.status_code == 404
-    action.refresh_from_db()
-    assert action.status == ActionStatus.OPEN
-
-
-def test_a_refused_completion_says_so_inside_the_row(signed_in, normal_matter, specialist):
-    """The refusal has nowhere else to go.
-
-    `Tehtud` swaps this row and only this row, and the refusal
-    `complete_next_action` actually raises — somebody else finished the step a
-    moment ago — leaves no current action to hang a message on. So the message
-    is rendered outside the row's three branches rather than inside one of them.
-    """
-    from app.workflow.services import complete_next_action
-
-    action = set_next_action(
-        matter=normal_matter,
-        text="Saata kiri",
-        kind=ActionKind.DO,
-        date_semantics=DateSemantics.DEADLINE,
-        target_date=timezone.localdate() + timedelta(days=1),
-        actor=specialist,
-    )
-    complete_next_action(action=action, actor=specialist)
-
-    response = signed_in.post(
-        reverse("matters:complete_action", kwargs={"pk": normal_matter.pk, "action_id": action.pk}),
-        headers={"HX-Request": "true"},
-    )
-    assert response.status_code == 400
-    body = response.content.decode()
-    assert 'id="jargmiseks-rida"' in body
-    assert "Ainult kehtivat tegevust saab lõpetada." in body
