@@ -21,7 +21,6 @@ from django.db.models import Case, F, FloatField, Q, QuerySet, Value, When
 from django.db.models.expressions import Combinable
 from django.db.models.functions import Greatest
 
-from app.core.authorization import apply as apply_scope
 from app.core.authorization import projected_visibility_q, scope_for_user
 from app.core.text import normalize_for_matching
 from app.matters.models import Matter
@@ -93,15 +92,17 @@ def reference_visible_documents(user: Any) -> QuerySet[SearchDocument]:
     # for a child row its own current override — never against anything the
     # projection stores. Restricting either takes effect on the next query with
     # no reindex.
-    return apply_scope(
-        documents,
-        projected_visibility_q(
-            scope,
-            kind_field="source_kind",
-            kind_overrides=SOURCE_OVERRIDE_FIELDS,
-            parent_prefix="matter__",
-        ),
+    condition = projected_visibility_q(
+        scope,
+        kind_field="source_kind",
+        kind_overrides=SOURCE_OVERRIDE_FIELDS,
+        parent_prefix="matter__",
     )
+    if not condition.children and not condition.negated:
+        return documents
+    # Frozen: `apply` at ad1593a1 always ended in `.distinct()`. The live one
+    # keeps it only where a join fans out (QRY-05), so it is spelled out here.
+    return documents.filter(condition).distinct()
 
 
 def _reference_condition(term: str) -> Q | None:
