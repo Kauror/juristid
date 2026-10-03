@@ -8,6 +8,22 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-10-04
+basis = "deployment"
+# Koodi tervisekontrolli väljalase: RULE-01 (#374), RULE-02 (#375, RULE-08 sees),
+# RULE-03 (#376), RULE-04 (#377); lisaks #364–#373, ENG-050 (#378, #379, #382),
+# SVC-04 (#380), QRY-05 (#381), QRY-04 (#383), QRY-06 (#384) — need ei muuda
+# midagi, mida lugeja näeb, peale kiiruse. Migratsioone ei ole. Kui see
+# väljalase ei jõua tootmisse 04.10 (Tallinna aja järgi), liiguvad need read
+# väljalaske päeva kirjesse.
+changes = [
+  "Teemade nimekirja veerus «Järgmiseks» on nüüd eesseisev oluline tähtaeg, kui teemal avatud tegevust ei ole — varem öeldi seal, et järgmine samm puudub.",
+  "«Viimane tegevus», «Muutusteta 30 p» ja Osakonna «Teemades muudatusi» arvestavad nüüd sama tööd ja selle päris kuupäeva; tegevuseks ei loe eraldi hetkeseisu muutmine, faili lisamine ega andmete parandamine, samuti eemaldatud kirjed.",
+  "Suletud teema hetkeseisu ei saa enam tavalise muutmisega vahetada: töö jätkamiseks vajuta «Ava uuesti» ja vali seal hetkeseis, millega teema uuesti avatakse.",
+  "Filter «Arvamus saadetud» näitab ainult teemasid, mille arvamus on tõesti välja saadetud; teemad, mille registris on «ei saatnud» või loetamatu märge, sinna enam ei kuulu.",
+]
+
+[[day]]
 date = 2026-10-03
 basis = "deployment"
 # Tööplaan, ADR 0133 (PR #361). Kaks migratsiooni (workflow/0011, audit/0032),
