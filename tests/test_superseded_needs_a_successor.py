@@ -261,8 +261,20 @@ def test_seotud_names_no_end_of_the_chain_the_reader_may_not_open(client, specia
 
     client.force_login(reader)
     assert client.get(f"/teemad/{later.pk}/").status_code == 404
-    assert hidden not in client.get(f"/teemad/{earlier.pk}/").content.decode()
-    assert "Konfidentsiaalne eelkäija" not in client.get(f"/teemad/{shown.pk}/").content.decode()
+    assert client.get(f"/teemad/{secret_earlier.pk}/").status_code == 404
+    for page, hidden_matter, hidden_title, label in (
+        (earlier, later, hidden, "Jätkub teemana"),
+        (shown, secret_earlier, "Konfidentsiaalne eelkäija", "Eelnev teema"),
+    ):
+        response = client.get(f"/teemad/{page.pk}/")
+        assert response.status_code == 200
+        body = response.content.decode()
+        # Neither its title, nor a link to it, nor the row that would say one
+        # exists: the card is not drawn at all when it would only hold that.
+        assert hidden_title not in body
+        assert f"/teemad/{hidden_matter.pk}/" not in body
+        assert label not in body
+        assert '<span class="railcard__label">Seotud</span>' not in body
 
     # The person who may read both still sees the chain.
     client.force_login(specialist)
