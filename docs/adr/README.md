@@ -119,7 +119,7 @@ consequences and reversibility.
 | [0107](0107-a-column-swap-keeps-what-was-typed-and-a-failure-is-told.md) | A column swap keeps what was typed, and a failed request is told | Accepted; amends 0075 §3's premise, not its decision; no migration |
 | [0108](0108-similar-matters-asks-by-post-with-only-its-deciding-fields.md) | `Sarnased teemad` asks by POST, with only the fields that decide it | Accepted; amends 0087 §4 and reverses its rejected POST alternative; no migration |
 | [0109](0109-matter-writes-lock-the-matter-before-the-search-index.md) | Matter writes lock the Matter before the search index, and inline whole-value editors carry the version of their own value | Accepted; amends 0040 §3 and extends 0104 §1 |
-| [0110](0110-workflow-transitions-decide-on-the-locked-row.md) | Workflow transitions and owner assignment decide on the locked row | Accepted; amends 0075 §4 |
+| [0110](0110-workflow-transitions-decide-on-the-locked-row.md) | Workflow transitions and owner assignment decide on the locked row | Accepted; amends 0075 §4; amended 2026-10-03 (one lock strength on the Matter: `set_next_action` at `FOR NO KEY UPDATE`, SVC-04) |
 | [0111](0111-a-cross-matter-pointer-locks-both-matters.md) | A write that points one Matter at another locks both | Accepted; amends 0096 §4.6 |
 | [0112](0112-an-uus-teema-form-is-saved-at-most-once.md) | An `Uus teema` form is saved at most once | Accepted; extends 0064's intake session; one additive migration |
 | [0113](0113-every-document-is-findable-by-name.md) | Every document is findable by its name, and the projection holds text | Accepted; amends 0072; `INDEX_VERSION` → `DOKUMENT.1`, rebuild required |

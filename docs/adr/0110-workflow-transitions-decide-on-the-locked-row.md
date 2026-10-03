@@ -64,3 +64,24 @@ finished file has always been allowed and stays so. The invariant needed is
 ## Migrations
 
 **None.**
+
+## Amendment, 2026-10-03 — one lock strength on the Matter (SVC-04)
+
+§1 said the transitions' `FOR NO KEY UPDATE` «conflicts with itself and with
+the `FOR UPDATE` `set_next_action` takes». `set_next_action` and
+`establish_opinion_preparation_action` now take the Matter through
+`lock_matter_for_write` and the open step at `FOR NO KEY UPDATE`, like every
+other Matter writer. Writers still take turns — the mode conflicts with itself
+— and every decision is still taken on the locked row, so one open step, the
+supersession chain and «no open step on a closed Matter» hold exactly as
+before (`tests/test_next_action_lock_strength.py`).
+
+What changes is what the lock no longer blocks: `FOR KEY SHARE`, which every
+insert of a row referencing the Matter takes, and the search rebuild takes at
+COMMIT. A composer locked the Matter at the weaker mode and then upgraded it
+inside `set_next_action` for the rest of its transaction; a write of an indexed
+row after that would close the ENG-027 cycle against a rebuild. Measured on
+`main` before the change: a child insert on the Matter waited for the step's
+transaction to commit; after it, the insert goes through while the step is held.
+No schema change.
+
