@@ -525,3 +525,26 @@ def test_the_change_window_is_whole_local_days(specialist, department_head):
     first_day = dt.date(2027, 1, 1)
     assert _matters_changed_by_owner(department_head, first_day, first_day) == {specialist.pk: 1}
     assert _matters_changed_by_owner(department_head, last_day, first_day) == {specialist.pk: 2}
+
+
+def test_the_change_window_is_a_range_the_index_can_answer(specialist, department_head):
+    """Moments compared with moments, never `occurred_at` cast to a local date.
+
+    `occurred_at__date` compiles to a per-row `AT TIME ZONE … ::date` cast. The
+    planner cannot estimate it, expected 68 rows of 12,658 and nested-looped the
+    whole change table — 1.27 s of the Osakond page on a 5,016-Matter clone,
+    against 58 ms as the half-open range this asserts.
+    """
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    from app.matters.department_dashboard import _matters_changed_by_owner
+
+    with CaptureQueriesContext(connection) as captured:
+        _matters_changed_by_owner(department_head, dt.date(2026, 3, 2), dt.date(2026, 3, 8))
+    window = [q["sql"] for q in captured if '"audit_changeevent"' in q["sql"]]
+    assert window, "the window issued no change-event query"
+    for sql in window:
+        assert "::date" not in sql and "AT TIME ZONE" not in sql, sql
+        # Aliased inside the subquery (`U1."occurred_at"`), so the column alone.
+        assert '"occurred_at" >= ' in sql and '"occurred_at" < ' in sql, sql
