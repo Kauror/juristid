@@ -233,14 +233,6 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         probe=lambda w: w["matter"].next_actions.count(),
     ),
     WriteRoute(
-        name="matters:complete_action",
-        label="Järgmiseks lõpetamine",
-        request=lambda w: ({"pk": w["matter"].pk, "action_id": w["action"].pk}, {}),
-        probe=lambda w: (
-            w["action"].__class__.objects.values_list("status", flat=True).get(pk=w["action"].pk)
-        ),
-    ),
-    WriteRoute(
         name="matters:review_action",
         label="Järgmiseks ülevaatamine",
         request=lambda w: (
@@ -263,34 +255,13 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
             .get(pk=w["unowned"].pk)
         ),
     ),
-    WriteRoute(
-        name="matters:complete_work_item",
-        label="Järgmiseks lõpetamine Minu tööl",
-        # No `pk`: the route is keyed on the action, and the Matter is resolved
-        # from it through the same gate.
-        request=lambda w: ({"action_id": w["review_action"].pk}, {}),
-        probe=lambda w: (
-            w["review_action"]
-            .__class__.objects.values_list("status", flat=True)
-            .get(pk=w["review_action"].pk)
-        ),
-    ),
-    WriteRoute(
-        name="matters:defer_action",
-        label="Järgmiseks edasilükkamine",
-        request=lambda w: ({"pk": w["matter"].pk, "action_id": w["action"].pk}, {"paevad": "7"}),
-        probe=lambda w: (
-            w["action"]
-            .__class__.objects.values_list("target_date", flat=True)
-            .get(pk=w["action"].pk)
-        ),
-    ),
     # -- the Teema workspace --------------------------------------------------
     #
-    # Seven routes where `matters:compose` was one. Each is a separate door onto
-    # a different canonical record, so each has to be fired at separately: a
-    # boundary that covered the old composer would have said nothing about six
-    # of these (docs/adr/0075 §2).
+    # Seven routes where `matters:compose` was one (the composer itself was
+    # retired with ENG-050A2). Each is a separate door onto a different
+    # canonical record, so each has to be fired at separately: a boundary that
+    # covered the old composer would have said nothing about six of these
+    # (docs/adr/0075 §2).
     WriteRoute(
         name="matters:complete_current_action",
         label="Praeguse tegevuse lõpetamine",
@@ -728,12 +699,6 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
     # No `matters:close_from_workspace` since docs/adr/0131 §11: a Matter closes
     # through its `Hetkeseis`, which `matters:add_note` and the edit page carry.
     WriteRoute(
-        name="matters:compose",
-        label="Sissekande lisamine",
-        request=lambda w: ({"pk": w["matter"].pk}, {"body": "<p>Loata sissekanne.</p>"}),
-        probe=lambda w: w["matter"].entries.count(),
-    ),
-    WriteRoute(
         name="matters:save_note",
         label="Isikliku märkme salvestamine",
         request=lambda w: ({"pk": w["matter"].pk}, {"note-body": "Loata märge"}),
@@ -760,24 +725,6 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         probe=lambda w: Matter.objects.values_list("brief_summary", flat=True).get(
             pk=w["matter"].pk
         ),
-    ),
-    WriteRoute(
-        name="matters:add_engagement",
-        label="Kaasamise lisamine",
-        # `SURVEY`, not `WEB_CALL`. `WEB_CALL` is still a valid stored value but
-        # `EngagementForm` stopped offering it (app/matters/forms.py,
-        # `ENGAGEMENT_CHOICES`), so that payload was refused by the *form* on an
-        # open Matter too: the authorized half of this matrix passed on a 200
-        # that wrote nothing, and the forbidden half compared an unchanged count
-        # with an unchanged count. Measured before the change - a SPECIALIST
-        # posting `WEB_CALL` creates no engagement; posting `SURVEY` creates
-        # exactly one, so both halves now rest on the gate rather than on
-        # validation.
-        request=lambda w: (
-            {"pk": w["matter"].pk},
-            {"kind": "SURVEY", "title": "Loata kaasamine"},
-        ),
-        probe=lambda w: w["matter"].engagements.count(),
     ),
     WriteRoute(
         name="intelligence:add_important_date",
@@ -819,15 +766,6 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
                 "saadetud-title": "Loata registreeritud arvamus",
                 "saadetud-kind": "FORMAL_OPINION",
             },
-        ),
-        probe=lambda w: w["matter"].submissions.count(),
-    ),
-    WriteRoute(
-        name="submissions:create",
-        label="Arvamuse loomine",
-        request=lambda w: (
-            {"matter_id": w["matter"].pk},
-            {"title": "Loata arvamus", "kind": "FORMAL_OPINION"},
         ),
         probe=lambda w: w["matter"].submissions.count(),
     ),
@@ -1541,7 +1479,7 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     # cross-user refusal is proved directly, with a real session and a real
     # file, in tests/test_intake_staging.py.
     "matters:intake_remove": "A: gated; sibling of matters:intake_stage",
-    "matters:update_engagement": "A: gated; sibling of matters:add_engagement",
+    "matters:update_engagement": "A: gated; sibling of matters:add_engagement_compact",
     "intelligence:edit_important_date": "A: gated; sibling of add_important_date",
     "intelligence:cancel_important_date": "A: gated; sibling of add_important_date",
     "intelligence:edit_effective_date": "A: gated; sibling of add_effective_date",

@@ -18,21 +18,29 @@ from app.taxonomy.models import Tag
 
 SELECT_WIDGET = forms.Select(attrs={"class": "field__input"})
 
-#: Form prefixes for the two opinion forms on Dokumendid.
+#: Form prefix for registering a send on Dokumendid.
 #:
-#: That page renders three forms carrying a `title` — the SharePoint working
-#: reference, a new opinion, and registering a send — and three `id="id_title"`
-#: on one page make every `<label for>` ambiguous, for a screen reader and for a
+#: That page renders more than one form carrying a `title` — the SharePoint
+#: working reference and registering a send — and two `id="id_title"` on one
+#: page make every `<label for>` ambiguous, for a screen reader and for a
 #: browser test alike. The same reason `app/matters/views.py` prefixes the
-#: private note: the composer's own field is called `body` too.
+#: private note. (`+ Uus arvamus` and its `arvamus` prefix were retired with
+#: `submissions:create`, ENG-050A: a new opinion is `Lisa teemale → Koja
+#: arvamus`.)
 #:
 #: The working-document form keeps the bare names, because it was there first
 #: and its field names are what its route already accepts.
-CREATE_PREFIX = "arvamus"
 REGISTER_PREFIX = "saadetud"
 
 
 class SubmissionCreateForm(forms.Form):
+    """The opinion's own facts: title, kind, recipients, channel.
+
+    The base of `RegisterSentOpinionForm` («Registreeri saatmine»). It used to
+    be `+ Uus arvamus` as well, which `submissions:create` retired (ENG-050A):
+    a new opinion is `Lisa teemale → Koja arvamus`.
+    """
+
     title = forms.CharField(
         label="Pealkiri",
         max_length=400,

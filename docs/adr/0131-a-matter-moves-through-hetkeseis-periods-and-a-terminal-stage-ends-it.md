@@ -270,6 +270,20 @@ so the file is never open while still reading «Jõustunud». Reopening into the
 stage a pre-period closure left the file in continues that period. The register's
 own reactivation still calls `reopen_matter` and gets a carried-over period.
 
+**Amended 2026-10-03 (RULE-03): reopening is the only way a closed file's stage
+moves.** A closed Matter stays in the period it was closed in — terminal or,
+for a file closed before `Hetkeseis` could close it, ordinary. The ordinary
+stage door (`change_stage`, behind the header's control and `Muuda teemat`)
+refuses a move on a closed Matter with one sentence, «Suletud teema
+hetkeseisu ei saa muuta. Ava teema esmalt uuesti.», decided on the locked row
+so a tab that still showed the file open cannot move it after a colleague's
+closure. Clearing the stage is a move. The stage it already holds is not, so a
+closed file's other corrections still save, and `Muuda teemat` stays one save:
+a refused stage refuses the title beside it. The closed header states the
+stage and offers no editor; `Muuda teemat` states it read-only; `Ava uuesti` is
+where the next stage is chosen. The register refresh is separate and
+unchanged: it turns the period as an import and never closes or reopens.
+
 Linking a later, separate Matter to an earlier one (a new amendment to a law
 that finished) is a different question and is deferred; nothing here assumes a
 Matter cannot restart.

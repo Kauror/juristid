@@ -281,59 +281,10 @@ def test_the_panel_stores_no_deadline_at_all(signed_in, specialist):
 # D2 — the *other* write path, which kept the stamp after the panel lost it
 # ---------------------------------------------------------------------------
 #
-# `+ Kaasamine` was fixed on 2026-09-14. `ComposerForm` was not, and it is a
-# live route: `teemad/<pk>/sissekanne/` is the superseded composer, kept on
-# purpose for the browsers still holding a page that posts to it
-# (docs/adr/0075 §11). Its template is included by nothing, so the only callers
-# left are a stale tab and a crafted POST — and both were still having today
-# written onto their consultation by the server.
-#
-# It has no date box and cannot grow one, because no surface renders it. So it
-# records that the date is not known, which is the only truthful answer a
-# surface that cannot ask is entitled to give.
-
-
-def _compose(client, matter, **fields):
-    """One save through the superseded composer, with engagement data on it."""
-    payload = {
-        "body": "Küsisime liikmetelt arvamust.",
-        "engagement_kind": EngagementKind.SURVEY,
-        "engagement_audience": "liikmed",
-    }
-    payload.update(fields)
-    return client.post(reverse("matters:compose", kwargs={"pk": matter.pk}), payload)
-
-
-def test_the_superseded_composer_route_stores_no_date_rather_than_today(signed_in, specialist):
-    """**The route**, not the form helper — this is what a stale tab reaches."""
-    matter = factories.MatterFactory(owner=specialist)
-
-    response = _compose(signed_in, matter)
-
-    assert response.status_code == 200
-    engagement = MatterEngagement.objects.get()
-    assert engagement.occurred_on is None
-    assert engagement.occurred_on != timezone.localdate()
-    assert engagement.feedback_deadline is None
-
-
-def test_the_superseded_composer_form_proposes_no_date_either(specialist):
-    """The same claim about the form, so a re-introduction fails at both layers."""
-    from app.matters.forms import ComposerForm
-
-    matter = factories.MatterFactory(owner=specialist)
-    form = ComposerForm(
-        data={
-            "body": "Küsisime liikmetelt arvamust.",
-            "engagement_kind": EngagementKind.SURVEY,
-            "engagement_audience": "liikmed",
-        },
-        matter=matter,
-        viewer=specialist,
-    )
-
-    assert form.is_valid(), form.errors
-    assert form.cleaned_data["engagement_kwargs"]["occurred_on"] is None
+# `+ Kaasamine` was fixed on 2026-09-14. The superseded composer
+# (`teemad/<pk>/sissekanne/`) was the other path; it stored no date rather than
+# today until it was retired with ENG-050A2 (docs/adr/0075, amended). The panel
+# is the only door left, and what it stores is what it was given.
 
 
 def test_no_live_write_path_puts_today_on_an_engagement_behind_the_persons_back(
@@ -345,29 +296,13 @@ def test_no_live_write_path_puts_today_on_an_engagement_behind_the_persons_back(
     composer is not asked and stores nothing. Neither invents today.
     """
     panel_matter = factories.MatterFactory(owner=specialist)
-    composer_matter = factories.MatterFactory(owner=specialist)
     when = timezone.localdate() - dt.timedelta(days=120)
 
     _post(signed_in, panel_matter, occurred_on=format_estonian_date(when))
-    _compose(signed_in, composer_matter)
 
+    # The composer was the other door, and it stored nothing; it was retired
+    # with ENG-050A2, so `+ Kaasamine` is the only way a round is added.
     assert MatterEngagement.objects.get(matter=panel_matter).occurred_on == when
-    assert MatterEngagement.objects.get(matter=composer_matter).occurred_on is None
-
-
-def test_the_composer_still_writes_everything_else_it_always_did(signed_in, specialist):
-    """The date is the only thing this changes. The rest of the save is untouched."""
-    from app.matters.models import Entry
-
-    matter = factories.MatterFactory(owner=specialist)
-
-    _compose(signed_in, matter, engagement_responses="14")
-
-    engagement = MatterEngagement.objects.get()
-    assert engagement.title == "liikmed"
-    assert engagement.kind == EngagementKind.SURVEY
-    assert engagement.response_count == 14
-    assert Entry.objects.filter(matter=matter).count() == 1
 
 
 # ---------------------------------------------------------------------------

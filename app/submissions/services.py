@@ -345,8 +345,8 @@ def mark_submission_sent(
 
     ``sent_at_precision`` says how much of ``sent_at`` the sender actually
     supplied. It defaults to TIMESTAMP because pressing send *is* a moment; a
-    caller that only ever had a day — the closing composer asks for `Saatmise
-    kuupäev`, and the register import has a date column — passes DATE so the UI
+    caller that only ever had a day — `Saatmise kuupäev` on a send, and the
+    register import's date column — passes DATE so the UI
     stops rendering an anchor of midnight as the hour the letter went out
     (app/submissions/enums.py).
 
@@ -904,11 +904,9 @@ def register_sent_opinion(
 # The services above do not carry that rule, deliberately. They are the
 # canonical primitives, and the archive apply composes them into records of
 # letters Koda really sent about work that finished years ago
-# (`app/legacy_import/opinion_apply.py`); the closing composer calls three of
-# them while the Matter it is about to close is still open
-# (`app/matters/services.py::_closure_final_opinion`). Stating «the Matter must
-# be open» down there would refuse the historical record, which is the one
-# thing this boundary must not do.
+# (`app/legacy_import/opinion_apply.py`). Stating «the Matter must be open»
+# down there would refuse the historical record, which is the one thing this
+# boundary must not do.
 #
 # So it is stated here, in the use cases the Dokumendid surface posts to. Each
 # is the same act with the question asked first, under the Matter's own row
@@ -920,36 +918,6 @@ def register_sent_opinion(
 # order, which is exactly where the services below take it anyway, so nothing
 # here adds an edge to the lock graph. Re-taking the same row at the same
 # strength inside one transaction is free.
-
-
-@transaction.atomic
-def create_opinion_draft_on_open_matter(
-    *,
-    matter: Any,
-    title: str,
-    kind: str = SubmissionKind.FORMAL_OPINION,
-    actor: Any = None,
-    recipients: list[Any] | None = None,
-    joint_submitters: list[Any] | None = None,
-    for_information: list[Any] | None = None,
-    channel: str = "",
-) -> Submission:
-    """`+ Uus arvamus` — start a draft, if there is still work to do here.
-
-    A draft is the beginning of new advocacy, which is the plainest case of the
-    rule: nobody starts writing an opinion about a file that is finished.
-    """
-    locked = lock_open_matter_for_business_write(matter.pk)
-    return create_submission(
-        matter=locked,
-        title=title,
-        kind=kind,
-        actor=actor,
-        recipients=recipients,
-        joint_submitters=joint_submitters,
-        for_information=for_information,
-        channel=channel,
-    )
 
 
 @transaction.atomic

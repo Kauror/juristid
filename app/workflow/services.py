@@ -282,8 +282,18 @@ def set_next_action(
     # both depend on the Matter's lifecycle state, so the Matter row is the
     # concurrency boundary that keeps them from interleaving into a closed
     # Matter that still carries an open instruction.
-    matter_model = apps.get_model("matters", "Matter")
-    locked_matter = matter_model.objects.select_for_update().get(pk=matter.pk)
+    #
+    # **At the strength every Matter writer uses** (`lock_matter_for_write`,
+    # `FOR NO KEY UPDATE`), not plain `FOR UPDATE` (SVC-04). Writers still
+    # exclude each other — the mode conflicts with itself — but `FOR UPDATE`
+    # also blocks the `FOR KEY SHARE` every insert of a row referencing the
+    # Matter takes, including the search rebuild's at COMMIT. Upgrading the
+    # lock mid-composer is the ENG-027 shape: the next write of an indexed row
+    # in the same transaction would deadlock against a rebuild
+    # (docs/adr/0110 §1, amended).
+    from app.matters.locks import lock_matter_for_write
+
+    locked_matter = lock_matter_for_write(matter.pk)
     if not locked_matter.is_open:
         raise DomainError("Suletud teemale ei saa järgmist tegevust määrata.")
 
@@ -291,7 +301,7 @@ def set_next_action(
         raise DomainError(PLAN_STEP_OF_ANOTHER_MATTER)
 
     previous = (
-        NextAction.objects.select_for_update()
+        NextAction.objects.select_for_update(no_key=True)
         .filter(matter=locked_matter, status=ActionStatus.OPEN)
         .first()
     )
@@ -424,10 +434,12 @@ def establish_opinion_preparation_action(
     if prepare_by is None:
         raise DomainError("Koostan arvamuse vajab kuupäeva.")
 
-    matter_model = apps.get_model("matters", "Matter")
-    locked_matter = matter_model.objects.select_for_update().get(pk=matter.pk)
+    # The same lock, at the same strength, as `set_next_action` (SVC-04).
+    from app.matters.locks import lock_matter_for_write
+
+    locked_matter = lock_matter_for_write(matter.pk)
     existing = (
-        NextAction.objects.select_for_update()
+        NextAction.objects.select_for_update(no_key=True)
         .filter(
             matter=locked_matter,
             status=ActionStatus.OPEN,
@@ -467,8 +479,8 @@ def _lock_for_transition(action: NextAction, refusal: str) -> NextAction:
 
     Same order as `set_next_action` and `close_matter`: the Matter first, then
     the action (app/matters/locks.py). `FOR NO KEY UPDATE` on both, because the
-    transaction goes on to insert a `ChangeEvent` referencing each; it still
-    conflicts with the `FOR UPDATE` `set_next_action` takes and with itself, so
+    transaction goes on to insert a `ChangeEvent` referencing each; the mode
+    conflicts with itself, and `set_next_action` takes the same one (SVC-04), so
     every transition on one Matter takes its turn.
 
     ``refusal`` is the sentence the transition already uses for an action that

@@ -415,3 +415,15 @@ opinion files no Submission accounts for.
   drafts stay listed with the step each is waiting for and no control; a
   stranded upload on a closed Matter adds nothing to the block. A reader is
   offered no step anywhere.
+
+## Amendment, 2026-10-03 — `submissions:create` is retired (ENG-050A)
+
+The 2026-09-27 amendment left `submissions:create` resolving with no caller
+and called its removal a separate decision. It is taken: the route,
+`create_opinion_draft_on_open_matter` and the `arvamus` form prefix are gone, so
+a stale `+ Uus arvamus` POST is a 404 and starts nothing. A new opinion is
+`Lisa teemale → Koja arvamus`. **An existing draft keeps every door it had** —
+`attach_evidence`, `mark_sent`, `metadata`, `withdraw` and `register_sent` are
+untouched, `create_submission` stays the domain service, and no stored
+`Submission` is changed. `SubmissionCreateForm` stays as the base of
+`RegisterSentOpinionForm`.

@@ -32,7 +32,6 @@ urlpatterns = [
     # whose own URL is `/teemad/`, and that is the URL a reader must keep
     # (docs/adr/0047).
     path("plokk/", workspace_views.embedded_block, name="embedded_block"),
-    path("teema/<uuid:matter_id>/uus/", views.create, name="create"),
     # «Registreeri saatmine» — an opinion file already on the Matter went out.
     # Matter-scoped like `create` rather than keyed on a submission, because
     # the whole point is that no submission exists yet: this is the act that

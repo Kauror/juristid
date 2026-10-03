@@ -39,7 +39,7 @@ from app.matters.process_phases import (
     PATTERN_EU,
     pattern_for,
 )
-from app.matters.services import change_stage, close_matter
+from app.matters.services import change_stage, close_matter, reopen_matter_into_stage
 from app.taxonomy.legal_instruments import (
     DOMESTIC_LEGAL_INSTRUMENT_KEYS,
     EU_LEGAL_INSTRUMENT_KEYS,
@@ -516,7 +516,8 @@ def test_a_stage_recorded_ahead_of_the_current_one_is_not_kirjas(specialist):
     """
     matter = factories.MatterFactory(owner=specialist, track=Track.DOMESTIC.value)
     change_stage(matter=matter, stage=_stage("in_force"), actor=specialist)
-    change_stage(matter=matter, stage=_stage("consultation"), actor=specialist)
+    # «Jõustunud» closed the file, so the correction is `Ava uuesti` (RULE-03).
+    reopen_matter_into_stage(matter=matter, stage=_stage("consultation"), actor=specialist)
 
     assert _states(_rail(matter, specialist)) == {
         "algus": STATE_UNKNOWN,
@@ -531,7 +532,8 @@ def test_the_audit_history_still_holds_the_stage_that_was_corrected(specialist):
     """A projection rule, and not a rewriting of what was recorded."""
     matter = factories.MatterFactory(owner=specialist, track=Track.DOMESTIC.value)
     change_stage(matter=matter, stage=_stage("in_force"), actor=specialist)
-    change_stage(matter=matter, stage=_stage("consultation"), actor=specialist)
+    # «Jõustunud» closed the file, so the correction is `Ava uuesti` (RULE-03).
+    reopen_matter_into_stage(matter=matter, stage=_stage("consultation"), actor=specialist)
 
     assert "in_force" in recorded_stage_keys(matter=matter, user=specialist)
 

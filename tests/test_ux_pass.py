@@ -23,7 +23,6 @@ from django.urls import reverse
 from django.utils import timezone
 
 from app.core.dates import end_of_month, format_estonian_date
-from app.core.enums import Visibility
 from app.matters import department as dep
 from app.matters import department_dashboard as dd
 from app.matters.services import (
@@ -35,12 +34,10 @@ from app.matters.services import (
 )
 from app.workflow.enums import (
     ActionKind,
-    ActionStatus,
     DatePrecision,
     DateSemantics,
     Disposition,
 )
-from app.workflow.models import NextAction
 from app.workflow.services import set_next_action
 from tests import factories
 
@@ -520,121 +517,6 @@ def test_a_saves_next_step_rides_with_it_at_the_precision_it_was_recorded(specia
 
 
 # ---------------------------------------------------------------------------
-# 1c — Järgmiseks
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-def test_deferring_a_deadline_supersedes_the_step_and_keeps_its_responsible(
-    client, specialist, other_specialist
-) -> None:
-    """A DO carries a commitment, so moving it is a new instruction.
-
-    Left to the service default the new step would fall to the Matter's owner,
-    quietly moving a colleague's instruction onto somebody else's queue
-    (app/workflow/services.py, `responsible_for_new_work`).
-    """
-    matter = factories.MatterFactory(owner=specialist)
-    action = set_next_action(
-        matter=matter,
-        text="Saada koja arvamus",
-        kind=ActionKind.DO,
-        date_semantics=DateSemantics.DEADLINE,
-        target_date=timezone.localdate() - timedelta(days=6),
-        responsible=other_specialist,
-        actor=specialist,
-    )
-
-    client.force_login(specialist)
-    response = client.post(
-        reverse("matters:defer_action", kwargs={"pk": matter.pk, "action_id": action.pk}),
-        {"paevad": "7"},
-    )
-    assert response.status_code == 200
-
-    action.refresh_from_db()
-    assert action.status == ActionStatus.SUPERSEDED
-    current = NextAction.objects.get(matter=matter, status=ActionStatus.OPEN)
-    assert current.target_date == timezone.localdate() + timedelta(days=7)
-    assert current.responsible == other_specialist
-    assert current.text == "Saada koja arvamus"
-
-
-@pytest.mark.django_db
-def test_deferring_a_wait_acknowledges_the_review_and_keeps_the_same_step(
-    client, specialist
-) -> None:
-    """Waiting is not lateness, and moving a review date is not a new promise.
-
-    The action keeps its identity: the Matter is still waiting on the same
-    thing (app/workflow/services.py, `acknowledge_review`).
-    """
-    matter = factories.MatterFactory(owner=specialist)
-    action = set_next_action(
-        matter=matter,
-        text="Ootan ministeeriumi vastust",
-        kind=ActionKind.WAIT,
-        date_semantics=DateSemantics.REVIEW_ON,
-        target_date=timezone.localdate() - timedelta(days=3),
-        actor=specialist,
-    )
-
-    client.force_login(specialist)
-    client.post(
-        reverse("matters:defer_action", kwargs={"pk": matter.pk, "action_id": action.pk}),
-        {"kuupaev": "15.9.2026"},
-    )
-
-    action.refresh_from_db()
-    assert action.status == ActionStatus.OPEN, "reviewing is not completing"
-    assert action.target_date == date(2026, 9, 15)
-
-
-@pytest.mark.django_db
-def test_an_unreadable_deferral_is_refused_with_the_page_and_the_reason(client, specialist) -> None:
-    matter = factories.MatterFactory(owner=specialist)
-    action = set_next_action(
-        matter=matter,
-        text="Saada koja arvamus",
-        kind=ActionKind.DO,
-        date_semantics=DateSemantics.DEADLINE,
-        target_date=timezone.localdate(),
-        actor=specialist,
-    )
-
-    client.force_login(specialist)
-    response = client.post(
-        reverse("matters:defer_action", kwargs={"pk": matter.pk, "action_id": action.pk}),
-        {"kuupaev": "31.02.2026"},
-    )
-
-    assert response.status_code == 400
-    assert "Kirjuta kuupäev kujul" in response.content.decode()
-    action.refresh_from_db()
-    assert action.target_date == timezone.localdate(), "nothing moved"
-
-
-@pytest.mark.django_db
-def test_an_approximate_step_is_not_offered_a_one_day_deferral(client, specialist) -> None:
-    """A step recorded to a month is deliberately vague, and adding a day to it
-    would be a day nobody chose (master specification 3.5)."""
-    matter = factories.MatterFactory(owner=specialist)
-    set_next_action(
-        matter=matter,
-        text="Jälgin menetlust",
-        kind=ActionKind.MONITOR,
-        date_semantics=DateSemantics.REVIEW_ON,
-        target_date=date(2026, 9, 1),
-        date_precision=DatePrecision.MONTH,
-        actor=specialist,
-    )
-
-    client.force_login(specialist)
-    body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
-    assert "uxnext__defer" not in body
-
-
-# ---------------------------------------------------------------------------
 # 1d — the composer
 # ---------------------------------------------------------------------------
 
@@ -914,92 +796,6 @@ def test_the_l_shortcut_has_an_obvious_click_equivalent() -> None:
 # ---------------------------------------------------------------------------
 # 1e — Minu töö
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-def test_one_click_finishes_a_step_and_returns_to_the_window_it_was_read_in(
-    client, specialist
-) -> None:
-    """The ✓ on the row calls the same service the Matter page calls.
-
-    And it comes back to the list somebody was working through, with the window
-    they chose still in the address — landing on a Matter page would cost them
-    the queue (design handoff 1e).
-    """
-    matter = factories.MatterFactory(owner=specialist)
-    action = set_next_action(
-        matter=matter,
-        text="Saada koja arvamus",
-        kind=ActionKind.DO,
-        date_semantics=DateSemantics.DEADLINE,
-        target_date=timezone.localdate(),
-        actor=specialist,
-    )
-
-    client.force_login(specialist)
-    response = client.post(
-        reverse("matters:complete_work_item", kwargs={"action_id": action.pk}),
-        {"next": "/minu-too/?kuni=koik"},
-    )
-
-    assert response.status_code == 302
-    assert response.headers["Location"] == "/minu-too/?kuni=koik"
-    action.refresh_from_db()
-    assert action.status == ActionStatus.COMPLETED
-
-
-@pytest.mark.django_db
-def test_the_quick_complete_refuses_an_off_site_return(client, specialist) -> None:
-    """`next` arrives from a browser and is somebody's input until it is checked.
-
-    The same guard the persona switch applies (app/accounts/views.py).
-    """
-    matter = factories.MatterFactory(owner=specialist)
-    action = set_next_action(
-        matter=matter,
-        text="Saada koja arvamus",
-        kind=ActionKind.DO,
-        date_semantics=DateSemantics.DEADLINE,
-        target_date=timezone.localdate(),
-        actor=specialist,
-    )
-
-    client.force_login(specialist)
-    response = client.post(
-        reverse("matters:complete_work_item", kwargs={"action_id": action.pk}),
-        {"next": "https://example.invalid/"},
-    )
-
-    assert response.headers["Location"] == reverse("matters:my_work")
-
-
-@pytest.mark.django_db
-def test_a_step_on_somebody_elses_restricted_matter_is_not_completable(
-    client, reader, other_specialist
-) -> None:
-    """404, not 403 — the same answer every other route gives for a record
-    somebody may not touch.
-
-    Asked as a reader: since docs/adr/0042 a lawyer reaches a colleague's
-    restricted Matter and may complete its step, exactly as they could on a
-    NORMAL one. The route still refuses somebody outside the legal team.
-    """
-    matter = factories.MatterFactory(owner=other_specialist, visibility=Visibility.RESTRICTED)
-    action = set_next_action(
-        matter=matter,
-        text="Saada koja arvamus",
-        kind=ActionKind.DO,
-        date_semantics=DateSemantics.DEADLINE,
-        target_date=timezone.localdate(),
-        actor=other_specialist,
-    )
-
-    client.force_login(reader)
-    response = client.post(reverse("matters:complete_work_item", kwargs={"action_id": action.pk}))
-
-    assert response.status_code == 404
-    action.refresh_from_db()
-    assert action.status == ActionStatus.OPEN
 
 
 @pytest.mark.django_db

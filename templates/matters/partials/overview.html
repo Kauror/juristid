@@ -65,11 +65,11 @@ next step and no history renders as a short, deliberate page.
       (docs/adr/0075 §2, §3, superseding docs/adr/0074 §3).
     {% endcomment %}
     {% comment %}
-      A server refusal that no panel owns — and there is one route that can
-      still produce one: `matters:compose`, the superseded composer's endpoint,
-      which no page posts to but which is kept available for its tests and as a
-      compatibility surface (docs/adr/0075 §11). A 400 with nothing on the page
-      saying why is worse than a plain sentence at the top of the workspace.
+      A server refusal that no panel owns: `_workspace_refusal` when the panel
+      that was pressed is no longer drawn, and `_removal_refusal`. A 400 with
+      nothing on the page saying why is worse than a plain sentence at the top
+      of the workspace. (The name is the superseded composer's, which first
+      needed it; the composer itself was retired with ENG-050A2.)
     {% endcomment %}
     {% if composer_error %}
       <p class="formerror workspace__error" role="alert">{{ composer_error }}</p>

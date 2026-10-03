@@ -67,7 +67,7 @@ from app.matters.process_timeline import (
     TRANSPOSITION_DEADLINE_LABEL,
     process_steps,
 )
-from app.matters.services import change_stage, close_matter
+from app.matters.services import change_stage, close_matter, reopen_matter_into_stage
 from app.matters.timeline import matter_timeline
 from app.matters.workspace import add_matter_koda_opinion, add_procedural_development
 from app.taxonomy.models import LegalInstrumentType
@@ -636,9 +636,10 @@ def test_a_standalone_stage_edit_places_nothing_and_dates_nothing(specialist, or
         PHASE_KOOSKOLASTUS,
         stage="consultation",
     )
-    # The mistake, and the correction — both through the header, both undated.
+    # The mistake, and the correction — both undated. «Jõustunud» closed the
+    # file, so the correction is `Ava uuesti` into the round it was in (RULE-03).
     change_stage(matter=matter, stage=_stage("in_force"), actor=specialist)
-    change_stage(matter=matter, stage=_stage("consultation"), actor=specialist)
+    reopen_matter_into_stage(matter=matter, stage=_stage("consultation"), actor=specialist)
 
     # The mistake marked no node. `Jõustumine` reads as something that may still
     # happen, not as something that did — a bare `Hetkeseis` edit proves a value
@@ -1370,7 +1371,8 @@ def test_a_stage_recorded_ahead_and_then_corrected_is_still_demoted(specialist):
     """
     matter = _matter(specialist, instruments=("seadus",))
     change_stage(matter=matter, stage=_stage("in_force"), actor=specialist)
-    change_stage(matter=matter, stage=_stage("consultation"), actor=specialist)
+    # «Jõustunud» closed the file, so the correction is `Ava uuesti` (RULE-03).
+    reopen_matter_into_stage(matter=matter, stage=_stage("consultation"), actor=specialist)
 
     rail = legal_process_rail(matter=matter, user=specialist)
     states = {node.label: node.state for node in rail.nodes}
