@@ -1723,34 +1723,6 @@
       });
     });
 
-    /* "Muuda" and "Määra allpool ↓" on the Järgmiseks row send the reader to
-       the composer rather than opening a second editor for the same value.
-       There is exactly one place a next step is written, and a competing inline
-       form would be a competing implementation of the same domain call
-       (Teema redesign §26.3). */
-    scope.querySelectorAll("[data-focus]").forEach(function (trigger) {
-      if (!once(trigger, "Focus")) {
-        return;
-      }
-      trigger.addEventListener("click", function () {
-        var target = document.getElementById(trigger.getAttribute("data-focus"));
-        if (!target) {
-          return;
-        }
-        /* `prefers-reduced-motion` is honoured by asking for "auto", which the
-           browser resolves against the user's own setting. */
-        target.scrollIntoView({ block: "center", behavior: "auto" });
-        /* Not `input` in general: every form here opens with a hidden CSRF
-           token, and it is the first match in document order. */
-        var box = target.querySelector(
-          "textarea, select, input:not([type=hidden])"
-        );
-        if (box) {
-          box.focus();
-        }
-      });
-    });
-
     /* The private note saves itself and says so. What it last saved is kept
        per box, and only a save the server confirmed moves it
        (`Workspace failures` below, ENG-012). */
@@ -2336,20 +2308,8 @@
       if (!list || !box) {
         return;
       }
-      /* Opt-in, and only Saatja asks for it.
-       *
-       * With `data-choicefilter-compact`, an empty box shows *nothing* rather
-       * than everything: the list is a result area, not a wall down the middle
-       * of the form. Ticked bodies are the exception and always show, which is
-       * what keeps "what have I chosen" answerable without typing.
-       *
-       * The whole catalogue is still in the document, so with scripting off
-       * this is an ordinary list of checkboxes and nothing is unreachable —
-       * which is the only reason hiding it here is allowed at all. */
-      var compact = holder.hasAttribute("data-choicefilter-compact");
       var apply = function () {
         var needle = box.value.trim().toLowerCase();
-        var shown = 0;
         /* `.chip` is Uus teema's control, `.checkitem` the one every other
            surface still uses. One selector rather than two bindings, because
            the rule — hide what does not match, never hide what is ticked — is
@@ -2359,18 +2319,8 @@
           var checked = item.querySelector("input:checked");
           /* A ticked choice never hides. Somebody who types after choosing
              should still be able to see — and untick — what they chose. */
-          var hide = !checked && (needle === "" ? compact : name.indexOf(needle) === -1);
-          item.hidden = hide;
-          if (!hide) {
-            shown += 1;
-          }
+          item.hidden = !checked && needle !== "" && name.indexOf(needle) === -1;
         });
-        if (compact) {
-          /* An empty box would otherwise be an empty bordered panel, which
-             reads as a control that has broken rather than one nobody has
-             asked anything yet. */
-          list.hidden = shown === 0;
-        }
       };
       box.addEventListener("input", apply);
       list.addEventListener("change", apply);
@@ -2941,23 +2891,10 @@
    * person ticked, and a form that comes back with an error and their answer
    * hidden looks like a form that discarded it. The value was always posted;
    * this is only about being able to see it.
-   *
-   * `data-stay-closed` is the exception. It was written for Adressaat's own
-   * disclosure, which the sender filled in — unfolding a section every time the
-   * page answered a question on somebody's behalf is the opposite of what
-   * defaulting it was for. Adressaat is no longer on `Uus teema`
-   * (docs/adr/0090 §5) and Valdkond carries the attribute now, for the
-   * neighbouring reason: a refused save comes back with areas ticked and says
-   * so in the summary, and unfolding twenty-two checkboxes to prove it undoes
-   * the change on the one path where somebody is already fixing something else
-   * (docs/adr/0088 §3, templates/matters/matter_create.html).
    */
   function bindOpenChosenDetails(scope) {
     (scope || document).querySelectorAll("details.chipdetails").forEach(function (holder) {
       if (!once(holder, "OpenChosen")) {
-        return;
-      }
-      if (holder.hasAttribute("data-stay-closed")) {
         return;
       }
       if (holder.querySelector("input:checked")) {
