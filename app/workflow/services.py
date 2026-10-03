@@ -477,10 +477,14 @@ def _lock_for_transition(action: NextAction, refusal: str) -> NextAction:
     """
     matter_model = apps.get_model("matters", "Matter")
     try:
-        matter_model.objects.select_for_update(no_key=True).get(pk=action.matter_id)
-        return NextAction.objects.select_for_update(no_key=True).get(pk=action.pk)
+        matter = matter_model.objects.select_for_update(no_key=True).get(pk=action.matter_id)
+        locked = NextAction.objects.select_for_update(no_key=True).get(pk=action.pk)
     except (matter_model.DoesNotExist, NextAction.DoesNotExist) as error:
         raise DomainError(refusal) from error
+    # The Matter row this transaction already holds, rather than a second read
+    # of it the first time a caller reaches `action.matter`.
+    locked.matter = matter
+    return locked
 
 
 @transaction.atomic

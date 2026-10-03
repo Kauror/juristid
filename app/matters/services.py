@@ -797,7 +797,7 @@ def _move_stage(*, matter: Matter, stage: Any, actor: Any, origin: str) -> Stage
     all» is a question about the committed row, never about the instance the
     caller fetched before somebody else's save.
     """
-    locked = Matter.objects.select_for_update(no_key=True).get(pk=matter.pk)
+    locked = lock_matter_for_write(matter.pk)
     previous = locked.stage
     if previous == stage:
         matter.stage = previous
@@ -1300,7 +1300,7 @@ def guard_matter_revision(*, matter: Matter, expected_revision: str | None) -> M
     service call, a test — and refusing those would make the guard a rule about
     who may write rather than about which version they wrote against.
     """
-    locked = Matter.objects.select_for_update(no_key=True).get(pk=matter.pk)
+    locked = lock_matter_for_write(matter.pk)
     if expected_revision and matter_revision_token(locked) != expected_revision:
         raise MatterEditConflict(locked)
     return locked
@@ -1938,8 +1938,12 @@ def _engagement_kind(value: str) -> str:
     return value
 
 
-def _engagement_precision(occurred_on: Any, value: Any) -> str:
-    """How exactly `Kaasamise kuupäev` is known, normalised and vouched for.
+def _normalised_precision(day: Any, value: Any) -> str:
+    """How exactly a recorded day is known, normalised and vouched for.
+
+    One rule for every dated record this module writes: `Kaasamise kuupäev`,
+    `Seisukoha kuupäev`, a development's and a timeline step's `Kuupäev`. They
+    were three byte-identical helpers, each pointing at the previous one.
 
     Two rules, and both are about a value a form or an importer can get wrong.
 
@@ -1955,7 +1959,7 @@ def _engagement_precision(occurred_on: Any, value: Any) -> str:
     that has already written a note and a next step names a constraint. Same
     reasoning as `_engagement_kind` and `_engagement_response_count`.
     """
-    if occurred_on is None:
+    if day is None:
         return DatePrecision.EXACT.value
     precision = value or DatePrecision.EXACT.value
     if precision not in DatePrecision.values:
@@ -2184,7 +2188,7 @@ def add_engagement(
     clean_title = title.strip()
     if not clean_title:
         raise DomainError("Kaasamisel peab olema pealkiri.")
-    precision = _engagement_precision(occurred_on, occurred_on_precision)
+    precision = _normalised_precision(occurred_on, occurred_on_precision)
     _refuse_deadline_before_engagement(occurred_on, precision, feedback_deadline)
 
     engagement = MatterEngagement.objects.create(
@@ -2387,7 +2391,7 @@ def update_engagement(
     # column touches neither: the normalised value then equals what is stored
     # and drops out of `changed`.
     if "occurred_on" in proposed or "occurred_on_precision" in proposed:
-        proposed["occurred_on_precision"] = _engagement_precision(
+        proposed["occurred_on_precision"] = _normalised_precision(
             proposed.get("occurred_on", locked.occurred_on),
             proposed.get("occurred_on_precision", locked.occurred_on_precision),
         )
@@ -3883,25 +3887,6 @@ def external_position_revision(position: MatterExternalPosition) -> str:
     return position.updated_at.isoformat()
 
 
-def _external_position_precision(stated_on: Any, value: Any) -> str:
-    """How exactly `Seisukoha kuupäev` is known, normalised and vouched for.
-
-    The two rules `_engagement_precision` keeps, for the same two reasons. A
-    date nobody knows has no precision, so a missing date forces `EXACT` — and
-    here the database says so as well, because the column is new and could
-    afford the `CHECK` the engagement's could not. And the vocabulary is
-    checked in the service so that a bad value is a `DomainError` naming what
-    was wrong rather than an `IntegrityError` naming a constraint from inside a
-    transaction that has already captured three files.
-    """
-    if stated_on is None:
-        return DatePrecision.EXACT.value
-    precision = value or DatePrecision.EXACT.value
-    if precision not in DatePrecision.values:
-        raise DomainError(f"Tundmatu kuupäeva täpsus {precision!r}.")
-    return precision
-
-
 def _external_position_engagement(matter: Matter, engagement: Any) -> MatterEngagement | None:
     """The `Kaasamine` this position answers, proved to be on the same Matter.
 
@@ -4110,7 +4095,7 @@ def record_external_position(
     clean_note = (lawyer_note or "").strip()[:EXTERNAL_POSITION_LAWYER_NOTE_MAX_LENGTH]
     _external_position_source(clean_url, attachments=attachment_count, summary=clean_summary)
     related = _external_position_engagement(matter, engagement)
-    precision = _external_position_precision(stated_on, stated_on_precision)
+    precision = _normalised_precision(stated_on, stated_on_precision)
 
     position = MatterExternalPosition.objects.create(
         matter=matter,
@@ -4337,7 +4322,7 @@ def correct_external_position(
         summary=clean_summary,
     )
     related = _external_position_engagement(locked_matter, engagement)
-    precision = _external_position_precision(stated_on, stated_on_precision)
+    precision = _normalised_precision(stated_on, stated_on_precision)
 
     proposed: dict[str, Any] = {
         "organisation_id": organisation.pk if organisation is not None else None,
@@ -4523,23 +4508,6 @@ def development_revision(development: MatterProceduralDevelopment) -> str:
     return development.updated_at.isoformat()
 
 
-def _development_precision(occurred_on: Any, value: Any) -> str:
-    """How exactly `Kuupäev` is known, normalised and vouched for.
-
-    The two rules `_external_position_precision` keeps, for the same two reasons.
-    A date nobody knows has no precision, so a missing date forces `EXACT` — and
-    the database says so as well. The vocabulary is checked here so that a bad
-    value is a `DomainError` naming what was wrong rather than an `IntegrityError`
-    from inside a transaction that has already captured three files.
-    """
-    if occurred_on is None:
-        return DatePrecision.EXACT.value
-    precision = value or DatePrecision.EXACT.value
-    if precision not in DatePrecision.values:
-        raise DomainError(f"Tundmatu kuupäeva täpsus {precision!r}.")
-    return precision
-
-
 @transaction.atomic
 def record_procedural_development(
     *,
@@ -4603,7 +4571,7 @@ def record_procedural_development(
 
     clean_title = (title or "").strip()[:DEVELOPMENT_TITLE_MAX_LENGTH]
     clean_note = (note or "").strip()
-    precision = _development_precision(occurred_on, occurred_on_precision)
+    precision = _normalised_precision(occurred_on, occurred_on_precision)
     development = MatterProceduralDevelopment.objects.create(
         matter=matter,
         title=clean_title,
@@ -4764,7 +4732,7 @@ def set_timeline_steps(
     for phase_key, hidden, occurs_on, precision in steps:
         if phase_key not in PHASE_KEYS:
             continue
-        clean_precision = _development_precision(occurs_on, precision)
+        clean_precision = _normalised_precision(occurs_on, precision)
         row = existing.get(phase_key)
         # The default — shown, undated — is the absence of a row.
         if not hidden and occurs_on is None:
@@ -4941,7 +4909,7 @@ def _apply_added_steps(
             raise DomainError(
                 f"Sammu nimetus võib olla kuni {TIMELINE_STEP_TITLE_MAX_LENGTH} märki."
             )
-        clean_precision = _development_precision(occurs_on, precision)
+        clean_precision = _normalised_precision(occurs_on, precision)
         anchor = (after_key or "")[:80]
         if row is None:
             created = MatterTimelineStep.objects.create(
@@ -5057,7 +5025,7 @@ def correct_procedural_development(
     # creates titleless ones — a sentence somebody typed and then decided was
     # restating the file under it has to have a way out.
     clean_title = (title or "").strip()[:DEVELOPMENT_TITLE_MAX_LENGTH]
-    precision = _development_precision(occurred_on, occurred_on_precision)
+    precision = _normalised_precision(occurred_on, occurred_on_precision)
 
     proposed: dict[str, Any] = {
         "title": clean_title,
@@ -5236,7 +5204,7 @@ def close_matter(
     # itself and with `FOR UPDATE`, so two closures, a closure and a reopen, and
     # a closure and a business write still take turns (app/matters/locks.py).
     if successor is None:
-        locked = Matter.objects.select_for_update(no_key=True).get(pk=matter.pk)
+        locked = lock_matter_for_write(matter.pk)
     else:
         # **Both Matters, in the global order** (ENG-073). A `Järglane` is a
         # live pointer at another Matter, and `delete_matter` refuses to delete
@@ -5366,7 +5334,7 @@ def reopen_matter_into_stage(*, matter: Matter, stage: Any, actor: Any = None) -
         raise DomainError(REOPEN_NEEDS_A_STAGE)
     if is_terminal_stage(getattr(stage, "key", None)):
         raise DomainError(REOPEN_INTO_TERMINAL_STAGE)
-    locked = Matter.objects.select_for_update(no_key=True).get(pk=matter.pk)
+    locked = lock_matter_for_write(matter.pk)
     if locked.is_open:
         raise DomainError("Teema on juba avatud.")
 
@@ -5406,7 +5374,7 @@ def reopen_matter(
     conflicts with itself, so a concurrent `close_matter` — which takes the same
     row at the same strength since ENG-027 — cannot interleave with it.
     """
-    locked = Matter.objects.select_for_update(no_key=True).get(pk=matter.pk)
+    locked = lock_matter_for_write(matter.pk)
     if locked.is_open:
         raise DomainError("Teema on juba avatud.")
 
@@ -5483,7 +5451,7 @@ def mark_historical_archive_inactive(
     and none of it may stay owed on a Matter that is no longer current. Each is
     ended with its own ordinary event; the closure itself is still unrecorded.
     """
-    matter = Matter.objects.select_for_update(no_key=True).get(pk=matter.pk)
+    matter = lock_matter_for_write(matter.pk)
     if matter.record_mode != RecordMode.ARCHIVE:
         raise DomainError("Ainult arhiivikirje saab muutuda ajalooliseks.")
     if not matter.is_open:
@@ -5591,7 +5559,7 @@ def retire_from_current_register(
     what guarantees that anything still owed when the retirement does happen is
     ended with its ordinary event rather than stranded on a closed file.
     """
-    matter = Matter.objects.select_for_update(no_key=True).get(pk=matter.pk)
+    matter = lock_matter_for_write(matter.pk)
     if matter.origin not in REGISTER_MANAGED_ORIGINS:
         raise DomainError("Registri operatsioon ei muuda kohapeal loodud teemat.")
     if matter.disposition or matter.closed_at is not None:
@@ -5718,7 +5686,7 @@ def refresh_matter_from_register(
         # like every other period change; the refresh keeps its one event, and
         # an imported stage never closes a Matter here — retiring imported work
         # is the register cutover's decision, not a side effect of a refresh.
-        locked = Matter.objects.select_for_update(no_key=True).get(pk=matter.pk)
+        locked = lock_matter_for_write(matter.pk)
         _turn_stage_episode(matter=locked, stage=matter.stage, origin=StageEpisodeOrigin.IMPORTED)
 
     scalar_fields = [field for field in changed if field != "source_organisations"]
