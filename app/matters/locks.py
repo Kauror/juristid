@@ -92,8 +92,11 @@ def lock_matter_for_evidence_integrity(matter_id: Any) -> Matter:
     Must be called inside `transaction.atomic`; Django refuses `FOR NO KEY
     UPDATE` outside one, which is the behaviour we want rather than a lock that
     is released before the check it protects has run.
+
+    The same lock as :func:`lock_matter_for_write`, under the name that says
+    why an evidence binder takes it.
     """
-    return Matter.objects.select_for_update(no_key=True).get(pk=matter_id)
+    return lock_matter_for_write(matter_id)
 
 
 def lock_matter_for_write(matter_id: Any) -> Matter:

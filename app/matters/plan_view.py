@@ -105,10 +105,6 @@ class WorkPlanView:
         return [row for row in self.rows if not row.step.is_skipped]
 
     @property
-    def skipped_rows(self) -> list[PlanRow]:
-        return [row for row in self.rows if row.step.is_skipped]
-
-    @property
     def ahead(self) -> list[MatterPlanStep]:
         """The steps that could be started next, in order — `Järgmisena`'s choices."""
         return [row.step for row in self.rows if row.is_ahead]

@@ -31,7 +31,8 @@ from django.db import transaction
 from app.audit.operations import composer_operation
 from app.core.enums import Visibility
 from app.core.errors import DomainError
-from app.documents.enums import DocumentRole
+from app.documents.enums import DocumentRole, ExtractionState
+from app.documents.models import Document
 from app.documents.services import add_evidence_version, create_document
 from app.documents.uploads import AcceptedUpload, read_upload
 from app.matters.entry_enums import EntryKind
@@ -52,6 +53,46 @@ def role_for(filename: str) -> str:
     if lowered.endswith(EMAIL_EXTENSIONS):
         return DocumentRole.ORIGINAL_EMAIL
     return DocumentRole.INCOMING_AUTHORITY
+
+
+def file_incoming(
+    *,
+    matter: Matter,
+    filename: str,
+    content: bytes,
+    mime_type: str,
+    actor: Any,
+    extraction_state: str = ExtractionState.PENDING,
+) -> Document:
+    """One incoming file as one Document with one immutable version.
+
+    The one sequence every incoming path files through — Saabunud, `Uus teema`'s
+    direct and held files, and a staged file promoted at save. Through the
+    ordinary services, so a file arriving with a new Matter is subject to the
+    same evidence rules as one uploaded later: same storage, same checksum, same
+    immutability trigger, same scan state. Nothing is inferred from the
+    filename but the role, and the role is :func:`role_for`'s, so an `.eml` is
+    «Algne e-kiri» however it reached the Teema (ENG-066: the three copies this
+    replaces had each needed that fix separately).
+
+    ``extraction_state`` is the staging area's: a file it has already read
+    arrives with that reading's state (`promoted_extraction_state`).
+    """
+    document = create_document(
+        matter=matter,
+        title=filename,
+        role=role_for(filename),
+        created_by=actor,
+    )
+    add_evidence_version(
+        document=document,
+        content=content,
+        original_filename=filename,
+        mime_type=mime_type,
+        uploaded_by=actor,
+        extraction_state=extraction_state,
+    )
+    return document
 
 
 def title_from_filename(filename: str) -> str:
@@ -167,18 +208,12 @@ def register_incoming(
     # grouped note would swallow the files into «lisas märkuse».
     with composer_operation():
         for upload in uploads:
-            document = create_document(
+            file_incoming(
                 matter=matter,
-                title=upload.filename,
-                role=role_for(upload.filename),
-                created_by=actor,
-            )
-            add_evidence_version(
-                document=document,
+                filename=upload.filename,
                 content=upload.content,
-                original_filename=upload.filename,
                 mime_type=upload.mime_type,
-                uploaded_by=actor,
+                actor=actor,
             )
 
     if seed_plan:

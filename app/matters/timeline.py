@@ -38,7 +38,7 @@ from django.utils import timezone
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.audit.visibility import scope_change_events
-from app.core.dates import format_estonian_date
+from app.core.dates import format_estonian_date, start_of_local_day
 from app.matters import selectors
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import EngagementKind, WebsiteOverviewStatus
@@ -242,20 +242,6 @@ _MILESTONE_LABELS: dict[str, str] = {
 #: not what it is called (app/matters/process_timeline.py `SENT_LABEL`).
 SUBMISSION_MILESTONE = "Arvamus välja"
 
-#: What a published or cancelled `Ülevaade / uudis` is called on the chronology.
-#:
-#: Named here rather than written into `projected_milestones` twice, because the
-#: published row and the cancelled one have to agree — a rename that reached one
-#: and not the other would put two names for one activity on one page.
-#:
-#: **The link beside it reads `Ülevaade / uudis`, and the address is behind it**
-#: (docs/adr/0121 §5). docs/adr/0105 §3 had put the address itself there, cut at
-#: 72 characters; the owner found the row cluttered and asked for a clean name.
-#: The address is kept as the link's `title` and in its accessible name, so
-#: *which page* is still answerable (`MatterWebsiteOverview.link_label`,
-#: `link_display`).
-WEBSITE_OVERVIEW_MILESTONE = "Ülevaade / uudis"
-
 #: What a published row prints where its publication date would go, when nobody
 #: knows what that date is.
 #:
@@ -360,8 +346,7 @@ class ChronologyMilestone:
     6 px muted dot (docs/adr/0074 §14, amended 2026-09-27).
 
     ``what`` is the headline — `Töövõit`, `Hetkeseis: Valitsuses`,
-    `Kaasamine: liikmed`. ``sub`` is the optional second line, and ``file_url``
-    turns part of it into a link to the exact bytes.
+    `Kaasamine: liikmed`. ``sub`` is the optional second line.
 
     Milestones carry a **date, never a clock time**. A work entry says when
     somebody wrote it because two notes on one afternoon need separating; a
@@ -376,8 +361,6 @@ class ChronologyMilestone:
     what: str
     display_date: str
     sub: str = ""
-    file_url: str = ""
-    file_label: str = ""
     links: tuple[ChronologyLink, ...] = ()
     #: **Dated ahead of today** — a `Kaasamine`, a `Väline seisukoht`, a `Märge`
     #: or a publication recorded for a day that has not come (docs/adr/0121
@@ -983,11 +966,6 @@ def _milestone_for_event(event: ChangeEvent) -> ChronologyMilestone:
     )
 
 
-def _start_of_day(day: date) -> datetime:
-    """The first moment of a local day: where a day-granular bound begins."""
-    return timezone.make_aware(datetime.combine(day, datetime.min.time()))
-
-
 def _end_of_day(day: date) -> datetime:
     """Where a dated fact sorts among the timestamped ones.
 
@@ -1566,7 +1544,7 @@ def projected_milestones(
     else:
         facts = _NO_FACTS
     rows: list[TimelineItem] = []
-    start = _start_of_day(since) if since is not None else None
+    start = start_of_local_day(since) if since is not None else None
 
     def dated(queryset: Any, field_name: str) -> Any:
         """Rows whose chronology day — the date, else the recorded day — is ≥ since."""
@@ -2171,7 +2149,7 @@ class _ChronologySources:
                 Submission.objects.filter(**visible)
                 .visible_to(self.user)
                 .historically_sent()
-                .filter(sent_at__lt=_start_of_day(self.day + timedelta(days=1)))
+                .filter(sent_at__lt=start_of_local_day(self.day + timedelta(days=1)))
                 .annotate(chronology_day=_local_date("sent_at")),
             ),
             (ChangeEventType.ENGAGEMENT_FEEDBACK_CLOSED.value, engagements),
@@ -2282,7 +2260,7 @@ class _ChronologySources:
                 Submission.objects.filter(**visible)
                 .visible_to(self.user)
                 .historically_sent()
-                .filter(sent_at__lt=_start_of_day(self.day + timedelta(days=1))),
+                .filter(sent_at__lt=start_of_local_day(self.day + timedelta(days=1))),
                 _local_date("sent_at"),
             )
             overviews = MatterWebsiteOverview.objects.filter(**visible).visible_to(self.user)
@@ -2858,7 +2836,9 @@ def _versions_shown_on_their_record(matter: Matter, *, user: Any, day: date) -> 
         Submission.objects.filter(matter=matter)
         .visible_to(user)
         .historically_sent()
-        .filter(sent_at__lt=_start_of_day(day + timedelta(days=1)), final_version__isnull=False)
+        .filter(
+            sent_at__lt=start_of_local_day(day + timedelta(days=1)), final_version__isnull=False
+        )
         .values("final_version_id")
     )
     linked = DocumentLink.objects.filter(document__matter=matter, entry__isnull=True).values(

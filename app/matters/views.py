@@ -15,6 +15,7 @@ Two conventions worth knowing:
 
 from __future__ import annotations
 
+import functools
 import unicodedata
 import uuid
 from collections.abc import Sequence
@@ -26,13 +27,14 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import F, Q
+from django.db.models import Count, F, Q
 from django.db.models.functions import ExtractYear
 from django.http import Http404, HttpRequest, HttpResponse, HttpResponseRedirect, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.functional import cached_property
 from django.views.decorators.http import require_http_methods
 
 from app.accounts.models import User
@@ -47,7 +49,6 @@ from app.audit.models import ChangeEvent
 from app.audit.operations import composer_operation, stage_episode_scope
 from app.audit.visibility import change_log_event_types, scope_change_events
 from app.core.authorization import (
-    may_review_work_victory,
     may_write_business_content,
 )
 from app.core.dates import (
@@ -60,6 +61,7 @@ from app.core.dates import (
 from app.core.decorators import business_write_required
 from app.core.enums import Visibility
 from app.core.errors import DomainError
+from app.core.middleware import is_htmx
 from app.core.request_params import bounded_int, safe_local_path
 from app.documents import pending as pending_uploads
 from app.documents.enums import DocumentRole, ExtractionState
@@ -152,7 +154,7 @@ from app.matters.forms import (
     read_organisation_choices,
     visible_engagements_of,
 )
-from app.matters.intake import register_incoming, role_for, validate_uploads
+from app.matters.intake import file_incoming, register_incoming, validate_uploads
 from app.matters.intake_suggestions import (
     CurrentValues,
     SuggestedField,
@@ -279,7 +281,7 @@ from app.taxonomy.legal_instruments import OTHER_LEGAL_INSTRUMENT_KEYS
 from app.taxonomy.models import PolicyArea
 from app.taxonomy.vocabulary import selectable_policy_areas
 from app.workflow import plan as work_plan
-from app.workflow.enums import REVIEW_KINDS, Disposition, PlanStepOperation, Track
+from app.workflow.enums import REVIEW_KINDS, PlanStepOperation, Track
 from app.workflow.models import MatterPlanStep, NextAction, StageVocabulary
 from app.workflow.plan import seed_standard_plan
 from app.workflow.selectors import stages_including
@@ -357,7 +359,6 @@ def get_visible_matter(request: HttpRequest, pk: Any) -> Matter:
             "owner",
             "stage",
             "addressee_organisation",
-            "superseded_by",
             # The derived register row. Joined rather than reached for, because
             # the page asks it two separate questions — what the register's own
             # JÄRGMISEKS says, and what it observed around the outreach — and a
@@ -370,9 +371,6 @@ def get_visible_matter(request: HttpRequest, pk: Any) -> Matter:
             "policy_areas",
             "tags",
             "collaborators",
-            # `Seotud` reads the successor chain in both directions, and the
-            # reverse side is a relation rather than a column.
-            "supersedes",
         )
     )
     return get_object_or_404(queryset, pk=pk)
@@ -639,7 +637,6 @@ def inbox(request: HttpRequest) -> HttpResponse:
             "unassigned_total": unassigned_total,
             "recent": recent,
             "seis": inbox_figures(request.user, today),
-            "intake_form": IncomingIntakeForm(viewer=request.user),
             "source_instructions": source_instructions_for([*unassigned, *recent]),
             "source_snapshot": snapshot_label(),
             "nav_active": "saabunud",
@@ -933,20 +930,25 @@ STATUS_SEGMENTS = (
 )
 
 
-def _segment_queryset(user: Any, key: str) -> Any:
-    """The population one segment counts, scoped before the count is taken."""
-    base = Matter.objects.visible_to(user)
-    if key == "avatud":
-        return base.filter(is_open=True)
-    if key == "suletud":
-        return base.filter(is_open=False)
-    if key == "arhiiv":
-        return base.filter(record_mode=RecordMode.ARCHIVE)
-    return base
+def _segment_counts(user: Any) -> dict[str, int]:
+    """Every segment's count in one statement, scoped before anything is counted.
+
+    One filtered `COUNT(DISTINCT id)` per segment over the reader's own
+    population, each segment's condition being `register_filters.status_q` —
+    the one the list it opens is filtered by. Distinct, because the scope joins
+    the collaborators table (`app.core.authorization.scoped_count`).
+    """
+    counts = {
+        key: Count("id", distinct=True, filter=register_filters.status_q(key))
+        for key, _label in STATUS_SEGMENTS
+        if key != "koik"
+    }
+    return Matter.objects.visible_to(user).aggregate(koik=Count("id", distinct=True), **counts)
 
 
 def _status_options(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
     current = params.get("olek", "avatud")
+    counts = _segment_counts(request.user)
     options = []
     for key, label in STATUS_SEGMENTS:
         query = params.copy()
@@ -957,7 +959,7 @@ def _status_options(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
                 "key": key,
                 "label": label,
                 "active": current == key,
-                "count": _segment_queryset(request.user, key).count(),
+                "count": counts[key],
                 "query": query.urlencode(),
             }
         )
@@ -1376,10 +1378,7 @@ def _wants_fragment(request: HttpRequest) -> bool:
     again; answering that with a fragment would replace the document with a bare
     table (Stage-2E.1 brief 7).
     """
-    return (
-        request.headers.get("HX-Request") == "true"
-        and request.headers.get("HX-History-Restore-Request") != "true"
-    )
+    return is_htmx(request) and request.headers.get("HX-History-Restore-Request") != "true"
 
 
 #: What the empty register offers when the matches are simply somewhere else.
@@ -1410,7 +1409,7 @@ def _matches_elsewhere(request: HttpRequest, params: Any, queryset: Any) -> dict
     arrives from `matter_list_queryset` through `visible_to` and through the
     free-text projection, so a restricted Matter cannot make the sentence
     appear. A count computed before authorization would be exactly the leak
-    `_segment_queryset` is careful about: «there is something you cannot see»
+    `_segment_counts` is careful about: «there is something you cannot see»
     is a disclosure.
 
     It does **not** widen the filter on the reader's behalf. It says a wider
@@ -1422,10 +1421,31 @@ def _matches_elsewhere(request: HttpRequest, params: Any, queryset: Any) -> dict
     widened["olek"] = "koik"
     widened.pop("leht", None)
     total = register_filters.apply_register_filters(queryset, request.user, widened)[0]
-    count = total.distinct().count()
+    count = _count_matters(total)
     if not count:
         return None
     return {"count": count, "query": widened.urlencode(), "label": ELSEWHERE_LINK}
+
+
+def _count_matters(queryset: Any) -> int:
+    """How many distinct Matters a register queryset holds.
+
+    Counted on the primary key alone. The register's queryset carries the eight
+    correlated subqueries `matter_list_queryset` annotates for its columns, and
+    `queryset.distinct().count()` makes the database evaluate all of them for
+    every matching row just to count rows — about half a second per page for a
+    reader on 5,000 Matters, against a few milliseconds this way. The filters
+    stay: an annotation the WHERE clause refers to is kept under `values()`.
+    """
+    return queryset.order_by().values("pk").distinct().count()
+
+
+class _RegisterPaginator(Paginator):
+    """`Paginator`, counting the way `_count_matters` does and slicing as before."""
+
+    @cached_property
+    def count(self) -> int:
+        return _count_matters(self.object_list)
 
 
 @login_required
@@ -1469,7 +1489,7 @@ def matter_list(request: HttpRequest) -> HttpResponse:
     queryset = _ordered(queryset, sort, request.user)
 
     per_page, page_size_key = page_size_from(params.get(PAGE_SIZE_PARAM))
-    paginator = Paginator(queryset.distinct(), per_page)
+    paginator = _RegisterPaginator(queryset.distinct(), per_page)
     page = paginator.get_page(params.get("leht"))
 
     query_without_page = params.copy()
@@ -1581,15 +1601,6 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         **register_columns(params),
     }
 
-    # Only on the full page. The chips sit above the filter bar, outside the
-    # results region a keystroke swaps, and four extra counts per keystroke
-    # would be four queries for something the reader cannot even see move
-    # (Stage-2E.1 brief 14).
-    context["saved_views"] = register_filters.saved_views(request.user, params)
-    # The view *is* the address. «Salvesta praegune filter vaatena» offers this
-    # link; there is nothing else to save, and nothing is stored.
-    context["current_view_url"] = request.build_absolute_uri()
-
     if _wants_fragment(request):
         # The whole results surface, not a patched piece of it: one render from
         # one queryset cannot disagree with itself about how many rows there are
@@ -1601,6 +1612,15 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         # (brief 14). The three the column headings share are above, because
         # the headings *are* in this fragment.
         return render(request, "matters/partials/register_results.html", context)
+
+    # Only on the full page, so after the fragment has returned. The chips sit
+    # above the filter bar, outside the results region a keystroke swaps, and
+    # four extra counts per keystroke would be four queries for something the
+    # reader cannot even see move (Stage-2E.1 brief 14).
+    context["saved_views"] = register_filters.saved_views(request.user, params)
+    # The view *is* the address. «Salvesta praegune filter vaatena» offers this
+    # link; there is nothing else to save, and nothing is stored.
+    context["current_view_url"] = request.build_absolute_uri()
 
     context |= {
         "tracks": Track.choices,
@@ -2310,7 +2330,6 @@ def _create_context(
         # more, and `Arvamuse tähtaeg` is a field on `form` — so the page has one
         # form for the Teema and one for the link, and nothing on it can be handed
         # somebody else's (docs/adr/0094 §5, §6).
-        "frequent_senders": getattr(form, "frequent_senders", []),
         # `secondary_fields` is gone with the disclosure it fed. The template
         # named the primary fields and looped this tuple for the rest, which was
         # the right shape while the rest were hidden behind "+ Täpsusta teema
@@ -2670,21 +2689,17 @@ def _attach_incoming_file(matter: Any, upload: Any, *, actor: Any) -> None:
     was classified by the path it happened to take — the direct post, which is
     the form without scripting, and every file held through a refused save
     (ENG-066). Documents stored before that are left as they were.
-    """
-    from app.documents.services import add_evidence_version, create_document
 
-    document = create_document(
+    A name of its own here, delegating to `app.matters.intake.file_incoming`,
+    because it is the seam the creation tests replace to fail one file of
+    several (tests/test_matter_create_form.py).
+    """
+    file_incoming(
         matter=matter,
-        title=upload.filename,
-        role=role_for(upload.filename),
-        created_by=actor,
-    )
-    add_evidence_version(
-        document=document,
+        filename=upload.filename,
         content=upload.content,
-        original_filename=upload.filename,
         mime_type=upload.mime_type,
-        uploaded_by=actor,
+        actor=actor,
     )
 
 
@@ -2938,14 +2953,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "procedural_link_open": "",
         "procedural_link_error": "",
         "can_write": may_write_business_content(request.user),
-        "can_review_victory": may_review_work_victory(request.user),
-        # «Lükka edasi», with the day each option lands on. Offered only on an
-        # exact date: deferring a step recorded as *september 2026* by a day
-        # would turn a period somebody deliberately left vague into a day they
-        # never named (master specification 3.5).
-        "defer_choices": defer_choices(defer_base(current_action, timezone.localdate())),
         "quick_dates": quick_date_choices(timezone.localdate()),
-        "can_defer": current_action is not None and not current_action.is_approximate,
         "today": timezone.localdate(),
         # The official `Arvamuse tähtaeg`, where `PRAEGUNE TEGEVUS` is showing a
         # plan instead of it. An open `Järgmiseks` is the current work and stays
@@ -3000,14 +3008,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
 def matter_detail(request: HttpRequest, pk: Any) -> HttpResponse:
     matter = get_visible_matter(request, pk)
     context = _overview_context(request, matter)
-    intelligence = context["intelligence"]
-    context.update(
-        _header_context(
-            request,
-            matter,
-            milestones=[*intelligence.upcoming_dates, *intelligence.past_dates],
-        )
-    )
+    context.update(_header_context(request, matter))
     context["tab"] = "teema"
     context["nav_active"] = "teemad"
     return render(request, "matters/matter_detail.html", context)
@@ -3058,9 +3059,7 @@ def _legal_instrument_line(matter: Matter) -> list[str]:
     return labels
 
 
-def _header_context(
-    request: HttpRequest, matter: Matter, *, milestones: Any = None
-) -> dict[str, Any]:
+def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # One read for the private note: its body fills the box and its `updated_at`
     # fills `Salvestatud HH:mm`.
     note_record = personal_note_record(matter=matter, author=request.user)
@@ -3076,11 +3075,19 @@ def _header_context(
         # nobody else is shown the control, so nobody else pays for the walk. The
         # route keeps every refusal it had; hiding the link is an offer withheld,
         # not the guard (docs/adr/0096 §4).
-        "can_delete": can_write and not plan_matter_deletion(matter).is_blocked,
+        #
+        # **A callable, so the walk runs only where the control is drawn.** The
+        # plan is most of this page's queries (≈150 of ≈210 on a busy file),
+        # and most re-renders of this context — every HTMX save and refusal in
+        # the column — never render `header.html` at all. The template calls it
+        # once, from `{% if can_delete %}`, and `cache` keeps a second reference
+        # from walking again.
+        "can_delete": functools.cache(
+            lambda: can_write and not plan_matter_deletion(matter).is_blocked
+        ),
         # No `submission_count`. The tab that displayed it is gone, and a count
         # nothing renders is a query nothing needs.
         "document_count": Document.objects.filter(matter=matter).visible_to(request.user).count(),
-        "dispositions": Disposition.choices,
         # The inline owner control. Current department workers plus this
         # Matter's own owner, so a file held by a departed colleague still says
         # who holds it and can still be handed to somebody who is here — the
@@ -3120,20 +3127,12 @@ def _header_context(
         "summary_revision": matter_field_revision(matter, "brief_summary"),
         "matter_policy_areas": list(matter.policy_areas.all()),
         "matter_legal_instruments": _legal_instrument_line(matter),
-        # The one deadline the header shows, chosen by the rule in §5.5 rather
-        # than by the template picking whichever field is non-empty.
-        # `milestones` when the caller has already read them, which the Matter
-        # page has: `Olulised tähtajad` renders from the same rows.
         # **The header's `Tähtaeg` is `Arvamuse tähtaeg`, and only that.** The
         # approved target reads `Saabus` and `Tähtaeg` as a pair — when it
         # arrived, when Koda's answer is due — so the slot cannot be filled by
         # whichever `MatterImportantDate` happens to be nearest
-        # (TEEMA_TARGET_SPEC §B, docs/adr/0074 §2).
-        #
-        # `active_deadline` is untouched and still answers the broader question
-        # for the surfaces that want it; `milestones` is still passed so it costs
-        # no second query where it is read.
-        "active_deadline": selectors.active_deadline(matter, request.user, milestones=milestones),
+        # (TEEMA_TARGET_SPEC §B, docs/adr/0074 §2). `selectors.active_deadline`
+        # still answers that broader question for the surfaces that ask it.
         "response_deadline": selectors.response_deadline_of(matter, request.user),
         "summary_form": BriefSummaryForm(initial={"brief_summary": matter.brief_summary}),
         # The rail travels with the header — it is on all three Matter surfaces
@@ -3547,7 +3546,6 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
             "working_documents": working,
             "document_roles": _role_filter_choices(),
             "upload_roles": _upload_role_choices(),
-            "opinion_role_filter": OPINION_ROLE_FILTER,
             # Only the years this Matter actually has files from. A dropdown
             # offering ten empty years is a dropdown that teaches people the
             # filter does not work.
@@ -3658,14 +3656,7 @@ def _render_overview(
     # `locked_matter`, and this one would render the stage it had before.
     matter.refresh_from_db(fields=["stage"])
     context = _overview_context(request, matter)
-    intelligence = context["intelligence"]
-    context.update(
-        _header_context(
-            request,
-            matter,
-            milestones=[*intelligence.upcoming_dates, *intelligence.past_dates],
-        )
-    )
+    context.update(_header_context(request, matter))
     body = render_to_string("matters/partials/overview.html", context, request=request)
     if header_out_of_band:
         context["header_out_of_band"] = True
@@ -4042,7 +4033,6 @@ def _engagement_row(
             "milestone": engagement_milestone(engagement),
             "engagement_edit_form": form,
             "engagement_edit_error": error,
-            "engagement_conflict": conflict,
             "engagement_conflict_milestone": (
                 engagement_milestone(conflict) if conflict is not None else None
             ),
@@ -5389,9 +5379,7 @@ _FIELD_SURFACES = {
     # claiming it had saved, which is the exact failure this mapping exists to
     # prevent (post-QA R2-07, `templates/matters/partials/header.html`).
     "policy_area_other": "matters/partials/header.html",
-    "track": "matters/partials/rail.html",
     "source_organisations": "matters/partials/rail.html",
-    "addressee_organisation": "matters/partials/rail.html",
     # **`received_date` renders the header now.** It moved into the metaline
     # with the approved target, so the surface it re-renders has to move with
     # it — a control that swaps `#teema-pais` with the rail replaces the header
@@ -6338,10 +6326,6 @@ def correct_website_overview_view(request: HttpRequest, pk: Any, overview_id: An
 
     overview.refresh_from_db()
     return _website_overview_link_row(request, matter, overview)
-
-
-def matter_url(matter: Matter) -> str:
-    return reverse("matters:matter_detail", kwargs={"pk": matter.pk})
 
 
 # ---------------------------------------------------------------------------
@@ -7479,13 +7463,6 @@ def _record_external_position(
     happens inside the save's own transaction, so a refusal further down leaves
     no institution behind (docs/adr/0073, docs/adr/0084 §4).
 
-    The institution is answered either by the picker's radio group or by the name
-    somebody typed into it, and which of the two wins is `resolve_addressee`'s
-    rule, shared rather than restated: a typed name is a deliberate act and beats
-    a chip that was merely left selected. Resolution happens inside the save's own
-    transaction, so a refusal further down leaves no institution behind
-    (docs/adr/0073, docs/adr/0084 §4).
-
     **Received feedback may name no institution at all**, and that is the one
     place the two panels diverge here: `resolve_addressee` is asked only when
     something was chosen or typed, because calling it with two empty answers
@@ -7506,49 +7483,55 @@ def _record_external_position(
     chosen = form.cleaned_data.get("organisation")
     typed = (form.cleaned_data.get("organisation_name") or "").strip()
     try:
-        workspace.add_matter_external_position(
-            matter=matter,
-            author=request.user,
-            # `None` where neither half of the picker was answered. The form has
-            # already refused that on `+ Teiste arvamus` — a published opinion
-            # with no author is an anonymous claim — so reaching here with
-            # nothing is received feedback that names nobody, which since
-            # docs/adr/0101 is a record rather than a gap: a lawyer writing down
-            # what a member said on the telephone has neither a catalogue row
-            # nor a collection to name (OWNER-01).
-            organisation=(
-                resolve_addressee(chosen=chosen, typed_name=typed)
-                if (chosen is not None or typed)
-                else None
-            ),
-            provenance=form_class.provenance,
-            # **The three answers neither panel asks any more**, and each of
-            # them is a `.get` on a field the form does not declare — so this is
-            # not a view choosing to ignore a value, it is a value that has
-            # nowhere to arrive. A POST carrying `source_label`, `lawyer_note`
-            # or `engagement` to either endpoint reaches a form that never
-            # cleaned it, and what reaches the service is the empty answer
-            # below. `Muuda` still asks all three, and every stored row keeps
-            # what it has (docs/adr/0095 §5).
-            source_label=form.cleaned_data.get("source_label") or "",
-            url=form.cleaned_data.get("url") or "",
-            # The resolved anchor and its precision. On these two panels that is
-            # the day box itself at `EXACT`: the period fields are not on the
-            # form, so a crafted `..._precision=QUARTER` is read by nothing
-            # (`ExternalPositionFieldsMixin.offers_precision`).
-            stated_on=form.cleaned_data.get("stated_on_value"),
-            stated_on_precision=form.cleaned_data["stated_on_precision"],
-            summary=form.cleaned_data.get("summary") or "",
-            lawyer_note=form.cleaned_data.get("lawyer_note") or "",
-            # `Liige`, and only from the panel that asks it. `+ Teiste arvamus`
-            # declares no such field, so this is `None` there — and the service
-            # refuses a `True` on that provenance in any case, because the box
-            # being absent and the value being refused are two separate defences
-            # (docs/adr/0095 §4).
-            source_is_member=bool(form.cleaned_data.get("source_is_member")),
-            engagement=form.cleaned_data.get("engagement"),
-            uploads=form.cleaned_data["attachments"],
-        )
+        # One transaction around the resolution and the save. A typed name the
+        # picker does not know becomes a new institution *while the arguments
+        # are evaluated*, which is before the use case's own transaction opens;
+        # without this, a refusal under the lock — a closed Matter in a stale
+        # tab, a rejected upload — left that institution in the catalogue.
+        with transaction.atomic():
+            workspace.add_matter_external_position(
+                matter=matter,
+                author=request.user,
+                # `None` where neither half of the picker was answered. The form has
+                # already refused that on `+ Teiste arvamus` — a published opinion
+                # with no author is an anonymous claim — so reaching here with
+                # nothing is received feedback that names nobody, which since
+                # docs/adr/0101 is a record rather than a gap: a lawyer writing down
+                # what a member said on the telephone has neither a catalogue row
+                # nor a collection to name (OWNER-01).
+                organisation=(
+                    resolve_addressee(chosen=chosen, typed_name=typed)
+                    if (chosen is not None or typed)
+                    else None
+                ),
+                provenance=form_class.provenance,
+                # **The three answers neither panel asks any more**, and each of
+                # them is a `.get` on a field the form does not declare — so this is
+                # not a view choosing to ignore a value, it is a value that has
+                # nowhere to arrive. A POST carrying `source_label`, `lawyer_note`
+                # or `engagement` to either endpoint reaches a form that never
+                # cleaned it, and what reaches the service is the empty answer
+                # below. `Muuda` still asks all three, and every stored row keeps
+                # what it has (docs/adr/0095 §5).
+                source_label=form.cleaned_data.get("source_label") or "",
+                url=form.cleaned_data.get("url") or "",
+                # The resolved anchor and its precision. On these two panels that is
+                # the day box itself at `EXACT`: the period fields are not on the
+                # form, so a crafted `..._precision=QUARTER` is read by nothing
+                # (`ExternalPositionFieldsMixin.offers_precision`).
+                stated_on=form.cleaned_data.get("stated_on_value"),
+                stated_on_precision=form.cleaned_data["stated_on_precision"],
+                summary=form.cleaned_data.get("summary") or "",
+                lawyer_note=form.cleaned_data.get("lawyer_note") or "",
+                # `Liige`, and only from the panel that asks it. `+ Teiste arvamus`
+                # declares no such field, so this is `None` there — and the service
+                # refuses a `True` on that provenance in any case, because the box
+                # being absent and the value being refused are two separate defences
+                # (docs/adr/0095 §4).
+                source_is_member=bool(form.cleaned_data.get("source_is_member")),
+                engagement=form.cleaned_data.get("engagement"),
+                uploads=form.cleaned_data["attachments"],
+            )
     except (DomainError, UploadRejected) as error:
         return _workspace_refusal(request, matter, key=key, form=form, error=str(error))
     return _render_overview(request, matter)
@@ -7742,49 +7725,55 @@ def update_external_position_view(request: HttpRequest, pk: Any, position_id: An
         return _external_position_row(request, matter, position, form=form, status=400)
 
     try:
-        corrected = correct_external_position(
-            position=position,
-            organisation=resolve_addressee(
-                chosen=form.cleaned_data.get("organisation"),
-                typed_name=form.cleaned_data.get("organisation_name") or "",
-            ),
-            url=form.cleaned_data.get("url") or "",
-            stated_on=form.cleaned_data.get("stated_on_value"),
-            stated_on_precision=form.cleaned_data["stated_on_precision"],
-            summary=form.cleaned_data.get("summary") or "",
-            lawyer_note=form.cleaned_data.get("lawyer_note") or "",
-            # `Allikas` only where the record may have one — the box is not on
-            # the form otherwise, and passing a value the record's provenance
-            # forbids is what `_external_position_authorship` refuses.
-            source_label=form.cleaned_data.get("source_label") or "",
-            # `Liige`, on the same terms. `None` where the form does not render
-            # the box, so a correction through that shape cannot clear a mark;
-            # `bool(...)` where it does, because an unticked box is a decision
-            # and not an absence (QA-014).
-            source_is_member=(
-                bool(form.cleaned_data.get("source_is_member"))
-                if "source_is_member" in form.fields
-                else None
-            ),
-            # **Not asked and not moved.** `None` is the sentinel for «this form
-            # did not render the control», which is what keeps a `LEGACY` row's
-            # unspecified provenance through a correction and what stops one press
-            # turning received feedback into a discovered opinion
-            # (docs/adr/0091 §3.4, §3.5).
-            provenance=None,
-            # `Seotud kaasamine` as the person left it. «Jääb samaks» is what
-            # the form offers — and pre-selects — when the stored round is one
-            # this reader may not see, so a correction of the date or the text
-            # leaves that relation exactly as it was instead of clearing it
-            # because the round was not in the list (ENG-047).
-            engagement=(
-                position.engagement
-                if form.cleaned_data.get("engagement") == ENGAGEMENT_UNCHANGED
-                else form.cleaned_data.get("engagement")
-            ),
-            actor=request.user,
-            expected_revision=form.cleaned_data.get("revision") or "",
-        )
+        # One transaction around the resolution and the save. A typed name the
+        # picker does not know becomes a new institution *while the arguments
+        # are evaluated*, which is before the use case's own transaction opens;
+        # without this, a refusal under the lock — a closed Matter in a stale
+        # tab, a rejected upload — left that institution in the catalogue.
+        with transaction.atomic():
+            corrected = correct_external_position(
+                position=position,
+                organisation=resolve_addressee(
+                    chosen=form.cleaned_data.get("organisation"),
+                    typed_name=form.cleaned_data.get("organisation_name") or "",
+                ),
+                url=form.cleaned_data.get("url") or "",
+                stated_on=form.cleaned_data.get("stated_on_value"),
+                stated_on_precision=form.cleaned_data["stated_on_precision"],
+                summary=form.cleaned_data.get("summary") or "",
+                lawyer_note=form.cleaned_data.get("lawyer_note") or "",
+                # `Allikas` only where the record may have one — the box is not on
+                # the form otherwise, and passing a value the record's provenance
+                # forbids is what `_external_position_authorship` refuses.
+                source_label=form.cleaned_data.get("source_label") or "",
+                # `Liige`, on the same terms. `None` where the form does not render
+                # the box, so a correction through that shape cannot clear a mark;
+                # `bool(...)` where it does, because an unticked box is a decision
+                # and not an absence (QA-014).
+                source_is_member=(
+                    bool(form.cleaned_data.get("source_is_member"))
+                    if "source_is_member" in form.fields
+                    else None
+                ),
+                # **Not asked and not moved.** `None` is the sentinel for «this form
+                # did not render the control», which is what keeps a `LEGACY` row's
+                # unspecified provenance through a correction and what stops one press
+                # turning received feedback into a discovered opinion
+                # (docs/adr/0091 §3.4, §3.5).
+                provenance=None,
+                # `Seotud kaasamine` as the person left it. «Jääb samaks» is what
+                # the form offers — and pre-selects — when the stored round is one
+                # this reader may not see, so a correction of the date or the text
+                # leaves that relation exactly as it was instead of clearing it
+                # because the round was not in the list (ENG-047).
+                engagement=(
+                    position.engagement
+                    if form.cleaned_data.get("engagement") == ENGAGEMENT_UNCHANGED
+                    else form.cleaned_data.get("engagement")
+                ),
+                actor=request.user,
+                expected_revision=form.cleaned_data.get("revision") or "",
+            )
     except ExternalPositionConflict as conflict:
         # 409, and nothing was written — not the metadata and not the source.
         # The form stays open holding this person's values and the version that
@@ -7888,38 +7877,46 @@ def add_koda_opinion(request: HttpRequest, pk: Any) -> HttpResponse:
     if not form.is_valid():
         return _workspace_refusal(request, matter, key=key, form=form)
     try:
-        result = workspace.add_matter_koda_opinion(
-            plan_step_id=launch[1] if launch else None,
-            # The step `Märgi praegune tegevus tehtuks` named, when it was
-            # ticked: fetched through `visible_to` first, so an identifier for a
-            # step this reader may not see answers 404 rather than confirming it
-            # exists, and whether it is still the open one is the use case's
-            # question under the lock (docs/adr/0126 §2).
-            complete_action_id=(launch[0] if launch else _named_action_id(request, matter, form)),
-            matter=matter,
-            author=request.user,
-            upload=form.cleaned_data["upload"],
-            # The bodies chosen, plus at most one somebody named through the
-            # picker's `+`. `resolve_addressee` is asked only when there is a
-            # name — the same rule the feedback panels use, and it runs inside
-            # the save's own transaction, so a refused upload leaves no
-            # institution behind (docs/adr/0073, docs/adr/0095 §1).
-            recipients=_koda_opinion_recipients(form),
-            sent_on=form.cleaned_data["sent_on"],
-            # **No title from this panel.** `Pealkiri` is not asked any more, so
-            # the blank that `add_matter_koda_opinion` has always answered with
-            # the uploaded file's own name is what it gets — a truthful identity
-            # somebody chose, rather than a headline cut out of the summary
-            # (docs/adr/0095 §2).
-            summary=form.cleaned_data.get("summary") or "",
-            # `Töödokumendid`: the editable file the letter was drafted in,
-            # filed as `Töödokument` under this same opinion and never as what
-            # was sent (docs/adr/0129 §2).
-            working_uploads=form.cleaned_data.get("working_files") or [],
-            # `Uus hetkeseis`: the file moves on after the opinion, which stays
-            # in the period it was written in (docs/adr/0131 §5).
-            stage=form.cleaned_data.get("stage"),
-        )
+        # One transaction around the resolution and the save. A typed name the
+        # picker does not know becomes a new institution *while the arguments
+        # are evaluated*, which is before the use case's own transaction opens;
+        # without this, a refusal under the lock — a closed Matter in a stale
+        # tab, a rejected upload — left that institution in the catalogue.
+        with transaction.atomic():
+            result = workspace.add_matter_koda_opinion(
+                plan_step_id=launch[1] if launch else None,
+                # The step `Märgi praegune tegevus tehtuks` named, when it was
+                # ticked: fetched through `visible_to` first, so an identifier for a
+                # step this reader may not see answers 404 rather than confirming it
+                # exists, and whether it is still the open one is the use case's
+                # question under the lock (docs/adr/0126 §2).
+                complete_action_id=(
+                    launch[0] if launch else _named_action_id(request, matter, form)
+                ),
+                matter=matter,
+                author=request.user,
+                upload=form.cleaned_data["upload"],
+                # The bodies chosen, plus at most one somebody named through the
+                # picker's `+`. `resolve_addressee` is asked only when there is a
+                # name — the same rule the feedback panels use, and it runs inside
+                # the save's own transaction, so a refused upload leaves no
+                # institution behind (docs/adr/0073, docs/adr/0095 §1).
+                recipients=_koda_opinion_recipients(form),
+                sent_on=form.cleaned_data["sent_on"],
+                # **No title from this panel.** `Pealkiri` is not asked any more, so
+                # the blank that `add_matter_koda_opinion` has always answered with
+                # the uploaded file's own name is what it gets — a truthful identity
+                # somebody chose, rather than a headline cut out of the summary
+                # (docs/adr/0095 §2).
+                summary=form.cleaned_data.get("summary") or "",
+                # `Töödokumendid`: the editable file the letter was drafted in,
+                # filed as `Töödokument` under this same opinion and never as what
+                # was sent (docs/adr/0129 §2).
+                working_uploads=form.cleaned_data.get("working_files") or [],
+                # `Uus hetkeseis`: the file moves on after the opinion, which stays
+                # in the period it was written in (docs/adr/0131 §5).
+                stage=form.cleaned_data.get("stage"),
+            )
     except (DomainError, UploadRejected) as error:
         return _workspace_refusal(request, matter, key=key, form=form, error=str(error))
     if result.closed:
@@ -8079,30 +8076,29 @@ def _timeline_steps_form(
     withholding the box would leave a phase with no date and no way to give it
     one (QA-006, QA-007).
     """
-    from app.matters.models import MatterTimelineStep
-
     phases = legal_process.phase_context(matter=matter)
-    visible = list(
-        MatterTimelineStep.objects.filter(matter=matter)
-        .visible_to(request.user)
-        .order_by("created_at", "id")
-    )
-    rows = {row.phase_key: row for row in visible if not row.is_added}
+    # The step rows read once and handed to both rail helpers, as the Matter
+    # page does (`_overview_context`); each re-read them on its own before.
+    step_rows = legal_process.timeline_step_rows(matter=matter, user=request.user)
+    rows, added_rows = step_rows
     # **`+ Lisa samm` places a step after something the person can see**, so the
     # panel reads the rail exactly as the page draws it — the same three reads,
     # the same merge — and offers its items, in its order (docs/adr/0119 §2).
     drawn = matter_rail(
         matter=matter,
         user=request.user,
-        rail=legal_process_rail(matter=matter, user=request.user, context=phases),
+        rail=legal_process_rail(
+            matter=matter, user=request.user, context=phases, step_rows=step_rows
+        ),
         milestones=process_steps(matter=matter, user=request.user),
+        step_rows=step_rows,
     )
     placed_after = {
         step.key: (drawn[index - 1].key if index else "")
         for index, step in enumerate(drawn)
         if step.kind == legal_process.KIND_STEP
     }
-    by_key = {row.rail_key: row for row in visible if row.is_added}
+    by_key = {row.rail_key: row for row in added_rows}
     added = [by_key[step.key] for step in drawn if step.key in by_key]
     return TimelineStepsForm(
         data,

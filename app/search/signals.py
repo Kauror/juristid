@@ -88,7 +88,7 @@ from app.search.indexing import (
     refresh_source_link,
     refresh_submission,
 )
-from app.search.models import SearchDocument, SearchRebuildReason, SearchSourceKind
+from app.search.models import SearchRebuildReason
 from app.submissions.models import Submission, SubmissionRecipient
 from app.taxonomy.models import PolicyArea, Tag, TagAlias
 
@@ -237,16 +237,12 @@ def refresh_on_tag_assignment(
 
 @receiver(post_save, sender=Entry, dispatch_uid="search_refresh_entry")
 def refresh_on_entry_save(sender: type[Entry], instance: Entry, **kwargs: Any) -> None:
+    """No `post_delete` companion: `SearchDocument.entry` is a real foreign key
+    with `on_delete=CASCADE`, so deleting an entry removes its projection row
+    through the schema (see `refresh_on_engagement_save`)."""
     if indexing_is_suspended():
         return
     refresh_entry(instance)
-
-
-@receiver(post_delete, sender=Entry, dispatch_uid="search_remove_entry")
-def remove_on_entry_delete(sender: type[Entry], instance: Entry, **kwargs: Any) -> None:
-    SearchDocument.objects.filter(
-        source_kind=SearchSourceKind.ENTRY, source_object_id=instance.pk
-    ).delete()
 
 
 @receiver(post_save, sender=MatterEngagement, dispatch_uid="search_refresh_engagement")
@@ -378,16 +374,15 @@ def refresh_on_source_link_change(
     """Attaching a page to a Matter makes it findable under that Matter.
 
     Five call sites create these rows — two in the historical importer, two in
-    the review queue, one in the seed command — and every one of them
-    remembered to call `index_source_link` afterwards. That is the defect: the
+    the review queue, one in the seed command — and each of them once had to
+    remember an explicit refresh afterwards. That was the defect: the
     projection was correct only for as long as the next person to write a sixth
     call site also remembered, and a page that is attached and unfindable
     reports itself as a page that was never attached.
 
-    So it is a signal, and the explicit calls become redundant rather than
-    load-bearing. Refreshing twice is one extra delete-and-insert of a single
-    row; missing it once is a historical file that silently is not in the
-    corpus (compare `refresh_on_tag_assignment`, for the same reason).
+    So it is a signal, and it is the only mechanism: the explicit calls were
+    removed once this covered them (compare `refresh_on_tag_assignment`, for
+    the same reason).
     """
     if indexing_is_suspended():
         return

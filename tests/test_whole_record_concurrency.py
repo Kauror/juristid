@@ -101,6 +101,24 @@ def test_the_token_moves_for_a_join_table_only_change(normal_matter, specialist,
     assert matter_revision_token(normal_matter) != before
 
 
+def test_the_token_moves_when_an_enrichment_adds_areas(normal_matter, specialist, db):
+    """The OneNote enrichment is the other writer of `Valdkonnad`, and it only adds.
+
+    `Muuda teemat` replaces the whole set, so a form opened before the
+    enrichment ran would remove the areas it added — unless the token moved.
+    """
+    from app.matters.services import add_source_derived_policy_areas
+    from app.taxonomy.models import PolicyArea
+
+    area = PolicyArea.objects.create(name_et="QA valdkond", key="qa-valdkond")
+    before = matter_revision_token(normal_matter)
+
+    add_source_derived_policy_areas(matter=normal_matter, policy_areas=[area], actor=specialist)
+    normal_matter.refresh_from_db()
+
+    assert matter_revision_token(normal_matter) != before
+
+
 def test_the_token_moves_for_a_legal_instrument_change(normal_matter, specialist, db):
     from app.taxonomy.models import LegalInstrumentType
 

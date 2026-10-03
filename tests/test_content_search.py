@@ -242,8 +242,13 @@ def test_a_deleted_entry_leaves_no_search_row(normal_matter, specialist) -> None
     entry = factories.EntryFactory(
         matter=normal_matter, author=specialist, body="<p>Kaduv märksõna: sillutis.</p>"
     )
+    entry_id = entry.pk
     entry.delete()
 
+    # The foreign-key cascade is what removes the row; no handler does.
+    assert not SearchDocument.objects.filter(
+        source_kind=SearchSourceKind.ENTRY, source_object_id=entry_id
+    ).exists()
     assert result_count(query="sillutis", user=specialist) == 0
 
 

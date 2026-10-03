@@ -1746,21 +1746,6 @@ def work_population_ids(
     return ids
 
 
-def no_next_action_q() -> Q:
-    """Matters carrying no open instruction, as a condition rather than a list.
-
-    Reader-blind, and therefore **not** what a page counts with: an action
-    restricted below its Matter is invisible to most readers, so this condition
-    would call the Matter instructed while the register — which asks the same
-    question through ``NextAction.objects.visible_to`` — lists it as having
-    none. Kept for the one caller that genuinely wants the reader-blind fact,
-    and every count goes through :func:`matters_without_action` instead.
-    """
-    return ~Q(
-        pk__in=NextAction.objects.filter(status=ActionStatus.OPEN).values("matter_id"),
-    )
-
-
 def matters_without_action(user: Any, *, owner: Any = None) -> QuerySet[Matter]:
     """Open Matters with no active NextAction — the one attention state no date can produce.
 

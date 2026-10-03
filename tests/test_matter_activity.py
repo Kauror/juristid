@@ -201,6 +201,34 @@ def test_an_authored_entry_is_activity(specialist):
     assert fact.basis == ActivityBasis.ENTRY
 
 
+def test_a_removed_entry_or_kaasamine_is_not_activity(specialist):
+    """A record taken off the Matter as a mistake is absent from every count (docs/adr/0102).
+
+    Filed on the wrong file today and removed, it must not say somebody worked
+    on this file today, nor sort it to the top of «Viimane tegevus».
+    """
+    from app.matters.enums import EngagementKind
+    from app.matters.models import Entry, MatterEngagement
+    from app.matters.services import add_engagement
+
+    matter = factories.MatterFactory(owner=specialist)
+    factories.EntryFactory(matter=matter, author=specialist, occurred_at=_at(2026, 2, 2))
+    mistaken = factories.EntryFactory(matter=matter, author=specialist, occurred_at=_at(2026, 4, 2))
+    round_ = add_engagement(
+        matter=matter,
+        kind=EngagementKind.EMAIL_CAMPAIGN,
+        title="Vale teema",
+        occurred_on=dt.date(2026, 3, 3),
+        actor=specialist,
+    )
+    Entry.objects.filter(pk=mistaken.pk).update(removed_at=timezone.now())
+    MatterEngagement.objects.filter(pk=round_.pk).update(removed_at=timezone.now())
+
+    fact = _fact(matter, specialist)
+    assert fact.occurred_on == dt.date(2026, 2, 2)
+    assert fact.basis == ActivityBasis.ENTRY
+
+
 def _sent_submission(matter, sent_at):
     """A SENT submission with the final evidence the database insists on."""
     document = create_document(
