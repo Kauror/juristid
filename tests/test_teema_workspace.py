@@ -1231,7 +1231,6 @@ def test_the_refusal_is_stated_where_the_write_is_decided(specialist, normal_mat
     _close_elsewhere(normal_matter, specialist)
 
     for call in (
-        lambda: workspace.add_matter_note(matter=normal_matter, author=specialist, body="<p>x</p>"),
         lambda: workspace.add_matter_engagement(
             matter=normal_matter, author=specialist, kind="SURVEY", audience="Liikmed"
         ),

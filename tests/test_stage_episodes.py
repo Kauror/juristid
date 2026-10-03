@@ -52,6 +52,7 @@ from app.matters.services import (
     REOPEN_INTO_TERMINAL_STAGE,
     REOPEN_NEEDS_A_STAGE,
     add_engagement,
+    add_entry,
     change_stage,
     close_matter,
     create_matter,
@@ -62,7 +63,6 @@ from app.matters.stage_episodes import offered_next_stages, offered_reopening_st
 from app.matters.workspace import (
     TERMINAL_STAGE_MAKES_NO_STEP,
     add_matter_koda_opinion,
-    add_matter_note,
     add_procedural_development,
 )
 from app.submissions.enums import SubmissionStatus
@@ -247,9 +247,9 @@ def test_the_database_refuses_an_unknown_start_on_a_recorded_period(specialist):
 def test_work_in_the_current_period_is_tied_to_it(specialist):
     matter = _matter(specialist, stage="idea")
 
-    note = add_matter_note(matter=matter, author=specialist, body="Helistasin ministeeriumisse.")
+    note = add_entry(matter=matter, author=specialist, body="Helistasin ministeeriumisse.")
 
-    added = ChangeEvent.objects.get(event_type=ChangeEventType.ENTRY_ADDED, object_id=note.entry.pk)
+    added = ChangeEvent.objects.get(event_type=ChangeEventType.ENTRY_ADDED, object_id=note.pk)
     assert added.stage_episode_id == _current(matter).pk
 
 
@@ -344,7 +344,7 @@ def test_a_correction_saved_with_a_move_belongs_to_the_period_it_was_saved_in(sp
 def test_a_stage_only_change_draws_no_row(specialist):
     """Rule 9: the period boundary says it — no «Hetkeseis muutus» row."""
     matter = _matter(specialist, stage="idea")
-    add_matter_note(matter=matter, author=specialist, body="Idee faasi märge.")
+    add_entry(matter=matter, author=specialist, body="Idee faasi märge.")
     add_procedural_development(
         matter=matter, author=specialist, title="", stage=_stage("consultation")
     )
@@ -372,9 +372,9 @@ def test_a_stage_only_change_draws_no_row(specialist):
 
 def test_the_page_draws_one_accordion_per_period_current_open(signed_in, specialist):
     matter = _matter(specialist, stage="idea")
-    add_matter_note(matter=matter, author=specialist, body="Esimene idee märge.")
+    add_entry(matter=matter, author=specialist, body="Esimene idee märge.")
     change_stage(matter=matter, stage=_stage("consultation"), actor=specialist)
-    add_matter_note(matter=matter, author=specialist, body="Ringi märge.")
+    add_entry(matter=matter, author=specialist, body="Ringi märge.")
     change_stage(matter=matter, stage=_stage("government"), actor=specialist)
     change_stage(matter=matter, stage=_stage("consultation"), actor=specialist)
 
@@ -420,9 +420,9 @@ def test_a_period_heading_prints_only_what_is_known(specialist):
 def test_work_from_before_any_period_reads_as_earlier_activity(specialist):
     """No row is moved into today's stage; unbound work keeps no period."""
     matter = factories.MatterFactory(owner=specialist, stage=None)
-    add_matter_note(matter=matter, author=specialist, body="Enne hetkeseisu.")
+    add_entry(matter=matter, author=specialist, body="Enne hetkeseisu.")
     change_stage(matter=matter, stage=_stage("idea"), actor=specialist)
-    add_matter_note(matter=matter, author=specialist, body="Idee ajal.")
+    add_entry(matter=matter, author=specialist, body="Idee ajal.")
 
     timeline = matter_episode_timeline(matter=matter, user=specialist)
     assert timeline is not None
@@ -436,7 +436,7 @@ def test_work_from_before_any_period_reads_as_earlier_activity(specialist):
 def test_work_after_the_stage_was_cleared_reads_under_no_stage(specialist):
     matter = _matter(specialist, stage="idea")
     change_stage(matter=matter, stage=None, actor=specialist)
-    add_matter_note(matter=matter, author=specialist, body="Hetkeseisuta.")
+    add_entry(matter=matter, author=specialist, body="Hetkeseisuta.")
 
     timeline = matter_episode_timeline(matter=matter, user=specialist)
     assert timeline is not None
@@ -447,7 +447,7 @@ def test_work_after_the_stage_was_cleared_reads_under_no_stage(specialist):
 
 def test_a_matter_with_no_period_keeps_the_flat_chronology(specialist):
     matter = _matter(specialist)
-    add_matter_note(matter=matter, author=specialist, body="Lihtne märge.")
+    add_entry(matter=matter, author=specialist, body="Lihtne märge.")
 
     assert matter_episode_timeline(matter=matter, user=specialist) is None
 
@@ -679,7 +679,7 @@ def test_the_seed_gives_active_staged_matters_a_period_with_no_start(specialist)
     unstaged = factories.MatterFactory(owner=specialist, stage=None)
     closed = factories.MatterFactory(owner=specialist, stage=_stage("parliament"))
     close_matter(matter=closed, disposition=Disposition.OTHER, actor=specialist)
-    note = add_matter_note(matter=active, author=specialist, body="Enne seemet.")
+    note = add_entry(matter=active, author=specialist, body="Enne seemet.")
     assert check_domain_invariants().by_kind().get("stage-episode-missing")
 
     seeded.seed(django_apps, None)
@@ -690,7 +690,7 @@ def test_the_seed_gives_active_staged_matters_a_period_with_no_start(specialist)
     assert episode.started_at is None and episode.is_current
     assert not MatterStageEpisode.objects.filter(matter__in=[unstaged, closed]).exists()
     # Earlier work is not moved into today's stage.
-    added = ChangeEvent.objects.get(event_type=ChangeEventType.ENTRY_ADDED, object_id=note.entry.pk)
+    added = ChangeEvent.objects.get(event_type=ChangeEventType.ENTRY_ADDED, object_id=note.pk)
     assert added.stage_episode_id is None
     assert check_domain_invariants().ok
 
@@ -873,7 +873,7 @@ def test_a_sent_opinion_is_a_point_and_a_withdrawn_one_stays_one(specialist, cap
 
 def test_operational_records_draw_no_point(specialist):
     matter = _matter(specialist, stage="idea")
-    add_matter_note(matter=matter, author=specialist, body="Tavaline märge.")
+    add_entry(matter=matter, author=specialist, body="Tavaline märge.")
     add_engagement(
         matter=matter,
         kind="OTHER",
