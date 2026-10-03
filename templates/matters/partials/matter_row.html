@@ -137,6 +137,17 @@ second `tbody` of the same table. Two copies of a row are two rows that drift.
           and the step already says what it is (ADR 0054).
         {% endcomment %}
         <span class="table__actiontext" title="{{ action.text }}">{{ action.text }}</span>
+      {% else %}{% with milestone=matter|upcoming_milestone %}{% if milestone %}
+        {% comment %}
+          No open step, but an `Oluline tähtaeg` still ahead of us the reader
+          may see: that is what happens next (docs/adr/0120), the same record
+          the Teema page names and the reason `?tegevus=puudub` leaves this
+          file out. Surfaced in its own words, never as a step: nothing is
+          created or completed through it. Its date stays the Kuupäev
+          column's business (RULE-01).
+        {% endcomment %}
+        <span class="table__sourcelabel">Oluline tähtaeg</span>
+        <span class="table__actiontext" title="{{ milestone.title }}">{{ milestone.title }}</span>
       {% elif source_instructions|get_item:matter.pk %}
         {% comment %}
           The register's own instruction, where no structured one exists.
@@ -152,7 +163,7 @@ second `tbody` of the same table. Two copies of a row are two rows that drift.
         </span>
       {% else %}
         <span class="table__missing">Järgmine samm puudub</span>
-      {% endif %}
+      {% endif %}{% endwith %}{% endif %}
     </span>
   </td>
 
