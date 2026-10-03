@@ -33,8 +33,7 @@ from app.intelligence.enums import EffectiveDateKind, FactStatus, WorkVictorySta
 from app.intelligence.models import MatterEffectiveDate, MatterImportantDate, MatterWorkVictory
 from app.matters import process_timeline
 from app.matters.enums import EngagementKind, MatterOrigin
-from app.matters.forms import ComposerForm
-from app.matters.models import Entry, MatterEngagement
+from app.matters.models import MatterEngagement
 from app.matters.process_timeline import process_steps
 from app.matters.services import add_engagement, change_stage, close_matter, reopen_matter
 from app.matters.timeline import matter_timeline
@@ -86,16 +85,6 @@ def _strip(body: str) -> str:
     if "tl-strip" not in body:
         return ""
     return body[body.index("tl-strip") : body.index('id="ajalugu-loend"')]
-
-
-def _compose(client, matter, **fields):
-    payload = {"body": "", "next_text": "", "next_date": "", "deadline_title": ""}
-    payload.update(fields)
-    return client.post(
-        reverse("matters:compose", kwargs={"pk": matter.pk}),
-        payload,
-        headers={"HX-Request": "true"},
-    )
 
 
 def _action(matter, actor, *, days: int = 7):
@@ -511,227 +500,11 @@ def test_each_operation_carries_its_own_save_and_there_is_no_global_one(
     assert "composer__actions" not in workspace
 
 
-# ===========================================================================
-# ONE SAVE, MANY RECORDS — §27
-# ===========================================================================
-
-
-def test_one_post_records_every_panel_atomically(signed_in, normal_matter, specialist):
-    """Entry, next step, attachment, deadline, commencement, victory and
-    engagement — one POST, one transaction, one operation id."""
-    response = _compose(
-        signed_in,
-        normal_matter,
-        body="<p>Käisin ministeeriumis.</p>",
-        next_text="Koosta arvamus",
-        next_date="20.10.2026",
-        attachment=SimpleUploadedFile("koond.pdf", b"%PDF-1.4 x", content_type="application/pdf"),
-        deadline_title="Kooskõlastusringi lõpp",
-        deadline_date="30.09.2026",
-        deadline_precision=DatePrecision.EXACT,
-        effective_title="Pakendiseaduse muudatused",
-        effective_on="01.01.2027",
-        victory_change="Üleminekuaeg pikenes",
-        victory_precision=DatePrecision.YEAR,
-        victory_year="2026",
-        engagement_kind=EngagementKind.SURVEY,
-        engagement_audience="liikmed",
-        engagement_responses="14",
-    )
-    assert response.status_code == 200, response.content.decode()[:3000]
-
-    assert Entry.objects.filter(matter=normal_matter).count() == 1
-    assert Document.objects.filter(matter=normal_matter).count() == 1
-    assert MatterImportantDate.objects.filter(matter=normal_matter).count() == 1
-    assert MatterEffectiveDate.objects.filter(matter=normal_matter).count() == 1
-    assert MatterWorkVictory.objects.filter(matter=normal_matter).count() == 1
-    assert MatterEngagement.objects.filter(matter=normal_matter).count() == 1
-
-    # One professional action, one operation id across every audit row.
-    operations = set(
-        ChangeEvent.objects.filter(matter=normal_matter)
-        .exclude(operation_id=None)
-        .values_list("operation_id", flat=True)
-    )
-    assert len(operations) == 1
-
-
-def test_two_filled_panels_are_all_or_nothing(signed_in, normal_matter):
-    """A refusal in one panel writes none of the others."""
-    response = _compose(
-        signed_in,
-        normal_matter,
-        body="<p>Midagi juhtus.</p>",
-        effective_title="Pakendiseaduse muudatused",
-        effective_on="",
-        victory_change="Üleminekuaeg pikenes",
-    )
-
-    assert response.status_code == 400
-    assert not Entry.objects.filter(matter=normal_matter).exists()
-    assert not MatterEffectiveDate.objects.filter(matter=normal_matter).exists()
-    assert not MatterWorkVictory.objects.filter(matter=normal_matter).exists()
-
-
-def test_an_attachment_goes_through_the_canonical_evidence_service(signed_in, normal_matter):
-    """Immutable bytes, a checksum, and the ordinary role — the target stopped
-    asking a person to classify a file and did not stop classifying it."""
-    response = _compose(
-        signed_in,
-        normal_matter,
-        body="<p>Sain faili.</p>",
-        attachment=SimpleUploadedFile("eelnou.pdf", b"%PDF-1.4 y", content_type="application/pdf"),
-    )
-    assert response.status_code == 200, response.content.decode()[:2000]
-
-    document = Document.objects.get(matter=normal_matter)
-    assert document.role == DocumentRole.OTHER
-    version = document.versions.get()
-    assert version.original_filename == "eelnou.pdf"
-    assert version.sha256
-
-
-# ===========================================================================
-# + OLULINE TÄHTAEG — §19
-# ===========================================================================
-
-
-@pytest.mark.parametrize(
-    ("precision", "fields", "anchor", "end"),
-    [
-        (
-            DatePrecision.EXACT,
-            {"deadline_date": "30.09.2026"},
-            date(2026, 9, 30),
-            date(2026, 9, 30),
-        ),
-        (
-            DatePrecision.MONTH,
-            {"deadline_month": "9", "deadline_year": "2026"},
-            date(2026, 9, 1),
-            date(2026, 9, 30),
-        ),
-        (
-            DatePrecision.QUARTER,
-            {"deadline_quarter": "3", "deadline_year": "2026"},
-            date(2026, 7, 1),
-            date(2026, 9, 30),
-        ),
-        (DatePrecision.YEAR, {"deadline_year": "2027"}, date(2027, 1, 1), date(2027, 12, 31)),
-    ],
-)
-def test_the_compact_precision_stores_the_period_it_was_given(
-    signed_in, normal_matter, precision, fields, anchor, end
-):
-    """The panel takes the answer its chosen precision asks for.
-
-    **This replaces «derives its period from the day».** The panel used to offer
-    one `Kuupäev` box and three chips, and a `Kvartal` meant *the quarter
-    containing whatever day you typed* (docs/adr/0074 §11). That worked, and it
-    asked somebody who knew only «III kvartal» to name a day first — so the day
-    they picked to satisfy the control became the thing the record was built
-    from. With `Aasta` added and a control per precision there is nothing left
-    to derive, and `bounds_for` still normalises every answer to the anchor the
-    full period form produces (docs/adr/0079 §1).
-    """
-    response = _compose(
-        signed_in,
-        normal_matter,
-        deadline_title="Kooskõlastusringi lõpp",
-        deadline_precision=precision,
-        **fields,
-    )
-    assert response.status_code == 200, response.content.decode()[:2000]
-
-    record = MatterImportantDate.objects.get(matter=normal_matter)
-    assert record.date_precision == precision
-    assert record.date_value == anchor
-    assert record.period_end == end
-
-
-def test_a_chosen_precision_whose_own_control_is_empty_is_refused(signed_in, normal_matter):
-    """The other half of the same change, and the stronger one.
-
-    A `Kvartal` with no quarter chosen used to be *derivable* — from the date
-    box, or from today if the box was empty. It is now a question the person
-    did not answer, and the refusal says which control is waiting.
-    """
-    response = _compose(
-        signed_in,
-        normal_matter,
-        deadline_title="Kooskõlastusringi lõpp",
-        deadline_precision=DatePrecision.QUARTER,
-        deadline_date="30.09.2026",
-    )
-
-    assert response.status_code == 400
-    assert not MatterImportantDate.objects.filter(matter=normal_matter).exists()
-
-
-def test_the_panel_offers_four_precisions_and_the_domain_keeps_six(signed_in, normal_matter):
-    chips = ComposerForm().precision_chips
-
-    assert [chip["label"] for chip in chips] == ["Täpne päev", "Kuu", "Kvartal", "Aasta"]
-    assert chips[0]["selected"]
-    body = _detail(signed_in, normal_matter)
-    assert "Poolaasta" not in body
-    # The stored vocabulary is untouched; old records still read.
-    assert DatePrecision.HALF_YEAR in DatePrecision.values
-    assert DatePrecision.INFERRED in DatePrecision.values
-
-
-# ===========================================================================
-# + JÕUSTUMINE and + TÖÖVÕIT — §20, §21
-# ===========================================================================
-
-
-def test_a_commencement_is_a_matter_effective_date_not_an_entry(signed_in, normal_matter):
-    response = _compose(
-        signed_in,
-        normal_matter,
-        effective_title="Pakendiseaduse muudatused",
-        effective_on="01.01.2027",
-    )
-    assert response.status_code == 200, response.content.decode()[:2000]
-
-    record = MatterEffectiveDate.objects.get(matter=normal_matter)
-    assert record.description == "Pakendiseaduse muudatused"
-    assert record.date_value == date(2027, 1, 1)
-    assert record.date_precision == DatePrecision.EXACT
-    assert record.status == FactStatus.ACTIVE
-    # No Entry was manufactured to make it appear in the chronology.
-    assert not Entry.objects.filter(matter=normal_matter).exists()
-
-
-def test_a_victory_does_not_require_closing_the_matter(signed_in, normal_matter):
-    """**§21.** A win is recorded when it happens, which is usually while the
-    file is still open."""
-    response = _compose(
-        signed_in,
-        normal_matter,
-        victory_change="Üleminekuaeg pikenes 2028-ni",
-        victory_precision=DatePrecision.YEAR,
-        victory_year="2026",
-    )
-    assert response.status_code == 200, response.content.decode()[:2000]
-
-    normal_matter.refresh_from_db()
-    assert normal_matter.is_open
-
-    victory = MatterWorkVictory.objects.get(matter=normal_matter)
-    assert victory.title == "Üleminekuaeg pikenes 2028-ni"
-    assert victory.status == WorkVictoryStatus.CONFIRMED
-    assert victory.confirmed_by is not None
-    # **The period is stated, not borrowed.** This used to assert
-    # `period_date is None`, and it was asserting the right thing about the
-    # wrong solution: nothing may be filed into a reporting year because a
-    # panel happened to be open, and the answer to that is to *ask*, not to
-    # record the win undated and invisible to every year-based surface
-    # (docs/adr/0079 §10).
-    assert victory.period_date == date(2026, 1, 1)
-    assert victory.period_end == date(2026, 12, 31)
-    assert victory.date_precision == DatePrecision.YEAR
-    assert not Entry.objects.filter(matter=normal_matter).exists()
+# §27 (one save, many records), §19 (+ Oluline tähtaeg), §20–§21 (+ Jõustumine,
+# + Töövõit) were asserted through the superseded composer, retired with
+# ENG-050A2. One save is one explicit operation now (docs/adr/0075); each panel
+# is tested on its own route in tests/test_teema_workspace.py and
+# tests/test_date_precision_composer.py.
 
 
 # ===========================================================================
@@ -743,8 +516,8 @@ def test_the_engagement_panel_asks_no_kind_and_keeps_its_two_questions(signed_in
     """docs/adr/0086 §1 retires the chips this used to count.
 
     `Küsitlus` / `Koosolek` / `Kirjade voor` was the panel's first control and
-    answered a question nothing read back. `COMPOSER_ENGAGEMENT_KINDS` survives
-    for the superseded composer, which nothing renders; what this asserts is
+    answered a question nothing read back. Its chip list went with the
+    superseded composer (ENG-050A2); what this asserts is
     that no chip of it reaches the panel a person actually uses.
 
     The two questions the approved target asked for — `Keda kaasati` and
@@ -771,77 +544,6 @@ def test_the_engagement_panel_asks_no_kind_and_keeps_its_two_questions(signed_in
     assert "Veebileht" in panel and "Märkus" in panel
 
 
-@pytest.mark.parametrize(
-    ("value", "stored"),
-    [
-        (EngagementKind.SURVEY, EngagementKind.SURVEY),
-        (EngagementKind.MEETING, EngagementKind.MEETING),
-        (EngagementKind.EMAIL_CAMPAIGN, EngagementKind.EMAIL_CAMPAIGN),
-    ],
-)
-def test_each_offered_kind_saves(signed_in, normal_matter, value, stored):
-    response = _compose(
-        signed_in,
-        normal_matter,
-        engagement_kind=value,
-        engagement_audience="liikmed",
-    )
-    assert response.status_code == 200, response.content.decode()[:2000]
-
-    record = MatterEngagement.objects.get(matter=normal_matter)
-    assert record.kind == stored
-    assert record.title == "liikmed"
-    # **No date, where this used to assert today.**
-    #
-    # docs/adr/0074 §9 said the target does not ask for a date and that the
-    # application's convention for «this happened as part of the work I am
-    # writing down now» is today in Europe/Tallinn. docs/adr/0078 §2 withdrew
-    # the second half: a consultation is routinely typed up days or months
-    # after it happened, so filing it as today is a false fact written by the
-    # server with no box on the screen anybody could have corrected.
-    #
-    # `+ Kaasamine` answered that by asking. This composer cannot — it is the
-    # superseded surface, kept for the browsers still posting to it
-    # (docs/adr/0075 §11), and nothing renders it — so it records that the date
-    # is not known, which `occurred_on` has always been able to mean. The first
-    # half of §9 is unchanged and is what this test still covers: the kind and
-    # the audience are what the panel asks for and what gets stored.
-    assert record.occurred_on is None
-
-
-def test_the_response_count_is_real_stored_data(signed_in, normal_matter):
-    """**§23.** Not note text, not title text, not browser-only state."""
-    response = _compose(
-        signed_in,
-        normal_matter,
-        engagement_kind=EngagementKind.SURVEY,
-        engagement_audience="liikmed",
-        engagement_responses="14",
-    )
-    assert response.status_code == 200, response.content.decode()[:2000]
-
-    record = MatterEngagement.objects.get(matter=normal_matter)
-    assert record.response_count == 14
-    record.refresh_from_db()
-    assert record.response_count == 14
-    # Nothing is derived from it.
-    assert not hasattr(record, "response_rate")
-
-
-def test_an_uncounted_engagement_stores_null_not_zero(signed_in, normal_matter):
-    """«Nobody answered» and «nobody counted» are different facts about a
-    consultation, and a column that cannot tell them apart reports the second as
-    the first (docs/adr/0074 §5)."""
-    _compose(
-        signed_in,
-        normal_matter,
-        engagement_kind=EngagementKind.MEETING,
-        engagement_audience="kaubandusvaldkonna töögrupp",
-    )
-
-    assert MatterEngagement.objects.get(matter=normal_matter).response_count is None
-
-
 def test_existing_engagements_keep_their_kind_and_gain_a_null_count(normal_matter, specialist):
     """No backfill, no rewrite: a `WEB_CALL` row the composer never offers is
     still valid, still reads and still edits."""
@@ -861,16 +563,6 @@ def test_existing_engagements_keep_their_kind_and_gain_a_null_count(normal_matte
     update_engagement(engagement=record, title="Kaasamiskutse", actor=specialist)
     record.refresh_from_db()
     assert record.kind == EngagementKind.WEB_CALL
-
-
-def test_an_engagement_needs_to_say_who_was_engaged(normal_matter):
-    form = ComposerForm(
-        {"engagement_kind": EngagementKind.SURVEY, "engagement_responses": "14"},
-        matter=normal_matter,
-    )
-
-    assert not form.is_valid()
-    assert "engagement_audience" in form.errors
 
 
 # ===========================================================================
@@ -2343,14 +2035,20 @@ def test_a_structured_fact_is_shown_once(signed_in, normal_matter, specialist):
     assert "lisas kaasamise" not in chronology
 
 
-def test_a_work_entry_carries_its_time_inline_and_its_file(signed_in, normal_matter):
-    _compose(
-        signed_in,
-        normal_matter,
+def test_a_work_entry_carries_its_time_inline_and_its_file(signed_in, normal_matter, specialist):
+    # `PRAEGUNE TEGEVUS` with a file — the current act that writes an entry and
+    # its evidence (the composer this used to post to was retired, ENG-050A2).
+    from app.matters import workspace
+
+    current = _action(normal_matter, specialist)
+    workspace.complete_current_action(
+        matter=normal_matter,
+        author=specialist,
+        action_id=current.pk,
         body="<p>Uus eelnõu versioon ministeeriumilt.</p>",
-        attachment=SimpleUploadedFile(
-            "eelnou_v3.pdf", b"%PDF-1.4 z", content_type="application/pdf"
-        ),
+        uploads=[
+            SimpleUploadedFile("eelnou_v3.pdf", b"%PDF-1.4 z", content_type="application/pdf")
+        ],
     )
 
     body = _detail(signed_in, normal_matter)
@@ -2366,21 +2064,6 @@ def test_a_work_entry_carries_its_time_inline_and_its_file(signed_in, normal_mat
     version = Document.objects.get(matter=normal_matter).versions.get()
     assert reverse("documents:download", kwargs={"pk": version.pk}) in chronology
     assert "eelnou_v3.pdf" in chronology
-
-
-def test_a_save_that_set_a_next_step_shows_the_pill(signed_in, normal_matter):
-    _compose(
-        signed_in,
-        normal_matter,
-        body="<p>Rääkisin ministeeriumiga.</p>",
-        next_text="Ootan ministeeriumi vastust",
-        next_date="20.10.2026",
-    )
-
-    body = _detail(signed_in, normal_matter)
-
-    assert "uxtl__next" in body
-    assert "Ootan ministeeriumi vastust" in body
 
 
 def test_the_chronology_is_newest_first(signed_in, normal_matter, specialist):

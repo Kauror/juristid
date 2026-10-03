@@ -30,16 +30,11 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from django.utils import timezone
 
-from app.documents.enums import DocumentRole
-from app.documents.models import Document
-from app.matters.models import Entry
 from app.workflow.enums import (
     ActionKind,
     DatePrecision,
     DateSemantics,
-    Disposition,
 )
-from app.workflow.models import NextAction
 from app.workflow.services import set_next_action_for_new_work
 
 pytestmark = pytest.mark.django_db
@@ -49,52 +44,9 @@ def _pdf(name: str = "Koja_arvamus.pdf") -> SimpleUploadedFile:
     return SimpleUploadedFile(name, b"%PDF-1.4 test", content_type="application/pdf")
 
 
-def _compose(client, matter, **fields):
-    """One composer save, carrying the fields every POST from the page carries."""
-    payload = {
-        "body": "",
-        "kind": "NOTE",
-        "attachment_role": DocumentRole.OTHER,
-        "next_text": "",
-        "next_date": "",
-        "deadline_title": "",
-        "deadline_date": "",
-        "deadline_precision": DatePrecision.EXACT,
-    }
-    payload.update(fields)
-    return client.post(
-        reverse("matters:compose", kwargs={"pk": matter.pk}),
-        payload,
-        headers={"HX-Request": "true"},
-    )
-
-
 # ---------------------------------------------------------------------------
 # F-02 — closure data may never be accepted and then ignored
 # ---------------------------------------------------------------------------
-
-
-def test_closure_answers_are_never_accepted_and_then_dropped(signed_in, normal_matter):
-    """F-02, after docs/adr/0131 §11: a closure posted to the old composer is refused.
-
-    F-02 was that a filled-in closing section could return 200, write an ordinary
-    Entry and silently discard the rest. Closing is a `Hetkeseis` now, and the
-    superseded composer refuses its closure answers outright — visibly, and with
-    nothing written — rather than either closing through a second door or
-    dropping them.
-    """
-    response = _compose(
-        signed_in,
-        normal_matter,
-        body="Teema on lõppenud.",
-        disposition=Disposition.COMPLETED,
-        closing_words="Seadus jõustus 1. jaanuaril.",
-    )
-    assert response.status_code == 400
-    assert "Teema lõpetatakse hetkeseisuga" in response.content.decode()
-    normal_matter.refresh_from_db()
-    assert normal_matter.is_open
-    assert not Entry.objects.filter(matter=normal_matter).exists()
 
 
 def test_the_lopeta_teema_route_is_gone(signed_in, normal_matter):
@@ -107,63 +59,6 @@ def test_the_lopeta_teema_route_is_gone(signed_in, normal_matter):
     assert response.status_code == 404
     normal_matter.refresh_from_db()
     assert normal_matter.is_open
-
-
-def test_the_old_confirmation_box_is_gone_from_the_form_and_the_page(signed_in, normal_matter):
-    """A redundant second confirmation is a place for answers to get lost."""
-    from app.matters.forms import ComposerForm
-
-    assert "close_matter" not in ComposerForm().fields
-    html = signed_in.get(
-        reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk})
-    ).content.decode()
-    assert 'name="close_matter"' not in html
-
-
-def test_a_partial_closure_refuses_the_whole_save(signed_in, normal_matter):
-    """Nothing at all is written when the closing half does not hold together —
-    not the entry above it, and not the next step beside it."""
-    response = _compose(
-        signed_in,
-        normal_matter,
-        body="Midagi juhtus.",
-        next_text="Vaadata versioon üle",
-        next_date="20.10.2026",
-        closing_words="Menetlus lõppes.",
-    )
-
-    assert response.status_code == 400
-    normal_matter.refresh_from_db()
-    assert normal_matter.is_open
-    assert not Entry.objects.filter(matter=normal_matter).exists()
-    assert not NextAction.objects.filter(matter=normal_matter).exists()
-
-
-def test_a_rejected_upload_leaves_nothing_behind(signed_in, normal_matter):
-    """The same atomic refusal when it is the evidence that is refused.
-
-    Through the composer's own file control, which is the evidence path the
-    approved target has: the closing panel no longer takes an upload, and the
-    canonical rules that governed that one govern this one
-    (app/documents/services.py)."""
-    bad = SimpleUploadedFile("arvamus.exe", b"MZ not a pdf", content_type="application/pdf")
-    response = _compose(signed_in, normal_matter, body="Sain faili.", attachment=bad)
-
-    assert response.status_code == 400
-    normal_matter.refresh_from_db()
-    assert normal_matter.is_open
-    assert not Entry.objects.filter(matter=normal_matter).exists()
-    assert not Document.objects.filter(matter=normal_matter).exists()
-
-
-def test_an_ordinary_save_that_touches_no_closing_field_still_works(signed_in, normal_matter):
-    """Outcome A. The composer is a capture surface first."""
-    response = _compose(signed_in, normal_matter, body="Helistasin ministeeriumisse.")
-
-    assert response.status_code == 200
-    normal_matter.refresh_from_db()
-    assert normal_matter.is_open
-    assert Entry.objects.filter(matter=normal_matter).count() == 1
 
 
 # ---------------------------------------------------------------------------

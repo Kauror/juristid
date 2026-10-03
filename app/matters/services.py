@@ -9,7 +9,6 @@ later from an importer or a scheduled job (master specification 12.4).
 from __future__ import annotations
 
 import hashlib
-import uuid
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -20,15 +19,12 @@ from django.db.models import Q
 from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
-from app.audit.operations import composer_operation, pin_stage_episode
+from app.audit.operations import pin_stage_episode
 from app.audit.services import record_change_event
 from app.core.enums import Visibility, most_restrictive, validate_visibility_override
 from app.core.errors import DomainError
 from app.core.richtext import excerpt, is_empty, sanitize_entry_html
 from app.core.web_addresses import normalize_web_address
-from app.documents.enums import DocumentRole
-from app.documents.services import add_evidence_version, create_document
-from app.documents.uploads import read_upload
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import (
     SELECTABLE_EXTERNAL_POSITION_PROVENANCE,
@@ -80,7 +76,6 @@ from app.workflow.enums import ActionStatus, DatePrecision, Disposition, Track
 from app.workflow.models import NextAction
 from app.workflow.services import (
     end_open_action_for_closure,
-    set_next_action_for_new_work,
 )
 from app.workflow.stage_flow import TERMINAL_DISPOSITIONS
 from app.workflow.stage_flow import is_terminal as is_terminal_stage
@@ -883,8 +878,8 @@ def stage_transition(
     inside the block belongs to the period that was current before the move,
     because that is the period the work was done in; and a stage that ends the
     Matter closes it on the way out, in the same transaction, so a closure never
-    precedes the act it was recorded with — the order `_apply_closure` has always
-    kept. A refusal anywhere inside rolls back all of it.
+    precedes the act it was recorded with — the order the superseded composer's
+    closure kept too. A refusal anywhere inside rolls back all of it.
     """
     with transaction.atomic():
         move = _move_stage(matter=matter, stage=stage, actor=actor, origin=origin)
@@ -1043,7 +1038,7 @@ def resolve_source_organisations(*, chosen: Any, typed_name: str) -> list[Any]:
     is not restated here: `resolve_organisation_name` reuses an exact or alias
     match, creates only a genuinely new body, and refuses a spelling that
     already names two. One definition, shared with the addressee field and with
-    the closing composer's recipients.
+    an opinion's recipients (`organisations.services.resolve_recipients`).
 
     **The sender relation is plural, so this is a union rather than a
     precedence.** That is the one place it differs from `resolve_addressee`,
@@ -5933,343 +5928,3 @@ def edit_entry(
     entry.edit_count = locked.edit_count
     entry.edited_at = locked.edited_at
     return locked
-
-
-@dataclass
-class ComposerResult:
-    """Everything one professional update wrote, and the id that ties it.
-
-    Returned rather than a tuple because a save can now produce six things and
-    a caller unpacking positionally would silently take the wrong one the day a
-    seventh is added.
-    """
-
-    operation_id: uuid.UUID
-    entry: Entry | None = None
-    document: Any = None
-    action: Any = None
-    important_date: Any = None
-    engagement: MatterEngagement | None = None
-    submission: Any = None
-    work_victory: Any = None
-    effective_date: Any = None
-    closed: bool = False
-
-
-@transaction.atomic
-def compose_update(
-    *,
-    matter: Matter,
-    author: Any,
-    body: str = "",
-    kind: str = EntryKind.NOTE,
-    occurred_at: Any = None,
-    organisation: Any = None,
-    next_action: dict[str, Any] | None = None,
-    attachment: Any = None,
-    attachment_role: str = DocumentRole.OTHER,
-    important_date: dict[str, Any] | None = None,
-    effective_date: dict[str, Any] | None = None,
-    work_victory: dict[str, Any] | None = None,
-    engagement: dict[str, Any] | None = None,
-    closure: dict[str, Any] | None = None,
-) -> ComposerResult:
-    """The unified composer: one save, one transaction, one professional update.
-
-    This is the adoption feature. A routine update today means editing an Excel
-    row and then writing the same thing into a OneNote page; here it is one box
-    and one save, and everything else the same action happened to involve — a
-    file, the next step, a deadline somebody announced, the consultation that
-    informed it, the decision to close — rides along with it.
-
-    **Atomicity is the substance of it, not a technicality.** If the entry
-    saved and the action did not, the lawyer would believe both landed while the
-    work queue quietly disagreed with the record. Everything below happens
-    inside one transaction, so a refusal anywhere leaves the Matter exactly as
-    it was.
-
-    **Order matters in one place.** Closure runs last, because
-    :func:`close_matter` ends the open next action and refuses a Matter that is
-    already shut — so a save that both set a next step and closed would
-    otherwise leave an instruction on a closed file, and one that closed before
-    capturing evidence would have the evidence refused.
-
-    **Every sub-action goes through its own service.** Nothing here writes a
-    model field: the deadline is ``add_important_date``, the consultation is
-    ``add_engagement``, the closure is :func:`close_matter`, the sent opinion is
-    the canonical Submission workflow. Their invariants, their audit rows and
-    their authorization checks are unchanged, which is the point — a unified
-    surface is not a unified rule set (Teema redesign §11, §34).
-
-    **One operation identifier ties the audit rows together**, so the human
-    timeline can render one line for one action without a single canonical
-    record being suppressed or merged (``app/audit/operations.py``).
-
-    **Nothing on the Teema page posts here any more, and that is exactly why
-    the closed-Matter guard matters.** docs/adr/0075 kept this route working on
-    purpose, for the browsers still holding a page that posts to it. A page
-    rendered before a closure is the stale tab R2-02 is about, and this is the
-    route it posts to — so the rule cannot live in whether the new workspace
-    renders a form. It is taken here, at the start, under the Matter lock, like
-    every operation in `app/matters/workspace.py`.
-
-    ``closure`` is unaffected: it is still the last thing this does, and closing
-    an open Matter is still allowed. What is refused is a composer save arriving
-    at a Matter somebody has already closed.
-    """
-    wants_something = bool(
-        body.strip()
-        or next_action
-        or attachment is not None
-        or important_date
-        or effective_date
-        or work_victory
-        or engagement
-        or closure
-    )
-    if not wants_something:
-        raise DomainError("Täida sissekanne või vali, mida veel salvestada.")
-
-    matter = lock_open_matter_for_business_write(matter.pk)
-
-    with composer_operation() as operation_id:
-        result = ComposerResult(operation_id=operation_id)
-
-        if body.strip():
-            result.entry = add_entry(
-                matter=matter,
-                body=body,
-                author=author,
-                kind=kind,
-                occurred_at=occurred_at,
-                organisation=organisation,
-            )
-
-        if attachment is not None:
-            # An attachment is evidence like any other: same immutability, same
-            # checksum, same provenance. It is captured inside this transaction,
-            # so a failed save leaves neither the note nor the file behind.
-            #
-            # The role is chosen in the upload control before the file is
-            # committed, never repaired afterwards — a document filed as "Muu"
-            # because the form asked too late is a document nobody finds
-            # (Teema redesign §23.5).
-            upload = read_upload(attachment)
-            result.document = create_document(
-                matter=matter,
-                title=upload.filename,
-                role=attachment_role,
-                created_by=author,
-            )
-            add_evidence_version(
-                document=result.document,
-                content=upload.content,
-                original_filename=upload.filename,
-                mime_type=upload.mime_type,
-                uploaded_by=author,
-            )
-
-        if important_date:
-            from app.intelligence.services import add_important_date
-
-            result.important_date = add_important_date(
-                matter=matter, actor=author, **important_date
-            )
-
-        if effective_date:
-            # `+ Jõustumine`, through the canonical commencement service. Not an
-            # `Entry` describing one and not a second effective-date model: the
-            # composer is a new way in to `MatterEffectiveDate`, not a new place
-            # to keep commencements (docs/adr/0074 §7).
-            from app.intelligence.services import add_effective_date
-
-            result.effective_date = add_effective_date(
-                matter=matter, actor=author, **effective_date
-            )
-
-        if work_victory:
-            # A win is recorded when it happens, which is not necessarily when
-            # the file is closed. `+ Töövõit` therefore stands on its own here,
-            # beside the closure's own victory rather than inside it, and both
-            # go through the same confirmed-victory service (docs/adr/0074 §8).
-            from app.intelligence.services import add_confirmed_work_victory
-
-            result.work_victory = add_confirmed_work_victory(
-                matter=matter, actor=author, **work_victory
-            )
-
-        if engagement:
-            result.engagement = add_engagement(matter=matter, actor=author, **engagement)
-
-        if next_action:
-            # The composer is a person typing, so the *new work* boundary: a
-            # step nobody named a person for goes to the Matter's owner only
-            # while that owner is still somebody the department gives work to
-            # (app/workflow/services.py `responsible_for_new_work`, ADR 0036).
-            result.action = set_next_action_for_new_work(matter=matter, actor=author, **next_action)
-
-        if closure:
-            _apply_closure(matter=matter, author=author, result=result, closure=closure)
-
-        return result
-
-
-def _closure_final_opinion(*, matter: Matter, author: Any, final_opinion: dict[str, Any]) -> Any:
-    """The sent opinion, from the file in front of the person closing the file.
-
-    Four canonical acts and not one shortcut between them: the upload becomes a
-    ``Document`` on *this* Matter under `KODA_SUBMISSION_FINAL`, that document
-    gets an immutable ``DocumentVersion`` through the evidence service, the
-    submission is created with its recipients, and only then is it marked sent
-    with that exact version bound as its final evidence.
-
-    Nothing about the invariant moved. ``mark_submission_sent`` still refuses a
-    submission with no final version and still re-checks that the evidence is
-    not less restricted than the Matter — the evidence simply arrives in the
-    same transaction now instead of in a visit beforehand
-    (Teema closing redesign §4, §21).
-
-    **The title is `matter.title`.** ``Submission.title`` is mandatory in the
-    canonical model and asking for it here made somebody retype the name of the
-    file they had open. Deriving it is not a hidden field: no title is
-    editable, submitted or defaulted anywhere in this workflow, and the
-    standalone Arvamused workflow still asks for its own (§5).
-
-    **`Saatmise kuupäev` is a day, so it is stored as one.** The anchor is
-    midnight in the department's timezone and ``SentAtPrecision.DATE`` is what
-    stops the UI reading that anchor back as the hour the letter went out (§6).
-    """
-    from app.organisations.services import resolve_recipients
-    from app.submissions.enums import SentAtPrecision
-    from app.submissions.services import (
-        create_submission,
-        mark_submission_sent,
-        select_final_evidence,
-    )
-
-    upload = read_upload(final_opinion["upload"])
-    document = create_document(
-        matter=matter,
-        title=upload.filename,
-        role=DocumentRole.KODA_SUBMISSION_FINAL,
-        created_by=author,
-    )
-    version = add_evidence_version(
-        document=document,
-        content=upload.content,
-        original_filename=upload.filename,
-        mime_type=upload.mime_type,
-        uploaded_by=author,
-    )
-    recipients = resolve_recipients(
-        chosen=final_opinion.get("recipients") or [],
-        typed_names=final_opinion.get("recipient_names") or [],
-    )
-    submission = create_submission(
-        matter=matter,
-        title=matter.title,
-        actor=author,
-        recipients=recipients,
-    )
-    select_final_evidence(submission=submission, version=version, actor=author)
-    return mark_submission_sent(
-        submission=submission,
-        actor=author,
-        sent_at=final_opinion.get("sent_at"),
-        sent_at_precision=SentAtPrecision.DATE,
-    )
-
-
-def _closure_commencement(*, matter: Matter, author: Any, effective: dict[str, Any]) -> Any:
-    """When the result took effect, recorded once.
-
-    A closure that reports a win states a commencement date, and the department
-    may already hold that fact — somebody entered it on `Teema andmed` when the
-    act was published. Adding a second identical row because the file is now
-    being closed would double every commencement in the register, so an
-    equivalent active exact date is returned rather than repeated (§13).
-    """
-    from app.intelligence.enums import EffectiveDateKind, FactStatus
-    from app.intelligence.models import MatterEffectiveDate
-    from app.intelligence.services import add_effective_date
-
-    date_value = effective["date_value"]
-    existing = MatterEffectiveDate.objects.filter(
-        matter=matter,
-        status=FactStatus.ACTIVE,
-        kind=EffectiveDateKind.KNOWN_DATE,
-        date_precision=DatePrecision.EXACT,
-        date_value=date_value,
-        # A row taken off the file is not a fact the file states any more, so
-        # it cannot stand in for the commencement this closure records
-        # (docs/adr/0102, ENG-047).
-        removed_at__isnull=True,
-    ).first()
-    if existing is not None:
-        return existing
-
-    return add_effective_date(
-        matter=matter,
-        actor=author,
-        kind=EffectiveDateKind.KNOWN_DATE,
-        date_value=date_value,
-        period_end=effective["period_end"],
-        date_precision=DatePrecision.EXACT,
-    )
-
-
-def _apply_closure(
-    *,
-    matter: Matter,
-    author: Any,
-    result: ComposerResult,
-    closure: dict[str, Any],
-) -> None:
-    """Finish the Matter, with whatever the person recorded alongside it.
-
-    Split out because the closure half of a composer save is four decisions,
-    not one, and each has a rule of its own:
-
-    * the **final opinion** is a canonical ``Submission`` or it is nothing —
-      created, given the exact evidence that went out, and marked sent through
-      the existing workflow, which refuses to mark anything sent without a
-      final version and refuses evidence less restricted than the submission
-      itself. A PDF is not an opinion and a filename is not a sent date
-      (Teema redesign §17, §20).
-    * the **work victory** goes through the same door the Matter page's own
-      control already uses, so this feature broadens nobody's authorization and
-      the department head's review of *imported* candidates is untouched
-      (Teema redesign §18). Its wording is the composer body: one narrative per
-      save, never a second box asking the same question (closing redesign §12).
-    * the **commencement date** is a `MatterEffectiveDate`, because that is
-      what the domain calls when something took effect. The victory's
-      `period_date` is a reporting period and is left alone (§13).
-    * **closure itself** runs last, and ends the open next action through the
-      existing lifecycle service rather than deleting it.
-    """
-    from app.intelligence.services import add_confirmed_work_victory
-
-    final_opinion = closure.get("final_opinion")
-    if final_opinion:
-        result.submission = _closure_final_opinion(
-            matter=matter, author=author, final_opinion=final_opinion
-        )
-
-    victory = closure.get("work_victory")
-    if victory:
-        result.work_victory = add_confirmed_work_victory(matter=matter, actor=author, **victory)
-
-    effective = closure.get("effective_date")
-    if effective:
-        result.effective_date = _closure_commencement(
-            matter=matter, author=author, effective=effective
-        )
-
-    close_matter(
-        matter=matter,
-        disposition=closure["disposition"],
-        actor=author,
-        reason=closure.get("reason", ""),
-        successor=closure.get("successor"),
-    )
-    result.closed = True

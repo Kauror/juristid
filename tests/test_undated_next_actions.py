@@ -31,7 +31,7 @@ from django.utils import timezone
 
 from app.core.dates import format_estonian_date
 from app.matters import my_work, selectors, work_items
-from app.matters.forms import ComposerForm, MatterProgressForm, NextActionForm
+from app.matters.forms import MatterProgressForm, NextActionForm
 from app.matters.models import MatterProceduralDevelopment
 from app.workflow.enums import ActionKind, ActionStatus, DatePrecision, DateSemantics
 from app.workflow.models import NO_DATE_LABEL, NextAction
@@ -269,14 +269,6 @@ def test_the_progress_form_refuses_a_step_ahead_with_no_sentence(normal_matter):
     assert form.errors["title"] == ["Kirjuta järgmine tegevus."]
     assert "occurred_on" not in form.errors
     assert not form.non_field_errors()
-
-
-def test_the_composer_accepts_a_next_step_with_no_date(normal_matter):
-    """The third form that carries the rule."""
-    form = ComposerForm({"body": "Kohtusime ministeeriumiga", "next_text": "Ootan uut versiooni"})
-
-    assert form.is_valid(), form.errors
-    assert form.cleaned_data["next_action_kwargs"]["target_date"] is None
 
 
 def test_editing_an_existing_action_can_clear_its_date(signed_in, normal_matter, specialist):

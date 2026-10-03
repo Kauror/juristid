@@ -17,7 +17,7 @@ from app.audit.enums import ChangeEventType, SecurityEventType
 from app.audit.services import record_security_event
 from app.core.enums import Visibility
 from app.matters import selectors
-from app.matters.services import add_entry, close_matter, compose_update, create_matter
+from app.matters.services import add_entry, close_matter, create_matter
 from app.matters.timeline import matter_timeline
 from app.search.services import search_matters
 from app.submissions.services import (
@@ -443,13 +443,20 @@ def test_timeline_paginates_deterministically(normal_matter, specialist):
     assert not (first_ids & second_ids)
 
 
-def test_composer_result_is_visible_immediately_on_the_page(signed_in, specialist):
+def test_a_saved_act_is_visible_immediately_on_the_page(signed_in, specialist):
+    """`PRAEGUNE TEGEVUS` with `Järgmisena` — the note and the new step, at once."""
+    from app.matters import workspace
+
     matter = factories.MatterFactory(owner=specialist)
-    compose_update(
+    current = set_next_action(
+        matter=matter, text="Kohtun ministeeriumiga", kind=ActionKind.DO, actor=specialist
+    )
+    workspace.complete_current_action(
         matter=matter,
         author=specialist,
+        action_id=current.pk,
         body="<p>Kohtumine ministeeriumiga.</p>",
-        next_action={"text": "Ootan uut sõnastust", "kind": ActionKind.WAIT},
+        next_text="Ootan uut sõnastust",
     )
     response = signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk}))
     body = response.content.decode()

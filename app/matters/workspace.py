@@ -27,8 +27,10 @@ them writes a model field: `complete_next_action`, `set_next_action_for_new_work
 invariants, audit rows and authorization. What is new is the orchestration —
 that a fact, its files and the links between them land together or not at all.
 
-`compose_update` is untouched and still exported; it is simply no longer what
-the Teema page posts to (docs/adr/0075 §11).
+These operations replaced the single composer save, which wrote any mix of an
+entry, a step, a closure and the rest in one transaction. `compose_update`, its
+form and its route were retired with ENG-050A2 (docs/adr/0075 §11, amended);
+the primitives above are what these operations call.
 
 **Every operation that adds content starts by locking the Matter and refusing a
 closed one** (`lock_open_matter_for_business_write`). Not because the page shows
@@ -122,8 +124,8 @@ TERMINAL_STAGE_MAKES_NO_STEP = (
 class WorkspaceResult:
     """What one workspace operation wrote.
 
-    A dataclass rather than a tuple for the reason :class:`ComposerResult` is
-    one: these grow a field when an operation learns to write something else,
+    A dataclass rather than a tuple: these grow a field when an operation
+    learns to write something else,
     and a caller unpacking positionally would silently take the wrong one.
     """
 

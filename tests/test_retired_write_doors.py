@@ -11,7 +11,11 @@ ended, and the current workflow is the only write path:
 * `matters:defer_action` → `Muuda` (`matters:set_action`) or `Vaatasin üle`
   (`matters:review_action`);
 * `matters:add_engagement` → `+ Kaasamine` (`matters:add_engagement_compact`);
-* `submissions:create` → `Lisa teemale → Koja arvamus`.
+* `submissions:create` → `Lisa teemale → Koja arvamus`;
+* `matters:compose`, the superseded composer (ENG-050A2) → one explicit act per
+  save: `PRAEGUNE TEGEVUS`, a `LISA TEEMALE` panel, or a terminal `Hetkeseis`.
+  One composer payload could carry several of those at once, so there is no
+  honest single operation to send it to.
 
 A stale tab's POST is a 404 and writes nothing. Not a redirect: a POST sent on
 to another operation would carry a payload that operation never asked for.
@@ -26,7 +30,9 @@ from django.urls import NoReverseMatch, URLResolver, get_resolver, reverse
 from django.utils import timezone
 
 from app.audit.models import ChangeEvent
-from app.matters.models import Entry, MatterEngagement
+from app.documents.models import Document
+from app.intelligence.models import MatterImportantDate
+from app.matters.models import Entry, Matter, MatterEngagement
 from app.submissions.models import Submission
 from app.workflow.enums import ActionKind, ActionStatus, DateSemantics
 from app.workflow.models import NextAction
@@ -41,6 +47,7 @@ RETIRED_NAMES = [
     "matters:defer_action",
     "matters:add_engagement",
     "submissions:create",
+    "matters:compose",
 ]
 
 
@@ -69,6 +76,19 @@ def _stale_posts(matter, action):
             f"/arvamused/teema/{matter.pk}/uus/",
             {"arvamus-title": "Hiline arvamus", "arvamus-kind": "FORMAL_OPINION"},
         ),
+        # Everything the composer once took in one save: an entry, a next step,
+        # an engagement, a deadline and a closure.
+        (
+            f"/teemad/{matter.pk}/sissekanne/",
+            {
+                "body": "<p>Hiline sissekanne.</p>",
+                "next_text": "Hiline samm",
+                "engagement_kind": "SURVEY",
+                "engagement_audience": "Liikmed",
+                "deadline_title": "Hiline tähtaeg",
+                "closure_outcome": "COMPLETED",
+            },
+        ),
     ]
 
 
@@ -80,6 +100,9 @@ def _state(matter, action):
         "entries": Entry.objects.filter(matter=matter).count(),
         "engagements": MatterEngagement.objects.filter(matter=matter).count(),
         "submissions": Submission.objects.filter(matter=matter).count(),
+        "documents": Document.objects.filter(matter=matter).count(),
+        "important_dates": MatterImportantDate.objects.filter(matter=matter).count(),
+        "open": Matter.objects.values_list("is_open", flat=True).get(pk=matter.pk),
         "events": ChangeEvent.objects.filter(matter=matter).count(),
     }
 
@@ -108,7 +131,9 @@ def test_no_retired_route_name_resolves():
         reverse("submissions:create", kwargs={"matter_id": "00000000-0000-0000-0000-000000000000"})
 
 
-@pytest.mark.parametrize("index", range(5), ids=[n.split(":")[1] for n in RETIRED_NAMES])
+@pytest.mark.parametrize(
+    "index", range(len(RETIRED_NAMES)), ids=[n.split(":")[1] for n in RETIRED_NAMES]
+)
 def test_a_stale_post_to_a_retired_door_is_404_and_writes_nothing(signed_in, step, index):
     matter, action = step
     before = _state(matter, action)

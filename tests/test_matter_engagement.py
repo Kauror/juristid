@@ -36,7 +36,6 @@ from app.legacy_import.source_pages import (
 )
 from app.matters.activity import ActivityBasis, activity_of
 from app.matters.enums import EngagementKind, MatterDataClass, MatterOrigin
-from app.matters.forms import ComposerForm
 from app.matters.models import Entry, Matter, MatterEngagement
 from app.matters.selectors import matter_list_queryset
 from app.matters.services import (
@@ -1260,24 +1259,6 @@ def test_a_refused_provider_link_says_so_under_its_own_box(signed_in, specialist
     assert not MatterEngagement.objects.exists()
     assert "Link peab algama" in body
     assert 'id="id_alchemer_url_error"' in body
-
-
-def test_the_composer_counts_a_typed_link_as_attempted_work(specialist):
-    """It used to count for nothing: a pasted Smaily address with nothing else
-    filled in was answered «Kirjelda tegevust või vali, mida veel salvestada»
-    and thrown away with the response."""
-    matter = factories.MatterFactory(owner=specialist)
-    form = ComposerForm(
-        data={"body": "", "engagement_smaily_url": SMAILY_URL},
-        matter=matter,
-        viewer=specialist,
-    )
-
-    assert not form.is_valid()
-    # The panel was recognised, so the answer is about the box that is missing
-    # rather than about the save being empty.
-    assert "engagement_audience" in form.errors
-    assert "Kirjelda tegevust" not in str(form.errors)
 
 
 # -- what a link may be, and what a "host" is (red team, 2026-09-12) ---------

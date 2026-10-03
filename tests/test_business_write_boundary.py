@@ -257,10 +257,11 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
     ),
     # -- the Teema workspace --------------------------------------------------
     #
-    # Seven routes where `matters:compose` was one. Each is a separate door onto
-    # a different canonical record, so each has to be fired at separately: a
-    # boundary that covered the old composer would have said nothing about six
-    # of these (docs/adr/0075 §2).
+    # Seven routes where `matters:compose` was one (the composer itself was
+    # retired with ENG-050A2). Each is a separate door onto a different
+    # canonical record, so each has to be fired at separately: a boundary that
+    # covered the old composer would have said nothing about six of these
+    # (docs/adr/0075 §2).
     WriteRoute(
         name="matters:complete_current_action",
         label="Praeguse tegevuse lõpetamine",
@@ -697,12 +698,6 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
     ),
     # No `matters:close_from_workspace` since docs/adr/0131 §11: a Matter closes
     # through its `Hetkeseis`, which `matters:add_note` and the edit page carry.
-    WriteRoute(
-        name="matters:compose",
-        label="Sissekande lisamine",
-        request=lambda w: ({"pk": w["matter"].pk}, {"body": "<p>Loata sissekanne.</p>"}),
-        probe=lambda w: w["matter"].entries.count(),
-    ),
     WriteRoute(
         name="matters:save_note",
         label="Isikliku märkme salvestamine",
