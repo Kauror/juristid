@@ -21,7 +21,7 @@ from __future__ import annotations
 from playwright.sync_api import expect
 
 from app.core.management.commands.seed_e2e_data import ARCHIVE_TITLE, RESTRICTED_TITLE
-from e2e.conftest import SANDRA, open_add_panel, open_composer, open_kaik_row, sign_in
+from e2e.conftest import SANDRA, chronology, open_add_panel, open_composer, open_kaik_row, sign_in
 
 
 def panel(page):
@@ -55,10 +55,6 @@ def open_empty_matter(page, base_url: str) -> None:
     page.wait_for_load_state("networkidle")
     page.get_by_role("link", name=ARCHIVE_TITLE, exact=False).first.click()
     page.wait_for_load_state("networkidle")
-
-
-def chronology(page):
-    return page.locator("#ajalugu-loend")
 
 
 def test_the_matter_page_carries_no_standalone_kaasamine_section(page, base_url):

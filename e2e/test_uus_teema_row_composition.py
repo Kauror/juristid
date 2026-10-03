@@ -241,6 +241,7 @@ def test_the_sender_search_is_not_a_narrow_island_when_stacked(page, base_url, w
 
 @pytest.mark.parametrize("width", [1440, 1024, 768, 420])
 def test_the_form_never_scrolls_sideways(page, base_url, width):
+    """§15 criterion 15, with the Õigusakt row on the form."""
     _open(page, base_url, width)
 
     overflows = page.evaluate(

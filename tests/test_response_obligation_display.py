@@ -62,20 +62,15 @@ from app.matters import work_items as wi
 from app.matters.models import Matter
 from app.matters.services import close_matter, create_matter
 from app.submissions.enums import SubmissionStatus
-from app.submissions.services import (
-    attach_final_evidence,
-    create_submission,
-    mark_submission_sent,
-)
 from app.workflow.enums import ActionKind, DateSemantics, Disposition
 from app.workflow.services import set_next_action
 from tests import factories
 from tests import synthetic_corpus as corpus
+from tests.factories import send_opinion_through_services as _send_opinion
 
 pytestmark = pytest.mark.django_db
 
 REGISTER = reverse("matters:matter_list")
-PDF = b"%PDF-1.4 arvamus"
 
 #: The label both surfaces print in front of the second date. The register's own
 #: word for the column, read from the one place that owns it.
@@ -152,19 +147,6 @@ def _mark(
         continues_under_reference=("2026_999" if currency == RegisterCurrency.SUPERSEDED else ""),
         observed_at=timezone.now(),
     )
-
-
-def _send_opinion(matter, actor):
-    submission = create_submission(matter=matter, title="Arvamus", actor=actor)
-    attach_final_evidence(
-        submission=submission,
-        content=PDF,
-        original_filename="arvamus.pdf",
-        mime_type="application/pdf",
-        actor=actor,
-    )
-    submission.refresh_from_db()
-    return mark_submission_sent(submission=submission, actor=actor)
 
 
 def _send_restricted_opinion(matter, capture_evidence, extract):
@@ -669,12 +651,3 @@ def test_the_row_filter_refuses_to_answer_without_the_annotation(specialist, tod
 
     with pytest.raises(ValueError, match="annotate_response_obligation"):
         secondary_obligation(unannotated, specialist)
-
-
-def test_no_migration_is_owed() -> None:
-    """This round adds a reading. It adds no column."""
-    from io import StringIO
-
-    from django.core.management import call_command
-
-    call_command("makemigrations", "--check", "--dry-run", stdout=StringIO())

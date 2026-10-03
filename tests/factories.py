@@ -27,6 +27,11 @@ from app.matters.models import Entry, Matter
 from app.organisations.models import Organisation, OrganisationType
 from app.submissions.enums import SubmissionKind, SubmissionStatus
 from app.submissions.models import Submission
+from app.submissions.services import (
+    attach_final_evidence,
+    create_submission,
+    mark_submission_sent,
+)
 from app.taxonomy.models import PolicyArea, Tag
 from app.workflow.enums import ActionKind, ActionStatus, DatePrecision, DateSemantics
 from app.workflow.models import NextAction, StageVocabulary
@@ -357,3 +362,22 @@ def historical_phase(development, phase: str):
     type(development).objects.filter(pk=development.pk).update(process_phase=phase)
     development.refresh_from_db()
     return development
+
+
+def send_opinion_through_services(matter, actor):
+    """Send an opinion on ``matter`` the way the product does it.
+
+    Through the submission services — create, attach the final PDF, mark sent —
+    rather than by writing a `SENT` row, so a test that asserts something about
+    a sent opinion gets one that passed whatever sending currently enforces.
+    """
+    submission = create_submission(matter=matter, title="Arvamus", actor=actor)
+    attach_final_evidence(
+        submission=submission,
+        content=b"%PDF-1.4 arvamus",
+        original_filename="arvamus.pdf",
+        mime_type="application/pdf",
+        actor=actor,
+    )
+    submission.refresh_from_db()
+    return mark_submission_sent(submission=submission, actor=actor)

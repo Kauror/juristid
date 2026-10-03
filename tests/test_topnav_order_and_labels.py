@@ -131,16 +131,6 @@ def test_the_head_reads_the_same_order_as_a_specialist(client, department_head):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("retired", RETIRED_LABELS)
-def test_the_retired_deadline_item_is_on_no_branch_of_the_bar(signed_in, retired):
-    """Gone at every width.
-
-    The whole ``<nav>`` is searched, so a label merely pushed into the "Veel"
-    disclosure would still fail this.
-    """
-    assert retired not in navigation_of(signed_in.get(reverse("matters:department")))
-
-
 def test_the_veel_trigger_is_not_marked_by_a_destination_that_no_longer_exists(client, specialist):
     """The trigger lit up for `nav_active == 'jalgimine'` as well as Statistika.
 

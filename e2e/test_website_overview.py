@@ -40,7 +40,15 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import SANDRA, create_matter, open_add_panel, open_kaik_row, sign_in, unique_title
+from e2e.conftest import (
+    SANDRA,
+    chronology,
+    create_matter,
+    open_add_panel,
+    open_kaik_row,
+    sign_in,
+    unique_title,
+)
 
 pytestmark = pytest.mark.e2e
 
@@ -58,10 +66,6 @@ def a_new_matter(page, base_url: str) -> str:
 
 def strip(page):
     return page.locator("#kodulehe-ulevaated")
-
-
-def chronology(page):
-    return page.locator("#ajalugu-loend")
 
 
 def published(page):

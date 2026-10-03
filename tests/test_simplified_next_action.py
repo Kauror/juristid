@@ -739,6 +739,8 @@ def test_an_overdue_step_still_reads_as_late(signed_in, normal_matter, specialis
 def test_the_empty_state_stays_quiet(signed_in, normal_matter):
     body = _detail(signed_in, normal_matter)
     assert "Järgmine samm on määramata" in body
+    # And nothing else. «Määra allpool ↓» pointed at a composer that now asks
+    # `Järgmiseks` by name one row below it (ADR 0052 §13).
     assert "Määra allpool" not in body
 
 

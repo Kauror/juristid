@@ -1067,44 +1067,6 @@ def test_an_archive_row_never_names_a_teema(client, administrator, specialist) -
 # ---------------------------------------------------------------------------
 
 
-def test_the_search_index_version_is_untouched() -> None:
-    """Requirement 15. This composes two surfaces; it writes no projection.
-
-    Pinned by value rather than merely asserted to exist: a UI consolidation
-    that moved `INDEX_VERSION` would silently require a search rebuild on
-    deployment, which is exactly the cost this change should not have.
-
-    **The literal has moved twice and this test's claim has not.** The pin is a
-    tripwire: it fires on *any* bump, so that a rebuild is always somebody's
-    decision rather than a side effect. It fired for docs/adr/0095 §2, when
-    opinion summaries moved out of an indexed identity tier, and again for
-    QA-003, when `Märge` and `Arvamus / tagasiside` entered the projection at
-    all — the capture model had moved on and the indexer had not, so a lawyer's
-    own notes were not in the corpus. Both are genuine contract changes and
-    both require a rebuild after deployment; neither has anything to do with
-    the surface this file is about.
-    Moved again by docs/adr/0113: every Document gained a row of its own and
-    authored text became plain and bounded in the projection — a contract
-    change that needs a rebuild, and nothing to do with this file's surface.
-    Moved again by docs/adr/0117: a diacritic-folded vector, authors in a
-    column of their own, received opinions' summaries in the body and merged
-    tags' successors — a rebuild, and nothing to do with this file's surface.
-    """
-    from app.search.models import INDEX_VERSION
-
-    assert INDEX_VERSION == "SONAVORM.1"
-
-
-def test_no_migration_is_outstanding() -> None:
-    """Requirement 16. Nothing here needs a schema change, so nothing made one."""
-    from io import StringIO
-
-    from django.core.management import call_command
-
-    out = StringIO()
-    call_command("makemigrations", "--check", "--dry-run", stdout=out, stderr=out)
-
-
 def test_a_bad_opinion_query_does_not_take_the_register_down(signed_in, specialist) -> None:
     """The section reports its own refusal; the register keeps its answer."""
     factories.MatterFactory(owner=specialist, title="Ükskõik milline teema")

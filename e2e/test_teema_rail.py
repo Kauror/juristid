@@ -34,13 +34,14 @@ from playwright.sync_api import expect
 from e2e.conftest import (
     MARTIN,
     READER,
+    choose_organisation,
     create_matter,
+    document_overflows,
     open_add_panel,
     open_matter,
     sign_in,
     sign_out,
 )
-from e2e.test_teema_page_cleanup import choose_organisation
 
 pytestmark = pytest.mark.e2e
 
@@ -109,12 +110,6 @@ def row_geometry(page):
             };
           });
         }"""
-    )
-
-
-def document_overflows(page) -> bool:
-    return page.evaluate(
-        "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
     )
 
 

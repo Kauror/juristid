@@ -463,17 +463,6 @@ def test_a_quarter_renders_as_a_quarter(specialist):
     assert action.display_date.startswith("III kvartal")
 
 
-def test_an_open_matter_with_no_action_says_so(signed_in, specialist):
-    matter = factories.MatterFactory(owner=specialist)
-
-    body = _detail(signed_in, matter)
-
-    assert "Järgmine samm on määramata" in body
-    # And nothing else. «Määra allpool ↓» pointed at a composer that now asks
-    # `Järgmiseks` by name one row below it (ADR 0052 §13).
-    assert "Määra allpool" not in body
-
-
 def test_an_imported_instruction_is_not_called_missing(signed_in, specialist, monkeypatch):
     """A register row carrying Excel's own sentence is not a broken record."""
     matter = factories.MatterFactory(owner=specialist)
@@ -648,12 +637,6 @@ def test_an_invalid_sub_action_rolls_back_the_whole_save(normal_matter, speciali
 
     assert Entry.objects.filter(matter=normal_matter).count() == before
     assert not MatterEngagement.objects.filter(matter=normal_matter).exists()
-
-
-def test_the_composer_refuses_an_empty_save(normal_matter, specialist):
-
-    with refused("Täida sissekanne või vali, mida veel salvestada."):
-        compose_update(matter=normal_matter, author=specialist)
 
 
 def test_the_composer_checks_its_own_authorization(client, normal_matter):

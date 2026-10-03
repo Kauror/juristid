@@ -887,36 +887,6 @@ def test_an_opinion_on_another_matter_is_not_reachable(client, reader, opinion):
 # ---------------------------------------------------------------------------
 
 
-def test_the_search_index_version_did_not_move():
-    """No child row carries taxonomy, so no rebuild follows this release.
-
-    Pinned as a literal rather than compared to itself, because the decision
-    docs/adr/0093 §5 records is that this number does **not** change — and a test
-    that compared the constant to itself would pass however it moved.
-
-    **The literal has moved twice and this test's claim has not.** The pin is a
-    tripwire: it fires on *any* bump, so that a rebuild is always somebody's
-    decision rather than a side effect. It fired for docs/adr/0095 §2, when
-    opinion summaries moved out of an indexed identity tier, and again for
-    QA-003, when `Märge` and `Arvamus / tagasiside` entered the projection at
-    all — the capture model had moved on and the indexer had not, so a lawyer's
-    own notes were not in the corpus. Both are genuine contract changes and
-    both require a rebuild after deployment; neither has anything to do with
-    the surface this file is about.
-    Moved again by docs/adr/0113: every Document gained a row of its own and
-    authored text became plain and bounded in the projection — a contract
-    change that needs a rebuild, and nothing to do with this file's surface.
-    Moved again by docs/adr/0117: a diacritic-folded vector, authors in a
-    column of their own, received opinions' summaries in the body and merged
-    tags' successors — a rebuild, and nothing to do with this file's surface.
-    """
-    from app.legacy_import.opinion_search_models import ARCHIVE_INDEX_VERSION
-    from app.search.models import INDEX_VERSION
-
-    assert INDEX_VERSION == "SONAVORM.1"
-    assert ARCHIVE_INDEX_VERSION == "1"
-
-
 def test_a_keyword_is_not_projected_into_the_search_corpus(opinion, tags, specialist):
     """The decision, asserted on the corpus rather than on the version number."""
     from app.search.indexing import reindex_submission

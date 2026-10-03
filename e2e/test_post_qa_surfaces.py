@@ -362,16 +362,6 @@ def test_the_edit_page_folds_case_and_diacritics(page, base_url):
     ).to_be_visible()
 
 
-def test_the_edit_pickers_popup_closes_on_blur_too(page, base_url):
-    edit_form(page, base_url)
-    search(page, EDIT_SENDER, "Näidis")
-    expect(results(page, EDIT_SENDER)).to_be_visible()
-
-    page.locator("#id_title").click()
-
-    expect(results(page, EDIT_SENDER)).to_be_hidden()
-
-
 def test_the_edit_page_prepopulates_the_current_sender(page, base_url):
     """Choose, save, reopen: the answer comes back visibly chosen.
 

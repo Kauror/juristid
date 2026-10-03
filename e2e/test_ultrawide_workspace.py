@@ -38,7 +38,7 @@ from __future__ import annotations
 
 import pytest
 
-from e2e.conftest import SANDRA, sign_in
+from e2e.conftest import SANDRA, document_overflows, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -78,12 +78,6 @@ MAX_SHARE_OF_VIEWPORT = 0.85
 #: How much bare monitor has to be left over before "there is an outer margin"
 #: is a fair description of what somebody sees.
 MINIMUM_OUTER_MARGIN = 100
-
-
-def document_overflows(page) -> bool:
-    return page.evaluate(
-        "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
-    )
 
 
 def resolve(page, base_url: str, path: str | None) -> str:

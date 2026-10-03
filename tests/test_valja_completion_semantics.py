@@ -62,17 +62,11 @@ from app.matters import work_items as wi
 from app.matters.services import create_matter
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
-from app.submissions.services import (
-    attach_final_evidence,
-    create_submission,
-    mark_submission_sent,
-)
 from app.workflow.enums import ActionKind, DateSemantics
 from app.workflow.services import set_next_action
+from tests.factories import send_opinion_through_services as _send_opinion
 
 pytestmark = pytest.mark.django_db
-
-PDF = b"%PDF-1.4 arvamus"
 
 TITLE = "Registri margisega teema"
 
@@ -142,19 +136,6 @@ def _mark(
         continues_under_reference=("2026_999" if currency == RegisterCurrency.SUPERSEDED else ""),
         observed_at=timezone.now(),
     )
-
-
-def _send_opinion(matter, actor):
-    submission = create_submission(matter=matter, title="Arvamus", actor=actor)
-    attach_final_evidence(
-        submission=submission,
-        content=PDF,
-        original_filename="arvamus.pdf",
-        mime_type="application/pdf",
-        actor=actor,
-    )
-    submission.refresh_from_db()
-    return mark_submission_sent(submission=submission, actor=actor)
 
 
 def _outstanding(user) -> set[Any]:

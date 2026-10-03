@@ -11,15 +11,11 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, create_matter, open_kaik_row, sign_in, unique_title
+from e2e.conftest import MARTIN, chronology, create_matter, open_kaik_row, sign_in, unique_title
 from e2e.test_engagement import open_panel as open_kaasamine
 from e2e.test_uus_teema_files import PDF_BYTES, create_with_files
 
 pytestmark = pytest.mark.e2e
-
-
-def chronology(page):
-    return page.locator("#ajalugu-loend")
 
 
 # `test_closing_with_muu_records_the_ordinary_work_win` drove `+ Lõpeta teema`,

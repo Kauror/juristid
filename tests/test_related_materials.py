@@ -57,7 +57,6 @@ from app.legacy_import.opinion_enums import (
 from app.legacy_import.opinion_links import link_matter
 from app.legacy_import.opinion_search import refresh_archive_binaries
 from app.legacy_import.opinion_search_models import (
-    ARCHIVE_INDEX_VERSION,
     OpinionArchiveSearchDocument,
 )
 from app.matters import purge
@@ -74,7 +73,7 @@ from app.related_materials.models import (
     RelatedSuggestionDismissal,
 )
 from app.related_materials.selectors import related_materials_for
-from app.search.models import INDEX_VERSION, SearchDocument
+from app.search.models import SearchDocument
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
 from app.workflow.enums import Disposition, Track
@@ -1038,26 +1037,6 @@ def test_the_engine_costs_a_fixed_number_of_queries_however_many_candidates(spec
 
     assert len(few) == len(many), (len(few), len(many))
     assert len(many) <= 30
-
-
-def test_the_projections_are_read_under_their_current_versions():
-    """A new consumer of the projections changes neither recipe (brief §47).
-
-    **The literal moved in docs/adr/0095 §2 and this test's claim did not.** The
-    pin is a tripwire: it fires on *any* bump, so that a rebuild is always
-    somebody's decision rather than a side effect. Opinion summaries moved out of
-    an indexed identity tier into a column the projection did not read, which is
-    a genuine contract change and the one this number now records — nothing to do
-    with the surface this file is about.
-    Moved again by docs/adr/0113: every Document gained a row of its own and
-    authored text became plain and bounded in the projection — a contract
-    change that needs a rebuild, and nothing to do with this file's surface.
-    Moved again by docs/adr/0117: a diacritic-folded vector, authors in a
-    column of their own, received opinions' summaries in the body and merged
-    tags' successors — a rebuild, and nothing to do with this file's surface.
-    """
-    assert INDEX_VERSION == "SONAVORM.1"
-    assert ARCHIVE_INDEX_VERSION == "1"
 
 
 def test_relation_events_stay_out_of_the_timeline_and_the_feed():

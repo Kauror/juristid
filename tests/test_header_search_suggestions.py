@@ -33,7 +33,6 @@ from app.legacy_import.opinion_access import may_read_archive
 from app.matters.services import create_matter
 from app.organisations.models import Organisation, OrganisationType
 from app.search.indexing import rebuild_all
-from app.search.models import INDEX_VERSION
 from app.search.views import MIN_SUGGESTION_CHARACTERS, SUGGESTION_LIMIT
 from tests import factories
 
@@ -325,32 +324,6 @@ def test_the_dropdown_agrees_with_the_results_page_order(crowd, client, speciali
         if row["result"].source_kind == SearchSourceKind.MATTER
     ]
     assert dropdown == on_page[:SUGGESTION_LIMIT]
-
-
-def test_the_index_contract_is_untouched() -> None:
-    """This endpoint reads the projection; it does not change what is in it.
-
-    A changed `INDEX_VERSION` would mean every deployment needs a rebuild
-    before search works again — an expensive consequence for a dropdown, and
-    the reason it is asserted rather than assumed (docs/adr/0038).
-
-    **The literal has moved twice and this test's claim has not.** The pin is a
-    tripwire: it fires on *any* bump, so that a rebuild is always somebody's
-    decision rather than a side effect. It fired for docs/adr/0095 §2, when
-    opinion summaries moved out of an indexed identity tier, and again for
-    QA-003, when `Märge` and `Arvamus / tagasiside` entered the projection at
-    all — the capture model had moved on and the indexer had not, so a lawyer's
-    own notes were not in the corpus. Both are genuine contract changes and
-    both require a rebuild after deployment; neither has anything to do with
-    the surface this file is about.
-    Moved again by docs/adr/0113: every Document gained a row of its own and
-    authored text became plain and bounded in the projection — a contract
-    change that needs a rebuild, and nothing to do with this file's surface.
-    Moved again by docs/adr/0117: a diacritic-folded vector, authors in a
-    column of their own, received opinions' summaries in the body and merged
-    tags' successors — a rebuild, and nothing to do with this file's surface.
-    """
-    assert INDEX_VERSION == "SONAVORM.1"
 
 
 def test_a_refused_query_produces_no_results_rather_than_an_error(

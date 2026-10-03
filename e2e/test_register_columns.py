@@ -44,7 +44,7 @@ import pytest
 from playwright.sync_api import expect
 
 from app.workflow.enums import ESTONIAN_MONTHS
-from e2e.conftest import SANDRA, create_matter, sign_in, unique_title
+from e2e.conftest import SANDRA, create_matter, document_overflows, sign_in, unique_title
 
 pytestmark = pytest.mark.e2e
 
@@ -71,12 +71,6 @@ SORT_HEADINGS = ["Kuupäev", "Viimane tegevus"]
 def open_register(page, base_url: str, query: str = "") -> None:
     page.goto(f"{base_url}{REGISTER}{query}")
     page.wait_for_load_state("networkidle")
-
-
-def document_overflows(page) -> bool:
-    return page.evaluate(
-        "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
-    )
 
 
 def column_index(page, heading: str) -> int:

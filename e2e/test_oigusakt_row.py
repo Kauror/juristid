@@ -337,17 +337,6 @@ def test_the_clear_mark_adds_no_tab_stop(page, base_url):
 
 
 @pytest.mark.parametrize("width", [1440, 1024, 768, 420])
-def test_the_page_never_scrolls_sideways_with_the_row_on_it(page, base_url, width):
-    """§15 criterion 15, restated for the row this branch inserted."""
-    _open(page, base_url, width)
-
-    overflows = page.evaluate(
-        "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
-    )
-    assert not overflows, f"Uus teema scrolls the page sideways at {width}px"
-
-
-@pytest.mark.parametrize("width", [1440, 1024, 768, 420])
 def test_the_chips_wrap_rather_than_truncate_or_scroll(page, base_url, width):
     """Labels stay whole at every width, and the row scrolls nowhere."""
     _open(page, base_url, width)

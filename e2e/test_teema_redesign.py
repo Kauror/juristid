@@ -24,6 +24,7 @@ from e2e.conftest import (
     MARTIN,
     SANDRA,
     create_matter,
+    document_overflows,
     open_add_panel,
     open_composer,
     open_kaik_period,
@@ -38,12 +39,6 @@ pytestmark = pytest.mark.e2e
 def _future(days: int) -> str:
     value = date.today() + timedelta(days=days)
     return f"{value.day}.{value.month}.{value.year}"
-
-
-def document_overflows(page) -> bool:
-    return page.evaluate(
-        "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
-    )
 
 
 # ---------------------------------------------------------------------------

@@ -33,6 +33,8 @@ from playwright.sync_api import expect
 
 from e2e.conftest import (
     SANDRA,
+    choose_organisation,
+    chronology,
     create_matter,
     open_add_panel,
     open_kaik_row,
@@ -69,26 +71,6 @@ def a_new_matter(page, base_url: str) -> str:
 
 def panel(page, panel_id: str):
     return page.locator(f"#{panel_id}")
-
-
-def chronology(page):
-    return page.locator("#ajalugu-loend")
-
-
-def choose_organisation(page, picker: str, name: str = MINISTRY) -> None:
-    """Answer an organisation control the way a person does: type, then pick.
-
-    The same two steps `e2e/test_unified_organisation_picker.py` uses, and
-    deliberately not a `check()` on the radio: the chips are labels whose input is
-    clipped, and an institution outside the visible shortlist is `hidden` until
-    the search reveals it — so ticking the control directly asserts something the
-    person never does and fails on exactly the bodies the search exists for.
-    """
-    box = page.locator(f"#{picker}-otsi")
-    box.click()
-    box.fill("")
-    box.type(name[:8], delay=20)
-    page.locator(f"#{picker}-tulemused").get_by_role("option", name=name, exact=True).click()
 
 
 # ---------------------------------------------------------------------------
