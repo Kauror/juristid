@@ -540,3 +540,31 @@ def test_an_important_deadline_is_on_its_owners_own_page(page, base_url, screens
     page.goto(f"{base_url}/minu-asjad/")
     page.wait_for_load_state("networkidle")
     expect(page.get_by_text("Konfidentsiaalne tähtaeg")).to_have_count(0)
+
+
+def test_the_register_row_names_a_milestone_as_the_next_step(page, base_url):
+    """With no step open, the row says what the Teema page says (RULE-01).
+
+    A new Teema starts no `NextAction`, so the only thing it is waiting for is
+    the milestone recorded below — and the register row must name it rather
+    than claim «Järgmine samm puudub» about a file `?tegevus=puudub` leaves out.
+    """
+    title = "Registris tähtajaga teema"
+    sign_in(page, base_url, MARTIN)
+    create_matter(page, base_url, title)
+    remember_matter(page)
+
+    form = open_fact_form(page, "+ Lisa oluline tähtaeg")
+    form.get_by_label("Mis on oodata", exact=True).fill("Ministeeriumi vastus registrisse")
+    ahead = date.today() + timedelta(days=30)
+    form.get_by_label("Kuupäev", exact=True).fill(f"{ahead.day:02d}.{ahead.month:02d}.{ahead.year}")
+    form.get_by_role("button", name="Salvesta", exact=True).click()
+    page.wait_for_load_state("networkidle")
+
+    page.goto(f"{base_url}/teemad/?olek=koik")
+    page.wait_for_load_state("networkidle")
+    row = page.locator("tr", has=page.get_by_role("link", name=title)).first
+    cell = row.locator("td.table__action")
+    expect(cell).to_contain_text("Oluline tähtaeg")
+    expect(cell).to_contain_text("Ministeeriumi vastus registrisse")
+    expect(cell).not_to_contain_text("Järgmine samm puudub")

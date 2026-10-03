@@ -48,8 +48,6 @@ from django.urls import reverse
 from django.utils import timezone
 
 from app.accounts.enums import UserRole
-from app.audit.enums import ChangeEventType
-from app.audit.models import ChangeEvent
 from app.core.enums import Visibility
 from app.matters import department_dashboard as dd
 from app.matters.department import build_department
@@ -163,19 +161,13 @@ def at_ten(day: date) -> datetime:
 
 
 def touched_on(matter: Matter, when: date, actor: Any) -> None:
-    """One Matter-level change event, on a day of the caller's choosing.
+    """One piece of substantive work on the Matter, on a day of the caller's choosing.
 
-    Matter-level rather than a child's: `scope_change_events` passes those
-    through on the Matter's own visibility, so this exercises the column rather
-    than the child-visibility rule that has a suite of its own.
+    An authored entry — the commonest work there is (`app.matters.activity`,
+    docs/adr/0134). A Matter-wide one, so this exercises the column rather than
+    the child-visibility rule that has a suite of its own.
     """
-    ChangeEvent.objects.create(
-        matter=matter,
-        actor=actor,
-        event_type=ChangeEventType.MATTER_STAGE_CHANGED,
-        occurred_at=at_ten(when),
-        summary="Menetlusetapp muutus",
-    )
+    factories.EntryFactory(matter=matter, author=actor, occurred_at=at_ten(when))
 
 
 def drafting(matter: Matter) -> None:

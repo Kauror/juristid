@@ -15,7 +15,8 @@ The definition is now one function, ``register_filters.opinion_state_q``:
   register row with a blank VÄLJA whose Matter has no SENT Submission this
   reader may see;
 * **saadetud** — a SENT Submission this reader may see, **or** a CURRENT
-  register row with something in VÄLJA.
+  register row whose VÄLJA is a date (RULE-04: «ei saatnud» and an unreadable
+  mark are marked but not sent — `tests/test_opinion_sent_means_sent.py`).
 
 The cell counts it, the cell's link opens it, and the register filter is it —
 so every test below asserts on all three where it can, and compares row
@@ -59,10 +60,11 @@ def martin(db) -> Any:
 
 
 def register_row(matter: Matter, *, sent_recorded: bool) -> None:
-    """A CURRENT register row, with VÄLJA blank or marked.
+    """A CURRENT register row, with VÄLJA blank or holding a send date.
 
     Both derivations of the cell are written, because a check constraint makes
-    the database refuse a row that says «recorded» and «blank» at once.
+    the database refuse a row that says «recorded» and «blank» at once. Marked
+    means ``DATE`` — the one reading «saadetud» accepts (RULE-04).
     """
     reference = factories.MatterSourceReferenceFactory(matter=matter)
     CurrentRegisterState.objects.create(
@@ -73,9 +75,8 @@ def register_row(matter: Matter, *, sent_recorded: bool) -> None:
         source_row_number=reference.source_row_number,
         currency=RegisterCurrency.CURRENT,
         opinion_sent_recorded=sent_recorded,
-        opinion_sent_state=(
-            OpinionSentState.RECORDED_OTHER if sent_recorded else OpinionSentState.BLANK
-        ),
+        opinion_sent_state=OpinionSentState.DATE if sent_recorded else OpinionSentState.BLANK,
+        opinion_sent_date=timezone.localdate() if sent_recorded else None,
         observed_at=timezone.now(),
     )
 

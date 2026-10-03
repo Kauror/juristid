@@ -2370,6 +2370,13 @@ fieldset.field > legend {
   max-width: 68ch;
 }
 
+/* A value the page states rather than offers: a closed Teema's `Hetkeseis` on
+ * `Muuda teemat`, which moves only through `Ava uuesti` (RULE-03). */
+.field__value {
+  margin: 0;
+  color: var(--text-body);
+}
+
 .field__error {
   font-size: var(--typography-size-meta);
   font-weight: var(--typography-weight-semibold);

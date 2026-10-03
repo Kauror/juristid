@@ -20,7 +20,9 @@ from typing import Any
 
 from django import template
 
+from app.intelligence.models import MatterImportantDate
 from app.matters.activity import MatterActivityFact, activity_of
+from app.matters.next_step import prefetched_upcoming_milestone
 from app.matters.register_dates import RegisterDate
 from app.matters.register_dates import register_date as _register_date
 from app.matters.work_items import (
@@ -90,6 +92,17 @@ def secondary_obligation(matter: Any, user: Any) -> ResponseObligation | None:
         # number the row never printed (docs/adr/0079 §12).
         primary_is_approximate=shown is not None and shown.is_approximate,
     )
+
+
+@register.filter(name="upcoming_milestone")
+def upcoming_milestone(matter: Any) -> MatterImportantDate | None:
+    """The `Oluline tähtaeg` the row's `Järgmiseks` cell names when no step is open.
+
+    `app.matters.next_step`'s choice, over the reader-scoped records
+    `selectors.matter_list_queryset` prefetched: the cell must not call a file
+    stepless that `?tegevus=puudub` leaves out (RULE-01, docs/adr/0120).
+    """
+    return prefetched_upcoming_milestone(matter)
 
 
 @register.filter
