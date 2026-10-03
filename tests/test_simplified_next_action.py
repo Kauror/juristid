@@ -360,71 +360,6 @@ def test_a_new_step_supersedes_the_open_one_rather_than_completing_it(
     ).exists()
 
 
-def test_tehtud_completes_the_step_and_writes_no_entry(signed_in, normal_matter, specialist):
-    """10 + ADR 0052 §7. The system already knows what was completed.
-
-    Manufacturing "Helistasin Kliimaministeeriumisse" as a note would be the
-    application writing a lawyer's record for them under their name.
-    """
-    action = set_next_action(
-        matter=normal_matter,
-        text="Helistada Kliimaministeeriumisse",
-        kind=ActionKind.DO,
-        date_semantics=DateSemantics.DEADLINE,
-        target_date=timezone.localdate() + timedelta(days=1),
-        actor=specialist,
-    )
-
-    response = signed_in.post(
-        reverse("matters:complete_action", kwargs={"pk": normal_matter.pk, "action_id": action.pk}),
-        headers={"HX-Request": "true"},
-    )
-    assert response.status_code == 200
-
-    action.refresh_from_db()
-    assert action.status == ActionStatus.COMPLETED
-    assert action.ended_by == specialist
-    assert ChangeEvent.objects.filter(
-        matter=normal_matter,
-        event_type=ChangeEventType.NEXT_ACTION_COMPLETED,
-        object_id=action.pk,
-    ).exists()
-
-    # The whole of it. No entry, and no replacement step.
-    assert not Entry.objects.filter(matter=normal_matter).exists()
-    assert current_next_action(normal_matter) is None
-    assert NextAction.objects.filter(matter=normal_matter).count() == 1
-
-
-def test_tehtud_answers_with_the_row_and_not_the_whole_column(signed_in, normal_matter, specialist):
-    """ADR 0052 §9 — the server half of "do not lose unsaved composer content".
-
-    The browser half is `e2e/test_simplified_next_action.py`. What is asserted
-    here is that the response is a fragment small enough not to contain the
-    composer at all: a response that carried `#teema-vaade` would replace the
-    open form however the target was written.
-    """
-    action = set_next_action(
-        matter=normal_matter,
-        text="Saata kiri ministeeriumile",
-        kind=ActionKind.DO,
-        date_semantics=DateSemantics.DEADLINE,
-        target_date=timezone.localdate() + timedelta(days=1),
-        actor=specialist,
-    )
-
-    response = signed_in.post(
-        reverse("matters:complete_action", kwargs={"pk": normal_matter.pk, "action_id": action.pk}),
-        headers={"HX-Request": "true"},
-    )
-    body = response.content.decode()
-
-    assert 'id="jargmiseks-rida"' in body
-    assert 'id="teema-vaade"' not in body
-    assert 'id="teema-koostaja"' not in body
-    assert "composer__body" not in body
-
-
 def test_completion_is_the_result_being_saved_and_swaps_the_whole_column(
     signed_in, normal_matter, specialist
 ):
@@ -510,14 +445,22 @@ def test_a_historical_action_can_still_be_completed_from_the_teema_page(
         actor=specialist,
     )
 
+    # `PRAEGUNE TEGEVUS` → `Salvesta`, the one completion door (ENG-050A retired
+    # `matters:complete_action`, which this used to post to).
     response = signed_in.post(
-        reverse("matters:complete_action", kwargs={"pk": normal_matter.pk, "action_id": action.pk}),
+        reverse("matters:complete_current_action", kwargs={"pk": normal_matter.pk}),
+        {"action_id": str(action.pk), "body": "Eelnõu menetlus on lõppenud."},
         headers={"HX-Request": "true"},
     )
     assert response.status_code == 200
 
     action.refresh_from_db()
     assert action.status == ActionStatus.COMPLETED
+    assert ChangeEvent.objects.filter(
+        matter=normal_matter,
+        event_type=ChangeEventType.NEXT_ACTION_COMPLETED,
+        object_id=action.pk,
+    ).exists()
     # Completing it did not rewrite what it was.
     assert action.kind == kind
     assert action.date_semantics == DateSemantics.REVIEW_ON
@@ -848,51 +791,3 @@ def test_a_reader_sees_the_step_but_not_tehtud_and_not_the_composer(
     assert "Tehtud" not in body
     assert 'name="next_text"' not in body
     assert 'id="teema-koostaja"' not in body
-
-
-def test_a_reader_cannot_complete_a_step(client, reader, normal_matter, specialist):
-    action = set_next_action(
-        matter=normal_matter,
-        text="Vaadata uus versioon üle",
-        kind=ActionKind.DO,
-        date_semantics=DateSemantics.DEADLINE,
-        target_date=timezone.localdate() + timedelta(days=3),
-        actor=specialist,
-    )
-    client.force_login(reader)
-    response = client.post(
-        reverse("matters:complete_action", kwargs={"pk": normal_matter.pk, "action_id": action.pk})
-    )
-    assert response.status_code == 404
-    action.refresh_from_db()
-    assert action.status == ActionStatus.OPEN
-
-
-def test_a_refused_completion_says_so_inside_the_row(signed_in, normal_matter, specialist):
-    """The refusal has nowhere else to go.
-
-    `Tehtud` swaps this row and only this row, and the refusal
-    `complete_next_action` actually raises — somebody else finished the step a
-    moment ago — leaves no current action to hang a message on. So the message
-    is rendered outside the row's three branches rather than inside one of them.
-    """
-    from app.workflow.services import complete_next_action
-
-    action = set_next_action(
-        matter=normal_matter,
-        text="Saata kiri",
-        kind=ActionKind.DO,
-        date_semantics=DateSemantics.DEADLINE,
-        target_date=timezone.localdate() + timedelta(days=1),
-        actor=specialist,
-    )
-    complete_next_action(action=action, actor=specialist)
-
-    response = signed_in.post(
-        reverse("matters:complete_action", kwargs={"pk": normal_matter.pk, "action_id": action.pk}),
-        headers={"HX-Request": "true"},
-    )
-    assert response.status_code == 400
-    body = response.content.decode()
-    assert 'id="jargmiseks-rida"' in body
-    assert "Ainult kehtivat tegevust saab lõpetada." in body

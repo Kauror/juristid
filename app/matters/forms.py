@@ -3848,9 +3848,10 @@ class EngagementForm(forms.Form):
     #: with that day; :attr:`clear_occurred_on` is how the period is removed on
     #: purpose (:meth:`clean`, docs/adr/0086 §1).
     #:
-    #: **`initial` is today, and it belongs to the add route rather than to the
-    #: editor.** `matters:add_engagement` still posts this form, and every date
-    #: box the product opens for a *new* record starts on today. It reaches no
+    #: **`initial` is today, and it belonged to the add route rather than to the
+    #: editor.** `matters:add_engagement` posted this form until ENG-050A retired
+    #: it — a new `Kaasamine` is `CompactEngagementForm` — and every date box the
+    #: product opens for a *new* record starts on today. It reaches no
     #: correction, because `_engagement_edit_form` builds its `initial` from the
     #: stored record.
     occurred_on = EstonianDateField(

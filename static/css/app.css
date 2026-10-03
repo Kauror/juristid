@@ -7176,7 +7176,6 @@ button.accordion__action:focus-visible {
   }
 
   .teema .matterhead,
-  .uxnext,
   .historicalrow,
   .webrow,
   .accordion__head,
@@ -9892,14 +9891,13 @@ section:has(.pw-more[open]) tbody.uxextra {
  * starts at any other (TEEMA_TARGET_SPEC, VISUAL PRECISION).
  *
  * Written as one rule over the elements that would otherwise disagree, because
- * they disagree for three different reasons: `.uxnext` and `.uxcomp__form`
- * carry a 16px component padding from `ux.css`, and `.tl-strip` carries the
+ * they disagree for different reasons: `.uxcomp__form` carries a 16px
+ * component padding from `ux.css`, and `.tl-strip` carries the
  * design export's own 32px margin *inside* an accordion body that is already
  * padded by 32 — which put it at 64 and made the one rule visibly false. The
  * strip's inset is the body's; the margin is zeroed rather than the padding,
  * so the chronology under it keeps the same edge. */
 
-#teema-vaade-wrap .uxnext,
 #teema-vaade-wrap .registerfacts,
 #teema-vaade-wrap .lprail,
 #teema-vaade-wrap .accordion--timeline .accordion__head,
@@ -9908,33 +9906,6 @@ section:has(.pw-more[open]) tbody.uxextra {
   padding-right: var(--spacing-8);
 }
 
-
-/* -- zone A: one action unit ----------------------------------------------
- *
- * The row states what is owed and the composer is where the answer is written.
- * They were a rounded card in a gutter and a bordered box under it; they are
- * now one surface with one 3px accent edge, and clicking the row opens the
- * composer (handoff §23, §24, I01). */
-
-.teemamain .uxnext {
-  background: var(--surface-capture);
-  border: 0;
-  border-bottom: 1px solid var(--border-subtle);
-  border-radius: 0;
-  box-shadow: inset 3px 0 0 var(--accent-border);
-  padding-top: 14px;
-  padding-bottom: 14px;
-  cursor: pointer;
-}
-
-/* Lateness still reads. `.uxnext--overdue` rings the row in production, and a
- * box-shadow that replaced the ring would have taken the one state this row
- * has. The ring is kept and the accent edge rides inside it. */
-.teemamain .uxnext--overdue {
-  box-shadow:
-    inset 3px 0 0 var(--accent-border),
-    0 0 0 3px var(--status-danger-halo);
-}
 
 /* -- one heading treatment -------------------------------------------------
  *
@@ -9945,7 +9916,6 @@ section:has(.pw-more[open]) tbody.uxextra {
 
 .teemamain .factsection__head .sectionlabel,
 .teemamain .accordion--timeline .accordion__title,
-.teemamain .uxnext__label,
 .teema .rail .railcard__label {
   font-size: 12px;
   font-weight: var(--typography-weight-bold);
@@ -11705,7 +11675,6 @@ section:has(.pw-more[open]) tbody.uxextra {
      page-wide rule higher up the file: these selectors carry an id, so the
      scoped block above beats that rule wherever both apply, and a media query
      is a condition rather than a specificity boost. */
-  #teema-vaade-wrap .uxnext,
   #teema-vaade-wrap .registerfacts,
   #teema-vaade-wrap .accordion--timeline .accordion__head,
   #teema-vaade-wrap .accordion--timeline .accordion__body {

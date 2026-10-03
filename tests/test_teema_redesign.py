@@ -46,7 +46,7 @@ from app.matters.services import (
 from app.matters.timeline import matter_timeline
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
-from app.workflow.enums import ActionKind, ActionStatus, DatePrecision, DateSemantics, Disposition
+from app.workflow.enums import ActionKind, DatePrecision, DateSemantics, Disposition
 from app.workflow.models import NextAction
 from app.workflow.services import current_next_action, set_next_action
 from tests import factories
@@ -486,27 +486,6 @@ def test_a_closed_matter_refuses_a_new_next_step(signed_in, specialist):
     assert "Uut sammu ei saa määrata ilma taasavamiseta" in body
     # And the composer is not rendered at all.
     assert 'id="teema-koostaja"' not in body
-
-
-def test_completing_the_step_goes_through_the_existing_service(signed_in, specialist):
-    matter = factories.MatterFactory(owner=specialist)
-    action = set_next_action(
-        matter=matter,
-        text="Esitan arvamuse",
-        kind=ActionKind.DO,
-        target_date=timezone.localdate() + timedelta(days=2),
-        actor=specialist,
-    )
-
-    response = signed_in.post(
-        reverse("matters:complete_action", kwargs={"pk": matter.pk, "action_id": action.pk}),
-        headers={"HX-Request": "true"},
-    )
-
-    assert response.status_code == 200
-    action.refresh_from_db()
-    assert action.status == ActionStatus.COMPLETED
-    assert current_next_action(matter) is None
 
 
 # ---------------------------------------------------------------------------

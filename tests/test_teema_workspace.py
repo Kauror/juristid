@@ -1295,17 +1295,6 @@ def test_the_refusal_is_stated_where_the_write_is_decided(specialist, normal_mat
 #: a stale page posting to one of them is the same defect wearing another URL.
 STALE_OTHER_ROUTE_WRITES = [
     (
-        # `SURVEY`, not `WEB_CALL`. The latter is a valid *stored* value that
-        # `EngagementForm` deliberately no longer offers (Teema redesign §14),
-        # so a payload carrying it is refused by the form on an open Matter too
-        # — and a closed-Matter test written on top of that refusal would be
-        # asserting nothing at all.
-        "matters:add_engagement",
-        {"pk": None},
-        {"kind": "SURVEY", "title": "Hiline kaasamine"},
-        lambda m: m.engagements.count(),
-    ),
-    (
         "intelligence:add_important_date",
         {"matter_id": None},
         {"title": "Hiline tähtaeg", "precision": "YEAR", "year": "2030"},

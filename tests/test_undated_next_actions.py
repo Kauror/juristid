@@ -643,22 +643,6 @@ def test_the_prepare_by_flow_still_invents_no_action(normal_matter, specialist):
     assert not NextAction.objects.filter(matter=normal_matter).exists()
 
 
-def test_the_defer_base_counts_from_today_for_an_undated_step(normal_matter, specialist):
-    """The one place an undated step meets date arithmetic.
-
-    `Lükka edasi` no longer renders on the Teema page and its route survives, so
-    the base has to stay defined: for a step with no day there is no other day to
-    count from, and today is the honest answer rather than an error.
-    """
-    from app.matters.views import defer_base
-
-    action = _undated(normal_matter, specialist)
-    today = timezone.localdate()
-
-    assert defer_base(action, today) == today
-    assert defer_base(None, today) == today
-
-
 def test_historical_wait_and_monitor_semantics_are_untouched(normal_matter, specialist):
     """docs/adr/0106 §6. The richer vocabulary is not collapsed into DO."""
     action = set_next_action(

@@ -713,7 +713,13 @@ def test_the_forms_on_this_page_do_not_share_element_ids(signed_in, specialist):
 
 
 def test_the_full_opinion_lifecycle_runs_from_documents(signed_in, specialist, organisation):
-    """Draft, evidence, recipients, send, read back, withdraw — all on one page."""
+    """An existing draft: evidence, recipients, send, read back, withdraw — on one page.
+
+    A page can no longer *start* a draft (`submissions:create`, retired by
+    ENG-050A — a new opinion is `Lisa teemale → Koja arvamus`), so the draft is
+    the older kind one already holds, made by the domain service; every step
+    after it is the page's own route, unchanged.
+    """
     from django.core.files.uploadedfile import SimpleUploadedFile
 
     from app.audit.enums import ChangeEventType
@@ -721,14 +727,13 @@ def test_the_full_opinion_lifecycle_runs_from_documents(signed_in, specialist, o
 
     matter = factories.MatterFactory(owner=specialist)
 
-    signed_in.post(
-        reverse("submissions:create", kwargs={"matter_id": matter.pk}),
-        {
-            "arvamus-title": "Koja arvamus eelnõule",
-            "arvamus-kind": SubmissionKind.FORMAL_OPINION,
-            "arvamus-recipients": [str(organisation.pk)],
-            "arvamus-channel": "EIS",
-        },
+    create_submission(
+        matter=matter,
+        title="Koja arvamus eelnõule",
+        kind=SubmissionKind.FORMAL_OPINION,
+        actor=specialist,
+        recipients=[organisation],
+        channel="EIS",
     )
     submission = Submission.objects.get(matter=matter)
     assert submission.status == SubmissionStatus.DRAFT
