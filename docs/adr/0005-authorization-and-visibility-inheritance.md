@@ -106,3 +106,26 @@ hand-maintained column on a transactional table.
 
 Low, by design. Adding a role to the restricted list is a one-line change with
 an accompanying test; changing the inheritance model is not.
+
+## Amendment, 2026-10-03 — participation has one SQL shape (QRY-05)
+
+The rule above is unchanged: a RESTRICTED Matter, and its children, are open to
+its owner and its explicit collaborators (and to the roles that see all
+restricted work). What changes is only how the collaborator half is asked.
+
+`restricted_participation_q` reached the collaborators as
+`Q(collaborators=user)`, a `LEFT OUTER JOIN` on the through table that repeats a
+Matter once per collaborator; `authorization.apply` then collapsed every
+reader's and administrator's query with `SELECT DISTINCT` over all selected
+columns. It now uses the uncorrelated `matter_id IN (SELECT matter_id FROM the
+through table WHERE user_id = …)` that search already used
+(`restricted_participation_subquery_q`, ENG-010) — one spelling instead of two —
+and `apply` keeps `DISTINCT` only where the filtered query still joins a
+one-to-many or many-to-many relation. A scope that sees all restricted work
+never had `DISTINCT` (its condition is empty), so no caller depends on it.
+
+The population is the same by construction and is checked row for row for every
+persona against the old join spelling (`tests/test_participation_one_shape.py`).
+Measured on a 5,016-Matter synthetic clone, the reader's register count went
+from 14.6 ms to 2.0 ms on the same 4,615 Matters. No schema change.
+
