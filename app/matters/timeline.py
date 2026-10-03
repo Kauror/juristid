@@ -38,7 +38,7 @@ from django.utils import timezone
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.audit.visibility import scope_change_events
-from app.core.dates import format_estonian_date
+from app.core.dates import format_estonian_date, start_of_local_day
 from app.matters import selectors
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import EngagementKind, WebsiteOverviewStatus
@@ -966,11 +966,6 @@ def _milestone_for_event(event: ChangeEvent) -> ChronologyMilestone:
     )
 
 
-def _start_of_day(day: date) -> datetime:
-    """The first moment of a local day: where a day-granular bound begins."""
-    return timezone.make_aware(datetime.combine(day, datetime.min.time()))
-
-
 def _end_of_day(day: date) -> datetime:
     """Where a dated fact sorts among the timestamped ones.
 
@@ -1549,7 +1544,7 @@ def projected_milestones(
     else:
         facts = _NO_FACTS
     rows: list[TimelineItem] = []
-    start = _start_of_day(since) if since is not None else None
+    start = start_of_local_day(since) if since is not None else None
 
     def dated(queryset: Any, field_name: str) -> Any:
         """Rows whose chronology day — the date, else the recorded day — is ≥ since."""
@@ -2154,7 +2149,7 @@ class _ChronologySources:
                 Submission.objects.filter(**visible)
                 .visible_to(self.user)
                 .historically_sent()
-                .filter(sent_at__lt=_start_of_day(self.day + timedelta(days=1)))
+                .filter(sent_at__lt=start_of_local_day(self.day + timedelta(days=1)))
                 .annotate(chronology_day=_local_date("sent_at")),
             ),
             (ChangeEventType.ENGAGEMENT_FEEDBACK_CLOSED.value, engagements),
@@ -2265,7 +2260,7 @@ class _ChronologySources:
                 Submission.objects.filter(**visible)
                 .visible_to(self.user)
                 .historically_sent()
-                .filter(sent_at__lt=_start_of_day(self.day + timedelta(days=1))),
+                .filter(sent_at__lt=start_of_local_day(self.day + timedelta(days=1))),
                 _local_date("sent_at"),
             )
             overviews = MatterWebsiteOverview.objects.filter(**visible).visible_to(self.user)
@@ -2841,7 +2836,9 @@ def _versions_shown_on_their_record(matter: Matter, *, user: Any, day: date) -> 
         Submission.objects.filter(matter=matter)
         .visible_to(user)
         .historically_sent()
-        .filter(sent_at__lt=_start_of_day(day + timedelta(days=1)), final_version__isnull=False)
+        .filter(
+            sent_at__lt=start_of_local_day(day + timedelta(days=1)), final_version__isnull=False
+        )
         .values("final_version_id")
     )
     linked = DocumentLink.objects.filter(document__matter=matter, entry__isnull=True).values(

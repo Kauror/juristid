@@ -87,6 +87,7 @@ from app.core.dates import (
     parse_flexible_date,
     short_day_month,
     short_range,
+    start_of_local_day,
     weekday_name,
 )
 from app.intelligence.enums import WorkVictoryStatus
@@ -467,8 +468,12 @@ def _matters_changed_by_owner(user: Any, start: date, end: date) -> dict[Any, in
     events = scope_change_events(
         ChangeEvent.objects.filter(
             event_type__in=_ACTIVITY_EVENT_TYPES,
-            occurred_at__date__gte=start,
-            occurred_at__date__lte=end,
+            # A half-open range of moments rather than `occurred_at__date`: the
+            # same local days, but one the `occurred_at` index answers. The
+            # `__date` cast made the planner expect 68 rows of 12,658 and
+            # nested-loop the whole table — 1.3 s of this page on 60k events.
+            occurred_at__gte=start_of_local_day(start),
+            occurred_at__lt=start_of_local_day(end + timedelta(days=1)),
         ),
         user,
     )

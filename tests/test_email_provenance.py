@@ -73,21 +73,25 @@ def test_each_attachment_keeps_its_own_bytes_and_checksum(
     assert email_version.sha256 not in checksums
 
 
-def test_the_link_row_answers_which_message_an_attachment_came_from(email_version, extract) -> None:
+def test_the_link_row_answers_which_message_an_attachment_came_from(
+    email_version, extract, specialist
+) -> None:
     extract(email_version)
 
-    links = list(attachments_of(email_version))
+    links = list(attachments_of(email_version, viewer=specialist))
     assert [link.declared_filename for link in links] == ["lisa-1.pdf", "markmed.txt"]
     assert all(link.parent_version_id == email_version.pk for link in links)
     assert all(link.disposition == AttachmentDisposition.ATTACHMENT for link in links)
 
     attachment = links[0].attachment_version
-    assert parent_email_of(attachment).parent_version_id == email_version.pk
+    assert parent_email_of(attachment, viewer=specialist).parent_version_id == email_version.pk
 
 
-def test_an_attachment_ordinal_is_its_position_in_the_message(email_version, extract) -> None:
+def test_an_attachment_ordinal_is_its_position_in_the_message(
+    email_version, extract, specialist
+) -> None:
     extract(email_version)
-    assert [link.ordinal for link in attachments_of(email_version)] == [1, 2]
+    assert [link.ordinal for link in attachments_of(email_version, viewer=specialist)] == [1, 2]
 
 
 def test_an_inline_resource_does_not_become_a_document(
@@ -208,12 +212,12 @@ def test_an_attachment_in_a_format_the_store_refuses_is_skipped_not_fatal(
 
 
 def test_an_outlook_message_records_the_same_provenance(
-    normal_matter, capture_evidence, extract
+    normal_matter, capture_evidence, extract, specialist
 ) -> None:
     version = capture_evidence(normal_matter, corpus.outlook_msg(), "kiri.msg", MSG)
     extract(version)
 
-    links = list(attachments_of(version))
+    links = list(attachments_of(version, viewer=specialist))
     assert [link.declared_filename for link in links] == ["lisa-1.pdf"]
     assert links[0].attachment_version.mime_type == "application/pdf"
 
@@ -337,3 +341,39 @@ def test_a_restricted_documents_thumbnail_is_not_served(
 
     assert client.get(f"/dokumendid/pisipilt/{thumbnail.pk}/").status_code == 404
     assert client.get(f"/dokumendid/{version.document_id}/").status_code == 404
+
+
+def test_provenance_names_no_file_the_reader_may_not_open(
+    email_version, extract, client, reader
+) -> None:
+    """Both directions of the provenance block read through `visible_to`.
+
+    Intake copies the message's restriction onto each attachment, so today the
+    two agree. A stored copy is not the rule, though (`app.core.authorization`):
+    once one file is stricter than the other, the page listing it must not print
+    its name, which is what the list shows and what is most telling about it.
+    """
+    from app.core.enums import Visibility
+    from app.documents.models import Document
+
+    extract(email_version)
+    hidden, shown = [
+        link.attachment_version for link in attachments_of(email_version, viewer=reader)
+    ]
+    client.force_login(reader)
+
+    Document.objects.filter(pk=hidden.document_id).update(visibility_override=Visibility.RESTRICTED)
+    assert client.get(f"/dokumendid/{hidden.document_id}/").status_code == 404
+    body = client.get(f"/dokumendid/{email_version.document_id}/").content.decode()
+    assert hidden.original_filename not in body
+    assert shown.original_filename in body
+
+    Document.objects.filter(pk=email_version.document_id).update(
+        visibility_override=Visibility.RESTRICTED
+    )
+    body = client.get(f"/dokumendid/{shown.document_id}/").content.decode()
+    # The attachment's own provenance note, written at intake, still says which
+    # message it came from; that is the attachment's record. What goes is the
+    # link to a page this reader would be refused.
+    assert "See fail oli manus number" not in body
+    assert f'href="/dokumendid/{email_version.document_id}/"' not in body
