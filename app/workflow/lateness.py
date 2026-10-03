@@ -95,7 +95,7 @@ from datetime import date
 from django.db.models import Q
 
 from app.workflow.dates import InvalidPeriod, period_bounds
-from app.workflow.enums import REVIEW_KINDS, DatePrecision
+from app.workflow.enums import OVERDUE_KIND, OVERDUE_SEMANTICS, REVIEW_KINDS, DatePrecision
 
 #: The precisions whose stored date stands for a span of days rather than one.
 #:
@@ -151,15 +151,28 @@ def days_past_period(value: date | None, precision: str, today: date) -> int:
 def overdue_date_q(today: date) -> Q:
     """The date half of "genuinely late", for a ``NextAction`` queryset.
 
-    Only the date. Which kinds may be late at all is
-    :func:`~app.workflow.models.NextActionQuerySet.overdue`'s business and is
-    stated once there, beside the two constants that name it.
+    Only the date. Which kinds may be late at all is :func:`overdue_q`'s half.
     """
     condition = ~Q(date_precision__in=APPROXIMATE_PRECISIONS) & Q(target_date__lt=today)
     for precision in APPROXIMATE_PRECISIONS:
         start, _ = period_bounds(today, precision)
         condition |= Q(date_precision=precision, target_date__lt=start)
     return condition
+
+
+def overdue_q(today: date) -> Q:
+    """Which ``NextAction`` rows are genuinely late — the kind half and the date half.
+
+    Only a DO with a DEADLINE can be late (`OVERDUE_KIND`, `OVERDUE_SEMANTICS`):
+    a WAIT whose review date has passed is due for a look, not missed. Status is
+    the caller's, as it is for :func:`review_due_q`: every caller already asks
+    for open actions in its own way.
+
+    One condition for `NextActionQuerySet.overdue`, the register's
+    `?tegevus=hilinenud` and the «Tähtaeg möödas» statistic, which each wrote
+    the kind half out by hand beside a shared date half.
+    """
+    return Q(kind=OVERDUE_KIND, date_semantics=OVERDUE_SEMANTICS) & overdue_date_q(today)
 
 
 # ---------------------------------------------------------------------------

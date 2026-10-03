@@ -1823,6 +1823,11 @@ def add_source_derived_policy_areas(
         return []
 
     matter.policy_areas.add(*missing)
+    # `updated_at` moves, as `set_policy_areas` and `set_legal_instruments` move
+    # it: `Muuda teemat` replaces the area set wholesale behind the whole-record
+    # token (`matter_revision_token`), and a form opened before this ran would
+    # otherwise pass that check and remove the areas it never showed.
+    matter.save(update_fields=["updated_at"])
     payload: dict[str, Any] = {"policy_area_keys": sorted(area.key for area in missing)}
     if provenance:
         payload["provenance"] = provenance
