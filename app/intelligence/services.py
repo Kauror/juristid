@@ -258,7 +258,12 @@ def update_important_date(
 def cancel_important_date(
     *, record: MatterImportantDate, actor: Any = None, reason: str = ""
 ) -> MatterImportantDate:
-    """The expected milestone is not going to happen. It stays on the record."""
+    """The expected milestone is not going to happen. It stays on the record.
+
+    Decided on the locked row, like every transition here: a second press with
+    a stale ACTIVE copy refuses rather than writing a second cancellation.
+    """
+    record = _lock_for_edit(record, None)
     if record.status != FactStatus.ACTIVE:
         raise DomainError("Ainult kehtivat tähtaega saab tühistada.")
 
@@ -477,6 +482,7 @@ def update_effective_date(
 def cancel_effective_date(
     *, record: MatterEffectiveDate, actor: Any = None, reason: str = ""
 ) -> MatterEffectiveDate:
+    record = _lock_for_edit(record, None)
     if record.status != FactStatus.ACTIVE:
         raise DomainError("Ainult kehtivat jõustumist saab tühistada.")
 
@@ -762,7 +768,12 @@ def confirm_work_victory(*, record: MatterWorkVictory, actor: Any = None) -> Mat
     The audit row carries both statuses and the approver, because "who decided
     this counted, and when" is the first question anybody will ask of a
     published figure (Stage-2G brief 34).
+
+    Decided on the locked row, so a confirmation and a rejection from two tabs
+    cannot both pass on stale copies and leave two contradictory decisions —
+    the second with a `from_status` that was no longer true.
     """
+    record = _lock_for_edit(record, None)
     if record.status == WorkVictoryStatus.CONFIRMED:
         raise DomainError("Töövõit on juba kinnitatud.")
 
@@ -797,6 +808,7 @@ def reject_work_victory(
     *, record: MatterWorkVictory, actor: Any = None, reason: str = ""
 ) -> MatterWorkVictory:
     """Record that a candidate did not come off. Kept, not deleted."""
+    record = _lock_for_edit(record, None)
     if record.status == WorkVictoryStatus.NOT_REALIZED:
         raise DomainError("Töövõit on juba märgitud mitterealiseerunuks.")
 

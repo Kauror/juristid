@@ -1044,6 +1044,31 @@ def test_a_stale_plan_revision_refuses(planned, specialist):
     assert len(_steps(planned)) == 5
 
 
+def test_starting_a_planned_step_moves_the_revision(planned, specialist):
+    """A step a person added is PLANNED already, so starting it changes no state.
+
+    It still changes which steps the editor may move, and an editor drawn
+    before it must refuse: with the old token, `↑` on the step below it swapped
+    a neighbour that editor had never shown (docs/adr/0133 §10).
+    """
+    custom = work_plan.add_plan_step(
+        matter=planned, title="Kohtun ministeeriumiga", actor=specialist
+    )
+    assert custom.state == PlanStepState.PLANNED
+    stale = _revision(planned)
+
+    work_plan.activate_plan_step(matter=planned, step=custom, actor=specialist)
+
+    assert _revision(planned) != stale
+    with pytest.raises(DomainError, match="vahepeal muudetud"):
+        work_plan.move_plan_step(
+            step=_step(planned, "send-opinion"),
+            direction="up",
+            actor=specialist,
+            expected_revision=stale,
+        )
+
+
 def test_editing_a_step_stores_exactly_what_was_chosen(planned, specialist):
     step = _step(planned, "website-overview")
 

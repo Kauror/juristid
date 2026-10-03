@@ -705,9 +705,13 @@ def _start(
         actor=actor,
         plan_step=step,
     )
+    # Saved whether or not the state changes. Starting a step changes which
+    # steps the editor may move, so it must move `plan_revision`; a PLANNED step
+    # left unsaved kept the old token, and a stale `↑/↓` then swapped a
+    # neighbour the editor had never shown (docs/adr/0133 §10).
     if step.state == PlanStepState.SUGGESTED:
         step.state = PlanStepState.PLANNED
-        step.save(update_fields=["state", "updated_at"])
+    step.save(update_fields=["state", "updated_at"])
     _record(
         ChangeEventType.PLAN_STEP_ACTIVATED,
         matter=locked_matter,
