@@ -159,9 +159,11 @@ def test_every_attachment_keeps_its_own_records(
     versions = DocumentVersion.objects.filter(document__in=attachments)
     assert versions.count() == 4
     assert len({version.sha256 for version in versions}) == 4
-    links = list(attachments_of(message))
+    links = list(attachments_of(message, viewer=specialist))
     assert [link.ordinal for link in links] == [1, 2, 3, 4]
-    assert all(parent_email_of(v).parent_version_id == message.pk for v in versions)
+    assert all(
+        parent_email_of(v, viewer=specialist).parent_version_id == message.pk for v in versions
+    )
     operation = email_intake_operation_id(message)
     for event_type in (ChangeEventType.DOCUMENT_CREATED, ChangeEventType.EVIDENCE_VERSION_ADDED):
         events = ChangeEvent.objects.filter(matter=normal_matter, event_type=event_type).exclude(

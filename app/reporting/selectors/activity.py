@@ -36,8 +36,8 @@ from app.reporting.selectors.base import (
     simple_result,
     visible_matters,
 )
-from app.workflow.enums import REVIEW_KINDS, ActionKind, ActionStatus, DateSemantics
-from app.workflow.lateness import overdue_date_q, review_due_q
+from app.workflow.enums import REVIEW_KINDS, ActionStatus
+from app.workflow.lateness import overdue_q, review_due_q
 from app.workflow.models import NextAction
 
 
@@ -172,11 +172,7 @@ def response_deadlines_open(context: ReportingContext) -> MetricResult:
 
 def overdue_do_deadline(context: ReportingContext) -> MetricResult:
     spec = definition(keys.OVERDUE_DO_DEADLINE)
-    actions = open_actions(context).filter(
-        overdue_date_q(context.today),
-        kind=ActionKind.DO,
-        date_semantics=DateSemantics.DEADLINE,
-    )
+    actions = open_actions(context).filter(overdue_q(context.today))
     return simple_result(
         spec,
         context=context,

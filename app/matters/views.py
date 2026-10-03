@@ -15,6 +15,7 @@ Two conventions worth knowing:
 
 from __future__ import annotations
 
+import functools
 import unicodedata
 import uuid
 from collections.abc import Sequence
@@ -357,7 +358,6 @@ def get_visible_matter(request: HttpRequest, pk: Any) -> Matter:
             "owner",
             "stage",
             "addressee_organisation",
-            "superseded_by",
             # The derived register row. Joined rather than reached for, because
             # the page asks it two separate questions — what the register's own
             # JÄRGMISEKS says, and what it observed around the outreach — and a
@@ -370,9 +370,6 @@ def get_visible_matter(request: HttpRequest, pk: Any) -> Matter:
             "policy_areas",
             "tags",
             "collaborators",
-            # `Seotud` reads the successor chain in both directions, and the
-            # reverse side is a relation rather than a column.
-            "supersedes",
         )
     )
     return get_object_or_404(queryset, pk=pk)
@@ -3076,7 +3073,16 @@ def _header_context(
         # nobody else is shown the control, so nobody else pays for the walk. The
         # route keeps every refusal it had; hiding the link is an offer withheld,
         # not the guard (docs/adr/0096 §4).
-        "can_delete": can_write and not plan_matter_deletion(matter).is_blocked,
+        #
+        # **A callable, so the walk runs only where the control is drawn.** The
+        # plan is most of this page's queries (≈150 of ≈210 on a busy file),
+        # and most re-renders of this context — every HTMX save and refusal in
+        # the column — never render `header.html` at all. The template calls it
+        # once, from `{% if can_delete %}`, and `cache` keeps a second reference
+        # from walking again.
+        "can_delete": functools.cache(
+            lambda: can_write and not plan_matter_deletion(matter).is_blocked
+        ),
         # No `submission_count`. The tab that displayed it is gone, and a count
         # nothing renders is a query nothing needs.
         "document_count": Document.objects.filter(matter=matter).visible_to(request.user).count(),
@@ -7479,13 +7485,6 @@ def _record_external_position(
     happens inside the save's own transaction, so a refusal further down leaves
     no institution behind (docs/adr/0073, docs/adr/0084 §4).
 
-    The institution is answered either by the picker's radio group or by the name
-    somebody typed into it, and which of the two wins is `resolve_addressee`'s
-    rule, shared rather than restated: a typed name is a deliberate act and beats
-    a chip that was merely left selected. Resolution happens inside the save's own
-    transaction, so a refusal further down leaves no institution behind
-    (docs/adr/0073, docs/adr/0084 §4).
-
     **Received feedback may name no institution at all**, and that is the one
     place the two panels diverge here: `resolve_addressee` is asked only when
     something was chosen or typed, because calling it with two empty answers
@@ -7506,49 +7505,55 @@ def _record_external_position(
     chosen = form.cleaned_data.get("organisation")
     typed = (form.cleaned_data.get("organisation_name") or "").strip()
     try:
-        workspace.add_matter_external_position(
-            matter=matter,
-            author=request.user,
-            # `None` where neither half of the picker was answered. The form has
-            # already refused that on `+ Teiste arvamus` — a published opinion
-            # with no author is an anonymous claim — so reaching here with
-            # nothing is received feedback that names nobody, which since
-            # docs/adr/0101 is a record rather than a gap: a lawyer writing down
-            # what a member said on the telephone has neither a catalogue row
-            # nor a collection to name (OWNER-01).
-            organisation=(
-                resolve_addressee(chosen=chosen, typed_name=typed)
-                if (chosen is not None or typed)
-                else None
-            ),
-            provenance=form_class.provenance,
-            # **The three answers neither panel asks any more**, and each of
-            # them is a `.get` on a field the form does not declare — so this is
-            # not a view choosing to ignore a value, it is a value that has
-            # nowhere to arrive. A POST carrying `source_label`, `lawyer_note`
-            # or `engagement` to either endpoint reaches a form that never
-            # cleaned it, and what reaches the service is the empty answer
-            # below. `Muuda` still asks all three, and every stored row keeps
-            # what it has (docs/adr/0095 §5).
-            source_label=form.cleaned_data.get("source_label") or "",
-            url=form.cleaned_data.get("url") or "",
-            # The resolved anchor and its precision. On these two panels that is
-            # the day box itself at `EXACT`: the period fields are not on the
-            # form, so a crafted `..._precision=QUARTER` is read by nothing
-            # (`ExternalPositionFieldsMixin.offers_precision`).
-            stated_on=form.cleaned_data.get("stated_on_value"),
-            stated_on_precision=form.cleaned_data["stated_on_precision"],
-            summary=form.cleaned_data.get("summary") or "",
-            lawyer_note=form.cleaned_data.get("lawyer_note") or "",
-            # `Liige`, and only from the panel that asks it. `+ Teiste arvamus`
-            # declares no such field, so this is `None` there — and the service
-            # refuses a `True` on that provenance in any case, because the box
-            # being absent and the value being refused are two separate defences
-            # (docs/adr/0095 §4).
-            source_is_member=bool(form.cleaned_data.get("source_is_member")),
-            engagement=form.cleaned_data.get("engagement"),
-            uploads=form.cleaned_data["attachments"],
-        )
+        # One transaction around the resolution and the save. A typed name the
+        # picker does not know becomes a new institution *while the arguments
+        # are evaluated*, which is before the use case's own transaction opens;
+        # without this, a refusal under the lock — a closed Matter in a stale
+        # tab, a rejected upload — left that institution in the catalogue.
+        with transaction.atomic():
+            workspace.add_matter_external_position(
+                matter=matter,
+                author=request.user,
+                # `None` where neither half of the picker was answered. The form has
+                # already refused that on `+ Teiste arvamus` — a published opinion
+                # with no author is an anonymous claim — so reaching here with
+                # nothing is received feedback that names nobody, which since
+                # docs/adr/0101 is a record rather than a gap: a lawyer writing down
+                # what a member said on the telephone has neither a catalogue row
+                # nor a collection to name (OWNER-01).
+                organisation=(
+                    resolve_addressee(chosen=chosen, typed_name=typed)
+                    if (chosen is not None or typed)
+                    else None
+                ),
+                provenance=form_class.provenance,
+                # **The three answers neither panel asks any more**, and each of
+                # them is a `.get` on a field the form does not declare — so this is
+                # not a view choosing to ignore a value, it is a value that has
+                # nowhere to arrive. A POST carrying `source_label`, `lawyer_note`
+                # or `engagement` to either endpoint reaches a form that never
+                # cleaned it, and what reaches the service is the empty answer
+                # below. `Muuda` still asks all three, and every stored row keeps
+                # what it has (docs/adr/0095 §5).
+                source_label=form.cleaned_data.get("source_label") or "",
+                url=form.cleaned_data.get("url") or "",
+                # The resolved anchor and its precision. On these two panels that is
+                # the day box itself at `EXACT`: the period fields are not on the
+                # form, so a crafted `..._precision=QUARTER` is read by nothing
+                # (`ExternalPositionFieldsMixin.offers_precision`).
+                stated_on=form.cleaned_data.get("stated_on_value"),
+                stated_on_precision=form.cleaned_data["stated_on_precision"],
+                summary=form.cleaned_data.get("summary") or "",
+                lawyer_note=form.cleaned_data.get("lawyer_note") or "",
+                # `Liige`, and only from the panel that asks it. `+ Teiste arvamus`
+                # declares no such field, so this is `None` there — and the service
+                # refuses a `True` on that provenance in any case, because the box
+                # being absent and the value being refused are two separate defences
+                # (docs/adr/0095 §4).
+                source_is_member=bool(form.cleaned_data.get("source_is_member")),
+                engagement=form.cleaned_data.get("engagement"),
+                uploads=form.cleaned_data["attachments"],
+            )
     except (DomainError, UploadRejected) as error:
         return _workspace_refusal(request, matter, key=key, form=form, error=str(error))
     return _render_overview(request, matter)
@@ -7742,49 +7747,55 @@ def update_external_position_view(request: HttpRequest, pk: Any, position_id: An
         return _external_position_row(request, matter, position, form=form, status=400)
 
     try:
-        corrected = correct_external_position(
-            position=position,
-            organisation=resolve_addressee(
-                chosen=form.cleaned_data.get("organisation"),
-                typed_name=form.cleaned_data.get("organisation_name") or "",
-            ),
-            url=form.cleaned_data.get("url") or "",
-            stated_on=form.cleaned_data.get("stated_on_value"),
-            stated_on_precision=form.cleaned_data["stated_on_precision"],
-            summary=form.cleaned_data.get("summary") or "",
-            lawyer_note=form.cleaned_data.get("lawyer_note") or "",
-            # `Allikas` only where the record may have one — the box is not on
-            # the form otherwise, and passing a value the record's provenance
-            # forbids is what `_external_position_authorship` refuses.
-            source_label=form.cleaned_data.get("source_label") or "",
-            # `Liige`, on the same terms. `None` where the form does not render
-            # the box, so a correction through that shape cannot clear a mark;
-            # `bool(...)` where it does, because an unticked box is a decision
-            # and not an absence (QA-014).
-            source_is_member=(
-                bool(form.cleaned_data.get("source_is_member"))
-                if "source_is_member" in form.fields
-                else None
-            ),
-            # **Not asked and not moved.** `None` is the sentinel for «this form
-            # did not render the control», which is what keeps a `LEGACY` row's
-            # unspecified provenance through a correction and what stops one press
-            # turning received feedback into a discovered opinion
-            # (docs/adr/0091 §3.4, §3.5).
-            provenance=None,
-            # `Seotud kaasamine` as the person left it. «Jääb samaks» is what
-            # the form offers — and pre-selects — when the stored round is one
-            # this reader may not see, so a correction of the date or the text
-            # leaves that relation exactly as it was instead of clearing it
-            # because the round was not in the list (ENG-047).
-            engagement=(
-                position.engagement
-                if form.cleaned_data.get("engagement") == ENGAGEMENT_UNCHANGED
-                else form.cleaned_data.get("engagement")
-            ),
-            actor=request.user,
-            expected_revision=form.cleaned_data.get("revision") or "",
-        )
+        # One transaction around the resolution and the save. A typed name the
+        # picker does not know becomes a new institution *while the arguments
+        # are evaluated*, which is before the use case's own transaction opens;
+        # without this, a refusal under the lock — a closed Matter in a stale
+        # tab, a rejected upload — left that institution in the catalogue.
+        with transaction.atomic():
+            corrected = correct_external_position(
+                position=position,
+                organisation=resolve_addressee(
+                    chosen=form.cleaned_data.get("organisation"),
+                    typed_name=form.cleaned_data.get("organisation_name") or "",
+                ),
+                url=form.cleaned_data.get("url") or "",
+                stated_on=form.cleaned_data.get("stated_on_value"),
+                stated_on_precision=form.cleaned_data["stated_on_precision"],
+                summary=form.cleaned_data.get("summary") or "",
+                lawyer_note=form.cleaned_data.get("lawyer_note") or "",
+                # `Allikas` only where the record may have one — the box is not on
+                # the form otherwise, and passing a value the record's provenance
+                # forbids is what `_external_position_authorship` refuses.
+                source_label=form.cleaned_data.get("source_label") or "",
+                # `Liige`, on the same terms. `None` where the form does not render
+                # the box, so a correction through that shape cannot clear a mark;
+                # `bool(...)` where it does, because an unticked box is a decision
+                # and not an absence (QA-014).
+                source_is_member=(
+                    bool(form.cleaned_data.get("source_is_member"))
+                    if "source_is_member" in form.fields
+                    else None
+                ),
+                # **Not asked and not moved.** `None` is the sentinel for «this form
+                # did not render the control», which is what keeps a `LEGACY` row's
+                # unspecified provenance through a correction and what stops one press
+                # turning received feedback into a discovered opinion
+                # (docs/adr/0091 §3.4, §3.5).
+                provenance=None,
+                # `Seotud kaasamine` as the person left it. «Jääb samaks» is what
+                # the form offers — and pre-selects — when the stored round is one
+                # this reader may not see, so a correction of the date or the text
+                # leaves that relation exactly as it was instead of clearing it
+                # because the round was not in the list (ENG-047).
+                engagement=(
+                    position.engagement
+                    if form.cleaned_data.get("engagement") == ENGAGEMENT_UNCHANGED
+                    else form.cleaned_data.get("engagement")
+                ),
+                actor=request.user,
+                expected_revision=form.cleaned_data.get("revision") or "",
+            )
     except ExternalPositionConflict as conflict:
         # 409, and nothing was written — not the metadata and not the source.
         # The form stays open holding this person's values and the version that
@@ -7888,38 +7899,46 @@ def add_koda_opinion(request: HttpRequest, pk: Any) -> HttpResponse:
     if not form.is_valid():
         return _workspace_refusal(request, matter, key=key, form=form)
     try:
-        result = workspace.add_matter_koda_opinion(
-            plan_step_id=launch[1] if launch else None,
-            # The step `Märgi praegune tegevus tehtuks` named, when it was
-            # ticked: fetched through `visible_to` first, so an identifier for a
-            # step this reader may not see answers 404 rather than confirming it
-            # exists, and whether it is still the open one is the use case's
-            # question under the lock (docs/adr/0126 §2).
-            complete_action_id=(launch[0] if launch else _named_action_id(request, matter, form)),
-            matter=matter,
-            author=request.user,
-            upload=form.cleaned_data["upload"],
-            # The bodies chosen, plus at most one somebody named through the
-            # picker's `+`. `resolve_addressee` is asked only when there is a
-            # name — the same rule the feedback panels use, and it runs inside
-            # the save's own transaction, so a refused upload leaves no
-            # institution behind (docs/adr/0073, docs/adr/0095 §1).
-            recipients=_koda_opinion_recipients(form),
-            sent_on=form.cleaned_data["sent_on"],
-            # **No title from this panel.** `Pealkiri` is not asked any more, so
-            # the blank that `add_matter_koda_opinion` has always answered with
-            # the uploaded file's own name is what it gets — a truthful identity
-            # somebody chose, rather than a headline cut out of the summary
-            # (docs/adr/0095 §2).
-            summary=form.cleaned_data.get("summary") or "",
-            # `Töödokumendid`: the editable file the letter was drafted in,
-            # filed as `Töödokument` under this same opinion and never as what
-            # was sent (docs/adr/0129 §2).
-            working_uploads=form.cleaned_data.get("working_files") or [],
-            # `Uus hetkeseis`: the file moves on after the opinion, which stays
-            # in the period it was written in (docs/adr/0131 §5).
-            stage=form.cleaned_data.get("stage"),
-        )
+        # One transaction around the resolution and the save. A typed name the
+        # picker does not know becomes a new institution *while the arguments
+        # are evaluated*, which is before the use case's own transaction opens;
+        # without this, a refusal under the lock — a closed Matter in a stale
+        # tab, a rejected upload — left that institution in the catalogue.
+        with transaction.atomic():
+            result = workspace.add_matter_koda_opinion(
+                plan_step_id=launch[1] if launch else None,
+                # The step `Märgi praegune tegevus tehtuks` named, when it was
+                # ticked: fetched through `visible_to` first, so an identifier for a
+                # step this reader may not see answers 404 rather than confirming it
+                # exists, and whether it is still the open one is the use case's
+                # question under the lock (docs/adr/0126 §2).
+                complete_action_id=(
+                    launch[0] if launch else _named_action_id(request, matter, form)
+                ),
+                matter=matter,
+                author=request.user,
+                upload=form.cleaned_data["upload"],
+                # The bodies chosen, plus at most one somebody named through the
+                # picker's `+`. `resolve_addressee` is asked only when there is a
+                # name — the same rule the feedback panels use, and it runs inside
+                # the save's own transaction, so a refused upload leaves no
+                # institution behind (docs/adr/0073, docs/adr/0095 §1).
+                recipients=_koda_opinion_recipients(form),
+                sent_on=form.cleaned_data["sent_on"],
+                # **No title from this panel.** `Pealkiri` is not asked any more, so
+                # the blank that `add_matter_koda_opinion` has always answered with
+                # the uploaded file's own name is what it gets — a truthful identity
+                # somebody chose, rather than a headline cut out of the summary
+                # (docs/adr/0095 §2).
+                summary=form.cleaned_data.get("summary") or "",
+                # `Töödokumendid`: the editable file the letter was drafted in,
+                # filed as `Töödokument` under this same opinion and never as what
+                # was sent (docs/adr/0129 §2).
+                working_uploads=form.cleaned_data.get("working_files") or [],
+                # `Uus hetkeseis`: the file moves on after the opinion, which stays
+                # in the period it was written in (docs/adr/0131 §5).
+                stage=form.cleaned_data.get("stage"),
+            )
     except (DomainError, UploadRejected) as error:
         return _workspace_refusal(request, matter, key=key, form=form, error=str(error))
     if result.closed:
@@ -8079,30 +8098,29 @@ def _timeline_steps_form(
     withholding the box would leave a phase with no date and no way to give it
     one (QA-006, QA-007).
     """
-    from app.matters.models import MatterTimelineStep
-
     phases = legal_process.phase_context(matter=matter)
-    visible = list(
-        MatterTimelineStep.objects.filter(matter=matter)
-        .visible_to(request.user)
-        .order_by("created_at", "id")
-    )
-    rows = {row.phase_key: row for row in visible if not row.is_added}
+    # The step rows read once and handed to both rail helpers, as the Matter
+    # page does (`_overview_context`); each re-read them on its own before.
+    step_rows = legal_process.timeline_step_rows(matter=matter, user=request.user)
+    rows, added_rows = step_rows
     # **`+ Lisa samm` places a step after something the person can see**, so the
     # panel reads the rail exactly as the page draws it — the same three reads,
     # the same merge — and offers its items, in its order (docs/adr/0119 §2).
     drawn = matter_rail(
         matter=matter,
         user=request.user,
-        rail=legal_process_rail(matter=matter, user=request.user, context=phases),
+        rail=legal_process_rail(
+            matter=matter, user=request.user, context=phases, step_rows=step_rows
+        ),
         milestones=process_steps(matter=matter, user=request.user),
+        step_rows=step_rows,
     )
     placed_after = {
         step.key: (drawn[index - 1].key if index else "")
         for index, step in enumerate(drawn)
         if step.kind == legal_process.KIND_STEP
     }
-    by_key = {row.rail_key: row for row in visible if row.is_added}
+    by_key = {row.rail_key: row for row in added_rows}
     added = [by_key[step.key] for step in drawn if step.key in by_key]
     return TimelineStepsForm(
         data,
