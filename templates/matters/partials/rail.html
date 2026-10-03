@@ -315,12 +315,17 @@ whose addressee nobody recorded should look short, not incomplete.
   {% comment %}
     Seotud — the canonical relations, in both directions. `supersedes` is the
     reverse of `superseded_by`, so a Matter that continued somebody else's work
-    says so without anything being stored twice (app/matters/models.py).
+    says so without anything being stored twice (app/matters/models.py). Both
+    ends are read through the reader's own scope, never off the instance: either
+    may be restricted while this one is not
+    (app/matters/templatetags/continuations.py).
   {% endcomment %}
-  {% if matter.superseded_by or matter.supersedes.all or matter.collaborators.all %}
+  {% load continuations %}
+  {% readable_continuations matter as continuations %}
+  {% if continuations or matter.collaborators.all %}
     <div class="railcard">
       <span class="railcard__label">Seotud</span>
-      {% for earlier in matter.supersedes.all %}
+      {% for earlier in continuations.earlier %}
         <div class="railcard__row">
           <span class="railcard__key">Eelnev teema</span>
           <a href="{% url 'matters:matter_detail' pk=earlier.pk %}">
@@ -328,11 +333,11 @@ whose addressee nobody recorded should look short, not incomplete.
           </a>
         </div>
       {% endfor %}
-      {% if matter.superseded_by %}
+      {% if continuations.later %}
         <div class="railcard__row">
           <span class="railcard__key">Jätkub teemana</span>
-          <a href="{% url 'matters:matter_detail' pk=matter.superseded_by.pk %}">
-            {{ matter.superseded_by.title|truncatechars:40 }} →
+          <a href="{% url 'matters:matter_detail' pk=continuations.later.pk %}">
+            {{ continuations.later.title|truncatechars:40 }} →
           </a>
         </div>
       {% endif %}
