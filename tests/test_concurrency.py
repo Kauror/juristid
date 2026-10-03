@@ -29,7 +29,7 @@ from app.documents.services import (
 )
 from app.matters import workspace
 from app.matters.locks import CLOSED_MATTER_REFUSAL
-from app.matters.models import Entry, EntryRevision, Matter
+from app.matters.models import Entry, EntryRevision, Matter, MatterProceduralDevelopment
 from app.matters.services import add_entry, close_matter, edit_entry
 from app.related_materials.models import MatterRelation
 from app.related_materials.services import link_related_matters
@@ -619,8 +619,10 @@ def test_closing_while_adding_content_cannot_leave_the_content(specialist):
                 holder_ready.set()
                 closer_started.wait(timeout=LOCK_WAIT_TIMEOUT)
                 wait_for_a_blocked_backend()
-                workspace.add_matter_note(
-                    matter=matter, author=specialist, body="<p>Võidujooksu märge.</p>"
+                # `+ Märge` — the current way content is added to a file
+                # (`add_matter_note` was retired, ENG-050B).
+                workspace.add_procedural_development(
+                    matter=matter, author=specialist, title="Võidujooksu märge."
                 )
             outcomes.append("note-written")
         except DomainError:
@@ -646,15 +648,15 @@ def test_closing_while_adding_content_cannot_leave_the_content(specialist):
     assert failures == [], failures
     matter.refresh_from_db()
 
-    entries = Entry.objects.filter(matter=matter)
-    # Exactly one serialisation won, and the pair is consistent: an entry exists
+    notes = MatterProceduralDevelopment.objects.filter(matter=matter)
+    # Exactly one serialisation won, and the pair is consistent: a `Märge` exists
     # only if it was written before the closure committed.
     assert "closed" in outcomes, outcomes
     if "note-refused" in outcomes:
-        assert entries.count() == 0, outcomes
+        assert notes.count() == 0, outcomes
     else:
         assert "note-written" in outcomes, outcomes
-        assert entries.count() == 1, outcomes
+        assert notes.count() == 1, outcomes
 
 
 def test_a_closure_that_commits_first_refuses_the_later_write(specialist):
@@ -667,7 +669,6 @@ def test_a_closure_that_commits_first_refuses_the_later_write(specialist):
     close_matter(matter=matter, disposition="COMPLETED", actor=specialist)
 
     for call in (
-        lambda: workspace.add_matter_note(matter=matter, author=specialist, body="<p>Hiline.</p>"),
         lambda: workspace.add_matter_engagement(
             matter=matter, author=specialist, kind="SURVEY", audience="Liikmed"
         ),
