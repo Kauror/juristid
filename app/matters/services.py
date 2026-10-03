@@ -790,14 +790,44 @@ class StageMove:
     closes: bool = False
 
 
+#: What an ordinary `Hetkeseis` change on a closed Matter is told (RULE-03).
+#: One sentence for every door that reaches it — the header, `Muuda teemat`, a
+#: crafted POST — and shown on `Muuda teemat` beside a closed file's stage.
+CLOSED_MATTER_STAGE_REFUSAL = "Suletud teema hetkeseisu ei saa muuta. Ava teema esmalt uuesti."
+
+
 def _move_stage(*, matter: Matter, stage: Any, actor: Any, origin: str) -> StageMove:
     """Matter.stage, the period it ends, the period it starts and the event — one write.
 
     The row is locked and its stage re-read under the lock: «is this a move at
     all» is a question about the committed row, never about the instance the
     caller fetched before somebody else's save.
+
+    **A closed Matter stays in the period it was closed in** (docs/adr/0131
+    §12). Its stage moves only through `Ava uuesti` —
+    `reopen_matter_into_stage`, which moves it and reopens the file in one act —
+    so a move here on a closed row is refused: from a stale tab that still
+    showed the file open, from `Muuda teemat`, from a crafted POST. Clearing the
+    stage is a move. The same stage again is not, so a correction of anything
+    else on a closed file, whose form posts the stage it holds, still saves.
+    Decided on the locked row, after any closure that committed first.
     """
     locked = lock_matter_for_write(matter.pk)
+    if not locked.is_open and locked.stage_id != getattr(stage, "pk", None):
+        raise DomainError(CLOSED_MATTER_STAGE_REFUSAL)
+    return _move_locked_stage(locked=locked, matter=matter, stage=stage, actor=actor, origin=origin)
+
+
+def _move_locked_stage(
+    *, locked: Matter, matter: Matter, stage: Any, actor: Any, origin: str
+) -> StageMove:
+    """The move itself, on a row the caller has locked and judged.
+
+    No open-or-closed question: `_move_stage` asks it for every ordinary move,
+    and `reopen_matter_into_stage` — the one act allowed to move a closed
+    file's stage — calls this directly with the row it locked. Nothing else
+    should.
+    """
     previous = locked.stage
     if previous == stage:
         matter.stage = previous
@@ -885,6 +915,11 @@ def stage_transition(
     Matter closes it on the way out, in the same transaction, so a closure never
     precedes the act it was recorded with — the order `_apply_closure` has always
     kept. A refusal anywhere inside rolls back all of it.
+
+    Only on an open Matter, unless the stage is the one it already holds
+    (`_move_stage`, RULE-03): a closed file's stage moves through
+    `reopen_matter_into_stage`. The register refresh is not a caller — it
+    turns the period directly, as an import (`refresh_matter_from_register`).
     """
     with transaction.atomic():
         move = _move_stage(matter=matter, stage=stage, actor=actor, origin=origin)
@@ -904,8 +939,10 @@ def change_stage(
     """Record where the external process now stands, as a new `Hetkeseis` period.
 
     `stage_transition` with nothing recorded inside it — the shape every
-    surface that only moves the stage uses: `Muuda teemat`, the header's own
-    control, the register refresh.
+    surface that only moves the stage uses: `Muuda teemat` and the header's own
+    control. The register refresh is not one of them: it turns the period
+    itself, as an import, and never closes or reopens anything
+    (`refresh_matter_from_register`).
 
     **Superseded in part on 2026-10-02 by docs/adr/0131 §10.** This used to
     say that a stage change says nothing about whether Koda is finished, and
@@ -913,6 +950,9 @@ def change_stage(
     «Rohkem ei tegele» close an open Matter in the same transaction, and
     «Jõustumise ootel» still does not. Every other stage is exactly what it
     was — where the external process stands.
+
+    A closed Matter refuses a move here with `CLOSED_MATTER_STAGE_REFUSAL`;
+    its stage is chosen again in `Ava uuesti` (RULE-03).
     """
     with stage_transition(matter=matter, stage=stage, actor=actor, origin=origin):
         pass
@@ -5332,7 +5372,16 @@ def reopen_matter_into_stage(*, matter: Matter, stage: Any, actor: Any = None) -
     if locked.is_open:
         raise DomainError("Teema on juba avatud.")
 
-    move = _move_stage(matter=matter, stage=stage, actor=actor, origin=StageEpisodeOrigin.RECORDED)
+    # Directly on the row locked above, past `_move_stage`'s closed-file
+    # refusal: this is the one act that moves a closed file's stage, and it
+    # reopens the file in the same transaction (RULE-03).
+    move = _move_locked_stage(
+        locked=locked,
+        matter=matter,
+        stage=stage,
+        actor=actor,
+        origin=StageEpisodeOrigin.RECORDED,
+    )
     episode = move.incoming if move.moved else ensure_current_stage_episode(matter=matter)
     return reopen_matter(matter=matter, actor=actor, stage_episode=episode)
 
