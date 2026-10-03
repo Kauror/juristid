@@ -28,15 +28,14 @@ from app.documents.enums import DocumentRole, ExtractionState
 from app.documents.models import Document
 from app.documents.preview import STATE_LABELS
 from app.documents.services import add_evidence_version, create_document, link_working_document
-from app.intelligence.enums import WorkVictoryStatus
-from app.intelligence.models import MatterImportantDate, MatterWorkVictory
-from app.matters import selectors
+from app.intelligence.models import MatterImportantDate
+from app.matters import selectors, workspace
 from app.matters.enums import EngagementKind
-from app.matters.models import Entry, MatterEngagement, MatterPersonalNote
+from app.matters.models import MatterPersonalNote
 from app.matters.services import (
     add_engagement,
+    add_entry,
     close_matter,
-    compose_update,
     matter_field_revision,
     personal_note_for,
     save_personal_note,
@@ -47,7 +46,6 @@ from app.matters.timeline import matter_timeline
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
 from app.workflow.enums import ActionKind, DatePrecision, DateSemantics, Disposition
-from app.workflow.models import NextAction
 from app.workflow.services import current_next_action, set_next_action
 from tests import factories
 from tests.refusals import refused
@@ -533,12 +531,13 @@ def test_the_next_step_is_what_was_typed_into_it_verbatim(signed_in, normal_matt
     from: the description used to *be* the step, and now the step has its own
     (ADR 0052 §2).
     """
+    # `+ Järgmine tegevus` / `Muuda` — the box the step is typed into now
+    # (the composer that carried it went with ENG-050A2).
     signed_in.post(
-        reverse("matters:compose", kwargs={"pk": normal_matter.pk}),
+        reverse("matters:set_action", kwargs={"pk": normal_matter.pk}),
         {
-            "body": "<p>Käisin Rahandusministeeriumi kohtumisel.</p>",
-            "next_text": "Esitan Koja arvamuse Rahandusministeeriumile EIS-i kaudu",
-            "next_date": format_estonian_date(timezone.localdate() + timedelta(days=7)),
+            "text": "Esitan Koja arvamuse Rahandusministeeriumile EIS-i kaudu",
+            "target_date": format_estonian_date(timezone.localdate() + timedelta(days=7)),
         },
         headers={"HX-Request": "true"},
     )
@@ -546,90 +545,6 @@ def test_the_next_step_is_what_was_typed_into_it_verbatim(signed_in, normal_matt
     action = current_next_action(normal_matter)
     assert action is not None
     assert action.text == "Esitan Koja arvamuse Rahandusministeeriumile EIS-i kaudu"
-    # And the description stayed the description.
-    assert "Käisin" not in action.text
-
-
-def test_an_entry_saves_alone(normal_matter, specialist):
-    result = compose_update(matter=normal_matter, author=specialist, body="<p>Lihtsalt märkus.</p>")
-
-    assert result.entry is not None
-    assert result.action is None
-    assert result.closed is False
-
-
-def test_a_next_step_saves_alone(normal_matter, specialist):
-    result = compose_update(
-        matter=normal_matter,
-        author=specialist,
-        next_action={"text": "Ainult samm", "kind": ActionKind.WAIT},
-    )
-
-    assert result.entry is None
-    assert result.action is not None
-    # No empty synthetic entry is manufactured to carry it.
-    assert not Entry.objects.filter(matter=normal_matter).exists()
-
-
-def test_one_save_can_write_everything_at_once(normal_matter, specialist, organisation):
-    today = timezone.localdate()
-    result = compose_update(
-        matter=normal_matter,
-        author=specialist,
-        body="<p>Kohtumine RaM maksupoliitika osakonnaga.</p>",
-        next_action={
-            "text": "Esitan arvamuse",
-            "kind": ActionKind.DO,
-            "target_date": today + timedelta(days=7),
-        },
-        important_date={
-            "title": "Kooskõlastusringi lõpp",
-            "date_value": today + timedelta(days=20),
-            "period_end": today + timedelta(days=20),
-        },
-        engagement={
-            "kind": EngagementKind.SURVEY,
-            "title": "Liikmete küsitlus aruandluskoormuse kohta",
-            "occurred_on": today,
-        },
-    )
-
-    assert result.entry is not None
-    assert result.action is not None
-    assert result.important_date is not None
-    assert result.engagement is not None
-    assert result.operation_id is not None
-
-
-def test_an_invalid_sub_action_rolls_back_the_whole_save(normal_matter, specialist):
-    """Atomicity is the substance of the composer, not a technicality."""
-
-    before = Entry.objects.filter(matter=normal_matter).count()
-
-    with refused("Kaasamisel peab olema pealkiri."):
-        compose_update(
-            matter=normal_matter,
-            author=specialist,
-            body="<p>See ei tohi alles jääda.</p>",
-            engagement={"kind": EngagementKind.SURVEY, "title": "   "},
-        )
-
-    assert Entry.objects.filter(matter=normal_matter).count() == before
-    assert not MatterEngagement.objects.filter(matter=normal_matter).exists()
-
-
-def test_the_composer_checks_its_own_authorization(client, normal_matter):
-    """A unified surface is not a unified rule set."""
-    reader = factories.ReaderFactory()
-    client.force_login(reader)
-
-    response = client.post(
-        reverse("matters:compose", kwargs={"pk": normal_matter.pk}),
-        {"body": "<p>Ei tohi salvestuda.</p>"},
-    )
-
-    assert response.status_code == 404
-    assert not Entry.objects.filter(matter=normal_matter).exists()
 
 
 # ---------------------------------------------------------------------------
@@ -637,63 +552,68 @@ def test_the_composer_checks_its_own_authorization(client, normal_matter):
 # ---------------------------------------------------------------------------
 
 
-def test_one_composer_save_is_one_timeline_item(normal_matter, specialist):
+def _finish_with_a_next_step(matter, author):
+    """`PRAEGUNE TEGEVUS` → `Salvesta` with `Järgmisena`: one act, three facts.
+
+    The current operation that writes an entry and a step together — the
+    composer that used to was retired with ENG-050A2.
+    """
     today = timezone.localdate()
-    compose_update(
-        matter=normal_matter,
-        author=specialist,
-        body="<p>Kohtumine ministeeriumiga.</p>",
-        next_action={
-            "text": "Esitan arvamuse",
-            "kind": ActionKind.DO,
-            "target_date": today + timedelta(days=7),
-        },
-        important_date={
-            "title": "Kooskõlastusringi lõpp",
-            "date_value": today + timedelta(days=20),
-            "period_end": today + timedelta(days=20),
-        },
+    open_step = set_next_action(
+        matter=matter,
+        text="Kohtun ministeeriumiga",
+        kind=ActionKind.DO,
+        target_date=today + timedelta(days=1),
+        actor=author,
     )
+    before = set(ChangeEvent.objects.filter(matter=matter).values_list("pk", flat=True))
+    workspace.complete_current_action(
+        matter=matter,
+        author=author,
+        action_id=open_step.pk,
+        body="<p>Kohtumine ministeeriumiga.</p>",
+        next_text="Esitan arvamuse",
+        next_date=today + timedelta(days=7),
+    )
+    return ChangeEvent.objects.filter(matter=matter).exclude(pk__in=before)
+
+
+def test_one_act_is_one_timeline_item(normal_matter, specialist):
+    _finish_with_a_next_step(normal_matter, specialist)
 
     items, _more = matter_timeline(matter=normal_matter, user=specialist, limit=50)
     saves = [item for item in items if item.is_grouped]
 
     assert len(saves) == 1
-    # «lisas olulise tähtaja» is no longer a clause. The approved target gives
-    # the deadline a milestone row of its own, projected from the canonical
-    # `MatterImportantDate`, so a clause here would state one act twice: «Marko
-    # lisas märkuse ja lisas olulise tähtaja» directly above «Kooskõlastusringi
-    # lõpp» (docs/adr/0074 §14).
-    assert saves[0].summary_sentence == "lisas märkuse ja määras järgmise sammu"
+    assert saves[0].summary_sentence == (
+        "lisas märkuse, määras järgmise sammu ja märkis eelmise sammu tehtuks"
+    )
 
 
 def test_the_underlying_audit_facts_are_all_still_there(normal_matter, specialist):
     """Grouped for a reader, never merged in the record."""
-    today = timezone.localdate()
-    compose_update(
-        matter=normal_matter,
-        author=specialist,
-        body="<p>Kohtumine.</p>",
-        next_action={
-            "text": "Esitan arvamuse",
-            "kind": ActionKind.DO,
-            "target_date": today + timedelta(days=7),
-        },
-    )
-
-    events = ChangeEvent.objects.filter(matter=normal_matter)
+    events = _finish_with_a_next_step(normal_matter, specialist)
     types = set(events.values_list("event_type", flat=True))
 
-    assert ChangeEventType.ENTRY_ADDED in types
-    assert ChangeEventType.NEXT_ACTION_SET in types
-    operations = {event.operation_id for event in events if event.operation_id is not None}
-    assert len(operations) == 1
+    assert types == {
+        ChangeEventType.ENTRY_ADDED,
+        ChangeEventType.NEXT_ACTION_COMPLETED,
+        ChangeEventType.NEXT_ACTION_SET,
+    }
+    operations = {event.operation_id for event in events}
+    assert len(operations) == 1 and None not in operations
 
 
 def test_unrelated_saves_are_never_grouped(normal_matter, specialist):
     """Two clicks a second apart are two things somebody did."""
-    compose_update(matter=normal_matter, author=specialist, body="<p>Esimene.</p>")
-    compose_update(matter=normal_matter, author=specialist, body="<p>Teine.</p>")
+    # Two acts, each its own operation — the shape every current workspace
+    # operation has (`composer_operation` around the `add_entry` primitive).
+    from app.audit.operations import composer_operation
+    from app.matters.services import add_entry
+
+    for body in ("<p>Esimene.</p>", "<p>Teine.</p>"):
+        with composer_operation():
+            add_entry(matter=normal_matter, author=specialist, body=body)
 
     items, _more = matter_timeline(matter=normal_matter, user=specialist, limit=50)
     entries = [item for item in items if item.is_entry]
@@ -726,7 +646,7 @@ def test_a_standalone_engagement_writes_no_timeline_row(normal_matter, specialis
 
 def test_the_timeline_paginates(normal_matter, specialist):
     for index in range(40):
-        compose_update(matter=normal_matter, author=specialist, body=f"<p>Kirje {index}</p>")
+        add_entry(matter=normal_matter, author=specialist, body=f"<p>Kirje {index}</p>")
 
     page, has_more = matter_timeline(matter=normal_matter, user=specialist, limit=30)
 
@@ -737,7 +657,7 @@ def test_the_timeline_paginates(normal_matter, specialist):
 def test_the_collapsed_timeline_does_not_render_everything(signed_in, specialist):
     matter = factories.MatterFactory(owner=specialist)
     for index in range(60):
-        compose_update(matter=matter, author=specialist, body=f"<p>Kirje {index}</p>")
+        add_entry(matter=matter, author=specialist, body=f"<p>Kirje {index}</p>")
 
     body = _detail(signed_in, matter)
 
@@ -834,93 +754,15 @@ def test_an_engagement_can_carry_a_linked_file(normal_matter, specialist):
 # ---------------------------------------------------------------------------
 
 
-def test_closing_from_the_composer_ends_the_open_step(normal_matter, specialist):
-    set_next_action(
-        matter=normal_matter,
-        text="Esitan arvamuse",
-        kind=ActionKind.DO,
-        target_date=timezone.localdate() + timedelta(days=3),
-        actor=specialist,
-    )
-
-    result = compose_update(
-        matter=normal_matter,
-        author=specialist,
-        body="<p>Seadus jõustus. Töö lõppes.</p>",
-        closure={"disposition": Disposition.COMPLETED, "reason": "Jõustus 01.01.2027."},
-    )
-
-    normal_matter.refresh_from_db()
-    assert result.closed
-    assert not normal_matter.is_open
-    assert normal_matter.disposition == Disposition.COMPLETED
-    assert current_next_action(normal_matter) is None
-    # Ended, never deleted.
-    assert NextAction.objects.filter(matter=normal_matter).count() == 1
-
-
-def test_the_composer_view_refuses_a_closure(signed_in, normal_matter, specialist):
-    """The old composer no longer closes a Matter (docs/adr/0131 §11).
-
-    It refuses the closure answer visibly and writes nothing; a Matter ends
-    through its `Hetkeseis`. Through the form the browser actually posts.
-
-    `compose_update` has its own tests, and they pass a Python dict. This one
-    goes through `ComposerForm` with the field set a browser sends — every
-    optional group present and empty, the closure group filled — because the
-    parsing between those two is where a closure can be quietly dropped and
-    the save still return 200.
-    """
-    set_next_action(
-        matter=normal_matter,
-        text="Esitan arvamuse",
-        kind=ActionKind.DO,
-        target_date=timezone.localdate() + timedelta(days=3),
-        actor=specialist,
-    )
-
-    response = signed_in.post(
-        reverse("matters:compose", kwargs={"pk": normal_matter.pk}),
-        {
-            "body": "<p>Menetlus lõppes; töö on tehtud.</p>",
-            "kind": "NOTE",
-            "attachment_role": DocumentRole.OTHER,
-            "next_text": "",
-            "next_date": "",
-            "deadline_title": "",
-            "deadline_date": "",
-            "deadline_precision": DatePrecision.EXACT,
-            "engagement_kind": EngagementKind.SURVEY,
-            "engagement_title": "",
-            "engagement_date": "",
-            "engagement_url": "",
-            "engagement_note": "",
-            "disposition": Disposition.COMPLETED,
-            "final_sent_on": "",
-            "work_victory": "EI",
-            "victory_effective_on": "",
-        },
-        headers={"HX-Request": "true"},
-    )
-
-    assert response.status_code == 400, response.content.decode()[:4000]
-    assert "Teema lõpetatakse hetkeseisuga" in response.content.decode()
-    normal_matter.refresh_from_db()
-    assert normal_matter.is_open
-    assert current_next_action(normal_matter) is not None
-
-
 def test_a_successor_is_a_real_relationship(normal_matter, specialist):
     successor = factories.MatterFactory(owner=specialist)
 
-    compose_update(
+    close_matter(
         matter=normal_matter,
-        author=specialist,
-        closure={
-            "disposition": Disposition.SUPERSEDED,
-            "reason": "Töö jätkub uue eelnõu all.",
-            "successor": successor,
-        },
+        disposition=Disposition.SUPERSEDED,
+        reason="Töö jätkub uue eelnõu all.",
+        successor=successor,
+        actor=specialist,
     )
 
     normal_matter.refresh_from_db()
@@ -988,24 +830,6 @@ def test_a_stage_change_never_reopens_a_closed_matter(normal_matter, specialist)
     assert normal_matter.stage_id == held
 
 
-def test_a_work_victory_recorded_at_closure_uses_the_existing_domain(normal_matter, specialist):
-    result = compose_update(
-        matter=normal_matter,
-        author=specialist,
-        closure={
-            "disposition": Disposition.COMPLETED,
-            "work_victory": {"title": "Piirmäär tõsteti 2000 euroni", "detail": "RaM nõustus."},
-        },
-    )
-
-    assert result.work_victory is not None
-    record = MatterWorkVictory.objects.get(matter=normal_matter)
-    assert record.title == "Piirmäär tõsteti 2000 euroni"
-    # The same door the Matter page's own control uses — the composer broadens
-    # nobody's authorization.
-    assert record.status == WorkVictoryStatus.CONFIRMED
-
-
 def test_closing_needs_business_write(client, normal_matter):
     reader = factories.ReaderFactory()
     client.force_login(reader)
@@ -1041,61 +865,21 @@ def _evidence(matter, actor, filename="Koja_arvamus.pdf"):
     )
 
 
-def test_a_final_opinion_at_closure_becomes_a_canonical_submission(
-    normal_matter, specialist, organisation
-):
-    """The file goes in here, and comes out as the canonical sent opinion.
-
-    The closing redesign moved the evidence into this save: there is no
-    pre-uploaded version to pick, because the lawyer closing the file has the
-    sent PDF in front of them and has never visited the documents tab
-    (Teema closing redesign §4, §21).
-    """
-    sent_on = timezone.now() - timedelta(days=1)
-
-    result = compose_update(
-        matter=normal_matter,
-        author=specialist,
-        closure={
-            "disposition": Disposition.RESPONSE_COMPLETE,
-            "final_opinion": {
-                "upload": _upload("Koja_arvamus.pdf"),
-                "recipients": [organisation],
-                "recipient_names": [],
-                "sent_at": sent_on,
-            },
-        },
-    )
-
-    submission = result.submission
-    assert submission is not None
-    assert submission.status == SubmissionStatus.SENT
-    assert submission.sent_at == sent_on
-    # Titled after the Matter, never retyped (§5).
-    assert submission.title == normal_matter.title
-    # The evidence was created by this save, on this Matter, in the right role.
-    version = submission.final_version
-    assert version is not None
-    assert version.document.matter == normal_matter
-    assert version.document.role == DocumentRole.KODA_SUBMISSION_FINAL
-    # Nothing this workflow does not ask for was invented (§8, §9).
-    assert submission.channel == ""
-    assert submission.reference == ""
-
-
 def test_a_pdf_alone_never_creates_a_submission(normal_matter, specialist):
-    compose_update(
+    # `+ Märge` with a file — the current way a document arrives with a note.
+    workspace.add_procedural_development(
         matter=normal_matter,
         author=specialist,
-        body="<p>Sain ministeeriumilt faili.</p>",
-        attachment=_upload(),
+        title="Sain ministeeriumilt faili.",
+        occurred_on=timezone.localdate(),
+        uploads=[_upload()],
     )
 
     assert Document.objects.filter(matter=normal_matter).count() == 1
     assert not Submission.objects.filter(matter=normal_matter).exists()
 
 
-def test_the_closing_flows_opinion_reaches_the_rail(signed_in, specialist, organisation):
+def test_a_sent_opinion_reaches_the_rail(signed_in, specialist, organisation):
     """The sent opinion reaches the main view — once, in `Koja arvamus`.
 
     The redesign put it in a full-width strip of its own under the position
@@ -1108,18 +892,14 @@ def test_the_closing_flows_opinion_reaches_the_rail(signed_in, specialist, organ
     matter = factories.MatterFactory(owner=specialist)
     assert "Arvamust ei ole lisatud." in _detail(signed_in, matter)
 
-    compose_update(
+    # `+ Koja arvamus` — the current way an opinion goes out (the closing
+    # composer that also could was retired with ENG-050A2).
+    workspace.add_matter_koda_opinion(
         matter=matter,
         author=specialist,
-        closure={
-            "disposition": Disposition.RESPONSE_COMPLETE,
-            "final_opinion": {
-                "upload": _upload("Koja_arvamus.pdf"),
-                "recipients": [organisation],
-                "recipient_names": [],
-                "sent_at": timezone.now(),
-            },
-        },
+        upload=_upload("Koja_arvamus.pdf"),
+        recipients=[organisation],
+        sent_on=timezone.localdate(),
     )
 
     body = _detail(signed_in, matter)
@@ -1516,18 +1296,6 @@ def test_the_upload_form_asks_for_the_role_before_committing(signed_in, speciali
     assert 'name="role"' in upload_form
 
 
-def test_an_attachment_role_chosen_in_the_composer_is_what_is_stored(normal_matter, specialist):
-    result = compose_update(
-        matter=normal_matter,
-        author=specialist,
-        body="<p>Ministeeriumi eelnõu.</p>",
-        attachment=_upload("eelnou.pdf"),
-        attachment_role=DocumentRole.INCOMING_AUTHORITY,
-    )
-
-    assert result.document.role == DocumentRole.INCOMING_AUTHORITY
-
-
 # ---------------------------------------------------------------------------
 # §24, §39 — a low-data Matter, and the cost of a large one
 # ---------------------------------------------------------------------------
@@ -1634,7 +1402,7 @@ def test_the_matter_page_does_not_explode_into_queries(
     """
     matter = factories.MatterFactory(owner=specialist, source_organisations=[organisation])
     for index in range(12):
-        compose_update(matter=matter, author=specialist, body=f"<p>Kirje {index}</p>")
+        add_entry(matter=matter, author=specialist, body=f"<p>Kirje {index}</p>")
     for index in range(5):
         add_engagement(
             matter=matter,

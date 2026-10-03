@@ -8,7 +8,6 @@ in the record.
 from __future__ import annotations
 
 from datetime import timedelta
-from unittest import mock
 
 import pytest
 from django.db import DatabaseError, transaction
@@ -21,10 +20,8 @@ from app.core.errors import ImmutableRecordError
 from app.core.richtext import excerpt, plain_text, sanitize_entry_html
 from app.matters.entry_enums import EntryKind
 from app.matters.models import Entry, EntryRevision
-from app.matters.services import add_entry, compose_update, edit_entry
-from app.workflow.enums import ActionKind, DateSemantics
-from app.workflow.models import NextAction
-from app.workflow.services import current_next_action
+from app.matters.services import add_entry, edit_entry
+from app.workflow.enums import ActionKind
 from tests import factories
 from tests.refusals import refused
 
@@ -177,120 +174,30 @@ def test_an_entry_can_be_more_restrictive_than_its_matter(normal_matter, special
 # -- the composer -----------------------------------------------------------
 
 
-def test_composer_saves_entry_and_next_action_together(normal_matter, specialist):
-    review_date = timezone.localdate() + timedelta(days=7)
-    result = compose_update(
-        matter=normal_matter,
-        author=specialist,
-        body="<p>Kohtumine ministeeriumiga.</p>",
-        kind=EntryKind.MEETING,
-        next_action={
-            "text": "Ootan ministeeriumi uut sõnastust",
-            "kind": ActionKind.WAIT,
-            "date_semantics": DateSemantics.REVIEW_ON,
-            "target_date": review_date,
-        },
-    )
+def test_one_act_produces_no_duplicate_timeline_events(normal_matter, specialist):
+    """One act, one entry event — not one per surface that renders it.
 
-    assert result.entry is not None
-    assert result.action is not None
-    assert current_next_action(normal_matter) == result.action
-    assert result.action.kind == ActionKind.WAIT
-    assert result.action.target_date == review_date
-
-
-def test_composer_accepts_an_entry_alone(normal_matter, specialist):
-    result = compose_update(matter=normal_matter, author=specialist, body="<p>Lihtsalt märkus.</p>")
-    assert result.entry is not None
-    assert result.action is None
-
-
-def test_composer_accepts_a_next_action_alone(normal_matter, specialist):
-    result = compose_update(
-        matter=normal_matter,
-        author=specialist,
-        next_action={
-            "text": "Ainult järgmiseks",
-            "kind": ActionKind.DO,
-            "target_date": timezone.localdate() + timedelta(days=3),
-        },
-    )
-    assert result.entry is None
-    assert result.action is not None
-
-
-def test_composer_refuses_an_empty_save(normal_matter, specialist):
-    with refused("Täida sissekanne või vali, mida veel salvestada."):
-        compose_update(matter=normal_matter, author=specialist)
-
-
-def test_a_failing_next_action_rolls_back_the_entry(normal_matter, specialist):
-    """The whole reason the composer is one transaction.
-
-    If the entry survived a failed action update, the lawyer would believe both
-    landed while the work queue quietly disagreed with the record.
+    `PRAEGUNE TEGEVUS` with `Järgmisena`, the current act that writes an entry
+    and a step together (the composer that used to was retired, ENG-050A2).
     """
-    before = Entry.objects.filter(matter=normal_matter).count()
+    from app.matters import workspace
+    from app.workflow.services import set_next_action
 
-    with refused("Järgmiseks vajab teksti."):
-        compose_update(
-            matter=normal_matter,
-            author=specialist,
-            body="<p>See ei tohi alles jääda.</p>",
-            next_action={"text": "   "},  # rejected by the service
-        )
-
-    assert Entry.objects.filter(matter=normal_matter).count() == before
-
-
-def test_a_failing_entry_leaves_the_action_untouched(normal_matter, specialist):
-    existing = compose_update(
+    current = set_next_action(
+        matter=normal_matter, text="Kohtun ministeeriumiga", kind=ActionKind.DO, actor=specialist
+    )
+    before = set(ChangeEvent.objects.filter(matter=normal_matter).values_list("pk", flat=True))
+    workspace.complete_current_action(
         matter=normal_matter,
         author=specialist,
-        next_action={
-            "text": "Algne tegevus",
-            "kind": ActionKind.DO,
-            "target_date": timezone.localdate() + timedelta(days=3),
-        },
-    ).action
-
-    with pytest.raises(RuntimeError):
-        with mock.patch(
-            "app.matters.services.Entry.objects.create", side_effect=RuntimeError("db down")
-        ):
-            compose_update(
-                matter=normal_matter,
-                author=specialist,
-                body="<p>Uus sissekanne</p>",
-                next_action={"text": "Uus tegevus", "kind": ActionKind.WAIT},
-            )
-
-    current = current_next_action(normal_matter)
-    assert current == existing
-    assert current.text == "Algne tegevus"
-    assert NextAction.objects.filter(matter=normal_matter).count() == 1
-
-
-def test_composer_produces_no_duplicate_timeline_events(normal_matter, specialist):
-    """One save, one entry event — not one per surface that renders it."""
-    compose_update(
-        matter=normal_matter,
-        author=specialist,
+        action_id=current.pk,
         body="<p>Üks sissekanne</p>",
-        next_action={"text": "Üks tegevus", "kind": ActionKind.WAIT},
+        next_text="Üks tegevus",
     )
-    assert (
-        ChangeEvent.objects.filter(
-            matter=normal_matter, event_type=ChangeEventType.ENTRY_ADDED
-        ).count()
-        == 1
-    )
-    assert (
-        ChangeEvent.objects.filter(
-            matter=normal_matter, event_type=ChangeEventType.NEXT_ACTION_SET
-        ).count()
-        == 1
-    )
+
+    written = ChangeEvent.objects.filter(matter=normal_matter).exclude(pk__in=before)
+    assert written.filter(event_type=ChangeEventType.ENTRY_ADDED).count() == 1
+    assert written.filter(event_type=ChangeEventType.NEXT_ACTION_SET).count() == 1
 
 
 def test_entry_factory_is_synthetic():

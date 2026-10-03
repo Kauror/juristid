@@ -50,8 +50,8 @@ from app.intelligence.models import MatterWorkVictory
 from app.matters.enums import EngagementKind, ExternalPositionProvenance
 from app.matters.services import (
     add_engagement,
+    add_entry,
     change_stage,
-    compose_update,
     create_matter,
     plan_website_overview,
     publish_website_overview,
@@ -652,15 +652,22 @@ def test_a_superseded_step_comes_back_as_history(normal_matter, specialist):
 
 
 def test_a_step_set_inside_a_note_keeps_its_strip_on_that_note(normal_matter, specialist):
-    """§8's exception: the consequence of an act reads on that act's own row."""
-    compose_update(
+    """§8's exception: the consequence of an act reads on that act's own row.
+
+    `PRAEGUNE TEGEVUS` with `Järgmisena` sets the step in the same act as the
+    note (the composer that also could was retired, ENG-050A2).
+    """
+    from app.matters import workspace
+    from app.workflow.services import set_next_action
+
+    current = set_next_action(matter=normal_matter, text="Kohtun ministeeriumiga", actor=specialist)
+    workspace.complete_current_action(
         matter=normal_matter,
         author=specialist,
+        action_id=current.pk,
         body="<p>Kohtusime ministeeriumiga.</p>",
-        next_action={
-            "text": "Saadan kokkuvõtte",
-            "target_date": timezone.localdate() + dt.timedelta(days=3),
-        },
+        next_text="Saadan kokkuvõtte",
+        next_date=timezone.localdate() + dt.timedelta(days=3),
     )
 
     rows = [item for item in _history(normal_matter, specialist) if item.is_entry]
@@ -1335,7 +1342,7 @@ def test_the_matter_level_writes_the_page_exists_for_are_all_still_there(
 ):
     """Fail-closed must not mean fail-empty: the audit page still audits."""
     matter = create_matter(title="Algne pealkiri", actor=specialist, owner=specialist)
-    compose_update(matter=matter, author=specialist, body="Märkus")
+    add_entry(matter=matter, author=specialist, body="Märkus")
     change_stage(matter=matter, stage=consultation, actor=specialist)
 
     body = signed_in.get(

@@ -284,8 +284,8 @@ def _refusal_detail(form: RegisterSentOpinionForm) -> str:
 def as_midnight(value: Any) -> Any:
     """A chosen day, as the aware midnight a submission stores.
 
-    The same reading `app/matters/forms.py` gives the closing composer's
-    `Saatmise kuupäev`, and for the same reason: `timezone.now()` would stamp
+    The reading the superseded closing composer gave its `Saatmise kuupäev`,
+    and for the same reason: `timezone.now()` would stamp
     today onto a letter that went out last month.
 
     Public, because the chronology's own `Muuda` on a recorded send has to read

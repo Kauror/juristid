@@ -110,7 +110,6 @@ from app.matters.forms import (
     CompactWebsiteOverviewForm,
     CompactWorkVictoryForm,
     CompleteCurrentActionForm,
-    ComposerForm,
     DevelopmentEvidenceForm,
     EngagementFeedbackForm,
     EngagementForm,
@@ -210,7 +209,6 @@ from app.matters.services import (
     assign_matter,
     change_stage,
     close_matter_for_terminal_stage,
-    compose_update,
     correct_engagement,
     correct_external_position,
     correct_procedural_development,
@@ -2832,10 +2830,6 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
                 else []
             ),
         ),
-        # The superseded composer, still built for the endpoint that still
-        # accepts it. Nothing on this page renders it any more
-        # (docs/adr/0075 §11).
-        "composer_form": ComposerForm(matter=matter, viewer=request.user),
         # `summary_form` and `note_form` are deliberately absent: the header
         # context carries them, it is merged over this one, and reading the
         # private note twice per page is two queries for one answer.
@@ -3642,59 +3636,6 @@ def _render_overview(
         body += render_to_string("matters/partials/header_stage.html", context, request=request)
         body += render_to_string("matters/partials/tabs.html", context, request=request)
     return HttpResponse(body, status=status)
-
-
-@login_required
-@business_write_required
-@require_http_methods(["POST"])
-def compose(request: HttpRequest, pk: Any) -> HttpResponse:
-    """The unified composer save. Entry and `Järgmiseks` land together."""
-    matter = get_visible_matter(request, pk)
-    form = ComposerForm(request.POST, request.FILES, matter=matter, viewer=request.user)
-
-    if not form.is_valid():
-        context = _overview_context(request, matter)
-        context.update(_header_context(request, matter))
-        context["composer_form"] = form
-        return render(request, "matters/partials/overview.html", context, status=400)
-
-    try:
-        kwargs = form.as_service_kwargs()
-        if kwargs.get("closure"):
-            # **No closure through the old composer either** (docs/adr/0131 §11).
-            # Nothing renders this form any more, and the one ordinary way a
-            # Matter ends is its `Hetkeseis` — a stale page must not keep a
-            # second, parallel door open. `compose_update` itself still closes
-            # for the callers that are not a person at a page.
-            raise DomainError(CLOSURE_IS_A_STAGE)
-        compose_update(matter=matter, author=request.user, **kwargs)
-    except (DomainError, UploadRejected) as error:
-        context = _overview_context(request, matter)
-        context.update(_header_context(request, matter))
-        context["composer_form"] = form
-        context["composer_error"] = str(error)
-        return render(request, "matters/partials/overview.html", context, status=400)
-
-    matter.refresh_from_db()
-    # **The header follows a closure out of band.**
-    #
-    # The composer swaps `#teema-vaade`, which is the action row, the chronology
-    # and the rail — and deliberately not the header band, because a save that
-    # only wrote a note has no business re-rendering the title, the metaline and
-    # its five inline editors. A closure is the one thing this save does that the
-    # header states: the state badge says `Avatud`, and it kept saying it beside
-    # a Matter that had just been archived. A page showing contradictory state
-    # after its own save is the defect HTMX swaps exist to avoid
-    # (implementation brief §57, docs/adr/0074 §10).
-    #
-    # Out of band rather than by widening the target: `#teema-vaade` is what the
-    # form must own, and a response that also replaced the header would re-render
-    # every inline editor on every note somebody writes.
-    return _render_overview(request, matter, header_out_of_band=not matter.is_open)
-
-
-#: What a closure posted anywhere but a `Hetkeseis` is told (docs/adr/0131 §11).
-CLOSURE_IS_A_STAGE = "Teema lõpetatakse hetkeseisuga: vali «Jõustunud» või «Rohkem ei tegele»."
 
 
 def _named_engagement_context(form: EngagementForm, posted: Any) -> dict[str, str]:

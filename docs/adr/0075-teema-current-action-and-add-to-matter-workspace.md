@@ -443,3 +443,24 @@ was never asked to read. `complete_next_action`, `acknowledge_review`,
 `set_next_action_for_new_work` and `record_engagement` are unchanged — only the
 doors went. The composer (`matters:compose`, `ComposerForm`, `compose_update`)
 is §11's last compatibility surface and is retired separately.
+
+## Amendment, 2026-10-03 — the composer is retired (ENG-050A2)
+
+§11's last compatibility surface is gone: `matters:compose`, `views.compose`,
+`ComposerForm`, `compose_update` and the composer-only closure it carried
+(`_apply_closure`, `_closure_final_opinion`, `_closure_commencement`,
+`ComposerResult`), with `composer_form` in the overview context. Its one
+production caller was the route itself. A stale composer POST is a 404 and
+writes nothing; it is not redirected, because one composer payload could hold
+several of today's explicit operations at once and there is no honest
+translation to one of them.
+
+What it combined is still done, one explicit operation at a time:
+`PRAEGUNE TEGEVUS` (`complete_current_action`), `LISA TEEMALE`'s panels, and a
+terminal `Hetkeseis` for closure (0131 §10–11). The primitives it called —
+`add_entry`, `capture_supporting_evidence`, `set_next_action_for_new_work`,
+`complete_next_action`, `add_engagement`, `close_matter`, the stage transition,
+`resolve_recipients`, the submission services — are unchanged, and so is
+`audit.operations.composer_operation`, which every current workspace operation
+uses to group one act's audit rows: the name is the composer's, the mechanism is
+current (naming debt, not dead code). No stored record changes.

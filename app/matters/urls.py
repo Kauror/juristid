@@ -430,10 +430,9 @@ urlpatterns = [
     # The route predates this round and is unchanged (brief §15).
     # HTMX surfaces
     #
-    # `sissekanne/` is the superseded composer. Kept because it still serves its
-    # form and its tests, and no longer posted to by any page
-    # (docs/adr/0075 §11, brief §29).
-    path("teemad/<uuid:pk>/sissekanne/", views.compose, name="compose"),
+    # No `sissekanne/` of its own. The superseded composer posted there; it was
+    # retired with ENG-050A2 (docs/adr/0075 §11, amended), and only the
+    # correction route below still lives under the entry.
     # `Muuda` on a filed Sissekanne. Under the entry rather than under the
     # Teema, because the thing being corrected is the entry and the route says
     # so; the Matter is still in the path so the view can prove the two belong

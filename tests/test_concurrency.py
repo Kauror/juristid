@@ -30,7 +30,7 @@ from app.documents.services import (
 from app.matters import workspace
 from app.matters.locks import CLOSED_MATTER_REFUSAL
 from app.matters.models import Entry, EntryRevision, Matter
-from app.matters.services import add_entry, close_matter, compose_update, edit_entry
+from app.matters.services import add_entry, close_matter, edit_entry
 from app.related_materials.models import MatterRelation
 from app.related_materials.services import link_related_matters
 from app.submissions.enums import SentAtPrecision, SubmissionStatus
@@ -687,7 +687,6 @@ def test_a_closure_that_commits_first_refuses_the_later_write(specialist):
             period_end=date(2026, 12, 31),
             date_precision="YEAR",
         ),
-        lambda: compose_update(matter=matter, author=specialist, body="<p>Hiline.</p>"),
         lambda: link_related_matters(
             matter=matter, other=factories.MatterFactory(owner=specialist), actor=specialist
         ),

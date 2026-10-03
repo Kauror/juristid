@@ -143,23 +143,6 @@ class EngagementKind(models.TextChoices):
     OTHER = "OTHER", "Muu"
 
 
-#: What `+ Kaasamine` offers, in the order the approved target lists it.
-#:
-#: Three chips, not five. `WEB_CALL` and `OTHER` remain valid stored values with
-#: no chip (docs/adr/0074, TEEMA_TARGET_SPEC §C.4).
-#:
-#: The labels are the enum's own, read through `.label` rather than written out
-#: again. This tuple decides *which* kinds are offered and in what order; what
-#: each one is called is `EngagementKind`'s answer and only its answer, so the
-#: chip somebody clicks and the chronology row they read afterwards cannot say
-#: two different things (post-QA R2-06).
-COMPOSER_ENGAGEMENT_KINDS: tuple[tuple[str, str], ...] = (
-    (EngagementKind.SURVEY.value, EngagementKind.SURVEY.label),
-    (EngagementKind.MEETING.value, EngagementKind.MEETING.label),
-    (EngagementKind.EMAIL_CAMPAIGN.value, EngagementKind.EMAIL_CAMPAIGN.label),
-)
-
-
 class WebsiteOverviewStatus(models.TextChoices):
     """Where one `Ülevaade / uudis` stands.
 

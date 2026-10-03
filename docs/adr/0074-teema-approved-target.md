@@ -870,3 +870,13 @@ in the section head; the section's own `<details>`, its hidden heading and the
 `#ajajoon` anchor; `Menetluse kulg` and every other part of the Teema page;
 every service, every audit event and every stored row. No migration, no
 `INDEX_VERSION` change, no search rebuild.
+
+## Amendment, 2026-10-03 — `compose_update` is gone (ENG-050A2)
+
+The statement under §6 that `compose_update` still takes the retired composer
+fields «and the archive importer still supplies them» no longer holds:
+`compose_update` was retired with the composer (docs/adr/0075, amendment of
+this date), and no importer called it — the archive writes its evidence
+through `create_document` and `add_evidence_version` directly
+(`app/legacy_import/opinion_apply.py`, `historical_apply.py`). The fields'
+meaning is unchanged on the records that carry them.

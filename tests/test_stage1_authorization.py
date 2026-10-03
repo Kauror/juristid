@@ -180,10 +180,12 @@ def test_posting_to_a_restricted_matter_is_refused(client, reader, restricted_wo
     client.force_login(reader)
     matter = restricted_world["matter"]
 
-    compose = client.post(
-        reverse("matters:compose", kwargs={"pk": matter.pk}), {"body": "<p>Sekkumine</p>"}
+    # `+ Märge` — a current write route (the composer this used to post to was
+    # retired with ENG-050A2).
+    note = client.post(
+        reverse("matters:add_note", kwargs={"pk": matter.pk}), {"body": "<p>Sekkumine</p>"}
     )
-    assert compose.status_code == 404
+    assert note.status_code == 404
 
     field = client.post(
         reverse("matters:update_field", kwargs={"pk": matter.pk, "field": "owner"}),

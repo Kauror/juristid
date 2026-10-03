@@ -345,8 +345,8 @@ def mark_submission_sent(
 
     ``sent_at_precision`` says how much of ``sent_at`` the sender actually
     supplied. It defaults to TIMESTAMP because pressing send *is* a moment; a
-    caller that only ever had a day — the closing composer asks for `Saatmise
-    kuupäev`, and the register import has a date column — passes DATE so the UI
+    caller that only ever had a day — `Saatmise kuupäev` on a send, and the
+    register import's date column — passes DATE so the UI
     stops rendering an anchor of midnight as the hour the letter went out
     (app/submissions/enums.py).
 
@@ -904,11 +904,9 @@ def register_sent_opinion(
 # The services above do not carry that rule, deliberately. They are the
 # canonical primitives, and the archive apply composes them into records of
 # letters Koda really sent about work that finished years ago
-# (`app/legacy_import/opinion_apply.py`); the closing composer calls three of
-# them while the Matter it is about to close is still open
-# (`app/matters/services.py::_closure_final_opinion`). Stating «the Matter must
-# be open» down there would refuse the historical record, which is the one
-# thing this boundary must not do.
+# (`app/legacy_import/opinion_apply.py`). Stating «the Matter must be open»
+# down there would refuse the historical record, which is the one thing this
+# boundary must not do.
 #
 # So it is stated here, in the use cases the Dokumendid surface posts to. Each
 # is the same act with the question asked first, under the Matter's own row

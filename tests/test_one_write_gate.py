@@ -135,7 +135,6 @@ def test_no_route_carries_its_own_refusal_sentence():
 #: Every route this wave moved onto the decorator.
 MOVED = [
     "matters:matter_create",
-    "matters:compose",
     "matters:update_engagement",
     "matters:matter_edit",
     "matters:update_position",
