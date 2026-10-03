@@ -36,7 +36,7 @@ from app.audit.models import ChangeEvent
 from app.core.dates import format_estonian_date
 from app.core.errors import DomainError
 from app.matters import work_items as wi
-from app.matters.enums import WebsiteOverviewStatus
+from app.matters.enums import RecordMode, WebsiteOverviewStatus
 from app.matters.intake import register_incoming, validate_uploads
 from app.matters.locks import CLOSED_MATTER_REFUSAL
 from app.matters.models import Entry, Matter, MatterEngagement, MatterWebsiteOverview
@@ -289,6 +289,17 @@ def test_paths_that_record_history_seed_nothing(specialist, pdf_bytes):
 
     for record in (native, imported, archive, incoming.matter):
         assert not _steps(record)
+
+
+def test_an_archive_row_is_given_no_plan_by_a_crafted_post(specialist):
+    """The page draws no plan control for an archive register row; the service refuses too."""
+    archive = factories.MatterFactory(owner=specialist, record_mode=RecordMode.ARCHIVE)
+
+    with pytest.raises(DomainError, match=re.escape(work_plan.ARCHIVE_HAS_NO_PLAN)):
+        work_plan.seed_standard_plan(matter=archive, actor=specialist)
+    with pytest.raises(DomainError, match=re.escape(work_plan.ARCHIVE_HAS_NO_PLAN)):
+        work_plan.add_plan_step(matter=archive, title="Uus", actor=specialist)
+    assert not MatterPlanStep.objects.filter(matter=archive).exists()
 
 
 def test_the_migration_backfills_nothing():
