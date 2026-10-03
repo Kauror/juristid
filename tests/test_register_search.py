@@ -572,6 +572,30 @@ def test_the_register_scope_segments_mean_what_they_say(signed_in):
     assert archived.record_mode == RecordMode.ARCHIVE
 
 
+def test_each_segment_counts_the_matters_its_list_shows(client, reader):
+    """The four chip counts are one aggregate, so they must count Matters, not join rows.
+
+    The scope joins the collaborators table, and a Matter with three
+    collaborators is three rows there. Each chip's number is checked against
+    the list the chip opens, for a reader whose scope carries that join.
+    """
+    colleagues = [factories.UserFactory() for _ in range(3)]
+    shared = factories.MatterFactory(title="Jagatud", is_open=True)
+    shared.collaborators.set(colleagues)
+    factories.MatterFactory(title="Teine avatud", is_open=True)
+    factories.ArchiveMatterFactory(
+        title="Arhiivis", is_open=False, closed_at=timezone.now(), disposition=Disposition.COMPLETED
+    )
+    client.force_login(reader)
+
+    options = client.get(REGISTER).context["status_options"]
+    counts = {option["key"]: option["count"] for option in options}
+
+    for key in ("avatud", "suletud", "arhiiv", "koik"):
+        assert counts[key] == total_of(client.get(REGISTER, {"olek": key})), key
+    assert counts == {"avatud": 2, "suletud": 1, "arhiiv": 1, "koik": 3}
+
+
 # ---------------------------------------------------------------------------
 # The organisation chooser
 # ---------------------------------------------------------------------------
