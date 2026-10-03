@@ -1425,9 +1425,21 @@ def matter_list(request: HttpRequest) -> HttpResponse:
     # and the count beside the box is the count of the list under it.
     query = (params.get("q") or "").strip()
     if query:
-        queryset = queryset.filter(
-            pk__in=search_services.matching_matter_ids(query=query, user=request.user)
-        )
+        # **Searched once per request** (QRY-06). Composed as a subquery, the
+        # search ran inside every statement that read the register — the rows,
+        # the count beside the box, and on an empty page `_matches_elsewhere`
+        # again — and each run is a scan of the whole projection. The Matters it
+        # reaches are bounded by the corpus, so they are read once here and the
+        # register narrows by the ids. Same population, same authorization: the
+        # search is scoped to this reader, and so is the queryset it narrows.
+        matched = {
+            matter_id
+            for matter_id in search_services.matching_matter_ids(
+                query=query, user=request.user
+            ).values_list("matter_id", flat=True)
+            if matter_id is not None
+        }
+        queryset = queryset.filter(pk__in=matched)
 
     # One call, and it is the same call the Ülevaade cards count through. The
     # register and the KPI above it therefore cannot disagree about what
