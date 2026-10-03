@@ -68,17 +68,17 @@ ITEMS: tuple[StatusItem, ...] = (
         area="Minu asjad",
         issue=(
             "Roheline «✓ Märgi tehtuks» on ridadelt eemaldatud ja klahv X koos "
-            "sellega. Marsruut ja teenus complete_work_item jäid alles."
+            "sellega. Marsruut complete_work_item jäi esialgu alles."
         ),
         why=(
             "Disain keelab ühe klikiga lõpetamise, sest järgmist sammu ei "
-            "määrata. Töötavat serveripoolset teenust ei kustutata ilma "
+            "määrata. Töötavat serveripoolset teenust ei kustutatud ilma "
             "eraldi otsuseta."
         ),
-        state=DEVIATION,
+        state=DECIDED,
         next_step=(
-            "Otsustada, kas marsruut jääb alles kasutuseta või eemaldatakse "
-            "koos teenusega eraldi voorus."
+            "Otsustatud ENG-050A-s: marsruut eemaldati. Tegevus lõpetatakse "
+            "teema lehel «✓ Tehtud» kaudu; teenus complete_next_action jääb."
         ),
         sources=("01-EHITUSJUHIS §3.6", "app/matters/urls.py"),
     ),

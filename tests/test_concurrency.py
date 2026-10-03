@@ -37,7 +37,6 @@ from app.submissions.enums import SentAtPrecision, SubmissionStatus
 from app.submissions.models import Submission
 from app.submissions.services import (
     attach_final_evidence_on_open_matter,
-    create_opinion_draft_on_open_matter,
     create_submission,
     mark_submission_sent_on_open_matter,
     register_sent_opinion_on_open_matter,
@@ -819,9 +818,6 @@ def test_a_closure_that_commits_first_refuses_every_dokumendid_write(specialist,
             original_filename="teine.pdf",
             mime_type="application/pdf",
             uploaded_by=specialist,
-        ),
-        lambda: create_opinion_draft_on_open_matter(
-            matter=matter, title="Hiline arvamus", actor=specialist
         ),
         lambda: select_final_evidence_on_open_matter(
             submission=draft, version=version, actor=specialist

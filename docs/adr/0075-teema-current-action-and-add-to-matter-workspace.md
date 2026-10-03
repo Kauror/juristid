@@ -423,3 +423,23 @@ does not re-classify what nobody touched. Until it is decided it does not, and
 §3's completion, §4's locking, the one-open-step invariant, which combination
 may be late (only `DO` + `DEADLINE`), the date rules of ADR 0079, and every
 stored row. Nothing is migrated or backfilled.
+
+## Amendment, 2026-10-03 — the compatibility doors are closed (ENG-050A)
+
+§11 and the 2026-09-26 amendment kept four write routes that no page posts to.
+Their compatibility window has ended, and the current workflow is the only
+write path:
+
+| Retired route | It did | The current operation |
+|---|---|---|
+| `matters:complete_action` (with `next_action_row.html`, the only template that posted to it and that only its own responses rendered) | `✓ Tehtud` with no result | `matters:complete_current_action` — `PRAEGUNE TEGEVUS`, `Mida tegid?` still required (0133) |
+| `matters:defer_action` (`Lükka edasi`) | moved a step's date by `+1 päev` / `+1 nädal` | `Muuda` (`matters:set_action`) for a plan, `Vaatasin üle` (`matters:review_action`) for a step that waits |
+| `matters:complete_work_item` | Minu asjad's one-click ✓ | the Teema page's `✓ Tehtud` (design: no one-click completion, DS-02) |
+| `matters:add_engagement` | the pre-launcher `Kaasamine` form | `+ Kaasamine` (`matters:add_engagement_compact`) |
+
+A stale POST to any of them is a 404 and writes nothing. Not a redirect: a
+POST redirected to a different operation would carry a payload that operation
+was never asked to read. `complete_next_action`, `acknowledge_review`,
+`set_next_action_for_new_work` and `record_engagement` are unchanged — only the
+doors went. The composer (`matters:compose`, `ComposerForm`, `compose_update`)
+is §11's last compatibility surface and is retired separately.

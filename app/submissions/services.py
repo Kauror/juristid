@@ -923,36 +923,6 @@ def register_sent_opinion(
 
 
 @transaction.atomic
-def create_opinion_draft_on_open_matter(
-    *,
-    matter: Any,
-    title: str,
-    kind: str = SubmissionKind.FORMAL_OPINION,
-    actor: Any = None,
-    recipients: list[Any] | None = None,
-    joint_submitters: list[Any] | None = None,
-    for_information: list[Any] | None = None,
-    channel: str = "",
-) -> Submission:
-    """`+ Uus arvamus` — start a draft, if there is still work to do here.
-
-    A draft is the beginning of new advocacy, which is the plainest case of the
-    rule: nobody starts writing an opinion about a file that is finished.
-    """
-    locked = lock_open_matter_for_business_write(matter.pk)
-    return create_submission(
-        matter=locked,
-        title=title,
-        kind=kind,
-        actor=actor,
-        recipients=recipients,
-        joint_submitters=joint_submitters,
-        for_information=for_information,
-        channel=channel,
-    )
-
-
-@transaction.atomic
 def attach_final_evidence_on_open_matter(
     *,
     submission: Submission,

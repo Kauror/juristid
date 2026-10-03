@@ -761,12 +761,14 @@ def test_the_composer_form_asks_the_target_engagement_questions():
 
 def test_the_one_kaasamine_path_still_works(signed_in, normal_matter, specialist):
     """Removing the duplicate removed nothing a person could do."""
+    # `+ Kaasamine`, the one path left (ENG-050A retired the pre-launcher door).
     response = signed_in.post(
-        reverse("matters:add_engagement", kwargs={"pk": normal_matter.pk}),
-        {"title": "Liikmete küsitlus", "kind": "SURVEY", "occurred_on": "5.8.2026"},
+        reverse("matters:add_engagement_compact", kwargs={"pk": normal_matter.pk}),
+        {"audience": "Liikmete küsitlus", "occurred_on": "5.8.2026"},
+        headers={"HX-Request": "true"},
     )
-    assert response.status_code in (200, 302)
-    assert normal_matter.engagements.filter(title="Liikmete küsitlus").exists()
+    assert response.status_code == 200
+    assert normal_matter.engagements.filter(occurred_on="2026-08-05").exists()
 
 
 # ---------------------------------------------------------------------------

@@ -187,7 +187,7 @@ def test_nobody_is_offered_a_new_opinion_on_dokumendid(
     body = response.content.decode()
 
     assert "+ Uus arvamus" not in body
-    assert reverse("submissions:create", kwargs={"matter_id": matter.pk}) not in body
+    assert f"/arvamused/teema/{matter.pk}/uus/" not in body  # retired, ENG-050A
     assert reverse("submissions:register_sent", kwargs={"matter_id": matter.pk}) not in body
 
 

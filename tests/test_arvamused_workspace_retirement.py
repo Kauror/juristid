@@ -248,7 +248,7 @@ def test_an_older_draft_keeps_its_home_and_nothing_starts_a_new_one(signed_in, s
     assert "Lõpetamata arvamused" in body
     assert "Koostamisel arvamus" in body
     assert "+ Uus arvamus" not in body
-    assert reverse("submissions:create", kwargs={"matter_id": matter.pk}) not in body
+    assert f"/arvamused/teema/{matter.pk}/uus/" not in body  # retired, ENG-050A
 
 
 def test_a_sent_opinion_still_lists_with_its_evidence(signed_in, specialist):
@@ -372,7 +372,7 @@ def test_a_reader_reads_the_page_and_is_offered_no_writes(client, reader, specia
     assert "Koostamisel arvamus" in body
     assert "ootab faili" in body
     assert "+ Uus arvamus" not in body
-    assert reverse("submissions:create", kwargs={"matter_id": matter.pk}) not in body
+    assert f"/arvamused/teema/{matter.pk}/uus/" not in body  # retired, ENG-050A
 
 
 def test_the_endpoint_still_refuses_a_reader(client, reader, specialist):

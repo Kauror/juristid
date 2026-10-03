@@ -613,34 +613,6 @@ def test_a_matter_page_costs_no_query_per_engagement(signed_in, specialist):
 # -- writing through the page ------------------------------------------------
 
 
-def _post_add(client, matter, **data):
-    """Post the add form. It no longer asks which channel a round used.
-
-    `Liik` came off both `Kaasamine` surfaces in docs/adr/0086 §1: it was a
-    classification nothing read back, so the panel's first control was a
-    decision with no consequence. Every row written through a write surface is
-    now `EngagementKind.OTHER`.
-    """
-    payload = {"title": "Kaasamiskutse", **data}
-    return client.post(reverse("matters:add_engagement", kwargs={"pk": matter.pk}), payload)
-
-
-def test_the_add_form_writes_the_neutral_kind_and_ignores_a_posted_one(signed_in, specialist):
-    """A crafted `kind` in the POST changes nothing, because nothing reads it.
-
-    The form has no such field any more, so Django drops the value and the view
-    names `OTHER` itself. The refusal this replaces — a 400 for a kind the form
-    did not offer — was protecting a vocabulary the product has stopped putting
-    to anybody (docs/adr/0086 §1).
-    """
-    matter = factories.MatterFactory(owner=specialist)
-
-    response = _post_add(signed_in, matter, kind=EngagementKind.WEB_CALL)
-
-    assert response.status_code == 200
-    assert MatterEngagement.objects.get(matter=matter).kind == EngagementKind.OTHER
-
-
 def test_a_legacy_kind_stays_creatable_through_the_service(specialist):
     """An importer, a migration or a correction is not the creation form."""
     matter = factories.MatterFactory(owner=specialist)
@@ -650,30 +622,6 @@ def test_a_legacy_kind_stays_creatable_through_the_service(specialist):
     )
 
     assert record.kind == EngagementKind.WEB_CALL
-
-
-def test_adding_through_the_page_saves_the_record(signed_in, specialist):
-    matter = factories.MatterFactory(owner=specialist)
-
-    response = _post_add(signed_in, matter, url=KODA_URL, occurred_on="2026-09-15", note="Märkus")
-
-    assert response.status_code == 200
-    engagement = MatterEngagement.objects.get(matter=matter)
-    assert engagement.title == "Kaasamiskutse"
-    assert engagement.occurred_on == dt.date(2026, 9, 15)
-
-
-def test_the_route_refuses_a_javascript_link(signed_in, specialist):
-    """The refusal is the service's and is unchanged. What went with the
-    standalone section is the surface that redisplayed the typed value — the
-    approved target's composer panel does not ask for a link at all
-    (docs/adr/0074 §9)."""
-    matter = factories.MatterFactory(owner=specialist)
-
-    response = _post_add(signed_in, matter, smaily_url="javascript:alert(1)")
-
-    assert response.status_code == 400
-    assert not MatterEngagement.objects.exists()
 
 
 def test_editing_through_the_page_updates_the_record(signed_in, specialist):
@@ -725,7 +673,13 @@ def test_a_reader_cannot_add_or_edit(client, specialist):
     )
     client.force_login(reader)
 
-    assert _post_add(client, matter).status_code == 404
+    assert (
+        client.post(
+            reverse("matters:add_engagement_compact", kwargs={"pk": matter.pk}),
+            {"audience": "Liikmed"},
+        ).status_code
+        == 404
+    )
     assert (
         client.post(
             reverse(
@@ -1355,7 +1309,8 @@ CREDENTIALED_URL = (
 
 PROVIDER_FIELDS = ["url", "smaily_url", "alchemer_url"]
 #: The link boxes a *form* still offers. The generic `url` left `Muuda` and the
-#: compatibility door (docs/adr/0121 §4); the service keeps its rule for it.
+#: compatibility door (docs/adr/0121 §4; the door itself went with ENG-050A); the
+#: service keeps its rule for it.
 FORM_LINK_FIELDS = ["smaily_url", "alchemer_url"]
 
 
@@ -1440,18 +1395,16 @@ def test_the_route_answers_a_too_long_link_the_way_it_answers_every_bad_link(
 ):
     """400 with a sentence beside the box, never 500 from a parser."""
     matter = factories.MatterFactory(owner=specialist)
-    payload = {
-        "kind": EngagementKind.SURVEY.value,
-        "title": "Küsitlus liikmetele",
-        "url": "",
-        "smaily_url": "",
-        "alchemer_url": "",
-        "note": "",
-        "occurred_on": "",
-    }
+    # `+ Kaasamine` — the one way a round is added (ENG-050A retired the
+    # pre-launcher `matters:add_engagement` this used to post to).
+    payload = {"audience": "Liikmed", "smaily_url": "", "alchemer_url": ""}
     payload[field] = TOO_LONG_URL
 
-    response = signed_in.post(reverse("matters:add_engagement", kwargs={"pk": matter.pk}), payload)
+    response = signed_in.post(
+        reverse("matters:add_engagement_compact", kwargs={"pk": matter.pk}),
+        payload,
+        headers={"HX-Request": "true"},
+    )
 
     assert response.status_code == 400
     assert not MatterEngagement.objects.filter(matter=matter).exists()
