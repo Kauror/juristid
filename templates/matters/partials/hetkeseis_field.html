@@ -26,7 +26,22 @@
   because `Hetkeseis` is optional and a control narrowed to the active rows
   would not merely refuse the unchanged stage, it would clear it on the next
   unrelated correction (docs/adr/0032 §Amendment). Empty on `Uus teema`.
+
+  **`form.stage_held`** — `Muuda teemat` on a closed file. The stage is stated
+  and posted back as it is stored; it moves only through `Ava uuesti` (RULE-03,
+  docs/adr/0131 §12). Never set on `Uus teema`.
 {% endcomment %}
+{% if form.stage_held %}
+<fieldset class="field">
+  <legend class="field__label">{{ form.stage.label }}</legend>
+  <input type="hidden" name="{{ form.stage.html_name }}" value="{{ form.matter.stage_id|default_if_none:'' }}">
+  <p class="field__value">{% if form.matter.stage %}{{ form.matter.stage.label_et }}{% else %}Määramata{% endif %}</p>
+  <p class="field__help">{{ form.stage_held_note }}</p>
+  {% if form.stage.errors %}
+    <span class="field__error" id="{{ form.stage.auto_id }}_error">{{ form.stage.errors|first }}</span>
+  {% endif %}
+</fieldset>
+{% else %}
 <fieldset class="field">
   <legend class="field__label">{{ form.stage.label }}</legend>
   <div class="chiprow">
@@ -70,3 +85,4 @@
     <span class="field__error" id="{{ form.stage.auto_id }}_error">{{ form.stage.errors|first }}</span>
   {% endif %}
 </fieldset>
+{% endif %}
