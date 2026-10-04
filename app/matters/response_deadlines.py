@@ -156,7 +156,6 @@ def _end_current(
             "outcome": outcome,
             "next_deadline": next_deadline.isoformat() if next_deadline else None,
             "has_note": bool(note),
-            "answered_by_opinion": submission is not None,
         },
     )
     return row
@@ -386,7 +385,9 @@ def ended_deadlines(matter: Matter, user: Any) -> list[EndedDeadline]:
                 next_display=format_estonian_date(row.next_deadline) if row.next_deadline else "",
                 note=row.note,
                 submission=visible.get(row.submission_id) if row.submission_id else None,
-                needs_review=withdrawn and not row.note,
+                # Told only to a reader who may see the opinion: to anybody
+                # else a withdrawal would disclose that it existed.
+                needs_review=withdrawn and not row.note and row.submission_id in visible,
                 ended_at=row.ended_at,
             )
         )
@@ -401,5 +402,6 @@ def answerable_submissions(matter: Matter, user: Any) -> list[Any]:
     return list(
         Submission.objects.visible_to(user)
         .filter(matter=matter, status=SubmissionStatus.SENT)
+        .prefetch_related("recipients")
         .order_by("-sent_at", "-created_at")
     )

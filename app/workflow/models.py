@@ -627,7 +627,7 @@ class MatterPlanStep(BaseModel):
     #: apart from one somebody started and finished (historical regression,
     #: UX-002). An id, never a title or a date that looks alike.
     fulfilled_by_operation = models.CharField(
-        max_length=32, blank=True, default="", choices=PlanStepOperation.choices
+        max_length=32, blank=True, default="", db_default="", choices=PlanStepOperation.choices
     )
     fulfilled_by_record = models.UUIDField(null=True, blank=True)
 

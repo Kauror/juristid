@@ -11,11 +11,14 @@ name the deadline it answers, the rounds whose wait it ends and the plan step it
 does — and nothing it does not name moves. A `LISA TEEMALE` record may be named
 as a `Tööplaan` step's work.
 
-**Four migrations, all additive:** `matters/0045` (`Matter.response_requested_at`,
+**Four migrations:** `matters/0045` (`Matter.response_requested_at`, nullable;
 the `MatterResponseDeadline` table), `matters/0046` (`MatterSaveOnce`),
-`workflow/0012` (`MatterPlanStep.fulfilled_by_operation` /
-`fulfilled_by_record`), `audit/0033` (`RESPONSE_DEADLINE_ENDED` on the event
-choices, no SQL). **No data migration and no backfill.**
+`workflow/0012` (`MatterPlanStep.fulfilled_by_operation`, with a database
+default `''`, and the nullable `fulfilled_by_record`, plus one check that every
+existing row satisfies), `audit/0033` (`RESPONSE_DEADLINE_ENDED` on the event
+choices, no SQL). Columns and tables are added; the running revision can go on
+writing through the swap and after a code-only rollback. **No data migration
+and no backfill.**
 
 ## Context
 
@@ -79,7 +82,10 @@ drawn without the warning colour and says why («teema suletud», «lõpetatud»
 the header and the register's Kuupäev cell. An ended deadline reads quietly in
 the header when none is current, and every ended one is listed in the rail's
 `Arvamuse tähtajad`. A linked opinion withdrawn since leaves the answer
-«vajab ülevaatamist»; nothing reopens automatically.
+«vajab ülevaatamist» — told only to a reader who may see that opinion; nothing
+reopens automatically. A register refresh that moves a deadline recorded as a
+request ends it as superseded («Registri värskendus asendas tähtaja») and the
+register's date reads as a legacy deadline.
 
 ### 5. The opinion finishes what it names
 

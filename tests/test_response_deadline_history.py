@@ -40,6 +40,7 @@ from app.matters.models import MatterResponseDeadline
 from app.matters.response_deadlines import (
     ANSWER_NEEDS_A_BASIS,
     CHANGE_NEEDS_A_MEANING,
+    FOREIGN_SUBMISSION,
     REPLACED_NEEDS_AN_OUTCOME,
     STALE_DEADLINE_REFUSAL,
     change_response_deadline,
@@ -313,7 +314,7 @@ def test_another_files_opinion_is_never_an_answer(specialist, send):
     matter = _requested(specialist, _days(3))
     elsewhere = send(factories.MatterFactory(owner=specialist))
 
-    with pytest.raises(DomainError):
+    with pytest.raises(DomainError, match=FOREIGN_SUBMISSION):
         resolve_response_deadline(
             matter=matter,
             outcome=ResponseDeadlineOutcome.ANSWERED,
@@ -469,3 +470,5 @@ def test_the_register_draws_a_settled_deadline_without_the_warning(signed_in, sp
 
     day = _days(-5)
     assert f"{day.day}.{day.month}.{day.year} · teema suletud" in body
+    row = body[body.index(f"{day.day}.{day.month}.{day.year} · teema suletud") - 200 :]
+    assert "dateline--deadline" not in row[:220]

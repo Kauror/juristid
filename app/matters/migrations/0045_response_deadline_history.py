@@ -56,7 +56,7 @@ class Migration(migrations.Migration):
             options={
                 'ordering': ['-ended_at', '-created_at'],
                 'indexes': [models.Index(fields=['matter', '-ended_at'], name='matters_respdl_matter_idx')],
-                'constraints': [models.CheckConstraint(condition=models.Q(('outcome__in', ['ANSWERED', 'NOT_ANSWERING', 'SUPERSEDED', 'MOVED', 'CANCELLED', 'CLOSED'])), name='matters_respdl_outcome_known'), models.CheckConstraint(condition=models.Q(('submission__isnull', True), ('outcome', 'ANSWERED'), _connector='OR'), name='matters_respdl_submission_only_when_answered'), models.CheckConstraint(condition=models.Q(models.Q(('outcome', 'ANSWERED'), _negated=True), ('submission__isnull', False), models.Q(('note', ''), _negated=True), _connector='OR'), name='matters_respdl_answer_has_a_basis'), models.CheckConstraint(condition=models.Q(('next_deadline__isnull', True), ('outcome__in', ['MOVED', 'SUPERSEDED', 'ANSWERED', 'NOT_ANSWERING']), _connector='OR'), name='matters_respdl_next_only_when_followed')],
+                'constraints': [models.CheckConstraint(condition=models.Q(('outcome__in', ['ANSWERED', 'NOT_ANSWERING', 'SUPERSEDED', 'MOVED', 'CANCELLED', 'CLOSED'])), name='matters_respdl_outcome_known'), models.CheckConstraint(condition=models.Q(('submission__isnull', True), ('outcome', 'ANSWERED'), _connector='OR'), name='matters_respdl_submission_only_when_answered'), models.CheckConstraint(condition=models.Q(('next_deadline__isnull', True), ('outcome__in', ['MOVED', 'SUPERSEDED', 'ANSWERED', 'NOT_ANSWERING']), _connector='OR'), name='matters_respdl_next_only_when_followed')],
             },
         ),
     ]
