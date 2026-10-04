@@ -1115,8 +1115,15 @@ def _keep_recorded_phases(
     pattern, and not a future date, which is a plan for a procedure the file no
     longer reads against.
 
-    They read as recorded, in the vocabulary's order, just before where the
-    file now stands: they happened, and they happened before the present.
+    They read as recorded, in the vocabulary's order, before where the file now
+    stands: they happened, and they happened before the present. **And in the
+    procedure's order among the phases already drawn**: a kept phase goes before
+    the first drawn phase that the vocabulary puts after it, when that is
+    earlier than the present. A `VTK` a file went through precedes its
+    `Kooskõlastusring`; read «just before the present» on a file standing at
+    `Riigikogus`, it was drawn after `Riigikogus` — a VTK from 2021 behind a
+    parliament reading from 2023. Only phase positions are compared, never the
+    dates, so an undated future phase or a person's own step moves nowhere.
     """
     drawn = {node.key for node in rail.nodes} if rail is not None else set()
     recorded = (
@@ -1128,7 +1135,7 @@ def _keep_recorded_phases(
     kept = [key for key in PHASE_KEYS if key in (recorded | dated) and key not in drawn]
     if not kept:
         return
-    position = next(
+    present = next(
         (
             index
             for index, step in enumerate(steps)
@@ -1136,11 +1143,24 @@ def _keep_recorded_phases(
         ),
         len(steps),
     )
-    for offset, key in enumerate(kept):
+    order = {key: index for index, key in enumerate(PHASE_KEYS)}
+    for key in kept:
+        later = next(
+            (
+                index
+                for index, step in enumerate(steps)
+                if step.kind == KIND_PHASE and order.get(step.key, -1) > order[key]
+            ),
+            len(steps),
+        )
+        # `kept` is in vocabulary order, so each insertion keeps the ones before
+        # it ahead of it; the present moves on by one as each lands before it.
+        position = min(later, present)
+        present += 1
         row = rows.get(key)
         dated_row = row if row is not None and not row.hidden else None
         steps.insert(
-            position + offset,
+            position,
             RailStep(
                 key=key,
                 label=phase_label(key),

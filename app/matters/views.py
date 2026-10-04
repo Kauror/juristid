@@ -2951,14 +2951,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # Beside the open step rather than instead of it. Both are true, both
         # are the reader's, and a page that showed one of them would be choosing
         # which of two facts about their day to withhold.
-        #
-        # A round with no deadline is listed too, after the dated ones: it is
-        # open work with no due date, never a date of today (docs/adr/0132).
-        "feedback_waits": list(
-            work_items.open_feedback_waits(request.user)
-            .filter(matter=matter)
-            .order_by(F("feedback_deadline").asc(nulls_last=True), "pk")
-        ),
+        "feedback_waits": _feedback_waits_of(request, matter),
         "response_obligation": work_items.secondary_response_obligation(
             matter,
             request.user,
@@ -3878,7 +3871,7 @@ def _engagement_row(
     the chronology itself renders from, so a corrected row cannot come back
     worded differently from the way it will read on the next page load.
     """
-    return render(
+    response = render(
         request,
         "matters/partials/engagement_row.html",
         {
@@ -3910,6 +3903,39 @@ def _engagement_row(
             "feedback_deadline_choices": feedback_deadline_choices(timezone.localdate()),
         },
         status=status,
+    )
+    # The round's answer changes what `PRAEGUNE TEGEVUS` says it is waiting on:
+    # finished, given a reply-by day, or a deadline moved or cleared. Only the
+    # row is swapped, so the waiting lines above the task ride along out of band
+    # (`matters/partials/feedback_waits.html`) — re-read now, after the write,
+    # for every open round on the file, so a second open round stays listed.
+    # Nothing else in the zone is replaced, so text typed in another form is
+    # kept. A closed file draws no such box, so nothing is sent for one.
+    if matter.is_open and request.headers.get("HX-Request"):
+        response.content += render_to_string(
+            "matters/partials/feedback_waits.html",
+            {
+                "matter": matter,
+                "feedback_waits": _feedback_waits_of(request, matter),
+                "oob": True,
+            },
+            request=request,
+        ).encode(response.charset or "utf-8")
+    return response
+
+
+def _feedback_waits_of(request: HttpRequest, matter: Matter) -> list[MatterEngagement]:
+    """The open rounds `PRAEGUNE TEGEVUS` lists for this reader, in its order.
+
+    A round with no deadline is listed too, after the dated ones: it is open
+    work with no due date, never a date of today (docs/adr/0132). One reading
+    for the page render and for a round's own answer, so the two cannot list
+    different rounds.
+    """
+    return list(
+        work_items.open_feedback_waits(request.user)
+        .filter(matter=matter)
+        .order_by(F("feedback_deadline").asc(nulls_last=True), "pk")
     )
 
 

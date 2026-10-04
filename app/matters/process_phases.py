@@ -207,6 +207,7 @@ PATTERN_DOMESTIC = "domestic"
 PATTERN_VTK = "vtk"
 PATTERN_MAARUS = "maarus"
 PATTERN_KOJA_ETTEPANEK = "koja-ettepanek"
+PATTERN_KOJA_ETTEPANEK_VTK = "koja-ettepanek-vtk"
 PATTERN_EU = "eu"
 PATTERN_EU_CONSULTATION = "eli-konsultatsioon"
 PATTERN_DIRECTIVE = "direktiiv"
@@ -378,6 +379,28 @@ EU_REGULATION_PATTERN = ProcessPattern(
     ),
 )
 
+#: Koda's own proposal, taken up by a ministry's VTK.
+#:
+#: The file starts as Koda's proposal and later also carries `VTK`, because a
+#: väljatöötamiskavatsus answering it was published — both instruments are true
+#: of it. Read as «two roads» it used to fall back to the generic domestic bill:
+#: the proposal's own phase was dropped and the VTK had no node at all, so the
+#: person could neither see nor date it. This is `KOJA_ETTEPANEK_PATTERN` with
+#: the VTK where it happens, after the proposal; like the VTK pattern's own
+#: node it maps no stage key, and everything after it stays conditional.
+KOJA_ETTEPANEK_VTK_PATTERN = ProcessPattern(
+    PATTERN_KOJA_ETTEPANEK_VTK,
+    "Koja ettepanek ja VTK",
+    (
+        PatternNode(PHASE_KOJA_ETTEPANEK, _IDEA),
+        PatternNode(PHASE_VTK),
+        PatternNode(PHASE_KOOSKOLASTUS, _CONSULTATION, conditional=True),
+        PatternNode(PHASE_VALITSUS, _GOVERNMENT, conditional=True),
+        PatternNode(PHASE_RIIGIKOGU, _PARLIAMENT, conditional=True),
+        PatternNode(PHASE_JOUSTUMINE, _IN_FORCE, conditional=True),
+    ),
+)
+
 PATTERNS: dict[str, ProcessPattern] = {
     pattern.key: pattern
     for pattern in (
@@ -385,6 +408,7 @@ PATTERNS: dict[str, ProcessPattern] = {
         VTK_PATTERN,
         MAARUS_PATTERN,
         KOJA_ETTEPANEK_PATTERN,
+        KOJA_ETTEPANEK_VTK_PATTERN,
         EU_PATTERN,
         EU_CONSULTATION_PATTERN,
         DIRECTIVE_PATTERN,
@@ -417,8 +441,9 @@ _INSTRUMENT_PATTERNS: dict[str, str] = {
 #: instrument patterns would otherwise read as «mixed» and draw nothing, which
 #: would withdraw the roadmap from precisely the file the full example was
 #: written about. The VTK pattern already contains the whole law path, so it is
-#: the superset and the honest choice (§10, LAW / VTK).
-_VTK_AND_LAW: frozenset[str] = frozenset({"vtk", "seadus"})
+#: the superset and the honest choice (§10, LAW / VTK). `_instrument_pattern`
+#: reads the same rule a step wider: an instrument with no road of its own beside
+#: the VTK names no competing road either.
 
 #: The two `Menetlusliik` values that choose a *family*, and the only two.
 #:
@@ -439,6 +464,7 @@ _PATTERN_FAMILY: dict[str, str] = {
     PATTERN_VTK: PATTERN_DOMESTIC,
     PATTERN_MAARUS: PATTERN_DOMESTIC,
     PATTERN_KOJA_ETTEPANEK: PATTERN_DOMESTIC,
+    PATTERN_KOJA_ETTEPANEK_VTK: PATTERN_DOMESTIC,
     PATTERN_EU: PATTERN_EU,
     PATTERN_EU_CONSULTATION: PATTERN_EU,
     PATTERN_DIRECTIVE: PATTERN_EU,
@@ -450,9 +476,19 @@ def _instrument_pattern(instrument_keys: frozenset[str]) -> ProcessPattern | Non
     """The most specific pattern the stored `Õigusakt` supports, or ``None``."""
     if not instrument_keys:
         return None
-    if "vtk" in instrument_keys and instrument_keys <= _VTK_AND_LAW:
-        return VTK_PATTERN
     named = {_INSTRUMENT_PATTERNS[key] for key in instrument_keys if key in _INSTRUMENT_PATTERNS}
+    if "vtk" in instrument_keys:
+        # What the file carries besides its VTK. A `Seadus` is the bill the VTK
+        # became, and an instrument with no road of its own (`Muu siseriiklik`)
+        # names no competing one, so both read as the VTK's file — the VTK
+        # pattern already contains the whole law path. Without this, the VTK
+        # a person added to a «Muu siseriiklik» file had no node, and its
+        # recorded date was drawn wherever the rail had room.
+        others = named - {PATTERN_VTK}
+        if others <= {PATTERN_DOMESTIC} and instrument_keys <= DOMESTIC_LEGAL_INSTRUMENT_KEYS:
+            return VTK_PATTERN
+        if others == {PATTERN_KOJA_ETTEPANEK}:
+            return KOJA_ETTEPANEK_VTK_PATTERN
     if len(named) == 1:
         return PATTERNS[next(iter(named))]
     return None
