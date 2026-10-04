@@ -559,14 +559,13 @@ def add_engagement_evidence(
         result = WorkspaceResult(operation_id=operation_id)
         result.record = current
         # A round restricted below its Matter keeps its new files restricted
-        # with it, as an opinion's working file is (docs/adr/0129 §4): never
-        # listed, counted or found by somebody who may not see the round.
+        # with it — the capture's own rule for every record (docs/adr/0137):
+        # never listed, counted or found by somebody who may not see the round.
         result.documents = capture_supporting_evidence(
             matter=locked_matter,
             record=current,
             uploads=_uploads(uploads),
             actor=author,
-            visibility_override=current.visibility_override,
         )
         return result
 
@@ -1113,7 +1112,6 @@ def add_matter_koda_opinion(
             accepted=working,
             actor=author,
             role=OPINION_WORKING_DOCUMENT_ROLE,
-            visibility_override=result.record.visibility_override,
         )
         if answers_deadline is not None:
             from app.matters.response_deadlines import answer_current_deadline_with
@@ -1175,7 +1173,8 @@ def add_opinion_working_documents(
 
     **Restricted with the opinion.** A `Submission` restricted below its Matter
     gives its working documents the same restriction, so the files cannot be
-    listed to somebody who may not see the letter they belong to.
+    listed to somebody who may not see the letter they belong to — decided by
+    the capture itself, as for every record (docs/adr/0137).
 
     **Refused on a closed Matter**, under the Matter's row lock, the rule every
     addition on this workspace keeps (docs/adr/0076 §2). All or none: one refused
@@ -1208,7 +1207,6 @@ def add_opinion_working_documents(
             uploads=files,
             actor=author,
             role=OPINION_WORKING_DOCUMENT_ROLE,
-            visibility_override=current.visibility_override,
         )
         return result
 
