@@ -472,20 +472,64 @@ _PATTERN_FAMILY: dict[str, str] = {
 }
 
 
+#: **The order a procedure's phases happen in**, family by family — for placing a
+#: phase the current pattern does not draw (`legal_process._keep_recorded_phases`).
+#:
+#: Not `PHASES`, whose order is a vocabulary's and is pinned by database checks:
+#: there `VTK` precedes `Koja ettepanek` and every domestic phase precedes every
+#: European one, which is no procedure's order. Here Koda's proposal comes before
+#: the VTK that answers it, and the two families are never compared — a domestic
+#: phase kept on a European rail is not «before ELi konsultatsioon», it is simply
+#: not on that road, and reads where the file now stands.
+PROCEDURE_ORDERS: tuple[tuple[str, ...], ...] = (
+    (
+        PHASE_ALGUS,
+        PHASE_KOJA_ETTEPANEK,
+        PHASE_VTK,
+        PHASE_KOOSKOLASTUS,
+        PHASE_VALITSUS,
+        PHASE_RIIGIKOGU,
+        PHASE_JOUSTUMINE,
+    ),
+    (
+        PHASE_ELI_KONSULTATSIOON,
+        PHASE_EESTI_SEISUKOHT,
+        PHASE_ELI_MENETLUS,
+        PHASE_JOUSTUMINE,
+        PHASE_ULEVOTMINE,
+    ),
+)
+
+
+def happens_before(first: str, second: str) -> bool:
+    """Whether ``first`` comes before ``second`` on a procedure that has both.
+
+    False when no procedure holds both: the two are not on one road, so neither
+    is before the other.
+    """
+    for order in PROCEDURE_ORDERS:
+        if first in order and second in order:
+            return order.index(first) < order.index(second)
+    return False
+
+
 def _instrument_pattern(instrument_keys: frozenset[str]) -> ProcessPattern | None:
     """The most specific pattern the stored `Õigusakt` supports, or ``None``."""
     if not instrument_keys:
         return None
     named = {_INSTRUMENT_PATTERNS[key] for key in instrument_keys if key in _INSTRUMENT_PATTERNS}
-    if "vtk" in instrument_keys:
+    if "vtk" in instrument_keys and instrument_keys <= DOMESTIC_LEGAL_INSTRUMENT_KEYS:
         # What the file carries besides its VTK. A `Seadus` is the bill the VTK
-        # became, and an instrument with no road of its own (`Muu siseriiklik`)
-        # names no competing one, so both read as the VTK's file — the VTK
-        # pattern already contains the whole law path. Without this, the VTK
-        # a person added to a «Muu siseriiklik» file had no node, and its
-        # recorded date was drawn wherever the rail had room.
-        others = named - {PATTERN_VTK}
-        if others <= {PATTERN_DOMESTIC} and instrument_keys <= DOMESTIC_LEGAL_INSTRUMENT_KEYS:
+        # became and an instrument with no road of its own (`Muu siseriiklik`)
+        # names no competing one, so neither takes the VTK's road away: the VTK
+        # pattern already contains the whole law path. Before this, `VTK`,
+        # `Seadus` and `Muu siseriiklik` together read as two roads, the rail
+        # fell back to the generic bill with no VTK node, and the VTK's recorded
+        # date was drawn after the parliament reading (historical replay, case 03).
+        # Koda's own proposal answered by a VTK reads proposal first, then VTK —
+        # with or without the bill it may become (case 04).
+        others = named - {PATTERN_VTK, PATTERN_DOMESTIC}
+        if not others:
             return VTK_PATTERN
         if others == {PATTERN_KOJA_ETTEPANEK}:
             return KOJA_ETTEPANEK_VTK_PATTERN

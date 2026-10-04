@@ -145,8 +145,7 @@ def test_a_repeated_finish_is_refused_and_still_reads_the_present(signed_in, spe
 
     engagement.refresh_from_db()
     assert engagement.feedback_closed_at is not None
-    if OOB_BOX.search(stale.content.decode()):
-        assert "Liikmete küsitlus" not in _waiting_lines(stale)
+    assert "Liikmete küsitlus" not in _waiting_lines(stale)
 
 
 def test_a_plain_post_gets_no_out_of_band_box(signed_in, specialist):

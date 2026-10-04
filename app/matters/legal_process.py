@@ -99,6 +99,7 @@ from app.matters.process_phases import (
     PHASE_ULEVOTMINE,
     ProcessPattern,
     confirmable_phase,
+    happens_before,
     pattern_for,
     phase_date_bounds,
     phase_label,
@@ -1118,8 +1119,10 @@ def _keep_recorded_phases(
     They read as recorded, in the vocabulary's order, before where the file now
     stands: they happened, and they happened before the present. **And in the
     procedure's order among the phases already drawn**: a kept phase goes before
-    the first drawn phase that the vocabulary puts after it, when that is
-    earlier than the present. A `VTK` a file went through precedes its
+    the first drawn phase its procedure puts after it
+    (`process_phases.PROCEDURE_ORDERS`), when that is earlier than the present;
+    a phase from the other family is on no road the rail draws and reads at the
+    present, as before. A `VTK` a file went through precedes its
     `Kooskõlastusring`; read «just before the present» on a file standing at
     `Riigikogus`, it was drawn after `Riigikogus` — a VTK from 2021 behind a
     parliament reading from 2023. Only phase positions are compared, never the
@@ -1143,13 +1146,12 @@ def _keep_recorded_phases(
         ),
         len(steps),
     )
-    order = {key: index for index, key in enumerate(PHASE_KEYS)}
     for key in kept:
         later = next(
             (
                 index
                 for index, step in enumerate(steps)
-                if step.kind == KIND_PHASE and order.get(step.key, -1) > order[key]
+                if step.kind == KIND_PHASE and happens_before(key, step.key)
             ),
             len(steps),
         )

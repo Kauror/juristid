@@ -215,3 +215,39 @@ def test_a_hidden_phase_and_an_added_step_stay_the_persons(specialist):
     assert [step.label for step in added] == ["Komisjoni istung"]
     riigikogu = next(index for index, step in enumerate(rail) if step.key == PHASE_RIIGIKOGU)
     assert rail.index(added[0]) == riigikogu + 1
+
+
+def test_a_proposal_and_its_vtk_keep_their_road_beside_a_bill():
+    keys = frozenset({"koja-ettepanek", "vtk", "seadus"})
+    assert pattern_for(track="", instrument_keys=keys).key == PATTERN_KOJA_ETTEPANEK_VTK
+
+
+def test_a_vtk_kept_on_a_proposals_rail_reads_after_the_proposal(specialist):
+    """The procedure's order, not the vocabulary's: proposal first, then the VTK."""
+    matter = factories.MatterFactory(owner=specialist, track="")
+    set_legal_instruments(matter=matter, legal_instruments=_instruments("koja-ettepanek"))
+    change_stage(matter=matter, stage=_stage("consultation"), actor=specialist)
+    add_procedural_development(matter=matter, author=specialist, title="VTK avaldati")
+    MatterProceduralDevelopment.objects.filter(matter=matter).update(process_phase=PHASE_VTK)
+
+    phases = _phases(matter, specialist)
+
+    assert phases.index(PHASE_KOJA_ETTEPANEK) < phases.index(PHASE_VTK)
+    assert phases.index(PHASE_VTK) < phases.index(PHASE_KOOSKOLASTUS)
+
+
+def test_a_domestic_phase_kept_on_a_european_rail_reads_at_the_present(specialist):
+    """Another family's phase is on no road the rail draws: never column one."""
+    matter = factories.MatterFactory(owner=specialist, track="")
+    set_legal_instruments(matter=matter, legal_instruments=_instruments("direktiiv"))
+    change_stage(matter=matter, stage=_stage("eu_procedure"), actor=specialist)
+    add_procedural_development(matter=matter, author=specialist, title="Kooskõlastus")
+    MatterProceduralDevelopment.objects.filter(matter=matter).update(
+        process_phase=PHASE_KOOSKOLASTUS
+    )
+
+    rail = _rail(matter, specialist)
+    phases = [step.key for step in rail if step.kind == KIND_PHASE]
+
+    assert phases[0] != PHASE_KOOSKOLASTUS
+    assert phases.index(PHASE_KOOSKOLASTUS) > 0
