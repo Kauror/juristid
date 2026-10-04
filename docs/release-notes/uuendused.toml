@@ -21,6 +21,9 @@ basis = "deployment"
 # sisu, teema käigu read ja filter, #389 otsingu uued allikad (ADR 0136, indeks
 # SONAVORM.2)). Migratsioonid matters/0045–0046, workflow/0012, audit/0033,
 # search/0014; otsinguindeks ehitatakse uuesti.
+# Kolmas väljalase samal päeval: piiratud nähtavuse pärimine (#391 ADR 0137 — kirjega
+# seotud fail, #392 ADR 0138 — tegevuse lõpetamise märge, #393 ADR 0139 — «Muuda»
+# muudetud tegevus). Migratsioone ei ole, otsinguindeksit ei ehitata uuesti.
 changes = [
   "Teemade nimekirja veerus «Järgmiseks» on nüüd eesseisev oluline tähtaeg, kui teemal avatud tegevust ei ole — varem öeldi seal, et järgmine samm puudub.",
   "«Viimane tegevus», «Muutusteta 30 p» ja Osakonna «Teemades muudatusi» arvestavad nüüd sama tööd ja selle päris kuupäeva; tegevuseks ei loe eraldi hetkeseisu muutmine, faili lisamine ega andmete parandamine, samuti eemaldatud kirjed.",
@@ -37,6 +40,7 @@ changes = [
   "Teema käigu ridadel on näha, millise sammu keegi määras või tehtuks märkis, ja teema käiku saab filtreerida ajavahemiku ja kirje liigi järgi.",
   "Otsing leiab nüüd ka kodulehe ülevaadete ja uudiste pealkirjad, olulised tähtajad ja töövõidud.",
   "Teema taasavamisel jääb varasem arvamuse tähtaeg ajalukku, kui seda ei märgita edasi kehtivaks.",
+  "Piiratud nähtavusega kirjele lisatud failid, piiratud tegevuse lõpetamise märge ja «Muuda» kaudu muudetud piiratud tegevus on nüüd sama piiranguga kui kirje või tegevus, millega need on seotud.",
 ]
 
 [[day]]
