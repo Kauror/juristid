@@ -530,6 +530,47 @@ def add_matter_engagement(
         return result
 
 
+ROUND_TAKES_FILES_WHILE_OPEN = (
+    "Faili saab lisada kaasamisele, mille tagasiside ootamine on pooleli."
+)
+
+
+@transaction.atomic
+def add_engagement_evidence(
+    *, engagement: Any, author: Any, uploads: Sequence[Any] = ()
+) -> WorkspaceResult:
+    """`+ Lisa fail` — a paper that arrived while the round is still open.
+
+    The files are captured as ordinary evidence and linked to this round, and
+    nothing else moves: the round stays open, no step is finished, no summary is
+    written (historical regression, UX-006 / F-017). New bytes are a new
+    document, never a copy of one the file already holds. Refused on a closed
+    Matter and on a round that is not open, under the Matter's lock.
+    """
+    locked_matter = lock_open_matter_for_business_write(engagement.matter_id)
+    current = (
+        MatterEngagement.objects.select_for_update(no_key=True)
+        .filter(pk=engagement.pk, matter=locked_matter, removed_at__isnull=True)
+        .first()
+    )
+    if current is None or not current.has_open_feedback_wait:
+        raise DomainError(ROUND_TAKES_FILES_WHILE_OPEN)
+    with composer_operation() as operation_id:
+        result = WorkspaceResult(operation_id=operation_id)
+        result.record = current
+        # A round restricted below its Matter keeps its new files restricted
+        # with it, as an opinion's working file is (docs/adr/0129 §4): never
+        # listed, counted or found by somebody who may not see the round.
+        result.documents = capture_supporting_evidence(
+            matter=locked_matter,
+            record=current,
+            uploads=_uploads(uploads),
+            actor=author,
+            visibility_override=current.visibility_override,
+        )
+        return result
+
+
 @transaction.atomic
 def add_engagement_feedback(
     *,

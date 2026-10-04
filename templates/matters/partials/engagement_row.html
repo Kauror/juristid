@@ -342,7 +342,7 @@ before the closure.
     {% if engagement.has_feedback_wait %}
       <p class="uxtl__wait{% if engagement.feedback_wait_is_due %} uxtl__wait--due{% endif %}">
         {% if engagement.feedback_wait_is_closed %}
-          Tagasiside ootamine lõpetatud {{ engagement.feedback_closed_at|date:"j.n.Y" }}
+          Tagasiside ootamine lõpetatud {{ engagement.feedback_closed_at|date:"j.n.Y" }}{% if engagement.feedback_deadline %} · tagasiside tähtaeg oli {{ engagement.feedback_deadline|date:"j.n.Y" }}{% endif %}
         {% elif engagement.feedback_wait_is_due %}
           Tagasiside tähtaeg möödus {{ engagement.feedback_deadline|date:"j.n.Y" }}
         {% elif engagement.feedback_deadline %}
@@ -354,6 +354,23 @@ before the closure.
     {% endif %}
     {% if engagement.feedback_received %}
       <p class="uxtl__feedback">{{ engagement.feedback_received|linebreaksbr }}</p>
+    {% endif %}
+    {% comment %}
+      **What came back, on the round itself** (historical regression, UX-006).
+      Each answer linked to this round, with who gave it and when, so nobody
+      has to open every position's `Muuda` to learn which round it answered.
+      Only answers this reader may see are listed or counted; the number is
+      «seotud seisukohti», never «vastajaid» — how many replied is the round's
+      own `Vastuseid`, and a missing count is not a zero
+      (`timeline.attach_round_positions`).
+    {% endcomment %}
+    {% if engagement.round_positions %}
+      <div class="uxtl__msnote">
+        <span class="uxtl__msnotelabel">Seotud seisukohti {{ engagement.round_positions|length }}</span>
+        {% for position in engagement.round_positions %}
+          <span class="uxtl__mssub">{{ position.who }} · {{ position.display_date }} · {{ position.provenance }}</span>
+        {% endfor %}
+      </div>
     {% endif %}
     {% comment %}
       `Märkus` — the recorder's own words about the round, under its label and
@@ -530,6 +547,37 @@ before the closure.
           </form>
         </div>
       </details>
+    {% endif %}
+    {% if engagement.evidence_form and can_write_business_content and matter.is_open %}
+      {% comment %}
+        `+ Lisa fail` while the round is still open: a survey export or a
+        member's letter that arrived before the round is finished. It finishes
+        nothing (`workspace.add_engagement_evidence`). A refused file comes
+        back as `engagement_evidence_form`, open on this row only, with the
+        refusal under the picker (`_evidence_refusal`).
+      {% endcomment %}
+      <details class="cx-panel uxtl__addfile" data-addpanel{% if engagement_evidence_form.record.pk == engagement.pk %} open{% endif %}>
+        <summary class="disclosure-chip disclosure-chip--quiet">+ Lisa fail</summary>
+        <div class="cx-panel__body">
+          <form class="addform" data-addform aria-label="Faili lisamine kaasamisele"
+                hx-post="{% url 'matters:add_engagement_evidence' pk=matter.pk engagement_id=engagement.pk %}"
+                hx-target="#teema-vaade" hx-swap="outerHTML"
+                hx-encoding="multipart/form-data">
+            {% csrf_token %}
+            {% if engagement_evidence_form.record.pk == engagement.pk %}
+              {% include "matters/partials/add_files.html" with field=engagement_evidence_form.attachments describe_errors=True %}
+            {% else %}
+              {% include "matters/partials/add_files.html" with field=engagement.evidence_form.attachments describe_errors=True %}
+            {% endif %}
+            <div class="addform__actions">
+              <button class="button button--quiet button--tiny" type="submit">Lisa fail</button>
+            </div>
+          </form>
+        </div>
+      </details>
+    {% elif engagement_evidence_form.record.pk == engagement.pk %}
+      {% comment %} The round was finished (or the file shut) while the file was on its way: say why it was not added. {% endcomment %}
+      <p class="formerror" role="alert">{{ engagement_evidence_form.attachments.errors|first }}</p>
     {% endif %}
   {% endif %}
 </div>

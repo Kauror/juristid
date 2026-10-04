@@ -1404,6 +1404,10 @@ def test_the_matter_page_does_not_explode_into_queries(
     added are the `Arvamuse tähtaeg` history (read once for the header and the
     rail) and the plan steps `LISA TEEMALE`'s forms may name as their work (one
     read for all three forms). Both flat in the population.
+
+    **Measured at 56 since its stage III**: the answers linked to the page's
+    `Kaasamine` rows, read once for every round on the page and never per row
+    (`timeline.attach_round_positions`).
     """
     matter = factories.MatterFactory(owner=specialist, source_organisations=[organisation])
     for index in range(12):
@@ -1429,5 +1433,5 @@ def test_the_matter_page_does_not_explode_into_queries(
     with CaptureQueriesContext(connection) as plan:
         plan_matter_deletion(matter)
 
-    with django_assert_max_num_queries(55 + len(plan)):
+    with django_assert_max_num_queries(56 + len(plan)):
         signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk}))

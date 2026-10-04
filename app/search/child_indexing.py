@@ -35,6 +35,7 @@ from app.core.text import normalize_for_matching
 from app.documents.enums import DerivativeStatus
 from app.documents.models import Document, DocumentTextFragment, DocumentVersion
 from app.intelligence.models import MatterImportantDate, MatterWorkVictory
+from app.intelligence.selectors import VISIBLE_VICTORY_STATUS
 from app.matters.models import (
     Entry,
     MatterEngagement,
@@ -483,8 +484,23 @@ def refresh_important_dates(records: QuerySet, *, generations: Sequence[int] | N
 
 
 def indexable_work_victories() -> QuerySet:
-    """Every `Töövõit` — candidate, confirmed or rejected — with its Matter."""
+    """Every `Töövõit` — candidate, confirmed or rejected — with its Matter.
+
+    Which of them has a row is `is_shown_work_victory`'s answer, so a review
+    decision withdraws or adds the row in the save that made it.
+    """
     return MatterWorkVictory.objects.select_related("matter")
+
+
+def is_shown_work_victory(record: MatterWorkVictory) -> bool:
+    """Only a confirmed, live `Töövõit` projects a row.
+
+    A candidate or a rejected claim is read nowhere but the review block that
+    writers see; the Teema page, the register and the department figures read
+    `VISIBLE_VICTORY_STATUS` alone. Search follows the source view, so it must
+    not show a reader — labelled «Töövõit» — a win nobody confirmed.
+    """
+    return not record.is_removed and record.status == VISIBLE_VICTORY_STATUS
 
 
 def work_victory_values(record: MatterWorkVictory, now: object) -> dict[str, object]:
@@ -515,7 +531,7 @@ def refresh_work_victories(records: QuerySet, *, generations: Sequence[int] | No
         list(records),
         kind=SearchSourceKind.WORK_VICTORY,
         values=work_victory_values,
-        projects=_is_live,
+        projects=is_shown_work_victory,
         generations=generations,
     )
 
