@@ -62,6 +62,7 @@ from django.db.models.functions import MD5, Cast
 
 from app.documents.enums import DerivativeStatus
 from app.documents.models import Document, DocumentTextFragment
+from app.intelligence.models import MatterImportantDate, MatterWorkVictory
 from app.legacy_import.source_pages import MatterSourcePage
 from app.matters.models import (
     Entry,
@@ -69,6 +70,7 @@ from app.matters.models import (
     MatterEngagement,
     MatterExternalPosition,
     MatterProceduralDevelopment,
+    MatterWebsiteOverview,
 )
 from app.search.freshness import FreshnessStatus
 from app.search.freshness import status as freshness_status
@@ -176,6 +178,25 @@ def _expected_populations() -> list[tuple[str, str, int]]:
             SearchSourceKind.DOCUMENT.value,
             Document.objects.filter(matter__deleted_at__isnull=True, **live).count(),
         ),
+        # F-008. An overview projects only a stated title, so one without a
+        # title is absent on purpose — every plan, and a publication recorded
+        # without one — and counting it would be the check crying wolf
+        # (`app.search.child_indexing.website_overview_projects`).
+        (
+            "Ülevaated / uudised",
+            SearchSourceKind.WEBSITE_OVERVIEW.value,
+            MatterWebsiteOverview.objects.filter(**live).exclude(title__regex=r"^\s*$").count(),
+        ),
+        (
+            "Olulised tähtajad",
+            SearchSourceKind.IMPORTANT_DATE.value,
+            MatterImportantDate.objects.filter(**live).count(),
+        ),
+        (
+            "Töövõidud",
+            SearchSourceKind.WORK_VICTORY.value,
+            MatterWorkVictory.objects.filter(**live).count(),
+        ),
     ]
 
 
@@ -229,13 +250,18 @@ def _matter_texts(ids: list[Any], now: Any) -> dict[Any, dict[str, Any]]:
     }
 
 
-def _child_texts(indexable: Any, values: Any, *, removable: bool = False) -> Any:
+def _child_texts(
+    indexable: Any, values: Any, *, removable: bool = False, projects: Any = None
+) -> Any:
+    """``projects`` is the indexer's own test of whether a source has a row,
+    for a kind where that is more than «not removed» (an untitled overview)."""
+
     def build(ids: list[Any], now: Any) -> dict[Any, dict[str, Any] | None]:
         expected: dict[Any, dict[str, Any] | None] = {}
         for source in indexable().filter(pk__in=ids):
             # A removed record projects nothing (docs/adr/0102): a row for it
             # is stale, exactly like a row whose text has changed.
-            if removable and source.is_removed:
+            if (removable and source.is_removed) or (projects is not None and not projects(source)):
                 expected[source.pk] = None
                 continue
             row = values(source, now)
@@ -296,6 +322,30 @@ def kind_contracts() -> dict[str, KindContract]:
             "Dokumendid",
             "document__matter_id",
             _child_texts(child.indexable_documents, child.document_values, removable=True),
+            REPAIR_ALL,
+        ),
+        SearchSourceKind.WEBSITE_OVERVIEW.value: KindContract(
+            "Ülevaated / uudised",
+            "website_overview__matter_id",
+            _child_texts(
+                child.indexable_website_overviews,
+                child.website_overview_values,
+                projects=child.website_overview_projects,
+            ),
+            REPAIR_ALL,
+        ),
+        SearchSourceKind.IMPORTANT_DATE.value: KindContract(
+            "Olulised tähtajad",
+            "important_date__matter_id",
+            _child_texts(
+                child.indexable_important_dates, child.important_date_values, removable=True
+            ),
+            REPAIR_ALL,
+        ),
+        SearchSourceKind.WORK_VICTORY.value: KindContract(
+            "Töövõidud",
+            "work_victory__matter_id",
+            _child_texts(child.indexable_work_victories, child.work_victory_values, removable=True),
             REPAIR_ALL,
         ),
     }

@@ -1210,11 +1210,14 @@ def test_neither_search_index_version_moves():
     Moved again by docs/adr/0117: a diacritic-folded vector, authors in a
     column of their own, received opinions' summaries in the body and merged
     tags' successors — a rebuild, and nothing to do with this file's surface.
+    Moved again by F-008: `Ülevaade / uudis`, `Oluline tähtaeg` and `Töövõit`
+    became source kinds of their own — a rebuild, and nothing to do with this
+    file's surface.
     """
     from app.legacy_import.opinion_search_models import ARCHIVE_INDEX_VERSION
     from app.search.models import INDEX_VERSION
 
-    assert INDEX_VERSION == "SONAVORM.1"
+    assert INDEX_VERSION == "SONAVORM.2"
     assert ARCHIVE_INDEX_VERSION == "1"
 
 

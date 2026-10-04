@@ -217,6 +217,9 @@ class RebuildResult:
     developments: int = 0
     positions: int = 0
     document_rows: int = 0
+    website_overviews: int = 0
+    important_dates: int = 0
+    work_victories: int = 0
     #: The generation this rebuild built and activated (docs/adr/0118).
     generation: int = 0
     #: The longest time the exclusive side of the refresh gate was held — the
@@ -629,6 +632,61 @@ def refresh_external_position(position: MatterExternalPosition) -> int:
 
 
 @transaction.atomic
+def refresh_website_overview(overview: Any) -> int:
+    """Reproject one `Ülevaade / uudis` — its stated title, or nothing (F-008).
+
+    Bounded fanout, one record and at most one row, so it runs inside the write
+    that changed it: a title recorded at publication is findable when that
+    transaction commits, a corrected one replaces it, and a removal withdraws
+    it. The vector recomputation is not bookkeeping — a row inserted without it
+    exists and can never match.
+    """
+    from app.search.child_indexing import (
+        indexable_website_overviews,
+        refresh_website_overviews,
+    )
+
+    _hold_off_a_rebuild()
+    count = refresh_website_overviews(indexable_website_overviews().filter(pk=overview.pk))
+    _recompute_vectors(
+        SearchDocument.objects.filter(
+            source_kind=SearchSourceKind.WEBSITE_OVERVIEW, source_object_id=overview.pk
+        )
+    )
+    return count
+
+
+@transaction.atomic
+def refresh_important_date(record: Any) -> int:
+    """Reproject one `Oluline tähtaeg`: its title and its explanation (F-008)."""
+    from app.search.child_indexing import indexable_important_dates, refresh_important_dates
+
+    _hold_off_a_rebuild()
+    count = refresh_important_dates(indexable_important_dates().filter(pk=record.pk))
+    _recompute_vectors(
+        SearchDocument.objects.filter(
+            source_kind=SearchSourceKind.IMPORTANT_DATE, source_object_id=record.pk
+        )
+    )
+    return count
+
+
+@transaction.atomic
+def refresh_work_victory(record: Any) -> int:
+    """Reproject one `Töövõit`: its title, explanation and note (F-008)."""
+    from app.search.child_indexing import indexable_work_victories, refresh_work_victories
+
+    _hold_off_a_rebuild()
+    count = refresh_work_victories(indexable_work_victories().filter(pk=record.pk))
+    _recompute_vectors(
+        SearchDocument.objects.filter(
+            source_kind=SearchSourceKind.WORK_VICTORY, source_object_id=record.pk
+        )
+    )
+    return count
+
+
+@transaction.atomic
 def refresh_source_link(link: MatterSourcePage) -> int:
     """Reproject one Matter↔page relationship."""
     from app.search.child_indexing import indexable_source_links, refresh_source_links
@@ -822,6 +880,9 @@ def rebuild_all(
         developments=counts["developments"],
         positions=counts["positions"],
         document_rows=counts["document_rows"],
+        website_overviews=counts["website_overviews"],
+        important_dates=counts["important_dates"],
+        work_victories=counts["work_victories"],
         seconds=(timezone.now() - started).total_seconds(),
         index_version=INDEX_VERSION,
         generation=generation.number,
@@ -886,17 +947,23 @@ def _fill(
         indexable_engagements,
         indexable_entries,
         indexable_fragments,
+        indexable_important_dates,
         indexable_positions,
         indexable_source_links,
         indexable_submissions,
+        indexable_website_overviews,
+        indexable_work_victories,
         refresh_developments,
         refresh_documents,
         refresh_engagements,
         refresh_entries,
         refresh_fragments,
+        refresh_important_dates,
         refresh_positions,
         refresh_source_links,
         refresh_submissions,
+        refresh_website_overviews,
+        refresh_work_victories,
     )
 
     plan = (
@@ -924,6 +991,28 @@ def _fill(
         ),
         ("positions", SearchSourceKind.EXTERNAL_POSITION, indexable_positions(), refresh_positions),
         ("document_rows", SearchSourceKind.DOCUMENT, indexable_documents(), refresh_documents),
+        # F-008. Every record that exists when the rebuild runs is projected
+        # here, including every one written before the release that added the
+        # kinds — which is how a deployment's one-time `rebuild_search_index`
+        # makes them findable.
+        (
+            "website_overviews",
+            SearchSourceKind.WEBSITE_OVERVIEW,
+            indexable_website_overviews(),
+            refresh_website_overviews,
+        ),
+        (
+            "important_dates",
+            SearchSourceKind.IMPORTANT_DATE,
+            indexable_important_dates(),
+            refresh_important_dates,
+        ),
+        (
+            "work_victories",
+            SearchSourceKind.WORK_VICTORY,
+            indexable_work_victories(),
+            refresh_work_victories,
+        ),
     )
     counts: dict[str, int] = {}
     for name, kind, queryset, refresh in plan:
