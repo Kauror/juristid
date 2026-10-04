@@ -29,7 +29,7 @@ from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
 from app.audit.services import record_change_event
-from app.core.enums import validate_visibility_override
+from app.core.enums import Visibility, validate_visibility_override
 from app.core.errors import DomainError
 from app.core.ids import uuid7
 from app.core.web_addresses import normalize_web_address
@@ -658,6 +658,26 @@ def read_uploads(uploads: Sequence[Any]) -> list[Any]:
     return accepted_files
 
 
+def evidence_visibility_override(record: Any) -> str:
+    """The ``visibility_override`` a new file captured for ``record`` is created with.
+
+    The record's own restriction, when it has one. A record whose override is
+    empty or `NORMAL` passes nothing on, so the file is created empty — the
+    Matter's visibility, exactly as every panel wrote it before. A record
+    restricted below its Matter passes `RESTRICTED` on, so the file is scoped
+    exactly like the record: neither listed on Dokumendid, counted, nor found in
+    search by a reader who may not see it (docs/adr/0137).
+
+    Only the *new* document's own column, at creation. The record's override is
+    copied rather than joined, as `Document.visible_to` has always read the
+    document's own column — so lifting the record's restriction later leaves its
+    files restricted until somebody lifts theirs, which fails closed. Records
+    with no override at all (no ``visibility_override`` attribute) add nothing.
+    """
+    inherited = getattr(record, "visibility_override", "") or ""
+    return "" if inherited == Visibility.NORMAL else inherited
+
+
 @transaction.atomic
 def capture_accepted_evidence(
     *,
@@ -666,16 +686,19 @@ def capture_accepted_evidence(
     accepted: Sequence[Any],
     actor: Any = None,
     role: str = DocumentRole.OTHER,
-    visibility_override: str = "",
 ) -> list[Document]:
     """The second half: store files :func:`read_uploads` accepted, each tied to ``record``.
 
-    ``visibility_override`` is the record's own restriction where the file must
-    carry it too — an opinion restricted below its Matter has working documents
-    restricted with it, decided here at creation rather than left for a caller
-    to remember (docs/adr/0129 §4). Empty, the document inherits the Matter's,
-    which is what every other workspace panel has always written.
+    **A file is never less restricted than the record it is evidence for**
+    (docs/adr/0137, extending docs/adr/0129 §4). Every document created here
+    carries ``record``'s own restriction (:func:`evidence_visibility_override`).
+    The rule is decided once, here, and not by each caller remembering to pass
+    it: the Teema panels did not, so a file on a restricted `Kaasamine` or
+    `Menetluse areng` was listed, counted and found in search by readers who
+    could not see the record it belonged to. There is deliberately no parameter
+    to say otherwise — a caller cannot create a file looser than its record.
     """
+    override = evidence_visibility_override(record)
     captured: list[Document] = []
     for file in accepted:
         document = create_document(
@@ -683,7 +706,7 @@ def capture_accepted_evidence(
             title=file.filename,
             role=role,
             created_by=actor,
-            visibility_override=visibility_override,
+            visibility_override=override,
         )
         add_evidence_version(
             document=document,
@@ -705,7 +728,6 @@ def capture_supporting_evidence(
     uploads: Sequence[Any],
     actor: Any = None,
     role: str = DocumentRole.OTHER,
-    visibility_override: str = "",
 ) -> list[Document]:
     """Capture every uploaded file as evidence and tie each to ``record``.
 
@@ -732,6 +754,10 @@ def capture_supporting_evidence(
     an opinion's `Töödokumendid` box, whose input itself names the role
     (`OPINION_WORKING_DOCUMENT_ROLE`, docs/adr/0129 §2).
 
+    **Restricted with its record.** Each file is created with ``record``'s own
+    restriction when it has one (:func:`evidence_visibility_override`,
+    docs/adr/0137), so no caller passes it and none can forget to.
+
     Two halves, :func:`read_uploads` and :func:`capture_accepted_evidence`, so a
     caller that writes other bytes in the same press can validate these first.
     """
@@ -741,7 +767,6 @@ def capture_supporting_evidence(
         accepted=read_uploads(uploads),
         actor=actor,
         role=role,
-        visibility_override=visibility_override,
     )
 
 
