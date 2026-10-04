@@ -411,7 +411,9 @@ def change_current_action(*, matter: Matter, actor: Any, action_id: Any, **step:
     The canonical `set_next_action_for_new_work`, which supersedes the open row
     with a new one, and **carries its `Tööplaan` step onto the replacement**:
     changing the words or the day of «Küsin Johnilt seisukohta» does not take it
-    out of the plan (docs/adr/0133 §4).
+    out of the plan (docs/adr/0133 §4). **And its restriction** (docs/adr/0139):
+    a step restricted below its Matter is still restricted after its words
+    change — an edit must not show a reader the work they could not see before.
 
     Named, like `Mida tegid?`: the editor posts the step it was drawn beside, and
     a step that is no longer the open one refuses with `STALE_ACTION_REFUSAL`
@@ -421,7 +423,11 @@ def change_current_action(*, matter: Matter, actor: Any, action_id: Any, **step:
     locked_matter = lock_open_matter_for_business_write(matter.pk)
     _named_open_action(locked_matter=locked_matter, action_id=action_id)
     return set_next_action_for_new_work(
-        matter=locked_matter, actor=actor, carry_plan_step=True, **step
+        matter=locked_matter,
+        actor=actor,
+        carry_plan_step=True,
+        carry_visibility_override=True,
+        **step,
     )
 
 
