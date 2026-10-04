@@ -16,11 +16,27 @@ basis = "deployment"
 # midagi, mida lugeja näeb, peale kiiruse. Migratsioone ei ole. Kui see
 # väljalase ei jõua tootmisse 04.10 (Tallinna aja järgi), liiguvad need read
 # väljalaske päeva kirjesse.
+# Teine väljalase samal päeval: ajaloolise regressioonitesti leiud (#386 F-001/F-003,
+# #387 arvamuse tähtaja ajalugu ja nimetatud töö lõpetamine (ADR 0135), #388 kaasamise
+# sisu, teema käigu read ja filter, #389 otsingu uued allikad (ADR 0136, indeks
+# SONAVORM.2)). Migratsioonid matters/0045–0046, workflow/0012, audit/0033,
+# search/0014; otsinguindeks ehitatakse uuesti.
 changes = [
   "Teemade nimekirja veerus «Järgmiseks» on nüüd eesseisev oluline tähtaeg, kui teemal avatud tegevust ei ole — varem öeldi seal, et järgmine samm puudub.",
   "«Viimane tegevus», «Muutusteta 30 p» ja Osakonna «Teemades muudatusi» arvestavad nüüd sama tööd ja selle päris kuupäeva; tegevuseks ei loe eraldi hetkeseisu muutmine, faili lisamine ega andmete parandamine, samuti eemaldatud kirjed.",
   "Suletud teema hetkeseisu ei saa enam tavalise muutmisega vahetada: töö jätkamiseks vajuta «Ava uuesti» ja vali seal hetkeseis, millega teema uuesti avatakse.",
   "Filter «Arvamus saadetud» näitab ainult teemasid, mille arvamus on tõesti välja saadetud; teemad, mille registris on «ei saatnud» või loetamatu märge, sinna enam ei kuulu.",
+  "Arvamuse tähtaja muutmisel küsib Juristid, kas sama küsimise tähtaeg muutus või tuli uus arvamuse küsimine; varasemad tähtajad ja see, mis neist sai, on näha teema külgribal «Arvamuse tähtajad».",
+  "Arvamuse tähtaja saab lõpetada vastatuna (koos saadetud Koja arvamusega või selgitusega), otsusega mitte vastata või tühistatuna; vastatud või suletud teema tähtaega ei näidata enam hoiatava värviga ega pooleli oleva tööna.",
+  "Uue arvamuse küsimisele ei loeta vastuseks varem saadetud arvamust — vastus märgitakse selle küsimise juurde, millele see vastab.",
+  "Koja arvamuse salvestamisel saab samas märkida, millisele arvamuse küsimisele see vastab, millise kaasamise tagasiside ootamise see lõpetab ja millise tööplaani sammu see täidab; märkimata jätmisel ei lõpetata midagi.",
+  "Kaasamise, kodulehe ülevaate või Koja arvamuse lisamisel saab valida tööplaani sammu, mille see töö täidab; suletud teema tööplaan on kokku pandud ega paku enam alustamist.",
+  "Kaasamise real on näha sellega seotud seisukohad, lõpetatud kaasamisel ka tagasiside tähtaeg, ja pooleliolevale kaasamisele saab lisada faili seda lõpetamata.",
+  "Kaasamise lõpetamise järel uueneb «Praegune tegevus» kohe, ilma lehte uuesti laadimata.",
+  "Menetluse kulg näitab VTK-d õiges kohas ka siis, kui VTK lisati õigusaktile hiljem — ka Koja ettepaneku juurde.",
+  "Teema käigu ridadel on näha, millise sammu keegi määras või tehtuks märkis, ja teema käiku saab filtreerida ajavahemiku ja kirje liigi järgi.",
+  "Otsing leiab nüüd ka kodulehe ülevaadete ja uudiste pealkirjad, olulised tähtajad ja töövõidud.",
+  "Teema taasavamisel jääb varasem arvamuse tähtaeg ajalukku, kui seda ei märgita edasi kehtivaks.",
 ]
 
 [[day]]
