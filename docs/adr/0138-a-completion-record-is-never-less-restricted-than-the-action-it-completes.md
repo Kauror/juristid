@@ -81,19 +81,23 @@ save (`complete_next_action`'s five callers, all in `app/matters/workspace.py`):
 | `add_matter_website_overview` from the current plan step | `MatterWebsiteOverview` | B — a publication, a first-class fact | no |
 
 A category-B record is a separate professional fact that merely also finishes a
-step. Restricting a sent opinion, a consultation or a publication because the
-step it finished was restricted would be a new product policy, and none of the
-existing decisions (0011, 0075, 0126, 0133) states it. Not made here.
+step. **It does not inherit the step's restriction — the owner's decision,
+2026-10-04.** Restriction belongs to the information itself, not to every
+workflow edge that led to it: a restricted internal task may well end in an
+ordinary Chamber opinion, and the reverse. Each independent record keeps its
+own visibility rule.
 
-### §4 The next step chosen in the same save — not decided here
+### §4 The next step chosen in the same save does not inherit
 
 `complete_current_action` may also start the next step (a `Tööplaan` step or
 `Muu tegevus`, docs/adr/0133 §4). That step is **new work**, not the record of
-the work done, and no existing decision says it inherits the restriction of the
-step before it. It is written by the ordinary creation rule
+the work done, so **it does not inherit the restriction of the step before it —
+the owner's decision, 2026-10-04.** It is written by the ordinary creation rule
 (`set_next_action_for_new_work`, `start_checked_step`) with no override, and a
-test pins that answer. Whether restriction should carry to future work is a
-separate product and security decision.
+test pins that answer.
+
+Editing the *same* step with `Muuda` is different: the replacement is the same
+work and keeps its restriction (docs/adr/0139).
 
 ### §5 No backfill
 
@@ -138,9 +142,15 @@ not guessed — also zero on production.
   through the real operation, with the controls, copy semantics, the stale-step
   refusal, the plan-step case and §4's pinned answer.
 
+## Decided since
+
+* 2026-10-04, the owner: category-B records do **not** inherit a completed
+  step's restriction (§3), and the next step does **not** inherit the
+  restriction of the one it follows (§4). Neither question is open.
+* A replacement of the same step by `Muuda` keeps its restriction
+  (docs/adr/0139).
+
 ## Not decided here
 
-* Category-B records inheriting a completed step's restriction (§3).
-* The next step inheriting the restriction of the one it follows (§4).
 * Rewriting existing entries (§5).
 * A restriction control on `PRAEGUNE TEGEVUS` or any other panel.

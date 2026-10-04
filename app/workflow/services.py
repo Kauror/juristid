@@ -18,6 +18,7 @@ from django.utils import timezone
 from app.accounts.selectors import is_assignable_business_user
 from app.audit.enums import ChangeEventType
 from app.audit.services import record_change_event
+from app.core.enums import Visibility
 from app.core.errors import DomainError
 from app.workflow.enums import (
     REVIEW_KINDS,
@@ -160,6 +161,7 @@ def set_next_action_for_new_work(
     actor: Any = None,
     plan_step: Any = None,
     carry_plan_step: bool = False,
+    carry_visibility_override: bool = False,
 ) -> NextAction:
     """`set_next_action`, for the surfaces where a person is creating the step.
 
@@ -187,6 +189,7 @@ def set_next_action_for_new_work(
         actor=actor,
         plan_step=plan_step,
         carry_plan_step=carry_plan_step,
+        carry_visibility_override=carry_visibility_override,
     )
 
 
@@ -210,6 +213,7 @@ def set_next_action(
     provenance: dict[str, Any] | None = None,
     plan_step: Any = None,
     carry_plan_step: bool = False,
+    carry_visibility_override: bool = False,
 ) -> NextAction:
     """Set the current action, superseding whatever it replaces.
 
@@ -255,6 +259,15 @@ def set_next_action(
       a step it never saw. Any other supersession — a `+ Märge` dated ahead, an
       import — passes neither, and the plan step it replaces stays where it was:
       superseding work is never completing it.
+
+    **``carry_visibility_override`` — the same work keeps its restriction**
+    (docs/adr/0139). Also `Muuda`, and for the same reason: the replacement is
+    the same work, so it is created with the superseded row's own restriction —
+    `RESTRICTED` is carried, empty or `NORMAL` carries nothing and the new row
+    inherits the Matter as before. Read off the locked row and written in the
+    `INSERT`, never patched afterwards, and copied rather than joined. Every
+    other caller is new work and passes nothing: superseding a restricted step
+    with new work does not restrict the new work (docs/adr/0138 §3–§4).
     """
     text = text.strip()
     if not text:
@@ -309,6 +322,10 @@ def set_next_action(
         plan_step_id = previous.plan_step_id
     else:
         plan_step_id = getattr(plan_step, "pk", None)
+    visibility_override = ""
+    if carry_visibility_override and previous is not None:
+        carried = previous.visibility_override or ""
+        visibility_override = "" if carried == Visibility.NORMAL else carried
     if previous is not None:
         previous.status = ActionStatus.SUPERSEDED
         previous.ended_at = timezone.now()
@@ -326,6 +343,7 @@ def set_next_action(
         responsible=responsible or locked_matter.owner,
         created_by=actor,
         plan_step_id=plan_step_id,
+        visibility_override=visibility_override,
     )
 
     if previous is not None:
