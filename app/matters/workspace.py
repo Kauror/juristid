@@ -57,6 +57,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from app.audit.operations import composer_operation
+from app.core.enums import Visibility
 from app.core.errors import DomainError
 from app.documents.enums import DocumentRole
 from app.documents.models import Document
@@ -273,6 +274,20 @@ def _named_plan_action(
     return current
 
 
+def completion_visibility_override(action: NextAction) -> str:
+    """The ``visibility_override`` of the `Entry` that records ``action`` as done.
+
+    That `Entry` is the account of the work done for this exact action, so it is
+    never less restricted than the action (docs/adr/0138): an action restricted
+    below its Matter passes `RESTRICTED` on, and an action with no stricter
+    override passes nothing, so the `Entry` inherits the Matter as it always
+    did. Read off the action's own column only — never its text, owner, plan
+    step, date or files — and copied at creation, not joined afterwards.
+    """
+    inherited = action.visibility_override or ""
+    return "" if inherited == Visibility.NORMAL else inherited
+
+
 @transaction.atomic
 def complete_current_action(
     *,
@@ -325,6 +340,12 @@ def complete_current_action(
       chosen for the person: the plan's next suggestion is not started because
       this one finished (docs/adr/0133 §4).
 
+    **The note is restricted with the step it finishes** (docs/adr/0138). It
+    is that step's completion record, so a step restricted below its Matter
+    gives the note the same restriction — and its files then follow the note
+    (docs/adr/0137). The next step chosen in the same save is new work and is
+    not restricted by this: it is written by the ordinary creation rule.
+
     **One transaction, checked before it writes.** The next step is asked for
     under the Matter's lock *before* the note is written — on this Matter, still
     ahead, not the step being finished — so a stale choice refuses the whole save
@@ -358,6 +379,7 @@ def complete_current_action(
             body=body,
             author=author,
             kind=EntryKind.NOTE,
+            visibility_override=completion_visibility_override(current),
         )
         result.documents = capture_supporting_evidence(
             matter=locked_matter,
