@@ -141,6 +141,11 @@ def item_period(item: Any) -> tuple[date, date] | None:
     """
     record = item.record
     name = type(record).__name__ if record is not None else ""
+    if name == "MatterWebsiteOverview" and record.is_cancelled and record.cancelled_at is not None:
+        # A cancelled plan has no publication day; its row sits on, and
+        # prints, the day it was cancelled (`timeline._website_overview_rows`).
+        day = timezone.localtime(record.cancelled_at).date()
+        return day, day
     fields = _DATED_FIELDS.get(name)
     if fields is not None:
         value = getattr(record, fields[0], None)

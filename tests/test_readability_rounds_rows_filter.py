@@ -178,6 +178,11 @@ def test_a_finished_round_takes_no_file_here(signed_in, specialist):
 
     assert response.status_code == 400
     assert not DocumentLink.objects.filter(engagement=engagement).exists()
+    # The form targets the whole column, so the refusal answers with the whole
+    # column — never one round row in its place — and says why on this row.
+    page = response.content.decode()
+    assert 'id="teema-vaade"' in page
+    assert 'role="alert"' in page
 
 
 # ---------------------------------------------------------------------------
@@ -280,3 +285,44 @@ def test_a_closed_file_still_offers_the_filter(signed_in, specialist):
     body = _detail(signed_in, matter)
 
     assert 'name="alates"' in body
+
+
+def test_a_file_on_a_restricted_round_is_restricted_with_it(specialist):
+    """docs/adr/0129 §4's rule for an opinion's working file, for this new door."""
+    from app.matters.models import MatterEngagement
+    from app.matters.workspace import add_engagement_evidence
+
+    matter = factories.MatterFactory(owner=specialist)
+    engagement = _round(matter, specialist)
+    MatterEngagement.objects.filter(pk=engagement.pk).update(
+        visibility_override=Visibility.RESTRICTED
+    )
+    engagement.refresh_from_db()
+
+    result = add_engagement_evidence(
+        engagement=engagement,
+        author=specialist,
+        uploads=[SimpleUploadedFile("piiratud.pdf", b"%PDF-1.4 r", content_type="application/pdf")],
+    )
+
+    assert [d.visibility_override for d in result.documents] == [Visibility.RESTRICTED]
+
+
+def test_a_cancelled_overview_plan_is_dated_by_the_day_it_was_cancelled(specialist):
+    """It prints that day, so a date range reads that day too — never «undated»."""
+    from app.matters.models import MatterWebsiteOverview
+    from app.matters.services import cancel_website_overview, plan_website_overview
+    from app.matters.timeline_filter import item_period
+
+    matter = factories.MatterFactory(owner=specialist)
+    plan = plan_website_overview(matter=matter, actor=specialist)
+    cancel_website_overview(overview=plan, actor=specialist)
+    cancelled_on = timezone.localdate()
+
+    rows = [r for r in _rows(matter, specialist) if isinstance(r.record, MatterWebsiteOverview)]
+
+    assert rows
+    for row in rows:
+        assert item_period(row) == (cancelled_on, cancelled_on)
+        assert keeps(row, TimelineFilter(since=cancelled_on))
+        assert not keeps(row, TimelineFilter(kind=KIND_UNDATED))

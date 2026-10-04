@@ -4067,7 +4067,9 @@ def add_engagement_evidence_view(request: HttpRequest, pk: Any, engagement_id: A
     The round through the Matter and `visible_to`, so a round this reader may
     not see is a 404; the closed-Matter and not-open refusals are the use
     case's, under the lock. Answers with the whole column: the file reaches the
-    round's row and `Dokumendid`'s count at once.
+    round's row and `Dokumendid`'s count at once. A refusal answers with the
+    column too — the form targets it — with the refused picker back on this
+    row only (`_evidence_refusal`).
     """
     matter = get_visible_matter(request, pk)
     engagement = get_object_or_404(
@@ -4075,19 +4077,15 @@ def add_engagement_evidence_view(request: HttpRequest, pk: Any, engagement_id: A
     )
     form = EngagementEvidenceForm(request.POST, request.FILES, record=engagement)
     if not form.is_valid():
-        return _engagement_row(
-            request,
-            matter,
-            engagement,
-            error=" ".join(str(message) for message in form.errors.get("attachments", [])),
-            status=400,
-        )
+        return _evidence_refusal(request, matter, key="engagement_evidence_form", form=form)
     try:
         workspace.add_engagement_evidence(
             engagement=engagement, author=request.user, uploads=form.cleaned_data["attachments"]
         )
     except (DomainError, UploadRejected) as error:
-        return _engagement_row(request, matter, engagement, error=str(error), status=400)
+        return _evidence_refusal(
+            request, matter, key="engagement_evidence_form", form=form, error=str(error)
+        )
     return _render_overview(request, matter)
 
 

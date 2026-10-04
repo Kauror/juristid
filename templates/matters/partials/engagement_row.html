@@ -552,9 +552,11 @@ before the closure.
       {% comment %}
         `+ Lisa fail` while the round is still open: a survey export or a
         member's letter that arrived before the round is finished. It finishes
-        nothing (`workspace.add_engagement_evidence`).
+        nothing (`workspace.add_engagement_evidence`). A refused file comes
+        back as `engagement_evidence_form`, open on this row only, with the
+        refusal under the picker (`_evidence_refusal`).
       {% endcomment %}
-      <details class="cx-panel uxtl__addfile" data-addpanel>
+      <details class="cx-panel uxtl__addfile" data-addpanel{% if engagement_evidence_form.record.pk == engagement.pk %} open{% endif %}>
         <summary class="disclosure-chip disclosure-chip--quiet">+ Lisa fail</summary>
         <div class="cx-panel__body">
           <form class="addform" data-addform aria-label="Faili lisamine kaasamisele"
@@ -562,13 +564,20 @@ before the closure.
                 hx-target="#teema-vaade" hx-swap="outerHTML"
                 hx-encoding="multipart/form-data">
             {% csrf_token %}
-            {% include "matters/partials/add_files.html" with field=engagement.evidence_form.attachments describe_errors=True %}
+            {% if engagement_evidence_form.record.pk == engagement.pk %}
+              {% include "matters/partials/add_files.html" with field=engagement_evidence_form.attachments describe_errors=True %}
+            {% else %}
+              {% include "matters/partials/add_files.html" with field=engagement.evidence_form.attachments describe_errors=True %}
+            {% endif %}
             <div class="addform__actions">
               <button class="button button--quiet button--tiny" type="submit">Lisa fail</button>
             </div>
           </form>
         </div>
       </details>
+    {% elif engagement_evidence_form.record.pk == engagement.pk %}
+      {% comment %} The round was finished (or the file shut) while the file was on its way: say why it was not added. {% endcomment %}
+      <p class="formerror" role="alert">{{ engagement_evidence_form.attachments.errors|first }}</p>
     {% endif %}
   {% endif %}
 </div>

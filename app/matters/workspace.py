@@ -558,11 +558,15 @@ def add_engagement_evidence(
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
         result.record = current
+        # A round restricted below its Matter keeps its new files restricted
+        # with it, as an opinion's working file is (docs/adr/0129 §4): never
+        # listed, counted or found by somebody who may not see the round.
         result.documents = capture_supporting_evidence(
             matter=locked_matter,
             record=current,
             uploads=_uploads(uploads),
             actor=author,
+            visibility_override=current.visibility_override,
         )
         return result
 
