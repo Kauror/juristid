@@ -528,4 +528,10 @@ def test_the_current_register_is_not_a_kind_of_search_row() -> None:
         # visibility; its row carries the document's own title and filenames,
         # not anything derived from another projection.
         "DOCUMENT",
+        # docs/adr/0136 (F-008). An `Ülevaade / uudis`, an `Oluline tähtaeg`
+        # and a `Töövõit` are canonical records with their own visibility;
+        # their rows carry the words a person typed, not another projection.
+        "WEBSITE_OVERVIEW",
+        "IMPORTANT_DATE",
+        "WORK_VICTORY",
     }
