@@ -284,10 +284,11 @@ def remove_matter_record(
 
     current.removed_at = timezone.now()
     current.removed_by = actor
-    # The search corpus follows from this save: the four kinds with a row of
-    # their own there (Sissekanne, Märge, Kaasamine, Seisukoht) re-project on
-    # post_save (`app.search.signals`), and a refresh that reads `removed_at`
-    # deletes the row and inserts nothing. The other kinds were never indexed.
+    # The search corpus follows from this save: the seven kinds with a row of
+    # their own there (Sissekanne, Märge, Kaasamine, Seisukoht, Ülevaade /
+    # uudis, Oluline tähtaeg, Töövõit) re-project on post_save
+    # (`app.search.signals`), and a refresh that reads `removed_at` deletes the
+    # row and inserts nothing. `Jõustumine` is not indexed.
     current.save(update_fields=["removed_at", "removed_by", "updated_at"])
 
     record_change_event(

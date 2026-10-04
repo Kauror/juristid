@@ -63,6 +63,7 @@ from django.dispatch import receiver
 from app.accounts.models import User
 from app.documents.enums import DerivativeStatus
 from app.documents.models import Document, DocumentVersion
+from app.intelligence.models import MatterImportantDate, MatterWorkVictory
 from app.legacy_import.source_pages import LegacySourcePage, MatterSourcePage
 from app.matters.models import (
     Entry,
@@ -71,6 +72,7 @@ from app.matters.models import (
     MatterExternalPosition,
     MatterProceduralDevelopment,
     MatterSourceOrganisation,
+    MatterWebsiteOverview,
     TagAssignment,
 )
 from app.organisations.models import Organisation, OrganisationAlias
@@ -84,9 +86,12 @@ from app.search.indexing import (
     refresh_engagement,
     refresh_entry,
     refresh_external_position,
+    refresh_important_date,
     refresh_matters,
     refresh_source_link,
     refresh_submission,
+    refresh_website_overview,
+    refresh_work_victory,
 )
 from app.search.models import SearchRebuildReason
 from app.submissions.models import Submission, SubmissionRecipient
@@ -313,6 +318,56 @@ def refresh_on_external_position_save(
     if indexing_is_suspended():
         return
     refresh_external_position(instance)
+
+
+@receiver(post_save, sender=MatterWebsiteOverview, dispatch_uid="search_refresh_website_overview")
+def refresh_on_website_overview_save(
+    sender: type[MatterWebsiteOverview], instance: MatterWebsiteOverview, **kwargs: Any
+) -> None:
+    """`Ülevaade / uudis`, findable by the title somebody gave it (F-008).
+
+    Every write to an overview is a `save()` — plan, publish, correct, cancel,
+    remove — so this one handler covers each of them, inside the service's own
+    transaction: a title recorded at publication is findable when it commits,
+    a corrected title replaces it, and a removal withdraws the row because the
+    refresh reads `removed_at` and inserts nothing.
+
+    No `post_delete` companion, for `refresh_on_engagement_save`'s reason:
+    `SearchDocument.website_overview` is a real foreign key with
+    `on_delete=CASCADE`.
+    """
+    if indexing_is_suspended():
+        return
+    refresh_website_overview(instance)
+
+
+@receiver(post_save, sender=MatterImportantDate, dispatch_uid="search_refresh_important_date")
+def refresh_on_important_date_save(
+    sender: type[MatterImportantDate], instance: MatterImportantDate, **kwargs: Any
+) -> None:
+    """`Oluline tähtaeg`, findable by its title and explanation when written (F-008).
+
+    Add, correct, cancel, supersede and remove all `save()` the row, so one
+    handler covers them; a superseding deadline is a new row and arrives
+    through its own `create()`. No `post_delete` companion: the foreign key
+    cascades.
+    """
+    if indexing_is_suspended():
+        return
+    refresh_important_date(instance)
+
+
+@receiver(post_save, sender=MatterWorkVictory, dispatch_uid="search_refresh_work_victory")
+def refresh_on_work_victory_save(
+    sender: type[MatterWorkVictory], instance: MatterWorkVictory, **kwargs: Any
+) -> None:
+    """`Töövõit`, findable by its title, explanation and note when written (F-008).
+
+    No `post_delete` companion: the foreign key cascades.
+    """
+    if indexing_is_suspended():
+        return
+    refresh_work_victory(instance)
 
 
 @receiver(post_save, sender=Submission, dispatch_uid="search_refresh_submission")

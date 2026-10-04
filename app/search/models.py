@@ -76,7 +76,20 @@ from app.core.models import BaseModel
 #: built by the older indexer has none of that, and is made ineligible exactly
 #: as before — too little until the one-time rebuild, never something
 #: confidential.
-INDEX_VERSION = "SONAVORM.1"
+#:
+#: Bumped from `SONAVORM.1` when `Ülevaade / uudis`, `Oluline tähtaeg` and
+#: `Töövõit` entered the projection as kinds of their own (F-008). Their text
+#: was already stored — an overview's stated title, a deadline's title and its
+#: explanation, a work victory's title, explanation and note — and none of it
+#: was findable: a lawyer searching for the words of a deadline they recorded
+#: got silence, which reads as «not recorded» rather than «not indexed». Rows
+#: built before this hold none of the three kinds, so an unrebuilt deployment
+#: answers against the older corpus; the version makes that visible to
+#: `check_search_integrity` and to the release manifest instead of leaving it
+#: to be discovered. Nothing confidential was in the older rows, so the
+#: fail-closed gap is too little until the one-time rebuild, never too much —
+#: exactly as for every bump above.
+INDEX_VERSION = "SONAVORM.2"
 
 
 class SearchSourceKind(models.TextChoices):
@@ -139,6 +152,21 @@ class SearchSourceKind(models.TextChoices):
     # Authorized like a fragment: through the Document's own override, which
     # may be stricter than its Matter's.
     DOCUMENT = "DOCUMENT", "Dokument"
+    # The three records a lawyer writes on a Teema whose words were stored and
+    # never findable (F-008). Each is a `VisibilityInheritingModel` with its own
+    # `visibility_override`, so each gets a row of its own for AUTH-003's rule:
+    # text that may be narrower than its Matter sits in a row whose visibility
+    # can say so, never inside the MATTER row.
+    #
+    # `Ülevaade / uudis` contributes its stated title only — never its address,
+    # and nothing derived from it: the title is the person's own words, and a
+    # page name guessed from a URL would be the projection inventing one
+    # (docs/adr/0127 §1). An overview with no title projects nothing.
+    WEBSITE_OVERVIEW = "WEBSITE_OVERVIEW", "Ülevaade / uudis"
+    # `Oluline tähtaeg`: its title and its explanation (`note`).
+    IMPORTANT_DATE = "IMPORTANT_DATE", "Oluline tähtaeg"
+    # `Töövõit`: its title, its explanation (`detail`) and its note.
+    WORK_VICTORY = "WORK_VICTORY", "Töövõit"
 
 
 #: Which live column carries each kind's own restriction, for the authorization
@@ -158,6 +186,9 @@ SOURCE_OVERRIDE_FIELDS: dict[str, str | None] = {
     SearchSourceKind.ENGAGEMENT.value: "engagement__visibility_override",
     SearchSourceKind.PROCEDURAL_DEVELOPMENT.value: "development__visibility_override",
     SearchSourceKind.EXTERNAL_POSITION.value: "external_position__visibility_override",
+    SearchSourceKind.WEBSITE_OVERVIEW.value: "website_overview__visibility_override",
+    SearchSourceKind.IMPORTANT_DATE.value: "important_date__visibility_override",
+    SearchSourceKind.WORK_VICTORY.value: "work_victory__visibility_override",
     # A source page has no restriction of its own. It is historical material
     # attached to a Matter, and the Matter's visibility is the whole answer —
     # so this maps to None, exactly like MATTER above.
@@ -336,6 +367,40 @@ class SearchDocument(BaseModel):
         related_name="search_documents",
         verbose_name="arvamus või tagasiside",
     )
+    # The three F-008 kinds. Unlike the keys above, each is served by a
+    # *partial* index declared in `Meta.indexes` rather than by the plain one a
+    # foreign key gets by default: these columns are NULL on every row but
+    # their own kind's, and a partial index built `CONCURRENTLY` lets the
+    # migration add them to a populated table without refusing writes while it
+    # scans it (`search/0014`). The index is what deleting a source looks its
+    # rows up through.
+    website_overview = models.ForeignKey(
+        "matters.MatterWebsiteOverview",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        db_index=False,
+        related_name="search_documents",
+        verbose_name="ülevaade / uudis",
+    )
+    important_date = models.ForeignKey(
+        "intelligence.MatterImportantDate",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        db_index=False,
+        related_name="search_documents",
+        verbose_name="oluline tähtaeg",
+    )
+    work_victory = models.ForeignKey(
+        "intelligence.MatterWorkVictory",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        db_index=False,
+        related_name="search_documents",
+        verbose_name="töövõit",
+    )
     matter_source_page = models.ForeignKey(
         "legacy_import.MatterSourcePage",
         on_delete=models.CASCADE,
@@ -469,6 +534,23 @@ class SearchDocument(BaseModel):
             # Refreshing one document's projection deletes its rows first, and
             # at fragment scale that lookup must not be a scan.
             models.Index(fields=["document_version"], name="search_by_version"),
+            # The F-008 foreign keys, over the rows that have one (see the
+            # fields for why partial).
+            models.Index(
+                fields=["website_overview"],
+                condition=models.Q(website_overview__isnull=False),
+                name="search_by_website_overview",
+            ),
+            models.Index(
+                fields=["important_date"],
+                condition=models.Q(important_date__isnull=False),
+                name="search_by_important_date",
+            ),
+            models.Index(
+                fields=["work_victory"],
+                condition=models.Q(work_victory__isnull=False),
+                name="search_by_work_victory",
+            ),
             # Deliberately no plain index on `generation`. Readers filter on it
             # in every query, and one would offer the planner a way to read
             # every row of the active generation — all of them — instead of
