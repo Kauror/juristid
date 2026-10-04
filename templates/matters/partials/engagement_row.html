@@ -465,28 +465,6 @@ before the closure.
         </div>
       </details>
     {% endif %}
-    {% if engagement.evidence_form and can_write_business_content and matter.is_open %}
-      {% comment %}
-        `+ Lisa fail` while the round is still open: a survey export or a
-        member's letter that arrived before the round is finished. It finishes
-        nothing (`workspace.add_engagement_evidence`).
-      {% endcomment %}
-      <details class="cx-panel uxtl__finish" data-addpanel>
-        <summary class="disclosure-chip disclosure-chip--quiet">+ Lisa fail</summary>
-        <div class="cx-panel__body">
-          <form class="addform" data-addform aria-label="Faili lisamine kaasamisele"
-                hx-post="{% url 'matters:add_engagement_evidence' pk=matter.pk engagement_id=engagement.pk %}"
-                hx-target="#teema-vaade" hx-swap="outerHTML"
-                hx-encoding="multipart/form-data">
-            {% csrf_token %}
-            {% include "matters/partials/add_files.html" with field=engagement.evidence_form.attachments describe_errors=True %}
-            <div class="addform__actions">
-              <button class="button button--quiet button--tiny" type="submit">Lisa fail</button>
-            </div>
-          </form>
-        </div>
-      </details>
-    {% endif %}
     {% if engagement.feedback_form and can_write_business_content and matter.is_open %}
       <details class="cx-panel uxtl__finish" data-addpanel
                {% if engagement.feedback_form_open %}open{% endif %}>
@@ -565,6 +543,28 @@ before the closure.
             {% endcomment %}
             <div class="addform__actions">
               <button class="button button--primary button--tiny" type="submit">Salvesta ja lõpeta</button>
+            </div>
+          </form>
+        </div>
+      </details>
+    {% endif %}
+    {% if engagement.evidence_form and can_write_business_content and matter.is_open %}
+      {% comment %}
+        `+ Lisa fail` while the round is still open: a survey export or a
+        member's letter that arrived before the round is finished. It finishes
+        nothing (`workspace.add_engagement_evidence`).
+      {% endcomment %}
+      <details class="cx-panel uxtl__addfile" data-addpanel>
+        <summary class="disclosure-chip disclosure-chip--quiet">+ Lisa fail</summary>
+        <div class="cx-panel__body">
+          <form class="addform" data-addform aria-label="Faili lisamine kaasamisele"
+                hx-post="{% url 'matters:add_engagement_evidence' pk=matter.pk engagement_id=engagement.pk %}"
+                hx-target="#teema-vaade" hx-swap="outerHTML"
+                hx-encoding="multipart/form-data">
+            {% csrf_token %}
+            {% include "matters/partials/add_files.html" with field=engagement.evidence_form.attachments describe_errors=True %}
+            <div class="addform__actions">
+              <button class="button button--quiet button--tiny" type="submit">Lisa fail</button>
             </div>
           </form>
         </div>
