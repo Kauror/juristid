@@ -487,6 +487,11 @@ urlpatterns = [
     ),
     path("teemad/<uuid:pk>/vali/<str:field>/", views.update_field, name="update_field"),
     path(
+        "teemad/<uuid:pk>/kaasamine/<uuid:engagement_id>/lisa-fail/",
+        views.add_engagement_evidence_view,
+        name="add_engagement_evidence",
+    ),
+    path(
         "teemad/<uuid:pk>/arvamuse-tahtaeg/",
         views.response_deadline_view,
         name="response_deadline",

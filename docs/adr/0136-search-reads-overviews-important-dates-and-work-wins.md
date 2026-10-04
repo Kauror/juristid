@@ -29,9 +29,14 @@ documents, rounds, `Märge` and positions, and none of these three.
   nothing else — never its address, and never a title read off the address.
   An overview with no title has no row. No page is fetched; nothing is
   extracted from documents.
-* **Every state, never removed.** Plans, publications, cancelled overviews,
-  superseded and cancelled deadlines, candidate and rejected wins all stay
-  findable; a removed record leaves the index in the save that removed it.
+* **Every state a reader can see, never removed.** Plans, publications,
+  cancelled overviews, superseded and cancelled deadlines all stay findable; a
+  removed record leaves the index in the save that removed it. A `Töövõit` is
+  the exception: only a confirmed one has a row (`VISIBLE_VICTORY_STATUS`, the
+  rule of the Teema page, the register and the figures). A candidate or a
+  rejected claim is read only in the writers' review block, so search must not
+  show it to a reader as a win; confirming or rejecting adds or withdraws the
+  row in the same save.
 * **The ordinary machinery.** `post_save` signals inside the business
   transaction, delete-and-reinsert refreshes, the full-rebuild plan, and
   `check_search_integrity`'s expected-row counts. Authorization at query time

@@ -602,8 +602,12 @@
    and the other ends one — and no row ever offers both, so a shared class would
    make «the control that finishes this round» unaddressable
    (docs/adr/0091 §2). */
+/* `+ Lisa fail` on an open round has its own class for the same reason: it
+   adds a paper and finishes nothing, so it must not answer to «the control that
+   finishes this round» (historical regression, UX-006). */
 .uxtl__finish,
-.uxtl__wait-open {
+.uxtl__wait-open,
+.uxtl__addfile {
   margin-top: 4px;
 }
 

@@ -31,7 +31,11 @@ from django.db import connection
 
 from app.accounts.models import User
 from app.core import deployment
-from app.intelligence.services import add_important_date, add_work_victory_candidate
+from app.intelligence.services import (
+    add_important_date,
+    add_work_victory_candidate,
+    confirm_work_victory,
+)
 from app.legacy_import.source_pages import (
     MatterSourcePage,
     SourceMatchClass,
@@ -130,8 +134,11 @@ def every_kind(specialist, capture_evidence, extract):
         note="Ministeeriumi ajakava järgi",
         actor=specialist,
     )
-    add_work_victory_candidate(
-        matter=matter, title="Üleminekuaeg pikenes", detail="Koja ettepanek", actor=specialist
+    confirm_work_victory(
+        record=add_work_victory_candidate(
+            matter=matter, title="Üleminekuaeg pikenes", detail="Koja ettepanek", actor=specialist
+        ),
+        actor=specialist,
     )
     rebuild_all()
     kinds = set(SearchDocument.objects.values_list("source_kind", flat=True))

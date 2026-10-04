@@ -26,7 +26,11 @@ from app.core.authorization import (
     may_write_business_content,
 )
 from app.intelligence.enums import WorkVictoryStatus
-from app.intelligence.services import add_important_date, add_work_victory_candidate
+from app.intelligence.services import (
+    add_important_date,
+    add_work_victory_candidate,
+    confirm_work_victory,
+)
 from app.matters.services import promote_matter_to_full
 from app.search.models import SearchDocument
 from app.workflow.enums import DatePrecision
@@ -208,10 +212,13 @@ def test_structured_facts_are_indexed_only_where_a_decision_says_so(specialist):
     add_important_date(
         matter=matter, title="Indekseeritud tähtaeg", date_value=FUTURE, period_end=FUTURE
     )
-    add_work_victory_candidate(
-        matter=matter,
-        title="Indekseeritud võit",
-        date_precision=DatePrecision.YEAR,
+    confirm_work_victory(
+        record=add_work_victory_candidate(
+            matter=matter,
+            title="Indekseeritud võit",
+            date_precision=DatePrecision.YEAR,
+            actor=specialist,
+        ),
         actor=specialist,
     )
 

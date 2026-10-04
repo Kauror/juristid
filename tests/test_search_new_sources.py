@@ -36,6 +36,8 @@ from app.core.enums import Visibility
 from app.intelligence.services import (
     add_important_date,
     add_work_victory_candidate,
+    confirm_work_victory,
+    reject_work_victory,
     update_important_date,
     update_work_victory,
 )
@@ -47,6 +49,7 @@ from app.matters.services import (
     publish_website_overview,
 )
 from app.search.indexing import rebuild_all, suspend_indexing
+from app.search.management.commands.check_search_integrity import build_report
 from app.search.models import INDEX_VERSION, SearchDocument, SearchSourceKind
 from app.search.services import result_count, search_page
 from app.workflow.enums import DatePrecision
@@ -104,13 +107,15 @@ def _deadline_retitle(record: Any, actor: Any, title: str) -> Any:
 
 
 def _victory(matter: Any, actor: Any, title: str, body: str) -> Any:
-    return add_work_victory_candidate(
+    """A confirmed `Töövõit` — the only state a reader can see, so the only one indexed."""
+    candidate = add_work_victory_candidate(
         matter=matter,
         title=title,
         detail=body,
         note="Märkus kinnitajale.",
         actor=actor,
     )
+    return confirm_work_victory(record=candidate, actor=actor)
 
 
 def _victory_retitle(record: Any, actor: Any, title: str) -> Any:
@@ -223,11 +228,34 @@ def test_a_written_record_is_findable_by_its_explanation_and_quoted(spec, matter
 
 
 def test_a_work_victorys_note_is_searchable_too(matter, specialist):
-    add_work_victory_candidate(
+    candidate = add_work_victory_candidate(
         matter=matter, title="Pealkiri", note=f"{BODY_WORD} märkus", actor=specialist
     )
+    confirm_work_victory(record=candidate, actor=specialist)
 
     assert len(_of_kind(specialist, BODY_WORD, SearchSourceKind.WORK_VICTORY)) == 1
+
+
+def test_only_a_confirmed_work_victory_is_findable(matter, specialist):
+    """A candidate or a rejected claim is shown nowhere a reader looks (the Teema
+    page, the register and the figures read `VISIBLE_VICTORY_STATUS`), so search
+    must not offer it as a «Töövõit» either; the review decision adds or withdraws
+    the row in the same save."""
+    candidate = add_work_victory_candidate(
+        matter=matter, title=f"{TITLE_WORD} kandidaat", actor=specialist
+    )
+    assert _of_kind(specialist, TITLE_WORD, SearchSourceKind.WORK_VICTORY) == []
+
+    confirmed = confirm_work_victory(record=candidate, actor=specialist)
+    assert len(_of_kind(specialist, TITLE_WORD, SearchSourceKind.WORK_VICTORY)) == 1
+
+    reject_work_victory(record=confirmed, actor=specialist, reason="Ei tulnud välja.")
+    assert _of_kind(specialist, TITLE_WORD, SearchSourceKind.WORK_VICTORY) == []
+
+    rebuild_all()
+    assert _of_kind(specialist, TITLE_WORD, SearchSourceKind.WORK_VICTORY) == []
+    report = build_report(full=True)
+    assert not [f.label for f in report.findings if f.label.startswith("Töövõidud")]
 
 
 # ---------------------------------------------------------------------------

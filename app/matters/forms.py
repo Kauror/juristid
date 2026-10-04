@@ -6604,6 +6604,17 @@ class ExternalPositionEvidenceForm(RecordEvidenceForm):
     slug = "valine_seisukoht"
 
 
+class EngagementEvidenceForm(RecordEvidenceForm):
+    """`+ Lisa fail` on a `Kaasamine` still collecting answers.
+
+    A survey export or a member's letter arrives while the round is open, and
+    the round could take files only when it was created or finished. Adding one
+    finishes nothing (historical regression, UX-006 / F-017).
+    """
+
+    slug = "kaasamine"
+
+
 class OpinionWorkingDocumentsForm(RecordEvidenceForm):
     """`+ Lisa töödokument` on a sent `Koja arvamus` (docs/adr/0129 §7).
 

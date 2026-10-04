@@ -918,6 +918,33 @@ def _documents_added(events: list[ChangeEvent]) -> int:
     )
 
 
+#: How long a step's own words may run inside a row's sentence before they are
+#: cut with «…». The whole sentence is one line on screen; the step's full text
+#: is one click away under the row.
+STEP_WORDS_IN_SENTENCE = 120
+
+
+def _step_words(events: list[ChangeEvent], event_type: str) -> str:
+    """The step's own words as this event recorded them, or ``""``.
+
+    Read off the event's ``summary`` — written in the same transaction as the
+    step, so it is what the step said **then**, not what a later `Muuda` made of
+    it. An event recorded without one says nothing here, and nothing is
+    reconstructed for it (historical regression, UX-011).
+    """
+    text = next(
+        (
+            (event.summary or "").strip()
+            for event in reversed(events)
+            if event.event_type == event_type and (event.summary or "").strip()
+        ),
+        "",
+    )
+    if len(text) > STEP_WORDS_IN_SENTENCE:
+        text = text[: STEP_WORDS_IN_SENTENCE - 1].rstrip() + "…"
+    return text
+
+
 def _verbs_for(entry: Entry | None, events: list[ChangeEvent]) -> tuple[str, ...]:
     seen = {event.event_type for event in events}
     verbs: list[str] = []
@@ -928,6 +955,17 @@ def _verbs_for(entry: Entry | None, events: list[ChangeEvent]) -> tuple[str, ...
             continue
         if event_type == ChangeEventType.EVIDENCE_VERSION_ADDED:
             phrase = documents_added_clause(_documents_added(events))
+        elif entry is None and event_type in (
+            ChangeEventType.NEXT_ACTION_SET,
+            ChangeEventType.NEXT_ACTION_COMPLETED,
+        ):
+            # **A row with no note of its own says which step** (UX-011).
+            # «määras järgmise sammu» alone named nothing, and the step's
+            # words were one expand or one `Kõik muudatused` away. A note's
+            # row keeps the bare clause: its `→` strip already names the step.
+            words = _step_words(events, event_type)
+            if words:
+                phrase = f"{phrase} «{words}»"
         verbs.append(phrase)
     return tuple(verbs)
 
@@ -3006,3 +3044,47 @@ def _with_linked_files(page: list[TimelineItem], user: Any) -> list[TimelineItem
         ]
         resolved.append(replace(item, files=(*item.files, *extra)) if extra else item)
     return resolved
+
+
+@dataclass(frozen=True)
+class RoundPosition:
+    """One answer a round received, as its row lists it."""
+
+    who: str
+    display_date: str
+    provenance: str
+
+
+def attach_round_positions(engagements: list[Any], user: Any) -> None:
+    """Hang on each round the positions linked to it that this reader may see.
+
+    **One query for every round on the page**, never one per row. Only
+    positions this reader may see are listed or counted, so a restricted answer
+    changes neither the list nor its number (AUTH-003). The round's own
+    `response_count` stays the only «vastajaid» figure: linked positions are
+    what the file holds, not how many replied (historical regression, UX-006).
+    """
+    if not engagements:
+        return
+    by_round: dict[Any, list[RoundPosition]] = {engagement.pk: [] for engagement in engagements}
+    positions = (
+        MatterExternalPosition.objects.visible_to(user)
+        .filter(engagement__in=list(by_round))
+        .select_related("organisation")
+        .order_by("stated_on", "created_at")
+    )
+    for position in positions:
+        who = position.organisation.name if position.organisation_id else position.source_label
+        by_round[position.engagement_id].append(
+            RoundPosition(
+                who=who or "—",
+                display_date=(
+                    format_at_precision(position.stated_on, position.stated_on_precision)
+                    if position.stated_on
+                    else EXTERNAL_POSITION_DATE_UNKNOWN
+                ),
+                provenance=position.get_provenance_display(),
+            )
+        )
+    for engagement in engagements:
+        engagement.round_positions = by_round[engagement.pk]

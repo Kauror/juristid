@@ -111,6 +111,7 @@ from app.matters.forms import (
     CompactWorkVictoryForm,
     CompleteCurrentActionForm,
     DevelopmentEvidenceForm,
+    EngagementEvidenceForm,
     EngagementFeedbackForm,
     EngagementForm,
     EngagementWaitForm,
@@ -258,11 +259,14 @@ from app.matters.stage_episodes import (
 from app.matters.timeline import (
     TIMELINE_FILTER_ALL,
     TIMELINE_FILTERS,
+    attach_round_positions,
     development_milestone,
     engagement_milestone,
     external_position_milestone,
     matter_timeline,
 )
+from app.matters.timeline_filter import KINDS as TIMELINE_FILTER_KINDS
+from app.matters.timeline_filter import keeps, timeline_filter_from
 from app.organisations.models import Organisation
 from app.related_materials.selectors import related_materials_for
 from app.search import services as search_services
@@ -327,6 +331,9 @@ PAGE_SIZE_CHOICES: tuple[int, ...] = (12, 30, 50)
 PAGE_SIZE_ALL = "koik"
 PAGE_SIZE_ALL_BOUND = 2000
 TIMELINE_PAGE_SIZE = 30
+#: A filtered flat chronology reads the whole visible history, so its count
+#: and rows answer the filter rather than one page of it.
+WHOLE_TIMELINE = 100_000
 
 
 def page_size_from(raw: str | None) -> tuple[int, str]:
@@ -2750,22 +2757,37 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         current_action=current_action,
         episodes=episodes,
     )
+    # `Alates`, `Kuni` and `Liik` — applied here, on the server, to every row
+    # this reader may see: the grouped chronology already reads the whole
+    # history, and a filtered flat one reads it too rather than filtering one
+    # page. Each row stays in its period; the count and the periods answer the
+    # same filter (`app/matters/timeline_filter.py`).
+    chosen = timeline_filter_from(request.GET)
     if episode_timeline is None:
         items, has_more = matter_timeline(
             matter=matter,
             user=request.user,
-            limit=TIMELINE_PAGE_SIZE,
+            limit=WHOLE_TIMELINE if chosen.is_active else TIMELINE_PAGE_SIZE,
             only=timeline_only,
             intelligence=intelligence,
             current_action=current_action,
         )
+        if chosen.is_active:
+            items = [item for item in items if keeps(item, chosen)]
+            has_more = False
     else:
+        if chosen.is_active:
+            for group in episode_timeline.groups:
+                group.items = [item for item in group.items if keeps(item, chosen)]
+                group.is_open = bool(group.items)
+            episode_timeline.groups = [group for group in episode_timeline.groups if group.items]
         items = [item for group in episode_timeline.groups for item in group.items]
         has_more = False
     # Each `Kaasamine` row on the chronology gets its own `Lõpeta kaasamine`
     # form, with its own ids and its own revision token. Here rather than in the
     # template because a template must not build a form, and on the record
     # rather than in this dict because there are many rows (`attach_feedback_form`).
+    attach_round_positions([item.record for item in items if item.is_engagement], request.user)
     for item in items:
         if item.is_engagement:
             attach_wait_form(attach_feedback_form(item.record))
@@ -2838,6 +2860,8 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # step are gone from it (docs/adr/0074 §16).
         "timeline_has_more": has_more,
         "timeline_count": len(items) + (1 if has_more else 0),
+        "timeline_filter": chosen,
+        "timeline_filter_kinds": TIMELINE_FILTER_KINDS,
         "timeline_only": timeline_only,
         "timeline_filters": TIMELINE_FILTERS,
         # The eight workspace forms, unbound. `PRAEGUNE TEGEVUS` takes one and
@@ -3876,6 +3900,11 @@ def attach_feedback_form(
         else (_engagement_feedback_form(engagement) if engagement.has_open_feedback_wait else None)
     )
     engagement.feedback_form_open = open_panel  # type: ignore[attr-defined]
+    # `+ Lisa fail` on a round still collecting answers, beside `Lõpeta`
+    # (historical regression, UX-006): adding a paper finishes nothing.
+    engagement.evidence_form = (  # type: ignore[attr-defined]
+        EngagementEvidenceForm(record=engagement) if engagement.has_open_feedback_wait else None
+    )
     return engagement
 
 
@@ -3905,6 +3934,7 @@ def _engagement_row(
     the chronology itself renders from, so a corrected row cannot come back
     worded differently from the way it will read on the next page load.
     """
+    attach_round_positions([engagement], request.user)
     response = render(
         request,
         "matters/partials/engagement_row.html",
@@ -4026,6 +4056,37 @@ def _named_rounds_to_finish(request: HttpRequest, matter: Matter) -> list[tuple[
     if any(pk not in visible for pk, _ in pairs):
         raise DomainError(workspace.ROUND_NOT_OPEN)
     return pairs
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def add_engagement_evidence_view(request: HttpRequest, pk: Any, engagement_id: Any) -> HttpResponse:
+    """`+ Lisa fail` on a round still collecting answers. The round stays open.
+
+    The round through the Matter and `visible_to`, so a round this reader may
+    not see is a 404; the closed-Matter and not-open refusals are the use
+    case's, under the lock. Answers with the whole column: the file reaches the
+    round's row and `Dokumendid`'s count at once. A refusal answers with the
+    column too — the form targets it — with the refused picker back on this
+    row only (`_evidence_refusal`).
+    """
+    matter = get_visible_matter(request, pk)
+    engagement = get_object_or_404(
+        MatterEngagement.objects.visible_to(request.user), pk=engagement_id, matter=matter
+    )
+    form = EngagementEvidenceForm(request.POST, request.FILES, record=engagement)
+    if not form.is_valid():
+        return _evidence_refusal(request, matter, key="engagement_evidence_form", form=form)
+    try:
+        workspace.add_engagement_evidence(
+            engagement=engagement, author=request.user, uploads=form.cleaned_data["attachments"]
+        )
+    except (DomainError, UploadRejected) as error:
+        return _evidence_refusal(
+            request, matter, key="engagement_evidence_form", form=form, error=str(error)
+        )
+    return _render_overview(request, matter)
 
 
 def _feedback_waits_of(request: HttpRequest, matter: Matter) -> list[MatterEngagement]:

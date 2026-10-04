@@ -63,6 +63,7 @@ from django.db.models.functions import MD5, Cast
 from app.documents.enums import DerivativeStatus
 from app.documents.models import Document, DocumentTextFragment
 from app.intelligence.models import MatterImportantDate, MatterWorkVictory
+from app.intelligence.selectors import VISIBLE_VICTORY_STATUS
 from app.legacy_import.source_pages import MatterSourcePage
 from app.matters.models import (
     Entry,
@@ -195,7 +196,7 @@ def _expected_populations() -> list[tuple[str, str, int]]:
         (
             "Töövõidud",
             SearchSourceKind.WORK_VICTORY.value,
-            MatterWorkVictory.objects.filter(**live).count(),
+            MatterWorkVictory.objects.filter(**live, status=VISIBLE_VICTORY_STATUS).count(),
         ),
     ]
 
@@ -345,7 +346,12 @@ def kind_contracts() -> dict[str, KindContract]:
         SearchSourceKind.WORK_VICTORY.value: KindContract(
             "Töövõidud",
             "work_victory__matter_id",
-            _child_texts(child.indexable_work_victories, child.work_victory_values, removable=True),
+            _child_texts(
+                child.indexable_work_victories,
+                child.work_victory_values,
+                removable=True,
+                projects=child.is_shown_work_victory,
+            ),
             REPAIR_ALL,
         ),
     }
