@@ -255,6 +255,9 @@
           <span class="field__error" id="{{ form.response_deadline.auto_id }}_error">{{ form.response_deadline.errors|first }}</span>
         {% endif %}
       </label>
+      {% if matter.response_deadline %}
+        {% include "matters/partials/response_deadline_fields.html" with prefix="muuda-tahtaeg" %}
+      {% endif %}
     </div>
 
     {# 9 — Menetluse link: where the proceeding this file is about lives. #}

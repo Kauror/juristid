@@ -122,6 +122,9 @@ under `PRAEGUNE TEGEVUS` (docs/adr/0133 §6).
               {{ form.alchemer_url.errors|first }}</p>
           {% endif %}
           {% include "matters/partials/add_files.html" with field=form.attachments %}
+          {% if not plan_launch %}
+            {% include "matters/partials/plan_fulfil_option.html" with steps=fulfillable_steps.ENGAGEMENT option_id="id_kaasamine_taidab_sammu" %}
+          {% endif %}
           <div class="addform__actions">
             <button class="button button--primary" type="submit">Salvesta</button>
           </div>

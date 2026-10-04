@@ -407,77 +407,100 @@ rather than read.
         «Arvamuse tähtaeg», not «Tähtaeg» (docs/adr/0131 §14): the editor below
         and both forms that ask it say «Arvamuse tähtaeg», and one fact reads
         one way on every surface that shows it.
+
+        **A settled deadline is drawn without the warning colour** and says why
+        — «teema suletud», or «lõpetatud» for a deadline from before requests
+        were tracked that a sent opinion or the register discharged. It is
+        history on the record, not a task (`selectors.response_deadline_of`).
       {% endcomment %}
       <span class="metaline__item metaline__item--deadline">
         <span class="metaline__label">Arvamuse tähtaeg</span>
         <details class="inlineedit">
           <summary class="inlineedit__trigger">
-            <span class="metaline__value metaline__value--deadline"
-                  title="{{ response_deadline.label }}">{{ response_deadline.display }}{% if not response_deadline.is_active %}{% elif response_deadline.is_today %} · täna{% elif response_deadline.is_overdue %} · {{ response_deadline.days_late }} p üle{% elif not response_deadline.is_past and response_deadline.days_remaining <= 60 %} · {{ response_deadline.days_remaining }} p{% endif %}</span>
+            <span class="metaline__value metaline__value--deadline{% if response_deadline.settled %} metaline__value--settled{% endif %}"
+                  title="{{ response_deadline.label }}">{{ response_deadline.display }}{% if response_deadline.settled %} · {{ response_deadline.settled }}{% elif not response_deadline.is_active %}{% elif response_deadline.is_today %} · täna{% elif response_deadline.is_overdue %} · {{ response_deadline.days_late }} p üle{% elif not response_deadline.is_past and response_deadline.days_remaining <= 60 %} · {{ response_deadline.days_remaining }} p{% endif %}</span>
           </summary>
-          <form class="inlineedit__form inlineform"
-                hx-post="{% url 'matters:update_field' pk=matter.pk field='response_deadline' %}"
-                hx-target="#teema-pais" hx-swap="outerHTML">
-            {% csrf_token %}
-            <label class="field">
-              <span class="field__label field__label--plain">Arvamuse tähtaeg</span>
-              <input class="field__input field__input--compact dateinput" type="text"
-                     inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa"
-                     data-datepicker="true" name="response_deadline"
-                     value="{{ matter.response_deadline|date:'j.n.Y' }}">
-            </label>
-            <button class="button button--quiet button--tiny" type="submit"
-                    aria-label="Salvesta tähtaja muudatus">Salvesta</button>
-          </form>
+          {% if can_write %}
+            {% comment %}
+              One editor, two acts, told apart by the button pressed: `Salvesta`
+              saves a date — asking what it means when it changes an existing
+              one — and `Lõpeta tähtaeg` ends the current one with the outcome
+              chosen below (`app/matters/response_deadlines.py`). Enter saves.
+            {% endcomment %}
+            <form class="inlineedit__form inlineedit__form--wide inlineform inlineform--stacked"
+                  hx-post="{% url 'matters:response_deadline' pk=matter.pk %}"
+                  hx-target="#teema-pais" hx-swap="outerHTML">
+              {% csrf_token %}
+              <input type="hidden" name="revision" value="{{ deadline_revision }}">
+              <label class="field">
+                <span class="field__label field__label--plain">Arvamuse tähtaeg</span>
+                <input class="field__input field__input--compact dateinput" type="text"
+                       inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa"
+                       data-datepicker="true" name="response_deadline"
+                       value="{{ matter.response_deadline|date:'j.n.Y' }}">
+              </label>
+              {% include "matters/partials/response_deadline_fields.html" with prefix="paise-tahtaeg" %}
+              <button class="button button--quiet button--tiny" type="submit" name="tegevus" value="muuda"
+                      aria-label="Salvesta tähtaja muudatus">Salvesta</button>
+              <button class="button button--quiet button--tiny" type="submit" name="tegevus" value="lopeta">Lõpeta tähtaeg</button>
+            </form>
+          {% endif %}
         </details>
       </span>
-    {% elif can_write %}
+    {% else %}
       {% comment %}
-        A Matter with no deadline at all still needs a way to gain one. A quiet
-        invitation rather than a label over an em dash, which is what made the
-        old band read as a data-quality report (Teema redesign §5.5, §24).
+        No current deadline. The last one that ended reads here, quiet and with
+        its outcome, so an answered request is not gone from the header the
+        moment it is answered; the rail lists them all. A linked opinion
+        withdrawn since says the answer needs looking at.
       {% endcomment %}
-      <span class="metaline__item">
-        <details class="inlineedit">
-          <summary class="inlineedit__trigger">
-            <span class="metaline__add">+ Arvamuse tähtaeg</span>
-          </summary>
-          <form class="inlineedit__form inlineform"
-                hx-post="{% url 'matters:update_field' pk=matter.pk field='response_deadline' %}"
-                hx-target="#teema-pais" hx-swap="outerHTML">
-            {% csrf_token %}
-            <label class="field">
-              <span class="field__label field__label--plain">Arvamuse tähtaeg</span>
-              {% comment %}
-                **Empty, and never today.**
+      {% with last=ended_deadlines|first %}
+        {% if last %}
+          <span class="metaline__item">
+            <span class="metaline__label">Arvamuse tähtaeg</span>
+            <span class="metaline__value metaline__value--settled">{{ last.display }} · {% if last.needs_review %}vajab ülevaatamist{% else %}{{ last.outcome_label|lower }}{% endif %}</span>
+          </span>
+        {% endif %}
+      {% endwith %}
+      {% if can_write %}
+        {% comment %}
+          A Matter with no deadline at all still needs a way to gain one. A quiet
+          invitation rather than a label over an em dash, which is what made the
+          old band read as a data-quality report (Teema redesign §5.5, §24).
+        {% endcomment %}
+        <span class="metaline__item">
+          <details class="inlineedit">
+            <summary class="inlineedit__trigger">
+              <span class="metaline__add">+ Arvamuse tähtaeg</span>
+            </summary>
+            <form class="inlineedit__form inlineform"
+                  hx-post="{% url 'matters:response_deadline' pk=matter.pk %}"
+                  hx-target="#teema-pais" hx-swap="outerHTML">
+              {% csrf_token %}
+              <input type="hidden" name="tegevus" value="muuda">
+              <input type="hidden" name="revision" value="{{ deadline_revision }}">
+              <label class="field">
+                <span class="field__label field__label--plain">Arvamuse tähtaeg</span>
+                {% comment %}
+                  **Empty, and never today.**
 
-                This box used to open pre-filled with today's date, defended as
-                "a suggestion in an unsaved box" (Teema QA §5). The defence does
-                not survive what the field means. `Arvamuse tähtaeg` is an
-                asserted business fact — the day somebody *else* set for Koda's
-                answer — and today is never a plausible reading of it; a
-                suggestion is only harmless where the suggested value could be
-                right. What it actually bought was one Enter away from a
-                deadline nobody had been given, on a Matter whose whole defect
-                was that nobody knew the date.
-
-                `MatterCreateForm`, `MatterEditForm` and `IncomingIntakeForm`
-                had already stopped defaulting this field for exactly this
-                reason; this is the one control that had been missed
-                (app/matters/forms.py, post-QA R2-09).
-
-                An existing deadline still prefills — that is the branch above,
-                where the value in the box is the record's own.
-              {% endcomment %}
-              <input class="field__input field__input--compact dateinput" type="text"
-                     inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa"
-                     data-datepicker="true" name="response_deadline" value="">
-            </label>
-            <button class="button button--quiet button--tiny" type="submit"
-                    aria-label="Salvesta tähtaeg">Salvesta</button>
-          </form>
-        </details>
-      </span>
+                  `Arvamuse tähtaeg` is an asserted business fact — the day
+                  somebody *else* set for Koda's answer — and today is never a
+                  plausible reading of it. `MatterCreateForm`, `MatterEditForm`
+                  and `IncomingIntakeForm` do not default it either
+                  (app/matters/forms.py, post-QA R2-09). A deadline set here is a
+                  new request, recorded now.
+                {% endcomment %}
+                <input class="field__input field__input--compact dateinput" type="text"
+                       inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa"
+                       data-datepicker="true" name="response_deadline" value="">
+              </label>
+              <button class="button button--quiet button--tiny" type="submit"
+                      aria-label="Salvesta tähtaeg">Salvesta</button>
+            </form>
+          </details>
+        </span>
+      {% endif %}
     {% endif %}
   </div>
 

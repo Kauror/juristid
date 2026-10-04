@@ -38,7 +38,8 @@ page (TEEMA_TARGET_SPEC §F).
   <h2 class="{% if plan.rows %}rowlabel{% else %}visually-hidden{% endif %}" id="tooplaan-pealkiri">Tööplaan</h2>
 
   {% if plan.compact_rows %}
-    <ol class="workplan__list">
+    {% if matter.is_open %}
+      <ol class="workplan__list">
       {% for row in plan.compact_rows %}
         <li class="workplan__step workplan__step--{{ row.css_state }}">
           <span class="workplan__marker" aria-hidden="true">{{ row.marker }}</span>
@@ -60,7 +61,42 @@ page (TEEMA_TARGET_SPEC §F).
           {% endif %}
         </li>
       {% endfor %}
-    </ol>
+      </ol>
+    {% else %}
+      {% comment %}
+        **A closed file's plan is history, folded away.** Its steps keep the
+        state they had — a suggestion nobody took stays a suggestion, and
+        closing marks nothing done and deletes nothing — but it is no longer
+        work: no `Alusta`, no `Soovitatud järgmisena`, and closed until a
+        reader opens it (historical regression, UX-002).
+      {% endcomment %}
+      <details class="cx-panel workplan__panel">
+        <summary class="disclosure-chip disclosure-chip--quiet">Tööplaan teema sulgemise ajal</summary>
+        <ol class="workplan__list">
+      {% for row in plan.compact_rows %}
+        <li class="workplan__step workplan__step--{{ row.css_state }}">
+          <span class="workplan__marker" aria-hidden="true">{{ row.marker }}</span>
+          <span class="workplan__title">{% if row.is_current %}{{ current_action.text }}{% else %}{{ row.step.title }}{% endif %}</span>
+          <span class="workplan__state{% if row.step.state == 'PLANNED' and not row.is_current %} visually-hidden{% endif %}">{{ row.state_label }}</span>
+          {% if writable and matter.is_open and row.is_ahead and not current_action %}
+            {% comment %}
+              `Alusta` on any step still ahead while nothing is current — one
+              click, in the step's own words and with no day; `Muuda` beside the
+              new current step gives it one. The next suggestion's own `Alusta`
+              above asks for the day first. A step is never started for anybody
+              (docs/adr/0133 §4).
+            {% endcomment %}
+            <form class="workplan__start" hx-post="{% url 'matters:start_plan_step' pk=matter.pk step_id=row.step.pk %}"
+                  hx-target="#teema-vaade" hx-swap="outerHTML">
+              {% csrf_token %}
+              <button class="quietbutton" type="submit" aria-label="Alusta: {{ row.step.title }}">Alusta</button>
+            </form>
+          {% endif %}
+        </li>
+      {% endfor %}
+        </ol>
+      </details>
+    {% endif %}
   {% endif %}
 
   {% if writable and matter.is_open %}

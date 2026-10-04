@@ -78,6 +78,9 @@ under `PRAEGUNE TEGEVUS` (docs/adr/0133 §6).
             <p class="field__error" id="{{ form.url.auto_id }}_error">
               {{ form.url.errors|first }}</p>
           {% endif %}
+          {% if not plan_launch %}
+            {% include "matters/partials/plan_fulfil_option.html" with steps=fulfillable_steps.WEBSITE_OVERVIEW option_id="id_koduleht_taidab_sammu" %}
+          {% endif %}
           <div class="addform__actions">
             <button class="button button--primary" type="submit">Lisa ülevaade / uudis</button>
           </div>

@@ -406,6 +406,12 @@ class ActiveDeadline:
     #: The external procedure may well continue, and the rail goes on drawing
     #: the phases that may still come. What stops is this office's own clock.
     is_active: bool = True
+    #: Why this deadline no longer asks for work, in the header's words — «teema
+    #: suletud», or «lõpetatud» for a deadline from before requests were
+    #: tracked that a sent opinion or the register's `VÄLJA` has discharged
+    #: (ADR 0059). Empty while it is still owed. A settled deadline is drawn
+    #: without the warning colour: it is history, not a task.
+    settled: str = ""
 
     @property
     def is_today(self) -> bool:
@@ -545,7 +551,7 @@ def response_deadline_of(
     """
     if matter.response_deadline is None:
         return None
-    from app.matters.work_items import response_deadline_is_outstanding
+    from app.matters.work_items import response_deadline_is_outstanding, response_obligation_of
 
     day = today or timezone.localdate()
     value = matter.response_deadline
@@ -561,6 +567,17 @@ def response_deadline_of(
     # this test covers. A second comparison would read as a rule about open
     # Matters and be unreachable on every one of them.
     active = matter.is_open
+    settled = ""
+    if not active:
+        settled = "teema suletud"
+    elif (
+        matter.response_requested_at is None
+        and not response_obligation_of(matter, user).is_outstanding
+    ):
+        # A deadline from before requests were tracked, discharged the way it
+        # always was. One recorded as a request is never discharged while it is
+        # current: answering it ends it (`app/matters/response_deadlines.py`).
+        settled = "lõpetatud"
     return ActiveDeadline(
         label="Arvamuse tähtaeg",
         value=value,
@@ -568,10 +585,13 @@ def response_deadline_of(
         is_past=is_past,
         days_remaining=(value - day).days,
         is_overdue=(
-            response_deadline_is_outstanding(matter, user) if is_past and active else False
+            response_deadline_is_outstanding(matter, user)
+            if is_past and active and not settled
+            else False
         ),
         days_late=(day - value).days if is_past else 0,
-        is_active=active,
+        is_active=active and not settled,
+        settled=settled,
     )
 
 

@@ -1399,6 +1399,11 @@ def test_the_matter_page_does_not_explode_into_queries(
     action the page already reads, so it costs nothing more; the step editors
     and the current step's typed form are built from rows already in hand. Flat
     in the population, and flat in the plan's length.
+
+    **Measured at 55 since the historical-regression round**, and the two it
+    added are the `Arvamuse tähtaeg` history (read once for the header and the
+    rail) and the plan steps `LISA TEEMALE`'s forms may name as their work (one
+    read for all three forms). Both flat in the population.
     """
     matter = factories.MatterFactory(owner=specialist, source_organisations=[organisation])
     for index in range(12):
@@ -1424,5 +1429,5 @@ def test_the_matter_page_does_not_explode_into_queries(
     with CaptureQueriesContext(connection) as plan:
         plan_matter_deletion(matter)
 
-    with django_assert_max_num_queries(53 + len(plan)):
+    with django_assert_max_num_queries(55 + len(plan)):
         signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk}))

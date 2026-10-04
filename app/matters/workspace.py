@@ -67,7 +67,7 @@ from app.matters.locks import (
     lock_open_matter_for_business_write,
     lock_submission_for_evidence_integrity,
 )
-from app.matters.models import Entry, Matter
+from app.matters.models import Entry, Matter, MatterEngagement
 from app.matters.services import (
     add_engagement,
     add_entry,
@@ -104,6 +104,61 @@ PLAN_STEP_NOT_CURRENT = (
 #: Refused when a typed save names a current step whose linked operation is a
 #: different one: an overview never finishes `Saada Koja arvamus`.
 PLAN_STEP_WRONG_OPERATION = "See salvestus ei tee praeguse tööplaani sammu tööd."
+
+ALREADY_SAVED = "See vorm on juba salvestatud. Laadi leht uuesti, et näha salvestatut."
+ROUND_NOT_OPEN = "Valitud kaasamise tagasiside ootamine on juba lõpetatud või seda ei ole."
+ROUND_CHANGED = "Valitud kaasamine on vahepeal muutunud. Laadi leht uuesti ja vali uuesti."
+
+
+def _spend_once(locked_matter: Matter, token: Any, purpose: str) -> None:
+    """Spend a drawn form's token, or refuse a second save of the same form.
+
+    Inside the save's transaction and under the Matter's lock, so two presses
+    are serialised and the second finds the first's token; a refusal later in
+    the same save rolls the token back with everything else.
+    """
+    if token is None:
+        return
+    from django.db import IntegrityError
+
+    from app.matters.models import MatterSaveOnce
+
+    try:
+        with transaction.atomic():
+            MatterSaveOnce.objects.create(token=token, matter=locked_matter, purpose=purpose)
+    except IntegrityError as error:
+        raise DomainError(ALREADY_SAVED) from error
+
+
+def _named_open_rounds(
+    locked_matter: Matter, rounds: Sequence[tuple[Any, str]]
+) -> list[tuple[MatterEngagement, str]]:
+    """The rounds a save names to finish, each still open and as the form drew it.
+
+    Checked under the Matter's lock **before** anything is written. A round of
+    another Matter, one already finished or never tracked, or one changed since
+    the form was drawn refuses the whole save — never a quiet skip.
+    """
+    from app.matters.services import engagement_revision_token
+
+    named: list[tuple[MatterEngagement, str]] = []
+    for engagement_id, revision in rounds:
+        engagement = (
+            MatterEngagement.objects.select_for_update(no_key=True)
+            .filter(matter=locked_matter, pk=engagement_id, removed_at__isnull=True)
+            .first()
+        )
+        if (
+            engagement is None
+            or not engagement.lifecycle_tracked
+            or engagement.feedback_closed_at is not None
+        ):
+            raise DomainError(ROUND_NOT_OPEN)
+        if revision and engagement_revision_token(engagement) != revision:
+            raise DomainError(ROUND_CHANGED)
+        named.append((engagement, revision))
+    return named
+
 
 #: `Järgmisena` named the step this very save is finishing.
 NEXT_IS_THE_CURRENT_STEP = "Seda sammu märgid praegu tehtuks. Vali järgmiseks mõni teine samm."
@@ -367,6 +422,7 @@ def add_matter_engagement(
     uploads: Sequence[Any] = (),
     plan_action_id: Any = None,
     plan_step_id: Any = None,
+    fulfils_plan_step_id: Any = None,
 ) -> WorkspaceResult:
     """`+ Kaasamine` — one consultation, with the replies it produced attached.
 
@@ -434,6 +490,16 @@ def add_matter_engagement(
         if plan_action_id is not None
         else None
     )
+    # **Or named from `LISA TEEMALE`** as the work of a `Kaasa liikmeid` step
+    # still ahead: that step is done by this round, and no action is invented
+    # to be finished at once (`work_plan.fulfillable_step`).
+    fulfils = (
+        work_plan.fulfillable_step(
+            locked_matter, fulfils_plan_step_id, PlanStepOperation.ENGAGEMENT
+        )
+        if fulfils_plan_step_id is not None and named is None
+        else None
+    )
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
         result.record = add_engagement(
@@ -457,6 +523,8 @@ def add_matter_engagement(
             uploads=_uploads(uploads),
             actor=author,
         )
+        if fulfils is not None:
+            work_plan.fulfil_plan_step(step=fulfils, record=result.record, actor=author)
         if named is not None:
             result.action = complete_next_action(action=named, actor=author)
         return result
@@ -771,6 +839,10 @@ def add_matter_koda_opinion(
     working_uploads: Sequence[Any] = (),
     stage: Any = None,
     plan_step_id: Any = None,
+    answers_deadline: str | None = None,
+    close_rounds: Sequence[tuple[Any, str]] = (),
+    fulfils_plan_step_id: Any = None,
+    once_token: Any = None,
 ) -> WorkspaceResult:
     """`+ Koja arvamus` — the Chamber's opinion went out, with the file that went.
 
@@ -874,6 +946,17 @@ def add_matter_koda_opinion(
     current, refuses before a byte is stored. The completion is the same
     `complete_next_action` either way, and so is everything about the
     `Submission`.
+
+    **What else the save finishes, named by the person** (historical regression,
+    stage II). ``answers_deadline`` — the current `Arvamuse tähtaeg`'s revision
+    as the form drew it — records this opinion as its answer and ends it;
+    ``close_rounds`` — ``(round, revision)`` pairs — ends those rounds' waits
+    and no others, with no summary invented; ``fulfils_plan_step_id`` marks one
+    `Saada Koja arvamus` step ahead in the plan as done by this opinion. Each is
+    checked under the lock before a byte is stored, and any refusal refuses the
+    whole save. Nothing is chosen for anybody: not the newest deadline, not
+    every round. ``once_token`` makes a second press of the same drawn form a
+    refusal rather than a second opinion.
     """
     from datetime import datetime, time
 
@@ -909,6 +992,26 @@ def add_matter_koda_opinion(
         named = _named_open_action(locked_matter=locked_matter, action_id=complete_action_id)
     else:
         named = None
+    _spend_once(locked_matter, once_token, "koja-arvamus")
+    if answers_deadline is not None:
+        from app.matters.response_deadlines import (
+            NO_CURRENT_DEADLINE,
+            STALE_DEADLINE_REFUSAL,
+            deadline_revision,
+        )
+
+        if locked_matter.response_deadline is None:
+            raise DomainError(NO_CURRENT_DEADLINE)
+        if answers_deadline and deadline_revision(locked_matter) != answers_deadline:
+            raise DomainError(STALE_DEADLINE_REFUSAL)
+    rounds = _named_open_rounds(locked_matter, close_rounds)
+    fulfils = (
+        work_plan.fulfillable_step(
+            locked_matter, fulfils_plan_step_id, PlanStepOperation.SUBMISSION
+        )
+        if fulfils_plan_step_id is not None
+        else None
+    )
     with (
         composer_operation() as operation_id,
         stage_transition(
@@ -971,6 +1074,22 @@ def add_matter_koda_opinion(
             role=OPINION_WORKING_DOCUMENT_ROLE,
             visibility_override=result.record.visibility_override,
         )
+        if answers_deadline is not None:
+            from app.matters.response_deadlines import answer_current_deadline_with
+
+            answer_current_deadline_with(
+                locked=locked_matter,
+                matter=matter,
+                submission=result.record,
+                actor=author,
+                expected_revision=answers_deadline or None,
+            )
+        for engagement, revision in rounds:
+            complete_engagement_feedback(
+                engagement=engagement, actor=author, expected_revision=revision or None
+            )
+        if fulfils is not None:
+            work_plan.fulfil_plan_step(step=fulfils, record=result.record, actor=author)
         if named is not None:
             result.action = complete_next_action(action=named, actor=author)
         return result
@@ -1435,6 +1554,7 @@ def add_matter_website_overview(
     title: str = "",
     plan_action_id: Any = None,
     plan_step_id: Any = None,
+    fulfils_plan_step_id: Any = None,
 ) -> WorkspaceResult:
     """`+ Ülevaade / uudis` — a plan, or a page that is already up.
 
@@ -1487,6 +1607,15 @@ def add_matter_website_overview(
         )
         if not url:
             raise DomainError(OVERVIEW_STEP_NEEDS_A_PUBLICATION)
+    # Named from `LISA TEEMALE` as a `Koosta kodulehe ülevaade` step's work: only
+    # a publication does that work, exactly as from the step itself.
+    fulfils = None
+    if fulfils_plan_step_id is not None and named is None:
+        fulfils = work_plan.fulfillable_step(
+            locked_matter, fulfils_plan_step_id, PlanStepOperation.WEBSITE_OVERVIEW
+        )
+        if not url:
+            raise DomainError(OVERVIEW_STEP_NEEDS_A_PUBLICATION)
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
         overview = plan_website_overview(matter=locked_matter, actor=author)
@@ -1505,6 +1634,8 @@ def add_matter_website_overview(
                 title=title,
             )
         result.record = overview
+        if fulfils is not None:
+            work_plan.fulfil_plan_step(step=fulfils, record=overview, actor=author)
         if named is not None:
             result.action = complete_next_action(action=named, actor=author)
         return result

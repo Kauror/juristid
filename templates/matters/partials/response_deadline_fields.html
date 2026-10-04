@@ -1,0 +1,50 @@
+{% comment %}
+What a changed `Arvamuse tähtaeg` means, and what became of the one it changes.
+
+Included under the date box wherever an existing deadline can be changed — the
+header and `Muuda teemat` — so the question is asked in the same words at both
+doors. Nothing is preselected: a later date can extend the same request or start
+a new one, and only the person knows which (`app/matters/response_deadlines.py`).
+A new request replaces the current one only with an outcome chosen here; an
+emptied box withdraws it unless an outcome is chosen.
+
+`prefix` is the id prefix for the two doors on one page.
+{% endcomment %}
+<fieldset class="field">
+  <legend class="field__label field__label--plain">Kui kuupäev muutub</legend>
+  <label class="cx-check" for="{{ prefix }}-change-moved">
+    <input type="radio" name="change" value="MOVED" id="{{ prefix }}-change-moved">
+    <span>Sama küsimise tähtaeg muutus</span>
+  </label>
+  <label class="cx-check" for="{{ prefix }}-change-replaced">
+    <input type="radio" name="change" value="REPLACED" id="{{ prefix }}-change-replaced">
+    <span>Uus arvamuse küsimine</span>
+  </label>
+</fieldset>
+<label class="field" for="{{ prefix }}-previous-outcome">
+  <span class="field__label field__label--plain">Mis sai tähtajast {{ matter.response_deadline|date:"j.n.Y" }} (uue küsimise, tühjendamise või lõpetamise korral)</span>
+  <select class="field__input field__input--compact" name="previous_outcome" id="{{ prefix }}-previous-outcome">
+    <option value="">— vali —</option>
+    <option value="ANSWERED">Vastatud</option>
+    <option value="NOT_ANSWERING">Otsustati mitte vastata</option>
+    <option value="SUPERSEDED">Jääb vastamata (asendub uue küsimisega)</option>
+    <option value="CANCELLED">Tühistatud</option>
+  </select>
+</label>
+{% with options=answerable_submissions %}
+  {% if options %}
+    <label class="field" for="{{ prefix }}-previous-submission">
+      <span class="field__label field__label--plain">Vastuseks saadetud Koja arvamus</span>
+      <select class="field__input field__input--compact" name="previous_submission" id="{{ prefix }}-previous-submission">
+        <option value="">— ei vali —</option>
+        {% for submission in options %}
+          <option value="{{ submission.pk }}">{{ submission.sent_at|date:"j.n.Y" }}{% if submission.title %} · {{ submission.title|truncatechars:60 }}{% endif %}</option>
+        {% endfor %}
+      </select>
+    </label>
+  {% endif %}
+{% endwith %}
+<label class="field" for="{{ prefix }}-previous-note">
+  <span class="field__label field__label--plain">Selgitus või allikas (kui vastati mujal)</span>
+  <input class="field__input field__input--compact" type="text" name="previous_note" id="{{ prefix }}-previous-note" maxlength="2000">
+</label>

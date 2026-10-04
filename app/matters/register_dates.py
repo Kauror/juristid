@@ -97,6 +97,11 @@ class RegisterDate:
     is_deadline: bool
     #: Whether the recorded precision is coarser than a day.
     is_approximate: bool
+    #: Why an `Arvamuse tähtaeg` in the cell no longer asks for work — «teema
+    #: suletud», or «lõpetatud» for a deadline from before requests were tracked
+    #: that a sent opinion or the register discharged. Empty otherwise. The cell
+    #: then states the date without the deadline colour.
+    settled: str = ""
 
 
 def _open_action(matter: Matter) -> Any:
@@ -135,7 +140,18 @@ def register_date(matter: Matter, today: date | None = None) -> RegisterDate | N
             is_approximate=action.is_approximate,
         )
     if matter.response_deadline is not None:
+        from app.matters.work_items import DISCHARGED
+
+        # Read off the annotation the register's queryset already carries
+        # (`selectors.matter_list_queryset`); a surface without it states the
+        # deadline as it always did rather than paying a query per row.
+        settled = ""
+        if not matter.is_open:
+            settled = "teema suletud"
+        elif matter.response_requested_at is None and getattr(matter, DISCHARGED, None) is True:
+            settled = "lõpetatud"
         return RegisterDate(
+            settled=settled,
             value=matter.response_deadline,
             meaning=RESPONSE_DEADLINE_LABEL,
             display=format_estonian_date(matter.response_deadline),
@@ -145,7 +161,7 @@ def register_date(matter: Matter, today: date | None = None) -> RegisterDate | N
             # read any of the three, so it states the deadline and says nothing
             # about whether it was met (ADR 0050, ADR 0059, UX-010).
             is_overdue=False,
-            is_deadline=True,
+            is_deadline=not settled,
             is_approximate=False,
         )
     return None

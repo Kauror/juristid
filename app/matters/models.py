@@ -36,6 +36,7 @@ from app.matters.enums import (
     MatterOrigin,
     ProceduralLinkKind,
     RecordMode,
+    ResponseDeadlineOutcome,
     StageEpisodeOrigin,
     TagAssignmentSource,
     WebsiteOverviewStatus,
@@ -370,6 +371,17 @@ class Matter(BaseModel):
     received_date = models.DateField(null=True, blank=True, verbose_name="saabus")
     response_deadline = models.DateField(
         null=True, blank=True, db_index=True, verbose_name="arvamuse tähtaeg"
+    )
+    #: When the current `Arvamuse tähtaeg` was recorded as a request through
+    #: this product's own doors — `Uus teema`, `Saabunud`, the header and
+    #: `Muuda teemat`. ``NULL`` means the deadline came from before these
+    #: requests were tracked, or from an importer: such a deadline keeps the
+    #: reading it always had, discharged by any sent opinion or the register's
+    #: `VÄLJA` (ADR 0059). One recorded here is discharged only by an explicit
+    #: answer that names it, so an opinion sent for an earlier request never
+    #: answers a later one (`app/matters/response_deadlines.py`).
+    response_requested_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="arvamust küsiti"
     )
 
     # -- substance ---------------------------------------------------------
@@ -3411,3 +3423,121 @@ class MatterStageEpisode(BaseModel):
 # finds the models — splitting the file is a readability decision, not a second
 # app (docs/adr/0064, the same reasoning as `app/documents/derivatives.py`).
 from app.matters.staging import MatterIntakeFile, MatterIntakeSession  # noqa: E402, F401
+
+
+class MatterResponseDeadline(BaseModel):
+    """An `Arvamuse tähtaeg` that is no longer the Matter's current one.
+
+    `Matter.response_deadline` owns the **current** deadline and nothing else.
+    When it stops being current — answered, declined, replaced by a new request,
+    moved, withdrawn, or left behind by a closed file — the value and what
+    happened to it are written here, once, and the current field is cleared or
+    given its successor. One owner per fact: this table never holds the current
+    deadline, and the Matter never holds a finished one.
+
+    **Nothing here is inferred.** An answer names the `Koja arvamus` that gave
+    it, or says in words where it was given; no date, filename or «latest
+    opinion» links one to the other. A linked opinion later withdrawn leaves the
+    row standing and reading as needing review rather than silently answered.
+
+    No visibility of its own: read only on its Matter's page, after the Matter
+    is found visible. The linked opinion keeps its own visibility and is named
+    only to a reader who may see it.
+    """
+
+    matter = models.ForeignKey(
+        Matter, on_delete=models.CASCADE, related_name="ended_response_deadlines"
+    )
+    deadline = models.DateField(verbose_name="arvamuse tähtaeg")
+    #: `Matter.response_requested_at` while this deadline was current; ``NULL``
+    #: for a deadline from before requests were tracked.
+    requested_at = models.DateTimeField(null=True, blank=True)
+    outcome = models.CharField(
+        max_length=24, choices=ResponseDeadlineOutcome.choices, verbose_name="tulemus"
+    )
+    submission = models.ForeignKey(
+        "submissions.Submission",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="answered_response_deadlines",
+        verbose_name="vastuseks saadetud arvamus",
+    )
+    #: The person's own words: how it was answered where nothing was sent through
+    #: Juristid, or why it was declined or withdrawn.
+    note = models.TextField(blank=True, default="", verbose_name="selgitus")
+    #: The deadline that followed, for a moved or replaced one.
+    next_deadline = models.DateField(null=True, blank=True)
+    ended_at = models.DateTimeField(default=timezone.now)
+    ended_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+
+    class Meta:
+        ordering = ["-ended_at", "-created_at"]
+        indexes = [models.Index(fields=["matter", "-ended_at"], name="matters_respdl_matter_idx")]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(outcome__in=ResponseDeadlineOutcome.values),
+                name="matters_respdl_outcome_known",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(submission__isnull=True)
+                | models.Q(outcome=ResponseDeadlineOutcome.ANSWERED),
+                name="matters_respdl_submission_only_when_answered",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(outcome=ResponseDeadlineOutcome.ANSWERED)
+                | models.Q(submission__isnull=False)
+                | ~models.Q(note=""),
+                name="matters_respdl_answer_has_a_basis",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(next_deadline__isnull=True)
+                | models.Q(
+                    outcome__in=[
+                        ResponseDeadlineOutcome.MOVED,
+                        ResponseDeadlineOutcome.SUPERSEDED,
+                        ResponseDeadlineOutcome.ANSWERED,
+                        ResponseDeadlineOutcome.NOT_ANSWERING,
+                    ]
+                ),
+                name="matters_respdl_next_only_when_followed",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.deadline:%d.%m.%Y} — {self.get_outcome_display()}"
+
+    @property
+    def display_deadline(self) -> str:
+        return format_estonian_date(self.deadline)
+
+
+class MatterSaveOnce(models.Model):
+    """A form's one-time token, spent by the save it was drawn for.
+
+    A double press, a retried request or a second tab sending the same drawn
+    form must not record the same act twice — two sent opinions, two finished
+    rounds. The form carries a random token; the save inserts it here inside its
+    own transaction, under the Matter's lock, before anything else is written.
+    A second save with the same token is refused; a refused or rolled-back save
+    spends nothing, so correcting it and saving again works.
+
+    Holds no business content and is read by nothing but the save.
+    """
+
+    token = models.UUIDField(primary_key=True)
+    matter = models.ForeignKey(Matter, on_delete=models.CASCADE, related_name="+")
+    purpose = models.CharField(max_length=40)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "ühekordne salvestus"
+
+    def __str__(self) -> str:
+        return f"{self.purpose} {self.token}"

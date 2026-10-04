@@ -489,6 +489,26 @@ record, not professional chronology (master specification 16.5).
         </span>
       {% endif %}
       {% comment %}
+        **What else the same save finished**, named by the person in it: the
+        `Arvamuse tähtaeg` this opinion answers, and the rounds whose wait it
+        ended. Explicit links only — `MatterResponseDeadline.submission` and
+        the save's own operation — never a date or a title that looks alike.
+      {% endcomment %}
+      {% if item.answered_deadline %}
+        <span class="uxtl__next">
+          <span class="uxtl__nextmode" aria-hidden="true">✓</span>
+          <span class="uxtl__nextlabel">Vastatud</span>
+          <span class="uxtl__nexttext">Arvamuse tähtaeg {{ item.answered_deadline }}</span>
+        </span>
+      {% endif %}
+      {% for round_title in item.closed_rounds %}
+        <span class="uxtl__next">
+          <span class="uxtl__nextmode" aria-hidden="true">✓</span>
+          <span class="uxtl__nextlabel">Kaasamine lõpetatud</span>
+          <span class="uxtl__nexttext">{{ round_title }}</span>
+        </span>
+      {% endfor %}
+      {% comment %}
         What the save decided. Its own pill rather than its own line: it is the
         consequence of the thing above it, and a reader scrolling for "what did
         we agree to do" is looking for exactly this.

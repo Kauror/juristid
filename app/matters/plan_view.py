@@ -63,6 +63,11 @@ class PlanRow:
         """
         if self.is_current:
             return "Praegu"
+        if self.step.fulfilled_by_record is not None:
+            # Done by work a person recorded and named as this step's work, as
+            # opposed to a step started and finished (historical regression,
+            # UX-002).
+            return "Tehtud salvestatud tööga"
         return self.step.get_state_display()
 
     @property

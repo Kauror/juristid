@@ -5340,7 +5340,9 @@ REOPEN_INTO_TERMINAL_STAGE = (
 
 
 @transaction.atomic
-def reopen_matter_into_stage(*, matter: Matter, stage: Any, actor: Any = None) -> Matter:
+def reopen_matter_into_stage(
+    *, matter: Matter, stage: Any, actor: Any = None, keep_response_deadline: bool = False
+) -> Matter:
     """«Ava uuesti» — a closed Matter becomes current work again, in a stage the person names.
 
     **One act, so the file is never open while still reading «Jõustunud».** The
@@ -5378,6 +5380,13 @@ def reopen_matter_into_stage(*, matter: Matter, stage: Any, actor: Any = None) -
         origin=StageEpisodeOrigin.RECORDED,
     )
     episode = move.incoming if move.moved else ensure_current_stage_episode(matter=matter)
+    if not keep_response_deadline:
+        # Closing answered nothing, and reopening does not make the deadline the
+        # file closed with current work again unless the person says so: it ends
+        # as «lõppes teema sulgemisega» and stays in its history.
+        from app.matters.response_deadlines import end_deadline_left_by_closure
+
+        end_deadline_left_by_closure(locked=locked, matter=matter, actor=actor)
     return reopen_matter(matter=matter, actor=actor, stage_episode=episode)
 
 

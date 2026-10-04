@@ -486,6 +486,11 @@ urlpatterns = [
         name="review_action",
     ),
     path("teemad/<uuid:pk>/vali/<str:field>/", views.update_field, name="update_field"),
+    path(
+        "teemad/<uuid:pk>/arvamuse-tahtaeg/",
+        views.response_deadline_view,
+        name="response_deadline",
+    ),
     path("teemad/<uuid:pk>/luhikokkuvote/", views.update_summary, name="update_summary"),
     path("teemad/<uuid:pk>/markmed/", views.save_note, name="save_note"),
     path(

@@ -432,6 +432,10 @@ class ChangeEventType(models.TextChoices):
     PLAN_STEP_RESTORED = "PLAN_STEP_RESTORED", "Tööplaani samm taastati"
     PLAN_STEP_ACTIVATED = "PLAN_STEP_ACTIVATED", "Tööplaani samm alustati"
     PLAN_STEP_COMPLETED = "PLAN_STEP_COMPLETED", "Tööplaani samm tehtud"
+    # An `Arvamuse tähtaeg` stopped being the current one, and how
+    # (`MatterResponseDeadline`). Matter-level: the deadline is a fact about
+    # the file, and the payload names no restricted record.
+    RESPONSE_DEADLINE_ENDED = "RESPONSE_DEADLINE_ENDED", "Arvamuse tähtaeg lõppes"
 
 
 class SecurityEventType(models.TextChoices):

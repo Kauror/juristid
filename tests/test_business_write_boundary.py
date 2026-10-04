@@ -187,6 +187,17 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         ),
     ),
     WriteRoute(
+        name="matters:response_deadline",
+        label="Arvamuse tähtaja määramine",
+        request=lambda w: (
+            {"pk": w["matter"].pk},
+            {"tegevus": "muuda", "response_deadline": "31.12.2030"},
+        ),
+        probe=lambda w: Matter.objects.values_list("response_deadline", flat=True).get(
+            pk=w["matter"].pk
+        ),
+    ),
+    WriteRoute(
         name="matters:update_field",
         label="Hetkeseisu muutmine",
         request=lambda w: (

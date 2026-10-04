@@ -1,0 +1,30 @@
+{% comment %}
+**What else this opinion finishes** — each named by the person, each unticked.
+
+* `Vastab arvamuse küsimisele` — records this opinion as the answer to the
+  current `Arvamuse tähtaeg` and ends it. It carries the deadline's token as the
+  form drew it, so a deadline changed meanwhile refuses the save rather than
+  being answered unseen. An opinion is never taken as the answer to a request
+  just because it is the newest (`app/matters/response_deadlines.py`).
+* `Lõpeta kaasamise ootamine` — one box per open round, none ticked: with two
+  rounds open, finishing one leaves the other exactly as it was. No summary is
+  invented for the finished round.
+
+The form's own one-time token rides here too, so a second press of the same
+drawn form is refused rather than recorded as a second opinion.
+{% endcomment %}
+<input type="hidden" name="salvestus" value="{{ save_once_token }}">
+{% if matter.is_open %}
+  {% if matter.response_deadline %}
+    <label class="cx-check cx-check--action" for="id_koja_arvamus_vastab">
+      <input type="checkbox" name="vastab_tahtajale" id="id_koja_arvamus_vastab" value="{{ deadline_revision }}">
+      <span>Vastab arvamuse küsimisele: <span class="cx-check__task">tähtaeg {{ matter.response_deadline|date:"j.n.Y" }}</span></span>
+    </label>
+  {% endif %}
+  {% for engagement, revision in opinion_open_rounds %}
+    <label class="cx-check cx-check--action" for="id_koja_arvamus_kaasamine_{{ forloop.counter }}">
+      <input type="checkbox" name="lopeta_kaasamine" id="id_koja_arvamus_kaasamine_{{ forloop.counter }}" value="{{ engagement.pk }}:{{ revision }}">
+      <span>Lõpeta kaasamise tagasiside ootamine: <span class="cx-check__task">{{ engagement.title }}</span></span>
+    </label>
+  {% endfor %}
+{% endif %}

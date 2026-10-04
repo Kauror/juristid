@@ -331,6 +331,11 @@ def test_matter_detail_query_count_is_bounded(signed_in, specialist):
     # and decides which is current from the open action already read. One read,
     # flat in the population and in the plan's length.
     #
+    # **56 since the historical-regression round**: the `Arvamuse tähtaeg`
+    # history (`MatterResponseDeadline`, read once for the header and the rail)
+    # and the plan steps `LISA TEEMALE`'s three forms may name as their work
+    # (one read for all three). Each flat in the population.
+    #
     # **Plus the deletion plan, measured rather than guessed (docs/adr/0120 §7).**
     # A writer's header asks `plan_matter_deletion` whether `Kustuta` can
     # succeed, and the plan walks the ownership graph — a cost that belongs to
@@ -339,7 +344,7 @@ def test_matter_detail_query_count_is_bounded(signed_in, specialist):
     # as tight as it was.
     with CaptureQueriesContext(connection) as plan:
         plan_matter_deletion(matter)
-    assert len(captured) < 54 + len(plan)
+    assert len(captured) < 56 + len(plan)
 
 
 def test_selectors_reuse_the_prefetched_open_action(specialist):

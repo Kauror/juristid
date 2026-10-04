@@ -325,6 +325,10 @@ MATTER_LEVEL_EVENT_TYPES: frozenset[str] = frozenset(
         ChangeEventType.PLAN_STEP_RESTORED,
         ChangeEventType.PLAN_STEP_ACTIVATED,
         ChangeEventType.PLAN_STEP_COMPLETED,
+        # An `Arvamuse tähtaeg` that stopped being current. The payload carries
+        # the date and the outcome, never the opinion that answered it, which
+        # keeps its own visibility on `MatterResponseDeadline`.
+        ChangeEventType.RESPONSE_DEADLINE_ENDED,
     }
 )
 

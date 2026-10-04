@@ -1,0 +1,43 @@
+{% comment %}
+`Arvamuse tähtajad` — every `Arvamuse tähtaeg` this file has had that is no
+longer the current one, newest first, with what happened to it.
+
+**On the ordinary page, not only on `Kõik muudatused`.** A replaced request used
+to vanish from every surface the moment a new date was typed over it; the only
+trace was an audit row or a `Märge` somebody remembered to write. Each row here
+is a fact the person stated — answered (by which opinion, or how), declined,
+replaced, moved, withdrawn, or left behind by a closed file — and nothing is
+inferred from dates or filenames (`app/matters/response_deadlines.py`).
+
+The answering opinion is named only to a reader who may see it. One withdrawn
+since, with no words of the person's own beside it, reads as needing review.
+
+Absent while there is no history: most files have had one deadline or none, and
+an empty card would be noise.
+{% endcomment %}
+{% with history=ended_deadlines %}
+  {% if history %}
+    <div class="railcard" id="arvamuse-tahtajad">
+      <span class="railcard__label">Arvamuse tähtajad</span>
+      {% if matter.response_deadline %}
+        <div class="railcard__row">
+          <span class="railcard__opinion"><time datetime="{{ matter.response_deadline|date:'Y-m-d' }}">{{ matter.response_deadline|date:"j.n.Y" }}</time> · praegune</span>
+        </div>
+      {% endif %}
+      {% for ended in history %}
+        <div class="railcard__row">
+          <span class="railcard__opinion"><time datetime="{{ ended.deadline|date:'Y-m-d' }}">{{ ended.display }}</time> · {% if ended.needs_review %}vajab ülevaatamist{% else %}{{ ended.outcome_label|lower }}{% endif %}{% if ended.next_display %} → {{ ended.next_display }}{% endif %}</span>
+          {% if ended.submission %}
+            <span class="railcard__file">arvamusega {{ ended.submission.sent_at|date:"j.n.Y" }}{% if ended.submission.title %} · {{ ended.submission.title|truncatechars:60 }}{% endif %}</span>
+          {% endif %}
+          {% if ended.needs_review %}
+            <span class="railcard__file muted">Seotud arvamus võeti tagasi.</span>
+          {% endif %}
+          {% if ended.note %}
+            <span class="railcard__file muted">{{ ended.note }}</span>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
