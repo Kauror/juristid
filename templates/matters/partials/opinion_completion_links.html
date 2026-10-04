@@ -17,13 +17,13 @@ drawn form is refused rather than recorded as a second opinion.
 {% if matter.is_open %}
   {% if matter.response_deadline %}
     <label class="cx-check cx-check--action" for="id_koja_arvamus_vastab">
-      <input type="checkbox" name="vastab_tahtajale" id="id_koja_arvamus_vastab" value="{{ deadline_revision }}">
+      <input type="checkbox" name="vastab_tahtajale" id="id_koja_arvamus_vastab" value="{{ deadline_revision }}"{% if refused_choices.answers_deadline %} checked{% endif %}>
       <span>Vastab arvamuse küsimisele: <span class="cx-check__task">tähtaeg {{ matter.response_deadline|date:"j.n.Y" }}</span></span>
     </label>
   {% endif %}
   {% for engagement, revision in opinion_open_rounds %}
     <label class="cx-check cx-check--action" for="id_koja_arvamus_kaasamine_{{ forloop.counter }}">
-      <input type="checkbox" name="lopeta_kaasamine" id="id_koja_arvamus_kaasamine_{{ forloop.counter }}" value="{{ engagement.pk }}:{{ revision }}">
+      <input type="checkbox" name="lopeta_kaasamine" id="id_koja_arvamus_kaasamine_{{ forloop.counter }}" value="{{ engagement.pk }}:{{ revision }}"{% if engagement.pk|stringformat:"s" in refused_choices.rounds %} checked{% endif %}>
       <span>Lõpeta kaasamise tagasiside ootamine: <span class="cx-check__task">{{ engagement.title }}</span></span>
     </label>
   {% endfor %}

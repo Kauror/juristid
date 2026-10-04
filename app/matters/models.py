@@ -3491,12 +3491,6 @@ class MatterResponseDeadline(BaseModel):
                 name="matters_respdl_submission_only_when_answered",
             ),
             models.CheckConstraint(
-                condition=~models.Q(outcome=ResponseDeadlineOutcome.ANSWERED)
-                | models.Q(submission__isnull=False)
-                | ~models.Q(note=""),
-                name="matters_respdl_answer_has_a_basis",
-            ),
-            models.CheckConstraint(
                 condition=models.Q(next_deadline__isnull=True)
                 | models.Q(
                     outcome__in=[

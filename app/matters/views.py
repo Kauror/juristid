@@ -4040,7 +4040,7 @@ def _named_rounds_to_finish(request: HttpRequest, matter: Matter) -> list[tuple[
     stand (`workspace._named_open_rounds` checks the rest under the lock).
     """
     pairs: list[tuple[Any, str]] = []
-    for raw in request.POST.getlist("lopeta_kaasamine"):
+    for raw in dict.fromkeys(request.POST.getlist("lopeta_kaasamine")):
         engagement_id, _, revision = raw.partition(":")
         try:
             pairs.append((uuid.UUID(engagement_id), revision))
@@ -5234,6 +5234,10 @@ def response_deadline_view(request: HttpRequest, pk: Any) -> HttpResponse:
         context["field_error"] = str(error)
         return render(request, "matters/partials/header.html", context, status=400)
     matter.refresh_from_db()
+    if "/dokumendid/" in request.headers.get("HX-Current-URL", ""):
+        # The header is shared by both tabs, and `Dokumendid` has no
+        # `#teema-vaade` to answer into: there the header alone is the answer.
+        return render(request, "matters/partials/header.html", _header_context(request, matter))
     response = _render_overview(request, matter, header_out_of_band=True)
     response["HX-Retarget"] = "#teema-vaade"
     response["HX-Reswap"] = "outerHTML"
@@ -6682,6 +6686,14 @@ def _workspace_refusal(
     context = _overview_context(request, matter)
     context.update(_header_context(request, matter))
     context[key] = form
+    # What else the refused save named — the deadline, the rounds, the plan
+    # step — comes back ticked, so correcting the file and saving again does
+    # not quietly drop it (`opinion_completion_links.html`).
+    context["refused_choices"] = {
+        "answers_deadline": bool(request.POST.get("vastab_tahtajale")),
+        "rounds": {raw.partition(":")[0] for raw in request.POST.getlist("lopeta_kaasamine")},
+        "plan_step": request.POST.get("taidab_sammu") or "",
+    }
     # The forms that live beside the current task and nowhere else: the
     # completion box and `Vaatasin üle`. `action_form` was one of them from
     # docs/adr/0097 §8.2 until docs/adr/0126 §1: its panel, `#lisa-jargmine`, is

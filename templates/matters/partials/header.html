@@ -415,6 +415,7 @@ rather than read.
       {% endcomment %}
       <span class="metaline__item metaline__item--deadline">
         <span class="metaline__label">Arvamuse tähtaeg</span>
+        {% if can_write %}
         <details class="inlineedit">
           <summary class="inlineedit__trigger">
             <span class="metaline__value metaline__value--deadline{% if response_deadline.settled %} metaline__value--settled{% endif %}"
@@ -427,7 +428,7 @@ rather than read.
               one — and `Lõpeta tähtaeg` ends the current one with the outcome
               chosen below (`app/matters/response_deadlines.py`). Enter saves.
             {% endcomment %}
-            <form class="inlineedit__form inlineedit__form--wide inlineform inlineform--stacked"
+            <form class="inlineedit__form deadlineeditor inlineform inlineform--stacked"
                   hx-post="{% url 'matters:response_deadline' pk=matter.pk %}"
                   hx-target="#teema-pais" hx-swap="outerHTML">
               {% csrf_token %}
@@ -446,6 +447,11 @@ rather than read.
             </form>
           {% endif %}
         </details>
+        {% else %}
+          {% comment %}A reader sees the value, and no editor that opens on nothing.{% endcomment %}
+          <span class="metaline__value metaline__value--deadline{% if response_deadline.settled %} metaline__value--settled{% endif %}"
+                  title="{{ response_deadline.label }}">{{ response_deadline.display }}{% if response_deadline.settled %} · {{ response_deadline.settled }}{% elif not response_deadline.is_active %}{% elif response_deadline.is_today %} · täna{% elif response_deadline.is_overdue %} · {{ response_deadline.days_late }} p üle{% elif not response_deadline.is_past and response_deadline.days_remaining <= 60 %} · {{ response_deadline.days_remaining }} p{% endif %}</span>
+        {% endif %}
       </span>
     {% else %}
       {% comment %}

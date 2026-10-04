@@ -1711,9 +1711,17 @@ th[aria-sort="descending"] .colhead__mark::after {
 /* The `Arvamuse tähtaeg` editor asks more than one short question — what a new
  * date means, and what became of the deadline it changes — so its labels wrap
  * inside a fixed popover width rather than running off it on one line. */
-.inlineedit__form--wide {
+.deadlineeditor {
   white-space: normal;
   width: min(22rem, calc(100vw - var(--spacing-8)));
+}
+
+/* A closed inline editor's popover is out of layout. Chromium still gave an
+ * absolutely positioned form inside a closed `<details>` a box, so a header
+ * that wrapped one item further right took a narrow page sideways although
+ * nothing was visible there (historical-regression round). */
+.inlineedit:not([open]) .inlineedit__form {
+  display: none;
 }
 
 /* A `<fieldset>` is `min-inline-size: min-content` by default, so a list of
@@ -12634,4 +12642,11 @@ section:has(.pw-more[open]) tbody.uxextra {
   display: flex;
   align-items: center;
   gap: var(--spacing-2);
+  /* «Arvamuse tähtaeg … kehtib edasi» rides here on a file that closed with a
+     deadline (docs/adr/0135 §2): the row wraps on a narrow screen rather than
+     taking the page sideways. */
+  flex-wrap: wrap;
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 100%;
 }

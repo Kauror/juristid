@@ -515,6 +515,8 @@ OPERATIONAL_MODELS = frozenset(
         # An unfinished Uus teema form and the files staged on it.
         "matters.MatterIntakeSession",
         "matters.MatterIntakeFile",
+        # A drawn form's one-time token: spent by its save, read by nothing else.
+        "matters.MatterSaveOnce",
     }
 )
 

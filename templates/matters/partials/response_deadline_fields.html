@@ -38,7 +38,7 @@ emptied box withdraws it unless an outcome is chosen.
       <select class="field__input field__input--compact" name="previous_submission" id="{{ prefix }}-previous-submission">
         <option value="">— ei vali —</option>
         {% for submission in options %}
-          <option value="{{ submission.pk }}">{{ submission.sent_at|date:"j.n.Y" }}{% if submission.title %} · {{ submission.title|truncatechars:60 }}{% endif %}</option>
+          <option value="{{ submission.pk }}">Koja arvamus {{ submission.sent_at|date:"j.n.Y" }}{% for recipient in submission.recipients.all %}{% if forloop.first %} · {% else %}, {% endif %}{{ recipient.name }}{% endfor %}</option>
         {% endfor %}
       </select>
     </label>

@@ -2493,7 +2493,9 @@ def _assemble_timeline(
                 sent_operations.add(record_operation)
                 folded_operations[record_operation] = (index, allowed)
             elif record_operation not in sent_operations:
-                folded_operations.setdefault(record_operation, (index, allowed))
+                # As before for every other record: the last one tied to the
+                # operation takes its effects (a closing `Märge` keeps its stage).
+                folded_operations[record_operation] = (index, allowed)
 
     effects: dict[uuid.UUID, list[ChangeEvent]] = {}
     if folded_operations:
