@@ -619,6 +619,17 @@ class MatterPlanStep(BaseModel):
         blank=True,
         related_name="skipped_plan_steps",
     )
+    #: **Done by work recorded elsewhere**, when it was: the typed record
+    #: (`Ülevaade / uudis`, `Kaasamine`, `Koja arvamus`) a person saved through
+    #: `LISA TEEMALE` and named, in the same save, as this step's work. Both or
+    #: neither, and only on a COMPLETED step. A step finished through its own
+    #: action carries neither — so a suggestion confirmed by real work is told
+    #: apart from one somebody started and finished (historical regression,
+    #: UX-002). An id, never a title or a date that looks alike.
+    fulfilled_by_operation = models.CharField(
+        max_length=32, blank=True, default="", db_default="", choices=PlanStepOperation.choices
+    )
+    fulfilled_by_record = models.UUIDField(null=True, blank=True)
 
     class Meta:
         verbose_name = "tööplaani samm"
@@ -660,6 +671,16 @@ class MatterPlanStep(BaseModel):
                     | (~models.Q(state=PlanStepState.SKIPPED) & models.Q(skipped_at__isnull=True))
                 ),
                 name="workflow_plan_step_skip_stamped",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(fulfilled_by_operation="", fulfilled_by_record__isnull=True)
+                    | (
+                        models.Q(state=PlanStepState.COMPLETED, fulfilled_by_record__isnull=False)
+                        & ~models.Q(fulfilled_by_operation="")
+                    )
+                ),
+                name="workflow_plan_step_fulfilled_by_record",
             ),
             # Template provenance is all three keys or none of them.
             models.CheckConstraint(

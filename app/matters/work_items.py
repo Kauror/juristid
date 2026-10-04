@@ -975,7 +975,12 @@ def _discharge_exists(user: Any) -> Q:
         currency=RegisterCurrency.CURRENT,
         opinion_sent_state__in=OPINION_WORK_COMPLETE_STATES,
     )
-    return Q(Exists(sent)) | Q(Exists(completed))
+    # **Only a deadline from before requests were tracked reads this way.** A
+    # deadline recorded as a request (`Matter.response_requested_at`) is
+    # discharged by an explicit answer that names it, which ends it and clears
+    # the field (`app/matters/response_deadlines.py`); until then no opinion
+    # discharges it — least of all one sent for an earlier request.
+    return Q(response_requested_at__isnull=True) & (Q(Exists(sent)) | Q(Exists(completed)))
 
 
 def annotate_response_obligation(queryset: QuerySet[Matter], user: Any) -> QuerySet[Matter]:

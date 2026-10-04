@@ -259,3 +259,42 @@ class ProceduralLinkKind(models.TextChoices):
     EU_PROCEDURE = "EU_PROCEDURE", "ELi menetlus"
     RIIGIKOGU = "RIIGIKOGU", "Riigikogu"
     OTHER = "OTHER", "Muu menetluslink"
+
+
+class ResponseDeadlineOutcome(models.TextChoices):
+    """How an `Arvamuse tähtaeg` stopped being the current one.
+
+    A `Matter` holds one current response deadline (`Matter.response_deadline`).
+    When it stops being current, what happened to it is kept as a fact
+    (`MatterResponseDeadline`), so a later request never erases an earlier one
+    and a finished one never reads as open work.
+
+    * ``ANSWERED`` — Koda answered it: with a sent `Koja arvamus` named by the
+      person, or with an explanation where nothing was sent through Juristid.
+      It creates no `Submission` and counts in no statistic.
+    * ``NOT_ANSWERING`` — a decision not to answer.
+    * ``SUPERSEDED`` — a new request replaced it while it was still unanswered.
+    * ``MOVED`` — the same request's deadline changed; the request goes on.
+    * ``CANCELLED`` — the deadline was withdrawn or removed.
+    * ``CLOSED`` — the Matter was closed with it, and the person reopening the
+      file did not carry it forward. Closing is not answering.
+    """
+
+    ANSWERED = "ANSWERED", "Vastatud"
+    NOT_ANSWERING = "NOT_ANSWERING", "Otsustati mitte vastata"
+    SUPERSEDED = "SUPERSEDED", "Asendatud uue küsimisega"
+    MOVED = "MOVED", "Tähtaeg muudetud"
+    CANCELLED = "CANCELLED", "Tühistatud"
+    CLOSED = "CLOSED", "Lõppes teema sulgemisega"
+
+
+class ResponseDeadlineChange(models.TextChoices):
+    """What a new date in `Arvamuse tähtaeg` means, when one is already set.
+
+    Asked of the person, never inferred: a later date can be an extension of the
+    same request or a new request that replaces it, and only the second ends the
+    first one — with an outcome somebody chose.
+    """
+
+    MOVED = "MOVED", "Sama küsimise tähtaeg muutus"
+    REPLACED = "REPLACED", "Uus arvamuse küsimine"

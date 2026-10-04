@@ -8,6 +8,7 @@ later from an importer or a scheduled job (master specification 12.4).
 
 from __future__ import annotations
 
+import datetime
 import hashlib
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
@@ -5340,7 +5341,9 @@ REOPEN_INTO_TERMINAL_STAGE = (
 
 
 @transaction.atomic
-def reopen_matter_into_stage(*, matter: Matter, stage: Any, actor: Any = None) -> Matter:
+def reopen_matter_into_stage(
+    *, matter: Matter, stage: Any, actor: Any = None, keep_response_deadline: bool = False
+) -> Matter:
     """«Ava uuesti» — a closed Matter becomes current work again, in a stage the person names.
 
     **One act, so the file is never open while still reading «Jõustunud».** The
@@ -5378,6 +5381,13 @@ def reopen_matter_into_stage(*, matter: Matter, stage: Any, actor: Any = None) -
         origin=StageEpisodeOrigin.RECORDED,
     )
     episode = move.incoming if move.moved else ensure_current_stage_episode(matter=matter)
+    if not keep_response_deadline:
+        # Closing answered nothing, and reopening does not make the deadline the
+        # file closed with current work again unless the person says so: it ends
+        # as «lõppes teema sulgemisega» and stays in its history.
+        from app.matters.response_deadlines import end_deadline_left_by_closure
+
+        end_deadline_left_by_closure(locked=locked, matter=matter, actor=actor)
     return reopen_matter(matter=matter, actor=actor, stage_episode=episode)
 
 
@@ -5714,6 +5724,30 @@ def refresh_matter_from_register(
     if not changed:
         return matter, {}
 
+    scalar_extra: list[str] = []
+    if "response_deadline" in changed and matter.response_requested_at is not None:
+        # The register moved a deadline somebody had recorded as a request. The
+        # recorded one ends as replaced — never silently overwritten — and the
+        # register's date is read as the importer's: a legacy deadline
+        # (docs/adr/0135 §3).
+        from app.matters.enums import ResponseDeadlineOutcome
+        from app.matters.models import MatterResponseDeadline
+
+        previous = changed["response_deadline"]["from"]
+        if previous:
+            MatterResponseDeadline.objects.create(
+                matter=matter,
+                deadline=datetime.date.fromisoformat(previous),
+                requested_at=matter.response_requested_at,
+                outcome=ResponseDeadlineOutcome.SUPERSEDED,
+                note="Registri värskendus asendas tähtaja.",
+                next_deadline=matter.response_deadline,
+                ended_at=timezone.now(),
+                ended_by=actor if getattr(actor, "pk", None) else None,
+            )
+        matter.response_requested_at = None
+        scalar_extra.append("response_requested_at")
+
     if senders is not None:
         matter.source_organisations.set(senders)
 
@@ -5728,7 +5762,7 @@ def refresh_matter_from_register(
         _turn_stage_episode(matter=locked, stage=matter.stage, origin=StageEpisodeOrigin.IMPORTED)
 
     scalar_fields = [field for field in changed if field != "source_organisations"]
-    matter.save(update_fields=[*scalar_fields, "updated_at"])
+    matter.save(update_fields=[*scalar_fields, *scalar_extra, "updated_at"])
     record_change_event(
         event_type=ChangeEventType.MATTER_SOURCE_FIELDS_REFRESHED,
         matter=matter,

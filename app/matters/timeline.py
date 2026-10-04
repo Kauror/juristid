@@ -483,6 +483,13 @@ class TimelineItem:
     #: what this row happened to do to it. Empty on every row whose operation
     #: moved no stage, which is nearly all of them (docs/adr/0092 §6).
     stage_effect: str = ""
+    #: The rounds whose wait this sent opinion's save ended, by title — only
+    #: rounds the save ended in its own operation and this reader may see. One
+    #: act, one row: «Arvamus välja», and under it what it finished.
+    closed_rounds: tuple[str, ...] = ()
+    #: The `Arvamuse tähtaeg` this opinion was recorded as answering — read off
+    #: `MatterResponseDeadline.submission`, the explicit link, never a date.
+    answered_deadline: str = ""
 
     @property
     def is_milestone(self) -> bool:
@@ -2068,7 +2075,9 @@ def matter_timeline(
     has_more = len(items) > offset + limit
     return (
         _disambiguate_files(
-            _with_linked_files(_with_files(_with_next_steps(page, user), user), user)
+            _with_answered_deadlines(
+                _with_linked_files(_with_files(_with_next_steps(page, user), user), user)
+            )
         ),
         has_more,
     )
@@ -2410,11 +2419,11 @@ def _assemble_timeline(
     # a `Kaasamine` is tied to the save that ended its wait, a sent opinion to
     # the save that sent it, and what either may fold is narrower than what a
     # `Märge` does (`FOLDED_EFFECTS`, docs/adr/0126 §4).
-    record_operations: dict[Any, list[tuple[uuid.UUID, frozenset[str]]]] = {}
+    record_operations: dict[Any, list[tuple[uuid.UUID, frozenset[str], str]]] = {}
     for event in events:
         if event.event_type in RECORD_OPERATION_EVENT_TYPES and event.operation_id is not None:
             record_operations.setdefault(event.object_id, []).append(
-                (event.operation_id, FOLDED_EFFECTS[event.event_type])
+                (event.operation_id, FOLDED_EFFECTS[event.event_type], event.event_type)
             )
     suppressed = frozenset(SUPPRESSED_WHEN_ENTRY_SHOWN) | frozenset(RECORD_OPERATION_EVENT_TYPES)
     renderable = [event for event in events if event.event_type not in suppressed]
@@ -2433,11 +2442,22 @@ def _assemble_timeline(
     # wrote each canonical record; this says which operations wrote a record
     # **that is on this page**, which is the only thing an effect may fold onto.
     folded_operations: dict[uuid.UUID, tuple[int, frozenset[str]]] = {}
+    # A save that sent an opinion and, in the same act, ended a round's wait
+    # ties both records to one operation. The opinion is the act: what the save
+    # finished folds under «Arvamus välja», and the round's own row stays where
+    # its date puts it, naming nothing twice.
+    sent_operations: set[uuid.UUID] = set()
     for index, item in enumerate(projected):
         if item.record is None:
             continue
-        for record_operation, allowed in record_operations.get(item.record.pk, ()):
-            folded_operations[record_operation] = (index, allowed)
+        for record_operation, allowed, event_type in record_operations.get(item.record.pk, ()):
+            if event_type == ChangeEventType.SUBMISSION_SENT:
+                sent_operations.add(record_operation)
+                folded_operations[record_operation] = (index, allowed)
+            elif record_operation not in sent_operations:
+                # As before for every other record: the last one tied to the
+                # operation takes its effects (a closing `Märge` keeps its stage).
+                folded_operations[record_operation] = (index, allowed)
 
     effects: dict[uuid.UUID, list[ChangeEvent]] = {}
     if folded_operations:
@@ -2560,6 +2580,22 @@ def _assemble_timeline(
     # stands *now* rather than what this act did to it — and the next step is
     # attached by `_with_next_steps` from the same `events` tuple, so it prints
     # at the precision the action was recorded to (docs/adr/0092 §6).
+    # The rounds a send ended in its own operation, named on the send's row.
+    # Only rounds on this page — that is, rounds this reader may see.
+    rounds_ended_by: dict[uuid.UUID, list[str]] = {}
+    for item in projected:
+        if not isinstance(item.record, MatterEngagement):
+            continue
+        for record_operation, _allowed, event_type in record_operations.get(item.record.pk, ()):
+            if (
+                event_type == ChangeEventType.ENGAGEMENT_FEEDBACK_CLOSED
+                and record_operation in sent_operations
+            ):
+                rounds_ended_by.setdefault(record_operation, []).append(item.record.title)
+    for folded_operation, titles in rounds_ended_by.items():
+        index, _allowed = folded_operations[folded_operation]
+        projected[index] = replace(projected[index], closed_rounds=tuple(titles))
+
     for folded_operation, (index, _allowed) in folded_operations.items():
         folded = effects.get(folded_operation)
         if not folded:
@@ -2709,6 +2745,32 @@ def _disambiguate_files(page: list[TimelineItem]) -> list[TimelineItem]:
                 files.append(replace(file, detail=f"{index}."))
         resolved.append(replace(item, files=tuple(files)))
     return resolved
+
+
+def _with_answered_deadlines(page: list[TimelineItem]) -> list[TimelineItem]:
+    """Name, on a sent opinion's row, the `Arvamuse tähtaeg` it was recorded as answering.
+
+    Read off `MatterResponseDeadline.submission` — the explicit link a person
+    made, in the opinion's own save or later — in one query for the page. The
+    row is already this reader's (a hidden opinion has no row), and the deadline
+    is a fact about the Matter, so naming it discloses nothing new.
+    """
+    from app.matters.models import MatterResponseDeadline
+
+    sent = [item.record.pk for item in page if isinstance(item.record, Submission)]
+    if not sent:
+        return page
+    answered: dict[Any, list[str]] = {}
+    for row in MatterResponseDeadline.objects.filter(submission__in=sent).order_by("deadline"):
+        answered.setdefault(row.submission_id, []).append(format_estonian_date(row.deadline))
+    if not answered:
+        return page
+    return [
+        replace(item, answered_deadline=", ".join(answered[item.record.pk]))
+        if isinstance(item.record, Submission) and item.record.pk in answered
+        else item
+        for item in page
+    ]
 
 
 def _with_next_steps(page: list[TimelineItem], user: Any) -> list[TimelineItem]:

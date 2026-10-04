@@ -150,6 +150,10 @@ under `PRAEGUNE TEGEVUS` (docs/adr/0133 §6).
         {% endcomment %}
         {% if not plan_launch %}
           {% include "matters/partials/complete_current_action_option.html" with field=form.complete_action option_id="id_koja_arvamus_tegevus_tehtud" %}
+          {% include "matters/partials/opinion_completion_links.html" %}
+          {% include "matters/partials/plan_fulfil_option.html" with steps=fulfillable_steps.SUBMISSION option_id="id_koja_arvamus_taidab_sammu" %}
+        {% else %}
+          <input type="hidden" name="salvestus" value="{{ save_once_token }}">
         {% endif %}
         {% comment %}
           **Has the file moved on** (docs/adr/0131 §5). The same `Uus hetkeseis`

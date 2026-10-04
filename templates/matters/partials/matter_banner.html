@@ -48,6 +48,12 @@ paragraph. The banner's own action slot keeps it inside and at the right.
         {% csrf_token %}
         <label class="visually-hidden" for="{{ reopen_form.stage.id_for_label }}">Uus hetkeseis</label>
         {{ reopen_form.stage }}
+        {% if matter.response_deadline %}
+          <label class="cx-check" for="id_taasava_keep_response_deadline">
+            <input type="checkbox" name="keep_response_deadline" id="id_taasava_keep_response_deadline">
+            <span>Arvamuse tähtaeg {{ matter.response_deadline|date:"j.n.Y" }} kehtib edasi</span>
+          </label>
+        {% endif %}
         <button class="button button--quiet" type="submit">Ava uuesti</button>
       </form>
     {% endif %}

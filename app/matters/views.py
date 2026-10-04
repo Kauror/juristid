@@ -138,6 +138,7 @@ from app.matters.forms import (
     ProceduralLinkEditForm,
     ReceivedFeedbackForm,
     ReopenForm,
+    ResponseDeadlineForm,
     ReviewActionForm,
     StartPlanStepForm,
     TimelineStepsForm,
@@ -191,6 +192,13 @@ from app.matters.removal import (
     RecordRemovalConflict,
     kind_for,
     remove_matter_record,
+)
+from app.matters.response_deadlines import (
+    answerable_submissions,
+    change_response_deadline,
+    deadline_revision,
+    ended_deadlines,
+    resolve_response_deadline,
 )
 from app.matters.services import (
     GUARDED_MATTER_FIELDS,
@@ -2017,6 +2025,12 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                     source_organisations=senders,
                     received_date=data.get("received_date"),
                     response_deadline=data.get("response_deadline"),
+                    # A deadline typed here is a request recorded now: it is
+                    # answered only by an answer that names it
+                    # (`app/matters/response_deadlines.py`).
+                    response_requested_at=(
+                        timezone.now() if data.get("response_deadline") else None
+                    ),
                     policy_areas=list(data.get("policy_areas") or []),
                     policy_area_other=data.get("policy_area_other") or "",
                     # Handed to the service as part of the creation operation
@@ -2695,6 +2709,7 @@ def _timeline_filter(request: HttpRequest) -> str:
 
 def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     timeline_only = _timeline_filter(request)
+    feedback_waits = _feedback_waits_of(request, matter)
     # One scoped read of the structured facts, shared by the chronology, the
     # process strip and whatever else asks. Built before the timeline rather than
     # beside it so the three surfaces cannot ask differently scoped questions
@@ -2951,7 +2966,16 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # Beside the open step rather than instead of it. Both are true, both
         # are the reader's, and a page that showed one of them would be choosing
         # which of two facts about their day to withhold.
-        "feedback_waits": _feedback_waits_of(request, matter),
+        "feedback_waits": feedback_waits,
+        # What a `LISA TEEMALE` save may name as finished with it: the plan
+        # steps of its operation still ahead — one read for all three forms —
+        # and, for `Koja arvamus`, the rounds still open, each with the token
+        # the save checks it against: the waits above, read once.
+        "fulfillable_steps": _fulfillable_steps_by_operation(matter),
+        "opinion_open_rounds": [
+            (engagement, engagement_revision_token(engagement)) for engagement in feedback_waits
+        ],
+        "save_once_token": uuid.uuid4(),
         "response_obligation": work_items.secondary_response_obligation(
             matter,
             request.user,
@@ -3095,6 +3119,16 @@ def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # (TEEMA_TARGET_SPEC §B, docs/adr/0074 §2). `selectors.active_deadline`
         # still answers that broader question for the surfaces that ask it.
         "response_deadline": selectors.response_deadline_of(matter, request.user),
+        # The deadline's history and the form's choices. Callables, cached, so
+        # only a surface that draws them pays: the header asks for the last
+        # ended one when no deadline is current, the rail lists them all, and
+        # the editor offers the sent opinions to a writer
+        # (`app/matters/response_deadlines.py`).
+        "deadline_revision": deadline_revision(matter),
+        "ended_deadlines": functools.cache(lambda: ended_deadlines(matter, request.user)),
+        "answerable_submissions": functools.cache(
+            lambda: answerable_submissions(matter, request.user) if can_write else []
+        ),
         "summary_form": BriefSummaryForm(initial={"brief_summary": matter.brief_summary}),
         # The rail travels with the header — it is on all three Matter surfaces
         # — so the private note and the write flag are read here rather than
@@ -3924,6 +3958,76 @@ def _engagement_row(
     return response
 
 
+class _LazySteps(dict[str, list[Any]]):
+    """The plan steps each `LISA TEEMALE` form may name, read once when first asked for.
+
+    A dict the template indexes by operation (`fulfillable_steps.SUBMISSION`);
+    the one query runs the first time any form draws the option, and never on a
+    surface that draws none.
+    """
+
+    def __init__(self, matter: Matter) -> None:
+        super().__init__()
+        self._matter = matter
+        self._loaded = False
+
+    def _load(self) -> None:
+        if self._loaded:
+            return
+        self._loaded = True
+        steps = work_plan.fulfillable_steps(self._matter, None) if self._matter.is_open else []
+        for step in steps:
+            self.setdefault(step.operation, []).append(step)
+
+    def __getitem__(self, key: Any) -> Any:
+        self._load()
+        return self.get(key, [])
+
+    def __contains__(self, key: object) -> bool:
+        return True
+
+
+def _fulfillable_steps_by_operation(matter: Matter) -> dict[str, list[Any]]:
+    return _LazySteps(matter)
+
+
+def _posted_uuid(request: HttpRequest, name: str) -> Any:
+    """A UUID the form posted under ``name``, ``None`` when absent, a refusal when garbled."""
+    raw = (request.POST.get(name) or "").strip()
+    if not raw:
+        return None
+    try:
+        return uuid.UUID(raw)
+    except ValueError as error:
+        raise DomainError("Vigane valik.") from error
+
+
+def _named_rounds_to_finish(request: HttpRequest, matter: Matter) -> list[tuple[Any, str]]:
+    """The rounds a `Koja arvamus` save names to finish, as ``(id, revision)`` pairs.
+
+    Only rounds of this Matter this reader may see; any other id refuses the
+    save rather than being skipped, so the person learns their choice did not
+    stand (`workspace._named_open_rounds` checks the rest under the lock).
+    """
+    pairs: list[tuple[Any, str]] = []
+    for raw in dict.fromkeys(request.POST.getlist("lopeta_kaasamine")):
+        engagement_id, _, revision = raw.partition(":")
+        try:
+            pairs.append((uuid.UUID(engagement_id), revision))
+        except ValueError as error:
+            raise DomainError(workspace.ROUND_NOT_OPEN) from error
+    if not pairs:
+        return []
+    visible = set(
+        MatterEngagement.objects.visible_to(request.user)
+        .filter(matter=matter, pk__in=[pk for pk, _ in pairs])
+        .values_list("pk", flat=True)
+    )
+    if any(pk not in visible for pk, _ in pairs):
+        raise DomainError(workspace.ROUND_NOT_OPEN)
+    return pairs
+
+
 def _feedback_waits_of(request: HttpRequest, matter: Matter) -> list[MatterEngagement]:
     """The open rounds `PRAEGUNE TEGEVUS` lists for this reader, in its order.
 
@@ -4415,6 +4519,21 @@ FIELD_SERVICES = {
 }
 
 
+def _named_answer(request: HttpRequest, matter: Matter) -> Any:
+    """The sent opinion a deadline form named as the answer, if this reader may see it.
+
+    Looked up among this Matter's sent opinions visible to the reader, so a
+    crafted id names nothing; an unknown one is no answer rather than an error.
+    """
+    wanted = request.POST.get("previous_submission") or ""
+    if not wanted:
+        return None
+    return next(
+        (item for item in answerable_submissions(matter, request.user) if str(item.pk) == wanted),
+        None,
+    )
+
+
 @login_required
 @business_write_required
 @require_http_methods(["GET", "POST"])
@@ -4515,10 +4634,19 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
                 actor=request.user,
             )
             set_matter_dates(
+                matter=matter, received_date=data.get("received_date"), actor=request.user
+            )
+            # The deadline asks what a changed date means, here as in the header
+            # (`matters/partials/response_deadline_fields.html`): the same
+            # request moved, or a new one replacing it with an outcome chosen.
+            change_response_deadline(
                 matter=matter,
-                received_date=data.get("received_date"),
-                response_deadline=data.get("response_deadline"),
+                deadline=data.get("response_deadline"),
                 actor=request.user,
+                change=request.POST.get("change", ""),
+                previous_outcome=request.POST.get("previous_outcome", ""),
+                previous_submission=_named_answer(request, matter),
+                previous_note=request.POST.get("previous_note", ""),
             )
             set_policy_areas(
                 matter=matter, policy_areas=list(data.get("policy_areas") or []), actor=request.user
@@ -4884,6 +5012,9 @@ def _edit_context(
         # so their absence reads as a decision rather than as an omission
         # (Teema QA §2.2).
         "immutable_facts": _immutable_facts(matter),
+        # The sent opinions a changed deadline may name as its answer
+        # (`matters/partials/response_deadline_fields.html`).
+        "answerable_submissions": answerable_submissions(matter, request.user),
         # Whether the page may offer the assisted review at all: only a Matter
         # with material to read has anything to be read. The count is the
         # same scoped read the header makes for the Dokumendid tab.
@@ -4990,6 +5121,66 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
     return response
 
 
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def response_deadline_view(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`Arvamuse tähtaeg` in the header: save a date, or end the current one.
+
+    A date that changes an existing deadline asks what it means — the same
+    request moved, or a new request that replaces it — and a replaced one ends
+    with the outcome the person chose. `Lõpeta tähtaeg` ends it as answered
+    (naming a sent `Koja arvamus` or saying where it was answered), declined or
+    withdrawn. Both answer with the whole column and the header, because the
+    deadline is read by the header, `PRAEGUNE TEGEVUS`, `Menetluse kulg` and the
+    rail's history at once (`app/matters/response_deadlines.py`).
+    """
+    matter = get_visible_matter(request, pk)
+    form = ResponseDeadlineForm(
+        request.POST, submissions=answerable_submissions(matter, request.user)
+    )
+    if not form.is_valid():
+        context = _header_context(request, matter)
+        context["field_error"] = "Vigane väärtus."
+        return render(request, "matters/partials/header.html", context, status=400)
+    data = form.cleaned_data
+    try:
+        if data["tegevus"] == "lopeta":
+            resolve_response_deadline(
+                matter=matter,
+                outcome=data.get("previous_outcome") or "",
+                actor=request.user,
+                submission=data.get("previous_submission"),
+                note=data.get("previous_note") or "",
+                expected_revision=data.get("revision") or None,
+            )
+        else:
+            change_response_deadline(
+                matter=matter,
+                deadline=data.get("response_deadline"),
+                actor=request.user,
+                change=data.get("change") or "",
+                previous_outcome=data.get("previous_outcome") or "",
+                previous_submission=data.get("previous_submission"),
+                previous_note=data.get("previous_note") or "",
+                expected_revision=data.get("revision") or None,
+            )
+    except DomainError as error:
+        matter.refresh_from_db()
+        context = _header_context(request, matter)
+        context["field_error"] = str(error)
+        return render(request, "matters/partials/header.html", context, status=400)
+    matter.refresh_from_db()
+    if "/dokumendid/" in request.headers.get("HX-Current-URL", ""):
+        # The header is shared by both tabs, and `Dokumendid` has no
+        # `#teema-vaade` to answer into: there the header alone is the answer.
+        return render(request, "matters/partials/header.html", _header_context(request, matter))
+    response = _render_overview(request, matter, header_out_of_band=True)
+    response["HX-Retarget"] = "#teema-vaade"
+    response["HX-Reswap"] = "outerHTML"
+    return response
+
+
 def _apply_inline_field(
     request: HttpRequest, matter: Matter, field: str, value: Any, form: Any
 ) -> None:
@@ -5020,7 +5211,10 @@ def _apply_inline_field(
     elif field == "received_date":
         set_matter_dates(matter=matter, received_date=value, actor=request.user)
     elif field == "response_deadline":
-        set_matter_dates(matter=matter, response_deadline=value, actor=request.user)
+        # A deadline set where there is none is a new request; changing or
+        # clearing one asks what it means, which is `response_deadline_view`'s
+        # form. This door only ever gives a first one or none.
+        change_response_deadline(matter=matter, deadline=value, actor=request.user)
     elif field == "policy_area_other":
         set_policy_area_other(matter=matter, value=value or "", actor=request.user)
     elif field == "policy_areas":
@@ -5302,7 +5496,10 @@ def reopen(request: HttpRequest, pk: Any) -> HttpResponse:
         return redirect("matters:matter_detail", pk=matter.pk)
     try:
         reopen_matter_into_stage(
-            matter=matter, stage=form.cleaned_data["stage"], actor=request.user
+            matter=matter,
+            stage=form.cleaned_data["stage"],
+            actor=request.user,
+            keep_response_deadline=bool(form.cleaned_data.get("keep_response_deadline")),
         )
         messages.success(request, "Teema on taasavatud.")
     except DomainError as error:
@@ -5788,6 +5985,7 @@ def add_website_overview(request: HttpRequest, pk: Any) -> HttpResponse:
             title=form.cleaned_data.get("overview_title") or "",
             plan_action_id=launch[0] if launch else None,
             plan_step_id=launch[1] if launch else None,
+            fulfils_plan_step_id=None if launch else _posted_uuid(request, "taidab_sammu"),
         )
     except DomainError as error:
         return _workspace_refusal(request, matter, key=key, form=form, error=str(error))
@@ -6425,6 +6623,14 @@ def _workspace_refusal(
     context = _overview_context(request, matter)
     context.update(_header_context(request, matter))
     context[key] = form
+    # What else the refused save named — the deadline, the rounds, the plan
+    # step — comes back ticked, so correcting the file and saving again does
+    # not quietly drop it (`opinion_completion_links.html`).
+    context["refused_choices"] = {
+        "answers_deadline": bool(request.POST.get("vastab_tahtajale")),
+        "rounds": {raw.partition(":")[0] for raw in request.POST.getlist("lopeta_kaasamine")},
+        "plan_step": request.POST.get("taidab_sammu") or "",
+    }
     # The forms that live beside the current task and nowhere else: the
     # completion box and `Vaatasin üle`. `action_form` was one of them from
     # docs/adr/0097 §8.2 until docs/adr/0126 §1: its panel, `#lisa-jargmine`, is
@@ -6850,6 +7056,7 @@ def add_engagement_compact(request: HttpRequest, pk: Any) -> HttpResponse:
         workspace.add_matter_engagement(
             plan_action_id=launch[0] if launch else None,
             plan_step_id=launch[1] if launch else None,
+            fulfils_plan_step_id=None if launch else _posted_uuid(request, "taidab_sammu"),
             matter=matter,
             author=request.user,
             audience=form.cleaned_data["audience"],
@@ -7550,6 +7757,13 @@ def add_koda_opinion(request: HttpRequest, pk: Any) -> HttpResponse:
         # tab, a rejected upload — left that institution in the catalogue.
         with transaction.atomic():
             result = workspace.add_matter_koda_opinion(
+                # What else this save finishes, each named by the person and
+                # each checked again under the lock (historical regression,
+                # stage II). Nothing is chosen for them.
+                answers_deadline=request.POST.get("vastab_tahtajale") or None,
+                close_rounds=_named_rounds_to_finish(request, matter),
+                fulfils_plan_step_id=(None if launch else _posted_uuid(request, "taidab_sammu")),
+                once_token=_posted_uuid(request, "salvestus"),
                 plan_step_id=launch[1] if launch else None,
                 # The step `Märgi praegune tegevus tehtuks` named, when it was
                 # ticked: fetched through `visible_to` first, so an identifier for a
@@ -7585,7 +7799,8 @@ def add_koda_opinion(request: HttpRequest, pk: Any) -> HttpResponse:
             )
     except (DomainError, UploadRejected) as error:
         return _workspace_refusal(request, matter, key=key, form=form, error=str(error))
-    if result.closed:
+    if result.closed or request.POST.get("vastab_tahtajale"):
+        # A closure, or an answered `Arvamuse tähtaeg`, changes the header too.
         matter.refresh_from_db()
         return _render_overview(request, matter, header_out_of_band=True)
     return _render_overview(request, matter)

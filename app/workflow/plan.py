@@ -617,6 +617,112 @@ def repeat_plan_step(
     return repeated
 
 
+# -- finishing a step with work recorded elsewhere ----------------------------
+
+STEP_WRONG_OPERATION = "See salvestus ei tee selle tööplaani sammu tööd."
+STEP_IS_CURRENT = (
+    "See samm on praegune tegevus — märgi see tehtuks valikuga «Märgi praegune tegevus tehtuks»."
+)
+
+
+def fulfillable_step(locked_matter: Any, step_id: Any, operation: str) -> MatterPlanStep:
+    """The step a `LISA TEEMALE` save names as its work, if it may be — or a refusal.
+
+    Asked under the Matter's lock **before** anything is written: the step is on
+    this Matter, still ahead (suggested or planned), of the operation this save
+    performs, and not the current step — the current step is finished through
+    its own action (`Märgi praegune tegevus tehtuks`), never twice.
+    """
+    from app.workflow.enums import ActionStatus
+    from app.workflow.models import NextAction
+
+    step = (
+        MatterPlanStep.objects.select_for_update(no_key=True)
+        .filter(matter=locked_matter, pk=step_id)
+        .first()
+    )
+    if step is None:
+        raise DomainError(STEP_NOT_ON_MATTER)
+    if not step.is_open:
+        raise DomainError(STEP_NOT_OPEN)
+    if step.operation != operation:
+        raise DomainError(STEP_WRONG_OPERATION)
+    if NextAction.objects.filter(
+        matter=locked_matter, plan_step=step, status=ActionStatus.OPEN
+    ).exists():
+        raise DomainError(STEP_IS_CURRENT)
+    return step
+
+
+def fulfil_plan_step(*, step: MatterPlanStep, record: Any, actor: Any = None) -> MatterPlanStep:
+    """The step is done, by ``record`` — work a person recorded and named as it.
+
+    No `NextAction` is created to be finished at once, and no other open action
+    is touched. The step is stamped now, as every completion is; the record
+    keeps its own business date (docs/adr/0133 §4).
+    """
+    step.state = PlanStepState.COMPLETED
+    step.completed_at = timezone.now()
+    step.completed_by = actor
+    step.skipped_at = None
+    step.skipped_by = None
+    step.fulfilled_by_operation = step.operation
+    step.fulfilled_by_record = record.pk
+    step.save(
+        update_fields=[
+            "state",
+            "completed_at",
+            "completed_by",
+            "skipped_at",
+            "skipped_by",
+            "fulfilled_by_operation",
+            "fulfilled_by_record",
+            "updated_at",
+        ]
+    )
+    _record(
+        ChangeEventType.PLAN_STEP_COMPLETED,
+        matter=step.matter,
+        actor=actor,
+        step=step,
+        payload={"record": str(record.pk), "operation": step.operation},
+    )
+    return step
+
+
+def fulfillable_steps(matter: Any, operation: str | None) -> list[MatterPlanStep]:
+    """The steps a save of ``operation`` may be named as the work of, in plan order.
+
+    Still ahead and not current; read for the form, checked again under the lock
+    by :func:`fulfillable_step` when the save names one. ``None`` reads every
+    typed operation at once, for a page drawing all three forms.
+    """
+    from app.workflow.enums import ActionStatus
+    from app.workflow.models import NextAction
+
+    current = NextAction.objects.filter(
+        matter=matter, status=ActionStatus.OPEN, plan_step__isnull=False
+    ).values_list("plan_step_id", flat=True)
+    operations = (
+        [operation]
+        if operation is not None
+        else [
+            PlanStepOperation.SUBMISSION,
+            PlanStepOperation.ENGAGEMENT,
+            PlanStepOperation.WEBSITE_OVERVIEW,
+        ]
+    )
+    return list(
+        MatterPlanStep.objects.filter(
+            matter=matter,
+            operation__in=operations,
+            state__in=[PlanStepState.SUGGESTED, PlanStepState.PLANNED],
+        )
+        .exclude(pk__in=current)
+        .order_by("position", "created_at")
+    )
+
+
 # -- starting a step ----------------------------------------------------------
 
 

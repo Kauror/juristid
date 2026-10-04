@@ -34,6 +34,8 @@ from app.matters.enums import (
     ExternalPositionProvenance,
     MatterDataClass,
     ProceduralLinkKind,
+    ResponseDeadlineChange,
+    ResponseDeadlineOutcome,
 )
 from app.matters.models import (
     DEVELOPMENT_TITLE_MAX_LENGTH,
@@ -5581,6 +5583,12 @@ class ReopenForm(forms.Form):
         error_messages={"required": "Vali hetkeseis, millega teema uuesti avatakse."},
         widget=forms.Select(attrs={"class": "field__input field__input--compact"}),
     )
+    #: Whether the `Arvamuse tähtaeg` the file closed with is current work again.
+    #: Unticked by default: closing answered nothing, and reopening must not
+    #: quietly make an old deadline late again. Unticked, it ends as «lõppes
+    #: teema sulgemisega» and stays in the deadline's history
+    #: (`app/matters/response_deadlines.py`).
+    keep_response_deadline = forms.BooleanField(required=False)
 
     def __init__(self, *args: Any, offered: list[Any] | None = None, **kwargs: Any) -> None:
         kwargs.setdefault("auto_id", "id_taasava_%s")
@@ -7518,3 +7526,34 @@ def drawn_under_the_current_step(form: forms.Form, slug: str) -> forms.Form:
         if field.widget.attrs.get("id"):
             field.widget.attrs["id"] = f"id_{slug}_{name}"
     return form
+
+
+class ResponseDeadlineForm(forms.Form):
+    """`Arvamuse tähtaeg` in the header: set, move, replace, clear or resolve it.
+
+    One form for both acts the header offers, told apart by ``tegevus``:
+    ``muuda`` saves a date, ``lopeta`` ends the current deadline with an
+    outcome. What a new date *means* is asked only when a deadline exists and
+    the date changes, and an outcome for the replaced request is required by
+    the service rather than defaulted here (`app/matters/response_deadlines.py`).
+
+    The opinion an answer names is drawn from the sent opinions this reader may
+    see on this Matter, so a crafted id reaches nothing else.
+    """
+
+    tegevus = forms.ChoiceField(choices=[("muuda", "muuda"), ("lopeta", "lopeta")])
+    revision = forms.CharField(required=False)
+    response_deadline = EstonianDateField(required=False)
+    change = forms.ChoiceField(choices=[("", ""), *ResponseDeadlineChange.choices], required=False)
+    previous_outcome = forms.ChoiceField(
+        choices=[("", ""), *ResponseDeadlineOutcome.choices], required=False
+    )
+    previous_submission = forms.ModelChoiceField(queryset=Matter.objects.none(), required=False)
+    previous_note = forms.CharField(required=False, max_length=2000)
+
+    def __init__(self, *args: Any, submissions: Any = (), **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        from app.submissions.models import Submission
+
+        field = cast(forms.ModelChoiceField, self.fields["previous_submission"])
+        field.queryset = Submission.objects.filter(pk__in=[item.pk for item in submissions])

@@ -27,6 +27,7 @@ from datetime import date
 from typing import Any
 
 from django.db import transaction
+from django.utils import timezone
 
 from app.audit.operations import composer_operation
 from app.core.enums import Visibility
@@ -188,6 +189,9 @@ def register_incoming(
         source_organisations=senders,
         received_date=received_date,
         response_deadline=response_deadline,
+        # `Saabunud` is a person filing a request that has just arrived: its
+        # deadline is recorded as a request now (`app/matters/response_deadlines.py`).
+        response_requested_at=timezone.now() if response_deadline else None,
         visibility=visibility,
         brief_summary=(brief_summary or "").strip(),
     )
