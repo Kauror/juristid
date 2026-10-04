@@ -20,6 +20,7 @@ import importlib.util
 import subprocess
 import sys
 import threading
+from datetime import date
 from io import StringIO
 from pathlib import Path
 
@@ -30,6 +31,7 @@ from django.db import connection
 
 from app.accounts.models import User
 from app.core import deployment
+from app.intelligence.services import add_important_date, add_work_victory_candidate
 from app.legacy_import.source_pages import (
     MatterSourcePage,
     SourceMatchClass,
@@ -43,6 +45,7 @@ from app.matters.models import (
     MatterExternalPosition,
     MatterProceduralDevelopment,
 )
+from app.matters.services import plan_website_overview, publish_website_overview
 from app.search import freshness
 from app.search.indexing import rebuild_all
 from app.search.management.commands.check_search_integrity import (
@@ -56,6 +59,7 @@ from app.search.models import (
     SearchRebuildReason,
     SearchSourceKind,
 )
+from app.workflow.enums import DatePrecision
 from tests import factories
 from tests import synthetic_corpus as corpus
 from tests.test_search_reliability import _source_page
@@ -105,6 +109,29 @@ def every_kind(specialist, capture_evidence, extract):
         source_label="Liit",
         provenance=ExternalPositionProvenance.RECEIVED,
         created_by=specialist,
+    )
+    # The three F-008 kinds, through their own services. The untitled plan
+    # projects nothing on purpose, and a healthy corpus must say so cleanly.
+    overview = plan_website_overview(matter=matter, actor=specialist)
+    publish_website_overview(
+        overview=overview,
+        url="https://www.koda.ee/uudised/koigi-liikidega",
+        published_on=None,
+        actor=specialist,
+        title="Koja ülevaade",
+    )
+    plan_website_overview(matter=matter, actor=specialist)
+    add_important_date(
+        matter=matter,
+        title="Eelnõu kooskõlastusring",
+        date_value=date(2027, 1, 1),
+        period_end=date(2027, 3, 31),
+        date_precision=DatePrecision.QUARTER,
+        note="Ministeeriumi ajakava järgi",
+        actor=specialist,
+    )
+    add_work_victory_candidate(
+        matter=matter, title="Üleminekuaeg pikenes", detail="Koja ettepanek", actor=specialist
     )
     rebuild_all()
     kinds = set(SearchDocument.objects.values_list("source_kind", flat=True))
@@ -185,6 +212,9 @@ def test_a_removed_record_whose_row_survived_is_reported(every_kind):
         SearchSourceKind.EXTERNAL_POSITION,
         SearchSourceKind.DOCUMENT,
         SearchSourceKind.ENGAGEMENT,
+        SearchSourceKind.WEBSITE_OVERVIEW,
+        SearchSourceKind.IMPORTANT_DATE,
+        SearchSourceKind.WORK_VICTORY,
     ],
 )
 def test_a_row_pointing_at_another_matter_is_reported_for_every_kind(every_kind, specialist, kind):

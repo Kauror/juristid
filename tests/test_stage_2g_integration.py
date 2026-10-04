@@ -193,29 +193,29 @@ def test_a_specialist_is_offered_the_same_destinations(client, specialist):
     assert body.count(f'href="{reverse("matters:department")}"') == 1
 
 
-# -- search stays where Stage 2E.1 left it ----------------------------------
+# -- search: what docs/adr/0136 changed, and what it left deferred -----------
 
 
-def test_structured_facts_are_not_indexed_for_search(specialist):
-    """Deliberately deferred, and asserted so the deferral is visible.
+def test_structured_facts_are_indexed_only_where_a_decision_says_so(specialist):
+    """Stage 2G deferred indexing intelligence records, with a failing test in front.
 
-    Stage 2G left intelligence records out of the search projection to avoid
-    colliding with Stage 2E.1's live search. If somebody later indexes them,
-    that should be a decision with a failing test in front of it — not a
-    surprise in the register's results.
+    The decision came (docs/adr/0136, historical regression F-008): an
+    `Oluline tähtaeg` and a `Töövõit` are now searchable, each as its own row
+    with its own visibility. `Jõustumine` facts are still not indexed — that
+    remains a deferral, asserted so it stays visible.
     """
     matter = factories.MatterFactory(owner=specialist)
     add_important_date(
-        matter=matter, title="Indekseerimata tähtaeg", date_value=FUTURE, period_end=FUTURE
+        matter=matter, title="Indekseeritud tähtaeg", date_value=FUTURE, period_end=FUTURE
     )
     add_work_victory_candidate(
         matter=matter,
-        title="Indekseerimata võit",
+        title="Indekseeritud võit",
         date_precision=DatePrecision.YEAR,
         actor=specialist,
     )
 
     kinds = set(SearchDocument.objects.filter(matter=matter).values_list("source_kind", flat=True))
-    assert "IMPORTANT_DATE" not in kinds
-    assert "WORK_VICTORY" not in kinds
+    assert "IMPORTANT_DATE" in kinds
+    assert "WORK_VICTORY" in kinds
     assert "EFFECTIVE_DATE" not in kinds
