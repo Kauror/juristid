@@ -31,17 +31,17 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 
 from app.core.enums import Visibility
-from app.core.errors import DomainError
 from app.documents.models import Document
 from app.matters.models import Entry
 from app.matters.timeline import matter_timeline
-from app.matters.workspace import complete_current_action
+from app.matters.workspace import STALE_ACTION_REFUSAL, complete_current_action
 from app.search.services import result_count
 from app.workflow import plan as work_plan
 from app.workflow.enums import ActionStatus
 from app.workflow.models import NextAction
 from app.workflow.services import set_next_action_for_new_work
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -245,7 +245,9 @@ def test_a_stale_restricted_action_refuses_the_whole_save(matter, specialist):
     entries_before = Entry.objects.filter(matter=matter).count()
     files_before = Document.objects.filter(matter=matter).count()
 
-    with pytest.raises(DomainError):
+    # Refused because the named step is no longer the current one — not merely
+    # because something refused.
+    with refused(STALE_ACTION_REFUSAL):
         _complete(matter, specialist, stale, uploads=[_pdf()], body=_body(" teist korda"))
 
     assert Entry.objects.filter(matter=matter).count() == entries_before
