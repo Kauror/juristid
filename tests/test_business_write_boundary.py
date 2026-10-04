@@ -345,6 +345,17 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         probe=lambda w: w["matter"].engagements.count(),
     ),
     WriteRoute(
+        name="matters:add_engagement_evidence",
+        label="Faili lisamine pooleliolevale kaasamisele",
+        request=lambda w: (
+            {"pk": w["matter"].pk, "engagement_id": w["waiting_engagement"].pk},
+            {},
+        ),
+        files=lambda: {"attachments": _pdf("loata-kaasamise-fail.pdf")},
+        probe=lambda w: DocumentLink.objects.filter(engagement=w["waiting_engagement"]).count(),
+        events=(ChangeEventType.EVIDENCE_VERSION_ADDED,),
+    ),
+    WriteRoute(
         name="matters:complete_engagement_feedback",
         label="Kaasamise lõpetamine",
         request=lambda w: (
