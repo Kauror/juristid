@@ -207,6 +207,7 @@ PATTERN_DOMESTIC = "domestic"
 PATTERN_VTK = "vtk"
 PATTERN_MAARUS = "maarus"
 PATTERN_KOJA_ETTEPANEK = "koja-ettepanek"
+PATTERN_KOJA_ETTEPANEK_VTK = "koja-ettepanek-vtk"
 PATTERN_EU = "eu"
 PATTERN_EU_CONSULTATION = "eli-konsultatsioon"
 PATTERN_DIRECTIVE = "direktiiv"
@@ -378,6 +379,28 @@ EU_REGULATION_PATTERN = ProcessPattern(
     ),
 )
 
+#: Koda's own proposal, taken up by a ministry's VTK.
+#:
+#: The file starts as Koda's proposal and later also carries `VTK`, because a
+#: väljatöötamiskavatsus answering it was published — both instruments are true
+#: of it. Read as «two roads» it used to fall back to the generic domestic bill:
+#: the proposal's own phase was dropped and the VTK had no node at all, so the
+#: person could neither see nor date it. This is `KOJA_ETTEPANEK_PATTERN` with
+#: the VTK where it happens, after the proposal; like the VTK pattern's own
+#: node it maps no stage key, and everything after it stays conditional.
+KOJA_ETTEPANEK_VTK_PATTERN = ProcessPattern(
+    PATTERN_KOJA_ETTEPANEK_VTK,
+    "Koja ettepanek ja VTK",
+    (
+        PatternNode(PHASE_KOJA_ETTEPANEK, _IDEA),
+        PatternNode(PHASE_VTK),
+        PatternNode(PHASE_KOOSKOLASTUS, _CONSULTATION, conditional=True),
+        PatternNode(PHASE_VALITSUS, _GOVERNMENT, conditional=True),
+        PatternNode(PHASE_RIIGIKOGU, _PARLIAMENT, conditional=True),
+        PatternNode(PHASE_JOUSTUMINE, _IN_FORCE, conditional=True),
+    ),
+)
+
 PATTERNS: dict[str, ProcessPattern] = {
     pattern.key: pattern
     for pattern in (
@@ -385,6 +408,7 @@ PATTERNS: dict[str, ProcessPattern] = {
         VTK_PATTERN,
         MAARUS_PATTERN,
         KOJA_ETTEPANEK_PATTERN,
+        KOJA_ETTEPANEK_VTK_PATTERN,
         EU_PATTERN,
         EU_CONSULTATION_PATTERN,
         DIRECTIVE_PATTERN,
@@ -417,8 +441,9 @@ _INSTRUMENT_PATTERNS: dict[str, str] = {
 #: instrument patterns would otherwise read as «mixed» and draw nothing, which
 #: would withdraw the roadmap from precisely the file the full example was
 #: written about. The VTK pattern already contains the whole law path, so it is
-#: the superset and the honest choice (§10, LAW / VTK).
-_VTK_AND_LAW: frozenset[str] = frozenset({"vtk", "seadus"})
+#: the superset and the honest choice (§10, LAW / VTK). `_instrument_pattern`
+#: reads the same rule a step wider: an instrument with no road of its own beside
+#: the VTK names no competing road either.
 
 #: The two `Menetlusliik` values that choose a *family*, and the only two.
 #:
@@ -439,6 +464,7 @@ _PATTERN_FAMILY: dict[str, str] = {
     PATTERN_VTK: PATTERN_DOMESTIC,
     PATTERN_MAARUS: PATTERN_DOMESTIC,
     PATTERN_KOJA_ETTEPANEK: PATTERN_DOMESTIC,
+    PATTERN_KOJA_ETTEPANEK_VTK: PATTERN_DOMESTIC,
     PATTERN_EU: PATTERN_EU,
     PATTERN_EU_CONSULTATION: PATTERN_EU,
     PATTERN_DIRECTIVE: PATTERN_EU,
@@ -446,13 +472,67 @@ _PATTERN_FAMILY: dict[str, str] = {
 }
 
 
+#: **The order a procedure's phases happen in**, family by family — for placing a
+#: phase the current pattern does not draw (`legal_process._keep_recorded_phases`).
+#:
+#: Not `PHASES`, whose order is a vocabulary's and is pinned by database checks:
+#: there `VTK` precedes `Koja ettepanek` and every domestic phase precedes every
+#: European one, which is no procedure's order. Here Koda's proposal comes before
+#: the VTK that answers it, and the two families are never compared — a domestic
+#: phase kept on a European rail is not «before ELi konsultatsioon», it is simply
+#: not on that road, and reads where the file now stands.
+PROCEDURE_ORDERS: tuple[tuple[str, ...], ...] = (
+    (
+        PHASE_ALGUS,
+        PHASE_KOJA_ETTEPANEK,
+        PHASE_VTK,
+        PHASE_KOOSKOLASTUS,
+        PHASE_VALITSUS,
+        PHASE_RIIGIKOGU,
+        PHASE_JOUSTUMINE,
+    ),
+    (
+        PHASE_ELI_KONSULTATSIOON,
+        PHASE_EESTI_SEISUKOHT,
+        PHASE_ELI_MENETLUS,
+        PHASE_JOUSTUMINE,
+        PHASE_ULEVOTMINE,
+    ),
+)
+
+
+def happens_before(first: str, second: str) -> bool:
+    """Whether ``first`` comes before ``second`` on a procedure that has both.
+
+    False when no procedure holds both: the two are not on one road, so neither
+    is before the other.
+    """
+    for order in PROCEDURE_ORDERS:
+        if first in order and second in order:
+            return order.index(first) < order.index(second)
+    return False
+
+
 def _instrument_pattern(instrument_keys: frozenset[str]) -> ProcessPattern | None:
     """The most specific pattern the stored `Õigusakt` supports, or ``None``."""
     if not instrument_keys:
         return None
-    if "vtk" in instrument_keys and instrument_keys <= _VTK_AND_LAW:
-        return VTK_PATTERN
     named = {_INSTRUMENT_PATTERNS[key] for key in instrument_keys if key in _INSTRUMENT_PATTERNS}
+    if "vtk" in instrument_keys and instrument_keys <= DOMESTIC_LEGAL_INSTRUMENT_KEYS:
+        # What the file carries besides its VTK. A `Seadus` is the bill the VTK
+        # became and an instrument with no road of its own (`Muu siseriiklik`)
+        # names no competing one, so neither takes the VTK's road away: the VTK
+        # pattern already contains the whole law path. Before this, `VTK`,
+        # `Seadus` and `Muu siseriiklik` together read as two roads, the rail
+        # fell back to the generic bill with no VTK node, and the VTK's recorded
+        # date was drawn after the parliament reading (historical replay, case 03).
+        # Koda's own proposal answered by a VTK reads proposal first, then VTK —
+        # with or without the bill it may become (case 04).
+        others = named - {PATTERN_VTK, PATTERN_DOMESTIC}
+        if not others:
+            return VTK_PATTERN
+        if others == {PATTERN_KOJA_ETTEPANEK}:
+            return KOJA_ETTEPANEK_VTK_PATTERN
     if len(named) == 1:
         return PATTERNS[next(iter(named))]
     return None

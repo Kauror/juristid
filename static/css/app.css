@@ -11827,6 +11827,13 @@ section:has(.pw-more[open]) tbody.uxextra {
   margin-bottom: var(--spacing-3);
 }
 
+/* The waiting rounds' lines, in one box a round's own answer can replace out
+ * of band (matters/partials/feedback_waits.html). `display: contents`, so the
+ * lines keep exactly the geometry they had as direct children. */
+.curact__waits {
+  display: contents;
+}
+
 .curact__owedlabel {
   font-size: var(--typography-size-chip);
   letter-spacing: 0.05em;

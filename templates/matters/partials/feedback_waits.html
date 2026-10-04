@@ -40,6 +40,16 @@ rather than completing anything — the rule every work surface in this product
 keeps.
 {% endcomment %}
 {% if matter.is_open %}
+  {% comment %}
+    **One stable box, so a round's own answer can refresh these lines.**
+    `Lõpeta kaasamine`, `Ootan tagasisidet` and a round's `Muuda` swap only the
+    round's row; without this box the line above kept «Ootame tagasisidet» for a
+    round already finished until the page was reloaded. The row's response
+    carries this partial again, out of band (`oob`), and replaces only these
+    lines — never the task, its forms or anything typed in them.
+    `display: contents`, so the box adds no geometry of its own.
+  {% endcomment %}
+  <div id="praegune-ootused" class="curact__waits"{% if oob %} hx-swap-oob="true"{% endif %}>
   {% for wait in feedback_waits %}
     <p class="curact__owed curact__owed--wait">
       <span class="curact__owedlabel">Ootame tagasisidet</span>
@@ -51,4 +61,5 @@ keeps.
       <a class="curact__owedlink" href="#kaasamine-{{ wait.pk }}-sisu">{{ wait.title }}</a>
     </p>
   {% endfor %}
+  </div>
 {% endif %}
