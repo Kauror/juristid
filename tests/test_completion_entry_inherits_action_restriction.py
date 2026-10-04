@@ -315,3 +315,63 @@ def test_the_override_a_completion_entry_is_created_with(override, expected):
     from app.matters.workspace import completion_visibility_override
 
     assert completion_visibility_override(NextAction(visibility_override=override)) == expected
+
+
+# ---------------------------------------------------------------------------
+# Independent records that also finish a restricted step keep their own rule
+# ---------------------------------------------------------------------------
+#
+# The owner's decision (docs/adr/0138 §3): restriction belongs to the
+# information, not to every workflow edge that led to it. A sent opinion or a
+# consultation that finishes a restricted step is not restricted by it.
+
+
+def test_an_opinion_that_finishes_a_restricted_step_keeps_its_own_visibility(
+    client, matter, specialist, reader, organisation
+):
+    from app.matters.workspace import add_matter_koda_opinion
+    from app.submissions.models import Submission
+
+    action = _action(matter, specialist, restricted=True)
+
+    submission = add_matter_koda_opinion(
+        matter=matter,
+        author=specialist,
+        upload=SimpleUploadedFile("Koja_arvamus.pdf", b"%PDF-1.4 arvamus"),
+        recipients=[organisation],
+        sent_on=action.created_at.date(),
+        complete_action_id=action.pk,
+    ).record
+
+    action.refresh_from_db()
+    assert action.status == ActionStatus.COMPLETED
+    assert submission.visibility_override == ""
+    assert Submission.objects.visible_to(reader).filter(pk=submission.pk).exists()
+
+
+def test_a_round_that_finishes_a_restricted_plan_step_keeps_its_own_visibility(
+    matter, specialist, reader
+):
+    from app.matters.models import MatterEngagement
+    from app.matters.workspace import add_matter_engagement
+    from app.workflow.enums import PlanStepOperation
+
+    work_plan.seed_standard_plan(matter=matter, actor=specialist)
+    step = next(
+        s for s in work_plan.plan_steps_of(matter) if s.operation == PlanStepOperation.ENGAGEMENT
+    )
+    action = work_plan.activate_plan_step(matter=matter, step=step, actor=specialist)
+    NextAction.objects.filter(pk=action.pk).update(visibility_override=Visibility.RESTRICTED)
+
+    engagement = add_matter_engagement(
+        matter=matter,
+        author=specialist,
+        audience="Liikmed",
+        plan_action_id=action.pk,
+        plan_step_id=step.pk,
+    ).record
+
+    action.refresh_from_db()
+    assert action.status == ActionStatus.COMPLETED
+    assert engagement.visibility_override == ""
+    assert MatterEngagement.objects.visible_to(reader).filter(pk=engagement.pk).exists()
