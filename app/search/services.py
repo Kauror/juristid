@@ -276,6 +276,10 @@ SOURCE_LABELS: dict[str, str] = {
     SearchSourceKind.PROCEDURAL_DEVELOPMENT.value: "Märge",
     SearchSourceKind.EXTERNAL_POSITION.value: "Arvamus või tagasiside",
     SearchSourceKind.DOCUMENT.value: "Dokument",
+    # F-008, with the kinds themselves, for the same reason.
+    SearchSourceKind.WEBSITE_OVERVIEW.value: "Ülevaade / uudis",
+    SearchSourceKind.IMPORTANT_DATE.value: "Oluline tähtaeg",
+    SearchSourceKind.WORK_VICTORY.value: "Töövõit",
 }
 
 #: Deterministic tiers. Higher wins, and the gaps are wide so that a strong
@@ -333,6 +337,9 @@ TRIGRAM_THRESHOLD = 0.6
 #: it, so a word inside a Märge title reached the row only if the Estonian
 #: stemmer happened to reduce it to the typed form — «Tarbijakaitseseadus»
 #: missed «…Tarbijakaitseseaduse…».
+#:
+#: The three F-008 kinds joined with the kinds themselves, so as not to repeat
+#: that: a row whose title is its whole identity is matched by its title.
 CHILD_KINDS = (
     SearchSourceKind.ENTRY,
     SearchSourceKind.SUBMISSION,
@@ -340,6 +347,9 @@ CHILD_KINDS = (
     SearchSourceKind.ENGAGEMENT,
     SearchSourceKind.PROCEDURAL_DEVELOPMENT,
     SearchSourceKind.EXTERNAL_POSITION,
+    SearchSourceKind.WEBSITE_OVERVIEW,
+    SearchSourceKind.IMPORTANT_DATE,
+    SearchSourceKind.WORK_VICTORY,
 )
 
 #: The kinds that actually populate ``alias_text``. A document fragment does not
@@ -985,6 +995,9 @@ _OWN_TITLE_KINDS = frozenset(
         SearchSourceKind.PROCEDURAL_DEVELOPMENT.value,
         SearchSourceKind.EXTERNAL_POSITION.value,
         SearchSourceKind.LEGACY_SOURCE_PAGE.value,
+        SearchSourceKind.WEBSITE_OVERVIEW.value,
+        SearchSourceKind.IMPORTANT_DATE.value,
+        SearchSourceKind.WORK_VICTORY.value,
     }
 )
 

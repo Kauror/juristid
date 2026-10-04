@@ -24,7 +24,8 @@ still holds: evidence rebuilds fragments, fragments rebuild this
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from typing import Any
 
 from django.db.models import QuerySet
 from django.utils import timezone
@@ -33,11 +34,13 @@ from app.core.richtext import plain_text
 from app.core.text import normalize_for_matching
 from app.documents.enums import DerivativeStatus
 from app.documents.models import Document, DocumentTextFragment, DocumentVersion
+from app.intelligence.models import MatterImportantDate, MatterWorkVictory
 from app.matters.models import (
     Entry,
     MatterEngagement,
     MatterExternalPosition,
     MatterProceduralDevelopment,
+    MatterWebsiteOverview,
 )
 from app.search.models import INDEX_VERSION, SearchDocument, SearchSourceKind
 from app.submissions.models import Submission
@@ -335,6 +338,186 @@ def refresh_positions(positions: QuerySet, *, generations: Sequence[int] | None 
         ]
     )
     return len(live)
+
+
+def _refresh_rows(
+    rows: list,
+    *,
+    kind: str,
+    values: Callable[[Any, object], dict[str, object]],
+    projects: Callable[[Any], bool],
+    generations: Sequence[int] | None,
+) -> int:
+    """Delete every given source's rows, insert one for each that still projects.
+
+    The shape of `refresh_engagements` and its siblings, once, for the three
+    F-008 kinds: one statement to withdraw, one to insert, whatever the batch
+    size — so a full rebuild costs two statements per batch and no query per
+    record, and a removed record (or a titleless overview) is withdrawn by the
+    same save that changed it (docs/adr/0102).
+    """
+    if not rows:
+        return 0
+    generations = _generations(generations)
+    now = timezone.now()
+    SearchDocument.objects.filter(
+        generation__in=generations,
+        source_kind=kind,
+        source_object_id__in=[row.pk for row in rows],
+    ).delete()
+    live = [row for row in rows if projects(row)]
+    SearchDocument.objects.bulk_create(
+        [
+            SearchDocument(**values(row, now), generation=generation)
+            for row in live
+            for generation in generations
+        ]
+    )
+    return len(live)
+
+
+def indexable_website_overviews() -> QuerySet:
+    """Every `Ülevaade / uudis`, with the Matter its row will hang off.
+
+    Unfiltered by state and by visibility, like every builder here. A plan, a
+    publication and a dropped plan are all records on the file — a cancelled
+    write-up still reads in `Teema käik` saying so — and *reading* the row is
+    authorized at query time against the overview's own current override.
+    """
+    return MatterWebsiteOverview.objects.select_related("matter")
+
+
+def website_overview_projects(overview: MatterWebsiteOverview) -> bool:
+    """Whether an overview has anything a search row could carry.
+
+    Its stated title, and only that. The model holds no other prose: the
+    address is a link, and a page name read off it would be a title nobody
+    wrote (docs/adr/0127 §1). So an overview with no title — every plan, and a
+    publication recorded without one — projects nothing, rather than a row
+    whose only words are the Teema's.
+    """
+    return not overview.is_removed and bool((overview.title or "").strip())
+
+
+def website_overview_values(overview: MatterWebsiteOverview, now: object) -> dict[str, object]:
+    """One `Ülevaade / uudis` as a search row: its stated title, nothing else.
+
+    **Not the URL, in any column.** Not as a title, not as host terms in
+    `alias_text` the way `_engagement_values` treats a campaign link: a
+    published page's address is a citation, and the brief that put this kind
+    in the corpus is explicit that nothing may be inferred from it.
+    """
+    return {
+        "matter": overview.matter,
+        "source_kind": SearchSourceKind.WEBSITE_OVERVIEW,
+        "source_object_id": overview.pk,
+        "website_overview": overview,
+        "title": overview.title.strip(),
+        "identifiers": "",
+        "alias_text": "",
+        "people_text": "",
+        "body_text": "",
+        "source_locator": "",
+        "index_version": INDEX_VERSION,
+        "indexed_at": now,
+    }
+
+
+def refresh_website_overviews(
+    overviews: QuerySet, *, generations: Sequence[int] | None = None
+) -> int:
+    return _refresh_rows(
+        list(overviews),
+        kind=SearchSourceKind.WEBSITE_OVERVIEW,
+        values=website_overview_values,
+        projects=website_overview_projects,
+        generations=generations,
+    )
+
+
+def _is_live(record: Any) -> bool:
+    return not record.is_removed
+
+
+def indexable_important_dates() -> QuerySet:
+    """Every `Oluline tähtaeg`, whatever its state, with its Matter.
+
+    A cancelled or superseded deadline stays on the file saying so, so it stays
+    findable; a removed one never belonged to it and projects nothing.
+    """
+    return MatterImportantDate.objects.select_related("matter")
+
+
+def important_date_values(record: MatterImportantDate, now: object) -> dict[str, object]:
+    """One `Oluline tähtaeg` as a search row: its title, and its explanation.
+
+    The explanation (`note`) is plain text, so it is the body as written and
+    can be quoted. `source_text` — the archive's wording an import kept — is
+    not indexed here: the archive page it came from is in the corpus already,
+    as its own `LEGACY_SOURCE_PAGE` row.
+    """
+    return {
+        "matter": record.matter,
+        "source_kind": SearchSourceKind.IMPORTANT_DATE,
+        "source_object_id": record.pk,
+        "important_date": record,
+        "title": record.title,
+        "identifiers": "",
+        "alias_text": "",
+        "people_text": "",
+        "body_text": bounded_body(record.note or ""),
+        "source_locator": "",
+        "index_version": INDEX_VERSION,
+        "indexed_at": now,
+    }
+
+
+def refresh_important_dates(records: QuerySet, *, generations: Sequence[int] | None = None) -> int:
+    return _refresh_rows(
+        list(records),
+        kind=SearchSourceKind.IMPORTANT_DATE,
+        values=important_date_values,
+        projects=_is_live,
+        generations=generations,
+    )
+
+
+def indexable_work_victories() -> QuerySet:
+    """Every `Töövõit` — candidate, confirmed or rejected — with its Matter."""
+    return MatterWorkVictory.objects.select_related("matter")
+
+
+def work_victory_values(record: MatterWorkVictory, now: object) -> dict[str, object]:
+    """One `Töövõit` as a search row: its title, its explanation and its note.
+
+    `detail` is the explanation a reviewer reads and `note` the remark beside
+    it; both are the lawyer's own prose. `source_url` is a citation and is not
+    indexed, for `_position_values`' reason.
+    """
+    return {
+        "matter": record.matter,
+        "source_kind": SearchSourceKind.WORK_VICTORY,
+        "source_object_id": record.pk,
+        "work_victory": record,
+        "title": record.title,
+        "identifiers": "",
+        "alias_text": "",
+        "people_text": "",
+        "body_text": bounded_body("\n".join(part for part in (record.detail, record.note) if part)),
+        "source_locator": "",
+        "index_version": INDEX_VERSION,
+        "indexed_at": now,
+    }
+
+
+def refresh_work_victories(records: QuerySet, *, generations: Sequence[int] | None = None) -> int:
+    return _refresh_rows(
+        list(records),
+        kind=SearchSourceKind.WORK_VICTORY,
+        values=work_victory_values,
+        projects=_is_live,
+        generations=generations,
+    )
 
 
 def indexable_fragments() -> QuerySet[DocumentTextFragment]:
