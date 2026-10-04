@@ -8,6 +8,7 @@ later from an importer or a scheduled job (master specification 12.4).
 
 from __future__ import annotations
 
+import datetime
 import hashlib
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
@@ -5723,6 +5724,30 @@ def refresh_matter_from_register(
     if not changed:
         return matter, {}
 
+    scalar_extra: list[str] = []
+    if "response_deadline" in changed and matter.response_requested_at is not None:
+        # The register moved a deadline somebody had recorded as a request. The
+        # recorded one ends as replaced — never silently overwritten — and the
+        # register's date is read as the importer's: a legacy deadline
+        # (docs/adr/0135 §3).
+        from app.matters.enums import ResponseDeadlineOutcome
+        from app.matters.models import MatterResponseDeadline
+
+        previous = changed["response_deadline"]["from"]
+        if previous:
+            MatterResponseDeadline.objects.create(
+                matter=matter,
+                deadline=datetime.date.fromisoformat(previous),
+                requested_at=matter.response_requested_at,
+                outcome=ResponseDeadlineOutcome.SUPERSEDED,
+                note="Registri värskendus asendas tähtaja.",
+                next_deadline=matter.response_deadline,
+                ended_at=timezone.now(),
+                ended_by=actor if getattr(actor, "pk", None) else None,
+            )
+        matter.response_requested_at = None
+        scalar_extra.append("response_requested_at")
+
     if senders is not None:
         matter.source_organisations.set(senders)
 
@@ -5737,7 +5762,7 @@ def refresh_matter_from_register(
         _turn_stage_episode(matter=locked, stage=matter.stage, origin=StageEpisodeOrigin.IMPORTED)
 
     scalar_fields = [field for field in changed if field != "source_organisations"]
-    matter.save(update_fields=[*scalar_fields, "updated_at"])
+    matter.save(update_fields=[*scalar_fields, *scalar_extra, "updated_at"])
     record_change_event(
         event_type=ChangeEventType.MATTER_SOURCE_FIELDS_REFRESHED,
         matter=matter,
