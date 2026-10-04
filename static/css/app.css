@@ -1700,6 +1700,14 @@ th[aria-sort="descending"] .colhead__mark::after {
   gap: var(--spacing-2);
 }
 
+/* `Teema käik`'s filter: the inline form's row, allowed to wrap on a narrow
+ * screen, with room before the list it narrows. */
+.tlfilter {
+  flex-wrap: wrap;
+  align-items: flex-end;
+  margin: 0 0 var(--spacing-3);
+}
+
 /* The `Arvamuse tähtaeg` editor asks more than one short question — what a new
  * date means, and what became of the deadline it changes — so its labels wrap
  * inside a fixed popover width rather than running off it on one line. */
