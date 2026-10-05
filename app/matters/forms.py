@@ -9,7 +9,6 @@ by adding another view (master specification 12.4, 23.4).
 from __future__ import annotations
 
 import json
-import uuid
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -26,6 +25,7 @@ from app.accounts.selectors import assignable_business_users, assignable_includi
 from app.core.authorization import scoped_count
 from app.core.dates import format_estonian_date
 from app.core.errors import DomainError
+from app.core.required_fields import marks_required
 from app.core.richtext import plain_text
 from app.core.widgets import DescribedRadioSelect, EstonianDateField, EstonianDateInput
 from app.documents.limits import WORKING_DOCUMENT_URL_MAX_LENGTH
@@ -1944,16 +1944,18 @@ class NextActionForm(forms.Form):
     #: requested at all is a question about the whole block, and answering it
     #: field by field is how "See lahter on nõutav." ends up under a control
     #: nobody touched.
-    text = forms.CharField(
-        label="Järgmiseks",
-        required=False,
-        max_length=2000,
-        widget=forms.TextInput(
-            attrs={
-                "class": "field__input uxcomp__next",
-                "placeholder": "Näiteks: Vaadata uus eelnõu versioon üle",
-            }
-        ),
+    text = marks_required(
+        forms.CharField(
+            label="Järgmiseks",
+            required=False,
+            max_length=2000,
+            widget=forms.TextInput(
+                attrs={
+                    "class": "field__input uxcomp__next",
+                    "placeholder": "Näiteks: Vaadata uus eelnõu versioon üle",
+                }
+            ),
+        )
     )
     #: **The day the work will be done**, and nothing more subtle than that.
     #:
@@ -3368,7 +3370,7 @@ class WorkingDocumentForm(forms.Form):
         widget=forms.TextInput(
             attrs={"class": "field__input", "placeholder": "Näiteks: Õigusosakond / KMS 2026"}
         ),
-        help_text="Valikuline. Aitab lugejal aru saada, kus fail SharePointis asub.",
+        help_text="Aitab lugejal aru saada, kus fail SharePointis asub.",
     )
 
 
@@ -3637,32 +3639,30 @@ class CompleteCurrentActionForm(forms.Form):
     use_required_attribute = False
 
     action_id = forms.UUIDField(widget=forms.HiddenInput())
-    body = forms.CharField(
-        label="Mida tegid?",
-        required=False,
-        widget=forms.Textarea(
-            attrs={
-                "class": "composer__body",
-                "rows": "3",
-                "placeholder": "Kirjelda, mida sa selle ülesandega tegid…",
-                "data-richtext": "true",
-                # Explicit, because `+ Märge` asks its own question into its own
-                # box and both fields are called `body`.
-                "id": "id_praegune_body",
-            }
-        ),
+    #: Declared optional and marked required: `clean_body` refuses an empty
+    #: answer with a sentence of its own rather than Django's.
+    body = marks_required(
+        forms.CharField(
+            label="Mida tegid?",
+            required=False,
+            widget=forms.Textarea(
+                attrs={
+                    "class": "composer__body",
+                    "rows": "3",
+                    "placeholder": "Kirjelda, mida sa selle ülesandega tegid…",
+                    "data-richtext": "true",
+                    # Explicit, because `+ Lisa` asks its own question into its
+                    # own box and both fields are called `body`.
+                    "id": "id_praegune_body",
+                }
+            ),
+        )
     )
     attachments = workspace_attachments("id_praegune_failid")
-    #: `Järgmisena` — what comes next, chosen in the same save (docs/adr/0133 §4).
-    #:
-    #: Three answers, rendered as one radio group by the template: a `Tööplaan`
-    #: step still ahead (its id), `Muu tegevus` (:data:`NEXT_OTHER`), or
-    #: `Praegu ei määra` (empty, the default). **Never preselected to a step**:
-    #: the plan's next suggestion is guidance, and starting it is the person's
-    #: decision — one click, but theirs. Whether the step named is on this
-    #: Matter and still ahead is the use case's question, under the lock.
-    next_choice = forms.CharField(required=False, max_length=64)
-    #: `Muu tegevus` — the next step in the person's words, tied to no plan step.
+    #: `Järgmine tegevus` — what comes next, in the person's own words, in the
+    #: same save. Optional: left empty, no step is opened. **No plan step is
+    #: offered or chosen here** — the `Tööplaan` is guidance, and the person
+    #: writes the next action directly (docs/adr/0140 §2).
     next_text = forms.CharField(
         label="Järgmine tegevus",
         required=False,
@@ -3678,51 +3678,49 @@ class CompleteCurrentActionForm(forms.Form):
     #: The next step's day, if it is known. Optional, never defaulted, and an
     #: exact day: a step that belongs *in October* is given its period through
     #: `Muuda` afterwards, which is where the precision control lives
-    #: (docs/adr/0106, docs/adr/0079).
+    #: (docs/adr/0106, docs/adr/0079). `+1 päev`, `+1 nädal` and `+1 kuu` beside
+    #: it only write into this box (`next_step_date_choices`).
     next_date = EstonianDateField(
         label="Millal?",
         required=False,
         widget=EstonianDateInput(attrs={"id": "id_praegune_jargmine_kuupaev"}),
     )
 
+    def __init__(self, *args: Any, next_stages: list[Any] | None = None, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        #: `Uus hetkeseis` — the same control `+ Lisa · Tavaline` and
+        #: `+ Koja arvamus` offer, in the same order, validated over the same
+        #: vocabulary (docs/adr/0131 §7). `Jätan muutmata` arrives chosen:
+        #: finishing a step moves the file only when the person says so.
+        #: Declared here rather than on the class because the field type is
+        #: defined further down this module.
+        self.fields["stage"] = NextStageChoiceField(
+            label="Uus hetkeseis",
+            queryset=StageVocabulary.objects.none(),
+            required=False,
+            empty_label="Jätan muutmata",
+            blank=True,
+            widget=StageSelect(
+                attrs={"class": "field__input field__input--compact", "id": "id_praegune_hetkeseis"}
+            ),
+        )
+        set_choices(self, "stage", active_stages())
+        cast(NextStageChoiceField, self.fields["stage"]).offer(next_stages)
+
     def clean_body(self) -> str:
         return require_written_body(self.cleaned_data.get("body"), "Kirjelda, mida tegid.")
 
     def clean(self) -> dict[str, Any]:
-        """`Järgmisena`, read into the one shape the use case takes.
+        """A day with no next action is dropped: it would be a date for nothing.
 
-        ``next_step_id`` is a step's id or ``None``; ``next_text`` is a sentence
-        only for `Muu tegevus`, where it is required — a `Muu tegevus` with no
-        words is a next step nobody stated, and is refused on the box rather than
-        quietly read as «Praegu ei määra». A day with no next step is dropped:
-        it would be a date for nothing.
+        An empty `Järgmine tegevus` is the ordinary answer — the step is done
+        and nothing new is opened — so it is never refused (docs/adr/0140 §2).
         """
         cleaned = super().clean() or {}
-        choice = (cleaned.get("next_choice") or "").strip()
-        cleaned["next_step_id"] = None
-        if choice == NEXT_OTHER:
-            text = (cleaned.get("next_text") or "").strip()
-            if not text:
-                self.add_error("next_text", NEXT_STEP_NEEDS_SENTENCE)
-            cleaned["next_text"] = text
-        elif choice:
-            try:
-                cleaned["next_step_id"] = uuid.UUID(choice)
-            except ValueError:
-                self.add_error("next_choice", NEXT_CHOICE_UNKNOWN)
-            cleaned["next_text"] = ""
-        else:
-            cleaned["next_text"] = ""
+        cleaned["next_text"] = (cleaned.get("next_text") or "").strip()
+        if not cleaned["next_text"]:
             cleaned["next_date"] = None
         return cleaned
-
-
-#: `Järgmisena` → `Muu tegevus`'s value. Not a UUID, so it cannot name a step.
-NEXT_OTHER = "muu"
-
-#: A `Järgmisena` value that is neither a step, `Muu tegevus` nor empty — only
-#: reachable by a crafted POST.
-NEXT_CHOICE_UNKNOWN = "Vali järgmine samm uuesti."
 
 
 class StartPlanStepForm(forms.Form):
@@ -3785,13 +3783,15 @@ class PlanStepForm(PlanRevisionForm):
     being edited, whose own ids keep two editors on one page apart.
     """
 
-    title = forms.CharField(
-        label="Tegevus",
-        required=False,
-        max_length=300,
-        widget=forms.TextInput(
-            attrs={"class": "field__input", "placeholder": "Näiteks: Kohtun ministeeriumiga"}
-        ),
+    title = marks_required(
+        forms.CharField(
+            label="Tegevus",
+            required=False,
+            max_length=300,
+            widget=forms.TextInput(
+                attrs={"class": "field__input", "placeholder": "Näiteks: Kohtun ministeeriumiga"}
+            ),
+        )
     )
     operation = forms.ChoiceField(
         label="Seotud toiming",
@@ -3948,16 +3948,18 @@ class CompactEngagementForm(forms.Form):
 
     use_required_attribute = False
 
-    audience = forms.CharField(
-        label="Keda kaasati",
-        required=False,
-        max_length=500,
-        widget=forms.TextInput(
-            attrs={
-                "class": "field__input field__input--compact",
-                "placeholder": "nt liikmed, kaubandusvaldkonna töögrupp",
-            }
-        ),
+    audience = marks_required(
+        forms.CharField(
+            label="Keda kaasati",
+            required=False,
+            max_length=500,
+            widget=forms.TextInput(
+                attrs={
+                    "class": "field__input field__input--compact",
+                    "placeholder": "nt liikmed, kaubandusvaldkonna töögrupp",
+                }
+            ),
+        )
     )
     #: `Vastuseid`, and the same field object `EngagementForm` corrects it with.
     #: What this panel can write, `Muuda` can fix — including back to blank
@@ -4164,16 +4166,18 @@ class CompactImportantDateForm(forms.Form):
 
     use_required_attribute = False
 
-    deadline_title = forms.CharField(
-        label="Mis tähtaeg",
-        required=False,
-        max_length=2000,
-        widget=forms.TextInput(
-            attrs={
-                "class": "field__input field__input--compact",
-                "placeholder": "nt kooskõlastusringi lõpp",
-            }
-        ),
+    deadline_title = marks_required(
+        forms.CharField(
+            label="Mis tähtaeg",
+            required=False,
+            max_length=2000,
+            widget=forms.TextInput(
+                attrs={
+                    "class": "field__input field__input--compact",
+                    "placeholder": "nt kooskõlastusringi lõpp",
+                }
+            ),
+        )
     )
     attachments = workspace_attachments("id_tahtaeg_failid")
 
@@ -4230,16 +4234,18 @@ class CompactEffectiveDateForm(forms.Form):
 
     use_required_attribute = False
 
-    effective_title = forms.CharField(
-        label="Mis jõustub",
-        required=False,
-        max_length=2000,
-        widget=forms.TextInput(
-            attrs={
-                "class": "field__input field__input--compact",
-                "placeholder": "nt pakendiseaduse muudatused",
-            }
-        ),
+    effective_title = marks_required(
+        forms.CharField(
+            label="Mis jõustub",
+            required=False,
+            max_length=2000,
+            widget=forms.TextInput(
+                attrs={
+                    "class": "field__input field__input--compact",
+                    "placeholder": "nt pakendiseaduse muudatused",
+                }
+            ),
+        )
     )
     attachments = workspace_attachments("id_joustumine_failid")
 
@@ -4321,16 +4327,18 @@ class CompactWorkVictoryForm(forms.Form):
 
     use_required_attribute = False
 
-    victory_change = forms.CharField(
-        label="Mis muutus",
-        required=False,
-        max_length=2000,
-        widget=forms.TextInput(
-            attrs={
-                "class": "field__input field__input--compact",
-                "placeholder": "nt üleminekuaeg väiketootjatele pikendati 2028. aastani",
-            }
-        ),
+    victory_change = marks_required(
+        forms.CharField(
+            label="Mis muutus",
+            required=False,
+            max_length=2000,
+            widget=forms.TextInput(
+                attrs={
+                    "class": "field__input field__input--compact",
+                    "placeholder": "nt üleminekuaeg väiketootjatele pikendati 2028. aastani",
+                }
+            ),
+        )
     )
     #: The day it was won. Filled with today, clearable, and the only date
     #: question this panel asks — see the class docstring for why the precision
@@ -4466,18 +4474,20 @@ class CompactWebsiteOverviewForm(forms.Form):
     #: The label is the whole question now. «Avaldatud ülevaate või uudise link»
     #: was a heading explaining a conditional the panel no longer has
     #: (docs/adr/0095 §5).
-    url = forms.CharField(
-        label="Link",
-        required=False,
-        max_length=WEBSITE_OVERVIEW_URL_MAX_LENGTH,
-        widget=forms.TextInput(
-            attrs={
-                "class": "field__input field__input--compact",
-                "inputmode": "url",
-                "autocomplete": "off",
-                "placeholder": "https://…",
-            }
-        ),
+    url = marks_required(
+        forms.CharField(
+            label="Link",
+            required=False,
+            max_length=WEBSITE_OVERVIEW_URL_MAX_LENGTH,
+            widget=forms.TextInput(
+                attrs={
+                    "class": "field__input field__input--compact",
+                    "inputmode": "url",
+                    "autocomplete": "off",
+                    "placeholder": "https://…",
+                }
+            ),
+        )
     )
     #: `Kuupäev`, opening on today.
     #:
@@ -4586,18 +4596,20 @@ class WebsiteOverviewLinkForm(forms.Form):
     #: the service enforces, and running Django's own validator first would
     #: answer a refused address with a different sentence depending on which
     #: layer happened to catch it.
-    url = forms.CharField(
-        label="Avaldatud ülevaate või uudise link",
-        required=False,
-        max_length=WEBSITE_OVERVIEW_URL_MAX_LENGTH,
-        widget=forms.TextInput(
-            attrs={
-                "class": "field__input field__input--compact",
-                "inputmode": "url",
-                "autocomplete": "off",
-                "placeholder": "https://…",
-            }
-        ),
+    url = marks_required(
+        forms.CharField(
+            label="Avaldatud ülevaate või uudise link",
+            required=False,
+            max_length=WEBSITE_OVERVIEW_URL_MAX_LENGTH,
+            widget=forms.TextInput(
+                attrs={
+                    "class": "field__input field__input--compact",
+                    "inputmode": "url",
+                    "autocomplete": "off",
+                    "placeholder": "https://…",
+                }
+            ),
+        )
     )
     #: Optional, empty, and **no longer pre-filled with today**.
     #:
@@ -5692,16 +5704,18 @@ class KodaOpinionForm(forms.Form):
     #: what went out of the Chamber is often the `.asice` itself, and that
     #: container — not a PDF taken out of it — is the record of what was sent
     #: (docs/adr/0125).
-    upload = forms.FileField(
-        label="Saadetud fail",
-        required=False,
-        widget=forms.ClearableFileInput(
-            attrs={
-                "class": "visually-hidden",
-                "id": "id_koja_arvamus_fail",
-                "accept": UPLOAD_ACCEPT,
-            }
-        ),
+    upload = marks_required(
+        forms.FileField(
+            label="Saadetud fail",
+            required=False,
+            widget=forms.ClearableFileInput(
+                attrs={
+                    "class": "visually-hidden",
+                    "id": "id_koja_arvamus_fail",
+                    "accept": UPLOAD_ACCEPT,
+                }
+            ),
+        )
     )
     #: `Töödokumendid` — the editable file the opinion was drafted in, which the
     #: lawyer reuses, edits and searches later (docs/adr/0129 §2).
@@ -5775,11 +5789,13 @@ class KodaOpinionForm(forms.Form):
     #: The queryset is the whole catalogue: every institution is a valid
     #: recipient, and narrowing it to a shortlist would refuse a correct answer
     #: given through the search control.
-    recipients = forms.ModelMultipleChoiceField(
-        label="Adressaadid",
-        queryset=Organisation.objects.none(),
-        required=False,
-        widget=OrganisationCheckboxSelect(attrs={"class": "chip__input"}),
+    recipients = marks_required(
+        forms.ModelMultipleChoiceField(
+            label="Adressaadid",
+            queryset=Organisation.objects.none(),
+            required=False,
+            widget=OrganisationCheckboxSelect(attrs={"class": "chip__input"}),
+        )
     )
     #: `Märgi praegune tegevus tehtuks` — when sending this opinion was the open
     #: step, the save finishes it (COMPLETED, never superseded) rather than
@@ -5800,17 +5816,19 @@ class KodaOpinionForm(forms.Form):
         blank=True,
         widget=StageSelect(attrs={"class": "field__input field__input--compact"}),
     )
-    sent_on = EstonianDateField(
-        label="Saatmise kuupäev",
-        required=False,
-        widget=EstonianDateInput(),
-        #: Today, and visibly. An opinion is written up on the day it goes out
-        #: far more often than not, and the default is in the box where it can be
-        #: read and changed — which is the one shape docs/adr/0078 §2 allows a
-        #: date default to take. What is refused is the *server* supplying one:
-        #: an emptied box is a refusal naming the missing day, never a stamp
-        #: (`clean_sent_on`, R2-01).
-        initial=timezone.localdate,
+    sent_on = marks_required(
+        EstonianDateField(
+            label="Saatmise kuupäev",
+            required=False,
+            widget=EstonianDateInput(),
+            #: Today, and visibly. An opinion is written up on the day it goes out
+            #: far more often than not, and the default is in the box where it can be
+            #: read and changed — which is the one shape docs/adr/0078 §2 allows a
+            #: date default to take. What is refused is the *server* supplying one:
+            #: an emptied box is a refusal naming the missing day, never a stamp
+            #: (`clean_sent_on`, R2-01).
+            initial=timezone.localdate,
+        )
     )
 
     def __init__(
@@ -6560,7 +6578,7 @@ class RecordEvidenceForm(forms.Form):
     #: deliberate line of code.
     slug = "kirje"
 
-    attachments = workspace_attachments("id_kirje_toend_failid")
+    attachments = marks_required(workspace_attachments("id_kirje_toend_failid"))
 
     def __init__(self, *args: Any, record: Any = None, **kwargs: Any) -> None:
         self.record = record
@@ -6665,21 +6683,23 @@ class EntryEditForm(forms.Form):
 
     use_required_attribute = False
 
-    body = forms.CharField(
-        label="Sissekande sisu",
-        required=False,
-        widget=forms.Textarea(
-            attrs={
-                # The ordinary field style rather than `composer__body`. The
-                # composer's box is one line at rest and grows only inside
-                # `.composer:focus-within`, which this is not in — it would open
-                # forty pixels tall on an entry somebody wrote three paragraphs
-                # of (static/css/app.css).
-                "class": "field__input",
-                "rows": "4",
-                "data-richtext": "true",
-            }
-        ),
+    body = marks_required(
+        forms.CharField(
+            label="Sissekande sisu",
+            required=False,
+            widget=forms.Textarea(
+                attrs={
+                    # The ordinary field style rather than `composer__body`. The
+                    # composer's box is one line at rest and grows only inside
+                    # `.composer:focus-within`, which this is not in — it would open
+                    # forty pixels tall on an entry somebody wrote three paragraphs
+                    # of (static/css/app.css).
+                    "class": "field__input",
+                    "rows": "4",
+                    "data-richtext": "true",
+                }
+            ),
+        )
     )
     revision = forms.CharField(required=False, widget=forms.HiddenInput())
 
@@ -6718,18 +6738,20 @@ def _procedural_link_url_field() -> forms.CharField:
     one refused address two different sentences depending on which layer caught
     it.
     """
-    return forms.CharField(
-        label="Link",
-        required=False,
-        max_length=PROCEDURAL_LINK_URL_MAX_LENGTH,
-        widget=forms.TextInput(
-            attrs={
-                "class": "field__input field__input--compact",
-                "inputmode": "url",
-                "autocomplete": "off",
-                "placeholder": "https://…",
-            }
-        ),
+    return marks_required(
+        forms.CharField(
+            label="Link",
+            required=False,
+            max_length=PROCEDURAL_LINK_URL_MAX_LENGTH,
+            widget=forms.TextInput(
+                attrs={
+                    "class": "field__input field__input--compact",
+                    "inputmode": "url",
+                    "autocomplete": "off",
+                    "placeholder": "https://…",
+                }
+            ),
+        )
     )
 
 

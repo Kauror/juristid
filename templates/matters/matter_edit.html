@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load form_labels %}
 {% block title %}Muuda teemat · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -129,7 +130,7 @@
     {# 1 — Pealkiri. #}
     <div class="createform__row createform__row--first">
       <label class="field">
-        <span class="field__label">{{ form.title.label }}</span>
+        <span class="field__label">{% field_label form.title %}</span>
         {{ form.title }}
         {% if form.title.errors %}<span class="field__error" id="{{ form.title.auto_id }}_error">{{ form.title.errors|first }}</span>{% endif %}
       </label>
@@ -144,7 +145,7 @@
     {% endcomment %}
     <div class="createform__row">
       <label class="field">
-        <span class="field__label">{{ form.brief_summary.label }}</span>
+        <span class="field__label">{% field_label form.brief_summary %}</span>
         {{ form.brief_summary }}
         {% if form.brief_summary.errors %}
           <span class="field__error" id="{{ form.brief_summary.auto_id }}_error">{{ form.brief_summary.errors|first }}</span>
@@ -155,7 +156,7 @@
     {# 3 — Saabus, where the master asks it: beside the file, before the people. #}
     <div class="createform__row">
       <label class="field createform__field--date">
-        <span class="field__label">{{ form.received_date.label }}</span>
+        <span class="field__label">{% field_label form.received_date %}</span>
         {{ form.received_date }}
         {% if form.received_date.errors %}
           <span class="field__error" id="{{ form.received_date.auto_id }}_error">{{ form.received_date.errors|first }}</span>
@@ -166,7 +167,7 @@
     {# 4 — Who owns it, and who it came from. #}
     <div class="createform__row createform__pair createform__pair--people">
       <fieldset class="field">
-        <legend class="field__label">{{ form.owner.label }}</legend>
+        <legend class="field__label">{% field_label form.owner %}</legend>
         <div class="chiprow">
           {% for choice in form.owner %}
             <label class="chip">
@@ -203,7 +204,7 @@
       {% endcomment %}
       <fieldset class="field senderpick">
         <legend class="field__label">
-          {{ form.source_organisations.label }}
+          {% field_label form.source_organisations %}
           <span class="field__count" data-chipcount-for="source_organisations"></span>
         </legend>
         {% include "matters/partials/organisation_picker.html" with picker_id="muuda-saatja" legend=form.source_organisations.label chips=form.sender_chip_choices tail=form.sender_tail_choices typed_field=form.sender_name add_label="Lisa uus saatja" clearable=True typed_hook="sender" %}
@@ -242,7 +243,7 @@
     {# 8 — Arvamuse tähtaeg, the master's last question. #}
     <div class="createform__row">
       <label class="field createform__field--date">
-        <span class="field__label">{{ form.response_deadline.label }}</span>
+        <span class="field__label">{% field_label form.response_deadline %}</span>
         {{ form.response_deadline }}
         {% comment %}
           The date and nothing else, here as on `Uus teema` since

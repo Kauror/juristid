@@ -1,3 +1,4 @@
+{% load form_labels %}
 {% comment %}
 The file affordance, once, for every operation that takes evidence.
 
@@ -25,7 +26,12 @@ timestamp or a filename (app/documents/links.py, brief §21, §22).
     accessible name and the script hook must stay one implementation
     (app/matters/forms.py `KodaOpinionForm.upload`).
   {% endcomment %}
-  <span class="cx-drop__text" data-filedrop-text>{{ drop_text|default:"Lohista failid siia või " }}<span class="cx-drop__pick">vali arvutist</span></span>
+  {% comment %}
+    A drop zone has no visible label of its own, so a required one carries the
+    marker in its text — the same `*` every required label carries
+    (docs/adr/0140 §6).
+  {% endcomment %}
+  <span class="cx-drop__text" data-filedrop-text>{{ drop_text|default:"Lohista failid siia või " }}<span class="cx-drop__pick">vali arvutist</span>{% if field|is_required %}{% required_mark %}{% endif %}</span>
 </label>
 {% if field.errors %}
   {% comment %}

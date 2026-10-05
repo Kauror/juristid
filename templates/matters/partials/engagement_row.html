@@ -1,3 +1,4 @@
+{% load form_labels %}
 {% comment %}
 One `Kaasamine`'s chronology row, and the way to correct it.
 
@@ -58,7 +59,7 @@ before the closure.
       {% endif %}
 
       <label class="cx-f" for="{{ engagement_edit_form.title.id_for_label }}">
-        <span class="cx-f__lab">{{ engagement_edit_form.title.label }}</span>
+        <span class="cx-f__lab">{% field_label engagement_edit_form.title %}</span>
         {{ engagement_edit_form.title }}
       </label>
       {% if engagement_edit_form.title.errors %}
@@ -86,8 +87,7 @@ before the closure.
       {% endcomment %}
       <label class="cx-f cx-f--num"
              for="{{ engagement_edit_form.response_count.id_for_label }}">
-        <span class="cx-f__lab">{{ engagement_edit_form.response_count.label }}
-          <span class="cx-f__opt">valikuline</span></span>
+        <span class="cx-f__lab">{% field_label engagement_edit_form.response_count %}</span>
         {{ engagement_edit_form.response_count }}
       </label>
       {% if engagement_edit_form.response_count.errors %}
@@ -125,14 +125,12 @@ before the closure.
       <div class="cx-grid cx-grid--links">
         <label class="cx-f cx-f--date"
                for="{{ engagement_edit_form.occurred_on.id_for_label }}">
-          <span class="cx-f__lab">{{ engagement_edit_form.occurred_on.label }}
-            <span class="cx-f__opt">valikuline</span></span>
+          <span class="cx-f__lab">{% field_label engagement_edit_form.occurred_on %}</span>
           {{ engagement_edit_form.occurred_on }}
         </label>
         <label class="cx-f cx-f--date"
                for="{{ engagement_edit_form.feedback_deadline.id_for_label }}">
-          <span class="cx-f__lab">{{ engagement_edit_form.feedback_deadline.label }}
-            <span class="cx-f__opt">valikuline</span></span>
+          <span class="cx-f__lab">{% field_label engagement_edit_form.feedback_deadline %}</span>
           {{ engagement_edit_form.feedback_deadline }}
         </label>
       </div>
@@ -161,8 +159,7 @@ before the closure.
         here (docs/adr/0086 §6).
       {% endcomment %}
       <label class="cx-f" for="{{ engagement_edit_form.feedback_received.id_for_label }}">
-        <span class="cx-f__lab">{{ engagement_edit_form.feedback_received.label }}
-          <span class="cx-f__opt">valikuline</span></span>
+        <span class="cx-f__lab">{% field_label engagement_edit_form.feedback_received %}</span>
         {{ engagement_edit_form.feedback_received }}
       </label>
       {% if engagement_edit_form.feedback_received.errors %}
@@ -176,8 +173,7 @@ before the closure.
         box clears the column.
       {% endcomment %}
       <label class="cx-f" for="{{ engagement_edit_form.url.id_for_label }}">
-        <span class="cx-f__lab">{{ engagement_edit_form.url.label }}
-          <span class="cx-f__opt">valikuline</span></span>
+        <span class="cx-f__lab">{% field_label engagement_edit_form.url %}</span>
         {{ engagement_edit_form.url }}
       </label>
       {% if engagement_edit_form.url.errors %}
@@ -185,11 +181,11 @@ before the closure.
       {% endif %}
       <div class="cx-grid cx-grid--links">
         <label class="cx-f" for="{{ engagement_edit_form.smaily_url.id_for_label }}">
-          <span class="cx-f__lab">{{ engagement_edit_form.smaily_url.label }}</span>
+          <span class="cx-f__lab">{% field_label engagement_edit_form.smaily_url %}</span>
           {{ engagement_edit_form.smaily_url }}
         </label>
         <label class="cx-f" for="{{ engagement_edit_form.alchemer_url.id_for_label }}">
-          <span class="cx-f__lab">{{ engagement_edit_form.alchemer_url.label }}</span>
+          <span class="cx-f__lab">{% field_label engagement_edit_form.alchemer_url %}</span>
           {{ engagement_edit_form.alchemer_url }}
         </label>
       </div>
@@ -200,8 +196,7 @@ before the closure.
         <p class="field__error" id="{{ engagement_edit_form.alchemer_url.auto_id }}_error">{{ engagement_edit_form.alchemer_url.errors|first }}</p>
       {% endif %}
       <label class="cx-f" for="{{ engagement_edit_form.note.id_for_label }}">
-        <span class="cx-f__lab">{{ engagement_edit_form.note.label }}
-          <span class="cx-f__opt">valikuline</span></span>
+        <span class="cx-f__lab">{% field_label engagement_edit_form.note %}</span>
         {{ engagement_edit_form.note }}
       </label>
       {% if engagement_edit_form.note.errors %}
@@ -441,7 +436,7 @@ before the closure.
               </div>
               <label class="cx-f cx-f--date"
                      for="{{ engagement.wait_form.feedback_deadline.id_for_label }}">
-                <span class="cx-f__lab">{{ engagement.wait_form.feedback_deadline.label }}</span>
+                <span class="cx-f__lab">{% field_label engagement.wait_form.feedback_deadline %}</span>
                 {{ engagement.wait_form.feedback_deadline }}
               </label>
             </div>
@@ -487,8 +482,7 @@ before the closure.
               (docs/adr/0086 §6).
             {% endcomment %}
             <label class="cx-f" for="{{ engagement.feedback_form.feedback_received.id_for_label }}">
-              <span class="cx-f__lab">{{ engagement.feedback_form.feedback_received.label }}
-                <span class="cx-f__opt">valikuline</span></span>
+              <span class="cx-f__lab">{% field_label engagement.feedback_form.feedback_received %}</span>
               {{ engagement.feedback_form.feedback_received }}
             </label>
             {% if engagement.feedback_form.feedback_received.errors %}

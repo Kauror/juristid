@@ -1700,14 +1700,6 @@ th[aria-sort="descending"] .colhead__mark::after {
   gap: var(--spacing-2);
 }
 
-/* `Teema käik`'s filter: the inline form's row, allowed to wrap on a narrow
- * screen, with room before the list it narrows. */
-.tlfilter {
-  flex-wrap: wrap;
-  align-items: flex-end;
-  margin: 0 0 var(--spacing-3);
-}
-
 /* The `Arvamuse tähtaeg` editor asks more than one short question — what a new
  * date means, and what became of the deadline it changes — so its labels wrap
  * inside a fixed popover width rather than running off it on one line. */
@@ -2358,6 +2350,20 @@ fieldset.field > legend {
   font-weight: var(--typography-weight-regular);
   text-transform: none;
   letter-spacing: 0;
+}
+
+/* The one form convention (docs/adr/0140 §6): an optional field carries no
+ * marker, a required one a small red `*` right after its label — secondary,
+ * never a badge or a warning. Written by `{% field_label %}` and
+ * `{% required_mark %}` (app/core/templatetags/form_labels.py), so it reads
+ * the same in every form, inside an uppercase label or a sentence-case one. */
+.req-mark {
+  margin-left: 2px;
+  color: var(--status-danger);
+  font-size: 0.9em;
+  font-weight: var(--typography-weight-regular);
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 .field__input {
@@ -10181,13 +10187,6 @@ section:has(.pw-more[open]) tbody.uxextra {
   color: var(--text-muted);
 }
 
-/* «valikuline» rides inside the label without inheriting its shouting. */
-#teema-vaade-wrap .cx-f__opt {
-  font-weight: var(--typography-weight-regular);
-  letter-spacing: normal;
-  text-transform: none;
-}
-
 #teema-vaade-wrap .cx-when {
   display: flex;
   align-items: center;
@@ -10475,11 +10474,16 @@ section:has(.pw-more[open]) tbody.uxextra {
   padding-bottom: var(--spacing-25);
 }
 
-/* The head is the label and the count. The caret is hidden rather than
- * removed — the `<details>` still opens and closes, and the whole head is its
- * trigger. */
-.teemamain .accordion--timeline .accordion__caret {
-  display: none;
+/* `Tegevused · N kirjet` — a heading and its count, and not a control: the
+ * section no longer folds as a whole (docs/adr/0140 §7). The period accordions
+ * inside keep their own heads. */
+.teemamain .accordion--timeline .accordion__head--static {
+  cursor: default;
+  gap: var(--spacing-15);
+}
+
+.teemamain .accordion--timeline .accordion__head--static:hover {
+  background: none;
 }
 
 /* Hierarchy inverted: the entry body is what a reader came for, the actor and
@@ -11970,21 +11974,44 @@ section:has(.pw-more[open]) tbody.uxextra {
   flex: 1 1 auto;
 }
 
-/* -- the work centre: ✓ Tehtud, Lisa märge, the step's own form ------------
+/* -- the work centre: ✓ Tehtud and the step's own form ---------------------
  *
- * docs/adr/0133 §4. `✓ Tehtud` is a full chip because finishing the step is
- * the act this zone exists for; `Lisa märge` is quiet, because a note leaves the
- * step as it is. `Lisa märge` is a `<label>` for the launcher's `+ Märge` radio,
- * so it needs the chip's box without the `<summary>` it usually sits in. */
-.curact__note {
+ * docs/adr/0133 §4, docs/adr/0140 §1. `✓ Tehtud` is a full chip because
+ * finishing the step is the act this zone exists for, and it is a toggle that
+ * never moves: a `<label>` for a clipped checkbox (`.addpick`, above), on the
+ * row in its own place, and the form is a sibling that alone takes `order: 1`
+ * and the line below the row — the `LISA TEEMALE` construction. */
+.curact__donechip {
   cursor: pointer;
-}
-
-/* `✓ Tehtud` reads as the act this zone exists for: the body colour and the
- * semibold weight, beside a quiet `Lisa märge` and `Muuda`. */
-.curact__done > summary {
   color: var(--text-body);
   font-weight: var(--typography-weight-semibold);
+}
+
+#teema-vaade-wrap .curact__task > .curact__donepanel {
+  display: none;
+}
+
+#teema-vaade-wrap .addpick:checked + .curact__donechip + .curact__donepanel {
+  display: block;
+  flex: 1 1 100%;
+  order: 1;
+}
+
+/* `Millal?`'s quick spans and the calendar box on one line (docs/adr/0140 §4):
+ * the date control keeps its own width instead of taking the row. */
+#teema-vaade-wrap .curact__when .datepicker {
+  flex: 0 0 auto;
+  width: auto;
+}
+
+#teema-vaade-wrap .curact__when .dateinput {
+  width: 14ch;
+}
+
+/* The completion form's questions, one under another, with the air the
+ * `LISA TEEMALE` forms give theirs. */
+#teema-vaade-wrap .curact__form > .cx-f {
+  margin-top: var(--spacing-2);
 }
 
 /* The current step's own typed form — `+ Ülevaade / uudis`, `+ Kaasamine` or

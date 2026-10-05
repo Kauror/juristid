@@ -1,3 +1,4 @@
+{% load form_labels %}
 {% comment %}
 `MENETLUSE LINGID` — where the official proceeding on this file actually lives.
 
@@ -101,7 +102,7 @@ because what the file recorded and who recorded it is part of the file
                     hx-target="#teema-vaade" hx-swap="outerHTML">
                 {% csrf_token %}
                 <fieldset class="cx-fieldset">
-                  <legend class="cx-f__lab">{{ edit_form.kind.label }}</legend>
+                  <legend class="cx-f__lab">{% field_label edit_form.kind %}</legend>
                   <div class="chiprow">
                     {% for choice in edit_form.kind %}
                       <label class="chip">
@@ -116,7 +117,7 @@ because what the file recorded and who recorded it is part of the file
                   {% endif %}
                 </fieldset>
                 <label class="cx-f" for="{{ edit_form.url.id_for_label }}">
-                  <span class="cx-f__lab">{{ edit_form.url.label }}</span>
+                  <span class="cx-f__lab">{% field_label edit_form.url %}</span>
                   {{ edit_form.url }}
                 </label>
                 {% if edit_form.url.errors %}
@@ -124,8 +125,7 @@ because what the file recorded and who recorded it is part of the file
                     {{ edit_form.url.errors|first }}</p>
                 {% endif %}
                 <label class="cx-f" for="{{ edit_form.label.id_for_label }}">
-                  <span class="cx-f__lab">{{ edit_form.label.label }}
-                    <span class="cx-f__opt">valikuline</span></span>
+                  <span class="cx-f__lab">{% field_label edit_form.label %}</span>
                   {{ edit_form.label }}
                 </label>
                 {% if edit_form.label.errors %}

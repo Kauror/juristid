@@ -1,3 +1,4 @@
+{% load form_labels %}
 {% comment %}
 One published `Ülevaade / uudis` address, and the way to correct it.
 
@@ -45,15 +46,15 @@ saying so, which is the same treatment every external link on this page gets.
         the name.
       {% endcomment %}
       <label class="cx-f">
-        <span class="cx-f__lab">{{ website_overview_link_form.title.label }}</span>
+        <span class="cx-f__lab">{% field_label website_overview_link_form.title %}</span>
         {{ website_overview_link_form.title }}
       </label>
       <label class="cx-f">
-        <span class="cx-f__lab">{{ website_overview_link_form.url.label }}</span>
+        <span class="cx-f__lab">{% field_label website_overview_link_form.url %}</span>
         {{ website_overview_link_form.url }}
       </label>
       <label class="cx-f cx-f--date">
-        <span class="cx-f__lab">{{ website_overview_link_form.published_on.label }}</span>
+        <span class="cx-f__lab">{% field_label website_overview_link_form.published_on %}</span>
         {{ website_overview_link_form.published_on }}
         {% comment %}
           The correction form's date box is the one that *clears* a date that

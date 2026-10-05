@@ -1,3 +1,4 @@
+{% load form_labels %}
 {% comment %}
   `Valdkonnad` — the governed vocabulary, drawn at rest, on both pages that ask
   it.
@@ -30,7 +31,7 @@
 {% endcomment %}
 <fieldset class="field">
   <legend class="field__label">
-    {{ form.policy_areas.label }}
+    {% field_label form.policy_areas %}
     <span class="field__count" data-chipcount-for="policy_areas"></span>
   </legend>
   <div class="chiprow">
@@ -55,7 +56,7 @@
   <div class="createform__other" id="valdkond-muu-tekst"
        {% if not form.policy_area_other_open %}hidden{% endif %}>
     <label class="field">
-      <span class="field__label">{{ form.policy_area_other.label }}</span>
+      <span class="field__label">{% field_label form.policy_area_other %}</span>
       {{ form.policy_area_other }}
       {% if form.policy_area_other.errors %}
         <span class="field__error" id="{{ form.policy_area_other.auto_id }}_error">{{ form.policy_area_other.errors|first }}</span>

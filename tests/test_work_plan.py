@@ -50,7 +50,6 @@ from app.matters.services import (
 )
 from app.matters.timeline import TIMELINE_EVENT_TYPES, matter_timeline
 from app.matters.workspace import (
-    NEXT_IS_THE_CURRENT_STEP,
     OVERVIEW_STEP_NEEDS_A_PUBLICATION,
     PLAN_STEP_NOT_CURRENT,
     PLAN_STEP_WRONG_OPERATION,
@@ -505,6 +504,8 @@ def test_mida_tegid_finishes_the_step(planned, specialist):
 
 
 def test_done_and_next_in_one_save(planned, specialist):
+    """`Järgmine tegevus` (docs/adr/0140 §2): the next action in the person's
+    own words, tied to no plan step, in the same operation as the note."""
     first = _start(planned, "read-material", specialist)
 
     result = complete_current_action(
@@ -512,16 +513,18 @@ def test_done_and_next_in_one_save(planned, specialist):
         author=specialist,
         action_id=first.pk,
         body="Lugesin materjali läbi.",
-        next_step_id=_step(planned, "website-overview").pk,
+        next_text="Kohtun ministeeriumiga",
         next_date=_day(7),
     )
 
     assert _step(planned, "read-material").state == PlanStepState.COMPLETED
     following = _open(planned).get()
     assert following == result.action
-    assert following.plan_step == _step(planned, "website-overview")
-    assert following.text == "Koosta kodulehe ülevaade"
+    assert following.plan_step_id is None
+    assert following.text == "Kohtun ministeeriumiga"
     assert following.target_date == _day(7)
+    # No plan step is started for the person: the suggestion stays one.
+    assert _step(planned, "website-overview").state == PlanStepState.SUGGESTED
     # One operation: the note, the completion and the next step.
     acts = (
         (ChangeEventType.ENTRY_ADDED, result.entry.pk),
@@ -535,23 +538,6 @@ def test_done_and_next_in_one_save(planned, specialist):
     assert operations == {result.operation_id}
 
 
-def test_muu_tegevus_is_an_ordinary_step(planned, specialist):
-    first = _start(planned, "read-material", specialist)
-
-    complete_current_action(
-        matter=planned,
-        author=specialist,
-        action_id=first.pk,
-        body="Lugesin.",
-        next_text="Kohtun ministeeriumiga",
-    )
-
-    following = _open(planned).get()
-    assert following.text == "Kohtun ministeeriumiga"
-    assert following.plan_step_id is None
-    assert following.target_date is None
-
-
 def test_the_next_suggestion_is_never_started_for_the_person(planned, specialist):
     first = _start(planned, "read-material", specialist)
 
@@ -561,57 +547,6 @@ def test_the_next_suggestion_is_never_started_for_the_person(planned, specialist
     assert _step(planned, "website-overview").state == PlanStepState.SUGGESTED
 
 
-def test_a_stale_next_step_refuses_the_whole_save(planned, specialist):
-    first = _start(planned, "read-material", specialist)
-    gone = _step(planned, "website-overview")
-    work_plan.skip_plan_step(step=gone, actor=specialist)
-
-    with pytest.raises(DomainError, match=re.escape(work_plan.STEP_NOT_OPEN)):
-        complete_current_action(
-            matter=planned,
-            author=specialist,
-            action_id=first.pk,
-            body="Lugesin.",
-            next_step_id=gone.pk,
-        )
-
-    first.refresh_from_db()
-    assert first.status == ActionStatus.OPEN
-    assert _step(planned, "read-material").state == PlanStepState.PLANNED
-    assert not Entry.objects.filter(matter=planned).exists()
-
-
-def test_the_step_being_finished_is_not_the_next_one(planned, specialist):
-    first = _start(planned, "read-material", specialist)
-
-    with pytest.raises(DomainError, match=NEXT_IS_THE_CURRENT_STEP):
-        complete_current_action(
-            matter=planned,
-            author=specialist,
-            action_id=first.pk,
-            body="Lugesin.",
-            next_step_id=first.plan_step_id,
-        )
-    assert not Entry.objects.filter(matter=planned).exists()
-
-
-def test_a_step_of_another_matter_is_refused_as_next(planned, specialist):
-    other = factories.MatterFactory(owner=specialist)
-    work_plan.seed_standard_plan(matter=other, actor=specialist)
-    first = _start(planned, "read-material", specialist)
-
-    with pytest.raises(DomainError, match=re.escape(work_plan.STEP_NOT_ON_MATTER)):
-        complete_current_action(
-            matter=planned,
-            author=specialist,
-            action_id=first.pk,
-            body="Lugesin.",
-            next_step_id=_step(other, "website-overview").pk,
-        )
-    assert not Entry.objects.filter(matter=planned).exists()
-    assert not _open(other).exists()
-
-
 def test_a_stale_tab_finishes_nothing(planned, specialist):
     first = _start(planned, "read-material", specialist)
     complete_current_action(
@@ -619,7 +554,7 @@ def test_a_stale_tab_finishes_nothing(planned, specialist):
         author=specialist,
         action_id=first.pk,
         body="Esimene sakk.",
-        next_step_id=_step(planned, "website-overview").pk,
+        next_text="Kohtun ministeeriumiga",
     )
     entries = Entry.objects.filter(matter=planned).count()
 
@@ -629,50 +564,63 @@ def test_a_stale_tab_finishes_nothing(planned, specialist):
             author=specialist,
             action_id=first.pk,
             body="Teine sakk.",
-            next_step_id=_step(planned, "consult-members").pk,
+            next_text="Saadan arvamuse",
         )
 
     assert Entry.objects.filter(matter=planned).count() == entries
-    assert _open(planned).get().plan_step == _step(planned, "website-overview")
-    assert _step(planned, "consult-members").state == PlanStepState.SUGGESTED
+    assert _open(planned).get().text == "Kohtun ministeeriumiga"
 
 
 def test_the_page_posts_done_and_next(signed_in, planned, specialist):
     first = _start(planned, "read-material", specialist)
     zone = _zone(_teema(signed_in, planned))
     assert "✓ Tehtud" in zone
-    assert "Järgmisena" in zone
-    assert "Praegu ei määra" in zone
-    assert "Lisa märge" in zone
+    assert "Järgmine tegevus" in zone
+    assert "Uus hetkeseis" in zone
+    for gone in (
+        "Järgmisena",
+        "Praegu ei määra",
+        "Muu tegevus",
+        "Lisa märge",
+        'name="next_choice"',
+    ):
+        assert gone not in zone, gone
 
     response = signed_in.post(
         reverse("matters:complete_current_action", kwargs={"pk": planned.pk}),
         {
             "action_id": str(first.pk),
             "body": "Lugesin materjali läbi.",
-            "next_choice": str(_step(planned, "website-overview").pk),
+            "next_text": "Kohtun ministeeriumiga",
             "next_date": "",
         },
         headers={"HX-Request": "true"},
     )
 
     assert response.status_code == 200
-    assert _open(planned).get().plan_step == _step(planned, "website-overview")
+    following = _open(planned).get()
+    assert following.text == "Kohtun ministeeriumiga"
+    assert following.plan_step_id is None
 
 
-def test_muu_tegevus_without_words_is_refused_on_the_box(signed_in, planned, specialist):
+def test_a_blank_next_action_opens_no_step_and_drops_its_day(signed_in, planned, specialist):
     first = _start(planned, "read-material", specialist)
 
     response = signed_in.post(
         reverse("matters:complete_current_action", kwargs={"pk": planned.pk}),
-        {"action_id": str(first.pk), "body": "Lugesin.", "next_choice": "muu"},
+        {
+            "action_id": str(first.pk),
+            "body": "Lugesin.",
+            "next_text": "  ",
+            "next_date": "1.12.2026",
+        },
         headers={"HX-Request": "true"},
     )
 
-    assert response.status_code == 400
-    assert "Kirjuta järgmine tegevus." in response.content.decode()
+    assert response.status_code == 200
     first.refresh_from_db()
-    assert first.status == ActionStatus.OPEN
+    assert first.status == ActionStatus.COMPLETED
+    assert not _open(planned).exists()
 
 
 def test_a_result_is_still_required(signed_in, planned, specialist):
@@ -680,7 +628,7 @@ def test_a_result_is_still_required(signed_in, planned, specialist):
 
     response = signed_in.post(
         reverse("matters:complete_current_action", kwargs={"pk": planned.pk}),
-        {"action_id": str(first.pk), "body": "", "next_choice": ""},
+        {"action_id": str(first.pk), "body": ""},
         headers={"HX-Request": "true"},
     )
 
@@ -1191,7 +1139,7 @@ def test_a_generic_completion_reads_as_the_result(planned, specialist):
         author=specialist,
         action_id=first.pk,
         body="Lugesin materjali läbi.",
-        next_step_id=_step(planned, "website-overview").pk,
+        next_text="Koostan kodulehe ülevaate",
     )
 
     rows = _rows(planned, specialist)

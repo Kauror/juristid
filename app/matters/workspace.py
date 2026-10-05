@@ -161,9 +161,6 @@ def _named_open_rounds(
     return named
 
 
-#: `Järgmisena` named the step this very save is finishing.
-NEXT_IS_THE_CURRENT_STEP = "Seda sammu märgid praegu tehtuks. Vali järgmiseks mõni teine samm."
-
 #: An overview step is finished by a publication, never by a plan.
 OVERVIEW_STEP_NEEDS_A_PUBLICATION = (
     "Kodulehe ülevaate samm on tehtud siis, kui ülevaade on avaldatud. Lisa ülevaate link."
@@ -296,9 +293,9 @@ def complete_current_action(
     action_id: Any,
     body: str,
     uploads: Sequence[Any] = (),
-    next_step_id: Any = None,
     next_text: str = "",
     next_date: Any = None,
+    stage: Any = None,
 ) -> WorkspaceResult:
     """`PRAEGUNE TEGEVUS` — what I did, and therefore that the step is done.
 
@@ -327,18 +324,20 @@ def complete_current_action(
     the description — filing "arvamus.pdf" as an account of what somebody did is
     the application putting words in a lawyer's mouth (docs/adr/0075 §3).
 
-    **`Järgmisena` — and what comes next, in the same save** (docs/adr/0133 §4).
-    Optional, and three answers:
+    **`Järgmine tegevus` — and what comes next, in the same save** (docs/adr/0140
+    §2). ``next_text`` is the next action in the person's own words, through
+    `set_next_action_for_new_work`, tied to no plan step; empty, and no step is
+    opened. Nothing is ever chosen for the person: the plan's next suggestion is
+    not started because this one finished (docs/adr/0133 §4).
 
-    * ``next_step_id`` — a `Tööplaan` step still ahead. Started through
-      `app.workflow.plan` exactly as `Alusta` starts it: the canonical
-      `NextAction`, linked to the step, with the step's own words and the day
-      in ``next_date`` if one was given and none if not;
-    * ``next_text`` — `Muu tegevus`, an ordinary step in the person's words,
-      through `set_next_action_for_new_work`, tied to no plan step;
-    * neither — `Praegu ei määra`, and no step is opened. Nothing is ever
-      chosen for the person: the plan's next suggestion is not started because
-      this one finished (docs/adr/0133 §4).
+    **`Uus hetkeseis` — and where the file now stands, in the same save**
+    (docs/adr/0140 §3). ``stage`` goes through `stage_transition`, exactly as
+    `+ Lisa · Tavaline` moves it: the period current before the move keeps the
+    note, its files and the completion, because the work was done there; the
+    move writes its own `MATTER_STAGE_CHANGED`; the stage the file already holds
+    moves nothing; and a stage that ends the Matter closes it on the way out —
+    so it is refused beside a next action, which the closure would cancel
+    (`TERMINAL_STAGE_MAKES_NO_STEP`, docs/adr/0131 §10).
 
     **The note is restricted with the step it finishes** (docs/adr/0138). It
     is that step's completion record, so a step restricted below its Matter
@@ -346,14 +345,18 @@ def complete_current_action(
     (docs/adr/0137). The next step chosen in the same save is new work and is
     not restricted by this: it is written by the ordinary creation rule.
 
-    **One transaction, checked before it writes.** The next step is asked for
-    under the Matter's lock *before* the note is written — on this Matter, still
-    ahead, not the step being finished — so a stale choice refuses the whole save
-    and nothing lands half-done. Then the note, its files, the completion (which
-    completes the current plan step through `complete_next_action`) and the new
-    step, in one operation, so `Teema käik` reads it as one row: what was done,
-    with the next step under it.
+    **One transaction, checked before it writes.** The named step is re-read
+    under the Matter's lock *before* anything is written, so a stale tab refuses
+    the whole save and nothing lands half-done. Then the note, its files, the
+    completion (which completes the current plan step through
+    `complete_next_action`), the new step and the move, in one operation, so
+    `Teema käik` reads it as one row: what was done, with the next step under it.
     """
+    from app.matters.services import stage_transition
+
+    next_text = (next_text or "").strip()
+    if is_terminal_stage(getattr(stage, "key", None)) and next_text:
+        raise DomainError(TERMINAL_STAGE_MAKES_NO_STEP)
     # The lock, and the question closure answers, through the one helper every
     # operation in this module now uses. This function had its own copy of both
     # from the start; the copy was correct and it was also the only one, which
@@ -365,15 +368,17 @@ def complete_current_action(
     # that turns a plain `FOR UPDATE` into a deadlock.
     locked_matter = lock_open_matter_for_business_write(matter.pk)
     current = _named_open_action(locked_matter=locked_matter, action_id=action_id)
-    following: MatterPlanStep | None = None
-    if next_step_id is not None:
-        following = work_plan.startable_step(locked_matter, next_step_id)
-        if following.pk == current.plan_step_id:
-            raise DomainError(NEXT_IS_THE_CURRENT_STEP)
-    next_text = (next_text or "").strip()
+    moves_stage = stage is not None and stage.pk != locked_matter.stage_id
 
-    with composer_operation() as operation_id:
-        result = WorkspaceResult(operation_id=operation_id)
+    with (
+        composer_operation() as operation_id,
+        stage_transition(
+            matter=locked_matter,
+            stage=stage if moves_stage else locked_matter.stage,
+            actor=author,
+        ) as move,
+    ):
+        result = WorkspaceResult(operation_id=operation_id, closed=move.closes)
         result.entry = add_entry(
             matter=locked_matter,
             body=body,
@@ -388,20 +393,14 @@ def complete_current_action(
             actor=author,
         )
         complete_next_action(action=current, actor=author)
-        if following is not None:
-            result.action = work_plan.start_checked_step(
-                locked_matter=locked_matter,
-                step=following,
-                actor=author,
-                target_date=next_date,
-            )
-        elif next_text:
-            result.action = set_next_action_for_new_work(
+        result.action = (
+            set_next_action_for_new_work(
                 matter=locked_matter, text=next_text, target_date=next_date, actor=author
             )
-        else:
-            result.action = None
-        return result
+            if next_text
+            else None
+        )
+    return result
 
 
 @transaction.atomic

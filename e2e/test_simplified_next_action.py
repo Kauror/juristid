@@ -79,7 +79,7 @@ def test_state_a_the_page_shows_the_step_its_date_and_one_way_to_finish_it(page,
     # answer to it (docs/adr/0075 §3). `✓ Tehtud` opens that question rather
     # than answering it (docs/adr/0133 §4).
     open_done_form(page)
-    expect(zone.get_by_text("Mida tegid?", exact=True)).to_be_visible()
+    expect(zone.locator("label.uxcomp__q")).to_contain_text("Mida tegid?")
     expect(zone.locator(".curact__form button[type=submit]")).to_have_count(1)
     expect(zone.get_by_role("button", name="Märgi tehtuks")).to_have_count(0)
 
@@ -172,7 +172,7 @@ def test_the_current_action_zone_carries_only_the_targets_controls(page, base_ur
     # `Muuda` is a native `<summary>` rather than a button, which is what
     # keeps it operable with scripting off (brief §33).
     expect(zone.get_by_text("Muuda", exact=True)).to_be_visible()
-    expect(zone.locator("#tehtud > summary")).to_have_text("✓ Tehtud")
+    expect(zone.locator('label[for="tehtud-valik"]')).to_have_text("✓ Tehtud")
     expect(page.locator("summary.uxnext__defersum")).to_have_count(0)
     assert "Lükka edasi" not in zone.inner_text()
     # And the launcher does not offer a second way to set the same one step.
@@ -243,7 +243,7 @@ def test_a_seeded_wait_reads_as_a_sentence_and_a_date(page, base_url):
     # here. This file shares one seeded world with the rest of the browser
     # suite, and a test that completed the seeded WAIT would decide what every
     # later reader of this Matter sees.
-    expect(zone.locator("#tehtud > summary")).to_have_text("✓ Tehtud")
+    expect(zone.locator('label[for="tehtud-valik"]')).to_have_text("✓ Tehtud")
 
 
 # ---------------------------------------------------------------------------

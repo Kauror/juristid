@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load form_labels %}
 {% load evidence_uploads %}
 {% block title %}Lisa saabunud materjal · {{ application_name }}{% endblock %}
 
@@ -64,12 +65,12 @@ decides it, not a field every filer meets (docs/adr/0096 §3).
     {# 2 — what it is called, and what it is about. #}
     <div class="createform__row createform__pair createform__pair--summary">
       <label class="field">
-        <span class="field__label">{{ form.title.label }}</span>
+        <span class="field__label">{% field_label form.title %}</span>
         {{ form.title }}
         {% if form.title.errors %}<span class="field__error" id="{{ form.title.auto_id }}_error">{{ form.title.errors|first }}</span>{% endif %}
       </label>
       <label class="field">
-        <span class="field__label">{{ form.brief_summary.label }}</span>
+        <span class="field__label">{% field_label form.brief_summary %}</span>
         {{ form.brief_summary }}
         {% if form.brief_summary.errors %}
           <span class="field__error" id="{{ form.brief_summary.auto_id }}_error">{{ form.brief_summary.errors|first }}</span>
@@ -80,14 +81,14 @@ decides it, not a field every filer meets (docs/adr/0096 §3).
     {# 3 — the two dates that arrive with it. #}
     <div class="createform__row createform__pair">
       <label class="field">
-        <span class="field__label">{{ form.received_date.label }}</span>
+        <span class="field__label">{% field_label form.received_date %}</span>
         {{ form.received_date }}
         {% if form.received_date.errors %}
           <span class="field__error" id="{{ form.received_date.auto_id }}_error">{{ form.received_date.errors|first }}</span>
         {% endif %}
       </label>
       <label class="field">
-        <span class="field__label">{{ form.response_deadline.label }}</span>
+        <span class="field__label">{% field_label form.response_deadline %}</span>
         {{ form.response_deadline }}
         {% if form.response_deadline.errors %}
           <span class="field__error" id="{{ form.response_deadline.auto_id }}_error">{{ form.response_deadline.errors|first }}</span>
@@ -98,7 +99,7 @@ decides it, not a field every filer meets (docs/adr/0096 §3).
     {# 4 — who takes it, and who it came from. #}
     <div class="createform__row createform__pair createform__pair--people">
       <fieldset class="field">
-        <legend class="field__label">{{ form.owner.label }}</legend>
+        <legend class="field__label">{% field_label form.owner %}</legend>
         <div class="chiprow">
           {% for choice in form.owner %}
             <label class="chip">
@@ -126,7 +127,7 @@ decides it, not a field every filer meets (docs/adr/0096 §3).
     {% endcomment %}
     <div class="createform__row">
       <label class="field">
-        <span class="field__label">{{ form.handover_note.label }}</span>
+        <span class="field__label">{% field_label form.handover_note %}</span>
         {{ form.handover_note }}
         {% if form.handover_note.errors %}
           <span class="field__error" id="{{ form.handover_note.auto_id }}_error">{{ form.handover_note.errors|first }}</span>

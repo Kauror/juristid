@@ -204,7 +204,7 @@ CLOCK_DEPENDENT = [
     # repeated in a summary line — and the folded system run's date span are
     # both gone from the page: the approved target's head is the label and the
     # count, and there are no folded runs (docs/adr/0074 §14, §16).
-    ".accordion--timeline > summary .uxtl__count",
+    ".accordion--timeline .accordion__head .uxtl__count",
     # Osakond's deadline panel. Every row prints "R 28.08" or "täna", and every
     # group header prints the window it holds — all of it computed from today
     # (design handoff 1a). The owner badges and four of the five group names stay
@@ -2607,9 +2607,9 @@ def test_the_work_plan_on_a_teema_filed_today(page, base_url):
       `Soovitus`, beside the controls that act on them;
     * **the current step leads** — once started, its row is the one in the body
       colour, and the finished ones carry their tick;
-    * **`✓ Tehtud` opens one compact form** — `Mida tegid?`, the files, and
-      `Järgmisena` as a row of plain choices with the next step's words and day
-      under them, not a second toolbar.
+    * **`✓ Tehtud` opens one compact form** — `Mida tegid?`, the files,
+      `Uus hetkeseis`, `Järgmine tegevus` and `Millal?` with its quick days
+      (docs/adr/0140), and the chip stays on the row above it.
 
     A Teema of its own, filed through `Uus teema` so it carries the standard
     plan, and run last because it writes. Clipped to the two sections, neither
@@ -2627,7 +2627,7 @@ def test_the_work_plan_on_a_teema_filed_today(page, base_url):
 
     page.get_by_role("button", name="Alusta: Tutvu materjaliga").click()
     page.wait_for_load_state("networkidle")
-    page.locator("#tehtud > summary").click()
+    page.locator('label[for="tehtud-valik"]').click()
     page.locator("#muuda-plaani > summary").click()
     _at_rest(page)
     compare("tooplaan-tehtud", capture(page, "tooplaan-tehtud", clip_to="#praegune-tegevus"))

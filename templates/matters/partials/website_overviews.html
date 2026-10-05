@@ -1,3 +1,4 @@
+{% load form_labels %}
 {% comment %}
 `ÜLEVAATED / UUDISED` — what this file still owes a reader somewhere.
 
@@ -70,17 +71,16 @@ controls and every write route still refuses it under the row lock
                     (docs/adr/0127 §1).
                   {% endcomment %}
                   <label class="cx-f">
-                    <span class="cx-f__lab">{{ publish_form.title.label }}
-                      <span class="cx-f__opt">valikuline</span></span>
+                    <span class="cx-f__lab">{% field_label publish_form.title %}</span>
                     {{ publish_form.title }}
                   </label>
                   <div class="cx-grid cx-grid--links">
                     <label class="cx-f">
-                      <span class="cx-f__lab">{{ publish_form.url.label }}</span>
+                      <span class="cx-f__lab">{% field_label publish_form.url %}</span>
                       {{ publish_form.url }}
                     </label>
                     <label class="cx-f cx-f--date">
-                      <span class="cx-f__lab">{{ publish_form.published_on.label }}</span>
+                      <span class="cx-f__lab">{% field_label publish_form.published_on %}</span>
                       {{ publish_form.published_on }}
                       {% comment %}
                         The `_helptext` id is the other half of what the comment

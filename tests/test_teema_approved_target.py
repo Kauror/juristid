@@ -194,7 +194,9 @@ def test_the_header_deadline_is_the_response_deadline_not_the_nearest_milestone(
 
     body = _detail(signed_in, normal_matter)
     slot = body[body.index("metaline__item--deadline") :]
-    slot = slot[: slot.index("</span>\n  </div>") if "</span>\n  </div>" in slot else 2000]
+    # Bounded by the next zone: the header ends before `PRAEGUNE TEGEVUS`, which
+    # may itself name the milestone as the upcoming step.
+    slot = slot[: slot.index('id="praegune-tegevus"')]
 
     assert "Arvamuse tähtaeg" in slot
     assert "Riigikogu I lugemine" not in slot
@@ -399,7 +401,7 @@ def test_lisa_teemale_offers_thirteen_choices_and_opens_none_of_them(signed_in, 
     panels = body[start : body.index("</section>", start)]
 
     expected = [
-        "+ Märge",
+        "+ Lisa",
         "Tavaline",
         "Oluline tähtaeg",
         "Jõustumine",
@@ -2461,11 +2463,13 @@ def test_the_current_action_zone_holds_the_task_and_exactly_one_way_to_finish_it
     assert "Koosta koja arvamus" in zone
     assert "Mida tegid?" in zone
     assert "Muuda" in zone
-    # **The whole point of the round.** Completion is the result being saved,
-    # so there is no second control that completes without one. `✓ Tehtud`
-    # since docs/adr/0133 §4 is the disclosure that *opens* that one form — a
-    # `<summary>`, not a button and not a request.
-    assert '<summary class="disclosure-chip">✓ Tehtud</summary>' in zone
+    # `✓ Tehtud` only opens this form (docs/adr/0133 §4): since docs/adr/0140
+    # §1 the label of a toggle that stays on the row — not a button, not a
+    # request, and nothing that completes by itself.
+    assert (
+        '<label class="disclosure-chip curact__donechip" for="tehtud-valik">✓ Tehtud</label>'
+        in zone
+    )
     for gone in ("Märgi tehtuks", "Tehtud</button>", "/valmis/"):
         assert gone not in zone
     # And not the retired controls or vocabulary.

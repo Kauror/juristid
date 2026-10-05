@@ -1,3 +1,4 @@
+{% load form_labels %}
 {% comment %}
 The quick-create panel. Replaces the picker in place and hands it back once the
 institution exists, so nothing else on the surrounding form is disturbed.
@@ -11,7 +12,7 @@ institution exists, so nothing else on the surrounding form is disturbed.
 
   <div class="formgrid">
     <label class="field">
-      <span class="field__label">Nimi</span>
+      <span class="field__label">Nimi{% required_mark %}</span>
       {{ form.name }}
       {% if form.name.errors %}<span class="field__error" id="{{ form.name.auto_id }}_error">{{ form.name.errors|first }}</span>{% endif %}
     </label>
@@ -22,7 +23,6 @@ institution exists, so nothing else on the surrounding form is disturbed.
     <label class="field">
       <span class="field__label">Registrikood</span>
       {{ form.registry_code }}
-      <span class="field__help">Vabatahtlik.</span>
     </label>
   </div>
 

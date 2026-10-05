@@ -14,8 +14,7 @@ through its own action, never twice.
 {% endcomment %}
 {% if steps and matter.is_open %}
   <label class="cx-f" for="{{ option_id }}">
-    <span class="cx-f__lab">Tööplaani samm, mille see täidab
-      <span class="cx-f__opt">valikuline</span></span>
+    <span class="cx-f__lab">Tööplaani samm, mille see täidab</span>
     <select class="field__input field__input--compact" name="taidab_sammu" id="{{ option_id }}">
       <option value="">— ei seo —</option>
       {% for step in steps %}

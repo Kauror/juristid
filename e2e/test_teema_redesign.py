@@ -70,11 +70,11 @@ def test_a_normal_matter_answers_everything_above_the_fold(page, base_url):
         assert box["y"] < fold, f"{selector} starts below the fold at {box['y']}px"
 
     # The chronology is open, and the documents are a tab away.
-    # Open by default since the v2 rebuild: the first page of the chronology is
-    # what a lawyer opens the file for, and closing it made every visit cost a
-    # click before the page said anything (02-EKRAANID §C). Still a <details>,
-    # so it closes.
-    expect(page.locator("#ajajoon")).to_have_attribute("open", "")
+    # Open, always: the first page of the chronology is what a lawyer opens the
+    # file for (02-EKRAANID §C), and since docs/adr/0140 §7 the section does not
+    # fold as a whole — only its period accordions do.
+    expect(page.locator("#ajajoon .accordion__body")).to_be_visible()
+    expect(page.locator("#ajajoon > summary")).to_have_count(0)
     expect(page.locator(".tabs__tab")).to_have_count(2)
 
 
@@ -126,7 +126,7 @@ def test_a_low_data_matter_is_short_and_deliberate(page, base_url):
     # And no completion box under it: there is nothing to complete, and a large
     # empty `Mida tegid?` with no task above it asks about work nobody has named
     # (docs/adr/0075 §5).
-    expect(page.get_by_text("Mida tegid?", exact=True)).to_have_count(0)
+    expect(page.locator("label.uxcomp__q")).to_have_count(0)
     # `Kaasamine` used to carry the last of the absence sentences in a collapsed
     # summary line, and then a standing section with a label and an add control.
     # The approved target has neither: recording one is a `LISA TEEMALE` panel,
@@ -164,12 +164,10 @@ def test_a_busy_matter_still_opens_on_what_to_do_next(page, base_url):
 
     page.goto(url)
     timeline = page.locator("#ajajoon")
-    # Open by default since the v2 rebuild: the first page of the chronology is
-    # what a lawyer opens the file for, and closing it made every visit cost a
-    # click before the page said anything (02-EKRAANID §C). Still a <details>,
-    # so it closes.
-    expect(timeline).to_have_attribute("open", "")
-    # Its summary line still says how much there is and when it last moved.
+    # Open, always: the first page of the chronology is what a lawyer opens the
+    # file for (02-EKRAANID §C), and since docs/adr/0140 §7 it does not fold.
+    expect(timeline.locator(".accordion__body")).to_be_visible()
+    # Its head still says how much there is.
     expect(timeline.locator(".uxtl__count")).to_contain_text("kirjet")
 
     # What the fold test is actually about: a Matter with two hundred entries
@@ -233,7 +231,7 @@ def test_closing_happens_in_lisa_teemale_and_leaves_a_readable_past(page, base_u
     expect(page.locator("#praegune-tegevus")).to_contain_text("teema on suletud")
     # No writable next step and no workspace at all (docs/adr/0075, brief §31).
     expect(page.locator("#lisa-teemale")).to_have_count(0)
-    expect(page.get_by_text("Mida tegid?", exact=True)).to_have_count(0)
+    expect(page.locator("label.uxcomp__q")).to_have_count(0)
     # The past stays readable — in the period it was written in, which is
     # closed until somebody opens it (docs/adr/0131 §7).
     headline = page.locator(".uxtl__mswhat").get_by_text("Märge: Menetlus lõppes; töö on tehtud.")

@@ -117,7 +117,7 @@ def test_a_marge_while_a_task_is_open_leaves_the_task_alone(page, base_url):
     expect(chronology(page)).to_contain_text("Ministeerium helistas reedel")
     expect(page.locator(".curact__text")).to_have_text("Oodata ministeeriumi vastust")
     # The step is still open, and `✓ Tehtud` still offers to finish it.
-    expect(page.locator("#praegune-tegevus #tehtud > summary")).to_have_text("✓ Tehtud")
+    expect(page.locator('#praegune-tegevus label[for="tehtud-valik"]')).to_have_text("✓ Tehtud")
 
 
 # ---------------------------------------------------------------------------

@@ -1,3 +1,4 @@
+{% load form_labels %}
 {% comment %}
 `+ Meile saadetud tagasiside` and `+ Teiste arvamus` — one panel, two chips.
 
@@ -172,7 +173,7 @@ as late (docs/adr/0084 §5).
         every surface that reads it.
       {% endcomment %}
       <label class="cx-f cx-f--date cx-f--solo" for="{{ form.stated_on.id_for_label }}">
-        <span class="cx-f__lab">{{ form.stated_on.label }}</span>
+        <span class="cx-f__lab">{% field_label form.stated_on %}</span>
         {{ form.stated_on }}
       </label>
       {% if form.stated_on.errors %}
@@ -199,7 +200,7 @@ as late (docs/adr/0084 §5).
         (docs/adr/0084 §3, amended 2026-09-16).
       {% endcomment %}
       <label class="cx-f" for="{{ form.summary.id_for_label }}">
-        <span class="cx-f__lab">{{ form.summary.label }}</span>
+        <span class="cx-f__lab">{% field_label form.summary %}</span>
         {{ form.summary }}
       </label>
       {% if form.summary.errors %}
@@ -208,7 +209,7 @@ as late (docs/adr/0084 §5).
       {% endif %}
 
       <label class="cx-f" for="{{ form.url.id_for_label }}">
-        <span class="cx-f__lab">{{ form.url.label }}</span>
+        <span class="cx-f__lab">{% field_label form.url %}</span>
         {{ form.url }}
       </label>
       {% if form.url.errors %}

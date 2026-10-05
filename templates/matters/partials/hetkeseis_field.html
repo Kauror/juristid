@@ -1,4 +1,5 @@
 {% load stage_help %}
+{% load form_labels %}
 {% comment %}
   `Hetkeseis` — one value, drawn at rest, on both pages that ask it.
 
@@ -33,7 +34,7 @@
 {% endcomment %}
 {% if form.stage_held %}
 <fieldset class="field">
-  <legend class="field__label">{{ form.stage.label }}</legend>
+  <legend class="field__label">{% field_label form.stage %}</legend>
   <input type="hidden" name="{{ form.stage.html_name }}" value="{{ form.matter.stage_id|default_if_none:'' }}">
   <p class="field__value">{% if form.matter.stage %}{{ form.matter.stage.label_et }}{% else %}Määramata{% endif %}</p>
   <p class="field__help">{{ form.stage_held_note }}</p>
@@ -43,7 +44,7 @@
 </fieldset>
 {% else %}
 <fieldset class="field">
-  <legend class="field__label">{{ form.stage.label }}</legend>
+  <legend class="field__label">{% field_label form.stage %}</legend>
   <div class="chiprow">
     {% for choice in form.stage %}
       {% with help=form.stage_help|stage_help:choice.data.value %}

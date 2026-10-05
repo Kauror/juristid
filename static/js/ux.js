@@ -147,14 +147,15 @@
   /* `✓ Tehtud`, opened, and the `Mida tegid?` box inside it — or `null` on a
      Matter with no open step or for a reader who may not write. By id: the
      current step's own typed form, drawn before it, has a textarea too
-     (docs/adr/0133 §4, §6). */
+     (docs/adr/0133 §4, §6). The panel opens off its checkbox, as a
+     `LISA TEEMALE` panel opens off its radio (docs/adr/0140 §1). */
   function openDoneForm() {
-    var panel = document.getElementById("tehtud");
+    var pick = document.getElementById("tehtud-valik");
     var box = document.getElementById("id_praegune_body");
-    if (!panel || !box) {
+    if (!pick || !box) {
       return null;
     }
-    panel.open = true;
+    pick.checked = true;
     return box;
   }
 
@@ -213,7 +214,7 @@
     }
     /* `L` for «lisa»: the box where something gets written down. On a Matter
        with a current task that is `Mida tegid?`; on one without, there is
-       nothing to complete, so it opens `+ Märge` instead. It used to open the
+       nothing to complete, so it opens `+ Lisa` instead. It used to open the
        composer, which was both of those and is gone (docs/adr/0075 §3). */
     var box = openDoneForm();
     if (box) {
@@ -447,37 +448,6 @@
         }
         event.preventDefault();
         pick.checked = false;
-      });
-    });
-  }
-
-  /* ---- PRAEGUNE TEGEVUS: `Lisa märge` brings the composer into view --------
-   * `Lisa märge` is a `<label>` for `+ Märge`'s radio in `LISA TEEMALE`, so
-   * choosing it opens the ordinary composer with no script at all
-   * (docs/adr/0133 §4). What a label cannot do is take the person there: the
-   * composer is further down the page. This scrolls it into view and puts the
-   * caret in its first box — after the browser has checked the radio, which is
-   * why it waits a frame.
-   */
-  function bindOpenNote(scope) {
-    scope.querySelectorAll("[data-open-note]").forEach(function (label) {
-      if (!once(label, "OpenNote")) {
-        return;
-      }
-      label.addEventListener("click", function () {
-        var targetId = label.getAttribute("data-open-note");
-        window.requestAnimationFrame(function () {
-          var field = document.getElementById(targetId);
-          if (!field) {
-            return;
-          }
-          field.scrollIntoView({ block: "center" });
-          try {
-            field.focus({ preventScroll: true });
-          } catch (error) {
-            field.focus();
-          }
-        });
       });
     });
   }
@@ -817,7 +787,6 @@
     var root = scope && scope.querySelectorAll ? scope : document;
     bindQuickDates(root);
     bindAddPanels(root);
-    bindOpenNote(root);
     bindPlanStepEditors(root);
     bindFileDrop(root);
     bindWorkRows(root);

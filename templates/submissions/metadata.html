@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load form_labels %}
 {% block title %}Arvamuse märksõnad ja seosed · {{ matter.title|truncatechars:60 }} · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -50,7 +51,7 @@ rendering and is what every existing opinion opens to (docs/adr/0093 §1, §2).
     <div class="createform__row">
       <fieldset class="field">
         <legend class="field__label">
-          {{ form.tags.label }}
+          {% field_label form.tags %}
           <span class="field__count" data-chipcount-for="tags"></span>
         </legend>
         <div class="chiprow">
@@ -78,7 +79,7 @@ rendering and is what every existing opinion opens to (docs/adr/0093 §1, §2).
     <div class="createform__row">
       <fieldset class="field">
         <legend class="field__label">
-          {{ form.website_overviews.label }}
+          {% field_label form.website_overviews %}
           <span class="field__count" data-chipcount-for="website_overviews"></span>
         </legend>
         <div class="chiprow">

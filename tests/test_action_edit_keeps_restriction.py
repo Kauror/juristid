@@ -238,24 +238,6 @@ def test_the_next_step_after_completing_a_restricted_step_does_not_inherit(matte
     assert result.action.visibility_override == ""
 
 
-def test_a_plan_step_chosen_after_completing_a_restricted_step_does_not_inherit(matter, specialist):
-    """`Järgmisena` naming a `Tööplaan` step is new work too (docs/adr/0133 §4)."""
-    original = _action(matter, specialist, restricted=True)
-    work_plan.seed_standard_plan(matter=matter, actor=specialist)
-    step = work_plan.plan_steps_of(matter)[0]
-
-    result = complete_current_action(
-        matter=matter,
-        author=specialist,
-        action_id=original.pk,
-        body="<p>Lugesin läbi.</p>",
-        next_step_id=step.pk,
-    )
-
-    assert result.action.plan_step_id == step.pk
-    assert result.action.visibility_override == ""
-
-
 # ---------------------------------------------------------------------------
 # G. A stale edit refuses and writes nothing
 # ---------------------------------------------------------------------------

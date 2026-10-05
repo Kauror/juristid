@@ -115,7 +115,7 @@ def test_the_whole_loop_from_no_step_to_the_following_one(page, base_url, screen
     zone = page.locator("#praegune-tegevus")
     expect(zone).to_contain_text("Järgmine samm on määramata")
     expect(zone.locator("#lisa-jargmine > summary")).to_have_text(CTA)
-    expect(zone.get_by_text("Mida tegid?", exact=True)).to_have_count(0)
+    expect(zone.locator("label.uxcomp__q")).to_have_count(0)
 
     # B. The step, set directly — yesterday, so it is late as soon as it exists.
     _set_directly(page, STEP, _day(-1))

@@ -225,7 +225,7 @@ def test_an_exact_milestone_can_be_added_in_a_few_fields(page, base_url):
     remember_matter(page)
 
     form = open_fact_form(page, "+ Lisa oluline tähtaeg")
-    form.get_by_label("Mis on oodata", exact=True).fill("Kooskõlastusringi lõpp")
+    form.get_by_label(re.compile(r"^Mis on oodata(?!\w)")).fill("Kooskõlastusringi lõpp")
     # A month from today, never a literal. The strip draws watched dates that
     # are still ahead (`facts.upcoming_dates`), and the `30.09.2026` this used
     # to type stopped being one on 1 October 2026 (ENG-002).
@@ -268,7 +268,7 @@ def test_a_quarter_is_captured_and_rendered_as_a_quarter(page, base_url, screens
     remember_matter(page)
 
     form = open_fact_form(page, "+ Lisa oluline tähtaeg")
-    form.get_by_label("Mis on oodata", exact=True).fill("Riigikogu esimene lugemine")
+    form.get_by_label(re.compile(r"^Mis on oodata(?!\w)")).fill("Riigikogu esimene lugemine")
     form.get_by_label("Kvartali täpsusega").check()
 
     # Narrowed: the day is gone and the quarter is there.
@@ -309,12 +309,14 @@ def test_a_refused_commencement_comes_back_with_what_was_typed(page, base_url):
     remember_matter(page)
 
     form = open_fact_form(page, "+ Lisa jõustumine")
-    form.get_by_label("Mis jõustub", exact=True).fill("Pakendiseaduse muudatused")
+    form.get_by_label(re.compile(r"^Mis jõustub(?!\w)")).fill("Pakendiseaduse muudatused")
     # A known date with no date is the refusal this form makes.
     form.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
-    expect(page.get_by_label("Mis jõustub", exact=True)).to_have_value("Pakendiseaduse muudatused")
+    expect(page.get_by_label(re.compile(r"^Mis jõustub(?!\w)"))).to_have_value(
+        "Pakendiseaduse muudatused"
+    )
 
 
 # -- work victories ---------------------------------------------------------
@@ -335,7 +337,7 @@ def test_a_person_adding_a_victory_gets_a_confirmed_one(page, base_url, screensh
     # The page talks about a Töövõit, never about confirming or proposing one.
     expect(page.locator(".cardnote")).to_have_text("Kirje lisatakse töövõiduna sinu nimel.")
 
-    form.get_by_label("Töövõit", exact=True).fill("Erisus jäi eelnõusse sisse")
+    form.get_by_label(re.compile(r"^Töövõit(?!\w)")).fill("Erisus jäi eelnõusse sisse")
     # `exact=True`, because "Poolaasta täpsusega" contains "Aasta täpsusega".
     form.get_by_label("Aasta täpsusega", exact=True).check()
     form.get_by_label("Aasta", exact=True).fill("2030")
@@ -555,7 +557,7 @@ def test_the_register_row_names_a_milestone_as_the_next_step(page, base_url):
     remember_matter(page)
 
     form = open_fact_form(page, "+ Lisa oluline tähtaeg")
-    form.get_by_label("Mis on oodata", exact=True).fill("Ministeeriumi vastus registrisse")
+    form.get_by_label(re.compile(r"^Mis on oodata(?!\w)")).fill("Ministeeriumi vastus registrisse")
     ahead = date.today() + timedelta(days=30)
     form.get_by_label("Kuupäev", exact=True).fill(f"{ahead.day:02d}.{ahead.month:02d}.{ahead.year}")
     form.get_by_role("button", name="Salvesta", exact=True).click()

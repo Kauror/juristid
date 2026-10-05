@@ -1,3 +1,4 @@
+{% load form_labels %}
 {% comment %}
 `TÖÖPLAAN` — what will probably have to be done after the current thing.
 
@@ -135,7 +136,7 @@ page (TEEMA_TARGET_SPEC §F).
             {% include "matters/partials/plan_step_fields.html" with form=plan_step_form %}
             {% if plan_step_form.before %}
               <label class="cx-f" for="{{ plan_step_form.before.id_for_label }}">
-                <span class="cx-f__lab">{{ plan_step_form.before.label }}</span>
+                <span class="cx-f__lab">{% field_label plan_step_form.before %}</span>
                 {{ plan_step_form.before }}
               </label>
             {% endif %}

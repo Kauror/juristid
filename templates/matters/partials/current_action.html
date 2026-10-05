@@ -1,3 +1,4 @@
+{% load form_labels %}
 {% comment %}
 `PRAEGUNE TEGEVUS` — the task this file is waiting on, and the one box that
 finishes it.
@@ -44,11 +45,12 @@ next, without having to file a `+ Märge` dated ahead to do it
 **Since docs/adr/0133 the zone is the work centre**, and three things changed in
 it. `Mida tegid?` is behind an explicit `✓ Tehtud`, because the act is
 finishing the step and the note is what it says about it — still required,
-still the one form, still named by `action_id`. It carries `Järgmisena`, so the
-step that follows is chosen in the same save: a `Tööplaan` step still ahead,
-`Muu tegevus`, or `Praegu ei määra`, never preselected. `Lisa märge` beside the
-step opens the ordinary `+ Märge` for something that happened while the step
-stays open. And when the current step is a typed `Tööplaan` step — an overview,
+still the one form, still named by `action_id`. Since docs/adr/0140 it carries
+`Uus hetkeseis` and `Järgmine tegevus` — where the file now stands and what
+comes next, in the person's own words, both optional and both in the same save;
+no plan step is offered there. `✓ Tehtud` and `Muuda` are the whole row, and
+something that happened while the step stays open is `+ Lisa` in
+`LISA TEEMALE`. And when the current step is a typed `Tööplaan` step — an overview,
 a consultation, the opinion — the canonical form that does its work is drawn
 here too, and saving it finishes the step. With no step open, the plan's next
 suggestion is offered with `Alusta`, and nothing is started for anybody.
@@ -136,30 +138,29 @@ suggestion is offered with `Alusta`, and nothing is started for anybody.
           An explicit act rather than a box that is always open (docs/adr/0133
           §4): the step is the line above, finishing it is this control, and
           opening it reveals the one completion form there has always been —
-          `Mida tegid?` required, files optional, and `Järgmisena`. Not a bare
-          checkbox: a result nobody wrote is a history that says only that a
-          button was pressed (docs/adr/0075 §3).
+          `Mida tegid?` required, files, `Uus hetkeseis` and `Järgmine tegevus`.
+          Not a bare checkbox: a result nobody wrote is a history that says only
+          that a button was pressed (docs/adr/0075 §3).
+
+          **A toggle that never moves** (docs/adr/0140 §1). The `LISA TEEMALE`
+          construction, for the same reason: a `<details>` that opens takes the
+          whole line, so the control just pressed jumped to the head of the next
+          one. Here the checkbox holds the state, the chip stays on this row in
+          its place, and only the form takes `order: 1` and the line below the
+          row. Pressing `✓ Tehtud` again closes it — natively, with scripting off
+          too. The panel id stays `tehtud`, so a refusal, a draft carried across
+          a save and Minu asjad's arrival reopen it exactly as before.
         {% endcomment %}
-        <details class="cx-panel curact__edit curact__done" id="tehtud" data-addpanel
-                 data-draft-host data-draft-state="{{ current_action.pk }}"
-                 {% if open_panel == "tehtud" %}open{% endif %}>
-          <summary class="disclosure-chip">✓ Tehtud</summary>
+        <input class="addpick" type="checkbox" id="tehtud-valik"
+               aria-controls="tehtud"
+               {% if open_panel == "tehtud" %}checked{% endif %}>
+        <label class="disclosure-chip curact__donechip" for="tehtud-valik">✓ Tehtud</label>
+        <div class="cx-panel curact__donepanel" id="tehtud" data-addpanel
+             data-draft-host data-draft-state="{{ current_action.pk }}">
           <div class="cx-panel__body">
             {% include "matters/partials/current_action_form.html" %}
           </div>
-        </details>
-        {% comment %}
-          `Lisa märge` — something happened on this work, and it is not finished.
-
-          Not a comment on the task and not a second note model: the label
-          chooses `+ Märge` in `LISA TEEMALE`, the ordinary composer, which
-          writes ordinary history and leaves this step exactly as it is
-          (docs/adr/0133 §4, docs/adr/0075 §7). Quiet, because it is the
-          secondary act here. `ux.js` brings the opened composer into view; with
-          scripting off the label still opens it, further down the page.
-        {% endcomment %}
-        <label class="disclosure-chip disclosure-chip--quiet curact__note"
-               for="lisa-marge-valik" data-open-note="id_marge_title">Lisa märge</label>
+        </div>
       {% endif %}
       {% if can_write and current_action.is_review_kind %}
         {% comment %}
@@ -315,12 +316,11 @@ suggestion is offered with `Alusta`, and nothing is started for anybody.
                   hx-target="#teema-vaade" hx-swap="outerHTML">
               {% csrf_token %}
               <label class="cx-f" for="{{ start_plan_form.text.id_for_label }}">
-                <span class="cx-f__lab">{{ start_plan_form.text.label }}</span>
+                <span class="cx-f__lab">{% field_label start_plan_form.text %}</span>
                 {{ start_plan_form.text }}
               </label>
               <label class="cx-f cx-f--date" for="{{ start_plan_form.target_date.id_for_label }}">
-                <span class="cx-f__lab">{{ start_plan_form.target_date.label }}
-                  <span class="cx-f__opt">valikuline</span></span>
+                <span class="cx-f__lab">{% field_label start_plan_form.target_date %}</span>
                 {{ start_plan_form.target_date }}
               </label>
               {% if start_plan_form.target_date.errors %}

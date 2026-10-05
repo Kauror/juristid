@@ -645,13 +645,13 @@ def open_composer(page) -> None:
 def open_done_form(page) -> None:
     """`✓ Tehtud` — open the completion form beside the current step.
 
-    Behind an explicit disclosure since docs/adr/0133 §4; the form inside is the
-    one `Mida tegid?` has always been. Looked at before clicking, so a form a
-    refusal reopened is not shut by the act of asking for it.
+    Behind an explicit control since docs/adr/0133 §4, and since docs/adr/0140
+    §1 a toggle — the label of `#tehtud-valik`, which stays on the row. Looked
+    at before clicking, so a form a refusal reopened is not shut by the act of
+    asking for it: a second press closes it.
     """
-    panel = page.locator("#tehtud")
-    if panel.get_attribute("open") is None:
-        panel.locator("> summary").click()
+    if not page.locator("#tehtud-valik").is_checked():
+        page.locator('label[for="tehtud-valik"]').click()
     page.locator("#id_praegune_body").wait_for(state="visible")
 
 

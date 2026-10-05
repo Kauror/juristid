@@ -757,17 +757,20 @@ def test_the_quieter_rows_keep_their_content_controls_and_order(signed_in, mixed
 # ---------------------------------------------------------------------------
 
 
-def test_both_headings_are_visually_hidden_and_still_name_their_sections(signed_in, three_opinions):
-    """F33–F35."""
+def test_both_headings_still_name_their_sections(signed_in, three_opinions):
+    """F33–F35, as docs/adr/0140 §7 amends them: `Menetluse kulg` is still a
+    visually hidden heading; `Tegevused` is a visible one with its count, and
+    the section no longer folds."""
     body = signed_in.get(_teema(three_opinions)).content.decode()
 
     assert '<section class="lprail" aria-labelledby="menetluse-kulg-heading">' in body
     assert (
         '<h2 class="lprail__head visually-hidden" id="menetluse-kulg-heading">Menetluse kulg</h2>'
     ) in body
-    assert '<h2 class="accordion__title visually-hidden">Teema käik</h2>' in body
-    # The count stays in the summary the section still folds by.
-    summary = body[body.index('id="ajajoon"') :]
-    summary = summary[: summary.index("</summary>")]
-    assert 'class="uxtl__count"' in summary
-    assert re.search(r"\d+ kirje", summary)
+    assert '<h2 class="accordion__title" id="tegevused-pealkiri">Tegevused</h2>' in body
+    # The count sits in the head beside it, and the head is not a `<summary>`.
+    head = body[body.index('id="ajajoon"') :]
+    head = head[: head.index('class="accordion__body"')]
+    assert "<summary" not in head
+    assert 'class="uxtl__count"' in head
+    assert re.search(r"\d+ kirje", head)

@@ -1,6 +1,6 @@
 {% load counts %}
 {% comment %}
-`Teema käik` — what actually happened on this file. Open by default.
+`Tegevused` (`Teema käik` until docs/adr/0140 §7) — what actually happened on this file.
 
 Where the *procedure* stands is `Menetluse kulg`, which is this section's
 sibling above rather than a block inside it (docs/adr/0092 §2, amended).
@@ -25,23 +25,19 @@ control meant. The `?ajajoon=` query and `timeline_page` still honour the filter
 so an existing link still works — the chrome is simply not rendered
 (app/matters/timeline.py `TIMELINE_FILTERS`).
 
-Still a `<details>`, so it closes, and still one line closed.
+**`Tegevused · N kirjet`, and the head is not a control** (docs/adr/0140 §7).
+The section was a `<details>` whose whole head folded six months of work away
+behind a count; nobody needed that, and a click on the number did it by
+accident. The head is a visible heading and the count beside it. The period
+accordions inside — one per `Hetkeseis` — still open and close one by one.
+The anchor stays `#ajajoon`, for the links that already name it.
 
-Nothing is fetched eagerly that the collapsed row does not need: the first page
-renders inside the `<details>` and everything older comes from `timeline_page`
-when somebody asks for it.
+Nothing is fetched eagerly that the page does not need: the first page renders
+here and everything older comes from `timeline_page` when somebody asks for it.
 {% endcomment %}
-<details class="accordion accordion--timeline" id="ajajoon" open>
-  <summary class="accordion__head">
-    <span class="accordion__caret" aria-hidden="true"></span>
-    {% comment %}
-      **The name is for assistive technology only** (owner decision,
-      2026-09-27). Sighted readers know what the list under `Menetluse kulg`
-      is; a screen reader still gets a level-two heading to navigate by, and
-      the summary is still named «Teema käik N kirjet». The caret and the count
-      stay visible, so the section still has something to press to fold it.
-    {% endcomment %}
-    <h2 class="accordion__title visually-hidden">Teema käik</h2>
+<section class="accordion accordion--timeline" id="ajajoon" aria-labelledby="tegevused-pealkiri">
+  <div class="accordion__head accordion__head--static">
+    <h2 class="accordion__title" id="tegevused-pealkiri">Tegevused</h2>
     {% comment %}
       The count is reader-visible chronology content and nothing else. A
       restricted child contributes no row and is not counted here either, so the
@@ -49,9 +45,8 @@ when somebody asks for it.
       moved when a restricted record was added would be a disclosure in itself
       (AUTH-003, app/matters/timeline.py).
     {% endcomment %}
-    <span class="uxtl__count">{{ timeline_count|counted:"kirje,kirjet" }}{% if timeline_has_more %}+{% endif %}</span>
-    <span class="accordion__spacer"></span>
-  </summary>
+    <span class="uxtl__count"><span aria-hidden="true">· </span>{{ timeline_count|counted:"kirje,kirjet" }}{% if timeline_has_more %}+{% endif %}</span>
+  </div>
 
   <div class="accordion__body">
     {% comment %}
@@ -86,47 +81,6 @@ when somebody asks for it.
       swaps its own button for the next batch *in place*, so the older lines
       arrive inside the same grid and the vertical rule stays continuous.
     {% endcomment %}
-    {% comment %}
-      **One compact filter, over the whole visible history** (historical
-      regression, UX-012): a date range and a kind. The default is no filter and
-      the page reads exactly as it did. Applied on the server to every row this
-      reader may see, with the count and the periods answering the same filter;
-      a month or a quarter overlaps the range as a period, never as an invented
-      day, and `Ainult kuupäevata kirjed` lists what a date cannot place
-      (`app/matters/timeline_filter.py`). A plain GET, so a filtered view is a
-      link somebody can send.
-    {% endcomment %}
-    {% if timeline_count or timeline_filter.is_active %}
-      <form class="inlineform tlfilter" method="get" action="#ajajoon" role="search" aria-label="Teema käigu filter">
-        <label class="field">
-          <span class="field__label field__label--plain">Alates</span>
-          <input class="field__input field__input--compact dateinput" type="text" inputmode="numeric"
-                 autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true"
-                 name="alates" value="{{ timeline_filter.since_text }}">
-        </label>
-        <label class="field">
-          <span class="field__label field__label--plain">Kuni</span>
-          <input class="field__input field__input--compact dateinput" type="text" inputmode="numeric"
-                 autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true"
-                 name="kuni" value="{{ timeline_filter.until_text }}">
-        </label>
-        <label class="field">
-          <span class="field__label field__label--plain">Liik</span>
-          <select class="field__input field__input--compact" name="liik">
-            {% for key, label in timeline_filter_kinds %}
-              <option value="{{ key }}"{% if key == timeline_filter.kind %} selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-          </select>
-        </label>
-        <button class="button button--quiet button--tiny" type="submit">Filtreeri</button>
-        {% if timeline_filter.is_active %}
-          <a class="button button--quiet button--tiny" href="?#ajajoon">Tühjenda filter</a>
-        {% endif %}
-      </form>
-      {% if timeline_filter.is_active and not timeline_count %}
-        <p class="muted">Filtrile vastavaid kirjeid ei ole.</p>
-      {% endif %}
-    {% endif %}
     <div id="ajalugu-loend" class="{% if timeline_groups %}kaikstages{% else %}uxtl{% endif %}">
     {% if timeline_groups %}
       {% comment %}
@@ -184,4 +138,4 @@ when somebody asks for it.
       </a>
     </p>
   </div>
-</details>
+</section>

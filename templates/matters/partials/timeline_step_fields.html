@@ -1,3 +1,4 @@
+{% load form_labels %}
 {% comment %}
 One added rail step's three questions: its name, its date, and its place.
 
@@ -7,7 +8,7 @@ cannot drift — the same partial for the same record, the reason
 {% endcomment %}
 <div class="kulgform__fields">
   <label class="cx-f" for="{{ title_field.id_for_label }}">
-    <span class="cx-f__lab">{{ title_field.label }}</span>
+    <span class="cx-f__lab">{% field_label title_field %}</span>
     {{ title_field }}
   </label>
   {% if title_field.errors %}
@@ -17,7 +18,7 @@ cannot drift — the same partial for the same record, the reason
   {% include "matters/partials/period_composer.html" with chips=chips date_field=date_field month_field=month_field quarter_field=quarter_field year_field=year_field only %}
 
   <label class="cx-f" for="{{ after_field.id_for_label }}">
-    <span class="cx-f__lab">{{ after_field.label }}</span>
+    <span class="cx-f__lab">{% field_label after_field %}</span>
     {{ after_field }}
   </label>
   {% if after_field.errors %}

@@ -1,3 +1,4 @@
+{% load form_labels %}
   {% comment %}
     `+ Oluline tähtaeg`. A milestone somebody else announced is often known
     only to a month, a quarter or a year, so the panel asks at which of those
@@ -14,7 +15,7 @@
             hx-encoding="multipart/form-data">
         {% csrf_token %}
         <label class="cx-f">
-          <span class="cx-f__lab">Mis tähtaeg</span>
+          <span class="cx-f__lab">Mis tähtaeg{% required_mark %}</span>
           {{ important_date_form.deadline_title }}
         </label>
         {% if important_date_form.deadline_title.errors %}

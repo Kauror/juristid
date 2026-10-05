@@ -1,3 +1,4 @@
+{% load form_labels %}
 {% comment %}
 One Sissekanne's text, and the way to correct it.
 
@@ -28,7 +29,7 @@ control that would add something new (app/matters/views.py, docs/adr/0075 §12).
           hx-swap="outerHTML">
       {% csrf_token %}
       <label class="visually-hidden" for="{{ entry_edit_form.body.id_for_label }}">
-        {{ entry_edit_form.body.label }}
+        {% field_label entry_edit_form.body %}
       </label>
       {{ entry_edit_form.body }}
       {{ entry_edit_form.revision }}

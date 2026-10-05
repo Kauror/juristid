@@ -1,15 +1,19 @@
+{% load form_labels %}
 {% comment %}
-`✓ Tehtud`'s form: `Mida tegid?`, its files, and `Järgmisena`.
+`✓ Tehtud`'s form: what I did, where the file now stands, and what comes next.
 
 The completion form `PRAEGUNE TEGEVUS` has always had, behind the explicit
-`✓ Tehtud` since docs/adr/0133 §4, and with the next step chosen in the same
-save. Everything said about it in `current_action.html` still holds: the
-result is required and is the person's own words, a file is supplementary,
-and the hidden `action_id` names the step so a stale tab completes nothing.
+`✓ Tehtud` since docs/adr/0133 §4, in one save (docs/adr/0140):
+
+    Mida tegid?  ·  files  ·  Uus hetkeseis  ·  Järgmine tegevus  ·  Millal?
+
+Everything said about it in `current_action.html` still holds: the result is
+required and is the person's own words, a file is supplementary, and the
+hidden `action_id` names the step so a stale tab completes nothing.
 {% endcomment %}
 {% comment %}
   The draft host is `#tehtud` around this form, not the form: a half-written
-  result carried across somebody else's save keeps its disclosure open with it
+  result carried across somebody else's save keeps its panel open with it
   (static/js/app.js `keepDrafts`, docs/adr/0107).
 {% endcomment %}
 <form class="curact__form" data-composer id="praegune-tegevus-vorm"
@@ -24,7 +28,7 @@ and the hidden `action_id` names the step so a stale tab completes nothing.
     <p class="formerror" role="alert">{{ workspace_error }}</p>
   {% endif %}
   <label class="uxcomp__q" for="{{ current_action_form.body.id_for_label }}">
-    Mida tegid?
+    {% field_label current_action_form.body %}
   </label>
   {{ current_action_form.body }}
   {% if current_action_form.body.errors %}
@@ -36,65 +40,54 @@ and the hidden `action_id` names the step so a stale tab completes nothing.
 
   {% comment %}
     The same file affordance every `LISA TEEMALE` form uses, from the same
-    partial — one accessible name, one drop contract, one place to change
-    either (templates/matters/partials/add_files.html). Under `Mida tegid?`
-    and before `Järgmisena`, because the files are evidence of what was done.
+    partial (templates/matters/partials/add_files.html). Under `Mida tegid?`,
+    because the files are evidence of what was done.
   {% endcomment %}
   {% include "matters/partials/add_files.html" with field=current_action_form.attachments %}
 
   {% comment %}
-    `Järgmisena` — what comes next, chosen in this same save (docs/adr/0133 §4).
-
-    **Optional, and never chosen for the person.** `Praegu ei määra` arrives
-    selected: finishing a step does not start the next one. A `Tööplaan` step
-    still ahead is one click, in its own words; `Muu tegevus` takes a sentence
-    of the person's own and is tied to no plan step. The day is optional and
-    never filled in. Everything lands in one transaction with the note above,
-    or nothing does — no wizard after the save.
+    `Uus hetkeseis` — the same control `+ Lisa · Tavaline` offers, in the same
+    order, through the same `stage_transition` (docs/adr/0140 §3). `Jätan
+    muutmata` arrives chosen; a stage that ends the Matter says so in its own
+    option, and closes the file with this save.
   {% endcomment %}
-  {% with chosen=current_action_form.next_choice.value|default_if_none:"" %}
-  <fieldset class="curact__next">
-    <legend class="cx-f__lab">Järgmisena <span class="cx-f__opt">valikuline</span></legend>
-    <div class="curact__choices">
-      {% for step in work_plan.ahead %}
-        <label class="cx-check curact__choice">
-          <input type="radio" name="next_choice" value="{{ step.pk }}"
-                 {% if chosen == step.pk|stringformat:"s" %}checked{% endif %}>
-          <span>{{ step.title }}</span>
-        </label>
+  <label class="cx-f" for="{{ current_action_form.stage.id_for_label }}">
+    <span class="cx-f__lab">{% field_label current_action_form.stage %}</span>
+    {{ current_action_form.stage }}
+  </label>
+  {% if current_action_form.stage.errors %}
+    <p class="field__error" id="{{ current_action_form.stage.auto_id }}_error">{{ current_action_form.stage.errors|first }}</p>
+  {% endif %}
+
+  {% comment %}
+    `Järgmine tegevus` — what comes next, written directly, in this same save.
+    Left empty, no step is opened; nothing is chosen for the person, and no
+    `Tööplaan` step is offered here (docs/adr/0140 §2). `Millal?` is the
+    ordinary date box, and `+1 päev` / `+1 nädal` / `+1 kuu` only write into it
+    (`next_step_date_choices`, static/js/ux.js `bindQuickDates`).
+  {% endcomment %}
+  <label class="cx-f" for="{{ current_action_form.next_text.id_for_label }}">
+    <span class="cx-f__lab">{% field_label current_action_form.next_text %}</span>
+    {{ current_action_form.next_text }}
+  </label>
+  {% if current_action_form.next_text.errors %}
+    <p class="field__error" id="{{ current_action_form.next_text.auto_id }}_error">{{ current_action_form.next_text.errors|first }}</p>
+  {% endif %}
+  <div class="cx-f cx-f--date curact__when">
+    <label class="cx-f__lab" for="{{ current_action_form.next_date.id_for_label }}">{% field_label current_action_form.next_date %}</label>
+    <div class="cx-when" data-quickdate-group="{{ current_action_form.next_date.id_for_label }}">
+      {% for choice in next_step_date_choices %}
+        <button type="button" class="uxchip" aria-pressed="false"
+                data-quickdate="{{ choice.value }}"
+                data-label-default="{{ choice.label }}"
+                data-label-chosen="{{ choice.label }} → {{ choice.when }}">{{ choice.label }}</button>
       {% endfor %}
-      <label class="cx-check curact__choice">
-        <input type="radio" name="next_choice" value="muu" {% if chosen == "muu" %}checked{% endif %}>
-        <span>Muu tegevus</span>
-      </label>
-      <label class="cx-check curact__choice">
-        <input type="radio" name="next_choice" value="" {% if not chosen %}checked{% endif %}>
-        <span>Praegu ei määra</span>
-      </label>
+      {{ current_action_form.next_date }}
     </div>
-    <div class="cx-grid cx-grid--links">
-      <label class="cx-f" for="{{ current_action_form.next_text.id_for_label }}">
-        <span class="cx-f__lab">{{ current_action_form.next_text.label }}
-          <span class="cx-f__opt">kui «Muu tegevus»</span></span>
-        {{ current_action_form.next_text }}
-      </label>
-      <label class="cx-f cx-f--date" for="{{ current_action_form.next_date.id_for_label }}">
-        <span class="cx-f__lab">{{ current_action_form.next_date.label }}
-          <span class="cx-f__opt">valikuline</span></span>
-        {{ current_action_form.next_date }}
-      </label>
-    </div>
-    {% if current_action_form.next_choice.errors %}
-      <p class="field__error" id="{{ current_action_form.next_choice.auto_id }}_error">{{ current_action_form.next_choice.errors|first }}</p>
-    {% endif %}
-    {% if current_action_form.next_text.errors %}
-      <p class="field__error" id="{{ current_action_form.next_text.auto_id }}_error">{{ current_action_form.next_text.errors|first }}</p>
-    {% endif %}
-    {% if current_action_form.next_date.errors %}
-      <p class="field__error" id="{{ current_action_form.next_date.auto_id }}_error">{{ current_action_form.next_date.errors|first }}</p>
-    {% endif %}
-  </fieldset>
-  {% endwith %}
+  </div>
+  {% if current_action_form.next_date.errors %}
+    <p class="field__error" id="{{ current_action_form.next_date.auto_id }}_error">{{ current_action_form.next_date.errors|first }}</p>
+  {% endif %}
 
   <div class="curact__row">
     <span class="curact__spacer"></span>

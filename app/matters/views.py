@@ -265,8 +265,6 @@ from app.matters.timeline import (
     external_position_milestone,
     matter_timeline,
 )
-from app.matters.timeline_filter import KINDS as TIMELINE_FILTER_KINDS
-from app.matters.timeline_filter import keeps, timeline_filter_from
 from app.organisations.models import Organisation
 from app.related_materials.selectors import related_materials_for
 from app.search import services as search_services
@@ -331,9 +329,6 @@ PAGE_SIZE_CHOICES: tuple[int, ...] = (12, 30, 50)
 PAGE_SIZE_ALL = "koik"
 PAGE_SIZE_ALL_BOUND = 2000
 TIMELINE_PAGE_SIZE = 30
-#: A filtered flat chronology reads the whole visible history, so its count
-#: and rows answer the filter rather than one page of it.
-WHOLE_TIMELINE = 100_000
 
 
 def page_size_from(raw: str | None) -> tuple[int, str]:
@@ -2757,30 +2752,16 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         current_action=current_action,
         episodes=episodes,
     )
-    # `Alates`, `Kuni` and `Liik` — applied here, on the server, to every row
-    # this reader may see: the grouped chronology already reads the whole
-    # history, and a filtered flat one reads it too rather than filtering one
-    # page. Each row stays in its period; the count and the periods answer the
-    # same filter (`app/matters/timeline_filter.py`).
-    chosen = timeline_filter_from(request.GET)
     if episode_timeline is None:
         items, has_more = matter_timeline(
             matter=matter,
             user=request.user,
-            limit=WHOLE_TIMELINE if chosen.is_active else TIMELINE_PAGE_SIZE,
+            limit=TIMELINE_PAGE_SIZE,
             only=timeline_only,
             intelligence=intelligence,
             current_action=current_action,
         )
-        if chosen.is_active:
-            items = [item for item in items if keeps(item, chosen)]
-            has_more = False
     else:
-        if chosen.is_active:
-            for group in episode_timeline.groups:
-                group.items = [item for item in group.items if keeps(item, chosen)]
-                group.is_open = bool(group.items)
-            episode_timeline.groups = [group for group in episode_timeline.groups if group.items]
         items = [item for group in episode_timeline.groups for item in group.items]
         has_more = False
     # Each `Kaasamine` row on the chronology gets its own `Lõpeta kaasamine`
@@ -2860,8 +2841,6 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # step are gone from it (docs/adr/0074 §16).
         "timeline_has_more": has_more,
         "timeline_count": len(items) + (1 if has_more else 0),
-        "timeline_filter": chosen,
-        "timeline_filter_kinds": TIMELINE_FILTER_KINDS,
         "timeline_only": timeline_only,
         "timeline_filters": TIMELINE_FILTERS,
         # The eight workspace forms, unbound. `PRAEGUNE TEGEVUS` takes one and
@@ -2981,6 +2960,8 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # `Tagasisidet ootame kuni`'s quick spans, resolved to real days here so
         # the chips can print the date each one lands on.
         "feedback_deadline_choices": feedback_deadline_choices(timezone.localdate()),
+        # `✓ Tehtud` → `Millal?`'s quick spans, the same way (docs/adr/0140 §4).
+        "next_step_date_choices": next_step_date_choices(timezone.localdate()),
         # The consultation rounds this file is still waiting on, newest deadline
         # last. Read here rather than in the template, like everything else on
         # this dict, and read through the child's own `visible_to`: a restricted
@@ -4543,6 +4524,29 @@ def feedback_deadline_choices(today: date) -> list[dict[str, Any]]:
     """
     spans = [(today + timedelta(days=days), label) for days, label in FEEDBACK_DEADLINE_SPANS]
     spans.append((add_months(today, 1), "1 kuu"))
+    return _resolved_date_choices(spans)
+
+
+def next_step_date_choices(today: date) -> list[dict[str, Any]]:
+    """What `✓ Tehtud` → `Millal?` offers beside its box (docs/adr/0140 §4).
+
+    `+1 päev`, `+1 nädal` and `+1 kuu` — spelled as *how much later*, because
+    the question is when to do the next thing — and the calendar box they write
+    into, which is the field that is submitted either way. The same contract as
+    :func:`feedback_deadline_choices`: resolved here, in Europe/Tallinn, and
+    `+1 kuu` is a calendar month (`app.core.dates.add_months`).
+    """
+    return _resolved_date_choices(
+        [
+            (today + timedelta(days=1), "+1 päev"),
+            (today + timedelta(days=7), "+1 nädal"),
+            (add_months(today, 1), "+1 kuu"),
+        ]
+    )
+
+
+def _resolved_date_choices(spans: list[tuple[date, str]]) -> list[dict[str, Any]]:
+    """Each span as the chip row draws it: the box's own value, and the day it lands on."""
     return [
         {
             "value": format_estonian_date(when),
@@ -6298,7 +6302,8 @@ WORKSPACE_PANELS: dict[str, tuple[str, str]] = {
     "action_form": ("lisa-jargmine", ""),
     # `PRAEGUNE TEGEVUS` → `Vaatasin üle`, beside a step that waits (ENG-021).
     "review_form": ("vaatasin-ule", ""),
-    # `PRAEGUNE TEGEVUS` → `✓ Tehtud`: `Mida tegid?` and `Järgmisena`.
+    # `PRAEGUNE TEGEVUS` → `✓ Tehtud`: `Mida tegid?`, `Uus hetkeseis` and
+    # `Järgmine tegevus` (docs/adr/0140).
     "current_action_form": ("tehtud", ""),
     # `PRAEGUNE TEGEVUS` → the current `Tööplaan` step's own typed form
     # (docs/adr/0133 §6). One panel id: a Teema's current step has one operation.
@@ -6401,7 +6406,7 @@ def workspace_forms(
         next_stages = offered_next_stages(matter)
     return {
         **_work_plan_forms(work_plan, matter=matter, viewer=viewer, next_stages=next_stages),
-        "current_action_form": CompleteCurrentActionForm(),
+        "current_action_form": CompleteCurrentActionForm(next_stages=next_stages),
         # `+ Märge · Tavaline`. What happened, when, optionally the stage it
         # moves the file to and the next thing the lawyer will do about it —
         # one atomic operation over three canonical services.
@@ -6783,7 +6788,9 @@ def complete_current_action(request: HttpRequest, pk: Any) -> HttpResponse:
     asked inside the service under a row lock (docs/adr/0075 §4).
     """
     matter = get_visible_matter(request, pk)
-    form = CompleteCurrentActionForm(request.POST, request.FILES)
+    form = CompleteCurrentActionForm(
+        request.POST, request.FILES, next_stages=offered_next_stages(matter)
+    )
     if not form.is_valid():
         return _workspace_refusal(request, matter, key="current_action_form", form=form)
 
@@ -6793,23 +6800,27 @@ def complete_current_action(request: HttpRequest, pk: Any) -> HttpResponse:
         matter=matter,
     )
     try:
-        workspace.complete_current_action(
+        result = workspace.complete_current_action(
             matter=matter,
             author=request.user,
             action_id=action.pk,
             body=form.cleaned_data["body"],
             uploads=form.cleaned_data["attachments"],
-            # `Järgmisena` (docs/adr/0133 §4): a plan step still ahead, a
-            # sentence of the person's own, or nothing. The step is fetched
-            # through this Matter inside the use case, under its lock.
-            next_step_id=form.cleaned_data.get("next_step_id"),
+            # `Järgmine tegevus` and `Uus hetkeseis` (docs/adr/0140): a sentence
+            # of the person's own or nothing, and a stage or `Jätan muutmata`.
             next_text=form.cleaned_data.get("next_text") or "",
             next_date=form.cleaned_data.get("next_date"),
+            stage=form.cleaned_data.get("stage"),
         )
     except (DomainError, UploadRejected) as error:
         return _workspace_refusal(
             request, matter, key="current_action_form", form=form, error=str(error)
         )
+    if result.closed:
+        # «Jõustunud» or «Rohkem ei tegele» ended the Matter (docs/adr/0131 §10):
+        # the header's state badge moves, as it does from `+ Lisa`.
+        matter.refresh_from_db()
+        return _render_overview(request, matter, header_out_of_band=True)
     return _render_overview(request, matter)
 
 

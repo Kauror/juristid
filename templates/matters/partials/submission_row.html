@@ -1,3 +1,4 @@
+{% load form_labels %}
 {% comment %}
 One sent `Koja arvamus`'s chronology row, and the way to correct what the file
 says about it.
@@ -54,7 +55,7 @@ anything changed.
       {% endif %}
 
       <label class="cx-f" for="{{ sent_opinion_edit_form.sent_on.id_for_label }}">
-        <span class="cx-f__lab">{{ sent_opinion_edit_form.sent_on.label }}</span>
+        <span class="cx-f__lab">{% field_label sent_opinion_edit_form.sent_on %}</span>
         {{ sent_opinion_edit_form.sent_on }}
       </label>
       {% comment %}
@@ -70,7 +71,7 @@ anything changed.
       {% endif %}
 
       <label class="cx-f" for="{{ sent_opinion_edit_form.kind.id_for_label }}">
-        <span class="cx-f__lab">{{ sent_opinion_edit_form.kind.label }}</span>
+        <span class="cx-f__lab">{% field_label sent_opinion_edit_form.kind %}</span>
         {{ sent_opinion_edit_form.kind }}
       </label>
       {% if sent_opinion_edit_form.kind.errors %}
@@ -78,8 +79,7 @@ anything changed.
       {% endif %}
 
       <label class="cx-f" for="{{ sent_opinion_edit_form.summary.id_for_label }}">
-        <span class="cx-f__lab">{{ sent_opinion_edit_form.summary.label }}
-          <span class="cx-f__opt">valikuline</span></span>
+        <span class="cx-f__lab">{% field_label sent_opinion_edit_form.summary %}</span>
         {{ sent_opinion_edit_form.summary }}
       </label>
       <span class="visually-hidden"
@@ -89,7 +89,7 @@ anything changed.
       {% endif %}
 
       <label class="cx-f" for="{{ sent_opinion_edit_form.recipients.id_for_label }}">
-        <span class="cx-f__lab">{{ sent_opinion_edit_form.recipients.label }}</span>
+        <span class="cx-f__lab">{% field_label sent_opinion_edit_form.recipients %}</span>
         {{ sent_opinion_edit_form.recipients }}
       </label>
       {% comment %}
