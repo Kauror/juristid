@@ -168,7 +168,7 @@ def test_the_inline_add_forms_still_work_on_a_teema_filed_with_a_staged_file(
     form.get_by_label("Kvartali täpsusega").check()
     expect(form.get_by_label("Kuupäev", exact=True)).to_be_hidden()
 
-    form.get_by_label(re.compile(r"^Töövõit( |$)")).fill("Erisus jäi rakendusmäärusesse")
+    form.get_by_label(re.compile(r"^Töövõit(?!\w)")).fill("Erisus jäi rakendusmäärusesse")
     form.get_by_label("Kvartal", exact=True).select_option("2")
     form.get_by_label("Aasta", exact=True).fill("2031")
     form.get_by_role("button", name="Salvesta töövõit").click()
