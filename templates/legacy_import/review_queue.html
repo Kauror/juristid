@@ -110,7 +110,7 @@
               {% csrf_token %}
               <input class="field__input reviewcard__note" type="text" name="note"
                      aria-label="Otsuse märkus"
-                     placeholder="Märkus (valikuline)" maxlength="2000">
+                     placeholder="Märkus" maxlength="2000">
               <button type="submit" class="button button--primary" name="decision" value="link"
                       {% if not row.matter or not candidate.source_page %}disabled{% endif %}>
                 Seo teemaga

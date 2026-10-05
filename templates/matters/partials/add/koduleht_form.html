@@ -1,3 +1,4 @@
+{% load form_labels %}
 {% comment %}
 The `koduleht` form, in the one place it is written — drawn by the `LISA TEEMALE`
 panel and, when the current `Tööplaan` step is this operation, a second time
@@ -53,17 +54,16 @@ under `PRAEGUNE TEGEVUS` (docs/adr/0133 §6).
           <div class="cx-grid cx-grid--links">
             <label class="cx-f cx-f--date"
                    for="{{ form.published_on.id_for_label }}">
-              <span class="cx-f__lab">{{ form.published_on.label }}</span>
+              <span class="cx-f__lab">{% field_label form.published_on %}</span>
               {{ form.published_on }}
             </label>
             <label class="cx-f" for="{{ form.overview_title.id_for_label }}">
-              <span class="cx-f__lab">{{ form.overview_title.label }}
-                <span class="cx-f__opt">valikuline</span></span>
+              <span class="cx-f__lab">{% field_label form.overview_title %}</span>
               {{ form.overview_title }}
             </label>
           </div>
           <label class="cx-f" for="{{ form.url.id_for_label }}">
-            <span class="cx-f__lab">{{ form.url.label }}</span>
+            <span class="cx-f__lab">{% field_label form.url %}</span>
             {{ form.url }}
           </label>
           {% if form.published_on.errors %}

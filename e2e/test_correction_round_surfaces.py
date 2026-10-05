@@ -53,7 +53,7 @@ def _record_commencement(page, description: str, day: str) -> None:
     A `get_by_text("Jõustumine")` resolves to the `<option>` in the phase select
     instead, which is not visible and never becomes so.
     """
-    page.get_by_text("+ Märge", exact=True).click()
+    page.locator("#lisa-teemale").get_by_text("+ Lisa", exact=True).click()
     page.locator('label[for="marge-joustumine-valik"]').click()
     page.fill("input[name='effective_title']", description)
     page.fill("input[name='effective_on']", day)
@@ -286,7 +286,7 @@ def test_a_save_leaves_the_keyboard_somewhere_useful(page, base_url):
     url = create_matter(page, base_url, unique_title("QA fookus"), owner=SANDRA)
 
     page.goto(url)
-    page.get_by_text("+ Märge", exact=True).click()
+    page.locator("#lisa-teemale").get_by_text("+ Lisa", exact=True).click()
     page.fill("#id_marge_title", "Ministeerium saatis uue versiooni")
     page.get_by_role("button", name="Salvesta").first.click()
     page.wait_for_selector("text=Ministeerium saatis uue versiooni")
@@ -311,7 +311,7 @@ def test_a_refusal_still_focuses_the_field_that_was_wrong(page, base_url):
     ahead = date.today() + timedelta(days=5)
 
     page.goto(url)
-    page.get_by_text("+ Märge", exact=True).click()
+    page.locator("#lisa-teemale").get_by_text("+ Lisa", exact=True).click()
     page.fill("#id_marge_title", "")
     page.fill("#id_marge_occurred_on", f"{ahead.day}.{ahead.month}.{ahead.year}")
     page.locator("#id_marge_as_next_step").wait_for(state="visible")
@@ -334,7 +334,7 @@ def test_a_panel_level_refusal_focuses_the_sentence_that_names_it(page, base_url
     url = create_matter(page, base_url, unique_title("QA tühi märge"), owner=SANDRA)
 
     page.goto(url)
-    page.get_by_text("+ Märge", exact=True).click()
+    page.locator("#lisa-teemale").get_by_text("+ Lisa", exact=True).click()
     page.fill("#id_marge_title", "")
     page.get_by_role("button", name="Salvesta").first.click()
     page.wait_for_selector("text=Kirjuta tegevus, lisa fail või vali uus hetkeseis.")
@@ -354,7 +354,7 @@ def test_a_mistaken_marge_can_be_taken_off_the_file(page, base_url):
     url = create_matter(page, base_url, unique_title("QA eemaldamine"), owner=SANDRA)
 
     page.goto(url)
-    page.get_by_text("+ Märge", exact=True).click()
+    page.locator("#lisa-teemale").get_by_text("+ Lisa", exact=True).click()
     page.fill("#id_marge_title", "Vale teema peale kirjutatud märge")
     page.get_by_role("button", name="Salvesta").first.click()
     page.wait_for_selector("text=Vale teema peale kirjutatud märge")
@@ -380,7 +380,7 @@ def test_the_confirmation_can_be_left_without_removing_anything(page, base_url):
     url = create_matter(page, base_url, unique_title("QA loobumine"), owner=SANDRA)
 
     page.goto(url)
-    page.get_by_text("+ Märge", exact=True).click()
+    page.locator("#lisa-teemale").get_by_text("+ Lisa", exact=True).click()
     page.fill("#id_marge_title", "See märge jääb alles")
     page.get_by_role("button", name="Salvesta").first.click()
     page.wait_for_selector("text=See märge jääb alles")
@@ -403,7 +403,7 @@ def test_the_removal_is_still_in_the_change_log(page, base_url):
     url = create_matter(page, base_url, unique_title("QA logi"), owner=SANDRA)
 
     page.goto(url)
-    page.get_by_text("+ Märge", exact=True).click()
+    page.locator("#lisa-teemale").get_by_text("+ Lisa", exact=True).click()
     page.fill("#id_marge_title", "Eemaldatav märge logis")
     page.get_by_role("button", name="Salvesta").first.click()
     page.wait_for_selector("text=Eemaldatav märge logis")
@@ -606,7 +606,7 @@ def test_kustuta_sits_beside_muuda_in_the_chronology(page, base_url):
     url = create_matter(page, base_url, unique_title("QA nuppude rida"), owner=SANDRA)
 
     page.goto(url)
-    page.get_by_text("+ Märge", exact=True).click()
+    page.locator("#lisa-teemale").get_by_text("+ Lisa", exact=True).click()
     page.fill("#id_marge_title", "Märge, mille nupud peavad ühel real olema")
     page.get_by_role("button", name="Salvesta").first.click()
     page.wait_for_selector("text=Märge, mille nupud peavad")

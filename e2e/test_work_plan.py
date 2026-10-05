@@ -91,13 +91,18 @@ def _start_from_plan(page, title: str) -> None:
 
 
 def _done(page, result: str, *, then: str | None = None) -> None:
-    """`✓ Tehtud`, the result, and — when given — the next step, in one save."""
+    """`✓ Tehtud` and the result — and, when given, the plan step started next.
+
+    The completion form offers no plan step since docs/adr/0140 §2, so a plan
+    step that comes next is started the way a lawyer starts one: `Alusta` on its
+    row, after the save.
+    """
     open_done_form(page)
     _zone(page).locator("#id_praegune_body").fill(result)
-    if then is not None:
-        _zone(page).locator(".curact__next").get_by_label(then, exact=True).check()
     _zone(page).locator("#praegune-tegevus-vorm button[type=submit]").click()
     wait_for_htmx(page)
+    if then is not None:
+        _start_from_plan(page, then)
 
 
 def _typed_panel(page):
@@ -149,10 +154,13 @@ def test_a_new_law_walks_its_ordinary_course(page, base_url, screenshots):
     expect(zone.locator(".curact__owed")).to_contain_text("Arvamuse tähtaeg")
     screenshots(page, "tooplaan-praegune-samm")
 
-    # C. Done, and the next step chosen in the same save.
+    # C. Done — the form asks the next action in words and offers no plan step
+    #    (docs/adr/0140 §2) — and the next plan step started from its row.
     open_done_form(page)
-    expect(zone.locator(".curact__next")).to_contain_text("Koosta kodulehe ülevaade")
-    expect(zone.locator(".curact__next").get_by_label("Praegu ei määra")).to_be_checked()
+    form = zone.locator("#praegune-tegevus-vorm")
+    expect(form.get_by_label("Järgmine tegevus")).to_have_value("")
+    expect(form.get_by_label("Uus hetkeseis")).to_have_value("")
+    expect(form).not_to_contain_text("Koosta kodulehe ülevaade")
     screenshots(page, "tooplaan-tehtud-ja-jargmine")
     _done(
         page, "Lugesin materjali läbi ja märkisin olulised kohad.", then="Koosta kodulehe ülevaade"

@@ -1,3 +1,4 @@
+{% load form_labels %}
 {% comment %}
 The fields of a structured-fact form, and only the fields.
 
@@ -29,7 +30,7 @@ because the anchor is not a fact — it is how the database sorts
 
 {% if form.kind %}
   <fieldset class="choiceset" id="joustumise-liik">
-    <legend class="field__label">{{ form.kind.label }}</legend>
+    <legend class="field__label">{% field_label form.kind %}</legend>
     {% for choice in form.kind %}
       <label class="choiceset__option">{{ choice.tag }} <span>{{ choice.choice_label }}</span></label>
     {% endfor %}
@@ -39,7 +40,7 @@ because the anchor is not a fact — it is how the database sorts
 
 {% if form.precision %}
   <fieldset class="choiceset" id="tapsuse-valik">
-    <legend class="field__label">{{ form.precision.label }}</legend>
+    <legend class="field__label">{% field_label form.precision %}</legend>
     {% for choice in form.precision %}
       <label class="choiceset__option">{{ choice.tag }} <span>{{ choice.choice_label }}</span></label>
     {% endfor %}

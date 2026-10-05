@@ -1,3 +1,4 @@
+{% load form_labels %}
 {% comment %}
 Saatja, on every surface that captures one.
 
@@ -90,7 +91,7 @@ an id — and `data-choicefilter` finds its list by that id.
 {% endcomment %}
 <fieldset class="field senderpick">
   <legend class="field__label">
-    {{ form.source_organisations.label }}
+    {% field_label form.source_organisations %}
     <span class="field__count" data-chipcount-for="source_organisations"></span>
   </legend>
 
@@ -156,7 +157,7 @@ an id — and `data-choicefilter` finds its list by that id.
   {% endif %}
 
   <label class="field senderpick__new">
-    <span class="field__label">{{ form.sender_name.label }}</span>
+    <span class="field__label">{% field_label form.sender_name %}</span>
     {{ form.sender_name }}
     {% if form.sender_name.errors %}
       <span class="field__error" id="{{ form.sender_name.auto_id }}_error">{{ form.sender_name.errors|first }}</span>

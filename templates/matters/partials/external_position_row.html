@@ -1,3 +1,4 @@
+{% load form_labels %}
 {% comment %}
 One `Väline seisukoht`'s chronology row, and the way to correct it.
 
@@ -89,7 +90,7 @@ closure (docs/adr/0076 §2, docs/adr/0084 §8).
         (docs/adr/0084 §3, §8).
       {% endcomment %}
       <label class="cx-f" for="{{ external_position_edit_form.summary.id_for_label }}">
-        <span class="cx-f__lab">{{ external_position_edit_form.summary.label }}</span>
+        <span class="cx-f__lab">{% field_label external_position_edit_form.summary %}</span>
         {{ external_position_edit_form.summary }}
       </label>
       {% if external_position_edit_form.summary.errors %}
@@ -97,7 +98,7 @@ closure (docs/adr/0076 §2, docs/adr/0084 §8).
       {% endif %}
 
       <label class="cx-f" for="{{ external_position_edit_form.url.id_for_label }}">
-        <span class="cx-f__lab">{{ external_position_edit_form.url.label }}</span>
+        <span class="cx-f__lab">{% field_label external_position_edit_form.url %}</span>
         {{ external_position_edit_form.url }}
       </label>
       {% if external_position_edit_form.url.errors %}
@@ -112,8 +113,7 @@ closure (docs/adr/0076 §2, docs/adr/0084 §8).
         refused exactly as an empty one is (docs/adr/0091 §4).
       {% endcomment %}
       <label class="cx-f" for="{{ external_position_edit_form.lawyer_note.id_for_label }}">
-        <span class="cx-f__lab">{{ external_position_edit_form.lawyer_note.label }}
-          <span class="cx-f__opt">valikuline</span></span>
+        <span class="cx-f__lab">{% field_label external_position_edit_form.lawyer_note %}</span>
         {{ external_position_edit_form.lawyer_note }}
       </label>
       {% if external_position_edit_form.lawyer_note.errors %}
@@ -135,8 +135,7 @@ closure (docs/adr/0076 §2, docs/adr/0084 §8).
       {% endcomment %}
       {% if external_position_edit_form.shows_source_label %}
         <label class="cx-f" for="{{ external_position_edit_form.source_label.id_for_label }}">
-          <span class="cx-f__lab">{{ external_position_edit_form.source_label.label }}
-            <span class="cx-f__opt">valikuline</span></span>
+          <span class="cx-f__lab">{% field_label external_position_edit_form.source_label %}</span>
           {{ external_position_edit_form.source_label }}
         </label>
         {% if external_position_edit_form.source_label.errors %}
@@ -166,8 +165,7 @@ closure (docs/adr/0076 §2, docs/adr/0084 §8).
       {% endif %}
 
       <label class="cx-f" for="{{ external_position_edit_form.engagement.id_for_label }}">
-        <span class="cx-f__lab">{{ external_position_edit_form.engagement.label }}
-          <span class="cx-f__opt">valikuline</span></span>
+        <span class="cx-f__lab">{% field_label external_position_edit_form.engagement %}</span>
         {{ external_position_edit_form.engagement }}
       </label>
       {% if external_position_edit_form.engagement.errors %}

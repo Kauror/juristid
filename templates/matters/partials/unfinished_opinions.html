@@ -1,4 +1,5 @@
 {% load evidence_uploads %}
+{% load form_labels %}
 {% comment %}
 `Lõpetamata arvamused` on Dokumendid — only what an older workflow left half done.
 
@@ -99,7 +100,7 @@ Matter's row lock — hiding them is courtesy, not the boundary
                     action="{% url 'submissions:mark_sent' pk=draft.pk %}">
                 {% csrf_token %}
                 <label class="field draftrow__addressees" for="{{ send.recipients.id_for_label }}">
-                  <span class="field__label">{{ send.recipients.label }}<span class="visually-hidden"> – {{ draft.title }}</span></span>
+                  <span class="field__label">{% field_label send.recipients %}<span class="visually-hidden"> – {{ draft.title }}</span></span>
                   {{ send.recipients }}
                   <span class="field__help" id="{{ send.recipients.auto_id }}_helptext">{{ send.recipients.help_text }}</span>
                 </label>
@@ -158,7 +159,7 @@ Matter's row lock — hiding them is courtesy, not the boundary
           <div class="formgrid">
             {% for field in register_form %}
               <label class="field">
-                <span class="field__label">{{ field.label }}</span>
+                <span class="field__label">{% field_label field %}</span>
                 {{ field }}
                 {% if field.help_text %}<span class="field__help"
                   id="{{ field.auto_id }}_helptext">{{ field.help_text }}</span>{% endif %}

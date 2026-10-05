@@ -48,7 +48,7 @@ pytestmark = pytest.mark.django_db
 #: something happened, somebody was asked, somebody had a view, something was
 #: published.
 CANONICAL = [
-    "+ Märge",
+    "+ Lisa",
     "+ Kaasamine",
     "+ Arvamus / tagasiside",
     "+ Ülevaade / uudis",

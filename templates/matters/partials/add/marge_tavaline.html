@@ -1,3 +1,4 @@
+{% load form_labels %}
 {% comment %}
 `Märke liik · Tavaline` — one activity on this file, done or planned.
 
@@ -62,8 +63,7 @@ and what still offers it (`Muuda` on the record, which decides per row).
     because the day below is what tells them apart (docs/adr/0124 §1).
   {% endcomment %}
   <label class="cx-f" for="{{ progress_form.title.id_for_label }}">
-    <span class="cx-f__lab">{{ progress_form.title.label }}
-      <span class="cx-f__opt">valikuline</span></span>
+    <span class="cx-f__lab">{% field_label progress_form.title %}</span>
     {{ progress_form.title }}
     {% if progress_form.title.errors %}
       <p class="field__error" id="{{ progress_form.title.auto_id }}_error">
@@ -108,7 +108,7 @@ and what still offers it (`Muuda` on the record, which decides per row).
   {% endcomment %}
   <div class="cx-dated" data-next-step-offer data-today="{{ progress_form.today|date:'Y-m-d' }}">
     <label class="cx-f cx-f--date cx-f--solo" for="{{ progress_form.occurred_on.id_for_label }}">
-      <span class="cx-f__lab">{{ progress_form.occurred_on.label }}</span>
+      <span class="cx-f__lab">{% field_label progress_form.occurred_on %}</span>
       {{ progress_form.occurred_on }}
       {% if progress_form.occurred_on.errors %}
         <p class="field__error" id="{{ progress_form.occurred_on.auto_id }}_error">
@@ -132,8 +132,7 @@ and what still offers it (`Muuda` on the record, which decides per row).
   {% endcomment %}
   <div class="cx-grid">
     <label class="cx-f" for="{{ progress_form.stage.id_for_label }}">
-      <span class="cx-f__lab">{{ progress_form.stage.label }}
-        <span class="cx-f__opt">valikuline</span></span>
+      <span class="cx-f__lab">{% field_label progress_form.stage %}</span>
       {{ progress_form.stage }}
       {% if progress_form.stage.errors %}
         <p class="field__error" id="{{ progress_form.stage.auto_id }}_error">

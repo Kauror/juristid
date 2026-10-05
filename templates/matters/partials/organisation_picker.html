@@ -1,3 +1,4 @@
+{% load form_labels %}
 {% comment %}
 One control for «which institution?», wherever `Uus teema` asks it.
 
@@ -128,7 +129,7 @@ picked before a refused save are the three states this already draws, and
 
   <noscript>
     <label class="field orgfind__fallbackfield">
-      <span class="field__label">{{ typed_field.label }}</span>
+      <span class="field__label">{% field_label typed_field %}</span>
       {{ typed_field }}
     </label>
     {% if tail or quiet %}

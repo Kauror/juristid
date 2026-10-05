@@ -46,7 +46,7 @@ pytestmark = pytest.mark.e2e
 #: exists to hold: fewer chips is allowed, more chips is allowed, a chip that
 #: *moves* is not.
 CANONICAL = [
-    "+ Märge",
+    "+ Lisa",
     "+ Kaasamine",
     "+ Arvamus / tagasiside",
     "+ Ülevaade / uudis",

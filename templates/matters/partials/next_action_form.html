@@ -1,3 +1,4 @@
+{% load form_labels %}
 {% comment %}
 `Järgmine tegevus` — two questions and one save, in one partial with two hosts.
 
@@ -41,7 +42,7 @@ October*, which until now had to be filed as the 1st.
     <input type="hidden" name="action_id" value="{{ current_action.pk }}">
   {% endif %}
   <label class="cx-f" for="{{ action_form.text.id_for_label }}">
-    <span class="cx-f__lab">Mida on vaja teha?</span>
+    <span class="cx-f__lab">Mida on vaja teha?{% required_mark %}</span>
     {{ action_form.text }}
   </label>
   {% if action_form.text.errors %}

@@ -1,3 +1,4 @@
+{% load form_labels %}
   {% comment %}
     `+ Töövõit`. A win is recorded when it happens, not when the file closes,
     and it neither closes the Matter nor completes the current step
@@ -19,7 +20,7 @@
             hx-encoding="multipart/form-data">
         {% csrf_token %}
         <label class="cx-f">
-          <span class="cx-f__lab">Mis muutus</span>
+          <span class="cx-f__lab">Mis muutus{% required_mark %}</span>
           {{ work_victory_form.victory_change }}
         </label>
         {% if work_victory_form.victory_change.errors %}

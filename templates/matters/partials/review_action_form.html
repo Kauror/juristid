@@ -1,3 +1,4 @@
+{% load form_labels %}
 {% comment %}
 `Vaatasin üle` — the date to look again, and one save.
 
@@ -36,7 +37,7 @@ control a screen reader cannot tell apart.
       {% endfor %}
     </div>
     <label class="cx-f cx-f--date" for="{{ review_form.next_review_date.id_for_label }}">
-      <span class="cx-f__lab">{{ review_form.next_review_date.label }}</span>
+      <span class="cx-f__lab">{% field_label review_form.next_review_date %}</span>
       {{ review_form.next_review_date }}
     </label>
   </div>

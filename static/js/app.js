@@ -4191,7 +4191,9 @@
     for (var panel = host; panel; panel = panel.parentElement) {
       if (panel.hasAttribute("data-addpanel") && panel.id) {
         var pick = document.getElementById(panel.id + "-valik");
-        if (pick && pick.type === "radio") {
+        /* A radio for a `LISA TEEMALE` choice, a checkbox for `✓ Tehtud`
+           (docs/adr/0140 §1): either way the input is what holds "open". */
+        if (pick && (pick.type === "radio" || pick.type === "checkbox")) {
           if (!pick.checked) {
             return [];
           }

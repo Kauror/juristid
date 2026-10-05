@@ -1,3 +1,4 @@
+{% load form_labels %}
 {% comment %}
 One ordinary form field. Rendered only when the form actually declares it, so
 the same page can serve a period form and a one-line reason form.
@@ -10,7 +11,7 @@ IV kvartal". CI found it: a browser test could not address the field at all.
 {% endcomment %}
 {% if field %}
   <div class="field">
-    <label class="field__label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+    <label class="field__label" for="{{ field.id_for_label }}">{% field_label field %}</label>
     {{ field }}
     {% comment %}
       The id is Django's own: a field with `help_text` gets

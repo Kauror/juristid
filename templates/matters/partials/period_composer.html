@@ -1,3 +1,4 @@
+{% load form_labels %}
 {% comment %}
 `Täpsus` — the one control that asks how exactly a date is known.
 
@@ -48,7 +49,7 @@ would submit an empty year. It is its own group, revealed by any of the three.
       <input class="precision__radio" type="radio"
              name="{{ chip.name }}" id="{{ chip.id }}" value="{{ chip.value }}"
              {% if chip.selected %}checked{% endif %}>
-      <label class="uxchip precision__chip" for="{{ chip.id }}">{{ chip.label }}</label>
+      <label class="uxchip precision__chip" for="{{ chip.id }}">{% field_label chip %}</label>
     {% endfor %}
   </div>
 
@@ -75,7 +76,7 @@ would submit an empty year. It is its own group, revealed by any of the three.
                 data-label-chosen="{{ choice.label }} → {{ choice.when }}">{{ choice.label }}</button>
       {% endfor %}
       <label class="cx-f cx-f--date">
-        <span class="cx-f__lab">{{ date_field.label }}</span>
+        <span class="cx-f__lab">{% field_label date_field %}</span>
         {{ date_field }}
       </label>
       {% if date_field.errors %}

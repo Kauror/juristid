@@ -138,9 +138,13 @@ def test_there_is_exactly_one_save_and_no_separate_completion_control(
 
     assert completion.count('type="submit"') == 1
     assert "Salvesta" in completion
-    # `✓ Tehtud` (docs/adr/0133 §4) only opens this form: a `<summary>`, not a
-    # control that completes anything by itself.
-    assert '<summary class="disclosure-chip">✓ Tehtud</summary>' in zone
+    # `✓ Tehtud` only opens this form (docs/adr/0133 §4): since docs/adr/0140
+    # §1 the label of a toggle that stays on the row — not a button, not a
+    # request, and nothing that completes by itself.
+    assert (
+        '<label class="disclosure-chip curact__donechip" for="tehtud-valik">✓ Tehtud</label>'
+        in zone
+    )
     for gone in ("Märgi tehtuks", "Tehtud</button>", "/valmis/"):
         assert gone not in zone, gone
 
@@ -440,7 +444,7 @@ def test_the_launcher_offers_its_choices_and_opens_none_of_them(signed_in, norma
         body.index('id="lisa-teemale"') : body.index("</section>", body.index('id="lisa-teemale"'))
     ]
 
-    for chip in ("+ Märge", "+ Kaasamine", "+ Arvamus / tagasiside", "+ Ülevaade / uudis"):
+    for chip in ("+ Lisa", "+ Kaasamine", "+ Arvamus / tagasiside", "+ Ülevaade / uudis"):
         assert chip in zone, chip
     for choice in (
         "Tavaline",

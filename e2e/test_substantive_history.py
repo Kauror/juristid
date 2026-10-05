@@ -206,34 +206,32 @@ def _record_koda_opinion(page, *, sent_on: str, filename: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_the_history_section_is_called_teema_kaik(page, base_url):
+def test_the_history_section_is_called_tegevused(page, base_url):
+    """`Tegevused · N kirjet` since docs/adr/0140 §7 — a visible heading."""
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
 
     section = page.locator("#ajajoon")
-    expect(section.locator(".accordion__title")).to_have_text("Teema käik")
+    expect(section.locator(".accordion__title")).to_have_text("Tegevused")
+    expect(section.locator(".accordion__title")).to_be_visible()
     # The anchor a shared link addresses is deliberately unchanged.
     expect(section).to_have_count(1)
 
 
-def test_collapsing_the_history_does_not_hide_menetluse_kulg(page, base_url):
-    """The reason the rail is a sibling and not a block inside the disclosure.
-
-    Collapsing six months of history is the ordinary thing to do when the
-    question is where the bill has got to — and until this round it took the
-    answer to that question away with it (docs/adr/0092 §2, amended).
-    """
+def test_the_history_is_not_a_fold_and_menetluse_kulg_is_its_sibling(page, base_url):
+    """The rail is a sibling of the history, never a block inside it
+    (docs/adr/0092 §2, amended) — and since docs/adr/0140 §7 the history's head
+    is a heading, not a control: there is nothing to fold the section with."""
     sign_in(page, base_url, SANDRA)
     _matter_with_instrument(page, base_url, "Seadus", stage="Kooskõlastusringil")
 
     expect(rail(page)).to_be_visible()
     # The structural fact, in the browser's own tree rather than in the markup.
     expect(page.locator("#ajajoon .lprail")).to_have_count(0)
+    expect(page.locator("#ajajoon > summary")).to_have_count(0)
 
-    page.locator("#ajajoon > summary").click()
-    expect(page.locator("#ajajoon")).not_to_have_attribute("open", "")
-    expect(history(page)).not_to_be_visible()
-    expect(rail(page)).to_be_visible()
+    page.locator("#ajajoon .accordion__head").click()
+    expect(history(page)).to_be_visible()
     expect(rail(page)).to_contain_text("Menetluse kulg")
 
 
@@ -242,7 +240,7 @@ def test_the_two_sections_are_headings_of_the_same_level(page, base_url):
     sign_in(page, base_url, SANDRA)
     _matter_with_instrument(page, base_url, "Seadus", stage="Kooskõlastusringil")
 
-    expect(page.get_by_role("heading", name="Teema käik", level=2)).to_have_count(1)
+    expect(page.get_by_role("heading", name="Tegevused", level=2)).to_have_count(1)
     expect(page.get_by_role("heading", level=2).filter(has_text="Menetluse kulg")).to_have_count(1)
 
 
@@ -621,21 +619,16 @@ def test_a_matter_with_nothing_to_place_draws_no_rail(page, base_url):
 def test_the_history_and_the_rail_are_reachable_by_keyboard(page, base_url):
     """Every control in the section is in the tab order and operable.
 
-    The section itself is a `<details>` whose summary is focusable, and the two
-    links the section adds — the technical log and a captured file — are ordinary
-    anchors. Asserted by focusing them rather than by reading the markup.
+    The section's head is a heading since docs/adr/0140 §7, so it is not in the
+    tab order; the links the section adds — the technical log and a captured
+    file — are ordinary anchors. Asserted by focusing them rather than by
+    reading the markup.
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
     _record_development(page, title="Eelnõu jõudis Riigikokku", occurred_on=_past(3))
 
-    summary = page.locator("#ajajoon > summary")
-    summary.focus()
-    expect(summary).to_be_focused()
-    page.keyboard.press("Enter")
-    expect(page.locator("#ajajoon")).not_to_have_attribute("open", "")
-    page.keyboard.press("Enter")
-    expect(page.locator("#ajajoon")).to_have_attribute("open", "")
+    expect(page.locator("#ajajoon > summary")).to_have_count(0)
 
     log = page.get_by_role("link", name=re.compile("Kõik muudatused"))
     log.focus()

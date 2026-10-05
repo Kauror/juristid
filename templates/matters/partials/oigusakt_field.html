@@ -1,3 +1,4 @@
+{% load form_labels %}
 {% comment %}
   `Õigusakt` — what kind of instrument the file is about, on both pages that
   ask it.
@@ -27,7 +28,7 @@
 {% endcomment %}
 <fieldset class="field">
   <legend class="field__label">
-    {{ form.legal_instruments.label }}
+    {% field_label form.legal_instruments %}
     <span class="field__count" data-chipcount-for="legal_instruments"></span>
   </legend>
   <div class="chiprow">
@@ -48,7 +49,7 @@
   <div class="createform__other" id="oigusakt-muu-tekst"
        {% if not form.other_instrument_open %}hidden{% endif %}>
     <label class="field">
-      <span class="field__label">{{ form.legal_instrument_other.label }}</span>
+      <span class="field__label">{% field_label form.legal_instrument_other %}</span>
       {{ form.legal_instrument_other }}
       {% if form.legal_instrument_other.errors %}
         <span class="field__error" id="{{ form.legal_instrument_other.auto_id }}_error">{{ form.legal_instrument_other.errors|first }}</span>

@@ -211,12 +211,13 @@ def test_three_opinions_draw_one_run_and_the_page_reads_quietly(page, base_url):
     open_kaik_row(note)
     expect(note.get_by_role("button", name=re.compile("Muuda"))).to_be_visible()
 
-    # Neither heading takes room, and both are still level-two headings.
-    for name in ("Menetluse kulg", "Teema käik"):
-        heading = page.get_by_role("heading", name=name, level=2)
-        expect(heading).to_have_count(1)
-        box = heading.bounding_box()
-        assert box is not None and box["width"] <= 1 and box["height"] <= 1, (name, box)
+    # `Menetluse kulg`'s heading takes no room and is still a level-two heading;
+    # `Tegevused` is a visible one, with its count beside it (docs/adr/0140 §7).
+    heading = page.get_by_role("heading", name="Menetluse kulg", level=2)
+    expect(heading).to_have_count(1)
+    box = heading.bounding_box()
+    assert box is not None and box["width"] <= 1 and box["height"] <= 1, box
+    expect(page.get_by_role("heading", name="Tegevused", level=2)).to_be_visible()
     expect(page.locator("#ajajoon .uxtl__count")).to_be_visible()
 
     for width in (768, 375):

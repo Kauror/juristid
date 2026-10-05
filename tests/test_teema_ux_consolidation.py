@@ -310,7 +310,7 @@ def test_a_restricted_matter_keeps_its_visibility_and_its_filter(signed_in, read
 # ---------------------------------------------------------------------------
 
 #: The four, and the whole of the four.
-FAMILIES = ["+ Märge", "+ Kaasamine", "+ Arvamus / tagasiside", "+ Ülevaade / uudis"]
+FAMILIES = ["+ Lisa", "+ Kaasamine", "+ Arvamus / tagasiside", "+ Ülevaade / uudis"]
 
 #: Every chip that used to be a peer of those and is not one now.
 RETIRED_CHIPS = [

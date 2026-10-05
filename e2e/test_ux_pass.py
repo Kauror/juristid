@@ -250,18 +250,16 @@ def test_the_closed_timeline_carries_more_than_a_counter(page, base_url):
     sign_in(page, base_url, SANDRA)
     open_matter_by_clicking(page, base_url, OPEN_TITLE)
 
-    summary = page.locator(".accordion--timeline > summary")
-    # `AJAJOON` and `{n} kirjet`, and nothing else. The head carried a preview
-    # quote *and* the step currently owed *and* the count — three facts in a
-    # summary line for a section that is open on arrival, one of them a verbatim
-    # repeat of the Järgmiseks row three inches above it (docs/adr/0074 §16).
-    expect(summary).to_contain_text("Teema käik")
-    expect(summary).to_contain_text("kirjet")
-    expect(summary.locator(".uxtl__preview")).to_have_count(0)
-    expect(summary.locator(".uxtl__previewnext")).to_have_count(0)
-    # The head is still the whole trigger: the section closes.
-    summary.click()
-    expect(page.locator(".accordion--timeline")).not_to_have_attribute("open", "")
+    head = page.locator(".accordion--timeline .accordion__head")
+    # `Tegevused` and `{n} kirjet`, and nothing else (docs/adr/0074 §16,
+    # docs/adr/0140 §7) — and a heading, not a trigger: the section does not fold.
+    expect(head).to_contain_text("Tegevused")
+    expect(head).to_contain_text("kirjet")
+    expect(head.locator(".uxtl__preview")).to_have_count(0)
+    expect(head.locator(".uxtl__previewnext")).to_have_count(0)
+    expect(page.locator(".accordion--timeline > summary")).to_have_count(0)
+    head.click()
+    expect(page.locator(".accordion--timeline .accordion__body")).to_be_visible()
 
 
 def test_the_timeline_draws_one_spine(page, base_url):

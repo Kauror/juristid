@@ -1,3 +1,4 @@
+{% load form_labels %}
 {% comment %}
 The `kaasamine` form, in the one place it is written — drawn by the `LISA TEEMALE`
 panel and, when the current `Tööplaan` step is this operation, a second time
@@ -24,31 +25,27 @@ under `PRAEGUNE TEGEVUS` (docs/adr/0133 §6).
           {% endif %}
           <div class="cx-grid">
             <label class="cx-f">
-              <span class="cx-f__lab">Keda kaasati</span>
+              <span class="cx-f__lab">Keda kaasati{% required_mark %}</span>
               {{ form.audience }}
             </label>
             <label class="cx-f cx-f--num">
-              <span class="cx-f__lab">Vastuseid
-                <span class="cx-f__opt">valikuline</span></span>
+              <span class="cx-f__lab">Vastuseid</span>
               {{ form.response_count }}
             </label>
           </div>
           <div class="cx-grid cx-grid--links">
             <label class="cx-f cx-f--date">
-              <span class="cx-f__lab">Kaasamise kuupäev
-                <span class="cx-f__opt">valikuline</span></span>
+              <span class="cx-f__lab">Kaasamise kuupäev</span>
               {{ form.occurred_on }}
             </label>
             <label class="cx-f cx-f--date"
                    for="{{ form.feedback_deadline.id_for_label }}">
-              <span class="cx-f__lab">{{ form.feedback_deadline.label }}
-                <span class="cx-f__opt">valikuline</span></span>
+              <span class="cx-f__lab">{% field_label form.feedback_deadline %}</span>
               {{ form.feedback_deadline }}
             </label>
           </div>
           <label class="cx-f" for="{{ form.feedback_received.id_for_label }}">
-            <span class="cx-f__lab">Saadud tagasiside / arvamused
-              <span class="cx-f__opt">valikuline</span></span>
+            <span class="cx-f__lab">Saadud tagasiside / arvamused</span>
             {{ form.feedback_received }}
           </label>
           {% comment %}
@@ -69,8 +66,7 @@ under `PRAEGUNE TEGEVUS` (docs/adr/0133 §6).
             Alchemer link says there is a survey (docs/adr/0127 §2).
           {% endcomment %}
           <label class="cx-f" for="{{ form.website_url.id_for_label }}">
-            <span class="cx-f__lab">{{ form.website_url.label }}
-              <span class="cx-f__opt">valikuline</span></span>
+            <span class="cx-f__lab">{% field_label form.website_url %}</span>
             {{ form.website_url }}
           </label>
           <div class="cx-grid cx-grid--links">
@@ -89,8 +85,7 @@ under `PRAEGUNE TEGEVUS` (docs/adr/0133 §6).
             `Saadud tagasiside`, which is what came back (docs/adr/0127 §2).
           {% endcomment %}
           <label class="cx-f" for="{{ form.engagement_note.id_for_label }}">
-            <span class="cx-f__lab">{{ form.engagement_note.label }}
-              <span class="cx-f__opt">valikuline</span></span>
+            <span class="cx-f__lab">{% field_label form.engagement_note %}</span>
             {{ form.engagement_note }}
           </label>
           {% if form.audience.errors %}

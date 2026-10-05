@@ -3,7 +3,7 @@
 
 **Four choices.** A note, a consultation, an opinion, a publication:
 
-    + Märge   + Kaasamine   + Arvamus / tagasiside   + Ülevaade / uudis
+    + Lisa   + Kaasamine   + Arvamus / tagasiside   + Ülevaade / uudis
 
 and nothing else is a peer of those four (docs/adr/0097 §8). `+ Lõpeta teema`
 stood after them until docs/adr/0131 §11; closing is a `Hetkeseis` now.
@@ -21,7 +21,7 @@ back of the application before it would take it.
 So the row asks what *kind of thing* they are recording, and the distinctions
 that remain are asked second, inside the one they chose:
 
-    + Märge                   Tavaline · Oluline tähtaeg · Jõustumine · Töövõit
+    + Lisa                    Tavaline · Oluline tähtaeg · Jõustumine · Töövõit
     + Kaasamine               (no further question)
     + Arvamus / tagasiside    Meile saadetud · Teiste arvamus · Koja arvamus
     + Ülevaade / uudis        (no further question)
@@ -97,7 +97,7 @@ row of controls that refuse (brief §30, §31).
   {% endcomment %}
   <div class="cx-panels">
     {% comment %}
-      1 — `+ Märge`. Something happened on this file.
+      1 — `+ Lisa` (the `+ Märge` family until docs/adr/0140 §5). Something happened on this file.
 
       The family that absorbed the most: the old `+ Märge`, `+ Menetluse areng`,
       `+ Oluline tähtaeg`, `+ Jõustumine` and `+ Töövõit` are all in here, as one
@@ -106,11 +106,11 @@ row of controls that refuse (brief §30, §31).
     <input class="addpick" type="radio" name="lisa-valik" id="lisa-marge-valik"
            data-addpick aria-controls="lisa-marge"
            {% if open_panel == "lisa-marge" %}checked{% endif %}>
-    <label class="disclosure-chip" for="lisa-marge-valik">+ Märge</label>
+    <label class="disclosure-chip" for="lisa-marge-valik">+ Lisa</label>
     <div class="cx-panel" id="lisa-marge" data-addpanel>
       <div class="cx-panel__body">
         {% comment %}
-          `Märke liik`, and it is **not** a second toolbar.
+          `Lisa liik` (`Märke liik` until docs/adr/0140 §5), and it is **not** a second toolbar.
 
           These four appear only after somebody has chosen `+ Märge`, which is
           the whole point of the reorganisation: the ordinary case answers
@@ -123,7 +123,7 @@ row of controls that refuse (brief §30, §31).
           object; they should have to know that they are recording a win
           (docs/adr/0097 §8.1).
         {% endcomment %}
-        <span class="cx-f__lab cx-sublab">Märke liik</span>
+        <span class="cx-f__lab cx-sublab">Lisa liik</span>
         <div class="cx-panels cx-panels--sub">
           {% comment %}
             **Which chip is checked is decided in Python, not here.**

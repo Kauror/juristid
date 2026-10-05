@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load form_labels %}
 {% load evidence_uploads %}
 {% block title %}Uus teema · {{ application_name }}{% endblock %}
 
@@ -140,7 +141,7 @@
     {# 1 — Pealkiri. The only field above the first rule. #}
     <div class="createform__row createform__row--first">
       <label class="field">
-        <span class="field__label">{{ form.title.label }}</span>
+        <span class="field__label">{% field_label form.title %}</span>
         {{ form.title }}
         {% comment %}
           "Pealkiri on ainus kohustuslik väli" used to sit under the page title.
@@ -179,7 +180,7 @@
     <div class="createform__row createform__pair createform__pair--sender">
       <fieldset class="field senderpick">
         <legend class="field__label">
-          {{ form.source_organisations.label }}
+          {% field_label form.source_organisations %}
           <span class="field__count" data-chipcount-for="source_organisations"></span>
         </legend>
         {% include "matters/partials/organisation_picker.html" with picker_id="saatja" legend=form.source_organisations.label chips=form.sender_chip_choices tail=form.sender_tail_choices typed_field=form.sender_name add_label="Lisa uus saatja" clearable=True sender_row=True typed_hook="sender" quiet=True %}
@@ -191,7 +192,7 @@
       </fieldset>
 
       <fieldset class="field">
-        <legend class="field__label">{{ form.owner.label }}</legend>
+        <legend class="field__label">{% field_label form.owner %}</legend>
         <div class="chiprow">
           {% for choice in form.owner %}
             <label class="chip">
@@ -227,7 +228,7 @@
     {% endcomment %}
     <div class="createform__row createform__trio createform__trio--dates">
       <label class="field" id="arvamuse-tahtaeg">
-        <span class="field__label">{{ form.response_deadline.label }}</span>
+        <span class="field__label">{% field_label form.response_deadline %}</span>
         {{ form.response_deadline }}
         {% if form.response_deadline.errors %}
           <span class="field__error" id="{{ form.response_deadline.auto_id }}_error">{{ form.response_deadline.errors|first }}</span>
@@ -237,7 +238,7 @@
       {% include "matters/partials/procedural_link_create.html" %}
 
       <label class="field">
-        <span class="field__label">{{ form.received_date.label }}</span>
+        <span class="field__label">{% field_label form.received_date %}</span>
         {{ form.received_date }}
         {% if form.received_date.errors %}
           <span class="field__error" id="{{ form.received_date.auto_id }}_error">{{ form.received_date.errors|first }}</span>
@@ -313,7 +314,7 @@
     {% endcomment %}
     <div class="createform__row">
       <label class="field">
-        <span class="field__label">{{ form.notes.label }}</span>
+        <span class="field__label">{% field_label form.notes %}</span>
         {{ form.notes }}
         {% if form.notes.errors %}<span class="field__error" id="{{ form.notes.auto_id }}_error">{{ form.notes.errors|first }}</span>{% endif %}
       </label>

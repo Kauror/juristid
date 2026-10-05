@@ -1,3 +1,4 @@
+{% load form_labels %}
       {% if open_choice == "marge-joustumine" and workspace_error %}
         <p class="formerror" role="alert">{{ workspace_error }}</p>
       {% endif %}
@@ -7,7 +8,7 @@
             hx-encoding="multipart/form-data">
         {% csrf_token %}
         <label class="cx-f">
-          <span class="cx-f__lab">Mis jõustub</span>
+          <span class="cx-f__lab">Mis jõustub{% required_mark %}</span>
           {{ effective_date_form.effective_title }}
         </label>
         {% if effective_date_form.effective_title.errors %}

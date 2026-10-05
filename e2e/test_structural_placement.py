@@ -196,7 +196,7 @@ def test_the_launcher_is_four_capture_chips_in_one_group(page, base_url: str):
     _matter(page, base_url)
 
     row = page.locator("#lisa-teemale .cx-panels").first
-    for chip in ("+ Märge", "+ Kaasamine", "+ Arvamus / tagasiside", "+ Ülevaade / uudis"):
+    for chip in ("+ Lisa", "+ Kaasamine", "+ Arvamus / tagasiside", "+ Ülevaade / uudis"):
         expect(
             row.locator("label.disclosure-chip", has_text=re.compile(rf"^{re.escape(chip)}$"))
         ).to_have_count(1)

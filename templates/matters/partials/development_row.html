@@ -1,3 +1,4 @@
+{% load form_labels %}
 {% comment %}
 One `Menetluse areng`'s chronology row, and the way to correct it.
 
@@ -65,7 +66,7 @@ page from before the closure (docs/adr/0076 §2, docs/adr/0084 §8).
       {% endif %}
 
       <label class="cx-f" for="{{ development_edit_form.title.id_for_label }}">
-        <span class="cx-f__lab">{{ development_edit_form.title.label }}</span>
+        <span class="cx-f__lab">{% field_label development_edit_form.title %}</span>
         {{ development_edit_form.title }}
       </label>
       {% if development_edit_form.title.errors %}
@@ -99,8 +100,7 @@ page from before the closure (docs/adr/0076 §2, docs/adr/0084 §8).
         record that refuses to save.
       {% endcomment %}
       <label class="cx-f" for="{{ development_edit_form.note.id_for_label }}">
-        <span class="cx-f__lab">{{ development_edit_form.note.label }}
-          <span class="cx-f__opt">valikuline</span></span>
+        <span class="cx-f__lab">{% field_label development_edit_form.note %}</span>
         {{ development_edit_form.note }}
       </label>
       {% if development_edit_form.note.errors %}
@@ -123,8 +123,7 @@ page from before the closure (docs/adr/0076 §2, docs/adr/0084 §8).
           (§7 of the brief, app/matters/phase_history.py).
         {% endcomment %}
         <label class="cx-f" for="{{ development_edit_form.process_phase.id_for_label }}">
-          <span class="cx-f__lab">{{ development_edit_form.process_phase.label }}
-            <span class="cx-f__opt">valikuline</span></span>
+          <span class="cx-f__lab">{% field_label development_edit_form.process_phase %}</span>
           {{ development_edit_form.process_phase }}
         </label>
         {% if development_edit_form.process_phase.errors %}

@@ -312,7 +312,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # step, which is what "a Matter opens on what to do next" actually means
     # (02-EKRAANID §C).
     timeline = page.locator("#ajajoon")
-    expect(timeline).to_have_attribute("open", "")
+    expect(timeline.locator(".accordion__body")).to_be_visible()
     assert timeline.bounding_box()["y"] > zone.bounding_box()["y"]
     # One professional update, one line — and two updates, two lines. The note
     # and the next step were one composer save until docs/adr/0075; they are two

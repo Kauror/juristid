@@ -1,3 +1,4 @@
+{% load form_labels %}
 {% comment %}
 A plan step's two questions: what it is, and which operation does it.
 
@@ -11,14 +12,14 @@ is what is stored.
 {% endcomment %}
 <div data-plan-step-editor data-original-title="{{ form.initial.title|default:'' }}">
   <label class="cx-f" for="{{ form.title.id_for_label }}">
-    <span class="cx-f__lab">{{ form.title.label }}</span>
+    <span class="cx-f__lab">{% field_label form.title %}</span>
     {{ form.title }}
   </label>
   {% if form.title.errors %}
     <p class="field__error" id="{{ form.title.auto_id }}_error">{{ form.title.errors|first }}</p>
   {% endif %}
   <fieldset class="cx-f workplan__operation">
-    <legend class="cx-f__lab">{{ form.operation.label }}</legend>
+    <legend class="cx-f__lab">{% field_label form.operation %}</legend>
     <div class="chiprow">
       {% for radio in form.operation %}
         <label class="chip" for="{{ radio.id_for_label }}">

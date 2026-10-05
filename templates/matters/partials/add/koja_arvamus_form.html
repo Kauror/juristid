@@ -1,3 +1,4 @@
+{% load form_labels %}
 {% comment %}
 The `koja-arvamus` form, in the one place it is written — drawn by the `LISA TEEMALE`
 panel and, when the current `Tööplaan` step is this operation, a second time
@@ -36,12 +37,12 @@ under `PRAEGUNE TEGEVUS` (docs/adr/0133 §6).
         {% endcomment %}
         <div class="cx-grid cx-grid--links">
           <div class="cx-f">
-            <span class="cx-f__lab">{{ form.upload.label }}</span>
+            <span class="cx-f__lab">{% field_label form.upload %}</span>
             {% include "matters/partials/add_files.html" with field=form.upload drop_text="Lohista fail siia või " %}
           </div>
           <label class="cx-f cx-f--date"
                  for="{{ form.sent_on.id_for_label }}">
-            <span class="cx-f__lab">{{ form.sent_on.label }}</span>
+            <span class="cx-f__lab">{% field_label form.sent_on %}</span>
             {{ form.sent_on }}
           </label>
         </div>
@@ -66,8 +67,7 @@ under `PRAEGUNE TEGEVUS` (docs/adr/0133 §6).
           wonders which file goes where.
         {% endcomment %}
         <div class="cx-f">
-          <span class="cx-f__lab">{{ form.working_files.label }}
-            <span class="cx-f__opt">valikuline</span></span>
+          <span class="cx-f__lab">{% field_label form.working_files %}</span>
           {% include "matters/partials/add_files.html" with field=form.working_files %}
           <p class="uxtl__formhint">Muudetav fail, millest arvamus koostati (nt DOCX). Ei ole saadetud fail.</p>
         </div>
@@ -129,8 +129,7 @@ under `PRAEGUNE TEGEVUS` (docs/adr/0133 §6).
           from the first characters of this box.
         {% endcomment %}
         <label class="cx-f" for="{{ form.summary.id_for_label }}">
-          <span class="cx-f__lab">{{ form.summary.label }}
-            <span class="cx-f__opt">valikuline</span></span>
+          <span class="cx-f__lab">{% field_label form.summary %}</span>
           {{ form.summary }}
         </label>
         {% if form.summary.errors %}
@@ -164,8 +163,7 @@ under `PRAEGUNE TEGEVUS` (docs/adr/0133 §6).
         {% endcomment %}
         <div class="cx-grid">
           <label class="cx-f" for="{{ form.stage.id_for_label }}">
-            <span class="cx-f__lab">{{ form.stage.label }}
-              <span class="cx-f__opt">valikuline</span></span>
+            <span class="cx-f__lab">{% field_label form.stage %}</span>
             {{ form.stage }}
             {% if form.stage.errors %}
               <p class="field__error" id="{{ form.stage.auto_id }}_error">
