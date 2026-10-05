@@ -8,6 +8,21 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-10-05
+basis = "deployment"
+# Teema kasutajaliidese puhastus, ADR 0140 (#395). Migratsioone ei ole,
+# otsinguindeksit ei ehitata uuesti. Kui see väljalase ei jõua tootmisse 05.10
+# (Tallinna aja järgi), liiguvad need read väljalaske päeva kirjesse.
+changes = [
+  "«✓ Tehtud» jääb praeguse tegevuse reale paigale: esimene vajutus avab lõpetamise vormi selle all, teine sulgeb selle. «Lisa märge» on realt eemaldatud — samal ajal juhtunu lisad «+ Lisa» kaudu.",
+  "Tegevuse lõpetamisel kirjutad järgmise tegevuse otse lahtrisse «Järgmine tegevus»; tühjaks jättes uut tegevust ei teki. Samas salvestuses saad valida ka «Uus hetkeseis» (vaikimisi «Jätan muutmata»).",
+  "«Millal?» kõrval on kiirvalikud «+1 päev», «+1 nädal» ja «+1 kuu»; kuupäeva saab pärast ka käsitsi muuta.",
+  "«Lisa teemale» all on «+ Märge» nüüd «+ Lisa» ja selle sees «Märke liik» nüüd «Lisa liik»; valikud on samad.",
+  "Kõigis vormides on kohustuslikud väljad märgitud väikese punase tärniga; sõna «valikuline» enam ei näidata.",
+  "Teema käigu pealkiri on nüüd «Tegevused» koos kirjete arvuga ning seda ei saa enam tervikuna kokku voltida; hetkeseisu perioodid avanevad ja sulguvad endiselt eraldi. Ajavahemiku ja liigi filter on eemaldatud.",
+]
+
+[[day]]
 date = 2026-10-04
 basis = "deployment"
 # Koodi tervisekontrolli väljalase: RULE-01 (#374), RULE-02 (#375, RULE-08 sees),
