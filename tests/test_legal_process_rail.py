@@ -593,8 +593,9 @@ def test_the_rail_renders_on_the_matter_page_without_its_state_words(signed_in, 
     # And what they said is still reachable without seeing the colours.
     assert 'aria-current="step"' in rail
     assert "Tulevikus" in rail
-    # The history section is still below it, saying what actually happened.
-    assert "Teema käik" in body
+    # The history section is still below it, saying what actually happened —
+    # `Tegevused` since docs/adr/0140 §7.
+    assert ">Tegevused</h2>" in body
 
 
 def test_the_stage_is_stated_in_the_header_and_not_on_the_rail(signed_in, specialist):

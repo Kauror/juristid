@@ -228,16 +228,18 @@ def test_an_arvamus_valja_row_carries_muuda_on_the_headline_row(
 # ---------------------------------------------------------------------------
 
 
-def test_the_panel_marks_every_control_optional(signed_in, specialist, stage):
-    """Read off the panel, because that is where somebody decides what to answer."""
+def test_the_panel_marks_no_control_required(signed_in, specialist, stage):
+    """Read off the panel, because that is where somebody decides what to answer.
+
+    Every control here is optional, and since docs/adr/0140 §6 an optional
+    field carries no marker at all: no «valikuline», and no required `*`."""
     body = signed_in.get(_teema(factories.MatterFactory(owner=specialist))).content.decode()
     zone = body[body.index('id="lisa-teemale"') :]
     panel = zone[zone.index('id="marge-tavaline"') : zone.index('id="marge-tahtaeg"')]
 
     assert 'cx-f__lab">Tegevus' in panel
-    # The sentence box now says so, which is the visible half of §4.
-    head = panel[panel.index('cx-f__lab">Tegevus') :]
-    assert "valikuline" in head[:200]
+    assert "valikuline" not in panel
+    assert "req-mark" not in panel
 
 
 def test_a_marge_saves_with_only_a_comment(signed_in, specialist, stage):

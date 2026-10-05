@@ -468,9 +468,11 @@ def test_the_ajajoon_head_is_the_label_and_the_count(client, specialist) -> None
 
     client.force_login(specialist)
     body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
-    summary = " ".join(body.split("accordion--timeline")[1].split("</summary>")[0].split())
+    summary = " ".join(
+        body.split("accordion--timeline")[1].split('class="accordion__body"')[0].split()
+    )
 
-    assert "Teema käik" in summary, "the section's own heading since docs/adr/0092"
+    assert "Tegevused" in summary, "the section's own heading since docs/adr/0140 §7"
     # The count, whichever grammatical number this Matter's own row total takes.
     # It is one row here since docs/adr/0092 §8 — the note — because the step
     # this test also sets is open and reads above the section rather than in it.
@@ -776,13 +778,13 @@ def test_the_l_shortcut_has_an_obvious_click_equivalent() -> None:
     control.
     """
     # What `L` opens, and its click equivalent on the page as it renders now:
-    # `Mida tegid?` on the current step, else the `+ Märge` chip. (This read the
+    # `Mida tegid?` on the current step, else the `+ Lisa` chip. (This read the
     # never-rendered `composer.html` until that template was deleted, ENG-106.)
     add = (TEMPLATE_DIR / "matters" / "partials" / "add_to_matter.html").read_text(encoding="utf-8")
     current = (TEMPLATE_DIR / "matters" / "partials" / "current_action.html").read_text(
         encoding="utf-8"
     )
-    assert 'for="lisa-marge-valik">+ Märge</label>' in add, "the chip is the click equivalent"
+    assert 'for="lisa-marge-valik">+ Lisa</label>' in add, "the chip is the click equivalent"
     assert 'aria-controls="lisa-marge"' in add
     assert 'id="praegune-tegevus"' in current
     for template in (add, current):
