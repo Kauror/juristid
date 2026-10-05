@@ -149,6 +149,7 @@ consequences and reversibility.
 | [0137](0137-a-file-is-never-less-restricted-than-the-record-it-is-evidence-for.md) | A file is never less restricted than the record it is evidence for | Accepted; extends 0129 §4 to every record-attached capture; no migrations, no backfill |
 | [0138](0138-a-completion-record-is-never-less-restricted-than-the-action-it-completes.md) | A completion record is never less restricted than the action it completes | Accepted; `PRAEGUNE TEGEVUS`'s `Entry` copies its action's restriction; sibling of 0137; no migrations, no backfill |
 | [0139](0139-a-replacement-of-the-same-action-keeps-the-actions-restriction.md) | A replacement of the same action keeps the action's restriction | Accepted; `Muuda` carries the superseded step's restriction (`carry_visibility_override`); new work does not; no migrations, no backfill |
+| [0140](0140-teema-ui-cleanup-tehtud-toggle-lisa-required-marker-tegevused.md) | Teema UI cleanup: a `✓ Tehtud` toggle, a simpler completion, `+ Lisa`, one required-field rule, `Tegevused` | Accepted; owner's UI round; `complete_current_action` gains `stage`, loses `next_step_id`; `{% field_label %}` marks required fields; the Tegevused filter is removed; no migrations |
 
 Naming: `NNNN-short-decision-title.md`.
 
