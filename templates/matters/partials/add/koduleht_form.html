@@ -1,27 +1,15 @@
 {% load form_labels %}
 {% comment %}
 The `koduleht` form, in the one place it is written — drawn by the `LISA TEEMALE`
-panel and, when the current `Tööplaan` step is this operation, a second time
-under `PRAEGUNE TEGEVUS` (docs/adr/0133 §6).
+panel. Under `PRAEGUNE TEGEVUS` it was drawn a second time for the current
+`Tööplaan` step until docs/adr/0141 retired the plan.
 
-    form          the bound or unbound form instance; the step's instance has
-                  its own ids (`drawn_under_the_current_step`)
-    plan_launch   true under the current step: posts the step and its action
+    form          the bound or unbound form instance
 {% endcomment %}
         <form class="addform" data-addform
               hx-post="{% url 'matters:add_website_overview' pk=matter.pk %}"
               hx-target="#teema-vaade" hx-swap="outerHTML">
           {% csrf_token %}
-          {% if plan_launch %}
-            {% comment %}
-              Drawn under the current `Tööplaan` step: the step and its open
-              action ride with the save, and they are the whole relationship —
-              the use case checks both under the Matter's lock and finishes the
-              step with the record (docs/adr/0133 §6).
-            {% endcomment %}
-            <input type="hidden" name="plan_action" value="{{ current_action.pk }}">
-            <input type="hidden" name="plan_step" value="{{ work_plan.current.pk }}">
-          {% endif %}
           {% comment %}
             The day and the address, and nothing else on the panel.
 
@@ -77,9 +65,6 @@ under `PRAEGUNE TEGEVUS` (docs/adr/0133 §6).
           {% if form.url.errors %}
             <p class="field__error" id="{{ form.url.auto_id }}_error">
               {{ form.url.errors|first }}</p>
-          {% endif %}
-          {% if not plan_launch %}
-            {% include "matters/partials/plan_fulfil_option.html" with steps=fulfillable_steps.WEBSITE_OVERVIEW option_id="id_koduleht_taidab_sammu" %}
           {% endif %}
           <div class="addform__actions">
             <button class="button button--primary" type="submit">Lisa ülevaade / uudis</button>

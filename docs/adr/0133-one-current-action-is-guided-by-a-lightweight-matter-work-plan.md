@@ -368,3 +368,12 @@ Statistika, which read open actions exactly as before; the search index.
 Reverse `workflow/0011` and `audit/0032` to drop the column, the table and the
 choices — losing only plan data. Restoring `establish_opinion_preparation_action`
 in `matter_create` restores the old first step for new Matters.
+
+## Amendment, 2026-10-06 — the visible plan is retired (docs/adr/0141)
+
+`Tööplaan` is no longer drawn or administered: the section, its editor, the
+typed launch under `PRAEGUNE TEGEVUS` and the plan-step selectors are gone.
+The seeded sequence stays in the background behind one
+`Soovitatud järgmisena` line, which can be started (`Alusta`, §4 unchanged)
+or dismissed (`×`, stored as `SKIPPED`); `Muuda` still carries the step and
+completion still completes it. No row is rewritten.

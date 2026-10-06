@@ -2597,38 +2597,31 @@ def test_menetluse_kulg_with_several_opinions(page, base_url):
 
 
 @pytest.mark.writes_last
-def test_the_work_plan_on_a_teema_filed_today(page, base_url):
-    """`TÖÖPLAAN` and the work centre above it (docs/adr/0133).
+def test_the_done_form_on_a_teema_filed_today(page, base_url):
+    """`PRAEGUNE TEGEVUS` with `✓ Tehtud` open (docs/adr/0140, docs/adr/0141).
 
-    Three claims a baseline holds and an assertion does not:
+    **`✓ Tehtud` opens one compact form** — `Mida tegid?`, the files,
+    `Uus hetkeseis`, `Järgmine tegevus` and `Millal?` with its quick days — and
+    the chip stays on the row above it. A claim a baseline holds and an
+    assertion does not.
 
-    * **faint is quieter, not disabled** — five suggestions at the page's
-      secondary text colour, each with its hollow marker and its printed
-      `Soovitus`, beside the controls that act on them;
-    * **the current step leads** — once started, its row is the one in the body
-      colour, and the finished ones carry their tick;
-    * **`✓ Tehtud` opens one compact form** — `Mida tegid?`, the files,
-      `Uus hetkeseis`, `Järgmine tegevus` and `Millal?` with its quick days
-      (docs/adr/0140), and the chip stays on the row above it.
-
-    A Teema of its own, filed through `Uus teema` so it carries the standard
-    plan, and run last because it writes. Clipped to the two sections, neither
-    of which renders a clock value: the step is started with no day.
+    A Teema of its own, filed through `Uus teema`, its first step written
+    through `+ Määra järgmine tegevus` with no day, and run last because it
+    writes. Clipped to the section, which then renders no clock value. Until
+    docs/adr/0141 the step was started from the `Tööplaan`, whose two
+    baselines went with it.
     """
     import re
 
     signed_in(page, base_url, "/teemad/uus/")
-    page.fill("#id_title", "Tööplaani visuaalne teema")
+    page.fill("#id_title", "Tehtud-vormi visuaalne teema")
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     page.wait_for_load_state("networkidle")
-    _at_rest(page)
-    compare("tooplaan-soovitused", capture(page, "tooplaan-soovitused", clip_to="#tooplaan"))
-
-    page.get_by_role("button", name="Alusta: Tutvu materjaliga").click()
+    page.locator("#lisa-jargmine > summary").click()
+    page.locator("#lisa-jargmine [name='text']").fill("Tutvu materjaliga")
+    page.locator("#lisa-jargmine button[type=submit]").first.click()
     page.wait_for_load_state("networkidle")
     page.locator('label[for="tehtud-valik"]').click()
-    page.locator("#muuda-plaani > summary").click()
     _at_rest(page)
-    compare("tooplaan-tehtud", capture(page, "tooplaan-tehtud", clip_to="#praegune-tegevus"))
-    compare("tooplaan-muuda", capture(page, "tooplaan-muuda", clip_to="#tooplaan"))
+    compare("praegune-tehtud", capture(page, "praegune-tehtud", clip_to="#praegune-tegevus"))

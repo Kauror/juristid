@@ -154,3 +154,10 @@ not guessed — also zero on production.
 
 * Rewriting existing entries (§5).
 * A restriction control on `PRAEGUNE TEGEVUS` or any other panel.
+
+## Amendment, 2026-10-06 — `Tööplaan` retired from view (docs/adr/0141)
+
+The rows above about a record saved «from the current plan step» describe a
+launch that no longer exists; those records now finish nothing. The rule for
+the completion `Entry` is unchanged, including for an action started from
+`Soovitatud järgmisena`.

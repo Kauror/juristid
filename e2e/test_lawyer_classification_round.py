@@ -110,7 +110,7 @@ def file_it(page, title: str) -> None:
     """Save the form with a first step, because every Teema this suite leaves
     behind is somebody else's fixture (`e2e/test_unified_organisation_picker.py`).
 
-    The first step is started from the new Teema's `Tööplaan`
+    The first step is written on the new Teema
     (`start_first_step`): `Arvamuse tähtaeg` records the obligation only since
     docs/adr/0133 §8. The date is still typed — a fixed future one, independent
     of the day the suite runs.

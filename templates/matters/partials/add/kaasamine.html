@@ -56,7 +56,7 @@
               {% if open_choice == "kaasamine-alusta" and workspace_error %}
                 <p class="formerror" role="alert">{{ workspace_error }}</p>
               {% endif %}
-              {% include "matters/partials/add/kaasamine_form.html" with form=add_engagement_form plan_launch=False %}
+              {% include "matters/partials/add/kaasamine_form.html" with form=add_engagement_form %}
             </div>
           </div>
 

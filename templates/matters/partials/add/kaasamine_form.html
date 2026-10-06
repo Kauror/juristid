@@ -1,32 +1,20 @@
 {% load form_labels %}
 {% comment %}
 The `kaasamine` form, in the one place it is written — drawn by the `LISA TEEMALE`
-panel and, when the current `Tööplaan` step is this operation, a second time
-under `PRAEGUNE TEGEVUS` (docs/adr/0133 §6).
+panel. Under `PRAEGUNE TEGEVUS` it was drawn a second time for the current
+`Tööplaan` step until docs/adr/0141 retired the plan.
 
 **`Alusta kaasamist` — the start of a round only** (docs/adr/0142). What came
 back — the replies, their files, how many answered — is `Lisa tagasiside`
 beside it, and the count is still corrected through `Muuda` on the round.
 
-    form          the bound or unbound form instance; the step's instance has
-                  its own ids (`drawn_under_the_current_step`)
-    plan_launch   true under the current step: posts the step and its action
+    form          the bound or unbound form instance
 {% endcomment %}
         <form class="addform" data-addform
               hx-post="{% url 'matters:add_engagement_compact' pk=matter.pk %}"
               hx-target="#teema-vaade" hx-swap="outerHTML"
               hx-encoding="multipart/form-data">
           {% csrf_token %}
-          {% if plan_launch %}
-            {% comment %}
-              Drawn under the current `Tööplaan` step: the step and its open
-              action ride with the save, and they are the whole relationship —
-              the use case checks both under the Matter's lock and finishes the
-              step with the record (docs/adr/0133 §6).
-            {% endcomment %}
-            <input type="hidden" name="plan_action" value="{{ current_action.pk }}">
-            <input type="hidden" name="plan_step" value="{{ work_plan.current.pk }}">
-          {% endif %}
           <label class="cx-f">
             <span class="cx-f__lab">Keda kaasati{% required_mark %}</span>
             {{ form.audience }}
@@ -105,9 +93,6 @@ beside it, and the count is still corrected through `Muuda` on the round.
           {% if form.alchemer_url.errors %}
             <p class="field__error" id="{{ form.alchemer_url.auto_id }}_error">
               {{ form.alchemer_url.errors|first }}</p>
-          {% endif %}
-          {% if not plan_launch %}
-            {% include "matters/partials/plan_fulfil_option.html" with steps=fulfillable_steps.ENGAGEMENT option_id="id_kaasamine_taidab_sammu" %}
           {% endif %}
           <div class="addform__actions">
             <button class="button button--primary" type="submit">Salvesta</button>

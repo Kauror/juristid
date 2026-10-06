@@ -47,13 +47,15 @@ it. `Mida tegid?` is behind an explicit `✓ Tehtud`, because the act is
 finishing the step and the note is what it says about it — still required,
 still the one form, still named by `action_id`. Since docs/adr/0140 it carries
 `Uus hetkeseis` and `Järgmine tegevus` — where the file now stands and what
-comes next, in the person's own words, both optional and both in the same save;
-no plan step is offered there. `✓ Tehtud` and `Muuda` are the whole row, and
-something that happened while the step stays open is `+ Lisa` in
-`LISA TEEMALE`. And when the current step is a typed `Tööplaan` step — an overview,
-a consultation, the opinion — the canonical form that does its work is drawn
-here too, and saving it finishes the step. With no step open, the plan's next
-suggestion is offered with `Alusta`, and nothing is started for anybody.
+comes next, in the person's own words, both optional and both in the same save.
+`✓ Tehtud` and `Muuda` are the whole row, and something that happened while the
+step stays open is `+ Lisa` in `LISA TEEMALE`.
+
+**No visible `Tööplaan`** (docs/adr/0141). The plan below this zone, its
+editor and the typed launch beside the step are gone. What stays is one
+suggestion while nothing is current — `Soovitatud järgmisena`, from the Matter's
+background sequence — which can be started (`Alusta`) or dismissed (`×`);
+`+ Määra järgmine tegevus` is always the manual alternative.
 {% endcomment %}
 <section class="curact{% if matter.is_open and current_action.is_overdue %} curact--overdue{% endif %}"
          id="praegune-tegevus" tabindex="-1" aria-labelledby="praegune-pealkiri">
@@ -101,37 +103,6 @@ suggestion is offered with `Alusta`, and nothing is started for anybody.
       </span>
 
       {% if can_write %}
-        {% comment %}
-          **The current `Tööplaan` step's own form, when a canonical record does
-          its work** (docs/adr/0133 §6). `Koosta kodulehe ülevaade`, `Kaasa
-          liikmeid` and `Saada Koja arvamus` are finished by publishing the
-          overview, asking the members and registering the send — so the form
-          that records each is drawn here, beside the step it finishes, and
-          posts the step and its action with the save. The same form in
-          `LISA TEEMALE` stays what it was: it finishes nothing it is not told to.
-          First on the line, because for such a step it is the ordinary thing
-          to do; `✓ Tehtud` beside it stays for work done some other way.
-        {% endcomment %}
-        {% if work_plan.typed_operation %}
-          <details class="cx-panel curact__edit curact__typed" id="samm-toiming" data-addpanel
-                   data-draft-host data-draft-state="{{ current_action.pk }}"
-                   {% if open_panel == "samm-toiming" %}open{% endif %}>
-            <summary class="disclosure-chip">{{ work_plan.typed_action_label }}</summary>
-            <div class="cx-panel__body">
-              <p class="curact__typedhint">Salvestamine märgib praeguse tegevuse tehtuks.</p>
-              {% if open_panel == "samm-toiming" and workspace_error %}
-                <p class="formerror" role="alert">{{ workspace_error }}</p>
-              {% endif %}
-              {% if work_plan.typed_operation == "WEBSITE_OVERVIEW" %}
-                {% include "matters/partials/add/koduleht_form.html" with form=plan_website_overview_form plan_launch=True %}
-              {% elif work_plan.typed_operation == "ENGAGEMENT" %}
-                {% include "matters/partials/add/kaasamine_form.html" with form=plan_engagement_form plan_launch=True %}
-              {% elif work_plan.typed_operation == "SUBMISSION" %}
-                {% include "matters/partials/add/koja_arvamus_form.html" with form=plan_koda_opinion_form picker_id="samm-adressaat" plan_launch=True %}
-              {% endif %}
-            </div>
-          </details>
-        {% endif %}
         {% comment %}
           `✓ Tehtud` — the step is done, and this says what was done.
 
@@ -289,21 +260,24 @@ suggestion is offered with `Alusta`, and nothing is started for anybody.
     {% endcomment %}
     {% include "matters/partials/feedback_waits.html" %}
 
-    {% if can_write and work_plan.next_suggestion %}
+    {% if can_write and recommendation %}
       {% comment %}
-        **`Soovitatud järgmisena` — the plan's next step, offered, not started**
-        (docs/adr/0133 §4). With nothing current, the first `Tööplaan` step
-        still ahead is named here with `Alusta`: one deliberate click, opening
-        the step's own words and an optional day. It is not a `NextAction`, not
-        a work item and not late; until somebody starts it, it is guidance.
+        **`Soovitatud järgmisena` — one suggestion, offered, not started**
+        (docs/adr/0141). The first step still ahead in the Matter's background
+        sequence; the sequence itself is never drawn. `Alusta` makes it the
+        current step, with its own words and an optional day. `×` dismisses it
+        for good on this Matter — the exact step shown, at the revision this
+        page was drawn from — and the next one is suggested instead. Until
+        somebody starts it, it is guidance: not a `NextAction`, not a work item
+        and not late. `+ Määra järgmine tegevus` below stays the manual way.
       {% endcomment %}
-      <div class="curact__task curact__suggest">
+      <div class="curact__task curact__suggest" id="soovitus">
         <span class="curact__flag">Soovitatud järgmisena</span>
         {% comment %}
           Its own class, not `.curact__text`: that names the current step
           everywhere, and a suggestion is not one.
         {% endcomment %}
-        <span class="curact__suggesttext">{{ work_plan.next_suggestion.title }}</span>
+        <span class="curact__suggesttext">{{ recommendation.step.title }}</span>
         <details class="cx-panel curact__edit" id="alusta-samm" data-addpanel
                  {% if open_panel == "alusta-samm" %}open{% endif %}>
           <summary class="disclosure-chip">Alusta</summary>
@@ -312,7 +286,7 @@ suggestion is offered with `Alusta`, and nothing is started for anybody.
               <p class="formerror" role="alert">{{ workspace_error }}</p>
             {% endif %}
             <form class="addform" data-addform
-                  hx-post="{% url 'matters:start_plan_step' pk=matter.pk step_id=work_plan.next_suggestion.pk %}"
+                  hx-post="{% url 'matters:start_plan_step' pk=matter.pk step_id=recommendation.step.pk %}"
                   hx-target="#teema-vaade" hx-swap="outerHTML">
               {% csrf_token %}
               <label class="cx-f" for="{{ start_plan_form.text.id_for_label }}">
@@ -332,6 +306,17 @@ suggestion is offered with `Alusta`, and nothing is started for anybody.
             </form>
           </div>
         </details>
+        <form class="curact__dismiss"
+              hx-post="{% url 'matters:dismiss_plan_step' pk=matter.pk step_id=recommendation.step.pk %}"
+              hx-target="#teema-vaade" hx-swap="outerHTML">
+          {% csrf_token %}
+          <input type="hidden" name="revision" value="{{ recommendation.revision }}">
+          <button class="quietbutton" type="submit"
+                  aria-label="Eemalda soovitus" title="Eemalda soovitus">×</button>
+        </form>
+        {% if open_panel == "soovitus" and workspace_error %}
+          <p class="formerror curact__suggesterror" role="alert">{{ workspace_error }}</p>
+        {% endif %}
       </div>
     {% endif %}
 
@@ -366,5 +351,3 @@ suggestion is offered with `Alusta`, and nothing is started for anybody.
   {% endif %}
 
 </section>
-
-{% include "matters/partials/work_plan.html" %}

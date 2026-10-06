@@ -595,9 +595,9 @@ def give_first_step(page, *, days: int = 7) -> None:
 
     Until docs/adr/0133 §8 the one date the form asks for also established the
     canonical `Koostan arvamuse` step, so this was the whole of it. It now
-    records the obligation only, and the new Teema opens with its faint
-    `Tööplaan` and no current step: the caller follows the creation with
-    :func:`start_first_step`, which is what a lawyer does next.
+    records the obligation only, and the new Teema opens with no current step:
+    the caller follows the creation with :func:`start_first_step`, which is
+    what a lawyer does next.
 
     Relative to today rather than a fixed future date: a constant eventually
     becomes a date in the past, and then every Teema this suite files is overdue
@@ -608,20 +608,26 @@ def give_first_step(page, *, days: int = 7) -> None:
     page.fill("#id_response_deadline", f"{when.day}.{when.month}.{when.year}")
 
 
-def start_first_step(page, *, days: int = 7) -> None:
-    """Start a new Teema's first `Tööplaan` step, dated ``days`` from today.
+#: The first step `start_first_step` writes. The words the standard `Tööplaan`
+#: used to suggest, kept so the files that read them still read a real step.
+FIRST_STEP_TEXT = "Tutvu materjaliga"
 
-    The browser twin of what a lawyer does on a fresh Teema since docs/adr/0133:
-    `Soovitatud järgmisena · Tutvu materjaliga` → `Alusta`, with a day. It leaves
-    the Teema with an open step, dated, which is what `give_first_step` used to
-    leave behind through `Koostan arvamuse` — so the department's «järgmise
+
+def start_first_step(page, *, days: int = 7, text: str = FIRST_STEP_TEXT) -> None:
+    """Set a new Teema's first step, dated ``days`` from today.
+
+    The browser twin of what a lawyer does on a fresh Teema: `+ Määra järgmine
+    tegevus`, the sentence and a day. Until docs/adr/0141 it was `Alusta` on the
+    first `Tööplaan` suggestion; the plan is gone and nothing is suggested. It
+    leaves the Teema with an open step, dated, so the department's «järgmise
     tegevuseta» list other files read is no longer than it was.
     """
     zone = page.locator("#praegune-tegevus")
-    zone.locator("#alusta-samm > summary").click()
+    open_next_action_form(page)
+    page.locator("#lisa-jargmine [name='text']").fill(text)
     when = date.today() + timedelta(days=days)
-    zone.locator("#id_alusta_target_date").fill(f"{when.day}.{when.month}.{when.year}")
-    zone.locator("#alusta-samm button[type=submit]").click()
+    page.locator("#id_target_date").fill(f"{when.day}.{when.month}.{when.year}")
+    page.locator("#lisa-jargmine button[type=submit]").first.click()
     wait_for_htmx(page)
     zone.locator("#tehtud").wait_for(state="attached")
 

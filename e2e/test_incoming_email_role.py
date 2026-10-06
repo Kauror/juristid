@@ -43,8 +43,9 @@ def file_a_teema_with(
 ) -> str:
     """Uus teema, the files chosen, «Loo teema», and the Teema it opened.
 
-    ``start=False`` leaves the first `Tööplaan` step unstarted, for a page with
-    scripting off: `Alusta` is a workspace save, and those are HTMX posts.
+    ``start=False`` leaves the Teema with no first step, for a page with
+    scripting off: `+ Määra järgmine tegevus` is a workspace save, and those are
+    HTMX posts.
     """
     page.goto(f"{base_url}/teemad/uus/")
     expect(page.get_by_role("heading", name="Uus teema")).to_be_visible()
@@ -120,7 +121,7 @@ def test_an_email_posted_with_the_form_is_the_original_email_too(
         context.close()
 
     # The Teema leaves the department with an open step like every other file
-    # this suite files; `Alusta` is a workspace save, so a scripted page does it.
+    # this suite files; setting it is a workspace save, so a scripted page does it.
     sign_in(page, base_url, MARTIN)
     page.goto(url)
     start_first_step(page)

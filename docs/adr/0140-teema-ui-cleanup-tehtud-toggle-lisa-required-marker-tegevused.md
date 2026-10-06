@@ -90,3 +90,9 @@ changed, it gained one optional argument and lost one path.
   page's UI.
 * `MatterProceduralLink.label`'s model `help_text` still begins «Valikuline —»;
   it shows only in the Django admin, and changing it would need a migration.
+
+## Amendment, 2026-10-06 — `Tööplaan` retired from view (docs/adr/0141)
+
+§2's «`Alusta` and the plan rows still start a plan step» narrows: the plan
+rows are gone, and `Alusta` is the one beside `Soovitatud järgmisena`.
+Completing a plan-linked step still completes its plan step.

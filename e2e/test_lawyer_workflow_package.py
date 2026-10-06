@@ -82,17 +82,18 @@ def panel(page, panel_id: str):
 # `Saabus` — and the lawyers read them as one question, so it is one box:
 # `response_deadline`, recording the obligation (docs/adr/0094 §5). It
 # established `Koostan arvamuse` too until docs/adr/0133 §8; a new Teema now
-# gets the faint `Tööplaan` instead.
+# gets no step — only `Soovitatud järgmisena` (docs/adr/0141).
 
 
-def test_the_deadline_is_the_obligation_and_the_plan_is_the_path(page, base_url):
-    """One box, one date — the obligation — and the faint plan, with nobody typing.
+def test_the_deadline_is_the_obligation_and_starts_nothing(page, base_url):
+    """One box, one date — the obligation — and a suggestion, with nothing started.
 
     Until docs/adr/0133 §8 this date also established `Koostan arvamuse` as the
     file's first step. A deadline three months away then filled `PRAEGUNE
     TEGEVUS` while every task before it had nowhere to be, so the date is the
-    obligation only: it reads in the header, nothing is current, and the
-    standard `Tööplaan` offers the first real step to start.
+    obligation only: it reads in the header and nothing is current. Since
+    docs/adr/0141 no plan is drawn; one step is suggested, and nothing is
+    started for anybody.
     """
     sign_in(page, base_url, SANDRA)
     page.goto(f"{base_url}/teemad/uus/")
@@ -106,9 +107,9 @@ def test_the_deadline_is_the_obligation_and_the_plan_is_the_path(page, base_url)
 
     current = page.locator("#praegune-tegevus")
     expect(current).not_to_contain_text("Koostan arvamuse")
-    expect(current).to_contain_text("Soovitatud järgmisena")
-    expect(current).to_contain_text("Tutvu materjaliga")
-    expect(page.locator("#tooplaan")).to_contain_text("Saada Koja arvamus")
+    expect(current).to_contain_text("Järgmine samm on määramata")
+    expect(current.locator(".curact__suggesttext")).to_have_text("Tutvu materjaliga")
+    expect(page.locator("#tooplaan")).to_have_count(0)
     expect(page.locator(".metaline").first).to_contain_text(prepare_by)
     start_first_step(page)
 

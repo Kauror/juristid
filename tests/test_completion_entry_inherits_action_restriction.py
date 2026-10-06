@@ -21,7 +21,7 @@ Asserted through the real operation, never by building the rows by hand:
   restricted, and an `Entry` written before an action was restricted is not
   rewritten;
 * **unchanged contracts** — a stale action still refuses the whole save, and a
-  `Tööplaan`-linked action gets the same rule.
+  `Soovitatud järgmisena`-linked action gets the same rule.
 """
 
 from __future__ import annotations
@@ -36,7 +36,6 @@ from app.matters.models import Entry
 from app.matters.timeline import matter_timeline
 from app.matters.workspace import STALE_ACTION_REFUSAL, complete_current_action
 from app.search.services import result_count
-from app.workflow import plan as work_plan
 from app.workflow.enums import ActionStatus
 from app.workflow.models import NextAction
 from app.workflow.services import set_next_action_for_new_work
@@ -257,17 +256,18 @@ def test_a_stale_restricted_action_refuses_the_whole_save(matter, specialist):
 
 
 # ---------------------------------------------------------------------------
-# H. A Tööplaan-linked action gets the same rule
+# H. A suggestion-linked action gets the same rule, and completing it
+#    completes its step (docs/adr/0141)
 # ---------------------------------------------------------------------------
 
 
-def test_a_restricted_plan_step_actions_completion_is_restricted(matter, specialist, reader):
-    work_plan.seed_standard_plan(matter=matter, actor=specialist)
-    step = work_plan.plan_steps_of(matter)[0]
-    action = work_plan.activate_plan_step(matter=matter, step=step, actor=specialist)
-    NextAction.objects.filter(pk=action.pk).update(visibility_override=Visibility.RESTRICTED)
+def test_a_restricted_plan_linked_actions_completion_is_restricted(matter, specialist, reader):
+    from app.workflow.models import MatterPlanStep
+
+    step = MatterPlanStep.objects.create(matter=matter, title="Tutvu materjaliga", position=0)
+    action = _action(matter, specialist, restricted=True)
+    NextAction.objects.filter(pk=action.pk).update(plan_step=step)
     action.refresh_from_db()
-    assert action.plan_step_id == step.pk
 
     entry = _complete(matter, specialist, action).entry
 
@@ -349,29 +349,18 @@ def test_an_opinion_that_finishes_a_restricted_step_keeps_its_own_visibility(
     assert Submission.objects.visible_to(reader).filter(pk=submission.pk).exists()
 
 
-def test_a_round_that_finishes_a_restricted_plan_step_keeps_its_own_visibility(
+def test_a_round_saved_beside_a_restricted_step_keeps_its_own_visibility(
     matter, specialist, reader
 ):
+    """A `Kaasamine` finishes no step since docs/adr/0141, and is not restricted by one."""
     from app.matters.models import MatterEngagement
     from app.matters.workspace import add_matter_engagement
-    from app.workflow.enums import PlanStepOperation
 
-    work_plan.seed_standard_plan(matter=matter, actor=specialist)
-    step = next(
-        s for s in work_plan.plan_steps_of(matter) if s.operation == PlanStepOperation.ENGAGEMENT
-    )
-    action = work_plan.activate_plan_step(matter=matter, step=step, actor=specialist)
-    NextAction.objects.filter(pk=action.pk).update(visibility_override=Visibility.RESTRICTED)
+    action = _action(matter, specialist, restricted=True)
 
-    engagement = add_matter_engagement(
-        matter=matter,
-        author=specialist,
-        audience="Liikmed",
-        plan_action_id=action.pk,
-        plan_step_id=step.pk,
-    ).record
+    engagement = add_matter_engagement(matter=matter, author=specialist, audience="Liikmed").record
 
     action.refresh_from_db()
-    assert action.status == ActionStatus.COMPLETED
+    assert action.status == ActionStatus.OPEN
     assert engagement.visibility_override == ""
     assert MatterEngagement.objects.visible_to(reader).filter(pk=engagement.pk).exists()

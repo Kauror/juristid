@@ -73,7 +73,6 @@ from app.workflow.enums import (
     DatePrecision,
     DateSemantics,
     Disposition,
-    PlanStepOperation,
 )
 from app.workflow.models import StageVocabulary
 from app.workflow.selectors import selectable_stages, stage_help_texts, stages_including
@@ -3725,7 +3724,7 @@ class CompleteCurrentActionForm(forms.Form):
 
 
 class StartPlanStepForm(forms.Form):
-    """`Alusta` — start a `Tööplaan` step as the Matter's current action.
+    """`Alusta` — start `Soovitatud järgmisena` as the Matter's current action.
 
     The step's own words are the action unless the person changes them, and the
     day is optional and never filled in for them (docs/adr/0133 §4). An exact
@@ -3749,7 +3748,7 @@ class StartPlanStepForm(forms.Form):
 
 
 class PlanRevisionForm(forms.Form):
-    """The one question every `Muuda plaani` control asks: which plan was this drawn from.
+    """The question `×` beside `Soovitatud järgmisena` asks: which sequence was this drawn from.
 
     Optional at the field so that a POST without it reaches the service and is
     refused there with the sentence a person can act on, rather than with a
@@ -3763,68 +3762,6 @@ class PlanRevisionForm(forms.Form):
     @property
     def expected_revision(self) -> str:
         return self.cleaned_data.get("revision") or ""
-
-
-class PlanMoveForm(PlanRevisionForm):
-    """`↑` / `↓`. The direction is the button's own value."""
-
-    direction = forms.ChoiceField(choices=[("up", "Üles"), ("down", "Alla")])
-
-
-class PlanStepForm(PlanRevisionForm):
-    """`+ Lisa samm` and a future step's `Muuda` — the words, and which operation does it.
-
-    **`Seotud toiming` is asked, never inferred** (docs/adr/0133 §6). New steps
-    default to `Tavaline tegevus`; a typed one is a person's explicit choice,
-    and the editor shows the choice beside the words so a rename cannot leave a
-    hidden mismatch behind. No date and no responsible person: a future step is
-    neither (docs/adr/0133 §4).
-
-    ``steps`` are the steps still ahead, for `Lisa enne`; ``step`` is the one
-    being edited, whose own ids keep two editors on one page apart.
-    """
-
-    title = marks_required(
-        forms.CharField(
-            label="Tegevus",
-            required=False,
-            max_length=300,
-            widget=forms.TextInput(
-                attrs={"class": "field__input", "placeholder": "Näiteks: Kohtun ministeeriumiga"}
-            ),
-        )
-    )
-    operation = forms.ChoiceField(
-        label="Seotud toiming",
-        choices=PlanStepOperation.choices,
-        initial=PlanStepOperation.GENERIC,
-        required=False,
-        widget=forms.RadioSelect(attrs={"class": "chip__input"}),
-    )
-    before = forms.ChoiceField(label="Asukoht", required=False, widget=SELECT_WIDGET)
-
-    def __init__(
-        self, *args: Any, steps: Sequence[Any] = (), step: Any = None, **kwargs: Any
-    ) -> None:
-        self.step = step
-        kwargs.setdefault("auto_id", f"id_samm_{step.pk}_%s" if step is not None else "id_samm_%s")
-        super().__init__(*args, **kwargs)
-        if step is not None:
-            del self.fields["before"]
-        else:
-            cast(forms.ChoiceField, self.fields["before"]).choices = [
-                ("", "Plaani lõppu"),
-                *((str(item.pk), f"Enne: {item.title}") for item in steps),
-            ]
-
-    def clean_title(self) -> str:
-        title = " ".join((self.cleaned_data.get("title") or "").split())
-        if not title:
-            raise forms.ValidationError("Kirjuta, mis samm see on.")
-        return title
-
-    def clean_operation(self) -> str:
-        return self.cleaned_data.get("operation") or PlanStepOperation.GENERIC.value
 
 
 #: The label of the box that finishes the current step from a substantive save.
@@ -7622,36 +7559,6 @@ class MatterProgressForm(forms.Form):
         ):
             self.add_error(None, DEVELOPMENT_NEEDS_SOMETHING)
         return cleaned
-
-
-class PlanLaunchForm(forms.Form):
-    """The current `Tööplaan` step a typed save was drawn under (docs/adr/0133 §6).
-
-    Two hidden ids, posted only by the form drawn beside the current step: the
-    open action and its plan step. Their absence is the ordinary `LISA TEEMALE`
-    save, which completes nothing it was not told to complete.
-    """
-
-    plan_action = forms.UUIDField(widget=forms.HiddenInput())
-    plan_step = forms.UUIDField(widget=forms.HiddenInput())
-
-
-def drawn_under_the_current_step(form: forms.Form, slug: str) -> forms.Form:
-    """A `LISA TEEMALE` form, made fit to be drawn a second time under the current step.
-
-    `+ Ülevaade / uudis`, `+ Kaasamine` and `+ Koja arvamus` are drawn twice on a
-    Teema whose current step is theirs: once in the launcher, as always, and
-    once under `PRAEGUNE TEGEVUS`, where saving also finishes the step. The
-    POST keys stay the same — it is the same endpoint and the same use case —
-    and every id moves: the form's own (``auto_id`` from the caller) and the
-    ids some widgets carry in their ``attrs``, which ``auto_id`` does not reach
-    (the reasoning `OtherOpinionForm` gives for its drop zone). Two controls
-    sharing an id is a label reaching the wrong box.
-    """
-    for name, field in form.fields.items():
-        if field.widget.attrs.get("id"):
-            field.widget.attrs["id"] = f"id_{slug}_{name}"
-    return form
 
 
 class ResponseDeadlineForm(forms.Form):
