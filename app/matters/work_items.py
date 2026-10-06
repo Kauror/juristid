@@ -871,11 +871,16 @@ def undated_feedback_waits(user: Any, *, owner: Any = None) -> QuerySet[MatterEn
 
 
 def dated_actions(user: Any, *, responsible: Any = None) -> QuerySet[NextAction]:
-    """Open actions with a date, scoped to the reader and optionally to a person."""
+    """Live actions with a date, scoped to the reader and optionally to a person.
+
+    The current action **and the planned ones** (docs/adr/0143): a dated
+    planned activity is real future work and reaches the work surfaces on its
+    day like the current one does.
+    """
     queryset = (
         NextAction.objects.visible_to(user)
         .filter(
-            status=ActionStatus.OPEN,
+            status__in=(ActionStatus.OPEN, ActionStatus.PLANNED),
             target_date__isnull=False,
             matter__is_open=True,
             matter__record_mode=RecordMode.FULL,

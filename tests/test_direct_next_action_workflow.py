@@ -184,8 +184,11 @@ def test_a_file_with_a_step_offers_muuda_and_not_the_direct_control(signed_in, m
 
     assert STEP in zone
     assert ">Muuda<" in zone
-    assert CTA not in zone
-    # The editor is drawn once, beside the task.
+    # Still offered beside a current step since docs/adr/0143 — it plans a
+    # dated future action there rather than replacing this one.
+    assert CTA in zone
+    assert 'id="lisa-planeeritud"' in zone
+    # The editor of the current step is drawn once, beside the task.
     assert zone.count('id="lisa-jargmine"') == 1
 
 
@@ -246,7 +249,8 @@ def test_setting_a_step_directly_writes_one_canonical_open_action(signed_in, mat
     # The answer is the column: the task is shown, with `Muuda` beside it.
     body = response.content.decode()
     assert STEP in _zone(body)
-    assert CTA not in _zone(body)
+    # The control stays (docs/adr/0143): beside a current step it plans one.
+    assert 'id="lisa-planeeritud"' in _zone(body)
 
 
 def test_a_direct_step_may_have_no_day_yet(signed_in, matter):

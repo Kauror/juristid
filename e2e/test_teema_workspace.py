@@ -208,23 +208,45 @@ def test_each_panel_saves_its_own_record_and_nothing_else(page, base_url, tmp_pa
     ).to_have_count(2)
 
 
-def test_an_engagement_carries_its_replies_on_its_own_row(page, base_url, tmp_path):
+def test_an_engagement_is_started_then_its_replies_are_added(page, base_url, tmp_path):
+    """`Alusta kaasamist`, then `Lisa tagasiside` on the same round (docs/adr/0142).
+
+    The second visit opens on `Lisa tagasiside` by itself, because the round is
+    open, and the replies land on the received-feedback record tied to that
+    round — its own files, counted on the round's row — while the round stays
+    open.
+    """
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Töölaua brauserikatse: kaasamine")
 
-    open_add_panel(page, "lisa-kaasamine")
-    page.locator("#lisa-kaasamine [name=audience]").fill("liikmed")
-    page.locator("#lisa-kaasamine [name=response_count]").fill("2")
-    page.locator("#lisa-kaasamine input[type=file]").set_input_files(
-        [_pdf(tmp_path, "vastus1.pdf"), _pdf(tmp_path, "vastus2.pdf", b"kaks")]
-    )
-    page.locator("#lisa-kaasamine button[type=submit]").click()
+    open_add_panel(page, "kaasamine-alusta")
+    page.locator("#kaasamine-alusta [name=audience]").fill("liikmed")
+    page.locator("#kaasamine-alusta button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
-    row = chronology(page).locator(".uxtl__item", has_text="Kaasamine: liikmed").first
-    expect(row).to_be_visible()
-    expect(row).to_contain_text("Vastuseid 2")
-    expect(row.locator("a.uxtl__file")).to_have_count(2)
+    open_add_panel(page, "lisa-kaasamine")
+    expect(page.locator("#kaasamine-tagasiside-valik")).to_be_checked()
+    reply = page.locator("#kaasamine-tagasiside")
+    expect(reply.locator("[name=engagement] option:checked")).to_contain_text("liikmed")
+    reply.locator("[name=summary]").fill("Kaks liiget vastasid, mõlemad toetavad.")
+    reply.locator("input[type=file]").set_input_files(
+        [_pdf(tmp_path, "vastus1.pdf"), _pdf(tmp_path, "vastus2.pdf", b"kaks")]
+    )
+    reply.locator("button[type=submit]").click()
+    page.wait_for_load_state("networkidle")
+
+    answer = chronology(page).locator(".uxtl__item", has_text="Kaks liiget vastasid").first
+    expect(answer).to_be_visible()
+    expect(answer.locator("a.uxtl__file")).to_have_count(2)
+    round_row = chronology(page).locator(".uxtl__item", has_text="Kaasamine: liikmed").first
+    expect(round_row).to_contain_text("Seotud seisukohti 1")
+    expect(round_row.get_by_text("Lõpeta kaasamine", exact=True)).to_have_count(1)
+
+    # Both modes stay one click away (the save closed the family again).
+    open_add_panel(page, "kaasamine-alusta")
+    expect(page.locator("#kaasamine-alusta [name=audience]")).to_be_visible()
+    open_add_panel(page, "kaasamine-tagasiside")
+    expect(page.locator("#kaasamine-tagasiside [name=summary]")).to_be_visible()
 
 
 # ---------------------------------------------------------------------------

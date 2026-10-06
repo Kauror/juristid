@@ -553,23 +553,32 @@ def test_a_date_with_no_next_action_is_refused_on_the_sentence(signed_in, normal
     assert not NextAction.objects.filter(matter=normal_matter).exists()
 
 
-def test_an_engagement_keeps_null_and_zero_apart(signed_in, normal_matter):
-    """Blank means *nobody counted*; `0` means *nobody answered*. Two facts."""
-    _post(
-        signed_in,
-        "matters:add_engagement_compact",
-        normal_matter,
-        {"kind": "SURVEY", "audience": "Liikmed", "response_count": ""},
-    )
-    _post(
-        signed_in,
-        "matters:add_engagement_compact",
-        normal_matter,
-        {"kind": "MEETING", "audience": "Töögrupp", "response_count": "0"},
+def test_an_engagement_keeps_null_and_zero_apart(signed_in, normal_matter, specialist):
+    """Blank means *nobody counted*; `0` means *nobody answered*. Two facts.
+
+    `Alusta kaasamist` writes no count since docs/adr/0142 — a round starts
+    uncounted — and the count is given on the round, where zero stays zero.
+    """
+    from app.matters.services import correct_engagement, engagement_revision_token
+
+    for title in ("Liikmed", "Töögrupp"):
+        _post(
+            signed_in,
+            "matters:add_engagement_compact",
+            normal_matter,
+            {"audience": title, "response_count": "5"},
+        )
+    counted = MatterEngagement.objects.get(title="Töögrupp")
+    correct_engagement(
+        engagement=counted,
+        title=counted.title,
+        response_count=0,
+        actor=specialist,
+        expected_revision=engagement_revision_token(counted),
     )
 
     uncounted = MatterEngagement.objects.get(title="Liikmed")
-    counted = MatterEngagement.objects.get(title="Töögrupp")
+    counted.refresh_from_db()
     assert uncounted.response_count is None
     assert counted.response_count == 0
 
@@ -770,16 +779,23 @@ def test_a_marge_carries_its_own_files(signed_in, normal_matter):
 
 
 def test_an_engagement_carries_its_replies(signed_in, normal_matter):
+    """The replies arrive through `Lisa tagasiside` (docs/adr/0142): the received-
+    feedback record tied to the round carries them, and the round stays open."""
+    _post(signed_in, "matters:add_engagement_compact", normal_matter, {"audience": "Liikmed"})
+    engagement = MatterEngagement.objects.get(matter=normal_matter)
+
     _post(
         signed_in,
-        "matters:add_engagement_compact",
+        "matters:add_engagement_reply",
         normal_matter,
-        {"kind": "SURVEY", "audience": "Liikmed", "response_count": "2"},
+        {"engagement": str(engagement.pk), "summary": "Kaks vastust."},
         files=[_pdf("vastus1.pdf"), _pdf("vastus2.pdf", b"%PDF-1.4 kaks")],
     )
 
-    engagement = MatterEngagement.objects.get(matter=normal_matter)
-    assert _names(_links_for(engagement=engagement)) == ["vastus1.pdf", "vastus2.pdf"]
+    reply = engagement.external_positions.get()
+    assert _names(_links_for(external_position=reply)) == ["vastus1.pdf", "vastus2.pdf"]
+    engagement.refresh_from_db()
+    assert engagement.has_open_feedback_wait
 
 
 def test_an_important_date_carries_the_letter_that_announced_it(signed_in, normal_matter):

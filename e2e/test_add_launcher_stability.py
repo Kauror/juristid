@@ -358,15 +358,15 @@ def test_a_refused_save_leaves_the_launcher_exactly_where_it_was(page, base_url)
     resting = chip_geometry(page)
 
     open_panel(page, "lisa-kaasamine")
-    page.locator("#lisa-kaasamine [name=response_count]").fill("3")
-    page.locator("#lisa-kaasamine [name=audience]").fill("")
-    page.locator("#lisa-kaasamine button[type=submit]").click()
+    page.locator("#kaasamine-alusta [name=engagement_note]").fill("Nimekiri liidult")
+    page.locator("#kaasamine-alusta [name=audience]").fill("")
+    page.locator("#kaasamine-alusta button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
-    panel = page.locator("#lisa-kaasamine")
+    panel = page.locator("#kaasamine-alusta")
     expect(panel).to_be_visible()
     expect(panel).to_contain_text("Kirjuta, keda kaasati")
-    expect(panel.locator("[name=response_count]")).to_have_value("3")
+    expect(panel.locator("[name=engagement_note]")).to_have_value("Nimekiri liidult")
     assert_unchanged(resting, chip_geometry(page), "after a refused save")
 
 

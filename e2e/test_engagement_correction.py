@@ -86,20 +86,26 @@ def _file_an_engagement(
     ``reply_by`` defaults to **empty**, and either way the round is open from the
     moment it is saved (docs/adr/0132): the date is the panel's own optional
     `Tagasisidet ootame kuni`, a due date on that open round and nothing more.
+
+    ``response_count`` is no longer on `Alusta kaasamist` (docs/adr/0142), so a
+    count is given the way it now is: `Muuda` on the round, right after.
     """
-    open_add_panel(page, "lisa-kaasamine")
-    page.locator("#lisa-kaasamine input[name=audience]").fill(AUDIENCE)
-    page.locator("#lisa-kaasamine input[name=occurred_on]").fill(occurred_on)
-    if response_count:
-        page.locator("#lisa-kaasamine input[name=response_count]").fill(response_count)
+    open_add_panel(page, "kaasamine-alusta")
+    page.locator("#kaasamine-alusta input[name=audience]").fill(AUDIENCE)
+    page.locator("#kaasamine-alusta input[name=occurred_on]").fill(occurred_on)
     if reply_by:
-        page.locator("#lisa-kaasamine input[name=feedback_deadline]").fill(reply_by)
+        page.locator("#kaasamine-alusta input[name=feedback_deadline]").fill(reply_by)
     with page.expect_response(
         lambda response: "/lisa/kaasamine/" in response.url and response.request.method == "POST"
     ) as caught:
-        page.locator("#lisa-kaasamine button[type=submit]").click()
+        page.locator("#kaasamine-alusta button[type=submit]").click()
     assert caught.value.status == 200, f"the consultation was refused: {caught.value.status}"
     page.wait_for_load_state("networkidle")
+    if response_count:
+        form = _open_the_editor(page)
+        form.locator("input[name=response_count]").fill(response_count)
+        assert _save(page).status == 200, "the count was refused"
+        page.wait_for_load_state("networkidle")
 
 
 def _row(page):
@@ -205,7 +211,8 @@ def test_an_emptied_date_reads_as_kuupaev_teadmata(page, base_url):
 def test_a_response_count_typed_on_the_panel_can_be_corrected_afterwards(page, base_url):
     """QA-03, in the browser it was found in.
 
-    `+ Kaasamine` takes `Vastuseid`, the chronology prints it, and until this
+    `Vastuseid` is given on the round (on `+ Kaasamine` until docs/adr/0142),
+    the chronology prints it, and until this
     round the editor had no box for it — so a lawyer who typed `7` where they
     meant `8` had no route back out of the number. The whole ladder in one pass,
     because the three states are only interesting against each other:

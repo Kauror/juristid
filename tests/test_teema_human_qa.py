@@ -705,7 +705,7 @@ def test_the_matter_page_renders_for_a_matter_with_nothing_on_it(signed_in, spec
     matter = factories.MatterFactory(owner=specialist)
     response = signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk}))
     assert response.status_code == 200
-    assert "Arvamust ei ole lisatud." in _body(response)
+    assert '<span class="railcard__none">Puudub</span>' in _body(response)
 
 
 def test_the_edit_page_reaches_every_matter_it_should(signed_in, specialist):

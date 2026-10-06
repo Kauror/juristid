@@ -56,6 +56,7 @@ from app.documents.services import (
     opinion_evidence_statuses,
     removal_refusal,
     remove_document,
+    rename_document,
     role_change_refusal,
 )
 from app.documents.uploads import UPLOAD_ACCEPT, UploadRejected, read_upload
@@ -229,6 +230,28 @@ def change_role(request: HttpRequest, pk: Any) -> HttpResponse:
         messages.success(request, "Dokumendi liik on muudetud.")
     except DomainError as error:
         messages.error(request, str(error))
+    return redirect("documents:document_detail", pk=document.pk)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def rename(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`Muuda` — the document's display title; its files and versions stay as they are.
+
+    The title rules and every refusal are `rename_document`'s, asked under the
+    Matter's and the document's locks. Posted from a Dokumendid row
+    (``tagasi=dokumendid``) it lands back on that list; from the document's
+    own page it lands there. Nothing else in the POST chooses a destination.
+    """
+    document = get_object_or_404(Document.objects.visible_to(request.user), pk=pk)
+    try:
+        rename_document(document=document, title=request.POST.get("title", ""), actor=request.user)
+        messages.success(request, "Dokumendi pealkiri on muudetud.")
+    except DomainError as error:
+        messages.error(request, str(error))
+    if request.POST.get("tagasi") == "dokumendid":
+        return redirect("matters:matter_documents", pk=document.matter_id)
     return redirect("documents:document_detail", pk=document.pk)
 
 

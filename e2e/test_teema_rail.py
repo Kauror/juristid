@@ -177,6 +177,14 @@ def test_a_sparse_matter_gives_a_compact_facts_block(page, base_url):
         assert gone not in keys, f"{gone} is retired from this rail"
 
     for row in rows:
+        if row["key"] == "Saatja":
+            # **Stacked** since the owner's UX round (2026-10-06): the label
+            # above, one sender per line — so one sender is two short lines,
+            # and the value sits under its label rather than beside it.
+            assert row["height"] <= 44, f"Saatja is {row['height']:.1f}px tall for one sender"
+            assert row["minHeight"] in ("auto", "0px"), "Saatja has a minimum height"
+            assert row["valueTop"] > row["keyTop"] + 4, "Saatja's value is not under its label"
+            continue
         # One short fact is one line. 12.5px text on a 1.35 line-height is
         # ~17px; the ceiling leaves room for the dashed affordance under an
         # editable value and for nothing else.
@@ -547,7 +555,7 @@ def test_a_writer_can_add_the_chambers_opinion_as_a_file(page, base_url):
 
     block = page.locator("#koja-arvamus")
     expect(block).to_be_visible()
-    expect(block.get_by_text("Arvamust ei ole lisatud.")).to_be_visible()
+    expect(block.get_by_text("Puudub", exact=True)).to_be_visible()
     # Read-only: no upload, and no way out of the block at all.
     expect(block.locator("input[type=file]")).to_have_count(0)
     expect(block.get_by_text("+ Lisa arvamus")).to_have_count(0)
@@ -570,7 +578,7 @@ def test_a_writer_can_add_the_chambers_opinion_as_a_file(page, base_url):
     page.wait_for_load_state("networkidle")
     block = page.locator("#koja-arvamus")
     expect(block.get_by_role("link", name=re.compile("Koja_arvamus.pdf"))).to_be_visible()
-    expect(block.get_by_text("Arvamust ei ole lisatud.")).to_have_count(0)
+    expect(block.get_by_text("Puudub", exact=True)).to_have_count(0)
 
 
 def test_a_reader_sees_the_opinion_but_no_way_to_add_one(page, base_url):

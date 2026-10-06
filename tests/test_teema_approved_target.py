@@ -418,9 +418,11 @@ def test_lisa_teemale_offers_thirteen_choices_and_opens_none_of_them(signed_in, 
     ]
     assert [chip for chip in expected if f">{chip}<" in panels] == expected
     # `+ Lõpeta teema` is retired (docs/adr/0131 §11): a file ends through its
-    # `Hetkeseis`, so eleven capture panels and no closing one.
+    # `Hetkeseis`, so eleven capture panels and no closing one — thirteen since
+    # `+ Kaasamine` became `Alusta kaasamist` and `Lisa tagasiside`
+    # (docs/adr/0142).
     assert ">+ Lõpeta teema<" not in panels
-    assert panels.count('class="cx-panel"') + panels.count("cx-panel cx-panel--last") == 11
+    assert panels.count('class="cx-panel"') + panels.count("cx-panel cx-panel--last") == 13
     # All closed on arrival: nothing in this zone is a form until it is chosen.
     assert "data-addpanel\n             open" not in panels
     assert 'cx-panel" open' not in panels
@@ -478,7 +480,9 @@ def test_each_operation_carries_its_own_save_and_there_is_no_global_one(
     completion = zone[zone.index('class="curact__form"') :]
     completion = completion[: completion.index("</form>")]
     assert completion.count('type="submit"') == 1
-    assert zone.count('type="submit"') == 2
+    # `Muuda`'s save, and `+ Määra järgmine tegevus`'s beside a current step
+    # (a planned action, docs/adr/0143).
+    assert zone.count('type="submit"') == 3
 
     # Ten operations under LISA TEEMALE — four families, of which two ask a
     # second question, plus `Lõpeta teema` — each with exactly one save of its
@@ -539,7 +543,8 @@ def test_the_engagement_panel_asks_no_kind_and_keeps_its_two_questions(signed_in
     for label in ("Küsitlus", "Koosolek", "Kirjade voor"):
         assert f">{label}<" not in panel
     assert "Keda kaasati" in panel
-    assert "Vastuseid" in panel
+    # `Vastuseid` is corrected on the round since docs/adr/0142.
+    assert "Vastuseid" not in panel
     # The old five-field form's headline box is still gone…
     assert "Pealkiri" not in panel
     # …and the round's page and note are asked again (docs/adr/0127 §2).
@@ -2059,8 +2064,9 @@ def test_a_work_entry_carries_its_time_inline_and_its_file(signed_in, normal_mat
 
     assert "lisas dokumendi" in chronology
     assert 'class="uxtl__time"' in chronology
-    # The time is inside the meta line, not in a column of its own.
-    meta = chronology[chronology.index('class="uxtl__meta"') :]
+    # The time is inside the meta line, not in a column of its own — here the
+    # ✓ line of the completion this save was (docs/adr/0143).
+    meta = chronology[chronology.index('class="uxtl__meta') :]
     meta = meta[: meta.index("</p>")]
     assert "uxtl__time" in meta
     # The file is a link to the exact bytes.
@@ -2282,8 +2288,9 @@ def test_the_rail_holds_the_four_target_blocks_in_order(signed_in, normal_matter
         for label in ("Teema andmed", "Koja arvamus", "Seotud materjalid", "Märkmed")
     ]
     assert positions == sorted(positions)
-    assert "Arvamust ei ole lisatud." in rail
-    assert "Seotud teemasid ega taustmaterjali ei ole valitud." in rail
+    assert '<span class="railcard__none">Puudub</span>' in rail
+    # An empty `Seotud materjalid` is its heading and `+ Lisa` only (docs/adr/0143).
+    assert "Seotud teemasid ega taustmaterjali ei ole valitud." not in rail
 
 
 def test_teema_andmed_holds_the_target_rows_that_are_still_asked(signed_in, normal_matter):

@@ -96,9 +96,13 @@ whose addressee nobody recorded should look short, not incomplete.
       prints an addressee on its cards, and nothing was backfilled or cleared.
     {% endcomment %}
 
-    <div class="railcard__row">
+    <div class="railcard__row railcard__row--stacked">
       {% comment %}
         SAATJA and KELLELE are different facts, never merged.
+
+        **Stacked** (owner's UX round, 2026-10-06): the label above, one
+        sender per line below it — a long institution name no longer wraps in
+        a narrow second column.
 
         This row read `Kellelt` until the lawyers' second feedback round. The
         fact and the control are unchanged — `Matter.source_organisations`, the
@@ -114,7 +118,7 @@ whose addressee nobody recorded should look short, not incomplete.
           <details class="inlineedit" id="teema-saatja-muuda" data-draft-host>
             <summary class="inlineedit__trigger" title="{{ matter.sender_names }}">
               {% if matter.source_organisations.all %}
-                <span class="railcard__value">{% include "matters/partials/senders.html" with matter=matter %}</span>
+                <span class="railcard__value">{% include "matters/partials/senders_stacked.html" with matter=matter %}</span>
               {% else %}<span class="railcard__add">+ Lisa</span>{% endif %}
             </summary>
             {% comment %}
@@ -168,7 +172,7 @@ whose addressee nobody recorded should look short, not incomplete.
             </form>
           </details>
         {% elif matter.source_organisations.all %}
-          <span class="railcard__value">{% include "matters/partials/senders.html" with matter=matter %}</span>
+          <span class="railcard__value">{% include "matters/partials/senders_stacked.html" with matter=matter %}</span>
         {% else %}<span class="muted">—</span>{% endif %}
       </span>
     </div>

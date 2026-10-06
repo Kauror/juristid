@@ -131,7 +131,7 @@ def test_the_panel_records_a_reference_and_the_rail_shows_it(page, base_url):
     record_one(page, base_url)
     name_the_link(page, "Eelnõu 123 SE")
 
-    expect(card(page)).to_contain_text("Menetluse lingid")
+    expect(card(page)).to_contain_text("Menetluse link")
     link = card(page).get_by_role("link", name="Eelnõu 123 SE")
     expect(link).to_be_visible()
     expect(link).to_have_attribute("href", EIS_URL)
@@ -173,7 +173,7 @@ def test_a_matter_with_no_references_shows_one_quiet_add_line(page, base_url):
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
 
-    expect(card(page).get_by_role("link", name="+ Lisa menetluse link")).to_be_visible()
+    expect(card(page).get_by_role("link", name="Lisa menetluse link")).to_be_visible()
     expect(card(page).get_by_role("link", name="eelnoud.valitsus.ee")).to_have_count(0)
     expect(page.locator("label[for='lisa-menetluse-link-valik']")).to_have_count(0)
 
@@ -183,7 +183,7 @@ def test_the_add_line_lands_on_the_block_that_asks(page, base_url):
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
 
-    card(page).get_by_role("link", name="+ Lisa menetluse link").click()
+    card(page).get_by_role("link", name="Lisa menetluse link").click()
     page.wait_for_load_state("load")
 
     expect(edit_block(page).locator("[name='menetlus-url']")).to_be_visible()
@@ -277,7 +277,7 @@ def test_creating_a_teema_without_touching_the_block_records_nothing(page, base_
     sign_in(page, base_url, SANDRA)
     create_matter(page, base_url, unique_title("Menetluse linkideta"))
 
-    expect(card(page).get_by_role("link", name="+ Lisa menetluse link")).to_be_visible()
+    expect(card(page).get_by_role("link", name="Lisa menetluse link")).to_be_visible()
     expect(card(page).locator(".proclink")).to_have_count(0)
 
 
@@ -314,7 +314,7 @@ def test_the_add_line_is_reachable_and_operable_from_the_keyboard(page, base_url
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
 
-    add = card(page).get_by_role("link", name="+ Lisa menetluse link")
+    add = card(page).get_by_role("link", name="Lisa menetluse link")
     add.focus()
     expect(add).to_be_focused()
     page.keyboard.press("Enter")

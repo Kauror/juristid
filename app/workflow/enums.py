@@ -79,7 +79,13 @@ class DatePrecision(models.TextChoices):
 
 
 class ActionStatus(models.TextChoices):
+    #: The Matter's one current action — `PRAEGUNE TEGEVUS`. At most one per
+    #: Matter (`workflow_one_open_action_per_matter`).
     OPEN = "OPEN", "Kehtiv"
+    #: A dated future action queued behind the current one (docs/adr/0143).
+    #: Any number per Matter; the earliest becomes `OPEN` when the current one
+    #: is completed.
+    PLANNED = "PLANNED", "Planeeritud"
     COMPLETED = "COMPLETED", "Tehtud"
     CANCELLED = "CANCELLED", "Tühistatud"
     SUPERSEDED = "SUPERSEDED", "Asendatud"

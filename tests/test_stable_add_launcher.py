@@ -59,6 +59,7 @@ CANONICAL = [
 SUBCHOICES = {
     "lisa-marge": ["Tavaline", "Oluline tähtaeg", "Jõustumine", "Töövõit"],
     "lisa-arvamus": ["Meile saadetud tagasiside", "Teiste arvamus", "Koja arvamus"],
+    "lisa-kaasamine": ["Alusta kaasamist", "Lisa tagasiside"],
 }
 
 #: Every panel in the zone: family and sub-choice alike.
@@ -78,6 +79,8 @@ PANEL_IDS = [
     "marge-joustumine",
     "marge-toovoit",
     "lisa-kaasamine",
+    "kaasamine-alusta",
+    "kaasamine-tagasiside",
     "lisa-arvamus",
     "arvamus-tagasiside",
     "arvamus-teiste",
@@ -320,7 +323,7 @@ def test_each_group_is_its_own_radio_group_so_only_one_form_can_be_open(signed_i
 
     assert len(names) == len(PANEL_IDS)
     assert names.count("lisa-valik") == len(EXCLUSIVE_IDS)
-    assert set(names) == {"lisa-valik", "marke-liik", "arvamuse-liik"}
+    assert set(names) == {"lisa-valik", "marke-liik", "kaasamise-liik", "arvamuse-liik"}
 
 
 def test_no_family_is_chosen_until_somebody_chooses(signed_in, specialist):
@@ -346,7 +349,10 @@ def test_each_family_arrives_with_its_ordinary_sub_choice_chosen(signed_in, spec
         for pick in re.finditer(r'id="([a-z-]+)-valik"([^>]*)>', zone)
         if re.search(r"\bchecked\b", pick.group(2))
     }
-    assert checked == {"marge-tavaline", "arvamus-tagasiside"}
+    # `+ Kaasamine` opens on `Alusta kaasamist` on a file with no open round
+    # (docs/adr/0142); `tests/test_document_title_and_kaasamine_split.py` has
+    # the other half.
+    assert checked == {"marge-tavaline", "kaasamine-alusta", "arvamus-tagasiside"}
 
 
 def test_each_chip_points_at_the_form_it_opens(signed_in, specialist):

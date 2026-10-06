@@ -192,7 +192,8 @@ def test_a_step_row_names_the_step_in_its_own_words_of_the_time(specialist):
     rows, _more = matter_timeline(matter=matter, user=specialist)
     sentences = [row.summary_sentence for row in rows if not row.is_entry]
 
-    assert any("määras järgmise sammu «Ootan ministeeriumi analüüsi»" in s for s in sentences)
+    # One line since the owner's UX round (docs/adr/0143): «Järgmine samm – …».
+    assert any("Järgmine samm – Ootan ministeeriumi analüüsi" in s for s in sentences)
 
 
 def test_a_file_on_a_restricted_round_is_restricted_with_it(specialist):

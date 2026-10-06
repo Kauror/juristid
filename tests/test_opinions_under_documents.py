@@ -829,7 +829,7 @@ def test_a_restricted_opinion_is_not_named_in_the_rail(client, reader, specialis
     body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
 
     assert "Salajane_arvamus.pdf" not in body
-    assert "Arvamust ei ole lisatud." in body
+    assert '<span class="railcard__none">Puudub</span>' in body
 
 
 def test_the_arvamus_filter_does_not_widen_visibility(client, reader, specialist):
@@ -1508,10 +1508,14 @@ def _visible(body: str) -> str:
 
     So each assertion below is about what is *on* the page rather than about
     what a screen reader is told — which was the whole finding.
+
+    `value` too: the row's `Muuda` box (docs/adr/0142) opens holding the
+    current title, inside a closed disclosure, and a pre-filled edit box is not
+    a second line on the row.
     """
     import re
 
-    return re.sub(r'(?:aria-label|title|alt)="[^"]*"', "", body)
+    return re.sub(r'(?:aria-label|title|alt|value)="[^"]*"', "", body)
 
 
 def _uploaded(matter, *, title: str, filename: str, actor=None):

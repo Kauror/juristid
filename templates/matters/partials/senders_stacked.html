@@ -1,0 +1,5 @@
+{% comment %}
+Every sender of a Matter, one per line, for the rail's stacked `Saatja` row.
+The comma-separated form for tables and tooltips is `senders.html`.
+{% endcomment %}
+{% for organisation in matter.source_organisations.all %}<span class="railcard__line">{{ organisation.name }}</span>{% empty %}—{% endfor %}

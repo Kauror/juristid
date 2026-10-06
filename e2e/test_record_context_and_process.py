@@ -105,8 +105,8 @@ def test_a_round_keeps_its_page_and_note_and_the_work_list_keeps_its_audience(
     sign_in(page, base_url, SANDRA)
     _new_matter(page, base_url, "Kaasamise kontekst")
 
-    open_add_panel(page, "lisa-kaasamine")
-    form = page.locator("#lisa-kaasamine")
+    open_add_panel(page, "kaasamine-alusta")
+    form = page.locator("#kaasamine-alusta")
     form.locator("[name=audience]").fill(AUDIENCE)
     expect(form.get_by_text("Veebileht", exact=False)).to_be_visible()
     form.locator("[name=website_url]").fill("www.koda.ee/hetkel-kasil/juristieksam")
@@ -300,8 +300,8 @@ def test_a_dated_vtk_reads_reached_and_the_points_after_it_keep_order(page, base
     assert caught.value.status == 200
     page.wait_for_load_state("networkidle")
 
-    open_add_panel(page, "lisa-kaasamine")
-    form = page.locator("#lisa-kaasamine")
+    open_add_panel(page, "kaasamine-alusta")
+    form = page.locator("#kaasamine-alusta")
     form.locator("[name=audience]").fill("liikmed")
     form.locator("[name=occurred_on]").fill(_day(-12))
     form.locator("[name=feedback_deadline]").fill(_day(-9))

@@ -118,3 +118,10 @@ control that would add something new (app/matters/views.py, docs/adr/0075 §12).
 {% if entry_edit_swap_marker %}
   {% include "matters/partials/entry_edited_marker.html" with entry=entry oob=True %}
 {% endif %}
+{% comment %}
+  A completion row reads its note as its headline (`uxtl__donetext`), so a
+  correction of that note answers the headline as well.
+{% endcomment %}
+{% if entry_edit_swap_marker and entry_done_text is not None %}
+  <span class="uxtl__donetext" id="sissekanne-{{ entry.pk }}-tehtud" hx-swap-oob="true">{{ entry_done_text }}</span>
+{% endif %}

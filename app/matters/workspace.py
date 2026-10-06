@@ -343,7 +343,10 @@ def complete_current_action(
             uploads=_uploads(uploads),
             actor=author,
         )
-        complete_next_action(action=current, actor=author)
+        # A written `Järgmine tegevus` becomes the current action itself, so the
+        # earliest planned one is promoted only when none was written
+        # (docs/adr/0143).
+        complete_next_action(action=current, actor=author, promote=not next_text)
         result.action = (
             set_next_action_for_new_work(
                 matter=locked_matter, text=next_text, target_date=next_date, actor=author

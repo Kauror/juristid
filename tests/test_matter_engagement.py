@@ -551,7 +551,7 @@ def test_an_undated_engagement_is_readable_without_a_manufactured_day(signed_in,
 
 
 def test_the_composer_panel_asks_for_one_date(signed_in, specialist):
-    """`Keda kaasati`, `Vastuseid`, one date, and the feedback box.
+    """`Keda kaasati` and one date on `Alusta kaasamist`; what came back is not here.
 
     **This reverses docs/adr/0074 §9.** The panel used to ask for no date, on
     the reasoning that an engagement recorded here is work being written down
@@ -564,8 +564,9 @@ def test_the_composer_panel_asks_for_one_date(signed_in, specialist):
     **`Tagasisidet ootame kuni` is asked here again, optional and empty**
     (docs/adr/0120 §3, narrowing docs/adr/0091 §2). Left empty the panel records
     a completed act and opens no wait; filled, it is the same wait `Ootan
-    tagasisidet` on the round's row opens. `Saadud tagasiside / arvamused` is
-    where the answers go when there is no separate file.
+    tagasisidet` on the round's row opens. `Vastuseid` and `Saadud tagasiside /
+    arvamused` left this form with docs/adr/0142: what came back is `Lisa
+    tagasiside`, and the count is corrected on the round.
 
     How those boxes behave is `tests/test_engagement_dates.py`; this is the
     inventory of what the panel asks.
@@ -577,17 +578,17 @@ def test_the_composer_panel_asks_for_one_date(signed_in, specialist):
     # To `+ Arvamus / tagasiside`, which is the family after `+ Kaasamine`.
     # `marge-tahtaeg` is a sub-choice inside `+ Märge` and stands earlier in
     # the document now (docs/adr/0097 §8).
-    start = body.index('id="lisa-kaasamine"')
-    panel = body[start : body.index('id="lisa-arvamus"', start)]
+    start = body.index('id="kaasamine-alusta"')
+    panel = body[start : body.index('id="kaasamine-tagasiside-valik"', start)]
 
     assert 'name="audience"' in panel
-    assert 'name="response_count"' in panel
     assert 'name="occurred_on"' in panel
     assert "Kaasamise kuupäev" in panel
     assert 'name="feedback_deadline"' in panel
     assert "Tagasisidet ootame kuni" in panel
-    assert 'name="feedback_received"' in panel
-    assert "Saadud tagasiside / arvamused" in panel
+    assert 'name="response_count"' not in panel
+    assert 'name="feedback_received"' not in panel
+    assert "Saadud tagasiside" not in panel
 
 
 def test_a_matter_page_costs_no_query_per_engagement(signed_in, specialist):

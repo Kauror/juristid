@@ -672,12 +672,18 @@ def assign_matter(
     follows_the_file = (
         Q(responsible=previous) if previous is not None else Q(responsible__isnull=True)
     )
-    moved = NextAction.objects.filter(
-        follows_the_file, matter=matter, status=ActionStatus.OPEN
-    ).first()
-    if moved is not None:
-        moved.responsible = owner
-        moved.save(update_fields=["responsible", "updated_at"])
+    # The current step and every planned one that follows the file move
+    # together: a planned step is the owner's default too (docs/adr/0143).
+    moved = None
+    for following in NextAction.objects.filter(
+        follows_the_file,
+        matter=matter,
+        status__in=(ActionStatus.OPEN, ActionStatus.PLANNED),
+    ).order_by("pk"):
+        following.responsible = owner
+        following.save(update_fields=["responsible", "updated_at"])
+        if following.status == ActionStatus.OPEN:
+            moved = following
 
     record_change_event(
         event_type=ChangeEventType.MATTER_ASSIGNED,

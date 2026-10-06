@@ -169,6 +169,11 @@ class RelatedMaterials:
     def is_empty(self) -> bool:
         return not self.relations and not self.background
 
+    @property
+    def count(self) -> int:
+        """Everything a person linked: the count beside `Seotud materjalid`."""
+        return len(self.relations) + len(self.background)
+
 
 def _opinions_url(matter: Any) -> str:
     """`matters.views.opinions_url`, imported late.

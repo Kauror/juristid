@@ -213,6 +213,25 @@ background sequence — which can be started (`Alusta`) or dismissed (`×`);
 
     {% include "matters/partials/feedback_waits.html" %}
 
+    {% comment %}
+      **`+ Määra järgmine tegevus` stays on the page while work is current**
+      (docs/adr/0143). Beside a current action it plans a dated future one: it
+      never replaces the current row, and the planned rows follow below.
+    {% endcomment %}
+    {% if can_write %}
+      <details class="cx-panel curact__edit curact__set" id="lisa-planeeritud" data-addpanel
+               {% if open_panel == "lisa-planeeritud" %}open{% endif %}>
+        <summary class="disclosure-chip">+ Määra järgmine tegevus</summary>
+        <div class="cx-panel__body">
+          {% if open_panel == "lisa-planeeritud" and workspace_error %}
+            <p class="formerror" role="alert">{{ workspace_error }}</p>
+          {% endif %}
+          {% include "matters/partials/planned_action_form.html" with form=planned_action_form submit_label="Lisa planeeritud tegevus" %}
+        </div>
+      </details>
+    {% endif %}
+    {% include "matters/partials/planned_actions.html" %}
+
   {% else %}
     {% comment %}
       No open step. The register's own `JÄRGMISEKS` still reads here where a
@@ -348,6 +367,7 @@ background sequence — which can be started (`Alusta`) or dismissed (`×`);
       {% endcomment %}
       {% include "matters/partials/next_action_panel.html" with summary="+ Määra järgmine tegevus" quiet=False extra_class="curact__set" draft_state="" %}
     {% endif %}
+    {% include "matters/partials/planned_actions.html" %}
   {% endif %}
 
 </section>

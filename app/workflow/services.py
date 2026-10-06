@@ -518,7 +518,9 @@ def _lock_for_transition(action: NextAction, refusal: str) -> NextAction:
 
 
 @transaction.atomic
-def complete_next_action(*, action: NextAction, actor: Any = None) -> NextAction:
+def complete_next_action(
+    *, action: NextAction, actor: Any = None, promote: bool = True
+) -> NextAction:
     """Mark the current action done. It stays in the history.
 
     Decided on the locked row (`_lock_for_transition`), so a second click, a
@@ -545,6 +547,8 @@ def complete_next_action(*, action: NextAction, actor: Any = None) -> NextAction
     )
     if action.plan_step_id is not None:
         _complete_plan_step(action=action, step_id=action.plan_step_id, actor=actor)
+    if promote:
+        promote_next_planned_action(matter=action.matter, actor=actor)
     return action
 
 
@@ -617,7 +621,7 @@ def cancel_next_action(
     """
     refusal = "Ainult kehtivat tegevust saab tühistada."
     action = _lock_for_transition(action, refusal)
-    if action.status != ActionStatus.OPEN:
+    if action.status not in (ActionStatus.OPEN, ActionStatus.PLANNED):
         raise DomainError(refusal)
 
     action.status = ActionStatus.CANCELLED
@@ -644,11 +648,16 @@ def cancel_next_action(
 
 @transaction.atomic
 def end_open_action_for_closure(*, matter: Any, actor: Any = None) -> NextAction | None:
-    """Close out the open action when the Matter itself closes.
+    """Close out the current action **and every planned one** when the Matter closes.
 
-    A closed Matter with a live `Järgmiseks` would keep appearing in someone's
-    work list forever.
+    A closed Matter with a live `Järgmiseks` — or a queued future one — would
+    keep appearing in someone's work list forever. Each is cancelled through
+    `cancel_next_action`, so each stays in the history (docs/adr/0143).
     """
+    for planned in NextAction.objects.filter(matter=matter, status=ActionStatus.PLANNED).order_by(
+        "target_date", "created_at", "pk"
+    ):
+        cancel_next_action(action=planned, actor=actor, reason="Teema suleti")
     action = current_next_action(matter)
     if action is None:
         return None
@@ -710,6 +719,197 @@ def acknowledge_review(
             "from": previous.isoformat() if previous else None,
             "to": next_review_date.isoformat() if next_review_date else None,
             "kind": action.kind,
+        },
+    )
+    return action
+
+
+# ---------------------------------------------------------------------------
+# Planned actions (docs/adr/0143)
+# ---------------------------------------------------------------------------
+#
+# A Matter has at most one current action (`OPEN`) and any number of dated
+# future ones (`PLANNED`). A planned action is never the current one: it is
+# written beside it, changed and cancelled on its own, and becomes current only
+# when the current one is completed — the earliest first. Every write locks the
+# Matter, the order `set_next_action` and the transitions above already use.
+
+#: Refused when a planned action has no day: planning is planning on days.
+PLANNED_ACTION_NEEDS_DATE = "Planeeritud tegevusel peab olema kuupäev."
+#: Refused when the planned action a form names is no longer planned.
+PLANNED_ACTION_CHANGED = (
+    "See planeeritud tegevus on vahepeal muutunud. Värskenda lehte ja vaata uuesti."
+)
+
+
+def _locked_planned(locked_matter: Any, action_id: Any) -> NextAction:
+    """The named planned action of this Matter, locked — or a refusal (stale tab)."""
+    action = (
+        NextAction.objects.select_for_update(no_key=True)
+        .filter(matter=locked_matter, pk=action_id, status=ActionStatus.PLANNED)
+        .first()
+    )
+    if action is None:
+        raise DomainError(PLANNED_ACTION_CHANGED)
+    return action
+
+
+@transaction.atomic
+def add_planned_action(
+    *,
+    matter: Any,
+    text: str,
+    target_date: date | None,
+    actor: Any = None,
+    responsible: Any = None,
+) -> NextAction:
+    """`+ Määra järgmine tegevus` beside a current action: a dated future one.
+
+    Never supersedes the current action or another planned one. `DO` /
+    `DEADLINE` / `EXACT`, like every step a person writes; the departed-owner
+    rule is the one new work follows. Audited as `NEXT_ACTION_SET` with
+    ``planned`` in the payload.
+    """
+    from app.matters.locks import lock_matter_for_write
+
+    text = (text or "").strip()
+    if not text:
+        raise DomainError("Järgmiseks vajab teksti.")
+    if target_date is None:
+        raise DomainError(PLANNED_ACTION_NEEDS_DATE)
+    locked_matter = lock_matter_for_write(matter.pk)
+    if not locked_matter.is_open:
+        raise DomainError("Suletud teemale ei saa järgmist tegevust määrata.")
+    action = NextAction.objects.create(
+        matter=locked_matter,
+        text=text,
+        kind=ActionKind.DO,
+        date_semantics=DateSemantics.DEADLINE,
+        target_date=target_date,
+        date_precision=DatePrecision.EXACT,
+        status=ActionStatus.PLANNED,
+        responsible=responsible_for_new_work(matter=locked_matter, explicit=responsible)
+        or locked_matter.owner,
+        created_by=actor,
+    )
+    record_change_event(
+        event_type=ChangeEventType.NEXT_ACTION_SET,
+        matter=locked_matter,
+        actor=actor,
+        obj=action,
+        summary=text[:200],
+        payload={
+            "kind": action.kind,
+            "date_semantics": action.date_semantics,
+            "target_date": target_date.isoformat(),
+            "replaced": None,
+            "planned": True,
+        },
+    )
+    return action
+
+
+@transaction.atomic
+def change_planned_action(
+    *, matter: Any, action_id: Any, text: str, target_date: date | None, actor: Any = None
+) -> NextAction:
+    """`Muuda` on a planned row — that exact action, said differently.
+
+    Superseded by a new planned row, as `Muuda` on the current action is, so
+    the history keeps both. Keeps its responsible person and its restriction;
+    the current action is untouched. A stale tab naming an action no longer
+    planned refuses with nothing written.
+    """
+    from app.matters.locks import lock_matter_for_write
+
+    text = (text or "").strip()
+    if not text:
+        raise DomainError("Järgmiseks vajab teksti.")
+    if target_date is None:
+        raise DomainError(PLANNED_ACTION_NEEDS_DATE)
+    locked_matter = lock_matter_for_write(matter.pk)
+    if not locked_matter.is_open:
+        raise DomainError("Suletud teemale ei saa järgmist tegevust määrata.")
+    previous = _locked_planned(locked_matter, action_id)
+    if (previous.text, previous.target_date) == (text, target_date):
+        return previous
+    action = NextAction.objects.create(
+        matter=locked_matter,
+        text=text,
+        kind=previous.kind,
+        date_semantics=previous.date_semantics,
+        target_date=target_date,
+        date_precision=DatePrecision.EXACT,
+        status=ActionStatus.PLANNED,
+        responsible=previous.responsible,
+        created_by=actor,
+        visibility_override=previous.visibility_override,
+    )
+    previous.status = ActionStatus.SUPERSEDED
+    previous.ended_at = timezone.now()
+    previous.ended_by = actor
+    previous.replaced_by = action
+    previous.save(update_fields=["status", "ended_at", "ended_by", "replaced_by", "updated_at"])
+    record_change_event(
+        event_type=ChangeEventType.NEXT_ACTION_SET,
+        matter=locked_matter,
+        actor=actor,
+        obj=action,
+        summary=text[:200],
+        payload={
+            "kind": action.kind,
+            "date_semantics": action.date_semantics,
+            "target_date": target_date.isoformat(),
+            "replaced": str(previous.pk),
+            "planned": True,
+        },
+    )
+    return action
+
+
+@transaction.atomic
+def cancel_planned_action(*, matter: Any, action_id: Any, actor: Any = None) -> NextAction:
+    """`×` on a planned row: that exact action leaves the plan. It stays in the history."""
+    from app.matters.locks import lock_matter_for_write
+
+    locked_matter = lock_matter_for_write(matter.pk)
+    action = _locked_planned(locked_matter, action_id)
+    return cancel_next_action(action=action, actor=actor, reason="Planeeritud tegevus eemaldati")
+
+
+@transaction.atomic
+def promote_next_planned_action(*, matter: Any, actor: Any = None) -> NextAction | None:
+    """The earliest planned action becomes current — if nothing is current.
+
+    Called inside the completion's transaction, under the Matter's lock. Order:
+    the earliest day, then the order it was planned in; never by its words.
+    The row keeps its text, day, responsible person and restriction; only its
+    status moves, and `NEXT_ACTION_SET` with ``promoted`` records it.
+    """
+    if NextAction.objects.filter(matter=matter, status=ActionStatus.OPEN).exists():
+        return None
+    action = (
+        NextAction.objects.select_for_update(no_key=True)
+        .filter(matter=matter, status=ActionStatus.PLANNED)
+        .order_by("target_date", "created_at", "pk")
+        .first()
+    )
+    if action is None:
+        return None
+    action.status = ActionStatus.OPEN
+    action.save(update_fields=["status", "updated_at"])
+    record_change_event(
+        event_type=ChangeEventType.NEXT_ACTION_SET,
+        matter=action.matter,
+        actor=actor,
+        obj=action,
+        summary=action.text[:200],
+        payload={
+            "kind": action.kind,
+            "date_semantics": action.date_semantics,
+            "target_date": action.target_date.isoformat() if action.target_date else None,
+            "replaced": None,
+            "promoted": True,
         },
     )
     return action

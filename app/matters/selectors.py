@@ -615,6 +615,18 @@ def current_action_of(matter: Matter, user: Any = None) -> NextAction | None:
     )
 
 
+def planned_actions_of(matter: Matter, user: Any) -> list[NextAction]:
+    """The planned future actions this reader may see, in the order they become current.
+
+    Earliest day first, then the order they were planned in (docs/adr/0143).
+    Scoped like `current_action_of`: a planned action restricted below its
+    Matter is not listed for a reader who may not see it.
+    """
+    if user is None:
+        return []
+    return list(NextAction.objects.visible_to(user).filter(matter=matter).planned())
+
+
 def visible_actions(user: Any) -> QuerySet[NextAction]:
     return (
         NextAction.objects.visible_to(user)

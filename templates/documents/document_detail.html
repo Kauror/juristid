@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load document_state evidence_uploads %}
+{% load document_state evidence_uploads form_labels %}
 {% block title %}{{ document.title }} · {{ matter.title }} · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -85,6 +85,20 @@
           </div>
         </form>
       {% endif %}
+
+      <form class="stackform" method="post"
+            action="{% url 'documents:rename' pk=document.pk %}">
+        {% csrf_token %}
+        <label class="field">
+          <span class="field__label">Pealkiri{% required_mark %}</span>
+          <input class="field__input" type="text" name="title" value="{{ document.title }}"
+                 maxlength="400" required>
+          <span class="field__help">Muudab ainult nähtavat pealkirja; algne failinimi ja failid ei muutu.</span>
+        </label>
+        <div class="form__actions">
+          <button class="button button--quiet" type="submit">Muuda pealkirja</button>
+        </div>
+      </form>
 
       {% if not role_refusal %}
         <form class="stackform" method="post"

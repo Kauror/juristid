@@ -177,6 +177,10 @@ class NextActionQuerySet(models.QuerySet):
     def open(self) -> NextActionQuerySet:
         return self.filter(status=ActionStatus.OPEN)
 
+    def planned(self) -> NextActionQuerySet:
+        """Queued future actions, in the order they become current (docs/adr/0143)."""
+        return self.filter(status=ActionStatus.PLANNED).order_by("target_date", "created_at", "pk")
+
     def overdue(self, today: date | None = None) -> NextActionQuerySet:
         """Actions that are genuinely late.
 
@@ -329,7 +333,9 @@ class NextAction(VisibilityInheritingModel):
         verbose_name_plural = "järgmised tegevused"
         ordering = ["-created_at"]
         constraints = [
-            # The invariant the whole Minu töö page depends on.
+            # The invariant the whole Minu töö page depends on: one *current*
+            # action. Queued future work is `PLANNED`, outside this index
+            # (docs/adr/0143).
             models.UniqueConstraint(
                 fields=["matter"],
                 condition=models.Q(status=ActionStatus.OPEN),
@@ -392,6 +398,14 @@ class NextAction(VisibilityInheritingModel):
                 | models.Q(date_precision=DatePrecision.EXACT),
                 name="workflow_next_action_undated_is_exact",
             ),
+            # **A planned action is dated** (docs/adr/0143): planning several
+            # future activities is planning them on days. The current action
+            # keeps docs/adr/0106's undated case.
+            models.CheckConstraint(
+                condition=~models.Q(status=ActionStatus.PLANNED)
+                | models.Q(target_date__isnull=False),
+                name="workflow_planned_action_is_dated",
+            ),
         ]
         indexes = [
             models.Index(
@@ -413,6 +427,10 @@ class NextAction(VisibilityInheritingModel):
     @property
     def is_open(self) -> bool:
         return self.status == ActionStatus.OPEN
+
+    @property
+    def is_planned(self) -> bool:
+        return self.status == ActionStatus.PLANNED
 
     def is_overdue(self, today: date | None = None) -> bool:
         """Whether this step's own period has ended without it being done.

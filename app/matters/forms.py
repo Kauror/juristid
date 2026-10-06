@@ -48,6 +48,7 @@ from app.matters.models import (
     WEBSITE_OVERVIEW_TITLE_MAX_LENGTH,
     WEBSITE_OVERVIEW_URL_MAX_LENGTH,
     Matter,
+    MatterEngagement,
 )
 from app.matters.stage_episodes import stage_choice_label
 from app.organisations.models import Organisation, OrganisationAlias
@@ -3746,6 +3747,46 @@ class StartPlanStepForm(forms.Form):
         super().__init__(*args, **kwargs)
 
 
+class PlannedActionForm(forms.Form):
+    """A planned future action: what, and on which day (docs/adr/0143).
+
+    `+ Määra järgmine tegevus` beside a current action, and `Muuda` on a planned
+    row. Both answers are required — planning several activities is planning
+    them on days — and the day is an exact one; a period is not offered here.
+    ``auto_id`` keeps the add form and each row's editor apart on one page.
+    """
+
+    use_required_attribute = False
+
+    text = marks_required(
+        forms.CharField(
+            label="Mida on vaja teha?",
+            required=False,
+            max_length=2000,
+            widget=forms.TextInput(attrs={"class": "field__input"}),
+        )
+    )
+    target_date = marks_required(
+        EstonianDateField(label="Millal?", required=False, widget=DATE_WIDGET)
+    )
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("auto_id", "id_planeeritud_%s")
+        super().__init__(*args, **kwargs)
+
+    def clean_text(self) -> str:
+        text = (self.cleaned_data.get("text") or "").strip()
+        if not text:
+            raise forms.ValidationError("Kirjuta, mida on vaja teha.")
+        return text
+
+    def clean_target_date(self) -> Any:
+        value = self.cleaned_data.get("target_date")
+        if value is None:
+            raise forms.ValidationError("Planeeritud tegevusel peab olema kuupäev.")
+        return value
+
+
 class PlanRevisionForm(forms.Form):
     """The question `×` beside `Soovitatud järgmisena` asks: which sequence was this drawn from.
 
@@ -3837,19 +3878,20 @@ class ReviewActionForm(forms.Form):
 
 
 class CompactEngagementForm(forms.Form):
-    """`+ Kaasamine` — who was engaged, when, by when answers were asked for.
+    """`+ Kaasamine · Alusta kaasamist` — who was asked, when, and by when.
 
-    **Four questions and a file box**, which is the whole of the simplified
-    round (docs/adr/0086 §2):
+    **The start of a round and nothing that came back** (docs/adr/0142):
 
     * `Keda kaasati` — required, and the one thing that identifies the record;
     * `Kaasamise kuupäev` — optional, visibly pre-filled with today, clearable;
-    * `Saadud tagasiside / arvamused` — optional prose, for the round somebody
-      is writing up after the answers already came in.
+    * `Tagasisidet ootame kuni`, `Veebileht`, the two provider links and
+      `Märkus` — optional.
 
-    `Vastuseid` and the two provider pointers stay, unchanged and optional. They
-    cost a reader nothing when they are empty and they are the only place a
-    mailing's address lives (docs/adr/0027, amended 2026-09-12).
+    `Vastuseid`, `Saadud tagasiside / arvamused` and the reply files left this
+    panel: what came back is `Lisa tagasiside` (`EngagementReplyForm`), and
+    a round's count is still corrected through `Muuda` on its row
+    (`EngagementForm`). A POST still carrying them reaches a form that does not
+    declare them, so nothing of theirs is written here.
 
     **`Tagasisidet ootame kuni` is back on this panel, optional and empty**
     (docs/adr/0120, UQ-10). docs/adr/0091 §2 took it off, so the one fact that
@@ -3898,10 +3940,6 @@ class CompactEngagementForm(forms.Form):
             ),
         )
     )
-    #: `Vastuseid`, and the same field object `EngagementForm` corrects it with.
-    #: What this panel can write, `Muuda` can fix — including back to blank
-    #: (`engagement_response_count_field`, QA-03).
-    response_count = engagement_response_count_field()
     #: `Veebileht` and `Märkus` (docs/adr/0127 §2), the same definitions
     #: `EngagementForm` corrects them with. Named `website_url` and
     #: `engagement_note` rather than `url` and `note` because this panel keeps
@@ -3938,30 +3976,6 @@ class CompactEngagementForm(forms.Form):
     #: `EngagementForm`'s, so the correction form reads back exactly what this
     #: one wrote (docs/adr/0120).
     feedback_deadline = engagement_feedback_deadline_field()
-    #: `Saadud tagasiside / arvamused` — what came back, where no separate file
-    #: exists.
-    #:
-    #: On the *creation* panel as well as on the completion form, because a
-    #: round is routinely written up after it finished: somebody records the
-    #: consultation and the answers in one save, and a field that only existed
-    #: behind `Lõpeta kaasamine` would make them file an empty round and then
-    #: immediately close it (docs/adr/0086 §5).
-    #:
-    #: Writing here does **not** close a wait. Recording what came back and
-    #: deciding the round is over are two acts, and only the second is a
-    #: decision somebody's name goes on.
-    feedback_received = forms.CharField(
-        label="Saadud tagasiside / arvamused",
-        required=False,
-        widget=forms.Textarea(
-            attrs={
-                "class": "field__input field__input--compact",
-                "rows": "3",
-                "placeholder": "Mida vastati? Nt liikmed toetasid, kaubandus soovis pikemat aega.",
-            }
-        ),
-    )
-    attachments = workspace_attachments("id_kaasamine_failid")
 
     def clean_audience(self) -> str:
         audience = (self.cleaned_data.get("audience") or "").strip()
@@ -5236,6 +5250,125 @@ class OtherOpinionForm(CompactExternalPositionForm):
     provenance = ExternalPositionProvenance.DISCOVERED.value
     allows_source_label = False
     panel_slug = "valine_seisukoht"
+
+
+#: Refused when `Lisa tagasiside` names no round, or one that is not open.
+ENGAGEMENT_FEEDBACK_NEEDS_ROUND = "Vali kaasamine, mille kohta tagasiside tuli."
+#: Refused when `Lisa tagasiside` carries neither words nor a file.
+ENGAGEMENT_FEEDBACK_NEEDS_CONTENT = "Kirjuta saadud tagasiside või lisa fail."
+
+
+class EngagementReplyForm(ExternalPositionFieldsMixin, forms.Form):
+    """`+ Kaasamine · Lisa tagasiside` — what came back from an open round.
+
+    **The canonical record, not a new one.** What a round produced has been a
+    `Meile saadetud tagasiside` tied to it by `Seotud kaasamine` since
+    docs/adr/0084 §4; the round row counts them («Seotud seisukohti N») and
+    their files follow them. This panel asks for exactly that record with the
+    round already named, through the same `_record_external_position` and
+    `add_matter_external_position` as `+ Arvamus / tagasiside`. It does **not**
+    close the round: `Lõpeta kaasamine` is still the one act that does
+    (docs/adr/0132, docs/adr/0142).
+
+    Four questions:
+
+    * `Kaasamine` — required, from this Matter's **open** rounds as this reader
+      may see them (`work_items.open_feedback_waits`). Preselected only when
+      there is exactly one; with several, the person chooses and nothing is
+      guessed from a date or a title;
+    * `Saadud tagasiside` — what came back, in writing;
+    * `Kuupäev` — opening on today, clearable, as on the sibling panel;
+    * the files, and `Märkus` — this office's own note, never part of the reply.
+
+    No organisation: received feedback may name nobody (docs/adr/0101), and a
+    round's answers are the round's. `Muuda` on the record still asks for one.
+    """
+
+    use_required_attribute = False
+
+    provenance = ExternalPositionProvenance.RECEIVED.value
+    allows_source_label = False
+    author_is_optional = True
+    offers_precision = False
+    panel_slug = "kaasamise_tagasiside"
+
+    engagement = marks_required(
+        _EngagementChoiceField(
+            label="Kaasamine",
+            queryset=MatterEngagement.objects.none(),
+            required=False,
+            empty_label="Vali kaasamine",
+            widget=SELECT_WIDGET,
+        )
+    )
+    summary = _external_position_summary_field()
+    stated_on = EstonianDateField(
+        label="Kuupäev",
+        required=False,
+        widget=EstonianDateInput(),
+        initial=timezone.localdate,
+    )
+    attachments = workspace_attachments("id_kaasamise_tagasiside_failid")
+    lawyer_note = _external_position_lawyer_note_field()
+
+    def __init__(
+        self,
+        *args: Any,
+        matter: Any = None,
+        viewer: Any = None,
+        open_rounds: list[Any] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        kwargs.setdefault("auto_id", f"id_{self.panel_slug}_%s")
+        super().__init__(*args, **kwargs)
+        self.fields["summary"].label = "Saadud tagasiside"
+        self.fields["lawyer_note"].label = "Märkus"
+        field = cast(Any, self.fields["engagement"])
+        #: How many open rounds this reader may attach feedback to. With none,
+        #: the panel says so instead of drawing a form that can only refuse.
+        self.open_round_count = 0
+        if matter is not None:
+            from app.matters import work_items
+
+            # The field's own queryset is what validates a posted id: open
+            # rounds on this Matter that this reader may see, and nothing else.
+            field.queryset = (
+                work_items.open_feedback_waits(viewer).filter(matter=matter).order_by("-created_at")
+            )
+            rounds = list(field.queryset) if open_rounds is None else list(open_rounds)
+            self.open_round_count = len(rounds)
+            # The rendered choices from the rows in hand; the queryset above is
+            # still what validates a post.
+            field.choices = [
+                ("", "Vali kaasamine"),
+                *(
+                    (
+                        str(round_.pk),
+                        f"{round_.title} · {round_.display_date}"
+                        if round_.display_date
+                        else round_.title,
+                    )
+                    for round_ in rounds
+                ),
+            ]
+            if len(rounds) == 1 and not self.is_bound:
+                self.initial["engagement"] = rounds[0].pk
+
+    def clean_engagement(self) -> Any:
+        engagement = self.cleaned_data.get("engagement")
+        if not engagement:
+            raise forms.ValidationError(ENGAGEMENT_FEEDBACK_NEEDS_ROUND)
+        return engagement
+
+    def clean(self) -> dict[str, Any]:
+        super().clean()
+        cleaned = self._clean_external_position(
+            has_file=bool(self.cleaned_data.get("attachments")),
+        )
+        # The sibling sentence names a link this panel does not ask for.
+        if "summary" in self.errors:
+            self.errors["summary"] = self.error_class([ENGAGEMENT_FEEDBACK_NEEDS_CONTENT])
+        return cleaned
 
 
 class ExternalPositionEditForm(ExternalPositionFieldsMixin, forms.Form):

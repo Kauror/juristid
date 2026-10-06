@@ -312,15 +312,15 @@ def test_a_task_save_keeps_an_open_marge_draft_open(page, base_url):
 def test_a_draft_in_a_panel_left_behind_stays_behind(page, base_url):
     """Carried, but not reopened: the person had already switched away from it."""
     _teema(page, base_url)
-    open_add_panel(page, "lisa-kaasamine")
-    page.locator("#lisa-kaasamine textarea").first.fill("Kaasamise mustand")
+    open_add_panel(page, "kaasamine-alusta")
+    page.locator("#kaasamine-alusta textarea").first.fill("Kaasamise mustand")
     open_add_panel(page, "marge-tavaline")
     page.fill("#id_marge_title", "Teine märge")
     page.locator(MARGE_SAVE).click()
     wait_for_htmx(page)
 
     assert not page.locator("#lisa-kaasamine-valik").is_checked()
-    expect(page.locator("#lisa-kaasamine textarea").first).to_have_value("Kaasamise mustand")
+    expect(page.locator("#kaasamine-alusta textarea").first).to_have_value("Kaasamise mustand")
 
 
 def test_an_open_row_editor_survives_an_unrelated_save(page, base_url):

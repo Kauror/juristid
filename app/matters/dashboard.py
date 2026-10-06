@@ -529,7 +529,8 @@ def _upcoming_sources(user: Any, today: date, window: DeadlineWindow) -> tuple[A
     actions = (
         NextAction.objects.visible_to(user)
         .filter(
-            status=ActionStatus.OPEN,
+            # The current action and the planned ones (docs/adr/0143).
+            status__in=(ActionStatus.OPEN, ActionStatus.PLANNED),
             target_date__gte=earliest,
             matter__is_open=True,
             matter__record_mode=RecordMode.FULL,

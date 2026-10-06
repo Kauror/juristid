@@ -916,7 +916,7 @@ def test_the_matter_page_never_runs_the_recommendation_engine(monkeypatch, signe
     body = response.content.decode()
     # The section is there, and its lazy control is the way in.
     assert "Seotud materjalid" in body
-    assert ">Lisa</summary>" in body
+    assert ">+ Lisa</summary>" in body
 
 
 def test_the_order_is_the_same_every_time(specialist):
@@ -1123,7 +1123,7 @@ def test_the_matter_page_renders_the_section_closed_and_computes_no_suggestions(
     # the suggestions — which is the order somebody uses them in: look for the
     # thing you know about, read what the application offers if you do not find
     # it (docs/adr/0074 §21).
-    assert ">Lisa</summary>" in body
+    assert ">+ Lisa</summary>" in body
     assert "data-related-suggestions" not in body
     assert "Jäätmeseaduse rakendamine" not in body
 
@@ -1139,7 +1139,7 @@ def test_a_reader_gets_the_section_without_controls(specialist, reader, client):
 
     assert "Jäätmeseaduse rakendamine" in body
     assert "Sama õigusakt: jäätmeseadus" in body
-    for control in (">Lisa</summary>", "Ei ole seotud", "Otsi teemat või dokumenti…"):
+    for control in (">+ Lisa</summary>", "Ei ole seotud", "Otsi teemat või dokumenti…"):
         assert control not in body
 
 

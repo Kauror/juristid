@@ -837,8 +837,8 @@ def record_a_round(page, matter_url: str, *, audience: str, deadline: str) -> No
     """
     page.goto(matter_url)
     page.wait_for_load_state("networkidle")
-    open_add_panel(page, "lisa-kaasamine")
-    panel = page.locator("#lisa-kaasamine")
+    open_add_panel(page, "kaasamine-alusta")
+    panel = page.locator("#kaasamine-alusta")
     panel.locator("[name=audience]").fill(audience)
     panel.locator("[name=feedback_deadline]").fill(deadline)
     # Wait for the POST itself, not for `networkidle`. The panel saves through
@@ -886,8 +886,8 @@ def test_a_round_with_no_reply_by_date_draws_nothing(page, base_url):
     )
     page.goto(matter_url)
     page.wait_for_load_state("networkidle")
-    open_add_panel(page, "lisa-kaasamine")
-    panel = page.locator("#lisa-kaasamine")
+    open_add_panel(page, "kaasamine-alusta")
+    panel = page.locator("#kaasamine-alusta")
     panel.locator("[name=audience]").fill("liikmed")
     # **The box is left empty**, so this is «a consultation with no reply-by
     # date» — an open round (docs/adr/0132) that docs/adr/0083 §1 says draws

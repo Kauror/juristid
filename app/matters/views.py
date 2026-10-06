@@ -114,6 +114,7 @@ from app.matters.forms import (
     EngagementEvidenceForm,
     EngagementFeedbackForm,
     EngagementForm,
+    EngagementReplyForm,
     EngagementWaitForm,
     EntryEditForm,
     ExternalPositionEditForm,
@@ -129,6 +130,7 @@ from app.matters.forms import (
     OpinionWorkingDocumentsForm,
     OtherOpinionForm,
     PersonalNoteForm,
+    PlannedActionForm,
     PlanRevisionForm,
     PositionForm,
     ProceduralDevelopmentEditForm,
@@ -258,6 +260,8 @@ from app.matters.timeline import (
     attach_round_positions,
     development_milestone,
     engagement_milestone,
+    entry_completes_a_step,
+    entry_plain_text,
     external_position_milestone,
     matter_timeline,
 )
@@ -2723,9 +2727,18 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # differently scoped answers to that on one page would be a row appearing or
     # vanishing for reasons a reader could not see (docs/adr/0092 §8).
     current_action = selectors.current_action_of(matter, request.user)
-    # `Soovitatud järgmisena` — one suggestion while this reader has no current
-    # step, read once (docs/adr/0141, `app.matters.plan_view`).
-    recommendation = recommendation_for(matter, current_action)
+    # The planned future actions this reader may see, earliest first, each with
+    # its own `Muuda` form (docs/adr/0143).
+    planned_actions = selectors.planned_actions_of(matter, request.user)
+    for planned in planned_actions:
+        planned.edit_form = PlannedActionForm(  # type: ignore[attr-defined]
+            auto_id=f"id_planeeritud_{planned.pk}_%s",
+            initial={"text": planned.text, "target_date": planned.target_date},
+        )
+    # `Soovitatud järgmisena` — one suggestion, read once (docs/adr/0141,
+    # `app.matters.plan_view`). A queued action outranks it: it is the fallback
+    # when nothing is current and nothing is planned.
+    recommendation = None if planned_actions else recommendation_for(matter, current_action)
     # The file's `Õigusakt` and its `Hetkeseis` periods, read **once** for the
     # rail's pattern, the grouped chronology and the next-stage order — three
     # readers of the same two facts (docs/adr/0131 §7).
@@ -2806,6 +2819,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "matter": matter,
         "current_action": current_action,
         "recommendation": recommendation,
+        "planned_actions": planned_actions,
         "upcoming_step": upcoming_step,
         "source_instruction": source_instruction,
         "source_snapshot": snapshot_label() if source_instruction else "",
@@ -2840,6 +2854,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
             current_action,
             matter=matter,
             viewer=request.user,
+            open_rounds=feedback_waits,
             recommendation=recommendation,
             phases=phases,
             phase_offers=_phase_date_offers(request, matter, phases, step_rows),
@@ -4369,6 +4384,103 @@ def set_action(request: HttpRequest, pk: Any) -> HttpResponse:
     return _render_overview(request, matter)
 
 
+# ---------------------------------------------------------------------------
+# Planned actions (docs/adr/0143)
+# ---------------------------------------------------------------------------
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def add_planned_action_view(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`+ Määra järgmine tegevus` beside a current action — a dated future one.
+
+    Never replaces the current action. On a Matter with no current action at
+    all the same save becomes the current one, as `+ Määra järgmine tegevus`
+    always made it (a stale tab drawn while one was current).
+    """
+    from app.workflow.services import add_planned_action, current_next_action
+
+    matter = get_visible_matter(request, pk)
+    form = PlannedActionForm(request.POST)
+    if not form.is_valid():
+        return _workspace_refusal(request, matter, key="planned_action_form", form=form)
+    try:
+        if current_next_action(matter) is None:
+            set_next_action_for_new_work(
+                matter=matter,
+                actor=request.user,
+                text=form.cleaned_data["text"],
+                target_date=form.cleaned_data["target_date"],
+            )
+        else:
+            add_planned_action(
+                matter=matter,
+                actor=request.user,
+                text=form.cleaned_data["text"],
+                target_date=form.cleaned_data["target_date"],
+            )
+    except DomainError as error:
+        return _workspace_refusal(
+            request, matter, key="planned_action_form", form=form, error=str(error)
+        )
+    return _render_overview(request, matter)
+
+
+def _visible_planned(request: HttpRequest, matter: Matter, action_id: Any) -> NextAction:
+    """A planned action of this Matter that this reader may see, or a 404 (AUTH-003)."""
+    return get_object_or_404(
+        NextAction.objects.visible_to(request.user), pk=action_id, matter=matter
+    )
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def change_planned_action_view(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse:
+    """`Muuda` on a planned row — that exact action; the current one is untouched."""
+    from app.workflow.services import change_planned_action
+
+    matter = get_visible_matter(request, pk)
+    action = _visible_planned(request, matter, action_id)
+    form = PlannedActionForm(request.POST, auto_id=f"id_planeeritud_{action.pk}_%s")
+    if not form.is_valid():
+        return _workspace_refusal(request, matter, key="planned_edit_form", form=form)
+    try:
+        change_planned_action(
+            matter=matter,
+            action_id=action.pk,
+            actor=request.user,
+            text=form.cleaned_data["text"],
+            target_date=form.cleaned_data["target_date"],
+        )
+    except DomainError as error:
+        return _workspace_refusal(
+            request, matter, key="planned_edit_form", form=form, error=str(error)
+        )
+    return _render_overview(request, matter)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def cancel_planned_action_view(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse:
+    """`×` — `Eemalda planeeritud tegevus`: cancelled, and kept in the history."""
+    from app.workflow.services import cancel_planned_action
+
+    matter = get_visible_matter(request, pk)
+    action = _visible_planned(request, matter, action_id)
+    form = PlanRevisionForm(request.POST)
+    form.is_valid()
+    try:
+        cancel_planned_action(matter=matter, action_id=action.pk, actor=request.user)
+    except DomainError as error:
+        return _workspace_refusal(
+            request, matter, key="planned_edit_form", form=form, error=str(error)
+        )
+    return _render_overview(request, matter)
+
+
 @login_required
 @business_write_required
 @require_http_methods(["POST"])
@@ -5749,6 +5861,10 @@ def _entry_row(
             # one that meant to clear it.
             "entry_edit_swap_marker": True,
             "entry_read_query": ENTRY_READ_QUERY,
+            # A completion row's headline is this note (timeline_items.html).
+            "entry_done_text": (
+                entry_plain_text(entry) if form is None and entry_completes_a_step(entry) else None
+            ),
         },
         status=status,
     )
@@ -6233,8 +6349,9 @@ WORKSPACE_PANELS: dict[str, tuple[str, str]] = {
     "important_date_form": ("lisa-marge", "marge-tahtaeg"),
     "effective_date_form": ("lisa-marge", "marge-joustumine"),
     "work_victory_form": ("lisa-marge", "marge-toovoit"),
-    # `+ Kaasamine` — one question, no sub-choice.
-    "add_engagement_form": ("lisa-kaasamine", ""),
+    # `+ Kaasamine` — start a round, or add what came back (docs/adr/0142).
+    "add_engagement_form": ("lisa-kaasamine", "kaasamine-alusta"),
+    "engagement_reply_form": ("lisa-kaasamine", "kaasamine-tagasiside"),
     # `+ Arvamus / tagasiside` — grouped on screen, three distinct records.
     "received_feedback_form": ("lisa-arvamus", "arvamus-tagasiside"),
     "external_position_form": ("lisa-arvamus", "arvamus-teiste"),
@@ -6251,6 +6368,10 @@ WORKSPACE_PANELS: dict[str, tuple[str, str]] = {
     # `Soovitatud järgmisena` → `Alusta` and `×` (docs/adr/0141).
     "start_plan_form": ("alusta-samm", ""),
     "plan_revision_form": ("soovitus", ""),
+    # `+ Määra järgmine tegevus` beside a current action, and a planned row's
+    # `Muuda` / `×` (docs/adr/0143).
+    "planned_action_form": ("lisa-planeeritud", ""),
+    "planned_edit_form": ("planeeritud", ""),
 }
 
 
@@ -6273,10 +6394,12 @@ WORKSPACE_CHOICE_FAMILY: dict[str, str] = {
     "arvamus-tagasiside": "arvamus_choice",
     "arvamus-teiste": "arvamus_choice",
     "arvamus-koja": "arvamus_choice",
+    "kaasamine-alusta": "kaasamine_choice",
+    "kaasamine-tagasiside": "kaasamine_choice",
 }
 
 
-def _workspace_choices(open_choice: str) -> dict[str, str]:
+def _workspace_choices(open_choice: str, *, has_open_round: bool = False) -> dict[str, str]:
     """One variable per sub-choice group, each naming one of that group's own ids.
 
     The template cannot do this with `open_choice` alone, and the failure is
@@ -6289,8 +6412,16 @@ def _workspace_choices(open_choice: str) -> dict[str, str]:
 
     So each group is told which of *its* ids is chosen, and the answer is always
     one of them (docs/adr/0097 §8.3).
+
+    **`+ Kaasamine` opens on what this Matter needs** (docs/adr/0142):
+    `Lisa tagasiside` while a round is open, `Alusta kaasamist` otherwise.
+    ``has_open_round`` is the page's own `feedback_waits` — the canonical
+    `work_items.open_feedback_waits` for this reader — and nothing else: not a
+    deadline, a title or which round is newest. A refusal from either form
+    still reopens the one it came from.
     """
     choices = dict(WORKSPACE_DEFAULT_CHOICES)
+    choices["kaasamine_choice"] = "kaasamine-tagasiside" if has_open_round else "kaasamine-alusta"
     family = WORKSPACE_CHOICE_FAMILY.get(open_choice)
     if family is not None:
         choices[family] = open_choice
@@ -6306,6 +6437,7 @@ def workspace_forms(
     phase_offers: Any = None,
     next_stages: Any = None,
     recommendation: Recommendation | None = None,
+    open_rounds: list[Any] | None = None,
 ) -> dict[str, Any]:
     """One unbound form per write intention, for an ordinary render.
 
@@ -6341,6 +6473,8 @@ def workspace_forms(
         next_stages = offered_next_stages(matter)
     return {
         "current_action_form": CompleteCurrentActionForm(next_stages=next_stages),
+        # `+ Määra järgmine tegevus` beside a current action (docs/adr/0143).
+        "planned_action_form": PlannedActionForm(),
         # `Soovitatud järgmisena` → `Alusta`, opened on the step's own words so
         # nobody retypes them (docs/adr/0141).
         "start_plan_form": StartPlanStepForm(
@@ -6385,6 +6519,11 @@ def workspace_forms(
         # review that moves nothing (ENG-021).
         "review_form": ReviewActionForm(),
         "add_engagement_form": CompactEngagementForm(),
+        # `+ Kaasamine · Lisa tagasiside`: the open rounds the page has already
+        # read are its choices, and the field's queryset still validates.
+        "engagement_reply_form": EngagementReplyForm(
+            matter=matter, viewer=viewer, open_rounds=open_rounds
+        ),
         "important_date_form": CompactImportantDateForm(),
         "effective_date_form": CompactEffectiveDateForm(),
         "work_victory_form": CompactWorkVictoryForm(),
@@ -6438,7 +6577,7 @@ def workspace_forms(
         # tegele» — and `close_matter` behind it is unchanged.
         "open_panel": "",
         "open_choice": "",
-        **_workspace_choices(""),
+        **_workspace_choices("", has_open_round=bool(open_rounds)),
         "workspace_error": "",
     }
 
@@ -6584,7 +6723,7 @@ def _workspace_refusal(
         context["workspace_error"] = ""
         context["open_panel"] = ""
         context["open_choice"] = ""
-        context.update(_workspace_choices(""))
+        context.update(_workspace_choices("", has_open_round=bool(context.get("feedback_waits"))))
     else:
         context["workspace_error"] = error
         # Both halves, and the template checks each against its own radio: the
@@ -6594,7 +6733,9 @@ def _workspace_refusal(
         family, choice = WORKSPACE_PANELS.get(key, ("", ""))
         context["open_panel"] = family
         context["open_choice"] = choice
-        context.update(_workspace_choices(choice))
+        context.update(
+            _workspace_choices(choice, has_open_round=bool(context.get("feedback_waits")))
+        )
     if not panel_is_rendered:
         # The panel that held their words is not on the fresh column, so the
         # words come back beside the refusal instead — read-only, and labelled
@@ -6858,7 +6999,6 @@ def add_engagement_compact(request: HttpRequest, pk: Any) -> HttpResponse:
             matter=matter,
             author=request.user,
             audience=form.cleaned_data["audience"],
-            response_count=form.cleaned_data.get("response_count"),
             smaily_url=form.cleaned_data.get("smaily_url") or "",
             alchemer_url=form.cleaned_data.get("alchemer_url") or "",
             # `Veebileht` and `Märkus`, into the record's own `url` and `note`
@@ -6870,12 +7010,33 @@ def add_engagement_compact(request: HttpRequest, pk: Any) -> HttpResponse:
             # Optional, and `None` when the box was left empty: no wait is opened
             # and nothing is defaulted (docs/adr/0120).
             feedback_deadline=form.cleaned_data.get("feedback_deadline"),
-            feedback_received=form.cleaned_data.get("feedback_received") or "",
-            uploads=form.cleaned_data["attachments"],
         )
     except (DomainError, UploadRejected) as error:
         return _workspace_refusal(request, matter, key=key, form=form, error=str(error))
     return _render_overview(request, matter)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def add_engagement_reply(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`+ Kaasamine · Lisa tagasiside` — what came back from a round that is open.
+
+    The canonical record for it already exists and is reused, not copied: a
+    `Meile saadetud tagasiside` (`MatterExternalPosition`, provenance RECEIVED)
+    tied to the round by its `engagement`, through the same
+    `_record_external_position` and `add_matter_external_position` as
+    `+ Arvamus / tagasiside`. The round row counts it and its files follow it
+    (docs/adr/0142).
+
+    **The round is named, never guessed**: the form's own field, offering only
+    this Matter's open rounds as this reader may see them, required, and
+    preselected only when there is exactly one. Saving it **does not close the
+    round** — `Lõpeta kaasamine` on the row is still the one act that does.
+    """
+    return _record_external_position(
+        request, pk, form_class=EngagementReplyForm, key="engagement_reply_form"
+    )
 
 
 @login_required

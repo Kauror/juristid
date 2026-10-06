@@ -441,10 +441,11 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # approved target names it rather than reciting the audit vocabulary
     # (docs/adr/0074 §14).
     assert any("arvamus välja" in row for row in rows), rows
-    assert any("määras järgmise sammu" in row for row in rows), rows
+    # A row that only set a step reads as one line since docs/adr/0143.
+    assert any("järgmine samm – " in row for row in rows), rows
     # Newest first: the send happened after the meeting was written up.
     assert next(i for i, row in enumerate(rows) if "arvamus välja" in row) < next(
-        i for i, row in enumerate(rows) if "määras järgmise sammu" in row
+        i for i, row in enumerate(rows) if "järgmine samm – " in row
     )
 
     # -- Teemad ----------------------------------------------------------
