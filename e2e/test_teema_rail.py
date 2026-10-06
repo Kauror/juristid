@@ -177,6 +177,14 @@ def test_a_sparse_matter_gives_a_compact_facts_block(page, base_url):
         assert gone not in keys, f"{gone} is retired from this rail"
 
     for row in rows:
+        if row["key"] == "Saatja":
+            # **Stacked** since the owner's UX round (2026-10-06): the label
+            # above, one sender per line — so one sender is two short lines,
+            # and the value sits under its label rather than beside it.
+            assert row["height"] <= 44, f"Saatja is {row['height']:.1f}px tall for one sender"
+            assert row["minHeight"] in ("auto", "0px"), "Saatja has a minimum height"
+            assert row["valueTop"] > row["keyTop"] + 4, "Saatja's value is not under its label"
+            continue
         # One short fact is one line. 12.5px text on a 1.35 line-height is
         # ~17px; the ceiling leaves room for the dashed affordance under an
         # editable value and for nothing else.

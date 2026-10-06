@@ -45,6 +45,7 @@ lists and the suggestions cannot disagree about the click that just happened.
           <a class="factrow__title factrow__matter" href="{% url 'matters:matter_detail' pk=item.other.pk %}">{{ item.other.title }}</a>
           {% if can_write %}
             <form class="relatedmaterials__remove" method="post" action="{% url 'related_materials:unlink' pk=matter.pk %}"
+                  hx-post="{% url 'related_materials:unlink' pk=matter.pk %}"
                   hx-target="#seotud-materjalid" hx-swap="outerHTML">
               {% csrf_token %}
               {% include "related_materials/partials/state_fields.html" %}
@@ -60,6 +61,7 @@ lists and the suggestions cannot disagree about the click that just happened.
           <span class="muted relatedmaterials__meta">{{ item.label }}{% if item.date %} · {{ item.date|date:"j.n.Y" }}{% endif %}</span>
           {% if can_write %}
             <form class="relatedmaterials__remove" method="post" action="{% url 'related_materials:remove_background' pk=matter.pk %}"
+                  hx-post="{% url 'related_materials:remove_background' pk=matter.pk %}"
                   hx-target="#seotud-materjalid" hx-swap="outerHTML">
               {% csrf_token %}
               {% include "related_materials/partials/state_fields.html" %}

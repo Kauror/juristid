@@ -877,6 +877,7 @@ def cancel_planned_action(*, matter: Any, action_id: Any, actor: Any = None) -> 
     return cancel_next_action(action=action, actor=actor, reason="Planeeritud tegevus eemaldati")
 
 
+@transaction.atomic
 def promote_next_planned_action(*, matter: Any, actor: Any = None) -> NextAction | None:
     """The earliest planned action becomes current — if nothing is current.
 

@@ -6721,6 +6721,11 @@ button.accordion__action:focus-visible {
 }
 
 /* `Seotud materjalid` rows: the title is the link, one quiet `×` at the end. */
+.relatedmaterials__list {
+  margin: 0;
+  padding: 0;
+}
+
 .relatedmaterials__row {
   display: flex;
   align-items: baseline;
@@ -11732,6 +11737,13 @@ section:has(.pw-more[open]) tbody.uxextra {
 
 #teema-vaade-wrap .uxtl__next .uxtl__nextdash {
   color: var(--text-muted);
+}
+
+/* A completion row reads as its result, a step-only row as its step: both in
+ * the body ink rather than the meta line's muted one (docs/adr/0143). */
+#teema-vaade-wrap .uxtl__meta--done,
+#teema-vaade-wrap .uxtl__meta--step .uxtl__stepline {
+  color: var(--text-body);
 }
 
 /* A completion row: the result is the line, with a small green tick. */
