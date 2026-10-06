@@ -655,8 +655,21 @@ def test_splitting_the_composer_dropped_none_of_its_fields(client, specialist) -
         actor=specialist,
     )
 
+    # And a file with an open consultation round, because `+ Kaasamine ·
+    # Lisa tagasiside` draws its form only while there is a round to answer
+    # (docs/adr/0142).
+    from app.matters.services import add_engagement
+
+    with_round = factories.MatterFactory(owner=specialist)
+    add_engagement(
+        matter=with_round,
+        kind="OTHER",
+        title="Liikmete küsitlus",
+        occurred_on=timezone.localdate(),
+        actor=specialist,
+    )
     markup = ""
-    for matter in (with_action, without_action, waiting):
+    for matter in (with_action, without_action, waiting, with_round):
         url = reverse("matters:matter_detail", kwargs={"pk": matter.pk})
         markup += _workspace_markup(client.get(url).content.decode())
 
