@@ -10628,6 +10628,42 @@ section:has(.pw-more[open]) tbody.uxextra {
   padding-left: 0;
 }
 
+/* `Seotud materjalid`'s `+ Lisa` reads like every other `+ Lisa` in the rail
+ * (`.railcard__add`, e.g. `Menetluse link`): flush left, no disclosure
+ * triangle, muted with a dashed underline — not a `▸` indented under the
+ * heading (owner's follow-up, 2026-10-06). */
+.teema .rail .relatedmaterials__picker {
+  margin-left: 0;
+}
+
+.teema .rail .relatedmaterials__picker > .disclosure__summary {
+  display: inline-block;
+  list-style: none;
+  padding-bottom: 1px;
+  border-bottom: 1px dashed var(--border-strong);
+  font-size: 12.5px;
+  font-weight: var(--typography-weight-regular);
+  color: var(--text-muted);
+}
+
+.teema .rail .relatedmaterials__picker > .disclosure__summary::-webkit-details-marker {
+  display: none;
+}
+
+.teema .rail .relatedmaterials__picker > .disclosure__summary::marker {
+  content: "";
+}
+
+.teema .rail .relatedmaterials__picker > .disclosure__summary:hover,
+.teema .rail .relatedmaterials__picker > .disclosure__summary:focus-visible {
+  color: var(--accent-link);
+  border-bottom-color: var(--accent-link);
+}
+
+.teema .rail .relatedmaterials__picker[open] > .disclosure__summary {
+  color: var(--text-primary);
+}
+
 .teema .rail .relatedmaterials {
   border: 0;
   margin: 0;
@@ -10876,14 +10912,18 @@ section:has(.pw-more[open]) tbody.uxextra {
   gap: var(--spacing-1) var(--spacing-2);
 }
 
+/* The picker takes the search box's own width (`.orgfind__search` stops at
+ * 30rem) rather than the rest of the row, so `Liige` sits a gap after the box
+ * instead of at the panel's far edge (owner's follow-up, 2026-10-06). */
 #teema-vaade-wrap .orgpick__row > .orgfind {
-  flex: 1 1 260px;
+  flex: 0 1 30rem;
   min-width: 0;
 }
 
 #teema-vaade-wrap .orgpick__mark {
   flex: none;
   margin-top: 4px;
+  margin-left: var(--spacing-1);
 }
 
 #teema-vaade-wrap .lprail__aside--koda {
