@@ -1,32 +1,23 @@
-"""`Tööplaan` — the likely course of a Matter's work, as faint guidance.
+"""`Soovitatud järgmisena` — the Matter's next suggested step, in the background.
 
-**Four questions, four answers, and this module owns only the third**
-(docs/adr/0133 §1):
+Since docs/adr/0141 `Tööplaan` is no longer a visible or administered feature.
+What remains is the ordered sequence behind one line under `PRAEGUNE TEGEVUS`:
+when nothing is current, the first step still ahead is suggested, and the
+person may **start** it (`activate_plan_step`) or **dismiss** it
+(`skip_plan_step`, which stores `SKIPPED` — persistent, and the next step is
+suggested instead).
 
-* `Hetkeseis` — where the external process stands;
-* `NextAction` — what the lawyer is doing next, at most one open per Matter;
-* **`Tööplaan` — what will probably have to be done after that;**
-* `Teema käik` — what actually happened.
+Starting writes the Matter's one canonical `NextAction` through
+`set_next_action_for_new_work`, with ``plan_step`` pointing back here; `Muuda`
+carries that link to the replacement, and completing the action completes the
+step (`app.workflow.services`), so the sequence advances. Work written by hand
+is never linked to a step.
 
-A plan is guidance, not a queue. A step has no date, no responsible person, no
-lateness and no reminder; it reaches no work surface, count or statistic and is
-never a chronology row. It becomes work in exactly one way — somebody starts it
-(:func:`activate_plan_step`) — and starting it writes the Matter's one canonical
-`NextAction` through `set_next_action_for_new_work`, with ``plan_step`` pointing
-back here. There is no second task service and no second date model.
-
-**The one-open-action invariant is untouched.** Starting a step while another
-action is open is refused rather than silently replacing it: the ordinary loop
-is *finish the current thing, then choose the next* (docs/adr/0133 §4).
-
-**Every change is audited and none is chronology.** The events below are
-`PLAN_*`, absent from `TIMELINE_EVENT_TYPES` on purpose (docs/adr/0133 §7).
-
-**Every change locks the Matter**, through the same helper every workspace write
-uses, so a closed Matter refuses and two writers take turns. Edits to the plan's
-*shape* — add, edit, move, skip, restore, repeat — also name the plan revision
-the editor was drawn from, and a stale one refuses the whole change rather than
-overwriting a colleague's newer order (docs/adr/0133 §10).
+The sequence comes from the code-managed `STANDARD_PLAN`, seeded when a person
+files real work (`Uus teema`, `Saabunud`). Every change locks the Matter; a
+dismissal also names the plan revision the page was drawn from, so a stale tab
+cannot skip a different suggestion. Changes are audited as `PLAN_*` events and
+are never chronology.
 """
 
 from __future__ import annotations
@@ -124,35 +115,25 @@ PLAN_TEMPLATES: dict[str, PlanTemplate] = {STANDARD_PLAN.key: STANDARD_PLAN}
 
 # -- refusals -----------------------------------------------------------------
 
-#: The editor was drawn from a plan somebody has changed since.
-STALE_PLAN_REFUSAL = "Tööplaani on vahepeal muudetud. Värskenda lehte ja vaata plaan uuesti üle."
+#: The page was drawn from a sequence somebody has changed since — the
+#: suggestion it showed was started, dismissed or replaced in another tab.
+STALE_PLAN_REFUSAL = "Soovitus on vahepeal muutunud. Värskenda lehte ja vaata uuesti."
 #: An archive register row is offered no plan at all (docs/adr/0133 §5). The
 #: page draws no control for one; this is the same rule for a crafted POST.
 ARCHIVE_HAS_NO_PLAN = "Arhiivikirjele tööplaani ei koostata."
-#: A step id that is not a step of this Matter's plan.
-STEP_NOT_ON_MATTER = "Seda sammu selle teema tööplaanis ei ole."
+#: A step id that is not a step of this Matter's sequence.
+STEP_NOT_ON_MATTER = "Seda soovitust selle teema juures ei ole."
 #: Starting a step while another action is open would replace it silently.
 CURRENT_ACTION_EXISTS = (
     "Teemal on juba praegune tegevus. Märgi see tehtuks või muuda seda, "
     "enne kui järgmise sammu alustad."
 )
-#: Only a step still ahead can be started, edited, moved or skipped.
-STEP_NOT_OPEN = "See samm on juba tehtud või vahele jäetud."
+#: Only a step still ahead can be started or dismissed.
+STEP_NOT_OPEN = "See soovitus on juba tehtud või kõrvale jäetud."
 #: The current step changes through its action, not through the plan.
 STEP_IS_CURRENT = (
     "See samm on praegu pooleli. Muuda seda praeguse tegevuse juures või märgi see tehtuks."
 )
-#: A step's words are what it is.
-STEP_NEEDS_TITLE = "Kirjuta, mis samm see on."
-STEP_TITLE_TOO_LONG = "Sammu kirjeldus on liiga pikk (kuni 300 märki)."
-#: Only a finished step is repeated; an open one is already ahead.
-ONLY_COMPLETED_REPEATS = "Korrata saab ainult tehtud sammu."
-#: Only a skipped step is restored.
-ONLY_SKIPPED_RESTORES = "Taastada saab ainult vahele jäetud sammu."
-#: A move past either end of the steps still ahead.
-STEP_CANNOT_MOVE = "Sammu ei saa sinna liigutada."
-
-TITLE_MAX = 300
 
 # -- reading ------------------------------------------------------------------
 
@@ -176,23 +157,13 @@ def plan_revision(steps: Sequence[MatterPlanStep]) -> str:
     return hashlib.sha256(material.encode()).hexdigest()[:32]
 
 
-def has_template(steps: Sequence[MatterPlanStep], template: PlanTemplate = STANDARD_PLAN) -> bool:
-    """Whether every step of ``template`` is already on this plan, in any state."""
-    present = {
-        step.template_step_key
-        for step in steps
-        if step.source == PlanStepSource.TEMPLATE and step.template_key == template.key
-    }
-    return all(item.key in present for item in template.steps)
-
-
 def current_step_id(matter: Any) -> Any:
     """The step the Matter's one open action belongs to, or ``None``. Reader-blind.
 
     The domain question, asked under the Matter's lock by the services below:
     whether a step is current is decided by the canonical open `NextAction`,
     never by a column on the step (docs/adr/0133 §3). A page asks the scoped
-    question through `app.matters.plan_view` instead.
+    question through `app.matters.plan_view.recommendation_for` instead.
     """
     return (
         NextAction.objects.filter(matter=matter, status=ActionStatus.OPEN)
@@ -217,10 +188,10 @@ def _lock(matter: Any) -> Any:
 
 
 def _lock_for_new_steps(matter: Any) -> Any:
-    """`_lock`, for the two acts that put a step on a plan: seeding and `+ Lisa samm`.
+    """`_lock`, for the one act that puts steps on a Matter: seeding.
 
     Refused for an archive register row under the lock, not only by the page
-    hiding the controls (`plan_view.WorkPlanView.may_adopt`): a page is not a
+    hiding the controls: a page is not a
     boundary, and an open ARCHIVE Matter exists (docs/adr/0133 §5).
     """
     locked_matter = _lock(matter)
@@ -256,29 +227,6 @@ def _find(steps: Sequence[MatterPlanStep], step: Any) -> MatterPlanStep:
     raise DomainError(STEP_NOT_ON_MATTER)
 
 
-def _renumber(steps: Sequence[MatterPlanStep]) -> None:
-    """Make the positions dense from zero in the given order, writing only what moved."""
-    for index, step in enumerate(steps):
-        if step.position != index:
-            step.position = index
-            step.save(update_fields=["position", "updated_at"])
-
-
-def _clean_title(title: str) -> str:
-    cleaned = " ".join((title or "").split())
-    if not cleaned:
-        raise DomainError(STEP_NEEDS_TITLE)
-    if len(cleaned) > TITLE_MAX:
-        raise DomainError(STEP_TITLE_TOO_LONG)
-    return cleaned
-
-
-def _check_operation(operation: str) -> str:
-    if operation not in PlanStepOperation.values:
-        raise DomainError(f"Tundmatu seotud toiming {operation!r}.")
-    return operation
-
-
 def _record(event_type: str, *, matter: Any, actor: Any, step: Any, payload: dict) -> None:
     record_change_event(
         event_type=event_type,
@@ -304,8 +252,7 @@ def seed_standard_plan(
     """Copy the template's steps onto a Matter as faint `SUGGESTED` guidance.
 
     **Called only where a person is starting real work** — `Uus teema` and
-    `Saabunud`, inside their creation transaction — or where a writer presses
-    `+ Lisa tavapärane tööplaan` on an open Matter. Never by `create_matter`,
+    `Saabunud`, inside their creation transaction. Never by `create_matter`,
     an importer, a register refresh, a cutover or a seed command: those record
     what was, and a plan on them would be intent nobody stated
     (docs/adr/0133 §5).
@@ -364,58 +311,6 @@ def seed_standard_plan(
     return created
 
 
-# -- changing the plan's shape ------------------------------------------------
-
-
-@transaction.atomic
-def add_plan_step(
-    *,
-    matter: Any,
-    title: str,
-    actor: Any = None,
-    operation: str = PlanStepOperation.GENERIC,
-    before: Any = None,
-    expected_revision: str | None = None,
-) -> MatterPlanStep:
-    """`+ Lisa samm` — a step a person expects to take. Not work yet.
-
-    `CUSTOM`, `PLANNED`, `GENERIC` unless a linked operation is chosen. No date,
-    no responsible person, no `NextAction`: the step becomes work only when it
-    is started (docs/adr/0133 §4).
-
-    ``before`` places it ahead of that step; nothing places it at the end.
-    """
-    cleaned = _clean_title(title)
-    _check_operation(operation)
-    locked_matter = _lock_for_new_steps(matter)
-    steps = _locked_steps(locked_matter)
-    _check_revision(steps, expected_revision)
-    index = len(steps)
-    if before is not None:
-        anchor = _find(steps, before)
-        if not anchor.is_open:
-            raise DomainError(STEP_NOT_OPEN)
-        index = steps.index(anchor)
-    step = MatterPlanStep.objects.create(
-        matter=locked_matter,
-        position=index,
-        title=cleaned,
-        source=PlanStepSource.CUSTOM,
-        operation=operation,
-        state=PlanStepState.PLANNED,
-        created_by=actor,
-    )
-    _renumber([*steps[:index], step, *steps[index:]])
-    _record(
-        ChangeEventType.PLAN_STEP_ADDED,
-        matter=locked_matter,
-        actor=actor,
-        step=step,
-        payload={"operation": operation, "position": index},
-    )
-    return step
-
-
 def _open_and_not_current(locked_matter: Any, step: MatterPlanStep) -> None:
     if not step.is_open:
         raise DomainError(STEP_NOT_OPEN)
@@ -424,104 +319,21 @@ def _open_and_not_current(locked_matter: Any, step: MatterPlanStep) -> None:
 
 
 @transaction.atomic
-def edit_plan_step(
-    *,
-    step: Any,
-    title: str,
-    operation: str,
-    actor: Any = None,
-    expected_revision: str | None = None,
-) -> MatterPlanStep:
-    """Change what a future step says, and which operation does it.
-
-    **Both answers are explicit.** The editor shows `Seotud toiming` beside the
-    words, and whatever it posts is stored — nothing is inferred from the text.
-    A typed step renamed to unrelated work keeps its operation only if the
-    person left it chosen in view of the new words; the editor switches it to
-    `Tavaline tegevus` as they type (docs/adr/0133 §6).
-
-    A finished or skipped step is history and is not edited; the current step is
-    edited through its action (`Muuda`). An edit is a person accepting the step,
-    so a `SUGGESTED` one becomes `PLANNED`. An edit that changes nothing writes
-    nothing.
-    """
-    cleaned = _clean_title(title)
-    _check_operation(operation)
-    locked_matter = _lock(step.matter_id)
-    steps = _locked_steps(locked_matter)
-    _check_revision(steps, expected_revision)
-    target = _find(steps, step)
-    _open_and_not_current(locked_matter, target)
-    if (target.title, target.operation) == (cleaned, operation):
-        return target
-    before = {"title": target.title, "operation": target.operation}
-    target.title = cleaned
-    target.operation = operation
-    target.state = PlanStepState.PLANNED
-    target.save(update_fields=["title", "operation", "state", "updated_at"])
-    _record(
-        ChangeEventType.PLAN_STEP_CHANGED,
-        matter=locked_matter,
-        actor=actor,
-        step=target,
-        payload={"from": before, "to": {"title": cleaned, "operation": operation}},
-    )
-    return target
-
-
-@transaction.atomic
-def move_plan_step(
-    *,
-    step: Any,
-    direction: str,
-    actor: Any = None,
-    expected_revision: str | None = None,
-) -> MatterPlanStep:
-    """`↑` / `↓` — swap a future step with its neighbour among the steps still ahead.
-
-    Only steps still ahead move, and only past each other: a finished step stays
-    where it happened, and the current one stays where it is. Buttons rather
-    than dragging, so the order is changed the same way with a keyboard, a
-    pointer or a screen reader (docs/adr/0133 §10).
-    """
-    if direction not in ("up", "down"):
-        raise DomainError(STEP_CANNOT_MOVE)
-    locked_matter = _lock(step.matter_id)
-    steps = _locked_steps(locked_matter)
-    _check_revision(steps, expected_revision)
-    target = _find(steps, step)
-    _open_and_not_current(locked_matter, target)
-    current = current_step_id(locked_matter)
-    movable = [item for item in steps if item.is_open and item.pk != current]
-    index = movable.index(target)
-    neighbour_index = index - 1 if direction == "up" else index + 1
-    if not 0 <= neighbour_index < len(movable):
-        raise DomainError(STEP_CANNOT_MOVE)
-    neighbour = movable[neighbour_index]
-    order = list(steps)
-    a, b = order.index(target), order.index(neighbour)
-    order[a], order[b] = order[b], order[a]
-    _renumber(order)
-    _record(
-        ChangeEventType.PLAN_STEP_MOVED,
-        matter=locked_matter,
-        actor=actor,
-        step=target,
-        payload={"direction": direction, "past": str(neighbour.pk)},
-    )
-    return target
-
-
-@transaction.atomic
 def skip_plan_step(
     *, step: Any, actor: Any = None, expected_revision: str | None = None
 ) -> MatterPlanStep:
-    """`Jäta vahele` — this step is not needed here. Kept, and restorable.
+    """`×` beside `Soovitatud järgmisena` — this suggestion is not wanted here.
 
-    Not a deletion: the step stays on the plan as `SKIPPED`, out of the compact
-    list and visible in `Muuda plaani`, so the decision can be undone and is on
-    the audit trail. Writes no chronology row, creates no record and touches no
-    work surface. The current step is finished or replaced first.
+    Persistent: the step is stored as `SKIPPED`, so a reload never suggests it
+    again and the next step still ahead is suggested instead. Not a deletion —
+    the row and its `PLAN_STEP_SKIPPED` audit event stay. Writes no chronology
+    row, creates no record and touches no work surface.
+
+    **The exact step the page showed.** The step id and the revision the page
+    was drawn from are both checked under the lock: a suggestion somebody else
+    started, dismissed or changed in another tab refuses the whole act rather
+    than dismissing whatever is suggested now. The current step is never
+    dismissed (docs/adr/0141).
     """
     locked_matter = _lock(step.matter_id)
     steps = _locked_steps(locked_matter)
@@ -543,186 +355,6 @@ def skip_plan_step(
     return target
 
 
-@transaction.atomic
-def restore_plan_step(
-    *, step: Any, actor: Any = None, expected_revision: str | None = None
-) -> MatterPlanStep:
-    """`Taasta` — a skipped step is wanted after all.
-
-    `PLANNED`, not back to `SUGGESTED`: restoring is a person deciding the step
-    belongs here, which is what `PLANNED` means. It returns to the place it
-    held; the skip's stamps are cleared and the audit trail keeps them.
-    """
-    locked_matter = _lock(step.matter_id)
-    steps = _locked_steps(locked_matter)
-    _check_revision(steps, expected_revision)
-    target = _find(steps, step)
-    if not target.is_skipped:
-        raise DomainError(ONLY_SKIPPED_RESTORES)
-    target.state = PlanStepState.PLANNED
-    target.skipped_at = None
-    target.skipped_by = None
-    target.save(update_fields=["state", "skipped_at", "skipped_by", "updated_at"])
-    _record(
-        ChangeEventType.PLAN_STEP_RESTORED,
-        matter=locked_matter,
-        actor=actor,
-        step=target,
-        payload={},
-    )
-    return target
-
-
-@transaction.atomic
-def repeat_plan_step(
-    *, step: Any, actor: Any = None, expected_revision: str | None = None
-) -> MatterPlanStep:
-    """`Korda` — the same work again, as a new occurrence.
-
-    A revised draft arrives and the members have to be asked again. The finished
-    step is not reopened — it happened, and its completion stays exactly as it
-    was. A new `CUSTOM`, `PLANNED` step with the same words and operation is put
-    first among the steps still ahead, where the next thing to do is read.
-    There is no uniqueness on an operation: a second `Kaasamine`, `Ülevaade` or
-    `Koja arvamus` is ordinary (docs/adr/0133 §9).
-    """
-    locked_matter = _lock(step.matter_id)
-    steps = _locked_steps(locked_matter)
-    _check_revision(steps, expected_revision)
-    original = _find(steps, step)
-    if not original.is_completed:
-        raise DomainError(ONLY_COMPLETED_REPEATS)
-    current = current_step_id(locked_matter)
-    index = next(
-        (position for position, item in enumerate(steps) if item.is_open and item.pk != current),
-        len(steps),
-    )
-    repeated = MatterPlanStep.objects.create(
-        matter=locked_matter,
-        position=index,
-        title=original.title,
-        source=PlanStepSource.CUSTOM,
-        operation=original.operation,
-        state=PlanStepState.PLANNED,
-        created_by=actor,
-    )
-    _renumber([*steps[:index], repeated, *steps[index:]])
-    _record(
-        ChangeEventType.PLAN_STEP_ADDED,
-        matter=locked_matter,
-        actor=actor,
-        step=repeated,
-        payload={"operation": original.operation, "repeats": str(original.pk)},
-    )
-    return repeated
-
-
-# -- finishing a step with work recorded elsewhere ----------------------------
-
-STEP_WRONG_OPERATION = "See salvestus ei tee selle tööplaani sammu tööd."
-STEP_IS_CURRENT = (
-    "See samm on praegune tegevus — märgi see tehtuks valikuga «Märgi praegune tegevus tehtuks»."
-)
-
-
-def fulfillable_step(locked_matter: Any, step_id: Any, operation: str) -> MatterPlanStep:
-    """The step a `LISA TEEMALE` save names as its work, if it may be — or a refusal.
-
-    Asked under the Matter's lock **before** anything is written: the step is on
-    this Matter, still ahead (suggested or planned), of the operation this save
-    performs, and not the current step — the current step is finished through
-    its own action (`Märgi praegune tegevus tehtuks`), never twice.
-    """
-    from app.workflow.enums import ActionStatus
-    from app.workflow.models import NextAction
-
-    step = (
-        MatterPlanStep.objects.select_for_update(no_key=True)
-        .filter(matter=locked_matter, pk=step_id)
-        .first()
-    )
-    if step is None:
-        raise DomainError(STEP_NOT_ON_MATTER)
-    if not step.is_open:
-        raise DomainError(STEP_NOT_OPEN)
-    if step.operation != operation:
-        raise DomainError(STEP_WRONG_OPERATION)
-    if NextAction.objects.filter(
-        matter=locked_matter, plan_step=step, status=ActionStatus.OPEN
-    ).exists():
-        raise DomainError(STEP_IS_CURRENT)
-    return step
-
-
-def fulfil_plan_step(*, step: MatterPlanStep, record: Any, actor: Any = None) -> MatterPlanStep:
-    """The step is done, by ``record`` — work a person recorded and named as it.
-
-    No `NextAction` is created to be finished at once, and no other open action
-    is touched. The step is stamped now, as every completion is; the record
-    keeps its own business date (docs/adr/0133 §4).
-    """
-    step.state = PlanStepState.COMPLETED
-    step.completed_at = timezone.now()
-    step.completed_by = actor
-    step.skipped_at = None
-    step.skipped_by = None
-    step.fulfilled_by_operation = step.operation
-    step.fulfilled_by_record = record.pk
-    step.save(
-        update_fields=[
-            "state",
-            "completed_at",
-            "completed_by",
-            "skipped_at",
-            "skipped_by",
-            "fulfilled_by_operation",
-            "fulfilled_by_record",
-            "updated_at",
-        ]
-    )
-    _record(
-        ChangeEventType.PLAN_STEP_COMPLETED,
-        matter=step.matter,
-        actor=actor,
-        step=step,
-        payload={"record": str(record.pk), "operation": step.operation},
-    )
-    return step
-
-
-def fulfillable_steps(matter: Any, operation: str | None) -> list[MatterPlanStep]:
-    """The steps a save of ``operation`` may be named as the work of, in plan order.
-
-    Still ahead and not current; read for the form, checked again under the lock
-    by :func:`fulfillable_step` when the save names one. ``None`` reads every
-    typed operation at once, for a page drawing all three forms.
-    """
-    from app.workflow.enums import ActionStatus
-    from app.workflow.models import NextAction
-
-    current = NextAction.objects.filter(
-        matter=matter, status=ActionStatus.OPEN, plan_step__isnull=False
-    ).values_list("plan_step_id", flat=True)
-    operations = (
-        [operation]
-        if operation is not None
-        else [
-            PlanStepOperation.SUBMISSION,
-            PlanStepOperation.ENGAGEMENT,
-            PlanStepOperation.WEBSITE_OVERVIEW,
-        ]
-    )
-    return list(
-        MatterPlanStep.objects.filter(
-            matter=matter,
-            operation__in=operations,
-            state__in=[PlanStepState.SUGGESTED, PlanStepState.PLANNED],
-        )
-        .exclude(pk__in=current)
-        .order_by("position", "created_at")
-    )
-
-
 # -- starting a step ----------------------------------------------------------
 
 
@@ -730,9 +362,8 @@ def startable_step(locked_matter: Any, step_id: Any) -> MatterPlanStep:
     """The step ``step_id`` names on this Matter, if it may be started — or a refusal.
 
     Asked under the Matter's lock, before anything is written, by
-    :func:`activate_plan_step` and by `Mida tegid?`'s `Järgmisena`: a step of
-    another Matter, a finished or skipped one, or one somebody else has already
-    started is refused, and the whole save with it.
+    :func:`activate_plan_step`: a step of another Matter, or a finished or
+    dismissed one, is refused.
     """
     step = (
         MatterPlanStep.objects.select_for_update(no_key=True)
@@ -768,7 +399,7 @@ def activate_plan_step(
 
     **Never over another action.** A Matter with an open step refuses, rather
     than superseding it: the ordinary loop is finish the current thing and then
-    choose the next, and `Mida tegid?`'s `Järgmisena` does both in one save.
+    choose the next.
 
     A `SUGGESTED` step started is a step a person accepted: it becomes
     `PLANNED`. Current-ness is not stored — the open action pointing here says
@@ -826,28 +457,3 @@ def _start(
         payload={"action": str(action.pk)},
     )
     return action
-
-
-def start_checked_step(
-    *,
-    locked_matter: Any,
-    step: MatterPlanStep,
-    actor: Any,
-    text: str = "",
-    target_date: date | None = None,
-    date_precision: str = DatePrecision.EXACT,
-) -> NextAction:
-    """Start a step :func:`startable_step` already returned, inside the caller's transaction.
-
-    For `Mida tegid?` → `Järgmisena`, which checks the next step before it writes
-    anything and starts it only after the current action is completed — so the
-    one-open-action question has already been answered by the completion.
-    """
-    return _start(
-        locked_matter=locked_matter,
-        step=step,
-        actor=actor,
-        text=text,
-        target_date=target_date,
-        date_precision=date_precision,
-    )

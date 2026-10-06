@@ -131,3 +131,9 @@ times for periods, closure and documents.
 Unapplying the four migrations drops the column, the two tables, the two plan
 columns and the event choice, losing only history recorded after this release.
 Restoring the ungated `_discharge_exists` restores the old discharge reading.
+
+## Amendment, 2026-10-06 — no plan step is named any more (docs/adr/0141)
+
+`Tööplaani samm, mille see täidab` (`taidab_sammu`) is gone from `+ Koja
+arvamus`, `+ Kaasamine` and `+ Ülevaade / uudis`, with `fulfils_plan_step_id`
+behind it. Naming the deadline and the rounds an opinion answers is unchanged.

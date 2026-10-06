@@ -8,6 +8,17 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-10-06
+basis = "deployment"
+# Tööplaan eemaldatud vaatest, soovitus jääb, ADR 0141 (#397). Migratsioone ei
+# ole, otsinguindeksit ei ehitata uuesti. Kui see väljalase ei jõua tootmisse
+# 06.10 (Tallinna aja järgi), liiguvad need read väljalaske päeva kirjesse.
+changes = [
+  "Tööplaan on Teema vaatest eemaldatud. Kui praegust tegevust pole, võib Juristid endiselt pakkuda järgmist sammu «Soovitatud järgmisena»: soovituse saab alustada («Alusta») või kõrvale jätta («×»). Kõrvale jäetud soovitust sellel teemal enam ei pakuta.",
+  "«+ Kaasamine», «+ Koja arvamus» ja «+ Ülevaade / uudis» ei küsi enam, millist tööplaani sammu salvestus täidab.",
+]
+
+[[day]]
 date = 2026-10-05
 basis = "deployment"
 # Teema kasutajaliidese puhastus, ADR 0140 (#395). Migratsioone ei ole,

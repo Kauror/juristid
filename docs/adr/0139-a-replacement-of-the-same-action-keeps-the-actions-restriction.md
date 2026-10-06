@@ -104,3 +104,9 @@ replacement lost it.
 
 * Rewriting existing chains (§6).
 * A restriction control on `Muuda` or any other panel.
+
+## Amendment, 2026-10-06 — `Alusta` now comes from `Soovitatud järgmisena` (docs/adr/0141)
+
+`Muuda` still carries both the plan step and the restriction. The step's
+`Alusta` is now the one beside the suggestion under `PRAEGUNE TEGEVUS`; the
+`Järgmisena` choice after a completion is gone (docs/adr/0140).

@@ -1036,11 +1036,11 @@ def test_a_deadline_somebody_typed_is_kept_and_counted_at_once(signed_in, specia
     assert item.meaning == wi.MEANING_RESPONSE
     assert item.when == due
 
-    # The lawyer starts the plan's first step, dated: one row still, the step.
-    from app.workflow.plan import activate_plan_step, plan_steps_of
+    # The lawyer writes the first step, dated: one row still, the step.
+    from app.workflow.services import set_next_action_for_new_work
 
-    activate_plan_step(
-        matter=matter, step=plan_steps_of(matter)[0], actor=specialist, target_date=due
+    set_next_action_for_new_work(
+        matter=matter, text="Tutvu materjaliga", actor=specialist, target_date=due
     )
     (item,) = [
         entry for entry in wi.work_items(specialist, today=anchor) if entry.matter_id == matter.pk
@@ -1067,12 +1067,11 @@ def test_completing_the_step_hands_the_row_back_to_the_deadline(signed_in, speci
     The step done, and `Arvamuse tähtaeg` is what the file is standing on
     again — same day, same column, never rewritten. That is what makes the
     assertion above a statement about *display order* rather than about the
-    record (docs/adr/0050). The step is the plan's first, started as a lawyer
-    starts it, since a new Teema no longer gets `Koostan arvamuse`
-    (docs/adr/0133 §8).
+    record (docs/adr/0050). The step is written as a lawyer writes it, since a
+    new Teema no longer gets `Koostan arvamuse` (docs/adr/0133 §8) nor a
+    `Tööplaan` (docs/adr/0141).
     """
-    from app.workflow.plan import activate_plan_step, plan_steps_of
-    from app.workflow.services import complete_next_action
+    from app.workflow.services import complete_next_action, set_next_action_for_new_work
 
     anchor = _wednesday()
     due = anchor + timedelta(days=2)
@@ -1085,8 +1084,8 @@ def test_completing_the_step_hands_the_row_back_to_the_deadline(signed_in, speci
         },
     )
     matter = Matter.objects.get(title="Lõpetatud sammuga teema")
-    step = activate_plan_step(
-        matter=matter, step=plan_steps_of(matter)[0], actor=specialist, target_date=due
+    step = set_next_action_for_new_work(
+        matter=matter, text="Tutvu materjaliga", actor=specialist, target_date=due
     )
     complete_next_action(action=step, actor=specialist)
 

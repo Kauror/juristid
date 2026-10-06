@@ -251,8 +251,8 @@ def set_next_action(
     an action with no plan step exactly as before.
 
     * ``plan_step`` is the step this action is being *started* from — passed
-      only by `app.workflow.plan` when somebody presses `Alusta` or chooses a
-      step under `Järgmisena`. It must be on the same Matter.
+      only by `app.workflow.plan` when somebody presses `Alusta` on
+      `Soovitatud järgmisena` (docs/adr/0141). It must be on the same Matter.
     * ``carry_plan_step`` is `Muuda`: an edit of the step that is open, whose
       replacement row is the same work and keeps the same plan step. Read off
       the row being superseded, under the lock, so a stale editor cannot carry
@@ -552,10 +552,10 @@ def _complete_plan_step(*, action: NextAction, step_id: Any, actor: Any) -> None
     """The `Tööplaan` step this action was an occurrence of is done too.
 
     **Here, inside the one completion service, so no path can disagree.**
-    `Mida tegid?`, `✓ Tehtud` on Minu asjad, a ticked `Märgi praegune tegevus
-    tehtuks` and a typed operation started from the step all complete the
-    action through `complete_next_action`; each therefore completes its step,
-    and nothing else does. A superseded or cancelled action — `Muuda` replacing
+    `Mida tegid?`, `✓ Tehtud` on Minu asjad and a ticked `Märgi praegune
+    tegevus tehtuks` all complete the action through `complete_next_action`;
+    each therefore completes its step — and the next suggestion follows — and
+    nothing else does. A superseded or cancelled action — `Muuda` replacing
     it, a `+ Märge` dated ahead, a closure — leaves its step exactly as it was
     (docs/adr/0133 §4).
 

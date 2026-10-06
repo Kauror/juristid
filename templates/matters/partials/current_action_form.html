@@ -61,8 +61,8 @@ hidden `action_id` names the step so a stale tab completes nothing.
 
   {% comment %}
     `Järgmine tegevus` — what comes next, written directly, in this same save.
-    Left empty, no step is opened; nothing is chosen for the person, and no
-    `Tööplaan` step is offered here (docs/adr/0140 §2). `Millal?` is the
+    Left empty, no step is opened, and nothing is chosen or suggested for the
+    person (docs/adr/0140 §2, docs/adr/0141). `Millal?` is the
     ordinary date box, and `+1 päev` / `+1 nädal` / `+1 kuu` only write into it
     (`next_step_date_choices`, static/js/ux.js `bindQuickDates`).
   {% endcomment %}

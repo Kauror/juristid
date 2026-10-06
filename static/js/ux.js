@@ -452,33 +452,6 @@
     });
   }
 
-  /* ---- Tööplaan: a rewritten typed step falls back to `Tavaline tegevus` -----
-   * A step's linked operation is stored exactly as chosen and never inferred
-   * from its words (docs/adr/0133 §6). But a person rewriting «Koosta kodulehe
-   * ülevaade» into «Kohtun ministeeriumiga» is very rarely keeping the overview
-   * behind it, so when the words move away from the saved ones the choice moves
-   * to `Tavaline tegevus`, visibly, where it can be chosen back. Without
-   * scripting the radio simply stays where it was, in plain view.
-   */
-  function bindPlanStepEditors(scope) {
-    scope.querySelectorAll("[data-plan-step-editor]").forEach(function (editor) {
-      if (!once(editor, "PlanStepEditor")) {
-        return;
-      }
-      var original = editor.getAttribute("data-original-title") || "";
-      var title = editor.querySelector("input[name=title]");
-      var generic = editor.querySelector('input[name=operation][value="GENERIC"]');
-      if (!title || !generic || !original) {
-        return;
-      }
-      title.addEventListener("input", function () {
-        if (title.value.trim() !== original.trim() && !generic.checked) {
-          generic.checked = true;
-        }
-      });
-    });
-  }
-
   /* ---- The file affordance -----------------------------------------------
    * The dashed box is a `<label>` over a hidden file input, so choosing a file
    * works with no script at all. This adds the two things a script can add:
@@ -787,7 +760,6 @@
     var root = scope && scope.querySelectorAll ? scope : document;
     bindQuickDates(root);
     bindAddPanels(root);
-    bindPlanStepEditors(root);
     bindFileDrop(root);
     bindWorkRows(root);
     bindExclusivePopovers(root);

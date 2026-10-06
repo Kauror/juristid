@@ -7,9 +7,11 @@ clock is the test's own (`timezone.now` / `timezone.localdate` patched); no
 stored timestamp is rewritten.
 
 Scenario A — one request, answered:
-    arrival with a deadline → overview published (the plan's step) → two rounds,
-    one with a deadline → an answer and a file reach the first round → the opinion
-    answers the deadline, ends the first round only and does the plan's step.
+    arrival with a deadline → overview published → two rounds, one with a
+    deadline → an answer and a file reach the first round → the opinion answers
+    the deadline and ends the first round only. The background sequence
+    behind `Soovitatud järgmisena` is seeded and no record fulfils a step
+    (docs/adr/0141).
 
 Scenario B — the next request, then lateness, then a decision:
     a new request after the answer → still owed although an opinion exists →
@@ -17,7 +19,7 @@ Scenario B — the next request, then lateness, then a decision:
 
 Scenario C — closure and reopening:
     closed with a deadline → not owed, settled in the header → reopened without
-    carrying it → nothing old reactivates; the plan is folded while closed.
+    carrying it → nothing old reactivates.
 """
 
 from __future__ import annotations
@@ -43,7 +45,7 @@ from app.matters.services import (
 )
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
-from app.workflow.enums import Disposition, PlanStepState
+from app.workflow.enums import Disposition
 from app.workflow.models import MatterPlanStep, StageVocabulary
 from tests import factories
 
@@ -126,10 +128,9 @@ def test_scenario_a_one_request_answered_over_two_weeks(signed_in, specialist, c
     matter = _new_matter(signed_in, "Jooksev töö A (sünteetiline)", START + dt.timedelta(days=14))
     assert matter.response_requested_at is not None
     assert matter.pk in _owed(specialist)
-    steps = {s.operation: s for s in MatterPlanStep.objects.filter(matter=matter)}
-    assert len(steps) >= 3
+    assert MatterPlanStep.objects.filter(matter=matter).count() == 5
 
-    # Day 1 — the write-up is published, named as the plan's overview step.
+    # Day 1 — the write-up is published.
     clock.go(1)
     signed_in.post(
         reverse("matters:add_website_overview", kwargs={"pk": matter.pk}),
@@ -137,13 +138,10 @@ def test_scenario_a_one_request_answered_over_two_weeks(signed_in, specialist, c
             "url": "https://www.koda.ee/et/sunteetiline-ulevaade-a",
             "published_on": _et(timezone.localdate()),
             "overview_title": "Sünteetiline ülevaade jooksva töö kohta",
-            "taidab_sammu": str(steps["WEBSITE_OVERVIEW"].pk),
         },
         headers={"HX-Request": "true"},
     )
-    steps["WEBSITE_OVERVIEW"].refresh_from_db()
-    assert steps["WEBSITE_OVERVIEW"].state == PlanStepState.COMPLETED
-    assert steps["WEBSITE_OVERVIEW"].fulfilled_by_record is not None
+    assert matter.website_overviews.filter(status="PUBLISHED").count() == 1
 
     # Day 2 — two rounds: one with a reply-by day, one without.
     clock.go(2)
@@ -184,8 +182,8 @@ def test_scenario_a_one_request_answered_over_two_weeks(signed_in, specialist, c
     assert DocumentLink.objects.filter(engagement=members).count() == 1
     assert "Seotud seisukohti 1" in _page(signed_in, matter)
 
-    # Day 9 — the opinion goes out: answers the deadline, ends the members'
-    # round only, and is the plan's «send» step.
+    # Day 9 — the opinion goes out: answers the deadline and ends the members'
+    # round only.
     clock.go(9)
     members.refresh_from_db()
     matter.refresh_from_db()
@@ -195,7 +193,6 @@ def test_scenario_a_one_request_answered_over_two_weeks(signed_in, specialist, c
         ministry,
         vastab_tahtajale=deadline_revision(matter),
         lopeta_kaasamine=[f"{members.pk}:{engagement_revision_token(members)}"],
-        taidab_sammu=str(steps["SUBMISSION"].pk),
     )
     matter.refresh_from_db()
     members.refresh_from_db()
@@ -209,8 +206,6 @@ def test_scenario_a_one_request_answered_over_two_weeks(signed_in, specialist, c
     assert answered.submission == opinion
     assert members.feedback_closed_at is not None
     assert group.feedback_closed_at is None
-    steps["SUBMISSION"].refresh_from_db()
-    assert steps["SUBMISSION"].state == PlanStepState.COMPLETED
 
     # The register no longer draws a deadline for it; search finds the write-up.
     register = signed_in.get(reverse("matters:matter_list")).content.decode()
@@ -285,7 +280,7 @@ def test_scenario_c_closure_and_reopening_reactivate_nothing(signed_in, speciali
     assert matter.pk not in _owed(specialist)
     assert response_deadline_of(matter, specialist).settled == "teema suletud"
     page = _page(signed_in, matter)
-    assert "Tööplaan teema sulgemise ajal" in page
+    assert 'id="tooplaan"' not in page
     assert "Soovitatud järgmisena" not in page
 
     clock.go(50)
@@ -299,4 +294,4 @@ def test_scenario_c_closure_and_reopening_reactivate_nothing(signed_in, speciali
     assert matter.pk not in _owed(specialist)
     (ended,) = MatterResponseDeadline.objects.filter(matter=matter)
     assert ended.outcome == ResponseDeadlineOutcome.CLOSED
-    assert not MatterPlanStep.objects.filter(matter=matter, state=PlanStepState.COMPLETED).exists()
+    assert not MatterPlanStep.objects.filter(matter=matter, state="COMPLETED").exists()

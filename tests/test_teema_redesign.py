@@ -1408,6 +1408,11 @@ def test_the_matter_page_does_not_explode_into_queries(
     **Measured at 56 since its stage III**: the answers linked to the page's
     `Kaasamine` rows, read once for every round on the page and never per row
     (`timeline.attach_round_positions`).
+
+    **One fewer since docs/adr/0141**: the steps `LISA TEEMALE` could name
+    went with the visible `Tööplaan`; the one plan read stays, for
+    `Soovitatud järgmisena`. The ceiling is left where it was; it is a guard
+    against N+1, not an exact count.
     """
     matter = factories.MatterFactory(owner=specialist, source_organisations=[organisation])
     for index in range(12):
