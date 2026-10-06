@@ -318,7 +318,7 @@ def test_a_restricted_step_is_not_visible_to_a_reader_who_may_not_see_it(
 # the lawyers read them as one question, so it is one box (docs/adr/0094 §5).
 #
 # **Since docs/adr/0133 §8 the box records the obligation only.** A new Teema
-# gets no `Koostan arvamuse` step — and since docs/adr/0141 no `Tööplaan` — a deadline
+# gets the faint standard `Tööplaan` and no `Koostan arvamuse` step: a deadline
 # months away is not the current task. `establish_opinion_preparation_action`
 # itself is unchanged and still tested above; `Uus teema` simply stopped calling
 # it.
@@ -334,7 +334,7 @@ def _create_payload(**extra):
 
 
 def test_uus_teema_makes_no_step_from_the_date_box(client, specialist):
-    """The deadline is the obligation, and nothing is started or seeded (docs/adr/0133 §8)."""
+    """The deadline is the obligation, and the plan is the path (docs/adr/0133 §8)."""
     from app.matters.models import Matter
     from app.workflow.models import MatterPlanStep
 
@@ -348,7 +348,7 @@ def test_uus_teema_makes_no_step_from_the_date_box(client, specialist):
     matter = Matter.objects.get()
     assert not NextAction.objects.exists()
     assert matter.response_deadline == PREPARE_BY
-    assert MatterPlanStep.objects.filter(matter=matter).count() == 0
+    assert MatterPlanStep.objects.filter(matter=matter).count() == 5
 
 
 def test_the_date_lands_on_the_matter_as_the_obligation_only(client, specialist):
@@ -399,8 +399,7 @@ def test_a_refused_create_leaves_no_step_and_keeps_the_typed_date(client, specia
     assert "25.09.2026" in response.content.decode()
 
 
-def test_correcting_the_refusal_and_saving_once_leaves_no_step_and_no_plan(client, specialist):
-    from app.matters.models import Matter
+def test_correcting_the_refusal_and_saving_once_leaves_exactly_one_plan(client, specialist):
     from app.workflow.models import MatterPlanStep
 
     client.force_login(specialist)
@@ -411,8 +410,7 @@ def test_correcting_the_refusal_and_saving_once_leaves_no_step_and_no_plan(clien
 
     assert response.status_code == 302
     assert not NextAction.objects.exists()
-    assert Matter.objects.count() == 1
-    assert MatterPlanStep.objects.count() == 0
+    assert MatterPlanStep.objects.count() == 5
 
 
 def test_there_is_no_second_first_step_box_to_collide_with(client, specialist):

@@ -126,6 +126,19 @@ urlpatterns = [
         views.complete_current_action,
         name="complete_current_action",
     ),
+    # `Soovitatud järgmisena` (docs/adr/0141): start the suggestion, or dismiss
+    # it. The only two acts left on the background sequence; a step's id only
+    # ever beside its Matter's.
+    path(
+        "teemad/<uuid:pk>/soovitus/<uuid:step_id>/alusta/",
+        views.start_plan_step,
+        name="start_plan_step",
+    ),
+    path(
+        "teemad/<uuid:pk>/soovitus/<uuid:step_id>/eemalda/",
+        views.dismiss_plan_step,
+        name="dismiss_plan_step",
+    ),
     path("teemad/<uuid:pk>/lisa/marge/", views.add_note, name="add_note"),
     path(
         "teemad/<uuid:pk>/lisa/kaasamine/",

@@ -298,7 +298,9 @@ def complete_current_action(
     **One transaction, checked before it writes.** The named step is re-read
     under the Matter's lock *before* anything is written, so a stale tab refuses
     the whole save and nothing lands half-done. Then the note, its files, the
-    completion, the new step and the move, in one operation, so
+    completion (which completes a suggested step the action was started from,
+    through `complete_next_action`), the new step and the move, in one
+    operation, so
     `Teema käik` reads it as one row: what was done, with the next step under it.
     """
     from app.matters.services import stage_transition
@@ -361,6 +363,11 @@ def change_current_action(*, matter: Matter, actor: Any, action_id: Any, **step:
     restricted below its Matter is still restricted after its words change — an
     edit must not show a reader the work they could not see before.
 
+    **And its suggested step** (docs/adr/0141): an action started from
+    `Soovitatud järgmisena` is still that work after `Muuda`, so completing the
+    replacement still advances the suggestions. Read off the superseded row,
+    never inferred from the words.
+
     Named, like `Mida tegid?`: the editor posts the step it was drawn beside, and
     a step that is no longer the open one refuses with `STALE_ACTION_REFUSAL`
     and writes nothing — otherwise a stale tab would carry *another* step's
@@ -371,6 +378,7 @@ def change_current_action(*, matter: Matter, actor: Any, action_id: Any, **step:
     return set_next_action_for_new_work(
         matter=locked_matter,
         actor=actor,
+        carry_plan_step=True,
         carry_visibility_override=True,
         **step,
     )

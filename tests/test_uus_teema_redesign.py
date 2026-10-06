@@ -184,11 +184,11 @@ def test_a_full_create_stores_exactly_what_was_entered(signed_in, specialist, ev
     assert link.kind == ProceduralLinkKind.OTHER
 
     # **No step from the deadline** (docs/adr/0133 §8): the date is the
-    # obligation on the Matter, and no `Tööplaan` is seeded either
-    # (docs/adr/0141).
+    # obligation on the Matter, and the work towards it is the faint standard
+    # `Tööplaan`, none of it started.
     assert not NextAction.objects.filter(matter=matter).exists()
     assert matter.response_deadline == date(2026, 9, 18)
-    assert matter.plan_steps.count() == 0
+    assert matter.plan_steps.count() == 5
 
 
 def test_the_summary_is_the_matters_own_field_and_not_an_entry(signed_in, specialist):

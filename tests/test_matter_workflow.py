@@ -336,8 +336,9 @@ def test_matter_detail_query_count_is_bounded(signed_in, specialist):
     # and the plan steps `LISA TEEMALE`'s three forms may name as their work
     # (one read for all three). Each flat in the population.
     #
-    # **Two fewer since docs/adr/0141**: both plan reads went with `Tööplaan`;
-    # the ceiling is left where it was.
+    # **One fewer since docs/adr/0141**: the fulfillable-steps read went with the
+    # visible `Tööplaan`; the plan read stays for `Soovitatud järgmisena`. The
+    # ceiling is left where it was.
     #
     # **Plus the deletion plan, measured rather than guessed (docs/adr/0120 §7).**
     # A writer's header asks `plan_matter_deletion` whether `Kustuta` can

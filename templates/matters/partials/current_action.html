@@ -51,10 +51,11 @@ comes next, in the person's own words, both optional and both in the same save.
 `✓ Tehtud` and `Muuda` are the whole row, and something that happened while the
 step stays open is `+ Lisa` in `LISA TEEMALE`.
 
-**No `Tööplaan`** (docs/adr/0141). The plan below this zone, its typed launch
-beside the step and its `Soovitatud järgmisena` / `Alusta` are gone: what comes
-next is what the lawyer writes, here, and nothing is suggested for them. Plan
-rows an older Matter still holds are dormant and are not read.
+**No visible `Tööplaan`** (docs/adr/0141). The plan below this zone, its
+editor and the typed launch beside the step are gone. What stays is one
+suggestion while nothing is current — `Soovitatud järgmisena`, from the Matter's
+background sequence — which can be started (`Alusta`) or dismissed (`×`);
+`+ Määra järgmine tegevus` is always the manual alternative.
 {% endcomment %}
 <section class="curact{% if matter.is_open and current_action.is_overdue %} curact--overdue{% endif %}"
          id="praegune-tegevus" tabindex="-1" aria-labelledby="praegune-pealkiri">
@@ -258,6 +259,66 @@ rows an older Matter still holds are dormant and are not read.
       surface at all (matters/partials/feedback_waits.html, docs/adr/0086 §3).
     {% endcomment %}
     {% include "matters/partials/feedback_waits.html" %}
+
+    {% if can_write and recommendation %}
+      {% comment %}
+        **`Soovitatud järgmisena` — one suggestion, offered, not started**
+        (docs/adr/0141). The first step still ahead in the Matter's background
+        sequence; the sequence itself is never drawn. `Alusta` makes it the
+        current step, with its own words and an optional day. `×` dismisses it
+        for good on this Matter — the exact step shown, at the revision this
+        page was drawn from — and the next one is suggested instead. Until
+        somebody starts it, it is guidance: not a `NextAction`, not a work item
+        and not late. `+ Määra järgmine tegevus` below stays the manual way.
+      {% endcomment %}
+      <div class="curact__task curact__suggest" id="soovitus">
+        <span class="curact__flag">Soovitatud järgmisena</span>
+        {% comment %}
+          Its own class, not `.curact__text`: that names the current step
+          everywhere, and a suggestion is not one.
+        {% endcomment %}
+        <span class="curact__suggesttext">{{ recommendation.step.title }}</span>
+        <details class="cx-panel curact__edit" id="alusta-samm" data-addpanel
+                 {% if open_panel == "alusta-samm" %}open{% endif %}>
+          <summary class="disclosure-chip">Alusta</summary>
+          <div class="cx-panel__body">
+            {% if open_panel == "alusta-samm" and workspace_error %}
+              <p class="formerror" role="alert">{{ workspace_error }}</p>
+            {% endif %}
+            <form class="addform" data-addform
+                  hx-post="{% url 'matters:start_plan_step' pk=matter.pk step_id=recommendation.step.pk %}"
+                  hx-target="#teema-vaade" hx-swap="outerHTML">
+              {% csrf_token %}
+              <label class="cx-f" for="{{ start_plan_form.text.id_for_label }}">
+                <span class="cx-f__lab">{% field_label start_plan_form.text %}</span>
+                {{ start_plan_form.text }}
+              </label>
+              <label class="cx-f cx-f--date" for="{{ start_plan_form.target_date.id_for_label }}">
+                <span class="cx-f__lab">{% field_label start_plan_form.target_date %}</span>
+                {{ start_plan_form.target_date }}
+              </label>
+              {% if start_plan_form.target_date.errors %}
+                <p class="field__error" id="{{ start_plan_form.target_date.auto_id }}_error">{{ start_plan_form.target_date.errors|first }}</p>
+              {% endif %}
+              <div class="addform__actions">
+                <button class="button button--primary" type="submit">Alusta</button>
+              </div>
+            </form>
+          </div>
+        </details>
+        <form class="curact__dismiss"
+              hx-post="{% url 'matters:dismiss_plan_step' pk=matter.pk step_id=recommendation.step.pk %}"
+              hx-target="#teema-vaade" hx-swap="outerHTML">
+          {% csrf_token %}
+          <input type="hidden" name="revision" value="{{ recommendation.revision }}">
+          <button class="quietbutton" type="submit"
+                  aria-label="Eemalda soovitus" title="Eemalda soovitus">×</button>
+        </form>
+        {% if open_panel == "soovitus" and workspace_error %}
+          <p class="formerror curact__suggesterror" role="alert">{{ workspace_error }}</p>
+        {% endif %}
+      </div>
+    {% endif %}
 
     {% if can_write %}
       {% comment %}

@@ -105,8 +105,8 @@ replacement lost it.
 * Rewriting existing chains (§6).
 * A restriction control on `Muuda` or any other panel.
 
-## Amendment, 2026-10-06 — `Muuda` carries the restriction only (docs/adr/0141)
+## Amendment, 2026-10-06 — `Alusta` now comes from `Soovitatud järgmisena` (docs/adr/0141)
 
-`carry_plan_step` is removed: the replacement no longer carries a `Tööplaan`
-step, and `Alusta` is gone. The restriction is carried exactly as decided
-here. An old row keeps the `plan_step` it was written with.
+`Muuda` still carries both the plan step and the restriction. The step's
+`Alusta` is now the one beside the suggestion under `PRAEGUNE TEGEVUS`; the
+`Järgmisena` choice after a completion is gone (docs/adr/0140).

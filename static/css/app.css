@@ -12014,6 +12014,43 @@ section:has(.pw-more[open]) tbody.uxextra {
   margin-top: var(--spacing-2);
 }
 
+/* `Soovitatud järgmisena` — one suggestion, `Alusta` and a quiet `×`
+ * (docs/adr/0141). The sentence at the body weight rather than the task's
+ * semibold: it is not the current task, and must not read as one. */
+.curact__suggest {
+  margin-top: var(--spacing-1);
+}
+
+.curact__suggesttext {
+  font-size: var(--typography-size-base);
+  font-weight: var(--typography-weight-regular);
+  color: var(--text-secondary);
+}
+
+.curact__dismiss {
+  margin: 0;
+}
+
+.curact__suggesterror {
+  flex: 1 1 100%;
+}
+
+/* A text button: quiet, but the whole glyph is the target and the focus ring is
+ * the page's own. `×` on a suggestion is secondary to `Alusta` beside it. */
+.quietbutton {
+  padding: 2px var(--spacing-1);
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--typography-size-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.quietbutton:hover {
+  color: var(--accent-link);
+}
+
 /* -- LISA TEEMALE ----------------------------------------------------------
  *
  * A choice of actions, not a form. Until a chip is pressed this whole zone is a

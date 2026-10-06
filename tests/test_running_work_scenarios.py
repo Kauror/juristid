@@ -9,8 +9,9 @@ stored timestamp is rewritten.
 Scenario A — one request, answered:
     arrival with a deadline → overview published → two rounds, one with a
     deadline → an answer and a file reach the first round → the opinion answers
-    the deadline and ends the first round only. No `Tööplaan` is seeded or
-    touched (docs/adr/0141).
+    the deadline and ends the first round only. The background sequence
+    behind `Soovitatud järgmisena` is seeded and no record fulfils a step
+    (docs/adr/0141).
 
 Scenario B — the next request, then lateness, then a decision:
     a new request after the answer → still owed although an opinion exists →
@@ -127,7 +128,7 @@ def test_scenario_a_one_request_answered_over_two_weeks(signed_in, specialist, c
     matter = _new_matter(signed_in, "Jooksev töö A (sünteetiline)", START + dt.timedelta(days=14))
     assert matter.response_requested_at is not None
     assert matter.pk in _owed(specialist)
-    assert not MatterPlanStep.objects.filter(matter=matter).exists()
+    assert MatterPlanStep.objects.filter(matter=matter).count() == 5
 
     # Day 1 — the write-up is published.
     clock.go(1)
@@ -293,4 +294,4 @@ def test_scenario_c_closure_and_reopening_reactivate_nothing(signed_in, speciali
     assert matter.pk not in _owed(specialist)
     (ended,) = MatterResponseDeadline.objects.filter(matter=matter)
     assert ended.outcome == ResponseDeadlineOutcome.CLOSED
-    assert not MatterPlanStep.objects.filter(matter=matter).exists()
+    assert not MatterPlanStep.objects.filter(matter=matter, state="COMPLETED").exists()

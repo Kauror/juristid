@@ -129,6 +129,7 @@ from app.matters.forms import (
     OpinionWorkingDocumentsForm,
     OtherOpinionForm,
     PersonalNoteForm,
+    PlanRevisionForm,
     PositionForm,
     ProceduralDevelopmentEditForm,
     ProceduralLinkCreateForm,
@@ -137,6 +138,7 @@ from app.matters.forms import (
     ReopenForm,
     ResponseDeadlineForm,
     ReviewActionForm,
+    StartPlanStepForm,
     TimelineStepsForm,
     WebsiteOverviewLinkForm,
     WorkingDocumentForm,
@@ -181,6 +183,7 @@ from app.matters.my_work import (
     view_from,
 )
 from app.matters.next_step import upcoming_milestone
+from app.matters.plan_view import Recommendation, recommendation_for
 from app.matters.process_timeline import process_steps
 from app.matters.removal import (
     RecordRemovalConflict,
@@ -279,8 +282,10 @@ from app.submissions.opinions import (
 from app.taxonomy.legal_instruments import OTHER_LEGAL_INSTRUMENT_KEYS
 from app.taxonomy.models import PolicyArea
 from app.taxonomy.vocabulary import selectable_policy_areas
+from app.workflow import plan as work_plan
 from app.workflow.enums import Track
-from app.workflow.models import NextAction, StageVocabulary
+from app.workflow.models import MatterPlanStep, NextAction, StageVocabulary
+from app.workflow.plan import seed_standard_plan
 from app.workflow.selectors import stages_including
 from app.workflow.services import (
     acknowledge_review,
@@ -691,6 +696,10 @@ def intake(request: HttpRequest) -> HttpResponse:
                     visibility=Visibility.NORMAL,
                     brief_summary=data.get("brief_summary", ""),
                     handover_note=data.get("handover_note", ""),
+                    # A person filing real work that has just arrived: the
+                    # background sequence behind `Soovitatud järgmisena` is
+                    # seeded, as on `Uus teema` (docs/adr/0133 §5, 0141).
+                    seed_plan=True,
                 )
             except (DomainError, UploadRejected) as error:
                 messages.error(request, str(error))
@@ -2128,8 +2137,14 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                 # it up, asking the members — had nowhere to be. So a new Teema
                 # gets no first step from the deadline any more: the service is
                 # untouched, every step it ever wrote is untouched, and nothing
-                # is superseded or migrated. Nor is a `Tööplaan` seeded any more
-                # (docs/adr/0141): the first step is whatever the lawyer writes.
+                # is superseded or migrated.
+                #
+                # **The background sequence instead** (docs/adr/0133 §5, 0141):
+                # five `SUGGESTED` steps behind `Soovitatud järgmisena`, none
+                # started, no `NextAction`, no date and no work item, and no
+                # plan drawn. Importers, the register refresh, cutovers and the
+                # seed commands never come through here, and a Teema filed
+                # already closed gets none.
                 #
                 # **A Teema filed as «Jõustunud» or «Rohkem ei tegele» is filed
                 # closed** (docs/adr/0131 §10): the same rule every other place
@@ -2137,6 +2152,8 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                 # transaction so the files and the link above are written on an
                 # open Matter.
                 ends_on_creation = is_terminal_stage(getattr(data.get("stage"), "key", None))
+                if not ends_on_creation:
+                    seed_standard_plan(matter=matter, actor=request.user)
                 if ends_on_creation:
                     close_matter_for_terminal_stage(matter=matter, actor=request.user)
 
@@ -2706,6 +2723,9 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # differently scoped answers to that on one page would be a row appearing or
     # vanishing for reasons a reader could not see (docs/adr/0092 §8).
     current_action = selectors.current_action_of(matter, request.user)
+    # `Soovitatud järgmisena` — one suggestion while this reader has no current
+    # step, read once (docs/adr/0141, `app.matters.plan_view`).
+    recommendation = recommendation_for(matter, current_action)
     # The file's `Õigusakt` and its `Hetkeseis` periods, read **once** for the
     # rail's pattern, the grouped chronology and the next-stage order — three
     # readers of the same two facts (docs/adr/0131 §7).
@@ -2785,6 +2805,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         ),
         "matter": matter,
         "current_action": current_action,
+        "recommendation": recommendation,
         "upcoming_step": upcoming_step,
         "source_instruction": source_instruction,
         "source_snapshot": snapshot_label() if source_instruction else "",
@@ -2819,6 +2840,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
             current_action,
             matter=matter,
             viewer=request.user,
+            recommendation=recommendation,
             phases=phases,
             phase_offers=_phase_date_offers(request, matter, phases, step_rows),
             next_stages=(
@@ -6226,6 +6248,9 @@ WORKSPACE_PANELS: dict[str, tuple[str, str]] = {
     # `PRAEGUNE TEGEVUS` → `✓ Tehtud`: `Mida tegid?`, `Uus hetkeseis` and
     # `Järgmine tegevus` (docs/adr/0140).
     "current_action_form": ("tehtud", ""),
+    # `Soovitatud järgmisena` → `Alusta` and `×` (docs/adr/0141).
+    "start_plan_form": ("alusta-samm", ""),
+    "plan_revision_form": ("soovitus", ""),
 }
 
 
@@ -6280,6 +6305,7 @@ def workspace_forms(
     phases: Any = None,
     phase_offers: Any = None,
     next_stages: Any = None,
+    recommendation: Recommendation | None = None,
 ) -> dict[str, Any]:
     """One unbound form per write intention, for an ordinary render.
 
@@ -6315,6 +6341,11 @@ def workspace_forms(
         next_stages = offered_next_stages(matter)
     return {
         "current_action_form": CompleteCurrentActionForm(next_stages=next_stages),
+        # `Soovitatud järgmisena` → `Alusta`, opened on the step's own words so
+        # nobody retypes them (docs/adr/0141).
+        "start_plan_form": StartPlanStepForm(
+            initial={"text": recommendation.step.title} if recommendation else None
+        ),
         # `+ Märge · Tavaline`. What happened, when, optionally the stage it
         # moves the file to and the next thing the lawyer will do about it —
         # one atomic operation over three canonical services.
@@ -6516,6 +6547,11 @@ def _workspace_refusal(
     panel_is_rendered = matter.is_open and (
         key not in needs_current_action or context["current_action"] is not None
     )
+    if key in ("start_plan_form", "plan_revision_form") and panel_is_rendered:
+        # `Alusta` and `×` are drawn only while a suggestion is (docs/adr/0141).
+        panel_is_rendered = (
+            context["current_action"] is None and context["recommendation"] is not None
+        )
     if key == "review_form" and panel_is_rendered:
         # `Vaatasin üle` is drawn only beside a step that waits: a replacement
         # that is a plan has no such panel to print the refusal in (ENG-021).
@@ -6622,6 +6658,78 @@ def complete_current_action(request: HttpRequest, pk: Any) -> HttpResponse:
         # the header's state badge moves, as it does from `+ Lisa`.
         matter.refresh_from_db()
         return _render_overview(request, matter, header_out_of_band=True)
+    return _render_overview(request, matter)
+
+
+# ---------------------------------------------------------------------------
+# `Soovitatud järgmisena` (docs/adr/0141)
+# ---------------------------------------------------------------------------
+#
+# The two acts left on the background sequence, each through one use case in
+# `app.workflow.plan`, each answering with the column. A refusal comes back
+# through `_workspace_refusal` beside the suggestion, or above the column when
+# the suggestion is gone. Neither writes a chronology row.
+
+
+def _plan_step_of(matter: Matter, step_id: Any) -> MatterPlanStep:
+    """A step of **this** Matter's sequence, or a 404 — never by id alone (AUTH-003)."""
+    return get_object_or_404(MatterPlanStep, pk=step_id, matter=matter)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def start_plan_step(request: HttpRequest, pk: Any, step_id: Any) -> HttpResponse:
+    """`Alusta` — the suggestion is the work now: the Matter's one `NextAction`.
+
+    Through `activate_plan_step`, which writes the action with the canonical
+    service, links it to the step and refuses while another action is open or
+    once the step is no longer ahead. The step's own words unless the person
+    changed them; a day only if they gave one.
+    """
+    matter = get_visible_matter(request, pk)
+    step = _plan_step_of(matter, step_id)
+    form = StartPlanStepForm(request.POST)
+    if not form.is_valid():
+        return _workspace_refusal(request, matter, key="start_plan_form", form=form)
+    try:
+        work_plan.activate_plan_step(
+            matter=matter,
+            step=step,
+            actor=request.user,
+            text=form.cleaned_data.get("text") or "",
+            target_date=form.cleaned_data.get("target_date"),
+        )
+    except DomainError as error:
+        return _workspace_refusal(
+            request, matter, key="start_plan_form", form=form, error=str(error)
+        )
+    return _render_overview(request, matter)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def dismiss_plan_step(request: HttpRequest, pk: Any, step_id: Any) -> HttpResponse:
+    """`×` — `Eemalda soovitus`: this suggestion is not wanted on this Matter.
+
+    The exact step the page showed, at the revision it was drawn from
+    (`skip_plan_step`): a stale tab refuses instead of dismissing whatever is
+    suggested now. Stored as `SKIPPED`, so it never comes back, and the next
+    step still ahead is suggested in its place.
+    """
+    matter = get_visible_matter(request, pk)
+    step = _plan_step_of(matter, step_id)
+    form = PlanRevisionForm(request.POST)
+    form.is_valid()
+    try:
+        work_plan.skip_plan_step(
+            step=step, actor=request.user, expected_revision=form.expected_revision
+        )
+    except DomainError as error:
+        return _workspace_refusal(
+            request, matter, key="plan_revision_form", form=form, error=str(error)
+        )
     return _render_overview(request, matter)
 
 

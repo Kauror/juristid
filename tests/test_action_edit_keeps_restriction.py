@@ -3,12 +3,13 @@
 `Muuda` beside the open step is an edit of **the same work**: the words or the
 day change, the work does not. The service writes that edit as a new
 `NextAction` superseding the old one, so the replacement is created with the
-old row's own restriction. Before this, a step restricted below its Matter came back
+old row's own restriction — exactly as it already carried the `Tööplaan` step
+(docs/adr/0133 §4). Before this, a step restricted below its Matter came back
 from `Muuda` as an ordinary one, and a reader who could not see it before the
 edit could see it after.
 
-Only `Muuda` carries it. New work — `+ Määra järgmine tegevus`, `Järgmine
-tegevus` after a completion, every importer — keeps the ordinary
+Only `Muuda` carries it. New work — `+ Määra järgmine tegevus`, `Järgmisena`
+after a completion, `Alusta` on a plan step, every importer — keeps the ordinary
 creation rule even though it also supersedes whatever was open (the owner's
 decision, docs/adr/0138 §3–§4).
 
@@ -32,6 +33,7 @@ from app.matters.workspace import (
     change_current_action,
     complete_current_action,
 )
+from app.workflow import plan as work_plan
 from app.workflow.enums import ActionStatus
 from app.workflow.models import NextAction
 from app.workflow.services import set_next_action_for_new_work
@@ -170,25 +172,20 @@ def test_a_restricted_matters_step_needs_no_redundant_override(specialist):
 
 
 # ---------------------------------------------------------------------------
-# D. An old plan-linked step keeps its restriction; the dormant plan link stays
-#    on the old row and is not carried (docs/adr/0141)
+# D. A plan-linked step keeps both its plan step and its restriction
 # ---------------------------------------------------------------------------
 
 
-def test_an_edited_old_plan_linked_step_keeps_its_restriction(matter, specialist, reader):
-    from app.workflow.models import MatterPlanStep
-
-    step = MatterPlanStep.objects.create(matter=matter, title="Tutvu materjaliga", position=0)
-    original = _action(matter, specialist, restricted=True)
-    NextAction.objects.filter(pk=original.pk).update(plan_step=step)
+def test_an_edited_plan_step_keeps_its_step_and_its_restriction(matter, specialist, reader):
+    work_plan.seed_standard_plan(matter=matter, actor=specialist)
+    step = work_plan.plan_steps_of(matter)[0]
+    original = _restrict(work_plan.activate_plan_step(matter=matter, step=step, actor=specialist))
 
     replacement = _edit(matter, specialist, original)
 
-    assert replacement.plan_step_id is None
+    assert replacement.plan_step_id == step.pk
     assert replacement.visibility_override == Visibility.RESTRICTED
     assert not NextAction.objects.visible_to(reader).filter(pk=replacement.pk).exists()
-    original.refresh_from_db()
-    assert original.plan_step_id == step.pk
 
 
 # ---------------------------------------------------------------------------

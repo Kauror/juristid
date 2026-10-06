@@ -3722,6 +3722,47 @@ class CompleteCurrentActionForm(forms.Form):
         return cleaned
 
 
+class StartPlanStepForm(forms.Form):
+    """`Alusta` — start `Soovitatud järgmisena` as the Matter's current action.
+
+    The step's own words are the action unless the person changes them, and the
+    day is optional and never filled in for them (docs/adr/0133 §4). An exact
+    day only; a period is given afterwards through `Muuda`, which is where the
+    precision control is. One-click from a plan row posts neither box.
+    """
+
+    use_required_attribute = False
+
+    text = forms.CharField(
+        label="Mida on vaja teha?",
+        required=False,
+        max_length=2000,
+        widget=forms.TextInput(attrs={"class": "field__input"}),
+    )
+    target_date = EstonianDateField(label="Millal?", required=False, widget=DATE_WIDGET)
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("auto_id", "id_alusta_%s")
+        super().__init__(*args, **kwargs)
+
+
+class PlanRevisionForm(forms.Form):
+    """The question `×` beside `Soovitatud järgmisena` asks: which sequence was this drawn from.
+
+    Optional at the field so that a POST without it reaches the service and is
+    refused there with the sentence a person can act on, rather than with a
+    form error under a control they cannot see.
+    """
+
+    use_required_attribute = False
+
+    revision = forms.CharField(required=False, max_length=64, widget=forms.HiddenInput())
+
+    @property
+    def expected_revision(self) -> str:
+        return self.cleaned_data.get("revision") or ""
+
+
 #: The label of the box that finishes the current step from a substantive save.
 #: One sentence for every form that offers it, so a lawyer meets one control
 #: wherever the act that finishes their step is recorded (docs/adr/0126 §2).

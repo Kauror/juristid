@@ -146,6 +146,18 @@ def _matter(world) -> Matter:
     return world["matter"]
 
 
+def _plan_step(world, key: str):
+    from app.workflow.models import MatterPlanStep
+
+    return MatterPlanStep.objects.get(matter=world["planned"], template_step_key=key)
+
+
+def _plan_revision(matter) -> str:
+    from app.workflow.plan import plan_revision, plan_steps_of
+
+    return plan_revision(plan_steps_of(matter))
+
+
 WRITE_ROUTES: tuple[WriteRoute, ...] = (
     WriteRoute(
         name="matters:matter_create",
@@ -842,6 +854,30 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         ),
         events=(ChangeEventType.DOCUMENT_ROLE_CHANGED,),
     ),
+    # -- `Soovitatud järgmisena` (docs/adr/0141) ----------------------------
+    #
+    # Fired at `planned`, which carries the background sequence and nothing
+    # current, so each act has a real suggestion to start or dismiss.
+    WriteRoute(
+        name="matters:start_plan_step",
+        label="Soovituse alustamine",
+        request=lambda w: (
+            {"pk": w["planned"].pk, "step_id": _plan_step(w, "read-material").pk},
+            {},
+        ),
+        probe=lambda w: w["planned"].next_actions.filter(status=ActionStatus.OPEN).count(),
+        events=(ChangeEventType.PLAN_STEP_ACTIVATED, ChangeEventType.NEXT_ACTION_SET),
+    ),
+    WriteRoute(
+        name="matters:dismiss_plan_step",
+        label="Soovituse eemaldamine",
+        request=lambda w: (
+            {"pk": w["planned"].pk, "step_id": _plan_step(w, "read-material").pk},
+            {"revision": _plan_revision(w["planned"])},
+        ),
+        probe=lambda w: _plan_step(w, "read-material").state,
+        events=(ChangeEventType.PLAN_STEP_SKIPPED,),
+    ),
     WriteRoute(
         name="documents:remove",
         label="Dokumendi eemaldamine",
@@ -1095,8 +1131,18 @@ def _build_world():
         owner=None, title="Vastutajata teema", reference_year=2099, reference_number=911
     )
 
+    # A Matter carrying the background sequence behind `Soovitatud järgmisena`
+    # and nothing current (docs/adr/0141).
+    from app.workflow.plan import seed_standard_plan
+
+    planned = factories.MatterFactory(
+        owner=author, title="Soovitusega teema", reference_year=2099, reference_number=912
+    )
+    seed_standard_plan(matter=planned, actor=author)
+
     return {
         "matter": matter,
+        "planned": planned,
         "entry": entry,
         "waiting_engagement": waiting_engagement,
         "quiet_engagement": quiet_engagement,

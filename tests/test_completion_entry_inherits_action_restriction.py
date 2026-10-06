@@ -20,8 +20,8 @@ Asserted through the real operation, never by building the rows by hand:
 * **copied, not joined** — relaxing the action later leaves the `Entry`
   restricted, and an `Entry` written before an action was restricted is not
   rewritten;
-* **unchanged contracts** — a stale action still refuses the whole save, and an
-  old `Tööplaan`-linked action gets the same rule.
+* **unchanged contracts** — a stale action still refuses the whole save, and a
+  `Soovitatud järgmisena`-linked action gets the same rule.
 """
 
 from __future__ import annotations
@@ -256,12 +256,12 @@ def test_a_stale_restricted_action_refuses_the_whole_save(matter, specialist):
 
 
 # ---------------------------------------------------------------------------
-# H. An old `Tööplaan`-linked action gets the same rule, and its dormant step
-#    is left as it was (docs/adr/0141)
+# H. A suggestion-linked action gets the same rule, and completing it
+#    completes its step (docs/adr/0141)
 # ---------------------------------------------------------------------------
 
 
-def test_a_restricted_old_plan_linked_actions_completion_is_restricted(matter, specialist, reader):
+def test_a_restricted_plan_linked_actions_completion_is_restricted(matter, specialist, reader):
     from app.workflow.models import MatterPlanStep
 
     step = MatterPlanStep.objects.create(matter=matter, title="Tutvu materjaliga", position=0)
@@ -275,7 +275,7 @@ def test_a_restricted_old_plan_linked_actions_completion_is_restricted(matter, s
     assert not Entry.objects.visible_to(reader).filter(pk=entry.pk).exists()
     assert result_count(query=BODY_WORD, user=reader) == 0
     step.refresh_from_db()
-    assert step.state == "PLANNED"
+    assert step.state == "COMPLETED"
 
 
 # ---------------------------------------------------------------------------

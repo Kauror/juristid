@@ -365,7 +365,7 @@ def test_the_typed_deadline_is_the_obligation_and_starts_nothing(page, base_url)
 
     The date is `Matter.response_deadline` and it reads in the header and on the
     current step's secondary line once there is one. It no longer establishes
-    `Koostan arvamuse`: a new Teema opens with no step and nothing suggested
+    `Koostan arvamuse`: a new Teema opens with no step and one suggestion
     (docs/adr/0141), and the lawyer writes the first one.
     """
     sign_in(page, base_url, MARTIN)
@@ -381,6 +381,7 @@ def test_the_typed_deadline_is_the_obligation_and_starts_nothing(page, base_url)
     expect(page.locator("#praegune-tegevus .curact__empty")).to_have_text(
         "Järgmine samm on määramata"
     )
+    expect(page.locator(".curact__suggesttext")).to_have_text("Tutvu materjaliga")
     expect(page.locator(".metaline").first).to_contain_text(wanted)
     start_first_step(page)
     expect(page.locator(".curact__owed")).to_contain_text("Arvamuse tähtaeg")
