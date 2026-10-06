@@ -17,6 +17,8 @@ basis = "deployment"
 # planeeritud tegevused, külgriba ja Tegevuste loetavus, ADR 0142 ja 0143 (#398).
 # Migratsioonid audit/0034 (SQL-ita) ja workflow/0013; olemasolevaid ridu ei
 # muudeta, otsinguindeksit ei ehitata uuesti.
+# Kolmas väljalase samal päeval: külgriba «+ Lisa» ja «Liige» paigutus (#399),
+# ainult CSS.
 changes = [
   "Tööplaan on Teema vaatest eemaldatud. Kui praegust tegevust pole, võib Juristid endiselt pakkuda järgmist sammu «Soovitatud järgmisena»: soovituse saab alustada («Alusta») või kõrvale jätta («×»). Kõrvale jäetud soovitust sellel teemal enam ei pakuta.",
   "«+ Kaasamine», «+ Koja arvamus» ja «+ Ülevaade / uudis» ei küsi enam, millist tööplaani sammu salvestus täidab.",
@@ -26,6 +28,7 @@ changes = [
   "Külgribal: «Koja arvamus» ütleb «Puudub», kui arvamust veel pole; «Menetluse link» lisatakse nupuga «+ Lisa»; «Seotud materjalid» näitab arvu ja iga rida on pealkiri koos «×»-ga seose eemaldamiseks; «Saatja» näitab iga saatjat eraldi real.",
   "Tegevustes näitab lõpetatud tegevuse rida rohelise linnukesega, mis tehti; järgmine samm on üks lihtne rida «Järgmine samm – …» ja ridadel on ainult kuupäev, ilma kellaajata.",
   "Tagasiside vormis on «Liige» organisatsiooni otsingu samal real.",
+  "Külgriba «Seotud materjalid» nupp «+ Lisa» näeb välja nagu teised külgriba «+ Lisa» nupud, ja tagasiside vormis on «Liige» kohe otsingulahtri kõrval.",
 ]
 
 [[day]]
