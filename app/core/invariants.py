@@ -256,7 +256,9 @@ def _closed_matter_findings() -> list[Finding]:
     engagement = apps.get_model("matters", "MatterEngagement")
     findings = [
         Finding(kind="closed-matter-open-next-action", subject=str(pk), detail=f"matter={matter}")
-        for pk, matter in next_action.objects.filter(status="OPEN", matter__is_open=False)
+        for pk, matter in next_action.objects.filter(
+            status__in=("OPEN", "PLANNED"), matter__is_open=False
+        )
         .order_by("pk")
         .values_list("pk", "matter_id")
     ]

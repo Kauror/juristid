@@ -1,0 +1,32 @@
+{% load form_labels %}
+{% comment %}
+A planned future action's form (docs/adr/0143): what, and on which day — both
+required. With `action` it is that planned row's `Muuda`; without, it is
+`+ Määra järgmine tegevus` beside a current action.
+
+    form          a `PlannedActionForm`, bound or unbound, with its own ids
+    action        the planned row being changed, or nothing
+    submit_label  what the button saves
+{% endcomment %}
+<form class="addform" data-addform
+      {% if action %}hx-post="{% url 'matters:change_planned_action' pk=matter.pk action_id=action.pk %}"{% else %}hx-post="{% url 'matters:add_planned_action' pk=matter.pk %}"{% endif %}
+      hx-target="#teema-vaade" hx-swap="outerHTML">
+  {% csrf_token %}
+  <label class="cx-f" for="{{ form.text.id_for_label }}">
+    <span class="cx-f__lab">{% field_label form.text %}</span>
+    {{ form.text }}
+  </label>
+  {% if form.text.errors %}
+    <p class="field__error" id="{{ form.text.auto_id }}_error">{{ form.text.errors|first }}</p>
+  {% endif %}
+  <label class="cx-f cx-f--date" for="{{ form.target_date.id_for_label }}">
+    <span class="cx-f__lab">{% field_label form.target_date %}</span>
+    {{ form.target_date }}
+  </label>
+  {% if form.target_date.errors %}
+    <p class="field__error" id="{{ form.target_date.auto_id }}_error">{{ form.target_date.errors|first }}</p>
+  {% endif %}
+  <div class="addform__actions">
+    <button class="button button--primary" type="submit">{{ submit_label }}</button>
+  </div>
+</form>

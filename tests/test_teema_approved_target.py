@@ -480,7 +480,9 @@ def test_each_operation_carries_its_own_save_and_there_is_no_global_one(
     completion = zone[zone.index('class="curact__form"') :]
     completion = completion[: completion.index("</form>")]
     assert completion.count('type="submit"') == 1
-    assert zone.count('type="submit"') == 2
+    # `Muuda`'s save, and `+ Määra järgmine tegevus`'s beside a current step
+    # (a planned action, docs/adr/0143).
+    assert zone.count('type="submit"') == 3
 
     # Ten operations under LISA TEEMALE — four families, of which two ask a
     # second question, plus `Lõpeta teema` — each with exactly one save of its
@@ -2062,8 +2064,9 @@ def test_a_work_entry_carries_its_time_inline_and_its_file(signed_in, normal_mat
 
     assert "lisas dokumendi" in chronology
     assert 'class="uxtl__time"' in chronology
-    # The time is inside the meta line, not in a column of its own.
-    meta = chronology[chronology.index('class="uxtl__meta"') :]
+    # The time is inside the meta line, not in a column of its own — here the
+    # ✓ line of the completion this save was (docs/adr/0143).
+    meta = chronology[chronology.index('class="uxtl__meta') :]
     meta = meta[: meta.index("</p>")]
     assert "uxtl__time" in meta
     # The file is a link to the exact bytes.
@@ -2285,8 +2288,9 @@ def test_the_rail_holds_the_four_target_blocks_in_order(signed_in, normal_matter
         for label in ("Teema andmed", "Koja arvamus", "Seotud materjalid", "Märkmed")
     ]
     assert positions == sorted(positions)
-    assert "Arvamust ei ole lisatud." in rail
-    assert "Seotud teemasid ega taustmaterjali ei ole valitud." in rail
+    assert '<span class="railcard__none">Puudub</span>' in rail
+    # An empty `Seotud materjalid` is its heading and `+ Lisa` only (docs/adr/0143).
+    assert "Seotud teemasid ega taustmaterjali ei ole valitud." not in rail
 
 
 def test_teema_andmed_holds_the_target_rows_that_are_still_asked(signed_in, normal_matter):

@@ -130,6 +130,7 @@ from app.matters.forms import (
     OpinionWorkingDocumentsForm,
     OtherOpinionForm,
     PersonalNoteForm,
+    PlannedActionForm,
     PlanRevisionForm,
     PositionForm,
     ProceduralDevelopmentEditForm,
@@ -259,6 +260,8 @@ from app.matters.timeline import (
     attach_round_positions,
     development_milestone,
     engagement_milestone,
+    entry_completes_a_step,
+    entry_plain_text,
     external_position_milestone,
     matter_timeline,
 )
@@ -2724,9 +2727,18 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # differently scoped answers to that on one page would be a row appearing or
     # vanishing for reasons a reader could not see (docs/adr/0092 §8).
     current_action = selectors.current_action_of(matter, request.user)
-    # `Soovitatud järgmisena` — one suggestion while this reader has no current
-    # step, read once (docs/adr/0141, `app.matters.plan_view`).
-    recommendation = recommendation_for(matter, current_action)
+    # The planned future actions this reader may see, earliest first, each with
+    # its own `Muuda` form (docs/adr/0143).
+    planned_actions = selectors.planned_actions_of(matter, request.user)
+    for planned in planned_actions:
+        planned.edit_form = PlannedActionForm(  # type: ignore[attr-defined]
+            auto_id=f"id_planeeritud_{planned.pk}_%s",
+            initial={"text": planned.text, "target_date": planned.target_date},
+        )
+    # `Soovitatud järgmisena` — one suggestion, read once (docs/adr/0141,
+    # `app.matters.plan_view`). A queued action outranks it: it is the fallback
+    # when nothing is current and nothing is planned.
+    recommendation = None if planned_actions else recommendation_for(matter, current_action)
     # The file's `Õigusakt` and its `Hetkeseis` periods, read **once** for the
     # rail's pattern, the grouped chronology and the next-stage order — three
     # readers of the same two facts (docs/adr/0131 §7).
@@ -2807,6 +2819,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "matter": matter,
         "current_action": current_action,
         "recommendation": recommendation,
+        "planned_actions": planned_actions,
         "upcoming_step": upcoming_step,
         "source_instruction": source_instruction,
         "source_snapshot": snapshot_label() if source_instruction else "",
@@ -4371,6 +4384,103 @@ def set_action(request: HttpRequest, pk: Any) -> HttpResponse:
     return _render_overview(request, matter)
 
 
+# ---------------------------------------------------------------------------
+# Planned actions (docs/adr/0143)
+# ---------------------------------------------------------------------------
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def add_planned_action_view(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`+ Määra järgmine tegevus` beside a current action — a dated future one.
+
+    Never replaces the current action. On a Matter with no current action at
+    all the same save becomes the current one, as `+ Määra järgmine tegevus`
+    always made it (a stale tab drawn while one was current).
+    """
+    from app.workflow.services import add_planned_action, current_next_action
+
+    matter = get_visible_matter(request, pk)
+    form = PlannedActionForm(request.POST)
+    if not form.is_valid():
+        return _workspace_refusal(request, matter, key="planned_action_form", form=form)
+    try:
+        if current_next_action(matter) is None:
+            set_next_action_for_new_work(
+                matter=matter,
+                actor=request.user,
+                text=form.cleaned_data["text"],
+                target_date=form.cleaned_data["target_date"],
+            )
+        else:
+            add_planned_action(
+                matter=matter,
+                actor=request.user,
+                text=form.cleaned_data["text"],
+                target_date=form.cleaned_data["target_date"],
+            )
+    except DomainError as error:
+        return _workspace_refusal(
+            request, matter, key="planned_action_form", form=form, error=str(error)
+        )
+    return _render_overview(request, matter)
+
+
+def _visible_planned(request: HttpRequest, matter: Matter, action_id: Any) -> NextAction:
+    """A planned action of this Matter that this reader may see, or a 404 (AUTH-003)."""
+    return get_object_or_404(
+        NextAction.objects.visible_to(request.user), pk=action_id, matter=matter
+    )
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def change_planned_action_view(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse:
+    """`Muuda` on a planned row — that exact action; the current one is untouched."""
+    from app.workflow.services import change_planned_action
+
+    matter = get_visible_matter(request, pk)
+    action = _visible_planned(request, matter, action_id)
+    form = PlannedActionForm(request.POST, auto_id=f"id_planeeritud_{action.pk}_%s")
+    if not form.is_valid():
+        return _workspace_refusal(request, matter, key="planned_edit_form", form=form)
+    try:
+        change_planned_action(
+            matter=matter,
+            action_id=action.pk,
+            actor=request.user,
+            text=form.cleaned_data["text"],
+            target_date=form.cleaned_data["target_date"],
+        )
+    except DomainError as error:
+        return _workspace_refusal(
+            request, matter, key="planned_edit_form", form=form, error=str(error)
+        )
+    return _render_overview(request, matter)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def cancel_planned_action_view(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse:
+    """`×` — `Eemalda planeeritud tegevus`: cancelled, and kept in the history."""
+    from app.workflow.services import cancel_planned_action
+
+    matter = get_visible_matter(request, pk)
+    action = _visible_planned(request, matter, action_id)
+    form = PlanRevisionForm(request.POST)
+    form.is_valid()
+    try:
+        cancel_planned_action(matter=matter, action_id=action.pk, actor=request.user)
+    except DomainError as error:
+        return _workspace_refusal(
+            request, matter, key="planned_edit_form", form=form, error=str(error)
+        )
+    return _render_overview(request, matter)
+
+
 @login_required
 @business_write_required
 @require_http_methods(["POST"])
@@ -5751,6 +5861,10 @@ def _entry_row(
             # one that meant to clear it.
             "entry_edit_swap_marker": True,
             "entry_read_query": ENTRY_READ_QUERY,
+            # A completion row's headline is this note (timeline_items.html).
+            "entry_done_text": (
+                entry_plain_text(entry) if form is None and entry_completes_a_step(entry) else None
+            ),
         },
         status=status,
     )
@@ -6254,6 +6368,10 @@ WORKSPACE_PANELS: dict[str, tuple[str, str]] = {
     # `Soovitatud järgmisena` → `Alusta` and `×` (docs/adr/0141).
     "start_plan_form": ("alusta-samm", ""),
     "plan_revision_form": ("soovitus", ""),
+    # `+ Määra järgmine tegevus` beside a current action, and a planned row's
+    # `Muuda` / `×` (docs/adr/0143).
+    "planned_action_form": ("lisa-planeeritud", ""),
+    "planned_edit_form": ("planeeritud", ""),
 }
 
 
@@ -6355,6 +6473,8 @@ def workspace_forms(
         next_stages = offered_next_stages(matter)
     return {
         "current_action_form": CompleteCurrentActionForm(next_stages=next_stages),
+        # `+ Määra järgmine tegevus` beside a current action (docs/adr/0143).
+        "planned_action_form": PlannedActionForm(),
         # `Soovitatud järgmisena` → `Alusta`, opened on the step's own words so
         # nobody retypes them (docs/adr/0141).
         "start_plan_form": StartPlanStepForm(

@@ -430,6 +430,22 @@ urlpatterns = [
         name="edit_entry",
     ),
     path("teemad/<uuid:pk>/jargmiseks/", views.set_action, name="set_action"),
+    # Planned future actions beside the current one (docs/adr/0143).
+    path(
+        "teemad/<uuid:pk>/planeeritud/",
+        views.add_planned_action_view,
+        name="add_planned_action",
+    ),
+    path(
+        "teemad/<uuid:pk>/planeeritud/<uuid:action_id>/muuda/",
+        views.change_planned_action_view,
+        name="change_planned_action",
+    ),
+    path(
+        "teemad/<uuid:pk>/planeeritud/<uuid:action_id>/eemalda/",
+        views.cancel_planned_action_view,
+        name="cancel_planned_action",
+    ),
     # `Muuda` on a filed Kaasamine, under the record rather than under the
     # Teema, and spelled the way `edit_entry` is — one address for the form and
     # the save, GET opening the box in the chronology row and POST writing it.

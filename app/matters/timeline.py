@@ -25,6 +25,7 @@ which is what they have always been (Teema redesign §11.1).
 
 from __future__ import annotations
 
+import html
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
@@ -34,6 +35,7 @@ from typing import Any
 from django.db import models
 from django.db.models.functions import Cast, Coalesce, TruncDate
 from django.utils import timezone
+from django.utils.html import strip_tags
 
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
@@ -749,6 +751,50 @@ class TimelineItem:
         return _join(verb for verb in self.summary_verbs if verb != "lisas märkuse")
 
     @property
+    def completion_text(self) -> str:
+        """What was done, when this row is the note that finished a step.
+
+        A `Mida tegid?` save writes the note and completes the current action in
+        one operation, and the note *is* the result. So that row reads as the
+        result — «✓ Lugesin VTK läbi …» — rather than as «märkis eelmise sammu
+        tehtuks» with the result behind an expand (owner's UX round,
+        2026-10-06). Plain text of the note; empty on every other row.
+        """
+        if self.entry is None or not any(
+            event.event_type == ChangeEventType.NEXT_ACTION_COMPLETED for event in self.events
+        ):
+            return ""
+        return entry_plain_text(self.entry)
+
+    @property
+    def besides_the_completion(self) -> str:
+        """`besides_the_note`, without what the row already shows.
+
+        The completion is the ✓ line, and a step this save set reads as its own
+        «Järgmine samm – …» line under it.
+        """
+        shown = {"lisas märkuse", "märkis eelmise sammu tehtuks"}
+        if self.next_step is not None:
+            shown.add("määras järgmise sammu")
+        return _join(verb for verb in self.summary_verbs if verb not in shown)
+
+    @property
+    def step_only(self) -> bool:
+        """A row whose only act was setting a step, read as one line.
+
+        «Järgmine samm – Kaasa liikmeid 4.10.2026», and not that sentence plus
+        the same words again in a strip under it (owner's UX round,
+        2026-10-06). The strip stays on every row that did something else too.
+        """
+        return (
+            self.entry is None
+            and self.record is None
+            and self.next_step is not None
+            and len(self.summary_verbs) == 1
+            and self.summary_verbs[0].startswith(STEP_LINE_PREFIXES)
+        )
+
+    @property
     def summary_sentence(self) -> str:
         """ "lisas märkuse ja määras järgmise sammu", or an empty string.
 
@@ -757,6 +803,29 @@ class TimelineItem:
         nothing at all — the entry card already says what it is.
         """
         return _join(self.summary_verbs)
+
+
+def entry_plain_text(entry: Any) -> str:
+    """An entry's note as one line of plain text, for a completion row's headline."""
+    return " ".join(html.unescape(strip_tags(entry.body or "")).split())
+
+
+def entry_completes_a_step(entry: Any) -> bool:
+    """Whether the save that wrote `entry` also completed the current action.
+
+    Explicit only: the entry's own `ENTRY_ADDED` row and a `NEXT_ACTION_COMPLETED`
+    row of the same operation — the same link the chronology groups by. A
+    correction of such a note answers with its headline too, so the line above
+    the note never shows the old words (`_entry_row`).
+    """
+    operations = (
+        ChangeEvent.objects.filter(event_type=ChangeEventType.ENTRY_ADDED, object_id=entry.pk)
+        .exclude(operation_id=None)
+        .values("operation_id")
+    )
+    return ChangeEvent.objects.filter(
+        event_type=ChangeEventType.NEXT_ACTION_COMPLETED, operation_id__in=operations
+    ).exists()
 
 
 def _local_day(value: datetime) -> date:
@@ -945,6 +1014,10 @@ def _step_words(events: list[ChangeEvent], event_type: str) -> str:
     return text
 
 
+#: How a row that only set a step begins (`_verbs_for`, `TimelineItem.step_only`).
+STEP_LINE_PREFIXES = ("Järgmine samm – ", "Planeeritud tegevus – ")
+
+
 def _verbs_for(entry: Entry | None, events: list[ChangeEvent]) -> tuple[str, ...]:
     seen = {event.event_type for event in events}
     verbs: list[str] = []
@@ -964,7 +1037,16 @@ def _verbs_for(entry: Entry | None, events: list[ChangeEvent]) -> tuple[str, ...
             # words were one expand or one `Kõik muudatused` away. A note's
             # row keeps the bare clause: its `→` strip already names the step.
             words = _step_words(events, event_type)
-            if words:
+            if words and event_type == ChangeEventType.NEXT_ACTION_SET:
+                # One readable line, not a sentence and a card (owner's UX
+                # round, 2026-10-06): «Järgmine samm – …», or «Planeeritud
+                # tegevus – …» for a dated future one (docs/adr/0143).
+                planned = any(
+                    event.event_type == event_type and (event.payload or {}).get("planned")
+                    for event in events
+                )
+                phrase = f"{'Planeeritud tegevus' if planned else 'Järgmine samm'} – {words}"
+            elif words:
                 phrase = f"{phrase} «{words}»"
         verbs.append(phrase)
     return tuple(verbs)

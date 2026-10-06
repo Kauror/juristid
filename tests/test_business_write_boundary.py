@@ -904,6 +904,51 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         probe=lambda w: _plan_step(w, "read-material").state,
         events=(ChangeEventType.PLAN_STEP_SKIPPED,),
     ),
+    # -- Planned actions (docs/adr/0143) ---------------------------------------
+    #
+    # Fired at `matter`, whose `action` is current, so `+ Määra` plans rather
+    # than sets; `planned_action` is the row `Muuda` and `×` name.
+    WriteRoute(
+        name="matters:add_planned_action",
+        label="Planeeritud tegevuse lisamine",
+        request=lambda w: (
+            {"pk": w["matter"].pk},
+            {
+                "text": "Loata plaan",
+                "target_date": (timezone.localdate() + timedelta(days=9)).strftime("%d.%m.%Y"),
+            },
+        ),
+        probe=lambda w: w["matter"].next_actions.filter(status=ActionStatus.PLANNED).count(),
+        events=(ChangeEventType.NEXT_ACTION_SET,),
+    ),
+    WriteRoute(
+        name="matters:change_planned_action",
+        label="Planeeritud tegevuse muutmine",
+        request=lambda w: (
+            {"pk": w["matter"].pk, "action_id": w["planned_action"].pk},
+            {
+                "text": "Loata muudatus",
+                "target_date": (timezone.localdate() + timedelta(days=10)).strftime("%d.%m.%Y"),
+            },
+        ),
+        probe=lambda w: (
+            w["planned_action"]
+            .__class__.objects.values_list("status", flat=True)
+            .get(pk=w["planned_action"].pk)
+        ),
+        events=(ChangeEventType.NEXT_ACTION_SET,),
+    ),
+    WriteRoute(
+        name="matters:cancel_planned_action",
+        label="Planeeritud tegevuse eemaldamine",
+        request=lambda w: ({"pk": w["matter"].pk, "action_id": w["planned_action"].pk}, {}),
+        probe=lambda w: (
+            w["planned_action"]
+            .__class__.objects.values_list("status", flat=True)
+            .get(pk=w["planned_action"].pk)
+        ),
+        events=(ChangeEventType.NEXT_ACTION_CANCELLED,),
+    ),
     WriteRoute(
         name="documents:remove",
         label="Dokumendi eemaldamine",
@@ -1166,9 +1211,20 @@ def _build_world():
     )
     seed_standard_plan(matter=planned, actor=author)
 
+    # A dated future action beside `action`, for `Muuda` and `×` (docs/adr/0143).
+    from app.workflow.services import add_planned_action
+
+    planned_action = add_planned_action(
+        matter=matter,
+        text="Planeeritud tegevus",
+        target_date=timezone.localdate() + timedelta(days=21),
+        actor=author,
+    )
+
     return {
         "matter": matter,
         "planned": planned,
+        "planned_action": planned_action,
         "entry": entry,
         "waiting_engagement": waiting_engagement,
         "quiet_engagement": quiet_engagement,

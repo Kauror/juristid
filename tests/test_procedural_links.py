@@ -206,7 +206,7 @@ def test_a_matter_with_no_links_renders_no_card_and_no_placeholders(signed_in, n
     Specifically **not** five empty rows waiting to be filled in.
 
     The card itself is no longer absent, and that is this round's one change to
-    the empty state: it renders a single quiet `+ Lisa menetluse link` line
+    the empty state: it renders a single quiet `+ Lisa` line (named «Lisa menetluse link»)
     pointing at `Muuda teemat`. The launcher chip that used to be the add
     affordance is gone, and an address recorded nowhere with no visible way to
     record one would be a capability that had quietly left the product
@@ -216,7 +216,7 @@ def test_a_matter_with_no_links_renders_no_card_and_no_placeholders(signed_in, n
 
     assert "+ Menetluse link" not in body
     card = _card(body)
-    assert "+ Lisa menetluse link" in card
+    assert 'aria-label="Lisa menetluse link">+ Lisa</a>' in card
     # One line, not a table of placeholders.
     assert "menetluse-link-" not in card
 

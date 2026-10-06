@@ -68,7 +68,9 @@ def confirmed_row(page, title: str):
 
 
 def background_row(page, title: str):
-    return page.locator("[data-related-background] .factrow").filter(has_text=title)
+    return page.locator("[data-related-confirmed] .factrow[data-related-material]").filter(
+        has_text=title
+    )
 
 
 def test_the_matter_page_loads_with_suggestions_unopened(page, base_url):
@@ -77,7 +79,7 @@ def test_the_matter_page_loads_with_suggestions_unopened(page, base_url):
 
     expect(section(page)).to_be_visible()
     expect(section(page).get_by_role("heading", name="Seotud materjalid")).to_be_visible()
-    expect(add_disclosure(page).locator("> summary")).to_have_text("Lisa")
+    expect(add_disclosure(page).locator("> summary")).to_have_text("+ Lisa")
     expect(add_disclosure(page)).not_to_have_attribute("open", "")
     expect(page.locator("[data-related-suggestions]")).to_have_count(0)
     # Secondary: in the facts rail, not the main column. The 2026-09 refinement
@@ -164,9 +166,9 @@ def test_an_earlier_opinion_becomes_background_and_stays_where_it_was(page, base
     expect(page.locator("[data-related-notice]")).to_contain_text("Taustmaterjal on lisatud.")
     row = background_row(page, SUBMISSION_TITLE)
     expect(row).to_be_visible()
-    expect(row.locator(".factrow__kind")).to_contain_text("Arvamus")
-    # «Ava» still opens the opinion on the Matter it was sent for.
-    assert row.get_by_role("link", name="Ava").get_attribute("href") == source_href
+    expect(row.locator(".relatedmaterials__meta")).to_contain_text("Arvamus")
+    # The title still opens the opinion on the Matter it was sent for.
+    assert row.locator("a.factrow__title").get_attribute("href") == source_href
     expect(material_card(page, SUBMISSION_TITLE)).to_have_count(0)
 
     row.get_by_role("button", name="Eemalda").click()
@@ -189,7 +191,7 @@ def test_archive_material_opens_through_the_archive_and_files_no_link(page, base
 
     row = background_row(page, ARCHIVE_LETTER_TITLE)
     expect(row).to_be_visible()
-    href = row.get_by_role("link", name="Ava").get_attribute("href") or ""
+    href = row.locator("a.factrow__title").get_attribute("href") or ""
     assert re.fullmatch(r"/haldus/arvamuste-arhiiv/[0-9a-f-]{36}/", href), href
     assert "opinion-archive/" not in page.content()
 

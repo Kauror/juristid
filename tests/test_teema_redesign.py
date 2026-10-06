@@ -890,7 +890,7 @@ def test_a_sent_opinion_reaches_the_rail(signed_in, specialist, organisation):
     (Teema QA §1.2, tests/test_teema_rail.py).
     """
     matter = factories.MatterFactory(owner=specialist)
-    assert "Arvamust ei ole lisatud." in _detail(signed_in, matter)
+    assert '<span class="railcard__none">Puudub</span>' in _detail(signed_in, matter)
 
     # `+ Koja arvamus` — the current way an opinion goes out (the closing
     # composer that also could was retired with ENG-050A2).
@@ -904,7 +904,7 @@ def test_a_sent_opinion_reaches_the_rail(signed_in, specialist, organisation):
 
     body = _detail(signed_in, matter)
     assert "Koja_arvamus.pdf" in body
-    assert "Arvamust ei ole lisatud." not in body
+    assert '<span class="railcard__none">Puudub</span>' not in body
     # And nothing else on the page says it a second time.
     assert "sentstrip" not in body
     assert body.count('id="koja-arvamus"') == 1
@@ -918,7 +918,7 @@ def test_a_draft_submission_alone_never_reaches_the_rail(signed_in, specialist):
     body = _detail(signed_in, matter)
 
     assert "Mustand" not in body
-    assert "Arvamust ei ole lisatud." in body
+    assert '<span class="railcard__none">Puudub</span>' in body
 
 
 # ---------------------------------------------------------------------------

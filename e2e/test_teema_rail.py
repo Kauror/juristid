@@ -547,7 +547,7 @@ def test_a_writer_can_add_the_chambers_opinion_as_a_file(page, base_url):
 
     block = page.locator("#koja-arvamus")
     expect(block).to_be_visible()
-    expect(block.get_by_text("Arvamust ei ole lisatud.")).to_be_visible()
+    expect(block.get_by_text("Puudub", exact=True)).to_be_visible()
     # Read-only: no upload, and no way out of the block at all.
     expect(block.locator("input[type=file]")).to_have_count(0)
     expect(block.get_by_text("+ Lisa arvamus")).to_have_count(0)
@@ -570,7 +570,7 @@ def test_a_writer_can_add_the_chambers_opinion_as_a_file(page, base_url):
     page.wait_for_load_state("networkidle")
     block = page.locator("#koja-arvamus")
     expect(block.get_by_role("link", name=re.compile("Koja_arvamus.pdf"))).to_be_visible()
-    expect(block.get_by_text("Arvamust ei ole lisatud.")).to_have_count(0)
+    expect(block.get_by_text("Puudub", exact=True)).to_have_count(0)
 
 
 def test_a_reader_sees_the_opinion_but_no_way_to_add_one(page, base_url):

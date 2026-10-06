@@ -13,9 +13,19 @@ basis = "deployment"
 # Tööplaan eemaldatud vaatest, soovitus jääb, ADR 0141 (#397). Migratsioone ei
 # ole, otsinguindeksit ei ehitata uuesti. Kui see väljalase ei jõua tootmisse
 # 06.10 (Tallinna aja järgi), liiguvad need read väljalaske päeva kirjesse.
+# Teine väljalase samal päeval: dokumendi pealkiri, kahe osaga kaasamine,
+# planeeritud tegevused, külgriba ja Tegevuste loetavus, ADR 0142 ja 0143 (#398).
+# Migratsioonid audit/0034 (SQL-ita) ja workflow/0013; olemasolevaid ridu ei
+# muudeta, otsinguindeksit ei ehitata uuesti.
 changes = [
   "Tööplaan on Teema vaatest eemaldatud. Kui praegust tegevust pole, võib Juristid endiselt pakkuda järgmist sammu «Soovitatud järgmisena»: soovituse saab alustada («Alusta») või kõrvale jätta («×»). Kõrvale jäetud soovitust sellel teemal enam ei pakuta.",
   "«+ Kaasamine», «+ Koja arvamus» ja «+ Ülevaade / uudis» ei küsi enam, millist tööplaani sammu salvestus täidab.",
+  "Dokumendi pealkirja saab muuta («Muuda» dokumentide nimekirjas ja dokumendi lehel). Faili algne nimi, sisu ja versioonid jäävad samaks.",
+  "«+ Kaasamine» on kaks valikut: «Alusta kaasamist» uue kaasamise jaoks ja «Lisa tagasiside» avatud kaasamisele saabunud tagasiside jaoks. Kui teemal on avatud kaasamine, avaneb kohe «Lisa tagasiside»; tagasiside lisamine kaasamist ei lõpeta.",
+  "«+ Määra järgmine tegevus» on avatud teemal alati nähtav. Kui praegune tegevus on olemas, lisandub uus kuupäevaga tegevus loendisse «Planeeritud tegevused», mida saab muuta («Muuda») või eemaldada («×»). Praeguse tegevuse lõpetamisel saab praeguseks kõige varasema kuupäevaga planeeritud tegevus. Teema sulgemisel lõpetatakse ka planeeritud tegevused.",
+  "Külgribal: «Koja arvamus» ütleb «Puudub», kui arvamust veel pole; «Menetluse link» lisatakse nupuga «+ Lisa»; «Seotud materjalid» näitab arvu ja iga rida on pealkiri koos «×»-ga seose eemaldamiseks; «Saatja» näitab iga saatjat eraldi real.",
+  "Tegevustes näitab lõpetatud tegevuse rida rohelise linnukesega, mis tehti; järgmine samm on üks lihtne rida «Järgmine samm – …» ja ridadel on ainult kuupäev, ilma kellaajata.",
+  "Tagasiside vormis on «Liige» organisatsiooni otsingu samal real.",
 ]
 
 [[day]]

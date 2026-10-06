@@ -120,12 +120,13 @@ def test_the_whole_loop_from_no_step_to_the_following_one(page, base_url, screen
     # B. The step, set directly — yesterday, so it is late as soon as it exists.
     _set_directly(page, STEP, _day(-1))
 
-    # C. The zone states it, late, with `Muuda` beside it and no direct control.
+    # C. The zone states it, late, with `Muuda` beside it. The direct control
+    # stays, and now plans a dated future action beside it (docs/adr/0143).
     zone = page.locator("#praegune-tegevus")
     expect(zone.locator(".curact__text")).to_have_text(STEP)
     expect(zone.locator(".curact__date--overdue")).to_have_count(1)
     expect(zone.locator("#lisa-jargmine > summary")).to_have_text("Muuda")
-    expect(zone).not_to_contain_text(CTA)
+    expect(zone.locator("#lisa-planeeritud > summary")).to_have_text(CTA)
     # Nothing was filed as a `Märge` to make it.
     expect(page.locator(KAIK_ROW).filter(has_text=STEP)).to_have_count(0)
     screenshots(page, "otsene-samm-praegune-tegevus")

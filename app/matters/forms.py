@@ -3747,6 +3747,46 @@ class StartPlanStepForm(forms.Form):
         super().__init__(*args, **kwargs)
 
 
+class PlannedActionForm(forms.Form):
+    """A planned future action: what, and on which day (docs/adr/0143).
+
+    `+ Määra järgmine tegevus` beside a current action, and `Muuda` on a planned
+    row. Both answers are required — planning several activities is planning
+    them on days — and the day is an exact one; a period is not offered here.
+    ``auto_id`` keeps the add form and each row's editor apart on one page.
+    """
+
+    use_required_attribute = False
+
+    text = marks_required(
+        forms.CharField(
+            label="Mida on vaja teha?",
+            required=False,
+            max_length=2000,
+            widget=forms.TextInput(attrs={"class": "field__input"}),
+        )
+    )
+    target_date = marks_required(
+        EstonianDateField(label="Millal?", required=False, widget=DATE_WIDGET)
+    )
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("auto_id", "id_planeeritud_%s")
+        super().__init__(*args, **kwargs)
+
+    def clean_text(self) -> str:
+        text = (self.cleaned_data.get("text") or "").strip()
+        if not text:
+            raise forms.ValidationError("Kirjuta, mida on vaja teha.")
+        return text
+
+    def clean_target_date(self) -> Any:
+        value = self.cleaned_data.get("target_date")
+        if value is None:
+            raise forms.ValidationError("Planeeritud tegevusel peab olema kuupäev.")
+        return value
+
+
 class PlanRevisionForm(forms.Form):
     """The question `×` beside `Soovitatud järgmisena` asks: which sequence was this drawn from.
 

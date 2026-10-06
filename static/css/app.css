@@ -6713,6 +6713,41 @@ button.accordion__action:focus-visible {
   flex: none;
 }
 
+/* `Saatja` stacked: the label above, one sender per line — a long institution
+   name never wraps in a narrow second column. */
+.teema .railcard__row--stacked {
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* `Seotud materjalid` rows: the title is the link, one quiet `×` at the end. */
+.relatedmaterials__row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-1) var(--spacing-2);
+  flex-wrap: wrap;
+}
+
+.relatedmaterials__row > .factrow__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.relatedmaterials__remove {
+  margin: 0;
+}
+
+.relatedmaterials__meta {
+  flex: 1 1 100%;
+  font-size: var(--typography-size-meta);
+}
+
+.railcard__line {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
 /* The inline editors sit on the row rather than around it: a control with its
    own padding inside a one-line row is what made the rail twice as tall as the
    facts in it. */
@@ -10826,10 +10861,24 @@ section:has(.pw-more[open]) tbody.uxextra {
   color: var(--status-danger);
 }
 
-/* `Liige`, in the organisation picker's own footer rather than a row of its
- * own. One line instead of three (matters/partials/external_position_panel.html). */
+/* `Liige`, at the end of the organisation search's own row rather than a row
+ * of its own (owner's UX round, 2026-10-06). Wraps under the box on a narrow
+ * panel (matters/partials/external_position_panel.html). */
+#teema-vaade-wrap .orgpick__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--spacing-1) var(--spacing-2);
+}
+
+#teema-vaade-wrap .orgpick__row > .orgfind {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
 #teema-vaade-wrap .orgpick__mark {
-  margin-top: 6px;
+  flex: none;
+  margin-top: 4px;
 }
 
 #teema-vaade-wrap .lprail__aside--koda {
@@ -11669,19 +11718,44 @@ section:has(.pw-more[open]) tbody.uxextra {
   text-decoration: underline;
 }
 
-/* What one save decided, as a bordered pill under the note rather than a line
- * of its own. */
+/* What one save decided, as one plain line under the act — history, not a
+ * control, so no border and no button shape (owner's UX round, 2026-10-06). */
 #teema-vaade-wrap .uxtl__next {
-  display: inline-flex;
+  display: flex;
   align-items: baseline;
-  gap: var(--spacing-2);
-  margin-top: var(--spacing-1);
-  padding: 3px 9px;
-  border: 1px solid var(--accent-border);
-  border-radius: 5px;
+  gap: var(--spacing-1);
+  margin-top: 2px;
   font-size: 12.5px;
   line-height: 1.4;
   color: var(--text-body);
+}
+
+#teema-vaade-wrap .uxtl__next .uxtl__nextdash {
+  color: var(--text-muted);
+}
+
+/* A completion row: the result is the line, with a small green tick. */
+#teema-vaade-wrap .uxtl__check {
+  flex: 0 0 auto;
+  color: var(--status-success);
+  font-weight: var(--typography-weight-semibold);
+}
+
+#teema-vaade-wrap .uxtl__donetext {
+  min-width: 0;
+  color: var(--text-body);
+  overflow-wrap: anywhere;
+}
+
+#teema-vaade-wrap .uxtl__author--quiet {
+  color: var(--text-muted);
+  font-weight: var(--typography-weight-regular);
+}
+
+/* The note is already the line; opened, the row shows its controls and files
+ * rather than the same words a second time. */
+#teema-vaade-wrap .uxtl__item--done .uxtl__entry > .richtext {
+  display: none;
 }
 
 /* The step's own sentence inside the pill, and the sixth surface QA-10b found.
@@ -12038,6 +12112,54 @@ section:has(.pw-more[open]) tbody.uxextra {
 /* `Soovitatud järgmisena` — one suggestion, `Alusta` and a quiet `×`
  * (docs/adr/0141). The sentence at the body weight rather than the task's
  * semibold: it is not the current task, and must not read as one. */
+/* `Planeeritud tegevused` — dated future actions under the current one
+ * (docs/adr/0143). A quiet label and compact rows: day, words, `Muuda`, `×`. */
+.curact__planned {
+  margin-top: var(--spacing-3);
+}
+
+.curact__plannedhead {
+  margin: 0 0 var(--spacing-1);
+  font-size: var(--typography-size-chip);
+  font-weight: var(--typography-weight-semibold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.curact__plannedlist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.curact__plannedrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--spacing-1) var(--spacing-2);
+  padding: 2px 0;
+  font-size: var(--typography-size-sm);
+}
+
+.curact__planneddate {
+  flex: 0 0 auto;
+  min-width: 6.5em;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.curact__plannedtext {
+  min-width: 0;
+  color: var(--text-body);
+  overflow-wrap: anywhere;
+}
+
+.curact__plannedrow > .cx-panel[open] {
+  flex: 1 1 100%;
+  order: 1;
+}
+
 .curact__suggest {
   margin-top: var(--spacing-1);
 }

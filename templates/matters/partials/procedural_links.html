@@ -55,7 +55,7 @@ because what the file recorded and who recorded it is part of the file
 {% endcomment %}
 {% if procedural_links or can_write and matter.is_open %}
   <div class="railcard" id="menetluse-lingid">
-    <span class="railcard__label">Menetluse lingid</span>
+    <span class="railcard__label">Menetluse link</span>
     {% if procedural_links %}
       {% for link, edit_form in procedural_links %}
       <div class="proclink" id="menetluse-link-{{ link.pk }}">
@@ -176,7 +176,7 @@ because what the file recorded and who recorded it is part of the file
         literal `id=` in prose counts as a second declaration.
       {% endcomment %}
       <div class="railcard__row">
-        <a class="railcard__add" href="{% url 'matters:matter_edit' pk=matter.pk %}#menetluse-link">+ Lisa menetluse link</a>
+        <a class="railcard__add" href="{% url 'matters:matter_edit' pk=matter.pk %}#menetluse-link" aria-label="Lisa menetluse link">+ Lisa</a>
       </div>
     {% endif %}
   </div>

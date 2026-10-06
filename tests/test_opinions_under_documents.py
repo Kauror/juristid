@@ -829,7 +829,7 @@ def test_a_restricted_opinion_is_not_named_in_the_rail(client, reader, specialis
     body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
 
     assert "Salajane_arvamus.pdf" not in body
-    assert "Arvamust ei ole lisatud." in body
+    assert '<span class="railcard__none">Puudub</span>' in body
 
 
 def test_the_arvamus_filter_does_not_widen_visibility(client, reader, specialist):

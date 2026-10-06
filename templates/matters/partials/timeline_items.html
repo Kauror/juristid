@@ -58,7 +58,7 @@ record, not professional chronology (master specification 16.5).
     than the headline, because a correction swaps the row's inside and the
     article stays.
   {% endcomment %}
-  <article class="uxtl__item {% if item.is_primary %}uxtl__item--primary{% else %}uxtl__item--secondary{% endif %}"
+  <article class="uxtl__item {% if item.is_primary %}uxtl__item--primary{% else %}uxtl__item--secondary{% endif %}{% if item.completion_text %} uxtl__item--done{% endif %}"
            data-kaik-rida="{{ item.row_key }}"
            {% if item.is_entry %}id="sissekanne-{{ item.entry.pk }}"{% endif %}>
     <span class="uxtl__rail" aria-hidden="true">
@@ -388,6 +388,38 @@ record, not professional chronology (master specification 16.5).
           page and left a gutter of dates nobody reads down
           (TEEMA_TARGET_SPEC §E).
         {% endcomment %}
+        {% comment %}
+          **A completion reads as what was done** (owner's UX round,
+          2026-10-06): the note that finished the step is the line, with a
+          small green `✓`, and the author follows quietly. The rest of the save
+          (a next step, files) still reads below. Every chronology line carries
+          the day only; the clock time stays in `Kõik muudatused`.
+        {% endcomment %}
+        {% if item.completion_text %}
+        <p class="uxtl__meta uxtl__meta--done" id="kaik-{{ item.row_key }}-rida">
+          <span class="uxtl__check" aria-hidden="true">✓</span>
+          <span class="uxtl__donetext" id="sissekanne-{{ item.entry.pk }}-tehtud">{{ item.completion_text }}</span>
+          {% if item.besides_the_completion %}
+            <span class="uxtl__did">{{ item.besides_the_completion }}</span>
+          {% endif %}
+          {% if item.actor %}
+            <span class="uxtl__author uxtl__author--quiet">{{ item.actor.display_name }}</span>
+          {% endif %}
+          {% include "matters/partials/entry_edited_marker.html" with entry=item.entry oob=False %}
+          <time class="uxtl__time" datetime="{{ item.occurred_at|date:'c' }}">{{ item.occurred_at|date:"j.n.Y" }}</time>
+        </p>
+        {% elif item.step_only %}
+        <p class="uxtl__meta uxtl__meta--step" id="kaik-{{ item.row_key }}-rida">
+          <span class="uxtl__did uxtl__stepline">{{ item.summary_sentence }}</span>
+          {% if item.next_step.date_line %}
+            <span class="uxtl__nextdate">{{ item.next_step.date_line }}</span>
+          {% endif %}
+          {% if item.actor %}
+            <span class="uxtl__author uxtl__author--quiet">{{ item.actor.display_name }}</span>
+          {% endif %}
+          <time class="uxtl__time" datetime="{{ item.occurred_at|date:'c' }}">{{ item.occurred_at|date:"j.n.Y" }}</time>
+        </p>
+        {% else %}
         <p class="uxtl__meta" id="kaik-{{ item.row_key }}-rida">
           {% if item.actor %}
             <span class="uxtl__author">{{ item.actor.display_name }}</span>
@@ -417,8 +449,9 @@ record, not professional chronology (master specification 16.5).
           {% if item.is_entry %}
             {% include "matters/partials/entry_edited_marker.html" with entry=item.entry oob=False %}
           {% endif %}
-          <time class="uxtl__time" datetime="{{ item.occurred_at|date:'c' }}">{{ item.occurred_at|date:"j.n.Y H:i" }}</time>
+          <time class="uxtl__time" datetime="{{ item.occurred_at|date:'c' }}">{{ item.occurred_at|date:"j.n.Y" }}</time>
         </p>
+        {% endif %}
         {% if item.is_entry %}
           {% comment %}
             The body and the `Muuda` that corrects it, in their own element so
@@ -513,9 +546,10 @@ record, not professional chronology (master specification 16.5).
         consequence of the thing above it, and a reader scrolling for "what did
         we agree to do" is looking for exactly this.
       {% endcomment %}
-      {% if item.next_step %}
+      {% if item.next_step and not item.step_only %}
         <span class="uxtl__next">
-          <span class="uxtl__nextmode" aria-hidden="true">→</span>
+          <span class="uxtl__nextlabel">Järgmine samm</span>
+          <span class="uxtl__nextdash" aria-hidden="true">–</span>
           <span class="uxtl__nexttext">{{ item.next_step.text }}</span>
           {% if item.next_step.date_line %}
             <span class="uxtl__nextdate">{{ item.next_step.date_line }}</span>

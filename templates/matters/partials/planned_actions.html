@@ -1,0 +1,38 @@
+{% comment %}
+`Planeeritud tegevused` — the dated future actions behind the current one
+(docs/adr/0143). Compact rows, earliest first: the day, the words, `Muuda` for
+that exact action and `×` to take it off the plan (cancelled, kept in the
+history). The earliest becomes the current action when the current one is done.
+Nothing renders when nothing is planned.
+{% endcomment %}
+{% if planned_actions %}
+  <div class="curact__planned" id="planeeritud">
+    <h3 class="curact__plannedhead">Planeeritud tegevused</h3>
+    {% if open_panel == "planeeritud" and workspace_error %}
+      <p class="formerror" role="alert">{{ workspace_error }}</p>
+    {% endif %}
+    <ul class="curact__plannedlist">
+      {% for planned in planned_actions %}
+        <li class="curact__plannedrow">
+          <span class="curact__planneddate">{{ planned.date_display }}</span>
+          <span class="curact__plannedtext">{{ planned.text }}</span>
+          {% if can_write %}
+            <details class="cx-panel curact__edit" id="planeeritud-{{ planned.pk }}" data-addpanel>
+              <summary class="disclosure-chip disclosure-chip--quiet">Muuda</summary>
+              <div class="cx-panel__body">
+                {% include "matters/partials/planned_action_form.html" with form=planned.edit_form action=planned submit_label="Salvesta" %}
+              </div>
+            </details>
+            <form class="curact__dismiss"
+                  hx-post="{% url 'matters:cancel_planned_action' pk=matter.pk action_id=planned.pk %}"
+                  hx-target="#teema-vaade" hx-swap="outerHTML">
+              {% csrf_token %}
+              <button class="quietbutton" type="submit"
+                      aria-label="Eemalda planeeritud tegevus" title="Eemalda planeeritud tegevus">×</button>
+            </form>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}

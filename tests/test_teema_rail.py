@@ -133,7 +133,12 @@ def test_every_editable_fact_keeps_its_editor_inside_its_row(signed_in, speciali
     matter = factories.MatterFactory(owner=specialist)
     body = _detail(signed_in, matter)
 
-    rows = re.findall(r"<div[^>]*class=\"railcard__row\"[^>]*>(.*?)</div>\s*(?=<)", body, re.S)
+    # `railcard__row--stacked` is the same row, label above (`Saatja`).
+    rows = re.findall(
+        r"<div[^>]*class=\"railcard__row(?: railcard__row--stacked)?\"[^>]*>(.*?)</div>\s*(?=<)",
+        body,
+        re.S,
+    )
     editable = [row for row in rows if "inlineedit" in row]
 
     assert editable, "no editable fact rendered for a writer"
@@ -205,7 +210,7 @@ def test_the_rail_offers_koja_arvamus_and_says_when_there_is_none(signed_in, spe
 
     assert 'id="koja-arvamus"' in body
     assert "Koja arvamus" in body
-    assert "Arvamust ei ole lisatud." in body
+    assert '<span class="railcard__none">Puudub</span>' in body
     assert "+ Lisa arvamus" not in body
 
 
@@ -267,7 +272,7 @@ def test_several_opinions_all_appear_in_the_rail(signed_in, specialist):
 
     for name in ("Esimene.pdf", "Taiendav.pdf", "Uhispoordumine.pdf"):
         assert block.count(name) == 1, name
-    assert "Arvamust ei ole lisatud." not in block
+    assert '<span class="railcard__none">Puudub</span>' not in block
 
 
 def test_an_uploaded_opinion_appears_in_the_rail(signed_in, specialist):
@@ -277,7 +282,7 @@ def test_an_uploaded_opinion_appears_in_the_rail(signed_in, specialist):
     body = _detail(signed_in, matter)
 
     assert "Koja_arvamus.pdf" in body
-    assert "Arvamust ei ole lisatud." not in body
+    assert '<span class="railcard__none">Puudub</span>' not in body
     document.refresh_from_db()
     download = reverse("documents:download", kwargs={"pk": document.current_version.pk})
     assert download in body
@@ -386,7 +391,7 @@ def test_an_opinion_restricted_below_its_matter_is_not_named_in_the_rail(
     body = _detail(client, matter)
 
     assert "Salajane_arvamus.pdf" not in body
-    assert "Arvamust ei ole lisatud." in body
+    assert '<span class="railcard__none">Puudub</span>' in body
 
 
 def test_a_sent_submissions_final_evidence_is_the_same_row(signed_in, specialist, organisation):
@@ -542,7 +547,7 @@ def test_the_rail_does_not_say_there_is_no_opinion_beside_one_it_sent(
     _sent_on(matter, _incoming_document(matter), specialist, organisation)
 
     block = _rail_block(_detail(signed_in, matter), "koja-arvamus")
-    assert "Arvamust ei ole lisatud." not in block
+    assert '<span class="railcard__none">Puudub</span>' not in block
 
 
 def test_a_draft_submissions_evidence_is_not_promoted_to_an_opinion(
@@ -561,7 +566,7 @@ def test_a_draft_submissions_evidence_is_not_promoted_to_an_opinion(
 
     block = _rail_block(_detail(signed_in, matter), "koja-arvamus")
     assert "Ministeeriumi_kiri.pdf" not in block
-    assert "Arvamust ei ole lisatud." in block
+    assert '<span class="railcard__none">Puudub</span>' in block
 
 
 def test_a_document_in_both_branches_is_listed_once(signed_in, specialist, organisation):
@@ -597,7 +602,7 @@ def test_visibility_still_gates_the_filename_of_a_sent_opinion(
     block = _rail_block(_detail(client, matter), "koja-arvamus")
 
     assert "Salajane_saadetud.pdf" not in block
-    assert "Arvamust ei ole lisatud." in block
+    assert '<span class="railcard__none">Puudub</span>' in block
 
 
 def test_the_union_does_not_reach_across_matters(signed_in, specialist, organisation):
@@ -611,4 +616,4 @@ def test_the_union_does_not_reach_across_matters(signed_in, specialist, organisa
     block = _rail_block(_detail(signed_in, mine), "koja-arvamus")
 
     assert "Teise_teema_kiri.pdf" not in block
-    assert "Arvamust ei ole lisatud." in block
+    assert '<span class="railcard__none">Puudub</span>' in block
