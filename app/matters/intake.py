@@ -147,7 +147,6 @@ def register_incoming(
     visibility: str = Visibility.NORMAL,
     brief_summary: str = "",
     handover_note: str = "",
-    seed_plan: bool = False,
 ) -> IntakeResult:
     """Create the Matter and capture every arriving file as evidence.
 
@@ -166,11 +165,8 @@ def register_incoming(
     Saabunud cannot leave an organisation behind that no Matter names
     (`app.matters.services.resolve_source_organisations`).
 
-    ``seed_plan`` is the explicit seam for `Tööplaan` (docs/adr/0133 §5): the
-    `Saabunud` page passes it, because a person filing material that has just
-    arrived is starting real work, and the faint standard plan is copied onto
-    the new Matter in this same transaction. Nothing infers it from the Matter's
-    origin or mode — a caller recording history leaves it off, and gets no plan.
+    No `Tööplaan` is seeded: the plan is no longer an active feature
+    (docs/adr/0141).
     """
     if not uploads:
         raise DomainError("Vali vähemalt üks fail.")
@@ -219,10 +215,5 @@ def register_incoming(
                 mime_type=upload.mime_type,
                 actor=actor,
             )
-
-    if seed_plan:
-        from app.workflow.plan import seed_standard_plan
-
-        seed_standard_plan(matter=matter, actor=actor)
 
     return IntakeResult(matter=matter, documents=len(uploads))

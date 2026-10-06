@@ -368,3 +368,13 @@ Statistika, which read open actions exactly as before; the search index.
 Reverse `workflow/0011` and `audit/0032` to drop the column, the table and the
 choices — losing only plan data. Restoring `establish_opinion_preparation_action`
 in `matter_create` restores the old first step for new Matters.
+
+## Amendment, 2026-10-06 — the interactive feature is retired (docs/adr/0141)
+
+`Tööplaan` is no longer an active feature. The section, its controls, `Alusta`,
+the typed launch under `PRAEGUNE TEGEVUS`, seeding on `Uus teema` and
+`Saabunud`, and every plan side effect — starting, fulfilling, completing a
+step through `complete_next_action`, `Muuda` carrying it — are removed.
+`MatterPlanStep`, `NextAction.plan_step` and the `PLAN_*` events stay as
+dormant history; no row is rewritten. What this record decided is kept as
+the account of what those rows meant.

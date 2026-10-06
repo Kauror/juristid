@@ -109,10 +109,10 @@ def test_the_form_produces_the_whole_record_in_one_go(created, specialist, stage
     assert created.policy_areas.exists()
 
     assert DocumentVersion.objects.filter(document__matter=created).count() == 1
-    # No step is made from the deadline, and none is started from the plan the
-    # page seeded: guidance is not work (docs/adr/0133 §4, §8).
+    # No step is made from the deadline (docs/adr/0133 §8), and no `Tööplaan`
+    # is seeded (docs/adr/0141).
     assert not NextAction.objects.filter(matter=created).exists()
-    assert created.plan_steps.count() == 5
+    assert created.plan_steps.count() == 0
     assert MatterPersonalNote.objects.filter(matter=created, author=specialist).exists()
 
 

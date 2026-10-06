@@ -7,15 +7,13 @@ never noticed work recorded from `LISA TEEMALE`.
 Protected here:
 
 * the opinion may name the current `Arvamuse tähtaeg` it answers, specific
-  rounds whose wait it ends, and one plan step ahead it fulfils — and nothing
-  unnamed moves;
+  rounds whose wait it ends — and nothing unnamed moves;
 * with two rounds open, finishing one leaves the other open;
 * any part refused refuses the whole save: no opinion, no file, no completion;
 * a second press of the same drawn form records nothing twice;
-* a round or overview recorded from `LISA TEEMALE` may fulfil a plan step of its
-  kind, without an action being invented, and the current step is not offered;
-* the history keeps one row for the act, with what it finished under it;
-* a closed file's plan is folded away and offers nothing to start.
+* the history keeps one row for the act, with what it finished under it.
+
+The `Tööplaan` step it could also fulfil went with the plan (docs/adr/0141).
 """
 
 from __future__ import annotations
@@ -29,14 +27,12 @@ from django.urls import reverse
 from django.utils import timezone
 
 from app.matters.enums import EngagementKind, ResponseDeadlineOutcome
-from app.matters.models import MatterEngagement, MatterResponseDeadline
+from app.matters.models import MatterResponseDeadline
 from app.matters.response_deadlines import change_response_deadline, deadline_revision
-from app.matters.services import add_engagement, close_matter, engagement_revision_token
+from app.matters.services import add_engagement, engagement_revision_token
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
-from app.workflow.enums import ActionStatus, Disposition, PlanStepState
-from app.workflow.models import MatterPlanStep, NextAction
-from app.workflow.plan import seed_standard_plan
+from app.workflow.enums import ActionStatus
 from app.workflow.services import set_next_action
 from tests import factories
 
@@ -238,91 +234,3 @@ def test_a_second_press_of_the_same_form_records_nothing_twice(signed_in, specia
 
     assert Submission.objects.filter(matter=matter).count() == 1
     assert "juba salvestatud" in second.content.decode()
-
-
-# ---------------------------------------------------------------------------
-# C — the plan, from either door
-# ---------------------------------------------------------------------------
-
-
-def _plan(matter, actor):
-    seed_standard_plan(matter=matter, actor=actor)
-    return {step.operation: step for step in MatterPlanStep.objects.filter(matter=matter)}
-
-
-def test_an_opinion_from_lisa_teemale_fulfils_the_named_plan_step(
-    signed_in, specialist, organisation
-):
-    matter = factories.MatterFactory(owner=specialist)
-    steps = _plan(matter, specialist)
-    other = set_next_action(matter=matter, text="Muu töö", actor=specialist)
-    send_step = steps["SUBMISSION"]
-
-    _opinion(signed_in, matter, organisation, taidab_sammu=str(send_step.pk))
-
-    send_step.refresh_from_db()
-    assert send_step.state == PlanStepState.COMPLETED
-    assert send_step.fulfilled_by_record == Submission.objects.get(matter=matter).pk
-    other.refresh_from_db()
-    assert other.status == ActionStatus.OPEN
-    assert NextAction.objects.filter(matter=matter).count() == 1
-
-
-def test_a_round_and_an_overview_fulfil_their_steps_without_an_invented_action(
-    signed_in, specialist
-):
-    matter = factories.MatterFactory(owner=specialist)
-    steps = _plan(matter, specialist)
-
-    signed_in.post(
-        reverse("matters:add_engagement_compact", kwargs={"pk": matter.pk}),
-        {"audience": "Liikmed (sünteetiline)", "taidab_sammu": str(steps["ENGAGEMENT"].pk)},
-        headers={"HX-Request": "true"},
-    )
-    refused = signed_in.post(
-        reverse("matters:add_website_overview", kwargs={"pk": matter.pk}),
-        {"taidab_sammu": str(steps["WEBSITE_OVERVIEW"].pk)},
-        headers={"HX-Request": "true"},
-    )
-
-    consult = MatterPlanStep.objects.get(pk=steps["ENGAGEMENT"].pk)
-    overview = MatterPlanStep.objects.get(pk=steps["WEBSITE_OVERVIEW"].pk)
-    assert consult.state == PlanStepState.COMPLETED
-    assert consult.fulfilled_by_record == MatterEngagement.objects.get(matter=matter).pk
-    # A plan, not a publication, does not do the overview step's work.
-    assert overview.state == PlanStepState.SUGGESTED
-    assert refused.status_code in (200, 400)
-    assert not NextAction.objects.filter(matter=matter).exists()
-
-
-def test_the_current_step_is_finished_by_its_own_action_not_by_naming(
-    signed_in, specialist, organisation
-):
-    from app.workflow.plan import activate_plan_step
-
-    matter = factories.MatterFactory(owner=specialist)
-    steps = _plan(matter, specialist)
-    activate_plan_step(matter=matter, step=steps["SUBMISSION"], actor=specialist)
-
-    _opinion(signed_in, matter, organisation, taidab_sammu=str(steps["SUBMISSION"].pk))
-
-    assert not Submission.objects.filter(matter=matter).exists()
-    page = signed_in.get(
-        reverse("matters:matter_detail", kwargs={"pk": matter.pk})
-    ).content.decode()
-    assert f'<option value="{steps["SUBMISSION"].pk}"' not in page
-
-
-def test_a_closed_files_plan_is_folded_and_offers_nothing_to_start(signed_in, specialist):
-    matter = factories.MatterFactory(owner=specialist)
-    _plan(matter, specialist)
-    close_matter(matter=matter, disposition=Disposition.COMPLETED, actor=specialist)
-
-    page = signed_in.get(
-        reverse("matters:matter_detail", kwargs={"pk": matter.pk})
-    ).content.decode()
-
-    assert "Tööplaan teema sulgemise ajal" in page
-    assert "Soovitatud järgmisena" not in page
-    assert ">Alusta<" not in page
-    assert MatterPlanStep.objects.filter(matter=matter, state=PlanStepState.SUGGESTED).count() == 5

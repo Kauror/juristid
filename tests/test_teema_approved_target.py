@@ -471,9 +471,10 @@ def test_each_operation_carries_its_own_save_and_there_is_no_global_one(
     # The current action's own save, and one only. `Muuda` is beside it with a
     # save of its own — a different operation, which is the distinction this
     # round exists to make (brief §9).
-    # `PRAEGUNE TEGEVUS` ends where `TÖÖPLAAN` begins (docs/adr/0133), whose
-    # own controls are plan edits rather than saves of this zone.
-    zone = body[body.index('id="praegune-tegevus"') : body.index('id="tooplaan"')]
+    # `PRAEGUNE TEGEVUS` is its own `<section>`; the `TÖÖPLAAN` that followed it
+    # is gone (docs/adr/0141).
+    start = body.index('id="praegune-tegevus"')
+    zone = body[start : body.index("</section>", start)]
     completion = zone[zone.index('class="curact__form"') :]
     completion = completion[: completion.index("</form>")]
     assert completion.count('type="submit"') == 1

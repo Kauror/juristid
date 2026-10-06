@@ -535,10 +535,9 @@ def test_the_panel_offers_one_activity_and_no_kind_selector(page, base_url):
     expect(page.get_by_text("+ Ülevaade / uudis", exact=True)).to_be_visible()
     panel = panel_of(page)
     expect(panel.locator("input[type=radio]")).to_have_count(0)
-    # No kind selector. The one select the panel may carry is `Tööplaani samm,
-    # mille see täidab` (docs/adr/0135 §6), which asks which plan step this
-    # publication does — not what kind of record it is.
-    expect(panel.locator("select:not([name=taidab_sammu])")).to_have_count(0)
+    # No kind selector, and since docs/adr/0141 no `Tööplaani samm` select
+    # either: the panel carries no select at all.
+    expect(panel.locator("select")).to_have_count(0)
     expect(panel.locator("[data-chipgroup]")).to_have_count(0)
     # And still nothing else: no title, no description, no attachment
     # (docs/adr/0081 §2).

@@ -159,8 +159,6 @@ def set_next_action_for_new_work(
     source_text: str = "",
     responsible: Any = None,
     actor: Any = None,
-    plan_step: Any = None,
-    carry_plan_step: bool = False,
     carry_visibility_override: bool = False,
 ) -> NextAction:
     """`set_next_action`, for the surfaces where a person is creating the step.
@@ -187,15 +185,8 @@ def set_next_action_for_new_work(
         source_text=source_text,
         responsible=responsible_for_new_work(matter=matter, explicit=responsible),
         actor=actor,
-        plan_step=plan_step,
-        carry_plan_step=carry_plan_step,
         carry_visibility_override=carry_visibility_override,
     )
-
-
-#: A plan step named for an action on a different Matter. Unreachable from the
-#: page, which fetches steps through the Matter it is on; this is the backstop.
-PLAN_STEP_OF_ANOTHER_MATTER = "Tööplaani samm ei kuulu sellele teemale."
 
 
 @transaction.atomic
@@ -211,8 +202,6 @@ def set_next_action(
     responsible: Any = None,
     actor: Any = None,
     provenance: dict[str, Any] | None = None,
-    plan_step: Any = None,
-    carry_plan_step: bool = False,
     carry_visibility_override: bool = False,
 ) -> NextAction:
     """Set the current action, superseding whatever it replaces.
@@ -246,19 +235,9 @@ def set_next_action(
     it would double every imported instruction in the timeline. Manual callers
     pass nothing and are unaffected.
 
-    **``plan_step`` and ``carry_plan_step`` — the `Tööplaan` relation**
-    (docs/adr/0133 §4). Both default to nothing, so every existing caller writes
-    an action with no plan step exactly as before.
-
-    * ``plan_step`` is the step this action is being *started* from — passed
-      only by `app.workflow.plan` when somebody presses `Alusta` or chooses a
-      step under `Järgmisena`. It must be on the same Matter.
-    * ``carry_plan_step`` is `Muuda`: an edit of the step that is open, whose
-      replacement row is the same work and keeps the same plan step. Read off
-      the row being superseded, under the lock, so a stale editor cannot carry
-      a step it never saw. Any other supersession — a `+ Märge` dated ahead, an
-      import — passes neither, and the plan step it replaces stays where it was:
-      superseding work is never completing it.
+    **No `Tööplaan` relation is written** (docs/adr/0141). `NextAction.plan_step`
+    stays in the schema for the rows that already carry one; a new row never
+    does, and a superseded row keeps the value it had.
 
     **``carry_visibility_override`` — the same work keeps its restriction**
     (docs/adr/0139). Also `Muuda`, and for the same reason: the replacement is
@@ -310,18 +289,11 @@ def set_next_action(
     if not locked_matter.is_open:
         raise DomainError("Suletud teemale ei saa järgmist tegevust määrata.")
 
-    if plan_step is not None and plan_step.matter_id != locked_matter.pk:
-        raise DomainError(PLAN_STEP_OF_ANOTHER_MATTER)
-
     previous = (
         NextAction.objects.select_for_update(no_key=True)
         .filter(matter=locked_matter, status=ActionStatus.OPEN)
         .first()
     )
-    if plan_step is None and carry_plan_step and previous is not None:
-        plan_step_id = previous.plan_step_id
-    else:
-        plan_step_id = getattr(plan_step, "pk", None)
     visibility_override = ""
     if carry_visibility_override and previous is not None:
         carried = previous.visibility_override or ""
@@ -342,7 +314,6 @@ def set_next_action(
         source_text=source_text,
         responsible=responsible or locked_matter.owner,
         created_by=actor,
-        plan_step_id=plan_step_id,
         visibility_override=visibility_override,
     )
 
@@ -358,8 +329,6 @@ def set_next_action(
         "target_date": target_date.isoformat() if target_date else None,
         "replaced": str(previous.id) if previous else None,
     }
-    if plan_step_id is not None:
-        payload["plan_step"] = str(plan_step_id)
     if provenance:
         # Nested rather than merged flat, so a provenance key can never shadow
         # one of the four above and silently change what the event says.
@@ -543,55 +512,9 @@ def complete_next_action(*, action: NextAction, actor: Any = None) -> NextAction
         summary=action.text[:200],
         payload={"kind": action.kind},
     )
-    if action.plan_step_id is not None:
-        _complete_plan_step(action=action, step_id=action.plan_step_id, actor=actor)
+    # An action written before docs/adr/0141 may still name a `Tööplaan` step.
+    # Completing it touches nothing there: the plan is dormant history.
     return action
-
-
-def _complete_plan_step(*, action: NextAction, step_id: Any, actor: Any) -> None:
-    """The `Tööplaan` step this action was an occurrence of is done too.
-
-    **Here, inside the one completion service, so no path can disagree.**
-    `Mida tegid?`, `✓ Tehtud` on Minu asjad, a ticked `Märgi praegune tegevus
-    tehtuks` and a typed operation started from the step all complete the
-    action through `complete_next_action`; each therefore completes its step,
-    and nothing else does. A superseded or cancelled action — `Muuda` replacing
-    it, a `+ Märge` dated ahead, a closure — leaves its step exactly as it was
-    (docs/adr/0133 §4).
-
-    Stamped now, like the action. The record the work produced keeps its own
-    business date; neither the action's planned day nor anything else is
-    written as when the step was done.
-    """
-    from app.workflow.enums import PlanStepState
-    from app.workflow.models import MatterPlanStep
-
-    step = MatterPlanStep.objects.select_for_update(no_key=True).get(pk=step_id)
-    if step.state == PlanStepState.COMPLETED:
-        return
-    step.state = PlanStepState.COMPLETED
-    step.completed_at = action.ended_at
-    step.completed_by = actor
-    step.skipped_at = None
-    step.skipped_by = None
-    step.save(
-        update_fields=[
-            "state",
-            "completed_at",
-            "completed_by",
-            "skipped_at",
-            "skipped_by",
-            "updated_at",
-        ]
-    )
-    record_change_event(
-        event_type=ChangeEventType.PLAN_STEP_COMPLETED,
-        matter=action.matter,
-        actor=actor,
-        obj=step,
-        summary=step.title[:200],
-        payload={"action": str(action.pk)},
-    )
 
 
 @transaction.atomic

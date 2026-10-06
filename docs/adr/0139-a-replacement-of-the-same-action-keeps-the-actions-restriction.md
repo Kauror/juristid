@@ -104,3 +104,9 @@ replacement lost it.
 
 * Rewriting existing chains (§6).
 * A restriction control on `Muuda` or any other panel.
+
+## Amendment, 2026-10-06 — `Muuda` carries the restriction only (docs/adr/0141)
+
+`carry_plan_step` is removed: the replacement no longer carries a `Tööplaan`
+step, and `Alusta` is gone. The restriction is carried exactly as decided
+here. An old row keeps the `plan_step` it was written with.

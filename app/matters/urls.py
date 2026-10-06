@@ -126,44 +126,6 @@ urlpatterns = [
         views.complete_current_action,
         name="complete_current_action",
     ),
-    # `Tööplaan` (docs/adr/0133). One route per act on the plan, under the Matter
-    # whose page draws it, and a step's id only ever beside its Matter's.
-    path("teemad/<uuid:pk>/plaan/tavaplaan/", views.seed_plan, name="seed_plan"),
-    path("teemad/<uuid:pk>/plaan/lisa/", views.add_plan_step, name="add_plan_step"),
-    path(
-        "teemad/<uuid:pk>/plaan/<uuid:step_id>/muuda/",
-        views.edit_plan_step,
-        name="edit_plan_step",
-    ),
-    path(
-        "teemad/<uuid:pk>/plaan/<uuid:step_id>/alusta/",
-        views.start_plan_step,
-        name="start_plan_step",
-    ),
-    path(
-        "teemad/<uuid:pk>/plaan/<uuid:step_id>/vahele/",
-        views.act_on_plan_step,
-        {"act": "vahele"},
-        name="skip_plan_step",
-    ),
-    path(
-        "teemad/<uuid:pk>/plaan/<uuid:step_id>/taasta/",
-        views.act_on_plan_step,
-        {"act": "taasta"},
-        name="restore_plan_step",
-    ),
-    path(
-        "teemad/<uuid:pk>/plaan/<uuid:step_id>/korda/",
-        views.act_on_plan_step,
-        {"act": "korda"},
-        name="repeat_plan_step",
-    ),
-    path(
-        "teemad/<uuid:pk>/plaan/<uuid:step_id>/liiguta/",
-        views.act_on_plan_step,
-        {"act": "liiguta"},
-        name="move_plan_step",
-    ),
     path("teemad/<uuid:pk>/lisa/marge/", views.add_note, name="add_note"),
     path(
         "teemad/<uuid:pk>/lisa/kaasamine/",

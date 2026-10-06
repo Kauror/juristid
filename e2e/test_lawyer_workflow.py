@@ -19,6 +19,7 @@ from playwright.sync_api import expect
 
 from e2e.conftest import (
     ADMIN,
+    FIRST_STEP_TEXT,
     HEAD,
     MARTIN,
     READER,
@@ -34,11 +35,10 @@ from e2e.conftest import (
 
 #: The first step of a new file, in the department's own words.
 #:
-#: Not typed by the lawyer: `Uus teema` seeds the faint standard `Tööplaan`, and
-#: the walkthrough starts its first suggestion with `Alusta` — the plan's own
-#: words become the step (docs/adr/0133 §4). Until docs/adr/0133 §8 it was
-#: `Koostan arvamuse`, established from `Arvamuse tähtaeg`.
-FIRST_STEP = "Tutvu materjaliga"
+#: Written through `+ Määra järgmine tegevus` (`start_first_step`). Until
+#: docs/adr/0141 it was the first `Tööplaan` suggestion, started with `Alusta`;
+#: until docs/adr/0133 §8 it was `Koostan arvamuse`, from `Arvamuse tähtaeg`.
+FIRST_STEP = FIRST_STEP_TEXT
 
 pytestmark = pytest.mark.e2e
 
@@ -185,7 +185,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     page.get_by_role("checkbox", name="Seadus", exact=True).check()
 
     # One date: what Koda owes. It no longer makes a step (docs/adr/0133 §8);
-    # the file's first step is started from its `Tööplaan` once it exists.
+    # the file's first step is written once it exists.
     # `Järgmiseks` was a second box here and is off this page (docs/adr/0094 §6).
     page.locator("#id_response_deadline").fill(_future(21))
     screenshots(page, "02-uus-teema")
