@@ -488,6 +488,20 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         ),
         probe=lambda w: w["matter"].external_positions.count(),
     ),
+    # `+ Kaasamine · Lisa tagasiside` — the same record, tied to an open round
+    # (docs/adr/0142). A second door onto one service is still a door.
+    WriteRoute(
+        name="matters:add_engagement_reply",
+        label="Kaasamise tagasiside lisamine",
+        request=lambda w: (
+            {"pk": w["matter"].pk},
+            {
+                "engagement": str(w["waiting_engagement"].pk),
+                "summary": "Loata salvestatud tagasiside.",
+            },
+        ),
+        probe=lambda w: w["matter"].external_positions.count(),
+    ),
     # `Koja arvamus` — the Chamber's own opinion, recorded from the Teema page
     # through the service `Dokumendid` already posts to. It writes a canonical
     # SENT `Submission`, its recipients, its `Document` and its immutable
@@ -857,6 +871,18 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
             .get(pk=w["plain_document"].pk)
         ),
         events=(ChangeEventType.DOCUMENT_ROLE_CHANGED,),
+    ),
+    # `Muuda` on a Dokumendid row — the display title only (docs/adr/0142).
+    WriteRoute(
+        name="documents:rename",
+        label="Dokumendi pealkirja muutmine",
+        request=lambda w: ({"pk": w["plain_document"].pk}, {"title": "Loata pealkiri"}),
+        probe=lambda w: (
+            w["plain_document"]
+            .__class__._base_manager.values_list("title", flat=True)
+            .get(pk=w["plain_document"].pk)
+        ),
+        events=(ChangeEventType.DOCUMENT_TITLE_CHANGED,),
     ),
     WriteRoute(
         name="documents:remove",

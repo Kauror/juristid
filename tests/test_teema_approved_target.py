@@ -418,9 +418,11 @@ def test_lisa_teemale_offers_thirteen_choices_and_opens_none_of_them(signed_in, 
     ]
     assert [chip for chip in expected if f">{chip}<" in panels] == expected
     # `+ Lõpeta teema` is retired (docs/adr/0131 §11): a file ends through its
-    # `Hetkeseis`, so eleven capture panels and no closing one.
+    # `Hetkeseis`, so eleven capture panels and no closing one — thirteen since
+    # `+ Kaasamine` became `Alusta kaasamist` and `Lisa tagasiside`
+    # (docs/adr/0142).
     assert ">+ Lõpeta teema<" not in panels
-    assert panels.count('class="cx-panel"') + panels.count("cx-panel cx-panel--last") == 11
+    assert panels.count('class="cx-panel"') + panels.count("cx-panel cx-panel--last") == 13
     # All closed on arrival: nothing in this zone is a form until it is chosen.
     assert "data-addpanel\n             open" not in panels
     assert 'cx-panel" open' not in panels
@@ -538,7 +540,8 @@ def test_the_engagement_panel_asks_no_kind_and_keeps_its_two_questions(signed_in
     for label in ("Küsitlus", "Koosolek", "Kirjade voor"):
         assert f">{label}<" not in panel
     assert "Keda kaasati" in panel
-    assert "Vastuseid" in panel
+    # `Vastuseid` is corrected on the round since docs/adr/0142.
+    assert "Vastuseid" not in panel
     # The old five-field form's headline box is still gone…
     assert "Pealkiri" not in panel
     # …and the round's page and note are asked again (docs/adr/0127 §2).

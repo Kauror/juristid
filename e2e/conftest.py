@@ -305,6 +305,9 @@ PANEL_FAMILY = {
     "arvamus-tagasiside": "lisa-arvamus",
     "arvamus-teiste": "lisa-arvamus",
     "arvamus-koja": "lisa-arvamus",
+    # `+ Kaasamine` is start, then feedback since docs/adr/0142.
+    "kaasamine-alusta": "lisa-kaasamine",
+    "kaasamine-tagasiside": "lisa-kaasamine",
 }
 
 

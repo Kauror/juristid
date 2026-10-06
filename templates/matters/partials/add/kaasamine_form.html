@@ -4,6 +4,10 @@ The `kaasamine` form, in the one place it is written — drawn by the `LISA TEEM
 panel and, when the current `Tööplaan` step is this operation, a second time
 under `PRAEGUNE TEGEVUS` (docs/adr/0133 §6).
 
+**`Alusta kaasamist` — the start of a round only** (docs/adr/0142). What came
+back — the replies, their files, how many answered — is `Lisa tagasiside`
+beside it, and the count is still corrected through `Muuda` on the round.
+
     form          the bound or unbound form instance; the step's instance has
                   its own ids (`drawn_under_the_current_step`)
     plan_launch   true under the current step: posts the step and its action
@@ -23,16 +27,10 @@ under `PRAEGUNE TEGEVUS` (docs/adr/0133 §6).
             <input type="hidden" name="plan_action" value="{{ current_action.pk }}">
             <input type="hidden" name="plan_step" value="{{ work_plan.current.pk }}">
           {% endif %}
-          <div class="cx-grid">
-            <label class="cx-f">
-              <span class="cx-f__lab">Keda kaasati{% required_mark %}</span>
-              {{ form.audience }}
-            </label>
-            <label class="cx-f cx-f--num">
-              <span class="cx-f__lab">Vastuseid</span>
-              {{ form.response_count }}
-            </label>
-          </div>
+          <label class="cx-f">
+            <span class="cx-f__lab">Keda kaasati{% required_mark %}</span>
+            {{ form.audience }}
+          </label>
           <div class="cx-grid cx-grid--links">
             <label class="cx-f cx-f--date">
               <span class="cx-f__lab">Kaasamise kuupäev</span>
@@ -44,10 +42,6 @@ under `PRAEGUNE TEGEVUS` (docs/adr/0133 §6).
               {{ form.feedback_deadline }}
             </label>
           </div>
-          <label class="cx-f" for="{{ form.feedback_received.id_for_label }}">
-            <span class="cx-f__lab">Saadud tagasiside / arvamused</span>
-            {{ form.feedback_received }}
-          </label>
           {% comment %}
             Where this round's material lives. Both optional, both inert: the
             form validates the scheme and nothing else, no request is made to
@@ -92,10 +86,6 @@ under `PRAEGUNE TEGEVUS` (docs/adr/0133 §6).
             <p class="field__error" id="{{ form.audience.auto_id }}_error">
               {{ form.audience.errors|first }}</p>
           {% endif %}
-          {% if form.response_count.errors %}
-            <p class="field__error" id="{{ form.response_count.auto_id }}_error">
-              {{ form.response_count.errors|first }}</p>
-          {% endif %}
           {% if form.occurred_on.errors %}
             <p class="field__error" id="{{ form.occurred_on.auto_id }}_error">
               {{ form.occurred_on.errors|first }}</p>
@@ -116,7 +106,6 @@ under `PRAEGUNE TEGEVUS` (docs/adr/0133 §6).
             <p class="field__error" id="{{ form.alchemer_url.auto_id }}_error">
               {{ form.alchemer_url.errors|first }}</p>
           {% endif %}
-          {% include "matters/partials/add_files.html" with field=form.attachments %}
           {% if not plan_launch %}
             {% include "matters/partials/plan_fulfil_option.html" with steps=fulfillable_steps.ENGAGEMENT option_id="id_kaasamine_taidab_sammu" %}
           {% endif %}

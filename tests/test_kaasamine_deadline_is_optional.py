@@ -285,7 +285,10 @@ def test_5_a_deadline_with_no_engagement_date_is_accepted(signed_in, specialist)
 
 
 def test_6_provider_links_and_counts_work_with_no_deadline(signed_in, specialist):
-    """Smaily and Alchemer pointers and the manual `Vastuseid` count."""
+    """Smaily and Alchemer pointers and the manual `Vastuseid` count.
+
+    The count is given on the round (`Muuda`) since docs/adr/0142, not on
+    `Alusta kaasamist`."""
     matter = factories.MatterFactory(owner=specialist)
 
     response = _panel(
@@ -293,7 +296,6 @@ def test_6_provider_links_and_counts_work_with_no_deadline(signed_in, specialist
         matter,
         smaily_url="https://sendsmaily.net/kampaania/1",
         alchemer_url="https://survey.alchemer.eu/s3/1",
-        response_count="12",
     )
 
     assert response.status_code == 200, response.content.decode()[:2000]
@@ -301,15 +303,14 @@ def test_6_provider_links_and_counts_work_with_no_deadline(signed_in, specialist
     assert engagement.feedback_deadline is None
     assert engagement.smaily_url == "https://sendsmaily.net/kampaania/1"
     assert engagement.alchemer_url == "https://survey.alchemer.eu/s3/1"
-    assert engagement.response_count == 12
+    assert engagement.response_count is None
     assert engagement.has_open_feedback_wait is True
 
     row = _row(signed_in, matter, engagement)
     assert "Smaily" in row
     assert "Alchemer" in row
-    assert "Vastuseid 12" in row
 
-    # And the count stays correctable on the open round.
+    # And the count is given and corrected on the open round.
     correct_engagement(
         engagement=engagement,
         title=engagement.title,

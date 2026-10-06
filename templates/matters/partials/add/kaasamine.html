@@ -1,7 +1,8 @@
     {% comment %}
-      `+ Kaasamine` — the three questions a consultation round actually has.
+      `+ Kaasamine` — start a consultation round, or add what came back.
 
-      **Who was engaged, when it happened, and what came back.** The panel used
+      **Who was engaged and when, then — separately — what came back**
+      (docs/adr/0142, below). The start form used
       to open on a row of `Liik` chips and a
       four-way `Täpsus` control, so the first two decisions a lawyer made were
       a classification nothing ever read back and a precision an as-it-happens
@@ -30,11 +31,47 @@
            data-addpick aria-controls="lisa-kaasamine"
            {% if open_panel == "lisa-kaasamine" %}checked{% endif %}>
     <label class="disclosure-chip" for="lisa-kaasamine-valik">+ Kaasamine</label>
-    <div class="cx-panel" id="lisa-kaasamine" data-addpanel data-draft-host>
+    {% comment %}
+      **Two acts, two forms** (docs/adr/0142): `Alusta kaasamist` records that
+      the request went out; `Lisa tagasiside` records what came back from a
+      round that is open. The same nested chip row `+ Lisa` and
+      `+ Arvamus / tagasiside` use, so either can be chosen by hand.
+
+      `kaasamine_choice` opens the one this Matter needs — `Lisa tagasiside`
+      while a round is open, `Alusta kaasamist` otherwise — from the canonical
+      open-round reading (`work_items.open_feedback_waits`), never from a
+      deadline, a title or which round is newest. A refusal reopens the form
+      it came from (`_workspace_choices`).
+    {% endcomment %}
+    <div class="cx-panel" id="lisa-kaasamine" data-addpanel>
       <div class="cx-panel__body">
-        {% if open_panel == "lisa-kaasamine" and workspace_error %}
-          <p class="formerror" role="alert">{{ workspace_error }}</p>
-        {% endif %}
-        {% include "matters/partials/add/kaasamine_form.html" with form=add_engagement_form plan_launch=False %}
+        <span class="cx-f__lab cx-sublab">Kaasamine</span>
+        <div class="cx-panels cx-panels--sub">
+          <input class="addpick" type="radio" name="kaasamise-liik" id="kaasamine-alusta-valik"
+                 data-addpick aria-controls="kaasamine-alusta"
+                 {% if kaasamine_choice == "kaasamine-alusta" %}checked{% endif %}>
+          <label class="disclosure-chip" for="kaasamine-alusta-valik">Alusta kaasamist</label>
+          <div class="cx-panel" id="kaasamine-alusta" data-addpanel data-draft-host>
+            <div class="cx-panel__body">
+              {% if open_choice == "kaasamine-alusta" and workspace_error %}
+                <p class="formerror" role="alert">{{ workspace_error }}</p>
+              {% endif %}
+              {% include "matters/partials/add/kaasamine_form.html" with form=add_engagement_form plan_launch=False %}
+            </div>
+          </div>
+
+          <input class="addpick" type="radio" name="kaasamise-liik" id="kaasamine-tagasiside-valik"
+                 data-addpick aria-controls="kaasamine-tagasiside"
+                 {% if kaasamine_choice == "kaasamine-tagasiside" %}checked{% endif %}>
+          <label class="disclosure-chip" for="kaasamine-tagasiside-valik">Lisa tagasiside</label>
+          <div class="cx-panel" id="kaasamine-tagasiside" data-addpanel data-draft-host>
+            <div class="cx-panel__body">
+              {% if open_choice == "kaasamine-tagasiside" and workspace_error %}
+                <p class="formerror" role="alert">{{ workspace_error }}</p>
+              {% endif %}
+              {% include "matters/partials/add/kaasamine_tagasiside.html" with form=engagement_reply_form %}
+            </div>
+          </div>
+        </div>
       </div>
     </div>

@@ -1,0 +1,59 @@
+{% load form_labels %}
+{% comment %}
+`+ Kaasamine · Lisa tagasiside` — what came back from a round that is open
+(docs/adr/0142).
+
+**The canonical record, with the round named.** A `Meile saadetud tagasiside`
+tied to the round — the same record `+ Arvamus / tagasiside` writes, through
+the same service — so the round row counts it and its files follow it. Saving
+it does **not** close the round: `Lõpeta kaasamine` on the row is still the one
+act that does.
+
+**The round is chosen, never guessed.** The select offers this Matter's open
+rounds as this reader may see them, and is filled in only when there is exactly
+one. With none, the panel says so and draws no form that could only refuse.
+
+    form    `EngagementReplyForm`, bound or unbound
+{% endcomment %}
+{% if form.open_round_count %}
+  <form class="addform" data-addform
+        hx-post="{% url 'matters:add_engagement_reply' pk=matter.pk %}"
+        hx-target="#teema-vaade" hx-swap="outerHTML"
+        hx-encoding="multipart/form-data">
+    {% csrf_token %}
+    <label class="cx-f" for="{{ form.engagement.id_for_label }}">
+      <span class="cx-f__lab">{% field_label form.engagement %}</span>
+      {{ form.engagement }}
+    </label>
+    {% if form.engagement.errors %}
+      <p class="field__error" id="{{ form.engagement.auto_id }}_error">
+        {{ form.engagement.errors|first }}</p>
+    {% endif %}
+    <label class="cx-f" for="{{ form.summary.id_for_label }}">
+      <span class="cx-f__lab">{% field_label form.summary %}</span>
+      {{ form.summary }}
+    </label>
+    {% if form.summary.errors %}
+      <p class="field__error" id="{{ form.summary.auto_id }}_error">
+        {{ form.summary.errors|first }}</p>
+    {% endif %}
+    <label class="cx-f cx-f--date" for="{{ form.stated_on.id_for_label }}">
+      <span class="cx-f__lab">{% field_label form.stated_on %}</span>
+      {{ form.stated_on }}
+    </label>
+    {% if form.stated_on.errors %}
+      <p class="field__error" id="{{ form.stated_on.auto_id }}_error">
+        {{ form.stated_on.errors|first }}</p>
+    {% endif %}
+    {% include "matters/partials/add_files.html" with field=form.attachments %}
+    <label class="cx-f" for="{{ form.lawyer_note.id_for_label }}">
+      <span class="cx-f__lab">{% field_label form.lawyer_note %}</span>
+      {{ form.lawyer_note }}
+    </label>
+    <div class="addform__actions">
+      <button class="button button--primary" type="submit">Salvesta tagasiside</button>
+    </div>
+  </form>
+{% else %}
+  <p class="cardnote">Avatud kaasamist ei ole. Alusta kõigepealt kaasamist.</p>
+{% endif %}

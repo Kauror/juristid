@@ -123,6 +123,7 @@ def _child_families() -> tuple[tuple[tuple[str, ...], Any, dict[str, str]], ...]
             (
                 ChangeEventType.DOCUMENT_CREATED,
                 ChangeEventType.DOCUMENT_ROLE_CHANGED,
+                ChangeEventType.DOCUMENT_TITLE_CHANGED,
                 ChangeEventType.DOCUMENT_REMOVED,
             ),
             Document,

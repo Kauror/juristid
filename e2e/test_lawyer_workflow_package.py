@@ -154,9 +154,9 @@ def test_the_capture_panel_asks_the_reply_by_date_empty(page, base_url):
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "lisa-kaasamine")
+    open_add_panel(page, "kaasamine-alusta")
 
-    form = panel(page, "lisa-kaasamine")
+    form = panel(page, "kaasamine-alusta")
     expect(form.get_by_text("Tagasisidet ootame kuni")).to_be_visible()
     expect(form.locator("[name=feedback_deadline]")).to_have_value("")
     expect(form.locator("[data-quickdate]")).to_have_count(0)
@@ -173,10 +173,10 @@ def test_a_reply_by_date_on_the_panel_is_the_open_rounds_due_date(page, base_url
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "lisa-kaasamine")
-    panel(page, "lisa-kaasamine").locator("[name=audience]").fill("liikmed")
-    panel(page, "lisa-kaasamine").locator("[name=feedback_deadline]").fill(_future(7))
-    panel(page, "lisa-kaasamine").locator("button[type=submit]").click()
+    open_add_panel(page, "kaasamine-alusta")
+    panel(page, "kaasamine-alusta").locator("[name=audience]").fill("liikmed")
+    panel(page, "kaasamine-alusta").locator("[name=feedback_deadline]").fill(_future(7))
+    panel(page, "kaasamine-alusta").locator("button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
     waiting = page.locator("#ajalugu-loend .uxtl__ms-body").filter(has_text="Kaasamine: liikmed")
@@ -635,8 +635,8 @@ def test_one_consultation_runs_from_teema_to_the_next_round(page, base_url):
     expect(page.locator("#praegune-tegevus")).to_contain_text("Tutvu materjaliga")
 
     # Kaasamine: a completed act, and no wait acquired by default.
-    open_add_panel(page, "lisa-kaasamine")
-    kaasamine = panel(page, "lisa-kaasamine")
+    open_add_panel(page, "kaasamine-alusta")
+    kaasamine = panel(page, "kaasamine-alusta")
     kaasamine.locator("[name=audience]").fill("234 tööstusettevõtet")
     # The reply-by box is empty and left so, so filing the round is a completed
     # act and the journey continues without anything landing on a desk

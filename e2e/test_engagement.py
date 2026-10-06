@@ -25,13 +25,16 @@ from e2e.conftest import SANDRA, chronology, open_add_panel, open_composer, open
 
 
 def panel(page):
-    """The `+ Kaasamine` panel under `LISA TEEMALE`, closed until asked for."""
-    return page.locator("#lisa-kaasamine")
+    """`+ Kaasamine · Alusta kaasamist` under `LISA TEEMALE`, closed until asked for.
+
+    The start form since docs/adr/0142; `Lisa tagasiside` is its sibling.
+    """
+    return page.locator("#kaasamine-alusta")
 
 
 def open_panel(page):
     """Open it, and return it. Idempotent, so a test can call it twice."""
-    open_add_panel(page, "lisa-kaasamine")
+    open_add_panel(page, "kaasamine-alusta")
     return panel(page)
 
 
@@ -94,8 +97,9 @@ def test_the_panel_opens_from_the_launcher_and_asks_the_four_simplified_question
     open_panel(page)
 
     expect(panel(page).locator("[name=audience]")).to_be_visible()
-    expect(panel(page).locator("[name=response_count]")).to_be_visible()
-    expect(panel(page).locator("[name=feedback_received]")).to_be_visible()
+    # What came back is `Lisa tagasiside` since docs/adr/0142, not this form.
+    expect(panel(page).locator("[name=response_count]")).to_have_count(0)
+    expect(panel(page).locator("[name=feedback_received]")).to_have_count(0)
     expect(panel(page).locator("[name=smaily_url]")).to_be_visible()
     expect(panel(page).locator("[name=alchemer_url]")).to_be_visible()
     expect(panel(page).locator("[name=website_url]")).to_be_visible()
@@ -171,14 +175,12 @@ def test_two_saves_write_the_note_and_the_engagement_separately(page, base_url):
 
     open_panel(page)
     panel(page).locator("[name=audience]").fill("liikmed")
-    panel(page).locator("[name=response_count]").fill("9")
     panel(page).locator("button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
     # The engagement, as a milestone row carrying its count and its wait.
     milestone = chronology(page).locator(".uxtl__mswhat", has_text="Kaasamine: liikmed")
     expect(milestone).to_have_count(1)
-    expect(chronology(page)).to_contain_text("Vastuseid 9")
     # And **no channel**, because the panel no longer asks for one: every row it
     # writes is `Muu`, and printing «Muu» would be the chronology stating a
     # classification nobody chose (docs/adr/0086 §1).
@@ -230,14 +232,14 @@ def test_an_engagement_with_no_audience_is_refused_with_the_panel_open(page, bas
     open_scratch_matter(page, base_url)
     open_panel(page)
 
-    panel(page).locator("[name=response_count]").fill("3")
+    panel(page).locator("[name=engagement_note]").fill("Nimekiri liidult")
     panel(page).locator("button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
     expect(panel(page)).to_be_visible()
     expect(panel(page)).to_contain_text("Kirjuta, keda kaasati")
-    # With the count still in it, and no other panel opened on its behalf.
-    expect(panel(page).locator("[name=response_count]")).to_have_value("3")
+    # With the note still in it, and no other panel opened on its behalf.
+    expect(panel(page).locator("[name=engagement_note]")).to_have_value("Nimekiri liidult")
     # `#marge-tavaline`, not `#lisa-marge`: the sub-choice is *inside* the
     # family, so `+ Märge` staying visible is the nesting working rather
     # than a panel that failed to close (docs/adr/0097 §8).

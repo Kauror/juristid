@@ -933,6 +933,56 @@ def change_document_role(*, document: Document, role: str, actor: Any = None) ->
     return locked
 
 
+#: Refused when the new title is empty once trimmed.
+DOCUMENT_TITLE_REQUIRED = "Kirjuta dokumendi pealkiri."
+#: Refused when the new title does not fit `Document.title`.
+DOCUMENT_TITLE_TOO_LONG = "Dokumendi pealkiri on liiga pikk (kuni 400 märki)."
+DOCUMENT_TITLE_MAX = 400
+
+
+@transaction.atomic
+def rename_document(*, document: Document, title: str, actor: Any = None) -> Document:
+    """`Muuda` on a Dokumendid row — the title people read, and nothing else.
+
+    `Document.title` is the display name. The original uploaded filename lives
+    on each `DocumentVersion` and is evidence metadata, so it is not touched;
+    neither are the bytes, the checksum, the MIME type, the stored object or
+    the version history. No version is created.
+
+    Whitespace is collapsed and an empty title is refused. Audited as
+    `DOCUMENT_TITLE_CHANGED` with the old and new title in the payload; the
+    same title again writes nothing, so a double submit is not a second event.
+    The search rows follow on the save (`app.search.signals.refresh_on_document_change`),
+    for this one document only.
+
+    Under the Matter's and then the document's lock, like `change_document_role`:
+    a closed Matter refuses, and so does a removed document.
+    """
+    cleaned = " ".join((title or "").split())
+    if not cleaned:
+        raise DomainError(DOCUMENT_TITLE_REQUIRED)
+    if len(cleaned) > DOCUMENT_TITLE_MAX:
+        raise DomainError(DOCUMENT_TITLE_TOO_LONG)
+    matter = lock_open_matter_for_business_write(document.matter_id)
+    locked = _locked_document(document)
+    if locked.is_removed:
+        raise DomainError(DOCUMENT_ALREADY_REMOVED)
+    if cleaned == locked.title:
+        return locked
+    previous = locked.title
+    locked.title = cleaned
+    locked.save(update_fields=["title", "updated_at"])
+    record_change_event(
+        event_type=ChangeEventType.DOCUMENT_TITLE_CHANGED,
+        matter=matter,
+        actor=actor,
+        obj=locked,
+        summary=cleaned[:200],
+        payload={"from": previous, "to": cleaned},
+    )
+    return locked
+
+
 @transaction.atomic
 def remove_document(*, document: Document, actor: Any = None) -> Document:
     """`Eemalda dokument` — a mistaken upload comes off the Matter (docs/adr/0120).

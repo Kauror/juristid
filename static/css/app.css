@@ -6903,6 +6903,27 @@ button.accordion__action:focus-visible {
   overflow-wrap: anywhere;
 }
 
+/* `Muuda` — the display title edited in place, under the name it changes. The
+   quiet meta-line size closed; open, one title box and its two buttons. */
+.docrename {
+  display: block;
+  margin-top: var(--spacing-1);
+  font-size: var(--typography-size-meta);
+}
+
+.docrename > summary {
+  display: inline;
+  cursor: pointer;
+}
+
+.docrename__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  margin-top: var(--spacing-2);
+  max-width: 36rem;
+}
+
 /* `Seotud kirje` — the record a file came in with (docs/adr/0129 §10). The same
    quiet meta line as `.doctable__sent`: context about the row above it, never a
    second heading, and allowed to break inside a long title rather than widen

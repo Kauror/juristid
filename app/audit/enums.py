@@ -131,6 +131,9 @@ class ChangeEventType(models.TextChoices):
     # count and the current checksum, so `Kõik muudatused` can say which file
     # left even though the file itself no longer reads anywhere.
     DOCUMENT_ROLE_CHANGED = "DOCUMENT_ROLE_CHANGED", "Dokumendi liik muudetud"
+    #: `Muuda` on a Dokumendid row — the display title, and nothing about a
+    #: version: the original filename, the bytes and the checksum stay.
+    DOCUMENT_TITLE_CHANGED = "DOCUMENT_TITLE_CHANGED", "Dokumendi pealkiri muudetud"
     DOCUMENT_REMOVED = "DOCUMENT_REMOVED", "Dokument eemaldatud"
     TAG_ASSIGNED = "TAG_ASSIGNED", "Silt lisatud"
     TAG_REMOVED = "TAG_REMOVED", "Silt eemaldatud"

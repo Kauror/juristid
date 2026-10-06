@@ -968,22 +968,27 @@ def test_an_already_finished_round_is_not_closed_twice_by_the_matter(specialist)
 
 def test_the_panel_stores_feedback_without_closing_anything(signed_in, specialist):
     """§5, §6. Writing down what came back and deciding the round is over are
-    two acts, and only the second is a decision somebody's name goes on."""
+    two acts, and only the second is a decision somebody's name goes on.
+
+    Since docs/adr/0142 what came back is `+ Kaasamine · Lisa tagasiside`, the
+    received-feedback record tied to the round; the round stays open."""
     matter = factories.MatterFactory(owner=specialist)
+    signed_in.post(
+        reverse("matters:add_engagement_compact", kwargs={"pk": matter.pk}),
+        {"audience": "liikmed", "occurred_on": ""},
+        headers={"HX-Request": "true"},
+    )
+    engagement = MatterEngagement.objects.get()
 
     response = signed_in.post(
-        reverse("matters:add_engagement_compact", kwargs={"pk": matter.pk}),
-        {
-            "audience": "liikmed",
-            "occurred_on": "",
-            "feedback_received": "Kaks vastust juba käes.",
-        },
+        reverse("matters:add_engagement_reply", kwargs={"pk": matter.pk}),
+        {"engagement": str(engagement.pk), "summary": "Kaks vastust juba käes."},
         headers={"HX-Request": "true"},
     )
 
     assert response.status_code == 200, response.content.decode()[:2000]
-    engagement = MatterEngagement.objects.get()
-    assert engagement.feedback_received == "Kaks vastust juba käes."
+    assert engagement.external_positions.get().summary == "Kaks vastust juba käes."
+    engagement.refresh_from_db()
     assert engagement.feedback_closed_at is None
 
 

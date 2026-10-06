@@ -170,6 +170,13 @@ urlpatterns = [
         views.add_engagement_compact,
         name="add_engagement_compact",
     ),
+    # `+ Kaasamine · Lisa tagasiside` — what came back from an open round, as
+    # the canonical received-feedback record tied to it (docs/adr/0142).
+    path(
+        "teemad/<uuid:pk>/lisa/kaasamise-tagasiside/",
+        views.add_engagement_reply,
+        name="add_engagement_reply",
+    ),
     path("teemad/<uuid:pk>/lisa/tahtaeg/", views.add_important_date, name="add_important_date"),
     path(
         "teemad/<uuid:pk>/lisa/joustumine/",

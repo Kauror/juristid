@@ -233,12 +233,13 @@ def test_an_important_deadline_saves_past_and_future_at_every_precision(
 #: What a person is asked on `+ Kaasamine`, by field name. `Veebileht` and
 #: `Märkus` joined it with docs/adr/0127 §2, under panel-specific names because
 #: the panel keeps Django's default ids on a page that already draws `id_url`.
+#: `Alusta kaasamist` since docs/adr/0142: the start of a round only. What came
+#: back — `Vastuseid` and `Saadud tagasiside` — is given on the round (`Muuda`,
+#: below) or as `Lisa tagasiside`.
 CREATE_FIELDS = {
     "audience",
-    "response_count",
     "occurred_on",
     "feedback_deadline",
-    "feedback_received",
     "website_url",
     "smaily_url",
     "alchemer_url",
@@ -260,11 +261,15 @@ EDIT_FIELDS = {
 
 
 def test_create_and_edit_ask_the_same_questions():
-    create = set(CompactEngagementForm().fields) - {"attachments"}
+    """Every start question is correctable; `Muuda` also holds what came back."""
+    create = set(CompactEngagementForm().fields)
     edit = set(EngagementForm().fields) - {"revision", "clear_occurred_on"}
 
     assert create == CREATE_FIELDS
     assert edit == EDIT_FIELDS
+    assert edit - {"title", "url", "note"} == (
+        create - {"audience", "website_url", "engagement_note"}
+    ) | {"response_count", "feedback_received"}
     # The same words on both surfaces (docs/adr/0127 §2).
     create_labels = {name: field.label for name, field in CompactEngagementForm().fields.items()}
     edit_labels = {name: field.label for name, field in EngagementForm().fields.items()}
@@ -344,10 +349,8 @@ def test_a_round_created_with_every_field_reads_back_at_once(signed_in, speciali
         reverse("matters:add_engagement_compact", kwargs={"pk": matter.pk}),
         {
             "audience": "liikmed",
-            "response_count": "7",
             "occurred_on": today.strftime("%d.%m.%Y"),
             "feedback_deadline": (today + timedelta(days=7)).strftime("%d.%m.%Y"),
-            "feedback_received": "Kolm arvamust.",
             "website_url": "www.koda.ee/hetkel-kasil/juristieksam",
             "smaily_url": "www.sendsmaily.net/kampaania",
             "alchemer_url": "survey.alchemer.eu/s3/123",
@@ -358,9 +361,7 @@ def test_a_round_created_with_every_field_reads_back_at_once(signed_in, speciali
 
     assert response.status_code == 200, response.content.decode()[:1500]
     engagement = MatterEngagement.objects.get(matter=matter)
-    assert engagement.response_count == 7
     assert engagement.feedback_deadline == today + timedelta(days=7)
-    assert engagement.feedback_received == "Kolm arvamust."
     assert engagement.smaily_url == "https://www.sendsmaily.net/kampaania"
     assert engagement.alchemer_url == "https://survey.alchemer.eu/s3/123"
     # `Veebileht` into `url`, through the same rule: the bare host gains its
