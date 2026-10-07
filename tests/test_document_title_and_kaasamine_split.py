@@ -224,7 +224,10 @@ def test_d_the_start_form_asks_only_start_questions_and_writes_the_round(signed_
         "engagement_note",
     ):
         assert f'name="{name}"' in start, name
-    for name in ("feedback_received", "response_count", "attachments"):
+    # The round's own files are back on the start form (owner's round,
+    # 2026-10-07); what came back still is not asked here.
+    assert 'name="attachments"' in start
+    for name in ("feedback_received", "response_count"):
         assert f'name="{name}"' not in start, name
     assert "Saadud tagasiside" not in start
 
@@ -287,10 +290,11 @@ def test_e_feedback_attaches_to_the_named_round_with_its_files(
     assert position.stated_on.isoformat() == "2026-10-03"
     link = DocumentLink.objects.get(external_position=position)
     assert link.document.matter_id == normal_matter.pk
-    # H. The round is still open: feedback is not `Lõpeta kaasamine`.
+    # H, superseded 2026-10-07 (docs/adr/0142 amendment): saving the feedback
+    # finishes the round it answers.
     round_.refresh_from_db()
-    assert round_.has_open_feedback_wait
-    assert round_.feedback_closed_at is None
+    assert not round_.has_open_feedback_wait
+    assert round_.feedback_closed_at is not None
 
 
 def test_f_only_completed_rounds_opens_on_alusta(signed_in, normal_matter, specialist):

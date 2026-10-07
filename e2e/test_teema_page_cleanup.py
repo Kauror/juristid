@@ -341,7 +341,10 @@ def test_teema_kaik_draws_one_hierarchy_in_the_dot_and_the_headline(page, base_u
         secondary = [row["text"] for row in geometry if row["secondary"]]
         assert len(primary) == 2, primary
         assert any("Arvamus välja" in text for text in primary), primary
-        assert any("Ülevaade / uudis" in text for text in primary), primary
+        # A koda.ee news address reads `Uudis` since docs/adr/0142 §C.
+        # The row's text opens with its toggle's hidden name, then the headline.
+        headlines = [text.replace("Kirje üksikasjad", "", 1).strip() for text in primary]
+        assert any(text.startswith("Uudis") for text in headlines), primary
         for words in (
             "Rääkisin ministeeriumiga",
             "Meile saadetud tagasiside",

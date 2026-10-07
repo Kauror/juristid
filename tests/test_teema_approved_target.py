@@ -549,7 +549,8 @@ def test_the_engagement_panel_asks_no_kind_and_keeps_its_two_questions(signed_in
     assert "Pealkiri" not in panel
     # …and the round's page and note are asked again (docs/adr/0127 §2).
     assert 'name="website_url"' in panel and 'name="engagement_note"' in panel
-    assert "Veebileht" in panel and "Märkus" in panel
+    # `Ülevaate link` since the owner's round of 2026-10-07 (docs/adr/0142 §C).
+    assert "Ülevaate link" in panel and "Märkus" in panel
 
 
 def test_existing_engagements_keep_their_kind_and_gain_a_null_count(normal_matter, specialist):

@@ -26,6 +26,7 @@ which owns docs/adr/0089 §8 the way this file owns ADR 0085.
 from __future__ import annotations
 
 import datetime as dt
+import re
 from pathlib import Path
 
 import pytest
@@ -85,6 +86,10 @@ def _detail(client, matter) -> str:
 
 
 def _add(client, matter, **fields):
+    # The kind is stated, so an address koda.ee's paths do not classify is not
+    # refused for want of one (docs/adr/0142 §C) — these tests are about other
+    # rules. A classified address ignores it.
+    fields.setdefault("kind", "NEWS")
     return client.post(
         reverse("matters:add_website_overview", kwargs={"pk": matter.pk}),
         fields,
@@ -140,18 +145,14 @@ def test_the_panel_reads_in_the_neutral_wording_throughout(signed_in, normal_mat
     assert "Avaldatud ülevaate või uudise link" not in panel
 
 
-def test_the_panel_asks_for_no_kind(signed_in, normal_matter):
-    """§1. The link is sufficient, so there is nothing here asking which it is.
-
-    A `liik` would be a question at planning time whose answer exists at
-    publication time: blank or guessed on most rows, consumed by nothing and
-    therefore corrected by nobody.
-    """
+def test_the_panel_offers_the_kind_and_nothing_else_new(signed_in, normal_matter):
+    """§1, narrowed by docs/adr/0142 §C (2026-10-07): `Ülevaade` or `Uudis` is
+    a stored fact now — read from a koda.ee address where its path says, asked
+    only where it does not. One `Liik` choice of exactly those two, no select."""
     panel = _panel(signed_in, normal_matter)
 
-    assert 'type="radio"' not in panel
+    assert re.findall(r'name="kind" value="([A-Z]+)"', panel) == ["OVERVIEW", "NEWS"]
     assert "<select" not in panel
-    assert "liik" not in panel.lower()
     # The two boxes, and the ones ADR 0081 §2 still refuses.
     assert 'name="url"' in panel
     assert 'name="published_on"' in panel
@@ -376,7 +377,9 @@ def test_several_publications_on_one_matter_on_several_hosts(normal_matter, spec
     items, _ = matter_timeline(matter=normal_matter, user=specialist)
     milestones = [item for item in items if item.website_overview is not None]
     assert len(milestones) == 3
-    assert {item.milestone.what for item in milestones} == {"Ülevaade / uudis"}
+    # A koda.ee news address reads `Uudis`; the other hosts were recorded with no
+    # kind and read as before (docs/adr/0142 §C).
+    assert {item.milestone.what for item in milestones} == {"Uudis", "Ülevaade / uudis"}
 
 
 def test_the_same_address_is_still_filed_at_most_once_per_matter(normal_matter, specialist):

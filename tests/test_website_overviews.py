@@ -745,7 +745,8 @@ def test_the_chronology_shows_the_address_in_a_new_tab(signed_in, normal_matter,
     assert 'rel="noopener noreferrer"' in row
     assert "avaneb uues aknas" in row
     assert f'href="{KODA_URL}"' in row
-    assert ">Ülevaade / uudis<span" in row
+    # A koda.ee/uudised/ address is a news item (2026-10-07: the kind is explicit).
+    assert ">Uudis<span" in row
     assert 'title="koda.ee/uudised/pakendiseaduse-ulevaade"' in row
     assert ": koda.ee/uudised/pakendiseaduse-ulevaade — avaneb uues aknas" in row
 
@@ -764,9 +765,11 @@ def test_the_chronology_records_published_and_cancelled_and_not_planned(normal_m
         WebsiteOverviewStatus.PUBLISHED,
         WebsiteOverviewStatus.CANCELLED,
     }
+    # The cancelled plan never had an address, so it keeps the legacy label;
+    # the published koda.ee/uudised/ one reads as `Uudis` (2026-10-07).
     assert [item.milestone.what for item in overviews] == [
         "Ülevaade / uudis",
-        "Ülevaade / uudis",
+        "Uudis",
     ]
 
 

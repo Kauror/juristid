@@ -91,6 +91,9 @@ MIDDLEWARE = [
     # anything that reads a parameter. A NUL byte is a 400 here rather than a
     # 500 in whichever view first compares it with a text column (ENG-046).
     "app.core.middleware.RefuseNulMiddleware",
+    # Pairs each uploaded file with the display title typed beside it in the
+    # shared upload queue (`<field>__pealkiri`), once for every form.
+    "app.core.middleware.UploadTitlesMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     # Before anything that reads business content, and it wraps the rest of the
     # stack so its `finally` runs even when a view raises. It holds one

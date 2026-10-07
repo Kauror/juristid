@@ -488,28 +488,268 @@
         }
       };
       field.addEventListener("change", show);
-      ["dragenter", "dragover"].forEach(function (name) {
-        drop.addEventListener(name, function (event) {
-          event.preventDefault();
-          drop.classList.add("is-dragover");
-        });
-      });
-      ["dragleave", "drop"].forEach(function (name) {
-        drop.addEventListener(name, function () {
-          drop.classList.remove("is-dragover");
-        });
-      });
-      drop.addEventListener("drop", function (event) {
-        if (!event.dataTransfer || !event.dataTransfer.files.length) {
-          return;
-        }
-        event.preventDefault();
-        field.files = event.dataTransfer.files;
-        show();
-      });
       show();
     });
   }
+
+  /* ---- The upload queue: one for every file control ---------------------
+   * Every dropzone — the workspace panels' dashed box (`[data-filedrop]`) and
+   * Uus teema's (`[data-upload-zone]`) — shares this, once, by delegation on
+   * the document, so a panel swapped in by HTMX needs no binding of its own
+   * (owner's round, 2026-10-07):
+   *
+   * - a dropped file joins the SAME queue as a picked one, added to what is
+   *   already chosen rather than replacing it;
+   * - each queued file is listed with a `Pealkiri` box — its display title,
+   *   the filename by default — posted as `<field>__pealkiri` in the files' own
+   *   order (app/core/middleware.py `UploadTitlesMiddleware`), and a `×`;
+   * - a file dragged anywhere else on the page is refused rather than opened
+   *   by the browser, so a near miss never navigates away from the form.
+   */
+  var canTransfer = (function () {
+    try {
+      return typeof DataTransfer === "function" && !!new DataTransfer().items;
+    } catch (error) {
+      return false;
+    }
+  })();
+
+  function uploadSize(bytes) {
+    if (bytes < 1024) {
+      return bytes + " B";
+    }
+    if (bytes < 1024 * 1024) {
+      return Math.round(bytes / 1024) + " KB";
+    }
+    return (bytes / (1024 * 1024)).toFixed(1).replace(".", ",") + " MB";
+  }
+
+  function uploadZoneOf(node) {
+    return node && node.closest ? node.closest("[data-filedrop], [data-upload-zone]") : null;
+  }
+
+  function uploadQueueOf(field) {
+    var zone = uploadZoneOf(field);
+    if (!zone) {
+      return null;
+    }
+    var inside = zone.querySelector("[data-upload-queue]");
+    if (inside) {
+      return inside;
+    }
+    var next = zone.nextElementSibling;
+    if (next && next.hasAttribute("data-upload-queue")) {
+      return next;
+    }
+    var list = document.createElement("ul");
+    list.className = "uploadqueue";
+    list.setAttribute("data-upload-queue", "");
+    list.hidden = true;
+    zone.parentNode.insertBefore(list, zone.nextSibling);
+    return list;
+  }
+
+  /* The titles typed so far, in the queue's order, so a redraw — a removal, a
+     second drop — keeps what somebody wrote beside each file. */
+  function typedUploadTitles(field) {
+    var list = uploadQueueOf(field);
+    return list
+      ? Array.prototype.map.call(list.querySelectorAll(".uploadqueue__title"), function (box) {
+          return box.value;
+        })
+      : [];
+  }
+
+  function setUploadFiles(field, files, titles) {
+    var transfer = new DataTransfer();
+    files.forEach(function (file) {
+      transfer.items.add(file);
+    });
+    field.files = transfer.files;
+    field.uploadQueueTitles = titles || null;
+    field.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  function addUploadFiles(field, dropped) {
+    var incoming = Array.prototype.slice.call(dropped || []);
+    if (!incoming.length) {
+      return;
+    }
+    if (!field.multiple) {
+      incoming = incoming.slice(0, 1);
+    }
+    if (!canTransfer) {
+      /* No DataTransfer to build with: the browser's own assignment is all
+         there is, and a second drop replaces the first. */
+      field.files = dropped;
+      field.dispatchEvent(new Event("change", { bubbles: true }));
+      return;
+    }
+    var current = field.multiple ? Array.prototype.slice.call(field.files || []) : [];
+    var titles = field.multiple ? typedUploadTitles(field) : [];
+    setUploadFiles(
+      field,
+      current.concat(incoming),
+      titles.concat(
+        incoming.map(function (file) {
+          return file.name;
+        })
+      )
+    );
+  }
+
+  function renderUploadQueue(field) {
+    var list = uploadQueueOf(field);
+    if (!list) {
+      return;
+    }
+    list.textContent = "";
+    var files = Array.prototype.slice.call(field.files || []);
+    if (list.hasAttribute("data-upload-queue-hidden") || !files.length) {
+      list.hidden = true;
+      return;
+    }
+    list.hidden = false;
+    var kept = field.uploadQueueTitles || [];
+    field.uploadQueueTitles = null;
+    files.forEach(function (file, index) {
+      var row = document.createElement("li");
+      /* Inside Uus teema's dropzone list the row is also that list's own row
+         kind, so the list reads as one list whatever filled it. */
+      row.className = list.classList.contains("dropzone__list")
+        ? "uploadqueue__row dropzone__file"
+        : "uploadqueue__row";
+
+      var label = document.createElement("label");
+      label.className = "uploadqueue__field";
+      var caption = document.createElement("span");
+      caption.className = "uploadqueue__label";
+      caption.textContent = "Pealkiri";
+      var title = document.createElement("input");
+      title.type = "text";
+      title.className = "field__input uploadqueue__title";
+      title.name = field.name + "__pealkiri";
+      title.maxLength = 400;
+      title.value = typeof kept[index] === "string" ? kept[index] : file.name;
+      title.setAttribute("aria-label", "Pealkiri: " + file.name);
+      label.appendChild(caption);
+      label.appendChild(title);
+      row.appendChild(label);
+
+      var meta = document.createElement("span");
+      meta.className = "uploadqueue__file";
+      meta.textContent = file.name + " · " + uploadSize(file.size);
+      row.appendChild(meta);
+
+      if (canTransfer) {
+        var remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "quietbutton uploadqueue__remove";
+        remove.textContent = "×";
+        remove.title = "Eemalda fail";
+        remove.setAttribute("aria-label", "Eemalda fail " + file.name);
+        remove.addEventListener("click", function () {
+          var others = function (unused, other) {
+            return other !== index;
+          };
+          setUploadFiles(field, files.filter(others), typedUploadTitles(field).filter(others));
+        });
+        row.appendChild(remove);
+      }
+      list.appendChild(row);
+    });
+  }
+
+  /* ---- `Tehtud` on a waiting round -------------------------------------
+   * Opens the one `Lisa tagasiside` form — `+ Kaasamine`, then its second
+   * choice — with this round chosen, and puts the caret in it. The same form
+   * `LISA TEEMALE` offers, not a second one (owner's round, 2026-10-07).
+   */
+  document.addEventListener("click", function (event) {
+    var opener = event.target.closest ? event.target.closest("[data-open-feedback]") : null;
+    if (!opener) {
+      return;
+    }
+    var launcher = document.getElementById("lisa-kaasamine-valik");
+    var mode = document.getElementById("kaasamine-tagasiside-valik");
+    if (!launcher || !mode) {
+      return;
+    }
+    event.preventDefault();
+    [launcher, mode].forEach(function (radio) {
+      if (!radio.checked) {
+        radio.checked = true;
+        radio.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+    var panel = document.getElementById("kaasamine-tagasiside");
+    var round = panel && panel.querySelector("select[name=engagement]");
+    if (round) {
+      round.value = opener.getAttribute("data-open-feedback");
+      round.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    if (panel) {
+      panel.scrollIntoView({ block: "center" });
+      var first = panel.querySelector("textarea, input[type=text]");
+      if (first) {
+        first.focus({ preventScroll: true });
+      }
+    }
+  });
+
+  function draggingFiles(event) {
+    var types = event.dataTransfer && event.dataTransfer.types;
+    return !!types && Array.prototype.indexOf.call(types, "Files") !== -1;
+  }
+
+  function markDragover(zone) {
+    document.querySelectorAll(".is-dragover, .is-over").forEach(function (other) {
+      if (other !== zone) {
+        other.classList.remove("is-dragover", "is-over");
+      }
+    });
+    if (zone) {
+      zone.classList.add(zone.hasAttribute("data-upload-zone") ? "is-over" : "is-dragover");
+    }
+  }
+
+  ["dragenter", "dragover"].forEach(function (name) {
+    document.addEventListener(name, function (event) {
+      if (!draggingFiles(event)) {
+        return;
+      }
+      /* Always: a file let go of anywhere on this application is never handed
+         to the browser to open. Only a zone accepts it. */
+      event.preventDefault();
+      var zone = uploadZoneOf(event.target);
+      event.dataTransfer.dropEffect = zone ? "copy" : "none";
+      markDragover(zone);
+    });
+  });
+  document.addEventListener("dragleave", function (event) {
+    var zone = uploadZoneOf(event.target);
+    if (zone && !zone.contains(event.relatedTarget)) {
+      zone.classList.remove("is-dragover", "is-over");
+    }
+  });
+  document.addEventListener("drop", function (event) {
+    if (!draggingFiles(event)) {
+      return;
+    }
+    event.preventDefault();
+    markDragover(null);
+    var zone = uploadZoneOf(event.target);
+    var field = zone && zone.querySelector("input[type=file]");
+    if (field && !field.disabled) {
+      addUploadFiles(field, event.dataTransfer.files);
+    }
+  });
+  document.addEventListener("change", function (event) {
+    var field = event.target;
+    if (field && field.type === "file" && uploadZoneOf(field)) {
+      renderUploadQueue(field);
+    }
+  });
 
   /* ---- Minu töö: J/K move, X completes, Enter opens ----------------------
    * The visible equivalents are all on the row already: the ✓ button, the ⋯

@@ -285,7 +285,7 @@ def test_the_letter_is_read_on_the_create_form_and_the_teema_keeps_what_was_conf
     expect(page.get_by_role("link", name="kaaskiri.pdf", exact=True)).to_be_visible()
 
     with page.expect_download() as download:
-        page.get_by_role("link", name="Laadi alla kaaskiri.pdf").click()
+        page.get_by_role("link", name="Tõmba alla kaaskiri.pdf").click()
     saved = download.value
     assert saved.suggested_filename == "kaaskiri.pdf"
     assert Path(saved.path()).read_bytes() == letter_pdf.read_bytes()

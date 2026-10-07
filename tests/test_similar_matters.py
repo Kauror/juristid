@@ -750,6 +750,9 @@ def test_the_request_carries_only_the_deciding_fields(client, specialist):
             "policy_areas",
             "legal_instruments",
             "source_organisations",
+            # The ticked `Seo uue teemaga` boxes, so a re-read keeps them ticked
+            # (owner's round, 2026-10-07). Matter ids the reader chose, not content.
+            "seo_teemaga",
             "csrfmiddlewaretoken",
         ]
     )

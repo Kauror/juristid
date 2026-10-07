@@ -13,10 +13,19 @@ basis = "deployment"
 # Kompaktne Teema vaade ja külgriba (#401). Ainult kuvamine; migratsioone ei
 # ole, otsinguindeksit ei ehitata uuesti. Kui see väljalase ei jõua tootmisse
 # 07.10 (Tallinna aja järgi), liiguvad need read väljalaske päeva kirjesse.
+# Teine väljalase samal päeval: kaasamine, ülevaade/uudis, failid, sarnased
+# teemad, dokumendid. Migratsioon matters/0047 (lisav), otsinguindeksit ei
+# ehitata uuesti.
 changes = [
   "«Praegune tegevus» on kompaktsem: tegevuse lisamise nupp on nüüd «+ Lisa tegevus» ja planeeritud tegevused on selle all lihtsa kuupäevadega loendina, ilma eraldi pealkirjata.",
   "«Arvamuse tähtaega» ei korrata enam praeguse tegevuse all; see on näha teema päises.",
   "Külgribal: «Menetluse link» näitab ainult linki ja «Muuda»; «Seotud materjalid» nupp «+ Lisa» on pealkirja real ning iga seotud teema ja selle «×» on ühel real; «Teema andmed» ei näita enam teemaviidet.",
+  "«Alusta kaasamist» võtab ülevaate lingi teema viimasest ülevaatest ja salvestab ülevaate ise, kui seda veel pole; kaasamisele saab nüüd lisada ka faile.",
+  "Ootel kaasamise real on Smaily ja Alchemeri link ning «Tehtud»: tagasiside salvestamine lõpetab ka selle kaasamise.",
+  "«+ Ülevaade / uudis» eristab ülevaadet ja uudist — koda.ee lingi järgi ise, muul juhul küsib — ja tegevustes on need eraldi näha.",
+  "Faili pealkirja saab muuta juba enne salvestamist ning failide lohistamine töötab kõikjal; faili algne nimi jääb alles.",
+  "Uue teema loomisel saab sarnased teemad kohe uue teemaga siduda.",
+  "Dokumentides on vähem müra: rolli veergu pole, pealkirja muudad «⋯» menüüst; «Koja arvamus» näitab arvamuse tähtaega, kuni arvamust veel pole; «Lisa teemale» nupud on uues järjekorras.",
 ]
 
 [[day]]

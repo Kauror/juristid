@@ -23,6 +23,18 @@
     {% if not intake_files %}hidden{% endif %}>
   {% for file in intake_files %}
     <li class="dropzone__file" data-intake-file="{{ file.id }}">
+      {% comment %}
+        The display title, editable before `Loo teema` and the filename by
+        default (docs/adr/0142 §A, amended 2026-10-07). The filename itself is
+        kept on the stored version whatever is typed here; a poll re-rendering
+        this list keeps what was typed (static/js/app.js `applyFragment`).
+      {% endcomment %}
+      <label class="uploadqueue__field">
+        <span class="uploadqueue__label">Pealkiri</span>
+        <input type="text" class="field__input uploadqueue__title" maxlength="400"
+               name="intake_title__{{ file.id }}" value="{{ file.filename }}" data-staged-title
+               aria-label="Pealkiri: {{ file.filename }}">
+      </label>
       <span class="dropzone__name">{{ file.filename }}</span>
       <span class="dropzone__size">{{ file.size }}</span>
       {% comment %}

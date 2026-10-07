@@ -275,7 +275,9 @@ def test_evidence_and_working_references_look_like_opposites(page, base_url):
     # the hidden one first.
     row = page.locator(".doctable tbody tr").first
     expect(row).to_contain_text("eelnou.pdf")
-    expect(row).to_contain_text("Saabunud ametlik dokument")
+    # No role on the row since 2026-10-07 (owner's round); it is stored and on
+    # the document's own page.
+    expect(row).not_to_contain_text("Saabunud ametlik dokument")
 
     # A SharePoint reference is not evidence, and does not look like it.
     # (No facts rail on this tab: browsing files is the task, and it gets the

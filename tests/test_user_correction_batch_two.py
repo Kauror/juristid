@@ -244,6 +244,8 @@ CREATE_FIELDS = {
     "smaily_url",
     "alchemer_url",
     "engagement_note",
+    # The round's own files, back on the start form (owner's round, 2026-10-07).
+    "attachments",
 }
 #: The same questions on `Muuda` — `title` is `audience`, `url` is `website_url`
 #: and `note` is `engagement_note`, each under its stored name.
@@ -268,12 +270,12 @@ def test_create_and_edit_ask_the_same_questions():
     assert create == CREATE_FIELDS
     assert edit == EDIT_FIELDS
     assert edit - {"title", "url", "note"} == (
-        create - {"audience", "website_url", "engagement_note"}
+        create - {"audience", "website_url", "engagement_note", "attachments"}
     ) | {"response_count", "feedback_received"}
     # The same words on both surfaces (docs/adr/0127 §2).
     create_labels = {name: field.label for name, field in CompactEngagementForm().fields.items()}
     edit_labels = {name: field.label for name, field in EngagementForm().fields.items()}
-    assert create_labels["website_url"] == edit_labels["url"] == "Veebileht"
+    assert create_labels["website_url"] == edit_labels["url"] == "Ülevaate link"
     assert create_labels["engagement_note"] == edit_labels["note"] == "Märkus"
 
 
@@ -307,7 +309,7 @@ def test_the_edit_form_renders_veebileht_and_markus(signed_in, specialist):
     assert 'name="feedback_deadline"' in html
     assert 'name="url"' in html and 'value="https://www.koda.ee/hetkel-kasil/x"' in html
     assert 'name="note"' in html and "Tööloend.</textarea>" in html
-    assert ">Veebileht" in html and ">Märkus" in html
+    assert ">Ülevaate link" in html and ">Märkus" in html
 
 
 def test_a_legacy_link_and_note_survive_an_edit_that_does_not_carry_them(signed_in, specialist):
@@ -487,7 +489,7 @@ def test_the_overview_panel_stores_a_bare_host_with_https(signed_in, specialist)
 
     response = signed_in.post(
         reverse("matters:add_website_overview", kwargs={"pk": matter.pk}),
-        {"url": "www.koda.ee/uudised/x", "published_on": ""},
+        {"kind": "NEWS", "url": "www.koda.ee/uudised/x", "published_on": ""},
         **HX,
     )
 
@@ -547,7 +549,7 @@ def test_an_overview_row_names_its_link_and_keeps_the_address_behind_it(signed_i
     visible = re.sub(
         r'<span\s+class="visually-hidden">.*?</span>', "", anchor.group(1), flags=re.S
     ).strip()
-    assert visible == "Ülevaade / uudis"
+    assert visible == "Uudis"
     assert "koda.ee/uudised/pikk-uudise-aadress" in anchor.group(0)  # title + hidden name
 
 

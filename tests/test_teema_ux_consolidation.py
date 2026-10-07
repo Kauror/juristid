@@ -310,7 +310,12 @@ def test_a_restricted_matter_keeps_its_visibility_and_its_filter(signed_in, read
 # ---------------------------------------------------------------------------
 
 #: The four, and the whole of the four.
-FAMILIES = ["+ Lisa", "+ Kaasamine", "+ Arvamus / tagasiside", "+ Ülevaade / uudis"]
+FAMILIES = [
+    "+ Ülevaade / uudis",
+    "+ Kaasamine",
+    "+ Arvamus / tagasiside",
+    "+ Lisa",
+]  # 2026-10-07 order
 
 #: Every chip that used to be a peer of those and is not one now.
 RETIRED_CHIPS = [
@@ -601,9 +606,9 @@ def test_the_toovoit_panel_asks_for_a_day_and_offers_no_precision(signed_in, spe
 
     zone = launcher(page_of(signed_in, teema_url(matter)))
     panel = zone[zone.index('id="marge-toovoit"') :]
-    # To the end of the `+ Märge` family: `Töövõit` is its last sub-choice,
-    # and the next chip in the document is the family after it.
-    panel = panel[: panel.index('id="lisa-kaasamine"')]
+    # To the end of the `+ Lisa` family: `Töövõit` is its last sub-choice, and
+    # `+ Lisa` is the last family since 2026-10-07, so the zone ends after it.
+    # (`launcher` already ends at the zone's `</section>`.)
 
     assert 'name="victory_date"' in panel
     assert "Täpsus" not in panel

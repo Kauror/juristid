@@ -698,12 +698,14 @@ def capture_accepted_evidence(
     could not see the record it belonged to. There is deliberately no parameter
     to say otherwise — a caller cannot create a file looser than its record.
     """
+    from app.documents.uploads import document_title_for
+
     override = evidence_visibility_override(record)
     captured: list[Document] = []
     for file in accepted:
         document = create_document(
             matter=matter,
-            title=file.filename,
+            title=document_title_for(file),
             role=role,
             created_by=actor,
             visibility_override=override,

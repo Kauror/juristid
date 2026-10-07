@@ -56,3 +56,32 @@ changes, and no existing row is rewritten.
 8. **Lifecycle unchanged.** Adding feedback does not close a round;
    `Lõpeta kaasamine` on the row is still the one act that does, with its own
    `Saadud tagasiside` and files (docs/adr/0086 §6, docs/adr/0132).
+
+## Amendment of 2026-10-07 — the owner's October round
+
+**One migration**, `matters/0047`. It adds `MatterWebsiteOverview.kind`, with `""` as the database default. It is additive, and no row is rewritten.
+
+**A, extended — a title before the save.** Every shared upload queue lists each chosen or dropped file with a `Pealkiri`, which defaults to the filename. The queue posts that title as `<field>__pealkiri`, in the order of the files. `UploadTitlesMiddleware` pairs it with its file once, for every form. A count that does not match is ignored.
+- The title becomes `Document.title`, through `read_upload` → `AcceptedUpload.display_title` and through `file_incoming`.
+- Staged Uus teema files carry it as `intake_title__<id>`.
+- The filename stays the version's `original_filename`. The bytes, checksum, MIME type and storage are untouched.
+
+**B §8, superseded — feedback finishes the round.** Saving `Lisa tagasiside` records the received feedback, files it, and closes the chosen round. These happen in one transaction, through the canonical `complete_engagement_feedback`.
+- It behaves the same whether it is opened from `+ Kaasamine` or from `Tehtud` on the waiting line under `PRAEGUNE TEGEVUS`. Both are the same form and the same view.
+- No `NextAction` is inferred from it.
+- `Lõpeta kaasamine` remains for closing a round without a feedback record.
+
+**C. `Ülevaade` and `Uudis` are told apart.** This narrows docs/adr/0085 §1. The kind is stored on the record.
+- **Classification from the address.** `app.matters.publication_kind` reads it from koda.ee's own paths, verified 2026-10-07:
+  - an overview is `/et/meie-moju/hetkel-kasil`, `/en/current-drafts` or `/ru/current-drafts`;
+  - news is `/et/uudised`, `/en/news` or `/ru/novosti`.
+- **Anything else is asked.** It is never guessed.
+- **Older rows.** Rows recorded before the column read their kind from the address where it is known, and stay «Ülevaade / uudis» otherwise.
+- **Chronology.** It reads «Ülevaade – …» or «Uudis – …».
+
+**B, extended — the round's Ülevaade.** `Alusta kaasamist` asks for an `Ülevaate link`, which is prefilled with the newest Ülevaade the reader may see, and never with news. A save records that Ülevaade in the same transaction as the round:
+- it reuses one already recorded at the same address;
+- otherwise it publishes a plan the Matter owes;
+- otherwise it records a new one with no publication day.
+
+A news address is refused. The start form takes files again. They belong to the new round and inherit its restriction (docs/adr/0137).

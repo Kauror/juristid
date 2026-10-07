@@ -82,6 +82,17 @@ without the rail becoming a second file list.
       is the ordinary state of most of the register, and a rail asking for one
       on every file would be nagging about work that has not come up.
     {% endcomment %}
-    <span class="railcard__none">Puudub</span>
+    {% comment %}
+      **Until an opinion exists, the deadline for one** (owner's round,
+      2026-10-07): `Arvamuse tähtaeg` here while Koda has sent nothing on this
+      file, `Puudub` when there is neither. Once any opinion went out, a later
+      request's deadline stays off this card — the header and the process strip
+      state it (`_opinion_rail_deadline`).
+    {% endcomment %}
+    {% if opinion_rail_deadline %}
+      <span class="railcard__value" id="koja-arvamus-tahtaeg"><span class="railcard__filekind">Arvamuse tähtaeg</span> {{ opinion_rail_deadline|date:"j.n.Y" }}</span>
+    {% else %}
+      <span class="railcard__none">Puudub</span>
+    {% endif %}
   {% endfor %}
 </div>

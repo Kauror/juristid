@@ -204,7 +204,8 @@ whose addressee nobody recorded should look short, not incomplete.
       put the vocabulary's own key in a place nothing would update if it moved.
     {% endcomment %}
     {% if matter_legal_instruments %}
-      <div class="railcard__row">
+      {# Stacked like `Saatja`: label above, the value below it (owner's round, 2026-10-07). #}
+      <div class="railcard__row railcard__row--stacked">
         <span class="railcard__key">Õigusakt</span>
         <span class="railcard__value">{% for label in matter_legal_instruments %}{{ label }}{% if not forloop.last %}, {% endif %}{% endfor %}</span>
       </div>

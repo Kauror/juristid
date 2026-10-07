@@ -1048,8 +1048,9 @@ def _table_of(body: str) -> str:
     return body[start : body.index("</table>", start)]
 
 
-def test_the_documents_table_has_four_columns(signed_in, specialist):
-    """`Fail | Roll | Kuupäev | Lisas`, asserted as the whole ordered list.
+def test_the_documents_table_has_three_columns(signed_in, specialist):
+    """`Fail | Kuupäev | Lisas`, asserted as the whole ordered list — `Roll`
+    left it in the owner's round of 2026-10-07.
 
     A list rather than four `in` checks and two `not in` checks: what changed
     here is the set of columns, and only the complete set can say that nothing
@@ -1061,7 +1062,7 @@ def test_the_documents_table_has_four_columns(signed_in, specialist):
     table = _table_of(_documents(signed_in, matter))
     headings = re.findall(r'<th scope="col">(.*?)</th>', table, re.S)
 
-    assert [heading.strip() for heading in headings] == ["Fail", "Roll", "Kuupäev", "Lisas"]
+    assert [heading.strip() for heading in headings] == ["Fail", "Kuupäev", "Lisas"]
 
 
 def test_the_documents_table_prints_no_version_and_no_size(signed_in, specialist):
@@ -1438,5 +1439,8 @@ def test_the_matter_page_does_not_explode_into_queries(
     with CaptureQueriesContext(connection) as plan:
         plan_matter_deletion(matter)
 
-    with django_assert_max_num_queries(56 + len(plan)):
+    # 58: two fixed reads joined on 2026-10-07 — `KOJA ARVAMUS` asking whether
+    # any opinion was sent, and `Alusta kaasamist` reading the newest Ülevaade.
+    # Neither grows with the page's rows.
+    with django_assert_max_num_queries(58 + len(plan)):
         signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk}))

@@ -211,7 +211,7 @@ PAGE = "https://koda.ee/uudised/r3-ulevaade"
 def _add(client, matter, url=PAGE):
     return client.post(
         reverse("matters:add_website_overview", kwargs={"pk": matter.pk}),
-        {"url": url, "published_on": "14.03.2026"},
+        {"kind": "NEWS", "url": url, "published_on": "14.03.2026"},
         **HX,
     )
 

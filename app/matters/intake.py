@@ -64,8 +64,12 @@ def file_incoming(
     mime_type: str,
     actor: Any,
     extraction_state: str = ExtractionState.PENDING,
+    title: str = "",
 ) -> Document:
     """One incoming file as one Document with one immutable version.
+
+    ``title`` is the display title typed for it before the save; the filename
+    is the title otherwise, and the version's `original_filename` always.
 
     The one sequence every incoming path files through — Saabunud, `Uus teema`'s
     direct and held files, and a staged file promoted at save. Through the
@@ -79,9 +83,11 @@ def file_incoming(
     ``extraction_state`` is the staging area's: a file it has already read
     arrives with that reading's state (`promoted_extraction_state`).
     """
+    from app.documents.uploads import clean_display_title
+
     document = create_document(
         matter=matter,
-        title=filename,
+        title=clean_display_title(title) or filename,
         role=role_for(filename),
         created_by=actor,
     )

@@ -1154,7 +1154,7 @@ def test_a_link_and_the_offered_day_record_a_publication(signed_in, normal_matte
         signed_in,
         "add_website_overview",
         normal_matter,
-        {"url": "https://koda.ee/uudis", "published_on": _as_typed(today)},
+        {"kind": "NEWS", "url": "https://koda.ee/uudis", "published_on": _as_typed(today)},
     )
 
     assert response.status_code == 200
@@ -1169,7 +1169,7 @@ def test_a_chosen_day_is_what_is_stored(signed_in, normal_matter):
         signed_in,
         "add_website_overview",
         normal_matter,
-        {"url": "https://koda.ee/uudis", "published_on": "14.03.2026"},
+        {"kind": "NEWS", "url": "https://koda.ee/uudis", "published_on": "14.03.2026"},
     )
 
     assert response.status_code == 200
@@ -1253,7 +1253,7 @@ def test_a_closed_matter_refuses_every_one_of_the_four_panels(signed_in, closed_
             signed_in,
             "add_website_overview",
             closed_matter,
-            {"url": "https://koda.ee/uudis", "published_on": "14.03.2026"},
+            {"kind": "NEWS", "url": "https://koda.ee/uudis", "published_on": "14.03.2026"},
         ),
     ]
 

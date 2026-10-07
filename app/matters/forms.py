@@ -36,6 +36,7 @@ from app.matters.enums import (
     ProceduralLinkKind,
     ResponseDeadlineChange,
     ResponseDeadlineOutcome,
+    WebsiteOverviewKind,
 )
 from app.matters.models import (
     DEVELOPMENT_TITLE_MAX_LENGTH,
@@ -50,6 +51,7 @@ from app.matters.models import (
     Matter,
     MatterEngagement,
 )
+from app.matters.publication_kind import classify_publication_url
 from app.matters.stage_episodes import stage_choice_label
 from app.organisations.models import Organisation, OrganisationAlias
 from app.taxonomy.legal_instruments import OTHER_LEGAL_INSTRUMENT_KEYS
@@ -227,7 +229,11 @@ def engagement_website_field() -> forms.CharField:
     the same `normalize_engagement_url` the provider links use — so
     `www.koda.ee/...` gains its `https://` the same way.
     """
-    return provider_link_field("Veebileht", "nt https://www.koda.ee/…")
+    # `Ülevaate link` since the owner's round of 2026-10-07: the page is the
+    # round's `Hetkel käsil` overview (docs/adr/0142 §C), on both surfaces.
+    return provider_link_field(
+        "Ülevaate link", "nt https://www.koda.ee/et/meie-moju/hetkel-kasil/…"
+    )
 
 
 def engagement_note_field() -> forms.CharField:
@@ -3877,6 +3883,12 @@ class ReviewActionForm(forms.Form):
         super().__init__(*args, **kwargs)
 
 
+#: Refused in `Ülevaate link`: a news item is not the round's overview.
+ENGAGEMENT_OVERVIEW_LINK_IS_NEWS = (
+    "See on uudise aadress. Ülevaate link on koda.ee «Hetkel käsil» lehe aadress."
+)
+
+
 class CompactEngagementForm(forms.Form):
     """`+ Kaasamine · Alusta kaasamist` — who was asked, when, and by when.
 
@@ -3945,6 +3957,10 @@ class CompactEngagementForm(forms.Form):
     #: `engagement_note` rather than `url` and `note` because this panel keeps
     #: Django's default ids on a page whose `+ Ülevaade / uudis` panel already
     #: draws `id_url`.
+    #: `Ülevaate link` — the round's `Hetkel käsil` overview, which is the page
+    #: the consultation points members at (docs/adr/0142 §C). Prefilled with
+    #: the newest Ülevaade the Matter has; a save records the Ülevaade too when
+    #: the Matter does not have it yet. A news address is refused.
     website_url = engagement_website_field()
     smaily_url = provider_link_field("Smaily link", "https://sendsmaily.net/…")
     alchemer_url = provider_link_field("Alchemer link", "https://survey.alchemer.eu/…")
@@ -3983,8 +3999,15 @@ class CompactEngagementForm(forms.Form):
             raise forms.ValidationError("Kirjuta, keda kaasati.")
         return audience
 
+    #: Files that belong to the round being started — the invitation, the
+    #: draft sent out — not received feedback, which `Lisa tagasiside` takes.
+    attachments = workspace_attachments("id_kaasamise_alusta_failid")
+
     def clean_website_url(self) -> str:
-        return clean_provider_link(self, "website_url")
+        url = clean_provider_link(self, "website_url")
+        if classify_publication_url(url) == WebsiteOverviewKind.NEWS:
+            raise forms.ValidationError(ENGAGEMENT_OVERVIEW_LINK_IS_NEWS)
+        return url
 
     def clean_engagement_note(self) -> str:
         return (self.cleaned_data.get("engagement_note") or "").strip()
@@ -4374,6 +4397,10 @@ def _clean_overview_title(value: Any) -> str:
         raise forms.ValidationError(str(error)) from error
 
 
+#: Refused when an address does not say whether it is an overview or news.
+WEBSITE_OVERVIEW_KIND_REQUIRED = "Vali, kas see on ülevaade või uudis."
+
+
 class CompactWebsiteOverviewForm(forms.Form):
     """`+ Ülevaade / uudis` — the day, the address, and a published page.
 
@@ -4470,6 +4497,14 @@ class CompactWebsiteOverviewForm(forms.Form):
     #: `overview_title` rather than `title` for `deadline_title`'s reason: this
     #: panel keeps Django's default ids on a page holding several forms.
     overview_title = overview_title_field()
+    #: `Ülevaade` or `Uudis` (docs/adr/0142 §C). Read from a koda.ee address
+    #: whose path says which; asked — and required — only when it does not.
+    kind = forms.ChoiceField(
+        label="Liik",
+        required=False,
+        choices=WebsiteOverviewKind.choices,
+        widget=forms.RadioSelect(attrs={"class": "chip__input"}),
+    )
 
     def clean_overview_title(self) -> str:
         return _clean_overview_title(self.cleaned_data.get("overview_title"))
@@ -4521,6 +4556,13 @@ class CompactWebsiteOverviewForm(forms.Form):
         # fact this record has been able to hold since docs/adr/0089 §8 and still
         # can.
         cleaned["publication"] = (url, published_on) if url else None
+        # The address says which, where it is a koda.ee page in a section the
+        # site itself names; otherwise the person says, and nothing is guessed.
+        known = classify_publication_url(url)
+        if known:
+            cleaned["kind"] = known
+        elif url and not cleaned.get("kind"):
+            self.add_error("kind", WEBSITE_OVERVIEW_KIND_REQUIRED)
         return cleaned
 
 
@@ -5290,6 +5332,10 @@ class EngagementReplyForm(ExternalPositionFieldsMixin, forms.Form):
     allows_source_label = False
     author_is_optional = True
     offers_precision = False
+    #: Saving it finishes the chosen round (owner's decision, 2026-10-07):
+    #: `_record_external_position` closes the wait through
+    #: `complete_engagement_feedback` in the same transaction.
+    closes_engagement = True
     panel_slug = "kaasamise_tagasiside"
 
     engagement = marks_required(

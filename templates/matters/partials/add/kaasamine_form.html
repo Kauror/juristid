@@ -94,6 +94,12 @@ beside it, and the count is still corrected through `Muuda` on the round.
             <p class="field__error" id="{{ form.alchemer_url.auto_id }}_error">
               {{ form.alchemer_url.errors|first }}</p>
           {% endif %}
+          {% comment %}
+            Files of the round being started — the invitation, the draft sent
+            out — filed on the new `Kaasamine` with its own restriction
+            (docs/adr/0137). Received replies go through `Lisa tagasiside`.
+          {% endcomment %}
+          {% include "matters/partials/add_files.html" with field=form.attachments %}
           <div class="addform__actions">
             <button class="button button--primary" type="submit">Salvesta</button>
           </div>

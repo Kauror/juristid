@@ -323,9 +323,16 @@ def promoted_extraction_state(staged_state: str) -> str:
 
 
 def promote_intake_files(
-    *, session: MatterIntakeSession, matter: Any, actor: Any
+    *,
+    session: MatterIntakeSession,
+    matter: Any,
+    actor: Any,
+    titles: dict[str, str] | None = None,
 ) -> list[MatterIntakeFile]:
     """Every file still on the form becomes one Document with one version.
+
+    ``titles`` maps a staged file's id to the display title typed on its row
+    (`intake_title__<id>`); a file without one keeps its filename as the title.
 
     Called from inside `matter_create`'s transaction, so a refusal anywhere
     after it takes the Documents with it and there is never a Matter carrying
@@ -415,6 +422,7 @@ def promote_intake_files(
             mime_type=staged.mime_type,
             actor=actor,
             extraction_state=promoted_extraction_state(staged.extraction_state),
+            title=(titles or {}).get(str(staged.pk), ""),
         )
         promoted.append(staged)
 

@@ -45,11 +45,11 @@ pytestmark = pytest.mark.e2e
 #: The geometry contract itself is unchanged and is exactly what this file
 #: exists to hold: fewer chips is allowed, more chips is allowed, a chip that
 #: *moves* is not.
-CANONICAL = [
-    "+ Lisa",
+CANONICAL = [  # the owner's order of 2026-10-07
+    "+ Ülevaade / uudis",
     "+ Kaasamine",
     "+ Arvamus / tagasiside",
-    "+ Ülevaade / uudis",
+    "+ Lisa",
 ]
 
 #: The top-level panels, which is what the chips above open.
@@ -315,7 +315,8 @@ def test_the_launcher_is_operable_from_the_keyboard(page, base_url):
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
 
-    page.locator("#lisa-marge-valik").focus()
+    # `Ülevaade / uudis` is first and `+ Kaasamine` follows it (2026-10-07 order).
+    page.locator("#lisa-koduleht-valik").focus()
     page.keyboard.press("ArrowDown")
 
     expect(page.locator("#lisa-kaasamine")).to_be_visible()

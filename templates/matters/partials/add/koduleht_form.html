@@ -66,6 +66,26 @@ panel. Under `PRAEGUNE TEGEVUS` it was drawn a second time for the current
             <p class="field__error" id="{{ form.url.auto_id }}_error">
               {{ form.url.errors|first }}</p>
           {% endif %}
+          {% comment %}
+            `Ülevaade` or `Uudis` (docs/adr/0142 §C). A koda.ee address in
+            `Hetkel käsil` or the news section says which and this is not
+            needed; any other address is not guessed at, so the save asks.
+          {% endcomment %}
+          <fieldset class="cx-fieldset">
+            <legend class="cx-f__lab">{{ form.kind.label }}</legend>
+            <div class="chiprow">
+              {% for choice in form.kind %}
+                <label class="chip">
+                  {{ choice.tag }}
+                  <span class="chip__name">{{ choice.choice_label }}</span>
+                </label>
+              {% endfor %}
+            </div>
+          </fieldset>
+          {% if form.kind.errors %}
+            <p class="field__error" id="{{ form.kind.auto_id }}_error">
+              {{ form.kind.errors|first }}</p>
+          {% endif %}
           <div class="addform__actions">
             <button class="button button--primary" type="submit">Lisa ülevaade / uudis</button>
           </div>

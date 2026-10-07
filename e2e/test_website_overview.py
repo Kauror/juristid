@@ -33,6 +33,7 @@ docs/adr/0095 §5 retired the control that made one. See `plan_one`.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -53,6 +54,10 @@ from e2e.conftest import (
 pytestmark = pytest.mark.e2e
 
 KODA_URL = "https://koda.ee/uudised/e2e-ulevaade"
+#: What a publication's chronology row is called: `Uudis` for the koda.ee news
+#: address above since docs/adr/0142 §C, `Ülevaade / uudis` for a row whose kind
+#: the address does not state.
+PUBLICATION_LABEL = re.compile(r"Uudis|Ülevaade / uudis")
 #: How that address prints on the row: no scheme, no trailing slash
 #: (`MatterWebsiteOverview.link_display`, docs/adr/0105 §3). Used as the
 #: link's accessible name, which is what makes three write-ups on one file
@@ -75,7 +80,7 @@ def published(page):
     a `Teema käik` row arrives closed as its one line (docs/adr/0074 §14,
     amended 2026-09-27).
     """
-    row = chronology(page).locator("article.uxtl__item").filter(has_text="Ülevaade / uudis").first
+    row = chronology(page).locator("article.uxtl__item").filter(has_text=PUBLICATION_LABEL).first
     open_kaik_row(row)
     return row
 
@@ -190,7 +195,7 @@ def test_a_stored_plan_reads_on_the_file(page, base_url):
     expect(strip(page)).to_contain_text("Ülevaade või uudis on plaanis, aga veel avaldamata.")
     # A plan is not a milestone: the chronology says nothing about it until
     # something actually happens (docs/adr/0081 §4).
-    expect(chronology(page)).not_to_contain_text("Ülevaade / uudis")
+    expect(chronology(page)).not_to_contain_text(PUBLICATION_LABEL)
 
 
 def test_the_panel_asks_a_day_and_an_address_and_nothing_else(page, base_url):
@@ -290,7 +295,7 @@ def test_cancelling_a_plan_leaves_it_on_the_chronology(page, base_url):
     strip(page).get_by_role("button", name="Tühista").click()
 
     expect(strip(page)).to_have_count(0)
-    expect(chronology(page)).to_contain_text("Ülevaade / uudis")
+    expect(chronology(page)).to_contain_text(PUBLICATION_LABEL)
     expect(chronology(page)).to_contain_text("Tühistatud")
 
 
@@ -407,7 +412,7 @@ def test_the_panel_can_record_a_page_that_is_already_up(page, base_url):
     # Straight onto the chronology as a published overview, and no planned row
     # left behind on the strip. A published row is one carrying an address —
     # `Avaldatud` was the sub-line that said so and is gone (docs/adr/0105 §3).
-    expect(chronology(page)).to_contain_text("Ülevaade / uudis")
+    expect(chronology(page)).to_contain_text(PUBLICATION_LABEL)
     expect(strip(page)).to_have_count(0)
     expect(published(page).get_by_role("link", name=KODA_LINK_TEXT)).to_be_visible()
 
@@ -521,12 +526,10 @@ def panel_of(page):
     return page.locator("#lisa-koduleht")
 
 
-def test_the_panel_offers_one_activity_and_no_kind_selector(page, base_url):
-    """docs/adr/0085 §1. An overview and a news item are the same act.
-
-    The chip says so, and there is nothing on the panel asking which of the two
-    this is — no radios, no select, no chip group. The link is what tells them
-    apart, and a plan does not have one yet.
+def test_the_panel_offers_one_activity_and_the_kind(page, base_url):
+    """docs/adr/0085 §1, narrowed by docs/adr/0142 §C (2026-10-07). One chip,
+    one act — and `Liik` (`Ülevaade` / `Uudis`), read from a koda.ee address
+    where its path says and asked otherwise. Nothing else was added.
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
@@ -534,7 +537,7 @@ def test_the_panel_offers_one_activity_and_no_kind_selector(page, base_url):
 
     expect(page.get_by_text("+ Ülevaade / uudis", exact=True)).to_be_visible()
     panel = panel_of(page)
-    expect(panel.locator("input[type=radio]")).to_have_count(0)
+    expect(panel.locator("input[type=radio][name=kind]")).to_have_count(2)
     # No kind selector, and since docs/adr/0141 no `Tööplaani samm` select
     # either: the panel carries no select at all.
     expect(panel.locator("select")).to_have_count(0)
@@ -597,7 +600,7 @@ def test_an_address_with_no_date_is_filed_as_a_publication(page, base_url):
     panel.get_by_role("button", name=PLAN_BUTTON).click()
     chronology(page).wait_for(state="visible")
 
-    expect(chronology(page)).to_contain_text("Ülevaade / uudis")
+    expect(chronology(page)).to_contain_text(PUBLICATION_LABEL)
     expect(chronology(page)).to_contain_text("Kuupäev teadmata")
     expect(published(page).get_by_role("link", name=KODA_LINK_TEXT)).to_be_visible()
     # And no plan is left behind claiming the write-up is still owed.
@@ -653,7 +656,7 @@ def test_a_recorded_date_can_be_cleared_from_the_row_and_stays_cleared(page, bas
     form.get_by_role("button", name="Salvesta").click()
     chronology(page).get_by_text("Kuupäev teadmata").first.wait_for()
 
-    expect(chronology(page)).to_contain_text("Ülevaade / uudis")
+    expect(chronology(page)).to_contain_text(PUBLICATION_LABEL)
     expect(published(page).get_by_role("link", name=KODA_LINK_TEXT)).to_be_visible()
     expect(chronology(page)).not_to_contain_text("14.3.2026")
 
@@ -683,7 +686,7 @@ def test_an_untouched_panel_is_refused_rather_than_filing_a_plan(page, base_url)
     expect(reopened.locator(".field__error").first).to_be_visible()
     expect(reopened.locator("[name=published_on]")).to_have_value(opened_on)
     expect(strip(page)).to_have_count(0)
-    expect(chronology(page)).not_to_contain_text("Ülevaade / uudis")
+    expect(chronology(page)).not_to_contain_text(PUBLICATION_LABEL)
 
 
 def test_a_news_item_on_somebody_elses_site_is_recorded(page, base_url):
@@ -696,6 +699,8 @@ def test_a_news_item_on_somebody_elses_site_is_recorded(page, base_url):
     panel = panel_of(page)
     panel.locator("[name=url]").fill(news)
     panel.locator("[name=published_on]").fill("14.03.2026")
+    # Not a koda.ee address, so the kind is chosen (docs/adr/0142 §C).
+    panel.get_by_label("Uudis", exact=True).check()
     panel.get_by_role("button", name=PLAN_BUTTON).click()
     chronology(page).wait_for(state="visible")
 

@@ -137,6 +137,7 @@ def test_scenario_a_one_request_answered_over_two_weeks(signed_in, specialist, c
         {
             "url": "https://www.koda.ee/et/sunteetiline-ulevaade-a",
             "published_on": _et(timezone.localdate()),
+            "kind": "OVERVIEW",
             "overview_title": "Sünteetiline ülevaade jooksva töö kohta",
         },
         headers={"HX-Request": "true"},

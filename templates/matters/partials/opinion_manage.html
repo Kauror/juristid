@@ -18,9 +18,10 @@ document's own evidence page and in the integrity tooling, and none of them is
 what somebody managing an opinion is asking about (§12, §28, §29).
 {% endcomment %}
 <details class="opinionmenu">
-  <summary class="opinionmenu__trigger"
-           aria-label="Halda arvamust {% if document.current_version %}{{ document.current_version.original_filename }}{% else %}{{ document.title }}{% endif %}">⋯</summary>
+  {# `Muuda`, like every `⋯` on Dokumendid (owner's round, 2026-10-07). #}
+  <summary class="opinionmenu__trigger" title="Muuda" aria-label="Muuda {{ document.title }}">⋯</summary>
   <div class="opinionmenu__body">
+    {% include "matters/partials/document_rename_form.html" with document=document %}
     {% if document.opinion_send %}
       <p class="opinionmenu__label">Saatmise andmed</p>
       <dl class="opinionmenu__meta">

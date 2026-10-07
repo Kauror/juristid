@@ -877,3 +877,31 @@ def my_active_matters(user: Any) -> QuerySet[Matter]:
         .distinct()
         .order_by("-updated_at")
     )
+
+
+def latest_overview_url(matter: Any, user: Any) -> str:
+    """The address of the newest Ülevaade on this Matter the reader may see, or ``""``.
+
+    Newest by when it was recorded, not by title or publication day. Only an
+    Ülevaade — a stored `OVERVIEW`, or a row from before the kind was stored
+    whose koda.ee address is in `Hetkel käsil` — and never a news item: this
+    is what `Alusta kaasamist`'s `Ülevaate link` opens on (docs/adr/0142 §C).
+    """
+    from app.matters.enums import WebsiteOverviewKind, WebsiteOverviewStatus
+    from app.matters.models import MatterWebsiteOverview
+
+    rows = (
+        MatterWebsiteOverview.objects.visible_to(user)
+        .filter(
+            matter=matter,
+            removed_at__isnull=True,
+            status=WebsiteOverviewStatus.PUBLISHED,
+            kind__in=("", WebsiteOverviewKind.OVERVIEW),
+        )
+        .exclude(url="")
+        .order_by("-created_at", "-pk")
+    )
+    for overview in rows:
+        if overview.effective_kind == WebsiteOverviewKind.OVERVIEW:
+            return overview.url
+    return ""

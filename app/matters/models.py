@@ -39,6 +39,7 @@ from app.matters.enums import (
     ResponseDeadlineOutcome,
     StageEpisodeOrigin,
     TagAssignmentSource,
+    WebsiteOverviewKind,
     WebsiteOverviewStatus,
 )
 from app.matters.process_phases import PHASE_KEYS
@@ -1518,6 +1519,16 @@ class MatterWebsiteOverview(VisibilityInheritingModel, RemovableRecord):
         db_index=True,
         verbose_name="olek",
     )
+    #: `Ülevaade` or `Uudis` (docs/adr/0142 §C). Empty on a record from before
+    #: the column — `effective_kind` reads those from the address where it can.
+    kind = models.CharField(
+        max_length=16,
+        choices=WebsiteOverviewKind.choices,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="liik",
+    )
     #: Where the published overview actually is. Empty until it is published,
     #: and empty forever on a plan that was dropped — the constraints below say
     #: so in the database rather than only in the service, because a URL on a
@@ -1778,7 +1789,19 @@ class MatterWebsiteOverview(VisibilityInheritingModel, RemovableRecord):
     LINK_LABEL = "Ülevaade / uudis"
 
     @property
+    def effective_kind(self) -> str:
+        """The stored kind, or — for a row from before it was stored — the
+        kind its koda.ee address states; ``""`` when neither says."""
+        from app.matters.publication_kind import classify_publication_url
+
+        return self.kind or classify_publication_url(self.url)
+
+    @property
     def link_label(self) -> str:
+        """`Ülevaade`, `Uudis`, or `Ülevaade / uudis` where the kind is unknown."""
+        kind = self.effective_kind
+        if kind:
+            return WebsiteOverviewKind(kind).label
         return self.LINK_LABEL
 
     @property
@@ -1796,9 +1819,12 @@ class MatterWebsiteOverview(VisibilityInheritingModel, RemovableRecord):
         builds the row with it and `website_overview_link.html` swaps the same
         line out of band after a correction renames the page.
         """
-        if self.title:
-            return f"{self.LINK_LABEL}: {self.title}"
-        return self.LINK_LABEL
+        # `Ülevaade – <pealkiri>` / `Uudis – <pealkiri>` since the kind is
+        # stored (docs/adr/0142 §C); a row of unknown kind keeps its old line.
+        if not self.effective_kind:
+            return f"{self.LINK_LABEL}: {self.title}" if self.title else self.LINK_LABEL
+        label = self.link_label
+        return f"{label} – {self.title}" if self.title else label
 
     #: How long the printed address may run before it is cut.
     #:
