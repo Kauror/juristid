@@ -378,7 +378,7 @@ def test_a_correction_may_move_a_publication_forward(normal_matter, specialist):
 def test_the_panel_records_a_publication_ahead(signed_in, normal_matter):
     response = signed_in.post(
         reverse("matters:add_website_overview", kwargs={"pk": normal_matter.pk}),
-        {"url": PAGE, "published_on": _day(TOMORROW)},
+        {"kind": "NEWS", "url": PAGE, "published_on": _day(TOMORROW)},
         **HX,
     )
 

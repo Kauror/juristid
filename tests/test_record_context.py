@@ -9,8 +9,9 @@ JUR-CASE-08/09: a round's public koda.ee page had to be pasted into
 Asserted here:
 
 * **the overview title** — optional, stored as typed on create, `Avalda` and
-  `Muuda`; the headline reads `Ülevaade / uudis: <pealkiri>` and an untitled row
-  reads exactly as before; the link still says `Ülevaade / uudis` and still
+  `Muuda`; the headline reads the kind and the title (`Uudis – …` for a koda.ee
+  news address since docs/adr/0142 §C) and an untitled row reads its kind alone;
+  the link says what it opens and still
   follows the stored address; a correction that does not carry the box leaves
   the name alone; a restricted write-up's name reaches nobody who may not see it;
 * **the round's page and note** — the existing `url` and `note` columns, asked on
@@ -93,9 +94,9 @@ def test_an_untitled_overview_reads_exactly_as_before(normal_matter, specialist)
 
     (row,) = _overview_rows(normal_matter, specialist)
     assert overview.title == ""
-    assert row.milestone.what == "Ülevaade / uudis"
-    assert overview.headline == "Ülevaade / uudis"
-    assert overview.link_label == "Ülevaade / uudis"
+    assert row.milestone.what == "Uudis"
+    assert overview.headline == "Uudis"
+    assert overview.link_label == "Uudis"
 
 
 def test_create_with_a_title_stores_it_and_heads_the_row(signed_in, normal_matter, specialist):
@@ -116,7 +117,7 @@ def test_create_with_a_title_stores_it_and_heads_the_row(signed_in, normal_matte
     assert overview.url == VTK_PAGE
     assert overview.published_on == dt.date(2026, 9, 9)
     (row,) = _overview_rows(normal_matter, specialist)
-    assert row.milestone.what == "Ülevaade / uudis: Koja seisukoht juristieksami VTK kohta"
+    assert row.milestone.what == "Uudis – Koja seisukoht juristieksami VTK kohta"
     published = ChangeEvent.objects.get(
         matter=normal_matter, event_type=ChangeEventType.WEBSITE_OVERVIEW_PUBLISHED
     )
@@ -139,8 +140,8 @@ def test_two_overviews_are_told_apart_without_opening_them(signed_in, normal_mat
             f'id="kodulehe-ulevaade-{overview.pk}-pealkiri" class="uxtl__mswhat">'
             f"{overview.headline}<"
         ) in body
-    assert "Ülevaade / uudis: Koja seisukoht VTK kohta" in body
-    assert "Ülevaade / uudis: Koja seisukoht eelnõu kohta" in body
+    assert "Uudis – Koja seisukoht VTK kohta" in body
+    assert "Uudis – Koja seisukoht eelnõu kohta" in body
     # The link is still the link, to the stored address.
     assert f'href="{VTK_PAGE}"' in body and f'href="{BILL_PAGE}"' in body
 
@@ -170,7 +171,7 @@ def test_muuda_renames_the_page_and_swaps_the_headline(signed_in, normal_matter,
     overview.refresh_from_db()
     assert overview.title == "Koja seisukoht juristieksami VTK kohta"
     body = response.content.decode()
-    assert 'hx-swap-oob="true">Ülevaade / uudis: Koja seisukoht juristieksami VTK kohta<' in body
+    assert 'hx-swap-oob="true">Uudis – Koja seisukoht juristieksami VTK kohta<' in body
     event = ChangeEvent.objects.get(
         matter=normal_matter, event_type=ChangeEventType.WEBSITE_OVERVIEW_LINK_CORRECTED
     )
@@ -199,7 +200,7 @@ def test_an_emptied_box_clears_the_title(signed_in, normal_matter):
 
     overview.refresh_from_db()
     assert overview.title == ""
-    assert overview.headline == "Ülevaade / uudis"
+    assert overview.headline == "Uudis"
 
 
 def test_a_correction_that_does_not_carry_the_box_keeps_the_title(signed_in, normal_matter):

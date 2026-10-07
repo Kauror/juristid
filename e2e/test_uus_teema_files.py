@@ -93,7 +93,7 @@ def test_one_file_chosen_on_uus_teema_is_on_dokumendid(page, base_url, tmp_path)
     assert "failiga" in said, f"the save did not report receiving a file: {said!r}"
     expect(page.get_by_text("Sellel teemal ei ole veel dokumente.")).to_have_count(0)
     expect(file_row(page, "kaaskiri.pdf")).to_be_visible()
-    expect(page.get_by_role("link", name="Laadi alla kaaskiri.pdf")).to_be_visible()
+    expect(page.get_by_role("link", name="Tõmba alla kaaskiri.pdf")).to_be_visible()
 
 
 def test_every_file_chosen_together_arrives_together(page, base_url, tmp_path):

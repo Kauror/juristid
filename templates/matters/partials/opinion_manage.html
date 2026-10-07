@@ -19,7 +19,7 @@ what somebody managing an opinion is asking about (§12, §28, §29).
 {% endcomment %}
 <details class="opinionmenu">
   {# `Muuda`, like every `⋯` on Dokumendid (owner's round, 2026-10-07). #}
-  <summary class="opinionmenu__trigger" title="Muuda" aria-label="Muuda">⋯</summary>
+  <summary class="opinionmenu__trigger" title="Muuda" aria-label="Muuda {{ document.title }}">⋯</summary>
   <div class="opinionmenu__body">
     {% include "matters/partials/document_rename_form.html" with document=document %}
     {% if document.opinion_send %}

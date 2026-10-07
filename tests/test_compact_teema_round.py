@@ -107,7 +107,8 @@ def test_planned_rows_render_under_the_control_without_a_heading(client, special
     assert 'aria-label="Planeeritud tegevused"' in zone
     rows = re.findall(r'<span class="curact__plannedtext">([^<]+)</span>', zone)
     assert rows == ["Helista ministeeriumile", "Kontrolli uut versiooni"]
-    assert zone.index("+ Lisa tegevus") < zone.index("Helista ministeeriumile")
+    # The planned rows come before `+ Lisa tegevus`, which is last (2026-10-07).
+    assert zone.index("Helista ministeeriumile") < zone.index("+ Lisa tegevus")
     assert zone.count('aria-label="Eemalda planeeritud tegevus"') == 2
 
 

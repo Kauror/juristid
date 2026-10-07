@@ -160,7 +160,9 @@ def test_the_upload_panel_no_longer_offers_arvamus(signed_in, specialist):
 
     assert "KODA_SUBMISSION_FINAL" not in select
     assert "Arvamus" not in select
-    assert f'<option value="{OPINION_ROLE_FILTER}"' in " ".join(body.split())
+    # The role filter left the toolbar on 2026-10-07; `?roll=arvamus` still
+    # narrows the list (the opinion rail links to it).
+    assert f'<option value="{OPINION_ROLE_FILTER}"' not in " ".join(body.split())
 
 
 # ---------------------------------------------------------------------------
@@ -256,7 +258,8 @@ def test_an_existing_outcome_evidence_document_still_renders(signed_in, speciali
     table = table[: table.index("</table>")]
 
     assert "Tulemus.pdf" in table
-    assert "Tulemuse tõend" in table
+    # The list shows no role since 2026-10-07; the stored role is untouched.
+    assert "Tulemuse tõend" not in table
     # And it is still reachable by the filter, which is a different vocabulary
     # from the upload menu on purpose.
     assert "Tulemus.pdf" in _page(signed_in, matter, roll=DocumentRole.OUTCOME_EVIDENCE)
@@ -366,13 +369,16 @@ def test_the_arvamus_filter_returns_the_whole_union(signed_in, specialist):
     assert unrelated.current_version.original_filename not in body
 
 
-def test_the_filter_menu_offers_arvamus_and_not_the_stored_role(signed_in, specialist):
+def test_the_role_filter_left_the_toolbar_and_its_address_still_works(signed_in, specialist):
+    """`Roll — kõik` is gone from Dokumendid (owner's round, 2026-10-07); the
+    `?roll=` address it posted still narrows the list."""
     matter = factories.MatterFactory(owner=specialist)
 
     body = _page(signed_in, matter)
     compact = " ".join(body.split())
 
-    assert f'<option value="{OPINION_ROLE_FILTER}"' in compact
+    assert 'name="roll"' not in compact
+    assert "Roll — kõik" not in compact
     # The stored role is still a real filter value and an old URL still works;
     # it is simply not on the menu, because it cannot express the union.
     assert '<option value="KODA_SUBMISSION_FINAL" ' not in compact
@@ -1627,5 +1633,6 @@ def test_what_a_reader_sees_and_what_a_screen_reader_hears_name_the_same_thing(
 
     body = _page(signed_in, matter)
 
-    assert 'aria-label="Laadi alla Ministeeriumi saatekiri"' in body
+    # `Tõmba alla` — the download's tooltip and name (owner's round, 2026-10-07).
+    assert 'title="Tõmba alla" aria-label="Tõmba alla Ministeeriumi saatekiri"' in body
     assert "Ministeeriumi saatekiri" in _visible(body)

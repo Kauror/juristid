@@ -108,7 +108,8 @@ def test_a_round_keeps_its_page_and_note_and_the_work_list_keeps_its_audience(
     open_add_panel(page, "kaasamine-alusta")
     form = page.locator("#kaasamine-alusta")
     form.locator("[name=audience]").fill(AUDIENCE)
-    expect(form.get_by_text("Veebileht", exact=False)).to_be_visible()
+    # `Ülevaate link` since the owner's round of 2026-10-07 (docs/adr/0142 §C).
+    expect(form.get_by_text("Ülevaate link", exact=False)).to_be_visible()
     form.locator("[name=website_url]").fill("www.koda.ee/hetkel-kasil/juristieksam")
     form.locator("[name=engagement_note]").fill(CAVEAT)
     form.locator("[name=feedback_deadline]").fill(_day(5))
@@ -122,9 +123,12 @@ def test_a_round_keeps_its_page_and_note_and_the_work_list_keeps_its_audience(
     expect(row.locator(".uxtl__msnote")).to_contain_text("Märkus")
     expect(row.locator(".uxtl__msnote")).to_contain_text(CAVEAT)
 
-    # The work list reads who was asked — never the address, never the note.
+    # The waiting line is operational since 2026-10-07: the wait and its day,
+    # Smaily / Alchemer where stored, and `Tehtud` — never the audience, the
+    # address or the note.
     zone = page.locator("#praegune-tegevus")
-    expect(zone).to_contain_text(AUDIENCE)
+    expect(zone).to_contain_text("Ootame tagasisidet")
+    expect(zone).not_to_contain_text(AUDIENCE)
     expect(zone).not_to_contain_text("koda.ee")
     expect(zone).not_to_contain_text("tööloendit")
     screenshots(page, "kaasamine-veebileht-markus")
@@ -181,8 +185,9 @@ def test_two_overviews_are_told_apart_on_their_closed_lines(page, base_url, scre
     _publish(page, "Koja seisukoht eelnõu kohta", "https://www.koda.ee/uudised/eelnou")
 
     heads = page.locator(f"{KAIK_ROW} .uxtl__mswhat").all_inner_texts()
-    assert "Ülevaade / uudis: Koja seisukoht VTK kohta" in heads, heads
-    assert "Ülevaade / uudis: Koja seisukoht eelnõu kohta" in heads, heads
+    # koda.ee news addresses read `Uudis` since docs/adr/0142 §C.
+    assert "Uudis – Koja seisukoht VTK kohta" in heads, heads
+    assert "Uudis – Koja seisukoht eelnõu kohta" in heads, heads
     # Closed rows: the toggle is named by the line, so it says which page.
     expect(page.get_by_role("button", name=re.compile("Koja seisukoht VTK kohta"))).to_have_count(1)
     screenshots(page, "kaks-ulevaadet")
@@ -198,7 +203,7 @@ def test_two_overviews_are_told_apart_on_their_closed_lines(page, base_url, scre
         row.get_by_role("button", name="Salvesta").click()
     assert caught.value.status == 200
     expect(
-        page.locator(".uxtl__mswhat", has_text="Ülevaade / uudis: Koja seisukoht juristieksami")
+        page.locator(".uxtl__mswhat", has_text="Uudis – Koja seisukoht juristieksami")
     ).to_have_count(1)
 
 

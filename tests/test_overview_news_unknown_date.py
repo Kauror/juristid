@@ -81,6 +81,10 @@ def _detail(client, matter) -> str:
 
 
 def _add(client, matter, **fields):
+    # The kind is stated, so an address koda.ee's paths do not classify is not
+    # refused for want of one (docs/adr/0142 §C) — these tests are about other
+    # rules. A classified address ignores it.
+    fields.setdefault("kind", "NEWS")
     return client.post(
         reverse("matters:add_website_overview", kwargs={"pk": matter.pk}),
         fields,
@@ -394,7 +398,7 @@ def test_the_chronology_shows_the_row_and_says_the_date_is_unknown(
 
     items, _ = matter_timeline(matter=normal_matter, user=specialist)
     milestones = [item.milestone for item in items if item.is_milestone]
-    overview_rows = [m for m in milestones if m.what == "Ülevaade / uudis"]
+    overview_rows = [m for m in milestones if m.what == "Uudis"]
 
     assert len(overview_rows) == 1
     assert overview_rows[0].display_date == WEBSITE_OVERVIEW_DATE_UNKNOWN
@@ -416,7 +420,7 @@ def test_the_page_never_prints_an_internal_timestamp_as_the_publication_date(
     # `Alustatud` legitimately carries today, and the launcher chip above it
     # carries the same four words.
     chronology = body[body.index('id="ajajoon"') :]
-    headline = chronology.index('uxtl__mswhat">Ülevaade / uudis<')
+    headline = chronology.index('uxtl__mswhat">Uudis<')
     cell = chronology[
         headline : chronology.index("</span>", chronology.index("uxtl__msdate", headline))
     ]
@@ -435,7 +439,7 @@ def test_a_dated_and_an_undated_publication_read_side_by_side(signed_in, normal_
     dates = [
         item.milestone.display_date
         for item in items
-        if item.is_milestone and item.milestone.what == "Ülevaade / uudis"
+        if item.is_milestone and item.milestone.what in ("Uudis", "Ülevaade / uudis")
     ]
 
     assert WEBSITE_OVERVIEW_DATE_UNKNOWN in dates

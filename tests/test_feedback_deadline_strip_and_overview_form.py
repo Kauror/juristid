@@ -228,6 +228,10 @@ def test_nothing_completes_or_cancels_because_the_day_passed(normal_matter, spec
 
 
 def _add(client, matter, **fields):
+    # The kind is stated, so an address koda.ee's paths do not classify is not
+    # refused for want of one (docs/adr/0142 §C) — these tests are about other
+    # rules. A classified address ignores it.
+    fields.setdefault("kind", "NEWS")
     return client.post(
         reverse("matters:add_website_overview", kwargs={"pk": matter.pk}),
         fields,

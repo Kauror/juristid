@@ -77,26 +77,29 @@ def test_finishing_a_round_removes_its_wait_from_current_work(signed_in, special
     page = signed_in.get(
         reverse("matters:matter_detail", kwargs={"pk": matter.pk})
     ).content.decode()
+    # A line is named by its round — `data-feedback-wait` — since the
+    # audience text left the line (owner's round, 2026-10-07).
+    line = f'data-feedback-wait="{engagement.pk}"'
     assert 'id="praegune-ootused"' in page
-    assert "Liikmete küsitlus" in page.split('id="praegune-ootused"', 1)[1].split("</div>", 1)[0]
+    assert line in page.split('id="praegune-ootused"', 1)[1].split("</div>", 1)[0]
 
     response = _finish(signed_in, engagement)
 
     assert response.status_code == 200
     assert "HX-Retarget" not in response
-    assert "Liikmete küsitlus" not in _waiting_lines(response)
+    assert line not in _waiting_lines(response)
     assert "Ootame tagasisidet" not in _waiting_lines(response)
 
 
 def test_another_open_round_stays_listed(signed_in, specialist):
     matter = factories.MatterFactory(owner=specialist)
     finished = _round(matter, "Esimene voor", actor=specialist)
-    _round(matter, "Teine voor", actor=specialist, deadline_days=None)
+    other = _round(matter, "Teine voor", actor=specialist, deadline_days=None)
 
     lines = _waiting_lines(_finish(signed_in, finished))
 
-    assert "Esimene voor" not in lines
-    assert "Teine voor" in lines
+    assert f'data-feedback-wait="{finished.pk}"' not in lines
+    assert f'data-feedback-wait="{other.pk}"' in lines
     assert "Tähtaeg määramata" in lines
 
 

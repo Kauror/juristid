@@ -415,6 +415,9 @@ def test_g_the_launchers_read_in_the_owners_order(client, specialist, normal_mat
         (NEWS_URL, WebsiteOverviewKind.NEWS),
         ("https://www.koda.ee/en/news/some-news", WebsiteOverviewKind.NEWS),
         ("https://www.koda.ee/ru/novosti/nashi-novosti", WebsiteOverviewKind.NEWS),
+        ("https://www.koda.ee/uudised/vana-aadress", WebsiteOverviewKind.NEWS),
+        ("https://koda.ee/meie-moju/hetkel-kasil/vana", WebsiteOverviewKind.OVERVIEW),
+        ("https://www.koda.ee/hetkel-kasil/x", ""),
         ("https://www.koda.ee/et/meie-moju", ""),
         ("https://www.err.ee/uudised/x", ""),
         ("", ""),
@@ -642,8 +645,9 @@ def test_m_dokumendid_is_simpler(client, specialist, normal_matter):
     assert "Saabunud ametlik dokument" not in table
     assert "Roll — kõik" not in body
     assert '<details class="docrename"' not in body
-    assert 'title="Tõmba alla" aria-label="Tõmba alla"' in table
-    assert 'title="Muuda" aria-label="Muuda">⋯</summary>' in table
+    # The tooltip is the one word; the accessible name names the row (ENG-098).
+    assert 'title="Tõmba alla" aria-label="Tõmba alla Ministeeriumi kiri"' in table
+    assert 'title="Muuda" aria-label="Muuda Ministeeriumi kiri">⋯</summary>' in table
     menu = table[table.index(f'id="muuda-pealkiri-{document.pk}"') :]
     assert reverse("documents:rename", kwargs={"pk": document.pk}) in menu
 

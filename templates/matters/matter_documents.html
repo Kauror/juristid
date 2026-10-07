@@ -465,7 +465,7 @@ finds again (§23.5).
                                aria-label="Ava {{ document.title }}">Ava</a>
                             <a class="quietlink"
                                href="{% url 'documents:download' pk=document.current_version.pk %}"
-                               title="Tõmba alla" aria-label="Tõmba alla">↓</a>
+                               title="Tõmba alla" aria-label="Tõmba alla {{ document.title }}">↓</a>
                           {% endif %}
                           {% if document.is_opinion %}
                             {% include "matters/partials/opinion_manage.html" with document=document %}
@@ -473,10 +473,13 @@ finds again (§23.5).
                             {% comment %}
                               `⋯` — `Muuda`: the display title, and the
                               document's own page for everything else about it
-                              (owner's round, 2026-10-07).
+                              (owner's round, 2026-10-07). The tooltip is the
+                              one word; the accessible name carries the title
+                              too, so twelve rows are not twelve identical
+                              controls to a screen reader (ENG-098).
                             {% endcomment %}
                             <details class="opinionmenu docmenu" id="muuda-pealkiri-{{ document.pk }}">
-                              <summary class="opinionmenu__trigger" title="Muuda" aria-label="Muuda">⋯</summary>
+                              <summary class="opinionmenu__trigger" title="Muuda" aria-label="Muuda {{ document.title }}">⋯</summary>
                               <div class="opinionmenu__body">
                                 {% include "matters/partials/document_rename_form.html" with document=document %}
                                 <a class="quietlink" href="{% url 'documents:document_detail' pk=document.pk %}">Dokumendi leht</a>

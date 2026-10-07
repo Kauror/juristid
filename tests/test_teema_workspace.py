@@ -780,7 +780,8 @@ def test_a_marge_carries_its_own_files(signed_in, normal_matter):
 
 def test_an_engagement_carries_its_replies(signed_in, normal_matter):
     """The replies arrive through `Lisa tagasiside` (docs/adr/0142): the received-
-    feedback record tied to the round carries them, and the round stays open."""
+    feedback record tied to the round carries them, and saving it finishes the
+    round (owner's decision, 2026-10-07)."""
     _post(signed_in, "matters:add_engagement_compact", normal_matter, {"audience": "Liikmed"})
     engagement = MatterEngagement.objects.get(matter=normal_matter)
 
@@ -795,7 +796,7 @@ def test_an_engagement_carries_its_replies(signed_in, normal_matter):
     reply = engagement.external_positions.get()
     assert _names(_links_for(external_position=reply)) == ["vastus1.pdf", "vastus2.pdf"]
     engagement.refresh_from_db()
-    assert engagement.has_open_feedback_wait
+    assert not engagement.has_open_feedback_wait
 
 
 def test_an_important_date_carries_the_letter_that_announced_it(signed_in, normal_matter):

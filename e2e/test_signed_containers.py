@@ -77,9 +77,9 @@ def _open_documents(page) -> None:
 
 
 def _downloaded(page, name: str) -> tuple[str, bytes]:
-    """Press `Laadi alla <name>` and return what the browser saved."""
+    """Press `Tõmba alla <name>` and return what the browser saved."""
     with page.expect_download() as arrival:
-        page.get_by_role("link", name=f"Laadi alla {name}", exact=True).click()
+        page.get_by_role("link", name=f"Tõmba alla {name}", exact=True).click()
     download = arrival.value
     return download.suggested_filename, Path(download.path()).read_bytes()
 

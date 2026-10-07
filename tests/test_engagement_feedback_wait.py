@@ -363,8 +363,9 @@ def test_the_matter_page_states_the_wait_with_no_open_step_at_all(signed_in, spe
     zone = zone[: zone.index("</section>")]
 
     assert "Ootame tagasisidet" in zone
-    assert f"kuni {deadline.day}.{deadline.month}.{deadline.year}" in zone
-    assert f"#kaasamine-{engagement.pk}-sisu" in zone
+    # The day and the round's own line, with `Tehtud` (owner's round, 2026-10-07).
+    assert f"{deadline.day}.{deadline.month}.{deadline.year}" in zone
+    assert f'data-feedback-wait="{engagement.pk}"' in zone
 
 
 def test_a_closed_wait_leaves_the_matter_page(signed_in, specialist):
@@ -966,12 +967,11 @@ def test_an_already_finished_round_is_not_closed_twice_by_the_matter(specialist)
 # ===========================================================================
 
 
-def test_the_panel_stores_feedback_without_closing_anything(signed_in, specialist):
-    """§5, §6. Writing down what came back and deciding the round is over are
-    two acts, and only the second is a decision somebody's name goes on.
-
-    Since docs/adr/0142 what came back is `+ Kaasamine · Lisa tagasiside`, the
-    received-feedback record tied to the round; the round stays open."""
+def test_the_panel_stores_feedback_and_finishes_the_round(signed_in, specialist):
+    """§5, §6, superseded by the owner's decision of 2026-10-07 (docs/adr/0142
+    amendment): `+ Kaasamine · Lisa tagasiside` records what came back **and**
+    finishes the round it answers, in one save. `Lõpeta kaasamine` remains for
+    closing a round with no feedback record."""
     matter = factories.MatterFactory(owner=specialist)
     signed_in.post(
         reverse("matters:add_engagement_compact", kwargs={"pk": matter.pk}),
@@ -989,7 +989,7 @@ def test_the_panel_stores_feedback_without_closing_anything(signed_in, specialis
     assert response.status_code == 200, response.content.decode()[:2000]
     assert engagement.external_positions.get().summary == "Kaks vastust juba käes."
     engagement.refresh_from_db()
-    assert engagement.feedback_closed_at is None
+    assert engagement.feedback_closed_at is not None
 
 
 def test_the_ordinary_panel_asks_for_a_reply_by_date_with_no_default(signed_in, specialist):

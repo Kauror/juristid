@@ -229,7 +229,11 @@ def engagement_website_field() -> forms.CharField:
     the same `normalize_engagement_url` the provider links use — so
     `www.koda.ee/...` gains its `https://` the same way.
     """
-    return provider_link_field("Veebileht", "nt https://www.koda.ee/…")
+    # `Ülevaate link` since the owner's round of 2026-10-07: the page is the
+    # round's `Hetkel käsil` overview (docs/adr/0142 §C), on both surfaces.
+    return provider_link_field(
+        "Ülevaate link", "nt https://www.koda.ee/et/meie-moju/hetkel-kasil/…"
+    )
 
 
 def engagement_note_field() -> forms.CharField:
@@ -3957,9 +3961,7 @@ class CompactEngagementForm(forms.Form):
     #: the consultation points members at (docs/adr/0142 §C). Prefilled with
     #: the newest Ülevaade the Matter has; a save records the Ülevaade too when
     #: the Matter does not have it yet. A news address is refused.
-    website_url = provider_link_field(
-        "Ülevaate link", "nt https://www.koda.ee/et/meie-moju/hetkel-kasil/…"
-    )
+    website_url = engagement_website_field()
     smaily_url = provider_link_field("Smaily link", "https://sendsmaily.net/…")
     alchemer_url = provider_link_field("Alchemer link", "https://survey.alchemer.eu/…")
     engagement_note = engagement_note_field()

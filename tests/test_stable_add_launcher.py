@@ -44,14 +44,14 @@ from tests import factories
 
 pytestmark = pytest.mark.django_db
 
-#: The four families, in the order the product's own reasoning puts them:
-#: something happened, somebody was asked, somebody had a view, something was
-#: published.
+#: The four families, in the owner's order of 2026-10-07: the consultation
+#: workflow as it runs — the overview a round points at, the round, what came
+#: back — and the general-purpose `+ Lisa` last.
 CANONICAL = [
-    "+ Lisa",
+    "+ Ülevaade / uudis",
     "+ Kaasamine",
     "+ Arvamus / tagasiside",
-    "+ Ülevaade / uudis",
+    "+ Lisa",
 ]
 
 #: What each family asks second, where it asks anything. `+ Kaasamine` and

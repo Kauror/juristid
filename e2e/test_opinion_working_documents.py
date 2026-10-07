@@ -191,9 +191,9 @@ def test_a_signed_letter_and_its_docx_in_one_opinion(page, base_url, screenshots
 
     # Each downloads as itself: the exact container, and the DOCX.
     assert _downloaded(
-        page, page.get_by_role("link", name="Laadi alla koda_opinion.asice", exact=True)
+        page, page.get_by_role("link", name="Tõmba alla koda_opinion.asice", exact=True)
     ) == ("koda_opinion.asice", container)
-    assert _downloaded(page, page.get_by_role("link", name=f"Laadi alla {DOCX}", exact=True)) == (
+    assert _downloaded(page, page.get_by_role("link", name=f"Tõmba alla {DOCX}", exact=True)) == (
         DOCX,
         _docx_bytes(DOCX),
     )
@@ -349,7 +349,7 @@ def test_a_restricted_teema_leaks_neither_the_file_nor_its_opinion(page, base_ur
     _open_documents(page, url)
     working = _document_row(page, name)
     expect(working.locator(".doctable__context")).to_contain_text("Koja arvamus")
-    download = page.get_by_role("link", name=f"Laadi alla {name}", exact=True).get_attribute("href")
+    download = page.get_by_role("link", name=f"Tõmba alla {name}", exact=True).get_attribute("href")
     assert download
 
     sign_out(page, base_url)
