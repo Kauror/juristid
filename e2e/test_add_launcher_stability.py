@@ -315,7 +315,8 @@ def test_the_launcher_is_operable_from_the_keyboard(page, base_url):
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
 
-    page.locator("#lisa-marge-valik").focus()
+    # `Ülevaade / uudis` is first and `+ Kaasamine` follows it (2026-10-07 order).
+    page.locator("#lisa-koduleht-valik").focus()
     page.keyboard.press("ArrowDown")
 
     expect(page.locator("#lisa-kaasamine")).to_be_visible()

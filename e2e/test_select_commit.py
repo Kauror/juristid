@@ -155,7 +155,8 @@ def test_a_document_filter_waits_for_enter_but_not_for_a_pointer(page, base_url)
     # A pointer choice commits at once, exactly as it always did.
     other = page.locator("select[name=aasta]")
     values = other.locator("option").evaluate_all("options => options.map(o => o.value)")
-    if len(values) > 1:
-        with page.expect_navigation():
-            other.select_option(values[1])
-        assert f"aasta={values[1]}" in page.url
+    # Any value but the one now chosen: re-picking it would change nothing.
+    others = [value for value in values if value != chosen]
+    with page.expect_navigation():
+        other.select_option(others[0])
+    assert f"aasta={others[0]}" in page.url

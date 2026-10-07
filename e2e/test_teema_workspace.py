@@ -243,11 +243,13 @@ def test_an_engagement_is_started_then_its_replies_are_added(page, base_url, tmp
     # Saving the feedback finished the round (owner's decision, 2026-10-07).
     expect(round_row.get_by_text("Lõpeta kaasamine", exact=True)).to_have_count(0)
 
-    # Both modes stay one click away (the save closed the family again).
+    # Both modes stay one click away (the save closed the family again). The
+    # only round is finished now, so `Lisa tagasiside` says so instead of a form.
     open_add_panel(page, "kaasamine-alusta")
     expect(page.locator("#kaasamine-alusta [name=audience]")).to_be_visible()
-    open_add_panel(page, "kaasamine-tagasiside")
-    expect(page.locator("#kaasamine-tagasiside [name=summary]")).to_be_visible()
+    page.locator("label[for=kaasamine-tagasiside-valik]").click()
+    expect(page.locator("#kaasamine-tagasiside")).to_contain_text("Avatud kaasamist ei ole")
+    expect(page.locator("#kaasamine-tagasiside [name=summary]")).to_have_count(0)
 
 
 # ---------------------------------------------------------------------------

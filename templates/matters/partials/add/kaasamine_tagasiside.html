@@ -6,8 +6,9 @@
 **The canonical record, with the round named.** A `Meile saadetud tagasiside`
 tied to the round — the same record `+ Arvamus / tagasiside` writes, through
 the same service — so the round row counts it and its files follow it. Saving
-it does **not** close the round: `Lõpeta kaasamine` on the row is still the one
-act that does.
+it also closes the round, in the same transaction, through the canonical
+`complete_engagement_feedback` (owner's round, 2026-10-07; docs/adr/0142
+amendment). `Tehtud` on the PRAEGUNE wait row opens this same form.
 
 **The round is chosen, never guessed.** The select offers this Matter's open
 rounds as this reader may see them, and is filled in only when there is exactly

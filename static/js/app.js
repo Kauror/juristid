@@ -393,7 +393,7 @@
           row.remove();
         }
         heldList.hidden = heldList.querySelectorAll(".dropzone__file").length === 0;
-        fileInput.dispatchEvent(new Event("change"));
+        fileInput.dispatchEvent(new Event("change", { bubbles: true }));
       });
     }
 
@@ -714,7 +714,7 @@
         /* The browser's own list and the chosen count are rebuilt from the
            input, which staging has just emptied, and from the staged rows that
            have taken its place. */
-        fileInput.dispatchEvent(new Event("change"));
+        fileInput.dispatchEvent(new Event("change", { bubbles: true }));
       };
 
       var uploading = function (on) {
@@ -889,7 +889,7 @@
             inFlight -= 1;
             stagingWorks = false;
             uploading(false);
-            fileInput.dispatchEvent(new Event("change"));
+            fileInput.dispatchEvent(new Event("change", { bubbles: true }));
           });
       };
 

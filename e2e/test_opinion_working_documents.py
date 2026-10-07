@@ -182,7 +182,8 @@ def test_a_signed_letter_and_its_docx_in_one_opinion(page, base_url, screenshots
     working = _document_row(page, DOCX)
     expect(letter).to_contain_text("Arvamus")
     expect(letter).to_contain_text(f"Saadetud {_et(_day(0))}")
-    expect(working.locator("td").nth(1)).to_have_text("Töödokument")
+    # No Roll column since 2026-10-07: the badge beside the name says it.
+    expect(working.locator(".badge", has_text="Töödokument")).to_be_visible()
     expect(working.locator(".doctable__context")).to_have_text(
         f"Seotud kirje: Koja arvamus · {_et(_day(0))} · {MINISTRY}"
     )
