@@ -8,6 +8,18 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-10-07
+basis = "deployment"
+# Kompaktne Teema vaade ja külgriba (#401). Ainult kuvamine; migratsioone ei
+# ole, otsinguindeksit ei ehitata uuesti. Kui see väljalase ei jõua tootmisse
+# 07.10 (Tallinna aja järgi), liiguvad need read väljalaske päeva kirjesse.
+changes = [
+  "«Praegune tegevus» on kompaktsem: tegevuse lisamise nupp on nüüd «+ Lisa tegevus» ja planeeritud tegevused on selle all lihtsa kuupäevadega loendina, ilma eraldi pealkirjata.",
+  "«Arvamuse tähtaega» ei korrata enam praeguse tegevuse all; see on näha teema päises.",
+  "Külgribal: «Menetluse link» näitab ainult linki ja «Muuda»; «Seotud materjalid» nupp «+ Lisa» on pealkirja real ning iga seotud teema ja selle «×» on ühel real; «Teema andmed» ei näita enam teemaviidet.",
+]
+
+[[day]]
 date = 2026-10-06
 basis = "deployment"
 # Tööplaan eemaldatud vaatest, soovitus jääb, ADR 0141 (#397). Migratsioone ei
