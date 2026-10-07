@@ -8,9 +8,8 @@ rendered page settles:
   asked on `+ Kaasamine` and on `Muuda`, while `PRAEGUNE TEGEVUS` goes on
   reading the audience — and a narrow window gains no sideways scroll;
 * two titled `Ülevaade / uudis` rows are told apart on their closed lines;
-* `Märgi ka menetluse kulgu` appears when `Uus hetkeseis` and the day call for
-  it, ticked, naming the phase and the day, hides for a day ahead, and one save
-  dates the phase on `Menetluse kulg`; unticked, nothing is dated;
+* a `Märge` that moves `Hetkeseis` dates nothing on `Menetluse kulg` (the
+  `Märgi ka menetluse kulgu` offer left with `+ Lisa · Tavaline` on 2026-10-07);
 * a `VTK` dated in the past reads as reached, with the points after it in date
   order.
 
@@ -31,9 +30,9 @@ from e2e.conftest import (
     SANDRA,
     give_first_step,
     open_add_panel,
-    open_composer,
     open_hetkeseis,
     open_kaik_row,
+    record_marge,
     sign_in,
     start_first_step,
     unique_title,
@@ -168,8 +167,9 @@ def test_a_round_keeps_its_page_and_note_and_the_work_list_keeps_its_audience(
 def _publish(page, title: str, address: str) -> None:
     open_add_panel(page, "lisa-koduleht")
     form = page.locator("#lisa-koduleht")
-    form.locator("[name=overview_title]").fill(title)
+    # In the form's own order since 2026-10-07: `Link` first, then `Pealkiri`.
     form.locator("[name=url]").fill(address)
+    form.locator("[name=overview_title]").fill(title)
     _post(
         page,
         "/lisa/koduleht/",
@@ -208,12 +208,8 @@ def test_two_overviews_are_told_apart_on_their_closed_lines(page, base_url, scre
 
 
 # ---------------------------------------------------------------------------
-# FLOW 3 / 4 — one transition, entered once; and unticked
+# FLOW 4 — a stage move, and no phase date nobody gave
 # ---------------------------------------------------------------------------
-
-
-def _offer(page):
-    return page.locator("#marge-tavaline [data-phase-date-choice]")
 
 
 def _rail_step(page, label: str):
@@ -223,67 +219,29 @@ def _rail_step(page, label: str):
     )
 
 
-def test_a_stage_move_dates_its_phase_with_one_save(page, base_url, screenshots):
-    sign_in(page, base_url, SANDRA)
-    _new_matter(page, base_url, "Üks üleminek", stage="Idee", law=("Seadus",))
-
-    open_composer(page)
-    page.locator("#id_marge_title").fill("Saabus eelnõu kooskõlastusringile")
-    expect(_offer(page)).to_be_hidden()
-    page.locator("#id_marge_stage").select_option(label="Kooskõlastusringil")
-
-    offer = _offer(page)
-    expect(offer).to_be_visible()
-    box = offer.get_by_role("checkbox")
-    expect(box).to_be_checked()
-    expect(offer).to_contain_text(f"Märgi ka menetluse kulgu: Kooskõlastusring {_day(0)}")
-    screenshots(page, "marge-menetluse-kulg")
-
-    # A day ahead is a plan: the box goes, and comes back ticked for today.
-    date_box = page.locator("#id_marge_occurred_on")
-    date_box.fill(_day(3))
-    date_box.dispatch_event("change")
-    expect(offer).to_be_hidden()
-    date_box.fill(_day(0))
-    date_box.dispatch_event("change")
-    expect(offer).to_be_visible()
-    expect(box).to_be_checked()
-
-    _post(
-        page,
-        "/lisa/marge/",
-        lambda: page.locator("#marge-tavaline button[type=submit]").click(),
-    )
-
-    # `Hetkeseis` moved, the phase is dated — with no second entry.
-    round_ = _rail_step(page, "Kooskõlastusring")
-    expect(round_).to_have_class(re.compile(r"tl-step--current"))
-    expect(round_).to_contain_text(_day(0))
-    # One row in `Teema käik` for the act.
-    expect(
-        page.locator(KAIK_ROW).filter(has_text="Saabus eelnõu kooskõlastusringile")
-    ).to_have_count(1)
+# FLOW 3 — `Märgi ka menetluse kulgu` appearing beside `Uus hetkeseis`, ticked,
+# hiding for a day ahead, and dating the phase with the same save — stood here.
+# The offer was drawn only on `+ Lisa · Tavaline`, which left `+ Lisa` on
+# 2026-10-07 (docs/adr/0143); `add_note` still takes `date_phase`, and
+# tests/test_stage_move_dates_its_phase.py holds that rule.
 
 
-def test_unticked_moves_the_stage_and_dates_nothing(page, base_url):
+def test_a_stage_move_without_the_phase_box_dates_nothing(page, base_url):
+    """A `Märge` that moves `Hetkeseis` and does not ask to date the phase.
+
+    The unticked case of FLOW 3, which is now every `Märge` a browser can send:
+    the stage moves, and `Menetluse kulg` gains no date nobody gave it.
+    """
     sign_in(page, base_url, SANDRA)
     _new_matter(page, base_url, "Linnukeseta", stage="Kooskõlastusringil", law=("Seadus",))
 
-    open_composer(page)
-    page.locator("#id_marge_title").fill("Eelnõu jõudis valitsusse")
-    page.locator("#id_marge_stage").select_option(label="Valitsuses")
-    offer = _offer(page)
-    expect(offer).to_be_visible()
-    offer.get_by_role("checkbox").uncheck()
-    _post(
-        page,
-        "/lisa/marge/",
-        lambda: page.locator("#marge-tavaline button[type=submit]").click(),
-    )
+    status = record_marge(page, "Eelnõu jõudis valitsusse", stage="Valitsuses")
+    assert status == 200, f"refused: {status}"
 
     government = _rail_step(page, "Valitsuses")
     expect(government).to_have_class(re.compile(r"tl-step--current"))
     expect(government.locator(".tl-step__date")).to_have_count(0)
+    expect(page.locator(KAIK_ROW).filter(has_text="Eelnõu jõudis valitsusse")).to_have_count(1)
 
 
 # ---------------------------------------------------------------------------

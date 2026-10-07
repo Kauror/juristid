@@ -59,6 +59,7 @@ from e2e.conftest import (
     finish_current_action,
     open_add_panel,
     open_kaik_row,
+    record_marge,
     set_next_step,
     sign_in,
     unique_title,
@@ -173,13 +174,15 @@ def _the_whole_address_is_still_there(readings: list[dict]) -> None:
         )
 
 
-def _file_a_development(page, url: str, note: str = "", retitle: str = "", **fields: str) -> None:
-    """One `+ Märge · Tavaline`, and a wait on the record rather than the network.
+def _file_a_development(
+    page, url: str, *, title: str, occurred_on: str = "", note: str = "", retitle: str = ""
+) -> None:
+    """One `Märge`, saved through `add_note`, and a wait on the record.
 
-    The save swaps `#teema-vaade` wholesale, so the `networkidle` that follows the
-    click can be the idle *before* the replacement lands — the flake
-    `e2e/test_long_token_wrapping.py` records paying for once already. Waiting
-    until the text is rendered is the only signal that means the record exists.
+    `+ Lisa · Tavaline` left on 2026-10-07 (docs/adr/0143); `record_marge`
+    sends the save that panel did and reloads, and every `Märge` already on a
+    file still draws the row this file measures. The wait on the rendered text
+    stays: it is the only signal that means the record exists.
 
     **`note` goes in through `Muuda`, not through the panel.** `+ Menetluse
     areng` asked for `Juristi märkus` and `+ Märge` does not: two text areas
@@ -196,13 +199,9 @@ def _file_a_development(page, url: str, note: str = "", retitle: str = "", **fie
     under a development from the interface — and the pill is a region this file
     measures.
     """
-    open_add_panel(page, "marge-tavaline")
-    form = page.locator("#marge-tavaline")
-    for name, value in fields.items():
-        form.locator(f"[name={name}]").fill(value)
-    form.get_by_role("button", name="Salvesta", exact=True).click()
-    page.wait_for_load_state("networkidle")
-    marker = fields["title"].split(" ")[-1]
+    # Ticked, as the panel arrived: the server takes it only for a day ahead.
+    assert record_marge(page, title, occurred_on=occurred_on, as_next_step=True) == 200
+    marker = title.split(" ")[-1]
     page.wait_for_function(
         """marker => [...document.querySelectorAll('.uxtl__mswhat')]
                .some(el => (el.textContent || '').includes(marker))""",

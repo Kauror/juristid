@@ -32,7 +32,7 @@ import pytest
 from playwright.sync_api import expect
 
 from app.core.management.commands.seed_e2e_data import FORMER_NAME, FORMER_OWNER_TITLE
-from e2e.conftest import ADMIN, HEAD, MARTIN, SANDRA, open_add_panel, sign_in
+from e2e.conftest import ADMIN, HEAD, MARTIN, SANDRA, open_next_action_form, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -154,17 +154,15 @@ def test_a_new_step_on_a_departed_colleagues_matter_is_refused_on_the_page(page,
     sign_in(page, base_url, MARTIN)
     _open_matter(page, base_url, FORMER_OWNER_TITLE)
 
-    # Through `+ Märge`, because that is the one ordinary way to set a first
-    # step since `+ Järgmine tegevus` left the launcher (docs/adr/0097 §8.2).
-    # The refusal is the same one: `set_next_action` runs inside the note's own
-    # transaction, so a departed owner refuses the whole save.
-    # The step is the activity itself, dated ahead and ticked (docs/adr/0124).
+    # Through `+ Lisa tegevus` (or `Muuda` beside a task) in `PRAEGUNE
+    # TEGEVUS` — the one ordinary way to set a step since `+ Lisa · Tavaline`,
+    # which this used, left on 2026-10-07 (docs/adr/0126 §1, docs/adr/0143).
+    # The refusal is the same one: `set_next_action` refuses a departed owner.
     when = date.today() + timedelta(days=7)
-    open_add_panel(page, "marge-tavaline")
-    page.locator("#id_marge_title").fill("Kontrollida, kas ministeerium vastas")
-    page.locator("#id_marge_occurred_on").fill(f"{when.day}.{when.month}.{when.year}")
-    expect(page.locator("#id_marge_as_next_step")).to_be_checked()
-    page.locator("#marge-tavaline button[type=submit]").click()
+    open_next_action_form(page)
+    page.locator("#lisa-jargmine [name='text']").fill("Kontrollida, kas ministeerium vastas")
+    page.locator("#id_target_date").fill(f"{when.day}.{when.month}.{when.year}")
+    page.locator("#lisa-jargmine button[type=submit]").first.click()
     page.wait_for_load_state("networkidle")
 
     # Scoped to the panel the save came from. The page also carries a standing
@@ -172,7 +170,7 @@ def test_a_new_step_on_a_departed_colleagues_matter_is_refused_on_the_page(page,
     # Playwright answers that with a strict-mode violation — and what this test
     # is about is the *refusal*, which has to be beside the control that was
     # pressed rather than somewhere on the page.
-    expect(page.locator("#marge-tavaline .formerror")).to_contain_text(
+    expect(page.locator("#lisa-jargmine .formerror")).to_contain_text(
         "ei ole enam aktiivne osakonna töötaja"
     )
 

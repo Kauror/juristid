@@ -827,13 +827,22 @@ def test_reopening_never_offers_a_terminal_stage():
     assert "in_force" not in offered and "monitoring_stopped" not in offered
 
 
-def test_the_marge_panel_offers_the_curated_order(signed_in, specialist):
+def test_the_koja_arvamus_panel_offers_the_curated_order(signed_in, specialist):
+    """`Uus hetkeseis` as a panel on the page draws it, not only as a list.
+
+    Asserted on `+ Arvamus / tagasiside → Koja arvamus`, which offers the same
+    control in the same order (docs/adr/0131 §7). It was asserted on
+    `+ Märge · Tavaline` until `Tavaline` left `+ Lisa` on 2026-10-07
+    (docs/adr/0143).
+    """
     matter = _matter(specialist, stage="consultation")
 
     body = signed_in.get(
         reverse("matters:matter_detail", kwargs={"pk": matter.pk})
     ).content.decode()
-    select = re.search(r'<select name="stage"[^>]*id="id_marge_stage".*?</select>', body, re.S)
+    select = re.search(
+        r'<select name="stage"[^>]*id="id_koja_arvamus_stage".*?</select>', body, re.S
+    )
     assert select is not None
     labels = re.findall(r"<option[^>]*>([^<]+)</option>", select.group(0))
     assert labels[0] == "Jätan muutmata"

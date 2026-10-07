@@ -57,11 +57,12 @@ CORRECTED = "Ministeerium lubas uue sõnastuse esmaspäevaks."
 def _file_an_entry(page, text: str) -> None:
     """Write one `Entry`, through the surface that writes one.
 
-    `Mida tegid?` in `PRAEGUNE TEGEVUS`, not `+ Märge`. The launcher's
-    ordinary note files a `MatterProceduralDevelopment` since
-    docs/adr/0097 §6 — one stated line, a structured record, and its own
-    correction surface. `Entry` is what completing a step records, which is
-    where most of them come from and is what this file corrects.
+    `Mida tegid?` in `PRAEGUNE TEGEVUS`, not a `Märge`. A `Märge` is a
+    `MatterProceduralDevelopment` since docs/adr/0097 §6 — one stated line, a
+    structured record, and its own correction surface — and its panel,
+    `+ Lisa · Tavaline`, left on 2026-10-07 (docs/adr/0143). `Entry` is what
+    completing a step records, which is where most of them come from and is
+    what this file corrects.
     """
     when = date.today() + timedelta(days=7)
     set_next_step(page, "Järgmine samm", f"{when.day}.{when.month}.{when.year}")

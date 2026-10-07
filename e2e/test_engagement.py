@@ -21,7 +21,14 @@ from __future__ import annotations
 from playwright.sync_api import expect
 
 from app.core.management.commands.seed_e2e_data import ARCHIVE_TITLE, RESTRICTED_TITLE
-from e2e.conftest import SANDRA, chronology, open_add_panel, open_composer, open_kaik_row, sign_in
+from e2e.conftest import (
+    SANDRA,
+    chronology,
+    open_add_panel,
+    open_kaik_row,
+    record_marge,
+    sign_in,
+)
 
 
 def panel(page):
@@ -168,10 +175,9 @@ def test_two_saves_write_the_note_and_the_engagement_separately(page, base_url):
     sign_in(page, base_url, SANDRA)
     open_scratch_matter(page, base_url)
 
-    open_composer(page)
-    page.locator("#id_marge_title").fill("Küsisin liikmetelt tagasisidet.")
-    page.locator("#marge-tavaline button[type=submit]").click()
-    page.wait_for_load_state("networkidle")
+    # The note through `add_note` — `+ Lisa · Tavaline`'s save, which still
+    # takes one though the panel left on 2026-10-07.
+    assert record_marge(page, "Küsisin liikmetelt tagasisidet.") == 200
 
     open_panel(page)
     panel(page).locator("[name=audience]").fill("liikmed")
@@ -240,10 +246,11 @@ def test_an_engagement_with_no_audience_is_refused_with_the_panel_open(page, bas
     expect(panel(page)).to_contain_text("Kirjuta, keda kaasati")
     # With the note still in it, and no other panel opened on its behalf.
     expect(panel(page).locator("[name=engagement_note]")).to_have_value("Nimekiri liidult")
-    # `#marge-tavaline`, not `#lisa-marge`: the sub-choice is *inside* the
-    # family, so `+ Märge` staying visible is the nesting working rather
-    # than a panel that failed to close (docs/adr/0097 §8).
-    expect(page.locator("#marge-tavaline")).not_to_be_visible()
+    # Neither `+ Lisa` nor its default sub-choice, `Arvamuse tähtaeg`
+    # (`Tavaline` until 2026-10-07): one radio group, one panel open
+    # (docs/adr/0097 §8).
+    expect(page.locator("#lisa-marge")).not_to_be_visible()
+    expect(page.locator("#marge-arvamuse-tahtaeg")).not_to_be_visible()
 
 
 def test_an_uncounted_engagement_says_nothing_about_responses(page, base_url):

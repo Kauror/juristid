@@ -25,9 +25,9 @@ from e2e.conftest import (
     READER,
     SANDRA,
     open_add_panel,
-    open_composer,
     open_hetkeseis,
     open_next_action_form,
+    record_marge,
     sign_in,
     sign_out,
     start_first_step,
@@ -257,22 +257,30 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     expect(page.locator("[name='next_kind']")).to_have_count(0)
     expect(page.locator("[name='next_date_semantics']")).to_have_count(0)
 
-    # Something happened. It is a `Märge`, and it must leave the open step alone.
-    open_composer(page)
-    page.locator("#id_marge_title").fill("Ministeerium lubas uue sõnastuse")
     # Opening one panel closes whichever was open (docs/adr/0075 §2).
+    #
+    # By the chips rather than `open_add_panel`: this file has an `Arvamuse
+    # tähtaeg`, so `+ Lisa` opens on `Arvamuse tähtaeg`'s note rather than a
+    # form, and the helper waits for a form in the family before it picks the
+    # sub-choice.
+    page.locator('label[for="lisa-marge-valik"]').click()
+    page.locator('label[for="marge-toovoit-valik"]').click()
+    expect(page.locator("#marge-toovoit")).to_be_visible()
     page.locator('label[for="marge-tahtaeg-valik"]').click()
     expect(page.locator("#marge-tahtaeg")).to_be_visible()
-    # `#marge-tavaline`, not `#lisa-marge`: the sub-choice is *inside* the
-    # family, so `+ Märge` staying visible is the nesting working rather
+    # `#marge-toovoit`, not `#lisa-marge`: the sub-choice is *inside* the
+    # family, so `+ Lisa` staying visible is the nesting working rather
     # than a panel that failed to close (docs/adr/0097 §8).
-    expect(page.locator("#marge-tavaline")).not_to_be_visible()
+    expect(page.locator("#marge-toovoit")).not_to_be_visible()
+    expect(page.locator("#lisa-marge")).to_be_visible()
     expect(page.locator("#teema-lopeta")).not_to_be_visible()
-    open_composer(page)
-    page.locator("#id_marge_title").fill("Ministeerium lubas uue sõnastuse")
+
+    # Something happened. It is a `Märge`, and it must leave the open step alone.
+    # Through `add_note` itself since `+ Lisa · Tavaline` left on 2026-10-07
+    # (docs/adr/0143); the endpoint and its record are unchanged.
+    record_marge(page, "Ministeerium lubas uue sõnastuse")
+    expect(page.locator("#praegune-tegevus .curact__text")).to_have_text(FIRST_STEP)
     screenshots(page, "04-marge")
-    page.locator("#marge-tavaline button[type=submit]").click()
-    page.wait_for_load_state("networkidle")
 
     # `.uxtl__mswhat`, not `.richtext`. A `Märge` writes a
     # `MatterProceduralDevelopment` since docs/adr/0097 §6, so the chronology

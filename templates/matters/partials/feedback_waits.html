@@ -51,8 +51,8 @@ keeps.
   {% endcomment %}
   <div id="praegune-ootused" class="curact__waits"{% if oob %} hx-swap-oob="true"{% endif %}>
   {% comment %}
-    **An operational row** (owner's round, 2026-10-07): the wait and its day,
-    then what the lawyer reaches for — the round's `Smaily` and `Alchemer`
+    **An operational row** (owner's round, 2026-10-07): the day first — or
+    «Tähtaeg määramata» — then «Ootame tagasisidet», then what the lawyer reaches for — the round's `Smaily` and `Alchemer`
     pages where they are stored, and `Tehtud`. No audience text («kellele»):
     that is on the round's own row. A link that is not stored is not drawn.
 
@@ -63,12 +63,12 @@ keeps.
   {% endcomment %}
   {% for wait in feedback_waits %}
     <p class="curact__owed curact__owed--wait" data-feedback-wait="{{ wait.pk }}">
-      <span class="curact__owedlabel">Ootame tagasisidet</span>
       {% if wait.feedback_deadline %}
         <span class="curact__oweddate{% if wait.feedback_wait_is_due %} curact__oweddate--overdue{% endif %}">{{ wait.feedback_deadline|date:"j.n.Y" }}</span>
       {% else %}
-        <span class="curact__oweddate">Tähtaeg määramata</span>
+        <span class="curact__oweddate curact__oweddate--unset">Tähtaeg määramata</span>
       {% endif %}
+      <span class="curact__waittext">Ootame tagasisidet</span>
       {% if wait.smaily_url %}
         <a class="curact__owedlink" href="{{ wait.smaily_url }}" target="_blank" rel="noopener noreferrer">Smaily<span class="visually-hidden"> — avaneb uues aknas</span></a>
       {% endif %}

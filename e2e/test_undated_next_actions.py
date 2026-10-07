@@ -6,10 +6,9 @@ settle:
 
 * that the step can be **recorded from the UI** with the day box empty, and
   that `PRAEGUNE TEGEVUS` then says «Kuupäev määramata» rather than trailing off
-  after the sentence or borrowing the overdue colour. Since docs/adr/0124 that
-  is `Muuda` beside the step: `+ Märge` makes a step only from an activity dated
-  ahead, so a first step is set there and its day emptied where a step is
-  edited;
+  after the sentence or borrowing the overdue colour. That is `+ Lisa tegevus`
+  with its day box left empty (docs/adr/0143); until 2026-10-07 a first step
+  came from `+ Märge` dated ahead and had its day emptied through `Muuda`;
 * that it **reaches `Minu asjad`**, which is the claim docs/adr/0105 §4 got
   wrong and refused the whole feature over;
 * that «Kuupäev määramata» does not wrap badly or push the page sideways at
@@ -21,41 +20,27 @@ world is shared across a shard.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
-
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import SANDRA, create_matter, open_add_panel, sign_in, unique_title
+from e2e.conftest import SANDRA, create_matter, open_next_action_form, sign_in, unique_title
 
 pytestmark = pytest.mark.e2e
 
 UNDATED_LABEL = "Kuupäev määramata"
 
 
-def _ahead(days: int) -> str:
-    day = date.today() + timedelta(days=days)
-    return f"{day.day}.{day.month}.{day.year}"
-
-
 def _record_undated_step(page, text: str) -> None:
-    """A first step from `+ Märge`, then its day emptied through `Muuda`.
+    """A first step through `+ Lisa tegevus`, its day box left empty.
 
-    `+ Märge` makes a step only from an activity dated ahead, with `Märgi
-    järgmiseks tegevuseks` ticked (docs/adr/0124), so an undated step is the
-    ordinary step with its day taken off where a step is edited
-    (docs/adr/0106 §4).
+    The one ordinary way to add work since `+ Lisa · Tavaline` left on
+    2026-10-07 (docs/adr/0143). Until then a first step came from `+ Märge`
+    dated ahead and had its day taken off through `Muuda` (docs/adr/0124,
+    docs/adr/0106 §4); the empty box is now the whole gesture.
     """
-    open_add_panel(page, "marge-tavaline")
-    form = page.locator("#marge-tavaline")
-    form.locator("[name=title]").fill(text)
-    form.locator("[name=occurred_on]").fill(_ahead(3))
-    expect(form.locator("[name=as_next_step]")).to_be_checked()
-    form.get_by_role("button", name="Salvesta", exact=True).click()
-    page.wait_for_load_state("networkidle")
-
-    page.locator("#praegune-tegevus #lisa-jargmine > summary").click()
-    page.locator("#id_target_date").fill("")
+    open_next_action_form(page)
+    page.locator("#lisa-jargmine [name='text']").fill(text)
+    expect(page.locator("#id_target_date")).to_have_value("")
     page.locator("#lisa-jargmine button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 

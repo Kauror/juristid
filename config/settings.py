@@ -609,6 +609,14 @@ APPLICATION_NAME = "Koda Õigusloome"
 # footer that the build was six months older than it was.
 APPLICATION_STAGE = env("APPLICATION_STAGE", "Stage 2I")
 APPLICATION_ENVIRONMENT = env("APPLICATION_ENVIRONMENT", "local")
+# `+ Ülevaade / uudis` reads a koda.ee page's title before the save — the one
+# outbound request this application makes to a pasted address, fenced to the
+# Chamber's own hosts (app/matters/publication_title.py, docs/adr/0089 §4
+# amended). Off where no network is wanted: the suite, CI and rehearsals.
+PUBLICATION_TITLE_FETCH = env_bool(
+    "JURISTID_PUBLICATION_TITLE_FETCH",
+    default=APPLICATION_ENVIRONMENT not in ("test", "ci", "recovery-rehearsal"),
+)
 
 
 def _revision() -> str:

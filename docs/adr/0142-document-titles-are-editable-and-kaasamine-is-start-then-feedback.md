@@ -85,3 +85,15 @@ changes, and no existing row is rewritten.
 - otherwise it records a new one with no publication day.
 
 A news address is refused. The start form takes files again. They belong to the new round and inherit its restriction (docs/adr/0137).
+
+## Second amendment of 2026-10-07 — the address first, and what it says before the save
+
+**C, extended — `+ Ülevaade / uudis` previews.** The form asks `Link` first, then `Kuupäev`, `Pealkiri` and `Liik`.
+- Once an address is pasted, `preview_website_overview` answers its kind, using the same `classify_publication_url` the save applies again. It also answers the koda.ee page's own title (`og:title`, else `<title>` without the site's name). The page shows both before `Lisa ülevaade / uudis` is pressed.
+- The title is read by `app.matters.publication_title`, the one outbound request to a pasted address (docs/adr/0089 §4, amended). It goes only over `https`, only to `koda.ee` / `www.koda.ee`, with redirects checked by hand, a short timeout and a size cap. Any failure is an empty title, and the form says the title could not be read.
+- **The person's answers stay theirs.**
+  - A typed title is never replaced, and both boxes stay editable.
+  - An answer for an address no longer in the box is dropped.
+  - An unclassified address leaves `Liik` to the person.
+- `Kuupäev` opens on today (Europe/Tallinn). No publication day is read off the page.
+- `settings.PUBLICATION_TITLE_FETCH` is off in the test suite, CI and rehearsals.

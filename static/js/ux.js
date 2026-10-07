@@ -41,37 +41,6 @@
     return Boolean(target.closest("dialog, [role=dialog], details[open] form"));
   }
 
-  /* ---- The composer, closed by default ----------------------------------
-   * `L` opens it and puts the cursor in the box. The closed row itself is a
-   * <summary>, so the mouse and the keyboard already open it without this.
-   */
-  function openComposer(composer) {
-    if (!composer) {
-      return;
-    }
-    /* `revealDisclosure` rather than `.open = true`: `+ Märge` stopped being a
-       `<details>` on 2026-09-14, and setting `open` on a plain element assigns a
-       property nothing reads — the `L` shortcut then focused a box that was
-       still hidden. Hoisted from below, where the arrival handler declares it. */
-    revealDisclosure(composer);
-    /* `[data-composer-focus]` first, and a textarea only as the fallback.
-
-       `+ Märge` stopped having a textarea on 2026-09-20: the ordinary note
-       asks `Tegevus` as one stated line, because the record it writes is
-       the structured one and its title is what the chronology renders
-       (docs/adr/0097 §6). A selector naming the control by *type* found
-       nothing, so `L` opened the panel and left the cursor where it was — a
-       shortcut that half works, which is the one thing worse than none.
-
-       The attribute is on the box the person is meant to type in rather than
-       on whichever control happens to be first: the date box is above it and
-       arrives already filled. */
-    var box = composer.querySelector("[data-composer-focus], textarea");
-    if (box) {
-      box.focus();
-    }
-  }
-
   /* ---- Arriving at the next step from another page ----------------------
    * `Määra` on Minu asjad, and `Muuda` / `Märgi tehtuks` / `Vaatasin üle…` in a
    * work row's menu, are the product's most repeated request — and all four are
@@ -102,22 +71,20 @@
    * silently undid the focus this sets: measured in Chromium, the composer
    * opened correctly and the caret was on the body. Running last is the only
    * order in which the focus survives. */
-  /* The three ids a link from another page may name, and every one of them is
-     an element some render of the Teema page really has.
+  /* The ids a link from another page may name, and every one of them is an
+     element some render of the Teema page really has.
 
-     `lisa-marge` joined them on 2026-09-20 with the `Määra` link on Minu asjad.
-     That link is offered on Matters with **no** open step, and `#lisa-jargmine`
-     is drawn beside a task and nowhere else since `+ Järgmine tegevus` left the
-     launcher — so on exactly the rows that block lists, the old target did not
-     exist and arrival did nothing at all: no reveal, no scroll, no caret. The
-     one ordinary way to set a first step is the optional `Järgmine tegevus`
-     inside `+ Märge` (docs/adr/0097 §8.2).
+     `lisa-jargmine` is `Muuda` beside a task and `+ Lisa tegevus` on a Matter
+     with none (docs/adr/0126 §1) — Minu asjad's `Määra` lands there. It
+     landed on `lisa-marge` (`+ Märge · Tavaline`) until that left `+ Lisa`
+     on 2026-10-07; an old link naming it now does nothing rather than open a
+     deadline form.
 
      `vaatasin-ule` is Minu asjad's `Vaatasin üle…`: the review disclosure
      beside a step that waits, opened with the caret in its date box. Where the
      step has since become a plan the panel is not drawn, and arrival falls back
      to `PRAEGUNE TEGEVUS` like the others (ENG-021). */
-  var NEXT_STEP_TARGETS = ["praegune-tegevus", "lisa-jargmine", "lisa-marge", "vaatasin-ule"];
+  var NEXT_STEP_TARGETS = ["praegune-tegevus", "lisa-jargmine", "vaatasin-ule"];
 
   /* Open whatever kind of disclosure this destination is, and say whether it
    * was one.
@@ -184,9 +151,9 @@
       /* `[data-composer-focus]` first, then the first visible control. Not
          `input` in general: every form here opens with a hidden CSRF token.
 
-         The attribute matters on `+ Märge`, whose first control is a date box
-         that arrives already filled — the caret belongs in `Tegevus`, which
-         is where the `L` shortcut puts it too. */
+         The attribute names the box the person is meant to type in where
+         the first control is something else — a date box that arrives
+         already filled, say. */
       var box =
         target.querySelector("[data-composer-focus]") ||
         target.querySelector("textarea, select, input:not([type=hidden])");
@@ -212,22 +179,51 @@
     if (event.key !== "l" && event.key !== "L") {
       return;
     }
-    /* `L` for «lisa»: the box where something gets written down. On a Matter
-       with a current task that is `Mida tegid?`; on one without, there is
-       nothing to complete, so it opens `+ Lisa` instead. It used to open the
-       composer, which was both of those and is gone (docs/adr/0075 §3). */
+    /* `L` for «lisa»: the box where ordinary work gets written down. On a
+       Matter with a current task that is `✓ Tehtud`'s `Mida tegid?`; on one
+       without, it is `+ Lisa tegevus` in `PRAEGUNE TEGEVUS` — the one
+       ordinary way to add work since `+ Lisa · Tavaline` left (2026-10-07).
+       Never a `+ Lisa` sub-choice: `Arvamuse tähtaeg` is first there, and a
+       shortcut for work is not a shortcut for a deadline. */
     var box = openDoneForm();
     if (box) {
       event.preventDefault();
       box.focus();
       return;
     }
-    var note = document.getElementById("lisa-marge");
-    if (!note) {
+    var addWork = document.getElementById("lisa-jargmine");
+    if (!addWork || addWork.tagName !== "DETAILS") {
       return;
     }
     event.preventDefault();
-    openComposer(note);
+    addWork.open = true;
+    addWork.scrollIntoView({ block: "center", behavior: "auto" });
+    var first = addWork.querySelector("[data-composer-focus]") ||
+      addWork.querySelector("textarea, input:not([type=hidden]), select");
+    if (first) {
+      focusQuietly(first);
+    }
+  });
+
+  /* `+ Lisa → Arvamuse tähtaeg` beside a request that is still current: the
+     link opens the header's own `Arvamuse tähtaeg` editor, where moving or
+     replacing it is asked. Without scripting it is a link to the header. */
+  document.addEventListener("click", function (event) {
+    var link = event.target.closest ? event.target.closest("[data-open-deadline-editor]") : null;
+    if (!link) {
+      return;
+    }
+    var editor = document.querySelector("[data-deadline-editor]");
+    if (!editor) {
+      return;
+    }
+    event.preventDefault();
+    editor.open = true;
+    editor.scrollIntoView({ block: "center", behavior: "auto" });
+    var field = editor.querySelector("input:not([type=hidden])");
+    if (field) {
+      focusQuietly(field);
+    }
   });
 
   /* ---- Quick dates in the composer --------------------------------------
@@ -996,8 +992,129 @@
     });
   }
 
+  /* ---- `+ Ülevaade / uudis`: what the pasted address is, before the save ----
+   * The server answers for the address in the box (`preview_website_overview`):
+   * the kind its koda.ee path states, and the koda.ee page's own title. The
+   * rules, all of which keep the person's own answers theirs:
+   *
+   * - an answer for an address that is no longer in the box is dropped — each
+   *   request carries a sequence number and the server echoes the address;
+   * - the title fills only an empty box, or one still holding the title this
+   *   preview put there; a title somebody typed is never replaced;
+   * - a known kind is chosen, because the save applies it anyway; an address
+   *   that states none un-chooses only a kind this preview chose;
+   * - nothing here is required: without scripting, or when the page cannot be
+   *   read, the boxes are the boxes and the save decides (docs/adr/0142,
+   *   amendment of 2026-10-07). */
+  function bindPublicationPreview(scope) {
+    scope.querySelectorAll("[data-publication-form]").forEach(function (form) {
+      if (!once(form, "PublicationPreview") || !window.fetch || !window.FormData) {
+        return;
+      }
+      var endpoint = form.getAttribute("data-preview-url");
+      var address = form.querySelector("input[name=url]");
+      var title = form.querySelector("input[name=overview_title]");
+      var status = form.querySelector("[data-publication-status]");
+      var token = form.querySelector("input[name=csrfmiddlewaretoken]");
+      if (!endpoint || !address || !token) {
+        return;
+      }
+      var asked = address.value.trim();
+      var sequence = 0;
+      var autoTitle = null;
+      var autoKind = null;
+      var timer = null;
+
+      function say(text) {
+        if (!status) {
+          return;
+        }
+        status.textContent = text;
+        status.hidden = !text;
+      }
+
+      function chooseKind(value) {
+        var radios = form.querySelectorAll("input[name=kind]");
+        Array.prototype.forEach.call(radios, function (radio) {
+          if (value) {
+            radio.checked = radio.value === value;
+          } else if (autoKind && radio === autoKind) {
+            radio.checked = false;
+          }
+        });
+        autoKind = value ? form.querySelector("input[name=kind]:checked") : null;
+      }
+
+      function fillTitle(text) {
+        if (!title) {
+          return;
+        }
+        var current = title.value.trim();
+        if (current && current !== autoTitle) {
+          return;
+        }
+        title.value = text;
+        autoTitle = text || null;
+      }
+
+      function preview() {
+        var value = address.value.trim();
+        if (value === asked) {
+          return;
+        }
+        asked = value;
+        sequence += 1;
+        var mine = sequence;
+        if (!/^https?:\/\/\S+$/i.test(value)) {
+          chooseKind("");
+          fillTitle("");
+          say("");
+          return;
+        }
+        say("Loen lehe andmeid…");
+        var data = new FormData();
+        data.append("url", value);
+        data.append("csrfmiddlewaretoken", token.value);
+        fetch(endpoint, { method: "POST", body: data, credentials: "same-origin" })
+          .then(function (response) {
+            return response.ok ? response.json() : null;
+          })
+          .then(function (answer) {
+            if (mine !== sequence || !answer || answer.url !== address.value.trim()) {
+              return;
+            }
+            chooseKind(answer.kind || "");
+            if (answer.title) {
+              fillTitle(answer.title);
+            }
+            say(answer.title_status === "failed" ? "Pealkirja ei õnnestunud lugeda — kirjuta see ise." : "");
+          })
+          .catch(function () {
+            if (mine === sequence) {
+              say("");
+            }
+          });
+      }
+
+      address.addEventListener("change", preview);
+      address.addEventListener("paste", function () {
+        window.setTimeout(preview, 0);
+      });
+      address.addEventListener("input", function () {
+        window.clearTimeout(timer);
+        timer = window.setTimeout(preview, 600);
+      });
+      Array.prototype.forEach.call(form.querySelectorAll("input[name=kind]"), function (radio) {
+        radio.addEventListener("change", function () {
+          autoKind = null;
+        });
+      });
+    });
+  }
+
   function bindAll(scope) {
     var root = scope && scope.querySelectorAll ? scope : document;
+    bindPublicationPreview(root);
     bindQuickDates(root);
     bindAddPanels(root);
     bindFileDrop(root);

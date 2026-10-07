@@ -241,13 +241,14 @@ SURFACES: tuple[Surface, ...] = (
         editor=False,
         files=_empty_upload(),
     ),
+    # `+ Lisa · Tavaline` (`add_note`) has no panel since 2026-10-07; its
+    # place in the family is `Arvamuse tähtaeg`.
     Surface(
-        "märge",
-        "matters:add_note",
+        "arvamuse-tähtaeg",
+        "matters:add_response_deadline",
         _on_matter,
-        lambda w: {"occurred_on": NOT_A_DATE, "next_date": NOT_A_DATE},
+        lambda w: {"response_deadline_date": NOT_A_DATE},
         editor=False,
-        files=_empty_upload(),
     ),
     Surface(
         "kaasamine",

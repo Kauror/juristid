@@ -405,7 +405,15 @@ def test_a_marge_of_a_file_and_a_step_saves(signed_in, normal_matter, stage, evi
 
 
 def test_a_marge_ahead_ticked_with_no_sentence_writes_nothing(signed_in, normal_matter, stage):
-    """18. Refused on the sentence, and the whole operation is unwound."""
+    """18. Refused on the sentence, and the whole operation is unwound.
+
+    The sentence is the form's, asserted above
+    (`test_the_progress_form_refuses_a_step_ahead_with_no_sentence`): a refused
+    `add_note` has no panel to draw it in since `Tavaline` left `+ Lisa` on
+    2026-10-07 (docs/adr/0143). What the endpoint owes is the refusal and an
+    untouched Matter — no `Märge`, no step, no stage move.
+    """
+    stage_before = normal_matter.stage_id
     response = signed_in.post(
         _add_note(normal_matter),
         {
@@ -416,9 +424,10 @@ def test_a_marge_ahead_ticked_with_no_sentence_writes_nothing(signed_in, normal_
     )
 
     assert response.status_code == 400
-    assert "Kirjuta järgmine tegevus." in response.content.decode()
     assert not MatterProceduralDevelopment.objects.filter(matter=normal_matter).exists()
     assert not NextAction.objects.filter(matter=normal_matter).exists()
+    normal_matter.refresh_from_db()
+    assert normal_matter.stage_id == stage_before
 
 
 # ---------------------------------------------------------------------------

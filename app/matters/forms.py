@@ -4119,6 +4119,34 @@ class EngagementFeedbackForm(forms.Form):
     complete_action = completes_current_action_field()
 
 
+#: Refused when `+ Lisa → Arvamuse tähtaeg` is saved without a date.
+RESPONSE_DEADLINE_NEEDS_A_DATE = "Sisesta arvamuse tähtaeg."
+
+
+class CompactResponseDeadlineForm(forms.Form):
+    """`+ Lisa → Arvamuse tähtaeg` — a new request for Koda's opinion.
+
+    One date, and the deadline revision the panel was drawn with, so a tab that
+    is behind a change made elsewhere is refused rather than acting on a
+    deadline it never showed. The structured deadline, not a note: the save is
+    `request_response_deadline`, which starts a request with its own request
+    time and never overwrites a current one (app/matters/response_deadlines.py).
+    """
+
+    use_required_attribute = False
+
+    response_deadline_date = marks_required(
+        EstonianDateField(label="Arvamuse tähtaeg", required=False, widget=EstonianDateInput())
+    )
+    revision = forms.CharField(required=False, widget=forms.HiddenInput)
+
+    def clean_response_deadline_date(self) -> Any:
+        value = self.cleaned_data.get("response_deadline_date")
+        if value is None:
+            raise forms.ValidationError(RESPONSE_DEADLINE_NEEDS_A_DATE)
+        return value
+
+
 class CompactImportantDateForm(forms.Form):
     """`+ Oluline tähtaeg` — a milestone somebody announced, and its letter.
 
@@ -4436,9 +4464,10 @@ class CompactWebsiteOverviewForm(forms.Form):
 
     **And an optional `Pealkiri`** since docs/adr/0127 §1, which narrows the
     «no title» of docs/adr/0081 §2 and docs/adr/0085 §1: a file written up twice
-    read as two identical lines in `Teema käik`. Still no description, no
-    attachment and **no kind selector** — which of the two kinds of publication
-    it is, is what the address says.
+    read as two identical lines in `Teema käik`. Still no description and no
+    attachment. `Liik` (docs/adr/0142 §C) is read from a koda.ee address and
+    asked only otherwise; since 2026-10-07 the page also previews it, with the
+    koda.ee title, before the save — and this form decides again on its own.
     """
 
     use_required_attribute = False

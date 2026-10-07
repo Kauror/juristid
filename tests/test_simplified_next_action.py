@@ -487,11 +487,12 @@ def test_the_questions_stopped_asking_for_both_at_once(signed_in, normal_matter)
     body = _detail(signed_in, normal_matter)
     assert "Kirjelda, mis tegid ja mida teed edasi" not in body
     # The composer's one box asked for both at once, in one sentence. What is
-    # left is one *activity* per save — `Tegevus` is either what was done or
-    # what will be, and its day says which (docs/adr/0075 §2, docs/adr/0124) —
-    # and editing the open step is its own form beside it.
-    assert "Tegevus" in body
-    assert "Kirjuta, mida tegid või mis on järgmine tegevus" in body
+    # left is one question per form beside the task: `✓ Tehtud` asks what was
+    # done, `Muuda` what is to be done (docs/adr/0075 §2, §3). The
+    # `+ Märge · Tavaline` box that asked «done or next» in one `Tegevus` is
+    # gone too — `Tavaline` left `+ Lisa` on 2026-10-07 (docs/adr/0143).
+    assert "Kirjuta, mida tegid või mis on järgmine tegevus" not in body
+    assert "Mida tegid?" in body
     assert "Mida on vaja teha?" in body
 
 

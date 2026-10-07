@@ -202,7 +202,7 @@ def test_a_written_next_action_is_opened_with_its_day(signed_in, normal_matter, 
 
 
 def test_a_chosen_stage_moves_the_file_canonically_in_the_same_save(signed_in, staged, specialist):
-    """The same `stage_transition` `+ Lisa · Tavaline` uses: one
+    """The same `stage_transition` `add_note` (`+ Lisa · Tavaline` until 2026-10-07) uses: one
     `MATTER_STAGE_CHANGED`, in the same operation as the note, and the note is
     the period it was written in — the old one."""
     action = _action(staged, specialist)
@@ -309,7 +309,9 @@ def test_the_launcher_says_lisa_and_lisa_liik(signed_in, normal_matter):
     assert ">Lisa liik</span>" in zone
     assert "+ Märge" not in body
     assert "Märke liik" not in body
-    for kind in ("Tavaline", "Oluline tähtaeg", "Jõustumine", "Töövõit"):
+    # `Tavaline` left `+ Lisa` on 2026-10-07 (docs/adr/0143).
+    assert ">Tavaline</label>" not in zone
+    for kind in ("Arvamuse tähtaeg", "Oluline tähtaeg", "Jõustumine", "Töövõit"):
         assert f">{kind}</label>" in zone, kind
 
 

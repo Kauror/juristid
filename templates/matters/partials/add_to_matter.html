@@ -21,10 +21,10 @@ back of the application before it would take it.
 So the row asks what *kind of thing* they are recording, and the distinctions
 that remain are asked second, inside the one they chose:
 
-    + Lisa                    Tavaline · Oluline tähtaeg · Jõustumine · Töövõit
-    + Kaasamine               (no further question)
-    + Arvamus / tagasiside    Meile saadetud · Teiste arvamus · Koja arvamus
     + Ülevaade / uudis        (no further question)
+    + Kaasamine               Alusta kaasamist · Lisa tagasiside
+    + Arvamus / tagasiside    Meile saadetud · Teiste arvamus · Koja arvamus
+    + Lisa                    Arvamuse tähtaeg · Oluline tähtaeg · Jõustumine · Töövõit
 
 **Grouped on the screen, distinct in the database.** This is a presentation
 change and deliberately not a data change: `+ Arvamus / tagasiside` still writes
@@ -47,14 +47,14 @@ they are not content at all:
 * `Menetluse link` is a fact *about* the Matter — where the proceeding is
   happening — and is asked on `Uus teema`, corrected on `Muuda teemat` and read
   on the rail (docs/adr/0097 §5);
-* `Menetluse areng` is gone as a word. Its ordinary function is `+ Märge ·
-  Tavaline`, which writes the same record (docs/adr/0097 §6).
+* `Menetluse areng` is gone as a word, and since 2026-10-07 so is the
+  `+ Lisa · Tavaline` that inherited it (docs/adr/0097 §6): ordinary work is
+  `PRAEGUNE TEGEVUS → + Lisa tegevus`, and what was done is `✓ Tehtud`.
 
 `+ Järgmine tegevus` is gone from the row too. There is at most one open
 `NextAction` and there is now exactly one *ordinary* way to set one: while a
-task is current, `Muuda` in `PRAEGUNE TEGEVUS`; otherwise `+ Märge` itself —
-an activity dated ahead with `Märgi järgmiseks tegevuseks` ticked, which is the
-same sentence and day written once (docs/adr/0124). Two controls both offering
+task is current, `Muuda` in `PRAEGUNE TEGEVUS`; otherwise `+ Lisa tegevus`
+there (docs/adr/0126 §1, docs/adr/0143). Two controls both offering
 to set "the next action" is how a lawyer ends up believing they have two
 (docs/adr/0097 §8.2).
 
@@ -133,7 +133,7 @@ row of controls that refuse (brief §30, §31).
         <div class="cx-panels cx-panels--sub">
           {% comment %}
             `Meile saadetud tagasiside` arrives chosen, on the same reasoning
-            that gives `+ Märge` a default: a family panel that opens on three
+            that gives `+ Lisa` a default: a family panel that opens on three
             more chips and no form is an extra click on every visit. It is the
             commonest of the three — most of what reaches a department is
             somebody answering it — and `arvamus_choice` is computed the same
@@ -190,10 +190,14 @@ row of controls that refuse (brief §30, §31).
         {% comment %}
           `Lisa liik` (`Märke liik` until docs/adr/0140 §5), and it is **not** a second toolbar.
 
-          These four appear only after somebody has chosen `+ Märge`, which is
-          the whole point of the reorganisation: the ordinary case answers
-          nothing here at all, because `Tavaline` arrives chosen.
+          These four appear only after somebody has chosen `+ Lisa`:
+          `Arvamuse tähtaeg`, `Oluline tähtaeg`, `Jõustumine`, `Töövõit`.
+          `Tavaline` left on 2026-10-07 — ordinary work is `PRAEGUNE TEGEVUS →
+          + Lisa tegevus`, and what was done is `✓ Tehtud`. Every `Märge`
+          already recorded still reads in `Teema käik`.
 
+          `Arvamuse tähtaeg` is the structured response deadline — a new
+          request for Koda's opinion, never a note (`arvamuse_tahtaeg.html`).
           `Oluline tähtaeg`, `Jõustumine` and `Töövõit` keep every bit of their
           structured meaning — three models, three services, three sets of
           reporting — and lose only their standing chips. A lawyer recording a
@@ -206,7 +210,7 @@ row of controls that refuse (brief §30, §31).
           {% comment %}
             **Which chip is checked is decided in Python, not here.**
             `marge_choice` is always one of this group's four ids: the one a
-            refusal came from, or `marge-tavaline`.
+            refusal came from, or `marge-arvamuse-tahtaeg`.
 
             The template could compare against `open_choice` directly and it
             must not. `open_choice` is global to the page, so when a refusal
@@ -218,16 +222,13 @@ row of controls that refuse (brief §30, §31).
             mistake rather than asking four `{% templatetag openblock %} if {% templatetag closeblock %}`s to agree
             (`_workspace_choices`, docs/adr/0097 §8.3).
           {% endcomment %}
-          <input class="addpick" type="radio" name="marke-liik" id="marge-tavaline-valik"
-                 data-addpick aria-controls="marge-tavaline"
-                 {% if marge_choice == "marge-tavaline" %}checked{% endif %}>
-          <label class="disclosure-chip" for="marge-tavaline-valik">Tavaline</label>
-          <div class="cx-panel" id="marge-tavaline" data-addpanel data-draft-host>
+          <input class="addpick" type="radio" name="marke-liik" id="marge-arvamuse-tahtaeg-valik"
+                 data-addpick aria-controls="marge-arvamuse-tahtaeg"
+                 {% if marge_choice == "marge-arvamuse-tahtaeg" %}checked{% endif %}>
+          <label class="disclosure-chip" for="marge-arvamuse-tahtaeg-valik">Arvamuse tähtaeg</label>
+          <div class="cx-panel" id="marge-arvamuse-tahtaeg" data-addpanel data-draft-host>
             <div class="cx-panel__body">
-              {% if open_choice == "marge-tavaline" and workspace_error %}
-                <p class="formerror" role="alert">{{ workspace_error }}</p>
-              {% endif %}
-              {% include "matters/partials/add/marge_tavaline.html" %}
+              {% include "matters/partials/add/arvamuse_tahtaeg.html" %}
             </div>
           </div>
 

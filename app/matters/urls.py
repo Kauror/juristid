@@ -184,6 +184,20 @@ urlpatterns = [
         views.add_website_overview,
         name="add_website_overview",
     ),
+    # What the pasted address is, before the save: its kind and its koda.ee
+    # title (docs/adr/0142, amendment of 2026-10-07). Writes nothing.
+    path(
+        "teemad/<uuid:pk>/lisa/koduleht/eelvaade/",
+        views.preview_website_overview,
+        name="preview_website_overview",
+    ),
+    # `+ Lisa → Arvamuse tähtaeg`: a new request for an opinion, on a Matter
+    # whose earlier request is answered or that never had one.
+    path(
+        "teemad/<uuid:pk>/lisa/arvamuse-tahtaeg/",
+        views.add_response_deadline,
+        name="add_response_deadline",
+    ),
     path(
         "teemad/<uuid:pk>/kodulehe-ulevaade/<uuid:overview_id>/avalda/",
         views.publish_website_overview_view,

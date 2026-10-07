@@ -23,12 +23,14 @@ from app.core.management.commands.seed_e2e_data import OPEN_TITLE
 from e2e.conftest import (
     MARTIN,
     SANDRA,
+    chronology,
+    close_through_stage,
     create_matter,
     document_overflows,
     open_add_panel,
-    open_composer,
     open_kaik_period,
     open_matter,
+    record_marge,
     set_next_step,
     sign_in,
 )
@@ -155,12 +157,10 @@ def test_a_busy_matter_still_opens_on_what_to_do_next(page, base_url):
     sign_in(page, base_url, MARTIN)
     url = create_matter(page, base_url, "Mahukas teema paljude sissekannetega")
 
+    # `Märge`s through `add_note`, which still takes them though `+ Lisa ·
+    # Tavaline` left on 2026-10-07 — the volume is the point, not the panel.
     for index in range(12):
-        page.goto(url)
-        open_composer(page)
-        page.locator("#id_marge_title").fill(f"Sissekanne number {index} sünteetilises maailmas.")
-        page.locator("#marge-tavaline button[type=submit]").click()
-        page.wait_for_load_state("networkidle")
+        assert record_marge(page, f"Sissekanne number {index} sünteetilises maailmas.") == 200
 
     page.goto(url)
     timeline = page.locator("#ajajoon")
@@ -185,7 +185,7 @@ def test_a_busy_matter_still_opens_on_what_to_do_next(page, base_url):
 # ---------------------------------------------------------------------------
 
 
-def test_closing_happens_in_lisa_teemale_and_leaves_a_readable_past(page, base_url):
+def test_closing_through_hetkeseis_leaves_a_readable_past(page, base_url):
     sign_in(page, base_url, MARTIN)
     url = create_matter(page, base_url, "Lõpetatav teema brauserikatsest")
 
@@ -194,28 +194,18 @@ def test_closing_happens_in_lisa_teemale_and_leaves_a_readable_past(page, base_u
     expect(page.locator(".curact__text")).to_have_text("Esitada arvamus ministeeriumile")
 
     # The narrative is its own save now: the closure no longer borrows a body
-    # from another operation (docs/adr/0075 §9).
-    open_composer(page)
-    page.locator("#id_marge_title").fill("Menetlus lõppes; töö on tehtud.")
-    page.locator("#marge-tavaline button[type=submit]").click()
-    page.wait_for_load_state("networkidle")
+    # from another operation (docs/adr/0075 §9). A historic `Märge`, written
+    # through `add_note` since `+ Lisa · Tavaline` left on 2026-10-07. The
+    # server's own answer, not what the page looks like afterwards: a save
+    # that is refused and one that quietly did nothing leave the same screen.
+    status = record_marge(page, "Menetlus lõppes; töö on tehtud.")
+    assert status == 200, f"the Märge was refused: {status}"
 
     # Closing is a `Hetkeseis` since docs/adr/0131 §11 — not a box in the rail
-    # and not a panel of its own.
+    # and not a panel of its own: the header's `Hetkeseis` editor.
     expect(page.locator(".rail").get_by_text("Sulge teema")).to_have_count(0)
     expect(page.locator("#teema-lopeta")).to_have_count(0)
-    open_composer(page)
-    page.select_option("#id_marge_stage", label="Jõustunud — lõpetab teema")
-    # The server's own answer, not what the page looks like afterwards. A save
-    # that is refused and a save that quietly did nothing leave an identical
-    # screen, and the difference is the whole question here.
-    with page.expect_response(
-        lambda response: "/lisa/marge/" in response.url and response.request.method == "POST"
-    ) as caught:
-        page.locator("#marge-tavaline button[type=submit]").click()
-    saved = caught.value
-    assert saved.status == 200, f"the closing save was refused: {saved.status}"
-    page.wait_for_load_state("networkidle")
+    close_through_stage(page, "Jõustunud")
     expect(page.locator(".formerror")).to_have_count(0)
     expect(page.locator(".addzone .field__error")).to_have_count(0)
 
@@ -367,12 +357,12 @@ def test_the_drop_area_never_lands_on_another_control_at_any_width(page, base_ur
     page.set_viewport_size({"width": 420, "height": 900})
     open_matter(page, base_url, OPEN_TITLE)
 
-    open_add_panel(page, "marge-tavaline")
-    # Scoped to the sub-choice rather than to the family. `+ Märge` holds four
-    # panels now and each takes files, so `#lisa-marge .cx-drop` is four
-    # elements — three of them the hidden siblings of the one on screen
-    # (docs/adr/0097 §8).
-    drop = page.locator("#marge-tavaline .cx-drop")
+    open_add_panel(page, "marge-toovoit")
+    # Scoped to the sub-choice rather than to the family. `+ Lisa` holds four
+    # panels and three of them take files, so `#lisa-marge .cx-drop` is three
+    # elements — two of them the hidden siblings of the one on screen
+    # (docs/adr/0097 §8). `Töövõit` since `Tavaline` left on 2026-10-07.
+    drop = page.locator("#marge-toovoit .cx-drop")
     expect(drop).to_be_visible()
     assert drop.evaluate("n => getComputedStyle(n).position") == "static", (
         "at 420px the drop area is still absolutely positioned — this is the "
@@ -380,7 +370,7 @@ def test_the_drop_area_never_lands_on_another_control_at_any_width(page, base_ur
     )
 
     box = drop.bounding_box()
-    form = page.locator("#marge-tavaline form").first.bounding_box()
+    form = page.locator("#marge-toovoit form").first.bounding_box()
     assert box["width"] >= form["width"] * 0.9, (
         f"the drop area is {box['width']:.0f}px in a {form['width']:.0f}px form — still a "
         f"corner affordance. Below 720px it is a full-width row of its own"
@@ -407,7 +397,7 @@ def test_the_drop_area_never_lands_on_another_control_at_any_width(page, base_ur
     # overlapping nothing.
     page.set_viewport_size({"width": 1440, "height": 900})
     page.wait_for_timeout(120)
-    open_add_panel(page, "marge-tavaline")
+    open_add_panel(page, "marge-toovoit")
     expect(drop).to_be_visible()
     assert drop.evaluate("n => getComputedStyle(n).position") == "static", (
         "at 1440px the drop area is absolutely positioned inside a narrow panel "
@@ -415,8 +405,8 @@ def test_the_drop_area_never_lands_on_another_control_at_any_width(page, base_ur
     )
     box = drop.bounding_box()
     others = [
-        page.locator("#id_marge_title").bounding_box(),
-        page.locator("#marge-tavaline button[type=submit]").bounding_box(),
+        page.locator("#marge-toovoit [name=victory_change]").bounding_box(),
+        page.locator("#marge-toovoit button[type=submit]").bounding_box(),
     ]
     assert all(not _overlap(box, other) for other in others), (
         "at 1440px the drop area is painted over another control in its own form"
@@ -503,18 +493,20 @@ def test_ctrl_enter_saves_and_every_shortcut_has_a_button(page, base_url):
     sign_in(page, base_url, MARTIN)
     url = create_matter(page, base_url, "Klaviatuuri brauserikatse")
 
-    open_composer(page)
-    page.locator("#id_marge_title").fill("Salvestatud klaviatuurilt.")
-    page.locator("#id_marge_title").press("ControlOrMeta+Enter")
+    # A `LISA TEEMALE` panel — `form[data-addform]`, the path the shortcut once
+    # silently lost (static/js/app.js). `+ Lisa · Töövõit` since `Tavaline`,
+    # which this used, left on 2026-10-07; its date arrives filled with today.
+    open_add_panel(page, "marge-toovoit")
+    box = page.locator("#marge-toovoit [name=victory_change]")
+    box.fill("Salvestatud klaviatuurilt.")
+    with page.expect_response(
+        lambda response: "/lisa/toovoit/" in response.url and response.request.method == "POST"
+    ) as caught:
+        box.press("ControlOrMeta+Enter")
+    assert caught.value.status == 200, f"the keyboard save was refused: {caught.value.status}"
     page.wait_for_load_state("networkidle")
 
-    # Scoped to the chronology row's headline, which is where a `Märge` lands.
-    # It was `.richtext` — `Entry.body`, prose — until `+ Märge` started writing
-    # the structured record: the sentence is a `title` now and the row prints it
-    # after the headline word (docs/adr/0097 §6, `DEVELOPMENT_HEADLINE`).
-    expect(
-        page.locator(".uxtl__mswhat").get_by_text("Märge: Salvestatud klaviatuurilt.")
-    ).to_be_visible()
+    expect(chronology(page)).to_contain_text("Salvestatud klaviatuurilt.")
 
     # The visible equivalent is the button itself. The `Ctrl + Enter` hint that
     # used to sit beside it went with the approved target's action row, which is
@@ -522,9 +514,9 @@ def test_ctrl_enter_saves_and_every_shortcut_has_a_button(page, base_url):
     # obvious click equivalent, and that is the control, not a caption naming
     # the shortcut (TEEMA_TARGET_SPEC §C.5, docs/adr/0074 §3).
     page.goto(url)
-    open_composer(page)
+    open_add_panel(page, "marge-toovoit")
     expect(page.locator(".composer__hint")).to_have_count(0)
-    expect(page.locator("#marge-tavaline button[type=submit]")).to_be_visible()
+    expect(page.locator("#marge-toovoit button[type=submit]")).to_be_visible()
 
 
 def test_the_current_action_zone_offers_muuda_and_the_launcher_does_not(page, base_url):

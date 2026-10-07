@@ -16,6 +16,8 @@ basis = "deployment"
 # Teine väljalase samal päeval: kaasamine, ülevaade/uudis, failid, sarnased
 # teemad, dokumendid. Migratsioon matters/0047 (lisav), otsinguindeksit ei
 # ehitata uuesti.
+# Kolmas väljalase samal päeval: ülevaate/uudise eelvaade, kuupäev ees,
+# «+ Lisa» ilma «Tavaline»-ta ja uus arvamuse tähtaeg. Migratsioone ei ole.
 changes = [
   "«Praegune tegevus» on kompaktsem: tegevuse lisamise nupp on nüüd «+ Lisa tegevus» ja planeeritud tegevused on selle all lihtsa kuupäevadega loendina, ilma eraldi pealkirjata.",
   "«Arvamuse tähtaega» ei korrata enam praeguse tegevuse all; see on näha teema päises.",
@@ -26,6 +28,10 @@ changes = [
   "Faili pealkirja saab muuta juba enne salvestamist ning failide lohistamine töötab kõikjal; faili algne nimi jääb alles.",
   "Uue teema loomisel saab sarnased teemad kohe uue teemaga siduda.",
   "Dokumentides on vähem müra: rolli veergu pole, pealkirja muudad «⋯» menüüst; «Koja arvamus» näitab arvamuse tähtaega, kuni arvamust veel pole; «Lisa teemale» nupud on uues järjekorras.",
+  "«+ Ülevaade / uudis» küsib kõigepealt linki: koda.ee lingi puhul näed enne salvestamist lehe pealkirja ja seda, kas tegemist on ülevaate või uudisega.",
+  "Praeguse tegevuse, planeeritud tegevuste ja ootel kaasamise read algavad kuupäevaga ning pikad tegevused on üksteisest selgelt eristatavad.",
+  "«+ Lisa» alt saab lisada uue arvamuse tähtaja, kui teemalt küsitakse arvamust uuesti; varasem arvamus jääb varasema küsimise juurde. «Tavaline» on eemaldatud: tavaline töö lisatakse «+ Lisa tegevus» kaudu.",
+  "Tegevuste ajajoonel ei korrata enam planeeritud tegevuse ees sõnu «Planeeritud tegevus».",
 ]
 
 [[day]]

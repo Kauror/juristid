@@ -387,6 +387,20 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         events=(ChangeEventType.ENGAGEMENT_CHANGED,),
     ),
     WriteRoute(
+        name="matters:add_response_deadline",
+        label="Uue arvamuse tähtaja lisamine",
+        request=lambda w: (
+            {"pk": w["matter"].pk},
+            {"response_deadline_date": "1.12.2099"},
+        ),
+        probe=lambda w: (
+            w["matter"]
+            .__class__.objects.values_list("response_deadline", flat=True)
+            .get(pk=w["matter"].pk)
+        ),
+        events=(ChangeEventType.MATTER_DATE_CHANGED,),
+    ),
+    WriteRoute(
         name="matters:add_important_date",
         label="Olulise tähtaja lisamine",
         request=lambda w: (
@@ -1490,6 +1504,11 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     # same guard, and awkward to fire blind (they need a specific child object
     # or an upload bound to one).
     "matters:matter_edit": "A: gated; exercised by tests/test_matters.py",
+    # A — gated by the same `business_write_required`, and it writes nothing:
+    # it answers what `add_website_overview` would record for an address, so
+    # there is no change for the matrix's probe to find
+    # (tests/test_followup_ux_round.py).
+    "matters:preview_website_overview": "A: gated; read-only preview of add_website_overview",
     # A — same guard and same view module as `matters:intake_stage`, which is
     # in the matrix above and is fired at by every forbidden actor. This one
     # cannot be fired blind: it needs a staging session and a file inside it

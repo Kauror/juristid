@@ -10,6 +10,11 @@ ENG-091, ENG-093):
   the other planned rows' own;
 * a `Märge` that moved `Hetkeseis` left the header saying the old stage.
 
+`+ Lisa · Tavaline` left on 2026-10-07 (docs/adr/0143); its endpoint,
+`add_note`, did not, so the `Märge` rows here are saved through it — with
+`record_marge`, or, where the swap is the subject, through `htmx.ajax` exactly
+as the panel's form posted.
+
 Each test ends with the same check a person cannot make by eye: no id on the page
 belongs to two elements.
 """
@@ -26,6 +31,7 @@ from e2e.conftest import (
     create_matter,
     open_add_panel,
     open_kaik_row,
+    record_marge,
     set_next_step,
     sign_in,
     wait_for_htmx,
@@ -83,10 +89,7 @@ def _teema_with_a_step(page, base_url: str) -> str:
 
 
 def _file_marge(page, title: str) -> None:
-    open_add_panel(page, "marge-tavaline")
-    page.fill("#id_marge_title", title)
-    page.locator("#marge-tavaline button[type=submit]").click()
-    wait_for_htmx(page)
+    assert record_marge(page, title) == 200
     _row(page, title).first.wait_for()
 
 
@@ -175,13 +178,28 @@ def test_a_refused_position_file_stays_on_its_own_row(page, base_url):
 
 
 def test_a_marge_that_moves_the_stage_moves_the_header_at_once(page, base_url):
+    """The header is redrawn by the save's own swap, not by the next load.
+
+    No panel posts a stage to `add_note` since `Tavaline` left (docs/adr/0143),
+    so the request is sent the way its form sent it — `hx-post`, swapping
+    `#teema-vaade` — and the page is not reloaded before the header is read.
+    """
     url = _teema_with_a_step(page, base_url)
-    open_add_panel(page, "marge-tavaline")
-    select = page.locator("#marge-tavaline select[name=stage]")
-    chosen = select.locator("option:not([value=''])").nth(1)
-    label = (chosen.text_content() or "").strip()
-    select.select_option(value=chosen.get_attribute("value"))
-    page.locator("#marge-tavaline button[type=submit]").click()
+    chosen = page.locator("#teema-hetkeseis select[name=stage] option:not([value=''])").nth(1)
+    label = (chosen.text_content() or "").strip().split(" — ")[0]
+    page.evaluate(
+        """async (stage) => {
+            await htmx.ajax('POST', location.pathname + 'lisa/marge/', {
+                target: '#teema-vaade', swap: 'outerHTML',
+                values: {
+                    csrfmiddlewaretoken:
+                        document.querySelector('input[name=csrfmiddlewaretoken]').value,
+                    title: '', occurred_on: '', stage,
+                },
+            });
+        }""",
+        chosen.get_attribute("value"),
+    )
     wait_for_htmx(page)
 
     header = page.locator("#teema-hetkeseis")
@@ -195,14 +213,16 @@ def test_a_marge_that_moves_the_stage_moves_the_header_at_once(page, base_url):
     expect(page.locator("#teema-hetkeseis .metaline__value")).to_have_text(label)
 
 
-def test_a_marge_with_a_file_moves_the_document_count(page, base_url):
+def test_a_saved_file_moves_the_document_count(page, base_url):
+    """Through `+ Lisa · Töövõit`, a launcher save that swaps and carries files —
+    `Tavaline`, which this used, left on 2026-10-07 (docs/adr/0143)."""
     _teema_with_a_step(page, base_url)
     count = page.locator("#teema-vaated .tabs__count")
     expect(count).to_have_count(0)
-    open_add_panel(page, "marge-tavaline")
-    page.fill("#id_marge_title", "Ministeerium saatis eelnõu")
-    page.locator("#marge-tavaline input[type=file]").set_input_files(_pdf("eelnou.pdf"))
-    page.locator("#marge-tavaline button[type=submit]").click()
+    open_add_panel(page, "marge-toovoit")
+    page.fill("#id_victory_change", "Ministeerium saatis eelnõu")
+    page.locator("#marge-toovoit input[type=file]").set_input_files(_pdf("eelnou.pdf"))
+    page.locator("#marge-toovoit button[type=submit]").click()
     wait_for_htmx(page)
 
     expect(count).to_have_text("· 1")

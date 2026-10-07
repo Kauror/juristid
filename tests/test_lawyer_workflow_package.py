@@ -45,7 +45,7 @@ from app.documents.links import DocumentLink
 from app.documents.models import Document
 from app.matters import work_items
 from app.matters.enums import EngagementKind, ExternalPositionProvenance
-from app.matters.forms import ProceduralDevelopmentEditForm
+from app.matters.forms import MatterProgressForm, ProceduralDevelopmentEditForm
 from app.matters.locks import CLOSED_MATTER_REFUSAL
 from app.matters.models import (
     EXTERNAL_POSITION_LEGACY_HEADLINE,
@@ -86,6 +86,7 @@ from app.submissions.models import Submission
 from app.workflow.enums import ActionKind, ActionStatus, DatePrecision, DateSemantics
 from app.workflow.models import NextAction
 from app.workflow.services import (
+    NEXT_STEP_NEEDS_SENTENCE,
     OPINION_PREPARATION_TEXT,
     establish_opinion_preparation_action,
 )
@@ -1537,20 +1538,27 @@ def test_an_undated_marge_makes_no_step_even_ticked(client, specialist, normal_m
 def test_a_step_ahead_with_no_sentence_is_refused_on_the_sentence(
     client, specialist, normal_matter
 ):
-    """And nothing is written — the `Märge` and the step share one transaction."""
+    """And nothing is written — the `Märge` and the step share one transaction.
+
+    The refusal is the form's, asserted on the form: `Tavaline` left `+ Lisa`
+    on 2026-10-07 (docs/adr/0143), so a refused `add_note` has no panel left to
+    draw the sentence in. The endpoint still refuses and still writes nothing.
+    """
+    payload = {
+        "title": "",
+        "occurred_on": _estonian(timezone.localdate() + dt.timedelta(days=30)),
+        "as_next_step": "on",
+    }
+    form = MatterProgressForm(payload)
+    assert not form.is_valid()
+    assert form.errors["title"] == [NEXT_STEP_NEEDS_SENTENCE]
+
     client.force_login(specialist)
-    response = client.post(
-        _development_url(normal_matter),
-        {
-            "title": "",
-            "occurred_on": _estonian(timezone.localdate() + dt.timedelta(days=30)),
-            "as_next_step": "on",
-        },
-    )
+    response = client.post(_development_url(normal_matter), payload)
 
     assert response.status_code == 400
-    assert "Kirjuta järgmine tegevus." in response.content.decode()
     assert not MatterProceduralDevelopment.objects.filter(matter=normal_matter).exists()
+    assert not NextAction.objects.filter(matter=normal_matter).exists()
 
 
 def test_the_development_route_accepts_an_empty_date(client, specialist, normal_matter):
@@ -1792,8 +1800,9 @@ def _development_url(matter) -> str:
     """Where a `MatterProceduralDevelopment` is created from the interface.
 
     `matters:add_development` served `+ Menetluse areng`, which is retired as a
-    user-facing concept: the ordinary control is `+ Märge · Tavaline`, it posts
-    here, and it writes the same record (docs/adr/0097 §6).
+    user-facing concept: the ordinary control was `+ Märge · Tavaline`, it
+    posted here, and it writes the same record (docs/adr/0097 §6). `Tavaline`
+    left `+ Lisa` on 2026-10-07 (docs/adr/0143); the route still answers.
     """
     return reverse("matters:add_note", kwargs={"pk": matter.pk})
 

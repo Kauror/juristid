@@ -201,9 +201,13 @@ SUPPRESSED_WHEN_ENTRY_SHOWN: frozenset[str] = frozenset(
 #:
 #: `märkis arvamuse saadetuks` and `lõpetas teema` went for the same reason:
 #: `SUBMISSION_SENT` and `MATTER_CLOSED` are milestone rows now.
+#: The clause a step-setting save reads as when it cannot name the step
+#: (`_verbs_for`, `TimelineItem.step_only`).
+STEP_SET_CLAUSE = "määras järgmise sammu"
+
 _CLAUSES: tuple[tuple[str, str], ...] = (
     (ChangeEventType.EVIDENCE_VERSION_ADDED, "lisas dokumendi"),
-    (ChangeEventType.NEXT_ACTION_SET, "määras järgmise sammu"),
+    (ChangeEventType.NEXT_ACTION_SET, STEP_SET_CLAUSE),
     (ChangeEventType.NEXT_ACTION_COMPLETED, "märkis eelmise sammu tehtuks"),
 )
 
@@ -782,16 +786,24 @@ class TimelineItem:
     def step_only(self) -> bool:
         """A row whose only act was setting a step, read as one line.
 
-        «Järgmine samm – Kaasa liikmeid 4.10.2026», and not that sentence plus
-        the same words again in a strip under it (owner's UX round,
-        2026-10-06). The strip stays on every row that did something else too.
+        «Järgmine samm – Kaasa liikmeid 4.10.2026», or a planned action's own
+        words, and not that sentence plus the same words again in a strip under
+        it (owner's UX round, 2026-10-06). The strip stays on every row that did
+        something else too.
+
+        **Read off the event, not the wording.** A planned action's line has no
+        type label since 2026-10-07, so the test is what `_verbs_for` built the
+        one verb from: a `NEXT_ACTION_SET` that named its step, rather than the
+        bare «määras järgmise sammu» it falls back to when there are no words.
         """
+        events = self.events or ((self.event,) if self.event is not None else ())
         return (
             self.entry is None
             and self.record is None
             and self.next_step is not None
             and len(self.summary_verbs) == 1
-            and self.summary_verbs[0].startswith(STEP_LINE_PREFIXES)
+            and self.summary_verbs[0] != STEP_SET_CLAUSE
+            and any(event.event_type == ChangeEventType.NEXT_ACTION_SET for event in events)
         )
 
     @property
@@ -1014,10 +1026,6 @@ def _step_words(events: list[ChangeEvent], event_type: str) -> str:
     return text
 
 
-#: How a row that only set a step begins (`_verbs_for`, `TimelineItem.step_only`).
-STEP_LINE_PREFIXES = ("Järgmine samm – ", "Planeeritud tegevus – ")
-
-
 def _verbs_for(entry: Entry | None, events: list[ChangeEvent]) -> tuple[str, ...]:
     seen = {event.event_type for event in events}
     verbs: list[str] = []
@@ -1039,13 +1047,15 @@ def _verbs_for(entry: Entry | None, events: list[ChangeEvent]) -> tuple[str, ...
             words = _step_words(events, event_type)
             if words and event_type == ChangeEventType.NEXT_ACTION_SET:
                 # One readable line, not a sentence and a card (owner's UX
-                # round, 2026-10-06): «Järgmine samm – …», or «Planeeritud
-                # tegevus – …» for a dated future one (docs/adr/0143).
+                # round, 2026-10-06): «Järgmine samm – …», or — for a dated
+                # future one — the planned action's own words and nothing in
+                # front of them: «Planeeritud tegevus –» said what the words
+                # already say (owner's round, 2026-10-07; docs/adr/0143).
                 planned = any(
                     event.event_type == event_type and (event.payload or {}).get("planned")
                     for event in events
                 )
-                phrase = f"{'Planeeritud tegevus' if planned else 'Järgmine samm'} – {words}"
+                phrase = words if planned else f"Järgmine samm – {words}"
             elif words:
                 phrase = f"{phrase} «{words}»"
         verbs.append(phrase)

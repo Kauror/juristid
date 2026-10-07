@@ -2,15 +2,17 @@
 
 docs/adr/0124. The ordinary `Märge` asked for what happened and then, in a
 second pair of boxes, for the next step and its day — so «Saadan ministeeriumile
-kirja, 2.10» had to be written twice or put in the wrong box. The panel now asks
+kirja, 2.10» had to be written twice or put in the wrong box. The panel asked
 one `Tegevus` and one `Kuupäev`; a day after today offers
 `Märgi järgmiseks tegevuseks`, ticked, and a save with it ticked makes that same
 sentence and day the Matter's `Järgmiseks` through the ordinary step service.
 
 Asserted here, each where it is decided:
 
-* **the panel** — the label, the placeholder, no second pair of boxes, and the
-  offer drawn hidden and disabled unless the day is ahead;
+* **the offer** — `MatterProgressForm` offers the box only on a day ahead and
+  sends it disabled otherwise. The panel that drew it left `+ Lisa` on
+  2026-10-07 (docs/adr/0143); `add_note` still records a `Märge`, and its
+  markup is no longer asserted anywhere;
 * **the rule** — past, today and an empty day never make a step, whatever the
   POST carries; ahead and ticked does; ahead and unticked does not;
 * **the reuse** — the step is written by `set_next_action_for_new_work`, the
@@ -25,7 +27,6 @@ Asserted here, each where it is decided:
 from __future__ import annotations
 
 import datetime as dt
-import re
 from unittest import mock
 
 import pytest
@@ -49,9 +50,6 @@ from app.workflow.services import NEXT_STEP_NEEDS_SENTENCE, set_next_action
 from tests import factories
 
 pytestmark = pytest.mark.django_db
-
-PLACEHOLDER = "Kirjuta, mida tegid või mis on järgmine tegevus"
-OFFER = "Märgi järgmiseks tegevuseks"
 
 
 def _day(offset: int) -> dt.date:
@@ -79,19 +77,6 @@ def _pdf(name: str) -> SimpleUploadedFile:
     return SimpleUploadedFile(name, b"%PDF-1.4 synthetic evidence", content_type="application/pdf")
 
 
-def _panel(body: str) -> str:
-    """`Märke liik · Tavaline`'s own panel, and nothing of its three siblings."""
-    zone = body[body.index('id="lisa-teemale"') :]
-    return zone[zone.index('id="marge-tavaline"') : zone.index('id="marge-tahtaeg"')]
-
-
-def _offer(panel: str) -> str:
-    """The `<label data-next-step-choice …>` element, open tag through close."""
-    start = panel.index("data-next-step-choice")
-    start = panel.rindex("<label", 0, start)
-    return panel[start : panel.index("</label>", start)]
-
-
 def _open_steps(matter):
     return NextAction.objects.filter(matter=matter, status=ActionStatus.OPEN)
 
@@ -113,57 +98,13 @@ def matter(specialist):
 
 
 # ---------------------------------------------------------------------------
-# The panel
+# The offer, as the form decides it
+#
+# The panel that drew it is gone: `Tavaline` left `+ Lisa` on 2026-10-07
+# (docs/adr/0143), and with it every assertion about its markup — the label,
+# the placeholder, the offer drawn hidden, `data-today`. `add_note` and
+# `MatterProgressForm` still answer a POST, so the rule is asserted on them.
 # ---------------------------------------------------------------------------
-
-
-def test_the_panel_asks_tegevus_once(signed_in, matter):
-    """One sentence, named for both tenses, and no second pair of boxes."""
-    panel = _panel(signed_in.get(_teema(matter)).content.decode())
-
-    assert re.search(r'cx-f__lab">\s*Tegevus\b', panel)
-    assert f'placeholder="{PLACEHOLDER}"' in panel
-    assert "Mis juhtus?" not in panel
-    assert 'name="next_text"' not in panel
-    assert 'name="next_date"' not in panel
-    assert "Järgmine tegevus" not in panel
-    assert "Millal?" not in panel
-    # Everything else the panel had is still there.
-    assert 'name="occurred_on"' in panel
-    assert 'name="attachments"' in panel
-    assert 'name="stage"' in panel
-    assert "Jätan muutmata" in panel
-    assert ">Salvesta<" in panel
-
-
-def test_a_fresh_panel_draws_the_offer_hidden_disabled_and_ticked(signed_in, matter):
-    """The day opens on today, so there is nothing ahead to offer yet.
-
-    Ticked underneath, because that is what it shows when it appears; disabled,
-    so a browser does not send a box nobody can see.
-    """
-    panel = _panel(signed_in.get(_teema(matter)).content.decode())
-    offer = _offer(panel)
-
-    assert OFFER in offer
-    assert " hidden" in offer[: offer.index(">")]
-    box = re.search(r"<input[^>]*name=\"as_next_step\"[^>]*>", offer).group(0)
-    assert "checked" in box
-    assert "disabled" in box
-
-
-def test_the_panel_carries_the_application_s_today(signed_in, matter):
-    """The script compares against the server's day, never the browser's."""
-    panel = _panel(signed_in.get(_teema(matter)).content.decode())
-
-    assert f'data-today="{timezone.localdate().isoformat()}"' in panel
-
-
-def test_only_the_tavaline_panel_offers_it(signed_in, matter):
-    """`Oluline tähtaeg`, `Jõustumine` and `Töövõit` do not grow the box."""
-    body = signed_in.get(_teema(matter)).content.decode()
-
-    assert body.count('name="as_next_step"') == 1
 
 
 @pytest.mark.parametrize(
@@ -186,18 +127,6 @@ def test_no_day_or_no_readable_day_offers_nothing(value):
 def test_a_fresh_form_offers_nothing():
     """Unbound, the box shows today — the one default the panel has."""
     assert MatterProgressForm().next_step_offered is False
-
-
-def test_a_refused_save_ahead_redraws_the_offer_as_it_was_answered(signed_in, matter):
-    """A refusal keeps the box visible, enabled and in the state it was sent."""
-    response = signed_in.post(_add_note(matter), {"occurred_on": _et(_day(3))})
-
-    assert response.status_code == 400
-    offer = _offer(_panel(response.content.decode()))
-    assert " hidden" not in offer[: offer.index(">")]
-    box = re.search(r"<input[^>]*name=\"as_next_step\"[^>]*>", offer).group(0)
-    assert "disabled" not in box
-    assert "checked" not in box
 
 
 # ---------------------------------------------------------------------------
@@ -358,14 +287,19 @@ def test_praegune_tegevus_and_minu_asjad_show_the_step(signed_in, matter):
 
 
 def test_an_activity_ahead_and_ticked_needs_its_sentence(signed_in, matter, stage):
-    """A step is its sentence: refused on `Tegevus`, and nothing is written."""
-    response = signed_in.post(
-        _add_note(matter),
-        {"occurred_on": _et(_day(1)), "as_next_step": "on", "stage": str(stage.pk)},
-    )
+    """A step is its sentence: refused on `Tegevus`, and nothing is written.
+
+    The sentence on the form, the refusal on the endpoint: a refused `add_note`
+    has no panel to draw it in since 2026-10-07 (docs/adr/0143).
+    """
+    payload = {"occurred_on": _et(_day(1)), "as_next_step": "on", "stage": str(stage.pk)}
+    form = MatterProgressForm(payload)
+    assert not form.is_valid()
+    assert form.errors["title"] == [NEXT_STEP_NEEDS_SENTENCE]
+
+    response = signed_in.post(_add_note(matter), payload)
 
     assert response.status_code == 400
-    assert NEXT_STEP_NEEDS_SENTENCE in response.content.decode()
     assert not MatterProceduralDevelopment.objects.filter(matter=matter).exists()
     assert not NextAction.objects.filter(matter=matter).exists()
     matter.refresh_from_db()

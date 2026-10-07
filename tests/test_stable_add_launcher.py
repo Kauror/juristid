@@ -57,7 +57,9 @@ CANONICAL = [
 #: What each family asks second, where it asks anything. `+ Kaasamine` and
 #: `+ Ülevaade / uudis` ask nothing further and their own panel is the form.
 SUBCHOICES = {
-    "lisa-marge": ["Tavaline", "Oluline tähtaeg", "Jõustumine", "Töövõit"],
+    # `Tavaline` left `+ Lisa` on 2026-10-07 (docs/adr/0143); `Arvamuse
+    # tähtaeg`, a new request for Koda's opinion, is first and the default.
+    "lisa-marge": ["Arvamuse tähtaeg", "Oluline tähtaeg", "Jõustumine", "Töövõit"],
     "lisa-arvamus": ["Meile saadetud tagasiside", "Teiste arvamus", "Koja arvamus"],
     "lisa-kaasamine": ["Alusta kaasamist", "Lisa tagasiside"],
 }
@@ -68,13 +70,13 @@ SUBCHOICES = {
 #: and a file ends through its `Hetkeseis`.
 #:
 #: `lisa-jargmine` is **not** among them: `+ Järgmine tegevus` left the row, and
-#: the one ordinary way to set a next step while none is open is the optional
-#: box inside `+ Märge`. Nor is `lisa-menetluse-link`, which is not a thing that
-#: happened to a Matter at all and is asked on the two Teema forms
-#: (docs/adr/0097 §5, §8.2).
+#: ordinary work is `PRAEGUNE TEGEVUS → + Lisa tegevus` — since `Tavaline` left
+#: `+ Lisa` on 2026-10-07 (docs/adr/0143), the only way. Nor is
+#: `lisa-menetluse-link`, which is not a thing that happened to a Matter at all
+#: and is asked on the two Teema forms (docs/adr/0097 §5, §8.2).
 PANEL_IDS = [
     "lisa-marge",
-    "marge-tavaline",
+    "marge-arvamuse-tahtaeg",
     "marge-tahtaeg",
     "marge-joustumine",
     "marge-toovoit",
@@ -254,7 +256,7 @@ def test_a_refusal_inside_a_family_reopens_both_levels(signed_in, specialist):
         if re.search(r"\bchecked\b", pick.group(2))
     }
     assert "marge-toovoit" in checked
-    assert "marge-tavaline" not in checked
+    assert "marge-arvamuse-tahtaeg" not in checked
 
 
 # ---------------------------------------------------------------------------
@@ -266,7 +268,7 @@ def _chosen(zone: str) -> list[str]:
     """Which launcher radios render `checked`.
 
     Families only. The two sub-choice groups always have one of their own
-    checked — `Tavaline` and `Meile saadetud tagasiside` arrive chosen, so a
+    checked — `Arvamuse tähtaeg` and `Meile saadetud tagasiside` arrive chosen, so a
     family panel never opens on more chips and no form — and counting those
     here would make «nothing is chosen until somebody chooses» false about a
     page where nothing is open (docs/adr/0097 §8.3).
@@ -334,12 +336,13 @@ def test_no_family_is_chosen_until_somebody_chooses(signed_in, specialist):
 
 
 def test_each_family_arrives_with_its_ordinary_sub_choice_chosen(signed_in, specialist):
-    """`Tavaline` and `Meile saadetud tagasiside`, so a family opens on a form.
+    """`Arvamuse tähtaeg` and `Meile saadetud tagasiside`, so a family opens on a form.
 
-    Not the first alphabetically: a `Märge` is usually just a note, and most of
-    what reaches a department is somebody answering it. A family panel that
-    opened on three more chips and no form would be an extra click on every
-    visit (docs/adr/0097 §8).
+    Most of what reaches a department is somebody answering it; `+ Lisa`
+    opened on `Tavaline` — «a `Märge` is usually just a note» — until that left
+    on 2026-10-07 (docs/adr/0143), and now opens on its first. A family panel
+    that opened on three more chips and no form would be an extra click on
+    every visit (docs/adr/0097 §8).
     """
     matter = factories.MatterFactory(owner=specialist)
     zone = _zone(signed_in, matter)
@@ -352,7 +355,7 @@ def test_each_family_arrives_with_its_ordinary_sub_choice_chosen(signed_in, spec
     # `+ Kaasamine` opens on `Alusta kaasamist` on a file with no open round
     # (docs/adr/0142); `tests/test_document_title_and_kaasamine_split.py` has
     # the other half.
-    assert checked == {"marge-tavaline", "kaasamine-alusta", "arvamus-tagasiside"}
+    assert checked == {"marge-arvamuse-tahtaeg", "kaasamine-alusta", "arvamus-tagasiside"}
 
 
 def test_each_chip_points_at_the_form_it_opens(signed_in, specialist):

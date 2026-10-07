@@ -273,19 +273,20 @@ def test_the_current_action_is_answerable_on_an_initial_get(signed_in, normal_ma
 
 
 def test_a_refused_save_comes_back_with_what_was_typed(signed_in, normal_matter, specialist):
-    """The refusal is «write something», since docs/adr/0105 §4 made the title optional.
+    """The panel that failed is the panel that comes back open, with its sentence in it.
 
-    What this test is about is unchanged: the panel that failed is the panel that
-    comes back open, with its sentence in it. Only the sentence moved — from «write
-    what happened» on one box to «write something, or attach, or move the stage, or
-    set a step», which names the four ways to answer rather than one of them.
+    And with what was typed still in its box. Asserted on `+ Lisa → Oluline
+    tähtaeg`: it was `+ Märge · Tavaline` until `Tavaline` left `+ Lisa` on
+    2026-10-07 (docs/adr/0143), and a refused `add_note` has no panel now.
     """
-    from app.matters.services import DEVELOPMENT_NEEDS_SOMETHING
-
     action = _action(normal_matter, specialist)
     response = signed_in.post(
-        reverse("matters:add_note", kwargs={"pk": normal_matter.pk}),
-        {"title": "", "occurred_on": "19.09.2026"},
+        reverse("matters:add_important_date", kwargs={"pk": normal_matter.pk}),
+        {
+            "deadline_title": "Eelnõu jõuab valitsusse",
+            "deadline_precision": DatePrecision.EXACT,
+            "deadline_date": "",
+        },
         headers={"HX-Request": "true"},
     )
     html = response.content.decode()
@@ -294,10 +295,17 @@ def test_a_refused_save_comes_back_with_what_was_typed(signed_in, normal_matter,
     # Its own panel, open, with its own refusal inside it — and the sub-choice
     # reopened too, or the sentence would be printed in a panel nobody can see
     # (docs/adr/0097 §8).
-    assert 'id="lisa-marge"' in html
-    assert 'id="marge-tavaline-valik"' in html
-    assert DEVELOPMENT_NEEDS_SOMETHING in html
-    # And the current action is untouched by a refused note.
+    checked = {
+        pick.group(1)
+        for pick in re.finditer(r'id="([a-z-]+)-valik"([^>]*)>', html)
+        if re.search(r"\bchecked\b", pick.group(2))
+    }
+    assert {"lisa-marge", "marge-tahtaeg"} <= checked
+    assert "Oluline tähtaeg vajab kuupäeva või perioodi." in html
+    panel = html[html.index('id="marge-tahtaeg"') : html.index('id="marge-joustumine-valik"')]
+    assert 'value="Eelnõu jõuab valitsusse"' in panel
+    # Nothing stored, and the current action is untouched by a refused save.
+    assert not MatterImportantDate.objects.filter(matter=normal_matter).exists()
     action.refresh_from_db()
     assert action.status == ActionStatus.OPEN
 
@@ -402,7 +410,8 @@ def test_lisa_teemale_offers_thirteen_choices_and_opens_none_of_them(signed_in, 
 
     expected = [
         "+ Lisa",
-        "Tavaline",
+        # `Tavaline` left on 2026-10-07 (docs/adr/0143); still thirteen.
+        "Arvamuse tähtaeg",
         "Oluline tähtaeg",
         "Jõustumine",
         "Töövõit",

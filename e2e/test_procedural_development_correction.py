@@ -32,8 +32,8 @@ from app.core.dates import format_estonian_date
 from e2e.conftest import (
     MARTIN,
     create_matter,
-    open_add_panel,
     open_kaik_row,
+    record_marge,
     sign_in,
     unique_title,
 )
@@ -70,28 +70,21 @@ MOVED_READ = format_estonian_date(dt.date.today() - dt.timedelta(days=20))
 
 
 def _file_a_development(page, *, occurred_on: str = HAPPENED) -> None:
-    """Record one procedural step through the real `+ Märge · Tavaline` panel.
+    """Record one procedural step through `/lisa/marge/`, as `Tavaline` did.
 
-    `+ Menetluse areng` filed these until docs/adr/0097 §6 and posted to
-    `/lisa/menetluse-areng/`. The panel is retired and the record is not: the
-    ordinary note writes the same `MatterProceduralDevelopment`, through
-    `/lisa/marge/`, and this file is about correcting one.
+    `+ Menetluse areng` filed these until docs/adr/0097 §6, and `+ Lisa ·
+    Tavaline` until 2026-10-07 (docs/adr/0143). Both panels are retired and the
+    record is not: `add_note` still writes the same `MatterProceduralDevelopment`
+    — `record_marge` sends its request — and every one already on a file is
+    corrected through `Muuda`, which is what this file is about.
 
-    **No `Juristi märkus` here**, because the panel does not ask for one any
-    more (§6.2). The editor still offers the box on a stored row — which is
-    what the correction tests below use it for, and is the stronger shape of
-    the same claim: a note the *correction* surface adds is a note the reader
-    sees attributed to this office.
+    **No `Juristi märkus` here**, because the save never asked for one (§6.2).
+    The editor offers the box on a stored row — which is what the correction
+    tests below use it for: a note the *correction* surface adds is a note the
+    reader sees attributed to this office.
     """
-    open_add_panel(page, "marge-tavaline")
-    page.locator("#marge-tavaline input[name=title]").fill(HEADLINE)
-    page.locator("#marge-tavaline input[name=occurred_on]").fill(occurred_on)
-    with page.expect_response(
-        lambda response: "/lisa/marge/" in response.url and response.request.method == "POST"
-    ) as caught:
-        page.locator("#marge-tavaline button[type=submit]").click()
-    assert caught.value.status == 200, f"the development was refused: {caught.value.status}"
-    page.wait_for_load_state("networkidle")
+    status = record_marge(page, HEADLINE, occurred_on=occurred_on)
+    assert status == 200, f"the development was refused: {status}"
 
 
 def _row(page):

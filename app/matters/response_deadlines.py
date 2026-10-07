@@ -263,6 +263,68 @@ def change_response_deadline(
     raise DomainError(CHANGE_NEEDS_A_MEANING)
 
 
+#: Refused by `+ Lisa → Arvamuse tähtaeg` while a request is still current.
+ACTIVE_DEADLINE_EXISTS = (
+    "Teemal on juba praegune arvamuse tähtaeg ({date}). Muuda või lõpeta see teema päises."
+)
+#: The note a pre-tracking deadline is ended with when a new request follows it.
+LEGACY_DISCHARGE_NOTE = "Varasema arvestuse järgi vastatud (saadetud arvamus või registri VÄLJA)."
+
+
+@transaction.atomic
+def request_response_deadline(
+    *,
+    matter: Matter,
+    deadline: date,
+    actor: Any = None,
+    expected_revision: str | None = None,
+) -> Matter:
+    """`+ Lisa → Arvamuse tähtaeg` — a new request for an opinion on this Matter.
+
+    The ordinary case is a Matter whose earlier request was answered (a sent
+    `Koja arvamus` ended it into history) and that is now asked again: the date
+    becomes the current deadline with a **fresh** `response_requested_at`, so
+    the earlier opinion — linked to the earlier request — never answers this
+    one, and the next sent opinion may (`answer_current_deadline_with`).
+
+    **A current request is never overwritten here.** Moving it or replacing it
+    are two different facts, and the header's editor is where the person says
+    which (`change_response_deadline`); this refuses instead of choosing.
+
+    One exception, and it is a reading the record already makes: a deadline from
+    before requests were tracked (no `response_requested_at`) that a sent
+    opinion or the register's `VÄLJA` has discharged reads «lõpetatud» in the
+    header. It is not current work, so it is written to history as answered —
+    with a note saying how it was answered, and no inferred link to any opinion
+    — and the new request follows it.
+    """
+    from app.matters.locks import lock_open_matter_for_business_write
+    from app.matters.work_items import response_obligation_of
+
+    locked = lock_open_matter_for_business_write(matter.pk)
+    _check_revision(locked, expected_revision)
+    if locked.response_deadline is not None:
+        legacy_settled = (
+            locked.response_requested_at is None
+            and not response_obligation_of(locked, actor).is_outstanding
+        )
+        if not legacy_settled:
+            raise DomainError(
+                ACTIVE_DEADLINE_EXISTS.format(date=format_estonian_date(locked.response_deadline))
+            )
+        _end_current(
+            locked=locked,
+            outcome=ResponseDeadlineOutcome.ANSWERED,
+            actor=actor,
+            note=LEGACY_DISCHARGE_NOTE,
+            next_deadline=deadline,
+        )
+    _write_field(
+        locked=locked, matter=matter, deadline=deadline, requested_at=timezone.now(), actor=actor
+    )
+    return matter
+
+
 @transaction.atomic
 def resolve_response_deadline(
     *,

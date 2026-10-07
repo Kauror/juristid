@@ -194,12 +194,16 @@ def test_the_completed_action_is_no_longer_the_current_one_after_a_refresh(
 
     assert "Järgmine samm on määramata" in body
     assert "Mida tegid?" not in body
-    # `+ Järgmine tegevus` was the launcher's second chip and is gone: there is
-    # one ordinary way to set a next step and it is `+ Märge` itself — the
-    # activity dated ahead, with `Märgi järgmiseks tegevuseks` ticked
-    # (docs/adr/0097 §8.2, docs/adr/0124).
+    # `+ Järgmine tegevus` was the launcher's second chip and is gone: the one
+    # ordinary way to set a next step is `PRAEGUNE TEGEVUS → + Lisa tegevus`
+    # (docs/adr/0126 §1). `+ Märge · Tavaline`'s `Märgi järgmiseks tegevuseks`
+    # was the other until `Tavaline` left `+ Lisa` on 2026-10-07
+    # (docs/adr/0143).
     assert "+ Järgmine tegevus" not in body
-    assert 'name="as_next_step"' in body
+    zone = body[body.index('id="praegune-tegevus"') :]
+    assert 'id="lisa-jargmine"' in zone
+    assert "+ Lisa tegevus" in zone
+    assert 'name="as_next_step"' not in body
     assert 'name="next_text"' not in body
     # The result is in the chronology.
     assert "Vaatasin versiooni üle." in body
@@ -447,7 +451,8 @@ def test_the_launcher_offers_its_choices_and_opens_none_of_them(signed_in, norma
     for chip in ("+ Lisa", "+ Kaasamine", "+ Arvamus / tagasiside", "+ Ülevaade / uudis"):
         assert chip in zone, chip
     for choice in (
-        "Tavaline",
+        # `Tavaline` left `+ Lisa` on 2026-10-07 (docs/adr/0143).
+        "Arvamuse tähtaeg",
         "Oluline tähtaeg",
         "Jõustumine",
         "Töövõit",

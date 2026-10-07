@@ -62,3 +62,21 @@ too. The legacy cutover commands still cancel only `OPEN`; they predate this.
 - `Liige` sits at the end of the organisation search row.
 - Required fields keep the red `*` of docs/adr/0140 §6; nothing says
   «valikuline».
+
+## Amendment of 2026-10-07 — date first, and no type label in the chronology
+
+**Date-first rows.** Every dated row in `PRAEGUNE TEGEVUS` opens on its day, in a column of its own:
+- the current action, which reads «Kuupäev määramata» (muted) when it has no date;
+- each planned action;
+- a round's feedback wait, which reads «Tähtaeg määramata» when it has no deadline, followed by «Ootame tagasisidet»;
+- the upcoming `Oluline tähtaeg`.
+
+The text takes the rest of the row and wraps under itself, never under the date. The controls stay on their row. Planned rows are separated by a hairline, not boxed as cards.
+
+**`+ Lisa · Tavaline` is gone** (docs/adr/0097 §6).
+- Ordinary work is `+ Lisa tegevus`, and what was done is `✓ Tehtud`.
+- `L` opens `✓ Tehtud` beside a task, and `+ Lisa tegevus` on a Matter without one.
+- `add_note` and its records remain; no Märge is rewritten.
+
+**The chronology prints a planned action's own words.** It no longer prefixes them with «Planeeritud tegevus –». «Järgmine samm – …» is unchanged.
+- `TimelineItem.step_only` reads the `NEXT_ACTION_SET` event rather than the sentence's prefix.

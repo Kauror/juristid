@@ -12,7 +12,9 @@ docs/adr/0105, in three parts, each asserted where it is decided:
 3. **`+ Märge` saves whatever there is.** A comment, a file, a stage, or any
    combination — and a press carrying none of them is refused with one sentence
    naming them. Since docs/adr/0124 the next step is not a box of its own: it is
-   the activity, dated ahead and ticked.
+   the activity, dated ahead and ticked. The panel is gone — `Tavaline` left
+   `+ Lisa` on 2026-10-07 (docs/adr/0143) — and the endpoint that saves one is
+   asserted here directly.
 
 `tests/test_website_overviews.py` and `tests/test_overview_news_publication.py`
 own §3, the `Ülevaade / uudis` row's address. `tests/test_lawyer_workflow_package.py`
@@ -29,10 +31,12 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from django.utils import timezone
 
+from app.matters.forms import MatterProgressForm
 from app.matters.models import MatterProceduralDevelopment
 from app.matters.services import DEVELOPMENT_NEEDS_SOMETHING
 from app.workflow.enums import ActionStatus
 from app.workflow.models import NextAction
+from app.workflow.services import NEXT_STEP_NEEDS_SENTENCE
 from tests import factories
 
 pytestmark = pytest.mark.django_db
@@ -225,21 +229,13 @@ def test_an_arvamus_valja_row_carries_muuda_on_the_headline_row(
 
 # ---------------------------------------------------------------------------
 # §4 — `+ Märge` saves whatever there is
+#
+# Through `matters:add_note`, which still records a `Märge` though no panel on
+# the page posts to it: `Tavaline` left `+ Lisa` on 2026-10-07
+# (docs/adr/0143). A refusal is therefore asserted on `MatterProgressForm`,
+# which says it, and on the endpoint, which writes nothing — there is no panel
+# left to draw its sentence in.
 # ---------------------------------------------------------------------------
-
-
-def test_the_panel_marks_no_control_required(signed_in, specialist, stage):
-    """Read off the panel, because that is where somebody decides what to answer.
-
-    Every control here is optional, and since docs/adr/0140 §6 an optional
-    field carries no marker at all: no «valikuline», and no required `*`."""
-    body = signed_in.get(_teema(factories.MatterFactory(owner=specialist))).content.decode()
-    zone = body[body.index('id="lisa-teemale"') :]
-    panel = zone[zone.index('id="marge-tavaline"') : zone.index('id="marge-tahtaeg"')]
-
-    assert 'cx-f__lab">Tegevus' in panel
-    assert "valikuline" not in panel
-    assert "req-mark" not in panel
 
 
 def test_a_marge_saves_with_only_a_comment(signed_in, specialist, stage):
@@ -337,13 +333,15 @@ def test_a_marge_carrying_nothing_is_refused_with_one_sentence(signed_in, specia
     checked first would be the wrong one to point at.
     """
     matter = factories.MatterFactory(owner=specialist)
+    payload = {"occurred_on": _today()}
 
-    response = signed_in.post(_add_note(matter), {"occurred_on": _today()})
+    form = MatterProgressForm(payload)
+    assert not form.is_valid()
+    assert form.errors == {"__all__": [DEVELOPMENT_NEEDS_SOMETHING]}
+
+    response = signed_in.post(_add_note(matter), payload)
 
     assert response.status_code == 400
-    body = response.content.decode()
-    assert DEVELOPMENT_NEEDS_SOMETHING in body
-    assert "See lahter on nõutav" not in body
     assert not MatterProceduralDevelopment.objects.filter(matter=matter).exists()
 
 
@@ -369,11 +367,17 @@ def test_an_undated_marge_is_never_a_step(signed_in, specialist, stage):
 def test_a_step_ahead_with_no_sentence_is_refused_on_the_sentence(signed_in, specialist, stage):
     """The other half of the same pair: a step is its sentence."""
     matter = factories.MatterFactory(owner=specialist)
+    payload = {"occurred_on": _ahead(), "as_next_step": "on"}
 
-    response = signed_in.post(_add_note(matter), {"occurred_on": _ahead(), "as_next_step": "on"})
+    form = MatterProgressForm(payload)
+    assert not form.is_valid()
+    assert form.errors["title"] == [NEXT_STEP_NEEDS_SENTENCE]
+
+    response = signed_in.post(_add_note(matter), payload)
 
     assert response.status_code == 400
-    assert "Kirjuta järgmine tegevus." in response.content.decode()
+    assert not MatterProceduralDevelopment.objects.filter(matter=matter).exists()
+    assert not NextAction.objects.filter(matter=matter).exists()
 
 
 def test_a_titleless_marge_is_correctable_into_one(signed_in, specialist, stage):

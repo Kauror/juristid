@@ -36,9 +36,9 @@ from e2e.conftest import (
     MARTIN,
     SANDRA,
     create_matter,
-    open_add_panel,
     open_kaik_row,
     open_matter,
+    record_marge,
     sign_in,
     unique_title,
     wait_for_htmx,
@@ -374,13 +374,13 @@ def test_an_open_row_fits_beside_the_spine_at_every_width(seeded, width):
 def test_a_refused_then_accepted_file_keeps_its_row_open(page, base_url, tmp_path):
     """`+ Lisa fail` answers by re-rendering the whole column, refused or not;
     the row it was pressed on comes back open both times, with the refusal in
-    it and then with the file in it."""
+    it and then with the file in it.
+
+    The `Märge` row is saved through `add_note` by `record_marge`, since
+    `+ Lisa · Tavaline` left on 2026-10-07 (docs/adr/0143)."""
     sign_in(page, base_url, SANDRA)
     create_matter(page, base_url, unique_title("Käigu akordion"))
-    open_add_panel(page, "marge-tavaline")
-    page.locator("#marge-tavaline [name=title]").fill("Rääkisin ministeeriumiga")
-    page.locator("#marge-tavaline").get_by_role("button", name="Salvesta", exact=True).click()
-    page.wait_for_load_state("networkidle")
+    assert record_marge(page, "Rääkisin ministeeriumiga") == 200
 
     marge = row(page, "Rääkisin ministeeriumiga")
     expect(toggle_of(marge)).to_have_attribute("aria-expanded", "false")
