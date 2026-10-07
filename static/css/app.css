@@ -6726,25 +6726,31 @@ button.accordion__action:focus-visible {
   padding: 0;
 }
 
+/* One row per item: the title (which wraps on its own) and its `×` at the end
+ * of that same row; a background item's kind and date under the title. A grid
+ * rather than a wrapping flex row, so a long title can never push the `×` onto
+ * a line of its own (owner's compact round, 2026-10-07). */
 .relatedmaterials__row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: baseline;
-  gap: var(--spacing-1) var(--spacing-2);
-  flex-wrap: wrap;
+  column-gap: var(--spacing-2);
 }
 
 .relatedmaterials__row > .factrow__title {
-  flex: 1 1 auto;
+  grid-column: 1;
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
 .relatedmaterials__remove {
+  grid-column: 2;
+  grid-row: 1;
   margin: 0;
 }
 
 .relatedmaterials__meta {
-  flex: 1 1 100%;
+  grid-column: 1;
   font-size: var(--typography-size-meta);
 }
 
@@ -10637,7 +10643,21 @@ section:has(.pw-more[open]) tbody.uxextra {
   margin-left: 0;
 }
 
+/* `+ Lisa` sits at the end of the heading row (owner's compact round,
+ * 2026-10-07): the summary is placed there and the closed disclosure takes no
+ * row of its own; opened, its panel still follows the list. */
+.teema .rail .relatedmaterials > .railcard__label {
+  padding-right: 4.5em;
+}
+
+.teema .rail .relatedmaterials__picker:not([open]) {
+  margin-top: calc(-1 * var(--spacing-15));
+}
+
 .teema .rail .relatedmaterials__picker > .disclosure__summary {
+  position: absolute;
+  top: 0;
+  right: 0;
   display: inline-block;
   list-style: none;
   padding-bottom: 1px;
@@ -10666,6 +10686,8 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 .teema .rail .relatedmaterials {
+  /* The anchor for `+ Lisa` in the heading row (below). */
+  position: relative;
   border: 0;
   margin: 0;
   padding: 0;
@@ -12090,7 +12112,7 @@ section:has(.pw-more[open]) tbody.uxextra {
  * waits drawn there) rather than beside a task, so it takes a little air above
  * and none below: it is the last thing in the zone (docs/adr/0126 §1). */
 .teemamain .curact__set {
-  margin: var(--spacing-2) 0 0;
+  margin: var(--spacing-15) 0 0;
 }
 
 .disclosure-chip--quiet {
@@ -12169,17 +12191,11 @@ section:has(.pw-more[open]) tbody.uxextra {
  * semibold: it is not the current task, and must not read as one. */
 /* `Planeeritud tegevused` — dated future actions under the current one
  * (docs/adr/0143). A quiet label and compact rows: day, words, `Muuda`, `×`. */
+/* The planned rows sit directly under `+ Lisa tegevus`, as a plain dated
+ * list with no heading, one short line each (owner's compact round,
+ * 2026-10-07). */
 .curact__planned {
-  margin-top: var(--spacing-3);
-}
-
-.curact__plannedhead {
-  margin: 0 0 var(--spacing-1);
-  font-size: var(--typography-size-chip);
-  font-weight: var(--typography-weight-semibold);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--text-muted);
+  margin-top: var(--spacing-1);
 }
 
 .curact__plannedlist {
@@ -12192,9 +12208,25 @@ section:has(.pw-more[open]) tbody.uxextra {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: var(--spacing-1) var(--spacing-2);
-  padding: 2px 0;
+  gap: 0 var(--spacing-2);
+  padding: 0;
   font-size: var(--typography-size-sm);
+  line-height: 1.35;
+}
+
+/* `Muuda` and `×` on a planned row are text-height, not chip-height: the row
+ * is a line of a list, and the chip padding is what made each one a band. */
+.curact__plannedrow > .curact__edit > .disclosure-chip,
+.curact__plannedrow .quietbutton {
+  padding-top: 0;
+  padding-bottom: 0;
+  min-height: 0;
+  line-height: 1.35;
+}
+
+.curact__plannedrow > .curact__edit,
+.curact__plannedrow > .curact__dismiss {
+  margin: 0;
 }
 
 .curact__planneddate {

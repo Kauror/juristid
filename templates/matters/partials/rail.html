@@ -48,21 +48,11 @@ whose addressee nobody recorded should look short, not incomplete.
     {% endif %}
 
     {% comment %}
-      The register reference, back in the rail.
-
-      It is not a *name* — the topic is named by its title, on every list and in
-      every heading, and putting `2026_47` where a title belongs is what the
-      identifier-free pass took out. It is an identity, and identity is exactly
-      what a facts block is for: it is what a lawyer quotes in a letter, what a
-      colleague asks for on the phone, and what the register's exact search
-      matches (02-EKRAANID §C, identifier-free UI §4).
+      **No `Teemaviide`** (owner's compact round, 2026-10-07). The register
+      reference is an internal identity: it stays on the record, in search, the
+      audit trail and reporting, and leaves this reading surface — the topic is
+      named by its title everywhere a lawyer reads it.
     {% endcomment %}
-    {% if matter.display_reference %}
-      <div class="railcard__row">
-        <span class="railcard__key">Teemaviide</span>
-        <span class="railcard__ref">{{ matter.display_reference }}</span>
-      </div>
-    {% endif %}
 
     {% comment %}
       Facts that used to be in the header band, where they competed with the
@@ -203,8 +193,7 @@ whose addressee nobody recorded should look short, not incomplete.
       with nothing saying which. `Muuda teemat` asks it properly and this points
       there (app/matters/forms.py `clean_legal_instrument_answer`).
 
-      **Omitted when there is nothing to say**, like `Teemaviide` above and
-      unlike the three editable rows, whose `+ Lisa` is an invitation this one
+      **Omitted when there is nothing to say**, unlike the three editable rows, whose `+ Lisa` is an invitation this one
       cannot honestly make.
 
       `Muu` is a real vocabulary row here rather than a checkbox beside one

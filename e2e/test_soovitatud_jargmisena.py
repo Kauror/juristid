@@ -59,7 +59,7 @@ def test_a_suggestion_is_started_finished_and_the_next_dismissed(page, base_url)
 
     # The manual way is always there. Leave the Teema with an open step, as
     # every file this suite creates must (e2e/conftest.py `give_first_step`).
-    expect(page.locator("#praegune-tegevus")).to_contain_text("+ Määra järgmine tegevus")
+    expect(page.locator("#praegune-tegevus")).to_contain_text("+ Lisa tegevus")
     page.locator("#praegune-tegevus #alusta-samm > summary").click()
     page.locator("#praegune-tegevus #alusta-samm button[type=submit]").click()
     wait_for_htmx(page)

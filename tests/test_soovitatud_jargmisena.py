@@ -12,7 +12,7 @@
 * **F** — a stale `×` cannot dismiss a different suggestion;
 * **G** — `Muuda` keeps the step link, and completing the edited action still
   advances;
-* **H** — `+ Määra järgmine tegevus` is unlinked work and moves no suggestion;
+* **H** — `+ Lisa tegevus` is unlinked work and moves no suggestion;
 * **I** — old plan rows render with no visible plan.
 """
 
@@ -167,7 +167,7 @@ def test_b_a_matter_with_nothing_current_suggests_its_next_step(signed_in, plann
     assert 'aria-label="Eemalda soovitus"' in zone
     assert 'title="Eemalda soovitus"' in zone
     assert "Kustuta" not in zone[zone.index('id="soovitus"') :]
-    assert "+ Määra järgmine tegevus" in zone
+    assert "+ Lisa tegevus" in zone
 
 
 def test_b_uus_teema_seeds_the_background_sequence(signed_in):
@@ -233,7 +233,7 @@ def test_e_with_every_suggestion_dismissed_the_block_is_gone(signed_in, planned)
     assert 'id="soovitus"' not in zone
     assert "Soovitatud järgmisena" not in zone
     assert "Järgmine samm on määramata" in zone
-    assert "+ Määra järgmine tegevus" in zone
+    assert "+ Lisa tegevus" in zone
 
 
 def test_f_a_stale_dismiss_cannot_dismiss_a_different_suggestion(signed_in, planned):

@@ -130,8 +130,10 @@ def test_the_matter_page_names_the_topic_and_not_the_record(signed_in, marked_ma
     assert REFERENCE not in heading
     assert f"<title>{REFERENCE}" not in body
     # Once, in the rail, under a label.
-    assert body.count(REFERENCE) == 1
-    assert f'class="railcard__ref">{REFERENCE}</span>' in body
+    # Not in the rail either since the owner's compact round (2026-10-07):
+    # `Teemaviide` left `Teema andmed`, so the page carries no reference.
+    assert REFERENCE not in body
+    assert "railcard__ref" not in body
 
 
 def test_the_breadcrumb_stops_at_teemad(signed_in, marked_matter):

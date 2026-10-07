@@ -281,8 +281,9 @@ def test_the_rail_carries_the_target_rows_and_no_maintenance_ones(page, base_url
     create_matter(page, base_url, "Raili brauserikatse")
 
     rail = page.locator("#teema-andmed")
-    for row in ("Teemaviide", "Saatja"):
-        expect(rail).to_contain_text(row)
+    expect(rail).to_contain_text("Saatja")
+    # `Teemaviide` left the card in the owner's compact round (2026-10-07).
+    expect(rail).not_to_contain_text("Teemaviide")
     for gone in (
         "Muu valdkond",
         "Andmeklass",

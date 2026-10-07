@@ -60,7 +60,11 @@ because what the file recorded and who recorded it is part of the file
       {% for link, edit_form in procedural_links %}
       <div class="proclink" id="menetluse-link-{{ link.pk }}">
         <div class="railcard__row">
-          <span class="railcard__key">{{ link.get_kind_display }}</span>
+          {% comment %}
+            The address and `Muuda`, and no kind label: «Muu menetluslink» told
+            the reader nothing the address does not (owner's compact round,
+            2026-10-07). The stored kind is untouched and still asked in `Muuda`.
+          {% endcomment %}
           {% comment %}
             The address and the control that edits it, on one line.
 

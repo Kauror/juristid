@@ -209,8 +209,10 @@ def test_the_matter_page_names_the_topic_rather_than_the_record(populated, clien
     edit = client.get(reverse("matters:matter_edit", kwargs={"pk": matter.pk})).content.decode()
 
     assert matter.title in detail
-    assert detail.count(matter.display_reference) == 1
-    assert f'class="railcard__ref">{matter.display_reference}</span>' in detail
+    # `Teemaviide` left the rail in the owner's compact round (2026-10-07):
+    # the reference is on no reading surface of the page now.
+    assert matter.display_reference not in detail
+    assert "Teemaviide" not in detail
     # Not in the heading, and not in the crumb.
     heading = detail.split('matterhead__title">', 1)[1].split("</h1>", 1)[0]
     assert matter.display_reference not in heading

@@ -34,10 +34,10 @@ step shows one compact line and no textarea: a large empty `Mida tegid?` with no
 task above it is a form asking about work nobody has named (brief §8).
 
 **But the next step is set right here.** Under that line sits
-`+ Määra järgmine tegevus` — the same `next_action_form.html`, the same
+`+ Lisa tegevus` — the same `next_action_form.html`, the same
 `matters:set_action` and the same `set_next_action_for_new_work` that `Muuda`
 uses beside an open step. One form in two states of one zone: `Muuda` while a
-step is open, `+ Määra järgmine tegevus` while none is, and never both. A lawyer
+step is open, `+ Lisa tegevus` while none is, and never both. A lawyer
 who has just finished something sets what comes next where they read what comes
 next, without having to file a `+ Märge` dated ahead to do it
 (docs/adr/0126 §1).
@@ -55,7 +55,7 @@ step stays open is `+ Lisa` in `LISA TEEMALE`.
 editor and the typed launch beside the step are gone. What stays is one
 suggestion while nothing is current — `Soovitatud järgmisena`, from the Matter's
 background sequence — which can be started (`Alusta`) or dismissed (`×`);
-`+ Määra järgmine tegevus` is always the manual alternative.
+`+ Lisa tegevus` is always the manual alternative.
 {% endcomment %}
 <section class="curact{% if matter.is_open and current_action.is_overdue %} curact--overdue{% endif %}"
          id="praegune-tegevus" tabindex="-1" aria-labelledby="praegune-pealkiri">
@@ -184,44 +184,26 @@ background sequence — which can be started (`Alusta`) or dismissed (`×`);
     </div>
 
     {% comment %}
-      The other date this file carries, under the plan and never instead of it.
-
-      The task above is what happens next, and it outranks the `Arvamuse
-      tähtaeg` on every work surface: a lawyer who wrote «JÄLGIN, vaatan uuesti
-      üle 15.10» has said what this file is doing, and a list calling it overdue
-      is the defect ADR 0050 fixed. What that precedence never decided is whether
-      **Koda has answered the ministry** — a note to oneself is a plan, not a
-      response — so while an opinion has not gone out and the register has not
-      recorded the opinion work as finished, the obligation stands and says so
-      here (PR #205, ADR 0011, ADR 0059).
-
-      One line, quiet, under the task: the reader's first question is still
-      *what am I supposed to be doing about this*, and this is the second.
-
-      Absent on a file where the deadline **is** the primary fact — no step, or a
-      closed Matter. There the header's own `Tähtaeg` states it in full, and
-      `work_items.secondary_response_obligation` returns nothing rather than let
-      the page print one day twice. Nothing about it moves the Matter into a work
-      queue: no population, no count and no ordering reads this.
+      **No `Arvamuse tähtaeg` line here** (owner's compact round, 2026-10-07).
+      The deadline is stated in the header — amber when it is close or past —
+      and on the procedural rail; a third copy under the task was the same day
+      read again. Display only: the obligation rule, the work queues, the
+      register's second line and the deadline history are untouched
+      (`work_items.secondary_response_obligation`).
     {% endcomment %}
-    {% if response_obligation %}
-      <p class="curact__owed">
-        <span class="curact__owedlabel">{{ response_obligation.label }}</span>
-        <span class="curact__oweddate{% if response_obligation.is_overdue %} curact__oweddate--overdue{% endif %}">{{ response_obligation.short_display }}{% if response_obligation.is_overdue %} · {{ response_obligation.days_late }} p üle{% endif %}</span>
-      </p>
-    {% endif %}
 
     {% include "matters/partials/feedback_waits.html" %}
 
     {% comment %}
-      **`+ Määra järgmine tegevus` stays on the page while work is current**
-      (docs/adr/0143). Beside a current action it plans a dated future one: it
-      never replaces the current row, and the planned rows follow below.
+      **`+ Lisa tegevus` stays on the page while work is current**
+      (docs/adr/0143; named `+ Lisa tegevus` since 2026-10-07). Beside a current
+      action it plans a dated future one: it never replaces the current row, and
+      the planned rows follow below as a plain dated list.
     {% endcomment %}
     {% if can_write %}
       <details class="cx-panel curact__edit curact__set" id="lisa-planeeritud" data-addpanel
                {% if open_panel == "lisa-planeeritud" %}open{% endif %}>
-        <summary class="disclosure-chip">+ Määra järgmine tegevus</summary>
+        <summary class="disclosure-chip">+ Lisa tegevus</summary>
         <div class="cx-panel__body">
           {% if open_panel == "lisa-planeeritud" and workspace_error %}
             <p class="formerror" role="alert">{{ workspace_error }}</p>
@@ -288,7 +270,7 @@ background sequence — which can be started (`Alusta`) or dismissed (`×`);
         for good on this Matter — the exact step shown, at the revision this
         page was drawn from — and the next one is suggested instead. Until
         somebody starts it, it is guidance: not a `NextAction`, not a work item
-        and not late. `+ Määra järgmine tegevus` below stays the manual way.
+        and not late. `+ Lisa tegevus` below stays the manual way.
       {% endcomment %}
       <div class="curact__task curact__suggest" id="soovitus">
         <span class="curact__flag">Soovitatud järgmisena</span>
@@ -341,7 +323,7 @@ background sequence — which can be started (`Alusta`) or dismissed (`×`);
 
     {% if can_write %}
       {% comment %}
-        `+ Määra järgmine tegevus` — the direct way to say what comes next.
+        `+ Lisa tegevus` — the direct way to say what comes next.
 
         **Whatever the line above says.** An upcoming `Oluline tähtaeg`, the
         register's Excel instruction and a waiting round are all things this
@@ -365,7 +347,7 @@ background sequence — which can be started (`Alusta`) or dismissed (`×`);
         `Muuda`, whose state is that step, and the unsaved sentence is then
         shown read-only rather than posted against it (docs/adr/0107).
       {% endcomment %}
-      {% include "matters/partials/next_action_panel.html" with summary="+ Määra järgmine tegevus" quiet=False extra_class="curact__set" draft_state="" %}
+      {% include "matters/partials/next_action_panel.html" with summary="+ Lisa tegevus" quiet=False extra_class="curact__set" draft_state="" %}
     {% endif %}
     {% include "matters/partials/planned_actions.html" %}
   {% endif %}

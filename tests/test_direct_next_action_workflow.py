@@ -3,8 +3,8 @@
 *Set the next step → do the work → record the real event → finish the step →
 set the next one.* Asserted here, each where it is decided:
 
-* **the direct control** — `PRAEGUNE TEGEVUS` draws `+ Määra järgmine
-  tegevus` on a file with no open step, and only there; it is `Muuda`'s own form
+* **the direct control** — `PRAEGUNE TEGEVUS` draws `+ Lisa tegevus` on a
+  file with no open step, and only there; it is `Muuda`'s own form
   and writes through the same service, so a step made directly and one made by a
   ticked future `+ Märge` are the same canonical record;
 * **the completion** — `Koja arvamus` and `Lõpeta kaasamine` offer
@@ -55,7 +55,7 @@ from tests import factories
 
 pytestmark = pytest.mark.django_db
 
-CTA = "+ Määra järgmine tegevus"
+CTA = "+ Lisa tegevus"
 OPTION = "Märgi praegune tegevus tehtuks"
 STEP = "Vormista ja saada Koja seisukoht"
 FOLLOWING = "Kontrolli menetluse seisu ja uusi materjale"

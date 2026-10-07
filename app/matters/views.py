@@ -2945,22 +2945,6 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "can_write": may_write_business_content(request.user),
         "quick_dates": quick_date_choices(timezone.localdate()),
         "today": timezone.localdate(),
-        # The official `Arvamuse tähtaeg`, where `PRAEGUNE TEGEVUS` is showing a
-        # plan instead of it. An open `Järgmiseks` is the current work and stays
-        # primary (docs/adr/0050); what it never said is whether Koda has
-        # answered, and until an opinion goes out or the register records the
-        # opinion work as finished it has not (PR #205).
-        #
-        # The primary date this is measured against is the open step's own, and
-        # the Matter's deadline where there is no step — because then the header
-        # metaline directly above is already stating that date in full, and a
-        # second line would be the same day twice
-        # (`work_items.secondary_response_obligation`).
-        #
-        # An approximate step never suppresses it. *Plaanis IV kvartal 2026*
-        # anchors on 1 October, and a Matter whose `Arvamuse tähtaeg` is that
-        # day would otherwise lose its official line to a number nobody put on
-        # the screen (docs/adr/0079 §12).
         # `Tagasisidet ootame kuni`'s quick spans, resolved to real days here so
         # the chips can print the date each one lands on.
         "feedback_deadline_choices": feedback_deadline_choices(timezone.localdate()),
@@ -2983,16 +2967,6 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
             (engagement, engagement_revision_token(engagement)) for engagement in feedback_waits
         ],
         "save_once_token": uuid.uuid4(),
-        "response_obligation": work_items.secondary_response_obligation(
-            matter,
-            request.user,
-            primary_date=(
-                current_action.target_date
-                if current_action is not None
-                else matter.response_deadline
-            ),
-            primary_is_approximate=(current_action is not None and current_action.is_approximate),
-        ),
     }
 
 

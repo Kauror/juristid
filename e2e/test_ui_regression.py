@@ -2606,7 +2606,7 @@ def test_the_done_form_on_a_teema_filed_today(page, base_url):
     assertion does not.
 
     A Teema of its own, filed through `Uus teema`, its first step written
-    through `+ Määra järgmine tegevus` with no day, and run last because it
+    through `+ Lisa tegevus` with no day, and run last because it
     writes. Clipped to the section, which then renders no clock value. Until
     docs/adr/0141 the step was started from the `Tööplaan`, whose two
     baselines went with it.

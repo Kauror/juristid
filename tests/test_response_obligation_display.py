@@ -218,10 +218,31 @@ def titles_on(response) -> list[str]:
 
 
 def teema_owed(response) -> str:
-    """`PRAEGUNE TEGEVUS`'s obligation line, or an empty string when absent."""
-    body = _body(response)
-    found = re.search(r'<p class="curact__owed">(.*?)</p>', body, re.DOTALL)
-    return " ".join(re.sub(r"<[^>]+>", " ", found.group(1)).split()) if found else ""
+    """What the rule says beside the Teema's plan, as one line, or ``""``.
+
+    `PRAEGUNE TEGEVUS` stopped printing this line in the owner's compact round
+    (2026-10-07) — the header states the deadline — so the rule is asked
+    directly, for the page's reader and with the primary date the page used to
+    pass it. Everything below keeps testing the rule; the page's own absence is
+    `test_teema_states_the_plan_and_leaves_the_deadline_to_the_header`.
+    """
+    from app.matters import selectors
+    from app.matters.work_items import secondary_response_obligation
+
+    assert "curact__owed" not in _body(response)
+    matter = response.context["matter"]
+    user = response.wsgi_request.user
+    current = selectors.current_action_of(matter, user)
+    owed = secondary_response_obligation(
+        matter,
+        user,
+        primary_date=current.target_date if current is not None else matter.response_deadline,
+        primary_is_approximate=current is not None and current.is_approximate,
+    )
+    if owed is None:
+        return ""
+    late = f" · {owed.days_late} p üle" if owed.is_overdue else ""
+    return f"{owed.label} {owed.short_display}{late}"
 
 
 def teema_of(client, matter) -> Any:
@@ -245,14 +266,22 @@ def instructed(specialist, today):
     return matter
 
 
-def test_teema_states_the_plan_first_and_the_obligation_second(signed_in, instructed, today):
-    """Both facts on the page, in that order, and each said once."""
+def test_teema_states_the_plan_and_leaves_the_deadline_to_the_header(signed_in, instructed, today):
+    """The plan under `PRAEGUNE TEGEVUS`; the deadline in the header, once.
+
+    The second line under the task was the deadline read a third time (header,
+    rail, task) and left in the owner's compact round (2026-10-07). The rule
+    still answers — the register prints it — and the page's header states the
+    date itself."""
     response = teema_of(signed_in, instructed)
     body = _body(response)
+    zone = body[body.index('id="praegune-tegevus"') : body.index('id="lisa-teemale"')]
 
-    plan = body.index("Jalgin menetlust")
-    owed = body.index('<p class="curact__owed">')
-    assert plan < owed, "the obligation must read as a note under the task, not above it"
+    assert "Jalgin menetlust" in zone
+    assert "curact__owed" not in zone
+    assert LABEL not in zone
+    header = body[: body.index('id="praegune-tegevus"')]
+    assert f'<span class="metaline__label">{LABEL}</span>' in header
 
     assert teema_owed(response) == f"{LABEL} {short_day_month(today - timedelta(days=1))} · 1 p üle"
 

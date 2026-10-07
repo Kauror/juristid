@@ -1,17 +1,18 @@
 {% comment %}
-`Planeeritud tegevused` — the dated future actions behind the current one
-(docs/adr/0143). Compact rows, earliest first: the day, the words, `Muuda` for
+The dated future actions behind the current one (docs/adr/0143). Compact
+rows under `+ Lisa tegevus`, earliest first: the day, the words, `Muuda` for
 that exact action and `×` to take it off the plan (cancelled, kept in the
 history). The earliest becomes the current action when the current one is done.
-Nothing renders when nothing is planned.
+Nothing renders when nothing is planned. **No heading** since the owner's
+compact round (2026-10-07): the dates say what the list is; the list keeps its
+name for assistive technology.
 {% endcomment %}
 {% if planned_actions %}
   <div class="curact__planned" id="planeeritud">
-    <h3 class="curact__plannedhead">Planeeritud tegevused</h3>
     {% if open_panel == "planeeritud" and workspace_error %}
       <p class="formerror" role="alert">{{ workspace_error }}</p>
     {% endif %}
-    <ul class="curact__plannedlist">
+    <ul class="curact__plannedlist" aria-label="Planeeritud tegevused">
       {% for planned in planned_actions %}
         <li class="curact__plannedrow">
           <span class="curact__planneddate">{{ planned.date_display }}</span>
