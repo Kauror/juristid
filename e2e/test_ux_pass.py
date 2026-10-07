@@ -24,10 +24,11 @@ from e2e.conftest import (
     HEAD,
     SANDRA,
     add_panel_is_open,
+    create_matter,
     open_add_panel,
-    open_composer,
     open_next_action_form,
     sign_in,
+    start_first_step,
 )
 from e2e.conftest import document_overflows as overflows
 
@@ -64,28 +65,41 @@ def test_l_puts_the_caret_in_the_box_that_records_what_happened(page, base_url):
     """`L` for «lisa», and a shortcut with an obvious click equivalent.
 
     It used to open the composer, which was both *what happened* and *what
-    happens next*. Those are two operations now, so `L` reaches the box that
-    records something being written down: `Mida tegid?` on a Matter with a
-    current task, and `+ Märge` on one without (docs/adr/0075 §3).
+    happens next*. Those are two operations now, so `L` reaches the box where
+    ordinary work is written down: `✓ Tehtud`'s `Mida tegid?` on a Matter with
+    a current task, and `+ Lisa tegevus` on one without (docs/adr/0075 §3). It
+    opened `+ Lisa` until `Tavaline` left it on 2026-10-07 — and never does now:
+    `Arvamuse tähtaeg` is first there, and a deadline is not work.
     """
+    # One Matter of its own, both states in turn: a seeded Matter's task is
+    # something other files complete.
     sign_in(page, base_url, SANDRA)
-    open_matter_by_clicking(page, base_url, OPEN_TITLE)
+    url = create_matter(page, base_url, "L-kiirklahvi brauserikatse")
 
-    current = page.locator("#praegune-tegevus textarea.composer__body")
-    if current.count():
-        page.keyboard.press("l")
-        expect(current).to_be_focused()
-        box = current
-    else:
-        assert not add_panel_is_open(page, "lisa-marge")
-        page.keyboard.press("l")
-        assert add_panel_is_open(page, "lisa-marge")
-        box = page.locator("#lisa-marge [data-composer-focus]")
-        expect(box).to_be_focused()
-
+    # No task: `L` is `+ Lisa tegevus`, caret in its first box.
+    expect(page.locator("#praegune-tegevus #lisa-jargmine > summary")).to_have_text(
+        "+ Lisa tegevus"
+    )
+    assert not add_panel_is_open(page, "lisa-jargmine")
+    page.keyboard.press("l")
+    assert add_panel_is_open(page, "lisa-jargmine")
+    assert not add_panel_is_open(page, "lisa-marge")
+    box = page.locator("#lisa-jargmine [name='text']")
+    expect(box).to_be_focused()
     # And the same key inside the box types a letter rather than doing anything.
     page.keyboard.type("l")
     assert box.input_value().endswith("l")
+
+    # A current task: `L` is `✓ Tehtud`'s `Mida tegid?`.
+    start_first_step(page)
+    page.goto(url)
+    page.wait_for_load_state("networkidle")
+    current = page.locator("#praegune-tegevus textarea.composer__body")
+    page.keyboard.press("l")
+    expect(current).to_be_focused()
+    assert not add_panel_is_open(page, "lisa-marge")
+    page.keyboard.type("l")
+    assert current.input_value().endswith("l")
 
 
 def test_a_quick_date_fills_the_field_that_is_actually_submitted(page, base_url):
@@ -103,20 +117,25 @@ def test_a_quick_date_fills_the_field_that_is_actually_submitted(page, base_url)
     assert "is-selected" in (chip.get_attribute("class") or "")
 
 
-def test_a_marge_still_saves_with_ctrl_enter(page, base_url):
+def test_a_new_action_still_saves_with_ctrl_enter(page, base_url):
+    """`+ Lisa tegevus` — ordinary work since `+ Lisa · Tavaline`, which this
+    used, left on 2026-10-07. The shortcut is the form's, not the control's: the
+    handler reaches `details form` from anything inside it (static/js/app.js).
+    A Matter of its own, because the seeded one's step is read elsewhere.
+    """
     sign_in(page, base_url, SANDRA)
-    open_matter_by_clicking(page, base_url, OPEN_TITLE)
+    create_matter(page, base_url, "Kiirsalvestuse brauserikatse")
 
-    open_composer(page)
-    # `Tegevus` is one stated line rather than a prose textarea since
-    # docs/adr/0097 §6. The shortcut is the form's, not the control's: the
-    # handler reaches `form[data-addform]` from anything inside it.
-    box = page.locator("#id_marge_title")
+    open_next_action_form(page)
+    page.locator("#lisa-jargmine [data-quickdate]").filter(has_text="+1 nädal").first.click()
+    box = page.locator("#lisa-jargmine [name='text']")
     box.fill("Sünteetiline kiirsissekanne klaviatuurilt.")
     box.press("Control+Enter")
     page.wait_for_load_state("networkidle")
 
-    expect(page.locator("#teema-vaade")).to_contain_text("Sünteetiline kiirsissekanne")
+    expect(page.locator("#praegune-tegevus .curact__text")).to_have_text(
+        "Sünteetiline kiirsissekanne klaviatuurilt."
+    )
 
 
 def test_every_advanced_composer_field_is_still_reachable(page, base_url):

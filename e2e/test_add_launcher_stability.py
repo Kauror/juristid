@@ -63,7 +63,8 @@ PANEL_IDS = [
 #: The sub-choices, and which family each is inside. Opening one of these is the
 #: nested case: it must move none of the four chips above it either.
 SUBCHOICES = [
-    ("lisa-marge", "marge-tavaline"),
+    # `Arvamuse tähtaeg` first since `Tavaline` left on 2026-10-07.
+    ("lisa-marge", "marge-arvamuse-tahtaeg"),
     ("lisa-marge", "marge-tahtaeg"),
     ("lisa-marge", "marge-joustumine"),
     ("lisa-marge", "marge-toovoit"),
@@ -126,8 +127,8 @@ def open_panel(page, panel_id: str):
     so a blind click on a chip that arrives *checked* shuts its panel. That
     never mattered while every chip arrived unchecked; two of them arrive
     chosen now, because a family panel that opened on more chips and no form
-    would be an extra click on every visit — `Tavaline` and
-    `Meile saadetud tagasiside` (docs/adr/0097 §8).
+    would be an extra click on every visit — `Arvamuse tähtaeg` (`Tavaline`
+    until 2026-10-07) and `Meile saadetud tagasiside` (docs/adr/0097 §8).
 
     So this looks before it clicks, which is what `e2e/conftest.py`'s own
     `open_add_panel` has always done.
@@ -273,10 +274,10 @@ def test_the_form_opens_below_the_whole_row_and_only_one_does(page, base_url):
         "the form does not open below the last row of chips"
     )
 
-    # One family open, and the rest shut. `marge-tavaline` is inside the open
-    # one and is visible with it — that is the nesting, not a second open form
-    # (docs/adr/0097 §8).
-    shown = {"lisa-marge", "marge-tavaline"}
+    # One family open, and the rest shut. `marge-arvamuse-tahtaeg`, its
+    # default child, is inside the open one and is visible with it — that is
+    # the nesting, not a second open form (docs/adr/0097 §8).
+    shown = {"lisa-marge", "marge-arvamuse-tahtaeg"}
     for panel_id in PANEL_IDS + [choice for _, choice in SUBCHOICES]:
         expectation = expect(page.locator(f"#{panel_id}"))
         (expectation.to_be_visible() if panel_id in shown else expectation.not_to_be_visible())

@@ -8,9 +8,11 @@ loaded; removing a row far down sent focus to the top as well. Each now lands on
 the first row that arrived, or on the row that took the removed one's place, and
 the page does not scroll.
 
-The rows are filed with the page's own `+ Märge` form, submitted from inside
-the page with its CSRF token — thirty-one saves through the panel would be a
-minute of clicking that proves nothing this file is about. The interaction under
+The rows are `Märge` records POSTed to `add_note` from inside the page with
+its CSRF token — the request `e2e.conftest.record_marge` sends, without its
+reload per row. `+ Lisa · Tavaline` that once drew the form left on 2026-10-07
+(docs/adr/0143), and thirty-one saves through a panel would be a minute of
+clicking that proves nothing this file is about anyway. The interaction under
 test, the keyboard on the swap, is driven for real.
 """
 
@@ -29,12 +31,16 @@ VIEWPORT = {"width": 1440, "height": 800}
 #: Thirty rows is the first page (`TIMELINE_PAGE_SIZE`); one more makes a second.
 FILE_ROWS = """
 async (count) => {
-  const form = document.querySelector('#marge-tavaline form[hx-post]');
-  const url = form.getAttribute('hx-post');
+  const token = document.querySelector('input[name=csrfmiddlewaretoken]').value;
+  // A Teema's address ends in its slash: `/teemad/<pk>/`.
+  const url = location.pathname + 'lisa/marge/';
   for (let i = 0; i < count; i++) {
-    const data = new FormData(form);
+    const data = new FormData();
+    data.set('csrfmiddlewaretoken', token);
     data.set('title', 'Sünteetiline samm ' + String(i).padStart(2, '0'));
+    data.set('occurred_on', '');
     const response = await fetch(url, {method: 'POST', body: data,
+                                       credentials: 'same-origin',
                                        headers: {'HX-Request': 'true'}});
     if (!response.ok) throw new Error('filing row ' + i + ' answered ' + response.status);
   }

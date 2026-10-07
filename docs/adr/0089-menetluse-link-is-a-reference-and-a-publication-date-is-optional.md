@@ -533,3 +533,15 @@ narrowing would have to say what date they are supposed to have, and the honest
 shapes are «existing rows are left alone and only new ones are checked» or «the
 narrowed rule is a reviewed migration that names every row it would refuse» —
 the same choice ADR 0085 §2's reversibility section names, for the same reason.
+
+## Amendment of 2026-10-07 — §4 has one fenced exception
+
+Only for `+ Ülevaade / uudis`, and only before the save: the server reads the **title** of a koda.ee page. The owner chose this on 2026-10-07 (docs/adr/0142, second amendment of 2026-10-07).
+
+**The fence** is `app.matters.publication_title`:
+- `https` only;
+- the hosts `koda.ee` and `www.koda.ee` only, with no other port and no userinfo;
+- every redirect is checked against the same rule, with at most three;
+- a 4 s timeout and a 512 KiB cap.
+
+**What does not change.** Nothing is stored from the page except the title the person saves, and they may edit it. No date is read, nothing is polled, and every other address — `Menetluse link` included — is still never contacted.

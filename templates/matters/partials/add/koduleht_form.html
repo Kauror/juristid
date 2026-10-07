@@ -6,39 +6,40 @@ panel. Under `PRAEGUNE TEGEVUS` it was drawn a second time for the current
 
     form          the bound or unbound form instance
 {% endcomment %}
-        <form class="addform" data-addform
+        <form class="addform" data-addform data-publication-form
+              data-preview-url="{% url 'matters:preview_website_overview' pk=matter.pk %}"
               hx-post="{% url 'matters:add_website_overview' pk=matter.pk %}"
               hx-target="#teema-vaade" hx-swap="outerHTML">
           {% csrf_token %}
           {% comment %}
-            The day and the address, and nothing else on the panel.
+            **Link first, then what the link says** (owner's round, 2026-10-07):
+            `Link`, `Kuupäev`, `Pealkiri`, `Liik`. The lawyer pastes the address;
+            the page then asks the server what it is (`preview_website_overview`)
+            and fills in, before the save, the koda.ee page's own title and —
+            where the path says — `Ülevaade` or `Uudis`. Both stay editable, a
+            title somebody typed is never replaced, and an address the site does
+            not classify leaves `Liik` to the person. The save checks the address
+            and the kind again on its own (docs/adr/0142, amendment of
+            2026-10-07; static/js/ux.js `bindPublicationPreview`).
 
             **This records a page that exists.** The empty save that used to
-            file a plan is gone: pressing `Salvesta` on a panel that looks
-            untouched is a save whose meaning the person has to know in advance,
-            and what it filed was a row they then had to publish from a second
-            control (docs/adr/0095 §5).
+            file a plan is gone (docs/adr/0095 §5). `PLANNED` and `CANCELLED`
+            are untouched in the domain: every stored plan still reads, still
+            carries `Avalda` and `Tühista` in `website_overviews.html`.
 
-            `PLANNED` and `CANCELLED` are untouched in the domain. Every stored
-            plan still reads, still carries `Avalda` and `Tühista` in
-            `website_overviews.html`, and `plan_website_overview` is still the
-            service that writes one.
-
-            **The date opens on today**, which narrows docs/adr/0089 §8 for this
-            box. That decision refused a default because the commonest save was
-            an address pasted with no known publication day — but what it
-            refused specifically was a date appearing *in response to a paste*,
-            unread. This one is in the box before anything is typed, and
-            clearing it still stores `NULL` and still reads «kuupäev teadmata»
-            (docs/adr/0078 §2).
-
-            **`Kuupäev`, `Pealkiri`, `Link`.** The optional `Pealkiri` shares
-            the day's row (`cx-grid--links`, the pairing `+ Koja arvamus` uses
-            for its file and its day) and the address has the full width below:
-            it is the one required answer and usually the longest. The title is
-            what the `Teema käik` line reads, so a file written up twice says
-            which write-up is which without opening either (docs/adr/0127 §1).
+            **The date opens on today** (Europe/Tallinn), visible before
+            anything is typed, and clearing it still stores `NULL` and still
+            reads «kuupäev teadmata» (docs/adr/0078 §2, docs/adr/0089 §8). The
+            preview does not read a publication day off the page.
           {% endcomment %}
+          <label class="cx-f" for="{{ form.url.id_for_label }}">
+            <span class="cx-f__lab">{% field_label form.url %}</span>
+            {{ form.url }}
+          </label>
+          {% if form.url.errors %}
+            <p class="field__error" id="{{ form.url.auto_id }}_error">
+              {{ form.url.errors|first }}</p>
+          {% endif %}
           <div class="cx-grid cx-grid--links">
             <label class="cx-f cx-f--date"
                    for="{{ form.published_on.id_for_label }}">
@@ -50,10 +51,6 @@ panel. Under `PRAEGUNE TEGEVUS` it was drawn a second time for the current
               {{ form.overview_title }}
             </label>
           </div>
-          <label class="cx-f" for="{{ form.url.id_for_label }}">
-            <span class="cx-f__lab">{% field_label form.url %}</span>
-            {{ form.url }}
-          </label>
           {% if form.published_on.errors %}
             <p class="field__error" id="{{ form.published_on.auto_id }}_error">
               {{ form.published_on.errors|first }}</p>
@@ -61,10 +58,6 @@ panel. Under `PRAEGUNE TEGEVUS` it was drawn a second time for the current
           {% if form.overview_title.errors %}
             <p class="field__error" id="{{ form.overview_title.auto_id }}_error">
               {{ form.overview_title.errors|first }}</p>
-          {% endif %}
-          {% if form.url.errors %}
-            <p class="field__error" id="{{ form.url.auto_id }}_error">
-              {{ form.url.errors|first }}</p>
           {% endif %}
           {% comment %}
             `Ülevaade` or `Uudis` (docs/adr/0142 §C). A koda.ee address in
@@ -89,4 +82,11 @@ panel. Under `PRAEGUNE TEGEVUS` it was drawn a second time for the current
           <div class="addform__actions">
             <button class="button button--primary" type="submit">Lisa ülevaade / uudis</button>
           </div>
+          {% comment %}
+            The preview's status, **after** the button: it appears on blur,
+            which is the mousedown of a click on `Lisa ülevaade / uudis`, and a
+            line drawn above the button moved it out from under the pointer — the
+            click landed on the form and nothing was saved.
+          {% endcomment %}
+          <p class="cardnote" data-publication-status aria-live="polite" hidden></p>
         </form>

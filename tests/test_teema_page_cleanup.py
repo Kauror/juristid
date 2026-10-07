@@ -2,12 +2,14 @@
 
 The owner's feedback of 2026-09-27, six changes that read as one pass:
 
-1. **`+ Märge` has no `Etapp`.** The field is gone from the form, the template
-   and the use case behind it, nothing is inferred in its place, and a phase an
-   older row stores is still read and still corrected (docs/adr/0105, amended);
-2. **`Kuupäev` is the width of a date** under `+ Märge` and under
-   `+ Arvamus / tagasiside` (`.cx-f--solo`; the width itself is measured in the
-   browser lane, `e2e/test_teema_page_cleanup.py`);
+1. **`+ Märge` has no `Etapp`.** The field is gone from the form and the use
+   case behind it, nothing is inferred in its place, and a phase an older row
+   stores is still read and still corrected (docs/adr/0105, amended). Its
+   panel is gone too — `Tavaline` left `+ Lisa` on 2026-10-07
+   (docs/adr/0143) — so `add_note` is asserted directly;
+2. **`Kuupäev` is the width of a date** under `+ Arvamus / tagasiside`
+   (`.cx-f--solo`; the width itself is measured in the browser lane,
+   `e2e/test_teema_page_cleanup.py`);
 3. **`+ Lõpeta teema` showed three chips and `Lõppsõna`** (retired by
    docs/adr/0131 §11), with `Kuidas lõppes` left to assistive technology and the
    archive sentence gone;
@@ -89,13 +91,6 @@ def procedure_matter(specialist):
     return matter
 
 
-def _marge_panel(body: str) -> str:
-    """The `+ Märge` form, from its first control to its own `</form>`."""
-    start = body.index('id="id_marge_title"')
-    start = body.rindex("<form", 0, start)
-    return body[start : body.index("</form>", start)]
-
-
 def _sent_opinion(matter, capture_evidence, *, days_ago: int):
     from app.submissions.enums import SubmissionStatus
 
@@ -119,20 +114,6 @@ def test_the_marge_form_declares_no_phase_field(procedure_matter):
     form = MatterProgressForm(phases=phase_context(matter=procedure_matter))
 
     assert "process_phase" not in form.fields
-
-
-def test_the_marge_panel_shows_no_etapp_and_carries_no_phase_input(signed_in, procedure_matter):
-    """A2, A3. On the file where the select used to render, nothing of it is left."""
-    panel = _marge_panel(signed_in.get(_teema(procedure_matter)).content.decode())
-
-    assert "Etapp" not in panel
-    assert "process_phase" not in panel
-    assert 'id="id_marge_process_phase"' not in panel
-    # And the date is on a row of its own, not the first half of a grid whose
-    # second half is now empty.
-    date_label = panel[panel.rindex("<label", 0, panel.index('id="id_marge_occurred_on"')) :]
-    assert date_label.startswith('<label class="cx-f cx-f--date cx-f--solo"')
-    assert '<div class="cx-grid cx-grid--links">\n    <label class="cx-f cx-f--date' not in panel
 
 
 def test_a_crafted_phase_on_the_marge_route_places_nothing(signed_in, procedure_matter):

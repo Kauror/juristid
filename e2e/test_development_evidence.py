@@ -27,7 +27,7 @@ from datetime import date, timedelta
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, create_matter, open_add_panel, open_kaik_row, sign_in, unique_title
+from e2e.conftest import MARTIN, create_matter, open_kaik_row, record_marge, sign_in, unique_title
 
 pytestmark = pytest.mark.e2e
 
@@ -46,19 +46,21 @@ def _pdf(name: str) -> dict:
 
 
 def _file_a_development(page, base_url: str) -> str:
-    """One step, with one paper already on it, through the real panel."""
+    """One step, with one paper already on it, saved through `add_note`.
+
+    `record_marge` sends the save `+ Lisa · Tavaline` did; that panel left on
+    2026-10-07 (docs/adr/0143), and every `Märge` already on a file still draws
+    the row this file is about.
+    """
     sign_in(page, base_url, MARTIN)
     url = create_matter(page, base_url, unique_title("Tõendi lisamine"))
-    open_add_panel(page, "marge-tavaline")
-    form = page.locator("#marge-tavaline")
-    form.locator("[name=title]").fill(HEADLINE)
-    form.locator("[name=occurred_on]").fill(_estonian(date.today() - timedelta(days=3)))
-    form.locator("input[type=file]").set_input_files(_pdf(FIRST_FILE))
-    form.get_by_role("button", name="Salvesta", exact=True).click()
-    page.wait_for_load_state("networkidle")
-    # The record, not the network: the save swaps the whole view, and an idle
-    # that lands before the replacement would let the next step act on the page
-    # the click was made on.
+    status = record_marge(
+        page,
+        HEADLINE,
+        occurred_on=_estonian(date.today() - timedelta(days=3)),
+        files=((FIRST_FILE, b"%PDF-1.4 synthetic evidence"),),
+    )
+    assert status == 200, status
     page.get_by_text(HEADLINE).first.wait_for()
     return url
 

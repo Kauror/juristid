@@ -81,7 +81,10 @@ def test_every_add_panel_offers_its_file_control_inside_420px(page, base_url):
     page.set_viewport_size(NARROW)
     open_matter(page, base_url, OPEN_TITLE)
 
-    for panel in ("lisa-marge", "marge-tahtaeg", "marge-toovoit"):
+    # `marge-joustumine` where `lisa-marge` stood: the family's first form was
+    # `Tavaline`'s until 2026-10-07, and its first child now is `Arvamuse
+    # tähtaeg`, one date box with no file control (docs/adr/0143).
+    for panel in ("marge-joustumine", "marge-tahtaeg", "marge-toovoit"):
         open_add_panel(page, panel)
 
         assert not overflows(page), f"{panel} makes the Teema page scroll sideways at 420px"
@@ -105,9 +108,11 @@ def test_attaching_a_file_in_a_narrow_panel_keeps_the_page_inside_itself(page, b
     sign_in(page, base_url, SANDRA)
     page.set_viewport_size(NARROW)
     open_matter(page, base_url, OPEN_TITLE)
-    open_add_panel(page, "lisa-marge")
+    # `Jõustumine`, a `+ Lisa` panel that takes a file, since `Tavaline` left
+    # on 2026-10-07 (docs/adr/0143).
+    open_add_panel(page, "marge-joustumine")
 
-    page.locator("#lisa-marge input[type=file]").first.set_input_files(
+    page.locator("#marge-joustumine input[type=file]").first.set_input_files(
         {
             "name": "Majandus-ja-kommunikatsiooniministeeriumi-vastuskiri-2026.pdf",
             "mimeType": "application/pdf",

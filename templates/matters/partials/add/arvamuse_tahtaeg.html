@@ -1,0 +1,51 @@
+{% load form_labels %}
+{% comment %}
+`+ Lisa → Arvamuse tähtaeg` (owner's round, 2026-10-07). Koda is asked for an
+opinion on this Matter — again, usually: the earlier request was answered by a
+sent `Koja arvamus`, which ended it into the deadline history, and now there is
+a new one.
+
+**The structured deadline, not a note.** The save is `request_response_deadline`:
+`Matter.response_deadline` with a fresh request time, so the earlier opinion —
+linked to the earlier request — never answers this one, and the header, the
+process strip and the work lists all read it. `KOJA ARVAMUS` in the rail keeps
+showing the opinion that exists; the new date is not drawn there (docs/adr/0142,
+amendment of 2026-10-07).
+
+**A current request is never overwritten here.** Moving it or replacing it are
+two different facts and the header's `Arvamuse tähtaeg` editor asks which, so
+while one is current this panel names it and points there instead of drawing a
+form. A deadline from before requests were tracked that a sent opinion already
+discharged («lõpetatud» in the header) is not current: the form is drawn.
+
+    response_deadline      `selectors.response_deadline_of`, or None
+    response_deadline_form `CompactResponseDeadlineForm`, bound or unbound
+{% endcomment %}
+{% if open_choice == "marge-arvamuse-tahtaeg" and workspace_error %}
+  <p class="formerror" role="alert">{{ workspace_error }}</p>
+{% endif %}
+{% if response_deadline and response_deadline.is_active %}
+  <p class="cardnote" data-current-response-deadline>
+    Teemal on praegune arvamuse tähtaeg <strong>{{ response_deadline.display }}</strong>.
+    Uue küsimise jaoks muuda või lõpeta see teema päises.
+    <a href="#teema-pais" data-open-deadline-editor>Ava arvamuse tähtaeg</a>
+  </p>
+{% else %}
+  <form class="addform" data-addform
+        hx-post="{% url 'matters:add_response_deadline' pk=matter.pk %}"
+        hx-target="#teema-vaade" hx-swap="outerHTML">
+    {% csrf_token %}
+    {{ response_deadline_form.revision }}
+    <label class="cx-f cx-f--date cx-f--solo" for="{{ response_deadline_form.response_deadline_date.id_for_label }}">
+      <span class="cx-f__lab">{% field_label response_deadline_form.response_deadline_date %}</span>
+      {{ response_deadline_form.response_deadline_date }}
+    </label>
+    {% if response_deadline_form.response_deadline_date.errors %}
+      <p class="field__error" id="{{ response_deadline_form.response_deadline_date.auto_id }}_error">
+        {{ response_deadline_form.response_deadline_date.errors|first }}</p>
+    {% endif %}
+    <div class="addform__actions">
+      <button class="button button--primary" type="submit">Salvesta</button>
+    </div>
+  </form>
+{% endif %}

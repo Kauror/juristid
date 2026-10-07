@@ -40,6 +40,7 @@ from e2e.conftest import (
     open_add_panel,
     open_hetkeseis,
     open_kaik_row,
+    record_marge,
     sign_in,
     unique_title,
 )
@@ -379,12 +380,9 @@ def test_the_chronology_row_offers_lisa_fail_and_never_lisa_toend(page, base_url
     _matter(page, base_url)
     headline = "Ministeerium saatis eelnõu"
 
-    open_add_panel(page, "marge-tavaline")
-    form = page.locator("#marge-tavaline")
-    form.locator("[name=title]").fill(headline)
-    form.locator("[name=occurred_on]").fill(_estonian(date.today() - timedelta(days=2)))
-    form.get_by_role("button", name="Salvesta", exact=True).click()
-    page.wait_for_load_state("networkidle")
+    # A `Märge` through `add_note`, which `+ Lisa · Tavaline` posted to until
+    # it left on 2026-10-07 (docs/adr/0143).
+    record_marge(page, headline, occurred_on=_estonian(date.today() - timedelta(days=2)))
     page.get_by_text(headline).first.wait_for()
 
     row = page.locator("article.uxtl__item").filter(has_text=headline)
@@ -503,12 +501,9 @@ def test_the_chronology_row_with_lisa_fail_does_not_overflow(page, base_url: str
     _matter(page, base_url)
     headline = "Ministeerium saatis eelnõu"
 
-    open_add_panel(page, "marge-tavaline")
-    form = page.locator("#marge-tavaline")
-    form.locator("[name=title]").fill(headline)
-    form.locator("[name=occurred_on]").fill(_estonian(date.today() - timedelta(days=2)))
-    form.get_by_role("button", name="Salvesta", exact=True).click()
-    page.wait_for_load_state("networkidle")
+    # A `Märge` through `add_note`, which `+ Lisa · Tavaline` posted to until
+    # it left on 2026-10-07 (docs/adr/0143).
+    record_marge(page, headline, occurred_on=_estonian(date.today() - timedelta(days=2)))
     page.get_by_text(headline).first.wait_for()
 
     row = page.locator("article.uxtl__item").filter(has_text=headline)

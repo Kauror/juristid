@@ -195,15 +195,12 @@ def test_the_confirmable_stages_are_exactly_the_five_reviewed():
 # ---------------------------------------------------------------------------
 
 
-def test_an_eligible_move_is_offered_on_the_panel(signed_in, specialist):
+def test_a_fresh_form_offers_nothing_until_a_stage_qualifies(specialist):
+    """The form's rule. The panel that drew it (`+ Lisa · Tavaline`) left on
+    2026-10-07 (docs/adr/0143); `add_note` still applies the rule."""
     matter = _matter(specialist)
 
-    body = signed_in.get(_teema(matter)).content.decode()
-
-    assert "data-phase-date-choice" in body
-    assert "&quot;consultation&quot;" in body
-    assert 'data-stage-key="consultation"' in body
-    # A fresh panel says «Jätan muutmata», so nothing is offered yet — hidden
+    # A fresh form says «Jätan muutmata», so nothing is offered yet — hidden
     # and disabled until a stage that qualifies is chosen.
     offers = _offers(matter, specialist)
     form = MatterProgressForm(phases=phase_context(matter=matter), phase_offers=offers)

@@ -8,8 +8,13 @@ went wrong around that in a real browser (ENG-012, ENG-034):
   gate swapped the password page into the column; the note's autosave went on
   saying «Salvestatud» over text that had not been saved;
 * **a save in one panel threw away what was typed in the others** — the
-  half-written `Mida tegid?`, an open `+ Märge`, a row's `Muuda`, the note's
-  last keystrokes.
+  half-written `Mida tegid?`, an open `+ Lisa` panel, a row's `Muuda`, the
+  note's last keystrokes.
+
+The panel these drive is `+ Lisa · Töövõit`: one required line and a date that
+arrives holding today, so a save is one box. It was `Tavaline` until that left
+`+ Lisa` on 2026-10-07 (docs/adr/0143); what is under test is the launcher's
+generic failure and draft handling, which every panel shares.
 
 Everything here is about what the page does, so it is measured in the page:
 which element is on screen, what it says, what the boxes hold, and what went
@@ -35,6 +40,7 @@ from e2e.conftest import (
     open_done_form,
     open_kaik_row,
     pass_the_gate,
+    record_marge,
     set_next_step,
     sign_in,
     wait_for_htmx,
@@ -44,8 +50,12 @@ from e2e.titles import unique_title
 pytestmark = pytest.mark.e2e
 
 FAILURE = "[data-request-failure]"
-MARGE_FORM = "#marge-tavaline form"
-MARGE_SAVE = "#marge-tavaline button[type=submit]"
+PANEL = "marge-toovoit"
+PANEL_FORM = "#marge-toovoit form"
+PANEL_SAVE = "#marge-toovoit button[type=submit]"
+#: `Mis muutus`, the panel's one required line.
+FIELD = "#id_victory_change"
+ROUTE = "**/lisa/toovoit/"
 COMPOSER = "#praegune-tegevus .composer__body"
 NOTE = ".railnote textarea"
 
@@ -116,26 +126,26 @@ def _history(page) -> str:
 def test_a_server_error_is_told_beside_the_form_and_keeps_the_text(page, base_url, width):
     page.set_viewport_size({"width": width, "height": 900})
     _teema(page, base_url, step=False)
-    open_add_panel(page, "marge-tavaline")
-    page.fill("#id_marge_title", "Ministeerium saatis uue versiooni")
+    open_add_panel(page, PANEL)
+    page.fill(FIELD, "Ministeerium saatis uue versiooni")
 
     posts: list[str] = []
     page.route(
-        "**/lisa/marge/",
+        ROUTE,
         lambda route: (
             posts.append(route.request.method),
             route.fulfill(status=500, body="<h1>Server Error (500)</h1>"),
         ),
     )
-    page.locator(MARGE_SAVE).click()
-    notice = page.locator(f"{MARGE_FORM} {FAILURE}")
+    page.locator(PANEL_SAVE).click()
+    notice = page.locator(f"{PANEL_FORM} {FAILURE}")
     expect(notice).to_be_visible()
     expect(notice).to_have_attribute("role", "alert")
     expect(notice).to_contain_text("Salvestamine ebaõnnestus.")
     expect(notice).to_contain_text("Serveris tekkis viga.")
     expect(notice).to_contain_text("Sisestatud tekst on alles")
     assert "500" not in notice.inner_text() and "Server Error" not in notice.inner_text()
-    expect(page.locator("#id_marge_title")).to_have_value("Ministeerium saatis uue versiooni")
+    expect(page.locator(FIELD)).to_have_value("Ministeerium saatis uue versiooni")
 
     # Told once and not sent again on the person's behalf.
     page.wait_for_timeout(1200)
@@ -144,14 +154,14 @@ def test_a_server_error_is_told_beside_the_form_and_keeps_the_text(page, base_ur
     # It sits in the flow, inside the page's width, and covers none of the form.
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     box = notice.bounding_box()
-    title = page.locator("#id_marge_title").bounding_box()
+    title = page.locator(FIELD).bounding_box()
     assert box is not None and title is not None
     assert box["x"] >= 0 and box["x"] + box["width"] <= width
     assert box["y"] >= title["y"] + title["height"]
 
     # And a retry that works takes the notice with it.
-    page.unroute("**/lisa/marge/")
-    page.locator(MARGE_SAVE).click()
+    page.unroute(ROUTE)
+    page.locator(PANEL_SAVE).click()
     wait_for_htmx(page)
     expect(page.locator(FAILURE)).to_have_count(0)
     assert "Ministeerium saatis uue versiooni" in _history(page)
@@ -159,63 +169,63 @@ def test_a_server_error_is_told_beside_the_form_and_keeps_the_text(page, base_ur
 
 def test_a_dropped_connection_is_told_and_keeps_the_text(page, base_url):
     _teema(page, base_url, step=False)
-    open_add_panel(page, "marge-tavaline")
-    page.fill("#id_marge_title", "Kirjutatud ühenduseta")
-    page.route("**/lisa/marge/", lambda route: route.abort())
-    page.locator(MARGE_SAVE).click()
-    notice = page.locator(f"{MARGE_FORM} {FAILURE}")
+    open_add_panel(page, PANEL)
+    page.fill(FIELD, "Kirjutatud ühenduseta")
+    page.route(ROUTE, lambda route: route.abort())
+    page.locator(PANEL_SAVE).click()
+    notice = page.locator(f"{PANEL_FORM} {FAILURE}")
     expect(notice).to_contain_text("Ühendus serveriga katkes.")
-    expect(page.locator("#id_marge_title")).to_have_value("Kirjutatud ühenduseta")
+    expect(page.locator(FIELD)).to_have_value("Kirjutatud ühenduseta")
 
 
 def test_an_expired_gate_keeps_the_column_and_offers_the_way_back(page, gate_base_url):
     _gate_teema(page, gate_base_url)
-    open_add_panel(page, "marge-tavaline")
-    page.fill("#id_marge_title", "Kirjutatud enne värava aegumist")
+    open_add_panel(page, PANEL)
+    page.fill(FIELD, "Kirjutatud enne värava aegumist")
     _drop_session(page)
 
-    page.locator(MARGE_SAVE).click()
-    notice = page.locator(f"{MARGE_FORM} {FAILURE}")
+    page.locator(PANEL_SAVE).click()
+    notice = page.locator(f"{PANEL_FORM} {FAILURE}")
     expect(notice).to_contain_text("Sisselogimine on aegunud.")
     # The column is still the column: no password form swapped into it.
     expect(page.locator("#teema-vaade")).to_have_count(1)
     expect(page.locator("input[type=password]")).to_have_count(0)
-    expect(page.locator("#id_marge_title")).to_have_value("Kirjutatud enne värava aegumist")
+    expect(page.locator(FIELD)).to_have_value("Kirjutatud enne värava aegumist")
     link = notice.get_by_role("link", name="Logi uuesti sisse")
     expect(link).to_have_attribute("href", "/konto/varav/")
 
 
 def test_an_expired_session_offers_sign_in_back_to_this_page(page, base_url):
     url = _teema(page, base_url, step=False)
-    open_add_panel(page, "marge-tavaline")
-    page.fill("#id_marge_title", "Kirjutatud enne sessiooni aegumist")
+    open_add_panel(page, PANEL)
+    page.fill(FIELD, "Kirjutatud enne sessiooni aegumist")
     _drop_session(page)
 
-    page.locator(MARGE_SAVE).click()
-    notice = page.locator(f"{MARGE_FORM} {FAILURE}")
+    page.locator(PANEL_SAVE).click()
+    notice = page.locator(f"{PANEL_FORM} {FAILURE}")
     expect(notice).to_contain_text("Sisselogimine on aegunud.")
     path = re.sub(r"^https?://[^/]+", "", url)
     expect(notice.get_by_role("link", name="Logi uuesti sisse")).to_have_attribute(
         "href", f"/konto/arendus-sisselogimine/?next={quote(path, safe='')}"
     )
-    expect(page.locator("#id_marge_title")).to_have_value("Kirjutatud enne sessiooni aegumist")
+    expect(page.locator(FIELD)).to_have_value("Kirjutatud enne sessiooni aegumist")
 
 
 def test_a_persona_change_in_another_tab_is_told_and_saves_nothing(page, gate_base_url):
     _gate_teema(page, gate_base_url)
-    open_add_panel(page, "marge-tavaline")
-    page.fill("#id_marge_title", "Kirjutatud Martini nimel")
+    open_add_panel(page, PANEL)
+    page.fill(FIELD, "Kirjutatud Martini nimel")
 
     other = page.context.new_page()
     other.goto(f"{gate_base_url}/osakond/")
     _choose_persona(other, "Sandra")
     other.close()
 
-    page.locator(MARGE_SAVE).click()
-    notice = page.locator(f"{MARGE_FORM} {FAILURE}")
+    page.locator(PANEL_SAVE).click()
+    notice = page.locator(f"{PANEL_FORM} {FAILURE}")
     expect(notice).to_contain_text("Leht on aegunud")
     expect(notice.get_by_role("button", name="Laadi leht uuesti")).to_be_visible()
-    expect(page.locator("#id_marge_title")).to_have_value("Kirjutatud Martini nimel")
+    expect(page.locator(FIELD)).to_have_value("Kirjutatud Martini nimel")
 
     notice.get_by_role("button", name="Laadi leht uuesti").click()
     page.wait_for_load_state("networkidle")
@@ -267,15 +277,15 @@ def test_a_refused_and_then_a_saved_marge_keep_the_half_written_task(page, base_
     page.fill(COMPOSER, "Helistasin, pooleli kirjeldus")
 
     # A refusal stays inline on its own panel.
-    open_add_panel(page, "marge-tavaline")
-    page.locator(MARGE_SAVE).click()
+    open_add_panel(page, PANEL)
+    page.locator(PANEL_SAVE).click()
     wait_for_htmx(page)
-    expect(page.locator("#marge-tavaline .formerror")).to_be_visible()
+    expect(page.locator("#marge-toovoit .field__error")).to_have_text("Kirjuta, mis muutus.")
     expect(page.locator(COMPOSER)).to_have_value("Helistasin, pooleli kirjeldus")
 
     # A save lands, and the task's box is untouched by it.
-    page.fill("#id_marge_title", "Ministeerium vastas")
-    page.locator(MARGE_SAVE).click()
+    page.fill(FIELD, "Ministeerium vastas")
+    page.locator(PANEL_SAVE).click()
     wait_for_htmx(page)
     assert "Ministeerium vastas" in _history(page)
     expect(page.locator(COMPOSER)).to_have_value("Helistasin, pooleli kirjeldus")
@@ -290,8 +300,8 @@ def test_a_refused_and_then_a_saved_marge_keep_the_half_written_task(page, base_
 
 def test_a_task_save_keeps_an_open_marge_draft_open(page, base_url):
     _teema(page, base_url)
-    open_add_panel(page, "marge-tavaline")
-    page.fill("#id_marge_title", "Märke mustand")
+    open_add_panel(page, PANEL)
+    page.fill(FIELD, "Märke mustand")
     open_done_form(page)
     page.fill(COMPOSER, "Helistasin")
     open_done_form(page)
@@ -299,12 +309,13 @@ def test_a_task_save_keeps_an_open_marge_draft_open(page, base_url):
     wait_for_htmx(page)
 
     assert "Helistasin" in _history(page)
-    expect(page.locator("#id_marge_title")).to_be_visible()
-    expect(page.locator("#id_marge_title")).to_have_value("Märke mustand")
+    expect(page.locator(FIELD)).to_be_visible()
+    expect(page.locator(FIELD)).to_have_value("Märke mustand")
     assert page.locator("#lisa-marge-valik").is_checked()
+    assert page.locator("#marge-toovoit-valik").is_checked()
     assert _duplicate_ids(page) == []
 
-    page.locator(MARGE_SAVE).click()
+    page.locator(PANEL_SAVE).click()
     wait_for_htmx(page)
     assert "Märke mustand" in _history(page)
 
@@ -314,9 +325,9 @@ def test_a_draft_in_a_panel_left_behind_stays_behind(page, base_url):
     _teema(page, base_url)
     open_add_panel(page, "kaasamine-alusta")
     page.locator("#kaasamine-alusta textarea").first.fill("Kaasamise mustand")
-    open_add_panel(page, "marge-tavaline")
-    page.fill("#id_marge_title", "Teine märge")
-    page.locator(MARGE_SAVE).click()
+    open_add_panel(page, PANEL)
+    page.fill(FIELD, "Teine märge")
+    page.locator(PANEL_SAVE).click()
     wait_for_htmx(page)
 
     assert not page.locator("#lisa-kaasamine-valik").is_checked()
@@ -325,10 +336,9 @@ def test_a_draft_in_a_panel_left_behind_stays_behind(page, base_url):
 
 def test_an_open_row_editor_survives_an_unrelated_save(page, base_url):
     _teema(page, base_url, step=False)
-    open_add_panel(page, "marge-tavaline")
-    page.fill("#id_marge_title", "Rida üks")
-    page.locator(MARGE_SAVE).click()
-    wait_for_htmx(page)
+    # A `Märge` row, whose `Muuda` carries `Juristi märkus`; saved through
+    # `add_note`, which outlived `Tavaline` (docs/adr/0143).
+    assert record_marge(page, "Rida üks") == 200
 
     open_kaik_row(page.locator(KAIK_ROW).filter(has_text="Rida üks").first)
     page.locator(".uxtl__edit").first.click()
@@ -337,9 +347,9 @@ def test_an_open_row_editor_survives_an_unrelated_save(page, base_url):
     editor.fill("Pooleli parandus")
     editor.focus()
 
-    open_add_panel(page, "marge-tavaline")
-    page.fill("#id_marge_title", "Rida kaks")
-    page.locator(MARGE_SAVE).click()
+    open_add_panel(page, PANEL)
+    page.fill(FIELD, "Rida kaks")
+    page.locator(PANEL_SAVE).click()
     wait_for_htmx(page)
 
     assert "Rida kaks" in _history(page)
@@ -359,9 +369,9 @@ def test_the_note_survives_a_save_inside_its_debounce(page, base_url):
     box = page.locator(NOTE)
     box.click()
     box.type("Kiire märkus", delay=5)
-    open_add_panel(page, "marge-tavaline")
-    page.fill("#id_marge_title", "Samal ajal")
-    page.locator(MARGE_SAVE).click()
+    open_add_panel(page, PANEL)
+    page.fill(FIELD, "Samal ajal")
+    page.locator(PANEL_SAVE).click()
     wait_for_htmx(page)
 
     expect(page.locator(NOTE)).to_have_value("Kiire märkus")
@@ -385,9 +395,9 @@ def test_a_draft_about_a_task_that_moved_on_is_shown_not_reposted(browser, base_
         finish_current_action(other, "Teises aknas tehtud")
         other.close()
 
-        open_add_panel(page, "marge-tavaline")
-        page.fill("#id_marge_title", "Märge pärast seda")
-        page.locator(MARGE_SAVE).click()
+        open_add_panel(page, PANEL)
+        page.fill(FIELD, "Märge pärast seda")
+        page.locator(PANEL_SAVE).click()
         wait_for_htmx(page)
 
         unsaved = page.locator("section.unsaved")
@@ -404,13 +414,13 @@ def test_a_clean_workspace_carries_nothing_across_a_save(page, base_url):
     """Nothing typed, nothing kept: every region is the server's fresh one."""
     _teema(page, base_url)
     open_add_panel(page, "lisa-kaasamine")
-    open_add_panel(page, "marge-tavaline")
+    open_add_panel(page, PANEL)
     page.evaluate(
         "() => document.querySelectorAll('[data-draft-host]')"
         ".forEach(el => { el.__before = true; })"
     )
-    page.fill("#id_marge_title", "Puhas salvestus")
-    page.locator(MARGE_SAVE).click()
+    page.fill(FIELD, "Puhas salvestus")
+    page.locator(PANEL_SAVE).click()
     wait_for_htmx(page)
 
     survivors = page.evaluate(
@@ -434,8 +444,8 @@ def test_one_unload_listener_however_many_swaps(page, base_url):
     )
     _teema(page, base_url, step=False)
     for number in range(3):
-        open_add_panel(page, "marge-tavaline")
-        page.fill("#id_marge_title", f"Salvestus {number}")
-        page.locator(MARGE_SAVE).click()
+        open_add_panel(page, PANEL)
+        page.fill(FIELD, f"Salvestus {number}")
+        page.locator(PANEL_SAVE).click()
         wait_for_htmx(page)
     assert page.evaluate("window.__unloadListeners") == 1

@@ -14,11 +14,18 @@ writing into another file's fixtures.
 from __future__ import annotations
 
 import re
-from datetime import date, timedelta
 
 import pytest
 
-from e2e.conftest import SANDRA, create_matter, open_kaik_row, sign_in, unique_title
+from e2e.conftest import (
+    SANDRA,
+    create_matter,
+    open_add_panel,
+    open_kaik_row,
+    record_marge,
+    sign_in,
+    unique_title,
+)
 from e2e.test_teema_page_cleanup import record_koja_arvamus
 
 pytestmark = pytest.mark.e2e
@@ -280,16 +287,20 @@ def test_a_save_leaves_the_keyboard_somewhere_useful(page, base_url):
     """An htmx swap destroys the focused element; the browser answers `body`.
 
     On a file with thirty rows that meant tabbing down from the skip link after
-    every single capture.
+    every single capture. Saved through `+ Lisa · Töövõit` since `Tavaline`,
+    the panel this was first measured on, left `+ Lisa` on 2026-10-07
+    (docs/adr/0143): the rule is the launcher's, not one panel's.
     """
     sign_in(page, base_url, SANDRA)
     url = create_matter(page, base_url, unique_title("QA fookus"), owner=SANDRA)
 
     page.goto(url)
-    page.locator("#lisa-teemale").get_by_text("+ Lisa", exact=True).click()
-    page.fill("#id_marge_title", "Ministeerium saatis uue versiooni")
-    page.get_by_role("button", name="Salvesta").first.click()
-    page.wait_for_selector("text=Ministeerium saatis uue versiooni")
+    open_add_panel(page, "marge-toovoit")
+    page.fill("#id_victory_change", "Ministeerium pikendas üleminekuaega")
+    page.locator("#marge-toovoit button[type=submit]").click()
+    # Attached, not visible: a `Töövõit` row arrives closed, its words on the
+    # sub-line its toggle opens (docs/adr/0074 §14).
+    page.wait_for_selector("text=Ministeerium pikendas üleminekuaega", state="attached")
 
     focused = page.evaluate("() => document.activeElement && document.activeElement.id")
     assert focused == "lisa-teemale"
@@ -298,49 +309,31 @@ def test_a_save_leaves_the_keyboard_somewhere_useful(page, base_url):
 def test_a_refusal_still_focuses_the_field_that_was_wrong(page, base_url):
     """The behaviour the round must not have traded away.
 
-    The refusal this used was «Kirjuta, mis juhtus.» on an empty `Mis juhtus?`,
-    which docs/adr/0105 §4 retired; the one it used next was «Vali järgmise
-    tegevuse kuupäev.» on an empty day, which docs/adr/0106 retired in turn, and
-    then «Kirjuta järgmine tegevus.» on the separate step box, which
-    docs/adr/0124 removed. What is left, and is the honest field-scoped refusal,
-    is the same sentence where the step now comes from: a day ahead marked as
-    the next step with nothing written in `Tegevus`.
+    The refusals this used were all `+ Lisa · Tavaline`'s — «Kirjuta, mis
+    juhtus.» (retired by docs/adr/0105 §4), «Vali järgmise tegevuse kuupäev.»
+    (docs/adr/0106), «Kirjuta järgmine tegevus.» (docs/adr/0124) — and the panel
+    itself left on 2026-10-07 (docs/adr/0143). The honest field-scoped refusal
+    left in the same launcher is `Töövõit` with nothing under `Mis muutus`.
     """
     sign_in(page, base_url, SANDRA)
     url = create_matter(page, base_url, unique_title("QA keeldumise fookus"), owner=SANDRA)
-    ahead = date.today() + timedelta(days=5)
 
     page.goto(url)
-    page.locator("#lisa-teemale").get_by_text("+ Lisa", exact=True).click()
-    page.fill("#id_marge_title", "")
-    page.fill("#id_marge_occurred_on", f"{ahead.day}.{ahead.month}.{ahead.year}")
-    page.locator("#id_marge_as_next_step").wait_for(state="visible")
-    page.get_by_role("button", name="Salvesta").first.click()
-    page.wait_for_selector("text=Kirjuta järgmine tegevus.")
+    open_add_panel(page, "marge-toovoit")
+    page.fill("#id_victory_change", "")
+    page.locator("#marge-toovoit button[type=submit]").click()
+    page.wait_for_selector("text=Kirjuta, mis muutus.")
 
     focused = page.evaluate("() => document.activeElement && document.activeElement.id")
-    assert focused == "id_marge_title"
+    assert focused == "id_victory_change"
 
 
-def test_a_panel_level_refusal_focuses_the_sentence_that_names_it(page, base_url):
-    """docs/adr/0105 §4's refusal, and the focus rule it lands on.
-
-    A `Märge` with no sentence, no file, no stage and no step names no box, so
-    `focusFirstRefusal` takes the summary itself rather than guessing a field —
-    putting the cursor in `Tegevus` would say the sentence is the missing
-    answer when any of them would do (static/js/ux.js).
-    """
-    sign_in(page, base_url, SANDRA)
-    url = create_matter(page, base_url, unique_title("QA tühi märge"), owner=SANDRA)
-
-    page.goto(url)
-    page.locator("#lisa-teemale").get_by_text("+ Lisa", exact=True).click()
-    page.fill("#id_marge_title", "")
-    page.get_by_role("button", name="Salvesta").first.click()
-    page.wait_for_selector("text=Kirjuta tegevus, lisa fail või vali uus hetkeseis.")
-
-    focused = page.evaluate("() => document.activeElement && document.activeElement.className")
-    assert "formerror" in (focused or ""), focused
+# `test_a_panel_level_refusal_focuses_the_sentence_that_names_it` stood here:
+# «Kirjuta tegevus, lisa fail või vali uus hetkeseis.» was `+ Lisa ·
+# Tavaline`'s own form-level refusal, and no other launcher panel refuses an
+# empty save without naming a box. The panel left on 2026-10-07
+# (docs/adr/0143); the focus rule for a form-level refusal is still measured by
+# e2e/test_refusal_focus.py (C).
 
 
 # ---------------------------------------------------------------------------
@@ -354,9 +347,7 @@ def test_a_mistaken_marge_can_be_taken_off_the_file(page, base_url):
     url = create_matter(page, base_url, unique_title("QA eemaldamine"), owner=SANDRA)
 
     page.goto(url)
-    page.locator("#lisa-teemale").get_by_text("+ Lisa", exact=True).click()
-    page.fill("#id_marge_title", "Vale teema peale kirjutatud märge")
-    page.get_by_role("button", name="Salvesta").first.click()
+    record_marge(page, "Vale teema peale kirjutatud märge")
     page.wait_for_selector("text=Vale teema peale kirjutatud märge")
 
     row = page.locator(
@@ -380,9 +371,7 @@ def test_the_confirmation_can_be_left_without_removing_anything(page, base_url):
     url = create_matter(page, base_url, unique_title("QA loobumine"), owner=SANDRA)
 
     page.goto(url)
-    page.locator("#lisa-teemale").get_by_text("+ Lisa", exact=True).click()
-    page.fill("#id_marge_title", "See märge jääb alles")
-    page.get_by_role("button", name="Salvesta").first.click()
+    record_marge(page, "See märge jääb alles")
     page.wait_for_selector("text=See märge jääb alles")
 
     row = page.locator("#ajalugu-loend .uxtl__item", has_text="See märge jääb alles").first
@@ -403,9 +392,7 @@ def test_the_removal_is_still_in_the_change_log(page, base_url):
     url = create_matter(page, base_url, unique_title("QA logi"), owner=SANDRA)
 
     page.goto(url)
-    page.locator("#lisa-teemale").get_by_text("+ Lisa", exact=True).click()
-    page.fill("#id_marge_title", "Eemaldatav märge logis")
-    page.get_by_role("button", name="Salvesta").first.click()
+    record_marge(page, "Eemaldatav märge logis")
     page.wait_for_selector("text=Eemaldatav märge logis")
 
     row = page.locator("#ajalugu-loend .uxtl__item", has_text="Eemaldatav märge logis").first
@@ -606,9 +593,7 @@ def test_kustuta_sits_beside_muuda_in_the_chronology(page, base_url):
     url = create_matter(page, base_url, unique_title("QA nuppude rida"), owner=SANDRA)
 
     page.goto(url)
-    page.locator("#lisa-teemale").get_by_text("+ Lisa", exact=True).click()
-    page.fill("#id_marge_title", "Märge, mille nupud peavad ühel real olema")
-    page.get_by_role("button", name="Salvesta").first.click()
+    record_marge(page, "Märge, mille nupud peavad ühel real olema")
     page.wait_for_selector("text=Märge, mille nupud peavad")
 
     row = page.locator("#ajalugu-loend .uxtl__item", has_text="Märge, mille nupud peavad").first

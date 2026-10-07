@@ -298,7 +298,8 @@ def wait_for_htmx(page, timeout: float = PANEL_TIMEOUT_MS) -> None:
 #: decision, and a test suite that discovered it by walking parents would go on
 #: passing if the nesting silently changed.
 PANEL_FAMILY = {
-    "marge-tavaline": "lisa-marge",
+    # `+ Lisa` — `Tavaline` left on 2026-10-07; `Arvamuse tähtaeg` is first.
+    "marge-arvamuse-tahtaeg": "lisa-marge",
     "marge-tahtaeg": "lisa-marge",
     "marge-joustumine": "lisa-marge",
     "marge-toovoit": "lisa-marge",
@@ -407,7 +408,7 @@ def open_add_panel(page, panel_id: str) -> None:
             # helper reported «did not open (open=False)» about a page whose
             # family it had never opened.
             if family is not None and not add_panel_is_open(page, family):
-                open_add_panel(page, family)
+                _open_family(page, family)
             if _open_add_panel_once(page, panel_id):
                 return
         except PlaywrightTimeoutError:
@@ -421,6 +422,22 @@ def open_add_panel(page, panel_id: str) -> None:
                 + (f", {family}={add_panel_is_open(page, family)}" if family else "")
                 + ")"
             )
+
+
+def _open_family(page, family: str) -> None:
+    """Open a family panel as the first of two steps, without asking for a form.
+
+    The family is the way to its sub-choice, so what it must show is its chips,
+    not a form: `+ Lisa` opens on `Arvamuse tähtaeg`, which on a Matter with a
+    current deadline draws a note and no form (2026-10-07). Waiting on a
+    visible form there refused a family that was open.
+    """
+    wait_for_htmx(page)
+    page.locator(f"#{family}").wait_for(state="attached", timeout=PANEL_STEP_MS)
+    if not add_panel_is_open(page, family):
+        add_panel_chip(page, family).click(timeout=PANEL_STEP_MS)
+    if not add_panel_is_open(page, family):
+        raise PlaywrightTimeoutError(f"#{family} did not open")
 
 
 def _open_add_panel_once(page, panel_id: str) -> bool:
@@ -464,40 +481,20 @@ def close_add_panel(page, panel_id: str) -> None:
 
 
 def set_next_step(page, text: str, when: str) -> None:
-    """Give a Matter its next step, through whichever control this page offers.
+    """Give a Matter its next step, through the one control there is for it.
 
-    **Two hosts, and which one exists is a fact about the Matter.** While a
-    task is open the control is `Muuda` inside `PRAEGUNE TEGEVUS`. While none
-    is, this helper sets the first step through `+ Märge` itself: the
-    activity, dated ahead, with `Märgi järgmiseks tegevuseks` ticked
-    (docs/adr/0097 §8.2, docs/adr/0124). That save also records the `Märge`,
-    which `Teema käik` draws as an `Eesolev` row carrying the same sentence —
-    and the files written before docs/adr/0126 read that row, so this door is
-    kept. The direct `+ Lisa tegevus` the zone now also offers is
-    driven by `e2e/test_direct_next_action_workflow.py`.
+    `#lisa-jargmine` in `PRAEGUNE TEGEVUS`: `Muuda` while a task is open and
+    `+ Lisa tegevus` while none is — the same `next_action_panel.html` either
+    way (docs/adr/0126 §1). Until 2026-10-07 a Matter with no task was given
+    one through `+ Lisa · Tavaline` with `Märgi järgmiseks tegevuseks` ticked;
+    that panel is gone, so this no longer records a `Märge` beside the step.
 
-    **Which host is decided by the completion form**, `#praegune-tegevus-vorm`,
-    which is drawn only beside an open step. `#lisa-jargmine` is not the signal
-    any more: since docs/adr/0126 §1 it is on every open Matter, as `Muuda` or
-    as `+ Lisa tegevus`.
-
-    `when` is an Estonian date as the box takes it, and on the `+ Märge` host
-    it has to be **after today**: a past or today's `Märge` offers no step.
+    `when` is an Estonian date as the box takes it.
     """
-    if page.locator("#praegune-tegevus-vorm").count():
-        open_next_action_form(page)
-        page.locator("#lisa-jargmine [name='text']").fill(text)
-        page.locator("#id_target_date").fill(when)
-        page.locator("#lisa-jargmine button[type=submit]").first.click()
-    else:
-        open_add_panel(page, "marge-tavaline")
-        page.locator("#id_marge_title").fill(text)
-        page.locator("#id_marge_occurred_on").fill(when)
-        offer = page.locator("#id_marge_as_next_step")
-        offer.wait_for(state="visible")
-        if not offer.is_checked():
-            offer.check()
-        page.locator("#marge-tavaline button[type=submit]").click()
+    open_next_action_form(page)
+    page.locator("#lisa-jargmine [name='text']").fill(text)
+    page.locator("#id_target_date").fill(when)
+    page.locator("#lisa-jargmine button[type=submit]").first.click()
     page.wait_for_load_state("networkidle")
 
 
@@ -632,23 +629,69 @@ def start_first_step(page, *, days: int = 7, text: str = FIRST_STEP_TEXT) -> Non
     zone.locator("#tehtud").wait_for(state="attached")
 
 
-def open_composer(page) -> None:
-    """`+ Märge` — where something that happened gets written down.
+def record_marge(
+    page,
+    title: str,
+    *,
+    occurred_on: str = "",
+    stage: str = "",
+    as_next_step: bool = False,
+    files: tuple[tuple[str, bytes], ...] = (),
+) -> int:
+    """Record a `Märge` the way `+ Lisa · Tavaline` did, now that it has no panel.
 
-    The composer this replaces asked *what happened* and *what happens next* in
-    one form over one `Salvesta`; those are two intentions and two saves now.
-    A test that used to type a body into the composer is recording a note, so
-    that is what this opens (docs/adr/0075 §2).
+    `Tavaline` left `+ Lisa` on 2026-10-07 (docs/adr/0143), and its endpoint,
+    `add_note`, still takes the save — every `Märge` already on a file still
+    reads, and a test that needs one on the page writes it here. The POST runs
+    inside the page, with its session and CSRF token, so it is the same request
+    the panel sent; the page is reloaded afterwards so it shows the result.
 
-    **It opens `Märke liik · Tavaline`, and the box is `Tegevus`.** The
-    ordinary note writes a `MatterProceduralDevelopment` now, through a single
-    stated line rather than a prose body, and `+ Menetluse areng` is gone as a
-    separate control — so a test that recorded a note through the composer
-    still records a note, and the record it lands in is the structured one
-    (docs/adr/0097 §6).
+    ``stage`` is a `Hetkeseis` label as the header's own select lists it. A
+    stage that ends the Matter closes it, as the panel's did. Returns the
+    response status.
     """
-    open_add_panel(page, "marge-tavaline")
-    page.locator("#id_marge_title").wait_for(state="visible")
+    stage_id = ""
+    if stage:
+        stage_id = page.evaluate(
+            """(label) => {
+                const select = document.querySelector('#teema-hetkeseis select[name=stage]');
+                const option = select && Array.from(select.options)
+                    .find((o) => o.textContent.trim().split(' — ')[0] === label);
+                return option ? option.value : '';
+            }""",
+            stage,
+        )
+        assert stage_id, f"no Hetkeseis {stage!r} in the header"
+    status = page.evaluate(
+        """async ({url, title, occurredOn, stage, asNext, files}) => {
+            const data = new FormData();
+            data.append('csrfmiddlewaretoken',
+                document.querySelector('input[name=csrfmiddlewaretoken]').value);
+            data.append('title', title);
+            data.append('occurred_on', occurredOn);
+            if (stage) data.append('stage', stage);
+            if (asNext) data.append('as_next_step', 'on');
+            for (const [name, bytes] of files) {
+                data.append('attachments', new File([new Uint8Array(bytes)], name));
+            }
+            const response = await fetch(url, {
+                method: 'POST', body: data, credentials: 'same-origin',
+                headers: {'HX-Request': 'true'},
+            });
+            return response.status;
+        }""",
+        {
+            "url": page.url.split("#")[0].split("?")[0].rstrip("/") + "/lisa/marge/",
+            "title": title,
+            "occurredOn": occurred_on,
+            "stage": stage_id,
+            "asNext": as_next_step,
+            "files": [[name, list(body)] for name, body in files],
+        },
+    )
+    page.reload()
+    page.wait_for_load_state("networkidle")
+    return status
 
 
 def open_done_form(page) -> None:
@@ -797,16 +840,20 @@ def close_through_stage(page, stage: str = "Rohkem ei tegele", title: str = "") 
     """End the Matter the one ordinary way there is: a `Hetkeseis` that ends it.
 
     `+ Lõpeta teema` is gone (docs/adr/0131 §11). «Jõustunud» and «Rohkem ei
-    tegele» close the Matter on `Salvesta`, and their option says so —
-    «… — lõpetab teema». ``title`` is the `Märge`'s own sentence, optional like
-    every other control on the panel.
+    tegele» close the Matter on save. With no ``title`` this is the header's
+    own `Hetkeseis` editor; with one, a `Märge` carrying that sentence and the
+    stage, through `record_marge` — `+ Lisa · Tavaline`'s save, since that
+    panel left on 2026-10-07.
     """
-    open_composer(page)
     if title:
-        page.fill("#id_marge_title", title)
-    page.select_option("#id_marge_stage", label=f"{stage} — lõpetab teema")
-    page.locator("#marge-tavaline button[type=submit]").click()
-    page.wait_for_load_state("networkidle")
+        record_marge(page, title, stage=stage)
+    else:
+        control = page.locator("#teema-hetkeseis")
+        control.locator("summary").click()
+        control.locator("select[name=stage]").select_option(label=stage)
+        with page.expect_navigation():
+            control.get_by_role("button", name="Salvesta hetkeseisu muudatus").click()
+        page.wait_for_load_state("networkidle")
     page.locator(".banner--closed").wait_for(state="visible")
 
 

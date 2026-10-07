@@ -23,13 +23,21 @@ from datetime import UTC, date, timedelta
 from typing import Any
 
 from django import forms
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Count, F, Q
 from django.db.models.functions import ExtractYear
-from django.http import Http404, HttpRequest, HttpResponse, HttpResponseRedirect, QueryDict
+from django.http import (
+    Http404,
+    HttpRequest,
+    HttpResponse,
+    HttpResponseRedirect,
+    JsonResponse,
+    QueryDict,
+)
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -107,6 +115,7 @@ from app.matters.forms import (
     CompactEffectiveDateForm,
     CompactEngagementForm,
     CompactImportantDateForm,
+    CompactResponseDeadlineForm,
     CompactWebsiteOverviewForm,
     CompactWorkVictoryForm,
     CompleteCurrentActionForm,
@@ -168,6 +177,7 @@ from app.matters.legal_process import (
     matter_rail,
 )
 from app.matters.models import (
+    WEBSITE_OVERVIEW_TITLE_MAX_LENGTH,
     Entry,
     Matter,
     MatterAssignmentNotice,
@@ -187,6 +197,7 @@ from app.matters.my_work import (
 from app.matters.next_step import upcoming_milestone
 from app.matters.plan_view import Recommendation, recommendation_for
 from app.matters.process_timeline import process_steps
+from app.matters.publication_kind import classify_publication_url
 from app.matters.removal import (
     RecordRemovalConflict,
     kind_for,
@@ -197,6 +208,7 @@ from app.matters.response_deadlines import (
     change_response_deadline,
     deadline_revision,
     ended_deadlines,
+    request_response_deadline,
     resolve_response_deadline,
 )
 from app.matters.services import (
@@ -6129,6 +6141,45 @@ def _website_overview_refusal(
 @login_required
 @business_write_required
 @require_http_methods(["POST"])
+def preview_website_overview(request: HttpRequest, pk: Any) -> HttpResponse:
+    """What `+ Ülevaade / uudis` would record for this address, before the save.
+
+    The kind is `classify_publication_url`'s — the rule the save applies again
+    on its own (`CompactWebsiteOverviewForm.clean`) — and the title is the
+    koda.ee page's own, read by `fetch_publication_title`, which contacts no
+    other host. Unknown addresses answer no kind and no title: the person says.
+    Nothing is written; a refused or malformed address answers empty.
+
+    ``url`` is echoed back so the page can drop an answer for an address that
+    is no longer the one in the box (static/js/ux.js `bindPublicationPreview`).
+    """
+    from app.matters.publication_title import fetch_publication_title, fetchable_url
+    from app.matters.services import normalize_overview_news_url
+
+    get_visible_matter(request, pk)
+    raw = str(request.POST.get("url", "")).strip()
+    try:
+        url = normalize_overview_news_url(raw) if raw else ""
+    except DomainError:
+        url = ""
+    attempted = bool(url and settings.PUBLICATION_TITLE_FETCH and fetchable_url(url))
+    title = fetch_publication_title(url)[:WEBSITE_OVERVIEW_TITLE_MAX_LENGTH] if attempted else ""
+    # `found`, `failed` (a koda.ee page that could not be read), or `""` where
+    # nothing was asked — another site, or the fetch switched off.
+    title_status = ("found" if title else "failed") if attempted else ""
+    return JsonResponse(
+        {
+            "url": raw,
+            "kind": classify_publication_url(url),
+            "title": title,
+            "title_status": title_status,
+        }
+    )
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
 def add_website_overview(request: HttpRequest, pk: Any) -> HttpResponse:
     """`+ Ülevaade / uudis` — a page that is already published.
 
@@ -6395,8 +6446,12 @@ def correct_website_overview_view(request: HttpRequest, pk: Any, overview_id: An
 #: An empty second element means the family asks no further question and its own
 #: panel is the form.
 WORKSPACE_PANELS: dict[str, tuple[str, str]] = {
-    # `+ Märge` — one visible family, four truthful record types underneath.
-    "progress_form": ("lisa-marge", "marge-tavaline"),
+    # `+ Lisa` — one visible family, four truthful record types underneath.
+    # `Tavaline` left it on 2026-10-07: ordinary work is `PRAEGUNE TEGEVUS →
+    # + Lisa tegevus` and `✓ Tehtud`. `add_note` still answers a POST, so its
+    # refusal still names the family; no sub-choice of it is a `Märge` now.
+    "progress_form": ("lisa-marge", ""),
+    "response_deadline_form": ("lisa-marge", "marge-arvamuse-tahtaeg"),
     "important_date_form": ("lisa-marge", "marge-tahtaeg"),
     "effective_date_form": ("lisa-marge", "marge-joustumine"),
     "work_victory_form": ("lisa-marge", "marge-toovoit"),
@@ -6431,14 +6486,15 @@ WORKSPACE_PANELS: dict[str, tuple[str, str]] = {
 #: `Märge` is usually just a note, and most of what reaches a department is
 #: somebody answering it.
 WORKSPACE_DEFAULT_CHOICES: dict[str, str] = {
-    "marge_choice": "marge-tavaline",
+    # The first of `+ Lisa`'s four since `Tavaline` left (2026-10-07).
+    "marge_choice": "marge-arvamuse-tahtaeg",
     "arvamus_choice": "arvamus-tagasiside",
 }
 
 #: Which family each sub-choice belongs to, so a refusal can be routed to the
 #: one variable that owns it.
 WORKSPACE_CHOICE_FAMILY: dict[str, str] = {
-    "marge-tavaline": "marge_choice",
+    "marge-arvamuse-tahtaeg": "marge_choice",
     "marge-tahtaeg": "marge_choice",
     "marge-joustumine": "marge_choice",
     "marge-toovoit": "marge_choice",
@@ -6531,17 +6587,14 @@ def workspace_forms(
         "start_plan_form": StartPlanStepForm(
             initial={"text": recommendation.step.title} if recommendation else None
         ),
-        # `+ Märge · Tavaline`. What happened, when, optionally the stage it
-        # moves the file to and the next thing the lawyer will do about it —
-        # one atomic operation over three canonical services.
+        # No `progress_form` (`+ Lisa · Tavaline`) since 2026-10-07: the panel
+        # is gone from the page. `add_note` and `MatterProgressForm` remain for
+        # the POSTs and records that already exist (docs/adr/0097 §6).
         #
-        # This one key replaces two: `matter_note_form` (an `Entry`) and
-        # `development_form` (a `MatterProceduralDevelopment`). They were two
-        # chips asking the same question with different amounts of ceremony, and
-        # `MatterProgressForm` says at length why the survivor writes the
-        # structured record rather than the prose one (docs/adr/0097 §6).
-        "progress_form": MatterProgressForm(
-            phases=phases, phase_offers=phase_offers, next_stages=next_stages
+        # `+ Lisa → Arvamuse tähtaeg`, drawn with the revision of the deadline
+        # it was drawn beside so a tab behind a change elsewhere is refused.
+        "response_deadline_form": CompactResponseDeadlineForm(
+            initial={"revision": deadline_revision(matter) if matter is not None else ""}
         ),
         # The period travels with the text. Reopening the editor on `Täpne
         # päev` / `01.10.2026` for a step recorded as *oktoober 2026* would
@@ -7096,6 +7149,35 @@ def add_engagement_reply(request: HttpRequest, pk: Any) -> HttpResponse:
     return _record_external_position(
         request, pk, form_class=EngagementReplyForm, key="engagement_reply_form"
     )
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def add_response_deadline(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`+ Lisa → Arvamuse tähtaeg` — Koda is asked for an opinion again.
+
+    A new current deadline with a fresh request time, through
+    `request_response_deadline`, which refuses — never overwrites — a request
+    that is still current; moving or replacing that one is the header editor's.
+    The header answers out of band, because it shows the deadline too.
+    """
+    matter = get_visible_matter(request, pk)
+    key = "response_deadline_form"
+    form = CompactResponseDeadlineForm(request.POST)
+    if not form.is_valid():
+        return _workspace_refusal(request, matter, key=key, form=form)
+    try:
+        request_response_deadline(
+            matter=matter,
+            deadline=form.cleaned_data["response_deadline_date"],
+            actor=request.user,
+            expected_revision=form.cleaned_data.get("revision") or None,
+        )
+    except DomainError as error:
+        return _workspace_refusal(request, matter, key=key, form=form, error=str(error))
+    matter.refresh_from_db()
+    return _render_overview(request, matter, header_out_of_band=True)
 
 
 @login_required

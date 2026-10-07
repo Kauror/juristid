@@ -74,48 +74,41 @@ def test_maara_opens_the_next_step_form_and_puts_the_caret_in_it(page, base_url)
     # block is not empty, and it is still accounted for — listed, or counted
     # behind the block's own «Näita kõiki».
     quiet = page.locator('section.railblock[aria-label="Järgmise tegevuseta"]')
-    own = quiet.locator(f'a.quietrow__cta[href="{own_path}#lisa-marge"]')
+    own = quiet.locator(f'a.quietrow__cta[href="{own_path}#lisa-jargmine"]')
     if not own.count():
         expect(quiet.locator("a.railblock__more")).to_be_visible()
 
-    # `#lisa-marge`, not `#lisa-jargmine`. These rows are Matters with **no**
-    # open step, and `PRAEGUNE TEGEVUS` draws its `Muuda` disclosure only
-    # beside a task — so once `+ Järgmine tegevus` left the launcher the old
-    # target did not exist on exactly the rows this block lists, and a browser
-    # answers a missing fragment by scrolling nowhere. The one ordinary way to
-    # set a first step is `+ Märge` itself — an activity dated ahead with
-    # `Märgi järgmiseks tegevuseks` ticked (docs/adr/0097 §8.2, docs/adr/0124).
+    # `#lisa-jargmine` — `+ Lisa tegevus` in `PRAEGUNE TEGEVUS`, which a
+    # Matter with no open step draws (docs/adr/0126 §1). These links named
+    # `#lisa-marge` from 2026-09-20, when a first step came from `+ Märge`
+    # dated ahead (docs/adr/0124); `+ Lisa · Tavaline` left on 2026-10-07 and
+    # `+ Lisa tegevus` is the one ordinary way to add work (docs/adr/0143).
     cta = own if own.count() else quiet.locator("a.quietrow__cta")
     assert cta.count(), "Minu asjad does not offer Määra for a Matter with no next step"
     href = cta.first.get_attribute("href") or ""
-    assert href.endswith("#lisa-marge"), href
-    matter_path = href.removesuffix("#lisa-marge")
+    assert href.endswith("#lisa-jargmine"), href
+    matter_path = href.removesuffix("#lisa-jargmine")
     cta.first.click()
     page.wait_for_url(re.compile(re.escape(matter_path)))
 
-    # The field is only visible once the panel is open, so waiting for it is
-    # what makes this free of a race with `load` — the assertion below then
-    # reports the state rather than the timing.
-    page.locator("#lisa-marge [name='title']").wait_for(state="visible")
+    # The field is only visible once the disclosure is open, so waiting for it
+    # is what makes this free of a race with `load` — the assertions below then
+    # report the state rather than the timing.
+    page.locator("#lisa-jargmine [name='text']").wait_for(state="visible")
 
-    panel = page.locator("#lisa-marge")
     # Open because somebody asked for it by following a control that says so —
-    # not because the page opens it for everybody. `LISA TEEMALE` is a choice
-    # until one is made (docs/adr/0075 §2).
-    #
-    # Asked as "is it showing" rather than "does it carry `open`": the panels
-    # stopped being `<details>` on 2026-09-14, and what the arrival handler
-    # does is choose the radio that reveals this one.
-    expect(panel).to_be_visible()
-    assert page.locator("#lisa-marge-valik").is_checked()
+    # not because the page opens it for everybody (docs/adr/0075 §2). And
+    # `+ Lisa`, whose first child is `Arvamuse tähtaeg` now, stays shut: a link
+    # for work is not a link to a deadline.
+    expect(page.locator("#lisa-jargmine")).to_have_attribute("open", "")
+    assert not page.locator("#lisa-marge-valik").is_checked()
+    expect(page.locator("#lisa-marge")).not_to_be_visible()
 
-    # And the caret is in `Tegevus` rather than in the date box below it,
-    # which arrives already filled. Same rule as the `L` shortcut: the
-    # attribute names the box a person is meant to type in.
+    # And the caret is in the sentence box, the first control of the form.
     assert page.evaluate(
-        "() => { const c = document.getElementById('lisa-marge');"
+        "() => { const c = document.getElementById('lisa-jargmine');"
         " return !!c && c.contains(document.activeElement)"
-        " && document.activeElement.hasAttribute('data-composer-focus'); }"
+        " && document.activeElement.name === 'text'; }"
     ), "arrival left the caret outside the box it promised"
 
 
@@ -138,6 +131,21 @@ def test_an_ordinary_matter_visit_opens_no_panel(page, base_url):
     panel.wait_for(state="attached")
 
     expect(panel).not_to_be_visible()
+    expect(page.locator("#lisa-jargmine")).not_to_have_attribute("open", "")
+
+    # A `#lisa-marge` link from before 2026-10-07 is no longer an arrival
+    # target: it opens nothing, rather than the deadline form `+ Lisa` now
+    # starts on (static/js/ux.js `NEXT_STEP_TARGETS`).
+    # Reloaded, because the same URL with a new fragment is a same-document
+    # navigation: no `load`, so no arrival handler would run to be tested.
+    page.goto(f"{matter_url}#lisa-marge")
+    page.reload()
+    page.wait_for_load_state("networkidle")
+    assert page.url.endswith("#lisa-marge"), page.url
+    page.locator("#lisa-marge").wait_for(state="attached")
+    expect(page.locator("#lisa-marge")).not_to_be_visible()
+    assert not page.locator("#lisa-marge-valik").is_checked()
+
     # And it opens from its own chip, which is what makes it a choice.
     page.locator('#lisa-teemale label[for="lisa-marge-valik"]').click()
     expect(panel).to_be_visible()

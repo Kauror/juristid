@@ -373,15 +373,19 @@ def test_no_retired_chip_is_a_top_level_choice(signed_in, specialist, stage, chi
     assert chip not in launcher(page_of(signed_in, teema_url(matter)))
 
 
-def test_marge_offers_its_four_kinds_and_defaults_to_tavaline(signed_in, specialist, stage):
+def test_marge_offers_its_four_kinds_and_defaults_to_arvamuse_tahtaeg(signed_in, specialist, stage):
+    """`Tavaline` left `+ Lisa` on 2026-10-07 (docs/adr/0143); the first of the
+    four that remain is the one that arrives chosen."""
     matter = factories.MatterFactory(owner=specialist)
 
     zone = launcher(page_of(signed_in, teema_url(matter)))
 
-    for label in ("Tavaline", "Oluline tähtaeg", "Jõustumine", "Töövõit"):
+    for label in ("Arvamuse tähtaeg", "Oluline tähtaeg", "Jõustumine", "Töövõit"):
         assert f">{label}</label>" in zone
-    opening = zone[zone.index('id="marge-tavaline-valik"') - 200 :]
-    assert "checked" in opening[: opening.index(">") + 400]
+    assert ">Tavaline</label>" not in zone
+    picks = re.finditer(r'<input[^>]*name="marke-liik"[^>]*id="([a-z-]+)-valik"[^>]*>', zone)
+    checked = [pick.group(1) for pick in picks if re.search(r"\bchecked\b", pick.group(0))]
+    assert checked == ["marge-arvamuse-tahtaeg"]
 
 
 def test_arvamus_offers_its_three_children(signed_in, specialist, stage):
@@ -434,6 +438,9 @@ def test_teema_toimingud_is_gone_and_both_controls_moved(signed_in, specialist, 
 
 # ---------------------------------------------------------------------------
 # 3b — `+ Märge` writes the structured record (§6)
+#
+# Through `matters:add_note`, which still answers a POST although no panel on
+# the page posts to it: `Tavaline` left `+ Lisa` on 2026-10-07 (docs/adr/0143).
 # ---------------------------------------------------------------------------
 
 
@@ -441,30 +448,9 @@ def add_note_url(matter: Matter) -> str:
     return reverse("matters:add_note", kwargs={"pk": matter.pk})
 
 
-def test_the_marge_panel_offers_no_precision_control(signed_in, specialist, stage):
-    """One date box, and `Täpsus` is not asked (§6.1)."""
-    matter = factories.MatterFactory(owner=specialist)
-
-    zone = launcher(page_of(signed_in, teema_url(matter)))
-    panel = zone[zone.index('id="marge-tavaline"') :]
-    panel = panel[: panel.index('id="marge-tahtaeg"')]
-
-    assert "Täpsus" not in panel
-    assert "Juristi märkus" not in panel
-    assert 'name="occurred_on"' in panel
-
-
-def test_the_marge_date_defaults_to_today(signed_in, specialist, stage):
-    """Visible in the box where it can be read, changed and emptied."""
-    matter = factories.MatterFactory(owner=specialist)
-
-    zone = launcher(page_of(signed_in, teema_url(matter)))
-
-    # `format_estonian_date`'s own shape — `20.9.2026`, no leading zeroes.
-    # `strftime` is what that function exists to avoid: the directive that
-    # drops a leading zero is `%-d` on Linux and `%#d` on Windows.
-    today = timezone.localdate()
-    assert f"{today.day}.{today.month}.{today.year}" in zone
+# `the marge date defaults to today` went with the `Tavaline` panel it read
+# (docs/adr/0143, 2026-10-07); the `+ Ülevaade / uudis` default is
+# tests/test_followup_ux_round.py's.
 
 
 def test_a_marge_writes_a_procedural_development(signed_in, specialist, stage):

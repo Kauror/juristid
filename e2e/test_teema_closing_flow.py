@@ -4,12 +4,14 @@ The domain suite proves the rules (`tests/test_stage_episodes.py`); this proves
 that a person can perform them.
 
 **There is no `+ Lõpeta teema` any more.** A file ends when its `Hetkeseis`
-says so: «Jõustunud» or «Rohkem ei tegele», chosen as `Uus hetkeseis` in
-`+ Märge`, and the option says so in its own words — «… — lõpetab teema».
-«Jõustumise ootel» does not end it. A closed file is reopened into a stage the
-person names, and the stage it ended in stays in `Teema käik` as history.
+says so: «Jõustunud» or «Rohkem ei tegele», chosen in the header's `Hetkeseis`
+or as `Uus hetkeseis` in `✓ Tehtud` — where the option says so in its own words,
+«… — lõpetab teema». «Jõustumise ootel» does not end it. (`Uus hetkeseis` was
+also in `+ Lisa · Tavaline` until that panel left on 2026-10-07.) A closed file
+is reopened into a stage the person names, and the stage it ended in stays in
+`Teema käik` as history.
 
-What only a browser can show: that the choice is in the panel, that one
+What only a browser can show: that the choice is in the form, that one
 `Salvesta` closes the file and moves the header, the banner and the workspace
 together, and that reopening opens a new period with the old one kept.
 
@@ -26,19 +28,20 @@ from e2e.conftest import (
     MARTIN,
     close_through_stage,
     create_matter,
-    open_composer,
+    open_done_form,
     sign_in,
+    start_first_step,
 )
 
 pytestmark = pytest.mark.e2e
 
 
-def move_stage(page, label: str, title: str = "") -> None:
-    open_composer(page)
-    if title:
-        page.fill("#id_marge_title", title)
-    page.select_option("#id_marge_stage", label=label)
-    page.locator("#marge-tavaline button[type=submit]").click()
+def finish_step_moving_stage(page, result: str, label: str) -> None:
+    """`✓ Tehtud` with `Uus hetkeseis` — the step done, and the file moved, in one save."""
+    open_done_form(page)
+    page.locator("#id_praegune_body").fill(result)
+    page.select_option("#id_praegune_hetkeseis", label=label)
+    page.locator("#praegune-tegevus-vorm button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
 
@@ -48,8 +51,13 @@ def test_there_is_no_closing_panel_and_the_stage_says_what_ends_the_file(page, b
 
     expect(page.locator("#teema-lopeta")).to_have_count(0)
     expect(page.get_by_text("+ Lõpeta teema", exact=True)).to_have_count(0)
-    open_composer(page)
-    options = page.locator("#id_marge_stage option").all_inner_texts()
+    # `✓ Tehtud`'s `Uus hetkeseis` — the one `Uus hetkeseis` on the page since
+    # `+ Lisa · Tavaline`, which offered the same list, left on 2026-10-07.
+    start_first_step(page)
+    open_done_form(page)
+    options = [
+        text.strip() for text in page.locator("#id_praegune_hetkeseis option").all_inner_texts()
+    ]
     assert "Jõustunud — lõpetab teema" in options
     assert "Rohkem ei tegele — lõpetab teema" in options
     assert "Jõustumise ootel" in options
@@ -60,11 +68,13 @@ def test_joustumise_ootel_keeps_the_file_open_and_joustunud_closes_it(page, base
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Lõpetamise brauserikatse: jõustumine", stage="Riigikogus")
 
-    move_stage(page, "Jõustumise ootel", title="Riigikogu võttis seaduse vastu.")
+    start_first_step(page)
+    finish_step_moving_stage(page, "Riigikogu võttis seaduse vastu.", "Jõustumise ootel")
     expect(page.locator(".badge--state")).to_contain_text("Avatud")
+    expect(page.locator("#teema-hetkeseis")).to_contain_text("Jõustumise ootel")
     expect(page.locator("#lisa-teemale")).to_have_count(1)
 
-    move_stage(page, "Jõustunud — lõpetab teema")
+    close_through_stage(page, "Jõustunud")
     expect(page.locator(".badge--state")).to_contain_text("Suletud")
     expect(page.locator(".banner--closed")).to_contain_text("Lõpetatud või jõustunud")
     expect(page.locator("#lisa-teemale")).to_have_count(0)
@@ -88,7 +98,7 @@ def test_reopening_names_the_stage_and_keeps_the_ended_period(page, base_url):
     """Flow G."""
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Lõpetamise brauserikatse: taasavamine", stage="Riigikogus")
-    move_stage(page, "Jõustunud — lõpetab teema")
+    close_through_stage(page, "Jõustunud")
     expect(page.locator(".badge--state")).to_contain_text("Suletud")
 
     banner = page.locator(".banner--closed")

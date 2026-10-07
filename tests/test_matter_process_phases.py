@@ -1385,13 +1385,12 @@ def test_a_stage_recorded_ahead_and_then_corrected_is_still_demoted(specialist):
 # ---------------------------------------------------------------------------
 
 
-def test_the_marge_panel_offers_no_phase_even_where_the_procedure_has_phases(signed_in, specialist):
+def test_the_page_offers_no_phase_even_where_the_procedure_has_phases(signed_in, specialist):
     """§7, reversed by the owner on 2026-09-27 (docs/adr/0105, amended).
 
-    It used to offer this file's own phases, pre-selected on the one `Hetkeseis`
-    placed it on. A `Märge` is a record of what happened and is no longer filed
-    under a phase: a regulation on `Kooskõlastusringil` — a file with a pattern
-    and a current phase, where the control *would* have rendered — gets none.
+    A `Märge` is no longer filed under a phase. Its panel (`+ Lisa · Tavaline`)
+    left on 2026-10-07 (docs/adr/0143); what stays is that no control on a
+    regulation on `Kooskõlastusringil` asks for one.
     """
     matter = _matter(specialist, instruments=("maarus",))
     change_stage(matter=matter, stage=_stage("consultation"), actor=specialist)
@@ -1399,7 +1398,7 @@ def test_the_marge_panel_offers_no_phase_even_where_the_procedure_has_phases(sig
     body = signed_in.get(
         reverse("matters:matter_detail", kwargs={"pk": matter.pk})
     ).content.decode()
-    assert 'id="id_marge_title"' in body
+    assert 'id="id_marge_title"' not in body
     assert 'id="id_marge_process_phase"' not in body
     assert "Etapp määramata" not in body
 

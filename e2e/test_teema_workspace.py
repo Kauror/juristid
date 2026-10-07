@@ -22,8 +22,8 @@ from e2e.conftest import (
     create_matter,
     finish_current_action,
     open_add_panel,
-    open_composer,
     open_done_form,
+    record_marge,
     set_next_step,
     sign_in,
 )
@@ -47,9 +47,8 @@ def _pdf(tmp_path, name: str, marker: bytes = b"") -> str:
 def set_step(page, text: str, days: int = 7) -> None:
     """Give this Matter a next step, through whichever control it offers.
 
-    `set_next_step` decides which that is: `Muuda` beside an open task, or the
-    optional box inside `+ Märge` when there is none, because
-    `+ Järgmine tegevus` left the launcher (docs/adr/0097 §8.2).
+    `set_next_step` decides which that is: `Muuda` beside an open task, or
+    `+ Lisa tegevus` in the same zone when there is none (docs/adr/0126 §1).
     """
     set_next_step(page, text, _future(days))
     expect(page.locator(".curact__text")).to_have_text(text)
@@ -105,14 +104,16 @@ def test_the_current_action_loop_from_task_to_result_to_the_next_one(page, base_
 
 
 def test_a_marge_while_a_task_is_open_leaves_the_task_alone(page, base_url):
+    """A `Märge` is a fact about the file, not the task's result.
+
+    Saved through `add_note` by `record_marge`, since `+ Lisa · Tavaline` left
+    the launcher on 2026-10-07 (docs/adr/0143) and the endpoint did not.
+    """
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Töölaua brauserikatse: märge")
     set_step(page, "Oodata ministeeriumi vastust")
 
-    open_composer(page)
-    page.locator("#id_marge_title").fill("Ministeerium helistas reedel.")
-    page.locator("#marge-tavaline button[type=submit]").click()
-    page.wait_for_load_state("networkidle")
+    assert record_marge(page, "Ministeerium helistas reedel.") == 200
 
     expect(chronology(page)).to_contain_text("Ministeerium helistas reedel")
     expect(page.locator(".curact__text")).to_have_text("Oodata ministeeriumi vastust")
@@ -127,9 +128,11 @@ def test_a_marge_while_a_task_is_open_leaves_the_task_alone(page, base_url):
 
 #: One panel per operation this zone offers, families and sub-choices alike.
 #:
-#: `teema-lopeta` is gone with `+ Lõpeta teema` (docs/adr/0131 §11).
+#: `teema-lopeta` is gone with `+ Lõpeta teema` (docs/adr/0131 §11), and
+#: `marge-tavaline` with `Tavaline` (2026-10-07, docs/adr/0143) — `Arvamuse
+#: tähtaeg` is `+ Lisa`'s first choice now.
 PANELS = (
-    "marge-tavaline",
+    "marge-arvamuse-tahtaeg",
     "marge-tahtaeg",
     "marge-joustumine",
     "marge-toovoit",
@@ -144,12 +147,12 @@ def test_opening_one_panel_closes_whichever_was_open(page, base_url):
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Töölaua brauserikatse: üks korraga")
 
-    # Within one group. `+ Märge`'s four are one group and
+    # Within one group. `+ Lisa`'s four are one group and
     # `+ Arvamus / tagasiside`'s two are another, and opening one of a family's
     # choices must not close the family it lives in — which is what the nesting
     # is for (docs/adr/0097 §8).
     for group in (
-        ("marge-tavaline", "marge-tahtaeg", "marge-joustumine", "marge-toovoit"),
+        ("marge-arvamuse-tahtaeg", "marge-tahtaeg", "marge-joustumine", "marge-toovoit"),
         ("arvamus-tagasiside", "arvamus-teiste"),
         ("lisa-kaasamine", "lisa-koduleht"),
     ):
@@ -270,7 +273,7 @@ def test_a_refused_panel_reopens_itself_and_no_other(page, base_url):
     # `lisa-marge` stays open: `Töövõit` is a choice *inside* it, so the family
     # holding its refused child open is the nesting working (docs/adr/0097 §8).
     assert add_panel_is_open(page, "lisa-marge")
-    for other in ("marge-tavaline", "lisa-kaasamine", "marge-tahtaeg"):
+    for other in ("marge-arvamuse-tahtaeg", "lisa-kaasamine", "marge-tahtaeg"):
         assert not add_panel_is_open(page, other), other
 
 

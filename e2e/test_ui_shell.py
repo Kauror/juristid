@@ -24,7 +24,7 @@ import pytest
 from playwright.sync_api import expect
 
 from app.core.management.commands.seed_e2e_data import OPEN_TITLE
-from e2e.conftest import SANDRA, document_overflows, open_composer, sign_in
+from e2e.conftest import SANDRA, document_overflows, open_add_panel, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -846,6 +846,10 @@ def test_the_composer_starts_as_one_row(page, base_url):
     (docs/adr/0075 §2). Opened, the field is at its working height and stays
     there: a chip taking the focus beside it must not reflow four lines of
     somebody's text under the pointer.
+
+    Measured on `Oluline tähtaeg`'s «Mis tähtaeg» since `Tavaline` — whose
+    `Pealkiri` this was — left `+ Lisa` on 2026-10-07 (docs/adr/0143): it is
+    the family's remaining one-line text box with a file drop beside it.
     """
     sign_in(page, base_url, SANDRA)
     open_first_matter(page, base_url)
@@ -855,20 +859,19 @@ def test_the_composer_starts_as_one_row(page, base_url):
     resting = closed.bounding_box()["height"]
     # One chip. The number is the difference between "note this down" and
     # "fill in this form".
-    assert resting <= 48, f"the closed Märge chip is {resting}px tall"
-    expect(page.locator("#id_marge_title")).to_be_hidden()
+    assert resting <= 48, f"the closed + Lisa chip is {resting}px tall"
+    expect(page.locator("#id_deadline_title")).to_be_hidden()
 
-    open_composer(page)
-    field = page.locator("#id_marge_title")
+    open_add_panel(page, "marge-tahtaeg")
+    field = page.locator("#id_deadline_title")
     expect(field).to_be_visible()
     working = field.bounding_box()["height"]
     # **One line, and that is the change.**
     #
     # The box measured three rows of an Estonian sentence while `+ Märge` wrote
-    # an `Entry`, whose `body` is prose. It writes a
-    # `MatterProceduralDevelopment` now and `title` is a stated line — the same
-    # one-line control `Muuda` has always drawn for the same column, which is
-    # the point: one field, one shape, on both surfaces (docs/adr/0097 §6).
+    # an `Entry`, whose `body` is prose. What this family asks for now is a
+    # stated line — the one-line control `Muuda` has always drawn for the same
+    # column, which is the point: one field, one shape (docs/adr/0097 §6).
     #
     # A range, and a wide one, because the number is not the claim. What must
     # not happen is this control growing back into a paragraph box, or
@@ -887,7 +890,7 @@ def test_the_composer_starts_as_one_row(page, base_url):
     # And it does not reflow when focus moves to a control beside it. This is
     # the claim the number above serves: a chip taking the focus must not move
     # somebody's text under the pointer.
-    page.locator("#marge-tavaline .cx-drop").click()
+    page.locator("#marge-tahtaeg .cx-drop").click()
     expect(field).to_have_css("height", f"{working:g}px")
 
 

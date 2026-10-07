@@ -209,7 +209,10 @@ def _add_note(matter) -> str:
 
 
 def test_the_panel_refuses_the_current_stage_alone(signed_in, staged_matter, stage):
-    """The auditor's M3 as a person does it: 400, the sentence, nothing stored."""
+    """The auditor's M3 through the endpoint: 400 and nothing stored.
+
+    The sentence is the form's (above); `add_note` has no panel to print it in
+    since `+ Lisa · Tavaline` left on 2026-10-07 (docs/adr/0143)."""
     events = _matter_events(staged_matter)
 
     response = signed_in.post(
@@ -218,7 +221,6 @@ def test_the_panel_refuses_the_current_stage_alone(signed_in, staged_matter, sta
     )
 
     assert response.status_code == 400
-    assert DEVELOPMENT_NEEDS_SOMETHING in response.content.decode()
     assert not _developments(staged_matter).exists()
     assert _matter_events(staged_matter) == events
 

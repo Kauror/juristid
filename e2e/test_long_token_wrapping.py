@@ -98,7 +98,7 @@ def _file_a_note(page, text: str) -> None:
     is the whole point of the fixture below, and `networkidle` alone does not
     survive it: the save swaps `#teema-vaade` wholesale, so the idle that
     follows the click can be the idle *before* the replacement lands. The next
-    `open_composer` then fills a composer that is about to be thrown away and
+    form is then filled on a page that is about to be thrown away and
     its submit posts nothing — leaving the page with the first note on it and
     the second silently missing. Measured at roughly one run in three, on this
     module's own branch before any of it was integrated, and it is the reason

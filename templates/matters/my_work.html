@@ -412,23 +412,13 @@ The rail holds only what has no honest place on a timeline.
             <span class="quietrow__meta">
               {{ row.silence }}
               {% comment %}
-                `#lisa-marge`, not `#lisa-jargmine`.
-
-                These rows are Matters with **no** open step, and on such a
-                Matter `PRAEGUNE TEGEVUS` renders no `Muuda` disclosure — that
-                control only exists beside a task. `#lisa-jargmine` was reached
-                here through the launcher's own `+ Järgmine tegevus` chip, and
-                that chip is gone: there is one ordinary way to set a next step
-                now, and it is the optional `Järgmine tegevus` inside `+ Märge`,
-                beside the thing that prompted it (docs/adr/0097 §8.2).
-
-                So the link lands on `+ Märge`. Left as it was it would have
-                pointed at an id the page no longer renders, which a browser
-                answers by scrolling nowhere — a «Määra» that silently does
-                nothing, on the one rail block that exists because these files
-                are already being forgotten.
+                `#lisa-jargmine` — `+ Lisa tegevus` in `PRAEGUNE TEGEVUS`, which a
+                Matter with no open step draws (docs/adr/0126 §1). These rows are
+                exactly those Matters. It pointed at `+ Märge · Tavaline` until
+                that left `+ Lisa` on 2026-10-07; the arrival handler in
+                static/js/ux.js opens the disclosure and puts the cursor in it.
               {% endcomment %}
-              <a class="quietrow__cta" href="{% url 'matters:matter_detail' pk=row.matter.pk %}#lisa-marge">Määra</a>
+              <a class="quietrow__cta" href="{% url 'matters:matter_detail' pk=row.matter.pk %}#lisa-jargmine">Määra</a>
             </span>
           </div>
         {% empty %}

@@ -103,11 +103,13 @@ def test_every_fragment_minu_asjad_emits_resolves_at_its_destination(client, spe
     # — the row and the composer became `PRAEGUNE TEGEVUS` and the `Muuda`
     # disclosure — and again on 2026-09-20, when `+ Järgmine tegevus` left the
     # launcher and `Määra` on a stepless Matter started naming `+ Märge`
-    # instead. The *class* guard above is what makes each of those a rename
-    # rather than four more dead links (docs/adr/0075 §3, §10,
+    # instead — and back to `+ Lisa tegevus` when `Tavaline` left `+ Lisa` on
+    # 2026-10-07 (docs/adr/0143). The *class* guard above is what makes each of
+    # those a rename rather than four more dead links (docs/adr/0075 §3, §10,
     # docs/adr/0097 §8.2).
     assert "jargmiseks" not in seen
-    assert {"praegune-tegevus", "lisa-marge"} <= seen
+    assert "lisa-marge" not in seen
+    assert {"praegune-tegevus", "lisa-jargmine"} <= seen
 
 
 def test_no_control_is_a_bare_hash(client, specialist, today):
@@ -165,14 +167,17 @@ def test_setting_a_next_step_sends_the_reader_to_the_form_that_writes_one(
     marker = body.index("quietrow__cta")
     cta = body[marker : marker + 200]
 
-    # `#lisa-marge`, not `#lisa-jargmine`. These rows are Matters with **no**
-    # open step, and `PRAEGUNE TEGEVUS` renders its `Muuda` disclosure only
-    # beside a task — so once the launcher's `+ Järgmine tegevus` chip went
-    # (docs/adr/0097 §8.2) this link pointed at an id the page does not render,
-    # and a browser answers that by scrolling nowhere. The next step is set
-    # inside `+ Märge`, beside the thing that prompted it.
-    assert "#lisa-marge" in cta
+    # `#lisa-jargmine`: on a Matter with **no** open step that is
+    # `PRAEGUNE TEGEVUS → + Lisa tegevus` (docs/adr/0126 §1), and these rows
+    # are exactly those Matters. It named `#lisa-marge` (`+ Märge · Tavaline`)
+    # until `Tavaline` left `+ Lisa` on 2026-10-07 (docs/adr/0143); left there,
+    # `Määra` would open a deadline form.
+    assert "#lisa-jargmine" in cta
+    assert "#lisa-marge" not in cta
     assert ">Määra<" in cta
+    # And the stepless Matter really draws it.
+    detail = _body(client, cta.split('href="', 1)[1].split("#", 1)[0])
+    assert 'id="lisa-jargmine"' in detail
 
 
 # ---------------------------------------------------------------------------
@@ -275,7 +280,9 @@ def test_every_next_step_fragment_is_one_the_arrival_handler_opens():
     Which is exactly what happened when `Määra` was repointed from
     `#lisa-jargmine` to `#lisa-marge` and the list was left alone: the fragment
     existed, the guard above stayed green, and arrival opened nothing
-    (docs/adr/0097 §8.2).
+    (docs/adr/0097 §8.2). `lisa-marge` left the list again when `Tavaline`
+    left `+ Lisa` on 2026-10-07 (docs/adr/0143): its default child is now a
+    deadline form, which no next-step link should open.
     """
     from pathlib import Path
 
@@ -286,6 +293,7 @@ def test_every_next_step_fragment_is_one_the_arrival_handler_opens():
     assert declaration, "ux.js no longer declares NEXT_STEP_TARGETS"
     known = set(re.findall(r'"([^"]+)"', declaration.group(1)))
 
-    # The two a next-step control may name, and which of them a Matter gets is
-    # decided by whether it has an open step.
-    assert {"lisa-marge", "lisa-jargmine"} <= known, known
+    # The two a next-step control may name — the zone, and `Muuda` / `+ Lisa
+    # tegevus` inside it — and never `+ Lisa`, whose default is a deadline.
+    assert {"praegune-tegevus", "lisa-jargmine"} <= known, known
+    assert "lisa-marge" not in known, known

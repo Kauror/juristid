@@ -12,7 +12,7 @@ no composer under it any more. Describing what was done about the current task
 lost does not exist (docs/adr/0075 §3).
 
 What this file proves instead is the shape that replaced it: that the completion
-is one operation, that a note leaves the open step alone, and that the quick
+is one operation, that recording something else leaves the open step alone, and that the quick
 dates, the historical kinds and the responsive rules the previous round settled
 all still hold.
 """
@@ -31,7 +31,7 @@ from e2e.conftest import (
     SANDRA,
     create_matter,
     finish_current_action,
-    open_composer,
+    open_add_panel,
     open_done_form,
     open_matter,
     open_next_action_form,
@@ -55,8 +55,8 @@ def set_step(page, text: str, days: int) -> None:
     """Record a next step, the way the design says: its own panel, its own save.
 
     `set_next_step` in the conftest decides which control this Matter offers —
-    `Muuda` beside an open task, or the optional box inside `+ Märge` when
-    there is none (docs/adr/0097 §8.2).
+    `Muuda` beside an open task, or `+ Lisa tegevus` when there is none
+    (docs/adr/0126 §1).
     """
     set_next_step(page, text, _future(days))
     expect(page.locator(".curact__text")).to_have_text(text)
@@ -141,19 +141,23 @@ def test_a_blank_result_is_refused_and_the_step_stays_open(page, base_url):
     expect(page.locator(".curact__text")).to_have_text("Saata kiri ministeeriumile")
 
 
-def test_a_marge_records_what_happened_and_leaves_the_step_open(page, base_url):
+def test_recording_something_else_leaves_the_step_open(page, base_url):
     """The other half of the split: something happened, and it is *not* the
-    current task finishing (docs/adr/0075 §2)."""
+    current task finishing (docs/adr/0075 §2).
+
+    A `Töövõit` through `+ Lisa` — it was a `Märge` through `+ Lisa · Tavaline`
+    until that panel left on 2026-10-07; a win neither closes the Matter nor
+    completes the step (brief §19)."""
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Märkme brauserikatse")
     set_step(page, "Oodata ministeeriumi vastust", 9)
 
-    open_composer(page)
-    page.locator("#id_marge_title").fill("Ministeerium helistas vahepeal.")
-    page.locator("#marge-tavaline button[type=submit]").click()
+    open_add_panel(page, "marge-toovoit")
+    page.locator("#marge-toovoit [name=victory_change]").fill("Ministeerium loobus sättest.")
+    page.locator("#marge-toovoit button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
-    expect(page.locator("#ajalugu-loend")).to_contain_text("Ministeerium helistas vahepeal")
+    expect(page.locator("#ajalugu-loend")).to_contain_text("Ministeerium loobus sättest")
     expect(page.locator(".curact__text")).to_have_text("Oodata ministeeriumi vastust")
 
 
@@ -334,7 +338,7 @@ def test_the_teema_surface_does_not_scroll_sideways(page, base_url, width):
 
     # And an opened `LISA TEEMALE` form uses the width it is given rather than
     # standing in a narrow column of its own.
-    open_composer(page)
-    box = page.locator("#id_marge_title").bounding_box()
+    open_add_panel(page, "marge-toovoit")
+    box = page.locator("#marge-toovoit [name=victory_change]").bounding_box()
     assert box["width"] > 0
     assert box["x"] + box["width"] <= width + 1

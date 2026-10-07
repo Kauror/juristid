@@ -30,18 +30,21 @@ DROP = """([selector, names]) => {
   return [over.defaultPrevented, drop.defaultPrevented];
 }"""
 
-ZONE = "#marge-tavaline [data-filedrop]"
+#: Any panel that takes files shares the queue; `+ Lisa · Töövõit` since
+#: `Tavaline`, which this used, left `+ Lisa` on 2026-10-07.
+PANEL = "marge-toovoit"
+ZONE = f"#{PANEL} [data-filedrop]"
 
 
 def test_dropped_files_join_the_queue_with_editable_titles(page, base_url):
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, unique_title("Lohistamine"))
-    open_add_panel(page, "marge-tavaline")
+    open_add_panel(page, PANEL)
 
     prevented = page.evaluate(DROP, [ZONE, ["esimene.pdf", "teine.pdf"]])
 
     assert prevented == [True, True]
-    rows = page.locator("#marge-tavaline [data-upload-queue] .uploadqueue__row")
+    rows = page.locator(f"#{PANEL} [data-upload-queue] .uploadqueue__row")
     expect(rows).to_have_count(2)
     expect(rows.nth(0).locator(".uploadqueue__title")).to_have_value("esimene.pdf")
     expect(rows.nth(1).locator(".uploadqueue__title")).to_have_value("teine.pdf")

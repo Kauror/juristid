@@ -47,6 +47,8 @@ CSRF_COOKIE_SECURE = False
 DEV_LOGIN_ENABLED = False
 REAL_DATA_ALLOWED = False
 APPLICATION_ENVIRONMENT = "test"
+# The suite never contacts koda.ee; a test that needs a title patches the fetch.
+PUBLICATION_TITLE_FETCH = False
 
 # No `collectstatic` has run for a test process, so the hashed manifest the
 # production backend expects does not exist.

@@ -80,6 +80,15 @@ background sequence — which can be started (`Alusta`) or dismissed (`×`);
       tests/test_teema_rail.py).
     {% endcomment %}
     <div class="curact__task">
+      {% comment %}
+        **The date first, then the words** (owner's round, 2026-10-07): a work
+        row is scanned «when?» before «what?», so every dated row in this zone
+        opens on its day — or on «Kuupäev määramata», muted — in a column of
+        its own; the text takes the rest and wraps under itself.
+      {% endcomment %}
+      <span class="curact__date{% if current_action.is_overdue %} curact__date--overdue{% elif not current_action.target_date %} curact__date--unset{% endif %}">
+        {{ current_action.date_display }}{% if current_action.is_overdue %} · {{ current_action.days_late }} p{% endif %}
+      </span>
       <span class="curact__text">{{ current_action.text }}</span>
       {% comment %}
         Rendered at its stored precision, with `days_late` riding on the date
@@ -98,9 +107,6 @@ background sequence — which can be started (`Alusta`) or dismissed (`×`);
         blank. `is_overdue` is `False` on a `None` date, so the number of days
         never appears either (app/workflow/models.py).
       {% endcomment %}
-      <span class="curact__date{% if current_action.is_overdue %} curact__date--overdue{% elif not current_action.target_date %} curact__date--unset{% endif %}">
-        {{ current_action.date_display }}{% if current_action.is_overdue %} · {{ current_action.days_late }} p{% endif %}
-      </span>
 
       {% if can_write %}
         {% comment %}
@@ -241,9 +247,9 @@ background sequence — which can be started (`Alusta`) or dismissed (`×`);
     {% endcomment %}
     {% if upcoming_step %}
       <div class="curact__task">
+        <span class="curact__date">{{ upcoming_step.display_date }}</span>
         <span class="curact__flag">Oluline tähtaeg</span>
         <span class="curact__text">{{ upcoming_step.title }}</span>
-        <span class="curact__date">{{ upcoming_step.display_date }}</span>
       </div>
     {% elif source_instruction %}
       <p class="curact__task">

@@ -13,8 +13,8 @@ This file holds the ones only a running page can settle:
   other organisation said, rather than as more of it (§4);
 * that `+ Koja arvamus` takes a file, a day and an addressee and puts a sent
   opinion on the file without leaving the Teema (§6);
-* that `+ Menetluse areng` records the step, moves `Hetkeseis` and sets
-  `Järgmiseks` in one save (§5);
+* that a `Märge` (`add_note`, which `+ Lisa · Tavaline` posted to until it left
+  on 2026-10-07) reads on Teema käik, and a later step is `+ Lisa tegevus` (§5);
 * and that after an opinion has gone out the page says the procedure may
   continue, with controls that are actually reachable (§5.5).
 
@@ -38,6 +38,8 @@ from e2e.conftest import (
     create_matter,
     open_add_panel,
     open_kaik_row,
+    record_marge,
+    set_next_step,
     sign_in,
     start_first_step,
     unique_title,
@@ -517,60 +519,20 @@ def test_the_addressee_opens_on_the_teema_sender(page, base_url):
 # ---------------------------------------------------------------------------
 
 
-def test_a_planned_activity_is_the_marge_and_the_next_step(page, base_url):
-    """One sentence, one day ahead, one save — and the page shows both records.
+# Three tests of `+ Lisa · Tavaline`'s own form stood here — `Märgi järgmiseks
+# tegevuseks` offered and ticked for a day ahead, hidden for a day behind, and
+# a step ahead refused on its missing sentence. The panel left `+ Lisa` on
+# 2026-10-07 (docs/adr/0143), so there is no form left to ask them of; ordinary
+# work is `+ Lisa tegevus`, and `add_note`'s own rules stay in tests/.
 
-    Before docs/adr/0124 the plan was written twice: once under `Mis juhtus?`
-    and again under `Järgmine tegevus` with its own `Millal?`. The day ahead now
-    offers `Märgi järgmiseks tegevuseks`, ticked, and the same sentence and day
-    become the step.
-    """
+
+def test_a_past_marge_sets_no_step(page, base_url):
+    """A `Märge` dated behind today is a record of something done, and nothing else."""
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "marge-tavaline")
-
-    form = panel(page, "marge-tavaline")
-    form.locator("[name=title]").fill("Vaatan uue versiooni läbi")
-    form.locator("[name=occurred_on]").fill(_future(4))
-    expect(form.locator("[name=as_next_step]")).to_be_visible()
-    expect(form.locator("[name=as_next_step]")).to_be_checked()
-    form.get_by_role("button", name="Salvesta", exact=True).click()
-
-    current = page.locator("#praegune-tegevus")
-    current.get_by_text("Vaatan uue versiooni läbi").first.wait_for()
-    expect(current).to_contain_text(_future(4))
-    expect(chronology(page)).to_contain_text("Vaatan uue versiooni läbi")
-
-
-def test_a_past_activity_offers_no_step_and_sets_none(page, base_url):
-    """A day that is not ahead is a record of something done, and nothing else."""
-    sign_in(page, base_url, SANDRA)
-    a_new_matter(page, base_url)
-    open_add_panel(page, "marge-tavaline")
-
-    form = panel(page, "marge-tavaline")
-    form.locator("[name=title]").fill("Eelnõu jõudis Riigikokku")
-    form.locator("[name=occurred_on]").fill(_past(2))
-    expect(form.locator("[name=as_next_step]")).to_be_hidden()
-    form.get_by_role("button", name="Salvesta", exact=True).click()
+    record_marge(page, "Eelnõu jõudis Riigikokku", occurred_on=_past(2))
 
     chronology(page).get_by_text("Eelnõu jõudis Riigikokku").first.wait_for()
-    expect(page.locator("#praegune-tegevus")).to_contain_text("Järgmine samm on määramata")
-
-
-def test_a_step_ahead_with_no_sentence_is_refused_on_the_sentence(page, base_url):
-    """A step is its sentence: refused on `Tegevus`, and nothing is written."""
-    sign_in(page, base_url, SANDRA)
-    a_new_matter(page, base_url)
-    open_add_panel(page, "marge-tavaline")
-
-    form = panel(page, "marge-tavaline")
-    form.locator("[name=title]").fill("")
-    form.locator("[name=occurred_on]").fill(_future(9))
-    expect(form.locator("[name=as_next_step]")).to_be_checked()
-    form.get_by_role("button", name="Salvesta", exact=True).click()
-
-    expect(page.locator("#marge-tavaline")).to_contain_text("Kirjuta järgmine tegevus.")
     expect(page.locator("#praegune-tegevus")).to_contain_text("Järgmine samm on määramata")
 
 
@@ -598,12 +560,8 @@ def test_a_step_set_after_the_opinion_takes_the_panel(page, base_url):
     _record_koda_opinion(page, base_url, sent_on=_past(1))
     expect(page.locator("#praegune-tegevus")).to_contain_text("Järgmine samm on määramata")
 
-    open_add_panel(page, "marge-tavaline")
-    form = panel(page, "marge-tavaline")
-    form.locator("[name=title]").fill("Vaatan läbi")
-    form.locator("[name=occurred_on]").fill(_future(3))
-    expect(form.locator("[name=as_next_step]")).to_be_checked()
-    form.get_by_role("button", name="Salvesta", exact=True).click()
+    # `+ Lisa tegevus` since `Tavaline` left on 2026-10-07 (docs/adr/0143).
+    set_next_step(page, "Vaatan läbi", _future(3))
 
     current = page.locator("#praegune-tegevus")
     current.get_by_text("Vaatan läbi").first.wait_for()
@@ -671,20 +629,13 @@ def test_one_consultation_runs_from_teema_to_the_next_round(page, base_url):
     expect(page.locator(".tl-strip")).to_contain_text("Koja arvamus")
 
     # And the procedure continues on the same file: what happened, then what
-    # the lawyer will do about it — one activity each (docs/adr/0124).
-    open_add_panel(page, "marge-tavaline")
-    areng = panel(page, "marge-tavaline")
-    areng.locator("[name=title]").fill("Ministeerium saatis uue eelnõu versiooni")
-    areng.locator("[name=occurred_on]").fill(_past(1))
-    areng.get_by_role("button", name="Salvesta", exact=True).click()
+    # the lawyer will do about it — one activity each (docs/adr/0124). The
+    # `Märge` through `add_note` and the step through `+ Lisa tegevus`, since
+    # `Tavaline` left `+ Lisa` on 2026-10-07 (docs/adr/0143).
+    record_marge(page, "Ministeerium saatis uue eelnõu versiooni", occurred_on=_past(1))
     chronology(page).get_by_text("Ministeerium saatis uue eelnõu versiooni").first.wait_for()
 
-    open_add_panel(page, "marge-tavaline")
-    plan = panel(page, "marge-tavaline")
-    plan.locator("[name=title]").fill("Vaatan uue versiooni läbi")
-    plan.locator("[name=occurred_on]").fill(_future(4))
-    expect(plan.locator("[name=as_next_step]")).to_be_checked()
-    plan.get_by_role("button", name="Salvesta", exact=True).click()
+    set_next_step(page, "Vaatan uue versiooni läbi", _future(4))
 
     page.locator("#praegune-tegevus").get_by_text("Vaatan uue versiooni läbi").first.wait_for()
     # The first opinion is still on the file: a second round is not a rewrite.
@@ -707,12 +658,7 @@ def test_a_developments_lawyer_note_reads_on_the_row_under_its_own_label(page, b
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "marge-tavaline")
-
-    form = panel(page, "marge-tavaline")
-    form.locator("[name=title]").fill("Ministeerium saatis parandatud eelnõu")
-    form.locator("[name=occurred_on]").fill(_past(3))
-    form.get_by_role("button", name="Salvesta", exact=True).click()
+    record_marge(page, "Ministeerium saatis parandatud eelnõu", occurred_on=_past(3))
 
     chronology(page).get_by_text("Ministeerium saatis parandatud eelnõu").first.wait_for()
 
@@ -757,12 +703,7 @@ def test_a_development_with_no_note_gains_no_empty_note_block(page, base_url):
     """Most steps carry no assessment, and none of them gains a bordered gap."""
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "marge-tavaline")
-
-    form = panel(page, "marge-tavaline")
-    form.locator("[name=title]").fill("Eelnõu jõudis Riigikokku")
-    form.locator("[name=occurred_on]").fill(_past(2))
-    form.get_by_role("button", name="Salvesta", exact=True).click()
+    record_marge(page, "Eelnõu jõudis Riigikokku", occurred_on=_past(2))
 
     chronology(page).get_by_text("Eelnõu jõudis Riigikokku").first.wait_for()
     item = chronology(page).locator(
@@ -778,19 +719,12 @@ def test_a_future_development_is_saved_and_reads_eesolev(page, base_url):
     real note. The whole save lands — the note, and the stage the lawyer chose —
     and the row is on Teema käik at once, marked `Eesolev` so it is not read as
     something that already happened. It is somebody else's event and not the
-    lawyer's task, so `Märgi järgmiseks tegevuseks` is unticked and no step is
-    made (docs/adr/0124 §2).
+    lawyer's task, so it is saved without `as_next_step` and no step is made
+    (docs/adr/0124 §2). Through `add_note` since `Tavaline` left on 2026-10-07.
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "marge-tavaline")
-
-    form = panel(page, "marge-tavaline")
-    form.locator("[name=title]").fill("Riigikogu esimene lugemine")
-    form.locator("[name=occurred_on]").fill(_future(12))
-    form.locator("[name=as_next_step]").uncheck()
-    form.locator("[name=stage]").select_option(label="Riigikogus")
-    form.get_by_role("button", name="Salvesta", exact=True).click()
+    record_marge(page, "Riigikogu esimene lugemine", occurred_on=_future(12), stage="Riigikogus")
 
     chronology(page).get_by_text("Riigikogu esimene lugemine").first.wait_for()
     item = chronology(page).locator(
@@ -801,12 +735,8 @@ def test_a_future_development_is_saved_and_reads_eesolev(page, base_url):
 
 
 def _file_a_step(page, title: str):
-    """One `MatterProceduralDevelopment`, through `+ Märge · Tavaline`."""
-    open_add_panel(page, "marge-tavaline")
-    form = panel(page, "marge-tavaline")
-    form.locator("[name=title]").fill(title)
-    form.locator("[name=occurred_on]").fill(_past(3))
-    form.get_by_role("button", name="Salvesta", exact=True).click()
+    """One `MatterProceduralDevelopment`, through `add_note` (`record_marge`)."""
+    record_marge(page, title, occurred_on=_past(3))
     chronology(page).get_by_text(title).first.wait_for()
 
 

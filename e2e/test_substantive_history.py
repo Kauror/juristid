@@ -51,6 +51,7 @@ from e2e.conftest import (
     open_add_panel,
     open_hetkeseis,
     open_kaik_row,
+    record_marge,
     sign_in,
     unique_title,
 )
@@ -174,15 +175,19 @@ def _matter_with_instrument(page, base_url: str, instrument: str, *, stage: str 
     return page.url
 
 
-def _record_development(page, *, title: str, occurred_on: str | None, **extra) -> None:
-    open_add_panel(page, "marge-tavaline")
-    form = panel(page, "marge-tavaline")
-    form.locator("[name=title]").fill(title)
-    form.locator("[name=occurred_on]").fill(occurred_on or "")
-    for name, value in extra.items():
-        form.locator(f"[name={name}]").fill(value)
-    form.get_by_role("button", name="Salvesta", exact=True).click()
-    page.wait_for_load_state("networkidle")
+def _record_development(
+    page, *, title: str, occurred_on: str | None, stage: str = "", files=()
+) -> None:
+    """One `Märge`, saved through `add_note` as `+ Lisa · Tavaline` saved it.
+
+    That panel left on 2026-10-07 (docs/adr/0143); `record_marge` sends its
+    request and reloads. `Märgi järgmiseks tegevuseks` is sent ticked, as the
+    panel arrived for a day ahead — the server takes it for no other day.
+    """
+    status = record_marge(
+        page, title, occurred_on=occurred_on or "", stage=stage, as_next_step=True, files=files
+    )
+    assert status == 200, status
 
 
 def _record_koda_opinion(page, *, sent_on: str, filename: str) -> None:
@@ -280,15 +285,12 @@ def test_one_development_save_reads_as_one_act_carrying_its_stage_and_step(page,
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "marge-tavaline")
-
-    form = panel(page, "marge-tavaline")
-    form.locator("[name=title]").fill("Vaatan eelnõu uue versiooni läbi")
-    form.locator("[name=occurred_on]").fill(_future(4))
-    form.locator("[name=stage]").select_option(label="Kooskõlastusringil")
-    expect(form.locator("[name=as_next_step]")).to_be_checked()
-    form.get_by_role("button", name="Salvesta", exact=True).click()
-    page.wait_for_load_state("networkidle")
+    _record_development(
+        page,
+        title="Vaatan eelnõu uue versiooni läbi",
+        occurred_on=_future(4),
+        stage="Kooskõlastusringil",
+    )
 
     row = (
         history(page)
@@ -436,16 +438,12 @@ def test_a_documents_row_is_under_the_act_it_evidences(page, base_url):
     """Not a chronology row of its own with a dot, a date and an upload time."""
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "marge-tavaline")
-
-    form = panel(page, "marge-tavaline")
-    form.locator("[name=title]").fill("Ministeerium saatis eelnõu uue versiooni")
-    form.locator("[name=occurred_on]").fill(_past(2))
-    form.locator("input[type=file]").set_input_files(
-        {"name": "eelnou-v2.pdf", "mimeType": "application/pdf", "buffer": b"%PDF-1.4 eelnou"}
+    _record_development(
+        page,
+        title="Ministeerium saatis eelnõu uue versiooni",
+        occurred_on=_past(2),
+        files=(("eelnou-v2.pdf", b"%PDF-1.4 eelnou"),),
     )
-    form.get_by_role("button", name="Salvesta", exact=True).click()
-    page.wait_for_load_state("networkidle")
 
     row = (
         history(page)
@@ -554,13 +552,9 @@ def test_an_explicitly_recorded_earlier_stage_reads_kirjas(page, base_url):
     _matter_with_instrument(page, base_url, "Seadus", stage="Kooskõlastusringil")
     _record_development(page, title="Eelnõu jõudis Riigikokku", occurred_on=_past(2))
 
-    open_add_panel(page, "marge-tavaline")
-    form = panel(page, "marge-tavaline")
-    form.locator("[name=title]").fill("Riigikogu võttis menetlusse")
-    form.locator("[name=occurred_on]").fill(_past(1))
-    form.locator("[name=stage]").select_option(label="Riigikogus")
-    form.get_by_role("button", name="Salvesta", exact=True).click()
-    page.wait_for_load_state("networkidle")
+    _record_development(
+        page, title="Riigikogu võttis menetlusse", occurred_on=_past(1), stage="Riigikogus"
+    )
 
     recorded = rail(page).locator(".tl-step--recorded")
     expect(recorded).to_contain_text("Kooskõlastus")
@@ -693,27 +687,15 @@ def _headlines(page) -> list[str]:
 def _record_phase_development(
     page, *, title: str, occurred_on: str, phase: str | None, stage: str | None = None
 ) -> None:
-    """One step through the panel a lawyer uses, then — where ``phase`` is given —
+    """One `Märge` (`_record_development`), then — where ``phase`` is given —
     the phase an older row of that step would carry (`_plant_historical_phase`).
 
-    The panel itself asks for no phase since docs/adr/0105 was amended on
-    2026-09-27; what these scenarios read is how the page draws the rows that do
-    hold one.
+    No surface asks for a phase since docs/adr/0105 was amended on 2026-09-27;
+    what these scenarios read is how the page draws the rows that do hold one.
     """
-    open_add_panel(page, "marge-tavaline")
-    form = panel(page, "marge-tavaline")
-    form.locator("[name=title]").fill(title)
-    form.locator("[name=occurred_on]").fill(occurred_on)
-    if stage is not None:
-        form.locator("[name=stage]").select_option(label=stage)
-    form.get_by_role("button", name="Salvesta", exact=True).click()
-    page.wait_for_load_state("networkidle")
-    # **Wait for the row, not for the network.** `networkidle` returns while the
-    # HTMX swap of `#teema-vaade` is still being applied, so a plain `assert`
-    # immediately afterwards reads the DOM the save is about to replace — and
-    # comes back exactly one save behind, forever. `expect` retries; the bare
-    # assertions these tests make about ordering do not, so they wait here
-    # instead (e2e/conftest.py `open_add_panel`).
+    _record_development(page, title=title, occurred_on=occurred_on, stage=stage or "")
+    # **Wait for the row.** The save reloads, but the bare assertions these
+    # tests make about ordering do not retry, so they wait here instead.
     expect(history(page)).to_contain_text(title)
     if phase is not None:
         _plant_historical_phase(page, title=title, phase=phase)
@@ -931,21 +913,9 @@ def test_one_save_updates_the_rail_and_the_row_together(page, base_url):
     assert _headlines(page)[0] == "Märge: Eelnõu jõudis Riigikokku"
 
 
-def test_the_marge_panel_asks_for_no_phase(page, base_url):
-    """§7, reversed by the owner on 2026-09-27 (docs/adr/0105, amended).
-
-    The panel offered this file's phases pre-selected on `Hetkeseis`. On the
-    same file — a `Seadus` on `Kooskõlastusringil`, where the select rendered —
-    there is now no control, no label and no hidden input to post one.
-    """
-    sign_in(page, base_url, SANDRA)
-    _matter_with_instrument(page, base_url, "Seadus", stage="Kooskõlastusringil")
-    open_add_panel(page, "marge-tavaline")
-
-    form = panel(page, "marge-tavaline")
-    expect(form.locator("[name=title]")).to_be_visible()
-    expect(form.locator("[name=process_phase]")).to_have_count(0)
-    expect(form).not_to_contain_text("Etapp")
+# `test_the_marge_panel_asks_for_no_phase` left with the panel it asked about:
+# `Tavaline` left `+ Lisa` on 2026-10-07 (docs/adr/0143), and no surface that
+# remains offers a `Märge` an `Etapp`.
 
 
 def test_a_milestone_row_puts_its_controls_on_the_headline_line(page, base_url):

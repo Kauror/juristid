@@ -137,3 +137,15 @@ Restoring the ungated `_discharge_exists` restores the old discharge reading.
 `Tööplaani samm, mille see täidab` (`taidab_sammu`) is gone from `+ Koja
 arvamus`, `+ Kaasamine` and `+ Ülevaade / uudis`, with `fulfils_plan_step_id`
 behind it. Naming the deadline and the rounds an opinion answers is unchanged.
+
+## Amendment of 2026-10-07 — a new request from `+ Lisa`
+
+`+ Lisa → Arvamuse tähtaeg` records a **new request** on a Matter whose earlier one is no longer current. It goes through `request_response_deadline`:
+- The new deadline gets a fresh `response_requested_at`.
+- The earlier request stays in `MatterResponseDeadline`, with its answering opinion. That opinion never answers the new request; the next sent `Koja arvamus` may.
+
+**It never overwrites a current request.** While one is current, the panel names it and sends the person to the header editor, where moved and replaced are told apart. A stale tab is refused by the deadline revision.
+
+**Pre-tracking deadlines.** A deadline from before tracking, which a sent opinion or `VÄLJA` already discharged («lõpetatud» in the header), is not current. It is ended as answered, with a note and no inferred opinion link, before the new request starts.
+
+`KOJA ARVAMUS` in the rail keeps showing the opinion; the new deadline is read in the header and the process surfaces (docs/adr/0142).

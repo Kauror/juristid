@@ -11981,7 +11981,13 @@ section:has(.pw-more[open]) tbody.uxextra {
   overflow-wrap: anywhere;
 }
 
+/* **Date first, in a column of its own; the words take the rest** (owner's
+   round, 2026-10-07). `12em` is the text's basis for line-breaking only: the
+   row keeps its controls on the first line while the text has room, and a long
+   text wraps under itself rather than under the date. */
 .curact__text {
+  flex: 1 1 12em;
+  min-width: 0;
   font-size: var(--typography-size-base);
   font-weight: var(--typography-weight-semibold);
   color: var(--text-body);
@@ -11993,6 +11999,8 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 .curact__date {
+  flex: 0 0 auto;
+  min-width: 6.5em;
   font-size: var(--typography-size-sm);
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
@@ -12051,16 +12059,21 @@ section:has(.pw-more[open]) tbody.uxextra {
   display: contents;
 }
 
-.curact__owedlabel {
-  font-size: var(--typography-size-chip);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+.curact__oweddate {
+  flex: 0 0 auto;
+  min-width: 6.5em;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* «Tähtaeg määramata» — the wait's muted unset value, as `--unset` above. */
+.curact__oweddate--unset {
   color: var(--text-muted);
 }
 
-.curact__oweddate {
-  color: var(--text-secondary);
-  font-variant-numeric: tabular-nums;
+/* «Ootame tagasisidet», after the day: what the row is, in plain words. */
+.curact__waittext {
+  color: var(--text-body);
 }
 
 .curact__oweddate--overdue {
@@ -12124,6 +12137,15 @@ section:has(.pw-more[open]) tbody.uxextra {
  * the task (owner's compact round, 2026-10-07). */
 .teemamain .curact__task > .curact__edit {
   margin-bottom: 0;
+}
+
+/* The row's controls keep to the right when a narrow column wraps them onto a
+   line of their own, so `Muuda` and `Tehtud` still read as this row's rather
+   than as the start of the next one (owner's round, 2026-10-07). On a wide row
+   the text's own growth has already taken the space, so nothing moves. */
+.teemamain .curact__task > #lisa-jargmine,
+.curact__waitdone {
+  margin-left: auto;
 }
 
 .disclosure-chip--quiet {
@@ -12220,7 +12242,7 @@ section:has(.pw-more[open]) tbody.uxextra {
   flex-wrap: wrap;
   align-items: baseline;
   gap: 0 var(--spacing-2);
-  padding: 0;
+  padding: var(--spacing-1) 0;
   font-size: var(--typography-size-sm);
   line-height: 1.35;
 }
@@ -12247,7 +12269,14 @@ section:has(.pw-more[open]) tbody.uxextra {
   font-variant-numeric: tabular-nums;
 }
 
+/* One planned action from the next, without cards: a hairline between rows
+   (owner's round, 2026-10-07). */
+.curact__plannedrow + .curact__plannedrow {
+  border-top: 1px solid var(--border-subtle);
+}
+
 .curact__plannedtext {
+  flex: 1 1 12em;
   min-width: 0;
   color: var(--text-body);
   overflow-wrap: anywhere;

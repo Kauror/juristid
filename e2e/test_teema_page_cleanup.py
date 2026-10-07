@@ -3,7 +3,7 @@
 `tests/test_teema_page_cleanup.py` proves what the server sends. This proves
 what only a layout engine can say about it:
 
-* `Kuupäev` under `+ Märge` and under `+ Arvamus / tagasiside` is the width of a
+* the date under `+ Lisa` and under `+ Arvamus / tagasiside` is the width of a
   date, its calendar button stays on the same row, and nothing pushes the page
   sideways at 1440, 768 or 375;
 * `+ Lõpeta teema` opens straight onto its chips, with no heading row above them;
@@ -38,6 +38,7 @@ from e2e.conftest import (
     sign_in,
     unique_title,
 )
+from e2e.conftest import record_marge as post_marge
 
 pytestmark = pytest.mark.e2e
 
@@ -122,7 +123,7 @@ def date_geometry(label) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# The panels: `+ Märge`, `+ Arvamus / tagasiside`, `+ Lõpeta teema`
+# The panels: `+ Lisa`, `+ Arvamus / tagasiside`, `+ Lõpeta teema`
 # ---------------------------------------------------------------------------
 
 
@@ -132,11 +133,14 @@ def test_the_panels_are_compact_and_fit(page, base_url, width):
     page.set_viewport_size({"width": width, "height": 900})
     a_procedure_matter(page, base_url, f"Paneelid {width}")
 
-    # `+ Märge`: no `Etapp`, and `Kuupäev` the width of a date.
-    open_add_panel(page, "marge-tavaline")
-    marge = page.locator("#marge-tavaline")
-    expect(marge.locator("[name=process_phase]")).to_have_count(0)
-    expect(marge).not_to_contain_text("Etapp")
+    # `+ Lisa`: no `Etapp` anywhere in it, and its default child's one date —
+    # `Arvamuse tähtaeg` since `Tavaline` and its `Kuupäev` left on 2026-10-07
+    # — the width of a date.
+    open_add_panel(page, "marge-arvamuse-tahtaeg")
+    family = page.locator("#lisa-marge")
+    expect(family.locator("[name=process_phase]")).to_have_count(0)
+    expect(family).not_to_contain_text("Etapp")
+    marge = page.locator("#marge-arvamuse-tahtaeg")
     geometry = date_geometry(marge.locator("label.cx-f--solo"))
     assert geometry["width"] <= 161, geometry
     assert geometry["sameRow"] and geometry["inside"], geometry
@@ -190,11 +194,9 @@ def test_three_opinions_draw_one_run_and_the_page_reads_quietly(page, base_url):
     assert shape[current:].strip("0") == "", (kinds, shape)
     assert set(shape[kinds.index("M") : current]) == {"1"}, (kinds, shape)
 
-    # `Teema käik`: the opinion heavier than a note.
-    open_add_panel(page, "marge-tavaline")
-    page.locator("#marge-tavaline [name=title]").fill("Rääkisin ministeeriumiga")
-    page.locator("#marge-tavaline").get_by_role("button", name="Salvesta", exact=True).click()
-    page.wait_for_load_state("networkidle")
+    # `Teema käik`: the opinion heavier than a note — a `Märge`, which every
+    # older file holds, written through `add_note` since its panel left.
+    record_marge(page, "Rääkisin ministeeriumiga")
     history = page.locator("#ajalugu-loend")
     note = history.locator("article.uxtl__item").filter(has_text="Rääkisin ministeeriumiga")
     expect(note).to_have_count(1)
@@ -271,10 +273,9 @@ ROW_GEOMETRY = """rows => {
 
 
 def record_marge(page, title: str) -> None:
-    open_add_panel(page, "marge-tavaline")
-    page.locator("#marge-tavaline [name=title]").fill(title)
-    page.locator("#marge-tavaline").get_by_role("button", name="Salvesta", exact=True).click()
-    page.wait_for_load_state("networkidle")
+    """A `Märge`, through `add_note` — `+ Lisa · Tavaline` left on 2026-10-07,
+    and every `Märge` already on a file still draws its row."""
+    assert post_marge(page, title) == 200
     expect(page.locator("#ajalugu-loend")).to_contain_text(title)
 
 
