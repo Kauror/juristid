@@ -12107,12 +12107,19 @@ section:has(.pw-more[open]) tbody.uxextra {
   margin: 0 0 var(--spacing-3);
 }
 
-/* `+ Määra järgmine tegevus` — the same editor, on a file with no open step.
+/* `+ Lisa tegevus` — the same editor, on a file with no open step.
  * It sits under the «Järgmine samm on määramata» line (or the milestone or
  * waits drawn there) rather than beside a task, so it takes a little air above
  * and none below: it is the last thing in the zone (docs/adr/0126 §1). */
 .teemamain .curact__set {
   margin: var(--spacing-15) 0 0;
+}
+
+/* `Muuda` inside the task's own row adds no space under it: as a flex item its
+ * bottom margin made the whole row taller and pushed `+ Lisa tegevus` away from
+ * the task (owner's compact round, 2026-10-07). */
+.teemamain .curact__task > .curact__edit {
+  margin-bottom: 0;
 }
 
 .disclosure-chip--quiet {

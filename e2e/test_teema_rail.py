@@ -200,9 +200,12 @@ def test_a_sparse_matter_gives_a_compact_facts_block(page, base_url):
             f"{row['key']}: the value is not beside its label"
         )
 
+    # A sparse Matter may have `Saatja` alone since `Teemaviide` left the card
+    # (2026-10-07); the pitch is measured wherever there are two rows.
     gaps = [row["gapAbove"] for row in rows[1:]]
-    assert max(gaps) <= 10, f"rows are {max(gaps):.1f}px apart"
-    assert min(gaps) >= 0, "rows overlap"
+    if gaps:
+        assert max(gaps) <= 10, f"rows are {max(gaps):.1f}px apart"
+        assert min(gaps) >= 0, "rows overlap"
 
     # And the block's height is its content's height, with nothing unexplained
     # in between: label, rows, gaps and the card's own padding.
