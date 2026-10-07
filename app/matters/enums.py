@@ -143,6 +143,22 @@ class EngagementKind(models.TextChoices):
     OTHER = "OTHER", "Muu"
 
 
+class WebsiteOverviewKind(models.TextChoices):
+    """Which of the two publications one `Ülevaade / uudis` record is.
+
+    An **Ülevaade** is Koda's own `Hetkel käsil` overview — part of the
+    consultation workflow, the page a `Kaasamine` points members at. An
+    **Uudis** is a news item, and is not. Stored on the record (docs/adr/0142
+    §C, owner's round 2026-10-07), set from the address where koda.ee's own path
+    says which it is (`app.matters.publication_kind`) and asked otherwise. Empty
+    on a row recorded before the column existed: those read their kind from the
+    address where it is known, and stay «Ülevaade / uudis» where it is not.
+    """
+
+    OVERVIEW = "OVERVIEW", "Ülevaade"
+    NEWS = "NEWS", "Uudis"
+
+
 class WebsiteOverviewStatus(models.TextChoices):
     """Where one `Ülevaade / uudis` stands.
 

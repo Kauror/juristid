@@ -174,6 +174,10 @@ class AcceptedUpload:
     content: bytes
     filename: str
     mime_type: str
+    #: The display title typed beside the file before the save, or ``""``
+    #: (docs/adr/0142 §A, amended 2026-10-07). Becomes `Document.title`; the
+    #: filename stays the version's `original_filename` whatever is typed here.
+    display_title: str = ""
 
 
 def _extension(filename: str) -> str:
@@ -229,5 +233,27 @@ def read_upload(uploaded_file: Any) -> AcceptedUpload:
     # on a Mac and the same name typed on Windows are one name, and a blind
     # `[:400]` used to cut the extension off an over-long one.
     return AcceptedUpload(
-        content=content, filename=canonical_filename(filename), mime_type=mime_type
+        content=content,
+        filename=canonical_filename(filename),
+        mime_type=mime_type,
+        display_title=clean_display_title(getattr(uploaded_file, "display_title", "")),
     )
+
+
+#: `Document.title`'s own bound.
+DISPLAY_TITLE_MAX_LENGTH = 400
+
+
+def clean_display_title(value: Any) -> str:
+    """A typed display title, whitespace collapsed and bounded, or ``""``."""
+    return " ".join(str(value or "").split())[:DISPLAY_TITLE_MAX_LENGTH]
+
+
+def document_title_for(upload: Any) -> str:
+    """What a file is called on the Matter: the title typed for it, else its name.
+
+    The original filename is never changed by this — it is the version's
+    `original_filename`, beside the bytes and the checksum.
+    """
+    title = clean_display_title(getattr(upload, "display_title", ""))
+    return title or str(getattr(upload, "filename", "") or "")[:DISPLAY_TITLE_MAX_LENGTH]

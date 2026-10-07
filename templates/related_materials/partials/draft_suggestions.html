@@ -10,9 +10,11 @@ the saved Matter's «Võimalikud seosed» keeps its deferred disclosure and its
 honest-emptiness message, because computing a count there would cost the
 computation the disclosure exists to defer (docs/adr/0062 §7, docs/adr/0087 §4).
 
-**Read-only, and it proposes nothing.** No `Lisa`, no `Ei ole seotud`, no
-form control of any kind: there is no Matter yet for a relation to attach to,
-and a suggestion that could write would be a second way to create one. A card
+**It writes nothing by itself.** Each card has one checkbox, unticked:
+`Seo uue teemaga`. A ticked card is linked to the new Matter by `Loo teema`, in
+the same transaction that creates it (owner's round, 2026-10-07) — the box is
+an answer on the form, not a write of its own, and no suggestion is ever
+ticked for anybody. A card
 is a title, why it is here, what Koda did there, and a link that opens it in a
 new tab — because the person is in the middle of filling in a form and taking
 them away from it would lose what they typed.
@@ -25,8 +27,8 @@ one (docs/adr/0087 §2).
   <section class="draftsimilar" aria-labelledby="sarnased-teemad-heading">
     <h2 class="rowlabel" id="sarnased-teemad-heading">Sarnased teemad</h2>
     <p class="draftsimilar__lead">
-      Varasemad teemad, mis sellega sarnanevad. Midagi ei seota ega muudeta —
-      vaata üle, kas Koda on sellega juba tegelenud.
+      Varasemad teemad, mis sellega sarnanevad. Vaata üle, kas Koda on sellega juba
+      tegelenud, ja märgi need, mida uue teemaga siduda — muud ei seota.
     </p>
     <ul class="relatedmaterials__cards">
       {% for item in draft_suggestions %}
@@ -71,8 +73,16 @@ one (docs/adr/0087 §2).
               </p>
             {% endif %}
           </div>
+          <label class="relatedcard__pick">
+            <input type="checkbox" name="seo_teemaga" value="{{ item.matter.pk }}"
+                   {% if item.matter.pk in selected_links %}checked{% endif %}>
+            <span>Seo uue teemaga</span>
+          </label>
         </li>
       {% endfor %}
     </ul>
+    {% for pk in kept_links %}
+      <input type="hidden" name="seo_teemaga" value="{{ pk }}">
+    {% endfor %}
   </section>
 {% endif %}

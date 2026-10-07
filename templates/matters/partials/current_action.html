@@ -194,11 +194,13 @@ background sequence — which can be started (`Alusta`) or dismissed (`×`);
 
     {% include "matters/partials/feedback_waits.html" %}
 
+    {% include "matters/partials/planned_actions.html" %}
+
     {% comment %}
-      **`+ Lisa tegevus` stays on the page while work is current**
-      (docs/adr/0143; named `+ Lisa tegevus` since 2026-10-07). Beside a current
-      action it plans a dated future one: it never replaces the current row, and
-      the planned rows follow below as a plain dated list.
+      **`+ Lisa tegevus` stays on the page while work is current, and comes
+      last** (docs/adr/0143; owner's rounds of 2026-10-07): the current action,
+      then the dated planned rows, then the control that adds another. It never
+      replaces the current row.
     {% endcomment %}
     {% if can_write %}
       <details class="cx-panel curact__edit curact__set" id="lisa-planeeritud" data-addpanel
@@ -212,7 +214,6 @@ background sequence — which can be started (`Alusta`) or dismissed (`×`);
         </div>
       </details>
     {% endif %}
-    {% include "matters/partials/planned_actions.html" %}
 
   {% else %}
     {% comment %}
@@ -321,9 +322,11 @@ background sequence — which can be started (`Alusta`) or dismissed (`×`);
       </div>
     {% endif %}
 
+    {% include "matters/partials/planned_actions.html" %}
     {% if can_write %}
       {% comment %}
-        `+ Lisa tegevus` — the direct way to say what comes next.
+        `+ Lisa tegevus` — the direct way to say what comes next. Last in the
+        zone, under any planned rows (owner's round, 2026-10-07).
 
         **Whatever the line above says.** An upcoming `Oluline tähtaeg`, the
         register's Excel instruction and a waiting round are all things this
@@ -349,7 +352,6 @@ background sequence — which can be started (`Alusta`) or dismissed (`×`);
       {% endcomment %}
       {% include "matters/partials/next_action_panel.html" with summary="+ Lisa tegevus" quiet=False extra_class="curact__set" draft_state="" %}
     {% endif %}
-    {% include "matters/partials/planned_actions.html" %}
   {% endif %}
 
 </section>

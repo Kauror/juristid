@@ -345,7 +345,7 @@
           and the only thing missing is that nothing is read before the Teema
           exists (static/js/app.js, docs/adr/0064).
         {% endcomment %}
-        <div class="dropzone"
+        <div class="dropzone" data-upload-zone
              data-intake-url="{% url 'matters:intake_stage' %}"
              data-intake-status-url="{% url 'matters:intake_status' %}"
              data-intake-remove-url="{% url 'matters:intake_remove' %}">
@@ -389,7 +389,7 @@
               {% endfor %}
             </ul>
           {% endif %}
-          <ul class="dropzone__list" id="valitud-failid" hidden></ul>
+          <ul class="dropzone__list uploadqueue" id="valitud-failid" data-upload-queue hidden></ul>
           {% comment %}
             The third list, and the one the server is actually reading:
             uploaded ahead of the save so the extraction worker may open it,
@@ -503,7 +503,7 @@
          hx-trigger="input changed delay:600ms from:#id_title,
                      sarnased:chips delay:250ms,
                      sarnased:restored"
-         hx-params="title,policy_areas,legal_instruments,source_organisations,csrfmiddlewaretoken"
+         hx-params="title,policy_areas,legal_instruments,source_organisations,seo_teemaga,csrfmiddlewaretoken"
          hx-target="this"
          hx-swap="innerHTML"></div>
   </form>

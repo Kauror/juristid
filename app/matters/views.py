@@ -216,6 +216,7 @@ from app.matters.services import (
     assign_matter,
     change_stage,
     close_matter_for_terminal_stage,
+    complete_engagement_feedback,
     correct_engagement,
     correct_external_position,
     correct_procedural_development,
@@ -267,6 +268,7 @@ from app.matters.timeline import (
 )
 from app.organisations.models import Organisation
 from app.related_materials.selectors import related_materials_for
+from app.related_materials.views import LINK_ON_CREATE_FIELD
 from app.search import services as search_services
 from app.submissions import embedded as opinions
 from app.submissions.forms import (
@@ -2071,7 +2073,16 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                 with composer_operation():
                     if intake_session is not None:
                         promoted = intake_staging.promote_intake_files(
-                            session=intake_session, matter=matter, actor=request.user
+                            session=intake_session,
+                            matter=matter,
+                            actor=request.user,
+                            # The display title typed on each staged row
+                            # (templates/matters/partials/intake_files.html).
+                            titles={
+                                key.removeprefix("intake_title__"): str(request.POST.get(key, ""))
+                                for key in request.POST
+                                if key.startswith("intake_title__")
+                            },
                         )
                         # A press while the upload was still in flight posts the
                         # session *and* the files it had just staged. Promoted
@@ -2108,6 +2119,18 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                 # A retry after a refusal creates a *different* Teema, so there
                 # is no duplicate to collapse here — and the per-Matter
                 # uniqueness stands behind a double-submitted create either way.
+                # **The similar Matters somebody ticked** (`Sarnased teemad →
+                # Seo uue teemaga`, owner's round 2026-10-07), linked through the
+                # one relation service inside this same transaction: a refusal
+                # anywhere takes the links with the Teema, and a link that cannot
+                # be made takes the Teema with it. Only Matters this reader may
+                # see; nothing is linked that was not ticked.
+                _link_ticked_similar_matters(
+                    matter=matter,
+                    ticked=request.POST.getlist(LINK_ON_CREATE_FIELD),
+                    actor=request.user,
+                )
+
                 if wants_procedural_link:
                     link = procedural_form.cleaned_data
                     record_procedural_link(
@@ -2621,6 +2644,37 @@ def _not_already_staged(chosen: list[Any], intake_session: Any) -> list[Any]:
     return intake_staging.without_staged_copies(chosen, intake_staging.live_files(intake_session))
 
 
+#: Refused when a ticked similar Matter is not one this reader may link.
+SIMILAR_LINK_NOT_FOUND = "Valitud sarnast teemat ei leitud. Värskenda lehte ja proovi uuesti."
+
+
+def _link_ticked_similar_matters(*, matter: Any, ticked: list[str], actor: Any) -> None:
+    """Link the new Matter to each ticked `Sarnased teemad` card, once each.
+
+    Through `link_related_matters`, the canonical relation service, so the pair
+    is stored once and audited on both files. Duplicates in the post collapse;
+    the new Matter itself is never a target. A value that is not a Matter this
+    reader may see refuses the whole save rather than linking the rest.
+    """
+    from app.related_materials.services import link_related_matters
+
+    wanted: list[uuid.UUID] = []
+    for value in ticked:
+        try:
+            pk = uuid.UUID(str(value))
+        except ValueError:
+            raise DomainError(SIMILAR_LINK_NOT_FOUND) from None
+        if pk != matter.pk and pk not in wanted:
+            wanted.append(pk)
+    if not wanted:
+        return
+    others = {other.pk: other for other in Matter.objects.visible_to(actor).filter(pk__in=wanted)}
+    if len(others) != len(wanted):
+        raise DomainError(SIMILAR_LINK_NOT_FOUND)
+    for pk in wanted:
+        link_related_matters(matter=matter, other=others[pk], actor=actor)
+
+
 def _read_new_matter_files(request: HttpRequest) -> tuple[list[Any], tuple[str, ...]]:
     """Read and validate every attachment before a single row is written.
 
@@ -2685,6 +2739,7 @@ def _attach_incoming_file(matter: Any, upload: Any, *, actor: Any) -> None:
         content=upload.content,
         mime_type=upload.mime_type,
         actor=actor,
+        title=getattr(upload, "display_title", ""),
     )
 
 
@@ -3025,6 +3080,21 @@ def _legal_instrument_line(matter: Matter) -> list[str]:
     return labels
 
 
+def _opinion_rail_deadline(matter: Any, viewer: Any) -> Any:
+    """The `Arvamuse tähtaeg` `KOJA ARVAMUS` shows while no opinion exists, or None.
+
+    Display only. «An opinion exists» is any send this reader may see that went
+    out (`historically_sent`), with or without a file — so a letter recorded
+    without its bytes still keeps the deadline off this card.
+    """
+    if matter.response_deadline is None:
+        return None
+    from app.submissions.models import Submission
+
+    sent = Submission.objects.filter(matter=matter).visible_to(viewer).historically_sent()
+    return None if sent.exists() else matter.response_deadline
+
+
 def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # One read for the private note: its body fills the box and its `updated_at`
     # fills `Salvestatud HH:mm`.
@@ -3143,6 +3213,10 @@ def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # read here rather than three times over. Each opinion file with the
         # send that tells it apart and its working documents (docs/adr/0129 §9).
         "opinion_rail": opinion_rail(matter, viewer=request.user),
+        # `KOJA ARVAMUS` states the `Arvamuse tähtaeg` until Koda has sent an
+        # opinion on this file, and never after — a later request's deadline
+        # is the header's and the process strip's (owner's round, 2026-10-07).
+        "opinion_rail_deadline": _opinion_rail_deadline(matter, request.user),
         "today": timezone.localdate(),
     }
 
@@ -3938,6 +4012,8 @@ def _engagement_row(
             {
                 "matter": matter,
                 "feedback_waits": _feedback_waits_of(request, matter),
+                # `Tehtud` on each line is a write control (feedback_waits.html).
+                "can_write": may_write_business_content(request.user),
                 "oob": True,
             },
             request=request,
@@ -6084,6 +6160,7 @@ def add_website_overview(request: HttpRequest, pk: Any) -> HttpResponse:
             url=publication[0] if publication else "",
             published_on=publication[1] if publication else None,
             title=form.cleaned_data.get("overview_title") or "",
+            kind=form.cleaned_data.get("kind") or "",
         )
     except DomainError as error:
         return _workspace_refusal(request, matter, key=key, form=form, error=str(error))
@@ -6492,7 +6569,13 @@ def workspace_forms(
         # the date that has just come round would invite saving it back — a
         # review that moves nothing (ENG-021).
         "review_form": ReviewActionForm(),
-        "add_engagement_form": CompactEngagementForm(),
+        # `Ülevaate link` opens on the newest Ülevaade the Matter has — never a
+        # news item (docs/adr/0142 §C).
+        "add_engagement_form": CompactEngagementForm(
+            initial=(
+                {"website_url": selectors.latest_overview_url(matter, viewer)} if matter else None
+            )
+        ),
         # `+ Kaasamine · Lisa tagasiside`: the open rounds the page has already
         # read are its choices, and the field's queryset still validates.
         "engagement_reply_form": EngagementReplyForm(
@@ -6984,6 +7067,8 @@ def add_engagement_compact(request: HttpRequest, pk: Any) -> HttpResponse:
             # Optional, and `None` when the box was left empty: no wait is opened
             # and nothing is defaulted (docs/adr/0120).
             feedback_deadline=form.cleaned_data.get("feedback_deadline"),
+            uploads=form.cleaned_data.get("attachments") or (),
+            record_overview=True,
         )
     except (DomainError, UploadRejected) as error:
         return _workspace_refusal(request, matter, key=key, form=form, error=str(error))
@@ -7338,6 +7423,16 @@ def _record_external_position(
                 engagement=form.cleaned_data.get("engagement"),
                 uploads=form.cleaned_data["attachments"],
             )
+            # **`Lisa tagasiside` finishes the round it answers** (owner's
+            # decision, 2026-10-07, docs/adr/0142 §B): the feedback, its files
+            # and the closed wait are one save — whichever door opened the form
+            # (`PRAEGUNE TEGEVUS → Tehtud` or `+ Kaasamine → Lisa tagasiside`).
+            # Through the canonical close, inside this transaction, so a round
+            # closed meanwhile by somebody else refuses the whole save. Nothing
+            # else is completed: no `NextAction` is inferred from feedback.
+            answered = form.cleaned_data.get("engagement")
+            if getattr(form_class, "closes_engagement", False) and answered is not None:
+                complete_engagement_feedback(engagement=answered, actor=request.user)
     except (DomainError, UploadRejected) as error:
         return _workspace_refusal(request, matter, key=key, form=form, error=str(error))
     return _render_overview(request, matter)

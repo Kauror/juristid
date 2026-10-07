@@ -12037,7 +12037,11 @@ section:has(.pw-more[open]) tbody.uxextra {
  * own modifier rather than a margin on `.curact__owed`, so the official
  * obligation's geometry — and its baseline — does not move (docs/adr/0086 §3). */
 .curact__owed--wait {
-  margin-bottom: var(--spacing-3);
+  flex-wrap: wrap;
+  gap: 0 var(--spacing-2);
+  /* One compact line with the task above it: the day, `Smaily`, `Alchemer`
+     and `Tehtud` (owner's round, 2026-10-07). */
+  margin-bottom: var(--spacing-15);
 }
 
 /* The waiting rounds' lines, in one box a round's own answer can replace out
@@ -12722,4 +12726,91 @@ section:has(.pw-more[open]) tbody.uxextra {
   flex-shrink: 1;
   min-width: 0;
   max-width: 100%;
+}
+
+/* -- The upload queue ------------------------------------------------------
+ * One row per chosen or dropped file, before the save: its display title
+ * (the filename by default, editable), the filename and size beneath, and a
+ * `×` to take it back off. Shared by every dropzone and by Uus teema's staged
+ * rows (static/js/ux.js `renderUploadQueue`, intake_files.html; owner's round,
+ * 2026-10-07). */
+.uploadqueue {
+  display: grid;
+  gap: var(--spacing-15);
+  margin: var(--spacing-15) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.uploadqueue[hidden] {
+  display: none;
+}
+
+.uploadqueue__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--spacing-2);
+}
+
+.uploadqueue__field {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  min-width: 0;
+}
+
+.uploadqueue__label {
+  flex: none;
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+.uploadqueue__title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.uploadqueue__file {
+  grid-column: 1;
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.uploadqueue__remove {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+/* A staged row on Uus teema carries the same title box above its name. */
+.dropzone__file > .uploadqueue__field {
+  flex: 1 1 100%;
+}
+
+.dropzone__list--staged > .dropzone__file {
+  flex-wrap: wrap;
+}
+
+
+.curact__waitdone {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+/* `Seo uue teemaga` on a `Sarnased teemad` card (owner's round, 2026-10-07). */
+.relatedcard__pick {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  margin-top: var(--spacing-1);
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+/* A Dokumendid row's `⋯` (`Muuda`): the display title form, then the
+ * document's own page (owner's round, 2026-10-07). */
+.docmenu .docrename__form {
+  margin-bottom: var(--spacing-2);
 }

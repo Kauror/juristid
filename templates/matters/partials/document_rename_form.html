@@ -1,0 +1,22 @@
+{% load form_labels %}
+{% comment %}
+`Muuda pealkirja` inside a Dokumendid row's `⋯` menu (owner's round,
+2026-10-07). The display title only: the filename under it is what the bytes
+are called and stays exactly as uploaded, and no version is written
+(`rename_document`, docs/adr/0142 §A). A writer on an open teema only, and not
+on a removed row (the list never shows one).
+{% endcomment %}
+{% if can_add_content %}
+  <form class="docrename__form" method="post" action="{% url 'documents:rename' pk=document.pk %}">
+    {% csrf_token %}
+    <input type="hidden" name="tagasi" value="dokumendid">
+    <label class="field">
+      <span class="field__label">Pealkiri{% required_mark %}</span>
+      <input class="field__input" type="text" name="title" value="{{ document.title }}"
+             maxlength="400" required aria-label="Muuda pealkirja: {{ document.title }}">
+    </label>
+    <div class="form__actions">
+      <button class="button button--primary button--tiny" type="submit">Salvesta</button>
+    </div>
+  </form>
+{% endif %}

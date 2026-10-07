@@ -84,6 +84,34 @@ class RefuseNulMiddleware:
         return self.get_response(request)
 
 
+class UploadTitlesMiddleware:
+    """Give each uploaded file the display title typed beside it, if any.
+
+    The shared upload queue (static/js/ux.js) posts one ``<field>__pealkiri``
+    per queued file, in the order of the files themselves. Here, once, each
+    `UploadedFile` gets that title as ``display_title``, so every form and
+    service that already reads uploads files them under it — no form names a
+    title field of its own (docs/adr/0142 §A, amended 2026-10-07). A count that
+    does not match the files is ignored rather than guessed at: the filename is
+    the title, as it always was.
+    """
+
+    SUFFIX = "__pealkiri"
+
+    def __init__(self, get_response: Any) -> None:
+        self.get_response = get_response
+
+    def __call__(self, request: HttpRequest) -> HttpResponse:
+        if request.method == "POST" and request.FILES:
+            for field in request.FILES:
+                titles = request.POST.getlist(f"{field}{self.SUFFIX}")
+                files = request.FILES.getlist(field)
+                if titles and len(titles) == len(files):
+                    for upload, title in zip(files, titles, strict=True):
+                        upload.display_title = title  # type: ignore[attr-defined]
+        return self.get_response(request)
+
+
 def _carries_nul(params: Any) -> bool:
     return any(
         has_nul(key) or any(has_nul(value) for value in params.getlist(key)) for key in params

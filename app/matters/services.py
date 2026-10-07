@@ -3129,7 +3129,9 @@ def _locked_website_overview(
 
 
 @transaction.atomic
-def plan_website_overview(*, matter: Matter, actor: Any = None) -> MatterWebsiteOverview:
+def plan_website_overview(
+    *, matter: Matter, actor: Any = None, kind: str = ""
+) -> MatterWebsiteOverview:
     """Record that this Matter is owed an overview or a news item.
 
     No address, no date, and no title. The record's whole content is *that the
@@ -3157,6 +3159,8 @@ def plan_website_overview(*, matter: Matter, actor: Any = None) -> MatterWebsite
     overview = MatterWebsiteOverview.objects.create(
         matter=matter,
         status=WebsiteOverviewStatus.PLANNED,
+        # `Ülevaade` or `Uudis` where the person said which (docs/adr/0142 §C).
+        kind=kind or "",
         created_by=actor,
         status_changed_at=timezone.now(),
     )
@@ -3165,7 +3169,7 @@ def plan_website_overview(*, matter: Matter, actor: Any = None) -> MatterWebsite
         matter=matter,
         actor=actor,
         obj=overview,
-        payload={"status": overview.status},
+        payload={"status": overview.status, "kind": overview.kind},
     )
     return overview
 
@@ -3200,8 +3204,12 @@ def publish_website_overview(
     actor: Any = None,
     expected_revision: str | None = None,
     title: Any = "",
+    kind: str | None = None,
 ) -> MatterWebsiteOverview:
     """`Plaanis` → `Avaldatud`: the page exists, and this is where it is.
+
+    ``kind`` sets `Ülevaade` / `Uudis` (docs/adr/0142 §C); ``None`` keeps the
+    record's own.
 
     ``title`` is the page's optional `Pealkiri` (docs/adr/0127 §1), stored as
     the person typed it, trimmed, or empty.
@@ -3242,6 +3250,8 @@ def publish_website_overview(
     locked.url = clean_url
     locked.published_on = day
     locked.title = clean_title
+    if kind is not None:
+        locked.kind = kind
     locked.published_by = actor
     locked.published_at = now
     locked.status_changed_at = now
@@ -3252,6 +3262,7 @@ def publish_website_overview(
             "url",
             "published_on",
             "title",
+            "kind",
             "published_by",
             "published_at",
             "status_changed_at",
@@ -3281,6 +3292,7 @@ def publish_website_overview(
                 locked.published_on.isoformat() if locked.published_on is not None else None
             ),
             "title": locked.title,
+            "kind": locked.kind,
         },
     )
     # Keep the caller's instance consistent with what was written, as
@@ -3289,6 +3301,7 @@ def publish_website_overview(
     overview.url = locked.url
     overview.published_on = locked.published_on
     overview.title = locked.title
+    overview.kind = locked.kind
     overview.published_at = locked.published_at
     return locked
 

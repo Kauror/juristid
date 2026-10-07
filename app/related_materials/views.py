@@ -391,6 +391,11 @@ def _uuid_list(values: list[str], *, limit: int = 40) -> list[uuid.UUID]:
     return keys
 
 
+#: The `Uus teema` checkbox that links a suggested Matter to the one being
+#: created (`matters.views.matter_create`, owner's round 2026-10-07).
+LINK_ON_CREATE_FIELD = "seo_teemaga"
+
+
 @login_required
 @require_POST
 def draft_suggestions(request: HttpRequest) -> HttpResponse:
@@ -436,8 +441,18 @@ def draft_suggestions(request: HttpRequest) -> HttpResponse:
         ],
     )
     suggestions = engine.suggestions_for_draft(profile, request.user)
+    # The suggestions somebody has ticked to link (`seo_teemaga`) stay ticked
+    # when the list is re-read as they type; a ticked one the new answer no
+    # longer shows is carried as a hidden value, so typing never silently
+    # drops a link somebody chose (owner's round, 2026-10-07).
+    selected = set(_uuid_list(answers.getlist(LINK_ON_CREATE_FIELD)))
+    shown = {item.matter.pk for item in suggestions}
     return render(
         request,
         DRAFT_TEMPLATE,
-        {"draft_suggestions": suggestions},
+        {
+            "draft_suggestions": suggestions,
+            "selected_links": selected,
+            "kept_links": sorted(str(pk) for pk in selected - shown),
+        },
     )

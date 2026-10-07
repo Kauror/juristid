@@ -369,62 +369,11 @@
   var fileInput = document.getElementById("id_files");
   var fileList = document.getElementById("valitud-failid");
   if (fileInput && fileList) {
-    var withoutIndex = function (skip) {
-      /* A FileList is read-only, so the way to drop one file is to build a new
-         transfer holding the others. Supported everywhere this application
-         runs; where it is not, the button simply does not appear. */
-      var transfer = new DataTransfer();
-      Array.prototype.slice.call(fileInput.files || []).forEach(function (file, index) {
-        if (index !== skip) {
-          transfer.items.add(file);
-        }
-      });
-      fileInput.files = transfer.files;
-      fileInput.dispatchEvent(new Event("change"));
-    };
-    var canDrop = typeof DataTransfer === "function";
-
-    fileInput.addEventListener("change", function () {
-      fileList.textContent = "";
-      var chosen = Array.prototype.slice.call(fileInput.files || []);
-      fileList.hidden = chosen.length === 0;
-      chosen.forEach(function (file, index) {
-        var item = document.createElement("li");
-        item.className = "dropzone__file";
-
-        /* No badge in front of the name. Every row of this list carried the
-           word TÕEND, which is what every row of it always is — a label that
-           never varies tells the reader nothing and takes the first position
-           on the line to do it. The evidence semantics are unchanged: each of
-           these still becomes one Document with one immutable version through
-           `app/documents/services.py`, and the Dokumendid tab is where a file's
-           role is actually a question worth answering. */
-
-        var name = document.createElement("span");
-        name.className = "dropzone__name";
-        name.textContent = file.name;
-        item.appendChild(name);
-
-        var size = document.createElement("span");
-        size.className = "dropzone__size";
-        size.textContent = humanSize(file.size);
-        item.appendChild(size);
-
-        if (canDrop) {
-          var drop = document.createElement("button");
-          drop.type = "button";
-          drop.className = "dropzone__drop";
-          drop.textContent = "×";
-          drop.setAttribute("aria-label", "Eemalda fail " + file.name);
-          drop.addEventListener("click", function () {
-            withoutIndex(index);
-          });
-          item.appendChild(drop);
-        }
-
-        fileList.appendChild(item);
-      });
-    });
+    /* The list of chosen files, their display titles, their `×` and what a
+       drop adds are the shared upload queue's (static/js/ux.js,
+       `uploadQueue`) — one implementation for this form and every
+       workspace panel. What is left here is the held list and the
+       staging island, both of which only this form has. */
 
     /* Taking a held file back off. The row carries the hidden `pending` key, so
        removing the row is what stops the next attempt resuming it — there is
@@ -448,47 +397,6 @@
       });
     }
 
-    var zone = fileInput.closest(".dropzone");
-    if (zone) {
-      ["dragenter", "dragover"].forEach(function (name) {
-        zone.addEventListener(name, function (event) {
-          event.preventDefault();
-          zone.classList.add("is-over");
-        });
-      });
-      ["dragleave", "drop"].forEach(function (name) {
-        zone.addEventListener(name, function (event) {
-          event.preventDefault();
-          zone.classList.remove("is-over");
-        });
-      });
-      zone.addEventListener("drop", function (event) {
-        if (!event.dataTransfer || !event.dataTransfer.files.length) {
-          return;
-        }
-        if (!canDrop) {
-          /* No DataTransfer to build with, so the browser's own assignment is
-             the only thing available and a second drop replaces the first. */
-          fileInput.files = event.dataTransfer.files;
-          fileInput.dispatchEvent(new Event("change"));
-          return;
-        }
-        /* Added to what is already there, not put in its place. Dropping a
-           covering letter and then its annex is two gestures and one obvious
-           intention; assigning the second FileList straight onto the input
-           silently threw the first away. The same rebuild the × control uses,
-           in the other direction. */
-        var transfer = new DataTransfer();
-        Array.prototype.slice.call(fileInput.files || []).forEach(function (file) {
-          transfer.items.add(file);
-        });
-        Array.prototype.slice.call(event.dataTransfer.files).forEach(function (file) {
-          transfer.items.add(file);
-        });
-        fileInput.files = transfer.files;
-        fileInput.dispatchEvent(new Event("change"));
-      });
-    }
 
     /* ---- Uus teema: read the files while the form is still open ----------
      * Choosing a file uploads it before the Teema exists, the extraction
@@ -762,6 +670,15 @@
            nothing else. So the poll and the remove path carry a standing
            warning over; only a new upload's own answer replaces it. */
         var keepWarning = !!(options && options.keepWarning);
+        /* The display titles typed on staged rows, by name, so a poll that
+           re-renders the list never takes back what somebody wrote. */
+        var typedTitles = {};
+        Array.prototype.forEach.call(
+          document.querySelectorAll("#intake-failid [data-staged-title]"),
+          function (box) {
+            typedTitles[box.name] = box.value;
+          }
+        );
         ["intake-failid", "intake-panel"].forEach(function (id) {
           var incoming = parsed.getElementById(id);
           var existing = document.getElementById(id);
@@ -781,6 +698,14 @@
             existing.replaceWith(document.importNode(incoming, true));
           }
         });
+        Array.prototype.forEach.call(
+          document.querySelectorAll("#intake-failid [data-staged-title]"),
+          function (box) {
+            if (Object.prototype.hasOwnProperty.call(typedTitles, box.name)) {
+              box.value = typedTitles[box.name];
+            }
+          }
+        );
         var panel = document.getElementById("intake-panel");
         if (panel) {
           bindSuggestionUse(panel);
@@ -892,6 +817,9 @@
       var stagingWorks = true;
       var inFlight = 0;
       var hideChosenList = function () {
+        /* The shared upload queue (static/js/ux.js) renders this list and
+           leaves it alone while it carries the mark set below. */
+        fileList.removeAttribute("data-upload-queue-hidden");
         if (!stagingWorks) {
           return;
         }
@@ -905,6 +833,7 @@
         if (!inFlight && !(staged && staged.querySelectorAll(".dropzone__file").length)) {
           return;
         }
+        fileList.setAttribute("data-upload-queue-hidden", "");
         fileList.textContent = "";
         fileList.hidden = true;
       };

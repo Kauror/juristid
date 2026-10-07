@@ -404,6 +404,7 @@ def add_matter_engagement(
     feedback_deadline: Any = None,
     feedback_received: str = "",
     uploads: Sequence[Any] = (),
+    record_overview: bool = False,
 ) -> WorkspaceResult:
     """`+ Kaasamine` — one consultation, with the replies it produced attached.
 
@@ -477,7 +478,54 @@ def add_matter_engagement(
             uploads=_uploads(uploads),
             actor=author,
         )
+        if record_overview and url:
+            _overview_for_engagement_link(matter=locked_matter, url=url, actor=author)
         return result
+
+
+def _overview_for_engagement_link(*, matter: Matter, url: str, actor: Any) -> Any:
+    """The Ülevaade a `Kaasamine` points at, recorded once (docs/adr/0142 §C).
+
+    `Ülevaate link` is the round's `Hetkel käsil` overview. If the Matter
+    already has an Ülevaade at that address it is reused as it is; a plan the
+    Matter owes is published at it; otherwise one is recorded — with no
+    publication day, since nobody said one. A news address is refused: the
+    field asks for an overview, and filing news as one would be the wrong
+    record. Inside the caller's transaction, so the round and its overview are
+    written together or not at all.
+    """
+    from app.matters.enums import WebsiteOverviewKind, WebsiteOverviewStatus
+    from app.matters.forms import ENGAGEMENT_OVERVIEW_LINK_IS_NEWS
+    from app.matters.models import MatterWebsiteOverview
+    from app.matters.publication_kind import classify_publication_url, same_publication_url
+
+    if classify_publication_url(url) == WebsiteOverviewKind.NEWS:
+        raise DomainError(ENGAGEMENT_OVERVIEW_LINK_IS_NEWS)
+    live = MatterWebsiteOverview.objects.filter(matter=matter, removed_at__isnull=True)
+    for published in live.filter(status=WebsiteOverviewStatus.PUBLISHED).order_by("-created_at"):
+        if same_publication_url(published.url, url) and published.effective_kind != (
+            WebsiteOverviewKind.NEWS
+        ):
+            return published
+    planned = (
+        live.filter(
+            status=WebsiteOverviewStatus.PLANNED,
+            kind__in=("", WebsiteOverviewKind.OVERVIEW),
+        )
+        .order_by("-created_at")
+        .first()
+    )
+    if planned is None:
+        planned = plan_website_overview(
+            matter=matter, actor=actor, kind=WebsiteOverviewKind.OVERVIEW
+        )
+    return publish_website_overview(
+        overview=planned,
+        url=url,
+        published_on=None,
+        actor=actor,
+        kind=WebsiteOverviewKind.OVERVIEW,
+    )
 
 
 ROUND_TAKES_FILES_WHILE_OPEN = (
@@ -1514,6 +1562,7 @@ def add_matter_website_overview(
     url: str = "",
     published_on: Any = None,
     title: str = "",
+    kind: str = "",
 ) -> WorkspaceResult:
     """`+ Ülevaade / uudis` — a plan, or a page that is already up.
 
@@ -1551,7 +1600,7 @@ def add_matter_website_overview(
     locked_matter = lock_open_matter_for_business_write(matter.pk)
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
-        overview = plan_website_overview(matter=locked_matter, actor=author)
+        overview = plan_website_overview(matter=locked_matter, actor=author, kind=kind)
         # **The address decides it, and the date does not.** Since
         # docs/adr/0089 §8 a publication whose day is unknown is an ordinary
         # publication, so an address with an empty date box records one rather
