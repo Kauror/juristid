@@ -51,10 +51,6 @@
       "seconds": 13.074,
       "tests": 3
     },
-    "e2e/test_empty_marge_refusal.py": {
-      "seconds": 5.732,
-      "tests": 2
-    },
     "e2e/test_engagement.py": {
       "seconds": 39.928,
       "tests": 12
