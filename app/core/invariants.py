@@ -76,6 +76,7 @@ SERVICE_RULES = frozenset(
         "document-link-crosses-matter",
         "external-position-crosses-matter",
         "change-event-on-another-matter",
+        "response-deadline-submission-crosses-matter",
         "closed-matter-without-closure-event",
         "stage-episode-stage-mismatch",
         "stage-episode-missing",
@@ -98,7 +99,7 @@ EXPLANATIONS: dict[str, str] = {
     "submission-sent-in-future": "Submission.sent_at is after today in Europe/Tallinn",
     # ENG-006. Every path that makes a Matter inactive ends these through
     # `end_live_work_for_closure`; a row here was left by one that did not.
-    "closed-matter-open-next-action": "An OPEN NextAction belongs to a closed Matter",
+    "closed-matter-open-next-action": ("An OPEN or PLANNED NextAction belongs to a closed Matter"),
     "closed-matter-planned-website-overview": (
         "A PLANNED MatterWebsiteOverview belongs to a closed Matter"
     ),
@@ -115,6 +116,9 @@ EXPLANATIONS: dict[str, str] = {
     ),
     "change-event-on-another-matter": (
         "A ChangeEvent about a Matter's record is filed under a different Matter"
+    ),
+    "response-deadline-submission-crosses-matter": (
+        "An ended Arvamuse tähtaeg names an answering Submission of a different Matter"
     ),
     "closed-matter-without-closure-event": (
         "A closed FULL Matter has no MATTER_CLOSED event: it was closed around close_matter"
@@ -356,6 +360,21 @@ def _cross_matter_findings() -> list[Finding]:
         .exclude(engagement__matter_id=F("matter_id"))
         .order_by("pk")
         .values_list("pk", "matter_id", "engagement__matter_id")
+    )
+
+    ended_deadline = apps.get_model("matters", "MatterResponseDeadline")
+    findings.extend(
+        Finding(
+            kind="response-deadline-submission-crosses-matter",
+            subject=str(pk),
+            detail=f"deadline matter={matter}, submission matter={submission_matter}",
+        )
+        for pk, matter, submission_matter in ended_deadline._base_manager.filter(
+            submission__isnull=False
+        )
+        .exclude(submission__matter_id=F("matter_id"))
+        .order_by("pk")
+        .values_list("pk", "matter_id", "submission__matter_id")
     )
 
     for model, owner_path in _event_subjects():
