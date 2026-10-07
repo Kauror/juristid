@@ -384,7 +384,10 @@ def test_the_typed_deadline_is_the_obligation_and_starts_nothing(page, base_url)
     expect(page.locator(".curact__suggesttext")).to_have_text("Tutvu materjaliga")
     expect(page.locator(".metaline").first).to_contain_text(wanted)
     start_first_step(page)
-    expect(page.locator(".curact__owed")).to_contain_text("Arvamuse tähtaeg")
+    # The deadline is the header's, not repeated under the task (owner's
+    # compact round, 2026-10-07).
+    expect(page.locator(".metaline").first).to_contain_text(wanted)
+    expect(page.locator("#praegune-tegevus")).not_to_contain_text("Arvamuse tähtaeg")
 
 
 def test_a_blank_deadline_leaves_the_file_with_no_step(page, base_url):

@@ -381,7 +381,7 @@ def open_add_panel(page, panel_id: str) -> None:
 
     **And it reads the page the server last sent.** A workspace save swaps
     `#teema-vaade` wholesale and `#lisa-jargmine` crosses hosts on exactly the
-    save this test suite makes it cross: `+ Määra järgmine tegevus` (once the
+    save this test suite makes it cross: `+ Lisa tegevus` (once the
     launcher chip) while no step is open, and the `Muuda` disclosure once one
     is. Measured against the previous
     version of this helper, with the save still on the wire: it read the panel
@@ -473,13 +473,13 @@ def set_next_step(page, text: str, when: str) -> None:
     (docs/adr/0097 §8.2, docs/adr/0124). That save also records the `Märge`,
     which `Teema käik` draws as an `Eesolev` row carrying the same sentence —
     and the files written before docs/adr/0126 read that row, so this door is
-    kept. The direct `+ Määra järgmine tegevus` the zone now also offers is
+    kept. The direct `+ Lisa tegevus` the zone now also offers is
     driven by `e2e/test_direct_next_action_workflow.py`.
 
     **Which host is decided by the completion form**, `#praegune-tegevus-vorm`,
     which is drawn only beside an open step. `#lisa-jargmine` is not the signal
     any more: since docs/adr/0126 §1 it is on every open Matter, as `Muuda` or
-    as `+ Määra järgmine tegevus`.
+    as `+ Lisa tegevus`.
 
     `when` is an Estonian date as the box takes it, and on the `+ Märge` host
     it has to be **after today**: a past or today's `Märge` offers no step.
@@ -502,10 +502,10 @@ def set_next_step(page, text: str, when: str) -> None:
 
 
 def open_next_action_form(page) -> None:
-    """`Muuda` or `+ Määra järgmine tegevus`, whichever this Matter is showing.
+    """`Muuda` or `+ Lisa tegevus`, whichever this Matter is showing.
 
     One form, two hosts: while a step is open it is the `Muuda` disclosure
-    beside the task, and once none is it is `+ Määra järgmine tegevus` in the
+    beside the task, and once none is it is `+ Lisa tegevus` in the
     same zone (docs/adr/0126 §1). Both are `next_action_panel.html`, with the
     same `#lisa-jargmine` id, which is what lets one helper open either.
 

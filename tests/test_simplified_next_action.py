@@ -608,9 +608,9 @@ def test_muu_valdkond_left_the_teema_rail_without_leaving_the_record(signed_in, 
     assert "Andmeklass" not in rail
     assert "Märgi testandmeteks" not in rail
     assert "Saabus" not in rail
-    for kept in ("Teemaviide", "Saatja"):
-        assert kept in rail
-    for gone in ("Menetlusliik", "Kellele"):
+    assert "Saatja" in rail
+    # `Teemaviide` left the rail in the owner's compact round (2026-10-07).
+    for gone in ("Teemaviide", "Menetlusliik", "Kellele"):
         assert gone not in rail
     # Stored, and unchanged by any of that.
     normal_matter.refresh_from_db()

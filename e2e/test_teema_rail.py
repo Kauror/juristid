@@ -168,7 +168,9 @@ def test_a_sparse_matter_gives_a_compact_facts_block(page, base_url):
     # the file was classified and the other a developer's switch. Every column,
     # value and endpoint is untouched (TEEMA_TARGET_SPEC §G.1,
     # docs/adr/0074 §2, §17).
-    assert keys[:2] == ["Teemaviide", "Saatja"], keys
+    # `Teemaviide` left the card in the owner's compact round (2026-10-07).
+    assert keys[:1] == ["Saatja"], keys
+    assert "Teemaviide" not in keys, keys
     # `Menetlusliik` and `Kellele` were rows three and four until
     # docs/adr/0097 §3, §4: the two Teema forms stopped asking about either, and
     # a read-only rail row is the easiest place for a withdrawn question to
@@ -198,9 +200,12 @@ def test_a_sparse_matter_gives_a_compact_facts_block(page, base_url):
             f"{row['key']}: the value is not beside its label"
         )
 
+    # A sparse Matter may have `Saatja` alone since `Teemaviide` left the card
+    # (2026-10-07); the pitch is measured wherever there are two rows.
     gaps = [row["gapAbove"] for row in rows[1:]]
-    assert max(gaps) <= 10, f"rows are {max(gaps):.1f}px apart"
-    assert min(gaps) >= 0, "rows overlap"
+    if gaps:
+        assert max(gaps) <= 10, f"rows are {max(gaps):.1f}px apart"
+        assert min(gaps) >= 0, "rows overlap"
 
     # And the block's height is its content's height, with nothing unexplained
     # in between: label, rows, gaps and the card's own padding.
@@ -250,11 +255,10 @@ def test_a_multi_sender_value_wraps_and_pushes_the_rest_down(page, base_url):
 
     rows = {row["key"]: row for row in row_geometry(page)}
     senders = rows["Saatja"]
-    reference = rows["Teemaviide"]
 
-    assert senders["height"] > reference["height"] + 4, (
-        "the sender list did not grow onto a second line"
-    )
+    # Stacked: the label, then one line per sender — two senders are at least
+    # three lines (the one-sender row stays within 44px, the test above).
+    assert senders["height"] > 48, "the sender list did not grow onto a second line"
 
     # Nothing below it was overlapped or pushed off.
     ordered = row_geometry(page)

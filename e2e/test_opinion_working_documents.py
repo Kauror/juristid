@@ -48,7 +48,7 @@ pytestmark = pytest.mark.e2e
 MINISTRY = "Näidisministeerium"
 STEP = "Vormista ja saada Koja seisukoht"
 OPTION = "Märgi praegune tegevus tehtuks"
-CTA = "+ Määra järgmine tegevus"
+CTA = "+ Lisa tegevus"
 DOCX = "16 03 2023 arvamus seoses juristieksami seaduse eelnõuga.docx"
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
@@ -67,7 +67,7 @@ def _et(day: date) -> str:
 
 
 def _set_step(page) -> None:
-    """`+ Määra järgmine tegevus` — the open step the opinion will finish."""
+    """`+ Lisa tegevus` — the open step the opinion will finish."""
     cta = page.locator("#praegune-tegevus #lisa-jargmine")
     open_add_panel(page, "lisa-jargmine")
     cta.locator("[name='text']").fill(STEP)

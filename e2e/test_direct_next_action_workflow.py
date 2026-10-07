@@ -4,7 +4,7 @@
 holds what only a rendered page settles: that a lawyer can walk the loop with
 the controls the page actually draws —
 
-    A. a Teema with no step offers `+ Määra järgmine tegevus`;
+    A. a Teema with no step offers `+ Lisa tegevus`;
     B. the step is set there, directly — no `Märge` is filed for it;
     C. `PRAEGUNE TEGEVUS` shows it (late, when its day has gone);
     D. Minu asjad lists it;
@@ -44,7 +44,7 @@ from e2e.conftest import (
 
 pytestmark = pytest.mark.e2e
 
-CTA = "+ Määra järgmine tegevus"
+CTA = "+ Lisa tegevus"
 OPTION = "Märgi praegune tegevus tehtuks"
 STEP = "Vormista ja saada Koja seisukoht"
 FOLLOWING = "Kontrolli menetluse seisu ja uusi materjale"
@@ -58,7 +58,7 @@ def _day(offset: int) -> str:
 
 
 def _set_directly(page, text: str, when: str) -> None:
-    """`+ Määra järgmine tegevus`, the way a lawyer uses it."""
+    """`+ Lisa tegevus`, the way a lawyer uses it."""
     cta = page.locator("#praegune-tegevus #lisa-jargmine")
     expect(cta.locator("> summary")).to_have_text(CTA)
     open_add_panel(page, "lisa-jargmine")

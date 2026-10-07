@@ -85,12 +85,12 @@ def test_the_current_action_loop_from_task_to_result_to_the_next_one(page, base_
 
     # And no step is opened on the completing save's behalf: the next one is a
     # separate deliberate act. It is offered right here, though — the zone that
-    # asked about the finished task now draws `+ Määra järgmine tegevus`, closed,
+    # asked about the finished task now draws `+ Lisa tegevus`, closed,
     # and the launcher still has no chip for it (docs/adr/0075 §5,
     # docs/adr/0097 §8.2, docs/adr/0126 §1, §3).
     cta = page.locator("#praegune-tegevus #lisa-jargmine")
     expect(cta).to_have_count(1)
-    expect(cta.locator("> summary")).to_have_text("+ Määra järgmine tegevus")
+    expect(cta.locator("> summary")).to_have_text("+ Lisa tegevus")
     expect(cta).not_to_have_attribute("open", "")
     expect(page.get_by_text("+ Järgmine tegevus", exact=True)).to_have_count(0)
 

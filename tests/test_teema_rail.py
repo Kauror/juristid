@@ -460,7 +460,7 @@ def test_the_other_rail_blocks_are_still_there(signed_in, specialist):
 
     assert "Märkmed" in body
     assert "Teema andmed" in body
-    assert "Teemaviide" in body
+    assert "Teemaviide" not in body  # owner's compact round, 2026-10-07
     assert "Sildid" not in body
 
 

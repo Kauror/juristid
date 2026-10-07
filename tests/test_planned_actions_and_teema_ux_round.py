@@ -1,7 +1,7 @@
 """One current action and dated planned ones; the rail and `Tegevused` (docs/adr/0143).
 
 PLANNED ACTIONS
-* `+ Määra järgmine tegevus` is drawn beside a current action;
+* `+ Lisa tegevus` is drawn beside a current action;
 * with a current action it adds a dated planned one and supersedes nothing;
 * without one it sets the current action;
 * a planned action needs a date; `Muuda` and `×` act on that exact row;
@@ -98,7 +98,7 @@ def test_the_set_control_stays_beside_a_current_action(client, specialist, with_
     zone = _zone(_detail(client, with_current))
 
     assert 'id="lisa-planeeritud"' in zone
-    assert "+ Määra järgmine tegevus" in zone
+    assert "+ Lisa tegevus" in zone
 
 
 def test_adding_beside_a_current_action_plans_and_supersedes_nothing(

@@ -2305,9 +2305,10 @@ def test_teema_andmed_holds_the_target_rows_that_are_still_asked(signed_in, norm
     card = body[body.index('id="teema-andmed"') :]
     card = card[: card.index('id="koja-arvamus"')]
 
-    for row in ("Teemaviide", "Saatja"):
-        assert row in card
+    assert "Saatja" in card
+    # `Teemaviide` left the card in the owner's compact round (2026-10-07).
     for gone in (
+        "Teemaviide",
         "Saabus",
         "Muu valdkond",
         "Andmeklass",

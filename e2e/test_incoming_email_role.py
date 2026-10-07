@@ -44,7 +44,7 @@ def file_a_teema_with(
     """Uus teema, the files chosen, «Loo teema», and the Teema it opened.
 
     ``start=False`` leaves the Teema with no first step, for a page with
-    scripting off: `+ Määra järgmine tegevus` is a workspace save, and those are
+    scripting off: `+ Lisa tegevus` is a workspace save, and those are
     HTMX posts.
     """
     page.goto(f"{base_url}/teemad/uus/")

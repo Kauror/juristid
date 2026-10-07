@@ -183,31 +183,28 @@ def test_the_second_line_stays_inside_its_own_cell(page, base_url, width):
 # ---------------------------------------------------------------------------
 
 
-def test_the_teema_workspace_states_the_obligation_under_the_task(page, base_url):
+def test_the_teema_states_the_deadline_in_the_header_not_under_the_task(page, base_url):
+    """The task under `PRAEGUNE TEGEVUS`; `Arvamuse tähtaeg` in the header.
+
+    The line under the task left in the owner's compact round (2026-10-07): it
+    was the header's date read a third time. The register keeps its second line
+    (the tests above)."""
     sign_in(page, base_url, SANDRA)
     open_register(page, base_url)
     open_seeded_teema(page, base_url)
 
     zone = page.locator("#praegune-tegevus")
-    task = zone.locator(".curact__task")
-    owed = zone.locator(".curact__owed")
-    expect(task).to_contain_text("Jälgin menetluse jätkumist")
-    expect(owed).to_contain_text(OWED_LABEL)
-    expect(owed).to_contain_text(LATE)
-
-    above = task.bounding_box()
-    below = owed.bounding_box()
-    assert above is not None and below is not None
-    assert below["y"] >= above["y"] + above["height"] - 1
-    assert font_size(zone.locator(".curact__owedlabel")) < font_size(zone.locator(".curact__text"))
+    expect(zone.locator(".curact__task")).to_contain_text("Jälgin menetluse jätkumist")
+    expect(zone.locator(".curact__owed")).to_have_count(0)
+    expect(zone).not_to_contain_text(OWED_LABEL)
+    expect(page.locator(".metaline").first).to_contain_text(OWED_LABEL)
 
 
-def test_a_narrow_teema_keeps_the_obligation_on_the_page(page, base_url):
+def test_a_narrow_teema_keeps_the_deadline_on_the_page(page, base_url):
     page.set_viewport_size({"width": 420, "height": 900})
     sign_in(page, base_url, SANDRA)
     open_register(page, base_url)
     open_seeded_teema(page, base_url)
 
-    owed = page.locator("#praegune-tegevus .curact__owed")
-    expect(owed).to_be_visible()
+    expect(page.locator(".metaline").first).to_contain_text(OWED_LABEL)
     assert not document_overflows(page), "the Teema workspace scrolls sideways at 420px"
