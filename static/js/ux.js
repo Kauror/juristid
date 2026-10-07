@@ -614,7 +614,11 @@
     field.uploadQueueTitles = null;
     files.forEach(function (file, index) {
       var row = document.createElement("li");
-      row.className = "uploadqueue__row";
+      /* Inside Uus teema's dropzone list the row is also that list's own row
+         kind, so the list reads as one list whatever filled it. */
+      row.className = list.classList.contains("dropzone__list")
+        ? "uploadqueue__row dropzone__file"
+        : "uploadqueue__row";
 
       var label = document.createElement("label");
       label.className = "uploadqueue__field";

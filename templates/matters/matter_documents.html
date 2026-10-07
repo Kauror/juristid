@@ -304,6 +304,14 @@ finds again (§23.5).
                             a star said «special» without saying what.
                           {% endcomment %}
                           <span class="badge badge--opinion">Arvamus</span>
+                        {% elif document.role == "WORKING_DOCUMENT" %}
+                          {% comment %}
+                            The opinion's working document keeps its name on
+                            the row now that `Roll` left the list (owner's
+                            round, 2026-10-07): it is part of the opinion's
+                            identity, not a role filter value.
+                          {% endcomment %}
+                          <span class="badge">Töödokument</span>
                         {% endif %}
                         {% if document.is_restricted %}
                           <span class="badge badge--restricted">Piiratud</span>

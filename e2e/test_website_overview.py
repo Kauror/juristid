@@ -699,6 +699,8 @@ def test_a_news_item_on_somebody_elses_site_is_recorded(page, base_url):
     panel = panel_of(page)
     panel.locator("[name=url]").fill(news)
     panel.locator("[name=published_on]").fill("14.03.2026")
+    # Not a koda.ee address, so the kind is chosen (docs/adr/0142 §C).
+    panel.get_by_label("Uudis", exact=True).check()
     panel.get_by_role("button", name=PLAN_BUTTON).click()
     chronology(page).wait_for(state="visible")
 

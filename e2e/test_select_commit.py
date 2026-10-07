@@ -125,21 +125,32 @@ def test_a_document_filter_waits_for_enter_but_not_for_a_pointer(page, base_url)
     url = create_matter(page, base_url, unique_title("Dokumentide filter"))
     page.goto(f"{url}dokumendid/")
     page.wait_for_load_state("networkidle")
+    # `Aasta` lists the years documents carry, and `Roll — kõik` — the filter
+    # this used to walk — left the toolbar on 2026-10-07: one file gives the
+    # year filter a value to walk to.
+    page.evaluate("document.getElementById('lae-dokument').hidden = false")
+    upload = page.locator("#lae-dokument form")
+    upload.locator("input[name=upload]").set_input_files(
+        {"name": "aasta.pdf", "mimeType": "application/pdf", "buffer": b"%PDF-1.4\naasta"}
+    )
+    with page.expect_navigation():
+        upload.get_by_role("button", name="Salvesta dokument").click()
+    page.goto(f"{url}dokumendid/")
+    page.wait_for_load_state("networkidle")
     navigations: list[str] = []
     page.on("framenavigated", lambda frame: navigations.append(frame.url))
 
-    select = page.locator("select[name=roll]")
+    select = page.locator("select[name=aasta]")
     select.focus()
-    for key in ("ArrowDown", "ArrowDown", "ArrowUp"):
-        _walk(select, key)
-        page.wait_for_timeout(SETTLE_MS)
+    _walk(select, "ArrowDown")
+    page.wait_for_timeout(SETTLE_MS)
     assert navigations == [], navigations
     chosen = select.input_value()
     assert chosen, "the walk never moved the selection"
 
     with page.expect_navigation():
         select.press("Enter")
-    assert re.search(rf"[?&]roll={re.escape(chosen)}(&|$)", page.url), page.url
+    assert re.search(rf"[?&]aasta={re.escape(chosen)}(&|$)", page.url), page.url
 
     # A pointer choice commits at once, exactly as it always did.
     other = page.locator("select[name=aasta]")

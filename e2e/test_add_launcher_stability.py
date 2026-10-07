@@ -45,11 +45,11 @@ pytestmark = pytest.mark.e2e
 #: The geometry contract itself is unchanged and is exactly what this file
 #: exists to hold: fewer chips is allowed, more chips is allowed, a chip that
 #: *moves* is not.
-CANONICAL = [
-    "+ Lisa",
+CANONICAL = [  # the owner's order of 2026-10-07
+    "+ Ülevaade / uudis",
     "+ Kaasamine",
     "+ Arvamus / tagasiside",
-    "+ Ülevaade / uudis",
+    "+ Lisa",
 ]
 
 #: The top-level panels, which is what the chips above open.

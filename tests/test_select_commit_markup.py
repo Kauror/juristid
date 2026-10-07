@@ -44,7 +44,8 @@ def test_the_document_filters_still_submit_themselves(signed_in, normal_matter):
         reverse("matters:matter_documents", kwargs={"pk": normal_matter.pk})
     ).content.decode()
 
-    assert "data-autosubmit" in _select(html, 'name="roll"')
+    # `Roll — kõik` left the toolbar on 2026-10-07; `Aasta` is the filter left.
+    assert 'name="roll"' not in html
     assert "data-autosubmit" in _select(html, 'name="aasta"')
 
 

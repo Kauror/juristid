@@ -1,4 +1,5 @@
-"""An e-mail filed on Uus teema reads «Algne e-kiri» on Dokumendid (ENG-066).
+"""An e-mail filed on Uus teema is filed as «Algne e-kiri» (ENG-066) — read on the
+document's own page since Dokumendid lost its Roll column (2026-10-07).
 
 The role is the one piece of classification the ordinary workflow shows about
 an incoming file: the Dokumendid table prints it beside the filename. It used
@@ -68,6 +69,25 @@ def document_row(page, filename: str):
     return page.locator("tr").filter(has=page.get_by_role("link", name=filename, exact=True))
 
 
+def role_of(page, filename: str) -> str:
+    """The role a document is filed under, read on its own page.
+
+    Dokumendid no longer prints a role column (owner's round, 2026-10-07); the
+    document's page still states it, and the row links there from `⋯`.
+    """
+    href = (
+        document_row(page, filename).locator("a", has_text="Dokumendi leht").get_attribute("href")
+    )
+    assert href, f"no document page link on the {filename} row"
+    body = page.context.new_page()
+    try:
+        body.goto(href if href.startswith("http") else page.url.split("/teemad/")[0] + href)
+        body.wait_for_load_state("networkidle")
+        return body.locator("body").inner_text()
+    finally:
+        body.close()
+
+
 def open_documents(page) -> None:
     page.goto(page.url.rstrip("/") + "/dokumendid/")
     expect(page.locator("table.doctable")).to_be_visible()
@@ -89,8 +109,8 @@ def test_an_email_chosen_on_uus_teema_is_the_original_email(page, base_url, tmp_
     file_a_teema_with(page, base_url, unique_title("Kiri skriptiga"), [email, memo])
     open_documents(page)
 
-    expect(document_row(page, "kiri.eml")).to_contain_text("Algne e-kiri")
-    expect(document_row(page, "memo.pdf")).to_contain_text("Saabunud ametlik dokument")
+    assert "Algne e-kiri" in role_of(page, "kiri.eml")
+    assert "Saabunud ametlik dokument" in role_of(page, "memo.pdf")
 
 
 def test_an_email_posted_with_the_form_is_the_original_email_too(
@@ -115,8 +135,8 @@ def test_an_email_posted_with_the_form_is_the_original_email_too(
         )
         open_documents(scriptless)
 
-        expect(document_row(scriptless, "kiri.eml")).to_contain_text("Algne e-kiri")
-        expect(document_row(scriptless, "memo.pdf")).to_contain_text("Saabunud ametlik dokument")
+        assert "Algne e-kiri" in role_of(scriptless, "kiri.eml")
+        assert "Saabunud ametlik dokument" in role_of(scriptless, "memo.pdf")
     finally:
         context.close()
 

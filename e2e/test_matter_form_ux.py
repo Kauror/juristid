@@ -809,8 +809,9 @@ def test_a_suggestion_never_touches_what_is_typed(page, base_url):
     assert page.evaluate("() => document.activeElement.id") == "id_notes"
 
 
-def test_the_similar_section_offers_nothing_to_press(page, base_url):
-    """Read-only, and structurally so: there is no Matter to link anything to."""
+def test_the_similar_section_offers_one_unticked_box_per_card(page, base_url):
+    """No button, and one `Seo uue teemaga` box per card, unticked: a ticked
+    card is linked by `Loo teema` in the same save (owner's round, 2026-10-07)."""
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
 
@@ -819,7 +820,10 @@ def test_the_similar_section_offers_nothing_to_press(page, base_url):
 
     expect(page.locator(SIMILAR_SECTION)).to_be_visible()
     assert page.locator(f"{SIMILAR_SECTION} button").count() == 0
-    assert page.locator(f"{SIMILAR_SECTION} input").count() == 0
+    cards = page.locator(f"{SIMILAR_SECTION} .relatedcard").count()
+    boxes = page.locator(f"{SIMILAR_SECTION} input[type=checkbox][name=seo_teemaga]")
+    assert boxes.count() == cards
+    assert page.locator(f"{SIMILAR_SECTION} input:checked").count() == 0
 
 
 def test_a_similar_candidate_opens_in_a_new_tab(page, base_url):

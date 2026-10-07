@@ -240,7 +240,8 @@ def test_an_engagement_is_started_then_its_replies_are_added(page, base_url, tmp
     expect(answer.locator("a.uxtl__file")).to_have_count(2)
     round_row = chronology(page).locator(".uxtl__item", has_text="Kaasamine: liikmed").first
     expect(round_row).to_contain_text("Seotud seisukohti 1")
-    expect(round_row.get_by_text("Lõpeta kaasamine", exact=True)).to_have_count(1)
+    # Saving the feedback finished the round (owner's decision, 2026-10-07).
+    expect(round_row.get_by_text("Lõpeta kaasamine", exact=True)).to_have_count(0)
 
     # Both modes stay one click away (the save closed the family again).
     open_add_panel(page, "kaasamine-alusta")
