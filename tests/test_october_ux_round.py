@@ -312,6 +312,53 @@ def test_d_uus_teema_files_take_their_typed_titles(client, specialist):
     assert document.current_version.original_filename == "skann_0412.pdf"
 
 
+def test_d_a_staged_row_shows_its_title_as_text_and_edits_it_only_on_request(client, specialist):
+    """Uus teema's staged row: the filename as text and a ✎, not a box.
+
+    The markup is the shared upload queue's (static/js/ux.js `openTitleEdit`):
+    the posted title is a hidden input, the ✎ is the only way to a box, and
+    no text box is rendered until somebody asks for one (owner's round,
+    2026-10-08). The posted name is unchanged, so `Loo teema` still files the
+    file under the title it carries.
+    """
+    client.force_login(specialist)
+    staged = client.post(reverse("matters:intake_stage"), {"files": [_pdf("skann_0412.pdf")]})
+    session = staged.context["intake_session"]
+    body = staged.content.decode()
+    row = re.search(r'<li class="dropzone__file" data-intake-file="([^"]+)">(.*?)</li>', body, re.S)
+    assert row, "no staged row"
+    file_id, markup = row.group(1), row.group(2)
+
+    assert 'type="text"' not in markup
+    assert re.search(
+        rf'<input type="hidden" name="intake_title__{file_id}" value="skann_0412.pdf"\s+'
+        r"data-title-edit-value data-staged-title>",
+        markup,
+    )
+    assert re.search(
+        r'<span class="titleedit__text" data-title-edit-text>skann_0412.pdf</span>', markup
+    )
+    pencil = re.search(r"<button [^>]*data-title-edit-open[^>]*>✎</button>", markup)
+    assert pencil
+    assert 'type="button"' in pencil.group(0)
+    assert 'aria-label="Muuda pealkirja: skann_0412.pdf"' in pencil.group(0)
+    assert 'title="Muuda pealkirja"' in pencil.group(0)
+    assert re.search(r"data-title-edit-original hidden>skann_0412.pdf</span>", markup)
+
+    client.post(
+        reverse("matters:matter_create"),
+        {
+            "title": "Lavastatud failiga teema",
+            "intake": str(session.pk),
+            f"intake_title__{file_id}": "Ministeeriumi kiri",
+        },
+    )
+
+    document = Document.objects.get(matter__title="Lavastatud failiga teema")
+    assert document.title == "Ministeeriumi kiri"
+    assert document.current_version.original_filename == "skann_0412.pdf"
+
+
 # ---------------------------------------------------------------------------
 # F. KOJA ARVAMUS
 # ---------------------------------------------------------------------------

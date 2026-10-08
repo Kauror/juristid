@@ -65,6 +65,7 @@ changes, and no existing row is rewritten.
 - The title becomes `Document.title`, through `read_upload` → `AcceptedUpload.display_title` and through `file_incoming`.
 - Staged Uus teema files carry it as `intake_title__<id>`.
 - The filename stays the version's `original_filename`. The bytes, checksum, MIME type and storage are untouched.
+- Since 2026-10-08 the title is shown as text with a ✎ beside it, not as a box per file. The ✎ makes only that file's title editable; Enter or leaving the box keeps it, Escape or an empty box restores the previous one. The posted names and order are unchanged: a hidden input per file carries the confirmed title (`static/js/ux.js` `openTitleEdit`, one behaviour for the queue rows and the staged rows).
 
 **B §8, superseded — feedback finishes the round.** Saving `Lisa tagasiside` records the received feedback, files it, and closes the chosen round. These happen in one transaction, through the canonical `complete_engagement_feedback`.
 - It behaves the same whether it is opened from `+ Kaasamine` or from `Tehtud` on the waiting line under `PRAEGUNE TEGEVUS`. Both are the same form and the same view.

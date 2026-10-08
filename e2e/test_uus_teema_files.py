@@ -309,7 +309,7 @@ def test_the_preview_says_the_filename_the_size_and_how_to_undo_it(page, base_ur
 
     row = page.locator(".dropzone__file")
     expect(row).to_have_count(1)
-    expect(row.locator(".dropzone__name")).to_have_text("eelnou.pdf")
+    expect(row.locator(".titleedit__text")).to_have_text("eelnou.pdf")
     expect(row.locator(".dropzone__size")).to_contain_text("KB")
     expect(row.get_by_role("button", name="Eemalda fail eelnou.pdf")).to_be_visible()
     expect(page.locator("[data-chipcount-for='id_files']")).to_have_text("1 valitud")

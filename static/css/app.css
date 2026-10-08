@@ -12758,11 +12758,9 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 /* -- The upload queue ------------------------------------------------------
- * One row per chosen or dropped file, before the save: its display title
- * (the filename by default, editable), the filename and size beneath, and a
- * `×` to take it back off. Shared by every dropzone and by Uus teema's staged
- * rows (static/js/ux.js `renderUploadQueue`, intake_files.html; owner's round,
- * 2026-10-07). */
+ * One line per chosen or dropped file, before the save: its display title
+ * with a ✎, its size, and a `×` to take it back off. Shared by every dropzone
+ * (static/js/ux.js `renderUploadQueue`; owner's round, 2026-10-07). */
 .uploadqueue {
   display: grid;
   gap: var(--spacing-15);
@@ -12776,49 +12774,72 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 .uploadqueue__row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  column-gap: var(--spacing-2);
-}
-
-.uploadqueue__field {
   display: flex;
   align-items: center;
   gap: var(--spacing-2);
-  min-width: 0;
 }
 
-.uploadqueue__label {
+.uploadqueue__size {
   flex: none;
   font-size: var(--typography-size-meta);
   color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
-.uploadqueue__title {
+.uploadqueue__remove {
+  flex: none;
+}
+
+/* -- A display title, edited only when asked --------------------------------
+ * The title as text and a ✎ beside it; the ✎ swaps the two for a box, for that
+ * file only. Once the title is not the filename, the filename follows it,
+ * muted. Used by the queue rows above and Uus teema's staged rows
+ * (static/js/ux.js `openTitleEdit`, intake_files.html; owner's round,
+ * 2026-10-08). */
+.titleedit {
+  display: flex;
   flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--spacing-1);
   min-width: 0;
 }
 
-.uploadqueue__file {
-  grid-column: 1;
-  font-size: var(--typography-size-meta);
+.titleedit__text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.titleedit__open {
+  flex: none;
+  padding: 0 var(--spacing-1);
+  border: 0;
+  background: none;
+  font: inherit;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.titleedit__open:hover {
+  color: var(--accent-link);
+}
+
+.titleedit__open:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.titleedit__original {
+  min-width: 0;
+  font-size: var(--typography-size-meta-sm);
   color: var(--text-muted);
   overflow-wrap: anywhere;
 }
 
-.uploadqueue__remove {
-  grid-column: 2;
-  grid-row: 1;
-}
-
-/* A staged row on Uus teema carries the same title box above its name. */
-.dropzone__file > .uploadqueue__field {
-  flex: 1 1 100%;
-}
-
-.dropzone__list--staged > .dropzone__file {
-  flex-wrap: wrap;
+.titleedit__input {
+  flex: 1 1 12rem;
+  min-width: 0;
 }
 
 

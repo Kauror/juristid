@@ -24,18 +24,22 @@
   {% for file in intake_files %}
     <li class="dropzone__file" data-intake-file="{{ file.id }}">
       {% comment %}
-        The display title, editable before `Loo teema` and the filename by
-        default (docs/adr/0142 §A, amended 2026-10-07). The filename itself is
-        kept on the stored version whatever is typed here; a poll re-rendering
-        this list keeps what was typed (static/js/app.js `applyFragment`).
+        The display title, the filename by default and changed before `Loo
+        teema` only through the ✎ beside it (docs/adr/0142 §A, amended
+        2026-10-07 and 2026-10-08). The markup is the shared upload queue's, so
+        one behaviour edits both (static/js/ux.js `openTitleEdit`). The
+        filename itself is kept on the stored version whatever the title says,
+        and stays on the row once they differ; a poll re-rendering this list
+        keeps the confirmed title (static/js/app.js `applyFragment`).
       {% endcomment %}
-      <label class="uploadqueue__field">
-        <span class="uploadqueue__label">Pealkiri</span>
-        <input type="text" class="field__input uploadqueue__title" maxlength="400"
-               name="intake_title__{{ file.id }}" value="{{ file.filename }}" data-staged-title
-               aria-label="Pealkiri: {{ file.filename }}">
-      </label>
-      <span class="dropzone__name">{{ file.filename }}</span>
+      <span class="titleedit" data-title-edit data-title-original="{{ file.filename }}">
+        <span class="titleedit__text" data-title-edit-text>{{ file.filename }}</span>
+        <button type="button" class="titleedit__open" data-title-edit-open
+                aria-label="Muuda pealkirja: {{ file.filename }}" title="Muuda pealkirja">✎</button>
+        <span class="titleedit__original" data-title-edit-original hidden>{{ file.filename }}</span>
+        <input type="hidden" name="intake_title__{{ file.id }}" value="{{ file.filename }}"
+               data-title-edit-value data-staged-title>
+      </span>
       <span class="dropzone__size">{{ file.size }}</span>
       {% comment %}
         Only where there is a reading to report. With the suggestion area

@@ -324,7 +324,13 @@ def test_journey_files_display_titles_and_relations(page, base_url, tmp_path):
     second.write_bytes(PDF)
     page.locator("#id_files").set_input_files([str(first), str(second)])
     expect(page.locator(".dropzone__file")).to_have_count(2)
+    # The title is text until its ✎ is pressed; Enter keeps what was typed.
+    page.get_by_role("button", name="Muuda pealkirja: kaaskiri.pdf").click()
     page.get_by_role("textbox", name="Pealkiri: kaaskiri.pdf").fill("Kaaskiri ministeeriumilt")
+    page.get_by_role("textbox", name="Pealkiri: kaaskiri.pdf").press("Enter")
+    expect(
+        page.locator(".dropzone__file .titleedit__text", has_text="Kaaskiri ministeeriumilt")
+    ).to_have_count(1)
 
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
