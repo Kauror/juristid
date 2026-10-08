@@ -185,7 +185,7 @@ rather than read.
     {% endcomment %}
     <span class="metaline__item">
       <span class="metaline__label">Vastutaja</span>
-      {% if not can_write %}
+      {% if not can_write or not can_assign_work %}
         {% if matter.owner %}<span class="metaline__value" title="{{ matter.owner.display_name }}">{{ matter.owner.get_short_name }}</span>
         {% else %}<span class="metaline__value metafield__missing">Määramata</span>{% endif %}
       {% else %}

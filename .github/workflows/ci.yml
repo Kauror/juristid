@@ -300,6 +300,7 @@ jobs:
           uv run python manage.py migrate audit 0015 --noinput
           uv run python manage.py migrate reporting 0001 --noinput
           uv run python manage.py migrate organisations 0001 --noinput
+          uv run python manage.py migrate accounts 0003 --noinput
           uv run python manage.py migrate --noinput
 
       - name: Estonian search capabilities are available
@@ -629,6 +630,13 @@ jobs:
       # shared password does not look wrong in a diff, it looks like a default
       # (tests/test_repository_data_safety.py, config/e2e_gate_settings.py).
       E2E_GATE_PASSWORD: ci-jagatud-parool-mitte-kusagil-mujal
+      # A third server, on a database of its own, running personal sign-in
+      # (docs/adr/0145). It is dormant in every deployment, so this is the only
+      # place it runs at all. Mail goes to files in this directory, where
+      # e2e/test_local_auth.py reads the one-time links; nothing is sent
+      # anywhere (config/e2e_local_auth_settings.py).
+      E2E_LOCAL_AUTH_BASE_URL: http://127.0.0.1:8002
+      E2E_LOCAL_AUTH_MAIL_DIR: /tmp/juristid-e2e-mail
       # Set to "1" on a manual run to (re)generate the visual baselines. The
       # renderings land in the browser-artifacts upload; commit what you agree
       # with. Baselines have to come from this image, because font
@@ -697,6 +705,26 @@ jobs:
           done
           echo "shared-gate server did not start"; exit 1
 
+      # Personal sign-in, on its own database so that the accounts it creates
+      # never reach the seeded world the rest of the suite asserts about. The
+      # browser test empties it and appoints the first administrator itself,
+      # through the operator command, exactly as an activation would.
+      - name: Start the personal sign-in application
+        env:
+          DJANGO_SETTINGS_MODULE: config.e2e_local_auth_settings
+        run: |
+          PGPASSWORD="$POSTGRES_PASSWORD" createdb -h "$POSTGRES_HOST" -U "$POSTGRES_USER" "${POSTGRES_DB}_localauth"
+          mkdir -p "$E2E_LOCAL_AUTH_MAIL_DIR"
+          uv run python manage.py migrate --noinput
+          nohup uv run python manage.py runserver 127.0.0.1:8002 --noreload > artifacts/server-local-auth.log 2>&1 &
+          for attempt in $(seq 1 40); do
+            if curl --fail --silent http://127.0.0.1:8002/healthz > /dev/null; then
+              echo "personal sign-in server is up"; exit 0
+            fi
+            sleep 1
+          done
+          echo "personal sign-in server did not start"; exit 1
+
       # This runner's slice of the browser suite. Whole files, chosen by
       # measured cost, against this runner's own database, its own two servers
       # and its own Chromium — which is what makes 7 of these safe when
@@ -722,6 +750,7 @@ jobs:
             artifacts/junit-browser-${{ matrix.shard }}.xml
             artifacts/server.log
             artifacts/server-gate.log
+            artifacts/server-local-auth.log
           if-no-files-found: warn
           retention-days: 14
 

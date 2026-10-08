@@ -36,7 +36,7 @@ from django.db.models import QuerySet
 
 from app.accounts.models import User
 from app.accounts.selectors import department_workers
-from app.core.authorization import is_department_head
+from app.core.authorization import may_view_department_management
 from app.core.errors import DomainError
 from app.matters.models import Matter, MatterAssignmentNotice, PersonalScratchpad
 
@@ -47,7 +47,8 @@ SCRATCHPAD_MAX_LENGTH = 20_000
 
 
 def may_open_person_work(user: Any, subject: Any) -> bool:
-    """Self, or the department head. Nothing else, and nothing new.
+    """Self, or whoever holds the department management view — by default the
+    department head, and nobody else (docs/adr/0145 §3).
 
     `is_staff` is deliberately absent: technical administration is not business
     access, and this page is a colleague's whole queue (AGENTS.md).
@@ -56,7 +57,9 @@ def may_open_person_work(user: Any, subject: Any) -> bool:
         return False
     if getattr(subject, "pk", None) == user.pk:
         return True
-    return is_department_head(user)
+    # The `department.view_management` capability: the department head by
+    # default, and whoever an administrator lends the view to (docs/adr/0145).
+    return may_view_department_management(user)
 
 
 def resolve_subject(raw_id: Any) -> User | None:

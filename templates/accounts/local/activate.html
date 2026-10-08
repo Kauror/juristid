@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Konto aktiveerimine · {{ application_name }}{% endblock %}
+
+{% comment %}
+  The invitation's landing page: the person chooses their own password, and
+  that — not anything an administrator did — is what makes the account usable
+  (docs/adr/0145 §5). The link itself is already out of the address bar by the
+  time this renders (app/accounts/local_views.py `_link_view`).
+{% endcomment %}
+
+{% block content %}
+<div class="page page--narrow">
+  <h1>Konto aktiveerimine</h1>
+
+  {% if invalid %}
+    {% include "accounts/local/link_state.html" with purpose="activation" %}
+  {% else %}
+    <p class="acctnote">
+      {{ holder.display_name }} · <span class="mono">{{ holder.upn }}</span>
+    </p>
+    {% include "accounts/local/new_password_form.html" with button="Salvesta parool" %}
+  {% endif %}
+</div>
+{% endblock %}

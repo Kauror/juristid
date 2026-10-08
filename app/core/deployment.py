@@ -512,6 +512,11 @@ OPERATIONAL_MODELS = frozenset(
         "search.SearchRebuildDebt",
         # Failed shared-password attempts per client: a lockout clock.
         "accounts.SharedGateThrottle",
+        # The same for personal sign-in (docs/adr/0145 §9): failure counters per
+        # account and network, and the networks an address has signed in from.
+        # Both move with every sign-in; neither is part of the register.
+        "accounts.AuthenticationThrottle",
+        "accounts.TrustedSignInSource",
         # An unfinished Uus teema form and the files staged on it.
         "matters.MatterIntakeSession",
         "matters.MatterIntakeFile",
@@ -633,6 +638,9 @@ BOOLEAN_ENVIRONMENT_VARIABLES = (
     "DJANGO_STATIC_MANIFEST",
     "EXTRACTION_OCR_ENABLED",
     "SEED_DEV_DATA",
+    "ACCOUNT_EMAIL_DELIVERY_ENABLED",
+    "LOCAL_AUTH_MFA_REQUIRED_FOR_ALL",
+    "DJANGO_EMAIL_USE_TLS",
 )
 
 

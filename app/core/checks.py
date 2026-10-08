@@ -39,8 +39,9 @@ def check_runtime_safety(app_configs: Any, **kwargs: Any) -> list[Error | Warnin
             Error(
                 "DEV_LOGIN_ENABLED must never be combined with REAL_DATA_ALLOWED.",
                 hint=(
-                    "Real Koda or member data may only exist in an environment that has "
-                    "passed the Secure Pilot Gate and authenticates through Entra ID."
+                    "Real Koda or member data may only exist behind a real authenticator "
+                    "(AUTH_MODE shared_gate, cloudflare_access or local_password), never "
+                    "behind the synthetic sign-in."
                 ),
                 id="juristid.E003",
             )
@@ -131,8 +132,9 @@ def _authentication_problems() -> list[Error | Warning]:
             Error(
                 "REAL_DATA_ALLOWED is on with no authenticator in front of it.",
                 hint=(
-                    "Set AUTH_MODE to shared_gate or cloudflare_access. Real member "
-                    "material must not be served to whoever reaches the port."
+                    "Set AUTH_MODE to shared_gate, cloudflare_access or (after the activation "
+                    "runbook) local_password. Real member material must not be served to "
+                    "whoever reaches the port."
                 ),
                 id="juristid.E006",
             )
@@ -164,6 +166,200 @@ def _authentication_problems() -> list[Error | Warning]:
     if mode == AuthMode.SHARED_GATE:
         problems.extend(_shared_gate_problems())
 
+    if mode == AuthMode.LOCAL_PASSWORD:
+        problems.extend(_local_password_problems())
+
+    problems.extend(_account_email_problems(mode))
+
+    return problems
+
+
+#: OWASP's minimum Argon2id configuration: 19 MiB of memory, two passes.
+ARGON2_MINIMUM_MEMORY_KIB = 19456
+ARGON2_MINIMUM_TIME_COST = 2
+
+
+def _local_password_problems() -> list[Error | Warning]:
+    """Every safeguard personal sign-in depends on, actually present (docs/adr/0145).
+
+    Two tiers, and the line is the one the rest of this file draws. What makes
+    the mode unsafe *anywhere* — a password floor below NIST's, Argon2id not the
+    hasher, a limit that is zero — refuses every process. What makes it unsafe
+    *for real data* — a test-grade hash cost, no dedicated MFA key, no TLS —
+    refuses a deployment marked REAL_DATA_ALLOWED, which is the only kind that
+    could hold a real person's password.
+    """
+    from app.accounts.passwords import MINIMUM_LENGTH
+
+    problems: list[Error | Warning] = []
+
+    if int(getattr(settings, "LOCAL_AUTH_PASSWORD_MIN_LENGTH", 0)) < MINIMUM_LENGTH:
+        problems.append(
+            Error(
+                f"LOCAL_AUTH_PASSWORD_MIN_LENGTH is below {MINIMUM_LENGTH}.",
+                hint="NIST SP 800-63B-4 requires 15 characters for a password used on its own.",
+                id="juristid.E030",
+            )
+        )
+
+    first_hasher = (settings.PASSWORD_HASHERS or [""])[0]
+    if "Argon2" not in first_hasher:
+        problems.append(
+            Error(
+                "Personal passwords would not be hashed with Argon2id.",
+                hint="The first entry of PASSWORD_HASHERS must be an Argon2 hasher.",
+                id="juristid.E031",
+            )
+        )
+    elif settings.REAL_DATA_ALLOWED and (
+        int(settings.LOCAL_AUTH_ARGON2_MEMORY_KIB) < ARGON2_MINIMUM_MEMORY_KIB
+        or int(settings.LOCAL_AUTH_ARGON2_TIME_COST) < ARGON2_MINIMUM_TIME_COST
+        or int(settings.LOCAL_AUTH_ARGON2_PARALLELISM) < 1
+    ):
+        problems.append(
+            Error(
+                "The Argon2id cost is below OWASP's minimum for a real-data deployment.",
+                hint=(
+                    f"LOCAL_AUTH_ARGON2_MEMORY_KIB >= {ARGON2_MINIMUM_MEMORY_KIB}, "
+                    f"LOCAL_AUTH_ARGON2_TIME_COST >= {ARGON2_MINIMUM_TIME_COST}, "
+                    "LOCAL_AUTH_ARGON2_PARALLELISM >= 1."
+                ),
+                id="juristid.E031",
+            )
+        )
+
+    limits = {
+        "LOCAL_AUTH_SESSION_IDLE_SECONDS": settings.LOCAL_AUTH_SESSION_IDLE_SECONDS,
+        "LOCAL_AUTH_SESSION_ABSOLUTE_SECONDS": settings.LOCAL_AUTH_SESSION_ABSOLUTE_SECONDS,
+        "LOCAL_AUTH_REAUTH_SECONDS": settings.LOCAL_AUTH_REAUTH_SECONDS,
+        "LOCAL_AUTH_ACTIVATION_LINK_SECONDS": settings.LOCAL_AUTH_ACTIVATION_LINK_SECONDS,
+        "LOCAL_AUTH_RESET_LINK_SECONDS": settings.LOCAL_AUTH_RESET_LINK_SECONDS,
+    }
+    unbounded = sorted(name for name, value in limits.items() if int(value) <= 0)
+    if unbounded:
+        problems.append(
+            Error(
+                f"Personal sign-in limits that are not positive: {', '.join(unbounded)}.",
+                hint="A zero limit is a session, a re-authentication or a link that never ends.",
+                id="juristid.E032",
+            )
+        )
+
+    if settings.REAL_DATA_ALLOWED and not getattr(settings, "LOCAL_AUTH_MFA_ENCRYPTION_KEY", ""):
+        problems.append(
+            Error(
+                "LOCAL_AUTH_MFA_ENCRYPTION_KEY is empty on a real-data deployment.",
+                hint=(
+                    "TOTP secrets would be encrypted under a key derived from SECRET_KEY, so "
+                    "rotating SECRET_KEY would silently unenrol every authenticator. Set a "
+                    "dedicated host-side secret."
+                ),
+                id="juristid.E033",
+            )
+        )
+
+    if not settings.DEBUG and not (
+        settings.SESSION_COOKIE_SECURE
+        and settings.CSRF_COOKIE_SECURE
+        and settings.SESSION_COOKIE_HTTPONLY
+    ):
+        problems.append(
+            Error(
+                "Personal sign-in is on with a session or CSRF cookie that is not Secure, or "
+                "a session cookie readable by scripts.",
+                hint="SESSION_COOKIE_SECURE, CSRF_COOKIE_SECURE and SESSION_COOKIE_HTTPONLY.",
+                id="juristid.E034",
+            )
+        )
+
+    if settings.REAL_DATA_ALLOWED and not (
+        getattr(settings, "SECURE_PROXY_SSL_HEADER", None) or settings.SECURE_SSL_REDIRECT
+    ):
+        problems.append(
+            Error(
+                "Personal sign-in on a real-data deployment with nothing enforcing HTTPS.",
+                hint=(
+                    "Set DJANGO_BEHIND_TLS_PROXY=1 behind the tunnel, or "
+                    "DJANGO_SECURE_SSL_REDIRECT=1. A password must never cross the network in "
+                    "clear."
+                ),
+                id="juristid.E035",
+            )
+        )
+
+    breached = getattr(settings, "LOCAL_AUTH_BREACHED_PASSWORDS_PATH", "")
+    if breached:
+        from pathlib import Path
+
+        if not Path(breached).is_file():
+            problems.append(
+                Warning(
+                    "LOCAL_AUTH_BREACHED_PASSWORDS_PATH does not name a readable file.",
+                    hint="The common-password list still applies; the breach list does not.",
+                    id="juristid.W032",
+                )
+            )
+
+    return problems
+
+
+#: Backends that would write a message — and the one-time link in it — to a
+#: console, a file or memory rather than to its recipient.
+_NON_DELIVERING_BACKENDS = (
+    "django.core.mail.backends.console.EmailBackend",
+    "django.core.mail.backends.filebased.EmailBackend",
+    "django.core.mail.backends.locmem.EmailBackend",
+)
+
+
+def _account_email_problems(mode: str) -> list[Error | Warning]:
+    """Account mail is off unless it was turned on deliberately, in the one mode it belongs to."""
+    from app.accounts.enums import AuthMode
+
+    if not getattr(settings, "ACCOUNT_EMAIL_DELIVERY_ENABLED", False):
+        return []
+    problems: list[Error | Warning] = []
+    if mode != AuthMode.LOCAL_PASSWORD:
+        problems.append(
+            Error(
+                "ACCOUNT_EMAIL_DELIVERY_ENABLED is on in a mode that has no account e-mail.",
+                hint=(
+                    "Invitations and reset links exist only under AUTH_MODE=local_password. "
+                    "Turning delivery on is a step of the activation runbook, not a setting to "
+                    "leave on beside the shared gate."
+                ),
+                id="juristid.E036",
+            )
+        )
+    base = getattr(settings, "ACCOUNT_LINK_BASE_URL", "") or ""
+    if not base or (settings.REAL_DATA_ALLOWED and not base.startswith("https://")):
+        problems.append(
+            Error(
+                "Account e-mail is on without an https ACCOUNT_LINK_BASE_URL.",
+                hint=(
+                    "Links are built from this setting, never from the request's Host header, "
+                    "and on a real-data deployment it must be the final https address."
+                ),
+                id="juristid.E037",
+            )
+        )
+    if not getattr(settings, "ACCOUNT_EMAIL_FROM", ""):
+        problems.append(
+            Error(
+                "Account e-mail is on without ACCOUNT_EMAIL_FROM.",
+                hint="State the sender address the Chamber's mail service accepts.",
+                id="juristid.E037",
+            )
+        )
+    if settings.REAL_DATA_ALLOWED and settings.EMAIL_BACKEND in _NON_DELIVERING_BACKENDS:
+        problems.append(
+            Error(
+                "Account e-mail on a real-data deployment would be written to a console, a "
+                "file or memory.",
+                hint="The message carries a one-time credential; it may only go to its recipient.",
+                id="juristid.E038",
+            )
+        )
     return problems
 
 

@@ -761,6 +761,29 @@ def update_work_victory(
     return record
 
 
+#: A person without `work_victory.review` asking to decide one (docs/adr/0145 §3).
+REVIEW_NOT_PERMITTED = (
+    "Töövõidu kinnitamise või mitterealiseerunuks märkimise otsuse teeb töövõitude "
+    "kinnitamise õigusega kasutaja."
+)
+
+
+def _require_reviewer(actor: Any) -> None:
+    """Refuse a person who may not decide a Töövõit, before the row is touched.
+
+    The views ask the same question first (`may_review_work_victory`); this is
+    the same rule one layer down, so a route that forgot it is still refused. A
+    call with no person behind it — none exists in the application today — is
+    not a review anybody performed and is not asked.
+    """
+    if getattr(actor, "pk", None) is None:
+        return
+    from app.core.authorization import may_review_work_victory
+
+    if not may_review_work_victory(actor):
+        raise DomainError(REVIEW_NOT_PERMITTED)
+
+
 @transaction.atomic
 def confirm_work_victory(*, record: MatterWorkVictory, actor: Any = None) -> MatterWorkVictory:
     """A person decides this is a Chamber work victory.
@@ -773,6 +796,7 @@ def confirm_work_victory(*, record: MatterWorkVictory, actor: Any = None) -> Mat
     cannot both pass on stale copies and leave two contradictory decisions —
     the second with a `from_status` that was no longer true.
     """
+    _require_reviewer(actor)
     record = _lock_for_edit(record, None)
     if record.status == WorkVictoryStatus.CONFIRMED:
         raise DomainError("Töövõit on juba kinnitatud.")
@@ -808,6 +832,7 @@ def reject_work_victory(
     *, record: MatterWorkVictory, actor: Any = None, reason: str = ""
 ) -> MatterWorkVictory:
     """Record that a candidate did not come off. Kept, not deleted."""
+    _require_reviewer(actor)
     record = _lock_for_edit(record, None)
     if record.status == WorkVictoryStatus.NOT_REALIZED:
         raise DomainError("Töövõit on juba märgitud mitterealiseerunuks.")

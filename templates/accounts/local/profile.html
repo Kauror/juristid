@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Minu konto · {{ application_name }}{% endblock %}
+
+{% comment %}
+  The signed-in person's own account: who the application believes they are,
+  what they may do, and how their sign-in is protected. Read-only except for
+  the links to the two pages that change something — the name, the role and
+  the permissions are an administrator's to set, never one's own
+  (docs/adr/0145 §4).
+{% endcomment %}
+
+{% block content %}
+<div class="page page--narrow">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Minu konto</h1>
+    {% if may_administer %}
+      <div class="pagehead__actions">
+        <a class="button button--secondary" href="{% url 'account_admin:list' %}">Kasutajate haldus</a>
+      </div>
+    {% endif %}
+  </div>
+
+  <section class="panel">
+    <h2 class="acctsection__title">Konto</h2>
+    <dl class="detailgrid">
+      <dt>Nimi</dt><dd>{{ person.display_name }}</dd>
+      <dt>E-post</dt><dd class="mono">{{ person.upn }}</dd>
+      <dt>Roll</dt><dd>{{ person.get_role_display }}</dd>
+      <dt>Viimane sisselogimine</dt>
+      <dd>{% if person.last_authenticated_at %}{{ person.last_authenticated_at|date:"j.n.Y H:i" }}{% else %}—{% endif %}</dd>
+    </dl>
+  </section>
+
+  <section class="panel">
+    <h2 class="acctsection__title">Õigused</h2>
+    {% if capabilities %}
+      <ul class="acctcaps">
+        {% for capability in capabilities %}
+          <li class="acctcaps__item"><strong>{{ capability.label }}</strong> — {{ capability.description }}</li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="acctnote">Rolli tavapärased õigused. Lisaõigusi ei ole.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <h2 class="acctsection__title">Turvalisus</h2>
+    <dl class="detailgrid">
+      <dt>Parool</dt>
+      <dd>{% if person.local_password_set_at %}seatud {{ person.local_password_set_at|date:"j.n.Y" }}{% else %}—{% endif %}</dd>
+      <dt>Teine tegur</dt>
+      <dd>{% if has_second_factor %}autentimisrakendus · taastekoode alles {{ recovery_codes_left }}{% else %}ei ole seadistatud{% endif %}</dd>
+    </dl>
+    <div class="acctactions">
+      <a class="button button--secondary" href="{% url 'accounts:change_password' %}">Muuda parooli</a>
+      <a class="button button--secondary" href="{% url 'accounts:security' %}">Teine tegur</a>
+    </div>
+  </section>
+</div>
+{% endblock %}

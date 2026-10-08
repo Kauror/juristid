@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Uus kasutaja · {{ application_name }}{% endblock %}
+
+{% comment %}
+  Creating an account is not activating it. The new account waits — inactive,
+  without a password — until it is approved and invited, and becomes usable
+  only when its owner sets their own password (docs/adr/0145 §5).
+{% endcomment %}
+
+{% block content %}
+<div class="page page--narrow">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Uus kasutaja</h1>
+    <span class="pagehead__context"><a href="{% url 'account_admin:list' %}">Kasutajad</a></span>
+  </div>
+
+  <form method="post" class="card card--form form" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div class="formerror" role="alert">{% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}</div>
+    {% endif %}
+    {% include "accounts/partials/field.html" with field=form.display_name %}
+    {% include "accounts/partials/field.html" with field=form.email %}
+    {% include "accounts/partials/field.html" with field=form.role %}
+    {% include "accounts/partials/field.html" with field=form.external_reason %}
+    <p class="acctnote">Konto luuakse ootel olekus. Seejärel kinnita see ja saada kutse.</p>
+    <div class="form__actions">
+      <button type="submit" class="button button--primary">Salvesta</button>
+      <a class="button button--quiet" href="{% url 'account_admin:list' %}">Loobu</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -115,3 +115,15 @@ STORAGES = {
     },
     "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
 }
+
+# Personal passwords hash with Argon2id in the suite too — the algorithm under
+# test is the one that ships — but at a cost a test can afford: the suite sets
+# hundreds of passwords, and the deployed parameters are measured in tens of
+# megabytes each. `juristid.E031` refuses parameters like these on a real-data
+# deployment, and tests/test_local_auth_passwords.py asserts the shipped defaults.
+# Reset mail inline, so a test asserts the outbox where the request returns;
+# tests/test_local_auth_lifecycle.py exercises the background path on its own.
+ACCOUNT_EMAIL_IN_BACKGROUND = False
+LOCAL_AUTH_ARGON2_TIME_COST = 1
+LOCAL_AUTH_ARGON2_MEMORY_KIB = 1024
+LOCAL_AUTH_ARGON2_PARALLELISM = 1

@@ -1,0 +1,9 @@
+Tere, {{ user.display_name }}!
+
+Sulle on loodud konto rakenduses {{ application_name }}. Konto aktiveerimiseks ava allolev link ja vali endale parool:
+
+{{ link }}
+
+Link on ühekordne ja kehtib kuni {{ expires_at|date:"j.n.Y H:i" }}. Parooli ei saadeta kunagi e-postiga ja keegi teine ei näe seda.
+
+Kui sa seda kirja ei oodanud, ära lingile vajuta ja anna sellest teada Koja IT-toele.

@@ -177,6 +177,10 @@ _SECRET_NAMES = (
     "DJANGO_SECRET_KEY",
     "POSTGRES_PASSWORD",
     "DEV_LOGIN_PIN",
+    # Personal sign-in (docs/adr/0145): the key TOTP secrets are encrypted
+    # under, and the SMTP credential account e-mail would use.
+    "LOCAL_AUTH_MFA_ENCRYPTION_KEY",
+    "DJANGO_EMAIL_HOST_PASSWORD",
 )
 
 #: Values a template is allowed to assign. Anything else assigned to one of the

@@ -47,6 +47,17 @@ dependencies = [
     # this subtly wrong is an authentication bypass, not a bug report
     # (docs/adr/0015).
     "pyjwt[crypto]>=2.10",
+    # -- personal sign-in (docs/adr/0145), dormant until activation ----------
+    # Argon2id password hashing through Django's own `Argon2PasswordHasher`.
+    # The reference binding Django documents and tests against; the
+    # alternative is PBKDF2, which OWASP ranks below a memory-hard function.
+    "argon2-cffi>=23.1",
+    # RFC 6238 TOTP for the second factor. Small, pure Python, widely used;
+    # the one-time-password arithmetic is not something to write by hand.
+    "pyotp>=2.9",
+    # The enrolment QR code, rendered server-side as inline SVG: pure Python,
+    # no dependencies, and no image request to anybody's server.
+    "segno>=1.6",
 ]
 
 [dependency-groups]

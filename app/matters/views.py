@@ -57,6 +57,7 @@ from app.audit.models import ChangeEvent
 from app.audit.operations import composer_operation, stage_episode_scope
 from app.audit.visibility import change_log_event_types, scope_change_events
 from app.core.authorization import (
+    may_assign_work,
     may_write_business_content,
 )
 from app.core.dates import (
@@ -1655,9 +1656,10 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         # the Matter header's own control offers, so the two cannot disagree
         # about who work may be given to (app/accounts/selectors.py, ADR 0036).
         "assignable_people": _assignable_first(request.user),
-        # The row control is a write. Drawn by capability, enforced by the route
-        # (app/core/decorators.py, `business_write_required`).
-        "can_assign_owner": may_write_business_content(request.user),
+        # The row control is an assignment. Drawn by the `work.assign`
+        # capability — both lawyer roles by default — and enforced by the route
+        # and by `assign_matter` beneath it (docs/adr/0145 §3).
+        "can_assign_owner": may_assign_work(request.user),
     }
 
     # Arvamused, as this page's second section. Built after the fragment branch

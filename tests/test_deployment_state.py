@@ -696,7 +696,10 @@ DEPLOYMENT_STATE_STEP = "And forwards again from the state a deployment is in"
 #: through it, or it does not and this record moves. Both are one line; only one
 #: of them is silent, and it is the one that is now impossible.
 SETTLED_LEAVES = {
-    "accounts": "0003_sharedgatethrottle",
+    # `accounts` is not here any more: 0004 adds the dormant local-authentication
+    # columns and tables (docs/adr/0145), and the next release carries it into a
+    # database that already has 0003 — with real accounts in it — so CI steps the
+    # app back and applies it forwards from exactly that state.
     # `audit` is not here any more: 0016 widens the `event_type` choices for
     # Seotud materjalid, and the next release carries that into a database
     # that already has 0015, so CI steps the app back and applies it forwards

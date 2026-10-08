@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Sisselogimine · {{ application_name }}{% endblock %}
+
+{% comment %}
+  Personal sign-in (docs/adr/0145). The address and the password on one page,
+  so a password manager can fill both; the second factor, where the account
+  has one, on the next.
+
+  Every refusal is the same sentence. "No such account", "wrong password",
+  "not yet activated" and "switched off" are four facts, and only somebody
+  probing the door benefits from telling them apart — the security audit
+  records which one it was. The one exception is a session that was already
+  signed in and whose account has since been switched off: that reader held
+  a valid session cookie, so telling them why it ended discloses nothing.
+{% endcomment %}
+
+{% block content %}
+<div class="page page--narrow">
+  <h1>Õigusloome töölaud</h1>
+
+  {% if notice %}
+    <p class="message message--warning" role="status">{{ notice }}</p>
+  {% endif %}
+  {% if error %}
+    <div class="formerror" role="alert"><p>{{ error }}</p></div>
+  {% endif %}
+
+  <form method="post" class="card card--form form" novalidate>
+    {% csrf_token %}
+    {% include "accounts/partials/field.html" with field=form.email %}
+    {% include "accounts/partials/field.html" with field=form.password %}
+    <div class="form__actions">
+      <button type="submit" class="button button--primary">Logi sisse</button>
+      <a class="acctlink" href="{% url 'accounts:forgot_password' %}">Unustasid parooli?</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

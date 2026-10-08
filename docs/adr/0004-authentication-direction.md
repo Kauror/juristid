@@ -38,6 +38,11 @@ table does not have to be rewritten when Entra arrives.
 
 **Production direction**
 
+**Superseded on 2026-10-08 for the production direction — see the amendment at
+the end of this document.** The planned individual authenticator is now personal
+sign-in in this application (`AUTH_MODE=local_password`, ADR 0145), built dormant;
+Entra ID is deferred, not rejected, and the column reserved for it below stands.
+
 - OIDC against Entra ID, authorization-code flow with PKCE, using
   **`mozilla-django-oidc`** as the current candidate library: small, standard
   OIDC, no opinion about the rest of the stack.
@@ -72,3 +77,54 @@ exists and is tested.
 
 Library choice: high. The user model's Entra column: low, which is why it is in
 migration 0001.
+
+---
+
+## Amendment, 2026-10-08 — personal sign-in is the planned individual authenticator; Entra ID waits
+
+- Status: accepted, amending «Production direction» above
+- Scope: which individual authenticator the real-data deployment is to move to,
+  and whether this application may hold passwords; nothing about the user model
+
+### What was decided before
+
+That production would authenticate individuals through Entra ID over OIDC, that
+there would be no local-password fallback, and that MFA and Conditional Access
+would be the tenant's business rather than this application's.
+
+### Why it is superseded
+
+The owner decided on 2026-10-08 that the department's individual sign-in will be
+a **personal password verified by this application, with a second factor**, and
+placed Entra ID / Microsoft 365 single sign-on outside the current round. The
+reason is practical rather than architectural: no tenant registration is in
+scope, and the department needs to administer its own accounts — add a lawyer,
+switch off one who left, appoint a second administrator — from the application
+rather than from a host shell.
+
+### What is decided now
+
+ADR 0145. In short: a fourth `AUTH_MODE`, `local_password`; Argon2id passwords
+under a NIST SP 800-63B-4 policy; TOTP as the second factor, mandatory for
+account administrators; one-time activation and reset links; a capability layer
+over the existing roles; an account administration page; and an operator-only
+bootstrap for the first administrator. **All of it ships dormant**: production
+stays on the shared gate until a separate, approved activation
+(`docs/LOCAL_AUTH_ACTIVATION_RUNBOOK.md`). MFA for this mode is therefore this
+application's responsibility, and it takes it.
+
+### What this amendment does not change
+
+- **The user model.** `entra_object_id` stays, nullable, unique and immutable —
+  database trigger and `save()` guard both unchanged. An Entra mode added later
+  would be a fifth `AUTH_MODE` value against the same table, with no rewrite.
+- **`upn` as `USERNAME_FIELD`**, normalised to lower case. Under personal sign-in
+  it is the login address.
+- **Synthetic accounts** remain structurally distinguishable and can never carry
+  an Entra identity. Neither individual authenticator — Cloudflare Access or
+  personal sign-in — signs a synthetic account in on a real-data deployment.
+- **The development sign-in** (`DEV_LOGIN_ENABLED`) is still refused outside
+  `DEBUG`, beside real data, and beside any real authenticator.
+- **Role assignment** is still the locally administered `role`, now with
+  individual capabilities over it (ADR 0145 §3); an Entra group claim remains an
+  option for whenever that mode is built.

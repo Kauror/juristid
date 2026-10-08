@@ -219,7 +219,8 @@ def test_structured_facts_are_indexed_only_where_a_decision_says_so(specialist):
             date_precision=DatePrecision.YEAR,
             actor=specialist,
         ),
-        actor=specialist,
+        # Confirming is a reviewer's decision (docs/adr/0145 §3).
+        actor=factories.DepartmentHeadFactory(),
     )
 
     kinds = set(SearchDocument.objects.filter(matter=matter).values_list("source_kind", flat=True))

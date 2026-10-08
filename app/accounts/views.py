@@ -1,9 +1,10 @@
 """Local development sign-in.
 
-This is the only authentication path that exists in Stage 0 and it is inert
-unless ``DEV_LOGIN_ENABLED`` is on, which a system check refuses to allow
-outside a debug environment. Production authenticates through Microsoft Entra
-ID (docs/adr/0004-authentication-direction.md).
+This was the only authentication path in Stage 0 and it is inert unless
+``DEV_LOGIN_ENABLED`` is on, which a system check refuses to allow outside a
+debug environment. A real-data deployment authenticates through the shared gate
+below today, and through personal sign-in (`app.accounts.local_views`) once an
+approved activation switches it on (docs/adr/0004 as amended, docs/adr/0145).
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
-from app.accounts import shared_gate
+from app.accounts import local_auth, shared_gate
 from app.accounts.models import User
 from app.accounts.selectors import persona_candidates, persona_from_id
 from app.audit.enums import SecurityEventType
@@ -253,9 +254,22 @@ def sign_out(request: HttpRequest) -> HttpResponse:
             user_agent=request.META.get("HTTP_USER_AGENT", ""),
             detail=shared_gate.audit_detail(request),
         )
+    local = local_auth.is_local_password()
+    if local and actor is not None:
+        # Personal sign-in names the person, so signing out is theirs to have
+        # done and the trail says so (docs/adr/0145 §9).
+        record_security_event(
+            event_type=SecurityEventType.SIGNED_OUT,
+            actor=actor,
+            ip_address=request.META.get("REMOTE_ADDR"),
+            user_agent=request.META.get("HTTP_USER_AGENT", ""),
+            detail={"path": "local_password"},
+        )
     shared_gate.close_gate(request)
     logout(request)
-    response = redirect("core:home")
+    response = redirect(
+        f"{reverse('accounts:sign_in')}?olek=valjunud" if local else reverse("core:home")
+    )
     # What the browser itself kept of the session goes with it: the pages are
     # `no-store` already, and this clears the origin's storage as well, where
     # an older htmx kept copies of the register (ENG-009). "storage" only —

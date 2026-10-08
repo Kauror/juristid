@@ -108,8 +108,13 @@ def _hash_for(raw: str) -> str:
 
     The plaintext is a function argument and a cache key inside this process.
     It is never returned, stored, or rendered.
+
+    PBKDF2 by name rather than "whatever `PASSWORD_HASHERS` lists first". The
+    first hasher became Argon2id for personal passwords (docs/adr/0145), and
+    the gate's cost, memory use and behaviour are not something that change
+    should have been able to move: the shared gate hashes exactly as it did.
     """
-    return make_password(raw)
+    return make_password(raw, hasher="pbkdf2_sha256")
 
 
 def verify_password(supplied: str) -> bool:

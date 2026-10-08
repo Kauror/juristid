@@ -10,9 +10,14 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django.utils.functional import SimpleLazyObject
 
-from app.accounts import shared_gate
+from app.accounts import local_auth, shared_gate
 from app.accounts.selectors import persona_candidates
-from app.core.authorization import is_department_head, may_write_business_content
+from app.core.authorization import (
+    is_department_head,
+    may_assign_work,
+    may_view_department_management,
+    may_write_business_content,
+)
 
 
 @lru_cache(maxsize=8)
@@ -88,6 +93,19 @@ def application(request: HttpRequest) -> dict[str, Any]:
         # rendering nothing rather than loudly. The route enforces the same
         # check again — this only decides whether the link is shown.
         "is_department_head": is_department_head(getattr(request, "user", None)),
+        # The department head's management surfaces, through the capability
+        # whose default is that role (docs/adr/0145 §3).
+        "may_view_department_management": may_view_department_management(
+            getattr(request, "user", None)
+        ),
+        # Personal sign-in (docs/adr/0145). Both false in every mode but
+        # `local_password`, so the shared gate's bar renders exactly as before;
+        # the administration link is offered only where the pages behind it
+        # would answer, and those pages ask the same question again.
+        "local_password_mode": local_auth.is_local_password(),
+        "may_administer_accounts": (
+            local_auth.is_local_password() and local_auth.may_administer_accounts(request)
+        ),
         # `can_read_opinion_archive` used to live here, for the second bar item
         # that opened the administrative archive browse. That item is gone —
         # one `Arvamused` destination, with the held corpus as its own tab
@@ -103,6 +121,10 @@ def application(request: HttpRequest) -> dict[str, Any]:
         # offering them a button that answers 404 is a page telling somebody to
         # try something it knows will fail (app/matters/views.py).
         "can_write_business_content": may_write_business_content(getattr(request, "user", None)),
+        # Whether to offer the Vastutaja controls. The `work.assign` capability,
+        # which both lawyer roles hold by default; `assign_matter` refuses the
+        # change for anybody it is withdrawn from (docs/adr/0145 §3).
+        "can_assign_work": may_assign_work(getattr(request, "user", None)),
     }
 
 

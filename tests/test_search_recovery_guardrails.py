@@ -138,7 +138,8 @@ def every_kind(specialist, capture_evidence, extract):
         record=add_work_victory_candidate(
             matter=matter, title="Üleminekuaeg pikenes", detail="Koja ettepanek", actor=specialist
         ),
-        actor=specialist,
+        # Confirming is a reviewer's decision (docs/adr/0145 §3).
+        actor=factories.DepartmentHeadFactory(),
     )
     rebuild_all()
     kinds = set(SearchDocument.objects.values_list("source_kind", flat=True))

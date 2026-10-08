@@ -35,6 +35,11 @@ that must never happen are unrepresentable rather than merely checked, and
 switches for one decision is how a deployment ends up with an authenticator that
 is configured and not running.
 
+**Superseded on 2026-10-08 for the set of modes — see the amendment at the end of
+this document.** There are four: `local_password` (personal sign-in, ADR 0145)
+joined them, dormant. The principle in this section — one setting, exactly one
+mode in force — is unchanged and now covers four values.
+
 Business authorization is identical in all three. Every read still resolves
 through `scope_for_user` and the `Q` builders in `app/core/authorization.py`.
 What changes between modes is *how much the deployment may claim about the
@@ -182,7 +187,62 @@ authentication, and there is no unauthenticated alternate endpoint beside it.
 
 ## What replaces this
 
+**Superseded on 2026-10-08 — see the amendment at the end of this document.**
+The planned replacement is now `AUTH_MODE=local_password` (ADR 0145), after an
+approved activation; `cloudflare_access` remains a supported alternative.
+
 `AUTH_MODE=cloudflare_access`, once the Access application exists. At that
 point `authenticated_via` becomes a claim the deployment can support, the
 persona selector goes away, and this ADR becomes history rather than
 description.
+
+---
+
+## Amendment, 2026-10-08 — a fourth mode, and a different planned replacement
+
+- Status: accepted, amending «One mode setting, not a pile of booleans» (the set
+  of values) and «What replaces this»
+- Scope: the modes this application has and which one is to replace the shared
+  gate; nothing about how the shared gate itself works
+
+### What was decided before
+
+Three modes — `none`, `shared_gate`, `cloudflare_access` — and the shared gate to
+be replaced by Cloudflare Access once the Access application existed.
+
+### Why it is superseded
+
+The owner chose personal sign-in verified by this application, with a second
+factor, as the individual authenticator for the real-data deployment, and asked
+for account administration inside the application (ADR 0145, amending ADR 0004).
+
+### What is decided now
+
+- `AUTH_MODE=local_password` is a fourth value of the same setting:
+  `authenticated_via = LOCAL_PASSWORD`, an individual identity this application
+  proves. It is **built, tested and dormant** — no deployment runs it, and every
+  route it adds answers 404 in the other three modes.
+- **One mode in force** still holds. There is no way to run the shared gate and
+  personal sign-in together; activation *switches* the mode, and the gate's
+  routes, its password and its personas leave with it
+  (`docs/LOCAL_AUTH_ACTIVATION_RUNBOOK.md`).
+- The planned replacement for the shared gate is `local_password`. Cloudflare
+  Access stays a supported, tested mode — the code, its tests and `juristid.E007`
+  are untouched — and could still sit *in front of* the application at the
+  perimeter without being the mode that establishes identity.
+
+### What this amendment does not change
+
+- **The shared gate, exactly.** Its password check (now PBKDF2 by name, so a new
+  default hasher cannot move it), throttle, session, persona rule
+  (`persona_candidates`), audit rows and every refusal are as described above.
+  `tests/test_local_auth_production_safety.py` runs it end to end beside the new
+  code.
+- **The persona is still not an identity.** No administrative capability is ever
+  exercisable through a persona, whatever the account holds: account
+  administration requires a session signed in under `local_password` with a
+  proved second factor (ADR 0145 §12).
+- **The department scope** (`DepartmentViewer`) and the no-public-origin rule.
+- **`REAL_DATA_ALLOWED` with `AUTH_MODE=none` still refuses to start** (`E006`);
+  `local_password` joins the modes that satisfy it, under its own checks
+  (`E030`–`E038`).

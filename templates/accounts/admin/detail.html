@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block title %}{{ person.display_name }} · Kasutajad · {{ application_name }}{% endblock %}
+
+{% comment %}
+  One account: identity, role, permissions, status, security and history, with
+  one `Salvesta` for the three things an administrator edits in place — the
+  name, the role and the permission toggles (docs/adr/0145 §12).
+
+  What a toggle shows is what the person *holds*, role default and personal
+  override resolved together; the small "rolli vaikimisi" mark says which
+  toggles merely follow the role. A toggle the reader may not change is
+  disabled and its value is kept by the form, so saving a name never changes a
+  permission by omission. The services check the same authority again.
+
+  Nothing here displays a password, a link, a key or a recovery code — the
+  application does not have them to display.
+{% endcomment %}
+
+{% block content %}
+<div class="page page--narrow">
+  <div class="pagehead">
+    <h1 class="pagehead__title">{{ person.display_name }}</h1>
+    {% include "accounts/admin/status_badge.html" with person=person %}
+    <span class="pagehead__context"><a href="{% url 'account_admin:list' %}">Kasutajad</a></span>
+  </div>
+
+  <section class="panel">
+    <h2 class="acctsection__title">Konto</h2>
+    <dl class="detailgrid">
+      <dt>E-post</dt>
+      <dd class="mono">
+        {{ person.upn }}
+        {% if may_delegate and not is_self %}
+          · <a href="{% url 'account_admin:change_email' person.pk %}">Muuda</a>
+        {% endif %}
+      </dd>
+      <dt>Loodud</dt><dd>{{ person.date_joined|date:"j.n.Y H:i" }}{% if person.created_by %} · {{ person.created_by.display_name }}{% endif %}</dd>
+      <dt>Muudetud</dt><dd>{{ person.updated_at|date:"j.n.Y H:i" }}</dd>
+      <dt>Kinnitatud</dt><dd>{% if person.approved_at %}{{ person.approved_at|date:"j.n.Y H:i" }}{% if person.approved_by %} · {{ person.approved_by.display_name }}{% endif %}{% else %}—{% endif %}</dd>
+      <dt>Tunnus</dt><dd class="mono acctid">{{ person.pk }}</dd>
+      <dt>Entra objekti ID</dt><dd class="mono acctid">{{ person.entra_object_id|default:"—" }}</dd>
+      {% if person.email_exception_approved_at %}
+        <dt>Välise aadressi erand</dt>
+        <dd>{{ person.email_exception_reason }} · {{ person.email_exception_approved_by.display_name }}, {{ person.email_exception_approved_at|date:"j.n.Y" }}</dd>
+      {% endif %}
+    </dl>
+  </section>
+
+  <form method="post" class="card card--form form" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div class="formerror" role="alert">{% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}</div>
+    {% endif %}
+    {% include "accounts/partials/field.html" with field=form.display_name %}
+    {% include "accounts/partials/field.html" with field=form.role %}
+    {% if is_self %}
+      <p class="acctnote">Oma rolli ja õigusi ei saa ise muuta. Palu seda teiselt haldurilt.</p>
+    {% elif not may_change_power %}
+      <p class="acctnote">Selle konto õigusi saab muuta ainult haldusõiguste andmise õigusega haldur.</p>
+    {% endif %}
+
+    <fieldset class="accttoggles">
+      <legend class="field__label">Tööõigused</legend>
+      {% for toggle in business_toggles %}
+        {% include "accounts/admin/toggle.html" %}
+      {% endfor %}
+    </fieldset>
+
+    <fieldset class="accttoggles">
+      <legend class="field__label">Haldusõigused</legend>
+      {% for toggle in administrative_toggles %}
+        {% include "accounts/admin/toggle.html" %}
+      {% endfor %}
+      <p class="acctnote">Haldusõigused ei anna ligipääsu tööde sisule. Haldajal on kohustuslik teine tegur.</p>
+    </fieldset>
+
+    <div class="form__actions">
+      <button type="submit" class="button button--primary">Salvesta</button>
+    </div>
+  </form>
+
+  <section class="panel">
+    <h2 class="acctsection__title">Konto seis</h2>
+    <p class="acctnote">
+      {% if person.account_status == "PENDING" %}
+        Konto ootab kinnitust. See ei ole kasutatav enne, kui inimene on kutse lingi kaudu oma parooli seadnud.
+      {% elif person.account_status == "INVITED" %}
+        Kutse on saadetud. Konto muutub kasutatavaks, kui inimene seab lingi kaudu oma parooli.
+      {% elif person.account_status == "ACTIVE" %}
+        Konto on aktiivne.{% if not person.has_local_password %} Isiklikku parooli ei ole veel seatud.{% endif %}
+      {% else %}
+        Konto on välja lülitatud. Varasem töö jääb tema nimele.
+      {% endif %}
+    </p>
+    {% if not email_delivery_enabled %}
+      <p class="acctnote">E-kirjade saatmine on selles keskkonnas välja lülitatud: linke ei saadeta ega kuvata.</p>
+    {% endif %}
+    {% if may_act_on_account %}
+      <div class="acctactions">
+        {% if person.account_status == "PENDING" %}
+          {% include "accounts/admin/action.html" with route="account_admin:send_link" label="Kinnita ja saada kutse" kind="primary" %}
+        {% elif person.account_status == "INVITED" %}
+          {% include "accounts/admin/action.html" with route="account_admin:send_link" label="Saada kutse uuesti" kind="secondary" %}
+          {% include "accounts/admin/action.html" with route="account_admin:cancel_invitation" label="Tühista kutse" kind="quiet" %}
+        {% elif person.account_status == "ACTIVE" %}
+          {% if person.has_local_password %}
+            {% include "accounts/admin/action.html" with route="account_admin:send_link" label="Saada parooli taastamise link" kind="secondary" %}
+          {% else %}
+            {% include "accounts/admin/action.html" with route="account_admin:send_link" label="Saada parooli seadistamise link" kind="secondary" %}
+          {% endif %}
+        {% else %}
+          {% include "accounts/admin/action.html" with route="account_admin:reactivate" label="Lülita uuesti sisse" kind="secondary" %}
+        {% endif %}
+      </div>
+      {% if person.account_status == "ACTIVE" %}
+        <div class="dangerzone">
+          <p class="dangerzone__title">Lülita konto välja</p>
+          <p class="dangerzone__help">Konto ei kustu: varasem töö jääb tema nimele. Seansid lõpetatakse ja lingid tühistatakse.</p>
+          <form method="post" action="{% url 'account_admin:deactivate' person.pk %}" class="dangerzone__actions">
+            {% csrf_token %}
+            <label class="visually-hidden" for="valjalulitamise-pohjus">Põhjus</label>
+            <input class="field__input field__input--compact" id="valjalulitamise-pohjus" type="text" name="reason" maxlength="500" placeholder="Põhjus">
+            <button type="submit" class="button button--danger">Lülita välja</button>
+          </form>
+        </div>
+      {% endif %}
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <h2 class="acctsection__title">Turvalisus</h2>
+    <dl class="detailgrid">
+      <dt>Isiklik parool</dt>
+      <dd>{% if person.local_password_set_at %}seatud {{ person.local_password_set_at|date:"j.n.Y H:i" }}{% else %}—{% endif %}</dd>
+      <dt>Teine tegur</dt>
+      <dd>{% if has_second_factor %}autentimisrakendus · taastekoode {{ recovery_codes_left }}{% else %}—{% endif %}</dd>
+      <dt>Viimane sisselogimine</dt>
+      <dd>{% if person.last_authenticated_at %}{{ person.last_authenticated_at|date:"j.n.Y H:i" }}{% else %}—{% endif %}</dd>
+    </dl>
+    {% if has_second_factor and may_act_on_account %}
+      <div class="acctactions">
+        {% include "accounts/admin/action.html" with route="account_admin:reset_second_factor" label="Lähtesta teine tegur" kind="secondary" %}
+      </div>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <h2 class="acctsection__title">Ajalugu</h2>
+    {% if history %}
+      <div class="accttable">
+        <table class="data-table">
+          <thead>
+            <tr><th scope="col">Aeg</th><th scope="col">Sündmus</th><th scope="col">Tegija</th><th scope="col">Muudatus</th></tr>
+          </thead>
+          <tbody>
+            {% for row in history %}
+              <tr>
+                <td>{{ row.event.occurred_at|date:"j.n.Y H:i" }}</td>
+                <td>{{ row.label }}{% if not row.event.succeeded %} <span class="badge badge--warning">ei õnnestunud</span>{% endif %}</td>
+                <td>{{ row.event.actor.display_name|default:"süsteem" }}</td>
+                <td>{{ row.summary|default:"—" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="acctnote">Muudatusi ei ole.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}
