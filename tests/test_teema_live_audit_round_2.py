@@ -154,7 +154,11 @@ CREATE_ONLY = {"notes", "uploads", "suggestion_state"}
 #: Teema page answer. It is named here so the asymmetry is a decision on record
 #: rather than drift (docs/adr/0130 §2, amending docs/adr/0096 §1 on this one
 #: field).
-EDIT_ONLY: set[str] = {"revision", "brief_summary"}
+#:
+#: **`confirm_follow_up_closure`** is not a fact either: it is the answer to a
+#: closure refused while a `Koja arvamuse järelkontroll` is pending, drawn only
+#: after that refusal, and a new Teema has no check to end (docs/adr/0146 §8).
+EDIT_ONLY: set[str] = {"revision", "brief_summary", "confirm_follow_up_closure"}
 
 
 def test_every_shared_fact_is_on_both_forms(specialist):

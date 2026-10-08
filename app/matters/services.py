@@ -897,7 +897,9 @@ def _move_locked_stage(
     )
 
 
-def close_matter_for_terminal_stage(*, matter: Matter, actor: Any = None) -> bool:
+def close_matter_for_terminal_stage(
+    *, matter: Matter, actor: Any = None, follow_ups_confirmed: bool = False
+) -> bool:
     """Close an open Matter whose `Hetkeseis` ends it. Returns whether it closed.
 
     «Jõustunud» closes with `COMPLETED` and «Rohkem ei tegele» with
@@ -915,6 +917,7 @@ def close_matter_for_terminal_stage(*, matter: Matter, actor: Any = None) -> boo
         disposition=TERMINAL_DISPOSITIONS[key],
         actor=actor,
         stage_episode=current_stage_episode(matter),
+        follow_ups_confirmed=follow_ups_confirmed,
     )
     for name in ("is_open", "disposition", "disposition_reason", "closed_at", "closed_by"):
         setattr(matter, name, getattr(closed, name))
@@ -928,6 +931,7 @@ def stage_transition(
     stage: Any,
     actor: Any = None,
     origin: str = StageEpisodeOrigin.RECORDED,
+    follow_ups_confirmed: bool = False,
 ) -> Iterator[StageMove]:
     """Move `Hetkeseis`, let the caller record the act, then close if the stage ends the Matter.
 
@@ -943,12 +947,18 @@ def stage_transition(
     (`_move_stage`, RULE-03): a closed file's stage moves through
     `reopen_matter_into_stage`. The register refresh is not a caller — it
     turns the period directly, as an import (`refresh_matter_from_register`).
+
+    ``follow_ups_confirmed`` is the person's answer to «this file still has a
+    Koja arvamuse järelkontroll — close anyway?», passed on to `close_matter`,
+    which asks it under the Matter's lock (docs/adr/0146 §8).
     """
     with transaction.atomic():
         move = _move_stage(matter=matter, stage=stage, actor=actor, origin=origin)
         yield move
         if move.closes:
-            close_matter_for_terminal_stage(matter=matter, actor=actor)
+            close_matter_for_terminal_stage(
+                matter=matter, actor=actor, follow_ups_confirmed=follow_ups_confirmed
+            )
 
 
 @transaction.atomic
@@ -958,6 +968,7 @@ def change_stage(
     stage: Any,
     actor: Any = None,
     origin: str = StageEpisodeOrigin.RECORDED,
+    follow_ups_confirmed: bool = False,
 ) -> Matter:
     """Record where the external process now stands, as a new `Hetkeseis` period.
 
@@ -977,7 +988,13 @@ def change_stage(
     A closed Matter refuses a move here with `CLOSED_MATTER_STAGE_REFUSAL`;
     its stage is chosen again in `Ava uuesti` (RULE-03).
     """
-    with stage_transition(matter=matter, stage=stage, actor=actor, origin=origin):
+    with stage_transition(
+        matter=matter,
+        stage=stage,
+        actor=actor,
+        origin=origin,
+        follow_ups_confirmed=follow_ups_confirmed,
+    ):
         pass
     return matter
 
@@ -5219,6 +5236,7 @@ def close_matter(
     reason: str = "",
     successor: Matter | None = None,
     stage_episode: MatterStageEpisode | None = None,
+    follow_ups_confirmed: bool = False,
 ) -> Matter:
     """Stop active work on the Matter, for a stated reason.
 
@@ -5248,6 +5266,13 @@ def close_matter(
     relationship with a file its author cannot see, and the refusal names it no
     more than a missing one. `DUPLICATE` asks for nothing: no decision ties a
     duplicate to a successor, and this does not invent one.
+
+    **A planned or current `Koja arvamuse järelkontroll` needs confirming**
+    (docs/adr/0146 §8). Closure is never forbidden, but it ends the checks —
+    each cancelled with «Teema suleti» and kept with its opinion — so a Matter
+    that has one closes only with ``follow_ups_confirmed``. Asked here, under
+    the lock, against what the database holds now: a form drawn before a check
+    existed cannot close past it.
     """
     if disposition not in Disposition.values:
         raise DomainError(f"Tundmatu lõpetamise põhjus {disposition!r}.")
@@ -5300,6 +5325,9 @@ def close_matter(
             raise DomainError(SUCCESSOR_DELETED_REFUSAL)
     if not locked.is_open:
         raise DomainError("Teema on juba suletud.")
+    from app.workflow.follow_ups import refuse_unconfirmed_closure
+
+    refuse_unconfirmed_closure(locked, confirmed=follow_ups_confirmed)
 
     matter = locked
     matter.is_open = False

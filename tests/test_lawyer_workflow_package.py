@@ -2071,7 +2071,10 @@ def test_a_sent_opinion_with_no_open_step_offers_no_continuation_sentence(
 
     assert "Menetlus võib jätkuda" not in body
     assert "Koja arvamus on saadetud" not in body
-    assert "Järgmine samm on määramata" in body
+    # What follows the send is its own `Arvamuse järelkontroll`, planned and
+    # read as the next step (docs/adr/0146, docs/adr/0144 §3) — no sentence.
+    assert "Kontrolli, kas adressaat on Koja arvamusele vastanud" in body
+    assert "Järgmine samm on määramata" not in body
 
 
 def test_a_matter_with_no_sent_opinion_offers_nothing_of_the_kind(
@@ -2088,18 +2091,24 @@ def test_a_matter_with_no_sent_opinion_offers_nothing_of_the_kind(
 def test_the_continuation_creates_no_work(
     client, specialist, normal_matter, ministry, evidence_root
 ):
-    """It is a sentence and two anchors. Nothing is proposed and nothing is due."""
-    add_matter_koda_opinion(
+    """Nothing is proposed. The one piece of work a send creates is its own check.
+
+    The retired continuation sentence created nothing, and nothing has taken its
+    place but the `Arvamuse järelkontroll` the send schedules (docs/adr/0146):
+    one planned check, on the opinion, and no other action or work item.
+    """
+    submission = add_matter_koda_opinion(
         matter=normal_matter,
         author=specialist,
         upload=_pdf(),
         recipients=[ministry],
         sent_on=OPINION_SENT_ON,
-    )
+    ).record
 
-    assert not NextAction.objects.filter(matter=normal_matter).exists()
+    (check,) = NextAction.objects.filter(matter=normal_matter)
+    assert check.follow_up.submission == submission
     items = work_items.work_items(specialist, responsible=specialist)
-    assert not any(item.matter.pk == normal_matter.pk for item in items)
+    assert [item.object_id for item in items if item.matter.pk == normal_matter.pk] == [check.pk]
 
 
 def test_a_restricted_submission_puts_no_continuation_on_the_page(

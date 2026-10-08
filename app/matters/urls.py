@@ -465,6 +465,17 @@ urlpatterns = [
         views.cancel_planned_action_view,
         name="cancel_planned_action",
     ),
+    # `Arvamuse järelkontroll` — what a check found, and its day (docs/adr/0146).
+    path(
+        "teemad/<uuid:pk>/jarelkontroll/<uuid:action_id>/tehtud/",
+        views.check_follow_up_view,
+        name="check_follow_up",
+    ),
+    path(
+        "teemad/<uuid:pk>/jarelkontroll/<uuid:action_id>/kuupaev/",
+        views.reschedule_follow_up_view,
+        name="reschedule_follow_up",
+    ),
     # `Muuda` on a filed Kaasamine, under the record rather than under the
     # Teema, and spelled the way `edit_entry` is — one address for the form and
     # the save, GET opening the box in the chronology row and POST writing it.

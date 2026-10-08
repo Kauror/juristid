@@ -84,3 +84,16 @@ The text takes the rest of the row and wraps under itself, never under the date.
 ## Amendment of 2026-10-08 — a planned row can be marked «Tehtud»
 
 Each planned row offers `✓ Tehtud | Muuda | ×` (docs/adr/0144 §1). `✓ Tehtud` finishes that action on any day, with what happened and optional files, and promotes nothing; §A4's promotion stays the current action's. `×` reads «Kustuta planeeritud tegevus». §A5's recommendation is `Järgmisena?` and reads the record (docs/adr/0144 §2).
+
+## Amendment of 2026-10-08 — an `Arvamuse järelkontroll` is a planned action that can be late
+
+A sent opinion now schedules a dated check of whether the addressee answered
+(docs/adr/0146). It is an ordinary `PLANNED` row with `NextAction.follow_up`
+set:
+
+- It is promoted by §A4 like any other planned row.
+- Closure cancels it by §A7, but only once the person confirms (docs/adr/0146 §8).
+- **§A6 gains one reading.** A planned check whose day has passed is overdue on
+  the work surfaces (`NextAction.is_overdue`), which no other planned action is.
+- New work written over a *current* check sends it back to the plan instead of
+  superseding it.

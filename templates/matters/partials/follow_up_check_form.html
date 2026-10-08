@@ -1,0 +1,55 @@
+{% load form_labels %}
+{% comment %}
+`✓ Tehtud` on an `Arvamuse järelkontroll` (docs/adr/0146 §5): what the check
+found. The outcome is required and typed — `Vastus saabunud`, `Vastust ei ole —
+kontrollin uuesti` (then the next check's day, chosen here and never an
+automatic 30 days) or `Lõpetan jälgimise` (then why, in `Selgitus`). Files
+carry the answer that arrived. Saving finishes this check and nothing else; for
+«no answer yet» the next check is planned in the same save.
+
+    form    a `FollowUpCheckForm`, bound or unbound, with this check's own ids
+    action  the check being finished, planned or current
+{% endcomment %}
+<form class="addform" data-addform
+      hx-post="{% url 'matters:check_follow_up' pk=matter.pk action_id=action.pk %}"
+      hx-target="#teema-vaade" hx-swap="outerHTML"
+      hx-encoding="multipart/form-data">
+  {% csrf_token %}
+  {% if form.non_field_errors %}
+    <p class="formerror" role="alert">{{ form.non_field_errors|first }}</p>
+  {% endif %}
+  <fieldset class="cx-fieldset cx-f">
+    <legend class="cx-f__lab">{% field_label form.outcome %}</legend>
+    {% for choice in form.outcome %}
+      <label class="cx-check" for="{{ choice.id_for_label }}">{{ choice.tag }} {{ choice.choice_label }}</label>
+    {% endfor %}
+  </fieldset>
+  {% if form.outcome.errors %}
+    <p class="field__error" id="{{ form.outcome.auto_id }}_error">{{ form.outcome.errors|first }}</p>
+  {% endif %}
+  <label class="cx-f cx-f--date cx-f--solo" for="{{ form.next_check_on.id_for_label }}">
+    <span class="cx-f__lab">{% field_label form.next_check_on %}</span>
+    {{ form.next_check_on }}
+    <span class="field__help" id="{{ form.next_check_on.auto_id }}_helptext">{{ form.next_check_on.help_text }}</span>
+  </label>
+  {% if form.next_check_on.errors %}
+    <p class="field__error" id="{{ form.next_check_on.auto_id }}_error">{{ form.next_check_on.errors|first }}</p>
+  {% endif %}
+  <label class="cx-f" for="{{ form.body.id_for_label }}">
+    <span class="cx-f__lab">{% field_label form.body %}</span>
+    {{ form.body }}
+  </label>
+  {% if form.body.errors %}
+    <p class="field__error" id="{{ form.body.auto_id }}_error">{{ form.body.errors|first }}</p>
+  {% endif %}
+  <div class="cx-f">
+    <span class="cx-f__lab">{% field_label form.attachments %}</span>
+    {% include "matters/partials/add_files.html" with field=form.attachments %}
+  </div>
+  {% if form.attachments.errors %}
+    <p class="field__error" id="{{ form.attachments.auto_id }}_error">{{ form.attachments.errors|first }}</p>
+  {% endif %}
+  <div class="addform__actions">
+    <button class="button button--primary" type="submit" aria-label="Salvesta järelkontroll">Salvesta</button>
+  </div>
+</form>

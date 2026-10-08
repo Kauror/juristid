@@ -194,3 +194,13 @@ step set here like any other; the `Submission` and `MatterEngagement` services
 and the evidence invariant; signed-container and upload validation;
 permissions and the business-write boundary; the search index
 (`INDEX_VERSION` unchanged). **No migrations.**
+
+## Amendment of 2026-10-08 — a check is finished only with what it found
+
+When the current action is an `Arvamuse järelkontroll` (docs/adr/0146), §2's
+`Märgi praegune tegevus tehtuks` is not drawn on `Koja arvamus` or
+`Lõpeta kaasamine`. `_named_open_action` refuses it if posted.
+
+A send also schedules its own check. §4's fold gains `NEXT_ACTION_SET` for
+`SUBMISSION_SENT`, so «Arvamus välja» reads «→ Kontrolli, kas adressaat …»
+under it instead of a second row.

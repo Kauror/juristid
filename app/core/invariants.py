@@ -83,6 +83,10 @@ SERVICE_RULES = frozenset(
         "stage-episode-without-matter-stage",
         "terminal-stage-on-open-matter",
         "change-event-episode-on-another-matter",
+        "follow-up-check-crosses-matter",
+        "follow-up-live-check-after-monitoring-ended",
+        "follow-up-monitoring-without-live-check",
+        "follow-up-live-check-on-unsent-opinion",
     }
 )
 
@@ -140,6 +144,20 @@ EXPLANATIONS: dict[str, str] = {
     ),
     "change-event-episode-on-another-matter": (
         "A ChangeEvent is bound to a MatterStageEpisode of a different Matter"
+    ),
+    # docs/adr/0146. One planned or current check per follow-up is a UNIQUE
+    # index; these are the rules only the services keep.
+    "follow-up-check-crosses-matter": (
+        "An Arvamuse järelkontroll check is on a different Matter than its opinion"
+    ),
+    "follow-up-live-check-after-monitoring-ended": (
+        "A planned or current check belongs to a follow-up that is no longer MONITORING"
+    ),
+    "follow-up-monitoring-without-live-check": (
+        "A follow-up is MONITORING but has no planned or current check: the check was lost"
+    ),
+    "follow-up-live-check-on-unsent-opinion": (
+        "A planned or current check is about an opinion that is no longer SENT"
     ),
 }
 
@@ -503,6 +521,53 @@ def _stage_episode_findings() -> list[Finding]:
     return findings
 
 
+def _follow_up_findings() -> list[Finding]:
+    """`Arvamuse järelkontroll` rows the services keep consistent (docs/adr/0146)."""
+    next_action = apps.get_model("workflow", "NextAction")
+    follow_up = apps.get_model("workflow", "OpinionFollowUp")
+    live = ("OPEN", "PLANNED")
+    checks = next_action.objects.filter(follow_up__isnull=False).order_by("created_at", "pk")
+    findings = [
+        Finding(kind="follow-up-check-crosses-matter", subject=str(pk), detail=f"matter={matter}")
+        for pk, matter in checks.exclude(matter=F("follow_up__submission__matter")).values_list(
+            "pk", "matter_id"
+        )
+    ]
+    findings += [
+        Finding(
+            kind="follow-up-live-check-after-monitoring-ended",
+            subject=str(pk),
+            detail=f"follow_up_state={state}",
+        )
+        for pk, state in checks.filter(status__in=live)
+        .exclude(follow_up__state="MONITORING")
+        .values_list("pk", "follow_up__state")
+    ]
+    findings += [
+        Finding(
+            kind="follow-up-live-check-on-unsent-opinion",
+            subject=str(pk),
+            detail=f"submission_status={status}",
+        )
+        for pk, status in checks.filter(status__in=live)
+        .exclude(follow_up__submission__status="SENT")
+        .values_list("pk", "follow_up__submission__status")
+    ]
+    has_live = next_action.objects.filter(follow_up=OuterRef("pk"), status__in=live)
+    findings += [
+        Finding(
+            kind="follow-up-monitoring-without-live-check",
+            subject=str(pk),
+            detail=f"submission={submission}",
+        )
+        for pk, submission in follow_up.objects.filter(state="MONITORING")
+        .exclude(Exists(has_live))
+        .order_by("created_at", "pk")
+        .values_list("pk", "submission_id")
+    ]
+    return findings
+
+
 def check_domain_invariants(*, today: datetime.date | None = None) -> InvariantReport:
     """Every row breaking one of the rules above. Reads; never writes."""
     day = today or timezone.localdate()
@@ -514,4 +579,5 @@ def check_domain_invariants(*, today: datetime.date | None = None) -> InvariantR
     report.findings.extend(_cross_matter_findings())
     report.findings.extend(_unrecorded_closure_findings())
     report.findings.extend(_stage_episode_findings())
+    report.findings.extend(_follow_up_findings())
     return report

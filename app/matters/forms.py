@@ -75,6 +75,7 @@ from app.workflow.enums import (
     DatePrecision,
     DateSemantics,
     Disposition,
+    FollowUpOutcome,
 )
 from app.workflow.models import StageVocabulary
 from app.workflow.selectors import selectable_stages, stage_help_texts, stages_including
@@ -152,6 +153,27 @@ def set_choices(form: forms.Form, name: str, queryset: QuerySet) -> None:
 #: date input renders in the *browser's* locale and showed `mm/dd/yyyy` on an
 #: otherwise Estonian form (app/core/widgets.py).
 DATE_WIDGET = EstonianDateInput()
+
+
+#: The confirmation a closure asks for when the Matter still has a planned or
+#: current `Arvamuse järelkontroll` (docs/adr/0146 §8). The field name every
+#: stage-moving form posts it under.
+FOLLOW_UP_CLOSURE_FIELD = "confirm_follow_up_closure"
+FOLLOW_UP_CLOSURE_LABEL = "Sulge teema ja lõpeta ka järelkontroll"
+
+
+def follow_up_closure_field() -> forms.BooleanField:
+    """`Sulge teema ja lõpeta ka järelkontroll` — never ticked for the person.
+
+    Drawn only after a save was refused for it (`form.follow_up_closure_refused`)
+    — beside the owner's warning, «Sellel teemal on pooleli Koja arvamuse
+    järelkontroll …» — so the ordinary save of a stage that closes nothing never
+    shows it. The service asks again under the Matter's lock; this box is the
+    person's answer and decides nothing on its own.
+    """
+    return forms.BooleanField(label=FOLLOW_UP_CLOSURE_LABEL, required=False)
+
+
 SELECT_WIDGET = forms.Select(attrs={"class": "field__input"})
 
 
@@ -1466,6 +1488,8 @@ class MatterEditForm(
         blank=True,
         widget=StageRadioSelect(attrs={"class": "chip__input"}),
     )
+    #: `Sulge teema ja lõpeta ka järelkontroll`, drawn after a refused closure (docs/adr/0146 §8).
+    confirm_follow_up_closure = follow_up_closure_field()
     #: `Menetlusliik` is deliberately absent, as it is from `MatterCreateForm`.
     #:
     #: `Uus teema` is the master and `Uus teema` never asked it, so this page
@@ -2978,6 +3002,8 @@ class MatterFieldForm(forms.Form):
 
     owner = UserChoiceField(queryset=User.objects.none(), required=False)
     stage = forms.ModelChoiceField(queryset=StageVocabulary.objects.none(), required=False)
+    #: The header's `Sulge teema ja lõpeta ka järelkontroll` (docs/adr/0146 §8).
+    confirm_follow_up_closure = follow_up_closure_field()
     # Plural, and a multiple field even though the surface it posts from is a
     # checkbox list: an inline edit of the sender set replaces the whole set, so
     # an empty POST is how somebody clears it rather than a validation error
@@ -3672,6 +3698,9 @@ class CompleteCurrentActionForm(forms.Form):
 
     use_required_attribute = False
 
+    #: `Sulge teema ja lõpeta ka järelkontroll`, drawn after a refused closure (docs/adr/0146 §8).
+    confirm_follow_up_closure = follow_up_closure_field()
+
     action_id = forms.UUIDField(widget=forms.HiddenInput())
     #: Declared optional and marked required: `clean_body` refuses an empty
     #: answer with a sentence of its own rather than Django's.
@@ -3862,6 +3891,109 @@ class CompletePlannedActionForm(forms.Form):
         if not body:
             raise forms.ValidationError("Kirjelda, mida tegid.")
         return body
+
+
+class FollowUpCheckForm(forms.Form):
+    """`✓ Tehtud` on an `Arvamuse järelkontroll` — what the check found (docs/adr/0146 §5).
+
+    The outcome is the one required answer, and it is typed, never read out of
+    prose: `Vastus saabunud`, `Vastust ei ole — kontrollin uuesti` (then the
+    next check's day, chosen here and never an automatic 30 days) or
+    `Lõpetan jälgimise` (then why, in `Selgitus`). `Selgitus` is otherwise the
+    answer's summary, and files carry the answer itself. Each check's form has
+    its own ids: a planned and a current check can be on one page.
+    """
+
+    use_required_attribute = False
+
+    outcome = marks_required(
+        forms.ChoiceField(
+            label="Mis selgus?",
+            required=False,
+            choices=FollowUpOutcome.choices,
+            widget=forms.RadioSelect,
+        )
+    )
+    next_check_on = EstonianDateField(
+        label="Järgmine kontroll",
+        required=False,
+        widget=DATE_WIDGET,
+        help_text="Kui vastust ei ole.",
+    )
+    body = forms.CharField(
+        label="Selgitus",
+        required=False,
+        widget=forms.Textarea(
+            attrs={
+                "class": "field__input",
+                "rows": "2",
+                "placeholder": "Mis vastati? Või miks jälgimine lõpeb.",
+            }
+        ),
+    )
+    attachments = workspace_attachments("id_jarelkontroll_failid")
+
+    def __init__(self, *args: Any, action_id: Any = None, **kwargs: Any) -> None:
+        if action_id is not None:
+            kwargs.setdefault("auto_id", f"id_jarelkontroll_{action_id}_%s")
+        super().__init__(*args, **kwargs)
+        if action_id is not None:
+            self.fields["attachments"].widget.attrs["id"] = f"id_jarelkontroll_{action_id}_failid"
+
+    def clean(self) -> dict[str, Any]:
+        from app.workflow.follow_ups import (
+            FOLLOW_UP_DATE_IN_THE_PAST,
+            FOLLOW_UP_NEEDS_OUTCOME,
+            MONITORING_END_NEEDS_REASON,
+            NEXT_CHECK_NEEDS_DATE,
+        )
+
+        cleaned = super().clean() or {}
+        outcome = cleaned.get("outcome") or ""
+        cleaned["body"] = (cleaned.get("body") or "").strip()
+        if outcome not in FollowUpOutcome.values:
+            self.add_error("outcome", FOLLOW_UP_NEEDS_OUTCOME)
+            return cleaned
+        if outcome == FollowUpOutcome.NO_RESPONSE:
+            day = cleaned.get("next_check_on")
+            if day is None:
+                self.add_error("next_check_on", NEXT_CHECK_NEEDS_DATE)
+            elif day < timezone.localdate():
+                self.add_error("next_check_on", FOLLOW_UP_DATE_IN_THE_PAST)
+        else:
+            # A day typed beside another answer schedules nothing.
+            cleaned["next_check_on"] = None
+        if outcome == FollowUpOutcome.MONITORING_ENDED and not cleaned["body"]:
+            self.add_error("body", MONITORING_END_NEEDS_REASON)
+        return cleaned
+
+
+class FollowUpDateForm(forms.Form):
+    """`Muuda` on an `Arvamuse järelkontroll` — its day, and only its day (docs/adr/0146 §6).
+
+    Earlier or later, before it is due or after; the check stays the same check.
+    """
+
+    use_required_attribute = False
+
+    target_date = marks_required(
+        EstonianDateField(label="Kontrolli kuupäev", required=False, widget=DATE_WIDGET)
+    )
+
+    def __init__(self, *args: Any, action_id: Any = None, **kwargs: Any) -> None:
+        if action_id is not None:
+            kwargs.setdefault("auto_id", f"id_jarelkontroll_{action_id}_kuupaev_%s")
+        super().__init__(*args, **kwargs)
+
+    def clean_target_date(self) -> Any:
+        from app.workflow.follow_ups import FOLLOW_UP_DATE_IN_THE_PAST, FOLLOW_UP_NEEDS_DATE
+
+        value = self.cleaned_data.get("target_date")
+        if value is None:
+            raise forms.ValidationError(FOLLOW_UP_NEEDS_DATE)
+        if value < timezone.localdate():
+            raise forms.ValidationError(FOLLOW_UP_DATE_IN_THE_PAST)
+        return value
 
 
 class PlanRevisionForm(forms.Form):
@@ -6013,6 +6145,8 @@ class KodaOpinionForm(forms.Form):
         blank=True,
         widget=StageSelect(attrs={"class": "field__input field__input--compact"}),
     )
+    #: `Sulge teema ja lõpeta ka järelkontroll`, drawn after a refused closure (docs/adr/0146 §8).
+    confirm_follow_up_closure = follow_up_closure_field()
     sent_on = marks_required(
         EstonianDateField(
             label="Saatmise kuupäev",
@@ -7478,6 +7612,8 @@ class MatterProgressForm(forms.Form):
         blank=True,
         widget=StageSelect(attrs={"class": "field__input field__input--compact"}),
     )
+    #: `Sulge teema ja lõpeta ka järelkontroll`, after a refused closure (docs/adr/0146 §8).
+    confirm_follow_up_closure = follow_up_closure_field()
     #: `Märgi ka menetluse kulgu: <faas> <päev>` — the stage move is also the day
     #: that phase began (docs/adr/0128 §1).
     #:

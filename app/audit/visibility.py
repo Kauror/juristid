@@ -45,7 +45,7 @@ from django.db.models import Exists, OuterRef, Q, QuerySet
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.core.authorization import apply as apply_scope
-from app.core.authorization import child_visibility_q, scope_for_user
+from app.core.authorization import child_scope_q, scope_for_user
 
 
 def _child_families() -> tuple[tuple[tuple[str, ...], Any, dict[str, str]], ...]:
@@ -103,6 +103,9 @@ def _child_families() -> tuple[tuple[tuple[str, ...], Any, dict[str, str]], ...]
                 ChangeEventType.NEXT_ACTION_COMPLETED,
                 ChangeEventType.NEXT_ACTION_REVIEWED,
                 ChangeEventType.NEXT_ACTION_CANCELLED,
+                # A follow-up check's day moved (docs/adr/0146 §6): about the
+                # check, so it reaches exactly the readers the check does.
+                ChangeEventType.NEXT_ACTION_RESCHEDULED,
             ),
             NextAction,
             direct,
@@ -382,7 +385,7 @@ def scope_change_events(events: QuerySet[ChangeEvent], user: Any) -> QuerySet[Ch
 
     eligible = ~Q(event_type__in=known)
     for event_types, model, paths in _child_families():
-        population = apply_scope(model._default_manager.all(), child_visibility_q(scope, **paths))
+        population = apply_scope(model._default_manager.all(), child_scope_q(model, scope, **paths))
         eligible |= Q(event_type__in=event_types) & Q(
             Exists(population.filter(pk=OuterRef("object_id")))
         )

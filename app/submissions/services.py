@@ -15,6 +15,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
+from app.audit.operations import composer_operation
 from app.audit.services import record_change_event
 from app.core.enums import Visibility, most_restrictive, validate_visibility_override
 from app.core.errors import DomainError
@@ -568,6 +569,14 @@ def correct_sent_opinion(
         for field in changed:
             setattr(locked, field, after[field])
         locked.save(update_fields=[*changed, "updated_at"])
+    if "sent_at" in changed:
+        # The first `Arvamuse järelkontroll` was computed from the old day. It
+        # follows the correction only while it still stands on that automatic
+        # day and no check has been done — a day a person chose is never
+        # silently overwritten (docs/adr/0146 §6).
+        from app.workflow.follow_ups import follow_sent_date_correction
+
+        follow_sent_date_correction(submission=locked, actor=actor)
 
     if addressees is not None:
         # Through the canonical service, so the addressee/teadmiseks
@@ -648,11 +657,22 @@ def withdraw_submission(
         summary=submission.title[:200],
         payload={"reason": reason[:500]},
     )
+    # A withdrawn opinion is no longer anything to check on: its planned or
+    # current check is cancelled with the reason, kept with its opinion, and
+    # completed checks stay as they were (docs/adr/0146 §9).
+    from app.workflow.follow_ups import WITHDRAWN_OPINION, cancel_checks_of_submission
+
+    cancel_checks_of_submission(submission=submission, actor=actor, reason=WITHDRAWN_OPINION)
     return submission
 
 
 @transaction.atomic
 def supersede_submission(*, submission: Submission, actor: Any = None) -> Submission:
+    # The Matter, then the submission, decided on the locked row — the order
+    # `withdraw_submission` takes, and the one `cancel_checks_of_submission`
+    # below relies on (app/matters/locks.py).
+    lock_matter_for_evidence_integrity(submission.matter_id)
+    submission = lock_submission_for_evidence_integrity(submission.pk)
     if submission.status not in {SubmissionStatus.SENT, SubmissionStatus.DRAFT}:
         raise DomainError("Seda arvamust ei saa asendatuks märkida.")
 
@@ -666,6 +686,11 @@ def supersede_submission(*, submission: Submission, actor: Any = None) -> Submis
         obj=submission,
         summary=submission.title[:200],
     )
+    # The replacement, once sent, is checked on in its own right; the
+    # superseded letter's check ends here (docs/adr/0146 §9).
+    from app.workflow.follow_ups import SUPERSEDED_OPINION, cancel_checks_of_submission
+
+    cancel_checks_of_submission(submission=submission, actor=actor, reason=SUPERSEDED_OPINION)
     return submission
 
 
@@ -1103,12 +1128,16 @@ def mark_submission_sent_on_open_matter(
             )
         if not SubmissionRecipient.objects.addressees().filter(submission=locked).exists():
             raise DomainError(SEND_NEEDS_ADDRESSEE)
-    return mark_submission_sent(
-        submission=submission,
-        actor=actor,
-        channel=channel,
-        reference=reference,
-    )
+    # One operation: the send and the check it schedules read as one act.
+    with composer_operation():
+        sent = mark_submission_sent(
+            submission=submission,
+            actor=actor,
+            channel=channel,
+            reference=reference,
+        )
+        schedule_follow_up_of(sent, actor=actor)
+    return sent
 
 
 @transaction.atomic
@@ -1152,22 +1181,41 @@ def register_sent_opinion_on_open_matter(
     a second registration candidate (R2-01).
     """
     lock_open_matter_for_business_write(document.matter_id)
-    return register_sent_opinion(
-        document=document,
-        version=version,
-        title=title,
-        kind=kind,
-        actor=actor,
-        recipients=recipients,
-        for_information=for_information,
-        joint_submitters=joint_submitters,
-        channel=channel,
-        reference=reference,
-        summary=summary,
-        sent_at=sent_at,
-        sent_at_precision=sent_at_precision,
-        further_versions=further_versions,
-    )
+    with composer_operation():
+        sent = register_sent_opinion(
+            document=document,
+            version=version,
+            title=title,
+            kind=kind,
+            actor=actor,
+            recipients=recipients,
+            for_information=for_information,
+            joint_submitters=joint_submitters,
+            channel=channel,
+            reference=reference,
+            summary=summary,
+            sent_at=sent_at,
+            sent_at_precision=sent_at_precision,
+            further_versions=further_versions,
+        )
+        schedule_follow_up_of(sent, actor=actor)
+    return sent
+
+
+def schedule_follow_up_of(submission: Submission, *, actor: Any = None) -> None:
+    """The one place a recorded send schedules its `Arvamuse järelkontroll` (docs/adr/0146 §1).
+
+    Called by the two interactive send wrappers above, after the send is
+    stamped and inside its transaction — `Märgi saadetuks`,
+    `Registreeri saatmine` and `+ Koja arvamus` all arrive through them, so
+    every one of them schedules the same check through the same service and no
+    view writes one. `mark_submission_sent` and `register_sent_opinion` below
+    the wrappers schedule nothing: the archive apply and the importers file
+    historical letters through them, and a letter from 2019 is not a task.
+    """
+    from app.workflow.follow_ups import schedule_first_check
+
+    schedule_first_check(submission=submission, actor=actor)
 
 
 # ---------------------------------------------------------------------------

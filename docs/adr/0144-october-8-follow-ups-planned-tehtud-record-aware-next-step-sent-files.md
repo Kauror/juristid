@@ -128,3 +128,17 @@ only — no lifecycle, confirmation or draft/sent semantics changed.
 
 The Teema summary spans the main column up to the 300px rail, and the full
 width once the rail stacks below 1100px; it no longer stops at 96ch.
+
+## Amendment of 2026-10-08 — a planned check asks what it found
+
+§1's `✓ Tehtud | Muuda | ×` changes for one kind of planned row, the
+`Arvamuse järelkontroll` (docs/adr/0146 §5–§6):
+
+- `✓ Tehtud` asks for a typed outcome instead of a free note: «Vastus saabunud»,
+  «Vastust ei ole — kontrollin uuesti» with the next day, or «Lõpetan
+  jälgimise» with a reason.
+- `Muuda` moves the day only, in place.
+- There is no `×`.
+
+`complete_planned_action`, `change_planned_action` and `cancel_planned_action`
+refuse a check. Every other planned row is exactly as §1 describes.

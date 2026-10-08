@@ -183,10 +183,14 @@ def test_a_signed_letter_and_its_docx_in_one_opinion(page, base_url, screenshots
     expect(_opinion_rows(page)).to_have_count(1)
     expect(page.locator(KAIK_ROW).filter(has_text="lisas dokumendi")).to_have_count(0)
     expect(page.locator(KAIK_ROW).filter(has_text="Märge")).to_have_count(0)
-    # The step is done and the zone offers the next one.
+    # The step is done; what is current now is the send's own check
+    # (docs/adr/0146 §4), and the zone still offers another action.
     zone = page.locator("#praegune-tegevus")
-    expect(zone).to_contain_text("Järgmine samm on määramata")
-    expect(zone.locator("#lisa-jargmine > summary")).to_have_text(CTA)
+    expect(zone).not_to_contain_text(STEP)
+    expect(zone.locator(".curact__text")).to_have_text(
+        "Kontrolli, kas adressaat on Koja arvamusele vastanud"
+    )
+    expect(zone.locator("#lisa-planeeritud > summary")).to_have_text(CTA)
 
     row = _opinion_rows(page).first
     open_kaik_row(row)

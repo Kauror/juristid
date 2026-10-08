@@ -154,16 +154,23 @@ OPERATION_EFFECT_EVENT_TYPES: tuple[str, ...] = (
 #: **Which effects fold onto which kind of row**, keyed by the event that ties
 #: the row's record to its operation.
 #:
-#: A development keeps exactly the two it has always folded. A send and a
-#: finished wait fold the one thing either can do to the step — finish it — and
-#: nothing else: a stage moved, or a step set, inside one of those operations
-#: (none does today) would stand as its own row rather than be quietly absorbed
-#: by a fold nobody decided (docs/adr/0126 §4).
+#: A development keeps exactly the two it has always folded. A finished wait
+#: folds the one thing it can do to the step — finish it — and nothing else: a
+#: stage moved, or a step set, inside one would stand as its own row rather than
+#: be quietly absorbed by a fold nobody decided (docs/adr/0126 §4). A send folds
+#: that and the step it sets — its own `Arvamuse järelkontroll`, scheduled by the
+#: send itself (docs/adr/0146 §1).
 FOLDED_EFFECTS: dict[str, frozenset[str]] = {
     ChangeEventType.PROCEDURAL_DEVELOPMENT_RECORDED.value: frozenset(
         {ChangeEventType.MATTER_STAGE_CHANGED.value, ChangeEventType.NEXT_ACTION_SET.value}
     ),
-    ChangeEventType.SUBMISSION_SENT.value: frozenset({ChangeEventType.NEXT_ACTION_COMPLETED.value}),
+    # A send finishes the step it was (docs/adr/0126 §4) and, since
+    # docs/adr/0146, schedules the opinion's first `Arvamuse järelkontroll`:
+    # «Arvamus välja» reads «→ Kontrolli, kas adressaat …» under it rather than
+    # the check standing as a second row for the one act.
+    ChangeEventType.SUBMISSION_SENT.value: frozenset(
+        {ChangeEventType.NEXT_ACTION_COMPLETED.value, ChangeEventType.NEXT_ACTION_SET.value}
+    ),
     ChangeEventType.ENGAGEMENT_FEEDBACK_CLOSED.value: frozenset(
         {ChangeEventType.NEXT_ACTION_COMPLETED.value}
     ),

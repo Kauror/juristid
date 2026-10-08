@@ -30,7 +30,13 @@ ticked only if it named the step still open now; a step that changed in the
 meantime is shown unticked, so the person decides again about the one in front
 of them.
 {% endcomment %}
-{% if current_action and matter.is_open %}
+{% comment %}
+**Not beside an `Arvamuse järelkontroll`** (docs/adr/0146 §5). A check is
+finished only with what it found, on its own row; this box would finish it
+without saying whether the addressee answered, so it is not drawn — and the use
+case refuses it if posted anyway.
+{% endcomment %}
+{% if current_action and matter.is_open and not current_action.follow_up_id %}
   <label class="cx-check cx-check--action" for="{{ option_id }}">
     <input type="checkbox" name="{{ field.html_name }}" id="{{ option_id }}"
            value="{{ current_action.pk }}"

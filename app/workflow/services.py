@@ -9,7 +9,7 @@ maintained in the same transaction as the change.
 from __future__ import annotations
 
 from datetime import date
-from typing import Any
+from typing import Any, cast
 
 from django.apps import apps
 from django.db import transaction
@@ -326,6 +326,16 @@ def set_next_action(
     if carry_visibility_override and previous is not None:
         carried = previous.visibility_override or ""
         visibility_override = "" if carried == Visibility.NORMAL else carried
+    # **A current follow-up check is never superseded by other work**
+    # (docs/adr/0146 §4). New work written over it — a `+ Märge` dated ahead,
+    # an import — becomes current, and the check goes back to the plan on its
+    # own day, still linked to its opinion: replacing it would be exactly the
+    # silent disappearance of an unanswered opinion the check exists to prevent.
+    returned_to_plan = None
+    if previous is not None and previous.follow_up_id is not None:
+        previous.status = ActionStatus.PLANNED
+        previous.save(update_fields=["status", "updated_at"])
+        returned_to_plan, previous = previous, None
     if previous is not None:
         previous.status = ActionStatus.SUPERSEDED
         previous.ended_at = timezone.now()
@@ -364,6 +374,8 @@ def set_next_action(
         # Nested rather than merged flat, so a provenance key can never shadow
         # one of the four above and silently change what the event says.
         payload["provenance"] = provenance
+    if returned_to_plan is not None:
+        payload["returned_to_plan"] = str(returned_to_plan.pk)
 
     record_change_event(
         event_type=ChangeEventType.NEXT_ACTION_SET,
@@ -373,6 +385,27 @@ def set_next_action(
         summary=text[:200],
         payload=payload,
     )
+    if returned_to_plan is not None:
+        record_change_event(
+            event_type=ChangeEventType.NEXT_ACTION_SET,
+            matter=locked_matter,
+            actor=actor,
+            obj=returned_to_plan,
+            summary=returned_to_plan.text[:200],
+            payload={
+                "kind": returned_to_plan.kind,
+                "date_semantics": returned_to_plan.date_semantics,
+                "target_date": (
+                    returned_to_plan.target_date.isoformat()
+                    if returned_to_plan.target_date
+                    else None
+                ),
+                "replaced": None,
+                "planned": True,
+                "returned_to_plan": True,
+                "follow_up": _follow_up_block(returned_to_plan),
+            },
+        )
     return action
 
 
@@ -531,6 +564,11 @@ def complete_next_action(
     action = _lock_for_transition(action, refusal)
     if action.status != ActionStatus.OPEN:
         raise DomainError(refusal)
+    # A follow-up check is finished only with what it found (docs/adr/0146 §5):
+    # every generic completion — `Mida tegid?`, a ticked `Märgi praegune tegevus
+    # tehtuks` — refuses one, and the database refuses a completed check
+    # without an outcome underneath this.
+    _refuse_a_follow_up_check(action)
 
     action.status = ActionStatus.COMPLETED
     action.ended_at = timezone.now()
@@ -634,6 +672,14 @@ def cancel_next_action(
         # Nested, so a provenance key can never shadow `reason` and quietly
         # change what the event says — the same rule `set_next_action` follows.
         payload["provenance"] = provenance
+    if action.follow_up_id is not None:
+        # A check cancelled by closure or by its opinion leaving: the watching
+        # of that opinion ends with it, and the event names the opinion
+        # (docs/adr/0146 §8).
+        from app.workflow.follow_ups import end_follow_up_for_cancelled_check
+
+        end_follow_up_for_cancelled_check(action=action, actor=actor, reason=reason)
+        payload["follow_up"] = _follow_up_block(action)
 
     record_change_event(
         event_type=ChangeEventType.NEXT_ACTION_CANCELLED,
@@ -742,6 +788,31 @@ PLANNED_ACTION_CHANGED = (
 )
 
 
+def _refuse_a_follow_up_check(action: NextAction) -> None:
+    """The generic controls do not finish, rewrite or remove a follow-up check.
+
+    `✓ Tehtud`, `Muuda`, `×` and a ticked `Märgi praegune tegevus tehtuks` would
+    each end or reshape a check without saying whether the addressee answered.
+    The check's own form asks that (`app.workflow.follow_ups`, docs/adr/0146 §5).
+    """
+    if action.follow_up_id is not None:
+        from app.workflow.follow_ups import FOLLOW_UP_HAS_ITS_OWN_FORM
+
+        raise DomainError(FOLLOW_UP_HAS_ITS_OWN_FORM)
+
+
+def _follow_up_block(action: NextAction) -> dict[str, str]:
+    """Which follow-up, and which opinion, an event about a check concerns."""
+    from app.workflow.models import OpinionFollowUp
+
+    submission_id = (
+        OpinionFollowUp.objects.filter(pk=cast(Any, action.follow_up_id))
+        .values_list("submission_id", flat=True)
+        .first()
+    )
+    return {"id": str(action.follow_up_id), "submission": str(submission_id)}
+
+
 def _locked_planned(locked_matter: Any, action_id: Any) -> NextAction:
     """The named planned action of this Matter, locked — or a refusal (stale tab)."""
     action = (
@@ -831,6 +902,9 @@ def change_planned_action(
     if not locked_matter.is_open:
         raise DomainError("Suletud teemale ei saa järgmist tegevust määrata.")
     previous = _locked_planned(locked_matter, action_id)
+    # A check's day moves through `follow_ups.reschedule_check`, in place; its
+    # words are not the person's to rewrite (docs/adr/0146 §6).
+    _refuse_a_follow_up_check(previous)
     if (previous.text, previous.target_date) == (text, target_date):
         return previous
     action = NextAction.objects.create(
@@ -874,6 +948,9 @@ def cancel_planned_action(*, matter: Any, action_id: Any, actor: Any = None) -> 
 
     locked_matter = lock_matter_for_write(matter.pk)
     action = _locked_planned(locked_matter, action_id)
+    # `×` is not how an unanswered opinion stops being watched: that is
+    # `Lõpetan jälgimise`, with a reason (docs/adr/0146 §5).
+    _refuse_a_follow_up_check(action)
     return cancel_next_action(action=action, actor=actor, reason="Planeeritud tegevus eemaldati")
 
 
@@ -904,6 +981,7 @@ def finish_planned_action(*, action: NextAction, actor: Any = None) -> NextActio
     """
     if action.status != ActionStatus.PLANNED:
         raise DomainError(PLANNED_ACTION_CHANGED)
+    _refuse_a_follow_up_check(action)
     action.status = ActionStatus.COMPLETED
     action.ended_at = timezone.now()
     action.ended_by = actor

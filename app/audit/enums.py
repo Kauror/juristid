@@ -79,6 +79,12 @@ class ChangeEventType(models.TextChoices):
     NEXT_ACTION_COMPLETED = "NEXT_ACTION_COMPLETED", "Järgmiseks tehtud"
     NEXT_ACTION_CANCELLED = "NEXT_ACTION_CANCELLED", "Järgmiseks tühistatud"
     NEXT_ACTION_REVIEWED = "NEXT_ACTION_REVIEWED", "Järgmiseks üle vaadatud"
+    # A follow-up check's day moved by a person — the same check, on another
+    # day (docs/adr/0146 §6). Its own event rather than a NEXT_ACTION_SET: no
+    # action was set, and the check keeps its identity, its opinion and its
+    # history. Audit-only, like NEXT_ACTION_REVIEWED: a moved day is not a row
+    # in `Teema käik`.
+    NEXT_ACTION_RESCHEDULED = "NEXT_ACTION_RESCHEDULED", "Järgmise tegevuse kuupäev muudetud"
     ENTRY_ADDED = "ENTRY_ADDED", "Sissekanne lisatud"
     ENTRY_EDITED = "ENTRY_EDITED", "Sissekannet muudetud"
     SUBMISSION_CREATED = "SUBMISSION_CREATED", "Arvamus loodud"
