@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, timedelta
+from urllib.parse import urlparse
 
 import pytest
 from playwright.sync_api import expect
@@ -54,8 +55,18 @@ def _send_opinion(page, name: str) -> None:
 CHECK_ROW = "[id^=jarelkontroll-]:not([id*=tehtud]):not([id*=kuupaev])"
 
 
+def _links_to_checks_of(matter_url: str) -> str:
+    """Minu asjad rows that open one of this Teema's checks (`WorkItem.record_url`)."""
+    path = urlparse(matter_url).path
+    return f"a.workrow2__link[href^='{path}#jarelkontroll-']"
+
+
 def _check_rows(page):
     return page.locator(f"#praegune-tegevus {CHECK_ROW}")
+
+
+#: Each save's accessible name: two forms share the row, each says which it saves.
+SAVE_NAMES = {"tehtud": "Salvesta järelkontroll", "kuupaev": "Salvesta järelkontrolli kuupäev"}
 
 
 def _save(page, row, endpoint: str) -> None:
@@ -66,7 +77,7 @@ def _save(page, row, endpoint: str) -> None:
             and r.request.method == "POST"
         )
     ) as caught:
-        row.get_by_role("button", name="Salvesta", exact=True).last.click()
+        row.get_by_role("button", name=SAVE_NAMES[endpoint], exact=True).click()
     assert caught.value.status == 200, caught.value.status
     wait_for_htmx(page)
 
@@ -83,7 +94,7 @@ def _done(page, row, outcome: str, *, body: str = "", next_day: int | None = Non
 
 def test_send_check_move_no_answer_check_again_answered(page, base_url):
     sign_in(page, base_url, SANDRA)
-    create_matter(
+    url = create_matter(
         page,
         base_url,
         unique_title("Järelkontroll"),
@@ -125,9 +136,9 @@ def test_send_check_move_no_answer_check_again_answered(page, base_url):
     expect(_check_rows(page)).to_have_count(0)
     expect(chronology(page)).to_contain_text("Vastus saabunud. Ministeerium vastas kirjaga.")
 
-    # And it is not on Minu asjad any more.
+    # And this Teema's check is not on Minu asjad any more.
     page.goto(f"{base_url}/minu-asjad/")
-    expect(page.locator("body")).not_to_contain_text(CHECK)
+    expect(page.locator(_links_to_checks_of(url))).to_have_count(0)
 
 
 def test_a_second_opinion_keeps_its_own_check_and_ending_asks_why(page, base_url):
@@ -151,7 +162,7 @@ def test_a_second_opinion_keeps_its_own_check_and_ending_asks_why(page, base_url
     with page.expect_response(
         lambda r: "/jarelkontroll/" in r.url and r.request.method == "POST"
     ) as caught:
-        first.get_by_role("button", name="Salvesta", exact=True).last.click()
+        first.get_by_role("button", name=SAVE_NAMES["tehtud"], exact=True).click()
     assert caught.value.status == 400
     wait_for_htmx(page)
     refused = _check_rows(page).first
@@ -163,7 +174,7 @@ def test_a_second_opinion_keeps_its_own_check_and_ending_asks_why(page, base_url
 
     expect(_check_rows(page)).to_have_count(1)
     page.goto(f"{base_url}/minu-asjad/")
-    expect(page.get_by_text(CHECK)).to_have_count(1)
+    expect(page.locator(_links_to_checks_of(url))).to_have_count(1)
     page.goto(url)
     expect(_check_rows(page)).to_have_count(1)
 

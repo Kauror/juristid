@@ -18,7 +18,7 @@ carry the answer that arrived. Saving finishes this check and nothing else; for
   {% if form.non_field_errors %}
     <p class="formerror" role="alert">{{ form.non_field_errors|first }}</p>
   {% endif %}
-  <fieldset class="cx-f">
+  <fieldset class="cx-fieldset cx-f">
     <legend class="cx-f__lab">{% field_label form.outcome %}</legend>
     {% for choice in form.outcome %}
       <label class="cx-check" for="{{ choice.id_for_label }}">{{ choice.tag }} {{ choice.choice_label }}</label>
@@ -27,7 +27,7 @@ carry the answer that arrived. Saving finishes this check and nothing else; for
   {% if form.outcome.errors %}
     <p class="field__error" id="{{ form.outcome.auto_id }}_error">{{ form.outcome.errors|first }}</p>
   {% endif %}
-  <label class="cx-f cx-f--date" for="{{ form.next_check_on.id_for_label }}">
+  <label class="cx-f cx-f--date cx-f--solo" for="{{ form.next_check_on.id_for_label }}">
     <span class="cx-f__lab">{% field_label form.next_check_on %}</span>
     {{ form.next_check_on }}
     <span class="field__help" id="{{ form.next_check_on.auto_id }}_helptext">{{ form.next_check_on.help_text }}</span>

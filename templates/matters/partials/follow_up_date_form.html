@@ -14,7 +14,7 @@ identity, its opinion, its responsible person and its restriction.
   {% if form.non_field_errors %}
     <p class="formerror" role="alert">{{ form.non_field_errors|first }}</p>
   {% endif %}
-  <label class="cx-f cx-f--date" for="{{ form.target_date.id_for_label }}">
+  <label class="cx-f cx-f--date cx-f--solo" for="{{ form.target_date.id_for_label }}">
     <span class="cx-f__lab">{% field_label form.target_date %}</span>
     {{ form.target_date }}
   </label>
