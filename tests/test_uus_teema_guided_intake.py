@@ -523,3 +523,14 @@ def test_muuda_teemat_now_says_valdkond_too(signed_in, specialist):
     matter = factories.MatterFactory(owner=specialist)
 
     assert _valdkond_legend(page(signed_in, edit_url(matter))) == "Valdkond"
+
+
+def test_the_saabunud_form_ends_with_its_buttons(signed_in):
+    """The registration form's footer note went with Uus teema's (docs/adr/0144 §7)."""
+    body = signed_in.get(reverse("matters:intake")).content.decode()
+    actions = body[body.index('class="createform__actions"') :]
+    actions = actions[: actions.index("</div>")]
+
+    assert ">Salvesta<" in actions
+    assert "Ülejäänud andmed" not in body
+    assert "createform__note" not in body

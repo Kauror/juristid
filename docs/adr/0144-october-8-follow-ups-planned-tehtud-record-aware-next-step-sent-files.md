@@ -108,8 +108,9 @@ only — no lifecycle, confirmation or draft/sent semantics changed.
 
 ## §7 Smaller cleanups
 
-- Uus teema ends with its buttons («Ülejäänud andmeid saab lisada ka hiljem
-  teema lehel.» is gone).
+- Uus teema and the `Saabunud` registration form end with their buttons
+  («Ülejäänud andmeid saab lisada ka hiljem teema lehel.» and «Ülejäänud andmed
+  saab lisada teema lehel.» are gone; the second added the same day).
 - «Muuda teemat» no longer heads its form with «Kontrolli dokumendist leitud
   andmeid»; the assisted review is unchanged and stays in the Teema header's
   `⋯` menu.
