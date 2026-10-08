@@ -59,7 +59,7 @@ def _new_teema(page, base_url: str, title: str) -> str:
     page.wait_for_load_state("networkidle")
     page.locator("#id_title").fill(title)
     give_first_step(page)
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     start_first_step(page)
     return page.url
@@ -111,7 +111,7 @@ def _register_koja_arvamus(page, name: str, content: bytes):
     form.locator("[name=sent_on]").fill(_past(1))
     _choose_ministry(page)
     with page.expect_response(re.compile(r"/lisa/koja-arvamus/$")) as answer:
-        form.get_by_role("button", name="Registreeri arvamus").click()
+        form.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("domcontentloaded")
     return answer.value
 
@@ -151,7 +151,7 @@ def test_uus_teema_takes_a_bdoc_and_an_asice_and_files_them_as_themselves(
     screenshots(page, "signed-containers-uus-teema")
 
     give_first_step(page)
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     start_first_step(page)
     complaints = page.locator(".field__error, .formerror, .message--error").all_inner_texts()

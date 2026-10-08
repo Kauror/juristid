@@ -405,7 +405,7 @@ def test_a_file_attached_to_lopeta_kaasamine_survives_the_save(page, base_url):
             "buffer": b"%PDF-1.4 liidu vastus",
         }
     )
-    waiting.get_by_role("button", name="Salvesta ja lõpeta").click()
+    waiting.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     finished = chronology(page).locator(
@@ -464,7 +464,7 @@ def test_finishing_a_round_with_no_file_is_unchanged(page, base_url):
     )
     waiting.get_by_text("Lõpeta kaasamine", exact=True).click()
     waiting.locator("[name=feedback_received]").fill("Keegi ei vastanud.")
-    waiting.get_by_role("button", name="Salvesta ja lõpeta").click()
+    waiting.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     finished = chronology(page).locator(

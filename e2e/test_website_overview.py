@@ -91,7 +91,7 @@ def published(page):
 #: either: the one form reaches the plan and the published page alike, so it
 #: cannot promise `planeeritud`. `/ uudis` since docs/adr/0085 §1, because the
 #: write-up is as often a news item as a Koda overview.
-PLAN_BUTTON = "Lisa ülevaade / uudis"
+PLAN_BUTTON = "Salvesta"
 
 #: What a planned row offers next. `Avalda` named the lifecycle transition and
 #: left the reader to discover it wanted two things (docs/adr/0083).
@@ -226,7 +226,7 @@ def test_publishing_moves_the_row_onto_the_chronology_as_its_address(page, base_
     disclosure = open_publish_form(page)
     disclosure.locator("[name=url]").fill(KODA_URL)
     disclosure.locator("[name=published_on]").fill("14.03.2026")
-    disclosure.get_by_role("button", name="Salvesta avaldatuna").click()
+    disclosure.get_by_role("button", name="Salvesta", exact=True).click()
 
     # The plan is discharged, so the strip goes with it.
     expect(strip(page)).to_have_count(0)
@@ -253,7 +253,7 @@ def test_the_new_tab_is_announced_and_not_merely_used(page, base_url):
     disclosure = open_publish_form(page)
     disclosure.locator("[name=url]").fill(KODA_URL)
     disclosure.locator("[name=published_on]").fill("14.03.2026")
-    disclosure.get_by_role("button", name="Salvesta avaldatuna").click()
+    disclosure.get_by_role("button", name="Salvesta", exact=True).click()
     published(page).get_by_role("link", name=KODA_LINK_TEXT).wait_for()
 
     name = (
@@ -276,7 +276,7 @@ def test_a_refused_address_comes_back_with_what_was_typed(page, base_url):
     disclosure = open_publish_form(page)
     disclosure.locator("[name=url]").fill("https://koda.ee@example.com/uudised/x")
     disclosure.locator("[name=published_on]").fill("14.03.2026")
-    disclosure.get_by_role("button", name="Salvesta avaldatuna").click()
+    disclosure.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_timeout(400)
 
     reopened = strip(page).locator("details.webrow__publish").first
@@ -307,7 +307,7 @@ def test_a_published_address_can_be_corrected_from_its_own_row(page, base_url):
     disclosure = open_publish_form(page)
     disclosure.locator("[name=url]").fill(KODA_URL)
     disclosure.locator("[name=published_on]").fill("14.03.2026")
-    disclosure.get_by_role("button", name="Salvesta avaldatuna").click()
+    disclosure.get_by_role("button", name="Salvesta", exact=True).click()
     published(page).get_by_role("link", name=KODA_LINK_TEXT).wait_for()
 
     published(page).locator(".uxtl__weblink").get_by_role("button", name="Muuda").click()

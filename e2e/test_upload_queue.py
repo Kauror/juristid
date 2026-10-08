@@ -241,7 +241,7 @@ def test_a_staged_title_on_uus_teema_survives_another_file_being_taken_off(
     expect(staged.locator(".titleedit__original")).to_have_text("kaaskiri.pdf")
 
     give_first_step(page)
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     url = page.url
     start_first_step(page)

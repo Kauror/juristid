@@ -104,7 +104,7 @@ def test_the_deadline_is_the_obligation_and_starts_nothing(page, base_url):
     prepare_by = _future(8)
     page.fill("#id_title", unique_title("Arvamuse tähtaeg ja plaan"))
     page.fill("#id_response_deadline", prepare_by)
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
 
     current = page.locator("#praegune-tegevus")
@@ -237,7 +237,7 @@ def test_feedback_with_no_organisation_is_accepted_on_the_page(page, base_url):
 
     form = panel(page, "arvamus-tagasiside")
     form.locator("[name=summary]").fill("58 vastust 234 küsitletust; enamik toetab.")
-    form.get_by_role("button", name="Salvesta tagasiside").click()
+    form.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     # Filed, and the headline ends where the author would have begun rather
@@ -262,7 +262,7 @@ def test_a_discovered_opinion_with_no_organisation_is_still_refused_on_the_page(
 
     form = panel(page, "arvamus-teiste")
     form.locator("[name=summary]").fill("Keegi kuskil arvas midagi.")
-    form.get_by_role("button", name="Salvesta arvamus").click()
+    form.get_by_role("button", name="Salvesta", exact=True).click()
 
     reopened = panel(page, "arvamus-teiste")
     expect(reopened.locator(".field__error").first).to_be_visible()
@@ -310,7 +310,7 @@ def test_the_member_mark_is_on_the_received_panel_alone_and_is_recorded(page, ba
     mark.check()
     expect(mark).to_be_checked()
     form.locator("[name=summary]").fill("Vastasid kirjaga.")
-    form.get_by_role("button", name="Salvesta tagasiside").click()
+    form.get_by_role("button", name="Salvesta", exact=True).click()
 
     chronology(page).get_by_text("Meile saadetud tagasiside:").first.wait_for()
     expect(chronology(page)).to_contain_text(f"Meile saadetud tagasiside: {MINISTRY}")
@@ -323,7 +323,7 @@ def test_a_named_organisation_reads_under_the_received_heading(page, base_url):
 
     choose_organisation(page, "tagasiside")
     panel(page, "arvamus-tagasiside").locator("[name=summary]").fill("Vastasid kirjaga.")
-    panel(page, "arvamus-tagasiside").get_by_role("button", name="Salvesta tagasiside").click()
+    panel(page, "arvamus-tagasiside").get_by_role("button", name="Salvesta", exact=True).click()
 
     chronology(page).get_by_text("Meile saadetud tagasiside:").first.wait_for()
     expect(chronology(page)).to_contain_text(f"Meile saadetud tagasiside: {MINISTRY}")
@@ -357,7 +357,7 @@ def test_the_lawyer_note_renders_as_its_own_labelled_line(page, base_url):
     form = panel(page, "arvamus-teiste")
     choose_organisation(page, "valine-seisukoht")
     form.locator("[name=summary]").fill("Toetab varianti B.")
-    form.get_by_role("button", name="Salvesta arvamus").click()
+    form.get_by_role("button", name="Salvesta", exact=True).click()
     chronology(page).get_by_text("Teiste arvamus:").first.wait_for()
 
     open_kaik_row(chronology(page).locator(".uxtl__ms-body").first)
@@ -396,7 +396,7 @@ def _record_koda_opinion(page, base_url: str, *, sent_on: str, summary: str = ""
     choose_organisation(page, "koja-adressaat")
     if summary:
         form.locator("[name=summary]").fill(summary)
-    form.get_by_role("button", name="Registreeri arvamus").click()
+    form.get_by_role("button", name="Salvesta", exact=True).click()
 
 
 def test_a_sent_opinion_is_withdrawn_from_its_own_row_after_a_confirmation(page, base_url):
@@ -457,7 +457,7 @@ def test_the_koda_opinion_panel_refuses_a_save_with_nothing_in_it(page, base_url
     form = panel(page, "arvamus-koja")
     form.locator("[name=summary]").fill("Toetame eelnõu.")
     form.locator("[name=sent_on]").fill("")
-    form.get_by_role("button", name="Registreeri arvamus").click()
+    form.get_by_role("button", name="Salvesta", exact=True).click()
 
     expect(page.locator("#arvamus-koja")).to_contain_text("Lisa fail, mis välja saadeti.")
     expect(page.locator("#arvamus-koja")).to_contain_text("Vali vähemalt üks adressaat.")
@@ -586,7 +586,7 @@ def test_one_consultation_runs_from_teema_to_the_next_round(page, base_url):
     page.wait_for_load_state("networkidle")
     page.fill("#id_title", unique_title("Terve töövoog"))
     page.fill("#id_response_deadline", _future(8))
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     # The deadline is the obligation; the first step is started from the plan
     # (docs/adr/0133 §8).
@@ -612,7 +612,7 @@ def test_one_consultation_runs_from_teema_to_the_next_round(page, base_url):
     choose_organisation(page, "tagasiside")
     tagasiside.locator("[name=source_is_member]").check()
     tagasiside.locator("[name=summary]").fill("58 vastust; enamik toetab.")
-    tagasiside.get_by_role("button", name="Salvesta tagasiside").click()
+    tagasiside.get_by_role("button", name="Salvesta", exact=True).click()
     chronology(page).get_by_text("Meile saadetud tagasiside:").first.wait_for()
 
     # What somebody else said. `Juristi märkus` is a `Muuda` control too, so the
@@ -621,7 +621,7 @@ def test_one_consultation_runs_from_teema_to_the_next_round(page, base_url):
     valine = panel(page, "arvamus-teiste")
     choose_organisation(page, "valine-seisukoht")
     valine.locator("[name=summary]").fill("Toetab varianti B.")
-    valine.get_by_role("button", name="Salvesta arvamus").click()
+    valine.get_by_role("button", name="Salvesta", exact=True).click()
     chronology(page).get_by_text("Teiste arvamus:").first.wait_for()
 
     # Koda's own opinion.

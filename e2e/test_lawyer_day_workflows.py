@@ -84,7 +84,7 @@ def _register_opinion(page, *, file_name: str, answers_deadline: bool) -> None:
     with page.expect_response(
         lambda r: r.url.endswith("/lisa/koja-arvamus/") and r.request.method == "POST"
     ):
-        form.get_by_role("button", name="Registreeri arvamus").click()
+        form.get_by_role("button", name="Salvesta", exact=True).click()
     wait_for_htmx(page)
 
 
@@ -110,7 +110,7 @@ def test_journey_consultation_to_repeat_opinion_and_closure(page, base_url, tmp_
     page.fill("#id_response_deadline", _et(5))
     page.locator("#id_files").set_input_files([str(incoming)])
     expect(page.locator(".dropzone__file")).to_have_count(1)
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     url = page.url
 
@@ -131,7 +131,7 @@ def test_journey_consultation_to_repeat_opinion_and_closure(page, base_url, tmp_
     panel.locator("[name=overview_title]").fill("Eelnõu ülevaade liikmetele")
     # Without the koda.ee fetch (off outside production) the kind is asked.
     panel.get_by_label("Ülevaade", exact=True).check()
-    panel.get_by_role("button", name="Lisa ülevaade / uudis").click()
+    panel.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
     row = chronology(page).locator(".uxtl__item", has_text="Eelnõu ülevaade liikmetele")
     expect(row).to_have_count(1)
@@ -162,7 +162,7 @@ def test_journey_consultation_to_repeat_opinion_and_closure(page, base_url, tmp_
     expect(feedback.locator("[name=engagement] option:checked")).to_contain_text("Liikmed")
     feedback.locator("[name=summary]").fill("Üksteist liiget vastas; mure halduskoormus.")
     feedback.locator("input[type=file]").first.set_input_files(_upload("tagasiside.pdf"))
-    feedback.get_by_role("button", name="Salvesta tagasiside").click()
+    feedback.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
     expect(page.locator("#praegune-ootused [data-feedback-wait]")).to_have_count(0)
 
@@ -242,7 +242,7 @@ def test_journey_current_and_planned_work(page, base_url):
 
     # `Muuda` on a planned row changes that row and nothing else.
     target = rows.filter(has_text="Küsi liikmetelt seisukohta")
-    target.locator(".curact__edit > summary").click()
+    target.locator(".curact__edit > summary", has_text="Muuda").click()
     target.locator("[name=text]").fill("Küsi liikmetelt seisukohta ja koosta koondtabel")
     target.locator("[name=target_date]").fill(_et(15))
     target.get_by_role("button", name="Salvesta").click()
@@ -332,7 +332,7 @@ def test_journey_files_display_titles_and_relations(page, base_url, tmp_path):
         page.locator(".dropzone__file .titleedit__text", has_text="Kaaskiri ministeeriumilt")
     ).to_have_count(1)
 
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     url = page.url
 

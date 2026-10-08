@@ -51,7 +51,7 @@ def _assign_new_matter(page, base_url: str, title: str, owner_short_name: str) -
     page.fill("#id_title", title)
     owners = page.locator("fieldset").filter(has_text="Vastutaja").first
     owners.locator("label").filter(has_text=owner_short_name).first.click()
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     return page.url
 

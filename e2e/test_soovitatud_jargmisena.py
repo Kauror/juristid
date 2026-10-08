@@ -27,7 +27,7 @@ def test_a_suggestion_is_started_finished_and_the_next_dismissed(page, base_url)
     sign_in(page, base_url, SANDRA)
     page.goto(f"{base_url}/teemad/uus/")
     page.fill("#id_title", unique_title("Soovituse brauserikatse"))
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     page.wait_for_load_state("networkidle")
 

@@ -149,7 +149,7 @@ def test_a_chosen_file_comes_back_under_the_step_it_supports(page, base_url: str
     form = page.locator("form[aria-label='Faili lisamine märkele']")
     form.wait_for()
     form.locator("input[type=file]").set_input_files(_pdf(LATER_FILE))
-    form.get_by_role("button", name="Lisa fail", exact=True).click()
+    form.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     row = _row(page)
@@ -171,7 +171,7 @@ def test_a_second_paper_can_be_added_to_the_same_step(page, base_url: str):
         form = page.locator("form[aria-label='Faili lisamine märkele']")
         form.wait_for()
         form.locator("input[type=file]").set_input_files(_pdf(name))
-        form.get_by_role("button", name="Lisa fail", exact=True).click()
+        form.get_by_role("button", name="Salvesta", exact=True).click()
         page.wait_for_load_state("networkidle")
         _row(page).get_by_role("link", name=name).first.wait_for()
 

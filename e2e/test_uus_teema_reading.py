@@ -252,7 +252,7 @@ def test_the_letter_is_read_on_the_create_form_and_the_teema_keeps_what_was_conf
     # ceremony: it is an ordinary value in an ordinary input.
     page.locator("#id_title").fill(title)
     name_a_next_step(page)
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("domcontentloaded")
 
     complaints = page.locator(".field__error, .formerror, .message--error").all_inner_texts()
@@ -329,7 +329,7 @@ def test_the_letter_names_its_own_kind_and_the_teema_keeps_it(page, base_url, le
 
     page.locator("#id_title").fill(title)
     name_a_next_step(page)
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("domcontentloaded")
     complaints = page.locator(".field__error, .formerror, .message--error").all_inner_texts()
     assert not complaints, f"the form refused: {complaints}"
@@ -441,7 +441,7 @@ def test_a_file_taken_back_off_stops_suggesting_and_is_not_filed(
 
     page.locator("#id_title").fill(title)
     name_a_next_step(page)
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     start_first_step(page)
 
@@ -464,7 +464,7 @@ def test_a_refused_save_keeps_the_staged_file_and_what_was_found(
     page.locator("#id_title").fill(title)
     # The ordinary refusal: «Muu» ticked with nothing written beside it.
     page.locator("#valdkond-muu input").check()
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("domcontentloaded")
 
     expect(page.get_by_role("heading", name="Uus teema")).to_be_visible()
@@ -477,7 +477,7 @@ def test_a_refused_save_keeps_the_staged_file_and_what_was_found(
 
     page.locator("#valdkond-muu-tekst input").fill("Pakendid")
     name_a_next_step(page)
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     start_first_step(page)
 
@@ -555,7 +555,7 @@ def test_a_refused_save_does_not_apply_a_sender_over_one_the_person_typed(
     # The ordinary refusal: «Muu» ticked with nothing written beside it.
     page.locator("#id_title").fill(title)
     page.locator("#valdkond-muu input").check()
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("domcontentloaded")
     expect(page.get_by_role("heading", name="Uus teema")).to_be_visible()
 
@@ -573,7 +573,7 @@ def test_a_refused_save_does_not_apply_a_sender_over_one_the_person_typed(
     # Correct the refused field and save. Exactly one sender survives.
     page.locator("#valdkond-muu-tekst input").fill("Pakendid")
     name_a_next_step(page)
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     start_first_step(page)
 
@@ -661,7 +661,7 @@ def test_the_file_is_still_there_and_the_teema_can_still_be_created(
 
     # Still on the form, still named, still going to be filed.
     expect(staged_rows(page)).to_have_count(1)
-    submit = page.get_by_role("button", name="Loo teema")
+    submit = page.get_by_role("button", name="Salvesta", exact=True)
     expect(submit).to_be_enabled()
 
     page.locator("#id_title").fill("Fail jäi lugemata, teema tehtud")
@@ -721,7 +721,7 @@ def test_choosing_to_stop_waiting_says_so_too(page, base_url, letter_pdf) -> Non
     expect(panel.locator(".intakepanel__reading")).to_be_hidden()
     expect(page.locator(".dropzone__read--waiting:visible")).to_have_count(0)
     expect(panel.locator(".intakepanel__spinner:visible")).to_have_count(0)
-    expect(page.get_by_role("button", name="Loo teema")).to_be_enabled()
+    expect(page.get_by_role("button", name="Salvesta", exact=True)).to_be_enabled()
 
 
 def test_a_second_file_after_a_stall_starts_the_reading_again(page, base_url, letter_pdf) -> None:
@@ -778,7 +778,7 @@ def test_a_file_that_cannot_be_read_does_not_stop_the_teema(
 
     page.locator("#id_title").fill(title)
     name_a_next_step(page)
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     start_first_step(page)
 
@@ -805,7 +805,7 @@ def test_three_initial_files_become_three_documents(
 
     page.locator("#id_title").fill("Kolme failiga teema")
     name_a_next_step(page)
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     start_first_step(page)
     expect(page.locator(".message").first).to_contain_text("3 failiga")
@@ -837,7 +837,7 @@ def test_uploading_a_document_later_starts_no_reading_workflow(
     name_a_next_step(page)
     ahead = date.today() + timedelta(days=7)
     typed_deadline = f"{ahead.day}.{ahead.month}.{ahead.year}"
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     start_first_step(page)
     matter_url = page.url
@@ -845,7 +845,7 @@ def test_uploading_a_document_later_starts_no_reading_workflow(
     open_documents(page)
     page.get_by_role("button", name="↑ Lae dokument").click()
     page.locator("#lae-dokument input[name='upload']").set_input_files(str(letter_pdf))
-    page.get_by_role("button", name="Salvesta dokument").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
     expect(page.get_by_role("link", name="kaaskiri.pdf", exact=True)).to_be_visible()
     read_staged_files_is_a_noop()
@@ -1051,7 +1051,7 @@ def test_a_chosen_suggestion_survives_a_save_refused_for_something_else(
     # never reaches the server at all.
     page.locator("#id_title").fill("Teema, mille salvestus keeldub")
     page.locator("#valdkond-muu input").check()
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("domcontentloaded")
     expect(page.get_by_role("heading", name="Uus teema")).to_be_visible()
     expect(page.locator(".field__error").first).to_be_visible()

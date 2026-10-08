@@ -112,7 +112,7 @@ def _refuse_an_empty_picker_on(page, row) -> None:
     open_kaik_row(row)
     row.locator("button.uxtl__edit[id$='-toend']").click()
     wait_for_htmx(page)
-    row.locator("form.uxtl__editform").get_by_role("button", name="Lisa fail", exact=True).click()
+    row.locator("form.uxtl__editform").get_by_role("button", name="Salvesta", exact=True).click()
     wait_for_htmx(page)
 
 
@@ -148,9 +148,7 @@ def test_a_refused_marge_file_stays_on_its_own_row(page, base_url):
 
     # The retry posts to the row it is on, and the file lands there.
     second.locator("form.uxtl__editform input[type=file]").set_input_files(_pdf("teine.pdf"))
-    second.locator("form.uxtl__editform").get_by_role(
-        "button", name="Lisa fail", exact=True
-    ).click()
+    second.locator("form.uxtl__editform").get_by_role("button", name="Salvesta", exact=True).click()
     wait_for_htmx(page)
     expect(second).to_contain_text("teine.pdf")
     expect(first).not_to_contain_text("teine.pdf")
@@ -169,9 +167,7 @@ def test_a_refused_position_file_stays_on_its_own_row(page, base_url):
     _assert_refusal_is_only_on(page, second, [first])
 
     second.locator("form.uxtl__editform input[type=file]").set_input_files(_pdf("seisukoht.pdf"))
-    second.locator("form.uxtl__editform").get_by_role(
-        "button", name="Lisa fail", exact=True
-    ).click()
+    second.locator("form.uxtl__editform").get_by_role("button", name="Salvesta", exact=True).click()
     wait_for_htmx(page)
     expect(second).to_contain_text("seisukoht.pdf")
     expect(first).not_to_contain_text("seisukoht.pdf")
@@ -242,7 +238,7 @@ def test_a_refused_publish_keeps_every_id_on_its_own_row(page, base_url):
     second = rows.nth(1)
     second.locator("details.webrow__publish summary").click()
     second.locator("[name=url]").fill("pole aadress")
-    second.get_by_role("button", name="Salvesta avaldatuna").click()
+    second.get_by_role("button", name="Salvesta", exact=True).click()
     wait_for_htmx(page)
 
     second = page.locator("#kodulehe-ulevaated li.webrow__item").nth(1)

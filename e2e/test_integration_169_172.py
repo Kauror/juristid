@@ -205,7 +205,7 @@ def test_a_body_typed_as_saatja_is_immediately_filterable_in_teemad(page, base_u
 
     page.locator("#id_title").fill(title)
     give_first_step(page)
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("domcontentloaded")
 
     complaints = page.locator(".field__error, .formerror, .message--error").all_inner_texts()

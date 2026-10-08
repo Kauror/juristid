@@ -1531,7 +1531,7 @@ def test_create_matter_refused(page, base_url):
     """
     signed_in(page, base_url, "/teemad/uus/")
     page.locator("form.createform").evaluate("form => form.noValidate = true")
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
     compare("uus-teema-viga", capture(page, "uus-teema-viga"))
 
@@ -2615,7 +2615,7 @@ def test_the_done_form_on_a_teema_filed_today(page, base_url):
 
     signed_in(page, base_url, "/teemad/uus/")
     page.fill("#id_title", "Tehtud-vormi visuaalne teema")
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     page.wait_for_load_state("networkidle")
     page.locator("#lisa-jargmine > summary").click()

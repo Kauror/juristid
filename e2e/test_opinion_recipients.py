@@ -51,7 +51,7 @@ def _new_matter(page, base_url: str, title: str, *, new_sender: str | None = Non
         box.fill(new_sender)
         page.locator("#saatja-valik [data-orgfind-add]").click()
     give_first_step(page)
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     start_first_step(page)
     complaints = page.locator(".field__error, .formerror, .message--error").all_inner_texts()
@@ -86,7 +86,7 @@ def _draft_with_its_file(
             }
         ]
     )
-    draft.get_by_role("button", name="Lisa fail").click()
+    draft.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
     draft = page.locator(".draftrow", has_text=title)
     expect(draft.get_by_role("button", name="Märgi saadetuks")).to_be_visible()

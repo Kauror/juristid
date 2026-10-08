@@ -112,7 +112,7 @@ def record_opinion(page, filename: str) -> None:
     with page.expect_response(
         lambda response: "/lisa/koja-arvamus/" in response.url and response.request.method == "POST"
     ) as caught:
-        panel.get_by_role("button", name="Registreeri arvamus").click()
+        panel.get_by_role("button", name="Salvesta", exact=True).click()
     assert caught.value.status == 200, f"the opinion was refused: {caught.value.status}"
     page.wait_for_load_state("networkidle")
     expect(page.locator("#ajalugu-loend")).to_contain_text("Arvamus välja")
@@ -190,7 +190,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     page.locator("#id_response_deadline").fill(_future(21))
     screenshots(page, "02-uus-teema")
 
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
 
     # The Matter opens immediately, named by its title.
     #

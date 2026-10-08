@@ -134,7 +134,7 @@ def test_a_document_filter_waits_for_enter_but_not_for_a_pointer(page, base_url)
         {"name": "aasta.pdf", "mimeType": "application/pdf", "buffer": b"%PDF-1.4\naasta"}
     )
     with page.expect_navigation():
-        upload.get_by_role("button", name="Salvesta dokument").click()
+        upload.get_by_role("button", name="Salvesta", exact=True).click()
     page.goto(f"{url}dokumendid/")
     page.wait_for_load_state("networkidle")
     navigations: list[str] = []

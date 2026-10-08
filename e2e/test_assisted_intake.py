@@ -77,7 +77,7 @@ def file_through_saabunud(page, base_url: str, files: list[Path], title: str = "
     page.set_input_files("input[name='uploads']", [str(path) for path in files])
     if title:
         page.fill("input[name='title']", title)
-    page.get_by_role("button", name="Registreeri ja loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     return page.url
 

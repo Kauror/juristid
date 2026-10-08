@@ -67,7 +67,7 @@ def _set_directly(page, text: str, when: str) -> None:
     with page.expect_response(
         lambda response: response.url.endswith("/jargmiseks/") and response.request.method == "POST"
     ) as caught:
-        cta.get_by_role("button", name="Salvesta järgmine samm").click()
+        cta.get_by_role("button", name="Salvesta", exact=True).click()
     assert caught.value.status == 200, f"the step was refused: {caught.value.status}"
     page.wait_for_load_state("networkidle")
 
@@ -101,7 +101,7 @@ def _register_opinion(page, *, finish_step: bool) -> None:
             response.url.endswith("/lisa/koja-arvamus/") and response.request.method == "POST"
         )
     ) as caught:
-        form.get_by_role("button", name="Registreeri arvamus").click()
+        form.get_by_role("button", name="Salvesta", exact=True).click()
     assert caught.value.status == 200, f"the opinion was refused: {caught.value.status}"
     page.wait_for_load_state("networkidle")
 
@@ -219,7 +219,7 @@ def test_the_two_controls_hold_their_shape_at_a_narrow_width(page, base_url, wid
     long_step = STEP + " ning kooskõlasta see eelnevalt kõigi asjaomaste osakondadega"
     page.locator("#lisa-jargmine [name='text']").fill(long_step)
     page.locator("#id_target_date").fill(_day(4))
-    page.locator("#lisa-jargmine").get_by_role("button", name="Salvesta järgmine samm").click()
+    page.locator("#lisa-jargmine").get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     open_add_panel(page, "arvamus-koja")

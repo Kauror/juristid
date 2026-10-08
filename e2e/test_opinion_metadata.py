@@ -47,7 +47,7 @@ SECOND_KEYWORD = "Aktsiis"
 #: offers beside it. One name for one surface.
 METADATA_LINK = "Märksõnad ja seosed"
 
-PLAN_BUTTON = "Lisa ülevaade / uudis"
+PLAN_BUTTON = "Salvesta"
 
 #: The opinion's file, and therefore its title: `+ Koja arvamus` names the
 #: record after the uploaded file (docs/adr/0095 §2).
@@ -72,7 +72,7 @@ def an_opinion(page, base_url: str) -> str:
         {"name": OPINION_FILE, "mimeType": "application/pdf", "buffer": b"%PDF-1.4 e2e"}
     )
     choose_organisation(page, "koja-adressaat")
-    panel.get_by_role("button", name="Registreeri arvamus").click()
+    panel.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
     expect(page.locator("#ajalugu-loend")).to_contain_text("Arvamus välja")
     return matter_url

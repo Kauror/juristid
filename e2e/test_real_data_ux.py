@@ -244,7 +244,7 @@ def test_two_ticked_areas_both_survive_the_save(page, base_url):
     page.locator("#id_title").fill("Kahe valdkonnaga teema")
     page.locator("input[name='policy_areas']").nth(0).check()
     page.locator("input[name='policy_areas']").nth(1).check()
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
 
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     # The header's Valdkond value, not `.tag`: Sildid and Valdkonnad are two
@@ -298,7 +298,7 @@ def test_a_matter_can_be_created_with_a_file_attached(page, base_url, tmp_path):
     expect(row).to_contain_text("kaaskiri.txt")
     expect(row).not_to_contain_text("TÕEND")
 
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("domcontentloaded")
 
     # If the form refused, say what it said. A bare navigation timeout tells you

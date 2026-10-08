@@ -785,7 +785,7 @@ def create_matter(
         box.fill("")
         box.type(sender[:8], delay=20)
         page.locator("#saatja-tulemused").get_by_role("option", name=sender, exact=True).click()
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     return page.url
 

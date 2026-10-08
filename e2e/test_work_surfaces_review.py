@@ -404,7 +404,7 @@ def test_hiljem_sits_on_the_same_surface_as_the_other_bands(page, base_url):
     # fortnight out, and the chips this form offered were a week or less. There
     # are no chips now, so it is simply typed.
     page.locator("#id_response_deadline").fill(_future(14))
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     _open(page, base_url, MARTIN, "/minu-asjad/", 1440)

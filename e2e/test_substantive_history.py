@@ -170,7 +170,7 @@ def _matter_with_instrument(page, base_url: str, instrument: str, *, stage: str 
         # Behind a menu since docs/adr/0094 §2; it shuts itself once answered.
         open_hetkeseis(page)
         page.get_by_role("radio", name=stage, exact=True).check()
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     return page.url
 
@@ -202,7 +202,7 @@ def _record_koda_opinion(page, *, sent_on: str, filename: str) -> None:
     # `hidden` until it is found, so ticking the control directly would assert
     # an interaction nobody has.
     choose_organisation(page, "koja-adressaat")
-    form.get_by_role("button", name="Registreeri arvamus").click()
+    form.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
 
@@ -400,14 +400,14 @@ def test_received_and_discovered_feedback_are_visibly_different_things(page, bas
     # the whole point of this test.
     choose_organisation(page, "tagasiside")
     received.locator("[name=summary]").fill("58 vastust; enamik vastu.")
-    received.get_by_role("button", name="Salvesta tagasiside").click()
+    received.get_by_role("button", name="Salvesta", exact=True).click()
     history(page).get_by_text("Meile saadetud tagasiside:").first.wait_for()
 
     open_add_panel(page, "arvamus-teiste")
     discovered = panel(page, "arvamus-teiste")
     choose_organisation(page, "valine-seisukoht")
     discovered.locator("[name=summary]").fill("Toetab varianti B.")
-    discovered.get_by_role("button", name="Salvesta arvamus").click()
+    discovered.get_by_role("button", name="Salvesta", exact=True).click()
     history(page).get_by_text("Teiste arvamus:").first.wait_for()
 
     # One organisation, two records, two headings: the provenance is the

@@ -56,7 +56,7 @@ def file_a_teema_with(
     # (e2e/conftest.py `give_first_step`); the date box is a plain input, so
     # this works with scripting off as well.
     give_first_step(page)
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     url = page.url
     if start:

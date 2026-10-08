@@ -265,7 +265,7 @@ def test_a_typed_estonian_date_is_saved(page, base_url):
     page.fill("#id_title", "Eestikeelse kuupäevaga teema")
     page.fill("#id_received_date", "7.9.2026")
     page.fill("#id_response_deadline", deadline)
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     # The Matter page shows both dates back, in the same format they were typed.
@@ -290,7 +290,7 @@ def test_a_padded_estonian_date_is_accepted_too(page, base_url):
     # nothing to do with this change; moving the date out of its window altered
     # a number on a page for no reason anybody could later explain.
     page.fill("#id_response_deadline", typed(8, padded=True))
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     assert typed(8) in " ".join(
@@ -305,7 +305,7 @@ def test_an_impossible_date_is_refused_in_estonian(page, base_url):
 
     page.fill("#id_title", "Võimatu kuupäevaga teema")
     page.fill("#id_response_deadline", "31.02.2026")
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     expect(page.locator(".field__error").first).to_contain_text("7.9.2026")

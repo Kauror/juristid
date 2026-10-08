@@ -24,17 +24,18 @@ from django.utils import timezone
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.core.enums import Visibility
-from app.core.errors import DomainError
 from app.matters.models import Entry
 from app.matters.workspace import complete_planned_action
 from app.workflow.enums import ActionStatus
 from app.workflow.models import NextAction
 from app.workflow.services import (
+    PLANNED_ACTION_CHANGED,
     add_planned_action,
     cancel_planned_action,
     change_planned_action,
     set_next_action_for_new_work,
 )
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -166,7 +167,7 @@ def test_a_row_that_is_no_longer_planned_is_refused(plan, specialist):
     cancel_planned_action(matter=matter, action_id=early.pk, actor=specialist)
     entries = Entry.objects.filter(matter=matter).count()
 
-    with pytest.raises(DomainError):
+    with refused(PLANNED_ACTION_CHANGED):
         complete_planned_action(matter=matter, author=specialist, action_id=early.pk, body="X")
 
     assert Entry.objects.filter(matter=matter).count() == entries
@@ -175,7 +176,7 @@ def test_a_row_that_is_no_longer_planned_is_refused(plan, specialist):
 def test_the_current_action_cannot_be_finished_through_the_planned_door(plan, specialist):
     matter, current, _early, _late = plan
 
-    with pytest.raises(DomainError):
+    with refused(PLANNED_ACTION_CHANGED):
         complete_planned_action(matter=matter, author=specialist, action_id=current.pk, body="X")
 
     current.refresh_from_db()

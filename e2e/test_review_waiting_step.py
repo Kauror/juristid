@@ -140,7 +140,7 @@ def test_vaatasin_ule_lands_on_the_review_and_records_it_once(page, base_url):
     expect(box).to_be_focused()
 
     box.fill(_in_two_weeks())
-    panel.get_by_role("button", name="Salvesta ülevaatus").click()
+    panel.get_by_role("button", name="Salvesta", exact=True).click()
     wait_for_htmx(page)
 
     zone = page.locator("#praegune-tegevus")
@@ -200,7 +200,7 @@ def test_the_review_control_fits_every_width(page, base_url, width):
     panel.locator("summary").click()
     expect(panel).to_have_attribute("open", "")
     expect(panel.get_by_label("Järgmine ülevaatus")).to_be_visible()
-    expect(panel.get_by_role("button", name="Salvesta ülevaatus")).to_be_visible()
+    expect(panel.get_by_role("button", name="Salvesta", exact=True)).to_be_visible()
     overflow = page.evaluate(
         "() => document.documentElement.scrollWidth - document.documentElement.clientWidth"
     )

@@ -73,7 +73,7 @@ def a_procedure_matter(
     page.get_by_role("radio", name=hetkeseis, exact=True).check()
     if deadline:
         page.fill("#id_response_deadline", deadline)
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     page.wait_for_load_state("networkidle")
     return page.url
@@ -88,7 +88,7 @@ def record_koja_arvamus(page, *, sent_on: str) -> None:
     )
     form.locator("[name=sent_on]").fill(sent_on)
     choose_organisation(page, "koja-adressaat")
-    form.get_by_role("button", name="Registreeri arvamus").click()
+    form.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
     expect(page.locator("#ajalugu-loend")).to_contain_text(sent_on.lstrip("0").replace(".0", "."))
 
@@ -283,7 +283,7 @@ def record_feedback(page, summary: str) -> None:
     """`Meile saadetud tagasiside`, as `e2e/test_correction_round_surfaces.py` does."""
     open_add_panel(page, "arvamus-tagasiside")
     page.fill("#id_tagasiside_summary", summary)
-    page.get_by_role("button", name="Salvesta tagasiside").click()
+    page.locator("#arvamus-tagasiside").get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
     expect(page.locator("#ajalugu-loend")).to_contain_text(summary)
 
@@ -304,7 +304,7 @@ def record_publication(page) -> None:
     panel = page.locator("#lisa-koduleht")
     panel.locator("[name=url]").fill("https://koda.ee/uudised/e2e-uks-hierarhia")
     panel.locator("[name=published_on]").fill("14.03.2026")
-    panel.get_by_role("button", name="Lisa ülevaade / uudis").click()
+    panel.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
     expect(page.locator("#ajalugu-loend")).to_contain_text("koda.ee/uudised/e2e-uks-hierarhia")
 

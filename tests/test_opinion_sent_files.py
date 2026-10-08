@@ -34,6 +34,7 @@ from app.core.errors import DomainError
 from app.documents.enums import DocumentRole
 from app.documents.models import Document
 from app.documents.services import (
+    OPINION_EVIDENCE_IS_NOT_A_WORKING_DOCUMENT,
     SENT_OPINION_EVIDENCE,
     link_document_to_record,
     new_version_refusal,
@@ -49,6 +50,7 @@ from app.submissions.models import Submission, SubmissionSentFile
 from app.submissions.opinions import opinion_rail, unregistered_opinion_documents
 from app.submissions.services import SENT_FILES_ONLY_BEFORE_SENDING, bind_further_sent_files
 from tests import factories
+from tests.refusals import refused
 from tests.synthetic_containers import signed_container
 
 pytestmark = pytest.mark.django_db
@@ -329,7 +331,7 @@ def test_a_further_file_cannot_be_filed_as_a_working_document(matter, specialist
     Document.objects.filter(pk=document.pk).update(role=DocumentRole.OTHER)
     document.refresh_from_db()
 
-    with pytest.raises(DomainError):
+    with refused(OPINION_EVIDENCE_IS_NOT_A_WORKING_DOCUMENT):
         link_document_to_record(document=document, record=submission, actor=specialist)
 
 

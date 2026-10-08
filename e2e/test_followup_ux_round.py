@@ -153,7 +153,7 @@ def test_a_a_typed_title_is_kept_and_an_unknown_address_asks(page, base_url):
     form.locator("[name=url]").fill("https://www.mkm.ee/uudised/naidis")
     form.locator("[name=url]").dispatch_event("change")
     expect(form.locator("[name=kind]:checked")).to_have_count(0)
-    form.get_by_role("button", name="Lisa ülevaade / uudis").click()
+    form.get_by_role("button", name="Salvesta", exact=True).click()
     wait_for_htmx(page)
     expect(page.locator("#lisa-koduleht")).to_contain_text("Vali, kas see on ülevaade või uudis.")
 
@@ -205,8 +205,10 @@ def test_c_long_rows_keep_their_columns_and_their_controls(page, base_url, width
         )
         assert row_date["right"] <= row_text["left"]
         assert row_text["bottom"] - row_text["top"] > 30, "a long planned action does not wrap"
+        # `✓ Tehtud | Muuda | ×` since docs/adr/0144 §1 — all three stay in the row.
         for control in (
-            row.locator(".curact__edit > summary"),
+            row.locator(".curact__edit > summary", has_text="Tehtud"),
+            row.locator(".curact__edit > summary", has_text="Muuda"),
             row.locator(".curact__dismiss button"),
         ):
             box = _box(control)

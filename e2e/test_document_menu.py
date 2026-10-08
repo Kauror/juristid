@@ -117,7 +117,7 @@ def _matter_with_files(page, base_url: str, tmp_path) -> str:
     page.fill("#id_title", unique_title("Dokumendimenüü"))
     page.locator("#id_files").set_input_files(paths)
     expect(page.locator(".dropzone__file")).to_have_count(len(FILES))
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     url = page.url
     page.goto(f"{url}dokumendid/")

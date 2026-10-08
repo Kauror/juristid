@@ -189,7 +189,7 @@ def test_b_seadus_dims_the_eu_stages_and_a_dimmed_stage_still_saves(page, base_u
     expect(page.locator(".field__error")).to_have_count(0)
 
     give_first_step(page)
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     start_first_step(page)
     assert not page.locator(".field__error, .formerror").all_inner_texts()
@@ -310,7 +310,7 @@ def test_f_a_full_creation_with_files(page, base_url, screenshots):
     expect(page.locator("#intake-failid .dropzone__file")).to_have_count(2)
     screenshots(page, "uus-teema-guided-full")
 
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     start_first_step(page)
     assert not page.locator(".field__error, .formerror").all_inner_texts()

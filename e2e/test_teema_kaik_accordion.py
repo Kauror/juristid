@@ -390,7 +390,7 @@ def test_a_refused_then_accepted_file_keeps_its_row_open(page, base_url, tmp_pat
     expect(editor).to_be_visible()
 
     # Refused: nothing chosen.
-    editor.get_by_role("button", name="Lisa fail", exact=True).click()
+    editor.get_by_role("button", name="Salvesta", exact=True).click()
     wait_for_htmx(page)
     marge = row(page, "Rääkisin ministeeriumiga")
     expect(toggle_of(marge)).to_have_attribute("aria-expanded", "true")
@@ -400,7 +400,7 @@ def test_a_refused_then_accepted_file_keeps_its_row_open(page, base_url, tmp_pat
     paper = tmp_path / "kohtumise-protokoll.pdf"
     paper.write_bytes(b"%PDF-1.4 synthetic minutes")
     marge.locator("form.uxtl__editform input[type=file]").set_input_files(str(paper))
-    marge.locator("form.uxtl__editform").get_by_role("button", name="Lisa fail", exact=True).click()
+    marge.locator("form.uxtl__editform").get_by_role("button", name="Salvesta", exact=True).click()
     wait_for_htmx(page)
     marge = row(page, "Rääkisin ministeeriumiga")
     expect(toggle_of(marge)).to_have_attribute("aria-expanded", "true")

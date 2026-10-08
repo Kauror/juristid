@@ -375,7 +375,7 @@ def test_the_typed_deadline_is_the_obligation_and_starts_nothing(page, base_url)
     page.fill("#id_title", unique_title("Üks kuupäev brauserist"))
     page.locator('input[name="owner"]').first.check()
     page.fill("#id_response_deadline", wanted)
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     expect(page.locator("#praegune-tegevus .curact__empty")).to_have_text(
@@ -400,7 +400,7 @@ def test_a_blank_deadline_leaves_the_file_with_no_step(page, base_url):
     create_form(page, base_url)
 
     page.fill("#id_title", unique_title("Ilma tähtajata brauserist"))
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     expect(page.locator("#praegune-tegevus")).to_contain_text("Järgmine samm on määramata")
@@ -420,7 +420,7 @@ def test_the_step_takes_the_owner_chosen_on_the_same_form(page, base_url):
     page.fill("#id_title", title)
     page.locator('input[name="owner"]').first.check()
     page.fill("#id_response_deadline", typed_date(21))
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
     # The first step is started from the plan (docs/adr/0133 §8), and it is
     # the owner's like any other.
@@ -582,7 +582,7 @@ def test_the_form_survives_a_narrow_window(page, base_url, width):
     expect(page.locator("#id_response_deadline")).to_be_visible()
     expect(page.locator("#id_received_date")).to_be_visible()
     expect(page.locator("label.dropzone__choose")).to_be_visible()
-    expect(page.get_by_role("button", name="Loo teema")).to_be_visible()
+    expect(page.get_by_role("button", name="Salvesta", exact=True)).to_be_visible()
 
 
 @pytest.mark.parametrize("width", [1440, 1280, 1024])
@@ -633,7 +633,7 @@ def test_the_whole_form_is_reachable_without_opening_anything(page, base_url, wi
     ):
         expect(page.locator(f'[name="{gone}"]')).to_have_count(0)
 
-    expect(page.get_by_role("button", name="Loo teema")).to_be_visible()
+    expect(page.get_by_role("button", name="Salvesta", exact=True)).to_be_visible()
 
 
 def test_the_submit_reads_inactive_without_becoming_unusable(page, base_url):
@@ -647,7 +647,7 @@ def test_the_submit_reads_inactive_without_becoming_unusable(page, base_url):
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
 
-    button = page.get_by_role("button", name="Loo teema")
+    button = page.get_by_role("button", name="Salvesta", exact=True)
     expect(button).to_have_attribute("data-inactive", "true")
     expect(button).to_be_enabled()
     assert button.get_attribute("aria-disabled") is None
@@ -667,7 +667,7 @@ def test_a_refused_save_hides_nothing_it_was_given(page, base_url):
     area = page.locator('input[name="policy_areas"]').first
     area.check()
     page.locator("form.createform").evaluate("form => form.noValidate = true")
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     expect(page.locator("#id_notes")).to_have_value("Mida see teema ettevõtjatele tähendab.")
