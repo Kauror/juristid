@@ -290,6 +290,41 @@ def test_the_schema_change_is_additive():
             assert isinstance(operation, allowed), (key, operation)
 
 
+def test_the_release_still_serving_survives_the_migration():
+    """What `migration_plan` will say at deploy time, decided now (ENG-014).
+
+    Every new account column is nullable or has a *database* default, so the
+    release still serving can insert an account between the migration and the
+    swap. The one operation the gate flags is the reviewed constraint on the
+    existing account table, which every existing row (ACTIVATED by default) and
+    every row the old release can write (it cannot name the column) satisfies.
+    """
+    from django.db.migrations.loader import MigrationLoader
+
+    from app.core.deployment import consequential_operations
+
+    loader = MigrationLoader(None, ignore_no_migrations=True)
+    before = loader.project_state(("accounts", "0003_sharedgatethrottle"))
+    accounts = consequential_operations(
+        loader.disk_migrations[("accounts", "0004_local_authentication")], state=before
+    )
+    audit_before = loader.project_state(("audit", "0034_document_title_changed_event"))
+    audit = consequential_operations(
+        loader.disk_migrations[("audit", "0035_local_authentication_events")], state=audit_before
+    )
+
+    assert list(accounts) == ["AddConstraint"]
+    constraints = [
+        operation.constraint.name
+        for operation in loader.disk_migrations[
+            ("accounts", "0004_local_authentication")
+        ].operations
+        if type(operation).__name__ == "AddConstraint"
+    ]
+    assert constraints == ["accounts_user_unactivated_is_inactive"]
+    assert audit == {}
+
+
 def test_the_audit_change_only_widens_the_vocabulary():
     from django.db.migrations.loader import MigrationLoader
 

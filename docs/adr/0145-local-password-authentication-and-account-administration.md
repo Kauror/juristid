@@ -337,7 +337,13 @@ settings and deployment templates.
 
 Two additive migrations: `accounts/0004` (new columns with defaults, five new
 tables, one constraint, one index) and `audit/0035` (the event vocabulary). No
-`RunPython`, no `RunSQL`, no row created, no row rewritten. No existing account
+`RunPython`, no `RunSQL`, no row created, no row rewritten. Every new account
+column is nullable or carries a **database** default (`db_default`), so the
+release still serving keeps inserting accounts between the migration and the
+swap; each new table is created whole, constraints included. `migration_plan`
+therefore flags exactly one operation — the account-table constraint — which
+every existing row (ACTIVATED by default) and every row the old release can
+write satisfies; `tests/test_local_auth_production_safety.py` pins that answer. No existing account
 gains a password, a capability or a new state; no owner, collaborator or audit
 actor changes; personas are not converted into anything; nothing is merged by
 name.

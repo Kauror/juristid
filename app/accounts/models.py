@@ -98,16 +98,25 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
     # already is: ACTIVATED, no overrides, no local password, never signed in
     # here. The rows that existed before this lifecycle need no data migration
     # and no rewrite, and nothing about them changes until somebody decides it.
+    #
+    # The NOT NULL ones carry their default **in the database** (`db_default`)
+    # as well as in Django. Django drops a plain `default` from the column once
+    # it has filled the existing rows, so the release still serving — which
+    # names none of these columns — could not insert an account between the
+    # migration and the swap. With `db_default` it can, and `migration_plan`
+    # calls the change additive (app/core/deployment.py, ENG-014).
     provisioning_state = models.CharField(
         max_length=16,
         choices=ProvisioningState.choices,
         default=ProvisioningState.ACTIVATED,
+        db_default=ProvisioningState.ACTIVATED.value,
         verbose_name="konto seis",
         help_text="Uus konto ootab kinnitust, siis kutset; kasutatavaks teeb selle ainult "
         "inimene ise, oma parooli seades.",
     )
     capability_overrides = models.JSONField(
         default=dict,
+        db_default=models.Value({}, output_field=models.JSONField()),
         blank=True,
         verbose_name="isiklikud õigused",
         help_text="Rolli vaikimisi õigustest erinevad load ja keelud. Muudetakse ainult "
@@ -118,7 +127,9 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
     #: deactivation. Folded into the session's authentication hash, so a bump
     #: ends every session the account has, in every worker, on its next
     #: request (see `_get_session_auth_hash`).
-    security_epoch = models.PositiveIntegerField(default=0, verbose_name="turvaversioon")
+    security_epoch = models.PositiveIntegerField(
+        default=0, db_default=0, verbose_name="turvaversioon"
+    )
     local_password_set_at = models.DateTimeField(
         null=True, blank=True, verbose_name="isiklik parool seatud"
     )
@@ -149,7 +160,7 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
     #: An address outside the allowed domains, approved for this one account.
     #: Never a domain: approving one address says nothing about its neighbours.
     email_exception_reason = models.TextField(
-        blank=True, verbose_name="välise aadressi erandi põhjus"
+        blank=True, default="", db_default="", verbose_name="välise aadressi erandi põhjus"
     )
     email_exception_approved_at = models.DateTimeField(
         null=True, blank=True, verbose_name="välise aadressi erand kinnitatud"
