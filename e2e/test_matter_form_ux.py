@@ -958,7 +958,7 @@ def test_back_after_creating_brings_the_warning_back(page, base_url):
     # this yet, so anything that appears later appeared because of the create.
     expect(page.locator(SIMILAR_SECTION)).to_have_count(0)
 
-    page.click("button:has-text('Loo teema')")
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
     assert "/teemad/uus/" not in page.url, "the Teema was not created"
 
@@ -988,7 +988,7 @@ def test_the_restored_warning_needs_no_keystroke(page, base_url):
 
     page.fill("#id_title", subject)
     _settle_suggestions(page)
-    page.click("button:has-text('Loo teema')")
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     asked = _draft_requests(page)
@@ -1108,7 +1108,7 @@ def test_a_refused_save_still_says_what_the_form_resembles(page, base_url):
     # readable without opening anything (docs/adr/0094 §2.3).
     page.keyboard.press("Escape")
 
-    page.click("button:has-text('Loo teema')")
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
     _settle_suggestions(page)
 

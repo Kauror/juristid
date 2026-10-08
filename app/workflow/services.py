@@ -887,6 +887,7 @@ def locked_planned_action(locked_matter: Any, action_id: Any) -> NextAction:
     return _locked_planned(locked_matter, action_id)
 
 
+@transaction.atomic
 def finish_planned_action(*, action: NextAction, actor: Any = None) -> NextAction:
     """`✓ Tehtud` on a planned row — that exact action is done (docs/adr/0144 §1).
 

@@ -78,7 +78,7 @@ def test_a_refused_save_and_the_back_that_follows_it(page, base_url):
     # A refusal that belongs to the title, with the link block never touched.
     page.fill("#id_title", "")
     _settle(page)
-    page.click("button:has-text('Loo teema')")
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     assert "/teemad/uus/" in page.url, "the blank-title save was not refused"
@@ -99,7 +99,7 @@ def test_a_refused_save_and_the_back_that_follows_it(page, base_url):
     _settle(page)
     expect(page.locator(SIMILAR_SECTION)).to_have_count(0)
 
-    page.click("button:has-text('Loo teema')")
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
     assert "/teemad/uus/" not in page.url, "the Teema was not created"
 

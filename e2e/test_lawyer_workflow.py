@@ -531,6 +531,9 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     expect(page.get_by_placeholder("Otsi teemat, viidet, asutust…")).to_be_focused()
 
 
+# It replaces the seeded Matter's step, which the chronology tests read: a shared
+# world is written last (`e2e/conftest.py`).
+@pytest.mark.writes_last
 def test_a_next_step_without_a_date_is_saved_and_says_so(page, base_url):
     """docs/adr/0106, through `Muuda` on a step that already has a date.
 
