@@ -1,11 +1,16 @@
 {% comment %}
 The dated future actions behind the current one (docs/adr/0143). Compact
-rows under `+ Lisa tegevus`, earliest first: the day, the words, `Muuda` for
-that exact action and `×` to take it off the plan (cancelled, kept in the
-history). The earliest becomes the current action when the current one is done.
-Nothing renders when nothing is planned. **No heading** since the owner's
-compact round (2026-10-07): the dates say what the list is; the list keeps its
-name for assistive technology.
+rows under `+ Lisa tegevus`, earliest first: the day, the words, and three
+controls for that exact action — `✓ Tehtud` (what happened; done on any day,
+docs/adr/0144 §1), `Muuda` (its words or its day) and `×` (`Kustuta
+planeeritud tegevus`: off the plan, cancelled and kept in the history). The
+earliest becomes the current action when the current one is done; finishing a
+planned one promotes nothing. Nothing renders when nothing is planned. **No
+heading** since the owner's compact round (2026-10-07): the dates say what the
+list is; the list keeps its name for assistive technology.
+
+A refused `✓ Tehtud` or `Muuda` comes back into its own row, opened, with what
+was typed and the field's own message (`_workspace_refusal`).
 {% endcomment %}
 {% if planned_actions %}
   <div class="curact__planned" id="planeeritud">
@@ -18,7 +23,13 @@ name for assistive technology.
           <span class="curact__planneddate">{{ planned.date_display }}</span>
           <span class="curact__plannedtext">{{ planned.text }}</span>
           {% if can_write %}
-            <details class="cx-panel curact__edit" id="planeeritud-{{ planned.pk }}" data-addpanel>
+            <details class="cx-panel curact__edit" id="planeeritud-tehtud-{{ planned.pk }}" data-addpanel{% if planned.open_done %} open{% endif %}>
+              <summary class="disclosure-chip disclosure-chip--quiet">✓ Tehtud</summary>
+              <div class="cx-panel__body">
+                {% include "matters/partials/planned_done_form.html" with form=planned.done_form action=planned %}
+              </div>
+            </details>
+            <details class="cx-panel curact__edit" id="planeeritud-{{ planned.pk }}" data-addpanel{% if planned.open_edit %} open{% endif %}>
               <summary class="disclosure-chip disclosure-chip--quiet">Muuda</summary>
               <div class="cx-panel__body">
                 {% include "matters/partials/planned_action_form.html" with form=planned.edit_form action=planned submit_label="Salvesta" %}
@@ -29,7 +40,7 @@ name for assistive technology.
                   hx-target="#teema-vaade" hx-swap="outerHTML">
               {% csrf_token %}
               <button class="quietbutton" type="submit"
-                      aria-label="Eemalda planeeritud tegevus" title="Eemalda planeeritud tegevus">×</button>
+                      aria-label="Kustuta planeeritud tegevus" title="Kustuta planeeritud tegevus">×</button>
             </form>
           {% endif %}
         </li>

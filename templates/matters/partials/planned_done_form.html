@@ -1,0 +1,33 @@
+{% load form_labels %}
+{% comment %}
+A planned row's `✓ Tehtud` (docs/adr/0144 §1): what happened, and optional
+files. Saving finishes this one planned action — before its day, on it or
+after it — and nothing else: the current action and every other planned row
+stay as they are, and nothing is promoted.
+
+    form    a `CompletePlannedActionForm`, bound or unbound, with its own ids
+    action  the planned row being finished
+{% endcomment %}
+<form class="addform" data-addform
+      hx-post="{% url 'matters:complete_planned_action' pk=matter.pk action_id=action.pk %}"
+      hx-target="#teema-vaade" hx-swap="outerHTML"
+      hx-encoding="multipart/form-data">
+  {% csrf_token %}
+  <label class="cx-f" for="{{ form.body.id_for_label }}">
+    <span class="cx-f__lab">{% field_label form.body %}</span>
+    {{ form.body }}
+  </label>
+  {% if form.body.errors %}
+    <p class="field__error" id="{{ form.body.auto_id }}_error">{{ form.body.errors|first }}</p>
+  {% endif %}
+  <div class="cx-f">
+    <span class="cx-f__lab">{% field_label form.attachments %}</span>
+    {% include "matters/partials/add_files.html" with field=form.attachments %}
+  </div>
+  {% if form.attachments.errors %}
+    <p class="field__error" id="{{ form.attachments.auto_id }}_error">{{ form.attachments.errors|first }}</p>
+  {% endif %}
+  <div class="addform__actions">
+    <button class="button button--primary" type="submit">Salvesta</button>
+  </div>
+</form>

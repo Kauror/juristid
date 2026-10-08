@@ -456,6 +456,11 @@ urlpatterns = [
         name="change_planned_action",
     ),
     path(
+        "teemad/<uuid:pk>/planeeritud/<uuid:action_id>/tehtud/",
+        views.complete_planned_action_view,
+        name="complete_planned_action",
+    ),
+    path(
         "teemad/<uuid:pk>/planeeritud/<uuid:action_id>/eemalda/",
         views.cancel_planned_action_view,
         name="cancel_planned_action",

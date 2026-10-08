@@ -953,6 +953,20 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         events=(ChangeEventType.NEXT_ACTION_SET,),
     ),
     WriteRoute(
+        name="matters:complete_planned_action",
+        label="Planeeritud tegevuse lõpetamine",
+        request=lambda w: (
+            {"pk": w["matter"].pk, "action_id": w["planned_action"].pk},
+            {"body": "Loata tehtud"},
+        ),
+        probe=lambda w: (
+            w["planned_action"]
+            .__class__.objects.values_list("status", flat=True)
+            .get(pk=w["planned_action"].pk)
+        ),
+        events=(ChangeEventType.NEXT_ACTION_COMPLETED,),
+    ),
+    WriteRoute(
         name="matters:cancel_planned_action",
         label="Planeeritud tegevuse eemaldamine",
         request=lambda w: ({"pk": w["matter"].pk, "action_id": w["planned_action"].pk}, {}),

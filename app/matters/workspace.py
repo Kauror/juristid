@@ -358,6 +358,51 @@ def complete_current_action(
 
 
 @transaction.atomic
+def complete_planned_action(
+    *,
+    matter: Matter,
+    author: Any,
+    action_id: Any,
+    body: str,
+    uploads: Sequence[Any] = (),
+) -> WorkspaceResult:
+    """`✓ Tehtud` on a planned row — what happened, and that this action is done.
+
+    The planned counterpart of `complete_current_action` (docs/adr/0144 §1), and
+    the same shape: the person says what actually happened — «Kohtumist ei
+    toimunud» is an ordinary answer, and there is no separate «jäta ära» — the
+    files that go with it are captured, and the action ends COMPLETED, in one
+    operation that `Teema käik` reads as one «✓» row.
+
+    **Only that action.** It is named by the form and re-read under the
+    Matter's lock before anything is written; the current action, its date and
+    every other planned row stay exactly as they were, and nothing is promoted.
+    The note is restricted with the action it finishes (docs/adr/0138).
+    """
+    from app.workflow.services import finish_planned_action, locked_planned_action
+
+    locked_matter = lock_open_matter_for_business_write(matter.pk)
+    planned = locked_planned_action(locked_matter, action_id)
+    with composer_operation() as operation_id:
+        result = WorkspaceResult(operation_id=operation_id)
+        result.entry = add_entry(
+            matter=locked_matter,
+            body=body,
+            author=author,
+            kind=EntryKind.NOTE,
+            visibility_override=completion_visibility_override(planned),
+        )
+        result.documents = capture_supporting_evidence(
+            matter=locked_matter,
+            record=result.entry,
+            uploads=_uploads(uploads),
+            actor=author,
+        )
+        result.action = finish_planned_action(action=planned, actor=author)
+    return result
+
+
+@transaction.atomic
 def change_current_action(*, matter: Matter, actor: Any, action_id: Any, **step: Any) -> NextAction:
     """`Muuda` beside the open step — the same work, said differently.
 

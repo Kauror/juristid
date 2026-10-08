@@ -109,7 +109,7 @@ def test_planned_rows_render_under_the_control_without_a_heading(client, special
     assert rows == ["Helista ministeeriumile", "Kontrolli uut versiooni"]
     # The planned rows come before `+ Lisa tegevus`, which is last (2026-10-07).
     assert zone.index("Helista ministeeriumile") < zone.index("+ Lisa tegevus")
-    assert zone.count('aria-label="Eemalda planeeritud tegevus"') == 2
+    assert zone.count('aria-label="Kustuta planeeritud tegevus"') == 2
 
 
 def test_planned_behaviour_is_unchanged(client, specialist, with_current):

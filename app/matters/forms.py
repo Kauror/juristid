@@ -3793,6 +3793,49 @@ class PlannedActionForm(forms.Form):
         return value
 
 
+class CompletePlannedActionForm(forms.Form):
+    """`✓ Tehtud` on a planned row — what happened (docs/adr/0144 §1).
+
+    Compact on purpose: one sentence and optional files. `Mida tegid?` is
+    required for the reason `CompleteCurrentActionForm` gives, and «Kohtumist ei
+    toimunud» is as good an answer as «Kohtusin ministeeriumiga». Each row's form
+    carries its own ids (``auto_id`` and the files box), because every planned
+    row draws one on the same page.
+    """
+
+    use_required_attribute = False
+
+    body = marks_required(
+        forms.CharField(
+            label="Mida tegid?",
+            required=False,
+            widget=forms.Textarea(
+                attrs={
+                    "class": "field__input",
+                    "rows": "2",
+                    "placeholder": "Mis juhtus? Nt «Kohtumist ei toimunud».",
+                }
+            ),
+        )
+    )
+    attachments = workspace_attachments("id_planeeritud_tehtud_failid")
+
+    def __init__(self, *args: Any, action_id: Any = None, **kwargs: Any) -> None:
+        if action_id is not None:
+            kwargs.setdefault("auto_id", f"id_planeeritud_{action_id}_tehtud_%s")
+        super().__init__(*args, **kwargs)
+        if action_id is not None:
+            self.fields["attachments"].widget.attrs["id"] = (
+                f"id_planeeritud_{action_id}_tehtud_failid"
+            )
+
+    def clean_body(self) -> str:
+        body = (self.cleaned_data.get("body") or "").strip()
+        if not body:
+            raise forms.ValidationError("Kirjelda, mida tegid.")
+        return body
+
+
 class PlanRevisionForm(forms.Form):
     """The question `×` beside `Soovitatud järgmisena` asks: which sequence was this drawn from.
 
