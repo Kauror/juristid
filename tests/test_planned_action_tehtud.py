@@ -66,7 +66,7 @@ def plan(normal_matter, specialist):
 
 
 def test_a_future_planned_action_is_finished_before_its_day(plan, specialist):
-    matter, current, early, late = plan
+    matter, _current, early, _late = plan
 
     result = complete_planned_action(
         matter=matter, author=specialist, action_id=early.pk, body="Kohtumist ei toimunud."
@@ -115,7 +115,7 @@ def test_nothing_is_promoted_even_without_a_current_action(normal_matter, specia
 
 
 def test_only_one_action_is_completed(plan, specialist):
-    matter, current, early, late = plan
+    matter, _current, early, _late = plan
     before = NextAction.objects.filter(matter=matter, status=ActionStatus.COMPLETED).count()
 
     complete_planned_action(matter=matter, author=specialist, action_id=early.pk, body="Tehtud.")
@@ -198,9 +198,10 @@ def test_the_row_draws_tehtud_muuda_and_kustuta(client, specialist, plan):
     assert row.index("✓ Tehtud") < row.index("Muuda") < row.index("×")
     assert 'title="Kustuta planeeritud tegevus"' in row
     assert 'aria-label="Kustuta planeeritud tegevus"' in row
-    assert reverse(
-        "matters:complete_planned_action", kwargs={"pk": matter.pk, "action_id": early.pk}
-    ) in row
+    assert (
+        reverse("matters:complete_planned_action", kwargs={"pk": matter.pk, "action_id": early.pk})
+        in row
+    )
 
 
 def test_the_panel_finishes_the_named_row(client, specialist, plan):
