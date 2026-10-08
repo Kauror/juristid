@@ -2389,6 +2389,16 @@
       if (!once(picker, "OrgPicker")) {
         return;
       }
+      /* The `<noscript>` fallback is only inert in a page the browser parsed
+         with scripting on. A picker that arrives in an htmx swap was parsed by
+         DOMParser, which parses with scripting off, so the fallback's text box
+         becomes a live control named like the hidden carrier — posted after it,
+         read last by the server, and empty. That is how a new institution added
+         with `+` vanished on save with «Vali …» (docs/adr/0144 §4). Scripting
+         is on here by definition, so the fallback goes. */
+      picker.querySelectorAll("noscript").forEach(function (fallback) {
+        fallback.remove();
+      });
       var box = picker.querySelector("[data-orgfind-input]");
       var add = picker.querySelector("[data-orgfind-add]");
       var results = picker.querySelector(".orgfind__results");

@@ -113,8 +113,10 @@ picked before a refused save are the three states this already draws, and
     **Before the `<noscript>` block, and that is load-bearing.** With scripting
     off both controls post under this name, and Django reads the *last* value
     for a text field — so the box somebody actually typed into has to come
-    second. With scripting on the block below is not markup at all and only this
-    posts.
+    second. With scripting on, `bindOrganisationPickers` removes the block, so
+    only this posts: a picker that arrives in an htmx swap was parsed with
+    scripting off, and its fallback would otherwise be a live, empty control
+    that wins (docs/adr/0144 §4).
 
     `data-sender-name` / `data-addressee-name` are how `bindAddresseeDefault`
     finds the two typed controls without depending on an auto-generated `id` a
