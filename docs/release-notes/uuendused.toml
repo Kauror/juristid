@@ -22,7 +22,7 @@ changes = [
   "«Koja arvamus» võtab vastu mitu saadetud faili (näiteks allkirjastatud ümbriku ja selgitava lisa) ühe arvamusena; eraldi «Töödokumendid» lahter on vormilt eemaldatud — töödokumendi saab lisada saadetud arvamuse realt.",
   "Kõigi vormide salvestusnupp on nüüd «Salvesta».",
   "Faili pealkirja muudad pliiatsiga (✎) faili nime kõrval; algne failinimi jääb näha. Dokumentides avaneb «⋯» väikese menüüna ega muuda rea kõrgust; pealkirja muudad käsuga «Muuda nime».",
-  "Teema lühikokkuvõte kasutab kogu põhiveeru laiust. Uue teema vormi lõpus pole enam lisateksti, kaasamise vorm küsib «Keda kaasad» ja dokumentide üleslaadimise juures pole enam selgitusi.",
+  "Teema lühikokkuvõte kasutab kogu põhiveeru laiust. Uue teema ja «Saabunud» registreerimise vormi lõpus pole enam lisateksti, kaasamise vorm küsib «Keda kaasad» ja dokumentide üleslaadimise juures pole enam selgitusi.",
 ]
 
 [[day]]

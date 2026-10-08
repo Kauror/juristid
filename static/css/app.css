@@ -5587,14 +5587,6 @@ a.barchart__row:hover {
   color: var(--text-muted);
 }
 
-/* At the far end of the actions row, not tucked behind "Loobu": it is a
-   reassurance about the whole form, not a note on the button beside it. */
-.createform__note {
-  margin-left: auto;
-  font-size: var(--typography-size-meta-sm);
-  color: var(--text-muted);
-}
-
 /* "Loo teema" reads inactive until there is a title to save.
  *
  * A flat fill and nothing else: no `disabled`, and no `aria-disabled` either.
