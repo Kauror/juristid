@@ -252,7 +252,7 @@ closure (docs/adr/0076 §2, docs/adr/0084 §8).
       </p>
       {% include "matters/partials/add_files.html" with field=external_position_evidence_form.attachments describe_errors=True %}
       <p class="uxtl__editactions">
-        <button class="button button--quiet button--tiny" type="submit">Lisa fail</button>
+        <button class="button button--quiet button--tiny" type="submit">Salvesta</button>
         <button class="button button--quiet button--tiny" type="button"
                 hx-get="{% url 'matters:add_external_position_evidence' pk=matter.pk position_id=position.pk %}{{ external_position_read_query }}"
                 hx-target="#valine-seisukoht-{{ position.pk }}-sisu"

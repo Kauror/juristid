@@ -49,7 +49,7 @@ def _matter_on_sandras_desk(page, base_url: str, title: str) -> str:
     page.wait_for_load_state("networkidle")
     page.locator("#id_title").fill(title)
     page.get_by_role("radio", name=SANDRA.short_name, exact=True).check()
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     return page.url
 

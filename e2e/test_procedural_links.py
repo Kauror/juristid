@@ -252,7 +252,7 @@ def test_a_reference_can_be_recorded_while_the_teema_is_created(page, base_url):
     block.locator("[name='menetlus-url']").fill(EIS_URL)
     # One box: `Nimetus` is not asked here since docs/adr/0130 §3.
     expect(block.locator("[name='menetlus-label']")).to_have_count(0)
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
 
     # The lawyer's own name for it is what the card reads by. The *source* was a
@@ -289,7 +289,7 @@ def test_a_refused_create_keeps_the_typed_address(page, base_url):
     page.fill("#id_title", unique_title("Menetluse link keeldumisel"))
     block = create_block(page)
     block.locator("[name='menetlus-url']").fill("javascript:alert(1)")
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     # The box to correct and the sentence explaining it are both simply on the

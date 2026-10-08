@@ -84,7 +84,7 @@ ORDER = [
     ('name="policy_areas"', "Valdkond"),
     ('name="notes"', "Märkmed"),
     ('name="files"', "Failid"),
-    ("createform__actions", "Loo teema"),
+    ("createform__actions", "Salvesta"),
 ]
 
 
@@ -106,7 +106,7 @@ def test_the_sections_are_in_the_owners_order(signed_in):
         ("Hetkeseis", "Valdkond"),
         ("Valdkond", "Märkmed"),
         ("Märkmed", "Failid"),
-        ("Failid", "Loo teema"),
+        ("Failid", "Salvesta"),
     ],
 )
 def test_each_named_pair_is_in_order(signed_in, earlier, later):

@@ -90,7 +90,7 @@ def test_feedback_saves_with_no_organisation_at_all(page, base_url):
     page.goto(url)
     _open_feedback(page)
     page.fill("#id_tagasiside_summary", "Helistas liige: üleminekuaeg on liiga lühike.")
-    page.get_by_role("button", name="Salvesta tagasiside").click()
+    page.locator("#arvamus-tagasiside").get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_selector("text=Helistas liige", state="attached")
 
     assert "Meile saadetud tagasiside" in page.locator("#ajalugu-loend").inner_text()
@@ -105,7 +105,7 @@ def test_feedback_saves_with_no_organisation_and_the_member_mark(page, base_url)
     _open_feedback(page)
     page.locator("#id_tagasiside_source_is_member").check()
     page.fill("#id_tagasiside_summary", "Liikme vastuseis, allikas jääb nimetamata.")
-    page.get_by_role("button", name="Salvesta tagasiside").click()
+    page.locator("#arvamus-tagasiside").get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_selector("text=Liikme vastuseis", state="attached")
 
     row = page.locator("#ajalugu-loend").inner_text()
@@ -126,7 +126,7 @@ def test_a_discovered_opinion_still_needs_an_author(page, base_url):
     page.get_by_text("+ Arvamus / tagasiside", exact=True).click()
     page.get_by_text("Teiste arvamus", exact=True).click()
     page.fill("#id_valine_seisukoht_summary", "Keegi kuskil arvas midagi.")
-    page.get_by_role("button", name="Salvesta arvamus").click()
+    page.locator("#arvamus-teiste").get_by_role("button", name="Salvesta", exact=True).click()
 
     page.wait_for_selector("text=Vali organisatsioon, kelle seisukoht see on.")
 
@@ -145,7 +145,7 @@ def test_the_member_mark_can_be_taken_off_again(page, base_url):
     _open_feedback(page)
     page.locator("#id_tagasiside_source_is_member").check()
     page.fill("#id_tagasiside_summary", "Märgitud liikmeks ekslikult.")
-    page.get_by_role("button", name="Salvesta tagasiside").click()
+    page.locator("#arvamus-tagasiside").get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_selector("text=Märgitud liikmeks ekslikult", state="attached")
     assert "· Liige" in page.locator("#ajalugu-loend").inner_text()
 
@@ -501,7 +501,7 @@ def test_a_new_organisation_typed_into_the_picker_becomes_a_real_one(page, base_
     picker.locator("[data-orgfind-input]").fill(name)
     picker.locator("[data-orgfind-add]").click()
     page.fill("#id_tagasiside_summary", "Uue liidu seisukoht.")
-    page.get_by_role("button", name="Salvesta tagasiside").click()
+    page.locator("#arvamus-tagasiside").get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_selector("text=Uue liidu seisukoht", state="attached")
 
     page.goto(url)
@@ -627,7 +627,7 @@ def test_a_correction_opened_and_saved_keeps_the_member_mark(page, base_url):
     _open_feedback(page)
     page.locator("#id_tagasiside_source_is_member").check()
     page.fill("#id_tagasiside_summary", "Liikme tagasiside, mis vajab pisiparandust.")
-    page.get_by_role("button", name="Salvesta tagasiside").click()
+    page.locator("#arvamus-tagasiside").get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_selector("text=Liikme tagasiside, mis vajab", state="attached")
 
     row = page.locator("#ajalugu-loend .uxtl__item", has_text="Liikme tagasiside, mis vajab").first

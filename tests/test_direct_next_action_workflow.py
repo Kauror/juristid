@@ -171,7 +171,7 @@ def test_a_file_with_no_step_offers_the_direct_control(signed_in, matter):
     # `Muuda`'s own form, posting to `Muuda`'s own endpoint.
     assert 'id="lisa-jargmine"' in zone
     assert reverse("matters:set_action", kwargs={"pk": matter.pk}) in zone
-    assert "Salvesta järgmine samm" in zone
+    assert ">Salvesta</button>" in zone
     # Nothing to complete, so nothing asks what was done.
     assert "Mida tegid?" not in zone
     assert ">Muuda<" not in zone

@@ -355,7 +355,9 @@ def _check_final_evidence(report: IntegrityReport) -> None:
     # Imported here rather than at module scope: `submissions` depends on
     # `documents`, and the reach back the other way belongs to this one
     # operator question rather than to the module.
-    from app.submissions.models import Submission
+    from itertools import chain
+
+    from app.submissions.models import Submission, SubmissionSentFile
 
     rows = (
         Submission.objects.exclude(final_version=None)
@@ -370,6 +372,17 @@ def _check_final_evidence(report: IntegrityReport) -> None:
             "final_version__document__visibility_override",
         )
     )
+    # A send's further sent files were accepted under the same two rules
+    # (docs/adr/0144 §5), so they are read the same way and reported the same.
+    further = SubmissionSentFile.objects.order_by("submission_id", "position").values_list(
+        "submission_id",
+        "submission__matter_id",
+        "submission__visibility_override",
+        "submission__matter__visibility",
+        "version_id",
+        "version__document__matter_id",
+        "version__document__visibility_override",
+    )
     for (
         submission_id,
         matter_id,
@@ -378,7 +391,7 @@ def _check_final_evidence(report: IntegrityReport) -> None:
         version_id,
         evidence_matter_id,
         evidence_override,
-    ) in rows.iterator(chunk_size=500):
+    ) in chain(rows.iterator(chunk_size=500), further.iterator(chunk_size=500)):
         if evidence_matter_id != matter_id:
             report.findings.append(
                 Finding(

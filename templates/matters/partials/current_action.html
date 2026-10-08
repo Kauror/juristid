@@ -53,7 +53,7 @@ step stays open is `+ Lisa` in `LISA TEEMALE`.
 
 **No visible `Tööplaan`** (docs/adr/0141). The plan below this zone, its
 editor and the typed launch beside the step are gone. What stays is one
-suggestion while nothing is current — `Soovitatud järgmisena`, from the Matter's
+suggestion while nothing is current — `Järgmisena?`, from the Matter's
 background sequence — which can be started (`Alusta`) or dismissed (`×`);
 `+ Lisa tegevus` is always the manual alternative.
 {% endcomment %}
@@ -216,7 +216,7 @@ background sequence — which can be started (`Alusta`) or dismissed (`×`);
           {% if open_panel == "lisa-planeeritud" and workspace_error %}
             <p class="formerror" role="alert">{{ workspace_error }}</p>
           {% endif %}
-          {% include "matters/partials/planned_action_form.html" with form=planned_action_form submit_label="Lisa planeeritud tegevus" %}
+          {% include "matters/partials/planned_action_form.html" with form=planned_action_form submit_label="Salvesta" %}
         </div>
       </details>
     {% endif %}
@@ -257,7 +257,11 @@ background sequence — which can be started (`Alusta`) or dismissed (`×`);
         <span class="curact__text curact__text--source">{{ source_instruction }}</span>
         {% if source_snapshot %}<span class="curact__flag">{{ source_snapshot }}</span>{% endif %}
       </p>
-    {% else %}
+    {% elif not scheduled_work %}
+      {% comment %}
+        Only when nothing is scheduled either: a round waiting for feedback or
+        a planned action below *is* the next step (docs/adr/0144 §3).
+      {% endcomment %}
       <p class="curact__empty">Järgmine samm on määramata</p>
     {% endif %}
     {% comment %}
@@ -270,7 +274,7 @@ background sequence — which can be started (`Alusta`) or dismissed (`×`);
 
     {% if can_write and recommendation %}
       {% comment %}
-        **`Soovitatud järgmisena` — one suggestion, offered, not started**
+        **`Järgmisena?` — one suggestion, offered, not started**
         (docs/adr/0141). The first step still ahead in the Matter's background
         sequence; the sequence itself is never drawn. `Alusta` makes it the
         current step, with its own words and an optional day. `×` dismisses it
@@ -280,7 +284,7 @@ background sequence — which can be started (`Alusta`) or dismissed (`×`);
         and not late. `+ Lisa tegevus` below stays the manual way.
       {% endcomment %}
       <div class="curact__task curact__suggest" id="soovitus">
-        <span class="curact__flag">Soovitatud järgmisena</span>
+        <span class="curact__flag">Järgmisena?</span>
         {% comment %}
           Its own class, not `.curact__text`: that names the current step
           everywhere, and a suggestion is not one.

@@ -670,8 +670,10 @@
            nothing else. So the poll and the remove path carry a standing
            warning over; only a new upload's own answer replaces it. */
         var keepWarning = !!(options && options.keepWarning);
-        /* The display titles typed on staged rows, by name, so a poll that
-           re-renders the list never takes back what somebody wrote. */
+        /* The display titles confirmed on staged rows, by name, so a poll
+           that re-renders the list never takes back what somebody wrote — and
+           a title still being edited, so the box comes back open with what
+           has been typed so far (static/js/ux.js `openTitleEdit`). */
         var typedTitles = {};
         Array.prototype.forEach.call(
           document.querySelectorAll("#intake-failid [data-staged-title]"),
@@ -679,6 +681,18 @@
             typedTitles[box.name] = box.value;
           }
         );
+        var editing = null;
+        var openEditor = document.querySelector("#intake-failid [data-title-edit-input]");
+        var editedTitle = openEditor && openEditor.closest("[data-title-edit]");
+        var editedName = editedTitle && editedTitle.querySelector("[data-staged-title]");
+        if (editedName && document.activeElement === openEditor) {
+          editing = {
+            name: editedName.name,
+            value: openEditor.value,
+            start: openEditor.selectionStart,
+            end: openEditor.selectionEnd,
+          };
+        }
         ["intake-failid", "intake-panel"].forEach(function (id) {
           var incoming = parsed.getElementById(id);
           var existing = document.getElementById(id);
@@ -703,6 +717,20 @@
           function (box) {
             if (Object.prototype.hasOwnProperty.call(typedTitles, box.name)) {
               box.value = typedTitles[box.name];
+              /* The row's text follows its hidden value (ux.js). */
+              box.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+            if (editing && box.name === editing.name) {
+              var opener = box.closest("[data-title-edit]");
+              opener = opener && opener.querySelector("[data-title-edit-open]");
+              if (opener) {
+                opener.click();
+                var reopened = document.activeElement;
+                if (reopened && reopened.hasAttribute("data-title-edit-input")) {
+                  reopened.value = editing.value;
+                  reopened.setSelectionRange(editing.start, editing.end);
+                }
+              }
             }
           }
         );
@@ -2361,6 +2389,16 @@
       if (!once(picker, "OrgPicker")) {
         return;
       }
+      /* The `<noscript>` fallback is only inert in a page the browser parsed
+         with scripting on. A picker that arrives in an htmx swap was parsed by
+         DOMParser, which parses with scripting off, so the fallback's text box
+         becomes a live control named like the hidden carrier — posted after it,
+         read last by the server, and empty. That is how a new institution added
+         with `+` vanished on save with «Vali …» (docs/adr/0144 §4). Scripting
+         is on here by definition, so the fallback goes. */
+      picker.querySelectorAll("noscript").forEach(function (fallback) {
+        fallback.remove();
+      });
       var box = picker.querySelector("[data-orgfind-input]");
       var add = picker.querySelector("[data-orgfind-add]");
       var results = picker.querySelector(".orgfind__results");

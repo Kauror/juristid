@@ -6303,9 +6303,13 @@ fieldset,
 /* No heading, no card. The largest body text on the page, directly under the
    facts, because the formal title is usually a poor description of the
    business issue. */
+/* The left column's width, not a reading measure: the header spans the page
+   above the grid, so the summary stops where the 300px rail begins (with the
+   header's own right padding as the gap) and runs full width once the rail
+   stacks below 1100px (docs/adr/0144 §8). */
 .summary {
   padding: var(--spacing-15) 0 var(--spacing-1);
-  max-width: 96ch;
+  max-width: calc(100% - 300px);
 }
 
 .summary__edit {
@@ -6365,7 +6369,6 @@ fieldset,
   display: flex;
   flex-direction: column;
   gap: var(--spacing-2);
-  max-width: 96ch;
   padding-top: var(--spacing-1);
 }
 
@@ -6982,15 +6985,22 @@ button.accordion__action:focus-visible {
   overflow-wrap: anywhere;
 }
 
-/* The per-row `...` disclosure.
+/* The per-row `⋯` menu on Dokumendid — an ordinary document's and an
+   opinion's alike.
 
-   In flow, not a floating popup, and that is not a style preference: every
-   `.tablewrap` in this application sets `overflow-x: auto`, which makes the
-   other axis compute to `auto` as well — so an absolutely positioned panel
-   inside one is clipped at the table's edge and pushes a scrollbar in front of
-   whatever it clipped. `.versions` two columns to the left solved this years
-   ago by growing its row, and one table with two disclosure mechanics is one
-   too many. */
+   **A floating panel, `position: fixed`** (2026-10-08). It used to be in flow,
+   for a real reason: every `.tablewrap` in this application sets
+   `overflow-x: auto`, which makes the other axis compute to `auto` as well, so
+   an *absolutely* positioned panel inside one is clipped at the table's edge.
+   In flow, though, opening `⋯` grew the row by the height of a rename form —
+   or of an opinion's whole send record — under the reader's cursor, and moved
+   every row below it. A fixed box escapes the scroll container the way
+   `.colhead__menu` and `.uxassign__menu` already do: the row keeps its height,
+   and `static/js/ux.js` (`data-uxfloat="fit"`) places the panel under its
+   trigger, end-aligned so a trigger at the table's right edge cannot push it
+   off-screen, above the trigger when there is more room there, and never
+   taller than the window — it scrolls inside itself instead. With no script it
+   opens where it would have sat in flow: a few pixels off, still usable. */
 .opinionmenu {
   display: inline-block;
 }
@@ -7013,17 +7023,78 @@ button.accordion__action:focus-visible {
 }
 
 .opinionmenu__body {
+  position: fixed;
+  z-index: 30;
   display: flex;
   flex-direction: column;
   gap: var(--spacing-2);
-  width: 260px;
-  margin-top: var(--spacing-2);
-  padding: var(--spacing-3);
+  width: 300px;
+  max-width: calc(100vw - 16px);
+  max-height: min(32rem, calc(100vh - 16px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--spacing-2) var(--spacing-3);
   text-align: left;
   white-space: normal;
   background: var(--surface-elevated);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
+  box-shadow: var(--shadow-menu);
+}
+
+/* An ordinary document's menu holds two commands, so it is narrower than an
+   opinion's, which also states the send. Wide enough for the title box and
+   `Salvesta` on one line when `Muuda nime` is open. */
+.docmenu > .opinionmenu__body {
+  width: 260px;
+}
+
+/* One command in the panel — `Muuda nime`, `Dokumendi leht`, `Märksõnad ja
+   seosed`, `Dokumendi andmed`: a full-width row at least 32 px tall, so it is a
+   target rather than a word (WCAG 2.5.8), the way `.colhead__option` reads in
+   the register's column menus. The negative inline margin lets the hover fill
+   reach past the text to the panel's padding, so the words stay aligned with
+   the labels and facts between the commands. */
+.opinionmenu__item {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  margin: 0 calc(var(--spacing-2) * -1);
+  padding: 0 var(--spacing-2);
+  border-radius: var(--radius-sm);
+  font: var(--typography-weight-regular) var(--typography-size-base) / 1.3
+    var(--typography-font-sans);
+  color: var(--text-body);
+  text-decoration: none;
+  cursor: pointer;
+  list-style: none;
+}
+
+.opinionmenu__item::-webkit-details-marker {
+  display: none;
+}
+
+.opinionmenu__item:hover {
+  background: var(--surface-overlay-hover);
+}
+
+/* `Muuda nime` while its editor is open: the command it came from stays named
+   above the box, marked as the one in use. */
+.docmenu__rename[open] > .opinionmenu__item {
+  color: var(--accent-link);
+  font-weight: var(--typography-weight-semibold);
+}
+
+/* The editor itself — the title box and `Salvesta` on one line under its
+   label, which is as compact as a labelled, required field gets. */
+.docmenu__rename .docrename__form {
+  flex-direction: row;
+  align-items: flex-end;
+  margin: var(--spacing-1) 0 var(--spacing-2);
+}
+
+.docmenu__rename .field {
+  flex: 1 1 auto;
 }
 
 .opinionmenu__label {
@@ -7242,6 +7313,10 @@ button.accordion__action:focus-visible {
 @media (max-width: 1100px) {
   .teemagrid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .summary {
+    max-width: none;
   }
 
   .teema .rail {
@@ -12758,11 +12833,9 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 /* -- The upload queue ------------------------------------------------------
- * One row per chosen or dropped file, before the save: its display title
- * (the filename by default, editable), the filename and size beneath, and a
- * `×` to take it back off. Shared by every dropzone and by Uus teema's staged
- * rows (static/js/ux.js `renderUploadQueue`, intake_files.html; owner's round,
- * 2026-10-07). */
+ * One line per chosen or dropped file, before the save: its display title
+ * with a ✎, its size, and a `×` to take it back off. Shared by every dropzone
+ * (static/js/ux.js `renderUploadQueue`; owner's round, 2026-10-07). */
 .uploadqueue {
   display: grid;
   gap: var(--spacing-15);
@@ -12776,49 +12849,72 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 .uploadqueue__row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  column-gap: var(--spacing-2);
-}
-
-.uploadqueue__field {
   display: flex;
   align-items: center;
   gap: var(--spacing-2);
-  min-width: 0;
 }
 
-.uploadqueue__label {
+.uploadqueue__size {
   flex: none;
   font-size: var(--typography-size-meta);
   color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
-.uploadqueue__title {
+.uploadqueue__remove {
+  flex: none;
+}
+
+/* -- A display title, edited only when asked --------------------------------
+ * The title as text and a ✎ beside it; the ✎ swaps the two for a box, for that
+ * file only. Once the title is not the filename, the filename follows it,
+ * muted. Used by the queue rows above and Uus teema's staged rows
+ * (static/js/ux.js `openTitleEdit`, intake_files.html; owner's round,
+ * 2026-10-08). */
+.titleedit {
+  display: flex;
   flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--spacing-1);
   min-width: 0;
 }
 
-.uploadqueue__file {
-  grid-column: 1;
-  font-size: var(--typography-size-meta);
+.titleedit__text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.titleedit__open {
+  flex: none;
+  padding: 0 var(--spacing-1);
+  border: 0;
+  background: none;
+  font: inherit;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.titleedit__open:hover {
+  color: var(--accent-link);
+}
+
+.titleedit__open:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.titleedit__original {
+  min-width: 0;
+  font-size: var(--typography-size-meta-sm);
   color: var(--text-muted);
   overflow-wrap: anywhere;
 }
 
-.uploadqueue__remove {
-  grid-column: 2;
-  grid-row: 1;
-}
-
-/* A staged row on Uus teema carries the same title box above its name. */
-.dropzone__file > .uploadqueue__field {
-  flex: 1 1 100%;
-}
-
-.dropzone__list--staged > .dropzone__file {
-  flex-wrap: wrap;
+.titleedit__input {
+  flex: 1 1 12rem;
+  min-width: 0;
 }
 
 
@@ -12836,10 +12932,4 @@ section:has(.pw-more[open]) tbody.uxextra {
   font-size: var(--typography-size-meta);
   color: var(--text-secondary);
   cursor: pointer;
-}
-
-/* A Dokumendid row's `⋯` (`Muuda`): the display title form, then the
- * document's own page (owner's round, 2026-10-07). */
-.docmenu .docrename__form {
-  margin-bottom: var(--spacing-2);
 }

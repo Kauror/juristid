@@ -3793,6 +3793,49 @@ class PlannedActionForm(forms.Form):
         return value
 
 
+class CompletePlannedActionForm(forms.Form):
+    """`✓ Tehtud` on a planned row — what happened (docs/adr/0144 §1).
+
+    Compact on purpose: one sentence and optional files. `Mida tegid?` is
+    required for the reason `CompleteCurrentActionForm` gives, and «Kohtumist ei
+    toimunud» is as good an answer as «Kohtusin ministeeriumiga». Each row's form
+    carries its own ids (``auto_id`` and the files box), because every planned
+    row draws one on the same page.
+    """
+
+    use_required_attribute = False
+
+    body = marks_required(
+        forms.CharField(
+            label="Mida tegid?",
+            required=False,
+            widget=forms.Textarea(
+                attrs={
+                    "class": "field__input",
+                    "rows": "2",
+                    "placeholder": "Mis juhtus? Nt «Kohtumist ei toimunud».",
+                }
+            ),
+        )
+    )
+    attachments = workspace_attachments("id_planeeritud_tehtud_failid")
+
+    def __init__(self, *args: Any, action_id: Any = None, **kwargs: Any) -> None:
+        if action_id is not None:
+            kwargs.setdefault("auto_id", f"id_planeeritud_{action_id}_tehtud_%s")
+        super().__init__(*args, **kwargs)
+        if action_id is not None:
+            self.fields["attachments"].widget.attrs["id"] = (
+                f"id_planeeritud_{action_id}_tehtud_failid"
+            )
+
+    def clean_body(self) -> str:
+        body = (self.cleaned_data.get("body") or "").strip()
+        if not body:
+            raise forms.ValidationError("Kirjelda, mida tegid.")
+        return body
+
+
 class PlanRevisionForm(forms.Form):
     """The question `×` beside `Soovitatud järgmisena` asks: which sequence was this drawn from.
 
@@ -3996,7 +4039,7 @@ class CompactEngagementForm(forms.Form):
     def clean_audience(self) -> str:
         audience = (self.cleaned_data.get("audience") or "").strip()
         if not audience:
-            raise forms.ValidationError("Kirjuta, keda kaasati.")
+            raise forms.ValidationError("Kirjuta, keda kaasad.")
         return audience
 
     #: Files that belong to the round being started — the invitation, the
@@ -5837,48 +5880,29 @@ class KodaOpinionForm(forms.Form):
 
     use_required_attribute = False
 
-    #: The exact bytes that went out. One file, because one `Submission` has one
-    #: `final_version` — a panel that took several would have to ask which of
-    #: them was the letter, and that is a question with no good place on it.
+    #: `Saadetud failid` — every file that went out with this opinion.
     #:
-    #: A plain `FileField` rather than `workspace_attachments`: the other panels
-    #: capture *supporting evidence for something*, where any number of files is
-    #: ordinary. This is the thing itself.
+    #: One or more (docs/adr/0144 §5): a signed container, a container and an
+    #: explanatory annex, several files sent together. All of them belong to the
+    #: one `Submission` — the first is its `final_version`, the rest its further
+    #: sent files — and never to one opinion each.
     #:
     #: **A signed container is an ordinary answer**, and `accept` offers it:
     #: what went out of the Chamber is often the `.asice` itself, and that
     #: container — not a PDF taken out of it — is the record of what was sent
     #: (docs/adr/0125).
+    #:
+    #: There is no `Töödokumendid` box any more: working documents are added
+    #: where the lawyer keeps them, and on a sent opinion's row afterwards
+    #: (docs/adr/0129 §7, docs/adr/0144 §5).
     upload = marks_required(
-        forms.FileField(
-            label="Saadetud fail",
+        MultipleFileField(
+            label="Saadetud failid",
             required=False,
-            widget=forms.ClearableFileInput(
-                attrs={
-                    "class": "visually-hidden",
-                    "id": "id_koja_arvamus_fail",
-                    "accept": UPLOAD_ACCEPT,
-                }
+            widget=MultipleFileInput(
+                attrs={"class": "visually-hidden", "id": "id_koja_arvamus_fail"}
             ),
         )
-    )
-    #: `Töödokumendid` — the editable file the opinion was drafted in, which the
-    #: lawyer reuses, edits and searches later (docs/adr/0129 §2).
-    #:
-    #: **Not the letter.** What went out is `Saadetud fail` above, and only that
-    #: is the opinion's evidence; these are filed as `Töödokument` — the box says
-    #: so, nothing is guessed from the bytes — and tied to the same `Submission`
-    #: by a `DocumentLink`. Several are ordinary (the DOCX and a table it cites),
-    #: so this is the multi-file control every other panel uses.
-    #:
-    #: Optional, and blank is exactly what the panel saved before: an opinion
-    #: whose working file somebody keeps elsewhere is still a whole record.
-    working_files = MultipleFileField(
-        label="Töödokumendid",
-        required=False,
-        widget=MultipleFileInput(
-            attrs={"class": "visually-hidden", "id": "id_koja_arvamus_toodokumendid"}
-        ),
     )
     #: `Kokkuvõte` — what this opinion says, in the lawyer's own words.
     #:

@@ -111,7 +111,7 @@ def test_a_refusal_below_the_fold_brings_the_person_to_it(page, base_url):
     # premise, and a window taller than the form would make the test vacuous.
     assert page.locator("#id_policy_area_other").bounding_box()["y"] > page.viewport_size["height"]
 
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     expect(page.locator("#valdkond-muu-tekst .field__error")).to_be_visible()
@@ -156,7 +156,7 @@ def test_the_cursor_goes_to_the_control_that_is_wrong_not_the_first_one(page, ba
 
     page.fill("#id_title", "Pealkiri on korras")
     page.fill("#id_response_deadline", BAD_DATE)
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     assert focused_id(page) != "id_title"
@@ -174,7 +174,7 @@ def test_a_save_that_worked_does_not_take_the_cursor(page, base_url):
     create_form(page, base_url)
 
     page.fill("#id_title", "Teema, mis salvestub esimese korraga")
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
 
     # `<body>` is where a fresh document leaves the cursor.
@@ -236,7 +236,7 @@ def test_the_refused_control_clears_the_bar_at_every_width(page, base_url, width
 
     page.fill("#id_title", f"Vigane vorm laiusel {width}")
     page.fill("#id_response_deadline", BAD_DATE)
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     assert focused_id(page) == "id_response_deadline", focused_id(page)

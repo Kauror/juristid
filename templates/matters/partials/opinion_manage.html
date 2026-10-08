@@ -16,11 +16,19 @@ What is deliberately not here: the checksum, the version, the byte size and the
 archive importer's match reasoning. All four are stored, all four remain on the
 document's own evidence page and in the integrity tooling, and none of them is
 what somebody managing an opinion is asking about (§12, §28, §29).
+
+**It floats over the table** (2026-10-08), the same menu an ordinary document's
+`⋯` opens (templates/matters/matter_documents.html): `Muuda nime` first, then
+the send's details and the acts on it, in a `position: fixed` panel the shared
+popover contract places (`data-uxpopover` / `data-uxfloat`, static/js/ux.js).
+Opening it no longer makes the row as tall as the send's details. The panel is
+never taller than the window and scrolls inside itself, and every click inside
+it — the title box, `Võta tagasi`'s own confirmation — keeps it open.
 {% endcomment %}
-<details class="opinionmenu">
+<details class="opinionmenu" data-uxpopover>
   {# `Muuda`, like every `⋯` on Dokumendid (owner's round, 2026-10-07). #}
   <summary class="opinionmenu__trigger" title="Muuda" aria-label="Muuda {{ document.title }}">⋯</summary>
-  <div class="opinionmenu__body">
+  <div class="opinionmenu__body" data-uxfloat="fit">
     {% include "matters/partials/document_rename_form.html" with document=document %}
     {% if document.opinion_send %}
       <p class="opinionmenu__label">Saatmise andmed</p>
@@ -148,7 +156,7 @@ what somebody managing an opinion is asking about (§12, §28, §29).
           is not, which is why the destructive one keeps the bottom of a menu
           nobody opens by accident (§13).
         {% endcomment %}
-        <a class="quietlink" href="{% url 'submissions:metadata' pk=document.opinion_send.pk %}">
+        <a class="opinionmenu__item" href="{% url 'submissions:metadata' pk=document.opinion_send.pk %}">
           Märksõnad ja seosed
         </a>
         {% comment %}
@@ -192,7 +200,7 @@ what somebody managing an opinion is asking about (§12, §28, §29).
         </p>
       {% endif %}
     {% endif %}
-    <a class="quietlink" href="{% url 'documents:document_detail' pk=document.pk %}">
+    <a class="opinionmenu__item" href="{% url 'documents:document_detail' pk=document.pk %}">
       Dokumendi andmed
     </a>
   </div>

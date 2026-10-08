@@ -252,7 +252,7 @@ def create_matter_with_deadline(page, base_url: str, title: str, *, deadline: st
     page.wait_for_load_state("networkidle")
     page.fill("#id_title", title)
     page.fill("#id_response_deadline", deadline)
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     return page.url
 
@@ -310,7 +310,7 @@ def register_a_send(page, matter_url: str, *, filename: str, sent_on: str) -> No
     with page.expect_response(
         lambda response: "/lisa/koja-arvamus/" in response.url and response.request.method == "POST"
     ) as caught:
-        form.get_by_role("button", name="Registreeri arvamus").click()
+        form.get_by_role("button", name="Salvesta", exact=True).click()
     assert caught.value.status == 200, f"the opinion was refused: {caught.value.status}"
     page.wait_for_load_state("networkidle")
 

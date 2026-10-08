@@ -146,16 +146,29 @@ def without_next_step(
 
     Neither an open `NextAction` the reader may see — dated or not, since
     docs/adr/0106 an undated step is a step — nor an upcoming `Oluline tähtaeg`
-    they may see. Both probes are `visible_to`: a record restricted below its
-    Matter must not decide, through a count, whether a visible Matter is listed
+    they may see, nor work already scheduled in the Matter's own lifecycle
+    (docs/adr/0144 §3): a `PLANNED` action, or a `Kaasamine` still waiting for
+    feedback. «Ootame tagasisidet 15.10» is the next step of a file whose round
+    is open, and reporting that file as having none was the page contradicting
+    itself. Every probe is `visible_to`: a record restricted below its Matter
+    must not decide, through a count, whether a visible Matter is listed
     (AUTH-003).
+
+    A current `Arvamuse tähtaeg` is not a step: it is what the next step is
+    *for*, and it stays in the header.
     """
+    from app.matters.models import MatterEngagement
+
     day = today or timezone.localdate()
     open_action = NextAction.objects.visible_to(user).filter(
-        matter=OuterRef("pk"), status=ActionStatus.OPEN
+        matter=OuterRef("pk"), status__in=(ActionStatus.OPEN, ActionStatus.PLANNED)
     )
     milestone = upcoming_milestones(user, day).filter(matter=OuterRef("pk"))
+    waiting = MatterEngagement.objects.visible_to(user).filter(
+        matter=OuterRef("pk"), lifecycle_tracked=True, feedback_closed_at__isnull=True
+    )
     return queryset.annotate(
         next_step_action=Exists(open_action),
         next_step_milestone=Exists(milestone),
-    ).filter(next_step_action=False, next_step_milestone=False)
+        next_step_waiting=Exists(waiting),
+    ).filter(next_step_action=False, next_step_milestone=False, next_step_waiting=False)

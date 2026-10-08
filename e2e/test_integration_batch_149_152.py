@@ -106,7 +106,7 @@ def create_with_a_staged_file(page, base_url: str, title: str, pdf: Path) -> str
 
     page.fill("#id_title", title)
     give_first_step(page)
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     start_first_step(page)
     return page.url
@@ -171,7 +171,7 @@ def test_the_inline_add_forms_still_work_on_a_teema_filed_with_a_staged_file(
     form.get_by_label(re.compile(r"^Töövõit(?!\w)")).fill("Erisus jäi rakendusmäärusesse")
     form.get_by_label("Kvartal", exact=True).select_option("2")
     form.get_by_label("Aasta", exact=True).fill("2031")
-    form.get_by_role("button", name="Salvesta töövõit").click()
+    form.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     # The record landed, and the standalone route redirected back to the Matter.

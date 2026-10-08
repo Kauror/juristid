@@ -90,7 +90,7 @@ def _matter(
         page.get_by_role("radio", name=stage, exact=True).check()
     if deadline_in is not None:
         page.fill("#id_response_deadline", _estonian(date.today() + timedelta(days=deadline_in)))
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     return page.url
 
@@ -286,7 +286,7 @@ def test_the_member_mark_is_inside_the_form_that_posts_and_still_saves(page, bas
     panel.locator(".orgpick__mark input[type=checkbox]").check()
     panel.locator("[name=summary]").fill("Liikmesettevõtte vastus.")
     panel.locator("[name=stated_on]").fill(_estonian(date.today() - timedelta(days=1)))
-    panel.get_by_role("button", name="Salvesta tagasiside", exact=True).click()
+    panel.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     # The save went through with the box ticked, and the record is on the file.
@@ -395,7 +395,7 @@ def test_the_chronology_row_offers_lisa_fail_and_never_lisa_toend(page, base_url
     action.click()
     opened = page.locator("form[aria-label='Faili lisamine märkele']")
     opened.wait_for()
-    expect(opened.get_by_role("button", name="Lisa fail", exact=True)).to_have_count(1)
+    expect(opened.get_by_role("button", name="Salvesta", exact=True)).to_have_count(1)
     expect(opened.get_by_role("button", name="Lisa tõend", exact=True)).to_have_count(0)
 
 

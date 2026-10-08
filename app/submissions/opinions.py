@@ -51,7 +51,12 @@ from django.db.models import Q
 from app.documents.enums import DocumentRole
 from app.documents.models import Document
 from app.submissions.enums import RecipientRole, SubmissionStatus
-from app.submissions.models import ADDRESSEE_ROWS, Submission, addressee_prefetch
+from app.submissions.models import (
+    ADDRESSEE_ROWS,
+    Submission,
+    SubmissionSentFile,
+    addressee_prefetch,
+)
 
 #: The query-string value the Dokumendid role filter uses for the union above.
 #:
@@ -87,14 +92,40 @@ def opinion_documents_queryset(matter: Any, *, viewer: Any) -> Any:
     evidence belonging to another Matter; saying so here as well makes a
     cross-Matter document structurally unreachable rather than merely unwritten.
     """
-    sent_evidence_documents = sent_opinion_submissions(matter, viewer=viewer).values_list(
-        "final_version__document_id", flat=True
+    sends = sent_opinion_submissions(matter, viewer=viewer)
+    sent_evidence_documents = sends.values_list("final_version__document_id", flat=True)
+    further_sent_documents = SubmissionSentFile.objects.filter(submission__in=sends).values_list(
+        "version__document_id", flat=True
     )
     return (
         Document.objects.filter(matter=matter)
-        .filter(Q(role=DocumentRole.KODA_SUBMISSION_FINAL) | Q(pk__in=sent_evidence_documents))
+        .filter(
+            Q(role=DocumentRole.KODA_SUBMISSION_FINAL)
+            | Q(pk__in=sent_evidence_documents)
+            | Q(pk__in=further_sent_documents)
+        )
         .visible_to(viewer)
     )
+
+
+def further_sent_documents_by_submission(
+    submission_ids: Any, *, viewer: Any
+) -> dict[Any, list[Document]]:
+    """Each send's further sent files, in the order they went (docs/adr/0144 §5).
+
+    Read through `Document.visible_to`, so a reader is never shown a file of a
+    send they may not see the bytes of.
+    """
+    visible = Document.objects.visible_to(viewer)
+    found: dict[Any, list[Document]] = {}
+    for row in (
+        SubmissionSentFile.objects.filter(submission_id__in=list(submission_ids))
+        .filter(version__document__in=visible)
+        .select_related("version__document__current_version")
+        .order_by("submission_id", "position")
+    ):
+        found.setdefault(row.submission_id, []).append(row.version.document)
+    return found
 
 
 def opinion_documents(matter: Any, *, viewer: Any) -> list[Document]:
@@ -121,12 +152,16 @@ class RailOpinion:
     ``working`` is that send's working documents (docs/adr/0129 §9), read
     through `DocumentLink.visible_to`, so a reader is never shown a working file
     of a letter or a document they may not see.
+
+    ``further`` is the rest of what went out with the letter, when it went as
+    several files (docs/adr/0144 §5): one line per opinion, every sent file on it.
     """
 
     document: Document
     sent_on: date | None = None
     detail: str = ""
     working: tuple[Document, ...] = ()
+    further: tuple[Document, ...] = ()
 
     @property
     def sent_label(self) -> str:
@@ -181,6 +216,12 @@ def opinion_rail(matter: Any, *, viewer: Any) -> list[RailOpinion]:
     for submission in sends:
         by_document[submission.final_version.document_id] = submission
 
+    further = further_sent_documents_by_submission(
+        [submission.pk for submission in by_document.values()], viewer=viewer
+    )
+    # A further sent file is drawn on its opinion's line, never as a line of its own.
+    folded = {document.pk for documents in further.values() for document in documents}
+
     working: dict[Any, list[Document]] = {}
     if by_document:
         for link in (
@@ -197,7 +238,8 @@ def opinion_rail(matter: Any, *, viewer: Any) -> list[RailOpinion]:
     for document in documents:
         submission = by_document.get(document.pk)
         if submission is None:
-            lines.append(RailOpinion(document=document))
+            if document.pk not in folded:
+                lines.append(RailOpinion(document=document))
             continue
         parts = []
         addressees = getattr(submission, ADDRESSEE_ROWS, [])
@@ -211,6 +253,7 @@ def opinion_rail(matter: Any, *, viewer: Any) -> list[RailOpinion]:
                 sent_on=submission_chronology_day(submission),
                 detail=" · ".join(parts),
                 working=tuple(working.get(submission.pk, ())),
+                further=tuple(further.get(submission.pk, ())),
             )
         )
     return lines
@@ -242,7 +285,10 @@ def sent_submission_by_document(matter: Any, *, viewer: Any) -> dict[Any, Submis
     rest kept for the send's own details behind it (`app/submissions/models.py`).
     """
     rows = sent_opinion_submissions(matter, viewer=viewer).prefetch_related(
-        "recipient_rows__organisation", "joint_submitter_rows__organisation", "tags"
+        "recipient_rows__organisation",
+        "joint_submitter_rows__organisation",
+        "tags",
+        "sent_file_rows__version",
     )
     # The linked write-ups, scoped on the *overview* side and read once for the
     # whole page rather than per row. A `prefetch_related("website_overviews")`
@@ -289,6 +335,8 @@ def sent_submission_by_document(matter: Any, *, viewer: Any) -> dict[Any, Submis
         ]
         submission.joint_rows = list(submission.joint_submitter_rows.all())
         by_document[submission.final_version.document_id] = submission
+        for row in submission.sent_file_rows.all():
+            by_document[row.version.document_id] = submission
     return by_document
 
 
@@ -328,6 +376,10 @@ def unregistered_opinion_documents(matter: Any, *, viewer: Any) -> list[Document
     ever_bound = set(
         Submission.objects.filter(matter=matter, final_version__isnull=False).values_list(
             "final_version__document_id", flat=True
+        )
+    ) | set(
+        SubmissionSentFile.objects.filter(submission__matter=matter).values_list(
+            "version__document_id", flat=True
         )
     )
     return [

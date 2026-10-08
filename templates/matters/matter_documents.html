@@ -130,10 +130,6 @@ finds again (§23.5).
                   <span class="field__label">Fail</span>
                   <input class="field__input" type="file" name="upload" required
                          accept="{% upload_accept %}">
-                  <span class="field__help">
-                    Lubatud on tavalised dokumendi-, e-kirja- ja pildivormingud ning
-                    digiallkirjastatud ümbrikud (.asice, .bdoc).
-                  </span>
                 </label>
                 <label class="field">
                   <span class="field__label">Roll</span>
@@ -158,7 +154,6 @@ finds again (§23.5).
                       <option value="{{ value }}">{{ label }}</option>
                     {% endfor %}
                   </select>
-                  <span class="field__help">Vali enne salvestamist — pärast on see parandus.</span>
                 </label>
                 <label class="field">
                   <span class="field__label">Pealkiri</span>
@@ -167,7 +162,7 @@ finds again (§23.5).
                 </label>
               </div>
               <div class="form__actions">
-                <button class="button button--primary" type="submit">Salvesta dokument</button>
+                <button class="button button--primary" type="submit">Salvesta</button>
               </div>
             </form>
           </div>
@@ -184,7 +179,7 @@ finds again (§23.5).
             {% include "intelligence/partials/field.html" with field=working_document_form.title %}
             {% include "intelligence/partials/field.html" with field=working_document_form.web_url %}
             {% include "intelligence/partials/field.html" with field=working_document_form.site_path %}
-            <button class="button button--quiet button--tiny" type="submit">Lisa viide</button>
+            <button class="button button--quiet button--tiny" type="submit">Salvesta</button>
           </form>
         </div>
       {% endif %}
@@ -479,18 +474,30 @@ finds again (§23.5).
                             {% include "matters/partials/opinion_manage.html" with document=document %}
                           {% elif can_write %}
                             {% comment %}
-                              `⋯` — `Muuda`: the display title, and the
-                              document's own page for everything else about it
-                              (owner's round, 2026-10-07). The tooltip is the
-                              one word; the accessible name carries the title
-                              too, so twelve rows are not twelve identical
-                              controls to a screen reader (ENG-098).
+                              `⋯` — `Muuda`: `Muuda nime` for the display
+                              title, and the document's own page for everything
+                              else about it (owner's rounds, 2026-10-07 and
+                              2026-10-08). The tooltip is the one word; the
+                              accessible name carries the title too, so twelve
+                              rows are not twelve identical controls to a screen
+                              reader (ENG-098).
+
+                              **A menu that floats, not a panel in the row**
+                              (2026-10-08). Opening it used to unfold the
+                              rename form inside the cell and make the row three
+                              lines taller under the reader's cursor. The body
+                              is now `position: fixed` and placed by the shared
+                              popover contract in `static/js/ux.js`
+                              (`data-uxpopover` / `data-uxfloat`): one open at a
+                              time, a click outside or Escape closes it, and
+                              focus goes back to `⋯`. The markup stays inside
+                              the row, so the row's own locators still find it.
                             {% endcomment %}
-                            <details class="opinionmenu docmenu" id="muuda-pealkiri-{{ document.pk }}">
+                            <details class="opinionmenu docmenu" id="muuda-pealkiri-{{ document.pk }}" data-uxpopover>
                               <summary class="opinionmenu__trigger" title="Muuda" aria-label="Muuda {{ document.title }}">⋯</summary>
-                              <div class="opinionmenu__body">
+                              <div class="opinionmenu__body" data-uxfloat="fit">
                                 {% include "matters/partials/document_rename_form.html" with document=document %}
-                                <a class="quietlink" href="{% url 'documents:document_detail' pk=document.pk %}">Dokumendi leht</a>
+                                <a class="opinionmenu__item" href="{% url 'documents:document_detail' pk=document.pk %}">Dokumendi leht</a>
                               </div>
                             </details>
                           {% endif %}

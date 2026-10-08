@@ -232,3 +232,7 @@ vocabulary is JUR-CASE-11's.
 * `E-kirja manus` provenance on Dokumendid: `EmailAttachmentLink` is explicit
   too, but it is not a `DocumentLink` and is left for a later round.
 * Dropping `Submission.working_document`.
+
+## Amendment of 2026-10-08 — several sent files, and no working box in the panel
+
+§1's «exactly one file» is now «one or more»: `final_version` stays the first, and `SubmissionSentFile` holds the rest of what went out with it, under the same evidence rules and triggers (docs/adr/0144 §5). The `+ Koja arvamus` panel no longer has the `Töödokumendid` box; working documents are added on the sent opinion's row (§7), and §5's line between evidence and working documents is unchanged.

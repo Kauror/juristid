@@ -488,6 +488,256 @@
     });
   }
 
+  /* ---- A display title, edited only when asked --------------------------
+   * A queued file reads as one line — its title, a ✎, its size, a × — and the
+   * title is the filename until somebody changes it. Only the ✎ turns it into
+   * a box, and only for that file: a queue of eight files is eight lines to
+   * read, not eight boxes to tab through (owner's round, 2026-10-08).
+   *
+   * One behaviour, delegated on the document, for every row that carries this
+   * markup — the queue rows built below and Uus teema's staged rows, which the
+   * server renders (templates/matters/partials/intake_files.html):
+   *
+   *   <span class="titleedit" data-title-edit data-title-original="a.pdf">
+   *     <span class="titleedit__text" data-title-edit-text>a.pdf</span>
+   *     <button type="button" class="titleedit__open" data-title-edit-open
+   *             aria-label="Muuda pealkirja: a.pdf" title="Muuda pealkirja">✎</button>
+   *     <span class="titleedit__original" data-title-edit-original hidden>a.pdf</span>
+   *     <input type="hidden" name="…" value="a.pdf" data-title-edit-value>
+   *   </span>
+   *
+   * The hidden input is what the form posts, and it changes only on a
+   * confirm — Enter, or leaving the box. Escape puts the previous title back,
+   * and so does confirming an empty box: a file always has a title. The box
+   * itself is unnamed, so an edit still open never posts a value beside the
+   * hidden one (`UploadTitlesMiddleware` pairs titles and files by count).
+   * Once the title differs from the filename, the filename stays on the row,
+   * muted, because it is what the stored version keeps.
+   */
+  var TITLE_MAX_LENGTH = 400;
+
+  /* Whether a pointer is pressed right now. Leaving the box by pressing a
+     button — `Salvesta`, another file's `×` — blurs it on the press; closing
+     it then reshapes the row under the pointer before the release, and the
+     click can land beside what it was aimed at. So the value is kept at once
+     and the box closes after the release. */
+  var pointerHeld = false;
+  document.addEventListener(
+    "pointerdown",
+    function () {
+      pointerHeld = true;
+    },
+    true
+  );
+  ["pointerup", "pointercancel"].forEach(function (name) {
+    document.addEventListener(
+      name,
+      function () {
+        pointerHeld = false;
+      },
+      true
+    );
+  });
+
+  function afterRelease(callback) {
+    var done = false;
+    var run = function () {
+      if (done) {
+        return;
+      }
+      done = true;
+      document.removeEventListener("pointerup", run, true);
+      document.removeEventListener("pointercancel", run, true);
+      /* After the click the release produces, which is dispatched in the
+         same task. */
+      window.setTimeout(callback, 0);
+    };
+    document.addEventListener("pointerup", run, true);
+    document.addEventListener("pointercancel", run, true);
+  }
+
+  function titleParts(box) {
+    return {
+      text: box.querySelector("[data-title-edit-text]"),
+      open: box.querySelector("[data-title-edit-open]"),
+      original: box.querySelector("[data-title-edit-original]"),
+      value: box.querySelector("[data-title-edit-value]"),
+      editor: box.querySelector("[data-title-edit-input]"),
+    };
+  }
+
+  /* Paints the confirmed title, and the filename beside it once they differ. */
+  function showTitle(box) {
+    var parts = titleParts(box);
+    if (!parts.value) {
+      return;
+    }
+    var title = parts.value.value;
+    var original = box.getAttribute("data-title-original") || "";
+    if (parts.text) {
+      parts.text.textContent = title;
+    }
+    if (parts.original) {
+      parts.original.hidden = !original || title === original;
+    }
+  }
+
+  /* The title a redraw should keep: what is confirmed, or what is being
+     typed if the box is still open — a second drop while somebody is
+     mid-word is not a reason to lose the word. */
+  function currentTitle(box) {
+    var parts = titleParts(box);
+    var typed = parts.editor ? parts.editor.value.trim() : "";
+    return typed || (parts.value ? parts.value.value : "");
+  }
+
+  function openTitleEdit(box) {
+    var parts = titleParts(box);
+    if (!parts.value) {
+      return null;
+    }
+    if (parts.editor) {
+      parts.editor.focus();
+      return parts.editor;
+    }
+    var previous = parts.value.value;
+    var original = box.getAttribute("data-title-original") || previous;
+    var editor = document.createElement("input");
+    editor.type = "text";
+    editor.className = "field__input field__input--compact titleedit__input";
+    editor.maxLength = TITLE_MAX_LENGTH;
+    editor.autocomplete = "off";
+    editor.value = previous;
+    editor.setAttribute("aria-label", "Pealkiri: " + original);
+    editor.setAttribute("data-title-edit-input", "");
+
+    var closed = false;
+    var keep = function () {
+      parts.value.value = editor.value.trim() || previous;
+    };
+    var close = function (refocus) {
+      if (closed) {
+        return;
+      }
+      closed = true;
+      editor.remove();
+      [parts.text, parts.open].forEach(function (part) {
+        if (part) {
+          part.hidden = false;
+        }
+      });
+      showTitle(box);
+      if (refocus && parts.open) {
+        parts.open.focus();
+      }
+    };
+
+    editor.addEventListener("keydown", function (event) {
+      if (event.key === "Enter") {
+        keep();
+        if (event.ctrlKey || event.metaKey) {
+          /* The surrounding form's own save shortcut (static/js/app.js): it
+             goes on, and posts the title just typed. */
+          return;
+        }
+        /* Never the form's implicit submission. */
+        event.preventDefault();
+        event.stopPropagation();
+        close(true);
+      } else if (event.key === "Escape") {
+        /* Stopped here, so the panel around it stays open. */
+        event.preventDefault();
+        event.stopPropagation();
+        close(true);
+      }
+    });
+    editor.addEventListener("blur", function () {
+      if (closed || !editor.isConnected) {
+        return;
+      }
+      keep();
+      if (pointerHeld) {
+        afterRelease(function () {
+          close(false);
+        });
+      } else {
+        close(false);
+      }
+    });
+
+    [parts.text, parts.open, parts.original].forEach(function (part) {
+      if (part) {
+        part.hidden = true;
+      }
+    });
+    box.insertBefore(editor, box.firstChild);
+    editor.focus();
+    editor.select();
+    return editor;
+  }
+
+  document.addEventListener("click", function (event) {
+    var opener = event.target.closest ? event.target.closest("[data-title-edit-open]") : null;
+    var box = opener && opener.closest("[data-title-edit]");
+    if (!box) {
+      return;
+    }
+    event.preventDefault();
+    openTitleEdit(box);
+  });
+
+  /* A title put back from outside — a poll re-rendering Uus teema's staged
+     rows restores what was confirmed (static/js/app.js `applyFragment`) — is
+     announced with a `change` on the hidden input, and the text follows. */
+  document.addEventListener("change", function (event) {
+    var value = event.target;
+    var box =
+      value && value.matches && value.matches("[data-title-edit-value]")
+        ? value.closest("[data-title-edit]")
+        : null;
+    if (box) {
+      showTitle(box);
+    }
+  });
+
+  /* The same markup as the server renders, for a row built here. */
+  function titleEditFor(name, title, original) {
+    var box = document.createElement("span");
+    box.className = "titleedit";
+    box.setAttribute("data-title-edit", "");
+    box.setAttribute("data-title-original", original);
+
+    var text = document.createElement("span");
+    text.className = "titleedit__text";
+    text.setAttribute("data-title-edit-text", "");
+    box.appendChild(text);
+
+    var open = document.createElement("button");
+    open.type = "button";
+    open.className = "titleedit__open";
+    open.textContent = "✎";
+    open.title = "Muuda pealkirja";
+    open.setAttribute("aria-label", "Muuda pealkirja: " + original);
+    open.setAttribute("data-title-edit-open", "");
+    box.appendChild(open);
+
+    var shown = document.createElement("span");
+    shown.className = "titleedit__original";
+    shown.textContent = original;
+    shown.setAttribute("data-title-edit-original", "");
+    box.appendChild(shown);
+
+    var value = document.createElement("input");
+    value.type = "hidden";
+    value.name = name;
+    value.value = title;
+    value.setAttribute("data-title-edit-value", "");
+    box.appendChild(value);
+
+    showTitle(box);
+    return box;
+  }
+
   /* ---- The upload queue: one for every file control ---------------------
    * Every dropzone — the workspace panels' dashed box (`[data-filedrop]`) and
    * Uus teema's (`[data-upload-zone]`) — shares this, once, by delegation on
@@ -496,9 +746,10 @@
    *
    * - a dropped file joins the SAME queue as a picked one, added to what is
    *   already chosen rather than replacing it;
-   * - each queued file is listed with a `Pealkiri` box — its display title,
-   *   the filename by default — posted as `<field>__pealkiri` in the files' own
-   *   order (app/core/middleware.py `UploadTitlesMiddleware`), and a `×`;
+   * - each queued file is listed with its display title — the filename by
+   *   default, changed with the ✎ beside it (above) — posted as
+   *   `<field>__pealkiri` in the files' own order (app/core/middleware.py
+   *   `UploadTitlesMiddleware`), its size and a `×`;
    * - a file dragged anywhere else on the page is refused rather than opened
    *   by the browser, so a near miss never navigates away from the form.
    */
@@ -545,14 +796,12 @@
     return list;
   }
 
-  /* The titles typed so far, in the queue's order, so a redraw — a removal, a
+  /* The titles given so far, in the queue's order, so a redraw — a removal, a
      second drop — keeps what somebody wrote beside each file. */
   function typedUploadTitles(field) {
     var list = uploadQueueOf(field);
     return list
-      ? Array.prototype.map.call(list.querySelectorAll(".uploadqueue__title"), function (box) {
-          return box.value;
-        })
+      ? Array.prototype.map.call(list.querySelectorAll("[data-title-edit]"), currentTitle)
       : [];
   }
 
@@ -616,26 +865,13 @@
         ? "uploadqueue__row dropzone__file"
         : "uploadqueue__row";
 
-      var label = document.createElement("label");
-      label.className = "uploadqueue__field";
-      var caption = document.createElement("span");
-      caption.className = "uploadqueue__label";
-      caption.textContent = "Pealkiri";
-      var title = document.createElement("input");
-      title.type = "text";
-      title.className = "field__input uploadqueue__title";
-      title.name = field.name + "__pealkiri";
-      title.maxLength = 400;
-      title.value = typeof kept[index] === "string" ? kept[index] : file.name;
-      title.setAttribute("aria-label", "Pealkiri: " + file.name);
-      label.appendChild(caption);
-      label.appendChild(title);
-      row.appendChild(label);
+      var title = typeof kept[index] === "string" && kept[index] ? kept[index] : file.name;
+      row.appendChild(titleEditFor(field.name + "__pealkiri", title, file.name));
 
-      var meta = document.createElement("span");
-      meta.className = "uploadqueue__file";
-      meta.textContent = file.name + " · " + uploadSize(file.size);
-      row.appendChild(meta);
+      var size = document.createElement("span");
+      size.className = "uploadqueue__size";
+      size.textContent = uploadSize(file.size);
+      row.appendChild(size);
 
       if (canTransfer) {
         var remove = document.createElement("button");
@@ -860,12 +1096,61 @@
     }
     var anchor = trigger.getBoundingClientRect();
     var margin = 8;
+    if (menu.getAttribute("data-uxfloat") === "fit") {
+      fit(menu, anchor, margin);
+      return;
+    }
     menu.style.top = anchor.bottom + 4 + "px";
     var left = Math.min(anchor.left, window.innerWidth - menu.offsetWidth - margin);
     menu.style.left = Math.max(margin, left) + "px";
   }
 
-  function placeOpenPopovers() {
+  /* `data-uxfloat="fit"` — a panel that must stay whole inside the window.
+
+     Dokumendid's row `⋯` (templates/matters/matter_documents.html). Its trigger
+     is the last control on the row, at the table's right edge, and the panel
+     can be long — an opinion's carries the whole send record — so the plain
+     placement above, left edge under the trigger and always downwards, would
+     run it off the right of a phone and off the bottom of any window for a row
+     low on the screen. A fixed box past the window's edge cannot be scrolled
+     to, so this keeps it inside:
+
+     - **end-aligned**: the panel's right edge under the trigger's, then
+       clamped to the window with the same 8 px margin;
+     - **downwards unless there is more room above**, so the last rows open
+       upwards rather than into the bottom edge;
+     - **never taller than that room**: the stylesheet caps it and it scrolls
+       inside itself, and this lowers the cap further when the room is smaller.
+
+     The panel's own scroll position is kept, because measuring it uncapped
+     would otherwise send a reader who had scrolled inside it back to the top
+     every time the page moved. */
+  function fit(menu, anchor, margin) {
+    var gap = 4;
+    var kept = menu.scrollTop;
+    menu.style.maxHeight = "";
+    var below = window.innerHeight - anchor.bottom - gap - margin;
+    var above = anchor.top - gap - margin;
+    var height = menu.offsetHeight;
+    var upward = height > below && above > below;
+    var room = Math.max(upward ? above : below, 0);
+    if (height > room) {
+      menu.style.maxHeight = room + "px";
+      height = menu.offsetHeight;
+    }
+    menu.style.top = (upward ? anchor.top - gap - height : anchor.bottom + gap) + "px";
+    var width = menu.offsetWidth;
+    var left = Math.min(anchor.right - width, window.innerWidth - width - margin);
+    menu.style.left = Math.max(margin, left) + "px";
+    menu.scrollTop = kept;
+  }
+
+  /* A scroll *inside* a panel moves nothing, so it re-places nothing. */
+  function placeOpenPopovers(event) {
+    var source = event && event.target;
+    if (source && source.closest && source.closest("[data-uxfloat]")) {
+      return;
+    }
     document.querySelectorAll("details[data-uxpopover][open]").forEach(place);
   }
 
@@ -885,6 +1170,20 @@
         });
         place(holder);
       });
+      /* A disclosure *inside* the panel — Dokumendid's `Muuda nime`, an
+         opinion's `Võta tagasi` confirmation — changes the panel's height, so
+         it is placed again: one that opened upwards must grow upwards, not
+         down over its own trigger. `toggle` does not bubble; the capture
+         phase still reaches the holder. */
+      holder.addEventListener(
+        "toggle",
+        function (event) {
+          if (event.target !== holder && holder.open) {
+            place(holder);
+          }
+        },
+        true
+      );
     });
   }
 
@@ -916,6 +1215,55 @@
       }
     });
   });
+
+  /* ---- Dokumendid `⋯` → `Muuda nime` -------------------------------------
+   * The row's menu is an ordinary popover above; its first command is a nested
+   * `<details>` that unfolds the title box inside the floating panel
+   * (templates/matters/partials/document_rename_form.html). Two things here,
+   * neither of which the command needs in order to work:
+   *
+   *  - opening it puts the cursor in the box with the old title selected, so
+   *    choosing the command and typing the new name are one movement (the
+   *    panel is placed again by the popover contract above, because it grew);
+   *  - closing the menu by any route (Escape, a click outside, another row's
+   *    `⋯`) folds the editor back and resets the box to the saved title, so the
+   *    next `⋯` opens a menu, not a half-typed name nobody saved.
+   *
+   * A click inside the panel — in the box, on `Salvesta` — is inside the
+   * `<details>` and never reaches the outside-click close above. Escape in the
+   * box closes the editor (app.js, `details form`) and the menu with it (the
+   * handler above), and focus lands on `⋯`, the control that opened it.
+   */
+  function bindDocumentRename(scope) {
+    scope.querySelectorAll("details[data-docrename]").forEach(function (editor) {
+      if (!once(editor, "DocRename")) {
+        return;
+      }
+      var holder = editor.parentElement && editor.parentElement.closest("details[data-uxpopover]");
+      editor.addEventListener("toggle", function () {
+        if (!editor.open) {
+          return;
+        }
+        var box = editor.querySelector("input[name=title]");
+        if (box) {
+          box.focus();
+          box.select();
+        }
+      });
+      if (holder) {
+        holder.addEventListener("toggle", function () {
+          if (holder.open) {
+            return;
+          }
+          editor.open = false;
+          var form = editor.querySelector("form");
+          if (form) {
+            form.reset();
+          }
+        });
+      }
+    });
+  }
 
   /* ---- «Salvesta praegune filter vaatena» --------------------------------
    * The view is the address. The control shows the current canonical URL and
@@ -1120,6 +1468,7 @@
     bindFileDrop(root);
     bindWorkRows(root);
     bindExclusivePopovers(root);
+    bindDocumentRename(root);
     bindCopyLink(root);
     bindRowFilter(root);
   }

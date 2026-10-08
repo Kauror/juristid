@@ -287,7 +287,7 @@ def test_a_refused_muu_save_comes_back_open_with_the_error_showing(page, base_ur
 
     page.fill('input[name="title"]', "Refused Õigusakt")
     page.locator(MUU_CHIP).first.click()
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     expect(page.locator(MUU_BOX)).to_be_visible()

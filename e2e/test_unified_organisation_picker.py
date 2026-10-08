@@ -243,7 +243,7 @@ def file_the_teema(page, title: str) -> None:
     """
     page.locator("#id_title").fill(title)
     give_first_step(page)
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("domcontentloaded")
     complaints = page.locator(".field__error, .formerror").all_inner_texts()
     assert not complaints, f"the form refused: {complaints}"

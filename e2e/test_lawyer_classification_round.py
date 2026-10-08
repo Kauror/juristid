@@ -117,7 +117,7 @@ def file_it(page, title: str) -> None:
     """
     page.locator("#id_title").fill(title)
     page.fill("#id_response_deadline", "31.12.2027")
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
     complaints = page.locator(".field__error, .formerror").all_inner_texts()
     assert not complaints, f"the form refused: {complaints}"

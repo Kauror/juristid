@@ -582,3 +582,61 @@ class SubmissionWebsiteOverviewLink(BaseModel):
             return
         if self.submission.matter_id != self.website_overview.matter_id:
             raise ValidationError(CROSS_MATTER_OVERVIEW_LINK)
+
+
+class SubmissionSentFile(BaseModel):
+    """A further file that went out with a sent `Koja arvamus` (docs/adr/0144 §5).
+
+    `Submission.final_version` stays the opinion's **first** sent file and keeps
+    every guarantee it always had — the `SENT` check constraint, the three
+    integrity triggers, the per-send audit pointer. A letter that went out as a
+    signed container *and* a separate explanatory attachment, or as several
+    files sent together, records the second and later files here: **one
+    Submission, several exact binaries**, never one opinion per file.
+
+    **Evidence, not a working document.** `DocumentLink.submission` is the
+    opinion's working documents and is never evidence (docs/adr/0129 §5); this
+    is the other side of that line, and a version cannot be both.
+
+    The same rules as `final_version`, enforced the same two ways: in
+    `app.submissions.services` for a sentence, and by the triggers installed in
+    `submissions/0009` as the backstop — the file belongs to the submission's
+    Matter, is never less restricted than the submission, and cannot be moved
+    to another Matter or relaxed while it is relied upon.
+
+    ``version`` is ``PROTECT``, like `final_version`: the bytes a send stands on
+    are not deleted out from under it. ``submission`` is ``CASCADE``: the row is
+    the submission's own pointer, the way `final_version` is a column of it.
+    """
+
+    submission = models.ForeignKey(
+        Submission,
+        on_delete=models.CASCADE,
+        related_name="sent_file_rows",
+        verbose_name="arvamus",
+    )
+    version = models.ForeignKey(
+        "documents.DocumentVersion",
+        on_delete=models.PROTECT,
+        related_name="sent_in_submission_rows",
+        verbose_name="saadetud fail",
+    )
+    position = models.PositiveSmallIntegerField(verbose_name="järjekord")
+
+    class Meta:
+        verbose_name = "arvamuse saadetud fail"
+        verbose_name_plural = "arvamuse saadetud failid"
+        ordering = ["submission", "position"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["submission", "version"],
+                name="submissions_sent_file_once_per_submission",
+            ),
+            models.UniqueConstraint(
+                fields=["submission", "position"],
+                name="submissions_sent_file_position_unique",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.submission_id} · {self.position}"

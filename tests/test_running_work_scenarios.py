@@ -282,7 +282,7 @@ def test_scenario_c_closure_and_reopening_reactivate_nothing(signed_in, speciali
     assert response_deadline_of(matter, specialist).settled == "teema suletud"
     page = _page(signed_in, matter)
     assert 'id="tooplaan"' not in page
-    assert "Soovitatud järgmisena" not in page
+    assert "Järgmisena?" not in page
 
     clock.go(50)
     signed_in.post(

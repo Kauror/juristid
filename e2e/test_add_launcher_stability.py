@@ -367,7 +367,7 @@ def test_a_refused_save_leaves_the_launcher_exactly_where_it_was(page, base_url)
 
     panel = page.locator("#kaasamine-alusta")
     expect(panel).to_be_visible()
-    expect(panel).to_contain_text("Kirjuta, keda kaasati")
+    expect(panel).to_contain_text("Kirjuta, keda kaasad")
     expect(panel.locator("[name=engagement_note]")).to_have_value("Nimekiri liidult")
     assert_unchanged(resting, chip_geometry(page), "after a refused save")
 

@@ -80,3 +80,7 @@ The text takes the rest of the row and wraps under itself, never under the date.
 
 **The chronology prints a planned action's own words.** It no longer prefixes them with «Planeeritud tegevus –». «Järgmine samm – …» is unchanged.
 - `TimelineItem.step_only` reads the `NEXT_ACTION_SET` event rather than the sentence's prefix.
+
+## Amendment of 2026-10-08 — a planned row can be marked «Tehtud»
+
+Each planned row offers `✓ Tehtud | Muuda | ×` (docs/adr/0144 §1). `✓ Tehtud` finishes that action on any day, with what happened and optional files, and promotes nothing; §A4's promotion stays the current action's. `×` reads «Kustuta planeeritud tegevus». §A5's recommendation is `Järgmisena?` and reads the record (docs/adr/0144 §2).

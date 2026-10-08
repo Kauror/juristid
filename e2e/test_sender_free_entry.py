@@ -140,7 +140,7 @@ def test_a_sender_can_be_named_on_uus_teema(page, base_url):
     # every Teema this suite leaves behind without one is a permanent row in
     # the department's «järgmise tegevuseta» list, which another file reads.
     give_first_step(page)
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
     start_first_step(page)
 
@@ -170,7 +170,7 @@ def test_a_sender_named_here_is_afterwards_in_the_one_catalogue(page, base_url):
     name_a_new_sender(page, TYPED_SENDER)
     page.fill("#id_title", "Sama asutus kataloogis")
     give_first_step(page)
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
     start_first_step(page)
 

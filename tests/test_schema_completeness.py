@@ -176,6 +176,9 @@ EXPECTED_TRIGGERS: dict[str, str] = {
     # Evidence a sent opinion relies on may not be widened, moved to another
     # Matter, or left behind by its Matter's own visibility changing.
     "submissions_final_evidence_integrity": "submissions_submission",
+    # A send's further files (docs/adr/0144 §5): the same Matter, never less
+    # restricted than the opinion that stands on them.
+    "submissions_sent_file_integrity": "submissions_submissionsentfile",
     "documents_relied_upon_evidence_stays_restricted": "documents_document",
     "documents_relied_upon_evidence_stays_in_matter": "documents_document",
     "matters_relied_upon_evidence_stays_restricted": "matters_matter",

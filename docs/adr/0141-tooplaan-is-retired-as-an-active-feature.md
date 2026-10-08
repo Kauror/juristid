@@ -57,3 +57,7 @@ existing row is rewritten or deleted.
    rows (replaced by `recommendation_for`), the seed/add/edit/skip-restore-
    repeat-move routes, their forms and templates, and the plan editor's CSS and
    script. The schema, the `PLAN_*` events and every existing row stay.
+
+## Amendment of 2026-10-08 — the suggestion reads the record
+
+The heading is «Järgmisena?». §2 still holds that no save names or fulfils a step, but the suggestion now skips a standard step the Matter's canonical records already prove done, and a still-outstanding `Arvamuse tähtaeg` brings the opinion step back (docs/adr/0144 §2). Nothing is written by that reading.

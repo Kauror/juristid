@@ -124,7 +124,7 @@ def test_adding_beside_a_current_action_plans_and_supersedes_nothing(
     zone = _zone(response.content.decode())
     assert "Planeeritud tegevused" in zone
     assert "Kaasa liikmeid" in zone
-    assert 'aria-label="Eemalda planeeritud tegevus"' in zone
+    assert 'aria-label="Kustuta planeeritud tegevus"' in zone
 
 
 def test_adding_without_a_current_action_sets_the_current_one(client, specialist, normal_matter):

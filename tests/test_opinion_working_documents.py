@@ -376,7 +376,7 @@ def test_adding_through_the_row_answers_with_the_column(
 
     picker = signed_in.get(url, headers={"HX-Request": "true"})
     assert picker.status_code == 200
-    assert "Lisa töödokument" in picker.content.decode()
+    assert ">Salvesta</button>" in picker.content.decode()
 
     response = signed_in.post(
         url, {"attachments": [_docx(), _docx(SECOND_DOCX, b"x")]}, headers={"HX-Request": "true"}
@@ -627,26 +627,13 @@ def test_a_refused_working_document_refuses_everything(
     assert _stored_objects(evidence_root) == []
 
 
-def test_the_panel_refusal_names_the_working_document_box(
-    signed_in, matter, specialist, organisation
-):
-    response = signed_in.post(
-        reverse("matters:add_koda_opinion", kwargs={"pk": matter.pk}),
-        {
-            "upload": _asice(),
-            "working_files": [_not_a_docx()],
-            "recipients": [str(organisation.pk)],
-            "sent_on": timezone.localdate().strftime("%d.%m.%Y"),
-        },
-        headers={"HX-Request": "true"},
-    )
+def test_the_panel_takes_no_working_documents_any_more(signed_in, matter, specialist, organisation):
+    """The `Töödokumendid` box left the panel (docs/adr/0144 §5).
 
-    assert response.status_code == 400
-    assert "Töödokumendid:" in response.content.decode()
-    assert not Submission.objects.filter(matter=matter).exists()
-
-
-def test_the_panel_saves_both_kinds_in_one_press(signed_in, matter, specialist, organisation):
+    A working file posted to it anyway is not a field of the form: it is not
+    stored, not linked and not mistaken for a sent file. Working documents are
+    added on the sent opinion's own row (`+ Lisa töödokument`).
+    """
     step = _step(matter, specialist)
 
     response = signed_in.post(
@@ -664,30 +651,26 @@ def test_the_panel_saves_both_kinds_in_one_press(signed_in, matter, specialist, 
     assert response.status_code == 200, response.content.decode()[:600]
     submission = Submission.objects.get(matter=matter)
     assert submission.final_version.original_filename == "koda_opinion.asice"
-    assert _working_links(submission).get().document.title == DOCX_NAME
+    assert not _working_links(submission).exists()
+    assert not Document.objects.filter(matter=matter, role=DocumentRole.WORKING_DOCUMENT).exists()
     step.refresh_from_db()
     assert step.status == ActionStatus.COMPLETED
     body = response.content.decode()
     kaik = body[body.index('id="ajajoon"') :]
     assert kaik.count("Arvamus välja") == 1
-    groups = re.findall(r'<span class="uxtl__filegrouplabel">([^<]+)</span>', kaik)
-    assert groups == ["Saadetud", "Töödokumendid"]
-    saadetud = kaik[kaik.index(">Saadetud<") : kaik.index(">Töödokumendid<")]
-    assert "koda_opinion.asice" in saadetud and DOCX_NAME not in saadetud
 
 
-def test_the_panel_offers_the_working_document_box_unticked_and_optional(
-    signed_in, matter, specialist
-):
+def test_the_panel_offers_one_multi_file_sent_box_and_no_working_box(signed_in, matter, specialist):
     body = _teema(signed_in, matter)
     panel = body[body.index('id="arvamus-koja"') :]
     panel = panel[: panel.index("</form>")]
 
-    assert "Töödokumendid" in panel
-    box = re.search(r'<input type="file" name="working_files"[^>]*>', panel)
+    assert "Töödokumendid" not in panel
+    assert 'name="working_files"' not in panel
+    assert "Saadetud failid" in panel
+    box = re.search(r'<input type="file" name="upload"[^>]*>', panel)
     assert box is not None
     assert "multiple" in box.group(0)
-    assert 'id="id_koja_arvamus_toodokumendid"' in box.group(0)
     assert ".docx" in box.group(0) and ".asice" in box.group(0)
 
 

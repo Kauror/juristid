@@ -52,7 +52,7 @@ def create_with_files(page, base_url: str, title: str, paths: list[str]) -> str:
     page.locator("#id_title").fill(title)
     page.locator("#id_files").set_input_files(paths)
     name_a_next_step(page)
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("domcontentloaded")
 
     complaints = page.locator(".field__error, .formerror, .message--error").all_inner_texts()
@@ -153,7 +153,7 @@ def test_loo_teema_pressed_while_uploading_files_each_file_once(page, base_url, 
         page.wait_for_timeout(100)
     assert held, "the files were never sent to staging"
 
-    button = page.get_by_role("button", name="Loo teema")
+    button = page.get_by_role("button", name="Salvesta", exact=True)
     button.click()
     expect(button).to_be_disabled()
     page.wait_for_timeout(1000)
@@ -190,7 +190,7 @@ def test_a_file_taken_back_off_does_not_arrive(page, base_url, tmp_path):
     expect(page.locator(".dropzone__file")).to_have_count(1)
 
     name_a_next_step(page)
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     start_first_step(page)
     open_documents(page)
@@ -267,7 +267,7 @@ def test_a_refused_save_does_not_throw_the_chosen_file_away(page, base_url, tmp_
     # request goes, and the answer is a re-rendered form.
     open_valdkond(page)
     page.locator("#id_policy_area_other_selected").check()
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("domcontentloaded")
     expect(page.locator(".field__error").first).to_be_visible()
 
@@ -278,7 +278,7 @@ def test_a_refused_save_does_not_throw_the_chosen_file_away(page, base_url, tmp_
     # Fix what was complained about and save. The file has to arrive.
     page.locator("#id_policy_area_other").fill("Ehitus ja kinnisvara")
     name_a_next_step(page)
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     start_first_step(page)
     open_documents(page)
@@ -309,7 +309,7 @@ def test_the_preview_says_the_filename_the_size_and_how_to_undo_it(page, base_ur
 
     row = page.locator(".dropzone__file")
     expect(row).to_have_count(1)
-    expect(row.locator(".dropzone__name")).to_have_text("eelnou.pdf")
+    expect(row.locator(".titleedit__text")).to_have_text("eelnou.pdf")
     expect(row.locator(".dropzone__size")).to_contain_text("KB")
     expect(row.get_by_role("button", name="Eemalda fail eelnou.pdf")).to_be_visible()
     expect(page.locator("[data-chipcount-for='id_files']")).to_have_text("1 valitud")
@@ -370,7 +370,7 @@ def test_a_dropped_file_reaches_dokumendid(page, base_url, tmp_path):
 
     page.locator("#id_title").fill("Lohistatud failiga teema")
     name_a_next_step(page)
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     start_first_step(page)
     open_documents(page)

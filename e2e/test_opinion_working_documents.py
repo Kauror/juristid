@@ -75,7 +75,7 @@ def _set_step(page) -> None:
     with page.expect_response(
         lambda response: response.url.endswith("/jargmiseks/") and response.request.method == "POST"
     ) as caught:
-        cta.get_by_role("button", name="Salvesta järgmine samm").click()
+        cta.get_by_role("button", name="Salvesta", exact=True).click()
     assert caught.value.status == 200, caught.value.status
     page.wait_for_load_state("networkidle")
 
@@ -88,16 +88,18 @@ def _register(
     sent_on: date,
     finish_step: bool = False,
 ) -> None:
-    """`+ Koja arvamus` with the letter and its working documents, in one press."""
+    """`+ Koja arvamus` with the letter, then its working documents on its row.
+
+    The panel takes only what went out since docs/adr/0144 §5; the working
+    documents are added where the product offers them — `+ Lisa töödokument`
+    on the sent opinion's own row — right after the send.
+    """
     open_add_panel(page, "arvamus-koja")
     form = page.locator("#arvamus-koja")
+    expect(form.locator("input[name=working_files]")).to_have_count(0)
     form.locator("input[name=upload]").set_input_files(
         {"name": sent[0], "mimeType": "application/vnd.etsi.asic-e+zip", "buffer": sent[1]}
     )
-    if working:
-        form.locator("input[name=working_files]").set_input_files(
-            [{"name": name, "mimeType": DOCX_MIME, "buffer": _docx_bytes(name)} for name in working]
-        )
     form.locator("[name=sent_on]").fill(_et(sent_on))
     if finish_step:
         option = form.get_by_role("checkbox", name=OPTION)
@@ -108,8 +110,28 @@ def _register(
             response.url.endswith("/lisa/koja-arvamus/") and response.request.method == "POST"
         )
     ) as caught:
-        form.get_by_role("button", name="Registreeri arvamus").click()
+        form.get_by_role("button", name="Salvesta", exact=True).click()
     assert caught.value.status == 200, f"the opinion was refused: {caught.value.status}"
+    page.wait_for_load_state("networkidle")
+    if working:
+        _add_working_documents(page, working)
+
+
+def _add_working_documents(page, names: list[str]) -> None:
+    """`+ Lisa töödokument` on the newest sent opinion's row."""
+    row = _opinion_rows(page).first
+    open_kaik_row(row)
+    row.get_by_role("button", name=re.compile(r"^\+ Lisa töödokument")).click()
+    picker = page.get_by_role("form", name="Töödokumendi lisamine Koja arvamusele")
+    expect(picker).to_be_visible()
+    picker.locator("input[type=file]").set_input_files(
+        [{"name": name, "mimeType": DOCX_MIME, "buffer": _docx_bytes(name)} for name in names]
+    )
+    with page.expect_response(
+        lambda response: "/lisa-toodokument/" in response.url and response.request.method == "POST"
+    ) as caught:
+        picker.get_by_role("button", name="Salvesta", exact=True).click()
+    assert caught.value.status == 200, caught.value.status
     page.wait_for_load_state("networkidle")
 
 
@@ -145,7 +167,9 @@ def test_a_signed_letter_and_its_docx_in_one_opinion(page, base_url, screenshots
     container = signed_container()
 
     open_add_panel(page, "arvamus-koja")
-    expect(page.locator("#arvamus-koja")).to_contain_text("Töödokumendid")
+    # The panel takes only what went out (docs/adr/0144 §5); the working
+    # document was added on the sent opinion's row by `_register`.
+    expect(page.locator("#arvamus-koja")).not_to_contain_text("Töödokumendid")
     screenshots(page, "toodokument-koja-arvamus-paneel")
     _register(
         page,
@@ -252,7 +276,7 @@ def test_a_working_document_added_after_the_send(page, base_url, screenshots):
     with page.expect_response(
         lambda response: "/lisa-toodokument/" in response.url and response.request.method == "POST"
     ) as caught:
-        picker.get_by_role("button", name="Lisa töödokument").click()
+        picker.get_by_role("button", name="Salvesta", exact=True).click()
     assert caught.value.status == 200, caught.value.status
     page.wait_for_load_state("networkidle")
 

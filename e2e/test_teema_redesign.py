@@ -256,7 +256,7 @@ def test_evidence_and_working_references_look_like_opposites(page, base_url):
         ]
     )
     panel.locator("select[name='role']").select_option("INCOMING_AUTHORITY")
-    panel.get_by_role("button", name="Salvesta dokument").click()
+    panel.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     page.goto(f"{url}dokumendid/")
@@ -283,7 +283,7 @@ def test_evidence_and_working_references_look_like_opposites(page, base_url):
     page.locator("#sharepointi-viide").locator("#id_web_url").fill(
         "https://example.invalid/sites/oigus/arvamus.docx"
     )
-    page.locator("#sharepointi-viide").get_by_role("button", name="Lisa viide").click()
+    page.locator("#sharepointi-viide").get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     row = page.locator(".sharepointrow").first

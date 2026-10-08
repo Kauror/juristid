@@ -341,7 +341,7 @@ def test_a_person_adding_a_victory_gets_a_confirmed_one(page, base_url, screensh
     # `exact=True`, because "Poolaasta täpsusega" contains "Aasta täpsusega".
     form.get_by_label("Aasta täpsusega", exact=True).check()
     form.get_by_label("Aasta", exact=True).fill("2030")
-    form.get_by_role("button", name="Salvesta töövõit").click()
+    form.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
     screenshots(page, "teema-toovoit-kohapeal")
 

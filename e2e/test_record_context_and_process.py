@@ -64,7 +64,7 @@ def _new_matter(page, base_url: str, prefix: str, *, stage: str | None = None, l
         page.get_by_role("radio", name=stage, exact=True).check()
     page.get_by_role("radio", name=SANDRA.short_name, exact=True).check()
     give_first_step(page)
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     start_first_step(page)
     url = page.url
@@ -173,7 +173,7 @@ def _publish(page, title: str, address: str) -> None:
     _post(
         page,
         "/lisa/koduleht/",
-        lambda: form.get_by_role("button", name="Lisa ülevaade / uudis").click(),
+        lambda: form.get_by_role("button", name="Salvesta", exact=True).click(),
     )
 
 

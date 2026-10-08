@@ -1292,7 +1292,8 @@ def test_the_upload_form_asks_for_the_role_before_committing(signed_in, speciali
     body = _body(signed_in.get(reverse("matters:matter_documents", kwargs={"pk": matter.pk})))
 
     action = reverse("documents:upload_evidence", kwargs={"matter_id": matter.pk})
-    upload_form = body[body.index(action) : body.index("Salvesta dokument")]
+    upload_form = body[body.index(action) :]
+    upload_form = upload_form[: upload_form.index("</form>")]
     assert 'name="upload"' in upload_form
     assert 'name="role"' in upload_form
 

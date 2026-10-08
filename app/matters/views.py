@@ -119,6 +119,7 @@ from app.matters.forms import (
     CompactWebsiteOverviewForm,
     CompactWorkVictoryForm,
     CompleteCurrentActionForm,
+    CompletePlannedActionForm,
     DevelopmentEvidenceForm,
     EngagementEvidenceForm,
     EngagementFeedbackForm,
@@ -2802,10 +2803,16 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
             auto_id=f"id_planeeritud_{planned.pk}_%s",
             initial={"text": planned.text, "target_date": planned.target_date},
         )
+        # `✓ Tehtud` on the row (docs/adr/0144 §1).
+        planned.done_form = CompletePlannedActionForm(  # type: ignore[attr-defined]
+            action_id=planned.pk
+        )
     # `Soovitatud järgmisena` — one suggestion, read once (docs/adr/0141,
     # `app.matters.plan_view`). A queued action outranks it: it is the fallback
     # when nothing is current and nothing is planned.
-    recommendation = None if planned_actions else recommendation_for(matter, current_action)
+    recommendation = (
+        None if planned_actions else recommendation_for(matter, current_action, request.user)
+    )
     # The file's `Õigusakt` and its `Hetkeseis` periods, read **once** for the
     # rail's pattern, the grouped chronology and the next-stage order — three
     # readers of the same two facts (docs/adr/0131 §7).
@@ -2888,6 +2895,11 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "recommendation": recommendation,
         "planned_actions": planned_actions,
         "upcoming_step": upcoming_step,
+        # Work already scheduled in the file's own lifecycle — a round waiting
+        # for feedback, a planned action — is the next step, and «Järgmine samm
+        # on määramata» above it would contradict it (docs/adr/0144 §3). The
+        # same rule `next_step.without_next_step` counts by.
+        "scheduled_work": bool(feedback_waits) or bool(planned_actions),
         "source_instruction": source_instruction,
         "source_snapshot": snapshot_label() if source_instruction else "",
         "timeline_items": items,
@@ -4506,6 +4518,7 @@ def change_planned_action_view(request: HttpRequest, pk: Any, action_id: Any) ->
     matter = get_visible_matter(request, pk)
     action = _visible_planned(request, matter, action_id)
     form = PlannedActionForm(request.POST, auto_id=f"id_planeeritud_{action.pk}_%s")
+    form.planned_action_id = action.pk  # type: ignore[attr-defined]
     if not form.is_valid():
         return _workspace_refusal(request, matter, key="planned_edit_form", form=form)
     try:
@@ -4526,8 +4539,40 @@ def change_planned_action_view(request: HttpRequest, pk: Any, action_id: Any) ->
 @login_required
 @business_write_required
 @require_http_methods(["POST"])
+def complete_planned_action_view(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse:
+    """`✓ Tehtud` on a planned row — what happened; that exact action is done.
+
+    The current action, its date and every other planned row are untouched, and
+    nothing is promoted (docs/adr/0144 §1). The row is fetched through
+    `visible_to` first, so an identifier this reader may not see answers 404;
+    whether it is still planned is the use case's question under the lock.
+    """
+    matter = get_visible_matter(request, pk)
+    action = _visible_planned(request, matter, action_id)
+    form = CompletePlannedActionForm(request.POST, request.FILES, action_id=action.pk)
+    form.planned_action_id = action.pk  # type: ignore[attr-defined]
+    if not form.is_valid():
+        return _workspace_refusal(request, matter, key="planned_done_form", form=form)
+    try:
+        workspace.complete_planned_action(
+            matter=matter,
+            author=request.user,
+            action_id=action.pk,
+            body=form.cleaned_data["body"],
+            uploads=form.cleaned_data["attachments"],
+        )
+    except (DomainError, UploadRejected) as error:
+        return _workspace_refusal(
+            request, matter, key="planned_done_form", form=form, error=str(error)
+        )
+    return _render_overview(request, matter)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
 def cancel_planned_action_view(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse:
-    """`×` — `Eemalda planeeritud tegevus`: cancelled, and kept in the history."""
+    """`×` — `Kustuta planeeritud tegevus`: off the plan, cancelled and kept in the history."""
     from app.workflow.services import cancel_planned_action
 
     matter = get_visible_matter(request, pk)
@@ -6478,7 +6523,12 @@ WORKSPACE_PANELS: dict[str, tuple[str, str]] = {
     # `Muuda` / `×` (docs/adr/0143).
     "planned_action_form": ("lisa-planeeritud", ""),
     "planned_edit_form": ("planeeritud", ""),
+    # A planned row's `✓ Tehtud` (docs/adr/0144 §1).
+    "planned_done_form": ("planeeritud", ""),
 }
+
+#: The planned-row forms, each drawn once per row: a refusal reopens that row.
+PLANNED_ROW_FORMS = {"planned_edit_form": "edit", "planned_done_form": "done"}
 
 
 #: Which sub-choice each family falls back to when no refusal names one of its
@@ -6780,6 +6830,16 @@ def _workspace_refusal(
     context = _overview_context(request, matter)
     context.update(_header_context(request, matter))
     context[key] = form
+    # A planned row's `Muuda` or `✓ Tehtud`: the bound form goes back into that
+    # row, opened, so the field's own message prints beside what was typed
+    # rather than the save failing in silence (docs/adr/0144 §1).
+    row_kind = PLANNED_ROW_FORMS.get(key)
+    refused_id = str(getattr(form, "planned_action_id", "") or "")
+    if row_kind and refused_id:
+        for planned in context.get("planned_actions") or []:
+            if str(planned.pk) == refused_id:
+                setattr(planned, f"{row_kind}_form", form)
+                setattr(planned, f"open_{row_kind}", True)
     # What else the refused save named — the deadline, the rounds — comes back
     # ticked, so correcting the file and saving again does not quietly drop it
     # (`opinion_completion_links.html`).
@@ -7862,7 +7922,7 @@ def add_koda_opinion(request: HttpRequest, pk: Any) -> HttpResponse:
                 complete_action_id=_named_action_id(request, matter, form),
                 matter=matter,
                 author=request.user,
-                upload=form.cleaned_data["upload"],
+                uploads=form.cleaned_data["upload"],
                 # The bodies chosen, plus at most one somebody named through the
                 # picker's `+`. `resolve_addressee` is asked only when there is a
                 # name — the same rule the feedback panels use, and it runs inside
@@ -7876,10 +7936,6 @@ def add_koda_opinion(request: HttpRequest, pk: Any) -> HttpResponse:
                 # somebody chose, rather than a headline cut out of the summary
                 # (docs/adr/0095 §2).
                 summary=form.cleaned_data.get("summary") or "",
-                # `Töödokumendid`: the editable file the letter was drafted in,
-                # filed as `Töödokument` under this same opinion and never as what
-                # was sent (docs/adr/0129 §2).
-                working_uploads=form.cleaned_data.get("working_files") or [],
                 # `Uus hetkeseis`: the file moves on after the opinion, which stays
                 # in the period it was written in (docs/adr/0131 §5).
                 stage=form.cleaned_data.get("stage"),

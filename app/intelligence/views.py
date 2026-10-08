@@ -133,7 +133,7 @@ EFFECTIVE_DATE_HELP = (
     "kohatäite kuupäeva ei salvestata."
 )
 WORK_VICTORY_HEADING = "Lisa töövõit"
-WORK_VICTORY_SUBMIT = "Salvesta töövõit"
+WORK_VICTORY_SUBMIT = "Salvesta"
 WORK_VICTORY_HELP = "Kirje lisatakse töövõiduna sinu nimel."
 
 

@@ -94,15 +94,13 @@ hidden `action_id` names the step so a stale tab completes nothing.
     {% comment %}
       `Salvesta tegevus`, not a bare `Salvesta`.
 
-      This button and an opinion panel's can be on screen together, and
-      both read `Salvesta` — two primary actions, identical words, saving
-      two different records. QA-024 found it the way anybody would: by
-      pressing the wrong one. Every other panel already names what it
-      saves (`Salvesta tagasiside`, `Salvesta arvamus`, `Registreeri
-      arvamus`); this one did not.
+      Every form's save reads `Salvesta` since the owner's round of 2026-10-08
+      (docs/adr/0144 §6). QA-024 found two identical primary buttons on one
+      screen pressed the wrong way round, so the accessible name still says
+      which record this one saves; the panels it can share the screen with
+      sit in their own disclosures.
     {% endcomment %}
-    <button class="button button--primary" type="submit" data-composer-submit>
-      Salvesta tegevus
-    </button>
+    <button class="button button--primary" type="submit" data-composer-submit
+            aria-label="Salvesta tegevus">Salvesta</button>
   </div>
 </form>

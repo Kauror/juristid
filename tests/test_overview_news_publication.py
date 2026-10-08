@@ -134,7 +134,7 @@ def test_the_panel_reads_in_the_neutral_wording_throughout(signed_in, normal_mat
     """
     panel = _panel(signed_in, normal_matter)
 
-    assert ">Lisa ülevaade / uudis<" in panel
+    assert ">Salvesta<" in panel
     assert "koda.ee" not in panel
     # The two labels are the questions themselves since docs/adr/0095 §5. The
     # legend explaining a conditional path, and the two labels that restated the

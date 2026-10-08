@@ -546,7 +546,7 @@ def upload_an_opinion(page, url: str) -> None:
     with page.expect_response(
         lambda response: "/lisa/koja-arvamus/" in response.url and response.request.method == "POST"
     ) as caught:
-        panel.get_by_role("button", name="Registreeri arvamus").click()
+        panel.get_by_role("button", name="Salvesta", exact=True).click()
     assert caught.value.status == 200, f"the opinion was refused: {caught.value.status}"
     page.wait_for_load_state("networkidle")
     page.goto(f"{url.rstrip('/')}/dokumendid/")

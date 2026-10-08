@@ -925,7 +925,7 @@ def test_a_refused_save_keeps_what_was_typed_and_says_why_beside_the_field(page,
     # Past the browser's own required-field check, because the server's refusal
     # is what has to render beside the field.
     page.locator("form.createform").evaluate("form => form.noValidate = true")
-    page.get_by_role("button", name="Loo teema").click()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     error = page.locator(".field__error, .formerror").first

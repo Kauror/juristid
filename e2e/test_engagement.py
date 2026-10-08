@@ -243,7 +243,7 @@ def test_an_engagement_with_no_audience_is_refused_with_the_panel_open(page, bas
     page.wait_for_load_state("networkidle")
 
     expect(panel(page)).to_be_visible()
-    expect(panel(page)).to_contain_text("Kirjuta, keda kaasati")
+    expect(panel(page)).to_contain_text("Kirjuta, keda kaasad")
     # With the note still in it, and no other panel opened on its behalf.
     expect(panel(page).locator("[name=engagement_note]")).to_have_value("Nimekiri liidult")
     # Neither `+ Lisa` nor its default sub-choice, `Arvamuse tähtaeg`
@@ -326,7 +326,7 @@ def test_a_link_typed_with_no_audience_is_answered_where_the_answer_belongs(page
     page.wait_for_load_state("networkidle")
 
     expect(panel(page)).to_be_visible()
-    expect(panel(page)).to_contain_text("Kirjuta, keda kaasati")
+    expect(panel(page)).to_contain_text("Kirjuta, keda kaasad")
     expect(panel(page).locator("[name=smaily_url]")).to_have_value(SMAILY_URL)
 
     focused = page.evaluate("() => document.activeElement && document.activeElement.name")
@@ -405,7 +405,7 @@ def test_a_file_attached_to_lopeta_kaasamine_survives_the_save(page, base_url):
             "buffer": b"%PDF-1.4 liidu vastus",
         }
     )
-    waiting.get_by_role("button", name="Salvesta ja lõpeta").click()
+    waiting.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     finished = chronology(page).locator(
@@ -464,7 +464,7 @@ def test_finishing_a_round_with_no_file_is_unchanged(page, base_url):
     )
     waiting.get_by_text("Lõpeta kaasamine", exact=True).click()
     waiting.locator("[name=feedback_received]").fill("Keegi ei vastanud.")
-    waiting.get_by_role("button", name="Salvesta ja lõpeta").click()
+    waiting.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     finished = chronology(page).locator(

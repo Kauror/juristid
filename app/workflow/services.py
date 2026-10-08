@@ -877,6 +877,48 @@ def cancel_planned_action(*, matter: Any, action_id: Any, actor: Any = None) -> 
     return cancel_next_action(action=action, actor=actor, reason="Planeeritud tegevus eemaldati")
 
 
+def locked_planned_action(locked_matter: Any, action_id: Any) -> NextAction:
+    """The named planned action, row-locked under a Matter the caller holds — or a refusal.
+
+    The public face of `_locked_planned` for a use case that writes more than
+    the action itself (`✓ Tehtud`'s note and files) and has to ask before it
+    writes any of it.
+    """
+    return _locked_planned(locked_matter, action_id)
+
+
+@transaction.atomic
+def finish_planned_action(*, action: NextAction, actor: Any = None) -> NextAction:
+    """`✓ Tehtud` on a planned row — that exact action is done (docs/adr/0144 §1).
+
+    On any day: before its date, on it or after it. The action ends COMPLETED
+    with `NEXT_ACTION_COMPLETED`, exactly as the current action does, with
+    ``planned`` in the payload so the history tells the two apart.
+
+    **It finishes this action and nothing else.** The current action keeps its
+    text and its date, no other planned row is promoted or touched — promotion
+    happens when the *current* action is completed, never here (docs/adr/0143
+    §A4) — and ``action`` must already be the locked row `locked_planned_action`
+    returned, so a stale tab naming a row that is no longer planned was refused
+    before anything was written.
+    """
+    if action.status != ActionStatus.PLANNED:
+        raise DomainError(PLANNED_ACTION_CHANGED)
+    action.status = ActionStatus.COMPLETED
+    action.ended_at = timezone.now()
+    action.ended_by = actor
+    action.save(update_fields=["status", "ended_at", "ended_by", "updated_at"])
+    record_change_event(
+        event_type=ChangeEventType.NEXT_ACTION_COMPLETED,
+        matter=action.matter,
+        actor=actor,
+        obj=action,
+        summary=action.text[:200],
+        payload={"kind": action.kind, "planned": True},
+    )
+    return action
+
+
 @transaction.atomic
 def promote_next_planned_action(*, matter: Any, actor: Any = None) -> NextAction | None:
     """The earliest planned action becomes current — if nothing is current.
