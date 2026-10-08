@@ -1,0 +1,27 @@
+{% load form_labels %}
+{% comment %}
+`Muuda` on an `Arvamuse järelkontroll` (docs/adr/0146 §6): its day, and only
+its day — earlier or later, before it is due or after. The check keeps its
+identity, its opinion, its responsible person and its restriction.
+
+    form    a `FollowUpDateForm`, bound or unbound, with this check's own ids
+    action  the check being moved, planned or current
+{% endcomment %}
+<form class="addform" data-addform
+      hx-post="{% url 'matters:reschedule_follow_up' pk=matter.pk action_id=action.pk %}"
+      hx-target="#teema-vaade" hx-swap="outerHTML">
+  {% csrf_token %}
+  {% if form.non_field_errors %}
+    <p class="formerror" role="alert">{{ form.non_field_errors|first }}</p>
+  {% endif %}
+  <label class="cx-f cx-f--date" for="{{ form.target_date.id_for_label }}">
+    <span class="cx-f__lab">{% field_label form.target_date %}</span>
+    {{ form.target_date }}
+  </label>
+  {% if form.target_date.errors %}
+    <p class="field__error" id="{{ form.target_date.auto_id }}_error">{{ form.target_date.errors|first }}</p>
+  {% endif %}
+  <div class="addform__actions">
+    <button class="button button--primary" type="submit" aria-label="Salvesta järelkontrolli kuupäev">Salvesta</button>
+  </div>
+</form>

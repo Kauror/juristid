@@ -59,7 +59,11 @@ from django.utils import timezone
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.core.authorization import apply as apply_scope
-from app.core.authorization import child_visibility_q, matter_visibility_q, scope_for_user
+from app.core.authorization import (
+    child_scope_q,
+    matter_visibility_q,
+    scope_for_user,
+)
 from app.core.dates import format_estonian_date
 from app.intelligence.models import (
     MatterEffectiveDate,
@@ -318,7 +322,13 @@ def intervention_rows(
                     # `30.09` here — a day nobody named (ADR 0079 §2, §3).
                     meaning=f"{item.meaning} {item.day_month}",
                     matter=item.matter,
-                    detail=item.text,
+                    # A check names its opinion beside its sentence: one Matter
+                    # may be checking on two letters (docs/adr/0146 §7).
+                    detail=(
+                        f"{item.text} · {item.follow_up_label}"
+                        if item.follow_up_label
+                        else item.text
+                    ),
                     owner=item.responsible,
                     sort_on=item.period_end or item.when or today,
                 )
@@ -478,6 +488,7 @@ _CHILD_EVENT_FAMILIES: tuple[tuple[tuple[str, ...], Any], ...] = (
             ChangeEventType.NEXT_ACTION_COMPLETED,
             ChangeEventType.NEXT_ACTION_REVIEWED,
             ChangeEventType.NEXT_ACTION_CANCELLED,
+            ChangeEventType.NEXT_ACTION_RESCHEDULED,
         ),
         NextAction,
     ),
@@ -541,6 +552,7 @@ _EVENT_VERBS: dict[str, str] = {
     ChangeEventType.NEXT_ACTION_COMPLETED: "lõpetas järgmise tegevuse",
     ChangeEventType.NEXT_ACTION_REVIEWED: "vaatas järgmise tegevuse üle",
     ChangeEventType.NEXT_ACTION_CANCELLED: "tühistas järgmise tegevuse",
+    ChangeEventType.NEXT_ACTION_RESCHEDULED: "muutis järelkontrolli kuupäeva",
     # Olulised tähtajad
     ChangeEventType.IMPORTANT_DATE_ADDED: "lisas olulise tähtaja",
     ChangeEventType.IMPORTANT_DATE_CHANGED: "muutis olulist tähtaega",
@@ -652,7 +664,7 @@ def _authorized_change_events(user: Any, since: date) -> QuerySet[ChangeEvent]:
     scope = scope_for_user(user)
 
     def scoped(model: Any) -> Any:
-        return apply_scope(model._default_manager.all(), child_visibility_q(scope))
+        return apply_scope(model._default_manager.all(), child_scope_q(model, scope))
 
     visible_matters = apply_scope(Matter.objects.all(), matter_visibility_q(scope)).values("pk")
 

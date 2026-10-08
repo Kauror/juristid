@@ -8089,6 +8089,7 @@ button.accordion__action:focus-visible {
 }
 
 .workrow2__matter,
+.workrow2__subject,
 .interrow__detail {
   display: block;
   font-size: var(--typography-size-meta);
@@ -12352,6 +12353,37 @@ section:has(.pw-more[open]) tbody.uxextra {
 .curact__plannedrow > .cx-panel[open] {
   flex: 1 1 100%;
   order: 1;
+}
+
+/* ---- `Arvamuse järelkontroll` (docs/adr/0146) ----
+ *
+ * A check is a planned or current action like any other, so it borrows the
+ * row it sits in. Two additions only: a planned check whose day has passed
+ * reads late in the colour the current action uses for it, and one quiet line
+ * under the sentence names the opinion it is about. */
+.curact__planneddate--overdue {
+  color: var(--status-danger);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.followup__subject {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: var(--typography-size-sm);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.followup__subject a {
+  color: inherit;
+}
+
+/* The closure confirmation: the owner's warning and the one box that answers
+ * it, drawn only after a save was refused for it (docs/adr/0146 §8). */
+.followupconfirm {
+  display: grid;
+  gap: var(--spacing-1);
+  margin: var(--spacing-2) 0;
 }
 
 .curact__suggest {

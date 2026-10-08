@@ -43,7 +43,7 @@ control on this row: the row itself is the link.
 {% endcomment %}
 <div class="workrow2{% if item.is_overdue %} workrow2--overdue{% elif item.is_review_ripe %} workrow2--review{% endif %}"
      data-workrow>
-  <a class="workrow2__link" href="{{ item.matter_url }}">
+  <a class="workrow2__link" href="{% if item.is_follow_up %}{{ item.record_url }}{% else %}{{ item.matter_url }}{% endif %}">
     <span class="workrow2__datecell">
       <span class="workrow2__date{% if item.is_overdue %} workrow2__date--overdue{% elif item.is_review_ripe %} workrow2__date--review{% elif item.is_today %} workrow2__date--today{% endif %}">{{ item.short_date }}</span>
       <span class="workrow2__meaning">{{ item.meaning_line }}</span>
@@ -51,6 +51,13 @@ control on this row: the row itself is the link.
 
     <span class="workrow2__body">
       <span class="workrow2__action">{{ item.text }}</span>
+      {% if item.follow_up_label %}
+        {% comment %}
+          Which opinion an `Arvamuse järelkontroll` checks on — one Matter may
+          have two — read through the opinion's own visibility (docs/adr/0146 §7).
+        {% endcomment %}
+        <span class="workrow2__subject">{{ item.follow_up_label }}</span>
+      {% endif %}
       <span class="workrow2__matter">
         {% if item.is_restricted %}<span aria-label="Piiratud teema">🔒</span> {% endif %}{{ item.matter.title }}
       </span>
@@ -80,8 +87,17 @@ control on this row: the row itself is the link.
     <summary class="rowmenu__trigger" aria-label="Rea tegevused">⋯</summary>
     <div class="rowmenu__menu">
       {% if item.is_action %}
-        <a class="rowmenu__item" href="{{ item.matter_url }}#praegune-tegevus">Lisa tulemus…</a>
-        <a class="rowmenu__item" href="{{ item.matter_url }}#lisa-jargmine">Muuda</a>
+        {% if item.is_follow_up %}
+          {% comment %}
+            An `Arvamuse järelkontroll` is finished and moved on its own row,
+            current or planned (docs/adr/0146 §7) — both links go there.
+          {% endcomment %}
+          <a class="rowmenu__item" href="{{ item.record_url }}">Lisa tulemus…</a>
+          <a class="rowmenu__item" href="{{ item.record_url }}">Muuda</a>
+        {% else %}
+          <a class="rowmenu__item" href="{{ item.matter_url }}#praegune-tegevus">Lisa tulemus…</a>
+          <a class="rowmenu__item" href="{{ item.matter_url }}#lisa-jargmine">Muuda</a>
+        {% endif %}
         {% if item.is_review_ripe %}
           {% comment %}
             "Vaatasin üle" is a real service (app/workflow/services.acknowledge_review)

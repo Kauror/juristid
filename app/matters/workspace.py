@@ -218,7 +218,29 @@ def _named_open_action(*, locked_matter: Matter, action_id: Any) -> NextAction:
     )
     if current is None or str(current.pk) != str(action_id):
         raise DomainError(STALE_ACTION_REFUSAL)
+    # Every caller here finishes or rewrites the step generically — `Mida
+    # tegid?`, `Muuda`, a ticked `Märgi praegune tegevus tehtuks`. A current
+    # `Arvamuse järelkontroll` is finished only with what it found, through
+    # `check_opinion_follow_up`, so it is refused here, before a byte is stored
+    # (docs/adr/0146 §5).
+    if current.follow_up_id is not None:
+        from app.workflow.follow_ups import FOLLOW_UP_HAS_ITS_OWN_FORM
+
+        raise DomainError(FOLLOW_UP_HAS_ITS_OWN_FORM)
     return current
+
+
+def _refuse_an_unconfirmed_closure(locked_matter: Matter, stage: Any, *, confirmed: bool) -> None:
+    """A save whose `Uus hetkeseis` would close a Matter with a pending check, asked first.
+
+    `close_matter` asks the same question under the same lock as the save ends;
+    asking it here as well means a refusal comes *before* the save stores any
+    file, so nothing is left behind in the evidence store (docs/adr/0146 §8).
+    """
+    from app.workflow.follow_ups import refuse_unconfirmed_closure
+
+    if locked_matter.is_open and is_terminal_stage(getattr(stage, "key", None)):
+        refuse_unconfirmed_closure(locked_matter, confirmed=confirmed)
 
 
 def completion_visibility_override(action: NextAction) -> str:
@@ -246,6 +268,7 @@ def complete_current_action(
     next_text: str = "",
     next_date: Any = None,
     stage: Any = None,
+    follow_ups_confirmed: bool = False,
 ) -> WorkspaceResult:
     """`PRAEGUNE TEGEVUS` — what I did, and therefore that the step is done.
 
@@ -320,6 +343,8 @@ def complete_current_action(
     locked_matter = lock_open_matter_for_business_write(matter.pk)
     current = _named_open_action(locked_matter=locked_matter, action_id=action_id)
     moves_stage = stage is not None and stage.pk != locked_matter.stage_id
+    if moves_stage:
+        _refuse_an_unconfirmed_closure(locked_matter, stage, confirmed=follow_ups_confirmed)
 
     with (
         composer_operation() as operation_id,
@@ -327,6 +352,7 @@ def complete_current_action(
             matter=locked_matter,
             stage=stage if moves_stage else locked_matter.stage,
             actor=author,
+            follow_ups_confirmed=follow_ups_confirmed,
         ) as move,
     ):
         result = WorkspaceResult(operation_id=operation_id, closed=move.closes)
@@ -383,6 +409,13 @@ def complete_planned_action(
 
     locked_matter = lock_open_matter_for_business_write(matter.pk)
     planned = locked_planned_action(locked_matter, action_id)
+    if planned.follow_up_id is not None:
+        # A planned `Arvamuse järelkontroll` is finished with what it found,
+        # through `check_opinion_follow_up` — refused here before the note or a
+        # file is written (docs/adr/0146 §5).
+        from app.workflow.follow_ups import FOLLOW_UP_HAS_ITS_OWN_FORM
+
+        raise DomainError(FOLLOW_UP_HAS_ITS_OWN_FORM)
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
         result.entry = add_entry(
@@ -399,6 +432,85 @@ def complete_planned_action(
             actor=author,
         )
         result.action = finish_planned_action(action=planned, actor=author)
+    return result
+
+
+#: How a check's note opens, by outcome: the person's typed choice, in their
+#: words, so `Teema käik` reads one «✓» row that says what was found. Never a
+#: sentence the person did not choose (docs/adr/0146 §5).
+CHECK_NOTE_OPENINGS = {
+    "RESPONSE_RECEIVED": "Vastus saabunud.",
+    "NO_RESPONSE": "Vastust ei ole — kontrollin uuesti {day}.",
+    "MONITORING_ENDED": "Lõpetan jälgimise.",
+}
+
+
+def _check_note(outcome: str, body: str, next_check_on: Any) -> str:
+    from app.workflow.dates import format_at_precision
+
+    opening = CHECK_NOTE_OPENINGS[outcome].format(
+        day=format_at_precision(next_check_on, DatePrecision.EXACT) if next_check_on else ""
+    )
+    text = (body or "").strip()
+    return f"{opening} {text}" if text else opening
+
+
+@transaction.atomic
+def check_opinion_follow_up(
+    *,
+    matter: Matter,
+    author: Any,
+    action_id: Any,
+    outcome: str,
+    body: str = "",
+    next_check_on: Any = None,
+    uploads: Sequence[Any] = (),
+) -> WorkspaceResult:
+    """`✓ Tehtud` on an `Arvamuse järelkontroll` — what the check found (docs/adr/0146 §5).
+
+    One operation: the note, its files (the answer that arrived, say), the
+    check's completion with its typed outcome and — for «no answer yet» — the
+    next check on the day the lawyer chose. `Teema käik` reads one «✓» row with
+    the next check under it.
+
+    * the check is named by the form and re-read under the Matter's lock; a
+      stale tab is refused with nothing written;
+    * the outcome's own questions — the next day, the reason for ending — are
+      asked **before** a file is stored;
+    * ``body`` is the answer's summary, or the reason monitoring ends (then
+      required); the note opens with the outcome the person chose;
+    * the note is restricted with the check, as every completion note is
+      (docs/adr/0138);
+    * nothing closes the Matter and nothing is invented: «Vastus saabunud»
+      creates no task, and the next check is never an automatic 30 days.
+    """
+    from app.workflow.follow_ups import complete_check, locked_check, validate_outcome
+
+    locked_matter = lock_open_matter_for_business_write(matter.pk)
+    check = locked_check(locked_matter, action_id)
+    validate_outcome(outcome=outcome, next_check_on=next_check_on, reason=body)
+    with composer_operation() as operation_id:
+        result = WorkspaceResult(operation_id=operation_id)
+        result.entry = add_entry(
+            matter=locked_matter,
+            body=_check_note(outcome, body, next_check_on),
+            author=author,
+            kind=EntryKind.NOTE,
+            visibility_override=completion_visibility_override(check),
+        )
+        result.documents = capture_supporting_evidence(
+            matter=locked_matter,
+            record=result.entry,
+            uploads=_uploads(uploads),
+            actor=author,
+        )
+        result.action = complete_check(
+            action=check,
+            outcome=outcome,
+            actor=author,
+            next_check_on=next_check_on,
+            reason=body,
+        )
     return result
 
 
@@ -929,6 +1041,7 @@ def add_matter_koda_opinion(
     answers_deadline: str | None = None,
     close_rounds: Sequence[tuple[Any, str]] = (),
     once_token: Any = None,
+    follow_ups_confirmed: bool = False,
 ) -> WorkspaceResult:
     """`+ Koja arvamus` — the Chamber's opinion went out, with the file that went.
 
@@ -1072,6 +1185,16 @@ def add_matter_koda_opinion(
         if complete_action_id is not None
         else None
     )
+    # **A send that also ends the Matter** (a terminal `Uus hetkeseis`) closes
+    # a file that, from this save on, has a check on this very opinion — and
+    # perhaps checks on earlier ones. The closure cancels them all, so the save
+    # asks for the same confirmation any closure with a pending check does,
+    # before a byte is stored (docs/adr/0146 §8).
+    if locked_matter.is_open and is_terminal_stage(getattr(stage, "key", None)):
+        if not follow_ups_confirmed:
+            from app.workflow.follow_ups import FollowUpClosureUnconfirmed
+
+            raise FollowUpClosureUnconfirmed()
     _spend_once(locked_matter, once_token, "koja-arvamus")
     if answers_deadline is not None:
         from app.matters.response_deadlines import (
@@ -1091,6 +1214,7 @@ def add_matter_koda_opinion(
             matter=locked_matter,
             stage=stage if stage is not None else locked_matter.stage,
             actor=author,
+            follow_ups_confirmed=follow_ups_confirmed,
         ) as move,
     ):
         result = WorkspaceResult(operation_id=operation_id, closed=move.closes)
@@ -1280,6 +1404,7 @@ def add_procedural_development(
     as_next_step: bool = False,
     date_phase: bool = False,
     uploads: Sequence[Any] = (),
+    follow_ups_confirmed: bool = False,
 ) -> WorkspaceResult:
     """`+ Menetluse areng` — the procedure moved, and what the lawyer does about it.
 
@@ -1425,6 +1550,8 @@ def add_procedural_development(
         next_text=step_text,
     ):
         raise DomainError(DEVELOPMENT_NEEDS_SOMETHING)
+    if moves_stage:
+        _refuse_an_unconfirmed_closure(locked_matter, stage, confirmed=follow_ups_confirmed)
 
     # The phase this move may date, read on the locked row *before* it moves:
     # «forward» is a question about where the file stood.
@@ -1452,7 +1579,10 @@ def add_procedural_development(
         # And a stage that ends the Matter closes it on the way out of the
         # block, after the record it was saved with.
         with stage_transition(
-            matter=locked_matter, stage=stage if moves_stage else locked_matter.stage, actor=author
+            matter=locked_matter,
+            stage=stage if moves_stage else locked_matter.stage,
+            actor=author,
+            follow_ups_confirmed=follow_ups_confirmed,
         ) as move:
             development = record_procedural_development(
                 matter=locked_matter,

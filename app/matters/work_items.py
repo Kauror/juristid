@@ -117,6 +117,7 @@ from app.intelligence.models import MatterImportantDate
 from app.legacy_import.current_state import CurrentRegisterState, RegisterCurrency
 from app.legacy_import.register_semantics import OPINION_WORK_COMPLETE_STATES
 from app.matters.enums import RecordMode
+from app.matters.follow_up_display import follow_up_subjects
 from app.matters.models import Matter, MatterEngagement
 from app.matters.register_dates import RESPONSE_DEADLINE_LABEL
 from app.submissions.enums import SubmissionStatus
@@ -309,6 +310,12 @@ class WorkItem:
     #: argument to a property — and a row that had to be told what day it is
     #: would end up being told twice, differently.
     today: date
+    #: Whether this row is an `Arvamuse järelkontroll` (docs/adr/0146 §7), and
+    #: which opinion it checks on — «Koja arvamus 8.10.2026 · Ministeerium» —
+    #: read through the opinion's own visibility, so a reader who may not see
+    #: the opinion gets ``""`` (`app.matters.follow_up_display`).
+    is_follow_up: bool = False
+    follow_up_label: str = ""
 
     @property
     def date_display(self) -> str:
@@ -353,6 +360,10 @@ class WorkItem:
         """
         if self.source_type == SOURCE_FEEDBACK_WAIT:
             return f"{self.matter_url}#kaasamine-{self.object_id}-sisu"
+        if self.is_follow_up:
+            # The check's own row in `PRAEGUNE TEGEVUS`, where its `✓ Tehtud`
+            # and its day are (docs/adr/0146 §7).
+            return f"{self.matter_url}#jarelkontroll-{self.object_id}"
         return self.matter_url
 
     @property
@@ -643,7 +654,7 @@ def open_matters(user: Any) -> QuerySet[Matter]:
     return full_matters(user).filter(is_open=True)
 
 
-def action_item(action: NextAction, today: date) -> WorkItem:
+def action_item(action: NextAction, today: date, *, subject: Any = None) -> WorkItem:
     anchor = action.target_date
     # A month or a quarter is behind us only once its *last* day is, so the
     # stored precision decides where the item stops being current. The same
@@ -674,6 +685,8 @@ def action_item(action: NextAction, today: date) -> WorkItem:
         is_overdue=overdue,
         is_review_ripe=ripe,
         today=today,
+        is_follow_up=action.follow_up_id is not None,
+        follow_up_label=subject.label if subject is not None else "",
     )
 
 
@@ -1303,7 +1316,14 @@ def work_items(
         responses = responses.filter(response_deadline__lte=latest)
         waits = waits.filter(feedback_deadline__lte=latest)
 
-    items = [action_item(action, today) for action in actions]
+    action_rows = list(actions)
+    # Which opinion each `Arvamuse järelkontroll` is about, read once for the
+    # page and through the opinion's own visibility (docs/adr/0146 §7).
+    subjects = follow_up_subjects(action_rows, user)
+    items = [
+        action_item(action, today, subject=subjects.get(action.follow_up_id))
+        for action in action_rows
+    ]
     items += [_deadline_item(record, today) for record in deadlines]
     items += [_response_deadline_item(matter, today) for matter in responses]
     items += [feedback_wait_item(engagement, today) for engagement in waits]

@@ -26,7 +26,7 @@ import operator
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from django.apps import apps
 from django.db.models import Case, CharField, Count, Q, QuerySet, Value, When
@@ -589,6 +589,21 @@ def child_visibility_q(
     return child_is_normal_q(
         parent_prefix=parent_prefix, override_field=override_field
     ) | restricted_participation_q(scope, prefix=parent_prefix)
+
+
+def child_scope_q(model: Any, scope: Scope, **paths: str) -> Q:
+    """The rows of a child ``model`` that ``scope`` may read.
+
+    `child_visibility_q`, unless the model states a stricter rule of its own as
+    ``visibility_rule`` — today only `NextAction`, whose follow-up checks are
+    never more visible than the opinion they are about (docs/adr/0146 §10). The
+    places that scope a child without its ``visible_to`` (to resolve the scope
+    once per page) ask this, so they cannot drift from it.
+    """
+    rule = getattr(model, "visibility_rule", None)
+    if rule is not None:
+        return cast(Q, rule(scope))
+    return child_visibility_q(scope, **paths)
 
 
 def restricted_participation_subquery_q(

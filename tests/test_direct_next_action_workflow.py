@@ -382,8 +382,12 @@ def test_registering_the_opinion_with_the_tick_completes_the_step(
     assert step.replaced_by is None
     assert step.ended_by == specialist
     assert timezone.localtime(step.ended_at).date() == timezone.localdate()
-    assert not _open_steps(matter).exists()
-    assert NextAction.objects.filter(matter=matter).count() == 1
+    # What is open now is the send's own `Arvamuse järelkontroll`, promoted by
+    # the established rule — the earliest planned action becomes current when
+    # the current one is completed (docs/adr/0143 §A4, docs/adr/0146 §4).
+    (current,) = _open_steps(matter)
+    assert current.follow_up.submission == submission
+    assert NextAction.objects.filter(matter=matter, follow_up__isnull=True).count() == 1
     assert not _events(matter, ChangeEventType.NEXT_ACTION_CANCELLED)
     # **No second record of the same act.** No note, no development.
     assert not Entry.objects.filter(matter=matter).exists()
@@ -394,9 +398,11 @@ def test_registering_the_opinion_with_the_tick_completes_the_step(
     assert len(sent) == len(completed) == 1
     assert sent[0].operation_id is not None
     assert sent[0].operation_id == completed[0].operation_id
-    # And the zone that asked about the step now offers the next one.
+    # And the zone that asked about the step now reads what comes next: the
+    # opinion's own check, current by promotion (docs/adr/0146 §4), with the
+    # manual control still under it.
     zone = _zone(response.content.decode())
-    assert "Järgmine samm on määramata" in zone
+    assert "Kontrolli, kas adressaat on Koja arvamusele vastanud" in zone
     assert CTA in zone
     assert STEP not in zone
 
@@ -743,7 +749,10 @@ def test_the_following_step_reads_on_every_work_surface(
 
     following = _open_steps(matter).get()
     assert following.text == FOLLOWING
-    assert NextAction.objects.filter(matter=matter).count() == 2
+    assert NextAction.objects.filter(matter=matter, follow_up__isnull=True).count() == 2
+    # The opinion's check, current until this step was set, went back to the
+    # plan on its own day rather than being superseded (docs/adr/0146 §4).
+    assert NextAction.objects.get(matter=matter, follow_up__isnull=False).status == "PLANNED"
 
     assert FOLLOWING in _zone(_teema(signed_in, matter))
     assert FOLLOWING in signed_in.get(reverse("matters:my_work")).content.decode()

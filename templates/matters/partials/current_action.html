@@ -79,7 +79,7 @@ background sequence — which can be started (`Alusta`) or dismissed (`×`);
       not be inside it at all (templates/matters/partials/rail.html,
       tests/test_teema_rail.py).
     {% endcomment %}
-    <div class="curact__task">
+    <div class="curact__task"{% if current_action.follow_up_id %} id="jarelkontroll-{{ current_action.pk }}"{% endif %}>
       {% comment %}
         **The date first, then the words** (owner's round, 2026-10-07): a work
         row is scanned «when?» before «what?», so every dated row in this zone
@@ -108,7 +108,30 @@ background sequence — which can be started (`Alusta`) or dismissed (`×`);
         never appears either (app/workflow/models.py).
       {% endcomment %}
 
-      {% if can_write %}
+      {% if current_action.follow_up_id %}
+        {% comment %}
+          **A current `Arvamuse järelkontroll`** (docs/adr/0146 §7): the same
+          two controls its planned row has — `✓ Tehtud` asks what the check
+          found, `Muuda` moves its day — and the line naming its opinion. The
+          generic `Mida tegid?` and `Muuda` below are not drawn for it.
+        {% endcomment %}
+        {% if can_write %}
+              <details class="cx-panel curact__edit" id="jarelkontroll-tehtud-{{ current_action.pk }}" data-addpanel{% if current_action.open_check %} open{% endif %}>
+                <summary class="disclosure-chip disclosure-chip--quiet">✓ Tehtud</summary>
+                <div class="cx-panel__body">
+                  {% include "matters/partials/follow_up_check_form.html" with form=current_action.check_form action=current_action %}
+                </div>
+              </details>
+              <details class="cx-panel curact__edit" id="jarelkontroll-kuupaev-{{ current_action.pk }}" data-addpanel{% if current_action.open_date %} open{% endif %}>
+                <summary class="disclosure-chip disclosure-chip--quiet">Muuda</summary>
+                <div class="cx-panel__body">
+                  {% include "matters/partials/follow_up_date_form.html" with form=current_action.date_form action=current_action %}
+                </div>
+              </details>
+            {% endif %}
+            {% include "matters/partials/follow_up_subject.html" with subject=current_action.follow_up_subject %}
+      {% endif %}
+      {% if can_write and not current_action.follow_up_id %}
         {% comment %}
           `✓ Tehtud` — the step is done, and this says what was done.
 
@@ -167,7 +190,7 @@ background sequence — which can be started (`Alusta`) or dismissed (`×`);
           </div>
         </details>
       {% endif %}
-      {% if can_write %}
+      {% if can_write and not current_action.follow_up_id %}
         {% comment %}
           `Muuda` — change what the task is or when it is due. **Beside the
           task**, quiet, and **not** a way to record that it was done:

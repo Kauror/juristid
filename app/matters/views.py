@@ -130,6 +130,8 @@ from app.matters.forms import (
     EntryEditForm,
     ExternalPositionEditForm,
     ExternalPositionEvidenceForm,
+    FollowUpCheckForm,
+    FollowUpDateForm,
     IncomingIntakeForm,
     KodaOpinionForm,
     MatterCreateForm,
@@ -304,6 +306,7 @@ from app.taxonomy.models import PolicyArea
 from app.taxonomy.vocabulary import selectable_policy_areas
 from app.workflow import plan as work_plan
 from app.workflow.enums import Track
+from app.workflow.follow_ups import FOLLOW_UP_CHANGED, FollowUpClosureUnconfirmed
 from app.workflow.models import MatterPlanStep, NextAction, StageVocabulary
 from app.workflow.plan import seed_standard_plan
 from app.workflow.selectors import stages_including
@@ -2809,6 +2812,10 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         planned.done_form = CompletePlannedActionForm(  # type: ignore[attr-defined]
             action_id=planned.pk
         )
+    # An `Arvamuse järelkontroll` — current or planned — draws its own two
+    # forms instead (what the check found; its day) and the line naming its
+    # opinion, read through the opinion's own visibility (docs/adr/0146 §7).
+    _attach_follow_up_forms([current_action, *planned_actions], request.user)
     # `Soovitatud järgmisena` — one suggestion, read once (docs/adr/0141,
     # `app.matters.plan_view`). A queued action outranks it: it is the fallback
     # when nothing is current and nothing is planned.
@@ -4503,6 +4510,133 @@ def add_planned_action_view(request: HttpRequest, pk: Any) -> HttpResponse:
     return _render_overview(request, matter)
 
 
+def _attach_follow_up_forms(actions: list[Any], viewer: Any) -> None:
+    """Give each follow-up check on the page its two forms and its opinion's line."""
+    from app.matters.follow_up_display import attach_follow_up_subjects
+
+    checks = [action for action in actions if action is not None and action.follow_up_id]
+    attach_follow_up_subjects(checks, viewer)
+    for check in checks:
+        check.check_form = FollowUpCheckForm(action_id=check.pk)
+        check.date_form = FollowUpDateForm(
+            action_id=check.pk, initial={"target_date": check.target_date}
+        )
+
+
+#: The two follow-up row forms, each drawn once per check: a refusal reopens
+#: that check's own panel with what was typed (docs/adr/0146 §7).
+FOLLOW_UP_ROW_FORMS = {"follow_up_check_form": "check", "follow_up_date_form": "date"}
+
+
+def _follow_up_refusal(
+    request: HttpRequest, matter: Matter, *, key: str, form: Any, action_id: Any, error: str = ""
+) -> HttpResponse:
+    """Re-render the column with the refused follow-up form back in its own row.
+
+    The row is found on the fresh column — current or planned. A check that is
+    no longer there (finished in another tab) has no row to reopen, so the
+    sentence goes to the column's own slot above the fresh state, as every
+    stale refusal on this page does (`_workspace_refusal`).
+    """
+    matter.refresh_from_db(fields=["is_open"])
+    context = _overview_context(request, matter)
+    context.update(_header_context(request, matter))
+    rows = [context.get("current_action"), *(context.get("planned_actions") or [])]
+    row = next(
+        (
+            action
+            for action in rows
+            if action is not None
+            and action.follow_up_id is not None
+            and str(action.pk) == str(action_id)
+        ),
+        None,
+    )
+    if row is not None and matter.is_open:
+        if error:
+            form.add_error(None, error)
+        kind = FOLLOW_UP_ROW_FORMS[key]
+        setattr(row, f"{kind}_form", form)
+        setattr(row, f"open_{kind}", True)
+    else:
+        context["composer_error"] = error or next(
+            (str(message) for messages in form.errors.values() for message in messages),
+            FOLLOW_UP_CHANGED,
+        )
+    body = render_to_string("matters/partials/overview.html", context, request=request)
+    return HttpResponse(body, status=400)
+
+
+def _visible_check(request: HttpRequest, matter: Matter, action_id: Any) -> NextAction:
+    """A follow-up check of this Matter that this reader may see, or a 404 (AUTH-003)."""
+    return get_object_or_404(
+        NextAction.objects.visible_to(request.user),
+        pk=action_id,
+        matter=matter,
+        follow_up__isnull=False,
+    )
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def check_follow_up_view(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse:
+    """`✓ Tehtud` on an `Arvamuse järelkontroll` — what the check found (docs/adr/0146 §5).
+
+    Fetched through `visible_to` first, so a check this reader may not see
+    answers 404; whether it is still planned or current is the use case's
+    question under the lock.
+    """
+    matter = get_visible_matter(request, pk)
+    check = _visible_check(request, matter, action_id)
+    form = FollowUpCheckForm(request.POST, request.FILES, action_id=check.pk)
+    key = "follow_up_check_form"
+    if not form.is_valid():
+        return _follow_up_refusal(request, matter, key=key, form=form, action_id=check.pk)
+    try:
+        workspace.check_opinion_follow_up(
+            matter=matter,
+            author=request.user,
+            action_id=check.pk,
+            outcome=form.cleaned_data["outcome"],
+            body=form.cleaned_data["body"],
+            next_check_on=form.cleaned_data.get("next_check_on"),
+            uploads=form.cleaned_data["attachments"],
+        )
+    except (DomainError, UploadRejected) as error:
+        return _follow_up_refusal(
+            request, matter, key=key, form=form, action_id=check.pk, error=str(error)
+        )
+    return _render_overview(request, matter)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def reschedule_follow_up_view(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse:
+    """`Muuda` on an `Arvamuse järelkontroll`: the same check, another day (docs/adr/0146 §6)."""
+    from app.workflow.follow_ups import reschedule_check
+
+    matter = get_visible_matter(request, pk)
+    check = _visible_check(request, matter, action_id)
+    form = FollowUpDateForm(request.POST, action_id=check.pk)
+    key = "follow_up_date_form"
+    if not form.is_valid():
+        return _follow_up_refusal(request, matter, key=key, form=form, action_id=check.pk)
+    try:
+        reschedule_check(
+            matter=matter,
+            action_id=check.pk,
+            target_date=form.cleaned_data["target_date"],
+            actor=request.user,
+        )
+    except DomainError as error:
+        return _follow_up_refusal(
+            request, matter, key=key, form=form, action_id=check.pk, error=str(error)
+        )
+    return _render_overview(request, matter)
+
+
 def _visible_planned(request: HttpRequest, matter: Matter, action_id: Any) -> NextAction:
     """A planned action of this Matter that this reader may see, or a 404 (AUTH-003)."""
     return get_object_or_404(
@@ -4919,7 +5053,24 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
             # uses: a new period, and — for «Jõustunud» or «Rohkem ei tegele» on
             # an open Matter — the closure, after every other field on this page
             # has been written to the open file (docs/adr/0131 §6, §10).
-            change_stage(matter=matter, stage=data.get("stage"), actor=request.user)
+            change_stage(
+                matter=matter,
+                stage=data.get("stage"),
+                actor=request.user,
+                follow_ups_confirmed=data.get("confirm_follow_up_closure", False),
+            )
+    except FollowUpClosureUnconfirmed:
+        # Closing this file would end a pending `Arvamuse järelkontroll`: the
+        # page comes back with everything typed, the warning and the box that
+        # confirms it beside `Hetkeseis` (docs/adr/0146 §8).
+        form.follow_up_closure_refused = True  # type: ignore[attr-defined]
+        matter.refresh_from_db()
+        return render(
+            request,
+            "matters/matter_edit.html",
+            _edit_context(request, matter, form, link_form),
+            status=400,
+        )
     except MatterEditConflict as conflict:
         # Somebody else changed this Matter between the page opening and this
         # save. Refused rather than applied, and the page comes back with every
@@ -5342,6 +5493,14 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
         context = _header_context(request, matter)
         context["field_error"] = str(conflict)
         return render(request, surface, context, status=409)
+    except FollowUpClosureUnconfirmed as refusal:
+        # The stage would close a file with a pending `Arvamuse järelkontroll`:
+        # the warning, and one button that posts the same stage again with the
+        # confirmation (docs/adr/0146 §8).
+        context = _header_context(request, matter)
+        context["field_error"] = str(refusal)
+        context["follow_up_closure_stage"] = getattr(value, "pk", value)
+        return render(request, surface, context, status=400)
     except DomainError as error:
         context = _header_context(request, matter)
         context["field_error"] = str(error)
@@ -5428,7 +5587,12 @@ def _apply_inline_field(
     if field == "owner":
         assign_matter(matter=matter, owner=value, actor=request.user)
     elif field == "stage":
-        change_stage(matter=matter, stage=value, actor=request.user)
+        change_stage(
+            matter=matter,
+            stage=value,
+            actor=request.user,
+            follow_ups_confirmed=form.cleaned_data.get("confirm_follow_up_closure", False),
+        )
     elif field == "source_organisations":
         # `list(...)` rather than the queryset, so an empty POST arrives as
         # `[]` — "clear every sender" — and never as the `_UNSET` that means
@@ -6785,6 +6949,20 @@ def unsaved_content(form: Any) -> list[tuple[str, str]]:
     return recovered
 
 
+def _closure_needs_confirmation(
+    request: HttpRequest, matter: Matter, *, key: str, form: Any
+) -> HttpResponse:
+    """The save would close a Matter with a pending `Arvamuse järelkontroll`.
+
+    The same form comes back, opened, with the owner's warning and the box
+    `Sulge teema ja lõpeta ka järelkontroll` beside the stage — unticked; the
+    person ticks it and saves again, or chooses another stage. Nothing was
+    written: the refusal came before the save stored anything (docs/adr/0146 §8).
+    """
+    form.follow_up_closure_refused = True
+    return _workspace_refusal(request, matter, key=key, form=form)
+
+
 def _workspace_refusal(
     request: HttpRequest,
     matter: Matter,
@@ -6961,7 +7139,12 @@ def complete_current_action(request: HttpRequest, pk: Any) -> HttpResponse:
             next_text=form.cleaned_data.get("next_text") or "",
             next_date=form.cleaned_data.get("next_date"),
             stage=form.cleaned_data.get("stage"),
+            # `Sulge teema ja lõpeta ka järelkontroll`, when the person ticked
+            # it after the warning (docs/adr/0146 §8).
+            follow_ups_confirmed=form.cleaned_data.get("confirm_follow_up_closure", False),
         )
+    except FollowUpClosureUnconfirmed:
+        return _closure_needs_confirmation(request, matter, key="current_action_form", form=form)
     except (DomainError, UploadRejected) as error:
         return _workspace_refusal(
             request, matter, key="current_action_form", form=form, error=str(error)
@@ -7941,7 +8124,13 @@ def add_koda_opinion(request: HttpRequest, pk: Any) -> HttpResponse:
                 # `Uus hetkeseis`: the file moves on after the opinion, which stays
                 # in the period it was written in (docs/adr/0131 §5).
                 stage=form.cleaned_data.get("stage"),
+                # A stage that also closes the Matter ends the check this send
+                # schedules, and any earlier one: confirmed, or refused before a
+                # byte is stored (docs/adr/0146 §8).
+                follow_ups_confirmed=form.cleaned_data.get("confirm_follow_up_closure", False),
             )
+    except FollowUpClosureUnconfirmed:
+        return _closure_needs_confirmation(request, matter, key=key, form=form)
     except (DomainError, UploadRejected) as error:
         return _workspace_refusal(request, matter, key=key, form=form, error=str(error))
     if result.closed or request.POST.get("vastab_tahtajale"):

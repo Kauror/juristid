@@ -58,6 +58,7 @@ hidden `action_id` names the step so a stale tab completes nothing.
   {% if current_action_form.stage.errors %}
     <p class="field__error" id="{{ current_action_form.stage.auto_id }}_error">{{ current_action_form.stage.errors|first }}</p>
   {% endif %}
+  {% include "matters/partials/follow_up_closure_confirm.html" with form=current_action_form %}
 
   {% comment %}
     `Järgmine tegevus` — what comes next, written directly, in this same save.
