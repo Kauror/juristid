@@ -389,10 +389,18 @@ def _submissions_left_above_their_evidence(*, matter: Matter, visibility: str) -
 
     A Matter has a handful of submissions, and this reads two columns of them.
     """
-    rows = (
+    from app.submissions.models import SubmissionSentFile
+
+    rows = list(
         Submission.objects.filter(matter=matter, final_version__isnull=False)
         .order_by()
         .values_list("visibility_override", "final_version__document__visibility_override")
+    )
+    # A send's further files stand under the same rule (docs/adr/0144 §5).
+    rows += list(
+        SubmissionSentFile.objects.filter(submission__matter=matter)
+        .order_by()
+        .values_list("submission__visibility_override", "version__document__visibility_override")
     )
     stranded = 0
     for submission_override, evidence_override in rows:

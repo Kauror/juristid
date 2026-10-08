@@ -130,13 +130,19 @@ def opinion_evidence_statuses(document: Document) -> set[str]:
 
     `Submission.final_version` — the exact bytes a send stands on — is the one
     tie between a file and a letter the evidence architecture keeps (ADR 0040,
-    DATA-001). Read from the plain manager and unscoped: this decides whether an
-    act on the file may happen at all, never what a reader is shown.
+    DATA-001), and a send's further files are the same tie for a letter that
+    went out as several files (docs/adr/0144 §5). Read from the plain manager
+    and unscoped: this decides whether an act on the file may happen at all,
+    never what a reader is shown.
     """
+    from django.db.models import Q
+
     from app.submissions.models import Submission
 
     return set(
-        Submission.objects.filter(final_version__document=document).values_list("status", flat=True)
+        Submission.objects.filter(
+            Q(final_version__document=document) | Q(sent_file_rows__version__document=document)
+        ).values_list("status", flat=True)
     )
 
 
@@ -573,15 +579,18 @@ OPINION_EVIDENCE_IS_NOT_A_WORKING_DOCUMENT = (
 def is_opinion_evidence(document: Document) -> bool:
     """Whether ``document`` is, or is filed as, the Chamber's sent letter.
 
-    Either the role says so or some Submission's `final_version` is one of its
-    versions. Asked of the plain manager and unscoped: it decides whether a link
-    may be written at all, never what a reader is shown.
+    Either the role says so or some Submission stands on one of its versions —
+    as its `final_version` or as one of its further sent files (docs/adr/0144
+    §5). Asked of the plain manager and unscoped: it decides whether a link may
+    be written at all, never what a reader is shown.
     """
-    from app.submissions.models import Submission
+    from app.submissions.models import Submission, SubmissionSentFile
 
     if document.role == DocumentRole.KODA_SUBMISSION_FINAL:
         return True
-    return Submission.objects.filter(final_version__document_id=document.pk).exists()
+    if Submission.objects.filter(final_version__document_id=document.pk).exists():
+        return True
+    return SubmissionSentFile.objects.filter(version__document_id=document.pk).exists()
 
 
 @transaction.atomic

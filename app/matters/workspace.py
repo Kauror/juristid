@@ -863,14 +863,19 @@ def add_matter_external_position(
         return result
 
 
+#: A `Koja arvamus` is recorded with the bytes that went out, or not at all.
+SENT_OPINION_NEEDS_A_FILE = "Lisa fail, mis välja saadeti."
+
+
 @transaction.atomic
 def add_matter_koda_opinion(
     *,
     matter: Matter,
     author: Any,
-    upload: Any,
     recipients: Sequence[Any],
     sent_on: Any,
+    upload: Any = None,
+    uploads: Sequence[Any] = (),
     title: str = "",
     summary: str = "",
     complete_action_id: Any = None,
@@ -983,6 +988,13 @@ def add_matter_koda_opinion(
     chosen for anybody: not the newest deadline, not every round. ``once_token``
     makes a second press of the same drawn form a refusal rather than a second
     opinion. No `Tööplaan` step is named or finished (docs/adr/0141).
+
+    **``uploads`` — every file that went out** (docs/adr/0144 §5). The first is
+    the letter — `final_version`, with every guarantee it always had; each further
+    one becomes its own `Document` + `DocumentVersion`, filed as the opinion's
+    letter too, and is bound to **this same** `Submission` as a further sent file.
+    One opinion and one «Arvamus välja» row, never one per file. ``upload`` is the
+    one-file shape every earlier caller passes, and still works.
     """
     from datetime import datetime, time
 
@@ -994,10 +1006,13 @@ def add_matter_koda_opinion(
         create_document,
         read_uploads,
     )
-    from app.documents.uploads import UploadRejected, read_upload
+    from app.documents.uploads import UploadRejected, document_title_for, read_upload
     from app.submissions.enums import SentAtPrecision
     from app.submissions.services import register_sent_opinion_on_open_matter
 
+    sent_files = ([upload] if upload is not None else []) + _uploads(uploads)
+    if not sent_files:
+        raise DomainError(SENT_OPINION_NEEDS_A_FILE)
     if sent_on is None:
         # Stated here as well as in the service, because this is the boundary the
         # panel posts to and «the application picked a day» is the one failure
@@ -1038,7 +1053,8 @@ def add_matter_koda_opinion(
         # ordinary evidence pipeline — same reader, same scan gate, same checksum,
         # same immutability — and the role is the one the product already has for
         # Koda's own opinion.
-        accepted = read_upload(upload)
+        accepted = read_upload(sent_files[0])
+        further = [read_upload(item) for item in sent_files[1:]]
         # The working documents too, and before the letter is stored: a refusal
         # here must leave no evidence bytes behind (docs/adr/0129 §6). Prefixed
         # with the box's own name, so a person told «file content does not
@@ -1049,7 +1065,7 @@ def add_matter_koda_opinion(
             raise UploadRejected(f"Töödokumendid: {error}") from error
         document = create_document(
             matter=locked_matter,
-            title=(title or "").strip() or accepted.filename,
+            title=(title or "").strip() or document_title_for(accepted),
             role=_Role.KODA_SUBMISSION_FINAL,
             created_by=author,
         )
@@ -1061,6 +1077,27 @@ def add_matter_koda_opinion(
             uploaded_by=author,
         )
         result.documents = [document]
+        further_versions = []
+        for extra in further:
+            # The letter's own role and restriction: these bytes went out with
+            # it, and are no less restricted than the opinion that stands on them.
+            extra_document = create_document(
+                matter=locked_matter,
+                title=document_title_for(extra),
+                role=_Role.KODA_SUBMISSION_FINAL,
+                visibility_override=document.visibility_override,
+                created_by=author,
+            )
+            further_versions.append(
+                add_evidence_version(
+                    document=extra_document,
+                    content=extra.content,
+                    original_filename=extra.filename,
+                    mime_type=extra.mime_type,
+                    uploaded_by=author,
+                )
+            )
+            result.documents.append(extra_document)
         # Midnight in Europe/Tallinn, carried as `SentAtPrecision.DATE` so that no
         # surface ever reads the anchor back as «00:00». The person answered a day
         # and the record says so (app/submissions/enums.py, docs/adr/0079 §2).
@@ -1078,6 +1115,7 @@ def add_matter_koda_opinion(
             recipients=list(recipients),
             sent_at=moment,
             sent_at_precision=SentAtPrecision.DATE,
+            further_versions=further_versions,
         )
         result.documents += capture_accepted_evidence(
             matter=locked_matter,

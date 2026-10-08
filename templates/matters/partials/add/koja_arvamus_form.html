@@ -26,7 +26,7 @@ panel. Under `PRAEGUNE TEGEVUS` it was drawn a second time for the current
         <div class="cx-grid cx-grid--links">
           <div class="cx-f">
             <span class="cx-f__lab">{% field_label form.upload %}</span>
-            {% include "matters/partials/add_files.html" with field=form.upload drop_text="Lohista fail siia või " %}
+            {% include "matters/partials/add_files.html" with field=form.upload %}
           </div>
           <label class="cx-f cx-f--date"
                  for="{{ form.sent_on.id_for_label }}">
@@ -38,27 +38,6 @@ panel. Under `PRAEGUNE TEGEVUS` it was drawn a second time for the current
           <p class="field__error" id="{{ form.sent_on.auto_id }}_error">
             {{ form.sent_on.errors|first }}</p>
         {% endif %}
-
-        {% comment %}
-          `Töödokumendid` — the editable file the letter was drafted in, beside
-          the letter and visibly not it (docs/adr/0129 §2).
-
-          **What went out is `Saadetud fail` above, and only that.** These are
-          filed as `Töödokument` — the box says so, nothing is read off the
-          bytes — and tied to this same opinion, so next year's lawyer finds the
-          DOCX under the letter it became instead of as a stray upload on
-          Dokumendid. They are never the opinion's evidence and cannot be.
-
-          Optional and several, the multi-file control every other panel uses;
-          the hint says in one line what the box is for, because «Saadetud fail»
-          and «Töödokumendid» next to each other is exactly where a person
-          wonders which file goes where.
-        {% endcomment %}
-        <div class="cx-f">
-          <span class="cx-f__lab">{% field_label form.working_files %}</span>
-          {% include "matters/partials/add_files.html" with field=form.working_files %}
-          <p class="uxtl__formhint">Muudetav fail, millest arvamus koostati (nt DOCX). Ei ole saadetud fail.</p>
-        </div>
 
         {% comment %}
           `Adressaadid` — the shared picker, searchable, and opening on the
@@ -150,6 +129,6 @@ panel. Under `PRAEGUNE TEGEVUS` it was drawn a second time for the current
           </label>
         </div>
         <div class="addform__actions">
-          <button class="button button--primary" type="submit">Registreeri arvamus</button>
+          <button class="button button--primary" type="submit">Salvesta</button>
         </div>
       </form>

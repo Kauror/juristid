@@ -7,6 +7,7 @@ window in which the system claims Koda sent an opinion it cannot produce.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import date, datetime
 from typing import Any
 
@@ -37,6 +38,7 @@ from app.submissions.models import (
     Submission,
     SubmissionJointSubmitter,
     SubmissionRecipient,
+    SubmissionSentFile,
     SubmissionTagAssignment,
     SubmissionWebsiteOverviewLink,
 )
@@ -388,6 +390,17 @@ def mark_submission_sent(
         version=_evidence_under_document_lock(final_version),
         matter_visibility=matter.visibility,
     )
+    further = list(
+        SubmissionSentFile.objects.filter(submission=locked)
+        .select_related("version")
+        .order_by("position")
+    )
+    for row in further:
+        check_evidence_is_usable(
+            submission=locked,
+            version=_evidence_under_document_lock(row.version),
+            matter_visibility=matter.visibility,
+        )
 
     if sent_at_precision not in SentAtPrecision.values:
         raise DomainError(f"Tundmatu saatmisaja täpsus {sent_at_precision!r}.")
@@ -413,19 +426,24 @@ def mark_submission_sent(
         ]
     )
 
+    payload: dict[str, Any] = {
+        "kind": locked.kind,
+        "sent_at": locked.sent_at.isoformat(),
+        "sent_at_precision": locked.sent_at_precision,
+        "final_version": str(locked.final_version_id),
+        "addressees": [organisation.name for organisation in addressees_of(locked)],
+    }
+    # Only when the letter went out as several files, so a one-file send
+    # records exactly what it always did (docs/adr/0144 §5).
+    if further:
+        payload["sent_files"] = [str(row.version_id) for row in further]
     record_change_event(
         event_type=ChangeEventType.SUBMISSION_SENT,
         matter=locked.matter,
         actor=actor,
         obj=locked,
         summary=locked.title[:200],
-        payload={
-            "kind": locked.kind,
-            "sent_at": locked.sent_at.isoformat(),
-            "sent_at_precision": locked.sent_at_precision,
-            "final_version": str(locked.final_version_id),
-            "addressees": [organisation.name for organisation in addressees_of(locked)],
-        },
+        payload=payload,
     )
 
     submission.refresh_from_db()
@@ -786,6 +804,7 @@ def register_sent_opinion(
     summary: str = "",
     sent_at: datetime | None = None,
     sent_at_precision: str = SentAtPrecision.TIMESTAMP,
+    further_versions: Sequence[DocumentVersion] = (),
 ) -> Submission:
     """Record that a file already on the Matter went out, in one act.
 
@@ -824,6 +843,12 @@ def register_sent_opinion(
     stated (R2-01). `mark_submission_sent` keeps its "now" default for the
     separate real-time act — pressing `Märgi saadetuks` on a draft genuinely
     does mean *now* — and this route refuses to use it.
+
+    ``further_versions`` are the letter's other files when it went out as
+    several — a signed container and an explanatory annex, say. They are bound
+    to this one Submission before the send is stamped, under the same checks as
+    ``version``, and the send event names them (docs/adr/0144 §5). One opinion,
+    never one per file.
     """
     if version.document_id != document.pk:
         raise DomainError("Tõend peab kuuluma valitud dokumendi juurde.")
@@ -881,6 +906,8 @@ def register_sent_opinion(
         visibility_override=document.visibility_override,
     )
     select_final_evidence(submission=submission, version=version, actor=actor)
+    if further_versions:
+        bind_further_sent_files(submission=submission, versions=further_versions)
     return mark_submission_sent(
         submission=submission,
         actor=actor,
@@ -889,6 +916,59 @@ def register_sent_opinion(
         channel=channel,
         reference=reference,
     )
+
+
+#: The same bytes twice on one send — the letter named again as an annex.
+SENT_FILE_REPEATED = "Sama faili ei saa arvamusele kaks korda lisada."
+
+#: Further files are bound while the opinion is being recorded, never after.
+SENT_FILES_ONLY_BEFORE_SENDING = "Saadetud faile saab arvamusele lisada ainult salvestamisel."
+
+
+@transaction.atomic
+def bind_further_sent_files(
+    *, submission: Submission, versions: Sequence[DocumentVersion]
+) -> list[SubmissionSentFile]:
+    """Bind a draft's second and later sent files, in order (docs/adr/0144 §5).
+
+    The lock order and the checks are `select_final_evidence`'s: the Matter,
+    then the submission, then each document; same Matter, not removed, not a
+    working document, never less restricted than the submission. A file that
+    is already a draft's chosen letter is refused for the same reason the first
+    file is — it would put one set of bytes under two records.
+
+    Only on a draft that already has its first file, so a send can never be
+    left with further files and no `final_version`, and a sent letter cannot
+    grow files after the fact: what went out is fixed when it is recorded.
+    """
+    matter = lock_matter_for_evidence_integrity(submission.matter_id)
+    locked = lock_submission_for_evidence_integrity(submission.pk)
+    if locked.status != SubmissionStatus.DRAFT or locked.final_version_id is None:
+        raise DomainError(SENT_FILES_ONLY_BEFORE_SENDING)
+
+    existing = SubmissionSentFile.objects.filter(submission=locked)
+    seen = {locked.final_version_id, *existing.values_list("version_id", flat=True)}
+    position = existing.order_by("-position").values_list("position", flat=True).first() or 0
+    rows = []
+    for version in versions:
+        if version.pk in seen:
+            raise DomainError(SENT_FILE_REPEATED)
+        seen.add(version.pk)
+        if Submission.objects.filter(status=SubmissionStatus.DRAFT, final_version=version).exists():
+            raise DomainError(
+                "See fail on juba koostatava arvamuse lõplik tõend. "
+                "Märgi see arvamus saadetuks selle enda juures."
+            )
+        check_evidence_is_usable(
+            submission=locked,
+            version=_evidence_under_document_lock(version),
+            matter_visibility=matter.visibility,
+        )
+        position += 1
+        rows.append(
+            SubmissionSentFile.objects.create(submission=locked, version=version, position=position)
+        )
+    return rows
 
 
 # ---------------------------------------------------------------------------
@@ -1047,6 +1127,7 @@ def register_sent_opinion_on_open_matter(
     summary: str = "",
     sent_at: datetime | None = None,
     sent_at_precision: str = SentAtPrecision.TIMESTAMP,
+    further_versions: Sequence[DocumentVersion] = (),
 ) -> Submission:
     """`Registreeri saatmine` from Dokumendid, on a Matter that is still open.
 
@@ -1085,6 +1166,7 @@ def register_sent_opinion_on_open_matter(
         summary=summary,
         sent_at=sent_at,
         sent_at_precision=sent_at_precision,
+        further_versions=further_versions,
     )
 
 

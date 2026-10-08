@@ -19,12 +19,10 @@ timestamp or a filename (app/documents/links.py, brief §21, §22).
   <span class="visually-hidden">{{ field.label }}</span>
   {{ field }}
   {% comment %}
-    `drop_text` is for the one control that takes a single file — `+ Koja
-    arvamus`, where one `Submission` has one `final_version`. Everything else
-    takes any number and gets the plural it has always had, which is why this is a
-    parameter with a default rather than a second partial: the drop contract, the
-    accessible name and the script hook must stay one implementation
-    (app/matters/forms.py `KodaOpinionForm.upload`).
+    `drop_text` is for a control that takes a single file. None does today —
+    `+ Koja arvamus` takes every file that went out since docs/adr/0144 §5 — so
+    every drop gets the plural; the parameter stays so the drop contract, the
+    accessible name and the script hook remain one implementation.
   {% endcomment %}
   {% comment %}
     A drop zone has no visible label of its own, so a required one carries the

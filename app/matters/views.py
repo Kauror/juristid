@@ -7862,7 +7862,7 @@ def add_koda_opinion(request: HttpRequest, pk: Any) -> HttpResponse:
                 complete_action_id=_named_action_id(request, matter, form),
                 matter=matter,
                 author=request.user,
-                upload=form.cleaned_data["upload"],
+                uploads=form.cleaned_data["upload"],
                 # The bodies chosen, plus at most one somebody named through the
                 # picker's `+`. `resolve_addressee` is asked only when there is a
                 # name — the same rule the feedback panels use, and it runs inside
@@ -7876,10 +7876,6 @@ def add_koda_opinion(request: HttpRequest, pk: Any) -> HttpResponse:
                 # somebody chose, rather than a headline cut out of the summary
                 # (docs/adr/0095 §2).
                 summary=form.cleaned_data.get("summary") or "",
-                # `Töödokumendid`: the editable file the letter was drafted in,
-                # filed as `Töödokument` under this same opinion and never as what
-                # was sent (docs/adr/0129 §2).
-                working_uploads=form.cleaned_data.get("working_files") or [],
                 # `Uus hetkeseis`: the file moves on after the opinion, which stays
                 # in the period it was written in (docs/adr/0131 §5).
                 stage=form.cleaned_data.get("stage"),

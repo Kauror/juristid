@@ -65,6 +65,18 @@ without the rail becoming a second file list.
       {% else %}
         <span class="railcard__file muted">{{ line.document.title }}</span>
       {% endif %}
+      {% comment %}
+        The rest of what went out with the letter, on the same line: one opinion,
+        however many files it was sent as (docs/adr/0144 §5).
+      {% endcomment %}
+      {% for sent in line.further %}
+        {% if sent.current_version %}
+          <a class="railcard__file"
+             href="{% url 'documents:download' pk=sent.current_version.pk %}">
+            {{ sent.current_version.original_filename }} ↗
+          </a>
+        {% endif %}
+      {% endfor %}
       {% for working in line.working %}
         {% if working.current_version %}
           {% comment %}
