@@ -197,6 +197,13 @@
   --border-subtle: var(--primitive-neutral-700);
   --border-default: var(--primitive-neutral-600);
   --border-control: var(--primitive-neutral-550);
+  /* The edge of a field somebody types into. The same value as
+     `--border-control` here, so the dark theme draws exactly what it always
+     drew; its own role because the light theme cannot share one: there a
+     text field has to be found by its edge alone, which wants 3:1 against the
+     page (WCAG 1.4.11), and every badge, tag and menu rule drawn that dark
+     would turn a quiet page into a grid (docs/adr/0147). */
+  --border-input: var(--border-control);
   --border-strong: var(--primitive-neutral-400);
 
   --text-primary: var(--primitive-neutral-50);
@@ -266,67 +273,90 @@
 /* ====================================================================
  * Semantic tokens — light theme
  *
- * Not part of the MVP. It exists so the architecture is proven to support a
- * future accessible light theme by re-pointing semantic values, with no
- * component changes (docs/adr/0009). Values are provisional until a light
- * theme is actually specified.
+ * A fully supported alternative to the dark default, chosen per browser with
+ * the switch on the bar (docs/adr/0147). Same roles, light values: every
+ * semantic token the dark block defines is defined here too, and
+ * tests/test_theme_tokens.py fails the build when one is missing — a role
+ * left out would silently fall through to its dark value.
+ *
+ * How it is built, so the next value added follows the same rules:
+ *
+ *   - Surfaces: a light grey canvas, white for everything that sits on it
+ *     (cards, rows, the bar, menus), and the recessed or banded surfaces a
+ *     step either side. Elevation is said with a border and a shadow, the way
+ *     a light interface says it, rather than with a lighter fill.
+ *   - Ink: graphite, never pure black. Every text role — muted included —
+ *     reaches WCAG AA 4.5:1 on every surface and every status fill here,
+ *     which the dark theme's muted step does not (tests/test_text_contrast.py
+ *     holds both palettes to what each one meets).
+ *   - Chamber blue #009FDA is the brand, but as text or as a fill under white
+ *     text it is 2.9:1 on white. The interactive blues are its darker steps,
+ *     the same hue, so a link, a primary button and a focus ring are AA here.
+ *   - Status colours are the dark theme's hues taken dark enough to be text
+ *     on white and on their own soft fill.
+ *   - Boundaries a person has to find — a text field, a focus ring, the
+ *     accent that marks a selected option — are 3:1 against the surfaces they
+ *     sit on (WCAG 1.4.11). Decorative separators stay quiet.
  * ==================================================================== */
 
 :root[data-theme="light"] {
   color-scheme: light;
 
-  --surface-base: #f6f8fa;
+  --surface-base: #f2f4f7;
   --surface-nav: var(--primitive-neutral-0);
   --surface-raised: var(--primitive-neutral-0);
-  --surface-panel: #f0f3f6;
-  --surface-elevated: #e7ecf1;
-  --surface-hover: #eef2f6;
-  --surface-selected: #e2f2fa;
-  --surface-backdrop: rgba(16, 20, 24, 0.32);
-  --surface-capture: #eef4f8;
-  --surface-rail: #eef1f4;
+  --surface-panel: #f8f9fb;
+  --surface-elevated: var(--primitive-neutral-0);
+  --surface-hover: #e9edf2;
+  --surface-overlay-hover: #e4e9ef;
+  --surface-selected: #e0eef7;
+  --surface-backdrop: rgba(16, 20, 24, 0.4);
+  --surface-capture: #eef5fa;
+  --surface-rail: #ebeef2;
 
-  --border-subtle: #e2e7ec;
-  --border-default: #d3dae1;
-  --border-control: #c3ccd5;
-  --border-strong: #9aa7b4;
+  --border-subtle: #e1e6eb;
+  --border-default: #d2d9e0;
+  --border-control: #b4bec8;
+  --border-input: #7b8794;
+  --border-strong: #8a96a2;
 
-  --text-primary: #101418;
-  --text-body: #2c343c;
-  --text-secondary: #4d5964;
-  --text-muted: #63707c;
-  /* The light theme's equivalent: `--text-muted` taken 20% towards the page. */
-  --text-atypical: #828d96;
+  --text-primary: #12171d;
+  --text-body: #2a323b;
+  --text-secondary: #46515c;
+  --text-muted: #58636e;
+  /* `--text-muted` taken a step towards the page, as in the dark theme — but
+     only as far as AA allows, because here it can: the quieter chip is still
+     4.5:1 on the surfaces a chip sits on. */
+  --text-atypical: #67717b;
   --text-inverse: var(--primitive-neutral-0);
 
-  --accent-primary: #0079a6;
-  --accent-hover: #00618a;
-  --accent-link: #0079a6;
-  --accent-soft: #e2f2fa;
-  --accent-border: #9fd4ec;
+  --accent-primary: #00739f;
+  --accent-hover: #005c80;
+  --accent-link: #006a93;
+  --accent-soft: #e0eef7;
+  --accent-border: #4293bb;
 
-  --focus-ring: #0079a6;
-  --accent-halo: rgba(0, 121, 166, 0.14);
-  --accent-glow: rgba(0, 121, 166, 0.16);
-  --status-danger-halo: rgba(178, 60, 44, 0.1);
+  --focus-ring: #006a93;
+  --accent-halo: rgba(0, 115, 159, 0.16);
+  --accent-glow: rgba(0, 159, 218, 0.22);
+  --status-danger-halo: rgba(180, 40, 28, 0.12);
 
-  --status-danger: #b23c2c;
-  --status-danger-soft: #fbecea;
-  --status-danger-border: #eab8b0;
-  --status-warning: #8a6512;
-  --status-warning-soft: #fdf3e0;
-  --status-warning-border: #e8cf9c;
-  --status-success: #1f7a58;
-  --status-success-soft: #e6f5ef;
-  --status-success-border: #a8dcc7;
-  --status-info: #0f6ea3;
-  --status-info-soft: #e4f1f9;
+  --status-danger: #b0281c;
+  --status-danger-soft: #fcedeb;
+  --status-danger-border: #cf6b5f;
+  --status-warning: #855600;
+  --status-warning-soft: #fcf3e2;
+  --status-warning-border: #d6a85a;
+  --status-success: #17704a;
+  --status-success-soft: #e6f4ed;
+  --status-success-border: #6db894;
+  --status-info: #0b6597;
+  --status-info-soft: #e3eff8;
 
   --surface-document: var(--primitive-neutral-0);
   --text-on-document: var(--primitive-neutral-900);
 
-  --shadow-overlay: 0 24px 64px rgba(16, 20, 24, 0.18);
-  --shadow-menu: 0 12px 32px rgba(16, 20, 24, 0.14);
-  --shadow-popover: 0 16px 44px rgba(16, 20, 24, 0.22);
-  --surface-overlay-hover: #dde4ea;
+  --shadow-overlay: 0 24px 64px rgba(16, 24, 32, 0.2);
+  --shadow-menu: 0 10px 28px rgba(16, 24, 32, 0.14);
+  --shadow-popover: 0 14px 40px rgba(16, 24, 32, 0.18);
 }

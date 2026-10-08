@@ -26,6 +26,10 @@ from the public website.
    light block that exists to prove a light theme needs different values, not
    different components.
 
+   **Superseded on 2026-10-08 for the light block's status — see the amendment
+   at the end of this document.** The light block is a supported theme now,
+   chosen per browser; dark is still the default (ADR 0147).
+
 Every colour value is **PROVISIONAL** and marked as such in the file, on the
 `/disainisusteem/` page and in this ADR. They are contrast-oriented placeholders,
 not Koda brand values. Replacing them when the CVI package arrives is an edit to
@@ -91,3 +95,44 @@ two lines if the Chamber would rather match the handoff exactly.
 as tint — TEEN filled, OOTAN solid outline, JÄLGIN dashed — and every date
 carries a written label saying whether it is a deadline, a review date or an
 expectation.
+
+---
+
+## Amendment, 2026-10-08 — the light block is a supported theme
+
+- Status: accepted, amending «themes — … a light block that exists to prove a
+  light theme needs different values, not different components» and the
+  Stage-1 update's «the light-theme block still proves a future light theme
+  needs different values rather than different components»
+- Scope: the light semantic block of `static/css/tokens.css`; how a page
+  reaches it; what components may read. Decided in ADR 0147.
+
+### What was decided before
+
+The light block existed only to prove the architecture: no page could reach
+it (`templates/base.html` hard-coded `data-theme="dark"`), and its values were
+marked provisional.
+
+### Why it is superseded
+
+The owner asked for a light theme as a fully supported alternative, with dark
+staying the default (ADR 0147).
+
+### What is decided now
+
+- The light block is a complete, reviewed palette, defining every role the
+  dark block defines; a browser reaches it with the switch on the bar, and the
+  choice is kept in that browser.
+- The proof this ADR asked for held: the light theme needed new values, one new
+  role (`--border-input`, equal to `--border-control` in dark) and two
+  component rules moved from primitives to roles — no component was redesigned.
+- The rules this ADR stated in prose are tests now
+  (`tests/test_theme_contract.py`): no component reads a primitive, both blocks
+  define the same roles, and no component carries a light-only override.
+
+### What this amendment does not change
+
+The three layers, the rule that components consume roles and never values,
+the CVI values of the dark theme, dark as the default and the primary
+expression, Barlow, and status never being colour alone. The dark theme draws
+what it drew before.

@@ -25,15 +25,17 @@
  * Shared: the initials badge that names who carries a dated row
  * ==================================================================== */
 
-/* `--primitive-neutral-600` rather than a surface token, because this is the
-   same disc the existing `.avatar` draws and two greys beside each other would
-   read as two different kinds of person. */
+/* One step up from the elevated surfaces around it — the disc the existing
+   `.avatar` draws reads as the same kind of person beside it. It read
+   `--primitive-neutral-600` directly until the light theme (docs/adr/0147),
+   where that primitive is a near-black disc under grey initials (1.8:1);
+   `--surface-overlay-hover` is that very value in the dark theme. */
 .uxav {
   display: inline-block;
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: var(--primitive-neutral-600);
+  background: var(--surface-overlay-hover);
   color: var(--text-secondary);
   font: 600 9px/20px var(--typography-font-sans);
   text-align: center;
