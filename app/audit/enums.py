@@ -463,3 +463,43 @@ class SecurityEventType(models.TextChoices):
     SHARED_GATE_PASSED = "SHARED_GATE_PASSED", "Jagatud parool sisestati"
     SHARED_GATE_CLOSED = "SHARED_GATE_CLOSED", "Jagatud seanss lõpetati"
     PERSONA_SELECTED = "PERSONA_SELECTED", "Kasutajavaade valiti"
+    # -- local authentication and account administration (docs/adr/0145) ---
+    #
+    # Each its own type, for the reason the timeline's events each have one: a
+    # trail that called a deactivation "role changed" could not answer who
+    # switched somebody off. Successful and failed sign-in reuse
+    # AUTHENTICATION_SUCCEEDED / AUTHENTICATION_FAILED with
+    # `detail.path = "local_password"`, beside the other modes' rows.
+    #
+    # **No detail payload on any of these carries a password, a link, a token,
+    # a TOTP secret or a recovery code** (tests/test_local_auth_audit.py).
+    SIGNED_OUT = "SIGNED_OUT", "Välja logitud"
+    SESSION_ENDED = "SESSION_ENDED", "Seanss lõpetati"
+    REAUTHENTICATED = "REAUTHENTICATED", "Isik kinnitati uuesti"
+    ACCOUNT_CREATED = "ACCOUNT_CREATED", "Konto loodud"
+    ACCOUNT_UPDATED = "ACCOUNT_UPDATED", "Konto andmeid muudeti"
+    ACCOUNT_INVITED = "ACCOUNT_INVITED", "Konto kinnitati ja kutsuti"
+    ACCOUNT_INVITATION_CANCELLED = "ACCOUNT_INVITATION_CANCELLED", "Kutse tühistati"
+    ACCOUNT_ACTIVATED = "ACCOUNT_ACTIVATED", "Konto aktiveeriti"
+    ACCOUNT_DEACTIVATED = "ACCOUNT_DEACTIVATED", "Konto lülitati välja"
+    ACCOUNT_REACTIVATED = "ACCOUNT_REACTIVATED", "Konto lülitati uuesti sisse"
+    LOGIN_EMAIL_CHANGED = "LOGIN_EMAIL_CHANGED", "Sisselogimise aadress muudeti"
+    EMAIL_EXCEPTION_APPROVED = "EMAIL_EXCEPTION_APPROVED", "Välise aadressi erand kinnitati"
+    CAPABILITIES_CHANGED = "CAPABILITIES_CHANGED", "Õigused muudeti"
+    ADMINISTRATOR_BOOTSTRAPPED = "ADMINISTRATOR_BOOTSTRAPPED", "Esimene haldur määrati"
+    PASSWORD_SET = "PASSWORD_SET", "Parool seati"
+    PASSWORD_CHANGED = "PASSWORD_CHANGED", "Parool muudeti"
+    PASSWORD_RESET_REQUESTED = "PASSWORD_RESET_REQUESTED", "Parooli taastamist taotleti"
+    CREDENTIAL_LINK_ISSUED = "CREDENTIAL_LINK_ISSUED", "Ühekordne link väljastati"
+    ACCOUNT_EMAIL_DELIVERY = "ACCOUNT_EMAIL_DELIVERY", "Konto e-kiri"
+    MFA_ENROLLED = "MFA_ENROLLED", "Teine tegur seadistati"
+    MFA_REMOVED = "MFA_REMOVED", "Teine tegur eemaldati"
+    MFA_RECOVERY_CODE_USED = "MFA_RECOVERY_CODE_USED", "Taastekoodi kasutati"
+    MFA_RECOVERY_CODES_REGENERATED = (
+        "MFA_RECOVERY_CODES_REGENERATED",
+        "Taastekoodid loodi uuesti",
+    )
+    # A security-sensitive request that was refused: a crafted privilege change,
+    # a final-administrator removal, a delegation beyond the actor's own
+    # authority. Recorded so that somebody probing the boundary leaves a trace.
+    ACCESS_REFUSED = "ACCESS_REFUSED", "Turvatundlik toiming keelati"

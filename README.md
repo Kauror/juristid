@@ -46,10 +46,15 @@ between releases; the ADR index is written as part of the change it describes.
 
 **The phase is pre-QA, behind the shared gate.** Every ADR from 0040 onward
 records it that way, and it is what `AUTH_MODE=shared_gate` means on the
-real-data instance: one department password, then a persona, with Cloudflare
-Access — implemented, verified against the team's published keys, and not yet
-the mode in force — as the hardening step after it
-([ADR 0016](docs/adr/0016-authentication-modes-and-the-shared-gate.md)).
+real-data instance: one department password, then a persona
+([ADR 0016](docs/adr/0016-authentication-modes-and-the-shared-gate.md)). The
+step after it is personal sign-in — `AUTH_MODE=local_password`, a personal
+password and a second factor, with account administration under Haldus →
+Kasutajad — built, tested and deployed **dormant**, to be switched on only by a
+separately approved activation
+([ADR 0145](docs/adr/0145-local-password-authentication-and-account-administration.md),
+[activation runbook](docs/LOCAL_AUTH_ACTIVATION_RUNBOOK.md)). Cloudflare Access
+stays implemented and supported beside it.
 [`docs/production-readiness.md`](docs/production-readiness.md) is the gate
 sequence for anything that changes production.
 

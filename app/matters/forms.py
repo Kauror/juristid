@@ -121,6 +121,22 @@ class UserChoiceField(forms.ModelChoiceField):
         return self._labels.get(obj.pk) or obj.get_short_name() or obj.upn
 
 
+def restrict_owner_to_self(form: Any, viewer: Any) -> None:
+    """Without `work.assign`, the only Vastutaja new work may name is oneself.
+
+    Naming a colleague as the owner of a Teema one is creating is assigning
+    them work, and the capability for that can be withdrawn per person
+    (docs/adr/0145 §3). The choices themselves narrow, so the GET offers only
+    what the POST accepts and a crafted identifier is refused as an invalid
+    choice — the same shape as every other population in this module.
+    """
+    from app.core.authorization import may_assign_work
+
+    if viewer is None or getattr(viewer, "pk", None) is None or may_assign_work(viewer):
+        return
+    set_choices(form, "owner", assignable_users().filter(pk=viewer.pk))
+
+
 def set_choices(form: forms.Form, name: str, queryset: QuerySet) -> None:
     """Point a choice field at its queryset.
 
@@ -1278,6 +1294,7 @@ class MatterCreateForm(
         # preserve, so the population is the current department workers with no
         # union (app/accounts/selectors.py).
         set_choices(self, "owner", assignable_users())
+        restrict_owner_to_self(self, viewer)
         set_choices(self, "stage", active_stages())
 
         # The explanations the Hetkeseis chips carry, read once. Handed to the
@@ -1594,6 +1611,16 @@ class MatterEditForm(
         # being optional that would not even fail loudly — it would clear an
         # owner nobody asked to remove (app/accounts/selectors.py).
         set_choices(self, "owner", assignable_including(matter.owner if matter else None))
+        # Without `work.assign` the Vastutaja is shown and kept, never changed:
+        # a disabled field ignores what the POST says and keeps the owner the
+        # Matter already has (docs/adr/0145 §3). `assign_matter` refuses the
+        # change as well, for any route that reaches it some other way.
+        from app.core.authorization import may_assign_work
+
+        if viewer is not None and getattr(viewer, "pk", None) is not None:
+            if not may_assign_work(viewer):
+                self.fields["owner"].disabled = True
+                self.initial["owner"] = matter.owner_id if matter else None
 
         # The offered vocabulary *plus* the stage this Matter already holds —
         # the shape `owner` uses one line up and `policy_areas` uses below, for
@@ -3491,6 +3518,7 @@ class IncomingIntakeForm(forms.Form):
         # way into a Matter and must not be the way around `Uus teema`'s rule
         # (app/accounts/selectors.py).
         set_choices(self, "owner", assignable_users())
+        restrict_owner_to_self(self, viewer)
 
         # Every organisation is a *valid* sender; only the frequent ones are
         # offered as chips. Validation therefore runs against the full set —

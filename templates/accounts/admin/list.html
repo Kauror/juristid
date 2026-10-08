@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Kasutajad · {{ application_name }}{% endblock %}
+
+{% comment %}
+  Haldus → Kasutajad. Every account, searchable by name and address, with the
+  five facts an administrator scans for: role, status, administrative power and
+  the last personal sign-in. Never a raw permission identifier
+  (docs/adr/0145 §12).
+
+  Reached only through `may_administer_accounts`; every other reader gets a 404
+  for this address (app/accounts/admin_views.py).
+{% endcomment %}
+
+{% block content %}
+<div class="page">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Kasutajad</h1>
+    <span class="pagehead__context">Haldus</span>
+    <div class="pagehead__actions">
+      <a class="button button--primary" href="{% url 'account_admin:create' %}">+ Uus kasutaja</a>
+    </div>
+  </div>
+
+  <form method="get" class="filterbar" role="search">
+    <label class="visually-hidden" for="kasutaja-otsing">Otsi nime või e-posti järgi</label>
+    <input class="field__input field__input--compact acctsearch" id="kasutaja-otsing" type="search"
+           name="q" value="{{ query }}" placeholder="Nimi või e-post" maxlength="200">
+    <label class="visually-hidden" for="kasutaja-seis">Seis</label>
+    <select class="field__input field__input--compact" id="kasutaja-seis" name="seis">
+      {% for value, label in statuses %}
+        <option value="{{ value }}"{% if value == status_key %} selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="button button--secondary">Otsi</button>
+  </form>
+
+  {% if rows %}
+    <div class="accttable">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th scope="col">Nimi</th>
+            <th scope="col">E-post</th>
+            <th scope="col">Roll</th>
+            <th scope="col">Seis</th>
+            <th scope="col">Haldusõigused</th>
+            <th scope="col">Viimane sisselogimine</th>
+            <th scope="col"><span class="visually-hidden">Tegevused</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            <tr>
+              <td>
+                {{ row.person.display_name }}
+                {% if row.person.is_synthetic %}<span class="badge badge--quiet">sünteetiline</span>{% endif %}
+              </td>
+              <td class="mono">{{ row.person.upn }}</td>
+              <td>{{ row.person.get_role_display }}</td>
+              <td>{% include "accounts/admin/status_badge.html" with person=row.person %}</td>
+              <td>{{ row.administrative|join:", "|default:"—" }}</td>
+              <td>{% if row.person.last_authenticated_at %}{{ row.person.last_authenticated_at|date:"j.n.Y H:i" }}{% else %}—{% endif %}</td>
+              <td><a href="{% url 'account_admin:detail' row.person.pk %}">Ava</a></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="empty"><p>Ühtegi kontot ei leitud.</p></div>
+  {% endif %}
+</div>
+{% endblock %}

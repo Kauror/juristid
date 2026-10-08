@@ -175,9 +175,16 @@ AUTH_USER_MODEL = "accounts.User"
 #   none              a developer laptop and CI
 #   shared_gate       one department password, then a persona from a list
 #   cloudflare_access Cloudflare verifies the individual; we verify Cloudflare
+#   local_password    the individual signs in here: e-mail, personal password,
+#                     second factor where required (docs/adr/0145) — built,
+#                     tested and dormant; no deployment runs it until the
+#                     activation runbook has been followed
+#                     (docs/LOCAL_AUTH_ACTIVATION_RUNBOOK.md)
 #
-# Business authorization is identical in all three. What differs is how much
+# Business authorization is identical in all four. What differs is how much
 # the deployment may claim about the identity it hands to that authorization.
+# Exactly one is in force: there is no setting that runs two of them side by
+# side, by design (docs/adr/0016, docs/adr/0145 §2).
 AUTH_MODE = env("AUTH_MODE", "none")
 
 # -- the shared gate --------------------------------------------------------
@@ -207,31 +214,122 @@ SHARED_GATE_SESSION_SECONDS = env_int("SHARED_GATE_SESSION_SECONDS", 12 * 60 * 6
 # Where `login_required` sends somebody who has no identity yet, which is a
 # different place in each mode:
 #
-#   shared_gate   the persona selector — they are already past the door, they
-#                 just have not said whose work they are looking at
-#   otherwise     the synthetic sign-in
+#   shared_gate     the persona selector — they are already past the door, they
+#                   just have not said whose work they are looking at
+#   local_password  the personal sign-in page
+#   otherwise       the synthetic sign-in
 #
 # In shared-gate mode the middleware has already bounced anybody who is not
 # behind the password, so this redirect is only ever reached by a reader with no
 # persona (app/accounts/middleware.py).
-LOGIN_URL = (
-    "accounts:choose_persona"
-    if (AUTH_MODE or "").strip().lower() == "shared_gate"
-    else "accounts:dev_login"
-)
+LOGIN_URL = {
+    "shared_gate": "accounts:choose_persona",
+    "local_password": "accounts:sign_in",
+}.get((AUTH_MODE or "").strip().lower(), "accounts:dev_login")
 LOGIN_REDIRECT_URL = "core:home"
 LOGOUT_REDIRECT_URL = "core:home"
 
-AUTH_PASSWORD_VALIDATORS = [
-    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
-    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
-    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
-    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+# -- personal passwords (docs/adr/0145 §6) ----------------------------------
+#
+# Argon2id first, through Django's own hasher and `argon2-cffi`. The others stay
+# listed only so that a hash some other tool once wrote can still be verified
+# (and is then re-hashed as Argon2id on the next successful sign-in). Nobody in
+# production has a usable password today: every account was provisioned with an
+# unusable one, and the shared gate hashes its own secret with PBKDF2 in process
+# memory, explicitly, so this order changes nothing it does
+# (app/accounts/shared_gate.py).
+PASSWORD_HASHERS = [
+    "app.accounts.passwords.JuristidArgon2PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher",
+    "django.contrib.auth.hashers.Argon2PasswordHasher",
+    "django.contrib.auth.hashers.ScryptPasswordHasher",
 ]
 
+# The Argon2id cost. OWASP's floor is 19 MiB of memory with two passes; this
+# is above it, and `juristid.E031` refuses a real-data local-password deployment
+# configured below it. A hash records its own parameters, so raising these later
+# re-hashes on the next sign-in rather than invalidating anybody.
+LOCAL_AUTH_ARGON2_TIME_COST = env_int("LOCAL_AUTH_ARGON2_TIME_COST", 2)
+LOCAL_AUTH_ARGON2_MEMORY_KIB = env_int("LOCAL_AUTH_ARGON2_MEMORY_KIB", 65536)
+LOCAL_AUTH_ARGON2_PARALLELISM = env_int("LOCAL_AUTH_ARGON2_PARALLELISM", 1)
+
+# NIST SP 800-63B-4: length and a blocklist, never composition rules, never
+# scheduled expiry. Django's MinimumLength and Numeric validators are not here:
+# the first is replaced by the 15-character rule, and the second is a
+# composition rule by another name.
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "app.accounts.passwords.EmptyNotAllowedValidator"},
+    {"NAME": "app.accounts.passwords.LengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "app.accounts.passwords.BreachedPasswordValidator"},
+    {"NAME": "app.accounts.passwords.ContextWordsValidator"},
+    {"NAME": "app.accounts.passwords.RepetitionValidator"},
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+]
+LOCAL_AUTH_PASSWORD_MIN_LENGTH = env_int("LOCAL_AUTH_PASSWORD_MIN_LENGTH", 15)
+# An operator-supplied list of known-breached passwords, one per line,
+# optionally gzipped. Empty means Django's 20,000 common passwords only.
+LOCAL_AUTH_BREACHED_PASSWORDS_PATH = env("LOCAL_AUTH_BREACHED_PASSWORDS_PATH", "")
+
+# -- the second factor -------------------------------------------------------
+#
+# The key TOTP secrets are encrypted under. A deployment secret of its own,
+# rather than SECRET_KEY, so rotating the Django secret does not unenrol every
+# authenticator; `juristid.E033` requires it on a real-data local-password
+# deployment. Empty falls back to SECRET_KEY, for laptops and CI only.
+LOCAL_AUTH_MFA_ENCRYPTION_KEY = env("LOCAL_AUTH_MFA_ENCRYPTION_KEY", "")
+# Whether everybody must enrol a second factor, or only those who administer
+# accounts. Administrators always must; this cannot turn that off.
+LOCAL_AUTH_MFA_REQUIRED_FOR_ALL = env_bool("LOCAL_AUTH_MFA_REQUIRED_FOR_ALL", default=False)
+
+# -- sessions -----------------------------------------------------------------
+#
+# A local session ends after an hour without a request, and after ten hours
+# whatever happens — a working day, not a working week. Critical changes (a
+# privilege, a deactivation, a second factor removed) ask for the password and
+# code again when the last proof is older than the re-authentication window.
+LOCAL_AUTH_SESSION_IDLE_SECONDS = env_int("LOCAL_AUTH_SESSION_IDLE_SECONDS", 60 * 60)
+LOCAL_AUTH_SESSION_ABSOLUTE_SECONDS = env_int("LOCAL_AUTH_SESSION_ABSOLUTE_SECONDS", 10 * 60 * 60)
+LOCAL_AUTH_REAUTH_SECONDS = env_int("LOCAL_AUTH_REAUTH_SECONDS", 15 * 60)
+
+# -- one-time links -----------------------------------------------------------
+LOCAL_AUTH_ACTIVATION_LINK_SECONDS = env_int("LOCAL_AUTH_ACTIVATION_LINK_SECONDS", 48 * 60 * 60)
+LOCAL_AUTH_RESET_LINK_SECONDS = env_int("LOCAL_AUTH_RESET_LINK_SECONDS", 60 * 60)
+
+# -- who may have an account --------------------------------------------------
+#
+# The Chamber's own domain. An external address is an individual exception,
+# approved with a reason by an administrator who may delegate administration —
+# never a domain added here because one address needed it.
+ACCOUNT_ALLOWED_EMAIL_DOMAINS = env_list("ACCOUNT_ALLOWED_EMAIL_DOMAINS", "koda.ee")
+
+# -- account e-mail: OFF -------------------------------------------------------
+#
+# Two separate switches, both off. `ACCOUNT_EMAIL_DELIVERY_ENABLED` is the
+# decision to send account mail at all, and `juristid.E036` refuses it in any
+# mode but local_password. `EMAIL_BACKEND` is the transport, and its default
+# delivers nothing — Django's own default would be SMTP to localhost. A later,
+# approved activation step configures both (docs/LOCAL_AUTH_ACTIVATION_RUNBOOK.md).
+ACCOUNT_EMAIL_DELIVERY_ENABLED = env_bool("ACCOUNT_EMAIL_DELIVERY_ENABLED", default=False)
+EMAIL_BACKEND = env("DJANGO_EMAIL_BACKEND", "app.accounts.mail.DeliveryDisabledBackend")
+EMAIL_HOST = env("DJANGO_EMAIL_HOST", "")
+EMAIL_PORT = env_int("DJANGO_EMAIL_PORT", 587)
+EMAIL_HOST_USER = env("DJANGO_EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = env("DJANGO_EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = env_bool("DJANGO_EMAIL_USE_TLS", default=True)
+EMAIL_TIMEOUT = env_int("DJANGO_EMAIL_TIMEOUT", 20)
+ACCOUNT_EMAIL_FROM = env("ACCOUNT_EMAIL_FROM", "")
+DEFAULT_FROM_EMAIL = ACCOUNT_EMAIL_FROM or "webmaster@localhost"
+# The address one-time links point at. Configured rather than read from the
+# request's Host header: a reset link built from a header an attacker can set is
+# the classic way to have somebody else's reset mailed to your server.
+ACCOUNT_LINK_BASE_URL = env("ACCOUNT_LINK_BASE_URL", "")
+
 # Local synthetic-user sign-in. Never enabled outside an isolated developer
-# environment; the real-data pilot and production authenticate through
-# Microsoft Entra ID. See docs/adr/0004-authentication-direction.md.
+# environment; a real-data deployment authenticates through the shared gate
+# today, and through personal sign-in (or Cloudflare Access) after an approved
+# activation — never through this. See docs/adr/0004 as amended by 0145.
 DEV_LOGIN_ENABLED = env_bool("DEV_LOGIN_ENABLED", default=False)
 
 # A shared PIN in front of the synthetic sign-in. Empty means no PIN, which is
@@ -243,8 +341,9 @@ DEV_LOGIN_ENABLED = env_bool("DEV_LOGIN_ENABLED", default=False)
 # to be. It is a speed bump that keeps a passer-by out, and it is only defensible
 # because the data behind it is invented.
 #
-# Anything reachable from the internet that holds real data needs Entra ID, or
-# an authenticating proxy, or both (docs/adr/0004).
+# Anything reachable from the internet that holds real data needs a real
+# authenticator in front of it — the shared gate today, personal sign-in or
+# Cloudflare Access after activation (docs/adr/0004, 0016, 0145).
 DEV_LOGIN_PIN = env("DEV_LOGIN_PIN", "")
 
 # How many wrong PINs from one address before it is locked out, and for how

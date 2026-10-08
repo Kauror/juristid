@@ -1,0 +1,8 @@
+{% comment %}
+  A one-button POST on the account. Every one of them needs a recent proof of
+  identity, asked for on the way if the last one is stale.
+{% endcomment %}
+<form method="post" action="{% url route person.pk %}" class="acctinline">
+  {% csrf_token %}
+  <button type="submit" class="button button--{{ kind }}">{{ label }}</button>
+</form>

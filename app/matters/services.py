@@ -591,6 +591,9 @@ def acknowledge_assignment_notice(*, notice: MatterAssignmentNotice, actor: Any)
 
 #: What an owner change that arrived after the Matter was deleted is told.
 ASSIGNMENT_ON_DELETED_MATTER = "Teemat ei ole enam olemas, seega ei saa sellele vastutajat määrata."
+#: A person without `work.assign` asking to change a Teema's Vastutaja
+#: (docs/adr/0145 §3).
+ASSIGNMENT_NOT_PERMITTED = "Sul ei ole õigust teema vastutajat määrata ega muuta."
 
 
 @transaction.atomic
@@ -637,6 +640,16 @@ def assign_matter(
     matter.owner = previous
     if previous == owner:
         return matter
+    # A colleague changing who answers for a file needs `work.assign` — both
+    # lawyer roles by default, withdrawable per person (docs/adr/0145 §3). Asked
+    # here as well as at every route, so no view can be the one that forgot.
+    # An operation's assignment carries `provenance` and no person's authority,
+    # and the owner backfill is the one caller that sends it.
+    if provenance is None and getattr(actor, "pk", None) is not None:
+        from app.core.authorization import may_assign_work
+
+        if not may_assign_work(actor):
+            raise DomainError(ASSIGNMENT_NOT_PERMITTED)
 
     # Before the column moves, and inside this transaction: whatever the
     # previous owner was still holding unread is about a state that is ending.

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Sisselogimise aadress · {{ application_name }}{% endblock %}
+
+{% comment %}
+  Correcting the address an account signs in with. The account keeps its
+  identifier, its work, its history and any Entra object id; outstanding links
+  are invalidated and every session ends (docs/adr/0145 §4).
+{% endcomment %}
+
+{% block content %}
+<div class="page page--narrow">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Muuda sisselogimise aadressi</h1>
+    <span class="pagehead__context"><a href="{% url 'account_admin:detail' person.pk %}">{{ person.display_name }}</a></span>
+  </div>
+  <p class="acctnote">Praegu: <span class="mono">{{ person.upn }}</span></p>
+
+  <form method="post" class="card card--form form" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div class="formerror" role="alert">{% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}</div>
+    {% endif %}
+    {% include "accounts/partials/field.html" with field=form.email %}
+    {% include "accounts/partials/field.html" with field=form.external_reason %}
+    <div class="form__actions">
+      <button type="submit" class="button button--primary">Salvesta</button>
+      <a class="button button--quiet" href="{% url 'account_admin:detail' person.pk %}">Loobu</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

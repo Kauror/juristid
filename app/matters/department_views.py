@@ -14,7 +14,7 @@ from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
 from django.utils import timezone
 
-from app.core.authorization import is_department_head
+from app.core.authorization import may_view_department_management
 from app.core.decorators import gate_required, viewer_for
 from app.matters import overview as overview_module
 from app.matters.department import build_department
@@ -68,7 +68,9 @@ def department(request: HttpRequest) -> HttpResponse:
         {
             "page": build_department(
                 viewer_for(request),
-                is_head=is_department_head(request.user),
+                # Since docs/adr/0145 the `department.view_management`
+                # capability, whose default is exactly the department head.
+                is_head=may_view_department_management(request.user),
                 scope=scope,
                 today=today,
                 # `request.GET`, because the Tehtud period and its row-kind

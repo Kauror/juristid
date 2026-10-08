@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Kinnita oma isik · {{ application_name }}{% endblock %}
+
+{% comment %}
+  A fresh proof before a change that matters: a permission, an account
+  switched off, a second factor replaced. Asked only when the last proof is
+  older than the re-authentication window (LOCAL_AUTH_REAUTH_SECONDS).
+{% endcomment %}
+
+{% block content %}
+<div class="page page--narrow">
+  <h1>Kinnita oma isik</h1>
+  <p class="acctnote">Selle muudatuse jaoks sisesta uuesti oma parool{% if has_code %} ja autentimisrakenduse kood{% endif %}.</p>
+
+  {% if error %}
+    <div class="formerror" role="alert"><p>{{ error }}</p></div>
+  {% endif %}
+
+  <form method="post" class="card card--form form" novalidate>
+    {% csrf_token %}
+    {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+    {% include "accounts/partials/field.html" with field=form.password %}
+    {% if has_code %}
+      {% include "accounts/partials/field.html" with field=form.code %}
+    {% endif %}
+    <div class="form__actions">
+      <button type="submit" class="button button--primary">Kinnita</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

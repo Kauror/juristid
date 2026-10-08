@@ -1547,6 +1547,30 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     # statement it runs. Anybody who may read Matters may ask it, exactly as
     # before, and what it answers is scoped by `visible_to`.
     "related_materials:draft_suggestions": "F: a read sent by POST; writes nothing",
+    # D — personal sign-in and the signed-in person's own credentials
+    # (docs/adr/0145). Not business content; every one of them 404s outside
+    # `AUTH_MODE=local_password`, and the ones behind sign-in act only on
+    # `request.user` (tests/test_local_auth_production_safety.py,
+    # tests/test_local_auth_sign_in.py).
+    "accounts:sign_in": "D: personal sign-in, local_password only",
+    "accounts:sign_in_second_factor": "D: second factor of a pending sign-in",
+    "accounts:activate": "D: one-time activation link; sets the holder's own password",
+    "accounts:forgot_password": "D: reset request; same answer for every address",
+    "accounts:reset_password": "D: one-time reset link; sets the holder's own password",
+    "accounts:change_password": "D: the signed-in person's own password",
+    "accounts:security_enrol": "D: the signed-in person's own authenticator",
+    "accounts:security_recovery_codes": "D: the signed-in person's own recovery codes",
+    "accounts:security_remove": "D: the signed-in person's own second factor",
+    "accounts:reauthenticate": "D: re-proving the signed-in person's identity",
+    # G — account administration (docs/adr/0145). Stricter than business write
+    # and orthogonal to it: `may_administer_accounts` (local_password, a
+    # second-factor session, `accounts.manage`) in front, and the actor's own
+    # authority checked again by `app.accounts.administration`
+    # (tests/test_local_auth_admin_views.py, tests/test_local_auth_lifecycle.py).
+    "account_admin:create": "G: account administration, may_administer_accounts",
+    "account_admin:detail": "G: account administration, may_administer_accounts",
+    "account_admin:deactivate": "G: account administration, may_administer_accounts",
+    "account_admin:change_email": "G: account administration, delegation only",
 }
 
 

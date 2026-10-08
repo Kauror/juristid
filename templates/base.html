@@ -233,6 +233,14 @@
           {% endcomment %}
           {% if shared_gate_mode %}
             {% include "components/persona_switcher.html" %}
+          {% elif local_password_mode and user.is_authenticated %}
+            {% comment %}
+              Under personal sign-in the bar names the person who signed in,
+              and the avatar opens their own account page (docs/adr/0145).
+            {% endcomment %}
+            <a class="avatar avatar--link" href="{% url 'accounts:profile' %}"
+               title="{{ user.display_name }} — Minu konto"
+               aria-label="Minu konto ({{ user.display_name }})">{{ user.initials }}</a>
           {% elif user.is_authenticated %}
             <span class="avatar" title="{{ user.display_name }}">{{ user.initials }}</span>
           {% endif %}

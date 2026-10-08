@@ -1,0 +1,12 @@
+{% comment %}
+  One permission: the person's resolved value, its name in Estonian, one line
+  of what it allows, and whether it simply follows the role.
+{% endcomment %}
+<label class="checkitem accttoggle">
+  {{ toggle.field }}
+  <span class="accttoggle__text">
+    <span class="accttoggle__name">{{ toggle.text.label }}</span>
+    <span class="accttoggle__help">{{ toggle.text.description }}</span>
+  </span>
+  {% if not toggle.overridden %}<span class="accttoggle__default">rolli vaikimisi</span>{% endif %}
+</label>

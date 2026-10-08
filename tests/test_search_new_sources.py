@@ -115,7 +115,8 @@ def _victory(matter: Any, actor: Any, title: str, body: str) -> Any:
         note="Märkus kinnitajale.",
         actor=actor,
     )
-    return confirm_work_victory(record=candidate, actor=actor)
+    # The decision is a reviewer's (docs/adr/0145 §3); the record is the author's.
+    return confirm_work_victory(record=candidate, actor=factories.DepartmentHeadFactory())
 
 
 def _victory_retitle(record: Any, actor: Any, title: str) -> Any:
@@ -231,7 +232,7 @@ def test_a_work_victorys_note_is_searchable_too(matter, specialist):
     candidate = add_work_victory_candidate(
         matter=matter, title="Pealkiri", note=f"{BODY_WORD} märkus", actor=specialist
     )
-    confirm_work_victory(record=candidate, actor=specialist)
+    confirm_work_victory(record=candidate, actor=factories.DepartmentHeadFactory())
 
     assert len(_of_kind(specialist, BODY_WORD, SearchSourceKind.WORK_VICTORY)) == 1
 
@@ -246,10 +247,11 @@ def test_only_a_confirmed_work_victory_is_findable(matter, specialist):
     )
     assert _of_kind(specialist, TITLE_WORD, SearchSourceKind.WORK_VICTORY) == []
 
-    confirmed = confirm_work_victory(record=candidate, actor=specialist)
+    reviewer = factories.DepartmentHeadFactory()
+    confirmed = confirm_work_victory(record=candidate, actor=reviewer)
     assert len(_of_kind(specialist, TITLE_WORD, SearchSourceKind.WORK_VICTORY)) == 1
 
-    reject_work_victory(record=confirmed, actor=specialist, reason="Ei tulnud välja.")
+    reject_work_victory(record=confirmed, actor=reviewer, reason="Ei tulnud välja.")
     assert _of_kind(specialist, TITLE_WORD, SearchSourceKind.WORK_VICTORY) == []
 
     rebuild_all()

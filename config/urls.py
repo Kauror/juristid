@@ -29,6 +29,13 @@ urlpatterns = [
         include(("app.related_materials.urls", "related_materials"), namespace="related_materials"),
     ),
     path("konto/", include(("app.accounts.urls", "accounts"), namespace="accounts")),
+    # Haldus → Kasutajad. Under `/haldus/` with the other internal tooling, and
+    # unreachable — 404 for everybody — in every mode but `local_password`
+    # (docs/adr/0145).
+    path(
+        "haldus/kasutajad/",
+        include(("app.accounts.admin_urls", "account_admin"), namespace="account_admin"),
+    ),
     path(
         "organisatsioonid/",
         include(("app.organisations.urls", "organisations"), namespace="organisations"),

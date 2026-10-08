@@ -35,7 +35,10 @@ server's LAN address, and `tests/test_deployment_unraid_main.py` fails if a port
 ever appears.
 
 **There is an authenticator in front of it.** `AUTH_MODE` is `shared_gate`
-today and `cloudflare_access` when the Access application exists. Real data with
+today. Personal sign-in (`AUTH_MODE=local_password`, ADR 0145) is deployed
+**dormant** and is switched on only by following
+`docs/LOCAL_AUTH_ACTIVATION_RUNBOOK.md` after an explicit approval;
+`cloudflare_access` stays a supported alternative. Real data with
 `AUTH_MODE=none` refuses to start (`juristid.E006`).
 
 **Nobody is provisioned automatically.** In `cloudflare_access` mode a verified

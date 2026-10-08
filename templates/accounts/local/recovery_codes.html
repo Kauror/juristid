@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Taastekoodid · {{ application_name }}{% endblock %}
+
+{% comment %}
+  Shown once, in the response that created them, and never again: the
+  application keeps only salted digests (app/accounts/mfa.py). Each code works
+  once, in place of the authenticator's code.
+{% endcomment %}
+
+{% block content %}
+<div class="page page--narrow">
+  <h1>Taastekoodid</h1>
+  <p class="message message--warning" role="status">
+    Salvesta need koodid kohe turvalisse kohta. Neid näidatakse ainult üks kord. Iga kood
+    töötab ühe korra, kui telefon ei ole käepärast.
+  </p>
+  <ul class="acctcodes">
+    {% for code in codes %}<li class="acctcodes__code mono">{{ code }}</li>{% endfor %}
+  </ul>
+  <div class="form__actions">
+    <a class="button button--primary" href="{% if first %}{% url 'core:home' %}{% else %}{% url 'accounts:security' %}{% endif %}">Olen koodid salvestanud</a>
+  </div>
+</div>
+{% endblock %}

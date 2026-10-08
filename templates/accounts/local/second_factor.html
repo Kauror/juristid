@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Kinnituskood · {{ application_name }}{% endblock %}
+
+{% comment %}
+  The second step. Nobody is signed in yet: the session holds only a short-
+  lived marker that the password was right (app/accounts/local_auth.py). The
+  one field takes either the authenticator's six digits or a recovery code,
+  and the page tells them apart by shape, so nobody has to find a second form
+  on the worst day — the one their phone is lost.
+{% endcomment %}
+
+{% block content %}
+<div class="page page--narrow">
+  <h1>Kinnituskood</h1>
+
+  {% if error %}
+    <div class="formerror" role="alert"><p>{{ error }}</p></div>
+  {% endif %}
+
+  <form method="post" class="card card--form form" novalidate>
+    {% csrf_token %}
+    {% include "accounts/partials/field.html" with field=form.code %}
+    <div class="form__actions">
+      <button type="submit" class="button button--primary">Kinnita</button>
+      <a class="acctlink" href="{% url 'accounts:sign_in' %}">Alusta uuesti</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

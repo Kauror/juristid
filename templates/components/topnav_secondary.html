@@ -79,3 +79,16 @@ and the two sections that were genuinely the head's are decided on the page
   existing archive URL still resolves (app/legacy_import/opinion_access.py,
   docs/adr/0028).
 {% endcomment %}
+{% comment %}
+  Haldus — account administration — and only for a reader the pages behind it
+  would answer: personal sign-in, a second-factor session and the
+  `accounts.manage` capability (app/accounts/local_auth.py
+  `may_administer_accounts`). In every other mode the flag is false and this
+  renders nothing, so the shared gate's bar is exactly what it was. The pages
+  ask the same question again and 404 when the answer is no (docs/adr/0145).
+{% endcomment %}
+{% if may_administer_accounts %}
+<a class="topnav__link {% if nav_active == 'haldus' %}is-active{% endif %}"
+   {% if nav_active == 'haldus' %}aria-current="page"{% endif %}
+   href="{% url 'account_admin:list' %}">Haldus</a>
+{% endif %}

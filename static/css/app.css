@@ -12925,3 +12925,164 @@ section:has(.pw-more[open]) tbody.uxextra {
   color: var(--text-secondary);
   cursor: pointer;
 }
+
+/* ---- personal sign-in and account administration (docs/adr/0145) ---------
+ *
+ * Every page these rules style exists only under AUTH_MODE=local_password, so
+ * nothing here can move a page the shared gate serves. One `acct` prefix, so a
+ * search finds all of it and none of it collides with a component elsewhere.
+ * Layout is the existing kit — `.page--narrow`, `.panel`, `.card--form`,
+ * `.field`, `.detailgrid`, `.data-table`, `.checkitem`, `.dangerzone` — and
+ * these add only what that kit does not have.
+ */
+.acctnote {
+  margin: 0;
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}
+
+.acctlink {
+  font-size: var(--typography-size-meta);
+}
+
+.acctsection__title {
+  margin: 0 0 var(--spacing-2);
+  font-size: var(--typography-size-base);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.acctactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  align-items: center;
+  margin-top: var(--spacing-3);
+}
+
+/* A one-button POST beside links in the same row. */
+.acctinline {
+  display: inline-flex;
+  margin: 0;
+}
+
+.acctcaps {
+  margin: 0;
+  padding-left: var(--spacing-5);
+  font-size: var(--typography-size-row);
+}
+
+.acctcaps__item + .acctcaps__item {
+  margin-top: var(--spacing-1);
+}
+
+.acctsearch {
+  min-width: 16rem;
+}
+
+/* The account table scrolls inside itself on a phone instead of pushing the
+   page sideways. `position: relative` as well, and it is not decoration: the
+   actions column's heading is `.visually-hidden`, which is absolutely
+   positioned, and an absolute element whose containing block is the page
+   escapes this box's clipping — at 375px it alone pushed the document 103px
+   wide (e2e/test_local_auth.py measures it). */
+.accttable {
+  position: relative;
+  overflow-x: auto;
+}
+
+.acctid {
+  font-size: var(--typography-size-meta-sm);
+  overflow-wrap: anywhere;
+}
+
+.accttoggles {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* The shared `.checkitem` chip, stretched into a row that carries a sentence. */
+.accttoggle {
+  display: flex;
+  align-items: flex-start;
+}
+
+.accttoggle__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-05);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.accttoggle__name {
+  font-weight: var(--typography-weight-semibold);
+}
+
+.accttoggle__help {
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}
+
+.accttoggle__default {
+  flex: none;
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-muted);
+}
+
+.acctenrol {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+
+.acctsteps {
+  margin: 0;
+  padding-left: var(--spacing-5);
+  font-size: var(--typography-size-row);
+}
+
+/* The QR code is drawn black on white for every scanner, whatever the theme,
+   so it sits on the document surface rather than on the dark canvas. */
+.acctqr {
+  align-self: flex-start;
+  padding: var(--spacing-2);
+  background: var(--surface-document);
+  border-radius: var(--radius-md);
+  line-height: 0;
+}
+
+.acctsecret {
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.acctcodes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+  gap: var(--spacing-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.acctcodes__code {
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--surface-panel);
+  font-size: var(--typography-size-base);
+  user-select: all;
+}
+
+/* The avatar on the bar becomes a link to «Minu konto» under personal sign-in. */
+.avatar--link {
+  text-decoration: none;
+}
+
+.avatar--link:hover {
+  border-color: var(--accent-border);
+}

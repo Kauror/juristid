@@ -1,0 +1,16 @@
+{% comment %}
+  What a one-time link page says when the link cannot be used: expired, spent,
+  superseded by a newer one, cancelled, or never valid. One sentence for all of
+  them — telling a stranger *which* would tell them a link was once real.
+{% endcomment %}
+<div class="formerror" role="alert">
+  <p>See link ei kehti enam. Lingid on ühekordsed ja lühiajalised.</p>
+</div>
+<p class="acctnote">
+  {% if purpose == "reset" %}
+    <a href="{% url 'accounts:forgot_password' %}">Telli uus link</a> või
+    <a href="{% url 'accounts:sign_in' %}">logi sisse</a>.
+  {% else %}
+    Palu kasutajate halduril saata uus kutse.
+  {% endif %}
+</p>

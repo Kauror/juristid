@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Teine tegur · {{ application_name }}{% endblock %}
+
+{% comment %}
+  Managing the second factor. Replacing the authenticator, issuing new
+  recovery codes and removing the factor are all changes an unattended
+  keyboard must not allow, so each asks for the password and a code again when
+  the last proof is older than the re-authentication window. Removal is not
+  offered where the factor is mandatory — an administrator's always is.
+{% endcomment %}
+
+{% block content %}
+<div class="page page--narrow">
+  <h1>Teine tegur</h1>
+
+  <section class="panel">
+    {% if has_second_factor %}
+      <p class="acctnote">
+        Autentimisrakendus on seadistatud. Taastekoode on alles <strong>{{ recovery_codes_left }}</strong>.
+      </p>
+      <div class="acctactions">
+        <a class="button button--secondary" href="{% url 'accounts:security_enrol' %}">Vaheta autentimisrakendus</a>
+        <form method="post" action="{% url 'accounts:security_recovery_codes' %}" class="acctinline">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{% url 'accounts:security' %}">
+          <button type="submit" class="button button--secondary">Loo uued taastekoodid</button>
+        </form>
+      </div>
+      {% if not mandatory %}
+        <div class="dangerzone">
+          <p class="dangerzone__title">Eemalda teine tegur</p>
+          <p class="dangerzone__help">Sisselogimiseks piisab siis ainult paroolist.</p>
+          <form method="post" action="{% url 'accounts:security_remove' %}" class="dangerzone__actions">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{% url 'accounts:security' %}">
+            <button type="submit" class="button button--danger">Eemalda</button>
+          </form>
+        </div>
+      {% endif %}
+    {% else %}
+      <p class="acctnote">
+        Teine tegur ei ole seadistatud.{% if mandatory %} Sinu kontol on see kohustuslik.{% endif %}
+      </p>
+      <div class="acctactions">
+        <a class="button button--primary" href="{% url 'accounts:security_enrol' %}">Seadista autentimisrakendus</a>
+      </div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

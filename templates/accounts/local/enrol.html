@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Autentimisrakendus · {{ application_name }}{% endblock %}
+
+{% comment %}
+  Setting up the authenticator. The QR code is inline SVG drawn on the server
+  — no image request, no third party. The key is also printed, for an app
+  that cannot scan. Nothing is stored until a code from the phone is typed
+  back; until then an authenticator the account already has keeps working.
+{% endcomment %}
+
+{% block content %}
+<div class="page page--narrow">
+  <h1>{% if replacing %}Vaheta autentimisrakendus{% else %}Seadista autentimisrakendus{% endif %}</h1>
+
+  {% if mandatory %}
+    <p class="message message--warning" role="status">
+      Sinu kontol on teine tegur kohustuslik. Seadista see enne jätkamist.
+    </p>
+  {% endif %}
+
+  <section class="panel acctenrol">
+    <ol class="acctsteps">
+      <li>Ava telefonis autentimisrakendus (näiteks Microsoft Authenticator või Google Authenticator).</li>
+      <li>Skaneeri kood või sisesta võti käsitsi.</li>
+      <li>Sisesta rakenduse näidatud kuuekohaline kood.</li>
+    </ol>
+    <div class="acctqr" role="img" aria-label="Autentimisrakenduse QR-kood">{{ enrolment.qr_svg|safe }}</div>
+    <p class="acctnote">Võti: <span class="mono acctsecret" data-totp-secret>{{ enrolment.secret }}</span></p>
+  </section>
+
+  <form method="post" class="card card--form form" novalidate>
+    {% csrf_token %}
+    {% include "accounts/partials/field.html" with field=form.code %}
+    <div class="form__actions">
+      <button type="submit" class="button button--primary">Kinnita</button>
+      {% if not mandatory %}
+        <a class="button button--quiet" href="{% url 'accounts:security' %}">Loobu</a>
+      {% endif %}
+    </div>
+  </form>
+</div>
+{% endblock %}

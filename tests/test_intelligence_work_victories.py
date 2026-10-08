@@ -93,14 +93,14 @@ def test_a_manual_victory_needs_a_description_too(normal_matter, specialist):
     assert MatterWorkVictory.objects.count() == 0
 
 
-def test_a_manual_victory_will_not_be_confirmed_twice(normal_matter, specialist):
+def test_a_manual_victory_will_not_be_confirmed_twice(normal_matter, specialist, department_head):
     """It is already confirmed; there is no second decision to record."""
     record = add_confirmed_work_victory(
         matter=normal_matter, title="Juba kinnitatud", actor=specialist, **_year(2026)
     )
 
     with refused("Töövõit on juba kinnitatud."):
-        confirm_work_victory(record=record, actor=specialist)
+        confirm_work_victory(record=record, actor=department_head)
 
 
 def test_a_manual_victory_can_still_be_marked_unrealised(

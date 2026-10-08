@@ -35,6 +35,7 @@ from typing import Any
 from django.contrib import admin
 from django.db.models import Q
 
+from app.accounts.enums import ProvisioningState
 from app.accounts.models import BreakGlassGrant, User
 from app.audit.models import ChangeEvent, SecurityAuditEvent
 from app.audit.visibility import change_log_event_types, scope_change_events
@@ -91,9 +92,14 @@ class UserAdmin(admin.ModelAdmin):
 
     def get_readonly_fields(self, request: Any, obj: Any = None) -> tuple[str, ...]:
         names = [field.name for field in User._meta.get_fields() if field.concrete]
-        return tuple(
-            name for name in names if name not in USER_ADMIN_EDITABLE and name != "password"
-        )
+        editable = set(USER_ADMIN_EDITABLE)
+        if obj is not None and obj.provisioning_state != ProvisioningState.ACTIVATED:
+            # An account still waiting for its owner to accept the invitation
+            # becomes active only by that owner setting a password; a checkbox
+            # here must not be the way around it (docs/adr/0145 §5). The
+            # database refuses it too.
+            editable.discard("is_active")
+        return tuple(name for name in names if name not in editable and name != "password")
 
     def has_add_permission(self, request: Any) -> bool:
         # `manage.py provision_user`, which refuses what the product would refuse.

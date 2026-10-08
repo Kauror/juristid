@@ -33,7 +33,8 @@ from django.db.models import Case, CharField, Count, Q, QuerySet, Value, When
 from django.db.models.sql.datastructures import Join
 from django.utils import timezone
 
-from app.accounts.enums import UserRole
+from app.accounts import capabilities
+from app.accounts.enums import Capability, UserRole
 from app.core.enums import Visibility
 
 # Business roles that may read RESTRICTED content without a break-glass grant.
@@ -75,7 +76,14 @@ ROLES_WITH_BUSINESS_WRITE: frozenset[str] = frozenset(
 # so the judgement belongs with the person answerable for it. Specialists write
 # and edit candidates freely; only the department head decides
 # (specification 5.1, Stage-2G brief 25).
-ROLES_WITH_WORK_VICTORY_REVIEW: frozenset[str] = frozenset({UserRole.DEPARTMENT_HEAD.value})
+#
+# Since docs/adr/0145 this is the *default* of the `work_victory.review`
+# capability rather than a rule of its own — the same set, read from the one
+# place the capability defaults are written, so the two cannot drift. An
+# individual grant or denial is resolved by `has_capability` below.
+ROLES_WITH_WORK_VICTORY_REVIEW: frozenset[str] = capabilities.DEFAULT_HOLDERS[
+    Capability.REVIEW_WORK_VICTORIES.value
+]
 
 
 def acting_role(user: object | None) -> str:
@@ -117,8 +125,141 @@ def may_write_business_content(user: object | None) -> bool:
 
 
 def may_review_work_victory(user: object | None) -> bool:
-    """May this user confirm a work victory, or record that it did not happen?"""
-    return acting_role(user) in ROLES_WITH_WORK_VICTORY_REVIEW
+    """May this user confirm a work victory, or record that it did not happen?
+
+    The department head by default, and anybody a capability grant names —
+    never a READER or a technical administrator, because confirming one is a
+    business write (docs/adr/0145 §3).
+    """
+    return has_capability(user, Capability.REVIEW_WORK_VICTORIES)
+
+
+# ---------------------------------------------------------------------------
+# Capabilities — the operations a role check used to answer (docs/adr/0145)
+# ---------------------------------------------------------------------------
+
+
+def capability_overrides(user: object | None) -> dict[str, str]:
+    """This person's own allow/deny overrides, cleaned of anything unrecognised.
+
+    Read from the user row the request already loaded. That is deliberate: the
+    overrides are a column on the account rather than a table beside it, so
+    asking a capability question costs no query — the context processor asks
+    one on every page, and an extra round trip per page per question is the
+    kind of cost the statistics pages already had to be rescued from
+    (PERF-01).
+    """
+    if user is None:
+        return {}
+    return capabilities.clean_overrides(getattr(user, "capability_overrides", None))
+
+
+def has_capability(user: object | None, capability: str) -> bool:
+    """Whether this person currently holds ``capability``.
+
+    In order, and every refusal fails closed:
+
+    1. Somebody acting, through `acting_role` — so the shared-gate sentinel, an
+       anonymous visitor and an inactive account hold nothing, exactly as they
+       hold no role.
+    2. A capability nobody has heard of is held by nobody.
+    3. A write capability needs the business-write role underneath it. An
+       override cannot make a READER or a technical administrator an author
+       (docs/adr/0037).
+    4. The person's own override, if they have one, decides; otherwise their
+       role's default does.
+    5. A capability that needs another one (`accounts.delegate` needs
+       `accounts.manage`) is held only together with it.
+
+    This answers whether the *account* holds a capability. Whether *this
+    request* may exercise an administrative one is a stronger question — it
+    also needs an individually authenticated, second-factor-verified session
+    in `local_password` mode — and is answered by
+    `app.accounts.local_auth.may_administer_accounts`, which asks this first.
+    """
+    return resolve_capability(acting_role(user), capability_overrides(user), str(capability))
+
+
+def resolve_capability(role: str, overrides: dict[str, str], capability: str) -> bool:
+    """Steps 2–5 of `has_capability`, for a role and a set of overrides.
+
+    The one place the rule is written. `has_capability` hands it the role of
+    somebody *acting* — nothing for an inactive account — and the account
+    administration hands it an account's stored role, to show and to diff what
+    the account will hold once it is active (`account_capabilities`).
+    """
+    if not role or not capabilities.is_known(capability):
+        return False
+    if capability in capabilities.REQUIRES_BUSINESS_WRITE and role not in ROLES_WITH_BUSINESS_WRITE:
+        return False
+
+    override = overrides.get(capability)
+    if override == capabilities.DENY:
+        return False
+    if override == capabilities.ALLOW:
+        held = capabilities.may_be_granted_to(role, capability)
+    else:
+        held = capabilities.role_default(role, capability)
+    if not held:
+        return False
+
+    prerequisite = capabilities.PREREQUISITES.get(capability)
+    return prerequisite is None or resolve_capability(role, overrides, prerequisite)
+
+
+def effective_capabilities(user: object | None) -> frozenset[str]:
+    """Every capability this person holds, for display and for the audit."""
+    return frozenset(
+        capability
+        for capability in capabilities.ALL_CAPABILITIES
+        if has_capability(user, capability)
+    )
+
+
+def account_capabilities(user: object | None) -> frozenset[str]:
+    """What this *account* grants while it is active — whether or not it is now.
+
+    For account administration only: a pending account's page shows, and its
+    save compares against, what the person will hold once they have activated.
+    Never an authorization answer — an inactive account holds nothing, and
+    `has_capability` is the only question any gate asks.
+    """
+    role = str(getattr(user, "role", "") or "") if user is not None else ""
+    overrides = capability_overrides(user)
+    return frozenset(
+        capability
+        for capability in capabilities.ALL_CAPABILITIES
+        if resolve_capability(role, overrides, capability)
+    )
+
+
+def may_view_department_management(user: object | None) -> bool:
+    """The Osakond page's *Meeskond* and *Tehtud*, and a colleague's Minu asjad.
+
+    The department head's surfaces since docs/adr/0049, by role — and now by the
+    `department.view_management` capability whose default is that role, so an
+    administrator can lend the view to a deputy without making them the head.
+    What the sections then *show* is still `visible_to(viewer)` like every
+    other read; this decides only whether they are built.
+    """
+    return has_capability(user, Capability.VIEW_DEPARTMENT_MANAGEMENT)
+
+
+def may_assign_work(user: object | None) -> bool:
+    """May this person give a Teema a Vastutaja, or hand it to somebody else?
+
+    Both lawyer roles by default — assignment is authorship, and authorship is
+    department-wide (docs/adr/0037, 0042) — and the capability exists so that
+    one person's right to reassign can be withdrawn without withdrawing their
+    right to write.
+
+    What it governs, exactly (`app.matters.services`): every change to an
+    existing Teema's Vastutaja — taking an unowned file, handing one on,
+    clearing it — and naming somebody *else* as the Vastutaja of a Teema being
+    created or registered. Creating one's own Teema is capture, not assignment,
+    and stays with the write right alone.
+    """
+    return has_capability(user, Capability.ASSIGN_WORK)
 
 
 @dataclass(frozen=True)
