@@ -320,6 +320,9 @@ EMAIL_HOST_PASSWORD = env("DJANGO_EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = env_bool("DJANGO_EMAIL_USE_TLS", default=True)
 EMAIL_TIMEOUT = env_int("DJANGO_EMAIL_TIMEOUT", 20)
 ACCOUNT_EMAIL_FROM = env("ACCOUNT_EMAIL_FROM", "")
+# «Unustasid parooli?» mails its link after the response, so the page takes the
+# same time for every address. The test suite turns it off to assert inline.
+ACCOUNT_EMAIL_IN_BACKGROUND = True
 DEFAULT_FROM_EMAIL = ACCOUNT_EMAIL_FROM or "webmaster@localhost"
 # The address one-time links point at. Configured rather than read from the
 # request's Host header: a reset link built from a header an attacker can set is

@@ -158,7 +158,12 @@ column exists to prevent.
 Changing a sign-in address (`change_login_email`) is a delegation decision. The
 account keeps its identity, its work and its history; outstanding links die and
 sessions end. It is how the shared-gate period's placeholder identities
-(`marko`, `ireen`, `sandra`) get their real addresses at activation.
+(`marko`, `ireen`, `sandra`) get their real addresses at activation — and it is
+**refused once the account has a personal password or a second factor**, and
+for one's own account. After that moment the address is where the person's own
+reset links go; an administrator who could move it could receive the next link
+and become them. A person whose address truly changes later gets a new account,
+and the old one is switched off.
 
 ### 5. Creation is never activation
 
@@ -209,13 +214,17 @@ the password it sets), short-lived (48 h activation, 1 h reset, both
 configurable), superseded by a newer link of the same purpose, invalidated by a
 password change, a deactivation, an address change or a cancelled invitation.
 
-The token travels as `?kood=` and is moved into the session and the address bar
-cleared on arrival: the production access log records paths and never queries
+The token travels as `?kood=`; on arrival the session keeps only a *proof* —
+the selector and the SHA-256 the row already stores, never the secret — and the
+address bar is cleared: the production access log records paths and never queries
 (ENG-071), and the page that uses the token is not the page whose URL holds it.
 Links are built from `ACCOUNT_LINK_BASE_URL`, never from the request's Host
 header. **The administrator never sees a link**, so cannot set a colleague's
 password; when a link cannot be delivered it is invalidated at once. Forgotten
-password answers the same sentence for every address and is rate-limited per
+password answers the same sentence for every address, does the same
+synchronous work for every address (the link is issued and mailed after the
+response, so an SMTP round trip does not say which addresses are real), and is
+rate-limited per
 address and per network; an account that has never set a password here gets no
 reset link — its first password comes from an administrator's decision.
 
@@ -228,8 +237,10 @@ rest with Fernet under a key derived from `LOCAL_AUTH_MFA_ENCRYPTION_KEY`
 session during enrolment. Accepted time steps are recorded, so a code is spent
 once. Ten recovery codes, 60 bits each, shown once and stored as salted digests.
 
-**Mandatory for anybody who holds `accounts.manage`** — not configurable, and the
-all-users policy (`LOCAL_AUTH_MFA_REQUIRED_FOR_ALL`) can only add to it. A person
+**Mandatory for anybody who holds `accounts.manage`, and for any `is_staff` or
+`is_superuser` account** (which can open the Django admin) — not configurable,
+and the all-users policy (`LOCAL_AUTH_MFA_REQUIRED_FOR_ALL`) can only add to it.
+Codes are ASCII digits only. A person
 who must enrol reaches nothing but the enrolment page. Administration needs a
 session that *proved* a second factor. An administrator cannot remove their own
 factor (only replace it); an administrator may reset somebody else's — the
@@ -255,7 +266,11 @@ factor.
   network, second factor, re-authentication, reset requests, password change.
   Nothing global; escalation doubles and is capped; failures decay. Keys are
   HMACs, so the table names no address, and an address that belongs to nobody is
-  counted exactly like a real one.
+  counted exactly like a real one. An IPv6 client is counted per /64. A network
+  that has signed an address in before (`TrustedSignInSource`, an HMAC too) is
+  not held back by the *account-wide* counter — the one a stranger can trip from
+  many networks — so knowing a colleague's address is not a way to keep them
+  out of their own desk; the account-and-network counter still holds it.
 - **Audit**: the existing append-only `SecurityAuditEvent`, with new types for
   sign-out, session end, re-authentication, the account lifecycle, address
   changes and exceptions, capability changes (old and new role, overrides and
@@ -301,8 +316,13 @@ the administrative history, saved with one **Salvesta**. Untouched toggles follo
 a changed role; a toggle the reader may not change is disabled and keeps its
 value. Every page is behind `local_auth.may_administer_accounts` — local mode, a
 session signed in here, a proved second factor, no pending enrolment, and
-`accounts.manage` — and answers 404 otherwise. Nothing there needs the Django
-admin, which still cannot add a person, change a role or mint a privilege.
+`accounts.manage` — and answers 404 otherwise. Every service re-reads the acting
+administrator under the administration lock before asking its authority, and
+any change to an account that holds administrative power — a rename or a
+cancelled invitation included — is delegation work. Nothing there needs the
+Django admin, which still cannot add a person, change a role or mint a
+privilege, and under personal sign-in cannot switch an account on or off
+either: that is account administration, with its final-administrator guard.
 
 ### 13. The release boundary
 
@@ -315,12 +335,25 @@ settings and deployment templates.
 
 ### 14. Existing accounts and history
 
-Two additive migrations: `accounts/0004` (new columns with defaults, four new
+Two additive migrations: `accounts/0004` (new columns with defaults, five new
 tables, one constraint, one index) and `audit/0035` (the event vocabulary). No
 `RunPython`, no `RunSQL`, no row created, no row rewritten. No existing account
 gains a password, a capability or a new state; no owner, collaborator or audit
 actor changes; personas are not converted into anything; nothing is merged by
 name.
+
+### 15. The independent review before merge
+
+A separate security review of the first draft found no authentication bypass and
+no change under the shared gate, and nine defects in the administration and
+sign-in paths, all fixed in this change and each pinned by a test in
+`tests/test_local_auth_review_fixes.py`: an address change after activation
+(§4), a dormant delegation allow that could wake up (`overrides_after` drops an
+allow whose prerequisite is not held), the account-wide lockout as a
+denial-of-service (§9), the Django admin's `is_active` checkbox and password-only
+staff accounts (§8, §12), forgotten-password timing (§7), non-ASCII digits
+reaching `compare_digest` (§8), a stale actor row (§12), a manager acting on an
+administrator (§12), and the raw link in the session (§7).
 
 ## Alternatives considered
 

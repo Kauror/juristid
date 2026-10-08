@@ -93,6 +93,14 @@ class UserAdmin(admin.ModelAdmin):
     def get_readonly_fields(self, request: Any, obj: Any = None) -> tuple[str, ...]:
         names = [field.name for field in User._meta.get_fields() if field.concrete]
         editable = set(USER_ADMIN_EDITABLE)
+        from app.accounts.local_auth import is_local_password
+
+        if is_local_password():
+            # Under personal sign-in switching an account off or on is account
+            # administration, with its final-administrator guard, its session
+            # ending and its audit (`app.accounts.administration`). A checkbox
+            # here would be the way around all three (docs/adr/0145 §12).
+            editable.discard("is_active")
         if obj is not None and obj.provisioning_state != ProvisioningState.ACTIVATED:
             # An account still waiting for its owner to accept the invitation
             # becomes active only by that owner setting a password; a checkbox

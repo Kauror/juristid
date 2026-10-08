@@ -235,19 +235,23 @@ def sign_in_second_factor(request: HttpRequest) -> HttpResponse:
 def _link_view(request: HttpRequest, *, purpose: str, route: str, template: str) -> HttpResponse:
     """Activation and reset share one shape.
 
-    A link arrives as `?kood=…`. It is moved into the session and the browser
-    is redirected to the bare address at once, so the secret leaves the address
-    bar, the history and any Referer before the page that uses it renders. The
-    production access log records paths, never queries (ENG-071).
+    A link arrives as `?kood=…`. What the session keeps of it is a *proof* —
+    the selector and the SHA-256 of the secret, never the secret itself — and
+    the browser is redirected to the bare address at once, so the link leaves
+    the address bar, the history and any Referer before the page that uses it
+    renders. The production access log records paths, never queries (ENG-071).
     """
     raw = request.GET.get(mail.LINK_PARAMETER)
     if raw is not None:
-        request.session[local_auth.SESSION_LINK] = {"purpose": str(purpose), "token": raw[:200]}
+        request.session[local_auth.SESSION_LINK] = {
+            "purpose": str(purpose),
+            "proof": tokens.proof_of(raw[:200]),
+        }
         return redirect(route)
 
     stored = request.session.get(local_auth.SESSION_LINK) or {}
-    token = stored.get("token", "") if stored.get("purpose") == str(purpose) else ""
-    holder = credentials.link_holder(tokens.peek(token, purpose=purpose)) if token else None
+    proof = stored.get("proof", "") if stored.get("purpose") == str(purpose) else ""
+    holder = credentials.link_holder(tokens.peek(proof, purpose=purpose)) if proof else None
     if holder is None:
         request.session.pop(local_auth.SESSION_LINK, None)
         return render(request, template, {"invalid": True}, status=400)
@@ -260,7 +264,7 @@ def _link_view(request: HttpRequest, *, purpose: str, route: str, template: str)
         return render(request, template, {"form": form, "holder": holder}, status=400)
     try:
         user = credentials.set_password_with_link(
-            token=token, purpose=purpose, password=form.cleaned_data["password"]
+            proof=proof, purpose=purpose, password=form.cleaned_data["password"]
         )
     except ValidationError as error:
         form.add_error("password", error)

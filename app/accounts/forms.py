@@ -68,7 +68,7 @@ class SecondFactorForm(forms.Form):
     def kind(self) -> str:
         """A six-digit value is a TOTP code; anything else is tried as a recovery code."""
         code = "".join(self.cleaned_data.get("code", "").split())
-        return "totp" if code.isdigit() and len(code) == 6 else "recovery"
+        return "totp" if len(code) == 6 and all(ch in "0123456789" for ch in code) else "recovery"
 
 
 class NewPasswordForm(forms.Form):

@@ -32,7 +32,7 @@ account is never deleted and never merged.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -88,6 +88,10 @@ BOOTSTRAP_NEEDS_A_CHANNEL = (
     "(--print-activation-link). Midagi ei muudetud."
 )
 BOOTSTRAP_NOT_DELIVERED = "Aktiveerimislinki ei õnnestunud saata, seega midagi ei muudetud."
+ADDRESS_FIXED_AFTER_ACTIVATION = (
+    "Konto on juba isikliku parooliga kasutusel, seega selle aadressi siit muuta ei saa. "
+    "Uus aadress tähendab uut kontot; vana lülita välja."
+)
 
 
 class AdministrationRefused(DomainError):
@@ -151,6 +155,22 @@ def _require_actor(actor: Any, capability: str, *, subject: Any = None, action: 
             else NOT_AN_ADMINISTRATOR
         )
         raise PrivilegeRefused(message, action=action, subject=subject)
+
+
+def _begin(actor: Any, capability: str, *, action: str, subject: Any = None) -> User:
+    """Every administration change starts here, in this order.
+
+    Local mode first; then the advisory lock that serialises privilege changes;
+    then the actor **re-read under that lock** and their authority asked of the
+    fresh row. Checking the instance the request loaded would let an
+    administrator whose rights were withdrawn a moment ago by a concurrent
+    request still complete one change on the strength of a stale copy.
+    """
+    _require_local_mode()
+    _lock_administration()
+    fresh = User.objects.filter(pk=actor.pk).first() if isinstance(actor, User) else None
+    _require_actor(fresh, capability, subject=subject, action=action)
+    return cast(User, fresh)
 
 
 def _lock_administration() -> None:
@@ -263,8 +283,7 @@ def create_account(
     been approved and invited, and its owner has set their own password through
     the one-time link.
     """
-    _require_local_mode()
-    _require_actor(actor, Capability.MANAGE_ACCOUNTS, action="create_account")
+    actor = _begin(actor, Capability.MANAGE_ACCOUNTS, action="create_account")
     name = " ".join((display_name or "").split())
     if not name:
         raise AdministrationRefused(DISPLAY_NAME_REQUIRED)
@@ -352,8 +371,7 @@ def send_setup_link(*, actor: User, user: User) -> LinkOutcome:
     The administrator sees whether the message was sent. They never see the
     link.
     """
-    _require_local_mode()
-    _require_actor(actor, Capability.MANAGE_ACCOUNTS, subject=user, action="send_setup_link")
+    actor = _begin(actor, Capability.MANAGE_ACCOUNTS, subject=user, action="send_setup_link")
     user = User.objects.select_for_update().get(pk=user.pk)
     if _touches_administration(user):
         _require_actor(
@@ -391,9 +409,12 @@ def send_setup_link(*, actor: User, user: User) -> LinkOutcome:
 @transaction.atomic
 def cancel_invitation(*, actor: User, user: User) -> User:
     """Withdraw an invitation: the link stops working and the account waits again."""
-    _require_local_mode()
-    _require_actor(actor, Capability.MANAGE_ACCOUNTS, subject=user, action="cancel_invitation")
+    actor = _begin(actor, Capability.MANAGE_ACCOUNTS, subject=user, action="cancel_invitation")
     user = User.objects.select_for_update().get(pk=user.pk)
+    if _touches_administration(user):
+        _require_actor(
+            actor, Capability.DELEGATE_ADMINISTRATION, subject=user, action="cancel_invitation"
+        )
     if user.provisioning_state != ProvisioningState.INVITED:
         raise AdministrationRefused(NOT_PENDING)
     tokens.invalidate_outstanding(user=user, reason="invitation_cancelled")
@@ -455,6 +476,15 @@ def overrides_after(
             # nothing the person holds and keeps the stored state honest.
             continue
         result[capability] = kept
+    # A stored allow whose prerequisite is not held does nothing today and must
+    # not wake up silently later: «Haldusõiguste andmine» kept as an allow after
+    # «Kasutajate haldus» was withdrawn would come back the day somebody ticks
+    # only the second box, with the page having shown the first one unticked.
+    for capability, prerequisite in capabilities.PREREQUISITES.items():
+        if result.get(capability) == capabilities.ALLOW and not resolve_capability(
+            role, result, prerequisite
+        ):
+            del result[capability]
     return result, moved
 
 
@@ -472,10 +502,14 @@ def update_account(
     ``wanted`` maps each capability to whether the person should hold it after
     the save. Only the difference from the role's default is stored.
     """
-    _require_local_mode()
-    _require_actor(actor, Capability.MANAGE_ACCOUNTS, subject=user, action="update_account")
-    _lock_administration()
+    actor = _begin(actor, Capability.MANAGE_ACCOUNTS, subject=user, action="update_account")
     user = User.objects.select_for_update().get(pk=user.pk)
+    if user.pk != actor.pk and _touches_administration(user):
+        # Not only its power: renaming another administrator is still acting on
+        # an administrator, which is delegation work.
+        _require_actor(
+            actor, Capability.DELEGATE_ADMINISTRATION, subject=user, action="update_account"
+        )
 
     unknown = set(wanted) - set(capabilities.ALL_CAPABILITIES)
     if unknown:
@@ -578,9 +612,7 @@ def deactivate_account(*, actor: User, user: User, reason: str = "") -> User:
     stop working, their sessions end at their next request, and no
     authentication mode will sign them in.
     """
-    _require_local_mode()
-    _require_actor(actor, Capability.MANAGE_ACCOUNTS, subject=user, action="deactivate_account")
-    _lock_administration()
+    actor = _begin(actor, Capability.MANAGE_ACCOUNTS, subject=user, action="deactivate_account")
     user = User.objects.select_for_update().get(pk=user.pk)
     if actor.pk == user.pk:
         raise PrivilegeRefused(NO_SELF_CHANGE, action="deactivate_account", subject=user)
@@ -612,9 +644,7 @@ def deactivate_account(*, actor: User, user: User, reason: str = "") -> User:
 @transaction.atomic
 def reactivate_account(*, actor: User, user: User) -> User:
     """Switch an account back on. Its password and second factor are as they were."""
-    _require_local_mode()
-    _require_actor(actor, Capability.MANAGE_ACCOUNTS, subject=user, action="reactivate_account")
-    _lock_administration()
+    actor = _begin(actor, Capability.MANAGE_ACCOUNTS, subject=user, action="reactivate_account")
     user = User.objects.select_for_update().get(pk=user.pk)
     if actor.pk == user.pk:
         raise PrivilegeRefused(NO_SELF_CHANGE, action="reactivate_account", subject=user)
@@ -643,8 +673,7 @@ def reset_second_factor(*, actor: User, user: User) -> User:
     enrol a new one at their next sign-in. One's own is removed from one's own
     security page, with a fresh proof, never from here.
     """
-    _require_local_mode()
-    _require_actor(actor, Capability.MANAGE_ACCOUNTS, subject=user, action="reset_second_factor")
+    actor = _begin(actor, Capability.MANAGE_ACCOUNTS, subject=user, action="reset_second_factor")
     user = User.objects.select_for_update().get(pk=user.pk)
     if actor.pk == user.pk:
         raise PrivilegeRefused(NO_SELF_CHANGE, action="reset_second_factor", subject=user)
@@ -673,11 +702,20 @@ def change_login_email(*, actor: User, user: User, email: str, external_reason: 
     ends. This is how the placeholder identities of the shared-gate period get
     their real addresses before activation (docs/LOCAL_AUTH_ACTIVATION_RUNBOOK.md).
     """
-    _require_local_mode()
-    _require_actor(
+    actor = _begin(
         actor, Capability.DELEGATE_ADMINISTRATION, subject=user, action="change_login_email"
     )
     user = User.objects.select_for_update().get(pk=user.pk)
+    if actor.pk == user.pk:
+        raise PrivilegeRefused(NO_SELF_CHANGE, action="change_login_email", subject=user)
+    if user.has_local_password or mfa.has_second_factor(user):
+        # After the person has signed in here, their address is how their own
+        # reset links reach *them*. Letting an administrator move it would let
+        # that administrator receive the next reset link and become them — the
+        # one thing an administrator must never be able to do (docs/adr/0145 §4).
+        raise PrivilegeRefused(
+            ADDRESS_FIXED_AFTER_ACTIVATION, action="change_login_email", subject=user
+        )
     address, exception = _clean_address(
         email,
         actor=actor,

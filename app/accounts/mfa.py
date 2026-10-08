@@ -161,7 +161,9 @@ def _qr_svg(uri: str) -> str:
 
 def _matching_step(secret: str, code: str, *, after_step: int) -> int | None:
     """The time step ``code`` belongs to, if it is current and not yet spent."""
-    cleaned = "".join(ch for ch in (code or "") if ch.isdigit())
+    # ASCII digits only: `str.isdigit` also accepts «١٢٣٤٥٦», which then reaches
+    # `hmac.compare_digest` as non-ASCII text and raises instead of refusing.
+    cleaned = "".join(ch for ch in (code or "") if ch in "0123456789")
     if len(cleaned) != DIGITS:
         return None
     totp = pyotp.TOTP(secret, digits=DIGITS, interval=INTERVAL)
@@ -247,7 +249,7 @@ def _new_code() -> str:
 
 
 def _canonical_code(code: str) -> str:
-    return "".join(ch for ch in (code or "").upper() if ch.isalnum())
+    return "".join(ch for ch in (code or "").upper() if ch in _RECOVERY_ALPHABET)
 
 
 def _code_digest(salt: str, code: str) -> str:

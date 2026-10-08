@@ -116,6 +116,10 @@ def second_factor_mandatory(user: Any) -> bool:
     """
     if holds_administrative_capability(user):
         return True
+    if getattr(user, "is_staff", False) or getattr(user, "is_superuser", False):
+        # A technical account reaches the Django admin, which is not a page to
+        # open on a password alone either.
+        return True
     return bool(getattr(settings, "LOCAL_AUTH_MFA_REQUIRED_FOR_ALL", False))
 
 
@@ -177,8 +181,16 @@ def attempt_sign_in(request: HttpRequest, *, email: str, password: str) -> SignI
     address = email_policy.normalise(email)
     counters = throttle.sign_in_counters(request, address)
     raw = passwords.normalise(password)
+    # A source this address has signed in from before is not held back by the
+    # account-wide counter, which is the one a stranger can trip from many
+    # networks; the tight account-and-network counter still holds it.
+    exempt = (
+        frozenset({ThrottleScope.SIGN_IN_ACCOUNT.value})
+        if throttle.is_trusted_source(address, request)
+        else frozenset()
+    )
     with transaction.atomic(), throttle.holding(counters) as held:
-        wait = held.wait()
+        wait = held.wait(ignoring=exempt)
         if wait:
             record_security_event(
                 event_type=SecurityEventType.AUTHENTICATION_FAILED,
@@ -199,7 +211,8 @@ def attempt_sign_in(request: HttpRequest, *, email: str, password: str) -> SignI
         if user is None:
             reason = "unknown_account"
         if reason:
-            wait = held.fail()
+            held.fail()
+            wait = held.wait(ignoring=exempt)
             record_security_event(
                 event_type=SecurityEventType.AUTHENTICATION_FAILED,
                 succeeded=False,
@@ -324,6 +337,7 @@ def complete_sign_in(request: HttpRequest, user: User, *, second_factor: str | N
         request.session[SESSION_NEXT] = next_path
     request.session.set_expiry(int(settings.LOCAL_AUTH_SESSION_ABSOLUTE_SECONDS))
     User.objects.filter(pk=user.pk).update(last_authenticated_at=now)
+    throttle.remember_trusted_source(email_policy.normalise(user.upn), request)
     record_security_event(
         event_type=SecurityEventType.AUTHENTICATION_SUCCEEDED,
         actor=user,

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import ipaddress
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -101,9 +102,44 @@ def network_of(request: HttpRequest) -> str:
     forwarded = request.META.get("HTTP_CF_CONNECTING_IP") or request.META.get(
         "HTTP_X_FORWARDED_FOR", ""
     )
-    if forwarded:
-        return forwarded.split(",")[0].strip() or "unknown"
-    return request.META.get("REMOTE_ADDR", "") or "unknown"
+    raw = (forwarded.split(",")[0].strip() if forwarded else "") or request.META.get(
+        "REMOTE_ADDR", ""
+    )
+    return _counting_unit(raw) or "unknown"
+
+
+def _counting_unit(raw: str) -> str:
+    """The unit one client is counted as: an IPv4 address, or an IPv6 /64.
+
+    An IPv6 subscriber is handed a whole /64 and can rotate through it for
+    free, so counting single IPv6 addresses would give one attacker billions of
+    fresh counters. The /64 is what one household or one office holds.
+    """
+    try:
+        address = ipaddress.ip_address(raw)
+    except ValueError:
+        return raw
+    if address.version == 6:
+        return str(ipaddress.ip_network(f"{address}/64", strict=False))
+    return str(address)
+
+
+def trusted_key(email: str, request: HttpRequest) -> str:
+    return digest("trusted", email, network_of(request))
+
+
+def is_trusted_source(email: str, request: HttpRequest) -> bool:
+    from app.accounts.models import TrustedSignInSource
+
+    return TrustedSignInSource.objects.filter(key_digest=trusted_key(email, request)).exists()
+
+
+def remember_trusted_source(email: str, request: HttpRequest) -> None:
+    from app.accounts.models import TrustedSignInSource
+
+    TrustedSignInSource.objects.update_or_create(
+        key_digest=trusted_key(email, request), defaults={"last_success_at": timezone.now()}
+    )
 
 
 @dataclass(frozen=True)
@@ -138,10 +174,17 @@ class Held:
     def __init__(self, rows: list[AuthenticationThrottle]) -> None:
         self._rows = rows
 
-    def wait(self) -> int:
-        """Seconds until every counter would let this attempt through; 0 if now."""
+    def wait(self, *, ignoring: frozenset[str] = frozenset()) -> int:
+        """Seconds until every counter would let this attempt through; 0 if now.
+
+        ``ignoring`` names scopes whose lockout this attempt is exempt from — and
+        only their lockout: a failure is still counted against them.
+        """
         now = timezone.now()
-        return max((row.seconds_remaining(now=now) for row in self._rows), default=0)
+        return max(
+            (row.seconds_remaining(now=now) for row in self._rows if row.scope not in ignoring),
+            default=0,
+        )
 
     def fail(self) -> int:
         """Count one failure against every held counter; return the longest wait."""

@@ -225,7 +225,9 @@ In Haldus → Kasutajad, as an administrator:
 1. For each shared-gate account with a placeholder sign-in name, **Muuda**
    the address to the person's real `@koda.ee` address (delegating
    administrators only; the account keeps its identity, its work and its
-   history).
+   history). Do this **before** sending the account its first link: once a
+   person has set a password or enrolled an authenticator, the page refuses to
+   move their address, by design.
 2. For each existing account: **Saada parooli seadistamise link**. The person
    sets their first password; nothing else about the account changes.
 3. New people: **+ Uus kasutaja** → **Kinnita ja saada kutse**.

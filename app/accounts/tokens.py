@@ -61,11 +61,29 @@ def _digest(verifier: str) -> str:
     return hashlib.sha256(verifier.encode("ascii")).hexdigest()
 
 
-def _split(raw: str) -> tuple[str, str] | None:
+_DIGEST = re.compile(r"^[0-9a-f]{64}$")
+
+
+def proof_of(raw: str) -> str:
+    """What a page may keep of a link once it has arrived: `<selector>.<digest>`.
+
+    The verifier itself is not kept anywhere — not in the database, and not in
+    the session either, which is a database table like any other. Its SHA-256
+    is what the link's row stores, so comparing the two proves the holder had
+    the link without anybody being able to turn the stored form back into one.
+    A malformed link yields "" and is refused without a query.
+    """
     selector, separator, verifier = (raw or "").strip().partition(".")
     if not separator or not _SELECTOR.match(selector) or not _VERIFIER.match(verifier):
+        return ""
+    return f"{selector}.{_digest(verifier)}"
+
+
+def _split(proof: str) -> tuple[str, str] | None:
+    selector, separator, digest = (proof or "").strip().partition(".")
+    if not separator or not _SELECTOR.match(selector) or not _DIGEST.match(digest):
         return None
-    return selector, verifier
+    return selector, digest
 
 
 @transaction.atomic
@@ -86,28 +104,28 @@ def issue(*, user: User, purpose: str, issued_by: User | None = None) -> IssuedL
     return IssuedLink(record=record, token=f"{selector}.{verifier}")
 
 
-def peek(raw: str, *, purpose: str) -> AccountCredentialToken | None:
+def peek(proof: str, *, purpose: str) -> AccountCredentialToken | None:
     """The usable link this value names, without spending it.
 
     For the GET that shows the set-password form: somebody opening a stale or
     spent link should be told so before they type a new password into a form
     that cannot accept it.
     """
-    parts = _split(raw)
+    parts = _split(proof)
     if parts is None:
         return None
-    selector, verifier = parts
+    selector, digest = parts
     record = (
         AccountCredentialToken.objects.select_related("user")
         .filter(selector=selector, purpose=purpose)
         .first()
     )
-    if record is None or not hmac.compare_digest(record.verifier_digest, _digest(verifier)):
+    if record is None or not hmac.compare_digest(record.verifier_digest, digest):
         return None
     return record if record.is_usable_at(timezone.now()) else None
 
 
-def consume(raw: str, *, purpose: str) -> AccountCredentialToken | None:
+def consume(proof: str, *, purpose: str) -> AccountCredentialToken | None:
     """Spend the link, once. ``None`` for every way it can be wrong.
 
     Must run inside the caller's transaction, so that spending the link and
@@ -117,16 +135,16 @@ def consume(raw: str, *, purpose: str) -> AccountCredentialToken | None:
     """
     if not transaction.get_connection().in_atomic_block:  # pragma: no cover - misuse
         raise RuntimeError("a credential link is consumed inside the change it authorises")
-    parts = _split(raw)
+    parts = _split(proof)
     if parts is None:
         return None
-    selector, verifier = parts
+    selector, digest = parts
     record = (
         AccountCredentialToken.objects.select_for_update()
         .filter(selector=selector, purpose=purpose)
         .first()
     )
-    if record is None or not hmac.compare_digest(record.verifier_digest, _digest(verifier)):
+    if record is None or not hmac.compare_digest(record.verifier_digest, digest):
         return None
     now = timezone.now()
     if not record.is_usable_at(now):

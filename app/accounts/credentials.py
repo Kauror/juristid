@@ -9,12 +9,16 @@ e-mail — ever sees, sets or recovers somebody else's password (docs/adr/0145 �
 
 from __future__ import annotations
 
+import logging
+import threading
+import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from django.conf import settings
 from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth.password_validation import validate_password
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import F
 from django.http import HttpRequest
 from django.utils import timezone
@@ -24,6 +28,8 @@ from app.accounts.enums import CredentialTokenPurpose, ProvisioningState, Thrott
 from app.accounts.models import AccountCredentialToken, User
 from app.audit.enums import SecurityEventType
 from app.audit.services import record_security_event
+
+logger = logging.getLogger(__name__)
 
 
 def _bump_epoch(user: User) -> None:
@@ -65,20 +71,20 @@ def check_new_password(password: str, user: User) -> None:
 
 
 @transaction.atomic
-def set_password_with_link(*, token: str, purpose: str, password: str) -> User | None:
+def set_password_with_link(*, proof: str, purpose: str, password: str) -> User | None:
     """Spend a one-time link on a new password. ``None`` if the link is no good.
 
     Validation first, spending second, all in one transaction: a password the
     validators refuse leaves the link usable for the next try, and a link
     spent is a password set — never one without the other.
     """
-    preview = tokens.peek(token, purpose=purpose)
+    preview = tokens.peek(proof, purpose=purpose)
     holder = link_holder(preview)
     if holder is None:
         return None
     check_new_password(password, holder)
 
-    record = tokens.consume(token, purpose=purpose)
+    record = tokens.consume(proof, purpose=purpose)
     user = link_holder(record)
     if user is None:
         return None
@@ -204,7 +210,26 @@ def request_password_reset(request: HttpRequest, *, email: str) -> None:
         )
         return
 
+    # The same synchronous work as the refusal above — one audit row — and the
+    # link issued and mailed after the response. Sending mail takes the time of
+    # an SMTP conversation, and a page that took that long only for real
+    # addresses would say which addresses are real (docs/adr/0145 §7).
+    detail["outcome"] = "queued"
+    record_security_event(
+        event_type=SecurityEventType.PASSWORD_RESET_REQUESTED,
+        subject=user,
+        ip_address=request.META.get("REMOTE_ADDR"),
+        detail=detail,
+    )
+    user_id = user.pk
+    after_the_response(lambda: _send_reset_link(user_id))
+
+
+def _send_reset_link(user_id: uuid.UUID) -> None:
     with transaction.atomic():
+        user = User.objects.filter(pk=user_id).first()
+        if user is None:  # pragma: no cover - accounts are never deleted
+            return
         issued = tokens.issue(user=user, purpose=CredentialTokenPurpose.PASSWORD_RESET)
         delivery = mail.send_credential_link(
             user=user,
@@ -219,14 +244,31 @@ def request_password_reset(request: HttpRequest, *, email: str) -> None:
                 purpose=CredentialTokenPurpose.PASSWORD_RESET,
                 reason=f"not_delivered:{delivery.reason}",
             )
-        detail["outcome"] = delivery.reason
-        record_security_event(
-            event_type=SecurityEventType.PASSWORD_RESET_REQUESTED,
-            succeeded=delivery.delivered,
-            subject=user,
-            ip_address=request.META.get("REMOTE_ADDR"),
-            detail=detail,
-        )
+
+
+def after_the_response(work: Callable[[], None]) -> None:
+    """Run ``work`` once this request's transaction has committed, off the request.
+
+    A daemon thread with its own database connection, closed when it is done.
+    `ACCOUNT_EMAIL_IN_BACKGROUND=False` runs it inline instead — the test
+    suite's setting, so the work is asserted where it happens. A message lost
+    to a worker restart is a person asking again, which the page invites.
+    """
+    if not getattr(settings, "ACCOUNT_EMAIL_IN_BACKGROUND", True):
+        work()
+        return
+
+    def run() -> None:
+        try:
+            work()
+        except Exception:  # pragma: no cover - logged without content, never raised into nothing
+            logger.warning("A password-reset message could not be prepared.")
+        finally:
+            connection.close()
+
+    transaction.on_commit(
+        lambda: threading.Thread(target=run, name="juristid-account-mail", daemon=True).start()
+    )
 
 
 # -- the second factor, by its owner ----------------------------------------------------

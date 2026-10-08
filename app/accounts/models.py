@@ -568,6 +568,30 @@ class RecoveryCode(BaseModel):
         return f"taastekood · {self.user_id}"
 
 
+class TrustedSignInSource(BaseModel):
+    """An address that has completed a sign-in from this network before.
+
+    Keyed by an HMAC of the address and the network, like the throttle — the
+    table names neither. It exists for one decision: the account-wide counter
+    (`SIGN_IN_ACCOUNT`) is what a distributed attack trips, and a counter only
+    keyed on the address would let anybody who knows a colleague's address keep
+    them out of their own desk by failing from enough networks. A source that has
+    signed this address in before is not held back by *that* counter; its own
+    account-and-network counter still applies in full (docs/adr/0145 §9).
+    """
+
+    key_digest = models.CharField(max_length=64, unique=True, verbose_name="tunnuse räsi")
+    last_success_at = models.DateTimeField(verbose_name="viimane õnnestunud sisselogimine")
+
+    class Meta:
+        verbose_name = "usaldatud sisselogimise allikas"
+        verbose_name_plural = "usaldatud sisselogimise allikad"
+        ordering = ["-last_success_at"]
+
+    def __str__(self) -> str:
+        return f"{self.key_digest[:12]}… {self.last_success_at:%Y-%m-%d}"
+
+
 class AuthenticationThrottle(BaseModel):
     """Failed attempts against one counter, shared by every worker.
 
