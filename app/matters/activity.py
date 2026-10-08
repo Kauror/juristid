@@ -133,7 +133,7 @@ from django.db.models.functions import Coalesce, Greatest, TruncDate
 from django.utils import timezone
 
 from app.core.authorization import apply as apply_scope
-from app.core.authorization import child_visibility_q, scope_for_user
+from app.core.authorization import child_scope_q, scope_for_user
 from app.core.dates import start_of_local_day
 from app.legacy_import.source_pages import MatterSourcePage, SourceRelationshipKind
 from app.matters.enums import MatterOrigin, WebsiteOverviewStatus
@@ -373,7 +373,7 @@ def _readable(model: Any, scope: Any) -> QuerySet[Any]:
     (Agent-F brief 31). ``tests/test_work_activity.py`` holds each source to its
     model's own ``visible_to`` through the hidden-record cases.
     """
-    scoped = apply_scope(model._default_manager.all(), child_visibility_q(scope))
+    scoped = apply_scope(model._default_manager.all(), child_scope_q(model, scope))
     if any(field.name == "removed_at" for field in model._meta.get_fields()):
         scoped = scoped.filter(removed_at__isnull=True)
     return scoped

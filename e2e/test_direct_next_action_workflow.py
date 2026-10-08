@@ -48,6 +48,8 @@ CTA = "+ Lisa tegevus"
 OPTION = "Märgi praegune tegevus tehtuks"
 STEP = "Vormista ja saada Koja seisukoht"
 FOLLOWING = "Kontrolli menetluse seisu ja uusi materjale"
+#: The check a send schedules on its own opinion (docs/adr/0146).
+FOLLOW_UP = "Kontrolli, kas adressaat on Koja arvamusele vastanud"
 MINISTRY = "Näidisministeerium"
 
 
@@ -145,10 +147,11 @@ def test_the_whole_loop_from_no_step_to_the_following_one(page, base_url, screen
     screenshots(page, "otsene-samm-koja-arvamus-valik")
     _register_opinion(page, finish_step=True)
 
-    # F. Finished, and the zone offers what comes next — no wizard, no new step.
+    # F. Finished. What is current now is the send's own `Arvamuse
+    # järelkontroll`, promoted by the established rule — no wizard, and no step
+    # anybody else chose (docs/adr/0146 §4).
     zone = page.locator("#praegune-tegevus")
-    expect(zone).to_contain_text("Järgmine samm on määramata")
-    expect(zone.locator("#lisa-jargmine > summary")).to_have_text(CTA)
+    expect(zone.locator(".curact__text")).to_have_text(FOLLOW_UP)
     expect(zone).not_to_contain_text(STEP)
 
     # G. One row for one act: «Arvamus välja», with the finished step under it.
@@ -161,6 +164,23 @@ def test_the_whole_loop_from_no_step_to_the_following_one(page, base_url, screen
     # No note was written to say the same thing again.
     expect(page.locator("#ajalugu-loend article[id^='sissekanne-']")).to_have_count(0)
     screenshots(page, "otsene-samm-teema-kaik")
+
+    # The answer arrived: the check is done, and nothing is current any more,
+    # so the zone offers what comes next.
+    check = page.locator(
+        "#praegune-tegevus [id^=jarelkontroll-]:not([id*=tehtud]):not([id*=kuupaev])"
+    )
+    check.locator("details > summary", has_text="Tehtud").click()
+    check.get_by_label("Vastus saabunud", exact=True).check()
+    with page.expect_response(
+        lambda response: "/jarelkontroll/" in response.url and response.request.method == "POST"
+    ) as caught:
+        check.get_by_role("button", name="Salvesta järelkontroll", exact=True).click()
+    assert caught.value.status == 200, f"the check was refused: {caught.value.status}"
+    page.wait_for_load_state("networkidle")
+    zone = page.locator("#praegune-tegevus")
+    expect(zone).to_contain_text("Järgmine samm on määramata")
+    expect(zone.locator("#lisa-jargmine > summary")).to_have_text(CTA)
 
     # H. The following step, through the same control.
     _set_directly(page, FOLLOWING, _day(6))

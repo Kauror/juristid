@@ -1,0 +1,22 @@
+{% comment %}
+The confirmation a closure asks for while the Matter has a planned or current
+`Arvamuse järelkontroll` (docs/adr/0146 §8). Drawn only after a save was
+refused for it — `form.follow_up_closure_refused` — or when the box came back
+ticked, so the ordinary save of a stage never shows it. Never ticked for the
+person. The service asks again under the Matter's lock.
+
+    form  a form with a `confirm_follow_up_closure` field
+{% endcomment %}
+{% if form.follow_up_closure_refused or form.confirm_follow_up_closure.value %}
+  <div class="followupconfirm" role="group" aria-labelledby="{{ form.confirm_follow_up_closure.auto_id }}_hoiatus">
+    <p class="formerror" role="alert" id="{{ form.confirm_follow_up_closure.auto_id }}_hoiatus">
+      Sellel teemal on pooleli Koja arvamuse järelkontroll. Teema sulgemisel lõpetatakse ka planeeritud järelkontroll.
+    </p>
+    <label class="cx-check" for="{{ form.confirm_follow_up_closure.auto_id }}">
+      <input type="checkbox" name="{{ form.confirm_follow_up_closure.html_name }}"
+             id="{{ form.confirm_follow_up_closure.auto_id }}" value="on"
+             {% if form.confirm_follow_up_closure.value %}checked{% endif %}>
+      {{ form.confirm_follow_up_closure.label }}
+    </label>
+  </div>
+{% endif %}

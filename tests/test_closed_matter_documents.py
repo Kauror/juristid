@@ -125,8 +125,18 @@ def _opinion_file(matter, *, name: str, actor):
 
 
 def _close(matter, actor):
-    """Close it the way the other tab does — through the domain service."""
-    close_matter(matter=matter, disposition=Disposition.COMPLETED, actor=actor, reason="QA")
+    """Close it the way the other tab does — through the domain service.
+
+    Confirmed: a send in the world leaves its `Arvamuse järelkontroll` planned,
+    and closing past it is the person's decision (docs/adr/0146 §8).
+    """
+    close_matter(
+        matter=matter,
+        disposition=Disposition.COMPLETED,
+        actor=actor,
+        reason="QA",
+        follow_ups_confirmed=True,
+    )
     matter.refresh_from_db()
     return matter
 

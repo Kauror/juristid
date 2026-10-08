@@ -8,6 +8,7 @@ management command (master specification 11.2, 10).
 from __future__ import annotations
 
 from datetime import date
+from typing import Any
 
 from django.conf import settings
 from django.contrib.postgres.fields import ArrayField
@@ -28,6 +29,8 @@ from app.workflow.enums import (
     DatePrecision,
     DateSemantics,
     Disposition,
+    FollowUpOutcome,
+    FollowUpState,
     PlanStepOperation,
     PlanStepSource,
     PlanStepState,
@@ -170,9 +173,30 @@ def resolve_legacy_status(raw_label: str, source_era: str = "") -> LegacyStatusM
     return exact or generic
 
 
+def next_action_visibility_q(scope: Any) -> models.Q:
+    """Which `NextAction` rows ``scope`` may read.
+
+    The child rule every record follows, and one more for a follow-up check: it
+    is never more visible than **the opinion it is about**, read live through
+    ``follow_up__submission`` rather than only copied when the check was
+    scheduled (docs/adr/0146 §10). A check's sentence and day say that an
+    opinion went out and roughly when; a reader refused the opinion is refused
+    the check too, whatever happened to either restriction since.
+
+    The opinion lives on the same Matter as its check, so the participation half
+    is the same; only the override read differs. A scope that sees all
+    restricted work reads both as everything, with no join.
+    """
+    base = child_visibility_q(scope)
+    if not scope.is_authenticated or scope.sees_all_restricted:
+        return base
+    opinion = child_visibility_q(scope, override_field="follow_up__submission__visibility_override")
+    return base & (models.Q(follow_up__isnull=True) | opinion)
+
+
 class NextActionQuerySet(models.QuerySet):
     def visible_to(self, user: object | None) -> NextActionQuerySet:
-        return apply_scope(self, child_visibility_q(scope_for_user(user)))
+        return apply_scope(self, next_action_visibility_q(scope_for_user(user)))
 
     def open(self) -> NextActionQuerySet:
         return self.filter(status=ActionStatus.OPEN)
@@ -184,7 +208,9 @@ class NextActionQuerySet(models.QuerySet):
     def overdue(self, today: date | None = None) -> NextActionQuerySet:
         """Actions that are genuinely late.
 
-        Only a DO with a DEADLINE qualifies. A WAIT whose review date has passed
+        The current action, and a *planned follow-up check* whose day has passed
+        (docs/adr/0146 §7) — `is_overdue`'s two cases, in SQL. Only a DO with a
+        DEADLINE qualifies. A WAIT whose review date has passed
         is due for a look, not missed, and calling it overdue would make the
         whole list untrustworthy.
 
@@ -194,7 +220,12 @@ class NextActionQuerySet(models.QuerySet):
         this queryset returns exactly the rows ``is_overdue`` below says are
         late, rather than a wider set the page then has to disagree with.
         """
-        return self.open().filter(overdue_q(today or timezone.localdate()))
+        day = today or timezone.localdate()
+        return self.filter(
+            models.Q(status=ActionStatus.OPEN)
+            | models.Q(status=ActionStatus.PLANNED, follow_up__isnull=False),
+            overdue_q(day),
+        )
 
     def due_for_review(self, today: date | None = None) -> NextActionQuerySet:
         """Open reviews that have come round — exactly the rows
@@ -325,8 +356,39 @@ class NextAction(VisibilityInheritingModel):
         related_name="actions",
         verbose_name="tööplaani samm",
     )
+    #: The sent opinion this action checks on, when it is a follow-up check
+    #: (docs/adr/0146). **An explicit relation, never an inference**: set by
+    #: the one service that schedules checks (`app.workflow.follow_ups`) and by
+    #: nothing else — no title, date, filename or addressee is ever matched.
+    #: ``NULL`` on every other action, and on every action written before it.
+    #:
+    #: ``PROTECT``: a check is never orphaned. A Teema's deletion removes its
+    #: actions before the follow-ups they point at (`app.matters.deletion`).
+    follow_up = models.ForeignKey(
+        "workflow.OpinionFollowUp",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="checks",
+        verbose_name="arvamuse järelkontroll",
+    )
+    #: What the check found, typed (`FollowUpOutcome`) — only on a COMPLETED
+    #: follow-up check, ``""`` everywhere else. A database default so a row
+    #: written by the release still serving during the swap is valid.
+    follow_up_outcome = models.CharField(
+        max_length=24,
+        choices=FollowUpOutcome.choices,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="järelkontrolli tulemus",
+    )
 
     objects = NextActionQuerySet.as_manager()
+
+    #: The scoping rule `app.core.authorization.child_scope_q` reads, so a page
+    #: that scopes this model without `visible_to` applies the same rule.
+    visibility_rule = staticmethod(next_action_visibility_q)
 
     class Meta:
         verbose_name = "järgmine tegevus"
@@ -406,6 +468,39 @@ class NextAction(VisibilityInheritingModel):
                 | models.Q(target_date__isnull=False),
                 name="workflow_planned_action_is_dated",
             ),
+            # **A sent opinion is checked on once at a time** (docs/adr/0146
+            # §3): one planned or current check per follow-up. A repeated
+            # «no reply yet» completes the check it answers before the next
+            # one exists, in one transaction.
+            models.UniqueConstraint(
+                fields=["follow_up"],
+                condition=models.Q(status__in=[ActionStatus.OPEN, ActionStatus.PLANNED]),
+                name="workflow_one_active_check_per_follow_up",
+            ),
+            # A follow-up check is a day: «check whether they answered» has no
+            # meaning without one.
+            models.CheckConstraint(
+                condition=models.Q(follow_up__isnull=True) | models.Q(target_date__isnull=False),
+                name="workflow_follow_up_check_is_dated",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(follow_up_outcome__in=["", *FollowUpOutcome.values]),
+                name="workflow_follow_up_outcome_vocabulary",
+            ),
+            # An outcome is what a *completed check* found, and nothing else
+            # carries one.
+            models.CheckConstraint(
+                condition=models.Q(follow_up_outcome="")
+                | models.Q(follow_up__isnull=False, status=ActionStatus.COMPLETED),
+                name="workflow_follow_up_outcome_on_completed_check",
+            ),
+            # …and a completed check always says what it found: no generic
+            # «✓ Tehtud» can finish one silently (docs/adr/0146 §5).
+            models.CheckConstraint(
+                condition=~models.Q(follow_up__isnull=False, status=ActionStatus.COMPLETED)
+                | ~models.Q(follow_up_outcome=""),
+                name="workflow_completed_check_has_outcome",
+            ),
         ]
         indexes = [
             models.Index(
@@ -432,6 +527,11 @@ class NextAction(VisibilityInheritingModel):
     def is_planned(self) -> bool:
         return self.status == ActionStatus.PLANNED
 
+    @property
+    def is_follow_up(self) -> bool:
+        """Whether this action is a check on a sent opinion (docs/adr/0146)."""
+        return self.follow_up_id is not None
+
     def is_overdue(self, today: date | None = None) -> bool:
         """Whether this step's own period has ended without it being done.
 
@@ -439,8 +539,14 @@ class NextAction(VisibilityInheritingModel):
         of it is behind us: *september 2026* anchors on 1 September so that it
         sorts, and reading that anchor as the commitment called a lawyer late on
         the second day of the month they were given (ADR 0079).
+
+        **A follow-up check is late as soon as its day has passed, current or
+        planned** (docs/adr/0146 §7). Any other planned action keeps
+        docs/adr/0143's reading: it is not late until it is the current one.
         """
-        if not self.is_open or self.target_date is None:
+        if self.target_date is None:
+            return False
+        if not (self.is_open or (self.is_planned and self.is_follow_up)):
             return False
         if self.kind != OVERDUE_KIND or self.date_semantics != OVERDUE_SEMANTICS:
             return False
@@ -752,3 +858,102 @@ class MatterPlanStep(BaseModel):
     def is_typed(self) -> bool:
         """Whether a canonical record, rather than `Mida tegid?`, finishes it."""
         return self.operation != PlanStepOperation.GENERIC
+
+
+class OpinionFollowUp(BaseModel):
+    """`Arvamuse järelkontroll` — the monitoring of one sent opinion (docs/adr/0146).
+
+    **One per sent `Submission`, and the database says so** (the one-to-one
+    below). It is created by the act that records the send — `Märgi saadetuks`,
+    `Registreeri saatmine` or `+ Koja arvamus` — and by nothing else: no import,
+    no archive apply, no backfill and no background job writes one.
+
+    **Not a second task.** The work is `NextAction`: each check is an ordinary
+    dated action pointing back here through ``NextAction.follow_up`` — the first
+    one scheduled automatically 30 calendar days after the recorded sending
+    date, every later one on a day the lawyer chose. This row holds only what no
+    single check can: which opinion is being watched, the date the first check
+    was computed from, and how the watching ended.
+
+    **No visibility of its own.** It is read through the check that points at it
+    (`NextAction.visible_to`, restricted with the opinion when the opinion is)
+    or through its `Submission`; it carries no text a reader could not already
+    see there.
+    """
+
+    submission = models.OneToOneField(
+        "submissions.Submission",
+        on_delete=models.PROTECT,
+        related_name="follow_up",
+        verbose_name="arvamus",
+    )
+    #: The business date the send was recorded with (Europe/Tallinn), and the
+    #: first check's automatically computed day — `sent_on` + 30 calendar days,
+    #: never moved for a weekend or a holiday. Kept so the automatic date stays
+    #: traceable after a lawyer moves the check (docs/adr/0146 §2, §6).
+    sent_on = models.DateField(verbose_name="saadetud")
+    first_due_on = models.DateField(verbose_name="esimene kontroll")
+    state = models.CharField(
+        max_length=24,
+        choices=FollowUpState.choices,
+        default=FollowUpState.MONITORING,
+        db_index=True,
+        verbose_name="olek",
+    )
+    ended_at = models.DateTimeField(null=True, blank=True, verbose_name="lõpetatud")
+    ended_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="ended_opinion_follow_ups",
+    )
+    #: Why the watching ended: the lawyer's own reason for `Lõpetan jälgimise`
+    #: (required), or the event that cancelled it («Teema suleti», «Arvamus
+    #: võeti tagasi»).
+    end_reason = models.TextField(blank=True, default="", verbose_name="lõpetamise põhjus")
+    #: Who recorded the send that scheduled it — the person whose act this was.
+    #: The provenance that it was scheduled *automatically* is this row itself
+    #: and the `automatic` flag on its first `NEXT_ACTION_SET`.
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="created_opinion_follow_ups",
+    )
+
+    class Meta:
+        verbose_name = "arvamuse järelkontroll"
+        verbose_name_plural = "arvamuste järelkontrollid"
+        ordering = ["-created_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(state__in=FollowUpState.values),
+                name="workflow_follow_up_state_vocabulary",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(first_due_on__gte=models.F("sent_on")),
+                name="workflow_follow_up_due_after_sending",
+            ),
+            # Ended exactly when it is no longer being watched.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(state=FollowUpState.MONITORING, ended_at__isnull=True)
+                    | (~models.Q(state=FollowUpState.MONITORING) & models.Q(ended_at__isnull=False))
+                ),
+                name="workflow_follow_up_end_stamped",
+            ),
+            # `Lõpetan jälgimise` always says why.
+            models.CheckConstraint(
+                condition=~models.Q(state=FollowUpState.ENDED) | ~models.Q(end_reason=""),
+                name="workflow_follow_up_end_has_reason",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"Järelkontroll: {self.submission_id}"
+
+    @property
+    def is_monitoring(self) -> bool:
+        return self.state == FollowUpState.MONITORING

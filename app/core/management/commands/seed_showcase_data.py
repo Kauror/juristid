@@ -488,12 +488,15 @@ def _build_taks_taiks(w: World) -> None:
         actor=w.owner,
         note="Sama algatus: 773 SE järglane on 554 SE.",
     )
+    # Confirmed: the opinion above left its `Arvamuse järelkontroll` planned,
+    # and the file closes past it as a person would (docs/adr/0146 §8).
     close_matter(
         matter=_fresh(taks),
         disposition=Disposition.SUPERSEDED,
         actor=w.owner,
         reason="Eelnõu langes menetlusest välja; töö jätkub TAIKS eelnõu all.",
         successor=_fresh(taiks),
+        follow_ups_confirmed=True,
     )
 
 

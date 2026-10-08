@@ -27,6 +27,9 @@ basis = "deployment"
 # täiendavad saadetud failid ja tõendi trigerid), olemasolevaid ridu ei muudeta,
 # otsinguindeksit ei ehitata uuesti. Kui see väljalase ei jõua tootmisse 08.10
 # (Tallinna aja järgi), liiguvad need read väljalaske päeva kirjesse.
+# Teine väljalase samal päeval: Koja arvamuse järelkontroll, ADR 0146.
+# Migratsioonid workflow/0014 ja audit/0036 (lisavad), tagantjärele midagi ei
+# looda, otsinguindeksit ei ehitata uuesti.
 changes = [
   "Planeeritud tegevuse saab märkida tehtuks («✓ Tehtud») juba enne selle kuupäeva: kirjuta, mis juhtus, ja lisa vajadusel fail. Praegune tegevus ja teised planeeritud tegevused ei muutu. «×» kustutab planeeritud tegevuse, ajalugu jääb alles.",
   "«Järgmisena?» (endine «Soovitatud järgmisena») ei paku enam tööd, mis on teemal juba tehtud — avaldatud ülevaade, alustatud kaasamine, saabunud tagasiside või saadetud arvamus. Kui arvamust küsitakse uuesti, pakub ta arvamuse koostamist taas.",
@@ -36,6 +39,9 @@ changes = [
   "Kõigi vormide salvestusnupp on nüüd «Salvesta».",
   "Faili pealkirja muudad pliiatsiga (✎) faili nime kõrval; algne failinimi jääb näha. Dokumentides avaneb «⋯» väikese menüüna ega muuda rea kõrgust; pealkirja muudad käsuga «Muuda nime».",
   "Teema lühikokkuvõte kasutab kogu põhiveeru laiust. Uue teema ja «Saabunud» registreerimise vormi lõpus pole enam lisateksti, kaasamise vorm küsib «Keda kaasad» ja dokumentide üleslaadimise juures pole enam selgitusi.",
+  "Kui Koja arvamus märgitakse saadetuks, lisab Juristid teemale planeeritud järelkontrolli 30 kalendripäeva pärast saatmise kuupäeva: «Kontrolli, kas adressaat on Koja arvamusele vastanud». Järelkontroll on teema vastutaja töö ning selle real on näha, millise arvamuse ja adressaadiga on tegu.",
+  "Järelkontrolli kuupäeva saab alati muuta («Muuda»). «✓ Tehtud» küsib, mis selgus: «Vastus saabunud», «Vastust ei ole — kontrollin uuesti» koos järgmise kontrolli kuupäevaga või «Lõpetan jälgimise» koos põhjusega.",
+  "Möödunud kuupäevaga järelkontroll on punasena näha «Minu asjades», «Osakonnas» ja teema lehel. Kui teemal on pooleli järelkontroll, küsib Juristid teema sulgemisel kinnitust.",
 ]
 
 [[day]]

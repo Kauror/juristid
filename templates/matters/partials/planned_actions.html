@@ -11,6 +11,13 @@ list is; the list keeps its name for assistive technology.
 
 A refused `✓ Tehtud` or `Muuda` comes back into its own row, opened, with what
 was typed and the field's own message (`_workspace_refusal`).
+
+**An `Arvamuse järelkontroll` keeps the row and changes its controls**
+(docs/adr/0146 §7): `✓ Tehtud` asks what the check found, `Muuda` moves its day
+and nothing else, and there is no `×` — an unanswered opinion stops being
+watched only through `Lõpetan jälgimise`, with a reason. A quiet line under it
+names the opinion. A planned check whose day has passed reads late, as the
+current action does; any other planned row does not (docs/adr/0143).
 {% endcomment %}
 {% if planned_actions %}
   <div class="curact__planned" id="planeeritud">
@@ -19,10 +26,26 @@ was typed and the field's own message (`_workspace_refusal`).
     {% endif %}
     <ul class="curact__plannedlist" aria-label="Planeeritud tegevused">
       {% for planned in planned_actions %}
-        <li class="curact__plannedrow">
-          <span class="curact__planneddate">{{ planned.date_display }}</span>
+        <li class="curact__plannedrow"{% if planned.follow_up_id %} id="jarelkontroll-{{ planned.pk }}"{% endif %}>
+          <span class="curact__planneddate{% if planned.is_overdue %} curact__planneddate--overdue{% endif %}">{{ planned.date_display }}{% if planned.is_overdue %} · {{ planned.days_late }} p{% endif %}</span>
           <span class="curact__plannedtext">{{ planned.text }}</span>
-          {% if can_write %}
+          {% if planned.follow_up_id %}
+            {% if can_write %}
+              <details class="cx-panel curact__edit" id="jarelkontroll-tehtud-{{ planned.pk }}" data-addpanel{% if planned.open_check %} open{% endif %}>
+                <summary class="disclosure-chip disclosure-chip--quiet">✓ Tehtud</summary>
+                <div class="cx-panel__body">
+                  {% include "matters/partials/follow_up_check_form.html" with form=planned.check_form action=planned %}
+                </div>
+              </details>
+              <details class="cx-panel curact__edit" id="jarelkontroll-kuupaev-{{ planned.pk }}" data-addpanel{% if planned.open_date %} open{% endif %}>
+                <summary class="disclosure-chip disclosure-chip--quiet">Muuda</summary>
+                <div class="cx-panel__body">
+                  {% include "matters/partials/follow_up_date_form.html" with form=planned.date_form action=planned %}
+                </div>
+              </details>
+            {% endif %}
+            {% include "matters/partials/follow_up_subject.html" with subject=planned.follow_up_subject %}
+          {% elif can_write %}
             <details class="cx-panel curact__edit" id="planeeritud-tehtud-{{ planned.pk }}" data-addpanel{% if planned.open_done %} open{% endif %}>
               <summary class="disclosure-chip disclosure-chip--quiet">✓ Tehtud</summary>
               <div class="cx-panel__body">

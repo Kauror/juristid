@@ -720,11 +720,17 @@ def test_splitting_the_composer_dropped_none_of_its_fields(client, specialist) -
     # for a day or nothing. `ProceduralDevelopmentEditForm` still offers the
     # whole control on a stored row, and is not a workspace panel, so its
     # fields are not enumerated here (docs/adr/0097 §6.1).
+    #
+    # **`confirm_follow_up_closure` is drawn only after a refusal.** It is the
+    # answer to «this file still has a Koja arvamuse järelkontroll — close
+    # anyway?», and a box asking it beside every stage choice would ask a
+    # question nobody was facing (docs/adr/0146 §8).
     derived = {
         "deadline_half",
         "effective_half",
         "next_half",
         "responsible",
+        "confirm_follow_up_closure",
     }
 
     missing: list[str] = []

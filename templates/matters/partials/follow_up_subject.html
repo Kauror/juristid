@@ -1,0 +1,14 @@
+{% comment %}
+Which opinion an `Arvamuse järelkontroll` is about — one quiet line:
+«Koja arvamus 8.10.2026 · Rahandusministeerium», the day and every addressee,
+with the letter that went out one click away (docs/adr/0146 §7). Read through
+the opinion's own visibility (`app.matters.follow_up_display`); a reader who may
+not see the opinion gets no line at all.
+
+    subject  a `FollowUpSubject`, or nothing
+{% endcomment %}
+{% if subject %}
+  <p class="followup__subject">
+    {% if subject.letter_url %}<a href="{{ subject.letter_url }}">{{ subject.label }} ↗</a>{% else %}{{ subject.label }}{% endif %}
+  </p>
+{% endif %}

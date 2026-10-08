@@ -637,6 +637,7 @@ def record_marge(
     stage: str = "",
     as_next_step: bool = False,
     files: tuple[tuple[str, bytes], ...] = (),
+    confirm_follow_up_closure: bool = False,
 ) -> int:
     """Record a `Märge` the way `+ Lisa · Tavaline` did, now that it has no panel.
 
@@ -649,6 +650,10 @@ def record_marge(
     ``stage`` is a `Hetkeseis` label as the header's own select lists it. A
     stage that ends the Matter closes it, as the panel's did. Returns the
     response status.
+
+    ``confirm_follow_up_closure`` posts the answer to «this file still has a
+    Koja arvamuse järelkontroll — close anyway?» (docs/adr/0146 §8); a file with
+    no pending check closes the same with it or without it.
     """
     stage_id = ""
     if stage:
@@ -663,7 +668,7 @@ def record_marge(
         )
         assert stage_id, f"no Hetkeseis {stage!r} in the header"
     status = page.evaluate(
-        """async ({url, title, occurredOn, stage, asNext, files}) => {
+        """async ({url, title, occurredOn, stage, asNext, files, confirm}) => {
             const data = new FormData();
             data.append('csrfmiddlewaretoken',
                 document.querySelector('input[name=csrfmiddlewaretoken]').value);
@@ -671,6 +676,7 @@ def record_marge(
             data.append('occurred_on', occurredOn);
             if (stage) data.append('stage', stage);
             if (asNext) data.append('as_next_step', 'on');
+            if (confirm) data.append('confirm_follow_up_closure', 'on');
             for (const [name, bytes] of files) {
                 data.append('attachments', new File([new Uint8Array(bytes)], name));
             }
@@ -687,6 +693,7 @@ def record_marge(
             "stage": stage_id,
             "asNext": as_next_step,
             "files": [[name, list(body)] for name, body in files],
+            "confirm": confirm_follow_up_closure,
         },
     )
     page.reload()
@@ -836,6 +843,10 @@ def open_kaik_period(node) -> None:
         period.locator("xpath=./summary").click()
 
 
+#: The header's one-button answer to a closure refused for a pending check.
+FOLLOW_UP_CLOSURE_BUTTON = "Sulge teema ja lõpeta ka järelkontroll"
+
+
 def close_through_stage(page, stage: str = "Rohkem ei tegele", title: str = "") -> None:
     """End the Matter the one ordinary way there is: a `Hetkeseis` that ends it.
 
@@ -844,15 +855,26 @@ def close_through_stage(page, stage: str = "Rohkem ei tegele", title: str = "") 
     own `Hetkeseis` editor; with one, a `Märge` carrying that sentence and the
     stage, through `record_marge` — `+ Lisa · Tavaline`'s save, since that
     panel left on 2026-10-07.
+
+    **A file with a pending `Arvamuse järelkontroll` asks first** (docs/adr/0146
+    §8): the header answers with the owner's warning and one button that closes
+    past it, which this presses, as a person who meant to close would; the
+    `Märge` posts the same confirmation.
     """
     if title:
-        record_marge(page, title, stage=stage)
+        record_marge(page, title, stage=stage, confirm_follow_up_closure=True)
     else:
         control = page.locator("#teema-hetkeseis")
         control.locator("summary").click()
         control.locator("select[name=stage]").select_option(label=stage)
-        with page.expect_navigation():
+        with page.expect_response(
+            lambda r: r.request.method == "POST" and "/vali/stage/" in r.url
+        ) as answer:
             control.get_by_role("button", name="Salvesta hetkeseisu muudatus").click()
+        if answer.value.status == 400:
+            confirm = page.get_by_role("button", name=FOLLOW_UP_CLOSURE_BUTTON, exact=True)
+            with page.expect_navigation():
+                confirm.click()
         page.wait_for_load_state("networkidle")
     page.locator(".banner--closed").wait_for(state="visible")
 

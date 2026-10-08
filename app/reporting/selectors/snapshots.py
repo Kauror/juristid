@@ -42,7 +42,7 @@ from django.db.models import (
 )
 from django.utils import timezone
 
-from app.core.authorization import Scope, child_visibility_q, matter_visibility_q, scope_for_user
+from app.core.authorization import Scope, child_scope_q, matter_visibility_q, scope_for_user
 from app.core.authorization import apply as apply_scope
 from app.matters.enums import RecordMode
 from app.matters.models import Matter
@@ -98,7 +98,9 @@ def _next_action_is_visible(scope: Scope) -> Any:
     return Exists(
         apply_scope(
             NextAction.objects.filter(pk=OuterRef("next_action")),
-            child_visibility_q(scope),
+            # `NextAction`'s own rule: a follow-up check is never more visible
+            # than its opinion (docs/adr/0146 §10).
+            child_scope_q(NextAction, scope),
         )
     )
 

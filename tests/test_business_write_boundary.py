@@ -977,6 +977,35 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         ),
         events=(ChangeEventType.NEXT_ACTION_CANCELLED,),
     ),
+    # `Arvamuse järelkontroll` — what a check found, and its day (docs/adr/0146).
+    WriteRoute(
+        name="matters:check_follow_up",
+        label="Järelkontrolli tulemus",
+        request=lambda w: (
+            {"pk": w["follow_up_matter"].pk, "action_id": w["follow_up_check"].pk},
+            {"outcome": "RESPONSE_RECEIVED", "body": "Loata vastus"},
+        ),
+        probe=lambda w: (
+            w["follow_up_check"]
+            .__class__.objects.values_list("status", "follow_up_outcome")
+            .get(pk=w["follow_up_check"].pk)
+        ),
+        events=(ChangeEventType.NEXT_ACTION_COMPLETED,),
+    ),
+    WriteRoute(
+        name="matters:reschedule_follow_up",
+        label="Järelkontrolli kuupäeva muutmine",
+        request=lambda w: (
+            {"pk": w["follow_up_matter"].pk, "action_id": w["follow_up_check"].pk},
+            {"target_date": (timezone.localdate() + timedelta(days=12)).strftime("%d.%m.%Y")},
+        ),
+        probe=lambda w: (
+            w["follow_up_check"]
+            .__class__.objects.values_list("target_date", flat=True)
+            .get(pk=w["follow_up_check"].pk)
+        ),
+        events=(ChangeEventType.NEXT_ACTION_RESCHEDULED,),
+    ),
     WriteRoute(
         name="documents:remove",
         label="Dokumendi eemaldamine",
@@ -1249,10 +1278,21 @@ def _build_world():
         actor=author,
     )
 
+    # A sent opinion and the check its send scheduled, on a Matter of their own
+    # (docs/adr/0146).
+    from tests.follow_ups import active_check, mark_sent
+
+    follow_up_matter = factories.MatterFactory(
+        owner=author, title="Järelkontrolliga teema", reference_year=2099, reference_number=913
+    )
+    follow_up_check = active_check(mark_sent(follow_up_matter, author, [organisation]))
+
     return {
         "matter": matter,
         "planned": planned,
         "planned_action": planned_action,
+        "follow_up_matter": follow_up_matter,
+        "follow_up_check": follow_up_check,
         "entry": entry,
         "waiting_engagement": waiting_engagement,
         "quiet_engagement": quiet_engagement,

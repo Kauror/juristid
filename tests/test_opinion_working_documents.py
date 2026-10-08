@@ -426,7 +426,11 @@ def test_a_withdrawn_opinion_still_takes_its_working_document(matter, specialist
 
 def test_a_closed_matter_refuses_a_new_working_document(matter, specialist, organisation):
     submission = _opinion(matter, specialist, organisation).record
-    close_matter(matter=matter, disposition=Disposition.OTHER, actor=specialist)
+    # The send left its `Arvamuse järelkontroll` planned; closing past it is a
+    # confirmed decision (docs/adr/0146 §8).
+    close_matter(
+        matter=matter, disposition=Disposition.OTHER, actor=specialist, follow_ups_confirmed=True
+    )
 
     with refused(CLOSED_MATTER_REFUSAL):
         add_opinion_working_documents(submission=submission, author=specialist, uploads=[_docx()])
@@ -474,7 +478,11 @@ def test_the_row_offers_the_button_only_on_an_open_matter(
 
     assert button in _teema(signed_in, matter)
 
-    close_matter(matter=matter, disposition=Disposition.OTHER, actor=specialist)
+    # The send left its `Arvamuse järelkontroll` planned; closing past it is a
+    # confirmed decision (docs/adr/0146 §8).
+    close_matter(
+        matter=matter, disposition=Disposition.OTHER, actor=specialist, follow_ups_confirmed=True
+    )
     assert button not in _teema(signed_in, matter)
 
 

@@ -91,6 +91,34 @@ class ActionStatus(models.TextChoices):
     SUPERSEDED = "SUPERSEDED", "Asendatud"
 
 
+class FollowUpOutcome(models.TextChoices):
+    """What a check of a sent opinion found (docs/adr/0146 §5).
+
+    Typed, and stored on the completed check, so a later report can ask how
+    many opinions were answered without reading anybody's prose. Only a
+    completed follow-up check carries one; every other action carries ``""``.
+    """
+
+    RESPONSE_RECEIVED = "RESPONSE_RECEIVED", "Vastus saabunud"
+    NO_RESPONSE = "NO_RESPONSE", "Vastust ei ole — kontrollin uuesti"
+    MONITORING_ENDED = "MONITORING_ENDED", "Lõpetan jälgimise"
+
+
+class FollowUpState(models.TextChoices):
+    """Where the monitoring of one sent opinion stands (docs/adr/0146 §3).
+
+    ``MONITORING`` while a check is planned or current; the other three are
+    how it ended, and none of them is reopened by anything automatic.
+    """
+
+    MONITORING = "MONITORING", "Jälgimisel"
+    RESPONSE_RECEIVED = "RESPONSE_RECEIVED", "Vastus saabunud"
+    ENDED = "ENDED", "Jälgimine lõpetatud"
+    #: Ended by something other than a check: the Matter closed, or the opinion
+    #: was withdrawn or superseded. The reason says which.
+    CANCELLED = "CANCELLED", "Tühistatud"
+
+
 #: Estonian month and period names, for rendering a date at the precision it
 #: was actually known to. "September 2026" is an honest rendering of an
 #: expectation; "01.09.2026" would invent a day nobody committed to.
