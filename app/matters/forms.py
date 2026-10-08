@@ -7612,6 +7612,8 @@ class MatterProgressForm(forms.Form):
         blank=True,
         widget=StageSelect(attrs={"class": "field__input field__input--compact"}),
     )
+    #: `Sulge teema ja lõpeta ka järelkontroll`, after a refused closure (docs/adr/0146 §8).
+    confirm_follow_up_closure = follow_up_closure_field()
     #: `Märgi ka menetluse kulgu: <faas> <päev>` — the stage move is also the day
     #: that phase began (docs/adr/0128 §1).
     #:

@@ -1203,3 +1203,24 @@ def test_the_verifier_reports_a_lost_check(normal_matter, specialist, ministry):
     kinds = {finding.kind for finding in check_domain_invariants().findings}
 
     assert "follow-up-monitoring-without-live-check" in kinds
+
+
+def test_the_release_still_serving_survives_the_migration(normal_matter, specialist):
+    """A `NextAction` written without the two new columns — as c60e2d73 writes
+    one between `migrate` and the swap — is valid under every new constraint."""
+    from django.db import connection
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            INSERT INTO workflow_nextaction (
+                id, created_at, updated_at, visibility_override, matter_id, text, kind,
+                date_semantics, target_date, date_precision, source_text, status
+            )
+            VALUES (gen_random_uuid(), now(), now(), '', %s, 'Vana väljalase', 'DO',
+                    'DEADLINE', %s, 'EXACT', '', 'PLANNED')
+            RETURNING follow_up_id, follow_up_outcome
+            """,
+            [normal_matter.pk, day(5)],
+        )
+        assert cursor.fetchone() == (None, "")

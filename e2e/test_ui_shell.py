@@ -579,10 +579,11 @@ def test_the_intervention_row_states_the_missing_deadline_and_nothing_else(page,
 
     rows = page.locator(".interrow")
     assert rows.count(), "the seeded world has no next-step-less Matter"
-    # `.first`: the section renders the preview rows and the rows behind «Näita
-    # veel N ▾» as two blocks, and since the preview narrowed to five the
-    # seeded world overflows into the second one (docs/adr/0049 §6).
-    text = page.locator(".ovsection__rows").first.inner_text()
+    # Every block: the section renders the preview rows and the rows behind
+    # «Näita veel N ▾» as two blocks, and overdue work reads first — since
+    # docs/adr/0146 that includes the checks of opinions other tests registered
+    # as sent long ago, so a next-step-less file may sit in the second block.
+    text = " ".join(page.locator(".ovsection__rows").all_inner_texts())
     assert "tähtaeg puudub" in text.lower(), text
     assert "sammuta" not in text.lower(), text
     assert "vaikust" not in text.lower(), text

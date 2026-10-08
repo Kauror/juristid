@@ -100,11 +100,22 @@ def test_current_work_package_has_dated_current_and_three_planned(lawyers):
     current = NextAction.objects.filter(matter=kliima, status=ActionStatus.OPEN)
     assert current.count() == 1
     assert current.get().target_date is not None
-    planned = NextAction.objects.filter(matter=kliima, status=ActionStatus.PLANNED)
+    planned = NextAction.objects.filter(
+        matter=kliima, status=ActionStatus.PLANNED, follow_up__isnull=True
+    )
     assert planned.count() == 3
     assert all(action.target_date is not None for action in planned)
     # Two of the planned rows are deliberately long enough to wrap.
     assert sum(1 for action in planned if len(action.text) > 120) >= 2
+    # And every opinion the package sends is being checked on, by its own
+    # `Arvamuse järelkontroll` beside those three (docs/adr/0146).
+    for submission in kliima.submissions.filter(status="SENT"):
+        assert (
+            NextAction.objects.filter(
+                follow_up__submission=submission, status=ActionStatus.PLANNED
+            ).count()
+            == 1
+        )
 
 
 def test_consultation_package_waits_for_feedback(lawyers):

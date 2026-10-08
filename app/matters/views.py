@@ -7303,7 +7303,12 @@ def add_note(request: HttpRequest, pk: Any) -> HttpResponse:
             # and still applies (docs/adr/0128 §1).
             date_phase=form.cleaned_data["date_phase"],
             uploads=form.cleaned_data["attachments"],
+            # A stage that closes a Matter with a pending `Arvamuse järelkontroll`
+            # asks first, as every closing door does (docs/adr/0146 §8).
+            follow_ups_confirmed=form.cleaned_data.get("confirm_follow_up_closure", False),
         )
+    except FollowUpClosureUnconfirmed:
+        return _closure_needs_confirmation(request, matter, key="progress_form", form=form)
     except (DomainError, UploadRejected) as error:
         return _workspace_refusal(request, matter, key="progress_form", form=form, error=str(error))
     if result.closed:
