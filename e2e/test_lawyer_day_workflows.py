@@ -354,9 +354,10 @@ def test_journey_files_display_titles_and_relations(page, base_url, tmp_path):
         page.get_by_role("link", name="Tõmba alla Kaaskiri ministeeriumilt").click()
     assert arrival.value.suggested_filename == "kaaskiri.pdf"
 
-    # A later rename from `⋯` changes the title and nothing else.
+    # A later rename from `⋯` → `Muuda nime` changes the title and nothing else.
     menu = plain.locator("details.docmenu")
     menu.locator("summary.opinionmenu__trigger").click()
+    menu.locator("summary", has_text="Muuda nime").click()
     menu.locator("input[name=title]").fill("Eelnõu terviktekst")
     menu.get_by_role("button", name="Salvesta").click()
     page.wait_for_load_state("networkidle")

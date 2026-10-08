@@ -519,6 +519,32 @@ def test_withdrawal_is_behind_the_rows_management_disclosure(signed_in, speciali
     assert f'href="{action}"' not in menu
 
 
+def test_the_opinion_menu_floats_with_muuda_nime_first(signed_in, specialist, organisation):
+    """The opinion's `⋯` is the same floating menu as a document's (2026-10-08).
+
+    `Muuda nime` first, then the send's details, the acts on it and the
+    document's own page — all in the one `data-uxfloat` panel, so opening it no
+    longer makes the row as tall as the send record (e2e/test_document_menu.py
+    measures that part).
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    document = _file(matter, name="Koja_arvamus.pdf", actor=specialist)
+    _send(matter, document, actor=specialist, recipients=[organisation])
+
+    menu = _page(signed_in, matter).split('<details class="opinionmenu" data-uxpopover>', 1)[1]
+    menu = menu[: menu.index("Dokumendi andmed")]
+
+    assert '<div class="opinionmenu__body" data-uxfloat="fit">' in menu
+    order = [
+        menu.index('<summary class="opinionmenu__item">Muuda nime</summary>'),
+        menu.index(reverse("documents:rename", kwargs={"pk": document.pk})),
+        menu.index("Saatmise andmed"),
+        menu.index("Märksõnad ja seosed"),
+        menu.index("Võta tagasi"),
+    ]
+    assert order == sorted(order)
+
+
 def test_the_send_details_keep_every_fact_the_retired_card_carried(
     signed_in, specialist, organisation
 ):

@@ -1096,12 +1096,61 @@
     }
     var anchor = trigger.getBoundingClientRect();
     var margin = 8;
+    if (menu.getAttribute("data-uxfloat") === "fit") {
+      fit(menu, anchor, margin);
+      return;
+    }
     menu.style.top = anchor.bottom + 4 + "px";
     var left = Math.min(anchor.left, window.innerWidth - menu.offsetWidth - margin);
     menu.style.left = Math.max(margin, left) + "px";
   }
 
-  function placeOpenPopovers() {
+  /* `data-uxfloat="fit"` — a panel that must stay whole inside the window.
+
+     Dokumendid's row `⋯` (templates/matters/matter_documents.html). Its trigger
+     is the last control on the row, at the table's right edge, and the panel
+     can be long — an opinion's carries the whole send record — so the plain
+     placement above, left edge under the trigger and always downwards, would
+     run it off the right of a phone and off the bottom of any window for a row
+     low on the screen. A fixed box past the window's edge cannot be scrolled
+     to, so this keeps it inside:
+
+     - **end-aligned**: the panel's right edge under the trigger's, then
+       clamped to the window with the same 8 px margin;
+     - **downwards unless there is more room above**, so the last rows open
+       upwards rather than into the bottom edge;
+     - **never taller than that room**: the stylesheet caps it and it scrolls
+       inside itself, and this lowers the cap further when the room is smaller.
+
+     The panel's own scroll position is kept, because measuring it uncapped
+     would otherwise send a reader who had scrolled inside it back to the top
+     every time the page moved. */
+  function fit(menu, anchor, margin) {
+    var gap = 4;
+    var kept = menu.scrollTop;
+    menu.style.maxHeight = "";
+    var below = window.innerHeight - anchor.bottom - gap - margin;
+    var above = anchor.top - gap - margin;
+    var height = menu.offsetHeight;
+    var upward = height > below && above > below;
+    var room = Math.max(upward ? above : below, 0);
+    if (height > room) {
+      menu.style.maxHeight = room + "px";
+      height = menu.offsetHeight;
+    }
+    menu.style.top = (upward ? anchor.top - gap - height : anchor.bottom + gap) + "px";
+    var width = menu.offsetWidth;
+    var left = Math.min(anchor.right - width, window.innerWidth - width - margin);
+    menu.style.left = Math.max(margin, left) + "px";
+    menu.scrollTop = kept;
+  }
+
+  /* A scroll *inside* a panel moves nothing, so it re-places nothing. */
+  function placeOpenPopovers(event) {
+    var source = event && event.target;
+    if (source && source.closest && source.closest("[data-uxfloat]")) {
+      return;
+    }
     document.querySelectorAll("details[data-uxpopover][open]").forEach(place);
   }
 
@@ -1121,6 +1170,20 @@
         });
         place(holder);
       });
+      /* A disclosure *inside* the panel — Dokumendid's `Muuda nime`, an
+         opinion's `Võta tagasi` confirmation — changes the panel's height, so
+         it is placed again: one that opened upwards must grow upwards, not
+         down over its own trigger. `toggle` does not bubble; the capture
+         phase still reaches the holder. */
+      holder.addEventListener(
+        "toggle",
+        function (event) {
+          if (event.target !== holder && holder.open) {
+            place(holder);
+          }
+        },
+        true
+      );
     });
   }
 
@@ -1152,6 +1215,55 @@
       }
     });
   });
+
+  /* ---- Dokumendid `⋯` → `Muuda nime` -------------------------------------
+   * The row's menu is an ordinary popover above; its first command is a nested
+   * `<details>` that unfolds the title box inside the floating panel
+   * (templates/matters/partials/document_rename_form.html). Two things here,
+   * neither of which the command needs in order to work:
+   *
+   *  - opening it puts the cursor in the box with the old title selected, so
+   *    choosing the command and typing the new name are one movement (the
+   *    panel is placed again by the popover contract above, because it grew);
+   *  - closing the menu by any route (Escape, a click outside, another row's
+   *    `⋯`) folds the editor back and resets the box to the saved title, so the
+   *    next `⋯` opens a menu, not a half-typed name nobody saved.
+   *
+   * A click inside the panel — in the box, on `Salvesta` — is inside the
+   * `<details>` and never reaches the outside-click close above. Escape in the
+   * box closes the editor (app.js, `details form`) and the menu with it (the
+   * handler above), and focus lands on `⋯`, the control that opened it.
+   */
+  function bindDocumentRename(scope) {
+    scope.querySelectorAll("details[data-docrename]").forEach(function (editor) {
+      if (!once(editor, "DocRename")) {
+        return;
+      }
+      var holder = editor.parentElement && editor.parentElement.closest("details[data-uxpopover]");
+      editor.addEventListener("toggle", function () {
+        if (!editor.open) {
+          return;
+        }
+        var box = editor.querySelector("input[name=title]");
+        if (box) {
+          box.focus();
+          box.select();
+        }
+      });
+      if (holder) {
+        holder.addEventListener("toggle", function () {
+          if (holder.open) {
+            return;
+          }
+          editor.open = false;
+          var form = editor.querySelector("form");
+          if (form) {
+            form.reset();
+          }
+        });
+      }
+    });
+  }
 
   /* ---- «Salvesta praegune filter vaatena» --------------------------------
    * The view is the address. The control shows the current canonical URL and
@@ -1356,6 +1468,7 @@
     bindFileDrop(root);
     bindWorkRows(root);
     bindExclusivePopovers(root);
+    bindDocumentRename(root);
     bindCopyLink(root);
     bindRowFilter(root);
   }

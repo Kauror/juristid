@@ -6982,15 +6982,22 @@ button.accordion__action:focus-visible {
   overflow-wrap: anywhere;
 }
 
-/* The per-row `...` disclosure.
+/* The per-row `⋯` menu on Dokumendid — an ordinary document's and an
+   opinion's alike.
 
-   In flow, not a floating popup, and that is not a style preference: every
-   `.tablewrap` in this application sets `overflow-x: auto`, which makes the
-   other axis compute to `auto` as well — so an absolutely positioned panel
-   inside one is clipped at the table's edge and pushes a scrollbar in front of
-   whatever it clipped. `.versions` two columns to the left solved this years
-   ago by growing its row, and one table with two disclosure mechanics is one
-   too many. */
+   **A floating panel, `position: fixed`** (2026-10-08). It used to be in flow,
+   for a real reason: every `.tablewrap` in this application sets
+   `overflow-x: auto`, which makes the other axis compute to `auto` as well, so
+   an *absolutely* positioned panel inside one is clipped at the table's edge.
+   In flow, though, opening `⋯` grew the row by the height of a rename form —
+   or of an opinion's whole send record — under the reader's cursor, and moved
+   every row below it. A fixed box escapes the scroll container the way
+   `.colhead__menu` and `.uxassign__menu` already do: the row keeps its height,
+   and `static/js/ux.js` (`data-uxfloat="fit"`) places the panel under its
+   trigger, end-aligned so a trigger at the table's right edge cannot push it
+   off-screen, above the trigger when there is more room there, and never
+   taller than the window — it scrolls inside itself instead. With no script it
+   opens where it would have sat in flow: a few pixels off, still usable. */
 .opinionmenu {
   display: inline-block;
 }
@@ -7013,17 +7020,78 @@ button.accordion__action:focus-visible {
 }
 
 .opinionmenu__body {
+  position: fixed;
+  z-index: 30;
   display: flex;
   flex-direction: column;
   gap: var(--spacing-2);
-  width: 260px;
-  margin-top: var(--spacing-2);
-  padding: var(--spacing-3);
+  width: 300px;
+  max-width: calc(100vw - 16px);
+  max-height: min(32rem, calc(100vh - 16px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--spacing-2) var(--spacing-3);
   text-align: left;
   white-space: normal;
   background: var(--surface-elevated);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
+  box-shadow: var(--shadow-menu);
+}
+
+/* An ordinary document's menu holds two commands, so it is narrower than an
+   opinion's, which also states the send. Wide enough for the title box and
+   `Salvesta` on one line when `Muuda nime` is open. */
+.docmenu > .opinionmenu__body {
+  width: 260px;
+}
+
+/* One command in the panel — `Muuda nime`, `Dokumendi leht`, `Märksõnad ja
+   seosed`, `Dokumendi andmed`: a full-width row at least 32 px tall, so it is a
+   target rather than a word (WCAG 2.5.8), the way `.colhead__option` reads in
+   the register's column menus. The negative inline margin lets the hover fill
+   reach past the text to the panel's padding, so the words stay aligned with
+   the labels and facts between the commands. */
+.opinionmenu__item {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  margin: 0 calc(var(--spacing-2) * -1);
+  padding: 0 var(--spacing-2);
+  border-radius: var(--radius-sm);
+  font: var(--typography-weight-regular) var(--typography-size-base) / 1.3
+    var(--typography-font-sans);
+  color: var(--text-body);
+  text-decoration: none;
+  cursor: pointer;
+  list-style: none;
+}
+
+.opinionmenu__item::-webkit-details-marker {
+  display: none;
+}
+
+.opinionmenu__item:hover {
+  background: var(--surface-overlay-hover);
+}
+
+/* `Muuda nime` while its editor is open: the command it came from stays named
+   above the box, marked as the one in use. */
+.docmenu__rename[open] > .opinionmenu__item {
+  color: var(--accent-link);
+  font-weight: var(--typography-weight-semibold);
+}
+
+/* The editor itself — the title box and `Salvesta` on one line under its
+   label, which is as compact as a labelled, required field gets. */
+.docmenu__rename .docrename__form {
+  flex-direction: row;
+  align-items: flex-end;
+  margin: var(--spacing-1) 0 var(--spacing-2);
+}
+
+.docmenu__rename .field {
+  flex: 1 1 auto;
 }
 
 .opinionmenu__label {
@@ -12857,10 +12925,4 @@ section:has(.pw-more[open]) tbody.uxextra {
   font-size: var(--typography-size-meta);
   color: var(--text-secondary);
   cursor: pointer;
-}
-
-/* A Dokumendid row's `⋯` (`Muuda`): the display title form, then the
- * document's own page (owner's round, 2026-10-07). */
-.docmenu .docrename__form {
-  margin-bottom: var(--spacing-2);
 }

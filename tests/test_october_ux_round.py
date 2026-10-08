@@ -12,7 +12,8 @@ I  Kaasamine — `Ülevaate link` prefilled with the newest Ülevaade; a save
 J  Alusta kaasamist takes files.
 K  The waiting round under PRAEGUNE TEGEVUS — day, Smaily, Alchemer, Tehtud.
 L  Lisa tagasiside finishes the round.
-M  Dokumendid — no Roll, rename inside `⋯`, the two tooltips.
+M  Dokumendid — no Roll, rename inside `⋯`, the two tooltips; since
+   2026-10-08 `⋯` is a floating menu and the rename is its `Muuda nime`.
 
 (E — drag and drop — is a browser behaviour: e2e/test_upload_queue.py.)
 """
@@ -21,8 +22,10 @@ from __future__ import annotations
 
 import re
 from datetime import timedelta
+from pathlib import Path
 
 import pytest
+from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import RequestFactory
 from django.urls import reverse
@@ -38,6 +41,7 @@ from app.matters.models import Matter, MatterExternalPosition, MatterWebsiteOver
 from app.matters.publication_kind import classify_publication_url
 from app.matters.services import (
     add_engagement,
+    close_matter,
     plan_website_overview,
     publish_website_overview,
     set_legal_instruments,
@@ -45,6 +49,7 @@ from app.matters.services import (
 from app.related_materials.models import MatterRelation
 from app.submissions.enums import SubmissionStatus
 from app.taxonomy.models import LegalInstrumentType
+from app.workflow.enums import Disposition
 from app.workflow.services import add_planned_action, set_next_action_for_new_work
 from tests import factories
 
@@ -717,3 +722,64 @@ def test_m_rename_from_the_menu_still_works(client, specialist, normal_matter):
     document.refresh_from_db()
     assert document.title == "Uus pealkiri"
     assert document.current_version.original_filename == "vana.pdf"
+
+
+def test_m_the_menu_floats_and_renames_behind_a_command(client, specialist, normal_matter):
+    """`⋯` is a floating menu whose first command is `Muuda nime` (2026-10-08).
+
+    The browser half — the row does not grow, the panel stays on screen, Escape
+    and a click outside close it — is e2e/test_document_menu.py. This pins the
+    markup that contract hangs on: the shared popover attributes, a fixed panel,
+    and the rename form behind a command rather than open the moment `⋯` is.
+    """
+    client.force_login(specialist)
+    document = factories.DocumentFactory(
+        matter=normal_matter, role=DocumentRole.INCOMING_AUTHORITY, title="Ministeeriumi kiri"
+    )
+    add_evidence_version(
+        document=document,
+        content=b"%PDF-1.4\nkiri",
+        original_filename="kiri.pdf",
+        mime_type="application/pdf",
+    )
+
+    body = client.get(
+        reverse("matters:matter_documents", kwargs={"pk": normal_matter.pk})
+    ).content.decode()
+
+    assert f'id="muuda-pealkiri-{document.pk}" data-uxpopover>' in body
+    menu = body[body.index(f'id="muuda-pealkiri-{document.pk}"') :]
+    menu = menu[: menu.index("Dokumendi leht") + len("Dokumendi leht")]
+    assert '<div class="opinionmenu__body" data-uxfloat="fit">' in menu
+    assert '<details class="docmenu__rename" data-docrename>' in menu
+    command = menu.index('<summary class="opinionmenu__item">Muuda nime</summary>')
+    form = menu.index(reverse("documents:rename", kwargs={"pk": document.pk}))
+    assert command < form < menu.index("Dokumendi leht")
+
+    css = (Path(settings.BASE_DIR) / "static" / "css" / "app.css").read_text(encoding="utf-8")
+    panel = css[css.index("\n.opinionmenu__body {") :]
+    panel = panel[: panel.index("}")]
+    assert "position: fixed;" in panel
+    assert "overflow-y: auto;" in panel
+
+
+def test_m_a_reader_gets_the_menu_without_the_rename(client, specialist, normal_matter):
+    """Closed teema: `⋯` still opens, with the document's page and no `Muuda nime`."""
+    client.force_login(specialist)
+    document = factories.DocumentFactory(matter=normal_matter, title="Suletud kiri")
+    add_evidence_version(
+        document=document,
+        content=b"%PDF-1.4\nsuletud",
+        original_filename="suletud.pdf",
+        mime_type="application/pdf",
+    )
+    close_matter(matter=normal_matter, disposition=Disposition.COMPLETED, actor=specialist)
+
+    body = client.get(
+        reverse("matters:matter_documents", kwargs={"pk": normal_matter.pk})
+    ).content.decode()
+
+    menu = body[body.index(f'id="muuda-pealkiri-{document.pk}"') :]
+    menu = menu[: menu.index("Dokumendi leht")]
+    assert "Muuda nime" not in menu
+    assert reverse("documents:rename", kwargs={"pk": document.pk}) not in menu
