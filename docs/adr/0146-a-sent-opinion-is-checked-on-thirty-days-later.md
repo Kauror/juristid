@@ -210,11 +210,19 @@ cancels it.
 The register cutovers and historical closures are not a person closing
 anything. They end checks without asking, through `end_live_work_for_closure`.
 
+The warning is asked of the database, not of the reader. That is safe only
+because every role that may write — and so close a Matter — also sees
+restricted work (`ROLES_WITH_BUSINESS_WRITE ⊆ ROLES_WITH_RESTRICTED_ACCESS`).
+Nobody who could be told «a check is pending» is refused the check, and a test
+fails if the two role sets ever part.
+
 **Reopening recreates nothing.** A cancelled follow-up stays cancelled. An
 explicit continuation can be designed separately.
 
 **A withdrawn or superseded opinion** cancels its planned or current check with
-«Arvamus võeti tagasi» / «Arvamus asendati». Its completed checks stay. A newly
+«Arvamus võeti tagasi» / «Arvamus asendati». Its completed checks stay. A check
+that was the current action hands the slot to the earliest planned row, as
+finishing it would have. A newly
 sent replacement is a new opinion with its own check. An interactive send on a
 closed Matter is still refused, and no live check is created on one by any path.
 
@@ -257,6 +265,11 @@ row. A moved day is audit-only, as a review is. The integrity verifier
 - a live check on ended monitoring;
 - monitoring with no live check;
 - a live check on an opinion no longer sent.
+
+**Known display limit.** A `Koja arvamus` whose own stage closes the Matter
+schedules its check and the closure cancels it in the same save. «Arvamus välja»
+still reads «→ Kontrolli, kas adressaat …» under it: the fold shows what the send
+set. The closure row below says the file ended.
 
 ## 11. What this does not build
 

@@ -1224,3 +1224,31 @@ def test_the_release_still_serving_survives_the_migration(normal_matter, special
             [normal_matter.pk, day(5)],
         )
         assert cursor.fetchone() == (None, "")
+
+
+def test_withdrawing_an_opinion_whose_check_is_current_promotes_the_next(
+    normal_matter, specialist, ministry
+):
+    opinion = mark_sent(normal_matter, specialist, [ministry])
+    check = active_check(opinion)
+    NextAction.objects.filter(pk=check.pk).update(status=ActionStatus.OPEN)
+    later = add_planned_action(
+        matter=normal_matter, text="Kohtumine ministeeriumis", target_date=day(15), actor=specialist
+    )
+
+    withdraw_submission(submission=opinion, actor=specialist, reason="Asendatakse")
+
+    later.refresh_from_db()
+    check.refresh_from_db()
+    assert check.status == ActionStatus.CANCELLED
+    assert later.status == ActionStatus.OPEN
+
+
+def test_whoever_may_close_a_matter_may_see_every_check_on_it():
+    """The closure warning is reader-blind (docs/adr/0146 §8), and that is safe
+    because every role that may write — and so close — also sees restricted
+    work. If the two sets ever part, the warning would tell somebody a restricted
+    opinion exists, and this fails first."""
+    from app.core.authorization import ROLES_WITH_BUSINESS_WRITE, ROLES_WITH_RESTRICTED_ACCESS
+
+    assert ROLES_WITH_BUSINESS_WRITE <= ROLES_WITH_RESTRICTED_ACCESS

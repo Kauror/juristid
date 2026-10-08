@@ -486,15 +486,23 @@ def cancel_checks_of_submission(*, submission: Any, actor: Any = None, reason: s
     follow-up ends `CANCELLED`. Completed checks stay exactly as they were. The
     caller holds the Matter's and the submission's locks.
     """
-    from app.workflow.services import cancel_next_action
+    from app.workflow.services import cancel_next_action, promote_next_planned_action
 
     follow_up = OpinionFollowUp.objects.filter(submission=submission).first()
     if follow_up is None or not follow_up.is_monitoring:
         return 0
     cancelled = 0
+    was_current = False
     for check in NextAction.objects.filter(follow_up=follow_up, status__in=ACTIVE).order_by("pk"):
+        was_current = was_current or check.status == ActionStatus.OPEN
         cancel_next_action(action=check, actor=actor, reason=reason)
         cancelled += 1
+    # A check that was the *current* action leaves the slot to the earliest
+    # planned one, as finishing it would have — the Matter is still open work
+    # and its plan must not be left with nothing current (docs/adr/0143 §A4).
+    # A closed Matter has nothing planned left to promote.
+    if was_current:
+        promote_next_planned_action(matter=submission.matter, actor=actor)
     return cancelled
 
 

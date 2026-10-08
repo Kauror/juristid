@@ -668,6 +668,11 @@ def withdraw_submission(
 
 @transaction.atomic
 def supersede_submission(*, submission: Submission, actor: Any = None) -> Submission:
+    # The Matter, then the submission, decided on the locked row — the order
+    # `withdraw_submission` takes, and the one `cancel_checks_of_submission`
+    # below relies on (app/matters/locks.py).
+    lock_matter_for_evidence_integrity(submission.matter_id)
+    submission = lock_submission_for_evidence_integrity(submission.pk)
     if submission.status not in {SubmissionStatus.SENT, SubmissionStatus.DRAFT}:
         raise DomainError("Seda arvamust ei saa asendatuks märkida.")
 
