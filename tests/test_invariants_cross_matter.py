@@ -40,6 +40,7 @@ NEW_KINDS = (
     "document-link-crosses-matter",
     "external-position-crosses-matter",
     "change-event-on-another-matter",
+    "response-deadline-submission-crosses-matter",
     "closed-matter-without-closure-event",
 )
 
@@ -181,6 +182,66 @@ def test_an_event_about_a_version_is_read_through_its_document(
     )
 
     assert _subjects("change-event-on-another-matter") == [str(stray.pk)]
+
+
+# -- the answered deadline's opinion ------------------------------------------------
+#
+# `resolve_response_deadline` and `answer_current_deadline_with` both take the
+# submission through `_checked_submission`, which refuses another Matter's
+# opinion; nothing in the schema can. Same family as Q29/Q43/Q46, found by the
+# overnight stabilization audit (2026-10-08).
+
+
+def _sent_opinion(matter, capture_evidence):
+    from app.submissions.enums import SubmissionStatus
+
+    version = capture_evidence(
+        matter, b"%PDF-1.4 synthetic opinion", "arvamus.pdf", "application/pdf"
+    )
+    return factories.SubmissionFactory(
+        matter=matter,
+        status=SubmissionStatus.SENT,
+        sent_at=timezone.now(),
+        final_version=version,
+    )
+
+
+def _answered_deadline(matter, specialist, capture_evidence):
+    from datetime import timedelta
+
+    from app.matters.models import MatterResponseDeadline
+    from app.matters.response_deadlines import (
+        request_response_deadline,
+        resolve_response_deadline,
+    )
+
+    request_response_deadline(
+        matter=matter, deadline=timezone.localdate() + timedelta(days=7), actor=specialist
+    )
+    opinion = _sent_opinion(matter, capture_evidence)
+    resolve_response_deadline(
+        matter=matter, outcome="ANSWERED", actor=specialist, submission=opinion
+    )
+    return MatterResponseDeadline.objects.get(matter=matter)
+
+
+def test_a_deadline_answered_by_its_own_opinion_is_clean(
+    normal_matter, specialist, capture_evidence
+):
+    row = _answered_deadline(normal_matter, specialist, capture_evidence)
+    assert str(row.pk) not in _subjects("response-deadline-submission-crosses-matter")
+
+
+def test_a_deadline_answered_by_another_matters_opinion_is_named(
+    normal_matter, other_matter, specialist, capture_evidence
+):
+    from app.matters.models import MatterResponseDeadline
+
+    row = _answered_deadline(normal_matter, specialist, capture_evidence)
+    foreign = _sent_opinion(other_matter, capture_evidence)
+    MatterResponseDeadline._base_manager.filter(pk=row.pk).update(submission=foreign)
+
+    assert _subjects("response-deadline-submission-crosses-matter") == [str(row.pk)]
 
 
 # -- Q59 ---------------------------------------------------------------------------
