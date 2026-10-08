@@ -189,7 +189,7 @@ def test_a_technical_account_must_use_a_second_factor_here():
 # -- 5. «Unustasid parooli?» takes the same path for every address ---------------------
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
 def test_the_reset_link_is_mailed_after_the_response(client, settings):
     settings.ACCOUNT_EMAIL_IN_BACKGROUND = True
     user, _ = person()
