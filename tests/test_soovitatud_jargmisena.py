@@ -161,7 +161,7 @@ def test_b_a_matter_with_nothing_current_suggests_its_next_step(signed_in, plann
     zone = _zone(_detail(signed_in, planned))
 
     assert "Järgmine samm on määramata" in zone
-    assert "Soovitatud järgmisena" in zone
+    assert "Järgmisena?" in zone
     assert _suggested(_detail(signed_in, planned)) == FIRST
     assert ">Alusta</summary>" in zone
     assert 'aria-label="Eemalda soovitus"' in zone
@@ -195,7 +195,7 @@ def test_c_alusta_makes_the_exact_step_current_and_hides_the_suggestion(signed_i
     assert action.plan_step_id == _step(planned, FIRST).pk
     body = _detail(signed_in, planned)
     assert 'id="soovitus"' not in body
-    assert "Soovitatud järgmisena" not in body
+    assert "Järgmisena?" not in body
 
 
 def test_d_completing_it_completes_the_step_and_suggests_the_next(signed_in, planned):
@@ -231,7 +231,7 @@ def test_e_with_every_suggestion_dismissed_the_block_is_gone(signed_in, planned)
     zone = _zone(_detail(signed_in, planned))
 
     assert 'id="soovitus"' not in zone
-    assert "Soovitatud järgmisena" not in zone
+    assert "Järgmisena?" not in zone
     assert "Järgmine samm on määramata" in zone
     assert "+ Lisa tegevus" in zone
 
@@ -370,4 +370,7 @@ def test_i_a_kaasamine_save_fulfils_no_step(signed_in, planned):
     )
 
     assert _step(planned, THIRD).state == PlanStepState.SUGGESTED
-    assert _suggested(_detail(signed_in, planned)) == FIRST
+    # Nothing is written, but the suggestion reads the record since docs/adr/0144
+    # §2: a consultation proves the material was read and the members invited,
+    # so the first step still unproven is the overview.
+    assert _suggested(_detail(signed_in, planned)) == SECOND

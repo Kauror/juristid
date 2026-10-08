@@ -33,7 +33,7 @@ def test_a_suggestion_is_started_finished_and_the_next_dismissed(page, base_url)
 
     zone = page.locator("#praegune-tegevus")
     expect(page.locator("#tooplaan")).to_have_count(0)
-    expect(zone).to_contain_text("Soovitatud järgmisena")
+    expect(zone).to_contain_text("Järgmisena?")
     expect(_suggestion(page)).to_have_text("Tutvu materjaliga")
     expect(zone.get_by_role("button", name="Eemalda soovitus")).to_be_visible()
 

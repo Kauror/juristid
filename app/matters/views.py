@@ -2810,7 +2810,9 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # `Soovitatud järgmisena` — one suggestion, read once (docs/adr/0141,
     # `app.matters.plan_view`). A queued action outranks it: it is the fallback
     # when nothing is current and nothing is planned.
-    recommendation = None if planned_actions else recommendation_for(matter, current_action)
+    recommendation = (
+        None if planned_actions else recommendation_for(matter, current_action, request.user)
+    )
     # The file's `Õigusakt` and its `Hetkeseis` periods, read **once** for the
     # rail's pattern, the grouped chronology and the next-stage order — three
     # readers of the same two facts (docs/adr/0131 §7).
@@ -2893,6 +2895,11 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "recommendation": recommendation,
         "planned_actions": planned_actions,
         "upcoming_step": upcoming_step,
+        # Work already scheduled in the file's own lifecycle — a round waiting
+        # for feedback, a planned action — is the next step, and «Järgmine samm
+        # on määramata» above it would contradict it (docs/adr/0144 §3). The
+        # same rule `next_step.without_next_step` counts by.
+        "scheduled_work": bool(feedback_waits) or bool(planned_actions),
         "source_instruction": source_instruction,
         "source_snapshot": snapshot_label() if source_instruction else "",
         "timeline_items": items,
