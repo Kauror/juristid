@@ -8,6 +8,24 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-10-08
+basis = "deployment"
+# Oktoobri järelvoor, ADR 0144. Migratsioon submissions/0009 (lisav: arvamuse
+# täiendavad saadetud failid ja tõendi trigerid), olemasolevaid ridu ei muudeta,
+# otsinguindeksit ei ehitata uuesti. Kui see väljalase ei jõua tootmisse 08.10
+# (Tallinna aja järgi), liiguvad need read väljalaske päeva kirjesse.
+changes = [
+  "Planeeritud tegevuse saab märkida tehtuks («✓ Tehtud») juba enne selle kuupäeva: kirjuta, mis juhtus, ja lisa vajadusel fail. Praegune tegevus ja teised planeeritud tegevused ei muutu. «×» kustutab planeeritud tegevuse, ajalugu jääb alles.",
+  "«Järgmisena?» (endine «Soovitatud järgmisena») ei paku enam tööd, mis on teemal juba tehtud — avaldatud ülevaade, alustatud kaasamine, saabunud tagasiside või saadetud arvamus. Kui arvamust küsitakse uuesti, pakub ta arvamuse koostamist taas.",
+  "Kui teemal on kaasamine, mis ootab tagasisidet, või planeeritud tegevus, ei kirjuta Juristid enam «Järgmine samm on määramata»; ka «järgmise tegevuseta» loendustes on need teemad nüüd tööga teemad.",
+  "Uue organisatsiooni lisamine («+») teiste arvamuse, Koja arvamuse adressaadi või tagasiside juures jääb nüüd salvestamisel alles.",
+  "«Koja arvamus» võtab vastu mitu saadetud faili (näiteks allkirjastatud ümbriku ja selgitava lisa) ühe arvamusena; eraldi «Töödokumendid» lahter on vormilt eemaldatud — töödokumendi saab lisada saadetud arvamuse realt.",
+  "Kõigi vormide salvestusnupp on nüüd «Salvesta».",
+  "Faili pealkirja muudad pliiatsiga (✎) faili nime kõrval; algne failinimi jääb näha. Dokumentides avaneb «⋯» väikese menüüna ega muuda rea kõrgust; pealkirja muudad käsuga «Muuda nime».",
+  "Teema lühikokkuvõte kasutab kogu põhiveeru laiust. Uue teema vormi lõpus pole enam lisateksti, kaasamise vorm küsib «Keda kaasad» ja dokumentide üleslaadimise juures pole enam selgitusi.",
+]
+
+[[day]]
 date = 2026-10-07
 basis = "deployment"
 # Kompaktne Teema vaade ja külgriba (#401). Ainult kuvamine; migratsioone ei
