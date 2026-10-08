@@ -376,7 +376,7 @@ def test_adding_through_the_row_answers_with_the_column(
 
     picker = signed_in.get(url, headers={"HX-Request": "true"})
     assert picker.status_code == 200
-    assert "Lisa töödokument" in picker.content.decode()
+    assert ">Salvesta</button>" in picker.content.decode()
 
     response = signed_in.post(
         url, {"attachments": [_docx(), _docx(SECOND_DOCX, b"x")]}, headers={"HX-Request": "true"}

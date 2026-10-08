@@ -1712,12 +1712,19 @@ def test_a_matter_with_no_documents_offers_no_review_link_and_an_honest_panel(
 
 
 @pytestmark_db
-def test_the_edit_page_offers_the_review_when_there_is_material(signed_in, intake_matter) -> None:
+def test_the_review_is_offered_from_the_teema_menu_not_the_edit_form(
+    signed_in, intake_matter
+) -> None:
+    """The edit form no longer heads itself with the link (docs/adr/0144 §7).
+
+    The review is unchanged and reachable: the Teema header's `⋯` menu still
+    offers it wherever there is material to read.
+    """
     body = signed_in.get(
         reverse("matters:matter_edit", kwargs={"pk": intake_matter.pk})
     ).content.decode()
-    assert _assisted(intake_matter) in body
-    assert "Kontrolli dokumendist leitud andmeid" in body
+    assert _assisted(intake_matter) not in body
+    assert "Kontrolli dokumendist leitud andmeid" not in body
     detail = signed_in.get(
         reverse("matters:matter_detail", kwargs={"pk": intake_matter.pk})
     ).content.decode()

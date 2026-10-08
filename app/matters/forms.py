@@ -4039,7 +4039,7 @@ class CompactEngagementForm(forms.Form):
     def clean_audience(self) -> str:
         audience = (self.cleaned_data.get("audience") or "").strip()
         if not audience:
-            raise forms.ValidationError("Kirjuta, keda kaasati.")
+            raise forms.ValidationError("Kirjuta, keda kaasad.")
         return audience
 
     #: Files that belong to the round being started — the invitation, the

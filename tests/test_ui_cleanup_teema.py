@@ -348,7 +348,7 @@ def test_required_labels_carry_the_mark_and_optional_ones_do_not(
 
     body = _detail(signed_in, normal_matter)
 
-    for required in ("Mida tegid?", "Keda kaasati", "Mis tähtaeg", "Mis jõustub", "Mis muutus"):
+    for required in ("Mida tegid?", "Keda kaasad", "Mis tähtaeg", "Mis jõustub", "Mis muutus"):
         assert re.search(re.escape(required) + r"\s*" + re.escape(MARK), body), required
     # A planned action's day is required (docs/adr/0143), so its panel is read
     # on its own and the rest of the page keeps the optional «Millal?».

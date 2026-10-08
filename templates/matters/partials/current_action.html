@@ -216,7 +216,7 @@ background sequence — which can be started (`Alusta`) or dismissed (`×`);
           {% if open_panel == "lisa-planeeritud" and workspace_error %}
             <p class="formerror" role="alert">{{ workspace_error }}</p>
           {% endif %}
-          {% include "matters/partials/planned_action_form.html" with form=planned_action_form submit_label="Lisa planeeritud tegevus" %}
+          {% include "matters/partials/planned_action_form.html" with form=planned_action_form submit_label="Salvesta" %}
         </div>
       </details>
     {% endif %}

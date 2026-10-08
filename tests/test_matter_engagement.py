@@ -917,7 +917,7 @@ def test_a_refused_engagement_comes_back_in_an_open_panel(signed_in, specialist)
 
     assert response.status_code == 400
     assert not MatterEngagement.objects.exists()
-    assert "Kirjuta, keda kaasati" in body
+    assert "Kirjuta, keda kaasad" in body
     assert _is_open(body, PANEL)
     # And what was typed came back with it.
     assert 'value="4"' in body
@@ -1240,7 +1240,7 @@ def test_a_typed_link_with_no_audience_is_refused_rather_than_discarded(signed_i
 
     assert response.status_code == 400
     assert not MatterEngagement.objects.exists()
-    assert "Kirjuta, keda kaasati" in body
+    assert "Kirjuta, keda kaasad" in body
     assert _is_open(body, PANEL)
     assert f'value="{SMAILY_URL}"' in body
 

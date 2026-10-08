@@ -259,9 +259,9 @@ def test_the_button_says_what_it_does(signed_in, normal_matter):
     panel = panel[panel.index('id="lisa-koduleht"') :]
     panel = panel[: panel.index("</form>")]
 
-    assert ">Lisa ülevaade / uudis<" in panel
+    # Every form's save reads «Salvesta» since docs/adr/0144 §6.
+    assert ">Salvesta<" in panel
     assert "planeeritud" not in panel
-    assert ">Salvesta<" not in panel
     # And the two controls are there, each labelled by the question it asks.
     # The legend that explained a conditional path went with the conditional
     # (docs/adr/0095 §5).

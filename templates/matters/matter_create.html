@@ -412,7 +412,7 @@
       {% include "matters/partials/intake_panel.html" %}
     </div>
 
-    {# 8 — One primary action, and the promise that makes it safe to press. #}
+    {# 8 — One primary action, and the way out. #}
     <div class="createform__actions">
       {% comment %}
         `data-needs`, not `aria-disabled`. The button reads inactive until there
@@ -423,9 +423,8 @@
         unavailable, and a browser driver refuses to click it at all, which is
         how the browser suite found this (Uus teema redesign §7, §15).
       {% endcomment %}
-      <button type="submit" class="button button--primary" data-needs="id_title">Loo teema</button>
+      <button type="submit" class="button button--primary" data-needs="id_title">Salvesta</button>
       <a class="button button--quiet" href="{% url 'matters:matter_list' %}">Loobu</a>
-      <span class="createform__note">Ülejäänud andmeid saab lisada ka hiljem teema lehel.</span>
     </div>
 
     {% comment %}

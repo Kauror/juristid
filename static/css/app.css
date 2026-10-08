@@ -6303,9 +6303,13 @@ fieldset,
 /* No heading, no card. The largest body text on the page, directly under the
    facts, because the formal title is usually a poor description of the
    business issue. */
+/* The left column's width, not a reading measure: the header spans the page
+   above the grid, so the summary stops where the 300px rail begins (with the
+   header's own right padding as the gap) and runs full width once the rail
+   stacks below 1100px (docs/adr/0144 §8). */
 .summary {
   padding: var(--spacing-15) 0 var(--spacing-1);
-  max-width: 96ch;
+  max-width: calc(100% - 300px);
 }
 
 .summary__edit {
@@ -6365,7 +6369,6 @@ fieldset,
   display: flex;
   flex-direction: column;
   gap: var(--spacing-2);
-  max-width: 96ch;
   padding-top: var(--spacing-1);
 }
 
@@ -7310,6 +7313,10 @@ button.accordion__action:focus-visible {
 @media (max-width: 1100px) {
   .teemagrid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .summary {
+    max-width: none;
   }
 
   .teema .rail {

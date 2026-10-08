@@ -130,10 +130,6 @@ finds again (§23.5).
                   <span class="field__label">Fail</span>
                   <input class="field__input" type="file" name="upload" required
                          accept="{% upload_accept %}">
-                  <span class="field__help">
-                    Lubatud on tavalised dokumendi-, e-kirja- ja pildivormingud ning
-                    digiallkirjastatud ümbrikud (.asice, .bdoc).
-                  </span>
                 </label>
                 <label class="field">
                   <span class="field__label">Roll</span>
@@ -158,7 +154,6 @@ finds again (§23.5).
                       <option value="{{ value }}">{{ label }}</option>
                     {% endfor %}
                   </select>
-                  <span class="field__help">Vali enne salvestamist — pärast on see parandus.</span>
                 </label>
                 <label class="field">
                   <span class="field__label">Pealkiri</span>
@@ -167,7 +162,7 @@ finds again (§23.5).
                 </label>
               </div>
               <div class="form__actions">
-                <button class="button button--primary" type="submit">Salvesta dokument</button>
+                <button class="button button--primary" type="submit">Salvesta</button>
               </div>
             </form>
           </div>
@@ -184,7 +179,7 @@ finds again (§23.5).
             {% include "intelligence/partials/field.html" with field=working_document_form.title %}
             {% include "intelligence/partials/field.html" with field=working_document_form.web_url %}
             {% include "intelligence/partials/field.html" with field=working_document_form.site_path %}
-            <button class="button button--quiet button--tiny" type="submit">Lisa viide</button>
+            <button class="button button--quiet button--tiny" type="submit">Salvesta</button>
           </form>
         </div>
       {% endif %}

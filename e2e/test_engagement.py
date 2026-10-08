@@ -243,7 +243,7 @@ def test_an_engagement_with_no_audience_is_refused_with_the_panel_open(page, bas
     page.wait_for_load_state("networkidle")
 
     expect(panel(page)).to_be_visible()
-    expect(panel(page)).to_contain_text("Kirjuta, keda kaasati")
+    expect(panel(page)).to_contain_text("Kirjuta, keda kaasad")
     # With the note still in it, and no other panel opened on its behalf.
     expect(panel(page).locator("[name=engagement_note]")).to_have_value("Nimekiri liidult")
     # Neither `+ Lisa` nor its default sub-choice, `Arvamuse tähtaeg`
@@ -326,7 +326,7 @@ def test_a_link_typed_with_no_audience_is_answered_where_the_answer_belongs(page
     page.wait_for_load_state("networkidle")
 
     expect(panel(page)).to_be_visible()
-    expect(panel(page)).to_contain_text("Kirjuta, keda kaasati")
+    expect(panel(page)).to_contain_text("Kirjuta, keda kaasad")
     expect(panel(page).locator("[name=smaily_url]")).to_have_value(SMAILY_URL)
 
     focused = page.evaluate("() => document.activeElement && document.activeElement.name")

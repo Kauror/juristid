@@ -770,9 +770,10 @@ def test_the_opinion_upload_controls_have_distinct_visible_labels(signed_in, spe
     body = documents(signed_in, matter)
 
     assert ">Vali fail<" in body
-    assert ">Lisa fail<" in body
-    # One submit, and its name is not the chooser's.
-    assert body.count(">Lisa fail<") == 1
+    # One submit, and its name is not the chooser's: every form's save reads
+    # «Salvesta» since docs/adr/0144 §6.
+    assert ">Salvesta<" in body
+    assert ">Lisa fail<" not in body
 
 
 def test_the_opinion_upload_controls_have_distinct_accessible_names(signed_in, specialist):

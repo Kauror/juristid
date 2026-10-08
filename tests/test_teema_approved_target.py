@@ -551,7 +551,7 @@ def test_the_engagement_panel_asks_no_kind_and_keeps_its_two_questions(signed_in
     assert 'name="kind"' not in panel
     for label in ("Küsitlus", "Koosolek", "Kirjade voor"):
         assert f">{label}<" not in panel
-    assert "Keda kaasati" in panel
+    assert "Keda kaasad" in panel
     # `Vastuseid` is corrected on the round since docs/adr/0142.
     assert "Vastuseid" not in panel
     # The old five-field form's headline box is still gone…

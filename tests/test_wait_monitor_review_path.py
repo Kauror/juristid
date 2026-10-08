@@ -274,7 +274,7 @@ def test_a_waiting_step_offers_a_labelled_review_control(client, specialist, nor
     assert 'id="id_ulevaatus_next_review_date"' in panel
     assert 'aria-describedby="id_ulevaatus_next_review_date_helptext"' in panel
     assert 'id="id_ulevaatus_next_review_date_helptext"' in panel
-    assert "Salvesta ülevaatus" in panel
+    assert ">Salvesta</button>" in panel
     # The stored classification is never printed (ADR 0054).
     for word in ("WAIT", "MONITOR", "REVIEW_ON", "Ootan", "Jälgin"):
         assert word not in panel, word
