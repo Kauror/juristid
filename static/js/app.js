@@ -3184,6 +3184,146 @@
     });
   }
 
+  /* ---- «Seo olemasoleva teemaga» on Uus teema -------------------------------
+   * Search the register by title, `Teemaviide` or keyword and choose a Teema
+   * to link — including one the suggestions above never proposed
+   * (docs/adr/0150 §3). Choosing adds a row with a hidden
+   * `seo_teemaga_valitud` value and a × to take it back; nothing is linked
+   * until the Teema is created, by `matter_create`, in one transaction.
+   *
+   *  - The block is rendered `hidden` and shown here: a search box inside the
+   *    create form would submit the whole Teema on Enter without this, so
+   *    Enter searches instead.
+   *  - Results come from `related_materials:draft_picker` as HTML the server
+   *    escaped; a chosen row is built from the page's own `<template>` and
+   *    filled with `textContent`, never from a string.
+   *  - The chosen ones are sent with each search so a result can be picked
+   *    once; a stale answer is aborted rather than raced.
+   */
+  function bindRelatedPicker(scope) {
+    (scope || document).querySelectorAll("[data-related-picker]").forEach(function (block) {
+      if (!once(block, "RelatedPicker")) {
+        return;
+      }
+      var url = block.getAttribute("data-related-picker");
+      var box = block.querySelector('input[type="search"]');
+      var found = block.querySelector(".relpick__found");
+      var chosen = block.querySelector("[data-related-chosen]");
+      var template = block.querySelector("template[data-related-chosen-template]");
+      if (!url || !box || !found || !chosen || !template || !window.fetch) {
+        return;
+      }
+      block.hidden = false;
+
+      var timer = null;
+      var controller = null;
+      var asked = null;
+
+      var chosenIds = function () {
+        return Array.prototype.map.call(
+          chosen.querySelectorAll('input[name="seo_teemaga_valitud"]'),
+          function (input) {
+            return input.value;
+          }
+        );
+      };
+
+      var search = function () {
+        var query = box.value.trim();
+        if (query === asked) {
+          return;
+        }
+        asked = query;
+        if (controller) {
+          controller.abort();
+          controller = null;
+        }
+        if (!query) {
+          found.innerHTML = "";
+          return;
+        }
+        var params = new URLSearchParams();
+        params.set("q", query);
+        chosenIds().forEach(function (id) {
+          params.append("seo_teemaga_valitud", id);
+        });
+        controller = new AbortController();
+        fetch(url + "?" + params.toString(), {
+          credentials: "same-origin",
+          signal: controller.signal
+        })
+          .then(function (response) {
+            return response.ok ? response.text() : "";
+          })
+          .then(function (html) {
+            found.innerHTML = html;
+          })
+          .catch(function () {
+            /* Aborted by a newer search, or offline: the box keeps its text. */
+          });
+      };
+
+      box.addEventListener("input", function () {
+        window.clearTimeout(timer);
+        timer = window.setTimeout(search, 300);
+      });
+      box.addEventListener("keydown", function (event) {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          window.clearTimeout(timer);
+          asked = null;
+          search();
+        }
+      });
+
+      found.addEventListener("click", function (event) {
+        var button = event.target.closest("[data-related-pick]");
+        if (!button) {
+          return;
+        }
+        var id = button.getAttribute("data-related-pick");
+        if (chosenIds().indexOf(id) === -1) {
+          var row = template.content.firstElementChild.cloneNode(true);
+          var title = button.getAttribute("data-related-title") || "";
+          var reference = button.getAttribute("data-related-reference") || "";
+          row.setAttribute("data-related-id", id);
+          row.querySelector('input[name="seo_teemaga_valitud"]').value = id;
+          var referenceNode = row.querySelector(".relpick__ref");
+          if (reference) {
+            referenceNode.textContent = reference;
+          } else {
+            referenceNode.remove();
+          }
+          row.querySelector(".relpick__title").textContent = title;
+          row.querySelector("[data-related-remove]").setAttribute(
+            "aria-label",
+            "Eemalda valik: " + title
+          );
+          chosen.appendChild(row);
+        }
+        var result = button.closest("li");
+        if (result) {
+          result.remove();
+        }
+        box.focus();
+      });
+
+      chosen.addEventListener("click", function (event) {
+        var remove = event.target.closest("[data-related-remove]");
+        if (!remove) {
+          return;
+        }
+        var row = remove.closest("li");
+        if (row) {
+          row.remove();
+        }
+        /* The next search may offer it again. */
+        asked = null;
+        box.focus();
+      });
+    });
+  }
+
   /* ---- A primary action that says whether it can do anything --------------
    * "Loo teema" reads inactive until there is a title, and it stays a working
    * button: pressing it anyway produces the server's refusal beside the field
@@ -4615,6 +4755,7 @@
     bindChipCounts(document);
     bindStageHelp(document);
     bindStageGuidance(document);
+    bindRelatedPicker(document);
     bindRequiredAction(document);
     bindNextStepOffers(document);
     bindPhaseDateOffers(document);

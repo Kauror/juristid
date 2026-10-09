@@ -46,6 +46,7 @@ SECTION_TEMPLATE = "related_materials/partials/section.html"
 PAGE_TEMPLATE = "related_materials/section_page.html"
 DRAFT_TEMPLATE = "related_materials/partials/draft_suggestions.html"
 PICKER_TEMPLATE = "related_materials/partials/picker_results.html"
+DRAFT_PICKER_TEMPLATE = "related_materials/partials/draft_picker_results.html"
 
 #: How many Matters «Lisa seotud teema» offers for one query. The header
 #: dropdown shows five; one more is fetched so «is there more» costs no count.
@@ -394,6 +395,64 @@ def _uuid_list(values: list[str], *, limit: int = 40) -> list[uuid.UUID]:
 #: The `Uus teema` checkbox that links a suggested Matter to the one being
 #: created (`matters.views.matter_create`, owner's round 2026-10-07).
 LINK_ON_CREATE_FIELD = "seo_teemaga"
+
+#: The Matters chosen by hand through `Seo olemasoleva teemaga` on `Uus teema`
+#: (docs/adr/0150 §3). A name of its own, so the suggestion cards' re-reads —
+#: which post `seo_teemaga` back and forth — can never resurrect a choice
+#: somebody removed from this list, nor drop one they made here.
+LINK_ON_CREATE_CHOSEN_FIELD = "seo_teemaga_valitud"
+
+
+def draft_picker_results(user: Any, query: str, *, exclude: set[uuid.UUID]) -> list[Matter]:
+    """Matters a person filing `Uus teema` may link by hand. Read only.
+
+    **The header search's own ranking and its own boundary** — `search_matters`
+    resolves the reader's scope before it filters or ranks, so a restricted
+    Matter they may not open is never a result, by title, by reference or by
+    keyword (`visible_documents`, docs/adr/0038). No threshold: this is a
+    search, not a suggestion, and finding the file the engine did not propose
+    is its whole point (docs/adr/0150 §3).
+
+    Real work only, as the suggestions are: `Uus teema` creates a REAL Matter,
+    and the link service refuses a pair across the two classes anyway
+    (`matters.views._link_ticked_similar_matters`). Already chosen ones are left
+    out, so a result can be picked once.
+    """
+    from app.matters.enums import MatterDataClass
+
+    if len(query) < MIN_PICKER_CHARACTERS:
+        return []
+    found = search_matters(query=query, user=user, limit=PICKER_LIMIT + len(exclude) + 4)
+    results = [
+        result.matter
+        for result in found
+        if result.matter.pk not in exclude and result.matter.data_class == MatterDataClass.REAL
+    ]
+    return results[:PICKER_LIMIT]
+
+
+@login_required
+@business_write_required
+@require_GET
+def draft_picker(request: HttpRequest) -> HttpResponse:
+    """`Seo olemasoleva teemaga` on `Uus teema`: search, and choose by hand.
+
+    Writes nothing. Choosing a result adds it to the form; the link is made by
+    `matter_create`, in the transaction that creates the Teema, and not before
+    (docs/adr/0150 §3). `business_write_required`, like `picker`: it serves a
+    write affordance, and only somebody who may create a Teema can use it.
+    """
+    query = clean_query(request.GET.get("q") or "")
+    exclude = set(_uuid_list(request.GET.getlist(LINK_ON_CREATE_CHOSEN_FIELD), limit=50))
+    return render(
+        request,
+        DRAFT_PICKER_TEMPLATE,
+        {
+            "picker_query": query,
+            "picker_results": draft_picker_results(request.user, query, exclude=exclude),
+            "too_short": 0 < len(query) < MIN_PICKER_CHARACTERS,
+        },
+    )
 
 
 @login_required
