@@ -81,3 +81,48 @@ deadline, so it counts only once a lawyer is on the opinion step.
   only» is superseded.
 - No migration, no new model, no change to `Submission`, to sending, to the
   evidence rule or to follow-up scheduling.
+
+---
+
+## Amendment, 2026-10-09 — the same population on Minu asjad
+
+- Status: accepted, extending «arvamust koostamisel» from the department strip
+  to every person's desk
+- Scope: `app/matters/my_work.py` (`OpinionWork`), Minu asjad and the
+  colleague's desk at `/inimesed/<id>/asjad/`; no selector, register filter or
+  Osakond figure changes
+
+### What was decided before
+
+The definition above counted for the department: Osakond's strip and its team
+table's ARVAMUS KOOSTAMISEL column. A lawyer's own desk printed no opinion
+figure at all, so the number Osakond showed for a person had no counterpart on
+the page that person opens every morning.
+
+### What is decided now
+
+Minu asjad's strip ends with two figures, after its four and in this order:
+
+1. **«N arvamust koostada sel nädalal»** — `drafting_matters(user)` narrowed to
+   the Matters the desk's owner owns, with a recorded `Arvamuse tähtaeg` from
+   Monday to Sunday of the current ISO week on the page's Tallinn date, both
+   ends inclusive. A deadline from an earlier week is not in it, however late.
+2. **«N arvamust koostamisel kokku»** — `drafting_matters(user)` narrowed to
+   those Matters, with no horizon: the person's cell in the team table's
+   ARVAMUS KOOSTAMISEL column, for the same reader.
+
+Ownership, not the person a step names, because that is what the column counts.
+`user` decides what may be read and the desk's owner whose Matters are counted,
+as everywhere on the page. Each figure links to the register list it counted —
+`?olek=avatud&liik=FULL&vastutaja=<id>&arvamus=koostamisel`, and for the week
+also `&tahtaeg_alates=<E>&tahtaeg_kuni=<P>`, the inclusive range the register
+already applies to `Arvamuse tähtaeg` — so neither needed a new register
+population. Neither carries a tone, and the strip's zero rule is unchanged.
+
+### What this amendment does not change
+
+The definition of «koostamisel» above, and therefore when a send ends the work
+or a new request starts it again; Osakond's seven figures and its team table;
+the register's filters; the timeline, its «sel nädalal» band, the notes, the
+unread assignments and the horizon control on Minu asjad. No migration, no DRAFT
+created, nothing about sending.

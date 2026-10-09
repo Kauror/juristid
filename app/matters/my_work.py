@@ -38,11 +38,15 @@ from typing import Any
 from django.urls import reverse
 from django.utils import timezone
 
+from app.core.dates import format_estonian_date
 from app.intelligence.enums import FactStatus
 from app.matters import work_items as wi
 from app.matters.activity import BASIS_LABELS, activity_of, annotate_last_activity
+from app.matters.dashboard import drafting_matters
 from app.matters.models import Entry, Matter
 from app.matters.next_step import milestone_is_upcoming, milestone_order
+from app.matters.register_filters import OPINION_DRAFTING
+from app.matters.selectors import date_range_q
 from app.workflow.enums import ESTONIAN_MONTHS
 
 #: How far the *Hiljem* band reaches when nobody has chosen otherwise: the end
@@ -647,6 +651,72 @@ def person_stats(user: Any, subject: Any, today: date) -> PersonStats:
 
 
 @dataclass(frozen=True)
+class OpinionWork:
+    """The opinions this person's Matters are waiting on: all of them, and this week's.
+
+    Two figures at the end of the strip, and neither is a new definition.
+
+    **In preparation** is ``dashboard.drafting_matters`` — the population
+    Osakond's ARVAMUS KOOSTAMISEL column counts and the register's
+    ``?arvamus=koostamisel`` lists — narrowed to the Matters this person *owns*.
+    Ownership rather than the person a step names, because that is what the
+    column counts: an opinion belongs to whoever carries the file, so the cell
+    on Osakond and the figure on this desk are the same number for the same
+    person and the same reader.
+
+    **Due this week** is that same population, narrowed once more by the
+    Matter's recorded ``Arvamuse tähtaeg`` falling inside the current calendar
+    week, Monday to Sunday, both inclusive — by the same inclusive range the
+    register's ``?tahtaeg_alates=`` and ``?tahtaeg_kuni=`` apply, so the figure
+    and the list it opens are one condition. The week is the page's own
+    ``today``, a local date in ``Europe/Tallinn``, recomputed on every request.
+    A deadline from an earlier week is not in it, however late; a deadline
+    already passed this week still is, because it is this week's opinion.
+
+    Nothing here decides what «being prepared» means. Whether a send has ended
+    the work, or a new request has reopened it, is the drafting definition's
+    question (``register_filters.opinion_state_q``), and both figures follow it
+    on the next read.
+    """
+
+    week_start: date
+    week_end: date
+    due_this_week: int
+    in_preparation: int
+    due_url: str
+    preparation_url: str
+
+
+def opinion_work(user: Any, subject: Any, today: date) -> OpinionWork:
+    """Count the subject's opinions in preparation, for this reader, on this day.
+
+    ``user`` decides what may be read and ``subject`` whose Matters are counted,
+    as everywhere on this page: a department head reading a colleague's desk
+    counts through the head's own entitlement, so a restricted Matter or a
+    Submission restricted below its Matter moves no figure for a reader who may
+    not open it (``drafting_matters`` scopes both).
+
+    Two queries whatever the portfolio holds: one ``COUNT`` per figure.
+    """
+    week_start, week_end = wi.start_of_iso_week(today), wi.end_of_iso_week(today)
+    preparing = drafting_matters(user).filter(owner=subject)
+    due = preparing.filter(date_range_q("response_deadline", start=week_start, end=week_end))
+    return OpinionWork(
+        week_start=week_start,
+        week_end=week_end,
+        due_this_week=due.count(),
+        in_preparation=preparing.count(),
+        due_url=_register_url(
+            subject,
+            arvamus=OPINION_DRAFTING,
+            tahtaeg_alates=format_estonian_date(week_start),
+            tahtaeg_kuni=format_estonian_date(week_end),
+        ),
+        preparation_url=_register_url(subject, arvamus=OPINION_DRAFTING),
+    )
+
+
+@dataclass(frozen=True)
 class QuickRow:
     """One line of the manager's Kiirvaade: a count and the list behind it."""
 
@@ -686,6 +756,7 @@ class MyWork:
     entries: list[Entry] = field(default_factory=list)
     quick: list[QuickRow] = field(default_factory=list)
     stats: PersonStats | None = None
+    opinions: OpinionWork | None = None
     open_matters: int = 0
     overdue: int = 0
     week: int = 0
@@ -815,7 +886,12 @@ def build_my_work(
     band_totals = {band.key: band.total for band in bands}
     overdue = band_totals.get(wi.BAND_OVERDUE, 0)
     week = band_totals.get(wi.BAND_WEEK, 0)
+    opinions = opinion_work(user, subject, today)
 
+    # The four work figures keep their order; the two opinion figures follow
+    # them. «sel nädalal» counts every kind of dated work in the band it opens,
+    # and the opinion figure beside it counts opinions only — so it is a
+    # separate figure with its own list rather than a narrowing of that band.
     seis = [
         SeisFigure("open", open_matters, "avatud teemat", _register_url(subject)),
         SeisFigure("overdue", overdue, "üle tähtaja", f"#{wi.BAND_OVERDUE}", "danger"),
@@ -826,6 +902,18 @@ def build_my_work(
             "järgmise tegevuseta",
             _register_url(subject, tegevus="puudub"),
             "warning",
+        ),
+        SeisFigure(
+            "opinions_week",
+            opinions.due_this_week,
+            "arvamust koostada sel nädalal",
+            opinions.due_url,
+        ),
+        SeisFigure(
+            "opinions_drafting",
+            opinions.in_preparation,
+            "arvamust koostamisel kokku",
+            opinions.preparation_url,
         ),
     ]
 
@@ -877,6 +965,7 @@ def build_my_work(
         entries=recent_entries(user, subject),
         quick=quick,
         stats=person_stats(user, subject, today),
+        opinions=opinions,
         open_matters=open_matters,
         overdue=overdue,
         week=week,

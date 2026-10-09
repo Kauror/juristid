@@ -366,6 +366,53 @@ def test_the_strip_figures_are_the_counts_of_the_bands_they_open(page, base_url)
         )
 
 
+#: The two opinion figures at the end of the strip (app/matters/my_work.py,
+#: `OpinionWork`). Martin owns the seeded opinions in preparation — the DRAFT on
+#: the overdue Matter and the register row with a blank VÄLJA — so his total is
+#: never a zero the strip would leave out.
+OPINION_TOTAL = '.seis__figure:has(.seis__caption:text-is("arvamust koostamisel kokku"))'
+
+
+@pytest.mark.parametrize("theme", ["dark", "light"])
+def test_the_opinion_figures_read_in_both_themes_and_open_their_list(page, base_url, theme):
+    """Readable in both themes, and the number is the list it opens.
+
+    The contrast is measured the way docs/adr/0147 §8 measures every page —
+    what the browser paints, against what it is painted on — but only for the
+    strip, because the page-wide audit signs in as Sandra, whose strip draws no
+    opinion figure at all.
+    """
+    from e2e.test_kpi_navigation import shown_total
+    from e2e.test_theme_contrast import AUDIT
+
+    page.add_init_script(
+        f"try {{ window.localStorage.setItem('juristid-theme', '{theme}') }} catch (e) {{}}"
+    )
+    _open(page, base_url, MARTIN, "/minu-asjad/", 1440)
+    assert page.evaluate("() => document.documentElement.dataset.theme") == theme
+
+    figure = page.locator(OPINION_TOTAL)
+    assert figure.count() == 1, "Martin's strip draws no «arvamust koostamisel kokku»"
+    assert figure.is_visible()
+    failing = [found for found in page.evaluate(AUDIT) if "seis__" in found["element"]]
+    assert not failing, f"{theme}: strip text under AA: {failing}"
+
+    claimed = int(figure.locator(".seis__number").inner_text().strip())
+    assert claimed >= 1
+    figure.click()
+    page.wait_for_load_state("networkidle")
+    assert "/teemad/" in page.url and "arvamus=koostamisel" in page.url
+    assert shown_total(page) == claimed
+
+
+def test_the_opinion_figures_fit_a_phone(page, base_url):
+    """Six figures wrap inside the strip; nothing pushes the page sideways."""
+    _open(page, base_url, MARTIN, "/minu-asjad/", 375)
+
+    assert page.locator(OPINION_TOTAL).is_visible()
+    _no_horizontal_overflow(page)
+
+
 def test_hiljem_sits_on_the_same_surface_as_the_other_bands(page, base_url):
     """*Hiljem* is a band of the timeline, not a panel dropped into it.
 

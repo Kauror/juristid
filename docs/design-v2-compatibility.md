@@ -58,6 +58,34 @@ visual suite — the panel colour is close enough to the page that the differenc
 stayed inside the tolerance — so no committed image would have caught the rule
 coming back either.
 
+#### The two opinion figures (2026-10-09)
+
+The strip ends with two figures, after the four it already had and in this
+order: **«N arvamust koostada sel nädalal»** and **«N arvamust koostamisel
+kokku»**. Both appear on one's own desk and on a colleague's
+(`/inimesed/<id>/asjad/`), from the one read model (`OpinionWork` in
+`app/matters/my_work.py`).
+
+- **Kokku** is `dashboard.drafting_matters(user)` narrowed to the Matters the
+  desk's owner *owns* — the population Osakond's ARVAMUS KOOSTAMISEL column
+  counts, so the cell on the team table and the figure on the desk are the same
+  number for the same reader. No horizon: overdue, this week, later and
+  undated are all in it.
+- **Sel nädalal** is that population with a recorded `Arvamuse tähtaeg` from
+  Monday to Sunday of the current calendar week, both inclusive, on the
+  page's own Tallinn date. A deadline from an earlier week is not in it, however
+  late. It is not the timeline's «sel nädalal», which counts every kind of
+  dated work in its band.
+- Each figure links to the register list it counted —
+  `?olek=avatud&liik=FULL&vastutaja=<id>&arvamus=koostamisel`, and for the
+  week also `&tahtaeg_alates=<E>&tahtaeg_kuni=<P>` — and
+  `tests/test_my_work_opinion_kpis.py` asserts the two are the same rows.
+- What «being prepared» means is the drafting definition's question
+  (`register_filters.opinion_state_q`), not this page's: when a send ends the
+  work, or a new request reopens it, both figures follow on the next read.
+- The strip's own conventions hold: a zero is not drawn, and neither figure
+  carries a tone.
+
 ### Inimese töölaud — `/inimesed/<uuid>/asjad/`
 
 | | |

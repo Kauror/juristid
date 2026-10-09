@@ -36,6 +36,12 @@ changes = [
   # (Tallinna aja järgi), liiguvad need read väljalaske päeva kirjesse.
   "Osakonna ülemisel real loeb «arvamust välja sel nädalal» nüüd jooksva kalendrinädala saadetud arvamusi esmaspäevast tänaseni, mitte viimase seitsme päeva omi. Esmaspäeval algab loendus uuesti.",
   "Osakonna ülemise rea lõpus on uus arv «arvamust koostamisel»: avatud teemad, mille arvamus on koostamisel, ükskõik kui kaugel on tähtaeg. Arvamus loetakse koostamisel olevaks ka siis, kui teema praegune tegevus on «Koostan arvamuse» ja arvamuse tähtajale pole veel vastatud. Klõps avab täpselt need teemad, ja sama arvu näitab Meeskonna tabeli veerg «Arvamus koostamisel». Kui Koja arvamus saadetakse ja see vastab tähtajale, kaob teema sellest arvust.",
+  # Minu asjade kaks arvamuse arvu (feature/my-work-opinion-kpis). Ainult
+  # lugemine: migratsioone ei ole, otsinguindeksit ei ehitata uuesti. Kui see
+  # väljalase ei jõua tootmisse 09.10 (Tallinna aja järgi), liiguvad need read
+  # väljalaske päeva kirjesse.
+  "«Minu asjade» ülemises reas on kaks uut arvu: «arvamust koostada sel nädalal» — sinu teemad, mille arvamus on koostamisel ja mille arvamuse tähtaeg on sel kalendrinädalal (esmaspäevast pühapäevani) — ning «arvamust koostamisel kokku» — kõik sinu teemad, mille arvamus on koostamisel, tähtajast olenemata.",
+  "Kumbki arv avab just need teemad «Teemade» loendis. Samad arvud on ka kolleegi töölaual, mida osakonnajuht vaatab, ning «arvamust koostamisel kokku» on sama arv, mis «Osakonna» meeskonna tabelis selle inimese «Arvamus koostamisel» veerus.",
 ]
 
 [[day]]
