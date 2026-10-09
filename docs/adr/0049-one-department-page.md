@@ -100,6 +100,10 @@ the read access the page it replaced already had.
 
 ### 4. Six figures, one strip
 
+**Amended 2026-10-09 by docs/adr/0149:** the sixth figure counts the current
+calendar week («arvamust välja sel nädalal»), and a seventh, «arvamust
+koostamisel», ends the strip.
+
 `üle tähtaja · tähtaeg sel nädalal · vastutajata · uut läbi vaatamata ·
 järgmise tegevuseta · arvamust välja · 7 p`
 

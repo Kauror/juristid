@@ -1018,6 +1018,18 @@ def annotate_response_obligation(queryset: QuerySet[Matter], user: Any) -> Query
     )
 
 
+def response_obligation_outstanding_q(user: Any) -> Q:
+    """A recorded ``Arvamuse tähtaeg`` nothing has discharged yet, as a filter.
+
+    The population :func:`response_obligations` lists — a deadline on the
+    Matter and :func:`_discharge_exists` false — as a condition another query
+    can combine, so a reader of the obligation elsewhere asks this rule rather
+    than a copy of it (``register_filters.opinion_state_q``, docs/adr/0149).
+    The lifecycle half — open, FULL, visible — is the caller's.
+    """
+    return Q(response_deadline__isnull=False) & ~_discharge_exists(user)
+
+
 def response_obligations(
     user: Any, *, owner: Any = None, open_only: bool = True
 ) -> QuerySet[Matter]:

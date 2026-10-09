@@ -431,10 +431,11 @@ SEIS_POPULATIONS = {
     "unassigned": lambda today: {"olek": "avatud", "liik": "FULL", "vastutaja": "puudub"},
     "unreviewed": lambda today: dd._unreviewed_params(today),
     "no_action": lambda today: {"olek": "avatud", "liik": "FULL", "tegevus": "puudub"},
+    "drafting": lambda today: {"olek": "avatud", "liik": "FULL", "arvamus": "koostamisel"},
 }
 
 
-def test_the_strip_carries_the_six_approved_figures(department_head, world, today):
+def test_the_strip_carries_the_seven_approved_figures(department_head, world, today):
     built = page_for(department_head, today=today)
     assert [figure.key for figure in built.seis] == [
         "overdue",
@@ -443,6 +444,7 @@ def test_the_strip_carries_the_six_approved_figures(department_head, world, toda
         "unreviewed",
         "no_action",
         "sent",
+        "drafting",
     ]
     assert [figure.caption for figure in built.seis] == [
         "üle tähtaja",
@@ -450,7 +452,8 @@ def test_the_strip_carries_the_six_approved_figures(department_head, world, toda
         "vastutajata",
         "uut läbi vaatamata",
         "järgmise tegevuseta",
-        "arvamust välja · 7 p",
+        "arvamust välja sel nädalal",
+        "arvamust koostamisel",
     ]
 
 
@@ -484,8 +487,8 @@ def test_a_seis_figure_opens_the_matters_it_counted(client, department_head, wor
 def test_the_sent_figure_states_a_number_it_cannot_open(department_head, world, today):
     """The one figure on the strip that carries no link, and why.
 
-    It counts a seven-day window; the Arvamused workspace narrows by year and by
-    month. The only destination available therefore holds more letters than the
+    It counts the current calendar week; the Arvamused workspace narrows by year
+    and by month. The only destination available therefore holds more letters than the
     number beside it, so the figure states the number and offers nothing — an
     honest number beats a link to a different list, which is the treatment the
     team table's three historical columns already get (docs/adr/0049 §4, DS-24).
@@ -496,7 +499,7 @@ def test_the_sent_figure_states_a_number_it_cannot_open(department_head, world, 
     assert (
         figure.value
         == dd.sent_submissions(
-            department_head, since=today - timedelta(days=dd.SENT_WINDOW_DAYS)
+            department_head, since=wi.start_of_iso_week(today), until=today
         ).count()
     )
     assert figure.url == ""
@@ -514,7 +517,7 @@ def test_every_other_figure_lands_on_the_register_rows(department_head, world, t
     built = page_for(department_head, today=today)
     register = [item for item in built.seis if item.url.startswith(REGISTER)]
 
-    assert len(register) == 5
+    assert len(register) == 6
     for figure in register:
         assert figure.url.endswith(dd.RESULTS_ANCHOR), figure.key
 

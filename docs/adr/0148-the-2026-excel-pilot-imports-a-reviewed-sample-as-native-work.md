@@ -189,7 +189,8 @@ writes nothing. Accounts, roles and authentication are untouched.
 ## Consequences
 
 - **Measures that read a register field.** Osakond's ARVAMUS KOOSTAMISEL counts
-  native drafts only, so group A shows through its `Arvamuse tähtaeg` instead.
+  native drafts only, so group A shows through its `Arvamuse tähtaeg` instead. **Superseded 2026-10-09 by docs/adr/0149:** the column reads the
+  native opinion step and the open obligation, so group A counts as «koostamisel».
   The feedback counts are kept in provenance but not displayed. «Uued teemad»
   counts natively created Matters by definition.
 - **Records the pilot creates.** Pilot Matters have origin `LEGACY_IMPORT`, keep

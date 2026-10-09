@@ -5,7 +5,8 @@ was a surface of its own; since the merge it and :mod:`app.matters.overview`
 are the two read models one page composes, and the composition is
 :mod:`app.matters.department` (docs/adr/0049).
 
-* **Seis** — six risks rather than six counters, each opening exactly its rows.
+* **Seis** — five risks, then what went out this week and what is being
+  written (docs/adr/0149), each opening exactly its rows where a list can.
 * **Mida meeskond teeb** — the Meeskond table, one row per member of the
   department, plus the work carried outside it and the work carried by
   nobody. Head only.
@@ -167,8 +168,10 @@ def _by_owner(queryset: QuerySet[Matter]) -> dict[Any, int]:
 # ---------------------------------------------------------------------------
 # Seis — the manager's risk strip
 #
-# Not general counters. Six states somebody can act on this morning, each one a
-# link to exactly the rows it counted (design handoff, Osakond §1).
+# Not general counters. Five states somebody can act on this morning, each one a
+# link to exactly the rows it counted (design handoff, Osakond §1), then two
+# informational figures: the opinions out this week and the ones being written
+# (docs/adr/0149).
 # ---------------------------------------------------------------------------
 
 
@@ -194,8 +197,19 @@ class SeisFigure:
 #: How far back "recently arrived, nobody has looked" reaches.
 UNREVIEWED_WINDOW_DAYS = INCOMING_WINDOW_DAYS
 
-#: The trailing window on the sent-opinions figure.
-SENT_WINDOW_DAYS = 7
+
+def sent_this_week(user: Any, today: date) -> QuerySet[Submission]:
+    """Opinions sent in the current ISO calendar week, up to and including today.
+
+    Monday to today, on the Tallinn calendar (docs/adr/0149 §1). A Monday
+    starts from nothing because the window starts that day; nothing is stored,
+    scheduled or reset. ``until=today`` keeps a send dated later this week out
+    of the figure until its day comes. Read through :func:`sent_submissions`, so
+    both precisions are compared on the local date: a DATE send is stored at
+    local midnight and a timestamp at whatever moment it was, and either belongs
+    to the day the sender was living in.
+    """
+    return sent_submissions(user, since=wi.start_of_iso_week(today), until=today)
 
 
 def _unreviewed_params(today: date) -> dict[str, Any]:
@@ -237,6 +251,11 @@ def _no_action_params() -> dict[str, Any]:
     other figure on the strip.
     """
     return {**_open_full(), "tegevus": MISSING}
+
+
+def _drafting_params() -> dict[str, Any]:
+    """«Arvamust koostamisel», as register parameters — `drafting_matters`' own population."""
+    return {**_open_full(), "arvamus": OPINION_DRAFTING}
 
 
 def sent_submissions(user: Any, *, since: date, until: date | None = None) -> QuerySet[Submission]:
@@ -314,18 +333,27 @@ def seis_figures(
             register_url(**no_action),
             "warning",
         ),
-        # No link. The count is a seven-day window and the Arvamused workspace
-        # filters by year and month, so the only destination available lists
-        # more opinions than the number beside it — which is precisely the
-        # count-and-list disagreement this strip exists to make impossible.
-        # It linked there before the merge and the parity sweep caught it the
-        # first time both pages' figures were on one strip
+        # No link. The count is the current calendar week and the Arvamused
+        # workspace filters by year and month, so the only destination available
+        # lists more opinions than the number beside it — which is precisely the
+        # count-and-list disagreement this strip exists to make impossible
         # (`e2e/test_kpi_navigation.py`, DS-24).
         SeisFigure(
             "sent",
-            sent_submissions(user, since=today - timedelta(days=SENT_WINDOW_DAYS)).count(),
-            f"arvamust välja · {SENT_WINDOW_DAYS} p",
+            sent_this_week(user, today).count(),
+            "arvamust välja sel nädalal",
             "",
+        ),
+        # Information, not a warning: no tone. The team table's ARVAMUS
+        # KOOSTAMISEL column counts the same `drafting_matters` per owner, so this
+        # is that column's total, and the link is the register's own
+        # `?arvamus=koostamisel` over open FULL Matters — the population the
+        # selector is (docs/adr/0149 §2).
+        SeisFigure(
+            "drafting",
+            drafting_matters(user).count(),
+            "arvamust koostamisel",
+            register_url(**_drafting_params()),
         ),
     ]
 

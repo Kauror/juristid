@@ -31,6 +31,11 @@ changes = [
   # väljalaske päeva kirjesse.
   "Teema pealkirja kõrval on nüüd töö olek: «Aktiivne» — Koda tegeleb teemaga; «Mitteaktiivne» — aktiivne töö on läbi, näiteks õigusakt jõustus; «Lõpetatud» — Koda otsustas töö lõpetada, näiteks rohkem ei tegele või jättis arvamuse saatmata; «Jätkub mujal» — töö jätkub teise teema all, mille leiad «Seotud» alt.",
   "Ilma autorita märkus näitab «Tegevused» loendis nüüd oma liiki («Märkus»), mitte ainult kuupäeva.",
+  # Osakonna näitajad, ADR 0149. Migratsioone ei ole, andmeid ei muudeta,
+  # otsinguindeksit ei ehitata uuesti. Kui see väljalase ei jõua tootmisse 09.10
+  # (Tallinna aja järgi), liiguvad need read väljalaske päeva kirjesse.
+  "Osakonna ülemisel real loeb «arvamust välja sel nädalal» nüüd jooksva kalendrinädala saadetud arvamusi esmaspäevast tänaseni, mitte viimase seitsme päeva omi. Esmaspäeval algab loendus uuesti.",
+  "Osakonna ülemise rea lõpus on uus arv «arvamust koostamisel»: avatud teemad, mille arvamus on koostamisel, ükskõik kui kaugel on tähtaeg. Arvamus loetakse koostamisel olevaks ka siis, kui teema praegune tegevus on «Koostan arvamuse» ja arvamuse tähtajale pole veel vastatud. Klõps avab täpselt need teemad, ja sama arvu näitab Meeskonna tabeli veerg «Arvamus koostamisel». Kui Koja arvamus saadetakse ja see vastab tähtajale, kaob teema sellest arvust.",
 ]
 
 [[day]]
