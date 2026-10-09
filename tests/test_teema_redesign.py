@@ -1041,6 +1041,10 @@ def _documents(client, matter) -> str:
     return _body(client.get(reverse("matters:matter_documents", kwargs={"pk": matter.pk})))
 
 
+#: A CSRF input, whatever order its attributes come in.
+_CSRF_INPUT = re.compile(r'<input\b[^>]*\bname="csrfmiddlewaretoken"[^>]*>')
+
+
 def _table_of(body: str) -> str:
     """The evidence table, so an assertion cannot match the page around it.
 
@@ -1048,9 +1052,19 @@ def _table_of(body: str) -> str:
     the document's own page; neither is reachable from here, but a bare `in
     body` is the kind of assertion that starts passing for the wrong reason the
     first time a shared partial grows.
+
+    And without the rows' CSRF inputs, which are noise of the same kind from
+    inside. Each token is 64 random letters and digits, new on every render, so
+    a two-character `not in` needle sits inside one by chance in about one run
+    in sixty: `v1` did, as `value="9v1aNEDu…"`, on PR #416's CI. Nothing here
+    asserts about the token, and the forms keep the rest of their markup.
     """
     start = body.index('<table class="table doctable">')
-    return body[start : body.index("</table>", start)]
+    table = _CSRF_INPUT.sub("", body[start : body.index("</table>", start)])
+    # If Django ever renders the input in a shape the pattern misses, say so
+    # here, every run, rather than going back to failing one run in sixty.
+    assert "csrfmiddlewaretoken" not in table
+    return table
 
 
 def test_the_documents_table_has_three_columns(signed_in, specialist):
@@ -1076,7 +1090,9 @@ def test_the_documents_table_prints_no_version_and_no_size(signed_in, specialist
     Matched inside the table and against the values this document really has,
     so neither assertion can pass because the string happens to be spelled
     differently: `filesizeformat` is what the cell used to render, and `v1` is
-    what the version cell used to say.
+    what the version cell used to say. `v1` is short enough to turn up inside a
+    random CSRF token, which is why `_table_of` takes those out; the size cannot,
+    because `filesizeformat` joins number and unit with a no-break space.
     """
     from django.template.defaultfilters import filesizeformat
 
