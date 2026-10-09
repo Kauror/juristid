@@ -1265,10 +1265,15 @@
     });
   }
 
-  /* ---- «Salvesta praegune filter vaatena» --------------------------------
+  /* ---- «Salvesta praegune filter vaatena», and «Teemaviide» ----------------
    * The view is the address. The control shows the current canonical URL and
    * offers to copy it; there is no stored view because there is nothing to
    * store — the link is the whole thing (matter_list.html).
+   *
+   * The same button copies a Teema's reference from the header, where the
+   * value is plain text rather than a box (header.html, docs/adr/0150 §4): a
+   * field is selected and its value copied, anything else has its text
+   * selected and copied, so Ctrl+C works on the selection either way.
    */
   function bindCopyLink(scope) {
     scope.querySelectorAll("[data-copy-from]").forEach(function (button) {
@@ -1280,8 +1285,18 @@
         if (!field) {
           return;
         }
-        field.select();
-        field.setSelectionRange(0, field.value.length);
+        var isField = typeof field.select === "function" && "value" in field;
+        var text = isField ? field.value : (field.textContent || "").trim();
+        if (isField) {
+          field.select();
+          field.setSelectionRange(0, field.value.length);
+        } else {
+          var range = document.createRange();
+          range.selectNodeContents(field);
+          var selection = window.getSelection();
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
         var done = function () {
           var said = button.getAttribute("data-label-done");
           if (!said) {
@@ -1294,7 +1309,7 @@
           }, 2000);
         };
         if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(field.value).then(done, function () {});
+          navigator.clipboard.writeText(text).then(done, function () {});
           return;
         }
         /* Older engines, and any context where the async API is refused. The

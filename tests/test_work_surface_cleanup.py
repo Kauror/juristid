@@ -200,7 +200,8 @@ def test_the_matter_page_names_the_topic_rather_than_the_record(populated, clien
     it still is, in every heading, every crumb and every list on every page.
 
     So this asserts both halves: the title names the file, and the reference
-    appears once, in the rail, under a label.
+    appears once, in the header's meta line, under a label (since 2026-10-09;
+    the rail before the compact round of 2026-10-07).
     """
     client.force_login(specialist)
     matter = populated["owned"]
@@ -209,10 +210,13 @@ def test_the_matter_page_names_the_topic_rather_than_the_record(populated, clien
     edit = client.get(reverse("matters:matter_edit", kwargs={"pk": matter.pk})).content.decode()
 
     assert matter.title in detail
-    # `Teemaviide` left the rail in the owner's compact round (2026-10-07):
-    # the reference is on no reading surface of the page now.
-    assert matter.display_reference not in detail
-    assert "Teemaviide" not in detail
+    # `Teemaviide` left the rail in the owner's compact round (2026-10-07) and
+    # came back on 2026-10-09 once, in the header's meta line, under its label
+    # and beside a copy button (docs/adr/0150 §4) — never in the rail.
+    assert detail.count(matter.display_reference) == 1
+    assert 'id="teemaviide">' + matter.display_reference + "</span>" in detail
+    rail = detail.split('id="teema-andmed"', 1)[1].split("</aside>", 1)[0]
+    assert "Teemaviide" not in rail
     # Not in the heading, and not in the crumb.
     heading = detail.split('matterhead__title">', 1)[1].split("</h1>", 1)[0]
     assert matter.display_reference not in heading

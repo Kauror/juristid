@@ -523,6 +523,26 @@ rather than read.
         </span>
       {% endif %}
     {% endif %}
+    {% if matter.display_reference %}
+      {% comment %}
+        `Teemaviide` — the register's own name for this file, `2026_301`,
+        shown again and copyable (docs/adr/0150 §4). Last on the line and in
+        the quiet meta voice, so the title stays the file's identity: the
+        reference is what a colleague quotes in an e-mail or types into the
+        search, which jumps straight here. Only a reference the record really
+        has — a historical file without one shows nothing, and nothing is
+        invented, regenerated or reallocated. Not on any list, dashboard or
+        timeline: those still name a Teema by its title (docs/adr/0035's
+        identifier-free rule, narrowed for this one place).
+      {% endcomment %}
+      <span class="metaline__item">
+        <span class="metaline__label">Teemaviide</span>
+        <span class="metaline__value metaline__ref" id="teemaviide">{{ matter.display_reference }}</span>
+        <button class="button button--quiet button--tiny" type="button"
+                data-copy-from="teemaviide" data-label-done="Kopeeritud"
+                aria-label="Kopeeri teemaviide">Kopeeri</button>
+      </span>
+    {% endif %}
   </div>
 
   {% include "matters/partials/summary.html" %}

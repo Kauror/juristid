@@ -9222,6 +9222,15 @@ button.accordion__action:focus-visible {
 
 /* The register reference in the rail: an identity, so it is set in the same
    monospace the exact search matches on. */
+/* `Teemaviide` in the header's meta line (docs/adr/0150 §4): the register's
+   `2026_301`, in tabular figures so the digits read as a code, and selectable
+   as a whole for the copy button beside it. */
+.metaline__ref {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  user-select: all;
+}
+
 .railcard__ref {
   font-family: ui-monospace, Menlo, monospace;
   font-size: var(--typography-size-meta);
