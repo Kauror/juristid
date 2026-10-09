@@ -160,9 +160,19 @@ class SheetReading:
     highest_number: int
 
 
+def _contracted_cells(extracted: ExtractedRow, contract: EraContract) -> dict[str, str]:
+    """The row's contracted cells only, as the parser serialised them.
+
+    What the pilot reads, digests and keeps. A column the era contract does not
+    name — `UUS VASTUTAJA` and `KOJA ETTEPANEK VÕI PÖÖRDUMINE` in 2026 — is out
+    of the pilot's scope, so it is neither read nor copied into provenance.
+    """
+    return {column.letter: extracted.raw_row.get(column.letter, "") for column in contract.columns}
+
+
 def _row_digest(extracted: ExtractedRow, contract: EraContract) -> str:
     """SHA-256 of the row's contracted cells, as the parser serialised them."""
-    cells = {column.letter: extracted.raw_row.get(column.letter, "") for column in contract.columns}
+    cells = _contracted_cells(extracted, contract)
     payload = json.dumps(cells, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
@@ -952,7 +962,7 @@ def _write(plan: PilotPlan, *, backup_set: str) -> tuple[ApplyReport, list[Any]]
             source_snapshot_sha256=workbook["sha256"],
             source_sheet=extracted.sheet,
             source_row_number=extracted.row_number,
-            source_row_raw=extracted.raw_row,
+            source_row_raw=_contracted_cells(extracted, plan.reading.contract),
             source_title=extracted.title,
             source_date_raw=(extracted.received.raw if extracted.received else "")[:200],
             onenote_url=extracted.onenote_url,

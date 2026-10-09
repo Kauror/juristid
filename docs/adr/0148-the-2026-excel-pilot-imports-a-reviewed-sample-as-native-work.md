@@ -56,8 +56,10 @@ during the pilot cannot collide with the rest of the register.
 - **Contract headers.** A column may name reviewed `header_aliases`; the 2025
   and 2026 contracts (version 1.2) accept `ANDSID TAGASISIDET` and
   `KÜSISIME TAGASISIDET` beside the long forms, which older snapshots still
-  carry. `UUS VASTUTAJA` and `KOJA ETTEPANEK VÕI PÖÖRDUMINE` stay uncontracted:
-  kept raw in provenance, never read.
+  carry. `UUS VASTUTAJA` and `KOJA ETTEPANEK VÕI PÖÖRDUMINE` stay uncontracted
+  and out of scope: never read, and never copied. The pilot's source reference
+  keeps the contracted cells only — the same cells the row digest covers — so
+  neither column reaches the database.
 
 ## 3. `Õigusakt` from the current vocabulary
 

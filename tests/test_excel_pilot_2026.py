@@ -347,6 +347,64 @@ def test_the_manifest_is_scope_limited_and_reproducible(workbook, selection):
     assert first["workbook"]["reserve_through"] == 15
 
 
+OUT_OF_SCOPE = ("OUT-OF-SCOPE-UUS-VASTUTAJA", "OUT-OF-SCOPE-KOJA-ETTEPANEK")
+
+
+def _with_out_of_scope_columns(path: Path) -> Path:
+    """The real 2026 sheet's two uncontracted columns, M and N, filled on every row."""
+    from openpyxl import load_workbook
+
+    book = load_workbook(path)
+    sheet = book["2026"]
+    width = sheet.max_column
+    sheet.cell(row=1, column=width + 1, value="UUS VASTUTAJA")
+    sheet.cell(row=1, column=width + 2, value="KOJA ETTEPANEK VÕI PÖÖRDUMINE")
+    for row in range(2, sheet.max_row + 1):
+        sheet.cell(row=row, column=width + 1, value=OUT_OF_SCOPE[0])
+        sheet.cell(row=row, column=width + 2, value=OUT_OF_SCOPE[1])
+    target = path.with_name("pilot-with-out-of-scope-columns.xlsx")
+    book.save(target)
+    book.close()
+    return target
+
+
+def test_the_out_of_scope_columns_never_reach_the_database(world, workbook, selection, pilot_on):
+    from django.core import serializers
+
+    from app.legacy_import.models import MatterSourceReference
+
+    widened = _with_out_of_scope_columns(workbook)
+    plain, wide = read_pilot_sheet(workbook), read_pilot_sheet(widened)
+    # Not read: the two columns move no row's digest.
+    assert {ref: row.row_sha256 for ref, row in wide.rows.items()} == {
+        ref: row.row_sha256 for ref, row in plain.rows.items()
+    }
+    assert any(
+        OUT_OF_SCOPE[0] in extracted.raw_row.values() for extracted in wide.extracted.values()
+    )
+
+    _apply(widened, _manifest(widened, selection))
+
+    contracted = {column.letter for column in wide.contract.columns}
+    references = list(MatterSourceReference.objects.all())
+    assert len(references) == 9
+    for reference in references:
+        assert set(reference.source_row_raw) <= contracted, "provenance keeps contracted cells only"
+    dump = serializers.serialize(
+        "json",
+        [
+            *references,
+            *ExcelPilotImport.objects.all(),
+            *Matter.all_objects.all(),
+            *Entry.objects.all(),
+            *NextAction.objects.all(),
+            *Submission.objects.all(),
+        ],
+    )
+    for marker in OUT_OF_SCOPE:
+        assert marker not in dump, f"{marker} reached the database"
+
+
 def test_a_blank_valja_is_not_automatically_active(workbook, selection):
     """2026_11 has a blank VÄLJA and «rohkem ei tegele»: finished, so not group A."""
     manifest = _manifest(workbook, selection)
