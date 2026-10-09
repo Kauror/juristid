@@ -290,14 +290,26 @@ def test_the_archive_path_schedules_nothing(normal_matter, specialist, ministry)
 
 
 def test_no_importer_reaches_the_scheduler():
-    """The archive apply, the register importers and the seed commands never schedule a check."""
+    """The archive apply, the register importers and the seed commands never schedule a check.
+
+    One module is the sanctioned exception, and it is named rather than matched:
+    the 2026 Excel operational pilot schedules the first check of an imported
+    opinion on a still-active file, behind its own gates (docs/adr/0148 §8). No
+    other importer may join it without a decision of its own.
+    """
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[1] / "app"
+    sanctioned = {root / "legacy_import" / "excel_pilot.py"}
     for path in [*root.glob("legacy_import/**/*.py"), *root.glob("core/management/**/*.py")]:
+        if path in sanctioned:
+            continue
         source = path.read_text(encoding="utf-8")
         assert "schedule_first_check" not in source, path
         assert "schedule_follow_up_of" not in source, path
+    assert "schedule_first_check" in (root / "legacy_import" / "excel_pilot.py").read_text(
+        encoding="utf-8"
+    ), "the sanctioned exception no longer exists; remove it from this guard"
 
 
 def test_a_draft_schedules_nothing(normal_matter, specialist, ministry):

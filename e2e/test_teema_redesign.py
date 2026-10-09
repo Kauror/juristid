@@ -218,7 +218,7 @@ def test_closing_through_hetkeseis_leaves_a_readable_past(page, base_url):
 
     # -- E. the closed Matter -------------------------------------------
     page.goto(url)
-    expect(page.locator(".badge--closed")).to_be_visible()
+    expect(page.locator(".badge--state.badge--inactive")).to_have_text("Mitteaktiivne")
     expect(page.locator(".banner--closed")).to_contain_text("Lõpetatud või jõustunud")
     expect(page.locator("#praegune-tegevus")).to_contain_text("teema on suletud")
     # No writable next step and no workspace at all (docs/adr/0075, brief §31).
