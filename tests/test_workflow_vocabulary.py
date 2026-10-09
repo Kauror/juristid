@@ -114,11 +114,16 @@ def test_the_importable_vocabulary_matches_the_seed_migration():
     assert vocabulary.RAW_LABEL_TO_DISPOSITION == seed.RAW_LABEL_TO_DISPOSITION
 
 
-def test_the_controlled_vocabulary_has_the_workbooks_eleven_labels():
+def test_the_controlled_vocabulary_has_the_workbooks_eleven_labels_and_four_current_ones():
+    """The eleven historical spellings, and the department's four current ones
+    since its `Hetkeseisu info` rewording (docs/adr/0148 §2)."""
     from app.workflow import vocabulary
 
-    assert len(vocabulary.CONTROLLED_LABELS) == 11
+    assert len(vocabulary.RAW_LABEL_TO_STAGE) + len(vocabulary.RAW_LABEL_TO_DISPOSITION) == 11
+    assert len(vocabulary.CURRENT_LABEL_TO_STAGE) == 4
+    assert len(vocabulary.CONTROLLED_LABELS) == 15
     assert "ootan ELi õiguse ülevõtmist" in vocabulary.CONTROLLED_LABELS
+    assert "ELi õiguse ülevõtmise ootel" in vocabulary.CONTROLLED_LABELS
 
 
 def test_the_closure_label_is_not_a_stage():

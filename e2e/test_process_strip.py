@@ -283,7 +283,7 @@ def add_a_commencement(page, *, what: str, when: str) -> None:
 def close_the_matter(page) -> None:
     """Close the open Matter the one ordinary way: «Rohkem ei tegele» (docs/adr/0131 §11)."""
     close_through_stage(page)
-    expect(page.locator(".badge--state")).to_contain_text("Suletud")
+    expect(page.locator(".badge--state")).to_contain_text("Lõpetatud")
 
 
 def register_a_send(page, matter_url: str, *, filename: str, sent_on: str) -> None:

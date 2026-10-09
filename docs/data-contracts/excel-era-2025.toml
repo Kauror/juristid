@@ -7,7 +7,7 @@ year = 2025
 sheet = "2025"
 era = "2025"
 header_row = 1
-contract_version = "1.1"
+contract_version = "1.2"
 status = "reviewed"
 reviewed_by = "Stage 2A parser owner — iga veerg kontrollitud 2026-08 hetktõmmise vastu; osakonna sisuline kinnitus on veel andmata"
 notes = """
@@ -136,6 +136,8 @@ Allikas on eesnimi ja mõnel real on neid mitu. Kasutaja leitakse ainult täpse 
 [[column]]
 letter = "I"
 header = "LIIKMETE ARV, KES ANDSID TAGASISIDET"
+# Lühendatud pealkiri alates osakonna 2026. aasta sügisese ümbersõnastuse järel; veerg on sama (docs/adr/0148 §2).
+header_aliases = ["ANDSID TAGASISIDET"]
 canonical_field = "member_feedback_responded"
 parser = "count"
 authority = "derived"
@@ -152,6 +154,8 @@ Elab tuletatud tabelis CurrentRegisterState.member_feedback_responded, mitte Mat
 [[column]]
 letter = "J"
 header = "LIIKMETE ARV, KELLELT OTSE KÜSISIME TAGASISIDET"
+# Lühendatud pealkiri alates osakonna 2026. aasta sügisese ümbersõnastuse järel; veerg on sama (docs/adr/0148 §2).
+header_aliases = ["KÜSISIME TAGASISIDET"]
 canonical_field = "member_feedback_requested"
 parser = "count"
 authority = "derived"

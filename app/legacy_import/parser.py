@@ -232,11 +232,13 @@ def check_headers(headers: dict[str, str], contract: EraContract) -> list[Header
     findings: list[HeaderFinding] = []
     expected = {column.letter: column.header for column in contract.columns}
 
-    for letter, header in expected.items():
-        found = headers.get(letter, "")
-        if found != header:
+    for column in contract.columns:
+        found = headers.get(column.letter, "")
+        if not column.accepts_header(found):
             findings.append(
-                HeaderFinding(column=letter, expected=header, found=found, kind="mismatch")
+                HeaderFinding(
+                    column=column.letter, expected=column.header, found=found, kind="mismatch"
+                )
             )
 
     for letter, found in headers.items():

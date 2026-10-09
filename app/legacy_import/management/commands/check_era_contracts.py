@@ -78,6 +78,8 @@ def render_overview(contracts: dict[int, EraContract]) -> str:
         ]
         for column in contract.columns:
             header = f"`{column.header}`" if column.header else "_(pealkirjata)_"
+            if column.header_aliases:
+                header += " (ka " + ", ".join(f"`{a}`" for a in column.header_aliases) + ")"
             lines.append(
                 f"| {column.letter} | {header} | `{column.canonical_field}` | "
                 f"`{column.parser}` | {_AUTHORITY_LABELS[column.authority]} | "

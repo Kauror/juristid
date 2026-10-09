@@ -70,12 +70,12 @@ def test_joustumise_ootel_keeps_the_file_open_and_joustunud_closes_it(page, base
 
     start_first_step(page)
     finish_step_moving_stage(page, "Riigikogu võttis seaduse vastu.", "Jõustumise ootel")
-    expect(page.locator(".badge--state")).to_contain_text("Avatud")
+    expect(page.locator(".badge--state")).to_contain_text("Aktiivne")
     expect(page.locator("#teema-hetkeseis")).to_contain_text("Jõustumise ootel")
     expect(page.locator("#lisa-teemale")).to_have_count(1)
 
     close_through_stage(page, "Jõustunud")
-    expect(page.locator(".badge--state")).to_contain_text("Suletud")
+    expect(page.locator(".badge--state")).to_contain_text("Mitteaktiivne")
     expect(page.locator(".banner--closed")).to_contain_text("Lõpetatud või jõustunud")
     expect(page.locator("#lisa-teemale")).to_have_count(0)
     # The work from before stays in its period.
@@ -99,14 +99,14 @@ def test_reopening_names_the_stage_and_keeps_the_ended_period(page, base_url):
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Lõpetamise brauserikatse: taasavamine", stage="Riigikogus")
     close_through_stage(page, "Jõustunud")
-    expect(page.locator(".badge--state")).to_contain_text("Suletud")
+    expect(page.locator(".badge--state")).to_contain_text("Mitteaktiivne")
 
     banner = page.locator(".banner--closed")
     banner.locator("select[name=stage]").select_option(label="Idee")
     banner.get_by_role("button", name="Ava uuesti").click()
     page.wait_for_load_state("networkidle")
 
-    expect(page.locator(".badge--state")).to_contain_text("Avatud")
+    expect(page.locator(".badge--state")).to_contain_text("Aktiivne")
     stages = page.locator(f"{KAIK_PERIOD} .kaikstage__stage").all_inner_texts()
     assert stages[:3] == ["Idee", "Jõustunud", "Riigikogus"], stages
     expect(page.locator(f"{KAIK_PERIOD}.kaikstage--current .kaikstage__stage")).to_have_text("Idee")

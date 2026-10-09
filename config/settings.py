@@ -775,6 +775,13 @@ APPLICATION_BUILT_AT = _build_stamp()
 # environment that has passed the Secure Pilot Gate (master specification 16.3).
 REAL_DATA_ALLOWED = env_bool("REAL_DATA_ALLOWED", default=False)
 
+# The 2026 Excel operational pilot (docs/adr/0148) may write placeholder evidence
+# and schedule historical follow-up checks — two things no ordinary importer is
+# allowed to do. Off everywhere by default, and never put in an env file: the
+# operator sets it on the one-off container that runs `excel_pilot_2026 apply`
+# against the hosted test-build, so the running application never carries it.
+EXCEL_PILOT_ENABLED = env_bool("JURISTID_EXCEL_PILOT", default=False)
+
 # -- Cloudflare Access ------------------------------------------------------
 #
 # The production authenticator. Cloudflare authenticates a person against the

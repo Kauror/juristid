@@ -772,12 +772,23 @@ p.formnote {
   text-transform: uppercase;
 }
 
-.badge--open {
+/* Töö olek beside a Teema's title (docs/adr/0148 §5). Restrained on purpose:
+   the word carries the state and the dot follows it in `currentColor`, so the
+   four read apart without colour and only Aktiivne is green. */
+.badge--active {
   color: var(--status-success);
 }
 
-.badge--open .badge__dot {
-  background: var(--status-success);
+.badge--inactive {
+  color: var(--text-secondary);
+}
+
+.badge--concluded {
+  color: var(--text-muted);
+}
+
+.badge--continues {
+  color: var(--status-info);
 }
 
 .badge__dot {

@@ -210,9 +210,11 @@ def test_closing_through_hetkeseis_leaves_a_readable_past(page, base_url):
     expect(page.locator(".addzone .field__error")).to_have_count(0)
 
     # The header followed the closure out of band, so the page does not come
-    # back from its own save calling an archived Matter `Avatud`
-    # (docs/adr/0074 §10, app/matters/views.py `_render_overview`).
-    expect(page.locator(".badge--state")).to_contain_text("Suletud")
+    # back from its own save calling a closed Matter `Aktiivne`
+    # (docs/adr/0074 §10, app/matters/views.py `_render_overview`). «Jõustunud»
+    # ends active work without a Chamber decision: `Mitteaktiivne`
+    # (docs/adr/0148 §5).
+    expect(page.locator(".badge--state")).to_contain_text("Mitteaktiivne")
 
     # -- E. the closed Matter -------------------------------------------
     page.goto(url)

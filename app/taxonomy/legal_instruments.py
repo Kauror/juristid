@@ -709,3 +709,60 @@ def canonical_legal_instrument_keys(raw: str) -> tuple[str, ...]:
             return ()
         keys.add(key)
     return tuple(key for key in REFERENCE_LEGAL_INSTRUMENT_KEYS if key in keys)
+
+
+#: The offered (version 2.0) types by their own reviewed label, normalised.
+_OFFERED_LABEL_TO_KEY: dict[str, str] = {
+    normalize_for_matching(item.label_et): item.key for item in OFFERED_LEGAL_INSTRUMENT_TYPES_V2
+}
+
+
+def current_legal_instrument_keys(raw: str) -> tuple[str, ...]:
+    """Read an `ÕIGUSAKT` cell written in the department's **current** vocabulary.
+
+    Since the 2026 rewording the workbook's own `Hetkeseisu info` sheet lists
+    the instrument kinds the lawyers reviewed for this application — «VTK»,
+    «seadus», «määrus», «muu siseriiklik», «ELi konsultatsioon», «ELi
+    direktiiv», «ELi määrus», «muu ELi dokument» — which are version 2.0's
+    offered labels word for word. :func:`canonical_legal_instrument_keys`
+    reads the register as version 1.0 did, so it files «ELi konsultatsioon»
+    under the retired `konsultatsioon` and cannot read either «muu» split at
+    all. A Matter created from a current cell is offered the version 2.0 list,
+    and that is the list it has to be read against (docs/adr/0148 §3).
+
+    The same discipline as the historical reader, one source of words earlier:
+
+    1. **The whole value** against the offered labels, so a label that itself
+       contains a comma («Strateegia, arengukava või tegevuskava») is one answer.
+    2. **Split** on the same separators, and read each part as an offered label
+       or — failing that — a version 1.0 alias **whose key is still offered**.
+       `S, M` therefore stays two answers. A part that resolves only to a
+       retired key, or to nothing, makes the **whole value** unmapped: an
+       answer is never half-recorded.
+
+    Returns offered keys in the offered order. An empty tuple is a real answer
+    — no canonical reading — and the raw cell is preserved regardless.
+    """
+    if not raw or not raw.strip():
+        return ()
+
+    whole = _OFFERED_LABEL_TO_KEY.get(normalize_for_matching(raw))
+    if whole is not None:
+        return (whole,)
+
+    parts = [part for part in _SEPARATORS.split(raw.strip()) if part.strip()]
+    if not parts:
+        return ()
+
+    offered = set(OFFERED_LEGAL_INSTRUMENT_KEYS)
+    keys: set[str] = set()
+    for part in parts:
+        normalized = normalize_for_matching(part)
+        key = _OFFERED_LABEL_TO_KEY.get(normalized)
+        if key is None:
+            alias = _ALIAS_TO_KEY.get(normalized)
+            if alias is None or alias not in offered:
+                return ()
+            key = alias
+        keys.add(key)
+    return tuple(key for key in OFFERED_LEGAL_INSTRUMENT_KEYS if key in keys)

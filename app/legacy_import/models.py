@@ -517,11 +517,127 @@ class RegisterEngagementImport(BaseModel):
         return f"{self.channel} {self.source_key[:60]}"
 
 
+class PilotGroup(models.TextChoices):
+    """Why a row is in the 2026 Excel pilot (docs/adr/0148 §1)."""
+
+    ACTIVE_DRAFTING = "A", "A — arvamus koostamisel"
+    SENT_OPINION = "B", "B — saadetud arvamus, töö jätkub"
+    CONCLUDED = "C", "C — lõpetatud või mujal jätkuv"
+
+
+class ExcelPilotImport(BaseModel):
+    """This Matter exists because the 2026 Excel operational pilot created it.
+
+    One row per pilot Matter, written in the same transaction as everything the
+    pilot wrote for it, and the place that says so: which reviewed manifest,
+    which workbook bytes, which row, which group and why — and which of the
+    records on the Matter are the pilot's own (docs/adr/0148).
+
+    **The technical marker for placeholder evidence lives here.** A historical
+    opinion imported by the pilot is a canonical SENT ``Submission`` whose
+    final evidence is a generated PDF saying, in capitals, that it is not the
+    Chamber's opinion. ``placeholder_version`` names that exact version, so a
+    query — not a filename pattern, not a title — finds every placeholder, and
+    the commissioning import that replaces this database can prove none
+    survived (``placeholder_versions``).
+
+    Owned by its Matter (``CASCADE``), so `Kustuta teema` on a pilot Matter
+    removes it with the rest of the file's records, exactly as it removes a
+    native Matter's — the tombstone and the audit trail keep the history. The
+    links to the records it describes are ``SET_NULL`` for the same reason: a
+    deletion walk must never meet a provenance row that refuses it.
+    """
+
+    matter = models.ForeignKey(
+        "matters.Matter",
+        on_delete=models.CASCADE,
+        related_name="pilot_imports",
+        verbose_name="teema",
+    )
+    source_reference = models.OneToOneField(
+        MatterSourceReference,
+        on_delete=models.CASCADE,
+        related_name="pilot_import",
+        verbose_name="allikaviide",
+    )
+    pilot = models.CharField(max_length=64, db_index=True, verbose_name="piloot")
+    pilot_version = models.CharField(max_length=32, verbose_name="piloodi versioon")
+    manifest_sha256 = models.CharField(
+        max_length=64, db_index=True, verbose_name="manifesti SHA-256"
+    )
+    workbook_sha256 = models.CharField(max_length=64, verbose_name="töövihiku SHA-256")
+    source_sheet = models.CharField(max_length=64, verbose_name="leht")
+    source_row_number = models.PositiveIntegerField(verbose_name="rida")
+    source_reference_label = models.CharField(max_length=32, verbose_name="registri viide")
+    selection_group = models.CharField(
+        max_length=1, choices=PilotGroup.choices, verbose_name="valikugrupp"
+    )
+    selection_reason = models.TextField(blank=True, verbose_name="valiku põhjus")
+    work_status = models.CharField(max_length=16, verbose_name="töö olek importimisel")
+    submission = models.ForeignKey(
+        "submissions.Submission",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="pilot_imports",
+        verbose_name="imporditud arvamus",
+    )
+    placeholder_version = models.OneToOneField(
+        "documents.DocumentVersion",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="pilot_placeholder",
+        verbose_name="asendusdokument",
+    )
+    follow_up = models.ForeignKey(
+        "workflow.OpinionFollowUp",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="pilot_imports",
+        verbose_name="järelkontroll",
+    )
+    #: What the pilot read and did, for the operator: the next-step treatment,
+    #: the entries written, the deadline resolution. Never read by a page.
+    interpretation = models.JSONField(default=dict, blank=True, verbose_name="tõlgendus")
+
+    class Meta:
+        verbose_name = "Exceli pilootimpordi kirje"
+        verbose_name_plural = "Exceli pilootimpordi kirjed"
+        ordering = ["source_sheet", "source_row_number"]
+        constraints = [
+            models.UniqueConstraint(fields=["matter"], name="legacy_import_pilot_one_per_matter"),
+            models.UniqueConstraint(
+                fields=["pilot", "source_reference_label"],
+                name="legacy_import_pilot_reference_once",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(selection_group__in=["A", "B", "C"]),
+                name="legacy_import_pilot_group_vocabulary",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.pilot} {self.source_reference_label}"
+
+
+def placeholder_versions() -> Any:
+    """Every placeholder evidence version the pilot generated, as a queryset.
+
+    The detection the brief asks for: by the provenance row, never by a name.
+    """
+    from app.documents.models import DocumentVersion
+
+    return DocumentVersion.objects.filter(pilot_placeholder__isnull=False)
+
+
 __all__ = [
     "CandidateClass",
     "CandidateState",
     "ConflictState",
     "CurrentRegisterState",
+    "ExcelPilotImport",
     "HistoricalMatchCandidate",
     "ImportBatch",
     "ImportRowLedger",
@@ -541,6 +657,7 @@ __all__ = [
     "OpinionMatchCandidate",
     "OpinionSubmissionImport",
     "OutreachChannel",
+    "PilotGroup",
     "ReconciliationStatus",
     "RegisterCurrency",
     "RegisterEngagementImport",

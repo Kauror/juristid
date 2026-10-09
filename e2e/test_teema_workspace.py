@@ -189,7 +189,7 @@ def test_each_panel_saves_its_own_record_and_nothing_else(page, base_url, tmp_pa
     expect(victory.locator("a.uxtl__file")).to_have_count(2)
     expect(chronology(page).get_by_text("lisas dokumendi")).to_have_count(0)
     # The Matter is still open: a win closes nothing.
-    expect(page.locator(".badge--state")).to_contain_text("Avatud")
+    expect(page.locator(".badge--state")).to_contain_text("Aktiivne")
 
     open_add_panel(page, "marge-joustumine")
     page.locator("#marge-joustumine [name=effective_title]").fill("Pakendiseaduse muudatused")

@@ -28,6 +28,26 @@ RAW_LABEL_TO_STAGE: dict[str, str] = {
     "muu": "other",
 }
 
+#: The department's current spellings, seeded by ``workflow/0015``.
+#:
+#: The workbook's own `Hetkeseisu info` sheet was reworded to the labels the
+#: lawyers reviewed for this application (``workflow/0007``, ``0010``), and the
+#: 2025 and 2026 sheets of the 08.10.26 snapshot write those words — so a
+#: register read with only the spellings above left 53 of its 237 2026 rows
+#: without a stage, and the seven that read «rohkem ei tegele» without a
+#: continuation stayed live work (docs/adr/0148 §2).
+#:
+#: «Rohkem ei tegele» is the stage `monitoring_stopped` here, not the
+#: disposition the old spelling maps to. That is docs/adr/0131 §9 applied to
+#: the register: the stage is current vocabulary going forward, and history
+#: written as «rohkem pole tegevusi plaanis» is still not reread.
+CURRENT_LABEL_TO_STAGE: dict[str, str] = {
+    "jõustumise ootel": "awaiting_entry",
+    "Eesti seisukoht koostamisel": "estonian_eu_position",
+    "ELi õiguse ülevõtmise ootel": "awaiting_transposition",
+    "rohkem ei tegele": "monitoring_stopped",
+}
+
 #: The eleventh. It describes Koda stopping work, which is a closure reason and
 #: not a place the external process has reached.
 RAW_LABEL_TO_DISPOSITION: dict[str, str] = {
@@ -35,8 +55,10 @@ RAW_LABEL_TO_DISPOSITION: dict[str, str] = {
 }
 
 #: Every label the reviewed vocabulary knows.
-CONTROLLED_LABELS: frozenset[str] = frozenset(RAW_LABEL_TO_STAGE) | frozenset(
-    RAW_LABEL_TO_DISPOSITION
+CONTROLLED_LABELS: frozenset[str] = (
+    frozenset(RAW_LABEL_TO_STAGE)
+    | frozenset(CURRENT_LABEL_TO_STAGE)
+    | frozenset(RAW_LABEL_TO_DISPOSITION)
 )
 
 

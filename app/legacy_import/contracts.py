@@ -137,6 +137,20 @@ class ColumnContract:
     meaning: str
     null_semantics: str
     notes: str
+    #: Other exact header texts a reviewer accepted for the same column.
+    #:
+    #: The department shortened two headers without changing what the columns
+    #: hold (`LIIKMETE ARV, KES ANDSID TAGASISIDET` became `ANDSID
+    #: TAGASISIDET`), and a snapshot taken before the rewording still carries
+    #: the long form. Both are the same column; neither is a guess. An alias is
+    #: a recorded decision like an organisation alias, compared exactly after
+    #: the surrounding whitespace the header reader already strips
+    #: (docs/adr/0148 §2).
+    header_aliases: tuple[str, ...] = ()
+
+    def accepts_header(self, found: str) -> bool:
+        """Whether ``found`` is this column's header or a reviewed alias of it."""
+        return found == self.header or found in self.header_aliases
 
     @property
     def index(self) -> int:
@@ -240,6 +254,15 @@ def _load_one(path: Path) -> EraContract:
         if direction not in DIRECTIONS:
             raise ContractError(f"{path.name}: unknown direction {direction!r}.")
 
+        aliases = entry.get("header_aliases", [])
+        if not isinstance(aliases, list) or not all(
+            isinstance(alias, str) and alias.strip() == alias and alias for alias in aliases
+        ):
+            raise ContractError(
+                f"{path.name}: column {letter} header_aliases must be a list of exact, "
+                "non-empty header texts."
+            )
+
         columns.append(
             ColumnContract(
                 letter=letter,
@@ -251,6 +274,7 @@ def _load_one(path: Path) -> EraContract:
                 meaning=str(entry.get("meaning", "")),
                 null_semantics=str(entry.get("null_semantics", "")),
                 notes=str(entry.get("notes", "")),
+                header_aliases=tuple(aliases),
             )
         )
 
