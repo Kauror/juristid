@@ -1,6 +1,7 @@
 # ADR 0147 — A light theme beside the dark default, chosen per browser
 
-- Status: accepted
+- Status: accepted, amended 2026-10-09 (the dark theme's three contrast gaps
+  closed — see the amendment at the end of this document)
 - Date: 2026-10-08
 - Stage: owner's light-theme round
 - Amends: ADR 0009 (the light block is no longer a provisional proof of the
@@ -138,6 +139,9 @@ grid. `.field__input`, `.searchfield__input`, the Teema composer and the rail
 note read it, and so does Minu asjad's own search box, which used
 `--border-default` — the one change below the bar in the dark theme, 7/255 per
 channel on a one-pixel edge, under the visual suite's threshold and invisible.
+**Superseded on 2026-10-09 for the dark value — see the amendment at the end of
+this document.** In dark `--border-input` is 3:1 too (#63707d), and the
+`Uus teema` title and a refused field have edge roles of their own.
 
 Two component rules read primitives directly and are now roles with the same
 dark value: `.uxav` (`--primitive-neutral-600` → `--surface-overlay-hover`, a
@@ -191,6 +195,9 @@ The rule ADR 0009 stated in prose is now enforced
   `--text-atypical` (3.61:1, by design quieter than muted, ADR 0130); and the
   field edge (1.43:1 — a dark field is told from the page by its fill). Closing
   them is a dark-theme change for its own round.
+  **Superseded on 2026-10-09 — see the amendment at the end of this
+  document.** All three are closed: the dark theme meets AA throughout too,
+  every field edge is 3:1 in both themes, and `DARK_GAPS` is empty.
 
 ### 9. Visual regression in both themes
 
@@ -237,3 +244,110 @@ The rule ADR 0009 stated in prose is now enforced
 
 High. Removing the switch and the script returns every page to the dark theme
 it always rendered; the light block can stay as the proof ADR 0009 kept it as.
+
+---
+
+## Amendment, 2026-10-09 — the dark theme's three gaps are closed
+
+- Status: accepted, amending §6's «In the dark theme it
+  *is* `--border-control`», and §8's «The dark theme meets it everywhere but
+  three gaps it carried before this round and keeps unchanged».
+- Scope: the dark palette in `static/css/tokens.css`, the two field-state rules
+  in `static/css/app.css` that now read roles of their own, and the tests that
+  measure both themes. Presentation only — no template, view, model, migration
+  or stored value changes. The light theme renders exactly what it rendered.
+
+### What was decided before
+
+§8 named three dark-theme gaps and left them for a dark-theme round, because
+this ADR's round had to leave the dark theme visually identical:
+
+1. `--text-muted` (#7d8b99) under AA on five surfaces: `--surface-elevated`
+   4.49:1 (nine popover labels on the rendered pages — the active pill's count,
+   the search suggestions' meta line, the saved-view note, a field label, the
+   opinion menu's section label and its `dt` labels, «Võta tagasi» and
+   «Loobu»), `--surface-overlay-hover` 4.11, `--surface-selected` and
+   `--accent-soft` 4.29, `--status-success-soft` 4.43.
+2. `--text-atypical` (#646f7a) at 3.61:1 on the page — the owner's deliberate
+   trade in ADR 0130's amendment of 2026-10-02.
+3. The field edge, `--border-input` = `--border-control` (#2a323b), at 1.43:1 on
+   the page (WCAG 1.4.11).
+
+### Why it is superseded
+
+The owner asked for the dark theme to meet the bar the light theme meets, with
+the smallest visible change, and approved the values below on 2026-10-09 after
+comparing rendered before/after crops of every surface they touch: the
+popovers, an ordinary page of muted text, the dimmed `Hetkeseis` chips, the bar,
+and `Uus teema` at rest and refused.
+
+### What is decided now
+
+1. **`--text-muted` is lifted, not moved.** #7d8b99 → #8693a1, a new ramp step
+   `--primitive-neutral-250` between 300 and 200. It is AA on every surface text
+   is drawn on: 4.57:1 on `--surface-overlay-hover` at worst, 4.99 on a
+   popover, 5.90 on the page, with `--text-secondary` still a clear step above
+   it (7.54). ENG-101's pattern — moving the seven rules behind the nine labels
+   to `--text-secondary` — was the alternative and was not chosen: it closes the
+   labels at rest and nothing else, leaves the five token pairs under AA for the
+   next rule that lands on them (the search suggestions' meta line already did,
+   at 4.11 under the pointer), and makes a popover's labels as loud as its
+   secondary text. The lift is at most 9/255 per channel, under the visual
+   suite's per-pixel threshold, so on its own it moves no baseline.
+   `--primitive-neutral-300` stays in the ramp: it is the value ENG-101
+   measured, and `tests/test_text_contrast.py` still reads it as that record.
+2. **`--text-atypical` is AA on the page and still quieter than muted.**
+   #646f7a → #74808d: 4.59:1 on `--surface-base`, the one surface `Uus teema`
+   draws the chip on, against muted's 5.90 there. Hover and keyboard focus still
+   restore full strength, and the subtle border is unchanged. The palette test
+   holds the dark chip to AA on the page rather than on every chip surface,
+   because a chip both quieter than muted and AA on a popover would be as bright
+   on the page as muted was (5.3:1) — the step ADR 0130's amendment found too
+   close to an ordinary chip — and holds it at least a fifth quieter than muted
+   in both themes. The rendered audit measures it where it is drawn, in both
+   themes: «Uus teema» with `Seadus` ticked is its sixteenth page.
+3. **A dark field is found by its edge.** `--border-input` #2a323b → #63707d
+   (`--primitive-neutral-350`): 3.65:1 on the page and at least 3.09:1 on every
+   surface a field sits on, popovers and the facts rail included — a dark
+   field's fill is the page's own, so the fill does not tell it apart.
+   `--border-control` keeps its value, so badges, tags, menus and every other
+   control rule stay as quiet as they were; that is what §6's separate role was
+   for.
+4. **Two field states have edge roles of their own**, because with a 3:1
+   resting edge they would have been the faintest fields on the page:
+   `--border-input-prominent`, the `Uus teema` title (was `--accent-border`
+   #17506a, 2.11:1), is #0c76a0 (`--primitive-brand-600`); and
+   `--border-input-refused`, a refused `createform` field (was
+   `--status-danger-border` #6b2f28, 1.82:1), is #aa544a
+   (`--primitive-danger-600`). Each is ≥3:1 on every control surface. In light
+   they are `var(--accent-border)` and `var(--status-danger-border)` — exactly
+   what light drew — as §7's step 4 asks of a new role.
+5. **The tests say so.** `DARK_GAPS` is empty in both
+   `tests/test_text_contrast.py` and `e2e/test_theme_contrast.py`, and stays as
+   the place a future gap would be named exactly. The field-edge test covers
+   all three field roles in both themes, plus the rail note on
+   `--surface-rail`; the quieter-chip test covers both themes and replaces
+   `DARK_ATYPICAL`; `tests/test_theme_contract.py` holds the two field-state
+   rules to their roles.
+6. **Visual baselines.** Dark scenarios change at text-field edges — the bar's
+   search field is in every one — and at `Uus teema`'s title and refused
+   fields. They are adopted from CI's own candidates only, never regenerated,
+   and only with the owner's approval. No light baseline changes.
+
+### What this amendment does not change
+
+- The light theme: every light value and every `hele-*` baseline.
+- Dark `--accent-border` and `--status-danger-border`: chips, tabs, badges,
+  danger buttons and a selected option's edge keep their quiet values. A
+  selected chip is told by its brand fill, its weight and its ink; its edge is
+  not a field edge and stays under 3:1 in dark, as before (light holds it to
+  3:1, as before).
+- ENG-101's three rules keep `--text-secondary`, and §7's steps for a new
+  component stand, step 3 included: muted now meets AA on raised and tinted
+  surfaces too, but `--text-secondary` remains the role for text placed there.
+- ADR 0130's two visual states, the restoration on hover and focus, the subtle
+  border, the «i» marker following the words, and `:checked` ending the
+  dimming.
+- Dark as the default, the switch, the stored preference, sign-out clearing it,
+  and the server rendering every page dark.
+- No migration, no template, no view, no stored value.

@@ -132,19 +132,32 @@ def test_no_component_carries_a_light_only_override(name):
 
 
 def test_a_text_field_has_its_own_edge_role():
-    """`--border-input`: the dark theme's control edge, and 3:1 in light.
+    """`--border-input`, and its two states, are field roles in both themes.
 
-    The same value as `--border-control` in the dark theme, which is how the
-    dark theme draws exactly what it drew before; the light theme cannot share
-    one, because there a field is found by its edge alone (WCAG 1.4.11).
+    A field is found by its edge, 3:1 in each theme (WCAG 1.4.11,
+    tests/test_text_contrast.py), while badges, tags and menus keep the
+    quieter `--border-control` — which is why the field edge is its own role.
+    The dark theme set it to `--border-control` until docs/adr/0147's
+    amendment of 2026-10-09.
     """
-    assert "--border-input: var(--border-control);" in _block(':root,\n:root[data-theme="dark"]')
+    for block in (':root,\n:root[data-theme="dark"]', ':root[data-theme="light"]'):
+        assert "--border-input: var(--border-control);" not in _block(block), block
     fields = (".field__input", ".searchfield__input", ".teema .composer__body", ".railnote__area")
     text = COMMENT.sub("", (CSS / "app.css").read_text(encoding="utf-8"))
     for selector in fields:
         body = re.search(r"\n" + re.escape(selector) + r" \{([^}]*)\}", text)
         assert body, selector
         assert "var(--border-input)" in body.group(1), selector
+    # The prominent title field and a refused field: brand and danger, drawn at
+    # least as strongly as a resting field rather than as a chip's or badge's.
+    states = {
+        ".createform .field__input--prominent": "var(--border-input-prominent)",
+        ".createform .field:has(.field__error) .field__input": "var(--border-input-refused)",
+    }
+    for selector, role in states.items():
+        body = re.search(r"\n" + re.escape(selector) + r"\s*\{([^}]*)\}", text)
+        assert body, selector
+        assert role in body.group(1), selector
 
 
 # ---------------------------------------------------------------------------

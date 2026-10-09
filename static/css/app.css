@@ -4725,10 +4725,12 @@ a.barchart__row:hover {
 }
 
 /* The title is the one field that reads as a capture surface: warmer ground,
-   brand border, a soft halo. It is where the cursor already is. */
+   brand border, a soft halo. It is where the cursor already is. Its edge is
+   its own role, because the brand edge chips and tabs use is fainter than a
+   resting field's (docs/adr/0147, amendment of 2026-10-09). */
 .createform .field__input--prominent {
   background: var(--surface-capture);
-  border-color: var(--accent-border);
+  border-color: var(--border-input-prominent);
 }
 
 .createform .field__input--prominent:focus {
@@ -5123,9 +5125,10 @@ a.barchart__row:hover {
 
    Quieter, not unavailable: muted words and a fainter outline, and nothing
    that reads as "disabled" — no strike, no `not-allowed` cursor, no opacity on
-   the whole chip. `--text-atypical` is `--text-muted` taken 20% further down,
-   because the first version read too close to an ordinary chip at a glance
-   (docs/adr/0130, amendment of 2026-10-02). Hover and keyboard focus
+   the whole chip. `--text-atypical` is quieter than `--text-muted`, because
+   the first version read too close to an ordinary chip at a glance
+   (docs/adr/0130, amendment of 2026-10-02), and still AA on the page
+   (docs/adr/0147, amendment of 2026-10-09). Hover and keyboard focus
    bring it back to full strength, and a *chosen* chip is never dimmed: the
    selector stops at `:checked`, so the ordinary selected look always wins. Set
    by `bindStageGuidance` (static/js/app.js). */
@@ -5694,9 +5697,11 @@ fieldset,
 
 /* The field that was refused, marked on the box as well as under it. Colour is
    never the only signal: the message below the field says what is wrong in
-   words (Uus teema redesign §7). */
+   words (Uus teema redesign §7). The edge is a field role rather than the
+   danger badge's border, which is fainter than a resting field's
+   (docs/adr/0147, amendment of 2026-10-09). */
 .createform .field:has(.field__error) .field__input{
-  border-color: var(--status-danger-border);
+  border-color: var(--border-input-refused);
   box-shadow: 0 0 0 3px var(--status-danger-halo);
 }
 
