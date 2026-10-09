@@ -168,7 +168,8 @@ def test_b_seadus_dims_the_eu_stages_and_a_dimmed_stage_still_saves(page, base_u
     dim_colour = _name_colour(page, "ELi menetluses")
     assert normal_colour != dim_colour
     # The dimmed words are `--text-atypical`, the token the 2026-10-02
-    # amendment introduced — `--text-muted` taken 20% further down.
+    # amendment introduced — quieter than `--text-muted`, and AA on the page
+    # since docs/adr/0147's amendment of 2026-10-09.
     assert dim_colour == page.evaluate(
         """() => { const probe = document.createElement('span');
                    probe.style.color = 'var(--text-atypical)';

@@ -14,10 +14,17 @@ basis = "deployment"
 # serverisse midagi ei salvestata, otsinguindeksit ei ehitata uuesti. Kui see
 # väljalase ei jõua tootmisse 09.10 (Tallinna aja järgi), liiguvad need read
 # väljalaske päeva kirjesse.
+# Tumeda teema kontrastivahed suletud, ADR 0147 muudatus 09.10. Ainult
+# kuvamine: migratsioone ei ole. Kolm viimast rida; kui see väljalase jõuab
+# tootmisse teisel päeval kui hele teema, liiguvad need read selle päeva
+# kirjesse.
 changes = [
   "Juristidil on nüüd ka hele teema. Ülemise riba paremas servas on lüliti: päike lülitab heledale teemale, kuu tagasi tumedale. Tume teema jääb vaikimisi teemaks.",
   "Brauser jätab valitud teema meelde ka järgmisteks külastusteks. Valik kehtib selles brauseris, mitte kasutajakontol, ja kustub koos muu brauseris hoitavaga, kui vajutad «Välju».",
   "Heledas teemas on kõik tekstid, nupud, sisestusväljad ja olekud ligipääsetava kontrastiga; üleslaaditud dokumente ja nende eelvaateid teema ei muuda.",
+  "Ka tumedas teemas on nüüd kõik tekstid ligipääsetava kontrastiga: hallid abitekstid, näiteks otsingusoovituste ja menüüde selgitavad read, on veidi heledamad.",
+  "Tumedas teemas on sisestusväljade servad selgemini näha. Uue teema pealkirjavälja sinine serv ja parandamist vajava välja punane serv on vähemalt sama selged kui tavalise välja serv.",
+  "Õigusaktiga tavaliselt mittesobivad hetkeseisud on uut teemat luues endiselt teistest tuhmimad, kuid tumedas teemas paremini loetavad.",
 ]
 
 [[day]]
