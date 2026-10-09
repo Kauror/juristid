@@ -421,8 +421,16 @@ record, not professional chronology (master specification 16.5).
         </p>
         {% else %}
         <p class="uxtl__meta" id="kaik-{{ item.row_key }}-rida">
+          {% comment %}
+            A note with no author — one the 2026 Excel pilot carried over from the
+            register, where nobody is named and nobody is invented — says what it
+            is instead, or its closed line would read as a bare date
+            (docs/adr/0148 §6).
+          {% endcomment %}
           {% if item.actor %}
             <span class="uxtl__author">{{ item.actor.display_name }}</span>
+          {% elif item.is_entry %}
+            <span class="uxtl__author">{{ item.entry.get_kind_display }}</span>
           {% endif %}
           {% comment %}
             The verb phrase, and no default badge. «Märkus» was written out

@@ -338,7 +338,7 @@ def test_a_closed_teema_offers_no_correction(page, base_url):
     # (docs/adr/0131 §11).
     close_through_stage(page)
 
-    expect(page.locator(".badge--state")).to_contain_text("Suletud")
+    expect(page.locator(".badge--state")).to_contain_text("Lõpetatud")
     expect(page.locator("#lisa-teemale")).to_have_count(0)
 
     # The row is still readable, and carries no way to rewrite it.

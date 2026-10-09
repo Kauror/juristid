@@ -91,13 +91,19 @@ def test_the_comparison_survives_casing_and_padding() -> None:
     assert is_terminal_status("ROHKEM POLE TEGEVUSI PLAANIS")
 
 
-def test_the_terminal_set_is_exactly_two_labels() -> None:
+def test_the_terminal_set_is_exactly_three_labels() -> None:
     """A guard on the vocabulary itself, not on any one call.
 
     Widening this set retires work in bulk and silently, so the size is asserted
-    where a reviewer of the diff will see it.
+    where a reviewer of the diff will see it. The third is the department's
+    current spelling of the second, which failed open as live work until it was
+    here (docs/adr/0148 §2).
     """
-    assert TERMINAL_STATUS_LABELS == {"jõustunud", "rohkem pole tegevusi plaanis"}
+    assert TERMINAL_STATUS_LABELS == {
+        "jõustunud",
+        "rohkem pole tegevusi plaanis",
+        "rohkem ei tegele",
+    }
 
 
 # =========================================================================

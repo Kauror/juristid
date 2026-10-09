@@ -25,6 +25,12 @@ changes = [
   "Ka tumedas teemas on nüüd kõik tekstid ligipääsetava kontrastiga: hallid abitekstid, näiteks otsingusoovituste ja menüüde selgitavad read, on veidi heledamad.",
   "Tumedas teemas on sisestusväljade servad selgemini näha. Uue teema pealkirjavälja sinine serv ja parandamist vajava välja punane serv on vähemalt sama selged kui tavalise välja serv.",
   "Õigusaktiga tavaliselt mittesobivad hetkeseisud on uut teemat luues endiselt teistest tuhmimad, kuid tumedas teemas paremini loetavad.",
+  # Exceli 2026 proovikasutus, ADR 0148. Migratsioonid workflow/0015 ja
+  # legacy_import/0016 (lisavad), otsinguindeksit ei ehitata uuesti. Kui see
+  # väljalase ei jõua tootmisse 09.10 (Tallinna aja järgi), liiguvad need read
+  # väljalaske päeva kirjesse.
+  "Teema pealkirja kõrval on nüüd töö olek: «Aktiivne» — Koda tegeleb teemaga; «Mitteaktiivne» — aktiivne töö on läbi, näiteks õigusakt jõustus; «Lõpetatud» — Koda otsustas töö lõpetada, näiteks rohkem ei tegele või jättis arvamuse saatmata; «Jätkub mujal» — töö jätkub teise teema all, mille leiad «Seotud» alt.",
+  "Ilma autorita märkus näitab «Tegevused» loendis nüüd oma liiki («Märkus»), mitte ainult kuupäeva.",
 ]
 
 [[day]]

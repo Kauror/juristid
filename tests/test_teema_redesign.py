@@ -100,11 +100,16 @@ def test_the_removed_furniture_is_gone_for_good(signed_in, specialist):
 
 
 def test_state_is_legible_without_colour(signed_in, specialist):
+    """The work-status word beside the title, never colour alone (docs/adr/0148 §5)."""
     matter = factories.MatterFactory(owner=specialist)
-    assert "Avatud" in _detail(signed_in, matter)
+    assert "Aktiivne" in _detail(signed_in, matter)
 
     close_matter(matter=matter, disposition=Disposition.COMPLETED, actor=specialist)
-    assert "Suletud" in _detail(signed_in, matter)
+    assert "Mitteaktiivne" in _detail(signed_in, matter)
+
+    stopped = factories.MatterFactory(owner=specialist)
+    close_matter(matter=stopped, disposition=Disposition.MONITORING_STOPPED, actor=specialist)
+    assert "Lõpetatud" in _detail(signed_in, stopped)
 
 
 def test_a_restricted_matter_is_chipped_and_says_nothing_more(signed_in, specialist):

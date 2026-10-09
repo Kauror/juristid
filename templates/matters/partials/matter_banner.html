@@ -59,7 +59,13 @@ paragraph. The banner's own action slot keeps it inside and at the right.
     {% endif %}
   </div>
 {% endif %}
-{% if matter.record_mode == "ARCHIVE" %}
+{% comment %}
+  Only for the historical register archive, whose modern fields may genuinely be
+  missing — not for a record the 2026 pilot built from a reviewed manifest,
+  which is ARCHIVE only because its undated closure can be held no other way
+  (`Matter.shows_register_archive_notice`, docs/adr/0148 §5).
+{% endcomment %}
+{% if matter.shows_register_archive_notice %}
   <div class="banner banner--archive">
     <p class="banner__text">
       <strong>Arhiivikirje.</strong>

@@ -899,6 +899,36 @@ def _actionable(source: str, mentions: list[DateMention]) -> tuple[list[DateMent
     )
 
 
+def instruction_kinds(text: str) -> tuple[str, ...]:
+    """Which kinds of work the wording names, with every date left aside.
+
+    The same forms :func:`parse_instruction` reads, asked a narrower question:
+    not «can this become a dated action», which a doubtful date refuses, but
+    «what does the sentence say Koda is doing». The 2026 pilot needs the second
+    answer for a sentence whose date it may not use — the instruction is still
+    worth keeping as an undated step, and its kind is still in its words
+    (docs/adr/0148 §6).
+
+    A wait and a review of it is one instruction, exactly as the parser reads
+    it, so it answers WAIT alone. Otherwise every kind named, in the fixed order
+    DO, WAIT, MONITOR; an empty tuple means the wording names none.
+    """
+    source = (text or "").strip()
+    if not source:
+        return ()
+    wait = bool(_matched(_WAIT, source))
+    monitor = bool(_matched(_MONITOR, source) or _review_forms(source))
+    do = bool(_matched(_DO, source))
+    if wait and monitor and not do:
+        return (ActionKind.WAIT.value,)
+    named = (
+        (ActionKind.DO.value, do),
+        (ActionKind.WAIT.value, wait),
+        (ActionKind.MONITOR.value, monitor),
+    )
+    return tuple(kind for kind, present in named if present)
+
+
 def parse_instruction(text: str, *, context: ParseContext = NO_CONTEXT) -> ParsedInstruction:
     """Read one ``JÄRGMISEKS`` sentence.
 

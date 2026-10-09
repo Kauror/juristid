@@ -157,11 +157,15 @@ def test_stage_vocabulary_reverses_and_reapplies_over_matters_in_a_stage(special
     from app.workflow.models import StageVocabulary
 
     vocabulary = _migration("app.workflow.migrations.0004_seed_stage_vocabulary")
+    # Reversed in the order the graph would reverse them: `workflow.0015`'s
+    # current spellings point at these stages and go first (docs/adr/0148 §2).
+    current = _migration("app.workflow.migrations.0015_current_register_status_labels")
     seeded = [key for key, *_ in vocabulary.STAGES]
     stage = StageVocabulary.objects.get(key=seeded[0])
     matter = create_matter(title="Menetluses teema", actor=specialist)
     type(matter).objects.filter(pk=matter.pk).update(stage=stage)
 
+    current.unseed(global_apps, None)
     vocabulary.unseed(global_apps, None)
 
     # The stage in use survives with the Matter still in it; the unused ones go.
@@ -170,10 +174,16 @@ def test_stage_vocabulary_reverses_and_reapplies_over_matters_in_a_stage(special
     assert StageVocabulary.objects.filter(key__in=seeded).count() == 1
 
     vocabulary.seed(global_apps, None)
+    current.seed(global_apps, None)
 
     assert StageVocabulary.objects.filter(key__in=seeded).count() == len(seeded)
     matter.refresh_from_db()
     assert matter.stage_id == stage.pk
+    from app.workflow.models import resolve_legacy_status
+
+    for label, key in current.CURRENT_LABEL_TO_STAGE.items():
+        mapping = resolve_legacy_status(label)
+        assert mapping is not None and mapping.stage is not None and mapping.stage.key == key
 
 
 @pytest.mark.django_db

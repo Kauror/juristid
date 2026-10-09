@@ -6,11 +6,12 @@ interpreted.
 
 ``HETKESEIS`` says where the external process stands
 --------------------------------------------------
-It decides whether work is still running. Two labels end it for
+It decides whether work is still running. Three labels end it for
 current-portfolio purposes and nothing else does:
 
     jõustunud
     rohkem pole tegevusi plaanis
+    rohkem ei tegele        (the department's current spelling of the second)
 
 Everything else in the controlled vocabulary — including ``muu``, which is a
 real status and not a gap — leaves the Matter current.
@@ -68,6 +69,12 @@ TERMINAL_STATUS_LABELS: frozenset[str] = frozenset(
     {
         "jõustunud",
         "rohkem pole tegevusi plaanis",
+        # The department's current spelling of the same decision (the
+        # workbook's `Hetkeseisu info` sheet since its rewording). Unknown, it
+        # failed open: seven 2026 rows that read «rohkem ei tegele» with no
+        # continuation note stayed live work in the 08.10.26 rehearsal
+        # (docs/adr/0148 §2).
+        "rohkem ei tegele",
     }
 )
 

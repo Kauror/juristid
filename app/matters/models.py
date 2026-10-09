@@ -571,6 +571,29 @@ class Matter(BaseModel):
         return self.visibility == Visibility.RESTRICTED
 
     @property
+    def work_status(self) -> Any:
+        """The badge beside the title — derived, never stored (app/matters/work_status.py)."""
+        from app.matters.work_status import work_status_of
+
+        return work_status_of(self)
+
+    @property
+    def shows_register_archive_notice(self) -> bool:
+        """Whether «Arhiivikirje. Imporditud registrist…» describes this record.
+
+        The notice exists for the historical register archive, whose modern
+        fields genuinely may be missing. A record the 2026 Excel pilot built
+        from a reviewed manifest carries every field its row could supply, and
+        is ARCHIVE only because a closure the register never dated can be held
+        no other way (``matters_closure_fields_consistent``) — so the notice
+        would be a source label on routine work, not a warning about it
+        (docs/adr/0148 §5).
+        """
+        if self.record_mode != RecordMode.ARCHIVE:
+            return False
+        return not self.pilot_imports.exists()
+
+    @property
     def sender_names(self) -> str:
         """Every sender, comma-joined, in a stable order.
 

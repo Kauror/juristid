@@ -317,7 +317,9 @@ def test_the_workbook_vocabulary_is_compared_but_never_adopted(corpus: Path) -> 
     summary = build_summary(inspect_workbook(corpus))
     vocabulary = summary["vocabulary"]
     assert vocabulary["workbook_label_count"] == 11
-    assert vocabulary["known_label_count"] == 11
+    # The eleven the synthetic sheet lists, and the department's four current
+    # spellings (docs/adr/0148 §2).
+    assert vocabulary["known_label_count"] == 15
     assert vocabulary["labels_missing_from_seed"] == []
     # The 2024 free-text value is used but is not in the controlled list, and
     # it stays that way.

@@ -183,7 +183,7 @@ def test_a_closed_teema_takes_the_correction_and_no_new_work(page, base_url):
     close_through_stage(page)
 
     # The page reads as closed, and offers nothing that would add to it.
-    expect(page.locator(".badge--state")).to_contain_text("Suletud")
+    expect(page.locator(".badge--state")).to_contain_text("Lõpetatud")
     expect(page.locator("#lisa-teemale")).to_have_count(0)
 
     # And the history is still correctable.
@@ -196,7 +196,7 @@ def test_a_closed_teema_takes_the_correction_and_no_new_work(page, base_url):
 
     expect(_entry_row(page)).to_contain_text(CORRECTED)
     # Still closed, still no way to add anything new.
-    expect(page.locator(".badge--state")).to_contain_text("Suletud")
+    expect(page.locator(".badge--state")).to_contain_text("Lõpetatud")
     expect(page.locator("#lisa-teemale")).to_have_count(0)
     assert re.search(r"/teemad/[0-9a-f-]{36}/$", page.url)
 
