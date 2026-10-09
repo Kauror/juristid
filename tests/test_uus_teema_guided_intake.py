@@ -352,7 +352,9 @@ def test_the_page_carries_the_matrix_once(signed_in):
     )
 
     assert found is not None
-    assert json.loads(found.group(1)) == stage_guidance_payload()
+    # With the prefill, which is `Uus teema`'s only (docs/adr/0130, amendment
+    # of 2026-10-09, «a stage chosen from the instrument»).
+    assert json.loads(found.group(1)) == stage_guidance_payload(prefill=True)
     assert body.count('id="hetkeseis-juhis"') == 1
 
 

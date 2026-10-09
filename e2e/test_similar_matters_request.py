@@ -114,7 +114,9 @@ def test_a_chip_asks_and_sends_what_it_chose(page, base_url, name):
     _create_form(page, base_url)
     seen = _requests(page)
 
-    chip = page.locator(f"label.chip:has(input[name='{name}'])").first
+    # The first chip with a real value: `Õigusakt` leads with «Määramata»,
+    # which arrives chosen and so asks nothing when clicked (docs/adr/0070).
+    chip = page.locator(f"label.chip:has(input[name='{name}']:not([value='']))").first
     value = chip.locator("input").get_attribute("value")
     chip.click()
     _settle(page)

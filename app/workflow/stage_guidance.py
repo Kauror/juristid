@@ -101,6 +101,31 @@ TYPICAL_STAGES_BY_INSTRUMENT: Mapping[str, frozenset[str]] = {
 ATYPICAL_STAGE_NOTE = "Valitud õigusakti puhul tavaliselt ei kasutata, kuid valida võib."
 
 
+#: What `Uus teema` says beside `Hetkeseis` after choosing it from the
+#: instrument — that it was chosen, why, and that it is the lawyer's to change
+#: (docs/adr/0130, amendment of 2026-10-09, «a stage chosen from the instrument»).
+STAGE_PREFILL_NOTE = "Hetkeseis valiti õigusakti järgi — muuda, kui teema on mujal."
+
+
+def prefill_stage_by_instrument() -> dict[str, str]:
+    """The instruments whose matrix row names exactly one meaningful stage, and that stage.
+
+    The conservative rule, read off the approved matrix rather than written
+    beside it: an instrument whose normal stages, apart from the two that are
+    normal everywhere (`Muu`, `Rohkem ei tegele`), are exactly one stage
+    *determines* that stage — a `VTK` is an idea, and so is the Chamber's own
+    proposal. Every other instrument (`Seadus`, `Määrus`, `ELi määrus`, `ELi
+    direktiiv`, …) leaves several stages normal, and the instrument alone does
+    not say which, so nothing is chosen for it.
+    """
+    prefill: dict[str, str] = {}
+    for key, stages in TYPICAL_STAGES_BY_INSTRUMENT.items():
+        meaningful = stages - ALWAYS_TYPICAL_STAGE_KEYS
+        if len(meaningful) == 1:
+            prefill[key] = next(iter(meaningful))
+    return dict(sorted(prefill.items()))
+
+
 def typical_stage_keys(instrument_keys: Iterable[str]) -> frozenset[str] | None:
     """The stage keys that stay normal for these instruments, or ``None`` for "all of them".
 
@@ -135,17 +160,25 @@ def is_stage_dimmed(stage_key: str | None, instrument_keys: Iterable[str]) -> bo
     return typical is not None and stage_key not in typical
 
 
-def stage_guidance_payload() -> dict[str, Any]:
+def stage_guidance_payload(*, prefill: bool = False) -> dict[str, Any]:
     """The matrix as the page's script reads it, serialised with `json_script`.
 
     Plain lists, sorted, so the rendered page is deterministic. The script
     applies the same union rule as :func:`typical_stage_keys`, and the browser
     suite holds the two to each other.
+
+    ``prefill`` is `Uus teema`'s only: the instruments that choose a stage on
+    an empty, untouched `Hetkeseis`, and the note that says so. `Muuda teemat`
+    never chooses a stage for a Teema that already exists.
     """
-    return {
+    payload: dict[str, Any] = {
         "always": sorted(ALWAYS_TYPICAL_STAGE_KEYS),
         "atypical_note": ATYPICAL_STAGE_NOTE,
         "instruments": {
             key: sorted(stages) for key, stages in sorted(TYPICAL_STAGES_BY_INSTRUMENT.items())
         },
     }
+    if prefill:
+        payload["prefill"] = prefill_stage_by_instrument()
+        payload["prefill_note"] = STAGE_PREFILL_NOTE
+    return payload
