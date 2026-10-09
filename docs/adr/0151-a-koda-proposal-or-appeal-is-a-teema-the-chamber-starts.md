@@ -102,7 +102,19 @@ The choice, and its consequences:
 
 **Nothing for B or C is built**, and no check is created for an initiative
 except through the existing send path. A's optional wording is prepared as a
-separate commit and is not merged until the owner chooses.
+separate commit and is not merged until the owner chooses:
+
+- `SubmissionKind.KODA_PROPOSAL` «Koja ettepanek või pöördumine»
+  (`submissions/0010`, a choices change with no SQL and no row touched);
+- `+ Koja arvamus` on an initiative records that kind; every other Teema still
+  records «Ametlik arvamus»;
+- the check reads «Kontrolli, kas adressaat on Koja ettepanekule vastanud» (and
+  the plural) for that kind; every existing check keeps its words;
+- creating an initiative schedules nothing.
+
+Consequence to weigh with it: Osakond's «arvamust välja sel nädalal» counts
+every SENT `Submission` (ADR 0149), so a sent proposal is counted there too —
+as it already is today when a lawyer registers one through `+ Koja arvamus`.
 
 ## Alternatives considered
 
