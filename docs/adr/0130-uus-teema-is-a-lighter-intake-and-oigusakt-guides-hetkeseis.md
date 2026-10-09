@@ -150,6 +150,9 @@ Once an `Õigusakt` is ticked, the `Hetkeseis` chips that do not normally fit
   **Superseded on 2026-10-02 for the strength of the dimming — see the
   amendment at the end of this document.** The words are now
   `--text-atypical`, 20% darker than `--text-muted`.
+  **Superseded again on 2026-10-09 for the dark value — see ADR 0147's
+  amendment of 2026-10-09.** The dark words are AA on the page (4.59:1) and
+  still quieter than `--text-muted` (5.90:1).
 * **Chosen wins.** A chosen chip looks like any chosen chip, whether or not it
   is atypical: the stylesheet stops dimming at `:checked`
   (`.chip--atypical .chip__input:not(:checked) + .chip__name`).
@@ -311,6 +314,10 @@ had to be looked for.
    trade for an at-a-glance difference on an option that is still offered, and
    it is recorded here so that it is revisited as a decision rather than found
    as a defect.
+   **Superseded on 2026-10-09 for the dark value — see ADR 0147's amendment of
+   2026-10-09.** Revisited as that decision: the owner approved dark
+   `--text-atypical` #74808d, 4.59:1 on the page (AA), still quieter than
+   `--text-muted` (now #8693a1, 5.90:1); everything else in this item stands.
 
 ### What this amendment does not change
 

@@ -6,12 +6,13 @@ paints — a role on the surface a component really puts it on, with every
 translucent background composited and every fade applied — across the pages a
 lawyer works in and the menus they open (docs/adr/0147 §8).
 
-The light theme meets WCAG AA (4.5:1, 3:1 for large text) for every piece of
-text here. The dark theme meets it everywhere but one pair it has carried since
-before the light theme: `--text-muted` on `--surface-elevated`, 4.49:1, on a
-handful of popover labels. That pair is named in `DARK_GAPS` and nothing else
-may fail — so a new rule that puts quiet text on a surface too close to it fails
-here in either theme, on the run that introduces it.
+Both themes meet WCAG AA (4.5:1, 3:1 for large text) for every piece of text
+here, the dimmed `Hetkeseis` chips included. The dark theme carried one pair
+until 2026-10-09 — `--text-muted` on `--surface-elevated`, 4.49:1, on nine
+popover labels — and the owner closed it by lifting the role (docs/adr/0147,
+amendment). Nothing may fail now, so a new rule that puts quiet text on a
+surface too close to it fails here in either theme, on the run that introduces
+it.
 
 Nothing here writes: every page is only read.
 """
@@ -130,10 +131,11 @@ AUDIT = r"""
 }
 """
 
-#: The dark theme's one known text gap: `--text-muted` (#7d8b99) on
-#: `--surface-elevated` (#1e242b), 4.49:1 (tests/test_text_contrast.py,
-#: `DARK_GAPS`). As painted colours, because that is what the page reports.
-DARK_GAPS = {("#7d8b99", "#1e242b")}
+#: The dark theme's known text gaps, as painted colours, because that is what
+#: the page reports. `--text-muted` (#7d8b99) on `--surface-elevated` (#1e242b),
+#: 4.49:1, was here until docs/adr/0147's amendment of 2026-10-09; empty since,
+#: like `DARK_GAPS` in tests/test_text_contrast.py.
+DARK_GAPS: set[tuple[str, str]] = set()
 
 
 def _open_matter(page, base_url: str, title: str, tab: str = "") -> None:
@@ -185,6 +187,13 @@ SURFACES = {
     ),
     "teema-suletud": lambda page, base_url: _open_matter(
         page, base_url, "Lõpetatud sünteetiline teema"
+    ),
+    # A ticked `Õigusakt` dims the `Hetkeseis` chips it does not normally take
+    # (docs/adr/0130 §4): the quietest text the application draws.
+    "uus-teema-hetkeseis": _then(
+        _go("/teemad/uus/"),
+        lambda p: p.get_by_role("checkbox", name="Seadus", exact=True).check(),
+        lambda p: p.wait_for_selector(".chip--atypical"),
     ),
     "uus-teema-viga": _then(
         _go("/teemad/uus/"),
