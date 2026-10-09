@@ -1,7 +1,7 @@
 # 0148 — The 2026 Excel pilot imports a reviewed sample as native work
 
 **Status:** accepted, amended 2026-10-09 (§10 — an opinion still being written
-starts with «Koostan arvamust»; the 35-Matter sample)
+starts with «Koostan arvamuse»; the 35-Matter sample)
 **Date:** 2026-10-09
 
 The owner's operational-pilot round. The hosted test-build is to be used for
@@ -217,7 +217,7 @@ step through `set_next_action`:
 
 | | |
 | --- | --- |
-| text | «Koostan arvamust» (`DRAFTING_TEXT`) |
+| text | «Koostan arvamuse» — `OPINION_PREPARATION_TEXT`, the product's own sentence for this work (0091 §1) |
 | kind / date meaning / precision | `DO` / `DEADLINE` / `EXACT` |
 | date | the row's `ARVAMUSE TÄHTAEG`, exactly — never moved, kept when past |
 | responsible | the Matter's owner (`VASTUTAJA`) |

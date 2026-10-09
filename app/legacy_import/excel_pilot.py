@@ -5,7 +5,7 @@ opinion is still being written, a hand-picked few whose opinion went out and
 whose work goes on, a few that are finished — becomes **native Juristid
 records**: Matters with their owner, `Hetkeseis`, `Õigusakt`, `Saabus` and
 `Arvamuse tähtaeg`; canonical SENT opinions; ordinary next actions, among them
-one «Koostan arvamust» on every opinion still being written; ordinary notes.
+one «Koostan arvamuse» on every opinion still being written; ordinary notes.
 Nothing here
 builds a register view beside the workflow: after the import every new thing
 happens in Juristid, and there is no synchronisation back (docs/adr/0148).
@@ -73,6 +73,7 @@ from app.legacy_import.register_semantics import (
 from app.matters.work_status import ACTIVE, CONCLUDED, CONTINUES, INACTIVE
 from app.taxonomy.legal_instruments import current_legal_instrument_keys
 from app.workflow.enums import ActionKind, DatePrecision, DateSemantics, Disposition
+from app.workflow.services import OPINION_PREPARATION_TEXT
 from app.workflow.vocabulary import CURRENT_LABEL_TO_STAGE, RAW_LABEL_TO_STAGE
 
 PILOT = "excel-pilot-2026"
@@ -99,9 +100,10 @@ STEP_ACTION = "ACTION"
 STEP_UNDATED_ACTION = "UNDATED_ACTION"
 STEP_ENTRY = "ENTRY"
 
-#: The current step of every opinion still being written (docs/adr/0148 §10):
-#: the department's own words for the work, dated by `ARVAMUSE TÄHTAEG`.
-DRAFTING_TEXT = "Koostan arvamust"
+#: The current step of every opinion still being written (docs/adr/0148 §10),
+#: dated by `ARVAMUSE TÄHTAEG`: the product's own sentence for that work
+#: (docs/adr/0091 §1), not a second spelling of it.
+DRAFTING_TEXT = OPINION_PREPARATION_TEXT
 #: Why a live row's `JÄRGMISEKS` is a note: the drafting step is the current one.
 REASON_DRAFTING = "opinion-being-drafted"
 #: …and the cell reads as an instruction of this kind, which the plan names.
@@ -351,7 +353,7 @@ def opinion_being_drafted(row: SourceRow, lifecycle: Lifecycle) -> bool:
 
 
 def drafting_action_of(row: SourceRow, lifecycle: Lifecycle) -> dict[str, Any] | None:
-    """The «Koostan arvamust» step an opinion still being written starts with, or None.
+    """The «Koostan arvamuse» step an opinion still being written starts with, or None.
 
     An ordinary DO whose day is the row's own `ARVAMUSE TÄHTAEG` — a deadline,
     exact, never moved, kept when already past. The step and `Arvamuse tähtaeg`
@@ -387,7 +389,7 @@ def next_step_of(row: SourceRow, lifecycle: Lifecycle, snapshot_date: dt.date) -
     * **A finished Matter** — never a task: the text is history and becomes a
       note (`Märkus`).
     * **An opinion still being written** — the current step is «Koostan
-      arvamust» (`drafting_action_of`), so the cell is a note beside it, word
+      arvamuse» (`drafting_action_of`), so the cell is a note beside it, word
       for word, and never a second task or a second deadline. A cell that does
       read as an instruction says so in its reasons, for the plan to name.
     * **Understood** by the register parser — a dated (or, where the sentence
@@ -1137,7 +1139,7 @@ def _write_row(
     }
 
     # 1 — the current step, before anything is planned beside it. An opinion
-    # still being written starts with «Koostan arvamust», owned by the Matter's
+    # still being written starts with «Koostan arvamuse», owned by the Matter's
     # owner and dated by its own deadline; its `JÄRGMISEKS`, if any, is then a
     # note (`next_step_of`), so the two never compete for the current slot.
     if drafting:

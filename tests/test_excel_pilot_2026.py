@@ -574,14 +574,14 @@ def test_a_finished_matters_instruction_is_a_note_never_a_task():
     assert drafting_action_of(row, lifecycle_of(row)) is None
 
 
-# The opinion still being written: one «Koostan arvamust», dated by its deadline.
+# The opinion still being written: one «Koostan arvamuse», dated by its deadline.
 
 
 def test_an_opinion_being_written_starts_with_the_drafting_step():
     row = _row(next_text="")
     lifecycle = lifecycle_of(row)
     assert drafting_action_of(row, lifecycle) == {
-        "text": "Koostan arvamust",
+        "text": "Koostan arvamuse",
         "kind": ActionKind.DO,
         "date_semantics": DateSemantics.DEADLINE,
         "target_date": "2026-09-01",

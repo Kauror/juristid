@@ -96,7 +96,7 @@ is the same folder as the container sees it (mounted read-only).
    | --- | --- |
    | Matters | 35 — A 20, B 6, C 9; owners 9 / 14 / 12 |
    | work status | 26 Aktiivne, 3 Mitteaktiivne, 4 Lõpetatud, 2 Jätkub mujal |
-   | «Koostan arvamust» | 20 open `DO` steps, each dated by its Matter's open `Arvamuse tähtaeg` |
+   | «Koostan arvamuse» | 20 open `DO` steps, each dated by its Matter's open `Arvamuse tähtaeg` |
    | SENT opinions | 11, each with its own placeholder PDF; 4 «ei saatnud» with none |
    | follow-up checks | 6, `PLANNED`, sending date + 30 (some already past) |
    | notes | 12 (6 beside a drafting step, 6 on finished files) |
