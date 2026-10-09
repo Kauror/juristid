@@ -257,9 +257,9 @@ def test_several_drafts_on_one_matter_are_one_opinion(specialist) -> None:
     work = figures(specialist)
 
     assert (work.due_this_week, work.in_preparation) == (1, 1)
-    assert listed(specialist, work.due_url) == listed(specialist, work.preparation_url) == {
-        matter.pk
-    }
+    assert (
+        listed(specialist, work.due_url) == listed(specialist, work.preparation_url) == {matter.pk}
+    )
 
 
 def test_a_matter_whose_only_opinion_went_out_is_not_in_preparation(
@@ -267,9 +267,7 @@ def test_a_matter_whose_only_opinion_went_out_is_not_in_preparation(
 ) -> None:
     """`+ Koja arvamus` records a send in one act, and answers the deadline."""
     matter = a_matter(specialist, deadline=timezone.localdate())
-    send_koja_arvamus(
-        matter, specialist, [organisation], timezone.localdate(), answers_deadline=""
-    )
+    send_koja_arvamus(matter, specialist, [organisation], timezone.localdate(), answers_deadline="")
 
     assert pair(specialist, timezone.localdate()) == (0, 0)
 
@@ -505,9 +503,9 @@ def test_the_total_is_the_owners_cell_on_osakond(
         cell = drafting_cell(department_head, person)
 
         assert work.in_preparation == cell.value, person
-        assert listed(department_head, work.preparation_url) == listed(
-            department_head, cell.url
-        ), person
+        assert listed(department_head, work.preparation_url) == listed(department_head, cell.url), (
+            person
+        )
         assert work.in_preparation == (
             dashboard.drafting_matters(department_head).filter(owner=person).count()
         )

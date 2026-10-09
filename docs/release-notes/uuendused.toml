@@ -31,6 +31,12 @@ changes = [
   # väljalaske päeva kirjesse.
   "Teema pealkirja kõrval on nüüd töö olek: «Aktiivne» — Koda tegeleb teemaga; «Mitteaktiivne» — aktiivne töö on läbi, näiteks õigusakt jõustus; «Lõpetatud» — Koda otsustas töö lõpetada, näiteks rohkem ei tegele või jättis arvamuse saatmata; «Jätkub mujal» — töö jätkub teise teema all, mille leiad «Seotud» alt.",
   "Ilma autorita märkus näitab «Tegevused» loendis nüüd oma liiki («Märkus»), mitte ainult kuupäeva.",
+  # Minu asjade kaks arvamuse arvu (feature/my-work-opinion-kpis). Ainult
+  # lugemine: migratsioone ei ole, otsinguindeksit ei ehitata uuesti. Kui see
+  # väljalase ei jõua tootmisse 09.10 (Tallinna aja järgi), liiguvad need read
+  # väljalaske päeva kirjesse.
+  "«Minu asjade» ülemises reas on kaks uut arvu: «arvamust koostada sel nädalal» — sinu teemad, mille arvamus on koostamisel ja mille arvamuse tähtaeg on sel kalendrinädalal (esmaspäevast pühapäevani) — ning «arvamust koostamisel kokku» — kõik sinu teemad, mille arvamus on koostamisel, tähtajast olenemata.",
+  "Kumbki arv avab just need teemad «Teemade» loendis. Samad arvud on ka kolleegi töölaual, mida osakonnajuht vaatab, ning «arvamust koostamisel kokku» on sama arv, mis «Osakonna» meeskonna tabelis selle inimese «Arvamus koostamisel» veerus.",
 ]
 
 [[day]]
