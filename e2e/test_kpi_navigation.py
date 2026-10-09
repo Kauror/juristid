@@ -289,11 +289,11 @@ def test_the_unowned_areas_rail_lists_the_areas_and_not_the_files(page, base_url
         assert "vastutaja=puudub" in href, href
 
 
-def test_the_seven_day_opinion_figure_states_a_number_it_cannot_open(page, base_url):
+def test_the_weeks_opinion_figure_states_a_number_it_cannot_open(page, base_url):
     """The one figure on the strip that is deliberately not a link.
 
-    It counts opinions sent in the last seven days, and the Arvamused workspace
-    narrows by year and by month — so the only destination available holds more
+    It counts opinions sent in the current calendar week, and the Arvamused
+    workspace narrows by year and by month — so the only destination available holds more
     letters than the number beside it. An honest number beats a link to a
     different list, which is the same treatment the team table's three
     historical columns get (docs/adr/0049 §4, DS-24).
@@ -307,14 +307,13 @@ def test_the_seven_day_opinion_figure_states_a_number_it_cannot_open(page, base_
     assert figure.locator("a").count() == 0
 
 
-def test_the_strip_carries_the_six_approved_figures(page, base_url):
-    """Six, in the approved order, and the two that left it are elsewhere.
+def test_the_strip_carries_the_seven_approved_figures(page, base_url):
+    """Seven, in the approved order: five risks, then two informational figures.
 
-    «Arvamust koostamisel» and «esitatud arvamust <kuu>» were Ülevaade's, and
-    the merged strip is the six states a head can act on this morning. Neither
-    population was retired — `drafting_count` and the Arvamused workspace's own
-    year/month filters still answer them — but neither is a figure on this page
-    (docs/adr/0049 §4).
+    The merged strip was the six states a head can act on this morning
+    (docs/adr/0049 §4). The owner added «arvamust koostamisel» back at its end,
+    as information rather than a warning, and the sent figure became the
+    current calendar week (docs/adr/0149).
     """
     sign_in(page, base_url, HEAD)
     open_overview(page, base_url, "osakond")
@@ -328,7 +327,8 @@ def test_the_strip_carries_the_six_approved_figures(page, base_url):
         "vastutajata",
         "uut läbi vaatamata",
         "järgmise tegevuseta",
-        "arvamust välja · 7 p",
+        "arvamust välja sel nädalal",
+        "arvamust koostamisel",
     ], captions
 
 

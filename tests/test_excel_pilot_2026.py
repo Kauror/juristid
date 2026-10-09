@@ -1109,3 +1109,21 @@ def _accounts_digest() -> str:
         "upn", "display_name", "role", "is_active", "is_staff", "is_superuser", "password"
     )
     return hashlib.sha256(repr(list(rows)).encode()).hexdigest()
+
+
+def test_the_opinions_being_written_count_as_drafting_with_no_draft_created(
+    world, workbook, selection, pilot_on
+):
+    """docs/adr/0149: the drafting population reads the native facts the pilot wrote.
+
+    The «Koostan arvamuse» step and the open `Arvamuse tähtaeg` are what make an
+    opinion being written read as «koostamisel» — no DRAFT Submission is made to
+    reach the number, and a sent, still-active file is not drafting.
+    """
+    from app.matters.dashboard import drafting_matters
+
+    _apply(workbook, _manifest(workbook, selection))
+    reader = world["mari"]
+    drafting = {m.display_reference for m in drafting_matters(reader)}
+    assert drafting == {"2026_1", "2026_2", "2026_3"}
+    assert not Submission.objects.filter(status=SubmissionStatus.DRAFT).exists()

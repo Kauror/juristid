@@ -20,9 +20,9 @@ Most worlds here put an opinion in preparation the historical way, with a DRAFT
 Submission: that reading is kept (docs/adr/0061), and it is the half of the
 definition every branch agrees on. Since the 2026-09-27 amendment to ADR 0061
 the interface records an opinion sent in one act and starts no DRAFT, so a
-lawyer's opinion work is a «Koostan arvamuse» step against an owed deadline;
-the tests for that path are at the end, marked as the drafting definition's
-pending half until it lands on main.
+lawyer's opinion work is a «Koostan arvamuse» step against an owed deadline
+(docs/adr/0149); the tests for that path — written natively, sent, requested
+again — are at the end.
 
 No fixture uses an imported or confidential row. Dates that only the figures
 read are fixed and passed as ``today``; dates the clock-reading paths see — the
@@ -577,14 +577,10 @@ def test_the_page_draws_a_count_as_a_link_and_drops_a_zero(client, specialist) -
 # ---------------------------------------------------------------------------
 
 #: These read the native half of «koostamisel» — an open «Koostan arvamuse»
-#: step against an `Arvamuse tähtaeg` still owed — which the Osakond work adds
-#: to `register_filters.opinion_state_q` (docs/adr/0149). Strict: the run that
-#: brings it in turns these red until the marker is removed, so it cannot be
-#: forgotten.
-NATIVE_HALF = pytest.mark.xfail(
-    strict=True,
-    reason="the native opinion-preparation half of opinion_state_q is not on main yet",
-)
+#: step against an `Arvamuse tähtaeg` still owed — in
+#: `register_filters.opinion_state_q` (docs/adr/0149). The desk follows it with
+#: no rule of its own: a send that answers the deadline ends the work on the
+#: next read, and a new request starts it again.
 
 
 def prepared(owner: Any, deadline: dt.date, **kwargs: Any) -> Matter:
@@ -596,7 +592,6 @@ def prepared(owner: Any, deadline: dt.date, **kwargs: Any) -> Matter:
     return matter
 
 
-@NATIVE_HALF
 def test_an_opinion_being_written_needs_no_draft(specialist, department_head) -> None:
     today = timezone.localdate()
     matter = prepared(specialist, today)
@@ -606,7 +601,6 @@ def test_an_opinion_being_written_needs_no_draft(specialist, department_head) ->
     assert drafting_cell(department_head, specialist).value == 1
 
 
-@NATIVE_HALF
 def test_sending_the_opinion_takes_it_off_both_figures(specialist, organisation) -> None:
     """Automatically: the send answers the deadline, and nobody closes the step."""
     today = timezone.localdate()
@@ -620,7 +614,6 @@ def test_sending_the_opinion_takes_it_off_both_figures(specialist, organisation)
     assert NextAction.objects.filter(matter=matter, status=ActionStatus.OPEN).exists()
 
 
-@NATIVE_HALF
 def test_a_new_request_after_a_send_is_in_preparation_again(specialist, organisation) -> None:
     from app.matters.response_deadlines import request_response_deadline
 
