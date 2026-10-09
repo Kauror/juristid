@@ -10,17 +10,16 @@ drops one below AA fails here rather than in a screen reader user's afternoon.
 
 Two palettes are reachable since docs/adr/0147: the dark default and the light
 theme a browser can choose. Each is resolved on its own — the light block over
-the dark one, exactly as the cascade does it — and held to what it meets:
+the dark one, exactly as the cascade does it — and held to the same bar: AA for
+every text role on every surface, and 3:1 for the boundaries a person has to
+find, a text field's edge in each of its states among them.
 
-* the light theme meets AA for every text role on every surface, and 3:1 for
-  the boundaries a person has to find;
-* the dark theme meets AA for every role but `--text-muted` on four raised or
-  tinted surfaces and the deliberately quiet `--text-atypical`, and its
-  control edges are under 3:1. Those gaps were there before the light theme
-  and are not changed by it — the dark theme is the approved design and stays
-  as it was — so they are named below, exactly, as `DARK_GAPS`. A change that
-  widens one fails; a change that closes one fails too, and asks for the entry
-  to go.
+The dark theme reached that bar on 2026-10-09 (docs/adr/0147, amendment). Until
+then it carried three gaps the light round recorded rather than redesigned —
+`--text-muted` on five raised or tinted surfaces, the quieter `--text-atypical`
+at 3.61:1, and a field edge at 1.43:1. `DARK_GAPS` is where such a gap is named,
+exactly, if one ever has to be recorded again: a change that widens one fails,
+and so does a change that closes one without removing its entry.
 """
 
 from __future__ import annotations
@@ -111,13 +110,20 @@ def test_the_failing_combinations_now_meet_aa(selector, surface, theme):
 
 
 def test_the_measured_shortfall_was_real():
-    """The numbers the finding was raised on, from the dark tokens as they stand."""
+    """The numbers the finding was raised on, and where the role is now.
+
+    ENG-101 measured `--primitive-neutral-300`, which was `--text-muted` until
+    docs/adr/0147's amendment of 2026-10-09 lifted the role a step.
+    """
     tokens = _dark_tokens()
-    muted = tokens["--text-muted"]
-    assert contrast(muted, tokens["--surface-selected"]) < AA_NORMAL_TEXT
-    assert contrast(muted, tokens["--surface-elevated"]) < AA_NORMAL_TEXT
+    measured = tokens["--primitive-neutral-300"]
+    assert contrast(measured, tokens["--surface-selected"]) < AA_NORMAL_TEXT
+    assert contrast(measured, tokens["--surface-elevated"]) < AA_NORMAL_TEXT
     # And where muted text stays muted, it passes.
-    assert contrast(muted, tokens["--surface-raised"]) >= AA_NORMAL_TEXT
+    assert contrast(measured, tokens["--surface-raised"]) >= AA_NORMAL_TEXT
+    # The role itself meets AA on both surfaces now.
+    for surface in ("--surface-selected", "--surface-elevated"):
+        assert contrast(tokens["--text-muted"], tokens[surface]) >= AA_NORMAL_TEXT
 
 
 # ---------------------------------------------------------------------------
@@ -179,19 +185,14 @@ CONTROL_SURFACES = (
     "--surface-capture",
 )
 
-#: The dark theme's measured gaps, as of the light theme's arrival
-#: (docs/adr/0147 §8). Not introduced by it, and not changed by it: the dark
-#: theme is the approved appearance. Each closes the day the dark theme is
-#: revisited, and this table is where that is noticed.
-DARK_GAPS: dict[tuple[str, str], float] = {
-    # ENG-101's own pair. The rules it named moved off muted; the token did
-    # not, and nine popover labels still sit on `--surface-elevated` at 4.49.
-    ("--text-muted", "--surface-elevated"): 4.49,
-    ("--text-muted", "--surface-overlay-hover"): 4.11,
-    ("--text-muted", "--surface-selected"): 4.29,
-    ("--text-muted", "--accent-soft"): 4.29,
-    ("--text-muted", "--status-success-soft"): 4.43,
-}
+#: The dark theme's measured gaps. The light round recorded five
+#: (docs/adr/0147 §8) — `--text-muted` on `--surface-elevated` 4.49, on
+#: `--surface-overlay-hover` 4.11, on `--surface-selected` and `--accent-soft`
+#: 4.29, on `--status-success-soft` 4.43 — and the owner closed them on
+#: 2026-10-09 by lifting the role rather than moving its rules (§8's
+#: amendment). Empty since; a gap that ever has to be recorded again is named
+#: here exactly, so that it can close but not widen.
+DARK_GAPS: dict[tuple[str, str], float] = {}
 
 
 @pytest.mark.parametrize("theme", THEMES)
@@ -232,27 +233,35 @@ def test_text_on_a_coloured_fill_meets_aa(theme, foreground, fill):
     assert ratio >= AA_NORMAL_TEXT, f"{theme}: {foreground} on {fill}: {ratio:.2f}:1"
 
 
-@pytest.mark.parametrize("surface", CHIP_SURFACES)
-def test_the_quieter_chip_is_still_readable_in_light(surface):
+#: Where the quieter chip is held to AA. In light, every surface a chip form can
+#: sit on. In dark, the page — the one surface `Uus teema` draws it on, and
+#: e2e/test_theme_contrast.py measures it there in both themes. A dark chip
+#: quieter than muted *and* AA on a popover would have to be as bright on the
+#: page as muted was before 2026-10-09: the step the owner found too close to
+#: an ordinary chip (docs/adr/0130, amendment of 2026-10-02).
+ATYPICAL_SURFACES = {"light": CHIP_SURFACES, "dark": ("--surface-base",)}
+
+#: How much quieter than muted the chip stays, as a ratio of the two
+#: contrasts: a step a glance can tell rather than a rounding difference. Both
+#: palettes keep about a quarter (1.23 light, 1.29 dark).
+QUIETER_BY = 1.2
+
+
+@pytest.mark.parametrize(
+    ("theme", "surface"), [(t, s) for t in THEMES for s in ATYPICAL_SURFACES[t]]
+)
+def test_the_quieter_chip_is_readable_and_still_quieter(theme, surface):
     """`--text-atypical` names an option the chosen Õigusakt rarely takes.
 
-    Quieter than `--text-muted` by design (docs/adr/0130), and in the dark
-    theme quieter than AA too — 3.6:1 on the page, `DARK_ATYPICAL` below. The
-    light palette has the room to keep it both quieter than muted and AA.
+    Quieter than `--text-muted` by design (docs/adr/0130), and AA where it is
+    drawn. The dark value was 3.61:1 until docs/adr/0147's amendment of
+    2026-10-09.
     """
-    tokens = _tokens("light")
+    tokens = _tokens(theme)
     ratio = contrast(tokens["--text-atypical"], tokens[surface])
-    assert ratio >= AA_NORMAL_TEXT, f"light: --text-atypical on {surface}: {ratio:.2f}:1"
-    assert ratio < contrast(tokens["--text-muted"], tokens[surface])
-
-
-#: Measured on the dark page (`--surface-base`); see the note above.
-DARK_ATYPICAL = 3.61
-
-
-def test_the_quieter_chip_in_dark_is_as_it_was():
-    tokens = _tokens("dark")
-    assert round(contrast(tokens["--text-atypical"], tokens["--surface-base"]), 2) == DARK_ATYPICAL
+    assert ratio >= AA_NORMAL_TEXT, f"{theme}: --text-atypical on {surface}: {ratio:.2f}:1"
+    muted = contrast(tokens["--text-muted"], tokens[surface])
+    assert muted / ratio >= QUIETER_BY, f"{theme}: on {surface}, muted {muted:.2f} vs {ratio:.2f}"
 
 
 # ---------------------------------------------------------------------------
@@ -270,31 +279,46 @@ def test_focus_and_the_selected_marker_stand_out_everywhere(theme, role, surface
     assert ratio >= NON_TEXT, f"{theme}: {role} on {surface}: {ratio:.2f}:1"
 
 
+@pytest.mark.parametrize("theme", THEMES)
 @pytest.mark.parametrize(
     "role",
     [
-        # The edge of every text field (docs/adr/0147 §6).
+        # The edge of every text field at rest (docs/adr/0147 §6).
         "--border-input",
-        # A selected chip's and option's edge, and the prominent title field's.
-        "--accent-border",
-        # A refused field's edge.
-        "--status-danger-border",
+        # The prominent title field's (`Uus teema`).
+        "--border-input-prominent",
+        # A refused field's.
+        "--border-input-refused",
     ],
 )
 @pytest.mark.parametrize("surface", CONTROL_SURFACES)
-def test_a_field_and_its_states_can_be_found_by_their_edge_in_light(role, surface):
-    tokens = _tokens("light")
-    ratio = contrast(tokens[role], tokens[surface])
-    assert ratio >= NON_TEXT, f"light: {role} on {surface}: {ratio:.2f}:1"
+def test_a_field_and_its_states_can_be_found_by_their_edge(theme, role, surface):
+    """A dark field's fill is the page's own, so it is found by its edge.
 
-
-def test_the_dark_field_edge_is_the_control_edge_it_always_was():
-    """Under 3:1, and unchanged: the dark theme draws what it drew before.
-
-    A field in the dark theme is told from the page by its fill as much as its
-    edge, and the edge has measured 1.43:1 on the page since the CVI palette
-    arrived. Recorded rather than fixed here, with the other dark gaps.
+    The dark edges were 1.43:1 at rest, 2.11:1 prominent and 1.82:1 refused on
+    the page until docs/adr/0147's amendment of 2026-10-09.
     """
-    tokens = _tokens("dark")
-    assert tokens["--border-input"] == tokens["--border-control"]
-    assert round(contrast(tokens["--border-input"], tokens["--surface-base"]), 2) == 1.43
+    tokens = _tokens(theme)
+    ratio = contrast(tokens[role], tokens[surface])
+    assert ratio >= NON_TEXT, f"{theme}: {role} on {surface}: {ratio:.2f}:1"
+
+
+@pytest.mark.parametrize("theme", THEMES)
+def test_the_rail_note_can_be_found_by_its_edge(theme):
+    """The facts rail's private note (`.railnote__area`) is a field too."""
+    tokens = _tokens(theme)
+    ratio = contrast(tokens["--border-input"], tokens["--surface-rail"])
+    assert ratio >= NON_TEXT, f"{theme}: --border-input on --surface-rail: {ratio:.2f}:1"
+
+
+@pytest.mark.parametrize("surface", CONTROL_SURFACES)
+def test_a_selected_option_can_be_found_by_its_edge_in_light(surface):
+    """A selected chip's and option's accent edge.
+
+    In dark a selected chip is told by its brand fill, its weight and its ink;
+    its edge stays the quiet brand rule chips, tabs and badges share
+    (docs/adr/0147, amendment of 2026-10-09, what it does not change).
+    """
+    tokens = _tokens("light")
+    ratio = contrast(tokens["--accent-border"], tokens[surface])
+    assert ratio >= NON_TEXT, f"light: --accent-border on {surface}: {ratio:.2f}:1"

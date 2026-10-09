@@ -21,6 +21,9 @@
   --primitive-brand-300: #5cc7ef;
   --primitive-brand-900: #0e2a37;
   --primitive-brand-700: #17506a;
+  /* Between 700 and 500: the brand edge of the prominent field, at 3:1 on
+     every surface a field sits on (docs/adr/0147, amendment of 2026-10-09). */
+  --primitive-brand-600: #0c76a0;
   --primitive-brand-ink: #06131a; /* text on a brand fill */
 
   /* ---- primitives: graphite-derived dark ramp ---------------------- */
@@ -37,7 +40,14 @@
   --primitive-neutral-600: #232b34;
   --primitive-neutral-550: #2a323b;
   --primitive-neutral-400: #3d4954;
+  /* The edge of a field somebody types into: 3:1 on every surface a field
+     sits on, popovers included (docs/adr/0147, amendment of 2026-10-09). */
+  --primitive-neutral-350: #63707d;
   --primitive-neutral-300: #7d8b99;
+  /* The muted step lifted just far enough to be AA on every raised, selected
+     and tinted surface; 300 is the value ENG-101 measured, kept as the ramp
+     step it is (docs/adr/0147, amendment of 2026-10-09). */
+  --primitive-neutral-250: #8693a1;
   --primitive-neutral-200: #9aa7b4;
   --primitive-neutral-100: #c5ced6;
   --primitive-neutral-50: #e8edf2;
@@ -47,6 +57,9 @@
   --primitive-danger-400: #ef7d6e;
   --primitive-danger-900: #2e1815;
   --primitive-danger-700: #6b2f28;
+  /* Between 700 and 400: a refused field's edge, at 3:1 on every surface a
+     field sits on (docs/adr/0147, amendment of 2026-10-09). */
+  --primitive-danger-600: #aa544a;
   --primitive-warning-400: #e3ac4e;
   --primitive-warning-900: #2b2113;
   --primitive-warning-700: #6b5518;
@@ -197,25 +210,37 @@
   --border-subtle: var(--primitive-neutral-700);
   --border-default: var(--primitive-neutral-600);
   --border-control: var(--primitive-neutral-550);
-  /* The edge of a field somebody types into. The same value as
-     `--border-control` here, so the dark theme draws exactly what it always
-     drew; its own role because the light theme cannot share one: there a
-     text field has to be found by its edge alone, which wants 3:1 against the
-     page (WCAG 1.4.11), and every badge, tag and menu rule drawn that dark
-     would turn a quiet page into a grid (docs/adr/0147). */
-  --border-input: var(--border-control);
+  /* The edge of a field somebody types into: 3:1 against every surface a
+     field sits on, popovers included (WCAG 1.4.11), because a field is found
+     by its edge — its fill is the page's own. Its own role so that the badge,
+     tag and menu rules drawn in `--border-control` stay quiet: drawn this
+     light, they would turn a quiet page into a grid. It equalled
+     `--border-control` (1.43:1) until docs/adr/0147's amendment of
+     2026-10-09. */
+  --border-input: var(--primitive-neutral-350);
+  /* The two field states that draw their edge in another colour: the
+     prominent title field (brand) and a refused field (danger). Each is at
+     least as findable as a resting field, which `--accent-border` and
+     `--status-danger-border` — drawn quietly for chips, tabs, badges and
+     buttons — are not (docs/adr/0147, amendment of 2026-10-09). */
+  --border-input-prominent: var(--primitive-brand-600);
+  --border-input-refused: var(--primitive-danger-600);
   --border-strong: var(--primitive-neutral-400);
 
   --text-primary: var(--primitive-neutral-50);
   --text-body: var(--primitive-neutral-100);
   --text-secondary: var(--primitive-neutral-200);
-  --text-muted: var(--primitive-neutral-300);
-  /* A `Hetkeseis` the chosen `Õigusakt` does not normally fit: `--text-muted`
-     (#7d8b99) taken 20% further down, because the muted step alone read too
-     close to an ordinary chip (docs/adr/0130, amendment of 2026-10-02). Its own
-     token rather than a primitive, because nothing else on the page is this
-     quiet and nothing else should borrow it. */
-  --text-atypical: #646f7a;
+  /* AA (4.5:1) on every surface text is painted on, raised, selected and
+     tinted ones included (docs/adr/0147, amendment of 2026-10-09). */
+  --text-muted: var(--primitive-neutral-250);
+  /* A `Hetkeseis` the chosen `Õigusakt` does not normally fit: quieter than
+     `--text-muted`, because the muted step alone read too close to an
+     ordinary chip (docs/adr/0130, amendment of 2026-10-02), and AA on the
+     page the chip is drawn on — 4.6:1 against muted's 5.9:1 (docs/adr/0147,
+     amendment of 2026-10-09). Its own token rather than a primitive, because
+     nothing else on the page is this quiet and nothing else should borrow
+     it. */
+  --text-atypical: #74808d;
   --text-inverse: var(--primitive-brand-ink);
 
   --accent-primary: var(--primitive-brand-500);
@@ -286,9 +311,9 @@
  *     step either side. Elevation is said with a border and a shadow, the way
  *     a light interface says it, rather than with a lighter fill.
  *   - Ink: graphite, never pure black. Every text role — muted included —
- *     reaches WCAG AA 4.5:1 on every surface and every status fill here,
- *     which the dark theme's muted step does not (tests/test_text_contrast.py
- *     holds both palettes to what each one meets).
+ *     reaches WCAG AA 4.5:1 on every surface and every status fill, as it
+ *     does in the dark theme (tests/test_text_contrast.py holds both palettes
+ *     to it).
  *   - Chamber blue #009FDA is the brand, but as text or as a fill under white
  *     text it is 2.9:1 on white. The interactive blues are its darker steps,
  *     the same hue, so a link, a primary button and a focus ring are AA here.
@@ -318,15 +343,19 @@
   --border-default: #d2d9e0;
   --border-control: #b4bec8;
   --border-input: #7b8794;
+  /* Here the accent and danger edges are already 3:1, so the two field
+     states draw exactly what they drew before they had roles of their own. */
+  --border-input-prominent: var(--accent-border);
+  --border-input-refused: var(--status-danger-border);
   --border-strong: #8a96a2;
 
   --text-primary: #12171d;
   --text-body: #2a323b;
   --text-secondary: #46515c;
   --text-muted: #58636e;
-  /* `--text-muted` taken a step towards the page, as in the dark theme — but
-     only as far as AA allows, because here it can: the quieter chip is still
-     4.5:1 on the surfaces a chip sits on. */
+  /* `--text-muted` taken a step towards the page, as in the dark theme, and
+     only as far as AA allows: the quieter chip is still 4.5:1 on the surfaces
+     a chip sits on. */
   --text-atypical: #67717b;
   --text-inverse: var(--primitive-neutral-0);
 
