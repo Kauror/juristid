@@ -122,6 +122,29 @@ class UserChoiceField(forms.ModelChoiceField):
         return self._labels.get(obj.pk) or obj.get_short_name() or obj.upn
 
 
+def default_owner_to_creator(form: Any, viewer: Any) -> None:
+    """`Uus teema` opens with the person filing it as Vastutaja (owner's R1, 2026-10-09).
+
+    **Server-side, on the unbound form only.** The page is rendered with the
+    chip already chosen, so it is visible the moment the form opens and works
+    without scripting. A bound form — a refused save, a re-render — shows what
+    was posted and nothing else, so a colleague chosen before a refusal is
+    still chosen after it, and nothing here ever overrides a choice.
+
+    Only when the creator is someone this form may name: a department worker
+    (`assignable_users`), narrowed to oneself without `work.assign`
+    (`restrict_owner_to_self`). An administrator who files a Teema without
+    doing the department's work is not made its owner; the field stays empty,
+    as it was for everybody before.
+    """
+    if form.is_bound or viewer is None or getattr(viewer, "pk", None) is None:
+        return
+    if "owner" in form.initial:
+        return
+    if form.fields["owner"].queryset.filter(pk=viewer.pk).exists():
+        form.initial["owner"] = viewer.pk
+
+
 def restrict_owner_to_self(form: Any, viewer: Any) -> None:
     """Without `work.assign`, the only Vastutaja new work may name is oneself.
 
@@ -1183,6 +1206,10 @@ class MatterCreateForm(
         # Stage 2E.1 and is left alone here rather than redesigned in a round
         # about other things — but it is the same gap `stage` had, so if anybody
         # is asked to fix it, this is the line (Agent-UI brief 5.1).
+        #
+        # Since 2026-10-09 the page opens with the person filing it already
+        # chosen (`default_owner_to_creator`, docs/adr/0150 §1), so the form no
+        # longer arrives empty either; somebody else is one click away.
         widget=forms.RadioSelect(attrs={"class": "chip__input"}),
     )
     #: Radios, rendered as chips. Both fields hold exactly one value, and a
@@ -1443,6 +1470,7 @@ class MatterCreateForm(
         # union (app/accounts/selectors.py).
         set_choices(self, "owner", assignable_users())
         restrict_owner_to_self(self, viewer)
+        default_owner_to_creator(self, viewer)
         set_choices(self, "stage", active_stages())
 
         # The explanations the Hetkeseis chips carry, read once. Handed to the
