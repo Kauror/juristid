@@ -116,6 +116,10 @@ the brief says to record rather than improvise.
   andmed» rail, under the label `Teemaviide`. The identifier-free rule is
   unchanged — a topic is *named* by its title in every heading, crumb and list —
   and the tests now assert both halves rather than one.
+  **Superseded twice:** the owner's compact round (2026-10-07) took `Teemaviide`
+  off the rail and so off the page; ADR 0150 §4 (2026-10-09) shows it again —
+  once, in the Teema header's meta line, copyable — and keeps it off the rail,
+  the lists, the dashboards and the timelines.
 - The one-click «✓ tehtuks» and its `X` shortcut are gone from the UI. The
   route and the service behind them are untouched and now have no caller; that
   is recorded as a decision to make, not left as a discovery.

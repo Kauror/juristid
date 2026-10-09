@@ -1,6 +1,6 @@
 # ADR 0070 — Õigusakt is a canonical Matter field, and it is not Menetlusliik
 
-- **Status:** accepted
+- **Status:** accepted, amended 2026-10-09
 - **Date:** 2026-09-10
 - **Supersedes:** the `authority = "deferred"` decision recorded for the
   `ÕIGUSAKT` column in every era contract `excel-era-2011.toml` …
@@ -61,6 +61,11 @@ The control follows the model, as ADR 0025 requires: checkbox chips, a
 `field__count` beside the legend, a `×` on each chosen chip. Menetlusliik
 directly above has none of the three because it holds one value, and that
 asymmetry is what keeps the two rows from reading as one question split in two.
+
+**Superseded on 2026-10-09 for new and deliberately changed classifications —
+see the amendment at the end of this document.** The relation stays
+many-to-many and every stored pair stays; what a person may now record is one
+instrument, through radio chips with «Määramata».
 
 ### 3. A governed reference vocabulary, not a tag and not free text
 
@@ -210,3 +215,71 @@ accident.
   contents of the register can be inferred from a checkbox list.
 - **Mapping the two unmappable values to `Muu` to reach 100% coverage.** A tidy
   number bought with a fabricated decision.
+
+---
+
+## Amendment, 2026-10-09 — one `Õigusakt` per Teema, and history keeps its pairs
+
+- Status: accepted, amending §2's control and the interactive half of its
+  «0..N» (the owner's brief of 2026-10-09, R2).
+- Scope: `Uus teema`, `Muuda teemat`, the two services a person reaches
+  (`create_matter` for native work, `set_legal_instruments`), the stage
+  guidance's input and the intake review's pre-fill. **No migration, no data
+  change, no rewrite of any stored pair.** Recorded with the rest of that
+  round in ADR 0150.
+
+### What was decided before
+
+`Matter.legal_instruments` is 0..N because the register writes combined answers
+(`S, M`, `direktiiv ja määrus`), and the control followed the model: checkbox
+chips with a count and a `×` on each chosen chip.
+
+### Why it is superseded
+
+The product owner wants one `Õigusakt` per Matter. Several instruments made the
+guidance a union nobody could read at a glance, and a Teema that is really two
+files — a directive and the act transposing it — is two Teemad linked under
+«Seotud teemad». The historical register still says what it says, and that is
+not rewritten.
+
+### What is decided now
+
+1. **One answer, interactively.** Both forms draw radio chips with «Määramata»
+   first — the shape `Hetkeseis` has — and no count or `×`. The field reads the
+   request as a list (`LegalInstrumentRadioSelect`) and refuses two values with
+   «Vali üks õigusakt.» (`SingleLegalInstrumentField`); it never trims to one.
+2. **The server enforces it.** `create_matter` refuses two for
+   `MatterOrigin.NATIVE`, and `set_legal_instruments` refuses any change that
+   would leave two — `ONE_LEGAL_INSTRUMENT_REFUSAL`. An unchanged set is not a
+   change, which is what lets a historical pair survive a save about something
+   else. `create_imported_matter` (origin `LEGACY_IMPORT`) still records what a
+   register cell says, `S, M` included.
+3. **A Matter that already holds several keeps them.** `Muuda teemat` states
+   them («Sellel teemal on varasemast mitu õigusakti. Need jäävad alles, kuni
+   valid ühe.») and offers one more radio first, «Jäta alles: A + B», which the
+   page arrives with. Saving it moves nothing and writes no event. Choosing one
+   instrument, or «Määramata», is the deliberate correction and is audited by
+   `MATTER_LEGAL_INSTRUMENTS_CHANGED` with `added`/`removed`, as before.
+   «Jäta alles» combined with anything else, or posted on a Matter that does
+   not hold several, is refused.
+4. **`Muu` keeps its text.** Both «Muu siseriiklik» and «Muu ELi dokument»
+   reveal and require `Õigusakti liik` exactly as before; the reveal listens to
+   the whole radio group so choosing another instrument hides and clears it;
+   «Jäta alles» keeps a held `Muu` and its text.
+5. **What reads the answer.** The stage guidance reads one key, or every key the
+   held choice names (`data-instrument-keys`), so a historical pair still guides
+   by union (ADR 0130 §7). `Sarnased teemad` reads the one value and ignores
+   «Määramata»'s blank. The intake review pre-fills an instrument only when
+   exactly one HIGH candidate exists, and the browser island fills nothing into
+   a radio group from two proposals — a conflict fills nothing, as everywhere
+   else.
+
+### What this amendment does not change
+
+- The model: still a many-to-many to `LegalInstrumentType`, still 0..N in the
+  database, no constraint added, nothing migrated.
+- Every stored pair, every import path, `legal_instrument_raw`, the vocabulary,
+  its order, the mapping seam and the two deliberately unmapped spellings.
+- Reporting, search and every read surface, which still read the whole set —
+  a historical pair is shown whole on the Teema page.
+- `Muu`'s meaning and its required text (§8).

@@ -213,7 +213,10 @@ before.
 ### 7. Union, not intersection
 
 A stage stays normal when it is normal for **at least one** ticked instrument,
-and is dimmed only when it is atypical for **every** one. One living Teema can
+and is dimmed only when it is atypical for **every** one.
+**Narrowed on 2026-10-09** — one `Õigusakt` is chosen at a time since ADR
+0070's amendment of that date; the union now applies to a historical pair kept
+by «Jäta alles» on `Muuda teemat`. One living Teema can
 legitimately span `ELi direktiiv` and the `Seadus` transposing it, or a `VTK`
 and the law that follows it; an intersection would dim exactly the stages such
 a file moves through.
@@ -228,7 +231,10 @@ a file moves through.
   and neither is derived from the other (docs/adr/0090 §4).
 * **`Muuda teemat` does not draw the guidance.** It is a correction surface for
   files whose real history may be exactly the exception; the keys on its inputs
-  are inert there. Its own order is also deliberately left as it was — 0096 §1's
+  are inert there.
+  **Superseded on 2026-10-09 — see the amendment of that date («Muuda
+  teemat»).** The edit page draws the same guidance from the same matrix; it is
+  still presentation only and touches no stored value. Its own order is also deliberately left as it was — 0096 §1's
   «`Uus teema` is the master» is narrowed accordingly for order: the edit page
   keeps its order until the owner decides otherwise.
 
@@ -440,3 +446,42 @@ stage. Neither is built until then.
 - The ordinary chip, the chosen chip's fill and weight, focus ring, cursor and
   hit area.
 - Escape still closes a bubble until the pointer or focus leaves the chip.
+
+---
+
+## Amendment, 2026-10-09 — «Muuda teemat»: the same guidance on the edit page
+
+- Status: accepted, amending §8's «`Uus teema` only» and narrowing §7 to the
+  held pairs ADR 0070's amendment of the same day keeps.
+- Scope: presentation on `Muuda teemat` (F5 of the owner's brief of
+  2026-10-09). No validation, no inference, no stored value.
+
+### What was decided before
+
+§8: the edit page did not draw the guidance; it is a correction surface whose
+files may be exactly the exception.
+
+### Why it is superseded
+
+The live QA of 9 October 2026 found the two pages disagreeing about the same
+pair of fields: a lawyer who learned the dimming on `Uus teema` met none of it
+when correcting a Teema, and read the absence as «every stage fits».
+
+### What is decided now
+
+- `Muuda teemat` wraps its `Hetkeseis` row in the same `data-stage-guidance`
+  and serialises the same `stage_guidance_payload()` (`_edit_context`); one
+  script (`bindStageGuidance`) and one matrix serve both pages.
+- A **stored stage is never touched**: dimming is a class and a described note
+  (this ADR's «not colour alone» amendment), and a chosen atypical stage stays
+  chosen. Opening and saving the page moves nothing that was not changed.
+- A **closed file's stage is stated, not offered** (RULE-03): it has no chips,
+  so there is nothing to dim.
+- The **order** of the edit page is unchanged (`Valdkond`, `Hetkeseis`,
+  `Õigusakt`); the guidance does not depend on order.
+
+### What this amendment does not change
+
+- The matrix, its keys, `Määramata` and `Muu` never dimmed, missing guidance
+  dimming nothing; nothing disabled, hidden, refused or rewritten.
+- The server accepts every valid combination on both pages.
