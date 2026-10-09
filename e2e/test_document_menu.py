@@ -65,6 +65,21 @@ PANEL = """(panel) => {
           overflow: document.scrollingElement.scrollWidth - window.innerWidth};
 }"""
 
+#: Lowers a page-wide flag and raises it on one `<details>`'s next `toggle`.
+#: ux.js places the panel from `toggle` listeners of its own: the menu's, added
+#: when the page was bound, and a capture-phase one on the menu for a
+#: disclosure inside the panel. Both run before a listener added here on the
+#: `<details>` itself, because an ancestor's capture listeners come before the
+#: target's and a target's run in the order they were added. So when the flag
+#: is up, the placement for that toggle has run.
+ARM_TOGGLE = """(details) => {
+  window.__toggled = false;
+  details.addEventListener('toggle', () => { window.__toggled = true; }, {once: true});
+}"""
+
+#: A `toggle` is one task after the click, so it either fires at once or never.
+TOGGLE_TIMEOUT_MS = 5_000
+
 
 def _same_layout(before: dict, after: dict, what: str) -> None:
     assert len(before["rows"]) == len(after["rows"]), what
@@ -98,6 +113,22 @@ def _menu(row):
 
 def _is_open(menu) -> bool:
     return menu.evaluate("details => details.open")
+
+
+def _toggle_placed(page, details, control) -> None:
+    """Click `control` and wait until ux.js has placed the panel for it.
+
+    `details` is the `<details>` the click opens or closes: the row's menu, or a
+    disclosure inside its panel. The browser fires `toggle` as a task after
+    `open` changes, so Playwright's click can return before ux.js has run
+    `place()`. A box read then shows the inline `top` and `max-height` left by
+    the previous opening, measured for the window as it was then, or the
+    stylesheet's unplaced box on a first opening. Run 37878444917 read `bottom`
+    753 in a 320 px window, which is the 900 px window's placement.
+    """
+    details.evaluate(ARM_TOGGLE)
+    control.click()
+    page.wait_for_function("() => window.__toggled", timeout=TOGGLE_TIMEOUT_MS)
 
 
 def _matter_with_files(page, base_url: str, tmp_path) -> str:
@@ -142,8 +173,8 @@ def test_opening_the_menu_moves_nothing_and_stays_on_screen(page, base_url, tmp_
             trigger.scroll_into_view_if_needed()
             before = page.evaluate(LAYOUT)
 
-            trigger.click()
             panel = menu.locator(".opinionmenu__body")
+            _toggle_placed(page, menu, trigger)
             expect(panel).to_be_visible()
             expect(panel.locator("summary", has_text="Muuda nime")).to_be_visible()
             expect(panel.get_by_role("link", name="Dokumendi leht")).to_be_visible()
@@ -155,7 +186,8 @@ def test_opening_the_menu_moves_nothing_and_stays_on_screen(page, base_url, tmp_
             assert not document_overflows(page), f"sideways scroll at {width} with {name} open"
 
             # The editor open is still a panel, not a taller row.
-            panel.locator("summary", has_text="Muuda nime").click()
+            editor = panel.locator("details[data-docrename]")
+            _toggle_placed(page, editor, editor.locator("summary", has_text="Muuda nime"))
             expect(panel.locator("input[name=title]")).to_be_visible()
             _same_layout(before, page.evaluate(LAYOUT), f"{name} editing at {width}")
             _on_screen(panel.evaluate(PANEL), f"{name} editing at {width}")
@@ -286,7 +318,7 @@ def test_an_opinions_menu_floats_and_scrolls_inside_itself(page, base_url):
 
     trigger.scroll_into_view_if_needed()
     before = page.evaluate(LAYOUT)
-    trigger.click()
+    _toggle_placed(page, menu, trigger)
     expect(panel.get_by_text("Saatmise andmed")).to_be_visible()
     # `Muuda nime` first, then what was there before.
     expect(panel.locator(".opinionmenu__item").first).to_have_text("Muuda nime")
@@ -296,7 +328,7 @@ def test_an_opinions_menu_floats_and_scrolls_inside_itself(page, base_url):
     # `Võta tagasi`'s confirmation is a click inside: the menu stays, and
     # `Loobu` folds the confirmation without sending anything.
     withdraw = panel.locator("details[data-withdraw]")
-    withdraw.locator("summary").click()
+    _toggle_placed(page, withdraw, withdraw.locator("summary"))
     expect(withdraw.get_by_role("button", name="Kinnita tagasivõtmine")).to_be_visible()
     assert _is_open(menu)
     _same_layout(before, page.evaluate(LAYOUT), "opinion menu, withdrawal open")
@@ -310,7 +342,7 @@ def test_an_opinions_menu_floats_and_scrolls_inside_itself(page, base_url):
     for width in (1440, 375):
         page.set_viewport_size({"width": width, "height": 320})
         trigger.scroll_into_view_if_needed()
-        trigger.click()
+        _toggle_placed(page, menu, trigger)
         reading = panel.evaluate(PANEL)
         _on_screen(reading, f"opinion menu in a 320 px window at {width}")
         assert reading["scrolls"], ("the panel should scroll inside itself", reading)
