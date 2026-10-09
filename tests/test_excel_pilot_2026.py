@@ -21,9 +21,11 @@ from app.accounts.models import User
 from app.documents.models import DocumentVersion
 from app.legacy_import import excel_pilot
 from app.legacy_import.excel_pilot import (
+    DRAFTING_TEXT,
     GROUP_A,
     GROUP_B,
     GROUP_C,
+    REASON_DRAFTING,
     STEP_ACTION,
     STEP_ENTRY,
     STEP_NONE,
@@ -33,6 +35,7 @@ from app.legacy_import.excel_pilot import (
     SourceRow,
     build_manifest,
     build_plan,
+    drafting_action_of,
     lifecycle_of,
     manifest_digest,
     next_step_of,
@@ -57,7 +60,14 @@ from app.matters.services import create_matter
 from app.matters.work_status import ACTIVE, CONCLUDED, CONTINUES, INACTIVE, work_status_of
 from app.submissions.enums import SentAtPrecision, SubmissionStatus
 from app.submissions.models import Submission
-from app.workflow.enums import ActionKind, ActionStatus, Disposition, FollowUpOutcome
+from app.workflow.enums import (
+    ActionKind,
+    ActionStatus,
+    DatePrecision,
+    DateSemantics,
+    Disposition,
+    FollowUpOutcome,
+)
 from app.workflow.models import NextAction, OpinionFollowUp, resolve_legacy_status
 from tests import factories
 from tests.refusals import refused
@@ -347,21 +357,27 @@ def test_the_manifest_is_scope_limited_and_reproducible(workbook, selection):
     assert first["workbook"]["reserve_through"] == 15
 
 
-OUT_OF_SCOPE = ("OUT-OF-SCOPE-UUS-VASTUTAJA", "OUT-OF-SCOPE-KOJA-ETTEPANEK")
+#: The real 2026 sheet's uncontracted columns, and the one Lovable adds beside them.
+OUT_OF_SCOPE_COLUMNS = ("UUS VASTUTAJA", "KOJA ETTEPANEK VÕI PÖÖRDUMINE", "MITTEAMETLIK ARVAMUS")
+OUT_OF_SCOPE = (
+    "OUT-OF-SCOPE-UUS-VASTUTAJA",
+    "OUT-OF-SCOPE-KOJA-ETTEPANEK",
+    "OUT-OF-SCOPE-MITTEAMETLIK",
+)
 
 
 def _with_out_of_scope_columns(path: Path) -> Path:
-    """The real 2026 sheet's two uncontracted columns, M and N, filled on every row."""
+    """Every uncontracted column, filled on every row."""
     from openpyxl import load_workbook
 
     book = load_workbook(path)
     sheet = book["2026"]
     width = sheet.max_column
-    sheet.cell(row=1, column=width + 1, value="UUS VASTUTAJA")
-    sheet.cell(row=1, column=width + 2, value="KOJA ETTEPANEK VÕI PÖÖRDUMINE")
+    for offset, header in enumerate(OUT_OF_SCOPE_COLUMNS, start=1):
+        sheet.cell(row=1, column=width + offset, value=header)
     for row in range(2, sheet.max_row + 1):
-        sheet.cell(row=row, column=width + 1, value=OUT_OF_SCOPE[0])
-        sheet.cell(row=row, column=width + 2, value=OUT_OF_SCOPE[1])
+        for offset, marker in enumerate(OUT_OF_SCOPE, start=1):
+            sheet.cell(row=row, column=width + offset, value=marker)
     target = path.with_name("pilot-with-out-of-scope-columns.xlsx")
     book.save(target)
     book.close()
@@ -518,11 +534,18 @@ def test_the_lifecycle_rule(changes, status, disposition):
     assert (lifecycle.status, lifecycle.disposition) == (status, disposition)
 
 
+def _sent_row(**changes) -> SourceRow:
+    """Live work whose opinion went out: `JÄRGMISEKS` is the only source of its step."""
+    sent = {
+        "valja_raw": "05.06.2026",
+        "valja_state": OpinionSentState.DATE,
+        "sent_on": dt.date(2026, 6, 5),
+    }
+    return _row(**{**sent, **changes})
+
+
 def test_a_sent_opinion_closes_nothing():
-    row = _row(
-        valja_raw="05.06.2026", valja_state=OpinionSentState.DATE, sent_on=dt.date(2026, 6, 5)
-    )
-    assert lifecycle_of(row).status == ACTIVE.key
+    assert lifecycle_of(_sent_row()).status == ACTIVE.key
 
 
 @pytest.mark.parametrize(
@@ -536,21 +559,80 @@ def test_a_sent_opinion_closes_nothing():
     ],
 )
 def test_the_next_step_rule_for_live_work(text, treatment, kind, has_date):
-    row = _row(next_text=text)
+    row = _sent_row(next_text=text)
     step = next_step_of(row, lifecycle_of(row), SNAPSHOT)
     assert step.treatment == treatment
     assert step.kind == kind
     assert (step.target_date is not None) == has_date
+    assert drafting_action_of(row, lifecycle_of(row)) is None, "a sent opinion is not drafted"
 
 
 def test_a_finished_matters_instruction_is_a_note_never_a_task():
     row = _row(status_raw="rohkem ei tegele", next_text=WAIT_REVIEW)
     step = next_step_of(row, lifecycle_of(row), SNAPSHOT)
     assert step.treatment == STEP_ENTRY
+    assert drafting_action_of(row, lifecycle_of(row)) is None
+
+
+# The opinion still being written: one «Koostan arvamuse», dated by its deadline.
+
+
+def test_an_opinion_being_written_starts_with_the_drafting_step():
+    row = _row(next_text="")
+    lifecycle = lifecycle_of(row)
+    assert drafting_action_of(row, lifecycle) == {
+        "text": "Koostan arvamuse",
+        "kind": ActionKind.DO,
+        "date_semantics": DateSemantics.DEADLINE,
+        "target_date": "2026-09-01",
+        "date_precision": DatePrecision.EXACT,
+        "source_field": "ARVAMUSE TÄHTAEG",
+    }
+    assert next_step_of(row, lifecycle, SNAPSHOT).treatment == STEP_NONE, "no note to keep"
+
+
+@pytest.mark.parametrize("text", [INFORMATION, WAIT_REVIEW, AMBIGUOUS])
+def test_a_drafting_rows_jargmiseks_is_a_note_beside_the_step(text):
+    """Information or an instruction alike: kept word for word, never a second task."""
+    row = _row(next_text=text)
+    lifecycle = lifecycle_of(row)
+    step = next_step_of(row, lifecycle, SNAPSHOT)
+    assert (step.treatment, step.text, step.kind, step.target_date) == (STEP_ENTRY, text, "", None)
+    assert step.reasons[0] == REASON_DRAFTING
+    assert drafting_action_of(row, lifecycle)["target_date"] == "2026-09-01"
+
+
+def test_an_instruction_kept_as_a_note_is_named_and_information_is_not():
+    information = next_step_of(_row(next_text=INFORMATION), lifecycle_of(_row()), SNAPSHOT)
+    assert information.reasons == (REASON_DRAFTING,)
+    instruction = next_step_of(_row(next_text=WAIT_REVIEW), lifecycle_of(_row()), SNAPSHOT)
+    assert instruction.reasons == (REASON_DRAFTING, "instruction-kept-as-note:WAIT")
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"deadline": None},  # no day for the work: nothing is made up
+        {"valja_raw": "ei saatnud", "valja_state": OpinionSentState.NOT_SENT},
+        {"status_raw": "jõustunud"},
+        {"status_raw": "rohkem ei tegele"},
+        {"status_raw": "rohkem ei tegele", "next_text": "Jätkub teema 2026_9 all."},
+    ],
+)
+def test_no_drafting_step_without_a_live_unsent_opinion_and_its_deadline(changes):
+    row = _row(**changes)
+    assert drafting_action_of(row, lifecycle_of(row)) is None
+
+
+def test_a_missing_stage_does_not_stop_the_drafting_step():
+    row = _row(status_raw="")
+    lifecycle = lifecycle_of(row)
+    assert lifecycle.status == ACTIVE.key
+    assert drafting_action_of(row, lifecycle) is not None
 
 
 def test_an_ambiguous_date_is_never_guessed():
-    row = _row(next_text=AMBIGUOUS)
+    row = _sent_row(next_text=AMBIGUOUS)
     step = next_step_of(row, lifecycle_of(row), SNAPSHOT)
     assert step.target_date is None
     assert step.date_precision == "EXACT"
@@ -774,9 +856,8 @@ def test_next_steps_use_the_ordinary_workflow(world, workbook, selection, pilot_
     _apply(workbook, _manifest(workbook, selection))
     current = NextAction.objects.filter(status=ActionStatus.OPEN, follow_up__isnull=True)
     by_reference = {action.matter.display_reference: action for action in current}
-    assert set(by_reference) == {"2026_3", "2026_4", "2026_5"}
-    assert by_reference["2026_3"].kind == ActionKind.WAIT
-    assert by_reference["2026_3"].target_date == dt.date(2026, 10, 15)
+    assert set(by_reference) == {"2026_1", "2026_2", "2026_3", "2026_4", "2026_5"}
+    assert {by_reference[ref].text for ref in ("2026_1", "2026_2", "2026_3")} == {DRAFTING_TEXT}
     assert by_reference["2026_4"].kind == ActionKind.MONITOR
     undated = by_reference["2026_5"]
     assert undated.target_date is None and undated.kind == ActionKind.WAIT
@@ -787,9 +868,128 @@ def test_next_steps_use_the_ordinary_workflow(world, workbook, selection, pilot_
     ).exists()
 
     notes = {e.matter.display_reference: e for e in Entry.objects.all()}
-    assert set(notes) == {"2026_2", "2026_6", "2026_8", "2026_9"}
+    assert set(notes) == {"2026_2", "2026_3", "2026_6", "2026_8", "2026_9"}
     assert all(note.author is None for note in notes.values())
     assert "Jätkub teema 2026_1 all" in notes["2026_9"].body
+    assert notes["2026_3"].body == WAIT_REVIEW, "a drafting row's instruction is a note"
+
+
+def test_every_opinion_being_written_has_one_drafting_step(world, workbook, selection, pilot_on):
+    report = _apply(workbook, _manifest(workbook, selection))
+    assert report.drafting_actions == 3
+
+    drafting = NextAction.objects.filter(text=DRAFTING_TEXT)
+    assert {a.matter.display_reference for a in drafting} == {"2026_1", "2026_2", "2026_3"}
+    for action in drafting:
+        matter = action.matter
+        assert (action.status, action.kind, action.date_semantics, action.date_precision) == (
+            ActionStatus.OPEN,
+            ActionKind.DO,
+            DateSemantics.DEADLINE,
+            DatePrecision.EXACT,
+        )
+        # One obligation seen twice: the step's day is the deadline the Matter keeps open.
+        assert action.target_date == matter.response_deadline
+        assert action.responsible == matter.owner
+        assert action.created_by is None
+        assert NextAction.objects.filter(matter=matter).count() == 1, "no second task"
+        assert not MatterResponseDeadline.objects.filter(matter=matter).exists()
+    # Already past on the day of the import, and kept exactly so.
+    assert drafting.get(matter=_matter("2026_1")).target_date == dt.date(2026, 9, 20)
+    assert drafting.get(matter=_matter("2026_1")).is_overdue(today=SNAPSHOT)
+    assert drafting.get(matter=_matter("2026_3")).target_date == dt.date(2026, 10, 1)
+
+    # The note beside the step on 2026_2 is the cell, word for word, and nothing else.
+    assert list(Entry.objects.filter(matter=_matter("2026_2")).values_list("body", flat=True)) == [
+        INFORMATION
+    ]
+    assert not Entry.objects.filter(matter=_matter("2026_1")).exists()
+
+
+def test_the_drafting_step_is_one_ordinary_history_event(world, workbook, selection, pilot_on):
+    from app.audit.enums import ChangeEventType
+    from app.audit.models import ChangeEvent
+
+    _apply(workbook, _manifest(workbook, selection))
+    action = NextAction.objects.get(matter=_matter("2026_1"))
+    events = ChangeEvent.objects.filter(
+        event_type=ChangeEventType.NEXT_ACTION_SET, object_id=action.pk
+    )
+    assert events.count() == 1
+    event = events.get()
+    assert event.actor is None, "no person is invented"
+    assert event.payload["provenance"]["treatment"] == "OPINION_DRAFTING"
+    assert event.payload["provenance"]["source_field"] == "ARVAMUSE TÄHTAEG"
+    assert event.payload["target_date"] == "2026-09-20"
+    record = ExcelPilotImport.objects.get(matter=_matter("2026_1"))
+    assert record.pilot_version == excel_pilot.PILOT_VERSION
+    assert record.interpretation["current_action"]["text"] == DRAFTING_TEXT
+
+
+def test_the_plan_names_an_instruction_kept_as_a_note(world, workbook, selection):
+    plan = build_plan(workbook, _manifest(workbook, selection))
+    warnings = {row.reference: row.warnings for row in plan.rows}
+    assert any("WAIT instruction" in warning for warning in warnings["2026_3"])
+    assert not any("instruction" in warning for warning in warnings["2026_2"])
+    lines = "\n".join(excel_pilot.summarise_plan(plan))
+    assert "draft=2026-09-20" in lines
+
+
+def test_a_drafting_row_without_a_stage_stays_active_with_its_step(
+    world, selection, pilot_on, tmp_path
+):
+    rows = _rows()
+    rows.insert(
+        11,
+        Row(
+            "2026_13",
+            "Teema hetkeseisuta",
+            "määrus",
+            dt.datetime(2026, 9, 5),
+            dt.datetime(2026, 10, 20),
+            None,
+            "Rahandusministeerium",
+            "Jaan",
+            None,
+            None,
+            None,
+            None,
+        ),
+    )
+    path = write_workbook(tmp_path / "no-stage.xlsx", [Sheet(2026, rows)])
+    _apply(path, _manifest(path, selection))
+    matter = _matter("2026_13")
+    assert (matter.is_open, matter.stage) == (True, None), "no stage is invented"
+    step = NextAction.objects.get(matter=matter, status=ActionStatus.OPEN)
+    assert (step.text, step.target_date, step.responsible) == (
+        DRAFTING_TEXT,
+        dt.date(2026, 10, 20),
+        world["jaan"],
+    )
+
+
+def test_a_manifest_from_the_earlier_rules_is_refused(world, workbook, selection):
+    """A changed interpretation invalidates the manifest it no longer produces."""
+    stale = _manifest(workbook, selection)
+    stale["pilot_version"] = "1.0"
+    for row in stale["rows"]:
+        row["expected"].pop("current_action")
+    with pytest.raises(PilotError, match="different manifest"):
+        build_plan(workbook, stale)
+
+
+def test_native_work_never_gets_a_drafting_step_from_its_deadline(
+    world, workbook, selection, pilot_on
+):
+    """The rule is the pilot's, at import time; a new Teema is untouched (docs/adr/0133 §8)."""
+    _apply(workbook, _manifest(workbook, selection))
+    native = create_matter(
+        title="Uus konsultatsioon",
+        actor=world["mari"],
+        reference_year=2026,
+        response_deadline=dt.date(2026, 11, 30),
+    )
+    assert not NextAction.objects.filter(matter=native).exists()
 
 
 def test_no_historical_stage_is_invented(world, workbook, selection, pilot_on):
