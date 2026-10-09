@@ -441,20 +441,28 @@ def test_the_page_renders_one_tooltip_per_explained_stage(signed_in):
     assert "aria-describedby" not in blank.group(0)
 
 
-def test_the_supplied_muu_text_is_the_one_the_source_gives(signed_in):
-    """Flagged, not fixed.
+def test_muu_explains_itself_and_no_longer_borrows_eli_menetluses(signed_in):
+    """Flagged in ADR 0032, answered by the owner on 9 October 2026.
 
-    The business text supplied for `muu` is word for word the text supplied for
-    `ELi menetluses`. That is very likely a slip in the source document, but
-    which of the two is wrong is a product decision and not a migration's to
-    make — so the duplication ships visibly and is named in ADR 0032. This test
-    exists so that resolving it is a deliberate edit rather than a silent one.
+    The business text supplied for `muu` was word for word the text supplied
+    for `ELi menetluses`, and shipped that way because which of the two was
+    wrong was a product decision (`workflow/0006`). It was «Muu»:
+    `workflow/0016` gives it the owner's own sentence and leaves «ELi
+    menetluses» exactly as the department wrote it.
     """
     from app.workflow.models import StageVocabulary
 
     other = StageVocabulary.objects.get(key="other")
     eu = StageVocabulary.objects.get(key="eu_procedure")
-    assert other.help_text == eu.help_text
+    assert other.help_text == (
+        "Vali „Muu“, kui ükski loetletud hetkeseis ei kirjelda teema tegelikku olukorda."
+    )
+    assert other.help_text != eu.help_text
+    assert eu.help_text.startswith("Kasuta 2 juhul: 1) ELi dokumendi")
+
+    # And the page renders the corrected sentence in the «Muu» bubble.
+    body = signed_in.get(CREATE).content.decode()
+    assert "ei kirjelda teema tegelikku olukorda" in body
 
 
 def test_rohkem_pole_tegevusi_plaanis_is_still_not_a_stage(signed_in):

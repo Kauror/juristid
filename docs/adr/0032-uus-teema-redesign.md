@@ -179,6 +179,9 @@ the new Adressaat chips.
    of the two is wrong is not a migration's decision.
    `tests/test_uus_teema_redesign.py` pins the duplication so that resolving it
    is a deliberate edit.
+   **Answered on 2026-10-09 — see the amendment of that date at the end of
+   this document.** «Muu» was the wrong one; `workflow/0016` gives it the
+   owner's own sentence and leaves «ELi menetluses» as the department wrote it.
 
 2. **`rohkem pole tegevusi plaanis` was supplied with a description alongside
    the ten stage texts, and it is not a Hetkeseis.** `workflow/0004` reads it as
@@ -321,3 +324,70 @@ is not the one chip with nothing explaining it.
   stage control could not borrow it: `Hetkeseis` is one value, so the retired
   option has to be inside the same `<select>` as the active ones rather than
   appended after the group.
+
+---
+
+## Amendment, 2026-10-09 — three `Hetkeseis` explanations corrected
+
+- Status: accepted, answering «Two things the product owner has to answer» §1
+  and correcting two more of the department's 2026-08-25 texts.
+- Scope: the `help_text` of three `StageVocabulary` rows, by one fail-closed
+  data migration (`workflow/0016_stage_help_corrections`). No key, label, sort
+  order, matrix row or stored `Matter.stage` moves; no historical record is
+  re-read.
+
+### What was decided before
+
+`workflow/0006` transcribed the department's explanations sentence for
+sentence. Two were flagged for the owner rather than edited — «Muu» repeating
+«ELi menetluses» (§1 above) and an unbalanced parenthesis in «Idee» — and
+`tests/test_uus_teema_redesign.py` pinned the duplication so that resolving it
+would be deliberate.
+
+### Why it is superseded
+
+The live UI QA of 9 October 2026 (F2, F3) and the owner's brief of the same day:
+
+* **«Muu»** explained itself with the EU procedure's text, so a lawyer looking
+  for the catch-all read a description of another stage.
+* **«Jõustunud»** said, for *every* EU act, to choose it only when Estonia need
+  not change its own law. For a regulation that points at «ELi õiguse
+  ülevõtmise ootel», which the approved guidance matrix deliberately dims for
+  `el-maarus` (ADR 0130 §5) because a regulation is directly applicable and is
+  not transposed. The words and the matrix disagreed, and the matrix had the
+  law right.
+* **«ELi õiguse ülevõtmise ootel»** began «ELi õigusakti jõustumisest» — any EU
+  act — although transposition is a directive's.
+
+### What is decided now
+
+| Stage | Explanation now |
+| --- | --- |
+| `other` «Muu» | Vali „Muu“, kui ükski loetletud hetkeseis ei kirjelda teema tegelikku olukorda. |
+| `in_force` «Jõustunud» | Jõustunud Riigi Teatajas või ELi aktide puhul EUR-Lexis. Kui jõustub ELi direktiiv, märgi hetkeseisuks „jõustunud“ üksnes juhul, kui Eesti ei pea seda siseriiklikku õigusesse üle võtma; seni on hetkeseis „ELi õiguse ülevõtmise ootel“. ELi määrus kohaldub vahetult ja seda üle ei võeta: jõustunud määrus on „jõustunud“ ka siis, kui seda hakatakse kohaldama hiljem või kui Eesti peab selle rakendamiseks oma õigust täiendama. |
+| `awaiting_transposition` «ELi õiguse ülevõtmise ootel» | ELi direktiivi (või muu ülevõtmist vajava ELi akti) jõustumisest kuni Eesti koostab selle ülevõtmiseks VTK, eelnõu või muu dokumendi. ELi määrust üle ei võeta — see kohaldub vahetult. |
+
+Four distinctions, each now said once: **entry into force** (the day the act is
+in force, whatever its date of application), **direct applicability** (a
+regulation needs no Estonian act to apply), **transposition** (a directive's,
+until Estonia has done it) and **national implementing measures** (which a
+regulation may require without being transposed). Whether the Chamber needs a
+stage of its own for «a regulation in force, Estonian implementing measures
+pending» is an open product question recorded in ADR 0130's amendment of
+2026-10-09 («not colour alone»), with a concrete example; until the owner
+answers, the vocabulary and the matrix stay as they are.
+
+The migration **fails closed** — a row whose text is no longer exactly what
+`workflow/0006` wrote is left alone — and its reverse restores the previous
+text under the same rule. `tests/test_stage_help_corrections.py` holds both,
+holds the frozen copy to `workflow/0006`, and holds the new words to the
+matrix.
+
+### What this amendment does not change
+
+- «ELi menetluses» keeps the department's own text, word for word.
+- The other seven explanations, including «Idee»'s unbalanced parenthesis,
+  which is still the department's to close.
+- The matrix (ADR 0130 §5): `el-maarus` still dims «ELi õiguse ülevõtmise
+  ootel»; no stage is added, renamed or retired.
+- Every stored `Matter.stage`, every Hetkeseis period, every import mapping.
