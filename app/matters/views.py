@@ -165,6 +165,7 @@ from app.matters.forms import (
     read_organisation_choices,
     visible_engagements_of,
 )
+from app.matters.initiative import KODA_INITIATIVE_LABEL, is_koda_initiative, set_koda_initiative
 from app.matters.intake import file_incoming, register_incoming, validate_uploads
 from app.matters.intake_suggestions import (
     CurrentValues,
@@ -2042,7 +2043,13 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                     # known — by a person, on `Muuda teemat` and in the Teema
                     # rail, both of which offer the whole vocabulary
                     # (docs/adr/0090 §4).
-                    track="",
+                    #
+                    # **One exception, and it is asked rather than derived:**
+                    # `Koja ettepanek või pöördumine` *is* a statement about the
+                    # procedure — the Chamber started it — and is recorded as
+                    # the track it names, `Koja algatus` (docs/adr/0151 §1).
+                    # The form has already set both incoming dates aside.
+                    track=Track.KODA_INITIATIVE if data.get("koda_initiative") else "",
                     source_organisations=senders,
                     received_date=data.get("received_date"),
                     response_deadline=data.get("response_deadline"),
@@ -3185,6 +3192,10 @@ def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     can_write = may_write_business_content(request.user)
     return {
         "matter": matter,
+        # `Koja ettepanek või pöördumine` — said on the meta line, and the two
+        # incoming dates it does not have are not offered (docs/adr/0151 §3).
+        "koda_initiative": is_koda_initiative(matter),
+        "koda_initiative_label": KODA_INITIATIVE_LABEL,
         # **`Kustuta` only where deleting can succeed** (docs/adr/0120, UQ-13).
         # Asked of `plan_matter_deletion` — the plan `matter_delete` renders and
         # `delete_matter` rebuilds under the row lock — so the header states the
@@ -5056,6 +5067,12 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
                     typed_name=data.get("sender_name") or "",
                 ),
                 actor=request.user,
+            )
+            # `Koja ettepanek või pöördumine` before the dates, so the date
+            # writers below judge them against the answer this save gives
+            # (docs/adr/0151 §2). Through the audited track writer.
+            set_koda_initiative(
+                matter=matter, value=bool(data.get("koda_initiative")), actor=request.user
             )
             set_matter_dates(
                 matter=matter, received_date=data.get("received_date"), actor=request.user

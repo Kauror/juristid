@@ -237,6 +237,18 @@ def create_matter(
     track = extra.get("track", "")
     if track and track not in Track.values:
         raise DomainError(f"Tundmatu menetlusliik {track!r}.")
+    # A Teema the Chamber starts itself has nothing that arrived and no opinion
+    # owed (docs/adr/0151 §2). An importer records whatever the register says.
+    if track == Track.KODA_INITIATIVE and origin == MatterOrigin.NATIVE:
+        from app.matters.initiative import (
+            INITIATIVE_HAS_NO_RECEIVED_DATE,
+            INITIATIVE_HAS_NO_RESPONSE_DEADLINE,
+        )
+
+        if extra.get("received_date"):
+            raise DomainError(INITIATIVE_HAS_NO_RECEIVED_DATE)
+        if extra.get("response_deadline"):
+            raise DomainError(INITIATIVE_HAS_NO_RESPONSE_DEADLINE)
 
     year_number: tuple[int, int] | None = None
     if assign_reference:
@@ -1255,6 +1267,16 @@ def set_matter_dates(
     changed: dict[str, Any] = {}
     fields: list[str] = []
 
+    # Never establishes a date a Chamber initiative does not have; keeping,
+    # moving or clearing one it holds is a correction (docs/adr/0151 §2).
+    from app.matters.initiative import refuse_new_incoming_dates
+
+    proposed: dict[str, Any] = {}
+    if received_date is not _UNSET:
+        proposed["received_date"] = received_date
+    if response_deadline is not _UNSET:
+        proposed["response_deadline"] = response_deadline
+    refuse_new_incoming_dates(matter, **proposed)
     if received_date is not _UNSET and received_date != matter.received_date:
         changed["received_from"] = (
             matter.received_date.isoformat() if matter.received_date else None

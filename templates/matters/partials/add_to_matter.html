@@ -222,6 +222,12 @@ row of controls that refuse (brief §30, §31).
             mistake rather than asking four `{% templatetag openblock %} if {% templatetag closeblock %}`s to agree
             (`_workspace_choices`, docs/adr/0097 §8.3).
           {% endcomment %}
+          {% comment %}
+            Not offered on a Chamber initiative: nobody asked Koda for an opinion
+            by a day, and the service refuses to start a request on one
+            (docs/adr/0151 §2).
+          {% endcomment %}
+          {% if not koda_initiative %}
           <input class="addpick" type="radio" name="marke-liik" id="marge-arvamuse-tahtaeg-valik"
                  data-addpick aria-controls="marge-arvamuse-tahtaeg"
                  {% if marge_choice == "marge-arvamuse-tahtaeg" %}checked{% endif %}>
@@ -231,6 +237,7 @@ row of controls that refuse (brief §30, §31).
               {% include "matters/partials/add/arvamuse_tahtaeg.html" %}
             </div>
           </div>
+          {% endif %}
 
           <input class="addpick" type="radio" name="marke-liik" id="marge-tahtaeg-valik"
                  data-addpick aria-controls="marge-tahtaeg"

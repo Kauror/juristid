@@ -226,8 +226,29 @@
       The deadline's field keeps the `arvamuse-tahtaeg` id, because it is how
       the refusal path and the browser suite find it.
     {% endcomment %}
+    {% comment %}
+      `Koja ettepanek või pöördumine` — the Chamber starts this one itself
+      (owner's R5, docs/adr/0151). Asked here, beside the two dates it decides
+      about, because it is the one thing that makes both of them not apply:
+      nothing arrived, and nobody asked Koda for an opinion by a day.
+
+      Ticked, the two date boxes are hidden and emptied (`bindInitiative`) and
+      the note says why; the form also sets both aside on the server, so a
+      `Saabus` still holding today's default, or anything else left in them,
+      is never recorded. Stored as `Matter.track` «Koja algatus», the process
+      kind it names. Not derived from `Õigusakt` «Koja ettepanek või
+      pöördumine» — a proposal may concern a regulation (docs/adr/0090 §4).
+    {% endcomment %}
+    <div class="createform__row" data-initiative-mode="clear">
+      <label class="checkline">
+        {{ form.koda_initiative }}
+        <span>{{ form.koda_initiative.label }}</span>
+      </label>
+      <p class="field__help" data-initiative-note hidden>Koda algatab selle ise: saabumise kuupäeva ega arvamuse tähtaega ei ole.</p>
+    </div>
+
     <div class="createform__row createform__trio createform__trio--dates">
-      <label class="field" id="arvamuse-tahtaeg">
+      <label class="field" id="arvamuse-tahtaeg" data-initiative-date>
         <span class="field__label">{% field_label form.response_deadline %}</span>
         {{ form.response_deadline }}
         {% if form.response_deadline.errors %}
@@ -237,7 +258,7 @@
 
       {% include "matters/partials/procedural_link_create.html" %}
 
-      <label class="field">
+      <label class="field" data-initiative-date>
         <span class="field__label">{% field_label form.received_date %}</span>
         {{ form.received_date }}
         {% if form.received_date.errors %}
