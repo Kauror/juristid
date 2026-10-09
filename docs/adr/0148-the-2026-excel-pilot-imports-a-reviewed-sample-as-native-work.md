@@ -1,6 +1,7 @@
 # 0148 — The 2026 Excel pilot imports a reviewed sample as native work
 
-**Status:** accepted
+**Status:** accepted, amended 2026-10-09 (§10 — an opinion still being written
+starts with «Koostan arvamust»; the 35-Matter sample)
 **Date:** 2026-10-09
 
 The owner's operational-pilot round. The hosted test-build is to be used for
@@ -200,3 +201,50 @@ writes nothing. Accounts, roles and authentication are untouched.
   - 0146 §9, a gated exception.
   - 0021 and 0045: a pilot row has no register read model.
   - 0131 §9: the current spelling of «rohkem ei tegele» is the stage.
+
+## 10. Amendment, 2026-10-09 — an opinion still being written is the current step
+
+The owner's 35-Matter round (pilot version 1.1). The first pilot read
+`JÄRGMISEKS` as the only source of a current step, so an active row with a
+blank `VÄLJA`, an `ARVAMUSE TÄHTAEG` and an empty `JÄRGMISEKS` — fourteen of the
+twenty opinions being written in the 09.10 snapshot — became a Teema with no
+current action, although the row says plainly that the opinion is being
+written and by when.
+
+**At import time only**, a row whose opinion is still being written — active
+(§5), `VÄLJA` blank, `ARVAMUSE TÄHTAEG` present — gets one ordinary current
+step through `set_next_action`:
+
+| | |
+| --- | --- |
+| text | «Koostan arvamust» (`DRAFTING_TEXT`) |
+| kind / date meaning / precision | `DO` / `DEADLINE` / `EXACT` |
+| date | the row's `ARVAMUSE TÄHTAEG`, exactly — never moved, kept when past |
+| responsible | the Matter's owner (`VASTUTAJA`) |
+| history | the one `NEXT_ACTION_SET` event, no actor, provenance `OPINION_DRAFTING` |
+
+The step and `Arvamuse tähtaeg` are one obligation seen twice: the Matter
+keeps the deadline open (§7), the Teema's secondary obligation line stays quiet
+because the step already shows that day, and the work queues list the step
+rather than the bare deadline (0050). A sent opinion discharges the deadline as
+it always has; the lawyer completes or changes the step through the ordinary
+controls.
+
+On such a row `JÄRGMISEKS`, when written, is **a note (`Märkus`) beside the
+step**, word for word — never a second task, a second deadline or text
+appended to the step. A cell that reads as an instruction is still a note, and
+the manifest records `instruction-kept-as-note:<KIND>` so `plan` names it for
+review; none of the 09.10 snapshot's six does.
+
+Unchanged: sent and finished rows (§6, §8), the parser, the evidence rule, the
+follow-up scheduler, every UI surface. A row with no `ARVAMUSE TÄHTAEG` gets no
+drafting step, because the row names no day for it. **0133 §8 is unchanged for
+native work:** a new Teema still gets no step from its deadline — the rule is
+the import's reading of what an existing register row says, not a runtime rule,
+and nothing creates a step on a Matter merely because it has none.
+
+The sample is now 20 A + 6 B + 9 C = 35 (`pilot_35_selection.toml`, outside the
+repository), from a derived A–L snapshot of 09.10 whose only difference from the
+08.10 workbook is one unselected row's `VÄLJA`, since marked «ei saatnud».
+`PILOT_VERSION` 1.1 is part of the manifest, so a manifest written under 1.0 no
+longer re-derives and `plan` refuses it.

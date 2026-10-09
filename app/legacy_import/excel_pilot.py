@@ -1,10 +1,12 @@
 """The 2026 Excel operational pilot: a small, real dataset in the ordinary workflow.
 
 A reviewed sample of the department's 2026 register — every Matter whose
-opinion is still being written, five whose opinion went out and whose work
-goes on, five that are finished — becomes **native Juristid records**: Matters
-with their owner, `Hetkeseis`, `Õigusakt`, `Saabus` and `Arvamuse tähtaeg`;
-canonical SENT opinions; ordinary next actions; ordinary notes. Nothing here
+opinion is still being written, a hand-picked few whose opinion went out and
+whose work goes on, a few that are finished — becomes **native Juristid
+records**: Matters with their owner, `Hetkeseis`, `Õigusakt`, `Saabus` and
+`Arvamuse tähtaeg`; canonical SENT opinions; ordinary next actions, among them
+one «Koostan arvamust» on every opinion still being written; ordinary notes.
+Nothing here
 builds a register view beside the workflow: after the import every new thing
 happens in Juristid, and there is no synchronisation back (docs/adr/0148).
 
@@ -55,6 +57,7 @@ from app.legacy_import.parser import RegisterWorkbook
 from app.legacy_import.register_next_actions import (
     REGISTER_NEXT_ACTION_PARSER_VERSION,
     ParseContext,
+    ParsedInstruction,
     ReviewReason,
     Verdict,
     instruction_kinds,
@@ -73,7 +76,8 @@ from app.workflow.enums import ActionKind, DatePrecision, DateSemantics, Disposi
 from app.workflow.vocabulary import CURRENT_LABEL_TO_STAGE, RAW_LABEL_TO_STAGE
 
 PILOT = "excel-pilot-2026"
-PILOT_VERSION = "1.0"
+#: 1.1 — an opinion still being written gets its drafting step (docs/adr/0148 §10).
+PILOT_VERSION = "1.1"
 MANIFEST_VERSION = "1"
 #: Typed by the operator at `apply`, the same discipline as
 #: `seed_showcase_data --operator-intent showcase-world`.
@@ -94,6 +98,14 @@ STEP_NONE = "NONE"
 STEP_ACTION = "ACTION"
 STEP_UNDATED_ACTION = "UNDATED_ACTION"
 STEP_ENTRY = "ENTRY"
+
+#: The current step of every opinion still being written (docs/adr/0148 §10):
+#: the department's own words for the work, dated by `ARVAMUSE TÄHTAEG`.
+DRAFTING_TEXT = "Koostan arvamust"
+#: Why a live row's `JÄRGMISEKS` is a note: the drafting step is the current one.
+REASON_DRAFTING = "opinion-being-drafted"
+#: …and the cell reads as an instruction of this kind, which the plan names.
+REASON_KEPT_AS_NOTE = "instruction-kept-as-note"
 
 #: What happens to the row's current `Arvamuse tähtaeg`.
 DEADLINE_NONE = "NONE"
@@ -324,12 +336,60 @@ class NextStep:
     reasons: tuple[str, ...] = ()
 
 
+def opinion_being_drafted(row: SourceRow, lifecycle: Lifecycle) -> bool:
+    """A live row whose opinion is still being written, and the day it is owed.
+
+    Blank `VÄLJA` on active work, with an `ARVAMUSE TÄHTAEG`: the row says the
+    Chamber is writing an opinion due on that day (docs/adr/0148 §10). Without
+    the deadline the row names no day for the work, and nothing is made up.
+    """
+    return (
+        lifecycle.status == ACTIVE.key
+        and row.valja_state == OpinionSentState.BLANK
+        and row.deadline is not None
+    )
+
+
+def drafting_action_of(row: SourceRow, lifecycle: Lifecycle) -> dict[str, Any] | None:
+    """The «Koostan arvamust» step an opinion still being written starts with, or None.
+
+    An ordinary DO whose day is the row's own `ARVAMUSE TÄHTAEG` — a deadline,
+    exact, never moved, kept when already past. The step and `Arvamuse tähtaeg`
+    are one obligation seen twice: the Matter keeps the deadline open, and the
+    Teema's secondary line stays quiet because the step already shows that day.
+    """
+    if not opinion_being_drafted(row, lifecycle):
+        return None
+    return {
+        "text": DRAFTING_TEXT,
+        "kind": ActionKind.DO.value,
+        "date_semantics": DateSemantics.DEADLINE.value,
+        "target_date": _iso(row.deadline),
+        "date_precision": DatePrecision.EXACT.value,
+        "source_field": "ARVAMUSE TÄHTAEG",
+    }
+
+
+def _instruction_kind(parsed: ParsedInstruction, text: str) -> str:
+    """The kind of work a sentence names — as the parser read it, else its words — or ""."""
+    if parsed.verdict == Verdict.UNDERSTOOD:
+        return str(parsed.kind)
+    if ReviewReason.NO_KIND in parsed.review_reasons:
+        return ""
+    kinds = instruction_kinds(text)
+    return kinds[0] if kinds else ""
+
+
 def next_step_of(row: SourceRow, lifecycle: Lifecycle, snapshot_date: dt.date) -> NextStep:
     """One `JÄRGMISEKS` cell, as an ordinary action, an undated action or a note.
 
     * **Nothing written** — no step.
     * **A finished Matter** — never a task: the text is history and becomes a
       note (`Märkus`).
+    * **An opinion still being written** — the current step is «Koostan
+      arvamust» (`drafting_action_of`), so the cell is a note beside it, word
+      for word, and never a second task or a second deadline. A cell that does
+      read as an instruction says so in its reasons, for the plan to name.
     * **Understood** by the register parser — a dated (or, where the sentence
       itself names no day, an undated) action of the kind it states.
     * **Refused only on its date** — the instruction is kept as an **undated**
@@ -345,6 +405,10 @@ def next_step_of(row: SourceRow, lifecycle: Lifecycle, snapshot_date: dt.date) -
 
     context = ParseContext(sheet_year=SHEET_YEAR, snapshot_date=snapshot_date)
     parsed = parse_instruction(text, context=context)
+    if opinion_being_drafted(row, lifecycle):
+        named = _instruction_kind(parsed, text)
+        kept = (f"{REASON_KEPT_AS_NOTE}:{named}",) if named else ()
+        return NextStep(STEP_ENTRY, text=text, reasons=(REASON_DRAFTING, *kept))
     if parsed.verdict == Verdict.UNDERSTOOD:
         return NextStep(
             STEP_ACTION if parsed.target_date is not None else STEP_UNDATED_ACTION,
@@ -482,6 +546,7 @@ def _expected_block(row: SourceRow, lifecycle: Lifecycle, snapshot_date: dt.date
         "submission": submission,
         "deadline": deadline_treatment(row, lifecycle),
         "follow_up_due": follow_up_due,
+        "current_action": drafting_action_of(row, lifecycle),
         "next_step": {
             "treatment": step.treatment,
             "kind": step.kind,
@@ -767,6 +832,12 @@ def build_plan(workbook_path: str | Path, manifest: dict[str, Any]) -> PilotPlan
 
         if expected["next_step"]["treatment"] in {STEP_ACTION, STEP_UNDATED_ACTION}:
             plan.responsible = _leading_colleague(row.next_text, people) or plan.owner
+        for reason in expected["next_step"]["reasons"]:
+            if reason.startswith(f"{REASON_KEPT_AS_NOTE}:"):
+                plan.warnings.append(
+                    f"JÄRGMISEKS reads as a {reason.split(':', 1)[1]} instruction; kept word for "
+                    f"word as a note beside «{DRAFTING_TEXT}» — review it."
+                )
 
         rows.append(plan)
 
@@ -803,6 +874,7 @@ class ApplyReport:
     submissions: int = 0
     placeholders: int = 0
     follow_ups: list[tuple[str, dt.date | None]] = field(default_factory=list)
+    drafting_actions: int = 0
     actions: int = 0
     undated_actions: int = 0
     entries: int = 0
@@ -1047,7 +1119,12 @@ def _write_row(
 
     row, expected = row_plan.row, row_plan.expected
     step = expected["next_step"]
-    interpretation: dict[str, Any] = {"next_step": step, "deadline": expected["deadline"]}
+    drafting = expected["current_action"]
+    interpretation: dict[str, Any] = {
+        "current_action": drafting,
+        "next_step": step,
+        "deadline": expected["deadline"],
+    }
     record: dict[str, Any] = {"interpretation": interpretation}
     provenance = {
         "source": PROVENANCE_SOURCE,
@@ -1059,7 +1136,28 @@ def _write_row(
         "reasons": step["reasons"],
     }
 
-    # 1 — the current step, before anything is planned beside it.
+    # 1 — the current step, before anything is planned beside it. An opinion
+    # still being written starts with «Koostan arvamust», owned by the Matter's
+    # owner and dated by its own deadline; its `JÄRGMISEKS`, if any, is then a
+    # note (`next_step_of`), so the two never compete for the current slot.
+    if drafting:
+        set_next_action(
+            matter=matter,
+            text=drafting["text"],
+            kind=drafting["kind"],
+            date_semantics=drafting["date_semantics"],
+            target_date=dt.date.fromisoformat(drafting["target_date"]),
+            date_precision=drafting["date_precision"],
+            responsible=row_plan.owner,
+            actor=None,
+            provenance={
+                **provenance,
+                "treatment": "OPINION_DRAFTING",
+                "reasons": [],
+                "source_field": drafting["source_field"],
+            },
+        )
+        report.drafting_actions += 1
     if step["treatment"] in {STEP_ACTION, STEP_UNDATED_ACTION}:
         target = dt.date.fromisoformat(step["target_date"]) if step["target_date"] else None
         set_next_action(
@@ -1185,10 +1283,12 @@ def summarise_plan(plan: PilotPlan) -> Iterable[str]:
         expected = row_plan.expected
         step = expected["next_step"]
         sub = expected["submission"]
+        drafting = expected["current_action"]
         yield (
             f"  {row_plan.reference:<9} {row_plan.item['group']} {expected['work_status']:<10} "
             f"stage={expected['stage'] or '—':<22} send={sub['sent_on'] if sub else '—':<10} "
-            f"check={expected['follow_up_due'] or '—':<10} step={step['treatment']}"
+            f"check={expected['follow_up_due'] or '—':<10} "
+            f"draft={drafting['target_date'] if drafting else '—':<10} step={step['treatment']}"
             f"{'/' + step['kind'] if step['kind'] else ''}"
             f"{'@' + step['target_date'] if step['target_date'] else ''}"
         )

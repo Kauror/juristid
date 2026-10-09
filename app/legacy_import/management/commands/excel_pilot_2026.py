@@ -110,6 +110,7 @@ class Command(BaseCommand):
         self.stdout.write(f"  follow-up checks      {len(report.follow_ups)}")
         for reference, due in report.follow_ups:
             self.stdout.write(f"    {reference:<12} due {due.isoformat() if due else '—'}")
+        self.stdout.write(f"  drafting actions      {report.drafting_actions}")
         self.stdout.write(f"  dated actions         {report.actions}")
         self.stdout.write(f"  undated actions       {report.undated_actions}")
         self.stdout.write(f"  notes (Märkus)        {report.entries}")

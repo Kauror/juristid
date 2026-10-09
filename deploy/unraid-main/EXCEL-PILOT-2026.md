@@ -2,9 +2,15 @@
 
 How `juristid-main` moves from its development dataset to the 2026 Excel
 operational pilot (docs/adr/0148): a fresh database, the reviewed accounts and
-reference data, and the 31-Matter sample imported by `excel_pilot_2026`. It is
+reference data, and the reviewed sample imported by `excel_pilot_2026`. It is
 the showcase reset's rename-aside model (`SHOWCASE-RESET.md`) with the pilot
 import in place of the showcase seed.
+
+**The current sample is the 35-Matter one** (pilot version 1.1, ADR 0148 §10):
+the derived A–L snapshot `SOURCE_2026_2026-10-09_pilot_verified.xlsx` with
+`pilot_35_selection.toml` — 20 A + 6 B + 9 C. It replaces the first, 31-Matter
+pilot (version 1.0, 08.10 workbook) by the same procedure; a 1.0 manifest no
+longer plans. The old world in step 1 is then that pilot's database.
 
 This is a **data operation**, separate from the code release that ships the
 command, and it needs the owner's explicit, current authorization. The owner
@@ -84,8 +90,20 @@ is the same folder as the container sees it (mounted read-only).
 
 9. **Health before serving:** `check_domain_invariants`,
    `deployment_readiness`, `check_evidence_integrity --verify-sha`, and the
-   counts the manifest promises (31 Matters; 26 open; 8 SENT opinions, each with
-   a placeholder; 5 follow-up checks; 2026 sequence at 300).
+   counts the manifest promises for the 35-Matter sample:
+
+   | | |
+   | --- | --- |
+   | Matters | 35 — A 20, B 6, C 9; owners 9 / 14 / 12 |
+   | work status | 26 Aktiivne, 3 Mitteaktiivne, 4 Lõpetatud, 2 Jätkub mujal |
+   | «Koostan arvamust» | 20 open `DO` steps, each dated by its Matter's open `Arvamuse tähtaeg` |
+   | SENT opinions | 11, each with its own placeholder PDF; 4 «ei saatnud» with none |
+   | follow-up checks | 6, `PLANNED`, sending date + 30 (some already past) |
+   | notes | 12 (6 beside a drafting step, 6 on finished files) |
+   | continuations | 2 |
+   | 2026 sequence | 300 |
+
+   The apply's own report prints the same lines (`drafting actions 20`).
 10. **Serve:** `$C up -d --no-build --no-deps --dry-run web intake-reader
     searchindex` (db and tunnel must not move), then without `--dry-run`; then
     healthz, the gate page, the persona list, Minu asjad, Osakond, a Teema, search.
@@ -102,8 +120,8 @@ defence; `juristid-restore.sh` the third.
 
 - A fresh database ends every gate session: everyone re-enters the department
   password once.
-- The intake reader extracts the eight placeholder PDFs after serving; a search
-  for «PROOVIMPORT» finds them.
+- The intake reader extracts the placeholder PDFs (eleven) after serving; a
+  search for «PROOVIMPORT» finds them.
 - `juristid_pre_pilot_<stamp>` and the moved trees are removed later, by name,
   with the owner — never as part of this procedure.
 - At commissioning this database is replaced again by a new import with real
