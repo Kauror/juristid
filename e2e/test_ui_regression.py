@@ -1113,10 +1113,32 @@ def assert_no_clock_value_sizes_a_column(page, name: str, *, root: str | None = 
     )
 
 
-def capture(page, name: str, *, full_page: bool = True, clip_to: str | None = None) -> bytes:
+def capture(
+    page,
+    name: str,
+    *,
+    full_page: bool = True,
+    clip_to: str | None = None,
+    rules: str | None = None,
+) -> bytes:
+    """Photograph the page as scenario `name`.
+
+    `rules` names the scenario whose clock contract this capture follows, when
+    it is not its own. A light-theme capture (`hele-…`, docs/adr/0147) is the
+    same surface as a dark scenario in the other palette, so it holds exactly
+    the same values still and requires exactly the same masks — declared once,
+    on the dark scenario, rather than in two tables somebody has to keep in
+    step.
+
+    The masks are painted in the page's own background colour, read from the
+    page rather than written here, so a mask over a light page is not a dark
+    box. On the dark default that colour is `--surface-base`, `#101418`, which
+    is what this used to say literally.
+    """
+    rules = rules or name
     page.add_style_tag(content=STYLE_FIXTURE)
     page.wait_for_load_state("networkidle")
-    for selector in REQUIRED_MASKS.get(name, ()):
+    for selector in REQUIRED_MASKS.get(rules, ()):
         assert page.locator(visible(selector)).count(), (
             f"{name}: the clock mask {selector!r} matches nothing on this page. "
             f"Either the markup moved and the selector needs following, or this "
@@ -1125,7 +1147,7 @@ def capture(page, name: str, *, full_page: bool = True, clip_to: str | None = No
             f"into the baseline, and the run would stay green until somebody "
             f"else's unrelated change went red for it."
         )
-    normalise_clock_text(page, name)
+    normalise_clock_text(page, rules)
     assert_no_clock_value_sizes_a_column(page, name, root=clip_to)
     masks = [page.locator(visible(selector)) for selector in CLOCK_DEPENDENT]
     target = page.locator(clip_to) if clip_to else page
@@ -1135,7 +1157,7 @@ def capture(page, name: str, *, full_page: bool = True, clip_to: str | None = No
         # collide.
         path=str(CANDIDATE_DIR / f"visual-{name}.png"),
         mask=masks,
-        mask_color="#101418",
+        mask_color=page.evaluate("() => getComputedStyle(document.body).backgroundColor"),
         **({"full_page": full_page} if clip_to is None else {}),
     )
     return image
@@ -1811,6 +1833,124 @@ def test_persona_popover_with_nobody_selected(page, gate_base_url):
         "persona-ilma-popover",
         capture(page, "persona-ilma-popover", full_page=False),
     )
+
+
+# ---- The light theme (docs/adr/0147) -------------------------------------
+#
+# Every scenario above is the dark default, and stays it. These photograph the
+# same surfaces in the light palette: the shell, Minu asjad, Osakond, the
+# register with and without its narrowing panel, a Teema, its documents, a
+# refused form, the persona popover and the door. Between them they hold the
+# alerts, the badges, the selected rows and segments, the status colours, the
+# inputs and their refusals, a menu and the emblem as drawn.
+#
+# Each is the twin of a dark scenario and follows that scenario's clock
+# contract (`rules=`), so a pair can differ in colour and in nothing else. The
+# theme is chosen the way a person chooses it — the browser's own preference,
+# there before any page script runs — so these also prove the preference
+# reaches every page of a signed-in walk, not just the one it was set on.
+
+#: Written into every document this page opens, before its scripts run. The
+#: `try`, because `about:blank` has no storage to write to.
+LIGHT_PREFERENCE = "try { window.localStorage.setItem('juristid-theme', 'light') } catch (e) {}"
+
+
+def in_light(page):
+    page.add_init_script(LIGHT_PREFERENCE)
+    return page
+
+
+def light_capture(page, name: str, *, rules: str | None = None, **options) -> bytes:
+    """`capture`, after proving the page really is in the light theme.
+
+    A preference that stopped being applied would otherwise photograph the dark
+    page under a light scenario's name — and the first such run would *adopt*
+    it, because a missing baseline is the one failure everybody fixes by
+    copying the candidate.
+    """
+    theme = page.evaluate("() => document.documentElement.getAttribute('data-theme')")
+    assert theme == "light", f"{name}: the page is in the {theme!r} theme"
+    return capture(page, name, rules=rules, **options)
+
+
+def test_light_shell(page, base_url):
+    signed_in(in_light(page), base_url, "/teemad/", width=1440)
+    compare(
+        "hele-shell-1440",
+        light_capture(page, "hele-shell-1440", rules="shell-1440", clip_to=".topbar"),
+    )
+
+
+def test_light_my_work(page, base_url):
+    signed_in(in_light(page), base_url, "/minu-asjad/")
+    compare("hele-minu-too", light_capture(page, "hele-minu-too", rules="minu-too"))
+
+
+def test_light_department(page, base_url):
+    signed_in(in_light(page), base_url, "/osakond/")
+    compare("hele-osakond", light_capture(page, "hele-osakond", rules="osakond"))
+
+
+def test_light_register(page, base_url):
+    signed_in(in_light(page), base_url, "/teemad/")
+    compare("hele-teemad-1440", light_capture(page, "hele-teemad-1440", rules="teemad-1440"))
+
+
+def test_light_register_with_the_narrowing_panel_open(page, base_url):
+    signed_in(in_light(page), base_url, "/teemad/")
+    page.locator(".filterpanel__trigger").click()
+    page.wait_for_timeout(120)
+    compare("hele-teemad-filter", light_capture(page, "hele-teemad-filter", rules="teemad-filter"))
+
+
+def test_light_matter_overview(page, base_url):
+    signed_in_matter(in_light(page), base_url, OPEN_TITLE)
+    compare(
+        "hele-teema-ulevaade", light_capture(page, "hele-teema-ulevaade", rules="teema-ulevaade")
+    )
+
+
+def test_light_matter_documents(page, base_url):
+    signed_in_matter(in_light(page), base_url, OPEN_TITLE, tab="Dokumendid")
+    compare(
+        "hele-teema-dokumendid",
+        light_capture(page, "hele-teema-dokumendid", rules="teema-dokumendid"),
+    )
+
+
+def test_light_create_matter_refused(page, base_url):
+    """Inputs, chips, a primary action and two refusals beside their fields."""
+    signed_in(in_light(page), base_url, "/teemad/uus/")
+    page.locator("form.createform").evaluate("form => form.noValidate = true")
+    page.get_by_role("button", name="Salvesta", exact=True).click()
+    page.wait_for_load_state("networkidle")
+    compare(
+        "hele-uus-teema-viga", light_capture(page, "hele-uus-teema-viga", rules="uus-teema-viga")
+    )
+
+
+def test_light_persona_popover_open(page, gate_base_url):
+    """A menu over the page, the bar's account controls and the switch."""
+    _behind_the_gate(in_light(page), gate_base_url)
+    page.locator("button.personarow").first.click()
+    page.wait_for_load_state("networkidle")
+    page.goto(f"{gate_base_url}/konto/kasutaja/")
+    page.set_viewport_size(BAR_VIEWPORT)
+    _open_popover(page)
+    compare(
+        "hele-persona-popover-avatud",
+        light_capture(
+            page, "hele-persona-popover-avatud", rules="persona-popover-avatud", full_page=False
+        ),
+    )
+
+
+def test_light_sign_in_door(page, gate_base_url):
+    """The page somebody meets first: the shared door, signed out, in light."""
+    in_light(page).set_viewport_size(DESKTOP_VIEWPORT)
+    page.goto(f"{gate_base_url}/konto/varav/")
+    page.wait_for_load_state("networkidle")
+    compare("hele-sisenemine", light_capture(page, "hele-sisenemine"))
 
 
 # ---------------------------------------------------------------------------

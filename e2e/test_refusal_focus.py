@@ -211,7 +211,9 @@ def test_a_form_level_refusal_focuses_the_message_and_not_a_guessed_field(page, 
     page.goto(f"{gate_base_url}/konto/varav/")
     page.wait_for_load_state("networkidle")
     page.fill('input[name="password"]', "vale-parool-mis-kindlasti-ei-sobi")
-    page.get_by_role("button").first.click()
+    # By name: the bar's theme switch is a button too, and it comes first
+    # (docs/adr/0147).
+    page.get_by_role("button", name="Sisene", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     summary = page.locator(".formerror")

@@ -1,0 +1,31 @@
+{% comment %}
+  The theme switch (docs/adr/0147). One button, no menu: there are two themes,
+  so the only choice is "the other one".
+
+  The icon and the name say what pressing does, not what is on now — a sun
+  offers the light theme, a moon offers the dark one. Both pairs are in the
+  markup and the stylesheet shows one, chosen from `<html data-theme>`
+  (static/css/app.css). A hidden element is out of the accessibility tree as
+  well as off the screen, so the spoken name changes with the icon and no
+  script has to keep either in step. No `aria-pressed`: the name already
+  changes with the state, and a toggle that did both would announce itself
+  twice over.
+
+  `type="button"`, so a press inside any form submits nothing. The click is
+  handled by static/js/theme.js, which is also what reveals the button —
+  without that script it would be a control that does nothing, so it is not
+  shown at all.
+{% endcomment %}
+<button type="button" class="themetoggle" data-theme-toggle>
+  <svg class="themetoggle__icon themetoggle__icon--sun" viewBox="0 0 24 24" width="16" height="16"
+       aria-hidden="true" focusable="false">
+    <circle cx="12" cy="12" r="4.25"></circle>
+    <path d="M12 2.75v2.1M12 19.15v2.1M2.75 12h2.1M19.15 12h2.1M5.46 5.46l1.48 1.48M17.06 17.06l1.48 1.48M5.46 18.54l1.48-1.48M17.06 6.94l1.48-1.48"></path>
+  </svg>
+  <svg class="themetoggle__icon themetoggle__icon--moon" viewBox="0 0 24 24" width="16" height="16"
+       aria-hidden="true" focusable="false">
+    <path d="M20.25 14.4A8.25 8.25 0 0 1 9.6 3.75a8.25 8.25 0 1 0 10.65 10.65z"></path>
+  </svg>
+  <span class="visually-hidden themetoggle__name--light">Lülita heledale teemale</span>
+  <span class="visually-hidden themetoggle__name--dark">Lülita tumedale teemale</span>
+</button>

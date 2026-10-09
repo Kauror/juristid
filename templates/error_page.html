@@ -14,6 +14,8 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    {# The browser's chosen theme, before anything is painted (static/js/theme.js). #}
+    <script src="{% static 'js/theme.js' %}"></script>
     <title>{% block title %}{% endblock %} · Koda Õigusloome</title>
     <link rel="stylesheet" href="{% static 'css/fonts.css' %}">
     <link rel="icon" type="image/png" href="{% static 'brand/koda-logo-negative.png' %}">

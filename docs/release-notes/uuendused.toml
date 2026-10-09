@@ -8,6 +8,19 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-10-09
+basis = "deployment"
+# Hele teema ja teemalüliti, ADR 0147. Ainult kuvamine: migratsioone ei ole,
+# serverisse midagi ei salvestata, otsinguindeksit ei ehitata uuesti. Kui see
+# väljalase ei jõua tootmisse 09.10 (Tallinna aja järgi), liiguvad need read
+# väljalaske päeva kirjesse.
+changes = [
+  "Juristidil on nüüd ka hele teema. Ülemise riba paremas servas on lüliti: päike lülitab heledale teemale, kuu tagasi tumedale. Tume teema jääb vaikimisi teemaks.",
+  "Brauser jätab valitud teema meelde ka järgmisteks külastusteks. Valik kehtib selles brauseris, mitte kasutajakontol, ja kustub koos muu brauseris hoitavaga, kui vajutad «Välju».",
+  "Heledas teemas on kõik tekstid, nupud, sisestusväljad ja olekud ligipääsetava kontrastiga; üleslaaditud dokumente ja nende eelvaateid teema ei muuda.",
+]
+
+[[day]]
 date = 2026-10-08
 basis = "deployment"
 # Oktoobri järelvoor, ADR 0144. Migratsioon submissions/0009 (lisav: arvamuse

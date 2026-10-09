@@ -239,7 +239,7 @@
   width: 100%;
   height: 30px;
   background: var(--surface-raised);
-  border: 1px solid var(--border-control);
+  border: 1px solid var(--border-input);
   border-radius: var(--radius-md);
   color: var(--text-primary);
   font-family: inherit;
@@ -375,6 +375,75 @@
    persona off the bar. Both spellings are in the DOM; `title` carries the long
    one either way. */
 .topbar__envshort {
+  display: none;
+}
+
+/* ---- the theme switch (docs/adr/0147) ------------------------------------
+ *
+ * A quiet icon button the height of the search field, so the bar keeps its
+ * one 48px row. It does nothing without static/js/theme.js, so it is shown
+ * only once that script has run — and the script says so on <html> before
+ * <body> is parsed, so showing it never moves anything after the first paint.
+ *
+ * Which icon and which spoken name are on is decided here, from
+ * `<html data-theme>` and nothing else. The icon is the action, not the
+ * state: a sun offers the light theme, a moon offers the dark one. These four
+ * selectors are the only rules in this file that read the theme attribute for
+ * anything but the emblem; colour never does — every colour below is a
+ * semantic token, which is what makes the switch a token swap. */
+.themetoggle {
+  display: none;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+/* The bar's own gap is 24px (12px once it wraps below 860px). Beside the
+   persona the switch keeps 8px: it reads as part of the account controls
+   rather than as one more destination, and the width it hands back is what
+   keeps the one-row bar inside its padding at 861px, where the search field
+   is already at its minimum. Before signing in it is the last thing on the
+   bar and keeps the ordinary gap. */
+.themetoggle:not(:last-child) {
+  margin-right: calc(var(--spacing-2) - var(--spacing-6));
+}
+
+@media (max-width: 860px) {
+  .themetoggle:not(:last-child) {
+    margin-right: calc(var(--spacing-2) - var(--spacing-3));
+  }
+}
+
+:root[data-theme-switchable] .themetoggle {
+  display: inline-flex;
+}
+
+.themetoggle:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.themetoggle__icon {
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+:root[data-theme="light"] .themetoggle__icon--sun,
+:root[data-theme="light"] .themetoggle__name--light,
+:root:not([data-theme="light"]) .themetoggle__icon--moon,
+:root:not([data-theme="light"]) .themetoggle__name--dark {
   display: none;
 }
 
@@ -2369,7 +2438,7 @@ fieldset.field > legend {
 .field__input {
   width: 100%;
   background: var(--surface-base);
-  border: 1px solid var(--border-control);
+  border: 1px solid var(--border-input);
   border-radius: var(--radius-md);
   color: var(--text-primary);
   font-family: inherit;
@@ -3867,8 +3936,8 @@ a.barchart__row:hover {
 .barchart__row--unknown .barchart__fill {
   background: repeating-linear-gradient(
     45deg,
-    var(--primitive-neutral-400),
-    var(--primitive-neutral-400) 3px,
+    var(--border-strong),
+    var(--border-strong) 3px,
     var(--surface-hover) 3px,
     var(--surface-hover) 6px
   );
@@ -6414,7 +6483,7 @@ fieldset,
   width: 100%;
   min-height: 62px;
   background: var(--surface-base);
-  border: 1px solid var(--border-control);
+  border: 1px solid var(--border-input);
   border-radius: var(--radius-md);
   padding: 11px 14px;
   font-size: var(--typography-size-row);
@@ -6809,7 +6878,7 @@ button.accordion__action:focus-visible {
   width: 100%;
   min-height: 118px;
   background: var(--surface-capture);
-  border: 1px solid var(--border-control);
+  border: 1px solid var(--border-input);
   border-radius: var(--radius-md);
   padding: 10px 12px;
   font-family: inherit;
@@ -9228,7 +9297,7 @@ button.accordion__action:focus-visible {
 .pw-search input {
   width: 200px;
   padding: 5px var(--spacing-25);
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--border-input);
   border-radius: var(--radius-md);
   background: var(--surface-base);
   color: var(--text-body);

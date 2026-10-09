@@ -3,6 +3,13 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    {% comment %}
+      First, and without `defer`: it sets `data-theme` on this element before
+      <body> is parsed, so a browser that chose the light theme never paints a
+      dark frame. The server always renders dark, which is the default
+      (static/js/theme.js, docs/adr/0147).
+    {% endcomment %}
+    <script src="{% static 'js/theme.js' %}"></script>
     <title>{% block title %}{{ application_name }}{% endblock %}</title>
     <link rel="stylesheet" href="{% static 'css/fonts.css' %}">
 
@@ -220,6 +227,13 @@
           {% endif %}
 
           {% comment %}
+            Beside the account controls, because it is a preference of this
+            browser rather than a place to go. Left of them, so the persona and
+            «Välju» keep the positions they have always had.
+          {% endcomment %}
+          {% include "components/theme_toggle.html" %}
+
+          {% comment %}
             Who the application is showing work for, and a way to change it.
 
             Named rather than reduced to an avatar, because in shared-gate mode
@@ -251,6 +265,12 @@
           </form>
         {% else %}
           <span class="topbar__spacer"></span>
+          {% comment %}
+            Before signing in too: signing out clears the browser's storage
+            and the preference with it, so the sign-in page is where somebody
+            meets the default again (docs/adr/0147).
+          {% endcomment %}
+          {% include "components/theme_toggle.html" %}
         {% endif %}
       </header>
 
