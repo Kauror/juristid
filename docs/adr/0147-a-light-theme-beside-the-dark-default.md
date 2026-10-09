@@ -306,6 +306,11 @@ and `Uus teema` at rest and refused.
    close to an ordinary chip — and holds it at least a fifth quieter than muted
    in both themes. The rendered audit measures it where it is drawn, in both
    themes: «Uus teema» with `Seadus` ticked is its sixteenth page.
+   **Superseded later on 2026-10-09 for both themes' value and the outline —
+   see ADR 0130's amendment of 2026-10-09 («not colour alone»).** The dimmed chip gained a
+   dotted outline as a cue that is not colour, which let the words keep a
+   margin: #7c8996 dark (5.18:1), #5d6873 light (≥5.16:1), held to 5.1:1 and
+   to «still quieter than muted» rather than «a fifth quieter».
 3. **A dark field is found by its edge.** `--border-input` #2a323b → #63707d
    (`--primitive-neutral-350`): 3.65:1 on the page and at least 3.09:1 on every
    surface a field sits on, popovers and the facts rail included — a dark

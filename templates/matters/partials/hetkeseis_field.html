@@ -22,6 +22,12 @@
   `aria-describedby`, which `DescribedRadioSelect` writes; the name is the words
   on the chip (app/workflow/selectors.py).
 
+  **`stagehelp__note`** is empty as rendered. `bindStageGuidance` writes one
+  sentence into it while the chosen `Õigusakt` does not normally fit this stage,
+  so the dimming reaches a keyboard and a screen reader as words — through the
+  same `aria-describedby` — and a chosen atypical stage still says so on hover
+  (docs/adr/0130, amendment of 2026-10-09 («not colour alone»)). Empty, it contributes nothing.
+
   **`retired_stage_ids`** is at most one row — the stage this Matter already
   holds, if the department has since withdrawn it. Offered back and marked,
   because `Hetkeseis` is optional and a control narrowed to the active rows
@@ -56,7 +62,7 @@
                 <span class="chip__name">{{ choice.choice_label }} · kasutusest väljas</span>
               </label>
               <span class="stagehelp" role="tooltip"
-                    id="{{ choice.id_for_label }}-selgitus">{{ help }}</span>
+                    id="{{ choice.id_for_label }}-selgitus">{{ help }}<span class="stagehelp__note" data-stage-atypical-note></span></span>
             </span>
           {% else %}
             <label class="chip chip--retired">
@@ -71,7 +77,7 @@
               <span class="chip__name">{{ choice.choice_label }}</span>
             </label>
             <span class="stagehelp" role="tooltip"
-                  id="{{ choice.id_for_label }}-selgitus">{{ help }}</span>
+                  id="{{ choice.id_for_label }}-selgitus">{{ help }}<span class="stagehelp__note" data-stage-atypical-note></span></span>
           </span>
         {% else %}
           <label class="chip">

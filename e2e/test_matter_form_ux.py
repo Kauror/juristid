@@ -528,12 +528,16 @@ def test_the_explanation_reaches_a_keyboard_and_a_screen_reader(page, base_url):
     assert _open_bubbles(page) == []
 
 
-@pytest.mark.parametrize("width", [1440, 1280, 1024])
+@pytest.mark.parametrize("width", [1440, 1280, 1024, 768, 375, 320])
 def test_a_stage_tooltip_never_opens_off_the_screen(page, base_url, width):
     """The chips wrap, so the last one on a row sits against the right edge.
 
-    Its bubble flips to open leftwards rather than widening the document, which
-    is the difference between a tooltip and a horizontal scrollbar.
+    Its bubble slides back inside the window rather than widening the document,
+    which is the difference between a tooltip and a horizontal scrollbar — and
+    on a phone it must not slide off the *left* edge instead, which is what the
+    first version did: at 320px and 375px the bubble was anchored to the right
+    edge of a chip in the middle of the screen and started up to 189px off it
+    (live QA, 9 October 2026). `_open_bubbles` checks both edges.
     """
     sign_in(page, base_url, MARTIN)
     page.set_viewport_size({"width": width, "height": 900})
@@ -546,6 +550,37 @@ def test_a_stage_tooltip_never_opens_off_the_screen(page, base_url, width):
         page.wait_for_timeout(60)
         shown = _open_bubbles(page)
         assert shown and not shown[0]["clipped"], (width, index, shown)
+        assert not _document_overflows(page), f"a tooltip widened the page at {width}px"
+
+
+@pytest.mark.parametrize("theme", ["dark", "light"])
+@pytest.mark.parametrize("width", [375, 320])
+def test_a_stage_tooltip_fits_a_phone_from_the_keyboard_too(page, base_url, width, theme):
+    """Focus opens the same bubble as hover, so it has to fit the same window.
+
+    Every explained stage, reached by focus rather than by the pointer, in both
+    themes: the whole bubble inside the window, its first word readable, and the
+    page no wider than before.
+    """
+    page.add_init_script(
+        f"try {{ window.localStorage.setItem('juristid-theme', '{theme}') }} catch (e) {{}}"
+    )
+    sign_in(page, base_url, MARTIN)
+    page.set_viewport_size({"width": width, "height": 800})
+    create_form(page, base_url)
+    open_hetkeseis(page)
+    assert page.evaluate("() => document.documentElement.dataset.theme") == theme
+
+    radios = page.locator('input[name="stage"][aria-describedby]')
+    assert radios.count() >= 5
+    for index in range(radios.count()):
+        radio = radios.nth(index)
+        radio.focus()
+        page.mouse.move(0, 0)
+        page.wait_for_timeout(60)
+        shown = _open_bubbles(page)
+        assert [node["id"] for node in shown] == [radio.get_attribute("aria-describedby")], shown
+        assert not shown[0]["clipped"], (width, theme, shown[0])
         assert not _document_overflows(page), f"a tooltip widened the page at {width}px"
 
 

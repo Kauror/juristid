@@ -94,6 +94,13 @@ TYPICAL_STAGES_BY_INSTRUMENT: Mapping[str, frozenset[str]] = {
 }
 
 
+#: What an atypical chip's explanation adds while it is dimmed — the dimming in
+#: words, for a keyboard and a screen reader, and for a chosen chip, which is
+#: never drawn dimmed (docs/adr/0130, amendment of 2026-10-09 («not colour alone»)). A description,
+#: not a warning: it says the stage is unusual here and that it may be chosen.
+ATYPICAL_STAGE_NOTE = "Valitud õigusakti puhul tavaliselt ei kasutata, kuid valida võib."
+
+
 def typical_stage_keys(instrument_keys: Iterable[str]) -> frozenset[str] | None:
     """The stage keys that stay normal for these instruments, or ``None`` for "all of them".
 
@@ -137,6 +144,7 @@ def stage_guidance_payload() -> dict[str, Any]:
     """
     return {
         "always": sorted(ALWAYS_TYPICAL_STAGE_KEYS),
+        "atypical_note": ATYPICAL_STAGE_NOTE,
         "instruments": {
             key: sorted(stages) for key, stages in sorted(TYPICAL_STAGES_BY_INSTRUMENT.items())
         },
