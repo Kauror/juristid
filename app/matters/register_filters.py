@@ -326,6 +326,29 @@ def opinion_state_q(user: Any, value: str) -> Q:
     preparation after the first went out is drafting, which is why the
     exception applies to the register half only.
 
+    * **or** the opinion is being prepared through the native workflow
+      (docs/adr/0149) — both of:
+
+      - an OPEN step this reader may see that *is* the opinion work: the
+        product's own sentence for it, ``OPINION_PREPARATION_TEXT``
+        («Koostan arvamuse»), or the work plan's opinion step, recognised by
+        its operation (``PlanStepOperation.SUBMISSION``) and never by its words
+        (docs/adr/0133 §6); and
+      - an ``Arvamuse tähtaeg`` still owed — the response obligation exactly as
+        :func:`app.matters.work_items.response_obligation_outstanding_q` reads
+        it.
+
+      Since docs/adr/0061 (amendment of 2026-09-27) the interface starts no
+      DRAFT: an opinion is recorded sent, in one act, from `Lisa teemale →
+      Koja arvamus`. Without this half nothing a lawyer does natively could
+      ever read as «koostamisel». The obligation is what ends it: the send that
+      answers the deadline discharges it, so the Matter leaves the count on the
+      next read even if nobody marks the old step done — and a send that does
+      not answer a request-tracked deadline leaves the work standing. Neither
+      half alone is drafting: an open file with an unanswered deadline may be
+      waited on or watched, and a step with no deadline owed is a plan, not an
+      opinion somebody is waiting for.
+
     **saadetud** — a SENT Submission this reader may see, **or** a CURRENT
     register row whose VÄLJA is a date (``recorded_sent``). Not «something is
     written in VÄLJA»: that includes **ei saatnud**, a decision not to send, and
@@ -369,8 +392,12 @@ def opinion_state_q(user: Any, value: str) -> Q:
     An unknown ``value`` matches nothing.
     """
     from app.legacy_import.current_state import CurrentRegisterState
+    from app.matters.work_items import response_obligation_outstanding_q
     from app.submissions.models import Submission
     from app.submissions.workspace import drafting
+    from app.workflow.enums import ActionStatus, PlanStepOperation
+    from app.workflow.models import NextAction
+    from app.workflow.services import OPINION_PREPARATION_TEXT
 
     if value not in {OPINION_DRAFTING, OPINION_SENT}:
         return Q(pk__in=[])
@@ -380,10 +407,22 @@ def opinion_state_q(user: Any, value: str) -> Q:
     sent_here = Q(Exists(readable.sent()))
     if value == OPINION_SENT:
         return sent_here | Q(Exists(register.recorded_sent()))
+    # The opinion work as the native workflow records it: the current step is the
+    # opinion step, read under the reader's own scope, and a deadline is owed.
+    preparing = (
+        NextAction.objects.visible_to(user)
+        .filter(matter=OuterRef("pk"), status=ActionStatus.OPEN)
+        .filter(
+            Q(text=OPINION_PREPARATION_TEXT) | Q(plan_step__operation=PlanStepOperation.SUBMISSION)
+        )
+    )
+    native = Q(Exists(preparing)) & response_obligation_outstanding_q(user)
     # `drafting()` on both sides: the Submission population /arvamused/ counts,
     # and the register rows the cutover counts — imported, not restated.
-    return Q(Exists(drafting(user, visible=readable))) | (
-        Q(Exists(register.drafting())) & ~sent_here
+    return (
+        Q(Exists(drafting(user, visible=readable)))
+        | (Q(Exists(register.drafting())) & ~sent_here)
+        | native
     )
 
 

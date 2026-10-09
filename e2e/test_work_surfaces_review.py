@@ -214,7 +214,7 @@ def test_no_seis_figure_leads_nowhere(page, base_url):
 
     Every figure that carries a link is a promise that a list exists behind it,
     so a `#` or an empty `href` is a dead end. Exactly one figure carries no
-    link at all: «arvamust välja · 7 p» counts a seven-day window the Arvamused
+    link at all: «arvamust välja sel nädalal» counts a calendar week the Arvamused
     workspace cannot narrow to, so it states the number and offers nothing
     rather than opening a longer list — an honest number beats a link to a
     different one (docs/adr/0049 §4, DS-24).
@@ -222,7 +222,7 @@ def test_no_seis_figure_leads_nowhere(page, base_url):
     _open(page, base_url, HEAD, "/osakond/", 1440)
 
     figures = page.locator(".seis__figure")
-    assert figures.count() == 6, figures.count()
+    assert figures.count() == 7, figures.count()
 
     unlinked = []
     for index in range(figures.count()):
@@ -234,7 +234,7 @@ def test_no_seis_figure_leads_nowhere(page, base_url):
             continue
         assert href and href != "#", f"{caption} leads nowhere"
 
-    assert unlinked == ["arvamust välja · 7 p"], unlinked
+    assert unlinked == ["arvamust välja sel nädalal"], unlinked
 
 
 def test_the_area_accordion_is_a_real_disclosure(page, base_url):
