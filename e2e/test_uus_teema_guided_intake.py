@@ -15,6 +15,9 @@ What only a running page can settle:
   chosen stage;
 * **G** — the dimming is not colour alone: a dotted edge, and one sentence in
   the explanation the radio is described by — chosen or not;
+* **H** — `VTK` and `Koja ettepanek või pöördumine` choose `Idee` on an empty,
+  untouched `Hetkeseis`, say so, take it back when the instrument changes, and
+  never again once the lawyer has chosen — `Määramata` included;
 * **F** — one realistic Teema through every section, files included — a signed
   container among them, so moving `Failid` cannot quietly regress
   docs/adr/0125.
@@ -429,3 +432,86 @@ def test_f_a_full_creation_with_files(page, base_url, screenshots):
     page.wait_for_load_state("networkidle")
     expect(page.locator('input[name="policy_areas"]:checked')).to_have_count(2)
     expect(_stage(page, "ELi menetluses")).to_be_checked()
+
+
+# ---------------------------------------------------------------------------
+# H — a stage chosen from the instrument (docs/adr/0130, amendment of 2026-10-09)
+# ---------------------------------------------------------------------------
+
+
+def _prefill_note(page):
+    return page.locator("[data-stage-prefill-note]")
+
+
+def test_h_vtk_chooses_idee_on_an_untouched_hetkeseis_and_takes_it_back(page, base_url):
+    _open(page, base_url)
+    expect(_stage(page, "Määramata")).to_be_checked()
+    expect(_prefill_note(page)).to_be_hidden()
+
+    _instrument(page, "VTK").check()
+    assert _chosen_stage(page) == "idea"
+    expect(_prefill_note(page)).to_be_visible()
+
+    # An instrument that does not decide the stage takes back the one chosen
+    # for it — and only that one.
+    _instrument(page, "Seadus").check()
+    assert _chosen_stage(page) == ""
+    expect(_prefill_note(page)).to_be_hidden()
+
+    _instrument(page, "Koja ettepanek või pöördumine").check()
+    assert _chosen_stage(page) == "idea"
+
+    _no_instrument(page).check()
+    assert _chosen_stage(page) == ""
+
+
+def test_h_a_stage_the_lawyer_chose_is_never_replaced(page, base_url):
+    _open(page, base_url)
+    _stage(page, "Riigikogus").check()
+
+    _instrument(page, "VTK").check()
+
+    assert _chosen_stage(page) == "parliament"
+    expect(_prefill_note(page)).to_be_hidden()
+
+
+def test_h_a_cleared_stage_is_not_put_back(page, base_url):
+    _open(page, base_url)
+    _instrument(page, "VTK").check()
+    assert _chosen_stage(page) == "idea"
+
+    # The lawyer says «not decided yet» — deliberately.
+    _stage(page, "Määramata").check()
+    _instrument(page, "Seadus").check()
+    _instrument(page, "VTK").check()
+
+    assert _chosen_stage(page) == ""
+    expect(_prefill_note(page)).to_be_hidden()
+
+
+def test_h_the_keyboard_reaches_it_the_same_way(page, base_url):
+    _open(page, base_url)
+    _no_instrument(page).focus()
+    page.keyboard.press("ArrowRight")
+    expect(_instrument(page, "VTK")).to_be_checked()
+    assert _chosen_stage(page) == "idea"
+
+
+def test_h_the_chosen_stage_is_what_the_teema_holds(page, base_url):
+    _open(page, base_url)
+    page.fill("#id_title", unique_title("Eeltäidetud idee"))
+    _instrument(page, "VTK").check()
+    give_first_step(page)
+    page.get_by_role("button", name="Salvesta", exact=True).click()
+    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    start_first_step(page)
+
+    page.goto(page.url + "muuda/")
+    page.wait_for_load_state("networkidle")
+    expect(_stage(page, "Idee")).to_be_checked()
+    # And the edit page chooses nothing: taking the stage away and changing the
+    # instrument leaves it taken away.
+    _stage(page, "Määramata").check()
+    _instrument(page, "Seadus").check()
+    _instrument(page, "VTK").check()
+    assert _chosen_stage(page) == ""

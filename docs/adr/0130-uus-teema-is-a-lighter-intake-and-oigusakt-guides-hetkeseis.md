@@ -247,6 +247,10 @@ text extraction for classification, no LLM, no auto-selection. The seam it
 would use is the same one this ADR uses — stable keys on the inputs, guidance
 as a presentation layer over a form the server validates on its own — so it can
 be added beside §4 without changing it.
+**Narrowed on 2026-10-09, awaiting the product owner's approval — see the
+amendment of that date «a stage chosen from the instrument».** One rule only:
+an instrument whose matrix row names exactly one stage chooses it on an empty,
+untouched `Hetkeseis` on `Uus teema`.
 
 ## Alternatives considered
 
@@ -485,3 +489,60 @@ when correcting a Teema, and read the absence as «every stage fits».
 - The matrix, its keys, `Määramata` and `Muu` never dimmed, missing guidance
   dimming nothing; nothing disabled, hidden, refused or rewritten.
 - The server accepts every valid combination on both pages.
+
+---
+
+## Amendment, 2026-10-09 — a stage chosen from the instrument (awaiting the owner's approval)
+
+- Status: **proposed, awaiting the product owner's approval before merge**;
+  amends §9's «no auto-selection» for one rule, and §8's «Nothing writes
+  `Matter.stage` from the matrix» only in the sense that the page chooses a
+  radio the lawyer then saves — the server still infers nothing.
+- Scope: `Uus teema`'s script. No model, no validation, no server-side
+  inference; `Muuda teemat` never chooses a stage.
+
+### What was decided before
+
+§9: no auto-selection of any classification. The guidance dims; it never
+chooses.
+
+### Why it is proposed
+
+The owner asked for `Õigusakt` to fill `Hetkeseis` where that is safe. For most
+instruments it is not: a `Seadus` can be anywhere from an idea to in force, and
+choosing the first stage would record a fact nobody stated.
+
+### What is proposed
+
+1. **One rule, read off the approved matrix**
+   (`prefill_stage_by_instrument`): an instrument whose normal stages, apart
+   from `Muu` and `Rohkem ei tegele`, are exactly one stage chooses it. Today
+   that is `VTK` → `Idee` and `Koja ettepanek või pöördumine` → `Idee`; every
+   other instrument chooses nothing, and the dimming alone guides.
+2. **Only an empty, untouched `Hetkeseis`.** The page must have arrived with
+   «Määramata» chosen (a refused save holding a stage counts as touched), and
+   no person may have chosen a stage since. Any choice a person makes — a stage
+   or «Määramata» — ends the prefill for that page for good, so a stage the
+   lawyer cleared is never put back.
+3. **It follows the instrument while it is the page's own choice.** Choosing
+   an instrument that does not decide the stage, or «Määramata» in `Õigusakt`,
+   takes back a stage the page chose — and only that one.
+4. **It says so.** «Hetkeseis valiti õigusakti järgi — muuda, kui teema on
+   mujal.» appears beside the row, politely announced, while the choice is the
+   page's; it goes the moment the lawyer chooses.
+5. **The server is unchanged.** The radio is an ordinary answer; what is saved
+   is what the page shows. With scripting off nothing is chosen.
+
+### Alternatives for the ambiguous instruments, if the owner wants more
+
+| option | consequence |
+| --- | --- |
+| choose the first typical stage (`Seadus` → `Idee`) | records an idea stage for a draft already before the government; wrong for most incoming drafts |
+| choose by the sender (a ministry → `Kooskõlastusringil`) | inference from a second field the matrix does not cover; a new rule to review |
+| choose nothing (this proposal) | the lawyer picks among the highlighted typical stages, as today |
+
+### What this amendment does not change
+
+- The matrix, its keys, the dimming, the note, union for a historical pair.
+- `Muuda teemat` and every stored stage.
+- The server's acceptance of every combination.

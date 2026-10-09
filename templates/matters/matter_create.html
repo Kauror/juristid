@@ -285,6 +285,13 @@
     {% endcomment %}
     <div class="createform__row" data-stage-guidance="hetkeseis-juhis">
       {% include "matters/partials/hetkeseis_field.html" %}
+      {% comment %}
+        Said when, and only when, `Hetkeseis` was chosen from the instrument —
+        a `VTK` or the Chamber's own proposal is an idea — and gone the moment
+        the lawyer chooses anything themselves (`bindStageGuidance`,
+        docs/adr/0130, amendment of 2026-10-09).
+      {% endcomment %}
+      <p class="field__help" data-stage-prefill-note aria-live="polite" hidden></p>
       {{ stage_guidance|json_script:"hetkeseis-juhis" }}
     </div>
 

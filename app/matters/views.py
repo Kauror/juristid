@@ -2346,7 +2346,9 @@ def _create_context(
         # `Õigusakt -> Hetkeseis` guidance, for the page's script: which stages
         # stay normal for which instrument. Presentation only — nothing on the
         # write path reads it (app/workflow/stage_guidance.py, docs/adr/0130).
-        "stage_guidance": stage_guidance_payload(),
+        # With the conservative prefill, which is this page's alone (docs/adr/0130,
+        # amendment of 2026-10-09, «a stage chosen from the instrument»).
+        "stage_guidance": stage_guidance_payload(prefill=True),
         # The form's own answers, so a refused save's redisplay does not propose
         # a sender over one the person has already given. On a GET the form is
         # unbound and `answered_on` is empty, which is what it was before

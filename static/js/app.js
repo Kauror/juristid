@@ -3125,6 +3125,25 @@
       var always = guidance.always || [];
       var byInstrument = guidance.instruments || {};
       var note = guidance.atypical_note || "";
+      /* The conservative prefill (docs/adr/0130, amendment of 2026-10-09, «a
+         stage chosen from the instrument»). `Uus teema` only — the payload
+         carries no `prefill` on `Muuda teemat`. Rules:
+          - only on a `Hetkeseis` that arrived empty and nobody has touched: a
+            refused save that comes back holding a stage counts as touched;
+          - only for an instrument that names exactly one stage (`VTK`, `Koja
+            ettepanek või pöördumine` → `Idee`);
+          - a person's own choice — any stage, «Määramata» included — ends it
+            for good, so a stage they cleared is never put back;
+          - choosing another instrument takes back a stage this put there, and
+            only that one. */
+      var prefill = guidance.prefill || null;
+      var prefillNote = row.querySelector("[data-stage-prefill-note]");
+      var checkedStageKey = function () {
+        var checked = row.querySelector('input[name="stage"]:checked');
+        return checked ? checked.getAttribute("data-stage-key") || "" : "";
+      };
+      var stageTouched = checkedStageKey() !== "";
+      var stageChosenHere = null;
 
       var chosenKeys = function () {
         var keys = [];
@@ -3175,9 +3194,50 @@
         });
       };
 
+      var sayPrefill = function (on) {
+        if (!prefillNote) {
+          return;
+        }
+        prefillNote.textContent = on ? guidance.prefill_note || "" : "";
+        prefillNote.hidden = !on;
+      };
+
+      var chooseStage = function (key) {
+        var target = key
+          ? row.querySelector('input[name="stage"][data-stage-key="' + key + '"]')
+          : row.querySelector('input[name="stage"][value=""]');
+        if (target && !target.checked) {
+          target.checked = true;
+        }
+      };
+
+      var applyPrefill = function () {
+        if (!prefill || stageTouched) {
+          return;
+        }
+        var keys = chosenKeys();
+        var wanted = keys.length === 1 ? prefill[keys[0]] || null : null;
+        var now = checkedStageKey();
+        if (wanted && (now === "" || now === stageChosenHere)) {
+          chooseStage(wanted);
+          stageChosenHere = wanted;
+          sayPrefill(true);
+        } else if (!wanted && stageChosenHere !== null && now === stageChosenHere) {
+          chooseStage("");
+          stageChosenHere = null;
+          sayPrefill(false);
+        }
+      };
+
       form.addEventListener("change", function (event) {
         if (event.target && event.target.name === "legal_instruments") {
           sync();
+          applyPrefill();
+        } else if (event.target && event.target.name === "stage" && event.isTrusted) {
+          /* A person chose — a stage or «Määramata». It is theirs from now. */
+          stageTouched = true;
+          stageChosenHere = null;
+          sayPrefill(false);
         }
       });
       sync();
