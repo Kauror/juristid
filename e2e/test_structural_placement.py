@@ -84,7 +84,7 @@ def _matter(
     page.wait_for_load_state("networkidle")
     page.fill("#id_title", unique_title("Paigutus"))
     if instrument is not None:
-        page.get_by_role("checkbox", name=instrument, exact=True).check()
+        page.get_by_role("radio", name=instrument, exact=True).check()
     if stage is not None:
         open_hetkeseis(page)
         page.get_by_role("radio", name=stage, exact=True).check()

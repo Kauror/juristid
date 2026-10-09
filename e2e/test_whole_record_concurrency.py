@@ -144,7 +144,7 @@ def test_a_stale_menetluse_kulg_panel_is_refused(page, context, base_url):
     # instrument is set here.
     page.goto(f"{matter_url}muuda/")
     page.wait_for_load_state("networkidle")
-    page.get_by_role("checkbox", name="Seadus", exact=True).check()
+    page.get_by_role("radio", name="Seadus", exact=True).check()
     page.get_by_role("button", name="Salvesta").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
 

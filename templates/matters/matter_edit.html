@@ -227,9 +227,17 @@
       {% include "matters/partials/valdkonnad_field.html" %}
     </div>
 
-    <div class="createform__row">
+    {% comment %}
+      The `Õigusakt -> Hetkeseis` guidance `Uus teema` draws, from the same
+      matrix and the same script (docs/adr/0130, amendment of 2026-10-09,
+      «Muuda teemat»). Presentation only: nothing is chosen, cleared or
+      refused, a stored stage is never touched, and a closed file's stage is
+      stated rather than offered, so there is nothing for it to dim there.
+    {% endcomment %}
+    <div class="createform__row" data-stage-guidance="hetkeseis-juhis">
       {% include "matters/partials/hetkeseis_field.html" %}
       {% include "matters/partials/follow_up_closure_confirm.html" with form=form %}
+      {{ stage_guidance|json_script:"hetkeseis-juhis" }}
     </div>
 
     <div class="createform__row">

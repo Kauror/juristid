@@ -8,7 +8,9 @@ What only a running page can settle:
   a dimmed `ELi menetluses` is still clickable, looks chosen once chosen, saves,
   and is exactly what the Teema then holds;
 * **C** — `ELi konsultatsioon` dims the domestic stages;
-* **D** — `ELi direktiiv` + `Seadus` combine by **union**;
+* **D** — one instrument at a time: choosing another re-dims at once, and a
+  historical pair (planted, as no page can make one now) still guides by
+  **union** on `Muuda teemat`;
 * **E** — changing the instruments re-dims immediately and never clears the
   chosen stage;
 * **G** — the dimming is not colour alone: a dotted edge, and one sentence in
@@ -31,7 +33,14 @@ import pytest
 from playwright.sync_api import expect
 
 from app.workflow.stage_guidance import ATYPICAL_STAGE_NOTE
-from e2e.conftest import MARTIN, give_first_step, sign_in, start_first_step, unique_title
+from e2e.conftest import (
+    MARTIN,
+    give_first_step,
+    plant_historical_instruments,
+    sign_in,
+    start_first_step,
+    unique_title,
+)
 from tests.synthetic_containers import signed_container
 
 pytestmark = pytest.mark.e2e
@@ -71,7 +80,12 @@ def _dimmed(page) -> set[str]:
 
 
 def _instrument(page, name: str):
-    return page.get_by_role("checkbox", name=name, exact=True)
+    return page.get_by_role("radio", name=name, exact=True)
+
+
+def _no_instrument(page):
+    """«Määramata» in the `Õigusakt` row — the radio that takes the answer back."""
+    return page.locator('input[name="legal_instruments"][value=""]')
 
 
 def _stage(page, name: str):
@@ -228,13 +242,31 @@ def test_c_an_eu_consultation_dims_the_domestic_stages(page, base_url, screensho
 # ---------------------------------------------------------------------------
 
 
-def test_d_a_directive_and_a_law_combine_by_union(page, base_url):
+def test_d_one_instrument_at_a_time_and_a_historical_pair_by_union(page, base_url):
     _open(page, base_url)
 
     _instrument(page, "ELi direktiiv").check()
     assert "parliament" in _dimmed(page)
+    assert "awaiting_transposition" not in _dimmed(page)
 
+    # Choosing `Seadus` replaces the directive: the EU stages dim instead.
     _instrument(page, "Seadus").check()
+    expect(_instrument(page, "ELi direktiiv")).not_to_be_checked()
+    dimmed = _dimmed(page)
+    assert "parliament" not in dimmed
+    assert {"eu_procedure", "awaiting_transposition"} <= dimmed
+
+    # A Matter filed before the rule with both keeps them, and «Jäta alles»
+    # guides by their union on `Muuda teemat` (docs/adr/0070, 0130).
+    page.fill("#id_title", unique_title("Juhis ajalooline paar"))
+    give_first_step(page)
+    page.get_by_role("button", name="Salvesta", exact=True).click()
+    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    start_first_step(page)
+    plant_historical_instruments(page, ["ELi direktiiv", "Seadus"])
+    page.goto(page.url + "muuda/")
+    page.wait_for_load_state("networkidle")
+    expect(page.locator('input[name="legal_instruments"][value="jata-alles"]')).to_be_checked()
     dimmed = _dimmed(page)
     for normal in ("eu_procedure", "awaiting_transposition", "parliament"):
         assert normal not in dimmed, (normal, dimmed)
@@ -253,7 +285,7 @@ def test_e_changing_the_instruments_redims_and_keeps_the_choice(page, base_url):
     assert "parliament" not in _dimmed(page)
 
     # Swap the instrument: Riigikogus becomes atypical, and stays chosen.
-    _instrument(page, "Seadus").uncheck()
+    _no_instrument(page).check()
     assert _dimmed(page) == set()
     _instrument(page, "ELi määrus").check()
     assert "parliament" in _dimmed(page)
@@ -261,8 +293,8 @@ def test_e_changing_the_instruments_redims_and_keeps_the_choice(page, base_url):
     assert _chosen_stage(page) == "parliament"
     expect(_stage(page, "Riigikogus")).to_be_checked()
 
-    # And back to nothing ticked: nothing dimmed, choice unchanged.
-    _instrument(page, "ELi määrus").uncheck()
+    # And back to nothing chosen: nothing dimmed, choice unchanged.
+    _no_instrument(page).check()
     assert _dimmed(page) == set()
     assert _chosen_stage(page) == "parliament"
 
@@ -324,8 +356,8 @@ def test_g_a_dimmed_stage_says_so_without_colour(page, base_url):
     expect(bubble).to_be_visible()
     expect(bubble.locator(".stagehelp__note")).to_have_text(ATYPICAL_STAGE_NOTE)
 
-    # Nothing ticked again: both cues go, the choice stays.
-    _instrument(page, "ELi määrus").uncheck()
+    # Nothing chosen again: both cues go, the choice stays.
+    _no_instrument(page).check()
     assert _edge(page, "Riigikogus") == "solid"
     assert ATYPICAL_STAGE_NOTE not in _description(page, "Riigikogus")
     expect(_stage(page, "Riigikogus")).to_be_checked()

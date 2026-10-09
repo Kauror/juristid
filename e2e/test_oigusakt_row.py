@@ -194,45 +194,34 @@ def test_every_option_is_visible_at_rest_and_each_muu_is_last_in_its_group(page,
     expect(page.locator(MUU_CHIP)).to_have_count(2)
 
 
-def test_the_count_reads_the_number_chosen(page, base_url):
-    """§15 criterion 7, and the order rule of §7 in the same pass.
+def test_one_choice_replaces_the_last_and_the_row_counts_nothing(page, base_url):
+    """One `Õigusakt` since the owner's decision of 2026-10-09 (docs/adr/0070).
 
-    The wording is the existing island's, not this field's. §13 of the design
-    draws the count as `·3`; `app.js` has written «3 valitud» since Valdkonnad
-    gained the affordance, and this row reuses that island unchanged rather than
-    giving one field on the page a count that reads differently from the other.
-    The design's claim is about *there being* a count; the words belong to the
-    control both fields share (`static/js/app.js` `bindChipCounts`).
+    The «3 valitud» count and the × marks belonged to several answers. A radio
+    group needs neither: choosing a chip unchooses the last one, «Määramata»
+    takes the answer back, and the chips never reorder themselves.
     """
     _open(page, base_url)
 
     chips = page.locator(f"{INSTRUMENTS} label.chip")
 
     def labels() -> list[str]:
-        """The chip words, without the clear mark.
-
-        `×` is stripped because it is *supposed* to appear when a chip is
-        chosen — that is the affordance §8 requires — and comparing raw text
-        would make this test fail for the thing it is not about.
-        """
-        return [
-            chips.nth(index).inner_text().replace("×", "").strip() for index in range(chips.count())
-        ]
+        return [chips.nth(index).inner_text().strip() for index in range(chips.count())]
 
     before = labels()
+    assert before[0] == "Määramata"
+    expect(page.locator(f'{INSTRUMENTS} [data-chipcount-for="legal_instruments"]')).to_have_count(0)
+    expect(page.locator(f"{INSTRUMENTS} .chip__clear")).to_have_count(0)
+    expect(page.get_by_role("radio", name="Määramata").first).to_be_visible()
 
-    count = page.locator(f'{INSTRUMENTS} [data-chipcount-for="legal_instruments"]')
-    expect(count).to_have_text("")
+    chips.nth(1).click()
+    chips.nth(2).click()
+    checked = page.locator(f'{INSTRUMENTS} input[name="legal_instruments"]:checked')
+    expect(checked).to_have_count(1)
+    assert checked.evaluate("i => i.closest('label').innerText.trim()") == before[2]
 
-    for index in (0, 1, 3):
-        chips.nth(index).click()
-
-    expect(count).to_have_text("3 valitud")
-    # And Valdkonnad, which carries the same kind of badge one row above since
-    # its vocabulary went back to being drawn at rest, says nothing about this
-    # field's chips — each badge counts its own group (docs/adr/0096 §2).
-    areas = page.locator('[data-chipcount-for="policy_areas"]')
-    assert (areas.text_content() or "").strip() == "", "Valdkonnad counted this field's chips"
+    page.locator(f'{INSTRUMENTS} input[name="legal_instruments"][value=""]').check()
+    expect(page.locator(f'{INSTRUMENTS} input[name="legal_instruments"][value=""]')).to_be_checked()
 
     assert labels() == before, "chips reordered themselves when they were chosen"
 

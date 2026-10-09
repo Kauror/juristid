@@ -407,47 +407,138 @@ class StageRadioSelect(DescribedRadioSelect):
         return option
 
 
-class LegalInstrumentCheckboxSelect(forms.CheckboxSelectMultiple):
-    """`Õigusakt` checkboxes, each carrying its type's stable key as `data-instrument-key`.
+#: What a person reads when a request names more than one `Õigusakt` — which
+#: the page's own control cannot send, so in practice a crafted or stale POST.
+#: The service says the same thing (`ONE_LEGAL_INSTRUMENT_REFUSAL`).
+ONE_LEGAL_INSTRUMENT_ERROR = "Vali üks õigusakt."
+
+#: The value of the one extra choice `Muuda teemat` offers on a Matter that
+#: already holds several instruments: «leave them as they are». Not a primary
+#: key, so it can never collide with a vocabulary row.
+HELD_LEGAL_INSTRUMENTS_VALUE = "jata-alles"
+
+
+class LegalInstrumentRadioSelect(forms.RadioSelect):
+    """`Õigusakt` radios, each carrying its type's stable key as `data-instrument-key`.
+
+    **Radios, because a Teema has one Õigusakt** (the owner's decision of
+    2026-10-09, docs/adr/0070's amendment of that date). «Määramata» is a real
+    chip, as on `Hetkeseis`, so the answer can be taken back without scripting.
+
+    **The request is read as a list.** A radio group posts one value, so a
+    second one can only come from a crafted or stale request — and reading the
+    group the way `RadioSelect` does, with `QueryDict.get`, would silently keep
+    the *last* of them. `SingleLegalInstrumentField` refuses the list instead.
 
     The rendered choices are plain ``(pk, label)`` pairs (see
     `LegalInstrumentChoicesMixin.offer_legal_instruments` for why), so the keys
-    are handed over by that method rather than read off an instance.
+    are handed over by that method rather than read off an instance. The held
+    choice on a legacy Matter carries every key it stands for, space-separated
+    in `data-instrument-keys`, which is what the `Hetkeseis` guidance reads for
+    it (app/workflow/stage_guidance.py).
     """
 
-    #: ``{rendered value: key}``, set per form instance. Django deep-copies
-    #: widgets with `base_fields`, so this cannot leak between requests.
+    #: ``{rendered value: key}`` and ``{rendered value: "key key"}``, set per
+    #: form instance. Django deep-copies widgets with `base_fields`, so neither
+    #: can leak between requests.
     option_keys: dict[str, str]
+    option_key_sets: dict[str, str]
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.option_keys = {}
+        self.option_key_sets = {}
+
+    def value_from_datadict(self, data: Any, files: Any, name: str) -> Any:
+        getter = getattr(data, "getlist", None)
+        if getter is None:
+            value = data.get(name)
+            return None if value is None else (value if isinstance(value, list) else [value])
+        values = getter(name)
+        return values if values else None
+
+    def format_value(self, value: Any) -> Any:
+        if value is None:
+            return [""]
+        values = value if isinstance(value, (list, tuple)) else [value]
+        rendered = [str(item) for item in values if item not in (None, "")]
+        return rendered or [""]
 
     def create_option(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         option = super().create_option(*args, **kwargs)
-        key = self.option_keys.get(str(option.get("value")))
+        value = str(option.get("value"))
+        key = self.option_keys.get(value)
         if key:
             option["attrs"]["data-instrument-key"] = key
+        keys = self.option_key_sets.get(value)
+        if keys:
+            option["attrs"]["data-instrument-keys"] = keys
         return option
 
 
-def legal_instruments_field() -> forms.ModelMultipleChoiceField:
+class SingleLegalInstrumentField(forms.ModelMultipleChoiceField):
+    """At most one `Õigusakt`, read from a request that could carry several.
+
+    A `ModelMultipleChoiceField` underneath, so `cleaned_data` keeps the shape
+    every consumer already reads — a list of `LegalInstrumentType` — and the
+    relation stays many-to-many: Matters that already hold several keep them
+    (docs/adr/0070's amendment of 2026-10-09).
+
+    Three answers are possible:
+
+    * **none** — «Määramata», or nothing posted;
+    * **one** row;
+    * **the held set**, on `Muuda teemat` only, when the Matter already holds
+      several and the person left them as they are (`held` is that set).
+
+    Two or more rows are refused with :data:`ONE_LEGAL_INSTRUMENT_ERROR`, never
+    trimmed to one: which of them was meant is not this field's to guess.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        #: The instruments a legacy Matter holds, when it holds several.
+        self.held: list[LegalInstrumentType] = []
+
+    def clean(self, value: Any) -> Any:
+        values = [str(item).strip() for item in (value or []) if str(item).strip()]
+        if HELD_LEGAL_INSTRUMENTS_VALUE in values:
+            if values == [HELD_LEGAL_INSTRUMENTS_VALUE] and self.held:
+                return list(self.held)
+            raise forms.ValidationError(
+                self.error_messages["invalid_choice"],
+                code="invalid_choice",
+                params={"value": HELD_LEGAL_INSTRUMENTS_VALUE},
+            )
+        if len(set(values)) > 1:
+            raise forms.ValidationError(ONE_LEGAL_INSTRUMENT_ERROR, code="one_instrument")
+        return super().clean(values[:1])
+
+
+def held_legal_instruments_label(held: Sequence[LegalInstrumentType]) -> str:
+    """«Jäta alles: VTK + Seadus» — the held choice, in the vocabulary's words."""
+    return "Jäta alles: " + " + ".join(item.label_et for item in held)
+
+
+def legal_instruments_field() -> SingleLegalInstrumentField:
     """The `Õigusakt` control, defined once for the two forms that carry it.
 
-    Checkboxes, because `Matter.legal_instruments` holds several — the control
-    shape is a promise about the data, and shipping a single-value control over
-    a many-valued field is the one thing the approved design forbids outright
-    (OIGUSAKT_UUS_TEEMA_DESIGN §4, ADR 0025).
+    **One answer** since the owner's decision of 2026-10-09: radios, with
+    «Määramata». It replaced checkboxes, which were chosen because the
+    relation holds several (OIGUSAKT_UUS_TEEMA_DESIGN §4, ADR 0025) — the
+    relation still does, for the Matters that already hold several, and the
+    control no longer offers to create more (docs/adr/0070, amendment of
+    2026-10-09).
 
     The queryset is empty here and filled per form: `Uus teema` offers the
     active vocabulary, `Muuda teemat` validates against all of it so a Matter
     carrying a since-retired type does not lose it to an unrelated correction.
     """
-    return forms.ModelMultipleChoiceField(
+    return SingleLegalInstrumentField(
         label="Õigusakt",
         queryset=LegalInstrumentType.objects.none(),
         required=False,
-        widget=LegalInstrumentCheckboxSelect(attrs={"class": "chip__input"}),
+        widget=LegalInstrumentRadioSelect(attrs={"class": "chip__input"}),
     )
 
 
@@ -628,18 +719,29 @@ class LegalInstrumentChoicesMixin:
         either a query per render or a dependence on Django keeping the
         model instance attached to the value it yields.
         """
-        cast(Any, self.fields["legal_instruments"]).choices = [
-            (item.pk, item.label_et) for item in offered
-        ]
+        field = cast(Any, self.fields["legal_instruments"])
+        held = list(field.held)
+        # «Määramata» first, as on `Hetkeseis`: one answer means the answer can
+        # be taken back, and a radio cannot be unticked by clicking it again.
+        # On a Matter that already holds several, «leave them as they are»
+        # comes before it and is what the page arrives with.
+        choices: list[tuple[Any, str]] = []
+        if held:
+            choices.append((HELD_LEGAL_INSTRUMENTS_VALUE, held_legal_instruments_label(held)))
+        choices.append(("", "Määramata"))
+        choices += [(item.pk, item.label_et) for item in offered]
+        field.choices = choices
         self._other_instrument_values = tuple(
             str(item.pk) for item in offered if item.key in OTHER_LEGAL_INSTRUMENT_KEYS
         )
-        # The stable key per rendered chip, for `Uus teema`'s Hetkeseis guidance
+        # The stable key per rendered chip, for the Hetkeseis guidance
         # (`app.workflow.stage_guidance`, docs/adr/0130). Written onto the
         # widget, so the attribute lands on the input that is the chip.
-        cast(Any, self.fields["legal_instruments"].widget).option_keys = {
-            str(item.pk): item.key for item in offered
-        }
+        widget = cast(Any, field.widget)
+        widget.option_keys = {str(item.pk): item.key for item in offered}
+        widget.option_key_sets = (
+            {HELD_LEGAL_INSTRUMENTS_VALUE: " ".join(item.key for item in held)} if held else {}
+        )
 
     @property
     def other_instrument_values(self) -> tuple[str, ...]:
@@ -679,8 +781,32 @@ class LegalInstrumentChoicesMixin:
         raw = cast(Any, self)["legal_instruments"].value()
         if raw is None:
             return False
-        values = raw if isinstance(raw, (list, tuple)) else [raw]
-        return any(str(item) in others for item in values)
+        values = [str(item) for item in (raw if isinstance(raw, (list, tuple)) else [raw])]
+        if HELD_LEGAL_INSTRUMENTS_VALUE in values:
+            # «Leave them as they are» keeps whatever `Muu` the held set has,
+            # and with it the text that says which.
+            values += [str(item.pk) for item in self.held_legal_instruments]
+        return any(value in others for value in values)
+
+    @property
+    def held_legal_instruments_value(self) -> str:
+        """The rendered value of «Jäta alles», for the template's comparison."""
+        return HELD_LEGAL_INSTRUMENTS_VALUE
+
+    @property
+    def held_includes_other(self) -> bool:
+        """Whether «Jäta alles» keeps a `Muu` — and so opens the box that says which."""
+        return any(item.key in OTHER_LEGAL_INSTRUMENT_KEYS for item in self.held_legal_instruments)
+
+    @property
+    def held_legal_instruments(self) -> list[LegalInstrumentType]:
+        """The instruments a Matter holds when it holds several — `[]` otherwise.
+
+        Only `Muuda teemat` ever sets it, and only for a Matter filed before the
+        owner's one-instrument rule (2026-10-09) or imported holding several.
+        The template states them, and offers keeping them as one choice.
+        """
+        return list(cast(Any, self.fields["legal_instruments"]).held)
 
 
 class OrganisationPickerChoicesMixin:
@@ -1740,8 +1866,15 @@ class MatterEditForm(
         set_choices(self, "legal_instruments", LegalInstrumentType.objects.all())
         instruments = list(selectable_legal_instrument_types())
         if matter is not None:
+            held = list(matter.legal_instruments.all())
             seen = {item.pk for item in instruments}
-            instruments += [item for item in matter.legal_instruments.all() if item.pk not in seen]
+            instruments += [item for item in held if item.pk not in seen]
+            # **A Matter that already holds several keeps them** until somebody
+            # chooses one (docs/adr/0070, amendment of 2026-10-09). They are
+            # offered back as one choice, «Jäta alles», which the page arrives
+            # with — so a save about anything else posts it and moves nothing.
+            if len(held) > 1:
+                cast(Any, self.fields["legal_instruments"]).held = held
         self.offer_legal_instruments(instruments)
         #: The retired areas this Matter carries. The template says so rather
         #: than showing a ticked box that looks like every other one.
@@ -1792,6 +1925,12 @@ class MatterEditForm(
         return value
 
 
+def held_legal_instruments_initial(matter: Matter) -> list[Any]:
+    """What `Muuda teemat` arrives with for `Õigusakt`, in the field's own terms."""
+    held = [item.pk for item in matter.legal_instruments.all()]
+    return [HELD_LEGAL_INSTRUMENTS_VALUE] if len(held) > 1 else held
+
+
 def edit_initial(matter: Matter) -> dict[str, Any]:
     """The Matter's current values, in the shape `MatterEditForm` reads."""
     from app.matters.services import matter_revision_token
@@ -1809,7 +1948,10 @@ def edit_initial(matter: Matter) -> dict[str, Any]:
         # statement that `policy_area_other` is answered (docs/adr/0096 §2).
         "policy_area_other_selected": bool(matter.policy_area_other),
         "policy_area_other": matter.policy_area_other,
-        "legal_instruments": [item.pk for item in matter.legal_instruments.all()],
+        # One instrument as itself; several — a Matter filed before the
+        # one-instrument rule, or imported holding several — as «Jäta alles»,
+        # the choice that keeps them (docs/adr/0070, amendment of 2026-10-09).
+        "legal_instruments": held_legal_instruments_initial(matter),
         "legal_instrument_other": matter.legal_instrument_other,
         "source_organisations": [
             organisation.pk for organisation in matter.source_organisations.all()
@@ -1862,6 +2004,10 @@ def matter_edit_conflict_changes(
         "source_organisations": lambda value: _display_many(Organisation, value),
     }
     stored = edit_initial(current)
+    # The instruments as the record holds them, not as the page offers them:
+    # `submitted` is cleaned data, where «Jäta alles» has already become the
+    # held set, so the comparison is set against set.
+    stored["legal_instruments"] = [item.pk for item in current.legal_instruments.all()]
     changes: list[dict[str, str]] = []
     for field, label in labels.items():
         mine = submitted.get(field)

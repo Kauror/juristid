@@ -35,6 +35,7 @@ from e2e.conftest import (
     open_add_panel,
     open_hetkeseis,
     open_kaik_row,
+    plant_historical_instruments,
     sign_in,
     unique_title,
 )
@@ -67,8 +68,11 @@ def a_procedure_matter(
     page.goto(f"{base_url}/teemad/uus/")
     page.wait_for_load_state("networkidle")
     page.fill("#id_title", unique_title(label))
-    for instrument in instruments:
-        page.get_by_role("checkbox", name=instrument, exact=True).check()
+    # One through the page — the control takes one since the owner's
+    # decision of 2026-10-09 — and a pair planted after the save, the way a
+    # Matter filed before that decision holds it.
+    if instruments:
+        page.get_by_role("radio", name=instruments[0], exact=True).check()
     open_hetkeseis(page)
     page.get_by_role("radio", name=hetkeseis, exact=True).check()
     if deadline:
@@ -76,6 +80,8 @@ def a_procedure_matter(
     page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     page.wait_for_load_state("networkidle")
+    if len(instruments) > 1:
+        plant_historical_instruments(page, instruments)
     return page.url
 
 

@@ -5403,6 +5403,9 @@ def _edit_context(
         # so their absence reads as a decision rather than as an omission
         # (Teema QA §2.2).
         "immutable_facts": _immutable_facts(matter),
+        # The `Õigusakt -> Hetkeseis` guidance, the matrix `Uus teema` reads
+        # (docs/adr/0130, amendment of 2026-10-09, «Muuda teemat»).
+        "stage_guidance": stage_guidance_payload(),
         # The sent opinions a changed deadline may name as its answer
         # (`matters/partials/response_deadline_fields.html`).
         "answerable_submissions": answerable_submissions(matter, request.user),

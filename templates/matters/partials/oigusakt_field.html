@@ -15,10 +15,15 @@
   moment the page opens and a refused save comes back with the box up and the
   refusal in it. Nothing is hidden behind a click.
 
-  Checkboxes, a `field__count` and a `chip__clear` on every chip — a Matter
-  really can concern a directive and the act transposing it, and the control
-  says so (ADR 0025). `Hetkeseis` has none of the three, because it holds one
-  value.
+  **Radios, one answer** (the owner's decision of 2026-10-09, docs/adr/0070's
+  amendment of that date). The checkboxes, the `field__count` and the
+  `chip__clear` went with the several answers they served; «Määramata» is a
+  real chip, as on `Hetkeseis`, so the answer can be taken back.
+
+  **A Matter that already holds several keeps them.** `Muuda teemat` then
+  states them and offers «Jäta alles: …» first, chosen, so a save about
+  anything else posts it and moves nothing; choosing one instrument, or
+  «Määramata», is the deliberate correction (`held_legal_instruments`).
 
   `Muu` is a real vocabulary row here, unlike Valdkonnad's, so the template
   cannot tell it apart by field name and compares against the form instead —
@@ -26,24 +31,31 @@
   `Muu ELi dokument` and an older Matter may hold version 1.0's `Muu`
   (app/matters/forms.py `other_instrument_values`, docs/adr/0070).
 {% endcomment %}
-<fieldset class="field">
-  <legend class="field__label">
-    {% field_label form.legal_instruments %}
-    <span class="field__count" data-chipcount-for="legal_instruments"></span>
-  </legend>
+<fieldset class="field"{% if form.held_legal_instruments %} aria-describedby="oigusakt-mitu"{% endif %}>
+  <legend class="field__label">{% field_label form.legal_instruments %}</legend>
+  {% if form.held_legal_instruments %}
+    <p class="field__help" id="oigusakt-mitu">Sellel teemal on varasemast mitu õigusakti. Need jäävad alles, kuni valid ühe.</p>
+  {% endif %}
   <div class="chiprow">
     {% for choice in form.legal_instruments %}
-      {% if choice.data.value|stringformat:"s" in form.other_instrument_values %}
-        <label class="chip chip--other" data-reveals="oigusakt-muu-tekst">
-          {{ choice.tag }}
-          <span class="chip__name">{{ choice.choice_label }}<span class="chip__clear" aria-hidden="true">×</span></span>
-        </label>
-      {% else %}
-        <label class="chip">
-          {{ choice.tag }}
-          <span class="chip__name">{{ choice.choice_label }}<span class="chip__clear" aria-hidden="true">×</span></span>
-        </label>
-      {% endif %}
+      {% with value=choice.data.value|stringformat:"s" %}
+        {% if value in form.other_instrument_values %}
+          <label class="chip chip--other" data-reveals="oigusakt-muu-tekst">
+            {{ choice.tag }}
+            <span class="chip__name">{{ choice.choice_label }}</span>
+          </label>
+        {% elif value == form.held_legal_instruments_value %}
+          <label class="chip"{% if form.held_includes_other %} data-reveals="oigusakt-muu-tekst"{% endif %}>
+            {{ choice.tag }}
+            <span class="chip__name">{{ choice.choice_label }}</span>
+          </label>
+        {% else %}
+          <label class="chip">
+            {{ choice.tag }}
+            <span class="chip__name">{{ choice.choice_label }}</span>
+          </label>
+        {% endif %}
+      {% endwith %}
     {% endfor %}
   </div>
   <div class="createform__other" id="oigusakt-muu-tekst"

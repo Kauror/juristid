@@ -165,7 +165,7 @@ def prefill_initial(
     # own evaluation harness still scores it. What is withdrawn is this
     # function's claim that the edit form can take it.
 
-    # Õigusakt is multi-valued like Valdkonnad and is filled by the same rule —
+    # Õigusakt was multi-valued like Valdkonnad and was filled by the same rule —
     # every HIGH candidate, and nothing at all when they conflict. In practice
     # at most one is HIGH: only the best-speaking document's own kind may reach
     # it, and everything corroborating stays at MEDIUM with «Kasuta» beside it
@@ -173,10 +173,15 @@ def prefill_initial(
     # which is what keeps a machine suggestion out of a form state that cannot
     # be saved — ticking `Muu` makes `Õigusakti liik` required, and there is
     # nothing honest to write in it (`clean_legal_instrument_answer`).
+    #
+    # **One, since the one-instrument rule** (docs/adr/0070, amendment of
+    # 2026-10-09): a review that ticked two would hand back a form its own save
+    # refuses. Two HIGH candidates are a conflict like any other — nothing is
+    # filled and both stay suggestions with «Kasuta» beside them.
     instruments = analysis.fields.get(SuggestedField.LEGAL_INSTRUMENTS)
     if instruments is not None and not current.legal_instrument_ids:
         chosen_many = instruments.prefill_candidates
-        if chosen_many:
+        if len(chosen_many) == 1:
             initial["legal_instruments"] = [candidate.value for candidate in chosen_many]
             prefilled[SuggestedField.LEGAL_INSTRUMENTS] = tuple(
                 candidate.value for candidate in chosen_many

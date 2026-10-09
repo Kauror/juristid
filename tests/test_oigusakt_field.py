@@ -116,20 +116,25 @@ def test_one_instrument_persists(signed_in):
     assert [item.key for item in matter.legal_instruments.all()] == ["seadus"]
 
 
-def test_several_instruments_persist(signed_in):
-    """The whole reason the field is many-to-many (task §6).
+def test_a_second_instrument_is_refused_and_nothing_is_created(signed_in):
+    """One `Õigusakt` per Teema since the owner's decision of 2026-10-09.
 
-    A package that amends an Act and a Regulation together is ordinary work,
-    and the historical register writes exactly that as `S, M`.
+    The field was many-to-many so that a package amending an Act and a
+    Regulation together could say so (task §6), and the relation still is —
+    historical Matters keep their pairs (docs/adr/0070, amendment of
+    2026-10-09). What the page no longer does is create one: its control posts
+    one value, so two can only come from a crafted or stale request, and that is
+    refused rather than trimmed to whichever arrived last.
     """
     chosen = [instrument("seadus"), instrument("maarus")]
-    signed_in.post(
+    response = signed_in.post(
         CREATE,
         {"title": "Kaks liiki", "legal_instruments": [str(item.pk) for item in chosen]},
     )
 
-    matter = Matter.objects.get(title="Kaks liiki")
-    assert {item.key for item in matter.legal_instruments.all()} == {"seadus", "maarus"}
+    assert response.status_code == 400
+    assert response.context["form"].errors["legal_instruments"] == ["Vali üks õigusakt."]
+    assert not Matter.objects.filter(title="Kaks liiki").exists()
 
 
 def test_the_same_instrument_twice_is_one_relation(signed_in):
@@ -384,34 +389,57 @@ def test_the_edit_form_prefills_what_the_matter_holds(specialist):
     matter = create_matter(
         title="Olemas",
         actor=specialist,
-        legal_instruments=[instrument("seadus"), instrument("muu")],
+        legal_instruments=[instrument("muu")],
         legal_instrument_other="Komisjoni soovitus",
     )
 
     form = MatterEditForm(initial=edit_initial(matter), matter=matter, viewer=specialist)
-    assert set(form["legal_instruments"].value()) == {
-        instrument("seadus").pk,
-        instrument("muu").pk,
-    }
+    assert form["legal_instruments"].value() == [instrument("muu").pk]
+    assert form.held_legal_instruments == []
     assert form["legal_instrument_other"].value() == "Komisjoni soovitus"
     assert form.other_instrument_open is True
 
 
-def test_editing_adds_removes_and_keeps(signed_in, specialist):
+def test_the_edit_form_keeps_a_historical_pair_as_one_choice(specialist):
+    """A Matter filed before the one-instrument rule arrives holding «Jäta alles».
+
+    Written straight to the relation, because that is how such a Matter exists:
+    filed while the control still took several, or imported from a register
+    cell naming two. Nothing interactive can create one any more.
+    """
+    from app.matters.forms import HELD_LEGAL_INSTRUMENTS_VALUE
+
+    matter = create_matter(title="Varasem paar", actor=specialist)
+    matter.legal_instruments.set([instrument("seadus"), instrument("muu")])
+    Matter.objects.filter(pk=matter.pk).update(legal_instrument_other="Komisjoni soovitus")
+    matter.refresh_from_db()
+
+    form = MatterEditForm(initial=edit_initial(matter), matter=matter, viewer=specialist)
+    assert form["legal_instruments"].value() == [HELD_LEGAL_INSTRUMENTS_VALUE]
+    assert {item.key for item in form.held_legal_instruments} == {"seadus", "muu"}
+    # «Jäta alles» keeps the `Muu`, and the box that says which stays open.
+    assert form.other_instrument_open is True
+    assert form["legal_instrument_other"].value() == "Komisjoni soovitus"
+
+
+def test_editing_changes_clears_and_refuses_a_second(signed_in, specialist):
     matter = create_matter(
         title="Muudetav", actor=specialist, legal_instruments=[instrument("seadus")]
     )
 
-    signed_in.post(
+    # A second instrument beside the first is refused, and nothing moves.
+    response = signed_in.post(
         edit_url(matter),
         edit_payload(
             matter,
             legal_instruments=[str(instrument("seadus").pk), str(instrument("direktiiv").pk)],
         ),
     )
+    assert response.status_code == 400
     matter.refresh_from_db()
-    assert {item.key for item in matter.legal_instruments.all()} == {"seadus", "direktiiv"}
+    assert [item.key for item in matter.legal_instruments.all()] == ["seadus"]
 
+    # Changing it is choosing another.
     signed_in.post(
         edit_url(matter),
         edit_payload(matter, legal_instruments=[str(instrument("direktiiv").pk)]),
@@ -419,7 +447,8 @@ def test_editing_adds_removes_and_keeps(signed_in, specialist):
     matter.refresh_from_db()
     assert [item.key for item in matter.legal_instruments.all()] == ["direktiiv"]
 
-    signed_in.post(edit_url(matter), edit_payload(matter, legal_instruments=[]))
+    # And «Määramata» clears it.
+    signed_in.post(edit_url(matter), edit_payload(matter, legal_instruments=[""]))
     matter.refresh_from_db()
     assert list(matter.legal_instruments.all()) == []
 
@@ -457,17 +486,17 @@ def test_a_refused_edit_keeps_the_choices(signed_in, specialist):
 
     response = signed_in.post(
         edit_url(matter),
-        edit_payload(
-            matter,
-            title="",
-            legal_instruments=[str(instrument("vtk").pk), str(instrument("eelnou").pk)],
-        ),
+        edit_payload(matter, title="", legal_instruments=[str(instrument("vtk").pk)]),
     )
 
     assert response.status_code == 400
     form = response.context["form"]
     chosen = {str(value) for value in form["legal_instruments"].value()}
-    assert chosen == {str(instrument("vtk").pk), str(instrument("eelnou").pk)}
+    assert chosen == {str(instrument("vtk").pk)}
+    # Rendered chosen, not merely remembered.
+    body = response.content.decode()
+    vtk = body.split(f'value="{instrument("vtk").pk}"', 1)[1].split(">", 1)[0]
+    assert "checked" in vtk
     matter.refresh_from_db()
     assert list(matter.legal_instruments.all()) == []
 
@@ -577,15 +606,22 @@ def test_the_events_stay_out_of_the_timeline():
 # ---------------------------------------------------------------------------
 
 
-def test_the_control_is_checkboxes_over_the_whole_active_vocabulary(specialist):
+def test_the_control_is_radios_over_the_whole_active_vocabulary(specialist):
+    """One answer since the owner's decision of 2026-10-09 (docs/adr/0070's amendment).
+
+    Radios, carrying each type's stable key for the Hetkeseis guidance
+    (`LegalInstrumentRadioSelect`, docs/adr/0130), with «Määramata» first so the
+    answer can be taken back — the shape `Hetkeseis` already has.
+    """
     form = MatterCreateForm(viewer=specialist)
     field = form.fields["legal_instruments"]
 
-    # Checkboxes, carrying each type's stable key for the Hetkeseis guidance
-    # (`LegalInstrumentCheckboxSelect`, docs/adr/0130).
-    assert isinstance(field.widget, forms.CheckboxSelectMultiple)
+    assert isinstance(field.widget, forms.RadioSelect)
+    assert not isinstance(field.widget, forms.CheckboxSelectMultiple)
     assert not field.required
-    offered = [label for _value, label in field.choices]
+    choices = list(field.choices)
+    assert choices[0] == ("", "Määramata")
+    offered = [label for _value, label in choices[1:]]
     assert offered == [
         item.label_et
         for item in LegalInstrumentType.objects.filter(is_active=True).order_by("sort_order")
@@ -615,18 +651,27 @@ def test_the_rendered_page_puts_oigusakt_first_in_the_classification_block(signe
 
 
 def test_the_page_offers_no_new_component(signed_in):
-    """No select, no disclosure, no search over this vocabulary (design §14)."""
+    """No select, no disclosure, no search over this vocabulary (design §14).
+
+    One radio per offered type and one for «Määramata»; no checkbox, no count
+    and no clear mark, which were the marks of a multi-select (ADR 0025).
+    """
     body = signed_in.get(CREATE).content.decode()
-    row_start = body.index('data-chipcount-for="legal_instruments"')
+    row_start = body.rindex("<fieldset", 0, body.index('name="legal_instruments"'))
     # The field's own fieldset, and no further.
     row = body[row_start : body.index("</fieldset>", row_start)]
 
     assert "<details" not in row
     assert "<select" not in row
-    assert 'type="radio"' not in row
+    assert 'type="checkbox"' not in row
+    assert "data-chipcount-for" not in row
+    assert "chip__clear" not in row
     assert (
-        row.count('type="checkbox"') == LegalInstrumentType.objects.filter(is_active=True).count()
+        row.count('type="radio"') == LegalInstrumentType.objects.filter(is_active=True).count() + 1
     )
+    # «Määramata» arrives chosen on a new Teema.
+    blank = row.split('value=""', 1)[1].split(">", 1)[0]
+    assert "checked" in blank
 
 
 def test_hetkeseis_gains_no_count_and_no_clear_marks(signed_in):

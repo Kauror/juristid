@@ -316,7 +316,7 @@
    */
   [
     ["#valdkond-muu input[type=checkbox]", "valdkond-muu-tekst"],
-    ['[data-reveals="oigusakt-muu-tekst"] input[type=checkbox]', "oigusakt-muu-tekst"]
+    ['[data-reveals="oigusakt-muu-tekst"] input', "oigusakt-muu-tekst"]
   ].forEach(function (pair) {
     var chips = document.querySelectorAll(pair[0]);
     var revealed = document.getElementById(pair[1]);
@@ -343,8 +343,21 @@
         }
       }
     };
+    /* Õigusakt is a radio group since the one-instrument rule (docs/adr/0070,
+       amendment of 2026-10-09). Choosing another radio unticks a `Muu` one
+       without a `change` on it, so the whole group is listened to — every
+       input sharing a name with a revealing chip. */
+    var listened = new Set();
     Array.prototype.forEach.call(chips, function (chip) {
-      chip.addEventListener("change", syncOther);
+      var group = chip.type === "radio" && chip.form
+        ? chip.form.querySelectorAll('input[name="' + chip.name + '"]')
+        : [chip];
+      Array.prototype.forEach.call(group, function (input) {
+        if (!listened.has(input)) {
+          listened.add(input);
+          input.addEventListener("change", syncOther);
+        }
+      });
     });
     syncOther();
   });
@@ -577,6 +590,16 @@
           return control.type !== "checkbox" && control.type !== "radio";
         })[0];
         var previous = autofilled[name] || [];
+
+        /* A radio group holds one answer — `Õigusakt` since docs/adr/0070's
+           amendment of 2026-10-09 — so two proposals for it are a conflict,
+           and a conflict fills nothing: ticking both would silently keep the
+           last. */
+        if (boxes.length && values.length > 1 && boxes.every(function (box) {
+          return box.type === "radio";
+        })) {
+          return;
+        }
 
         if (boxes.length) {
           var checked = boxes
@@ -3060,25 +3083,28 @@
     });
   }
 
-  /* ---- Õigusakt -> Hetkeseis guidance on Uus teema --------------------------
-   * Once an `Õigusakt` is ticked, the `Hetkeseis` chips that do not normally
-   * fit ANY ticked instrument get `chip--atypical`, which draws them quieter,
-   * and their explanation gains one sentence saying so (`atypical_note`). That
-   * is all this does (app/workflow/stage_guidance.py, docs/adr/0130).
+  /* ---- Õigusakt -> Hetkeseis guidance, on Uus teema and Muuda teemat -------
+   * Once an `Õigusakt` is chosen, the `Hetkeseis` chips that do not normally
+   * fit it get `chip--atypical`, which draws them quieter, and their
+   * explanation gains one sentence saying so (`atypical_note`). That is all
+   * this does (app/workflow/stage_guidance.py, docs/adr/0130).
    *
    *  - Two states only: a chip has the class or it does not.
    *  - Nothing is disabled, hidden, unticked or validated. A dimmed chip stays
    *    a radio like any other, and a chosen one looks chosen — the stylesheet
    *    stops dimming at `:checked`, so this never has to know what is chosen.
-   *  - Several instruments combine by UNION: a stage stays normal if it is
-   *    normal for at least one of them.
-   *  - Nothing ticked, or an instrument the matrix has no row for, means no
-   *    guidance at all — every chip normal.
+   *  - One instrument is chosen at a time since the one-instrument rule
+   *    (docs/adr/0070, amendment of 2026-10-09). The one choice that stands
+   *    for several — «Jäta alles» on a Matter that already holds them — names
+   *    every key in `data-instrument-keys`, and those still combine by UNION:
+   *    a stage stays normal if it is normal for at least one of them.
+   *  - Nothing chosen («Määramata»), or an instrument the matrix has no row
+   *    for, means no guidance at all — every chip normal.
    *
    * Keys, never labels: `data-instrument-key` on each `Õigusakt` input and
    * `data-stage-key` on each `Hetkeseis` input; `Määramata` has no key and is
    * never touched. The matrix arrives as JSON from the server, so there is one
-   * copy of it, in Python.
+   * copy of it, in Python — and the edit page reads the same one.
    */
   function bindStageGuidance(scope) {
     (scope || document).querySelectorAll("[data-stage-guidance]").forEach(function (row) {
@@ -3100,12 +3126,22 @@
       var byInstrument = guidance.instruments || {};
       var note = guidance.atypical_note || "";
 
-      var typicalStages = function () {
-        var chosen = Array.prototype.slice
-          .call(form.querySelectorAll('input[name="legal_instruments"]:checked'))
-          .map(function (input) {
-            return input.getAttribute("data-instrument-key") || "";
+      var chosenKeys = function () {
+        var keys = [];
+        form.querySelectorAll('input[name="legal_instruments"]:checked').forEach(function (input) {
+          var several = input.getAttribute("data-instrument-keys");
+          var one = input.getAttribute("data-instrument-key");
+          (several ? several.split(" ") : one ? [one] : []).forEach(function (key) {
+            if (key) {
+              keys.push(key);
+            }
           });
+        });
+        return keys;
+      };
+
+      var typicalStages = function () {
+        var chosen = chosenKeys();
         if (!chosen.length) {
           return null;
         }
