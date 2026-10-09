@@ -141,27 +141,27 @@ def test_the_row_is_full_width_and_holds_one_field(page, base_url, width):
 # ---------------------------------------------------------------------------
 
 
-def test_the_control_is_checkbox_chips_with_the_multi_select_affordances(page, base_url):
-    """§15 criteria 5 and 7 — and the asymmetry with Hetkeseis above it.
+def test_the_control_is_one_answer_radio_chips(page, base_url):
+    """§15 criteria 5 and 7, as the owner's decision of 2026-10-09 reshaped them.
 
-    The count and the clear marks are what say *this one holds several*, and the
-    single-value row above having neither is what stops two neighbouring chip
-    rows reading as one question split in two (design §4, §6). It was
-    Menetlusliik that made that point until this round; Hetkeseis makes it now.
+    One `Õigusakt` per Teema (docs/adr/0070, amendment of 2026-10-09): radio
+    chips with «Määramata» first — the shape `Hetkeseis` beside it already has —
+    and none of the count and clear marks that said «this one holds several».
     """
     _open(page, base_url)
 
     field = page.locator(INSTRUMENTS)
     expect(field.locator("legend.field__label")).to_have_count(1)
     expect(field.locator("div.chiprow")).to_have_count(1)
-    expect(field.locator('input[type="radio"]')).to_have_count(0)
+    expect(field.locator('input[type="checkbox"]')).to_have_count(0)
     expect(field.locator("select")).to_have_count(0)
     expect(field.locator("details")).to_have_count(0)
 
-    boxes = field.locator('input[type="checkbox"]')
-    assert boxes.count() == 10, "the reviewed vocabulary is not on the page"
-    expect(field.locator("span.field__count[data-chipcount-for]")).to_have_count(1)
-    expect(field.locator("span.chip__clear")).to_have_count(boxes.count())
+    radios = field.locator('input[type="radio"]')
+    assert radios.count() == 11, "the reviewed vocabulary and «Määramata» are not on the page"
+    expect(field.locator('input[type="radio"][value=""]')).to_be_checked()
+    expect(field.locator("span.field__count[data-chipcount-for]")).to_have_count(0)
+    expect(field.locator("span.chip__clear")).to_have_count(0)
 
     stage = page.locator(STAGE)
     expect(stage.locator("span.field__count")).to_have_count(0)
@@ -183,9 +183,11 @@ def test_every_option_is_visible_at_rest_and_each_muu_is_last_in_its_group(page,
     for index in range(total):
         expect(chips.nth(index)).to_be_visible()
 
-    names = [chips.nth(index).inner_text().replace("×", "").strip() for index in range(total)]
+    names = [chips.nth(index).inner_text().strip() for index in range(total)]
+    # «Määramata» leads, then the vocabulary in its reviewed order.
+    assert names[0] == "Määramata"
     assert names[-1] == "Muu ELi dokument"
-    assert names[5] == "Muu siseriiklik"
+    assert names[6] == "Muu siseriiklik"
 
     others = page.locator(f"{INSTRUMENTS} label.chip--other")
     expect(others).to_have_count(2)
@@ -212,7 +214,7 @@ def test_one_choice_replaces_the_last_and_the_row_counts_nothing(page, base_url)
     assert before[0] == "Määramata"
     expect(page.locator(f'{INSTRUMENTS} [data-chipcount-for="legal_instruments"]')).to_have_count(0)
     expect(page.locator(f"{INSTRUMENTS} .chip__clear")).to_have_count(0)
-    expect(page.get_by_role("radio", name="Määramata").first).to_be_visible()
+    expect(page.locator(INSTRUMENTS).get_by_role("radio", name="Määramata")).to_be_visible()
 
     chips.nth(1).click()
     chips.nth(2).click()
@@ -243,15 +245,19 @@ def test_muu_reveals_and_hides_its_box(page, base_url):
     expect(box.locator("span.field__label")).to_have_text("Õigusakti liik")
     assert _box(page, MUU_BOX)["width"] <= 30 * 16 + 2, "the reveal is wider than 30rem"
 
-    # The other `Muu` opens the same box, and the box stays open while either of
-    # them is ticked — which is the rule the server renders with too
-    # (docs/adr/0090 §3).
+    # The other `Muu` opens the same box — one answer at a time now, so
+    # choosing it replaces the first and the box stays open (docs/adr/0090 §3).
     page.locator(MUU_CHIP).last.click()
-    expect(box).to_be_visible()
-    page.locator(MUU_CHIP).first.click()
     expect(box).to_be_visible()
 
-    page.locator(MUU_CHIP).last.click()
+    # Choosing any other instrument closes it — the group is listened to as a
+    # whole, because a radio unticked by its neighbour fires no change of its
+    # own — and so does «Määramata».
+    page.get_by_role("radio", name="Seadus", exact=True).click()
+    expect(box).to_be_hidden()
+    page.locator(MUU_CHIP).first.click()
+    expect(box).to_be_visible()
+    page.locator(f'{INSTRUMENTS} input[type="radio"][value=""]').check()
     expect(box).to_be_hidden()
 
 
@@ -281,7 +287,7 @@ def test_a_refused_muu_save_comes_back_open_with_the_error_showing(page, base_ur
 
     expect(page.locator(MUU_BOX)).to_be_visible()
     expect(page.locator(f"{MUU_BOX} span.field__error")).to_be_visible()
-    expect(page.locator(f'{MUU_CHIP} input[type="checkbox"]').first).to_be_checked()
+    expect(page.locator(f'{MUU_CHIP} input[type="radio"]').first).to_be_checked()
 
 
 # ---------------------------------------------------------------------------
@@ -289,16 +295,23 @@ def test_a_refused_muu_save_comes_back_open_with_the_error_showing(page, base_ur
 # ---------------------------------------------------------------------------
 
 
-def test_space_toggles_a_focused_chip_and_the_ring_is_visible(page, base_url):
-    """§15 criteria 11 and 12."""
+def test_the_keyboard_moves_the_one_answer_and_the_ring_is_visible(page, base_url):
+    """§15 criteria 11 and 12, for a radio group.
+
+    The group is one tab stop; the arrow keys move the answer along it, and the
+    first arrow from «Määramata» chooses the first instrument.
+    """
     _open(page, base_url)
 
-    first = page.locator(f'{INSTRUMENTS} input[type="checkbox"]').first
-    first.focus()
-    page.keyboard.press(" ")
+    blank = page.locator(f'{INSTRUMENTS} input[type="radio"][value=""]')
+    blank.focus()
+    page.keyboard.press("ArrowRight")
+    first = page.locator(f'{INSTRUMENTS} input[type="radio"]').nth(1)
     expect(first).to_be_checked()
-    page.keyboard.press(" ")
-    expect(first).not_to_be_checked()
+    expect(blank).not_to_be_checked()
+    page.keyboard.press("ArrowLeft")
+    expect(blank).to_be_checked()
+    page.keyboard.press("ArrowRight")
 
     outline = first.evaluate(
         "node => getComputedStyle(node.nextElementSibling).outlineStyle"
@@ -307,17 +320,22 @@ def test_space_toggles_a_focused_chip_and_the_ring_is_visible(page, base_url):
     assert "none" not in outline, f"the focus ring is suppressed: {outline!r}"
 
 
-def test_the_clear_mark_adds_no_tab_stop(page, base_url):
-    """§15 criterion 12. `×` is decorative and never another thing to tab past."""
+def test_the_group_is_one_tab_stop(page, base_url):
+    """§15 criterion 12, for a radio group: one stop, however many chips.
+
+    The `×` marks this test used to hold to «no tab stop» went with the several
+    answers they cleared (docs/adr/0070, amendment of 2026-10-09).
+    """
     _open(page, base_url)
 
-    marks = page.locator(f"{INSTRUMENTS} span.chip__clear")
-    assert marks.count() > 0
-    for index in range(marks.count()):
-        mark = marks.nth(index)
-        assert mark.get_attribute("aria-hidden") == "true"
-        assert mark.get_attribute("tabindex") is None
-        assert mark.evaluate("node => node.tagName") == "SPAN"
+    expect(page.locator(f"{INSTRUMENTS} span.chip__clear")).to_have_count(0)
+    page.locator(f'{INSTRUMENTS} input[type="radio"][value=""]').focus()
+    page.keyboard.press("Tab")
+    inside = page.evaluate(
+        "() => !!document.activeElement.closest('fieldset')"
+        " && document.activeElement.name === 'legal_instruments'"
+    )
+    assert not inside, "Tab stayed inside the Õigusakt group"
 
 
 # ---------------------------------------------------------------------------

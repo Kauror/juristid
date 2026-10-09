@@ -591,3 +591,29 @@ def test_opinions_sent_after_the_file_opened_read_after_algus(page, base_url, wi
     )
     # Nine columns fit at 768 and above, so the rail itself does not scroll.
     assert geometry["scrollWidth"] <= geometry["clientWidth"] + 1, (width, geometry)
+
+
+# ---------------------------------------------------------------------------
+# Teemaviide, once, in the header (docs/adr/0150 §4)
+# ---------------------------------------------------------------------------
+
+
+def test_the_teemaviide_is_in_the_header_and_copies(page, base_url):
+    sign_in(page, base_url, SANDRA)
+    page.context.grant_permissions(["clipboard-read", "clipboard-write"], origin=base_url)
+    a_procedure_matter(
+        page, base_url, "Teemaviide päises", instruments=("Seadus",), hetkeseis="Idee"
+    )
+
+    reference = page.locator("#teemaviide")
+    expect(reference).to_be_visible()
+    value = (reference.text_content() or "").strip()
+    assert re.fullmatch(r"\d{4}_\d+", value), value
+    # Beside the title, never in it, and not on the rail.
+    assert value not in (page.locator("h1.matterhead__title").text_content() or "")
+    expect(page.locator("#teema-andmed")).not_to_contain_text("Teemaviide")
+
+    button = page.get_by_role("button", name="Kopeeri teemaviide")
+    button.click()
+    expect(button).to_have_text("Kopeeritud")
+    assert page.evaluate("() => navigator.clipboard.readText()") == value

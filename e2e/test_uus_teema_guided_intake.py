@@ -80,7 +80,11 @@ def _dimmed(page) -> set[str]:
 
 
 def _instrument(page, name: str):
-    return page.get_by_role("radio", name=name, exact=True)
+    """A chip in the `Õigusakt` row. Scoped, because «Määramata» is a radio in
+    both rows since the one-instrument rule (docs/adr/0070, 2026-10-09)."""
+    return page.locator('fieldset:has(input[name="legal_instruments"])').get_by_role(
+        "radio", name=name, exact=True
+    )
 
 
 def _no_instrument(page):
@@ -89,7 +93,10 @@ def _no_instrument(page):
 
 
 def _stage(page, name: str):
-    return page.get_by_role("radio", name=name, exact=True)
+    """A chip in the `Hetkeseis` row, scoped for the same reason as `_instrument`."""
+    return page.locator('fieldset:has(> .chiprow input[name="stage"])').get_by_role(
+        "radio", name=name, exact=True
+    )
 
 
 def _chosen_stage(page) -> str:

@@ -171,7 +171,11 @@ def test_the_reviewed_vocabularies_are_what_the_page_offers(page, base_url):
     assert stages[0] == "Määramata"
     assert tuple(stages[1:]) == STAGES
 
-    assert tuple(chip_names(page, INSTRUMENT_FIELD)) == INSTRUMENTS
+    # One answer since docs/adr/0070's amendment of 2026-10-09, so `Õigusakt`
+    # leads with the same named blank as `Hetkeseis`.
+    instruments = chip_names(page, INSTRUMENT_FIELD)
+    assert instruments[0] == "Määramata"
+    assert tuple(instruments[1:]) == INSTRUMENTS
 
 
 def test_the_stage_row_offers_rohkem_ei_tegele_as_a_stage(page, base_url):
@@ -312,11 +316,11 @@ def test_the_classification_rows_never_take_the_page_sideways(page, base_url, wi
 
 @pytest.mark.parametrize("width", [1440, 420])
 def test_both_vocabularies_are_answerable_from_the_keyboard(page, base_url, width):
-    """Scenario G. Tab to the chip, Space to take it — at both widths.
+    """Scenario G. Reach the chip, take it with the keyboard — at both widths.
 
-    A radio group is one tab stop and a checkbox group is one per box, which is
-    what the two controls promise about their data. What matters here is that
-    neither needs a mouse.
+    Both rows are radio groups now — one answer each (docs/adr/0070, amendment
+    of 2026-10-09) — so each is one tab stop and the arrow keys move the
+    answer. What matters here is that neither needs a mouse.
     """
     create_form(page, base_url, width)
 
@@ -327,9 +331,11 @@ def test_both_vocabularies_are_answerable_from_the_keyboard(page, base_url, widt
     page.keyboard.press(" ")
     expect(stage).to_be_checked()
 
-    instrument = page.locator(f'{INSTRUMENT_FIELD} input[type="checkbox"]').first
-    instrument.focus()
-    page.keyboard.press(" ")
+    blank = page.locator(f'{INSTRUMENT_FIELD} input[type="radio"][value=""]')
+    instrument = page.locator(f'{INSTRUMENT_FIELD} input[type="radio"]').nth(1)
+    blank.focus()
+    page.keyboard.press("ArrowRight")
     expect(instrument).to_be_checked()
-    page.keyboard.press(" ")
+    page.keyboard.press("ArrowLeft")
+    expect(blank).to_be_checked()
     expect(instrument).not_to_be_checked()
