@@ -19,7 +19,11 @@ import logging
 
 from app.documents.enums import DerivativeKind
 from app.documents.extraction.base import DerivativePayload
-from app.documents.extraction.limits import Limits, configure_image_safety
+from app.documents.extraction.limits import (
+    Limits,
+    bounded_render_scale,
+    configure_image_safety,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +71,9 @@ def pdf_first_page_thumbnail(content: bytes, limits: Limits) -> DerivativePayloa
         try:
             if len(document) == 0:
                 return None
-            image = document[0].render(scale=THUMBNAIL_PDF_SCALE).to_pil()
+            page = document[0]
+            width, height = page.get_size()
+            image = page.render(scale=thumbnail_render_scale(width, height, limits)).to_pil()
         finally:
             document.close()
         try:
@@ -77,6 +83,21 @@ def pdf_first_page_thumbnail(content: bytes, limits: Limits) -> DerivativePayloa
     except Exception:
         logger.info("Could not build a thumbnail for a PDF")
         return None
+
+
+def thumbnail_render_scale(width_pt: float, height_pt: float, limits: Limits) -> float:
+    """The scale that renders a page straight into the thumbnail box.
+
+    Rendering at a fixed 1.4 and shrinking afterwards let the page size alone
+    decide the bitmap: a 14,400 pt poster page asked PDFium for ~400 megapixels
+    before Pillow ever saw it (AUD-045). Rendering only as large as the box
+    needs is never larger than the old scale, does less work for ordinary
+    pages, and is still capped by the shared pixel budget.
+    """
+    wanted = THUMBNAIL_PDF_SCALE
+    if width_pt > 0 and height_pt > 0:
+        wanted = min(wanted, THUMBNAIL_BOX[0] / width_pt, THUMBNAIL_BOX[1] / height_pt)
+    return bounded_render_scale(width_pt, height_pt, wanted, limits)
 
 
 def _payload(image: object) -> DerivativePayload:

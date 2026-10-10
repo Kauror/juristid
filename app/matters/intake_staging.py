@@ -322,6 +322,20 @@ def promoted_extraction_state(staged_state: str) -> str:
     return PROMOTED_EXTRACTION_STATE.get(staged_state, ExtractionState.PENDING)
 
 
+def promoted_extraction_note(staged: MatterIntakeFile) -> str:
+    """The reason a promoted version carries, from the staged file's.
+
+    Only for ``FAILED``. A canonical version that is FAILED and silent about why
+    is exactly what data-quality tooling cannot explain, and the reader *did*
+    say why — on the staged row that is thrown away with the session (DX-4).
+    The other states need no reason carried: ``INTAKE_READ`` and ``PENDING``
+    are not failures, and ``NOT_APPLICABLE`` is the format's, not this file's.
+    """
+    if promoted_extraction_state(staged.extraction_state) != ExtractionState.FAILED:
+        return ""
+    return staged.extraction_note
+
+
 def promote_intake_files(
     *,
     session: MatterIntakeSession,
@@ -422,6 +436,7 @@ def promote_intake_files(
             mime_type=staged.mime_type,
             actor=actor,
             extraction_state=promoted_extraction_state(staged.extraction_state),
+            extraction_note=promoted_extraction_note(staged),
             title=(titles or {}).get(str(staged.pk), ""),
         )
         promoted.append(staged)

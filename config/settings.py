@@ -556,6 +556,12 @@ EXTRACTION_OCR_TIMEOUT_SECONDS = env_int("EXTRACTION_OCR_TIMEOUT_SECONDS", 120)
 # writing, so the pass that lost it writes nothing at all
 # (app/documents/extraction/orchestrator.py).
 EXTRACTION_STALE_CLAIM_MINUTES = env_int("EXTRACTION_STALE_CLAIM_MINUTES", 30)
+# How many claims a file gets before a stale one is treated as the file's fault.
+# A claim that never finishes is usually a worker the file itself killed (out of
+# memory, a native crash); reclaiming it for ever kills the worker for ever. The
+# corpus worker and the intake reader both count claims and settle the row
+# FAILED instead of taking it again past this number (AUD-045).
+EXTRACTION_MAX_ATTEMPTS = env_int("EXTRACTION_MAX_ATTEMPTS", 3)
 EXTRACTION_WORKER_IDLE_SECONDS = env_int("EXTRACTION_WORKER_IDLE_SECONDS", 10)
 
 # Where the worker marks that its loop turned, so a container healthcheck can

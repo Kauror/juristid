@@ -186,6 +186,19 @@ the heartbeat as the only symptom and a second worker reclaiming the row and
 wedging on the same page. `EXTRACTION_OCR_TIMEOUT_SECONDS` bounds one engine
 run, and exceeding it is an ordinary named extraction failure on one file.
 
+**Reclaims are bounded in number (AUD-045).** A file that kills the worker
+outright — out of memory, a native crash — never reaches a terminal write, so
+the stale-claim rule handed it to the next worker, which it killed too, for
+ever. Every claim now counts (`extraction_attempts`: one for a fresh or forced
+request, plus one per reclaim of an unfinished claim), and a stale claim already
+at `EXTRACTION_MAX_ATTEMPTS` (default 3) is settled `FAILED` with error code
+`attempts_exhausted` inside the claim's own locked statement instead of being
+taken again. `--force` starts the count over. The intake reader applies the
+same budget to staged files. Its cause is closed at the source too: a PDF page's
+size is bounded against `EXTRACTION_MAX_IMAGE_PIXELS` *before* PDFium allocates
+the bitmap, for OCR and thumbnails alike — an oversized page is OCR'd at a lower
+resolution and the extraction note says so.
+
 **Rejected: Celery with Redis.** At six lawyers and a few files a day it is a
 second piece of infrastructure to run, back up, monitor and explain, in exchange
 for capabilities none of the work needs (AGENTS.md forbids introducing either

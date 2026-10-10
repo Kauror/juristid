@@ -64,6 +64,7 @@ def file_incoming(
     mime_type: str,
     actor: Any,
     extraction_state: str = ExtractionState.PENDING,
+    extraction_note: str = "",
     title: str = "",
 ) -> Document:
     """One incoming file as one Document with one immutable version.
@@ -81,7 +82,9 @@ def file_incoming(
     replaces had each needed that fix separately).
 
     ``extraction_state`` is the staging area's: a file it has already read
-    arrives with that reading's state (`promoted_extraction_state`).
+    arrives with that reading's state (`promoted_extraction_state`), and a
+    file it failed to read arrives with the reader's reason in
+    ``extraction_note`` (DX-4).
     """
     from app.documents.uploads import clean_display_title
 
@@ -98,6 +101,7 @@ def file_incoming(
         mime_type=mime_type,
         uploaded_by=actor,
         extraction_state=extraction_state,
+        extraction_note=extraction_note,
     )
     return document
 

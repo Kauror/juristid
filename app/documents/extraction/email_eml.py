@@ -146,12 +146,24 @@ def _walk(
         filename = decode_mime_header(part.get_filename()) or _fallback_name(
             content_type, len(found)
         )
-        disposition = (part.get("Content-Disposition") or "").lower()
         content_id = (part.get("Content-ID") or "").strip().strip("<>")
         # Inline means the message draws with it: a signature logo, a bullet
         # image, a tracking pixel. It is recorded and deliberately not promoted
         # to a Document (Stage-2B brief 27).
-        inline = "inline" in disposition or bool(content_id)
+        #
+        # The sender's explicit disposition wins. Mail clients put a Content-ID
+        # on ordinary attachments too, and reading every one of those as a logo
+        # meant a real annex never became evidence (AUD-047). Only a part that
+        # says nothing either way falls back to the Content-ID, which is what an
+        # image referenced from an HTML body usually looks like. The parsed
+        # disposition type, not a substring: `filename="inline.pdf"` is not one.
+        disposition = part.get_content_disposition()
+        if disposition == "attachment":
+            inline = False
+        elif disposition == "inline":
+            inline = True
+        else:
+            inline = bool(content_id)
 
         try:
             payload = part.get_content()

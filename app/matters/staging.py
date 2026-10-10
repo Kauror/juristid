@@ -225,6 +225,15 @@ class MatterIntakeFile(BaseModel):
         null=True, blank=True, verbose_name="töötlemine algas"
     )
     extraction_note = models.CharField(max_length=300, blank=True, verbose_name="eraldamise märkus")
+    # How many times a worker has claimed this row since it was last asked for.
+    # A file that kills the worker outright (out of memory, a segfault in a
+    # native parser) never reaches a terminal write, so its stale claim would
+    # otherwise be re-taken — and the worker killed again — for ever. Bounded
+    # by EXTRACTION_MAX_ATTEMPTS, after which the claim settles it FAILED
+    # instead (AUD-045).
+    extraction_attempts = models.PositiveSmallIntegerField(
+        default=0, verbose_name="töötlemiskatseid"
+    )
     #: The parser's fragments, as JSON rather than as ``DocumentTextFragment``
     #: rows. Those belong to a ``DocumentVersion``, are what search reads and
     #: carry a rebuild contract; this is a handful of paragraphs read once, by

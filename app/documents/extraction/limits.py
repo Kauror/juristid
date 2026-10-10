@@ -20,6 +20,7 @@ rather than a code change.
 
 from __future__ import annotations
 
+import math
 import zipfile
 from dataclasses import dataclass
 from typing import IO
@@ -135,3 +136,27 @@ def configure_image_safety(limits: Limits) -> None:
     from PIL import Image
 
     Image.MAX_IMAGE_PIXELS = limits.max_image_pixels
+
+
+def bounded_render_scale(width_pt: float, height_pt: float, wanted: float, limits: Limits) -> float:
+    """The largest scale <= ``wanted`` whose raster stays inside the pixel budget.
+
+    PDFium allocates the whole bitmap the moment ``render`` is called; Pillow's
+    guard above only ever sees it afterwards, when the memory is already gone. A
+    433-byte PDF declaring a 5000 × 5000 pt page is a 7000 × 7000 raster at OCR
+    resolution, so the budget has to be applied to the page size *before*
+    rendering (AUD-045). A page with no usable size is left at ``wanted`` —
+    PDFium refuses those itself, without allocating.
+    """
+    area = float(width_pt) * float(height_pt)
+    if area <= 0:
+        return wanted
+    scale = min(wanted, (limits.max_image_pixels / area) ** 0.5)
+    # PDFium rounds each side up to whole pixels, so the exact square root can
+    # still land a few pixels over; shave until the rounded raster fits.
+    while (
+        scale > 0
+        and math.ceil(width_pt * scale) * math.ceil(height_pt * scale) > limits.max_image_pixels
+    ):
+        scale *= 0.999
+    return scale
