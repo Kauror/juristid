@@ -80,11 +80,11 @@ def _case_03(specialist):
     """The TAKS → TAIKS shape: «Muu siseriiklik», then VTK and Seadus, then Riigikogu."""
     matter = factories.MatterFactory(owner=specialist, track="")
     set_legal_instruments(matter=matter, legal_instruments=_instruments("muu-siseriiklik"))
-    set_legal_instruments(
-        matter=matter,
-        legal_instruments=_instruments("muu-siseriiklik", "vtk", "seadus"),
-        actor=specialist,
-    )
+    # The replayed file grew to three instruments while the control still took
+    # several. Since the one-instrument rule (docs/adr/0070, amendment of
+    # 2026-10-09) no interactive path makes such a set, so the history is
+    # written the way it is held: straight to the relation.
+    matter.legal_instruments.set(_instruments("muu-siseriiklik", "vtk", "seadus"))
     set_timeline_steps(
         matter=matter,
         steps=[
@@ -145,9 +145,8 @@ def test_case_04_a_proposal_answered_by_a_vtk_reads_both_in_order(specialist):
         actor=specialist,
     )
 
-    set_legal_instruments(
-        matter=matter, legal_instruments=_instruments("koja-ettepanek", "vtk"), actor=specialist
-    )
+    # Grown to a pair before the one-instrument rule; held, not re-made.
+    matter.legal_instruments.set(_instruments("koja-ettepanek", "vtk"))
 
     assert (
         pattern_for(track="", instrument_keys=frozenset({"koja-ettepanek", "vtk"})).key
