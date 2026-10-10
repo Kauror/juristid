@@ -57,6 +57,7 @@ from app.audit.models import ChangeEvent
 from app.audit.operations import composer_operation, stage_episode_scope
 from app.audit.visibility import change_log_event_types, scope_change_events
 from app.core.authorization import (
+    distinct_if_fans_out,
     may_assign_work,
     may_write_business_content,
 )
@@ -1488,7 +1489,10 @@ def matter_list(request: HttpRequest) -> HttpResponse:
     queryset = _ordered(queryset, sort, request.user)
 
     per_page, page_size_key = page_size_from(params.get(PAGE_SIZE_PARAM))
-    paginator = _RegisterPaginator(queryset.distinct(), per_page)
+    # DISTINCT only when a join can repeat a row (AUD-001): on the default
+    # register it bought nothing and cost every row's subqueries before the
+    # page limit — and, in the production image, JIT compilation besides.
+    paginator = _RegisterPaginator(distinct_if_fans_out(queryset), per_page)
     page = paginator.get_page(params.get("leht"))
 
     query_without_page = params.copy()

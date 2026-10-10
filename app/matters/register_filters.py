@@ -38,6 +38,7 @@ from urllib.parse import urlencode
 from django.db.models import Count, Exists, OuterRef, Q, QuerySet
 from django.utils import timezone
 
+from app.core.authorization import distinct_if_fans_out
 from app.core.dates import format_estonian_date, parse_flexible_date
 from app.legacy_import.source_pages import MatterSourcePage
 from app.matters import selectors
@@ -892,10 +893,11 @@ def register_population(
 ) -> QuerySet[Matter]:
     """The exact rows ``matters:matter_list?<params>`` would page through.
 
-    ``.distinct()`` because that is what the register paginates, and a count
-    taken without it would exceed the list by however many join rows a plural
-    filter produced — which is precisely the "card says 15, list shows 14"
-    failure this module exists to make impossible.
+    De-duplicated exactly as the register paginates it — ``.distinct()``
+    whenever a join can repeat a row (`distinct_if_fans_out`, AUD-001) — because
+    a count taken without it would exceed the list by however many join rows a
+    plural filter produced, which is precisely the "card says 15, list shows
+    14" failure this module exists to make impossible.
 
     Deliberately *not* ``matter_list_queryset``: that annotates six correlated
     subqueries so a row can render *viimane tegevus*, and a KPI renders no rows
@@ -917,7 +919,7 @@ def register_population(
     queryset, _ = apply_register_filters(
         base, user, as_text(params), today=today, shared_items=shared_items
     )
-    return queryset.distinct()
+    return distinct_if_fans_out(queryset)
 
 
 # ---------------------------------------------------------------------------
