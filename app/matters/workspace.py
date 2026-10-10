@@ -231,17 +231,21 @@ def _named_open_action(*, locked_matter: Matter, action_id: Any) -> NextAction:
     return current
 
 
-def _refuse_an_unconfirmed_closure(locked_matter: Matter, stage: Any, *, confirmed: bool) -> None:
-    """A save whose `Uus hetkeseis` would close a Matter with a pending check, asked first.
+def _refuse_an_unconfirmed_closure(
+    locked_matter: Matter, stage: Any, *, confirmed: bool, finishing: Any = None
+) -> None:
+    """A save whose `Uus hetkeseis` would close a Matter with live work, asked first.
 
     `close_matter` asks the same question under the same lock as the save ends;
     asking it here as well means a refusal comes *before* the save stores any
-    file, so nothing is left behind in the evidence store (docs/adr/0146 §8).
+    file, so nothing is left behind in the evidence store (docs/adr/0146 §8,
+    docs/adr/0152). ``finishing`` is the step this same save completes, which
+    is done rather than outstanding by the time the Matter closes.
     """
     from app.workflow.follow_ups import refuse_unconfirmed_closure
 
     if locked_matter.is_open and is_terminal_stage(getattr(stage, "key", None)):
-        refuse_unconfirmed_closure(locked_matter, confirmed=confirmed)
+        refuse_unconfirmed_closure(locked_matter, confirmed=confirmed, finishing=finishing)
 
 
 def completion_visibility_override(action: NextAction) -> str:
@@ -345,7 +349,10 @@ def complete_current_action(
     current = _named_open_action(locked_matter=locked_matter, action_id=action_id)
     moves_stage = stage is not None and stage.pk != locked_matter.stage_id
     if moves_stage:
-        _refuse_an_unconfirmed_closure(locked_matter, stage, confirmed=follow_ups_confirmed)
+        # The step being finished here is done by the time the Matter closes.
+        _refuse_an_unconfirmed_closure(
+            locked_matter, stage, confirmed=follow_ups_confirmed, finishing=current
+        )
 
     with (
         composer_operation() as operation_id,
@@ -1192,10 +1199,14 @@ def add_matter_koda_opinion(
     # asks for the same confirmation any closure with a pending check does,
     # before a byte is stored (docs/adr/0146 §8).
     if locked_matter.is_open and is_terminal_stage(getattr(stage, "key", None)):
-        if not follow_ups_confirmed:
-            from app.workflow.follow_ups import FollowUpClosureUnconfirmed
+        from app.workflow.follow_ups import refuse_unconfirmed_closure
 
-            raise FollowUpClosureUnconfirmed()
+        # This send schedules a check that the closure would end at once, so
+        # the confirmation is always asked — and names whatever else is live
+        # (docs/adr/0152). The step it finishes, if it was one, is done.
+        refuse_unconfirmed_closure(
+            locked_matter, confirmed=follow_ups_confirmed, finishing=named, will_check=True
+        )
     _spend_once(locked_matter, once_token, "koja-arvamus")
     if answers_deadline is not None:
         from app.matters.response_deadlines import (

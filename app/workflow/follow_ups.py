@@ -97,14 +97,21 @@ ACTIVE = (ActionStatus.OPEN, ActionStatus.PLANNED)
 
 
 class FollowUpClosureUnconfirmed(DomainError):
-    """A closure that would end a check nobody confirmed ending.
+    """A closure that would end live work nobody confirmed ending.
 
     Its own class so a view can tell it from every other refusal and draw the
-    confirmation box beside the warning, rather than a bare error.
+    confirmation box beside the warning, rather than a bare error. Named for the
+    check it was first about (docs/adr/0146 §8); since the owner's decision of
+    2026-10-10 it is asked about every kind of live work a closure ends
+    (`app.matters.closure_work`, docs/adr/0152), and carries the sentence and
+    the confirming box's words for what this closure would end.
     """
 
-    def __init__(self) -> None:
-        super().__init__(FOLLOW_UP_CLOSURE_WARNING)
+    def __init__(self, message: str = FOLLOW_UP_CLOSURE_WARNING, label: str = "") -> None:
+        super().__init__(message)
+        from app.matters.closure_work import CHECKS_ONLY_LABEL
+
+        self.label = label or CHECKS_ONLY_LABEL
 
 
 def follow_up_text(addressee_count: int, kind: str = "") -> str:
@@ -473,17 +480,32 @@ def end_follow_up_for_cancelled_check(*, action: NextAction, actor: Any, reason:
     follow_up.save(update_fields=["state", "ended_at", "ended_by", "end_reason", "updated_at"])
 
 
-def refuse_unconfirmed_closure(locked_matter: Any, *, confirmed: bool) -> None:
-    """Closing a Matter with a planned or current check needs the person's confirmation.
+def refuse_unconfirmed_closure(
+    locked_matter: Any, *, confirmed: bool, finishing: Any = None, will_check: bool = False
+) -> None:
+    """Closing a Matter with live work needs the person's confirmation.
+
+    First asked for a planned or current check (docs/adr/0146 §8); since the
+    owner's decision of 2026-10-10 for every kind of live work closure ends —
+    the current step, planned steps, planned website overviews and open feedback
+    waits besides (docs/adr/0152). ``finishing`` is a step the same save
+    completes; ``will_check`` a send that schedules a check in it.
 
     Asked under the Matter's lock by `close_matter`, and earlier by every
     operation that stores a file before its stage can close the Matter, so a
-    refusal never strands bytes. The answer is the database's at that moment:
-    a tab drawn before a check existed, posting no confirmation, is refused
-    (docs/adr/0146 §8). Allowed once confirmed — closure is never forbidden.
+    refusal never strands bytes. The answer is the database's at that moment: a
+    tab drawn before the work existed, posting no confirmation, is refused.
+    Allowed once confirmed — closure is never forbidden.
     """
-    if not confirmed and pending_checks(locked_matter).exists():
-        raise FollowUpClosureUnconfirmed()
+    from app.matters.closure_work import closure_warning, live_work_at_closure
+
+    if confirmed:
+        return
+    warning = closure_warning(
+        live_work_at_closure(locked_matter, finishing=finishing, will_check=will_check)
+    )
+    if warning is not None:
+        raise FollowUpClosureUnconfirmed(*warning)
 
 
 @transaction.atomic
