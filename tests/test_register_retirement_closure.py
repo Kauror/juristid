@@ -179,7 +179,10 @@ def test_close_matter_still_ends_them_through_the_same_helper(normal_matter, spe
     _wait(normal_matter, specialist)
     _step(normal_matter, specialist)
 
-    services.close_matter(matter=normal_matter, disposition="COMPLETED", actor=specialist)
+    # Confirmed, as the closing person does for live work (docs/adr/0152).
+    services.close_matter(
+        matter=normal_matter, disposition="COMPLETED", actor=specialist, follow_ups_confirmed=True
+    )
 
     _nothing_owed(normal_matter)
     assert _events(normal_matter, ChangeEventType.MATTER_CLOSED) == 1

@@ -132,7 +132,9 @@ def test_closing_while_setting_an_action_cannot_leave_both(specialist):
         try:
             holder_ready.wait(timeout=LOCK_WAIT_TIMEOUT)
             closer_started.set()
-            close_matter(matter=matter, disposition="COMPLETED", actor=specialist)
+            close_matter(
+                follow_ups_confirmed=True, matter=matter, disposition="COMPLETED", actor=specialist
+            )
             outcomes.append("closed")
         except DomainError:
             outcomes.append("close-refused")
@@ -165,7 +167,9 @@ def test_closing_while_setting_an_action_cannot_leave_both(specialist):
 def test_a_closure_that_lands_first_makes_the_later_action_refuse(specialist):
     """The ordering the lock is there to produce, verified end to end."""
     matter = factories.MatterFactory(owner=specialist)
-    close_matter(matter=matter, disposition="COMPLETED", actor=specialist)
+    close_matter(
+        follow_ups_confirmed=True, matter=matter, disposition="COMPLETED", actor=specialist
+    )
 
     with refused("Suletud teemale ei saa järgmist tegevust määrata."):
         set_next_action(
@@ -634,7 +638,9 @@ def test_closing_while_adding_content_cannot_leave_the_content(specialist):
         try:
             holder_ready.wait(timeout=LOCK_WAIT_TIMEOUT)
             closer_started.set()
-            close_matter(matter=matter, disposition="COMPLETED", actor=specialist)
+            close_matter(
+                follow_ups_confirmed=True, matter=matter, disposition="COMPLETED", actor=specialist
+            )
             outcomes.append("closed")
         except DomainError:
             outcomes.append("close-refused")
@@ -666,7 +672,9 @@ def test_a_closure_that_commits_first_refuses_the_later_write(specialist):
     so a surface added later inherits the rule rather than restating it.
     """
     matter = factories.MatterFactory(owner=specialist)
-    close_matter(matter=matter, disposition="COMPLETED", actor=specialist)
+    close_matter(
+        follow_ups_confirmed=True, matter=matter, disposition="COMPLETED", actor=specialist
+    )
 
     for call in (
         lambda: workspace.add_matter_engagement(
@@ -751,7 +759,9 @@ def test_closing_while_uploading_evidence_cannot_leave_the_file(specialist):
         try:
             holder_ready.wait(timeout=LOCK_WAIT_TIMEOUT)
             closer_started.set()
-            close_matter(matter=matter, disposition="COMPLETED", actor=specialist)
+            close_matter(
+                follow_ups_confirmed=True, matter=matter, disposition="COMPLETED", actor=specialist
+            )
             outcomes.append("closed")
         except DomainError:
             outcomes.append("close-refused")
@@ -800,7 +810,9 @@ def test_a_closure_that_commits_first_refuses_every_dokumendid_write(specialist,
     )
     draft = create_submission(matter=matter, title="Koostatav arvamus", actor=specialist)
 
-    close_matter(matter=matter, disposition="COMPLETED", actor=specialist)
+    close_matter(
+        follow_ups_confirmed=True, matter=matter, disposition="COMPLETED", actor=specialist
+    )
 
     for call in (
         lambda: capture_evidence_on_open_matter(

@@ -149,6 +149,7 @@ def test_complete_against_closure_cannot_complete_after_the_matter_closed(specia
             matter=Matter.objects.get(pk=matter.pk),
             disposition=Disposition.COMPLETED,
             actor=specialist,
+            follow_ups_confirmed=True,
         ),
         lambda: complete_next_action(action=held, actor=specialist),
     )

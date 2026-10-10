@@ -163,7 +163,12 @@ def test_a_plain_post_gets_no_out_of_band_box(signed_in, specialist):
 def test_a_closed_file_gets_no_waiting_box(signed_in, specialist):
     matter = factories.MatterFactory(owner=specialist)
     _round(matter, "Liikmete küsitlus", actor=specialist)
-    close_matter(matter=matter, disposition=Disposition.COMPLETED, actor=specialist)
+    close_matter(
+        follow_ups_confirmed=True,
+        matter=matter,
+        disposition=Disposition.COMPLETED,
+        actor=specialist,
+    )
 
     page = signed_in.get(
         reverse("matters:matter_detail", kwargs={"pk": matter.pk})

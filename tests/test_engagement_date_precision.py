@@ -822,7 +822,11 @@ def test_a_closed_matter_refuses_a_correction_on_a_period_too(signed_in, special
     matter = factories.MatterFactory(owner=specialist)
     engagement = _stored(matter, DatePrecision.MONTH, dt.date(2025, 10, 1))
     close_matter(
-        matter=matter, disposition=Disposition.COMPLETED, actor=specialist, reason="valmis"
+        follow_ups_confirmed=True,
+        matter=matter,
+        disposition=Disposition.COMPLETED,
+        actor=specialist,
+        reason="valmis",
     )
 
     response = _edit(signed_in, engagement, occurred_on="17.10.2025")

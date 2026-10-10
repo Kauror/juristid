@@ -472,8 +472,13 @@ def test_joustunud_closes_as_completed_and_ends_the_open_step(specialist):
         matter=matter, text="Jälgin jõustumist", target_date=None, actor=specialist
     )
 
+    # Confirmed, as the closing person does for live work (docs/adr/0152).
     add_procedural_development(
-        matter=matter, author=specialist, title="Seadus jõustus", stage=_stage("in_force")
+        matter=matter,
+        author=specialist,
+        title="Seadus jõustus",
+        stage=_stage("in_force"),
+        follow_ups_confirmed=True,
     )
 
     matter.refresh_from_db()

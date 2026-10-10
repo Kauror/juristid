@@ -652,6 +652,8 @@ def test_closing_writes_a_closure_and_fabricates_nothing(signed_in, normal_matte
         {
             "title": "Menetlus lõppes.",
             "stage": str(StageVocabulary.objects.get(key="monitoring_stopped").pk),
+            # The open step ends with the closure; the person confirms it (ADR 0152).
+            "confirm_follow_up_closure": "on",
         },
     )
 
@@ -1103,10 +1105,17 @@ def test_an_associated_file_is_still_an_ordinary_document_on_dokumendid(signed_i
 
 
 def _close_elsewhere(matter, actor):
-    """Close the Matter the way the other tab does: the domain service."""
+    """Close the Matter the way the other tab does: the domain service, confirmed
+    there for any live work it ends (docs/adr/0152)."""
     from app.workflow.enums import Disposition
 
-    close_matter(matter=matter, disposition=Disposition.COMPLETED, actor=actor, reason="QA")
+    close_matter(
+        matter=matter,
+        disposition=Disposition.COMPLETED,
+        actor=actor,
+        reason="QA",
+        follow_ups_confirmed=True,
+    )
     matter.refresh_from_db()
     return matter
 

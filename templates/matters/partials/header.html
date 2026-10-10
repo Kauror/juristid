@@ -174,9 +174,10 @@ rather than read.
   {% endif %}
   {% if follow_up_closure_stage and can_write %}
     {% comment %}
-      The stage chosen here would close a Matter with a pending `Arvamuse
-      järelkontroll`: the warning above, and one button that posts the same
-      stage again with the confirmation (docs/adr/0146 §8). Nothing was saved.
+      The stage chosen here would close a Matter with live work — a pending
+      `Arvamuse järelkontroll`, a step, a planned overview or an open wait: the
+      warning above names what, and one button posts the same stage again with
+      the confirmation (docs/adr/0146 §8, docs/adr/0152). Nothing was saved.
     {% endcomment %}
     <form class="inlineform followupconfirm"
           hx-post="{% url 'matters:update_field' pk=matter.pk field='stage' %}"
@@ -184,7 +185,7 @@ rather than read.
       {% csrf_token %}
       <input type="hidden" name="stage" value="{{ follow_up_closure_stage }}">
       <input type="hidden" name="confirm_follow_up_closure" value="on">
-      <button class="button button--tiny" type="submit">Sulge teema ja lõpeta ka järelkontroll</button>
+      <button class="button button--tiny" type="submit">{{ follow_up_closure_label|default:"Sulge teema ja lõpeta ka järelkontroll" }}</button>
     </form>
   {% endif %}
 

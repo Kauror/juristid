@@ -85,6 +85,7 @@ def test_superseded_with_a_successor_closes_and_points_at_it(working_matter, spe
         disposition=Disposition.SUPERSEDED,
         actor=specialist,
         successor=successor,
+        follow_ups_confirmed=True,
     )
 
     working_matter.refresh_from_db()

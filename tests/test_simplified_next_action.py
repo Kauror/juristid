@@ -196,6 +196,8 @@ def test_closing_the_matter_still_works_with_neither_box(signed_in, normal_matte
         {
             "title": "Menetlus lõppes.",
             "stage": str(StageVocabulary.objects.get(key="in_force").pk),
+            # The step ends with the closure; the person confirms it (ADR 0152).
+            "confirm_follow_up_closure": "on",
         },
         HTTP_HX_REQUEST="true",
     )

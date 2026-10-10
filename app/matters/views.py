@@ -112,6 +112,7 @@ from app.matters.enums import MatterDataClass, MatterOrigin, RecordMode
 from app.matters.episode_timeline import matter_episode_timeline
 from app.matters.forms import (
     ENGAGEMENT_UNCHANGED,
+    FOLLOW_UP_CLOSURE_FIELD,
     BriefSummaryForm,
     CompactEffectiveDateForm,
     CompactEngagementForm,
@@ -5128,11 +5129,11 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
                 actor=request.user,
                 follow_ups_confirmed=data.get("confirm_follow_up_closure", False),
             )
-    except FollowUpClosureUnconfirmed:
-        # Closing this file would end a pending `Arvamuse järelkontroll`: the
-        # page comes back with everything typed, the warning and the box that
-        # confirms it beside `Hetkeseis` (docs/adr/0146 §8).
-        form.follow_up_closure_refused = True  # type: ignore[attr-defined]
+    except FollowUpClosureUnconfirmed as refusal:
+        # Closing this file would end live work: the page comes back with
+        # everything typed, the warning naming what, and the box that confirms
+        # it beside `Hetkeseis` (docs/adr/0146 §8, docs/adr/0152).
+        _mark_closure_refused(form, refusal)
         matter.refresh_from_db()
         return render(
             request,
@@ -5572,6 +5573,7 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
         context = _header_context(request, matter)
         context["field_error"] = str(refusal)
         context["follow_up_closure_stage"] = getattr(value, "pk", value)
+        context["follow_up_closure_label"] = refusal.label
         return render(request, surface, context, status=400)
     except DomainError as error:
         context = _header_context(request, matter)
@@ -7022,17 +7024,35 @@ def unsaved_content(form: Any) -> list[tuple[str, str]]:
 
 
 def _closure_needs_confirmation(
-    request: HttpRequest, matter: Matter, *, key: str, form: Any
+    request: HttpRequest, matter: Matter, *, key: str, form: Any, refusal: Any = None
 ) -> HttpResponse:
-    """The save would close a Matter with a pending `Arvamuse järelkontroll`.
+    """The save would close a Matter with live work — a pending check among it.
 
     The same form comes back, opened, with the owner's warning and the box
     `Sulge teema ja lõpeta ka järelkontroll` beside the stage — unticked; the
     person ticks it and saves again, or chooses another stage. Nothing was
     written: the refusal came before the save stored anything (docs/adr/0146 §8).
     """
-    form.follow_up_closure_refused = True
+    _mark_closure_refused(form, refusal)
     return _workspace_refusal(request, matter, key=key, form=form)
+
+
+def _mark_closure_refused(form: Any, refusal: Any) -> None:
+    """Draw the confirmation beside the stage, in the words this closure needs.
+
+    The sentence names what the closure would end (`app.matters.closure_work`);
+    the box reads «Sulge teema ja lõpeta ka järelkontroll» when that is all, and
+    «Sulge teema ja lõpeta pooleli töö» otherwise (docs/adr/0152).
+    """
+    form.follow_up_closure_refused = True
+    if refusal is not None:
+        form.closure_warning = str(refusal)
+        field = form.fields.get(FOLLOW_UP_CLOSURE_FIELD)
+        if field is not None:
+            field.label = refusal.label
+            # A bound field copies its label when first built, which validation
+            # has already done.
+            form[FOLLOW_UP_CLOSURE_FIELD].label = refusal.label
 
 
 def _workspace_refusal(
@@ -7215,8 +7235,10 @@ def complete_current_action(request: HttpRequest, pk: Any) -> HttpResponse:
             # it after the warning (docs/adr/0146 §8).
             follow_ups_confirmed=form.cleaned_data.get("confirm_follow_up_closure", False),
         )
-    except FollowUpClosureUnconfirmed:
-        return _closure_needs_confirmation(request, matter, key="current_action_form", form=form)
+    except FollowUpClosureUnconfirmed as refusal:
+        return _closure_needs_confirmation(
+            request, matter, key="current_action_form", form=form, refusal=refusal
+        )
     except (DomainError, UploadRejected) as error:
         return _workspace_refusal(
             request, matter, key="current_action_form", form=form, error=str(error)
@@ -7379,8 +7401,10 @@ def add_note(request: HttpRequest, pk: Any) -> HttpResponse:
             # asks first, as every closing door does (docs/adr/0146 §8).
             follow_ups_confirmed=form.cleaned_data.get("confirm_follow_up_closure", False),
         )
-    except FollowUpClosureUnconfirmed:
-        return _closure_needs_confirmation(request, matter, key="progress_form", form=form)
+    except FollowUpClosureUnconfirmed as refusal:
+        return _closure_needs_confirmation(
+            request, matter, key="progress_form", form=form, refusal=refusal
+        )
     except (DomainError, UploadRejected) as error:
         return _workspace_refusal(request, matter, key="progress_form", form=form, error=str(error))
     if result.closed:
@@ -8206,8 +8230,8 @@ def add_koda_opinion(request: HttpRequest, pk: Any) -> HttpResponse:
                 # byte is stored (docs/adr/0146 §8).
                 follow_ups_confirmed=form.cleaned_data.get("confirm_follow_up_closure", False),
             )
-    except FollowUpClosureUnconfirmed:
-        return _closure_needs_confirmation(request, matter, key=key, form=form)
+    except FollowUpClosureUnconfirmed as refusal:
+        return _closure_needs_confirmation(request, matter, key=key, form=form, refusal=refusal)
     except (DomainError, UploadRejected) as error:
         return _workspace_refusal(request, matter, key=key, form=form, error=str(error))
     if result.closed or request.POST.get("vastab_tahtajale"):

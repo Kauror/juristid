@@ -558,6 +558,7 @@ def test_a_closed_matter_states_no_outstanding_obligation(signed_in, specialist,
         actor=specialist,
         disposition=Disposition.MONITORING_STOPPED,
         reason="Menetlus loppes",
+        follow_ups_confirmed=True,
     )
 
     assert teema_owed(teema_of(signed_in, matter)) == ""

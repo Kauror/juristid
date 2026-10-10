@@ -533,7 +533,11 @@ def test_closing_the_matter_ends_an_open_round_with_no_deadline(specialist):
     engagement = _round(matter, specialist)
 
     close_matter(
-        matter=matter, disposition=Disposition.COMPLETED, actor=specialist, reason="valmis"
+        follow_ups_confirmed=True,
+        matter=matter,
+        disposition=Disposition.COMPLETED,
+        actor=specialist,
+        reason="valmis",
     )
 
     engagement.refresh_from_db()

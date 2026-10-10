@@ -905,10 +905,11 @@ def close_through_stage(page, stage: str = "Rohkem ei tegele", title: str = "") 
     stage, through `record_marge` — `+ Lisa · Tavaline`'s save, since that
     panel left on 2026-10-07.
 
-    **A file with a pending `Arvamuse järelkontroll` asks first** (docs/adr/0146
-    §8): the header answers with the owner's warning and one button that closes
-    past it, which this presses, as a person who meant to close would; the
-    `Märge` posts the same confirmation.
+    **A file with live work asks first** — a pending `Arvamuse järelkontroll`
+    (docs/adr/0146 §8), and since 2026-10-10 a current or planned step, a
+    planned overview or an open wait (docs/adr/0152): the header answers with
+    the warning and one button that closes past it, which this presses, as a
+    person who meant to close would; the `Märge` posts the same confirmation.
     """
     if title:
         record_marge(page, title, stage=stage, confirm_follow_up_closure=True)
@@ -921,7 +922,10 @@ def close_through_stage(page, stage: str = "Rohkem ei tegele", title: str = "") 
         ) as answer:
             control.get_by_role("button", name="Salvesta hetkeseisu muudatus").click()
         if answer.value.status == 400:
-            confirm = page.get_by_role("button", name=FOLLOW_UP_CLOSURE_BUTTON, exact=True)
+            # The one button that closes past the warning. Its words follow
+            # what the closure would end — «… lõpeta ka järelkontroll» for a
+            # check alone, «… lõpeta pooleli töö» otherwise (docs/adr/0152).
+            confirm = page.locator("form.followupconfirm").get_by_role("button")
             with page.expect_navigation():
                 confirm.click()
         page.wait_for_load_state("networkidle")

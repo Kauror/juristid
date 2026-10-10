@@ -543,7 +543,13 @@ def test_closing_a_matter_cancels_every_plan_it_still_owed(normal_matter, specia
     second = plan_website_overview(matter=normal_matter, actor=specialist)
     published = _published(normal_matter, specialist)
 
-    close_matter(matter=normal_matter, disposition=Disposition.COMPLETED, actor=specialist)
+    # Confirmed, as the closing person does for live work (docs/adr/0152).
+    close_matter(
+        matter=normal_matter,
+        disposition=Disposition.COMPLETED,
+        actor=specialist,
+        follow_ups_confirmed=True,
+    )
 
     first.refresh_from_db()
     second.refresh_from_db()
@@ -562,10 +568,25 @@ def test_closing_a_matter_cancels_every_plan_it_still_owed(normal_matter, specia
     assert reasons == ["matter_closed", "matter_closed"]
 
 
-def test_a_planned_overview_never_blocks_a_closure(normal_matter, specialist):
+def test_a_planned_overview_asks_first_and_never_forbids_the_closure(normal_matter, specialist):
+    """docs/adr/0152: the closure names the overview it would end and waits for a
+    confirmation; confirmed, it closes."""
     plan_website_overview(matter=normal_matter, actor=specialist)
 
-    close_matter(matter=normal_matter, disposition=Disposition.COMPLETED, actor=specialist)
+    with refused(
+        "Teema sulgemisel lõpetatakse ka pooleli töö: 1 planeeritud kodulehe ülevaade. "
+        "Kui midagi neist tuleb jätkata, vii see enne sulgemist teisele, seotud teemale."
+    ):
+        close_matter(matter=normal_matter, disposition=Disposition.COMPLETED, actor=specialist)
+    normal_matter.refresh_from_db()
+    assert normal_matter.is_open is True
+
+    close_matter(
+        matter=normal_matter,
+        disposition=Disposition.COMPLETED,
+        actor=specialist,
+        follow_ups_confirmed=True,
+    )
 
     normal_matter.refresh_from_db()
     assert normal_matter.is_open is False
@@ -872,7 +893,12 @@ def test_a_closed_matter_refuses_a_crafted_plan(signed_in, closed_matter):
 
 def test_a_closed_matter_refuses_a_crafted_publication(signed_in, normal_matter, specialist):
     overview = plan_website_overview(matter=normal_matter, actor=specialist)
-    close_matter(matter=normal_matter, disposition=Disposition.COMPLETED, actor=specialist)
+    close_matter(
+        matter=normal_matter,
+        disposition=Disposition.COMPLETED,
+        actor=specialist,
+        follow_ups_confirmed=True,
+    )
     overview.refresh_from_db()
     # Closure cancelled it, so re-plan the harder case: a row the closure never
     # saw, written straight to the table, is still refused by the route.

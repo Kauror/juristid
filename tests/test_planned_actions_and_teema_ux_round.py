@@ -263,7 +263,13 @@ def test_closure_cancels_current_and_every_planned_action(specialist, with_curre
     add_planned_action(matter=with_current, text="Üks", target_date=_day(5), actor=specialist)
     add_planned_action(matter=with_current, text="Kaks", target_date=_day(6), actor=specialist)
 
-    close_matter(matter=with_current, disposition=Disposition.COMPLETED, actor=specialist)
+    # Confirmed, as the closing person does for live work (docs/adr/0152).
+    close_matter(
+        matter=with_current,
+        disposition=Disposition.COMPLETED,
+        actor=specialist,
+        follow_ups_confirmed=True,
+    )
 
     assert not NextAction.objects.filter(
         matter=with_current, status__in=(ActionStatus.OPEN, ActionStatus.PLANNED)
