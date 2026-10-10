@@ -157,7 +157,12 @@ def test_a_service_refusal_lands_on_the_row_too(
     from app.workflow.enums import Disposition
 
     refused = developments[2]
-    close_matter(matter=normal_matter, disposition=Disposition.COMPLETED, actor=specialist)
+    close_matter(
+        matter=normal_matter,
+        disposition=Disposition.COMPLETED,
+        actor=specialist,
+        follow_ups_confirmed=True,
+    )
 
     response = signed_in.post(
         _development_evidence(normal_matter, refused), {"attachments": [_pdf("a.pdf")]}, **HX
