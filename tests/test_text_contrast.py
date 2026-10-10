@@ -242,9 +242,17 @@ def test_text_on_a_coloured_fill_meets_aa(theme, foreground, fill):
 ATYPICAL_SURFACES = {"light": CHIP_SURFACES, "dark": ("--surface-base",)}
 
 #: How much quieter than muted the chip stays, as a ratio of the two
-#: contrasts: a step a glance can tell rather than a rounding difference. Both
-#: palettes keep about a quarter (1.23 light, 1.29 dark).
-QUIETER_BY = 1.2
+#: contrasts. It was 1.2 — the colour step alone had to be one a glance can
+#: tell — and that held the words a hair over AA (4.51:1 light, 4.59:1 dark).
+#: Since docs/adr/0130's amendment of 2026-10-09 («not colour alone») the dimmed chip's
+#: outline is dotted, so the glance has a cue that is not colour, and the words
+#: keep a margin instead: still quieter than muted (1.08 light, 1.14 dark), and
+#: never below :data:`ATYPICAL_MINIMUM`.
+QUIETER_BY = 1.07
+
+#: AA and a margin over it (the live QA of 9 October 2026 measured 4.51:1 and
+#: 4.59:1 and asked for one).
+ATYPICAL_MINIMUM = 5.1
 
 
 @pytest.mark.parametrize(
@@ -253,13 +261,14 @@ QUIETER_BY = 1.2
 def test_the_quieter_chip_is_readable_and_still_quieter(theme, surface):
     """`--text-atypical` names an option the chosen Õigusakt rarely takes.
 
-    Quieter than `--text-muted` by design (docs/adr/0130), and AA where it is
-    drawn. The dark value was 3.61:1 until docs/adr/0147's amendment of
-    2026-10-09.
+    Quieter than `--text-muted` by design (docs/adr/0130), and AA with a
+    margin where it is drawn. The dark value was 3.61:1 until docs/adr/0147's
+    amendment of 2026-10-09, and 4.59:1 (light 4.51:1) until docs/adr/0130's
+    amendment of that day («not colour alone»).
     """
     tokens = _tokens(theme)
     ratio = contrast(tokens["--text-atypical"], tokens[surface])
-    assert ratio >= AA_NORMAL_TEXT, f"{theme}: --text-atypical on {surface}: {ratio:.2f}:1"
+    assert ratio >= ATYPICAL_MINIMUM, f"{theme}: --text-atypical on {surface}: {ratio:.2f}:1"
     muted = contrast(tokens["--text-muted"], tokens[surface])
     assert muted / ratio >= QUIETER_BY, f"{theme}: on {surface}, muted {muted:.2f} vs {ratio:.2f}"
 

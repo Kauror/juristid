@@ -5134,18 +5134,33 @@ a.barchart__row:hover {
 /* A `Hetkeseis` that does not normally fit any chosen `Õigusakt` — guidance on
    Uus teema, never a rule (app/workflow/stage_guidance.py, docs/adr/0130 §4).
 
-   Quieter, not unavailable: muted words and a fainter outline, and nothing
+   Quieter, not unavailable: quieter words and a *dotted* outline, and nothing
    that reads as "disabled" — no strike, no `not-allowed` cursor, no opacity on
-   the whole chip. `--text-atypical` is quieter than `--text-muted`, because
-   the first version read too close to an ordinary chip at a glance
-   (docs/adr/0130, amendment of 2026-10-02), and still AA on the page
-   (docs/adr/0147, amendment of 2026-10-09). Hover and keyboard focus
-   bring it back to full strength, and a *chosen* chip is never dimmed: the
-   selector stops at `:checked`, so the ordinary selected look always wins. Set
-   by `bindStageGuidance` (static/js/app.js). */
+   the whole chip. Two cues, because one of them must not be colour: the
+   outline's line style tells a glance which chips are dimmed whatever the
+   reader's colour vision or screen, which is what lets `--text-atypical` keep
+   AA with a margin (5.2:1) rather than sitting on the line (4.5–4.6:1) to be
+   faint enough to notice (docs/adr/0130, amendment of 2026-10-09 («not colour alone»)).
+   Dotted, never dashed: dashed is this application's "not saved yet".
+
+   The fainter outline it replaces (`--border-subtle`, 1.14–1.17:1) all but
+   vanished, and a vanished edge read as a chip half drawn. `--border-strong`
+   dotted is visible (2.0:1 dark, 2.7:1 light) and, broken into dots, still no
+   heavier than an ordinary chip's solid edge.
+
+   Hover and keyboard focus bring the words back to full strength. A *chosen*
+   chip takes the ordinary selected look — the colour selector stops at
+   `:checked` — but keeps its dotted edge, so a deliberately chosen atypical
+   stage stays recognisable without looking refused; its explanation says the
+   same in words (`.stagehelp__note`). Set by `bindStageGuidance`
+   (static/js/app.js). */
+.chip--atypical .chip__name {
+  border-style: dotted;
+}
+
 .chip--atypical .chip__input:not(:checked) + .chip__name {
   color: var(--text-atypical);
-  border-color: var(--border-subtle);
+  border-color: var(--border-strong);
 }
 
 /* The «i» marker of an explained chip follows its words down, or it would be
@@ -5157,7 +5172,6 @@ a.barchart__row:hover {
 .chip--atypical:hover .chip__input:not(:checked) + .chip__name,
 .chip--atypical .chip__input:not(:checked):focus-visible + .chip__name {
   color: var(--text-primary);
-  border-color: var(--border-strong);
 }
 
 /* A body that does not exist yet.
@@ -5583,7 +5597,11 @@ a.barchart__row:hover {
   left: 0;
   z-index: 40;
   width: max-content;
-  max-width: min(22rem, calc(100vw - 24px));
+  /* Narrower than the window by both 8px margins `bindStageHelp` keeps and a
+     desktop scrollbar's width besides: `100vw` counts the scrollbar and
+     `clientWidth` does not, so at 320px with a scrollbar a bubble 24px short of
+     `100vw` was still wider than the room it could be slid into. */
+  max-width: min(22rem, calc(100vw - 40px));
   padding: var(--spacing-2) var(--spacing-25);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
@@ -5601,7 +5619,7 @@ a.barchart__row:hover {
    * right-hand Hetkeseis chips put a horizontal scrollbar on the whole page at
    * 1024px — measured, not guessed. Taken out of layout entirely there is
    * nothing to overflow until one is actually opened, and an opened one is
-   * flipped by then.
+   * slid inside the window by then (`bindStageHelp`).
    *
    * A description referenced by `aria-describedby` is read even when its
    * element is `display: none`; that is the whole reason the attribute exists
@@ -5619,13 +5637,16 @@ a.barchart__row:hover {
   display: none;
 }
 
-/* A chip near the right edge opens leftwards instead of off the screen. Set by
-   the script once the bubble has a box to measure; the `max-width` below is the
-   floor under it, so even an unflipped bubble on a narrow window stays inside
-   the viewport. */
-.stagehelp--flip {
-  left: auto;
-  right: 0;
+/* The dimming in words (`bindStageGuidance`): empty, and so absent, unless the
+   chosen `Õigusakt` does not normally fit this stage. */
+.stagehelp__note {
+  display: block;
+  margin-top: var(--spacing-1);
+  color: var(--text-muted);
+}
+
+.stagehelp__note:empty {
+  display: none;
 }
 
 /* -- Järgmine tegevus: the one panel ---------------------------------------- */

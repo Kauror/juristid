@@ -1,6 +1,6 @@
 # 0130 — `Uus teema` is a lighter intake, and `Õigusakt` guides `Hetkeseis`
 
-**Status:** accepted, amended 2026-10-02
+**Status:** accepted, amended 2026-10-02 and 2026-10-09
 **Date:** 2026-10-01
 
 The product owner's decisions after the latest round of lawyer feedback on the
@@ -153,9 +153,17 @@ Once an `Õigusakt` is ticked, the `Hetkeseis` chips that do not normally fit
   **Superseded again on 2026-10-09 for the dark value — see ADR 0147's
   amendment of 2026-10-09.** The dark words are AA on the page (4.59:1) and
   still quieter than `--text-muted` (5.90:1).
+  **Superseded again on 2026-10-09 for the outline and both values —
+  see the amendment of 2026-10-09 («not colour alone») at the end of this document.** The
+  outline is dotted, the words are 5.2:1 in both themes, and the dimming is
+  also said in words inside the chip's explanation.
 * **Chosen wins.** A chosen chip looks like any chosen chip, whether or not it
   is atypical: the stylesheet stops dimming at `:checked`
   (`.chip--atypical .chip__input:not(:checked) + .chip__name`).
+  **Narrowed on 2026-10-09 — see the amendment of that date («not colour alone»).** Colour
+  and weight still follow `:checked`; a chosen atypical chip keeps its dotted
+  edge and its explanation's note, so a deliberate exception stays
+  recognisable.
 * **Nothing is ever cleared or changed.** Ticking or unticking an instrument
   re-dims immediately and never touches the chosen stage, including one that
   has just become atypical.
@@ -332,3 +340,112 @@ had to be looked for.
 - Every other §1 placement: Pealkiri; Saatja | Vastutaja; Arvamuse tähtaeg |
   Menetluse link | Saabus; `Märkmed` then `Failid` last. §2 and §3 stand.
 - No migration.
+
+---
+
+## Amendment, 2026-10-09 — the dimmed chip is not colour alone, and a tooltip fits a phone
+
+- Status: accepted, amending §4's «muted text and a fainter outline» and its
+  dimmed-state value (as already amended on 2026-10-02 and by ADR 0147's
+  amendment of 2026-10-09), and the Hetkeseis tooltip's placement (ADR 0032,
+  Uus teema redesign §8).
+- Scope: presentation, plus one sentence in the guidance payload. The matrix,
+  its keys, its union rule and everything §8 says about validation and
+  inference are unchanged. No model or schema change; the `Hetkeseis`
+  explanations corrected in the same round are a data migration of their own,
+  recorded in ADR 0032's amendment of this date.
+
+### What was decided before
+
+A dimmed chip was quieter words (`--text-atypical`, 4.59:1 dark, 4.51:1 light
+on the page) and a fainter solid outline (`--border-subtle`, 1.17:1 dark,
+1.14:1 light). The words had been taken as far down as AA allows because the
+colour step alone had to be visible at a glance (2026-10-02). A chosen chip
+looked exactly like any chosen chip. The tooltip measured its right edge only
+and, when that overflowed, re-anchored to the chip's right edge.
+
+### Why it is superseded
+
+The live UI QA of 9 October 2026 measured all of it:
+
+* **The distinction was colour alone**, the words sat a hair over AA with no
+  margin, and the outline (1.14–1.17:1) all but vanished — a dimmed chip read
+  as half drawn rather than as quieter.
+* **A screen reader and a keyboard got nothing.** Hover and focus restore full
+  strength, so the one moment a keyboard user reaches the chip is the moment
+  the cue disappears, and nothing was said in words.
+* **A chosen atypical stage was indistinguishable** from a chosen typical one,
+  so a deliberate exception could not be recognised afterwards.
+* **At 320px and 375px the Hetkeseis bubble opened off the left edge** — up to
+  189px, so most of the explanation was unreadable. The right-edge flip anchored
+  a bubble as wide as the screen to a chip in the middle of it.
+
+### What is decided now
+
+1. **Two cues, one of them not colour.** A dimmed chip's outline is **dotted**
+   (`border-style`, in `--border-strong`: 2.0:1 dark, 2.7:1 light — visible, and
+   broken into dots no heavier than an ordinary chip's solid edge). Dotted,
+   never dashed: dashed is this application's «not saved yet».
+2. **The words keep a margin.** `--text-atypical` is #7c8996 dark (5.18:1 on the
+   page) and #5d6873 light (≥5.16:1 on every chip surface), still quieter than
+   `--text-muted` (by 1.14 and 1.08). `tests/test_text_contrast.py` holds it to
+   `ATYPICAL_MINIMUM` 5.1 and `QUIETER_BY` 1.07; the at-a-glance difference of
+   2026-10-02 is now carried by the outline as well as the words.
+3. **The dimming in words.** `ATYPICAL_STAGE_NOTE` — «Valitud õigusakti puhul
+   tavaliselt ei kasutata, kuid valida võib.» — travels in the guidance payload,
+   and `bindStageGuidance` writes it into an empty `.stagehelp__note` inside the
+   chip's explanation while the stage is atypical. The radio is described by
+   that explanation (`aria-describedby`), so a screen reader hears it, and the
+   bubble shows it on hover and focus. A description, not a warning: it says
+   the stage may be chosen.
+4. **A chosen atypical chip stays recognisable.** It takes the ordinary chosen
+   look (§4's «chosen wins» for colour and weight still holds) but keeps its
+   dotted edge and its note. Nothing refuses, warns or asks to confirm.
+5. **A tooltip slides, it does not flip.** `bindStageHelp` measures the open
+   bubble and moves it sideways by exactly its overflow, left edge first, with
+   an 8px margin; the stylesheet's `max-width` (`min(22rem, 100vw - 40px)`)
+   guarantees it fits a window with a desktop scrollbar. Hover, focus, touch and
+   Escape behave as before; with scripting off the bubble opens where it did.
+   `e2e/test_matter_form_ux.py` checks every bubble at 1440–320px by pointer and
+   at 375/320px by keyboard in both themes.
+
+### Product question — EU regulations that need Estonian implementing measures (answered 2026-10-10)
+
+The QA found the department's explanations inconsistent with the matrix (F3):
+«Jõustunud» told the lawyer, for every EU act, to choose it only when Estonia
+need not change its own law, which for a regulation points at «ELi õiguse
+ülevõtmise ootel» — the stage §5 deliberately dims for `el-maarus`, because a
+regulation is directly applicable and is not transposed. The words are
+corrected (ADR 0032's amendment of this date); **the matrix is not changed**.
+
+What the vocabulary cannot say on the regulation's own Teema is «in force, and
+Estonian implementing measures are still pending». Concrete case: an EU
+regulation that obliges Member States to designate a competent authority and
+lay down penalties (the AI Act, Regulation (EU) 2024/1689, is one) enters into
+force and applies directly, while the Estonian act doing those two things is
+still a draft. Today that is «Jõustunud» on the regulation's Teema, with the
+Estonian act followed as a `Seadus`/`Määrus` Teema of its own, linked under
+«Seotud teemad». The owner decides whether that is enough, or whether the
+Chamber needs either (a) «ELi õiguse ülevõtmise ootel» broadened to
+«…ülevõtmise või rakendamise ootel» and undimmed for `el-maarus`, or (b) a new
+stage. Neither is built until then.
+
+**Answered by the owner on 2026-10-10: neither.** The vocabulary and the
+matrix stay. A regulation in force is «Jõustunud» even while Estonian
+implementing measures are pending — two separate facts. A separate, linked
+Teema is opened only where there is an actual, distinct Estonian legislative
+process to follow, never automatically for every regulation. «Jõustunud» ends
+the Teema, so its explanation says so; and closing a Teema must not silently
+discard outstanding work or follow-ups — that closure safeguard is a change of
+its own, to every terminal stage, not part of this amendment.
+
+### What this amendment does not change
+
+- The matrix, the stable keys, union semantics (§7), `Määramata` and `Muu`
+  never dimmed, and missing guidance dimming nothing.
+- Nothing disabled, hidden, refused, cleared or rewritten; the server accepts
+  every combination (§8); no `Matter.stage` or `Matter.track` inference.
+- Hover and keyboard focus still bring the words to full strength.
+- The ordinary chip, the chosen chip's fill and weight, focus ring, cursor and
+  hit area.
+- Escape still closes a bubble until the pointer or focus leaves the chip.

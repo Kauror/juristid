@@ -2994,16 +2994,27 @@
    * Hover and focus are CSS. Two things are not, and both are corrections
    * rather than behaviour:
    *
-   *  - a chip near the right edge would open its bubble off the screen, so the
-   *    bubble is measured once it is visible and flipped to open leftwards;
+   *  - a bubble must open inside the window, so it is measured once it is
+   *    visible and slid sideways until both of its edges are on screen;
    *  - Escape closes it, which a CSS `:hover` cannot hear. Suppression lasts
    *    until the pointer or the focus leaves the chip, so the next hover shows
    *    it again rather than the chip staying mute.
    *
+   * **Slid, not flipped.** The first version only knew the right edge: a chip
+   * near it opened its bubble leftwards from the chip's own right edge. On a
+   * phone that is most chips, and a bubble as wide as the screen anchored to a
+   * chip in the middle of it then hung off the *left* edge instead — at 320px
+   * the `Hetkeseis` text started 134px off screen (live QA, 9 October 2026).
+   * Measuring both edges and moving the bubble by exactly the overflow keeps it
+   * as close to its chip as the window allows, at every width; the stylesheet's
+   * `max-width` guarantees there is always room for the whole of it.
+   *
    * With scripting off the tooltip still opens on hover and on focus and still
-   * closes when either leaves; only the flip and Escape are missing
+   * closes when either leaves; only the sliding and Escape are missing
    * (Uus teema redesign §8).
    */
+  var STAGE_HELP_MARGIN = 8;
+
   function bindStageHelp(scope) {
     (scope || document).querySelectorAll(".chip--explained").forEach(function (chip) {
       if (!once(chip, "StageHelp")) {
@@ -3015,10 +3026,23 @@
       }
       var place = function () {
         chip.classList.remove("is-suppressed");
-        bubble.classList.remove("stagehelp--flip");
+        bubble.style.left = "";
         var box = bubble.getBoundingClientRect();
-        if (box.right > document.documentElement.clientWidth - 8) {
-          bubble.classList.add("stagehelp--flip");
+        if (!box.width) {
+          return;
+        }
+        var view = document.documentElement.clientWidth;
+        var shift = 0;
+        if (box.right > view - STAGE_HELP_MARGIN) {
+          shift = view - STAGE_HELP_MARGIN - box.right;
+        }
+        // The left edge wins: a bubble that cannot fit at all is read from its
+        // first word, and the stylesheet's `max-width` means it always fits.
+        if (box.left + shift < STAGE_HELP_MARGIN) {
+          shift = STAGE_HELP_MARGIN - box.left;
+        }
+        if (shift) {
+          bubble.style.left = Math.round(shift) + "px";
         }
       };
       var clear = function () {
@@ -3038,8 +3062,9 @@
 
   /* ---- Õigusakt -> Hetkeseis guidance on Uus teema --------------------------
    * Once an `Õigusakt` is ticked, the `Hetkeseis` chips that do not normally
-   * fit ANY ticked instrument get `chip--atypical`, which draws them quieter.
-   * That is all this does (app/workflow/stage_guidance.py, docs/adr/0130).
+   * fit ANY ticked instrument get `chip--atypical`, which draws them quieter,
+   * and their explanation gains one sentence saying so (`atypical_note`). That
+   * is all this does (app/workflow/stage_guidance.py, docs/adr/0130).
    *
    *  - Two states only: a chip has the class or it does not.
    *  - Nothing is disabled, hidden, unticked or validated. A dimmed chip stays
@@ -3073,6 +3098,7 @@
       }
       var always = guidance.always || [];
       var byInstrument = guidance.instruments || {};
+      var note = guidance.atypical_note || "";
 
       var typicalStages = function () {
         var chosen = Array.prototype.slice
@@ -3104,6 +3130,12 @@
           var key = input.getAttribute("data-stage-key");
           var dim = typical !== null && always.indexOf(key) === -1 && typical.indexOf(key) === -1;
           chip.classList.toggle("chip--atypical", dim);
+          // The same fact in words, inside the explanation the radio is
+          // described by — for a keyboard, a screen reader, and a chosen chip.
+          var holder = chip.querySelector("[data-stage-atypical-note]");
+          if (holder) {
+            holder.textContent = dim ? note : "";
+          }
         });
       };
 

@@ -11,6 +11,8 @@ What only a running page can settle:
 * **D** — `ELi direktiiv` + `Seadus` combine by **union**;
 * **E** — changing the instruments re-dims immediately and never clears the
   chosen stage;
+* **G** — the dimming is not colour alone: a dotted edge, and one sentence in
+  the explanation the radio is described by — chosen or not;
 * **F** — one realistic Teema through every section, files included — a signed
   container among them, so moving `Failid` cannot quietly regress
   docs/adr/0125.
@@ -28,6 +30,7 @@ import re
 import pytest
 from playwright.sync_api import expect
 
+from app.workflow.stage_guidance import ATYPICAL_STAGE_NOTE
 from e2e.conftest import MARTIN, give_first_step, sign_in, start_first_step, unique_title
 from tests.synthetic_containers import signed_container
 
@@ -270,6 +273,62 @@ def test_e_changing_the_instruments_redims_and_keeps_the_choice(page, base_url):
             .filter(i => i.closest('.chip').classList.contains('chip--atypical')).length"""
     )
     assert extra == 0
+
+
+# ---------------------------------------------------------------------------
+# G — not colour alone
+# ---------------------------------------------------------------------------
+
+
+def _edge(page, stage_name: str) -> str:
+    return _stage(page, stage_name).evaluate(
+        "i => getComputedStyle(i.closest('.chip').querySelector('.chip__name')).borderTopStyle"
+    )
+
+
+def _description(page, stage_name: str) -> str:
+    """What a screen reader reads after the radio's name."""
+    return _stage(page, stage_name).evaluate(
+        "i => document.getElementById(i.getAttribute('aria-describedby')).textContent.trim()"
+    )
+
+
+def test_g_a_dimmed_stage_says_so_without_colour(page, base_url):
+    """docs/adr/0130, amendment of 2026-10-09 («not colour alone»).
+
+    The words got brighter (AA with a margin), so the difference a glance needs
+    is carried by the outline's line style; and a keyboard or screen-reader user,
+    who never sees either, hears it in the explanation. A chosen atypical stage
+    keeps both, so a deliberate exception stays recognisable without being
+    refused.
+    """
+    _open(page, base_url)
+    assert _edge(page, "Riigikogus") == "solid"
+    assert ATYPICAL_STAGE_NOTE not in _description(page, "Riigikogus")
+
+    _instrument(page, "ELi määrus").check()
+    assert "parliament" in _dimmed(page)
+    assert _edge(page, "Riigikogus") == "dotted"
+    assert _description(page, "Riigikogus").endswith(ATYPICAL_STAGE_NOTE)
+    # A stage that fits keeps its solid edge and its plain explanation.
+    assert _edge(page, "Jõustunud") == "solid"
+    assert ATYPICAL_STAGE_NOTE not in _description(page, "Jõustunud")
+
+    # Chosen anyway: the chosen look, the dotted edge, and the words, which the
+    # bubble shows on focus.
+    _stage(page, "Riigikogus").check()
+    expect(_stage(page, "Riigikogus")).to_be_checked()
+    assert _edge(page, "Riigikogus") == "dotted"
+    _stage(page, "Riigikogus").focus()
+    bubble = page.locator("#" + _stage(page, "Riigikogus").get_attribute("aria-describedby"))
+    expect(bubble).to_be_visible()
+    expect(bubble.locator(".stagehelp__note")).to_have_text(ATYPICAL_STAGE_NOTE)
+
+    # Nothing ticked again: both cues go, the choice stays.
+    _instrument(page, "ELi määrus").uncheck()
+    assert _edge(page, "Riigikogus") == "solid"
+    assert ATYPICAL_STAGE_NOTE not in _description(page, "Riigikogus")
+    expect(_stage(page, "Riigikogus")).to_be_checked()
 
 
 # ---------------------------------------------------------------------------

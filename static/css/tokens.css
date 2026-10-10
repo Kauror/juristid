@@ -233,14 +233,16 @@
   /* AA (4.5:1) on every surface text is painted on, raised, selected and
      tinted ones included (docs/adr/0147, amendment of 2026-10-09). */
   --text-muted: var(--primitive-neutral-250);
-  /* A `Hetkeseis` the chosen `Õigusakt` does not normally fit: quieter than
-     `--text-muted`, because the muted step alone read too close to an
-     ordinary chip (docs/adr/0130, amendment of 2026-10-02), and AA on the
-     page the chip is drawn on — 4.6:1 against muted's 5.9:1 (docs/adr/0147,
-     amendment of 2026-10-09). Its own token rather than a primitive, because
-     nothing else on the page is this quiet and nothing else should borrow
-     it. */
-  --text-atypical: #74808d;
+  /* A `Hetkeseis` the chosen `Õigusakt` does not normally fit: a step quieter
+     than `--text-muted`, and AA with a margin on the page the chip is drawn on
+     — 5.2:1 against muted's 5.9:1. It was 4.6:1 (docs/adr/0147, amendment of
+     2026-10-09), a hair over the line; the at-a-glance difference the owner
+     asked for (docs/adr/0130, amendment of 2026-10-02) is now carried by the
+     chip's dotted outline as well as by its words, so the words no longer
+     have to be as faint as AA allows (docs/adr/0130, amendment of
+     2026-10-09, «not colour alone»). Its own token rather than a primitive, because nothing else
+     on the page is this quiet and nothing else should borrow it. */
+  --text-atypical: #7c8996;
   --text-inverse: var(--primitive-brand-ink);
 
   --accent-primary: var(--primitive-brand-500);
@@ -354,9 +356,10 @@
   --text-secondary: #46515c;
   --text-muted: #58636e;
   /* `--text-muted` taken a step towards the page, as in the dark theme, and
-     only as far as AA allows: the quieter chip is still 4.5:1 on the surfaces
-     a chip sits on. */
-  --text-atypical: #67717b;
+     AA with a margin: at least 5.1:1 on every surface a chip sits on (it was
+     4.51:1 on the page until docs/adr/0130, amendment of 2026-10-09 («not colour alone»),
+     which gave the dimmed chip a dotted outline to carry the difference). */
+  --text-atypical: #5d6873;
   --text-inverse: var(--primitive-neutral-0);
 
   --accent-primary: #00739f;
