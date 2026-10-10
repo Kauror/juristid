@@ -364,18 +364,21 @@ The live UI QA of 9 October 2026 (F2, F3) and the owner's brief of the same day:
 | Stage | Explanation now |
 | --- | --- |
 | `other` «Muu» | Vali „Muu“, kui ükski loetletud hetkeseis ei kirjelda teema tegelikku olukorda. |
-| `in_force` «Jõustunud» | Jõustunud Riigi Teatajas või ELi aktide puhul EUR-Lexis. Kui jõustub ELi direktiiv, märgi hetkeseisuks „jõustunud“ üksnes juhul, kui Eesti ei pea seda siseriiklikku õigusesse üle võtma; seni on hetkeseis „ELi õiguse ülevõtmise ootel“. ELi määrus kohaldub vahetult ja seda üle ei võeta: jõustunud määrus on „jõustunud“ ka siis, kui seda hakatakse kohaldama hiljem või kui Eesti peab selle rakendamiseks oma õigust täiendama. |
+| `in_force` «Jõustunud» | Jõustunud Riigi Teatajas või ELi aktide puhul EUR-Lexis. Kui jõustub ELi direktiiv, märgi hetkeseisuks „jõustunud“ üksnes juhul, kui Eesti ei pea seda siseriiklikku õigusesse üle võtma; seni on hetkeseis „ELi õiguse ülevõtmise ootel“. ELi määrus kohaldub vahetult ja seda üle ei võeta: jõustunud määrus on „jõustunud“ ka siis, kui seda hakatakse kohaldama hiljem või kui Eesti rakendusmeetmed on veel pooleli. Kui Eestis on käimas eraldi rakendusakti menetlus, mida Koda jälgib, ava selle jaoks seotud teema. „Jõustunud“ lõpetab teema. |
 | `awaiting_transposition` «ELi õiguse ülevõtmise ootel» | ELi direktiivi (või muu ülevõtmist vajava ELi akti) jõustumisest kuni Eesti koostab selle ülevõtmiseks VTK, eelnõu või muu dokumendi. ELi määrust üle ei võeta — see kohaldub vahetult. |
 
 Four distinctions, each now said once: **entry into force** (the day the act is
 in force, whatever its date of application), **direct applicability** (a
 regulation needs no Estonian act to apply), **transposition** (a directive's,
 until Estonia has done it) and **national implementing measures** (which a
-regulation may require without being transposed). Whether the Chamber needs a
-stage of its own for «a regulation in force, Estonian implementing measures
-pending» is an open product question recorded in ADR 0130's amendment of
-2026-10-09 («not colour alone»), with a concrete example; until the owner
-answers, the vocabulary and the matrix stay as they are.
+regulation may require without being transposed). **The owner answered on
+2026-10-10:** no stage is added and the matrix stays. A regulation in force is
+«Jõustunud» even while Estonian implementing measures are pending; where a
+distinct Estonian implementing process is actually being followed, it is a
+separate Teema linked to this one — not one for every regulation. Because
+«Jõustunud» ends the Teema, the explanation says so, so that outstanding work is
+placed before it closes (ADR 0130's amendment of 2026-10-09, «not colour
+alone»).
 
 The migration **fails closed** — a row whose text is no longer exactly what
 `workflow/0006` wrote is left alone — and its reverse restores the previous
