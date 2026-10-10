@@ -172,10 +172,28 @@ def test_a_rejected_second_file_leaves_no_partial_matter(client, specialist) -> 
     assert DocumentVersion.objects.count() == 0
 
 
-def test_the_received_date_defaults_to_today(client, specialist) -> None:
+def test_a_received_date_left_out_is_unknown_not_today(client, specialist) -> None:
+    """D-3 (AUD-010): the box *shows* today, but a POST without a date is a date
+    nobody knows. This test used to assert the opposite — the view filled the
+    gap with `timezone.localdate()` on the server, which `Uus teema` never did,
+    and an invented arrival date is exactly the certainty AGENTS.md forbids
+    manufacturing. The visible prefill is pinned in
+    tests/test_matter_creation_use_case.py."""
     client.force_login(specialist)
     _post(client, [_file("x.pdf", PDF)], title="Täna saabunud")
-    assert Matter.objects.get(title="Täna saabunud").received_date == timezone.localdate()
+    assert Matter.objects.get(title="Täna saabunud").received_date is None
+
+
+def test_a_received_date_given_is_stored(client, specialist) -> None:
+    client.force_login(specialist)
+    today = timezone.localdate()
+    _post(
+        client,
+        [_file("x.pdf", PDF)],
+        title="Täna saabunud",
+        received_date=f"{today.day}.{today.month}.{today.year}",
+    )
+    assert Matter.objects.get(title="Täna saabunud").received_date == today
 
 
 def test_intake_files_material_as_normal_and_refuses_to_be_told_otherwise(

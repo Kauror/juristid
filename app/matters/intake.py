@@ -22,6 +22,7 @@ evidence rather than an attachment.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
@@ -37,8 +38,15 @@ from app.documents.models import Document
 from app.documents.services import add_evidence_version, create_document
 from app.documents.uploads import AcceptedUpload, read_upload
 from app.matters.entry_enums import EntryKind
+from app.matters.enums import MatterDataClass
 from app.matters.models import Matter
-from app.matters.services import add_entry, create_matter, resolve_source_organisations
+from app.matters.services import (
+    add_entry,
+    close_matter_for_terminal_stage,
+    create_matter,
+    resolve_source_organisations,
+)
+from app.workflow.stage_flow import is_terminal as is_terminal_stage
 
 #: Extensions whose contents are an email rather than a document. The file is
 #: captured exactly as it arrived either way; the role records what it *is*, so
@@ -141,6 +149,137 @@ def validate_uploads(files: list[Any]) -> list[AcceptedUpload]:
     return [read_upload(handle) for handle in files]
 
 
+#: A step the caller hands to :func:`file_new_matter`, run on the new Matter.
+MatterStep = Callable[[Matter], object]
+
+
+@transaction.atomic
+def file_new_matter(
+    *,
+    title: str,
+    actor: Any = None,
+    owner: Any = None,
+    stage: Any = None,
+    track: str = "",
+    source_organisations: Any = None,
+    sender_name: str = "",
+    received_date: date | None = None,
+    response_deadline: date | None = None,
+    policy_areas: Any = None,
+    policy_area_other: str = "",
+    legal_instruments: Any = None,
+    legal_instrument_other: str = "",
+    visibility: str = Visibility.NORMAL,
+    data_class: str = MatterDataClass.REAL,
+    brief_summary: str = "",
+    handover_note: str = "",
+    attach_files: MatterStep | None = None,
+    after_files: MatterStep | None = None,
+    seed_plan: bool = False,
+) -> Matter:
+    """A person files a new Teema: the one creation sequence both doors share.
+
+    `Uus teema` (`matter_create`) and `Saabunud` (`intake`) used to orchestrate
+    the same creation twice, once in a view and once here, and every shared rule
+    had to be kept in step by hand — the deadline recorded as a request, the
+    files grouped into one operation, the plan seeded, a terminal `Hetkeseis`
+    closing the file (AUD-010). The doors still differ in what they *ask*; what
+    a new Teema *is* is decided here, once, in one transaction, in this order:
+
+    1. the senders are resolved, so a typed institution and the Teema that names
+       it are one write and a refusal below takes both
+       (`resolve_source_organisations`, §6);
+    2. the Matter is created with exactly what the door gave it. **The received
+       date is stored as given**: a person who cleared it has said it is not
+       known, and `None` stays `None` — no door invents today (D-3; «never
+       manufacture historical certainty», AGENTS.md);
+    3. the handover note («Märkmed vastutajale»), its own timeline row;
+    4. the files, through the caller's ``attach_files``, inside **one**
+       `composer_operation`, so `Teema käik` reads «lisas 3 dokumenti» once
+       (docs/adr/0121 §6);
+    5. the caller's ``after_files`` — `Uus teema`'s scratch note and links —
+       in the same transaction, so a refusal there takes the Teema with it;
+    6. a terminal `Hetkeseis` closes the file, last, so everything above is
+       written on an open Matter (docs/adr/0131 §10); otherwise the standard
+       plan is seeded where ``seed_plan`` asks for it (docs/adr/0133 §5, 0141).
+
+    No first `NextAction` is written from the deadline (docs/adr/0094, 0133 §8):
+    the deadline is an obligation on the Matter, not its current task.
+
+    Visibility, the data class and the `Koja algatus` track are the caller's
+    decisions and arrive already made; `create_matter` refuses what is not
+    allowed — TEST on a non-native record, incoming dates on `Koja algatus`,
+    a second `Õigusakt` (docs/adr/0150, 0151).
+    """
+    senders = resolve_source_organisations(
+        chosen=source_organisations, typed_name=sender_name or ""
+    )
+
+    matter = create_matter(
+        title=title,
+        actor=actor,
+        owner=owner,
+        stage=stage,
+        track=track or "",
+        source_organisations=senders,
+        received_date=received_date,
+        response_deadline=response_deadline,
+        # A deadline typed by a person filing new work is a request recorded
+        # now: it is answered only by an answer that names it
+        # (`app/matters/response_deadlines.py`). Computed here, once, for both
+        # doors.
+        response_requested_at=timezone.now() if response_deadline else None,
+        policy_areas=list(policy_areas or []),
+        policy_area_other=policy_area_other or "",
+        # Handed to the service as part of the creation rather than written on
+        # afterwards: one MATTER_CREATED, and no instant at which the Teema
+        # carries a classification nobody chose (task §17, §19).
+        legal_instruments=list(legal_instruments or []),
+        legal_instrument_other=legal_instrument_other or "",
+        visibility=visibility,
+        data_class=data_class,
+        brief_summary=(brief_summary or "").strip(),
+    )
+
+    # «Märkmed vastutajale» — what the person filing this wants whoever picks it
+    # up to know. Recorded as the Matter's first timeline entry rather than as a
+    # column of its own: it is a dated, attributed statement about the file, it
+    # is visible to exactly the people who may see the file, and that is what an
+    # `Entry` already is. No new field, and no new visibility question
+    # (docs/design-v2-compatibility.md, DS-09).
+    note = (handover_note or "").strip()
+    if note:
+        add_entry(matter=matter, body=note, author=actor, kind=EntryKind.NOTE)
+
+    # **Every file this press files is one operation** (docs/adr/0121 §6): one
+    # `operation_id`, so `Teema käik` reads «lisas 7 dokumenti» once instead of
+    # «lisas dokumendi» seven times. Only the files — `Teema loodud`, the note
+    # above and the extras below are separate facts with rows of their own, and
+    # a grouped note would swallow the files into «lisas märkuse». Each document
+    # keeps its own `DOCUMENT_CREATED` and `EVIDENCE_VERSION_ADDED`; the
+    # grouping is the chronology's reading, never a merged record.
+    if attach_files is not None:
+        with composer_operation():
+            attach_files(matter)
+
+    if after_files is not None:
+        after_files(matter)
+
+    # **A Teema filed as «Jõustunud» or «Rohkem ei tegele» is filed closed**
+    # (docs/adr/0131 §10), last, so the files and links above are written on an
+    # open Matter — and it gets no plan: importers, refreshes and a Teema filed
+    # already closed never get one (docs/adr/0133 §5). A Matter created a moment
+    # ago has no follow-up to confirm, so the closure asks nothing.
+    if is_terminal_stage(getattr(stage, "key", None)):
+        close_matter_for_terminal_stage(matter=matter, actor=actor)
+    elif seed_plan:
+        from app.workflow.plan import seed_standard_plan
+
+        seed_standard_plan(matter=matter, actor=actor)
+
+    return matter
+
+
 @transaction.atomic
 def register_incoming(
     *,
@@ -185,42 +324,7 @@ def register_incoming(
     if not uploads:
         raise DomainError("Vali vähemalt üks fail.")
 
-    resolved_title = (title or "").strip() or title_from_filename(uploads[0].filename)
-    senders = resolve_source_organisations(
-        chosen=source_organisations, typed_name=sender_name or ""
-    )
-
-    matter = create_matter(
-        title=resolved_title,
-        actor=actor,
-        owner=owner,
-        stage=stage,
-        track=track or "",
-        source_organisations=senders,
-        received_date=received_date,
-        response_deadline=response_deadline,
-        # `Saabunud` is a person filing a request that has just arrived: its
-        # deadline is recorded as a request now (`app/matters/response_deadlines.py`).
-        response_requested_at=timezone.now() if response_deadline else None,
-        visibility=visibility,
-        brief_summary=(brief_summary or "").strip(),
-    )
-
-    # «Märkmed vastutajale» — what the person filing this wants whoever picks it
-    # up to know. Recorded as the Matter's first timeline entry rather than as a
-    # column of its own: it is a dated, attributed statement about the file, it
-    # is visible to exactly the people who may see the file, and that is what an
-    # `Entry` already is. No new field, and no new visibility question
-    # (docs/design-v2-compatibility.md, DS-09).
-    note = (handover_note or "").strip()
-    if note:
-        add_entry(matter=matter, body=note, author=actor, kind=EntryKind.NOTE)
-
-    # The files filed by this one press are one operation, so `Teema käik` reads
-    # «lisas 3 dokumenti» once — the rule `Uus teema` follows (docs/adr/0121 §6).
-    # The handover note above is its own row and deliberately outside it: a
-    # grouped note would swallow the files into «lisas märkuse».
-    with composer_operation():
+    def attach_uploads(matter: Matter) -> None:
         for upload in uploads:
             file_incoming(
                 matter=matter,
@@ -230,9 +334,23 @@ def register_incoming(
                 actor=actor,
             )
 
-    if seed_plan:
-        from app.workflow.plan import seed_standard_plan
-
-        seed_standard_plan(matter=matter, actor=actor)
-
+    # A thin door over the one creation sequence (AUD-010): what is Saabunud's
+    # own is only the files-first title and the files themselves. The received
+    # date goes through exactly as given — `None` when it was cleared (D-3).
+    matter = file_new_matter(
+        title=(title or "").strip() or title_from_filename(uploads[0].filename),
+        actor=actor,
+        owner=owner,
+        stage=stage,
+        track=track,
+        source_organisations=source_organisations,
+        sender_name=sender_name,
+        received_date=received_date,
+        response_deadline=response_deadline,
+        visibility=visibility,
+        brief_summary=brief_summary,
+        handover_note=handover_note,
+        attach_files=attach_uploads,
+        seed_plan=seed_plan,
+    )
     return IntakeResult(matter=matter, documents=len(uploads))
