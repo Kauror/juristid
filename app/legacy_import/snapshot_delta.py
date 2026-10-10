@@ -383,6 +383,12 @@ def _workbook_rows(
     reference_column = contract.column_for("matter_reference")
     if title_column is None or reference_column is None:
         return rows, findings, ambiguous
+    # A drifted header stops the comparison (AUD-041): a delta read one column
+    # to the left is a confident list of changes that never happened.
+    drift = workbook.header_mismatches(contract)
+    if drift:
+        ambiguous.extend(f"{contract.sheet}: {finding.describe()}" for finding in drift)
+        return rows, findings, ambiguous
 
     for row in workbook.rows(contract):
         if row.is_blank:

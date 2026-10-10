@@ -32,6 +32,7 @@ from app.legacy_import.extraction import ExtractedRow, extract_sheet, summarize
 from app.legacy_import.models import MatchMethod, MatterSourceReference
 from app.legacy_import.next_actions import NextActionCandidate, extract_candidate
 from app.legacy_import.parser import (
+    HEADER_MISMATCH,
     PARSER_VERSION,
     SOURCE_SYSTEM,
     RegisterWorkbook,
@@ -212,11 +213,22 @@ def build_plan(
                 f"{sheet_inventory.name}: {finding.describe()}"
                 for finding in sheet_inventory.header_findings
             )
+            # **A header that does not match its contract fails closed** (AUD-041,
+            # docs/adr/0012). The rows are still read and counted so the report
+            # shows what the sheet holds, but none of them is planned as a create
+            # or a match: reading them by the contract's letters would import a
+            # year whose columns are one to the left.
+            drifted = any(
+                finding.kind == HEADER_MISMATCH for finding in sheet_inventory.header_findings
+            )
 
             rows = extract_sheet(workbook.rows(contract), contract)
             sheet_counts[sheet_inventory.name] = summarize(rows)
 
             for row in rows:
+                if drifted and row.is_matter_row:
+                    plans.append(_drifted_row(row))
+                    continue
                 plans.append(_plan_row(row, snapshot, tables, when, people))
                 if row.reference is not None and row.reference.year == row.year:
                     highest[row.year] = max(highest.get(row.year, 0), row.reference.number)
@@ -228,6 +240,19 @@ def build_plan(
         structure_findings=structure_findings,
         highest_reference_by_year=highest,
     )
+
+
+#: Why a row of a drifted sheet waits for a person.
+HEADER_DRIFT_NOTE = (
+    "Lehe veerupäis ei vasta ajastulepingule; veerge ei arvata. "
+    "Paranda leping või lehe päis ja planeeri uuesti."
+)
+
+
+def _drifted_row(row: ExtractedRow) -> RowPlan:
+    """A matter row on a sheet whose header has drifted: review, never apply."""
+    row.note(Anomaly.PARSE_ERROR.value)
+    return RowPlan(row=row, outcome=RowOutcome.REVIEW_REQUIRED.value, note=HEADER_DRIFT_NOTE)
 
 
 def _plan_row(
