@@ -419,7 +419,7 @@ The live UI QA of 9 October 2026 measured all of it:
    `e2e/test_matter_form_ux.py` checks every bubble at 1440–320px by pointer and
    at 375/320px by keyboard in both themes.
 
-### Open product question — EU regulations that need Estonian implementing measures
+### Product question — EU regulations that need Estonian implementing measures (answered 2026-10-10)
 
 The QA found the department's explanations inconsistent with the matrix (F3):
 «Jõustunud» told the lawyer, for every EU act, to choose it only when Estonia
@@ -439,6 +439,15 @@ Estonian act followed as a `Seadus`/`Määrus` Teema of its own, linked under
 Chamber needs either (a) «ELi õiguse ülevõtmise ootel» broadened to
 «…ülevõtmise või rakendamise ootel» and undimmed for `el-maarus`, or (b) a new
 stage. Neither is built until then.
+
+**Answered by the owner on 2026-10-10: neither.** The vocabulary and the
+matrix stay. A regulation in force is «Jõustunud» even while Estonian
+implementing measures are pending — two separate facts. A separate, linked
+Teema is opened only where there is an actual, distinct Estonian legislative
+process to follow, never automatically for every regulation. «Jõustunud» ends
+the Teema, so its explanation says so; and closing a Teema must not silently
+discard outstanding work or follow-ups — that closure safeguard is a change of
+its own, to every terminal stage, not part of this amendment.
 
 ### What this amendment does not change
 
