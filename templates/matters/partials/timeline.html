@@ -106,13 +106,26 @@ here and everything older comes from `timeline_page` when somebody asks for it.
               {% if group.repeat > 1 %}<span class="kaikstage__repeat">{{ group.repeat }}. kord</span>{% endif %}
               {% if group.period %}<span class="kaikstage__period">{{ group.period }}</span>{% endif %}
               {% if group.is_current %}<span class="visually-hidden">(praegune hetkeseis)</span>{% endif %}
-              <span class="kaikstage__count">{{ group.items|length|counted:"kirje,kirjet" }}</span>
+              <span class="kaikstage__count">{{ group.items|length|counted:"kirje,kirjet" }}{% if group.partial %}+{% endif %}</span>
             </summary>
             <div class="uxtl kaikstage__body">
               {% include "matters/partials/timeline_items.html" with timeline_items=group.items timeline_has_more=False matter=matter timeline_only=timeline_only stage_group=group %}
+              {% if group.partial %}
+                <p class="uxtl__audit"><a class="quietlink" href="?{{ timeline_history_param }}=koik#ajajoon">Selle perioodi varasemad kirjed: näita kogu käik</a></p>
+              {% endif %}
             </div>
           </details>
         {% endfor %}
+        {% comment %}
+          **Bounded, and the rest one click away** (AUD-008, product decision
+          D-2). The page reads the newest rows and groups them; a period that
+          began before the oldest row read says «+» on its count and offers the
+          whole history. The link reloads the page with every row — the
+          grouping is the same, only nothing is left out.
+        {% endcomment %}
+        {% if timeline_groups_more %}
+          <p class="uxtl__audit"><a class="button button--quiet button--tiny" href="?{{ timeline_history_param }}=koik#ajajoon">Näita kogu käik</a></p>
+        {% endif %}
     {% else %}
         {% include "matters/partials/timeline_items.html" with timeline_items=timeline_items timeline_has_more=timeline_has_more next_offset=30 matter=matter timeline_only=timeline_only %}
     {% endif %}

@@ -44,8 +44,18 @@ from app.matters.stage_episodes import episodes_of, period_label
 from app.matters.timeline import TIMELINE_FILTER_ALL, TimelineItem, matter_timeline
 from app.submissions.models import Submission
 
-#: Every row, in one read: the grouped chronology places rows by period, not by page.
+#: Every row, in one read — only when somebody asks for the whole history
+#: («Näita kogu käik»). The grouped chronology places rows by period, not by
+#: page, so the whole of it is one read.
 WHOLE_HISTORY = 100_000
+
+#: The newest rows the grouped chronology reads by default (AUD-008, product
+#: decision D-2). A long-lived Matter's history grows for ten or fifteen years,
+#: and reading all of it on every Teema page and every save made the page's
+#: cost the file's age (master specification §13.4: «must not load every
+#: historical Entry/ChangeEvent/document derivative at once»). Two of the flat
+#: pager's pages: every recent period whole, and older ones on request.
+GROUPED_WINDOW = 60
 
 #: The heading over work recorded before the Matter's first period.
 EARLIER_ACTIVITY_LABEL = "Varasem tegevus"
@@ -71,6 +81,10 @@ class StageGroup:
     repeat: int = 1
     is_open: bool = False
     items: list[TimelineItem] = field(default_factory=list)
+    #: This period began before the oldest row read, so it may hold rows the
+    #: bounded read did not reach. Its rows are never *invented* away: the
+    #: heading says more exist, and «Näita kogu käik» reads them all.
+    partial: bool = False
 
     @property
     def dom_id(self) -> str:
@@ -82,6 +96,8 @@ class EpisodeTimeline:
     """The grouped chronology, newest group first."""
 
     groups: list[StageGroup]
+    #: Older rows exist beyond the bounded read (``GROUPED_WINDOW``).
+    has_more: bool = False
 
     @property
     def count(self) -> int:
@@ -188,8 +204,15 @@ def matter_episode_timeline(
     intelligence: Any = None,
     current_action: Any = _ASK,
     episodes: list[MatterStageEpisode] | None = None,
+    whole_history: bool = False,
 ) -> EpisodeTimeline | None:
     """The chronology grouped by period, or ``None`` for a Matter that has never had one.
+
+    **Bounded by default** (AUD-008, D-2): the newest ``GROUPED_WINDOW`` rows
+    are read and grouped exactly as the whole history would be, so every
+    period that began after the oldest row read is complete. A period that
+    began before it is marked ``partial`` and ``has_more`` says older rows
+    exist; ``whole_history`` reads every row, for «Näita kogu käik».
 
     ``None`` keeps a Matter with no periods — one that has never held a
     `Hetkeseis` since periods exist — on the flat, paged chronology it always
@@ -204,14 +227,17 @@ def matter_episode_timeline(
     extra: dict[str, Any] = {}
     if current_action is not _ASK:
         extra["current_action"] = current_action
-    items, _more = matter_timeline(
+    items, more = matter_timeline(
         matter=matter,
         user=user,
-        limit=WHOLE_HISTORY,
+        limit=WHOLE_HISTORY if whole_history else GROUPED_WINDOW,
         only=only,
         intelligence=intelligence,
         **extra,
     )
+    # The oldest moment the read reached. Anything older was not read, so a
+    # period that began before it cannot claim to be complete.
+    cutoff = min((item.created_at for item in items), default=None) if more else None
     bound = _record_bindings(matter, items)
 
     by_episode: dict[Any, list[TimelineItem]] = {episode.pk: [] for episode in episodes}
@@ -267,9 +293,35 @@ def matter_episode_timeline(
             )
         )
 
+    if cutoff is not None:
+        _mark_partial(groups, episodes, cutoff)
+
     groups.reverse()
     # The current period is open; with none current — the stage was cleared —
     # the newest group is, so the place new work lands is always in view.
     current = next((group for group in groups if group.is_current), None)
     (current or groups[0]).is_open = True
-    return EpisodeTimeline(groups=groups)
+    return EpisodeTimeline(groups=groups, has_more=bool(more))
+
+
+def _mark_partial(
+    groups: list[StageGroup], episodes: list[MatterStageEpisode], cutoff: datetime
+) -> None:
+    """Flag every group whose time span reaches back past the oldest row read.
+
+    A period's rows are mostly placed by time, so a period that began before
+    the cutoff may hold unread rows; a gap group spans from the previous
+    period's start (or the beginning of the file) and is judged the same way.
+    Groups are in chronological order here, oldest first.
+    """
+    starts: dict[str, datetime | None] = {}
+    previous: datetime | None = None
+    for episode in episodes:
+        starts[str(episode.pk)] = _opened_at(episode)
+    for group in groups:
+        if group.episode is not None:
+            start = starts.get(str(group.episode.pk))
+            previous = start
+        else:
+            start = previous
+        group.partial = start is None or start < cutoff

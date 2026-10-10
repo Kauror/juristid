@@ -349,6 +349,9 @@ PAGE_SIZE_CHOICES: tuple[int, ...] = (12, 30, 50)
 PAGE_SIZE_ALL = "koik"
 PAGE_SIZE_ALL_BOUND = 2000
 TIMELINE_PAGE_SIZE = 30
+#: `?kaik=koik` reads the grouped `Teema käik` whole (AUD-008).
+TIMELINE_HISTORY_PARAM = "kaik"
+TIMELINE_HISTORY_ALL = "koik"
 
 
 def page_size_from(raw: str | None) -> tuple[int, str]:
@@ -2828,6 +2831,10 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # `Teema käik`, under the `Hetkeseis` period each act was done in
     # (docs/adr/0131 §7) — or, for a Matter that has never had a period, the
     # flat chronology paged exactly as before.
+    #
+    # **Bounded unless the whole history is asked for** (AUD-008, D-2): the
+    # newest rows on every page view and every column re-render, every row on
+    # `?kaik=koik` — «Näita kogu käik» in the section.
     episode_timeline = matter_episode_timeline(
         matter=matter,
         user=request.user,
@@ -2835,6 +2842,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         intelligence=intelligence,
         current_action=current_action,
         episodes=episodes,
+        whole_history=request.GET.get(TIMELINE_HISTORY_PARAM) == TIMELINE_HISTORY_ALL,
     )
     if episode_timeline is None:
         items, has_more = matter_timeline(
@@ -2847,7 +2855,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         )
     else:
         items = [item for group in episode_timeline.groups for item in group.items]
-        has_more = False
+        has_more = episode_timeline.has_more
     # Each `Kaasamine` row on the chronology gets its own `Lõpeta kaasamine`
     # form, with its own ids and its own revision token. Here rather than in the
     # template because a template must not build a form, and on the record
@@ -2910,6 +2918,9 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "timeline_items": items,
         # The same rows in their `Hetkeseis` periods, or `None` for the flat list.
         "timeline_groups": episode_timeline.groups if episode_timeline is not None else None,
+        # Older rows exist beyond the grouped read: the section offers them.
+        "timeline_groups_more": episode_timeline is not None and episode_timeline.has_more,
+        "timeline_history_param": TIMELINE_HISTORY_PARAM,
         # `Teema käik` — the file's course above the chronology that explains
         # it: `Tagasiside tähtaeg`, `Koja arvamus`, `Arvamuse tähtaeg`,
         # `Jõustumine`, `Lõpetatud`, the pattern's own phases, and nothing else.

@@ -183,6 +183,10 @@ view reads every row of the Matter once and places each. The flat view still
 pages by time (ENG-018, ENG-125); the grouped one trades that bound for being
 right, which on the files Juristid now holds costs a handful of rows.
 
+**Superseded on 2026-10-10 for the default read — see the amendment at the end
+of this document.** The grouped view reads the newest rows by default, and the
+whole history when asked («Näita kogu käik»).
+
 **The next-stage order** (`app/workflow/stage_flow.py`), for `+ Märge → Uus
 hetkeseis` and `+ Koja arvamus → Uus hetkeseis` only:
 
@@ -356,3 +360,59 @@ a form and a route; nothing it wrote was removed.
 * The `Märge` composer redesign (the next product step).
 * Linking a later Matter to an earlier one as its continuation.
 * A gentle «add an Estonian Õigusakt» suggestion after the EU → domestic bridge.
+
+---
+
+## Amendment, 2026-10-10 — the grouped `Teema käik` is bounded, the whole of it on request
+
+- Status: accepted, amending §7's «Whole history in one read»
+- Scope: the default read of the grouped chronology on the Teema page and in
+  every column re-render; grouping, placement and the flat view are unchanged
+
+### What was decided before
+
+The grouped view read every row of the Matter on every page view, because a
+period's rows are placed by what they are bound to rather than by a time window.
+
+### Why it is superseded
+
+Master specification §13.4 says the timeline «must not load every historical
+Entry/ChangeEvent/document derivative at once». The cost grew with each file's
+age. The audit (AUD-008, AUD-012) measured a busy Matter at about 1 MB of HTML
+per page view and per save. The product owner's decision D-2 (2026-10-10) chose
+a bounded default with explicit access to the rest.
+
+### What is decided now
+
+- The grouped view reads the newest `GROUPED_WINDOW` (60) rows through the
+  flat view's own bounded pager, and groups them exactly as before.
+- A period that began after the oldest row read is complete.
+- A period that began before it is marked partial: its count reads «N+», and
+  it offers «Selle perioodi varasemad kirjed: näita kogu käik».
+- The section offers «Näita kogu käik» (`?kaik=koik`), which reads every row and
+  groups them the same way, with nothing marked.
+
+### What this amendment does not change
+
+- The grouping itself: one accordion per period, newest first, the current
+  one open.
+- Placement by binding, «Varasem tegevus» and «Hetkeseis määramata».
+- The flat view for a Matter with no periods.
+- Every row stays reachable in one click; nothing is hidden or summarised.
+
+The audit also named four row-local evidence saves for a narrower answer than
+the column. They were re-examined and kept as column answers, because each
+changes the header's document count and the file list drawn by the
+chronology around the row. Neither is local to the row (D-2: narrow only what
+genuinely affects one row).
+
+Measured on a synthetic Matter in one period pair, on a disposable PostgreSQL 18:
+
+| History | Bounded default | Whole history |
+| --- | --- | --- |
+| 550 notes | 528 ms, 242 kB | 671 ms, 1,637 kB |
+| 150 notes | 464 ms, 239 kB | 311 ms, 498 kB |
+
+The pager's fixed cost makes the bounded read slower below about 250 rows. Its
+HTML stays about the same size at any length, which is what every save
+re-renders.
