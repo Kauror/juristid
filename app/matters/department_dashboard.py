@@ -1374,7 +1374,9 @@ class RailRow:
     tone: str = ""
 
 
-def incoming_rail(user: Any, today: date | None = None) -> list[RailRow]:
+def incoming_rail(
+    user: Any, today: date | None = None, *, items: list[Any] | None = None
+) -> list[RailRow]:
     """*Uued teemad* — what has arrived, and what has been left alone.
 
     Three rows the department page used to spread across two surfaces: the Seis
@@ -1395,7 +1397,11 @@ def incoming_rail(user: Any, today: date | None = None) -> list[RailRow]:
     population = Matter.objects.visible_to(user)
 
     def count(params: dict[str, Any]) -> int:
-        return register_population(user, params, today=today, population=population).count()
+        # The page's one read of the work model, when it has one (AUD-009):
+        # a `?too=` row here must not read it again for the same reader and day.
+        return register_population(
+            user, params, today=today, population=population, shared_items=items
+        ).count()
 
     arrived = _arrived_this_week_params(today)
     unreviewed = _unreviewed_params(today)
