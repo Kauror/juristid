@@ -92,7 +92,12 @@ def test_a_stale_completion_on_a_closed_matter_still_shows_the_refusal(
 ):
     """Tab A closes the Matter. Tab B, still holding the step, presses Salvesta."""
     action = _action(normal_matter, specialist)
-    close_matter(matter=normal_matter, disposition=Disposition.COMPLETED, actor=specialist)
+    close_matter(
+        matter=normal_matter,
+        disposition=Disposition.COMPLETED,
+        actor=specialist,
+        follow_ups_confirmed=True,
+    )
 
     response = _post(
         signed_in,
