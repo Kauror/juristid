@@ -163,7 +163,9 @@ def test_a_closed_action_cannot_be_reviewed(normal_matter, specialist):
     action = set_next_action(
         matter=normal_matter, text="Ootan", kind=ActionKind.WAIT, actor=specialist
     )
-    close_matter(matter=normal_matter, disposition="COMPLETED", actor=specialist)
+    close_matter(
+        follow_ups_confirmed=True, matter=normal_matter, disposition="COMPLETED", actor=specialist
+    )
     action.refresh_from_db()
     with refused("Ainult kehtivat tegevust saab üle vaadata."):
         acknowledge_review(action=action, actor=specialist)
@@ -287,7 +289,9 @@ def test_matters_without_next_action_finds_the_quiet_ones(specialist):
 def test_a_closed_matter_is_not_flagged_as_missing_a_next_step(specialist):
     """Closing a Matter ends its action; that is not a gap to chase."""
     matter = factories.MatterFactory(owner=specialist)
-    close_matter(matter=matter, disposition="COMPLETED", actor=specialist)
+    close_matter(
+        follow_ups_confirmed=True, matter=matter, disposition="COMPLETED", actor=specialist
+    )
 
     found = set(selectors.matters_without_next_action(specialist).values_list("id", flat=True))
     assert matter.id not in found

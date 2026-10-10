@@ -99,14 +99,18 @@ def test_closing_a_matter_ends_its_open_action(normal_matter, specialist):
     set_next_action(
         matter=normal_matter, text="Jälgi menetlust", kind=ActionKind.MONITOR, actor=specialist
     )
-    close_matter(matter=normal_matter, disposition="COMPLETED", actor=specialist)
+    close_matter(
+        follow_ups_confirmed=True, matter=normal_matter, disposition="COMPLETED", actor=specialist
+    )
 
     assert current_next_action(normal_matter) is None
     assert NextAction.objects.filter(matter=normal_matter).count() == 1
 
 
 def test_a_closed_matter_rejects_a_new_action(normal_matter, specialist):
-    close_matter(matter=normal_matter, disposition="COMPLETED", actor=specialist)
+    close_matter(
+        follow_ups_confirmed=True, matter=normal_matter, disposition="COMPLETED", actor=specialist
+    )
     with refused("Suletud teemale ei saa järgmist tegevust määrata."):
         set_next_action(matter=normal_matter, text="Veel midagi", actor=specialist)
 

@@ -208,7 +208,9 @@ def test_the_zone_is_rendered_whether_or_not_its_write_controls_are(
     """
     matter = _with_action(specialist, today)
     if closed:
-        close_matter(matter=matter, actor=specialist, disposition="COMPLETED")
+        close_matter(
+            follow_ups_confirmed=True, matter=matter, actor=specialist, disposition="COMPLETED"
+        )
     client.force_login(specialist)
 
     detail = _body(client, reverse("matters:matter_detail", kwargs={"pk": matter.pk}))

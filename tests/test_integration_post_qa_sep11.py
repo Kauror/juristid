@@ -111,7 +111,13 @@ def _action(matter, actor, *, text: str = "Vaadata ministeeriumi vastus ule"):
 
 def _close_elsewhere(matter, actor):
     """Close the Matter the way the other tab does: through the domain service."""
-    close_matter(matter=matter, disposition=Disposition.COMPLETED, actor=actor, reason="QA")
+    close_matter(
+        follow_ups_confirmed=True,
+        matter=matter,
+        disposition=Disposition.COMPLETED,
+        actor=actor,
+        reason="QA",
+    )
     matter.refresh_from_db()
     return matter
 

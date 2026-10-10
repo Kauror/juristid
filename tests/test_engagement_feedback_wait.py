@@ -226,7 +226,11 @@ def test_a_wait_on_a_closed_matter_is_not_work(specialist):
     matter = factories.MatterFactory(owner=specialist)
     _waiting(matter)
     close_matter(
-        matter=matter, disposition=Disposition.COMPLETED, actor=specialist, reason="valmis"
+        follow_ups_confirmed=True,
+        matter=matter,
+        disposition=Disposition.COMPLETED,
+        actor=specialist,
+        reason="valmis",
     )
 
     assert _waits(specialist) == []
@@ -486,6 +490,7 @@ def test_closing_a_matter_reads_the_matter_row_once_however_many_rounds_wait(spe
             _waiting(matter, days=day + 1, actor=specialist)
         with CaptureQueriesContext(connection) as captured:
             close_matter(
+                follow_ups_confirmed=True,
                 matter=matter,
                 disposition=Disposition.COMPLETED,
                 actor=specialist,
@@ -732,7 +737,11 @@ def test_a_closed_matter_refuses_a_completion(signed_in, specialist):
     engagement = _waiting(matter, actor=specialist)
     token = engagement_revision_token(engagement)
     close_matter(
-        matter=matter, disposition=Disposition.COMPLETED, actor=specialist, reason="valmis"
+        follow_ups_confirmed=True,
+        matter=matter,
+        disposition=Disposition.COMPLETED,
+        actor=specialist,
+        reason="valmis",
     )
 
     response = signed_in.post(
@@ -874,7 +883,11 @@ def test_closing_the_matter_ends_every_open_wait_audibly(specialist):
     second = _waiting(matter, days=9, actor=specialist)
 
     close_matter(
-        matter=matter, disposition=Disposition.COMPLETED, actor=specialist, reason="valmis"
+        follow_ups_confirmed=True,
+        matter=matter,
+        disposition=Disposition.COMPLETED,
+        actor=specialist,
+        reason="valmis",
     )
 
     for engagement in (first, second):
@@ -894,21 +907,41 @@ def test_closing_writes_no_feedback_for_anybody(specialist):
     engagement = _waiting(matter, actor=specialist)
 
     close_matter(
-        matter=matter, disposition=Disposition.COMPLETED, actor=specialist, reason="valmis"
+        follow_ups_confirmed=True,
+        matter=matter,
+        disposition=Disposition.COMPLETED,
+        actor=specialist,
+        reason="valmis",
     )
 
     engagement.refresh_from_db()
     assert engagement.feedback_received == ""
 
 
-def test_closing_is_never_blocked_by_a_wait(specialist):
-    """§7. There is no precondition here and no refusal."""
+def test_a_wait_asks_first_and_never_forbids_the_closure(specialist):
+    """§7, as docs/adr/0152 narrowed it: an open wait no longer ends unseen.
+
+    Closing asks first and names the waits; confirmed, the closure goes ahead —
+    a wait is still never a reason closure is impossible.
+    """
+    from app.workflow.follow_ups import FollowUpClosureUnconfirmed
+
     matter = factories.MatterFactory(owner=specialist)
     _waiting(matter, actor=specialist)
     _waiting(matter, days=30, actor=specialist)
 
+    with pytest.raises(FollowUpClosureUnconfirmed) as asked:
+        close_matter(matter=matter, disposition=Disposition.COMPLETED, actor=specialist)
+    assert "2 kaasamise tagasiside ootust" in str(asked.value)
+    matter.refresh_from_db()
+    assert matter.is_open is True
+
     close_matter(
-        matter=matter, disposition=Disposition.COMPLETED, actor=specialist, reason="valmis"
+        follow_ups_confirmed=True,
+        matter=matter,
+        disposition=Disposition.COMPLETED,
+        actor=specialist,
+        reason="valmis",
     )
 
     matter.refresh_from_db()
@@ -924,7 +957,11 @@ def test_reopening_does_not_revive_a_wait(specialist):
     matter = factories.MatterFactory(owner=specialist)
     engagement = _waiting(matter, actor=specialist)
     close_matter(
-        matter=matter, disposition=Disposition.COMPLETED, actor=specialist, reason="valmis"
+        follow_ups_confirmed=True,
+        matter=matter,
+        disposition=Disposition.COMPLETED,
+        actor=specialist,
+        reason="valmis",
     )
 
     reopen_matter(matter=matter, actor=specialist, reason="tuli tagasi")
@@ -949,7 +986,11 @@ def test_an_already_finished_round_is_not_closed_twice_by_the_matter(specialist)
     first = engagement.feedback_closed_at
 
     close_matter(
-        matter=matter, disposition=Disposition.COMPLETED, actor=specialist, reason="valmis"
+        follow_ups_confirmed=True,
+        matter=matter,
+        disposition=Disposition.COMPLETED,
+        actor=specialist,
+        reason="valmis",
     )
 
     engagement.refresh_from_db()
@@ -1222,7 +1263,11 @@ def test_a_closed_matter_refuses_the_wait(signed_in, specialist):
     engagement = _plain(matter, actor=specialist)
     token = engagement_revision_token(engagement)
     close_matter(
-        matter=matter, disposition=Disposition.COMPLETED, actor=specialist, reason="valmis"
+        follow_ups_confirmed=True,
+        matter=matter,
+        disposition=Disposition.COMPLETED,
+        actor=specialist,
+        reason="valmis",
     )
 
     response = signed_in.post(

@@ -865,7 +865,9 @@ def test_a_closed_matter_still_accepts_a_metadata_correction(signed_in, speciali
 
     matter = create_matter(title="Suletud teema", actor=specialist, owner=specialist)
     submission = factories.SubmissionFactory(matter=matter, title="Vana arvamus")
-    close_matter(matter=matter, actor=specialist, disposition="COMPLETED")
+    close_matter(
+        follow_ups_confirmed=True, matter=matter, actor=specialist, disposition="COMPLETED"
+    )
 
     response = signed_in.post(
         _metadata_url(submission), {"tags": [str(tags[0].pk)], "website_overviews": []}
@@ -940,7 +942,9 @@ def test_closing_a_matter_still_cancels_its_planned_overviews(
     from app.matters.services import close_matter
 
     set_submission_website_overviews(submission=opinion, overviews=[planned], actor=specialist)
-    close_matter(matter=normal_matter, actor=specialist, disposition="COMPLETED")
+    close_matter(
+        follow_ups_confirmed=True, matter=normal_matter, actor=specialist, disposition="COMPLETED"
+    )
     planned.refresh_from_db()
 
     assert planned.status == WebsiteOverviewStatus.CANCELLED

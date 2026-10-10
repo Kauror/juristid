@@ -309,7 +309,12 @@ def test_a_decision_not_to_answer_ends_drafting(department_head, filed, speciali
 def test_a_concluded_matter_is_not_drafting(department_head, filed, specialist):
     prepare(filed, specialist, dt.date(2026, 11, 2))
     filed.refresh_from_db()
-    close_matter(matter=filed, disposition=Disposition.MONITORING_STOPPED, actor=specialist)
+    close_matter(
+        follow_ups_confirmed=True,
+        matter=filed,
+        disposition=Disposition.MONITORING_STOPPED,
+        actor=specialist,
+    )
     assert drafting(department_head) == set()
 
 

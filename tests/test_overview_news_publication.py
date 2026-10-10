@@ -589,7 +589,11 @@ def test_a_closed_matter_refuses_every_crafted_write_and_still_allows_a_correcti
     published = _published(matter, specialist, url=NEWS_HTTPS_URL)
     planned = plan_website_overview(matter=matter, actor=specialist)
     close_matter(
-        matter=matter, disposition=Disposition.COMPLETED, actor=specialist, reason="tehtud"
+        follow_ups_confirmed=True,
+        matter=matter,
+        disposition=Disposition.COMPLETED,
+        actor=specialist,
+        reason="tehtud",
     )
 
     # The closure cancelled the plan it still owed, and did not touch the page
@@ -640,6 +644,7 @@ def test_a_stale_correction_on_a_closed_matter_writes_nothing(normal_matter, spe
         expected_revision=stale,
     )
     close_matter(
+        follow_ups_confirmed=True,
         matter=normal_matter,
         disposition=Disposition.COMPLETED,
         actor=specialist,

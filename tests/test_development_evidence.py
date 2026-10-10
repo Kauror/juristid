@@ -449,7 +449,12 @@ def test_j_a_closed_matter_refuses_the_addition(normal_matter, development, spec
     that posts may be holding a page from before somebody else closed the file.
     Reopening is the way out, and it leaves somebody's name on both decisions.
     """
-    close_matter(matter=normal_matter, disposition=Disposition.COMPLETED, actor=specialist)
+    close_matter(
+        follow_ups_confirmed=True,
+        matter=normal_matter,
+        disposition=Disposition.COMPLETED,
+        actor=specialist,
+    )
 
     with refused(CLOSED_MATTER_REFUSAL):
         add_development_evidence(
@@ -463,7 +468,12 @@ def test_j_a_closed_matter_answers_the_post_without_writing(
     signed_in, normal_matter, development, specialist
 ):
     """And through the route, where a stale tab actually arrives."""
-    close_matter(matter=normal_matter, disposition=Disposition.COMPLETED, actor=specialist)
+    close_matter(
+        follow_ups_confirmed=True,
+        matter=normal_matter,
+        disposition=Disposition.COMPLETED,
+        actor=specialist,
+    )
 
     response = signed_in.post(_url(normal_matter, development), {"attachments": _pdf(LATER_FILE)})
 
@@ -710,7 +720,12 @@ def test_p_cancel_re_reads_the_row(signed_in, normal_matter, development):
 
 def test_p_a_closed_matter_offers_no_action(signed_in, normal_matter, development, specialist):
     """No button on a finished file — and the service refuses anyway (§J)."""
-    close_matter(matter=normal_matter, disposition=Disposition.COMPLETED, actor=specialist)
+    close_matter(
+        follow_ups_confirmed=True,
+        matter=normal_matter,
+        disposition=Disposition.COMPLETED,
+        actor=specialist,
+    )
 
     detail = signed_in.get(
         reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk})

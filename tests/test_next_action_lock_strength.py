@@ -197,6 +197,7 @@ def test_a_step_and_a_closure_never_leave_a_closed_matter_with_an_open_step(spec
     outcomes = _race(
         lambda: _step(matter, specialist),
         lambda: close_matter(
+            follow_ups_confirmed=True,
             matter=Matter.objects.get(pk=matter.pk),
             disposition=Disposition.COMPLETED,
             actor=specialist,
