@@ -183,7 +183,7 @@ def test_editing_an_open_step_can_state_any_of_the_four(
     supersedes rather than updates, and a precision dropped on the way into the
     replacement would look like an edit that silently changed the date.
     """
-    set_next_action(
+    original = set_next_action(
         matter=normal_matter,
         text="Vana tekst",
         kind=ActionKind.DO,
@@ -197,6 +197,7 @@ def test_editing_an_open_step_can_state_any_of_the_four(
         "matters:set_action",
         normal_matter,
         {
+            "action_id": str(original.pk),
             "text": "Uus tekst",
             "next_precision": precision,
             **_fields("next", answers, date_field="target_date"),
@@ -303,13 +304,17 @@ def test_editing_only_the_text_keeps_a_precision_the_control_cannot_offer(
     do it silently, on a surface that shows no date control for the value it
     just replaced.
     """
-    _historical(normal_matter, specialist, precision, anchor)
+    original = _historical(normal_matter, specialist, precision, anchor)
 
     response = _post(
         signed_in,
         "matters:set_action",
         normal_matter,
-        {"text": "Parandatud tekst", "next_precision": precision},
+        {
+            "action_id": str(original.pk),
+            "text": "Parandatud tekst",
+            "next_precision": precision,
+        },
     )
     assert response.status_code == 200, response.content.decode()[:2000]
 
@@ -327,13 +332,16 @@ def test_choosing_an_offered_precision_replaces_a_historical_one(
     A person who actually means «now it is October» must be able to say so, and
     the chip they choose wins.
     """
-    _historical(normal_matter, specialist, DatePrecision.HALF_YEAR, datetime.date(2027, 7, 1))
+    original = _historical(
+        normal_matter, specialist, DatePrecision.HALF_YEAR, datetime.date(2027, 7, 1)
+    )
 
     response = _post(
         signed_in,
         "matters:set_action",
         normal_matter,
         {
+            "action_id": str(original.pk),
             "text": "Vana samm",
             "next_precision": DatePrecision.MONTH,
             "next_month": "10",
@@ -356,13 +364,19 @@ def test_a_crafted_post_cannot_name_a_precision_the_record_does_not_have(
     `HALF_YEAR` would store one, on a surface that offers no way to choose it
     and therefore no way to notice it (ADR 0052 §4's rule, kept).
     """
-    _historical(normal_matter, specialist, DatePrecision.MONTH, datetime.date(2026, 10, 1))
+    original = _historical(
+        normal_matter, specialist, DatePrecision.MONTH, datetime.date(2026, 10, 1)
+    )
 
     response = _post(
         signed_in,
         "matters:set_action",
         normal_matter,
-        {"text": "Uus tekst", "next_precision": DatePrecision.HALF_YEAR},
+        {
+            "action_id": str(original.pk),
+            "text": "Uus tekst",
+            "next_precision": DatePrecision.HALF_YEAR,
+        },
     )
 
     assert response.status_code == 400

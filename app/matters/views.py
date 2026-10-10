@@ -312,10 +312,7 @@ from app.workflow.follow_ups import FOLLOW_UP_CHANGED, FollowUpClosureUnconfirme
 from app.workflow.models import MatterPlanStep, NextAction, StageVocabulary
 from app.workflow.plan import seed_standard_plan
 from app.workflow.selectors import stages_including
-from app.workflow.services import (
-    acknowledge_review,
-    set_next_action_for_new_work,
-)
+from app.workflow.services import acknowledge_review
 from app.workflow.stage_flow import is_terminal as is_terminal_stage
 from app.workflow.stage_guidance import stage_guidance_payload
 
@@ -4494,21 +4491,26 @@ def set_action(request: HttpRequest, pk: Any) -> HttpResponse:
     # without one — and the shared helper still falls back to the
     # workspace-level slot for a Matter closed meanwhile, bringing its header.
     #
-    # **This is the direct route and the `Muuda` route at once.** With no step
-    # the reader can see, `NextActionForm.as_service_kwargs` writes new work
-    # (`DO` / `DEADLINE`); with one, it keeps that step's kind and date meaning
-    # and the service supersedes it. Either way it is the one canonical
-    # `set_next_action_for_new_work` that `+ Märge`'s ticked day ahead and
-    # `Uus teema` call too — there is no second way to write a step
-    # (docs/adr/0124 §2, docs/adr/0126 §1).
+    # **This is the direct route and the `Muuda` route at once.** `Muuda`
+    # names its step and keeps that step's kind and date meaning; the direct
+    # route names none and writes new work (`DO` / `DEADLINE`). Either way the
+    # step is written by the one canonical `set_next_action_for_new_work` that
+    # `+ Märge`'s ticked day ahead and `Uus teema` call too — there is no second
+    # way to write a step (docs/adr/0124 §2, docs/adr/0126 §1).
     if not form.is_valid():
         return _workspace_refusal(request, matter, key="action_form", form=form)
 
     # **`Muuda` names the step it was drawn beside** (docs/adr/0133 §4). With an
     # `action_id`, the save is an edit of that step: it is re-read under the
     # Matter's lock, a stale one refuses, and the replacement keeps the step's
-    # restriction (docs/adr/0139). Without one it is new work, exactly as before. The id
-    # is fetched through `visible_to` first, so a foreign or hidden one is a 404.
+    # restriction (docs/adr/0139). The id is fetched through `visible_to` first,
+    # so a foreign or hidden one is a 404.
+    #
+    # **Without one it is new work, decided under the lock** (AUD-004,
+    # AUD-040): the current step if none is open by then, a planned one if a
+    # step has appeared and this one has a day, a refusal if it has none — never
+    # a supersession of a step this page did not draw. Always `DO` /
+    # `DEADLINE`: the kind of a step somebody else wrote is not this one's.
     named = form.cleaned_data.get("action_id")
     try:
         if named is not None:
@@ -4522,8 +4524,14 @@ def set_action(request: HttpRequest, pk: Any) -> HttpResponse:
                 **form.as_service_kwargs(),
             )
         else:
-            set_next_action_for_new_work(
-                matter=matter, actor=request.user, **form.as_service_kwargs()
+            step = form.as_service_kwargs()
+            workspace.add_unnamed_step(
+                matter=matter,
+                actor=request.user,
+                text=step["text"],
+                target_date=step["target_date"],
+                date_precision=step["date_precision"],
+                responsible=step["responsible"],
             )
     except DomainError as error:
         return _workspace_refusal(request, matter, key="action_form", form=form, error=str(error))
@@ -4544,29 +4552,20 @@ def add_planned_action_view(request: HttpRequest, pk: Any) -> HttpResponse:
 
     Never replaces the current action. On a Matter with no current action at
     all the same save becomes the current one, as `+ Määra järgmine tegevus`
-    always made it (a stale tab drawn while one was current).
+    always made it (a stale tab drawn while one was current). Which of the two
+    is decided under the Matter's lock (`workspace.add_unnamed_step`, AUD-004).
     """
-    from app.workflow.services import add_planned_action, current_next_action
-
     matter = get_visible_matter(request, pk)
     form = PlannedActionForm(request.POST)
     if not form.is_valid():
         return _workspace_refusal(request, matter, key="planned_action_form", form=form)
     try:
-        if current_next_action(matter) is None:
-            set_next_action_for_new_work(
-                matter=matter,
-                actor=request.user,
-                text=form.cleaned_data["text"],
-                target_date=form.cleaned_data["target_date"],
-            )
-        else:
-            add_planned_action(
-                matter=matter,
-                actor=request.user,
-                text=form.cleaned_data["text"],
-                target_date=form.cleaned_data["target_date"],
-            )
+        workspace.add_unnamed_step(
+            matter=matter,
+            actor=request.user,
+            text=form.cleaned_data["text"],
+            target_date=form.cleaned_data["target_date"],
+        )
     except DomainError as error:
         return _workspace_refusal(
             request, matter, key="planned_action_form", form=form, error=str(error)

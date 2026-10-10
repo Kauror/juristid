@@ -10,8 +10,10 @@ edit could see it after.
 
 Only `Muuda` carries it. New work — `+ Määra järgmine tegevus`, `Järgmisena`
 after a completion, `Alusta` on a plan step, every importer — keeps the ordinary
-creation rule even though it also supersedes whatever was open (the owner's
-decision, docs/adr/0138 §3–§4).
+creation rule (the owner's decision, docs/adr/0138 §3–§4). Most of those doors
+supersede whatever was open; `+ Määra järgmine tegevus` no longer supersedes a
+step it was not drawn beside — beside an open step it files the new work in the
+plan (AUD-040, D-7) — and that planned work does not inherit either.
 
 Asserted through the real operation and the real route, never by building rows:
 the restricted edit, the controls, the plan-linked edit, new work and the next
@@ -208,17 +210,27 @@ def test_new_work_over_a_restricted_step_keeps_the_ordinary_rule(matter, special
 
 
 def test_the_new_work_route_keeps_the_ordinary_rule(client, matter, specialist):
-    """The same view without an `action_id` is new work, and does not inherit."""
-    _action(matter, specialist, restricted=True)
+    """The same view without an `action_id` is new work.
+
+    A step already open stays open (AUD-040, D-7), and the new work waits in the
+    plan without inheriting the restriction (docs/adr/0139 §5).
+    """
+    original = _action(matter, specialist, restricted=True)
     client.force_login(specialist)
+    planned_on = timezone.localdate() + dt.timedelta(days=5)
 
     client.post(
         reverse("matters:set_action", kwargs={"pk": matter.pk}),
-        {"text": "Uus töö: helista ministeeriumi", "target_date": ""},
+        {"text": "Uus töö: helista ministeeriumi", "target_date": planned_on.strftime("%d.%m.%Y")},
     )
 
-    new_work = NextAction.objects.get(matter=matter, status=ActionStatus.OPEN)
-    assert new_work.text == "Uus töö: helista ministeeriumi"
+    original.refresh_from_db()
+    assert original.status == ActionStatus.OPEN
+    assert original.visibility_override == Visibility.RESTRICTED
+    new_work = NextAction.objects.get(
+        matter=matter, status=ActionStatus.PLANNED, text="Uus töö: helista ministeeriumi"
+    )
+    assert new_work.target_date == planned_on
     assert new_work.visibility_override == ""
 
 

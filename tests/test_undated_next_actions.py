@@ -273,11 +273,16 @@ def test_the_progress_form_refuses_a_step_ahead_with_no_sentence(normal_matter):
 
 def test_editing_an_existing_action_can_clear_its_date(signed_in, normal_matter, specialist):
     """13, 28, 29. Emptying the box is how a date comes off, and it persists."""
-    _dated(normal_matter, specialist, timezone.localdate() + dt.timedelta(days=9))
+    dated = _dated(normal_matter, specialist, timezone.localdate() + dt.timedelta(days=9))
 
     response = signed_in.post(
         reverse("matters:set_action", kwargs={"pk": normal_matter.pk}),
-        {"text": "Koostan arvamuse", "target_date": "", "next_precision": DatePrecision.EXACT},
+        {
+            "action_id": str(dated.pk),
+            "text": "Koostan arvamuse",
+            "target_date": "",
+            "next_precision": DatePrecision.EXACT,
+        },
         headers={"HX-Request": "true"},
     )
 
@@ -291,12 +296,13 @@ def test_editing_an_existing_action_can_clear_its_date(signed_in, normal_matter,
 
 def test_a_cleared_date_can_be_set_again(signed_in, normal_matter, specialist):
     """30. And the deadline surfaces come back with it."""
-    _undated(normal_matter, specialist, text="Koostan arvamuse")
+    undated = _undated(normal_matter, specialist, text="Koostan arvamuse")
     when = timezone.localdate() + dt.timedelta(days=2)
 
     response = signed_in.post(
         reverse("matters:set_action", kwargs={"pk": normal_matter.pk}),
         {
+            "action_id": str(undated.pk),
             "text": "Koostan arvamuse",
             "target_date": format_estonian_date(when),
             "next_precision": DatePrecision.EXACT,
