@@ -237,7 +237,11 @@ class MatterIntakeFile(BaseModel):
     #: The parser's fragments, as JSON rather than as ``DocumentTextFragment``
     #: rows. Those belong to a ``DocumentVersion``, are what search reads and
     #: carry a rebuild contract; this is a handful of paragraphs read once, by
-    #: one caller, and deleted with the row.
+    #: one caller, and deleted with the row. Blanked earlier than that — with
+    #: ``text_character_count`` and ``email_metadata`` — the moment the session
+    #: is consumed or expires, because the row itself waits for an operator's
+    #: sweep and the text must not wait with it (`consume_session`,
+    #: `clear_expired_intake_text`, AUD-025).
     text = models.JSONField(default=list, blank=True, verbose_name="eraldatud tekst")
     #: What the budget planner reads, so a file whose text the analysis will not
     #: reach is never loaded (`intake_suggestions/input.py`).

@@ -605,8 +605,9 @@ INTAKE_READER_IDLE_SECONDS = env_float("INTAKE_READER_IDLE_SECONDS", 0.5)
 # Its own number rather than EXTRACTION_STALE_CLAIM_MINUTES, because the two
 # describe different work. A corpus parse may be a 500-page OCR run and needs
 # half an hour of grace; a staged intake file is bounded by
-# MAX_INTAKE_UPLOAD_BYTES and finishes in seconds, so a claim older than this
-# belongs to a reader that died — and waiting thirty minutes to find that out
+# MAX_EVIDENCE_UPLOAD_BYTES (the ceiling `read_upload` puts on every staged
+# file; there is no intake-specific limit, DX-5) and finishes in seconds, so a
+# claim older than this belongs to a reader that died — and waiting thirty minutes to find that out
 # would strand the form it was reading for long past the session's own life.
 INTAKE_READER_STALE_CLAIM_MINUTES = env_int("INTAKE_READER_STALE_CLAIM_MINUTES", 5)
 

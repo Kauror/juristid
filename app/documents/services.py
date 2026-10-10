@@ -416,9 +416,9 @@ def add_evidence_version(
 
     ``extraction_state`` is the caller's when the caller already knows. Every
     ordinary upload leaves it ``PENDING`` — nothing has read the bytes — but a
-    file promoted out of `Uus teema` was read while the form was open, and
-    saying so is what keeps a corpus run from reading it a second time
-    (``INTAKE_READ``; app/matters/intake_staging.py, docs/adr/0072).
+    file promoted out of `Uus teema` while the form offered its reading was read
+    for that form, and saying so is what keeps a corpus run from reading it a
+    second time (``INTAKE_READ``; app/matters/intake_staging.py, docs/adr/0072).
     ``extraction_note`` goes with it: a version that arrives already FAILED
     must say why, or nobody can (DX-4). Truncated to the column, as every
     other writer of that note does.

@@ -14,10 +14,16 @@ Five states are reported separately, and the sixth thing to know is that one of
 them is new:
 
 * **done** — the text was extracted and is what search reads;
-* **queued** — ``PENDING`` or ``PROCESSING``; nothing has read it;
-* **read at intake** — ``INTAKE_READ``: a person watched this file being read
-  on `Uus teema`, the answers went onto the form, and no permanent text was
-  ever made from it. Terminal and successful (docs/adr/0072);
+* **queued** — ``PENDING`` or ``PROCESSING``; no permanent text exists yet.
+  That includes a file filed on `Uus teema` while the form does not offer its
+  reading: the intake reader may have read it, but for nobody, so promotion
+  leaves it owed like any other upload (AUD-025, D-6);
+* **read at intake** — ``INTAKE_READ``: this file was read on `Uus teema`
+  while the form offered the reading, what was found was offered on the form,
+  and no permanent text was ever made from it. Terminal and successful
+  (docs/adr/0072). Rows written before 2026-10-10 may carry it from a form
+  that offered nothing; no migration relabels them (docs/adr/0072 amendment
+  2026-10-10);
 * **failed**, **not applicable** — the other two terminal outcomes.
 
 ``NOT_APPLICABLE`` is a success. A signed container has no extracted text
@@ -124,7 +130,7 @@ def extraction_pending(context: ReportingContext) -> MetricResult:
 def extraction_intake_read(context: ReportingContext) -> MetricResult:
     result = _state_result(context, keys.EXTRACTION_INTAKE_READ, read_at_intake(context))
     return result.with_note(
-        "Need failid loeti teema loomise ajal ja vastused läksid vormile. "
+        "Need failid loeti teema loomise ajal ja leitu pakuti vormile. "
         "Püsivat teksti neist ei tehtud, seega ei ole nende sisu otsitav — "
         "see on teadlik valik, mitte puudujääk."
     )
@@ -159,11 +165,11 @@ def extraction_states(context: ReportingContext) -> tuple[Segment, ...]:
         Segment(
             label="Eraldatud", value=versions.filter(extraction_state=ExtractionState.DONE).count()
         ),
-        Segment(label="Järjekorras", value=pending, note="Keegi ei ole neid veel lugenud"),
+        Segment(label="Järjekorras", value=pending, note="Püsivat teksti neist veel ei ole"),
         Segment(
             label="Loetud teema loomisel",
             value=intake,
-            note="Loetud vormil; püsivat teksti ei tehtud",
+            note="Loetud vormi jaoks; püsivat teksti ei tehtud",
         ),
         Segment(
             label="Ei kohaldu",

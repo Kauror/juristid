@@ -45,6 +45,11 @@ STATE_LABELS: dict[str, str] = {
     ExtractionState.DONE: "Tekst olemas",
     ExtractionState.FAILED: "Teksti ei õnnestunud eraldada",
     ExtractionState.NOT_APPLICABLE: "Teksti eraldamine ei kohaldu",
+    # The enum's own label, because it already is the sentence. Until this row
+    # existed the version table printed `INTAKE_READ` raw — the enum on a
+    # lawyer's screen, which is what this table is for preventing (DX-6,
+    # docs/adr/0072 §4).
+    ExtractionState.INTAKE_READ: ExtractionState.INTAKE_READ.label,
 }
 
 STATE_TONES: dict[str, str] = {
@@ -53,6 +58,9 @@ STATE_TONES: dict[str, str] = {
     ExtractionState.DONE: "ok",
     ExtractionState.FAILED: "problem",
     ExtractionState.NOT_APPLICABLE: "quiet",
+    # Terminal and not a problem, but not «Tekst olemas» either: nothing
+    # permanent was made from the bytes, so it reads the way NOT_APPLICABLE does.
+    ExtractionState.INTAKE_READ: "quiet",
 }
 
 

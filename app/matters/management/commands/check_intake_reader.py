@@ -15,7 +15,7 @@ watch «Loen faili…» for half an hour.
 
 Its window is `INTAKE_READER_STALE_CLAIM_MINUTES`, five minutes rather than the
 corpus worker's thirty, because a staged file is bounded by
-`MAX_INTAKE_UPLOAD_BYTES` and finishes in seconds. Waiting half an hour to
+`MAX_EVIDENCE_UPLOAD_BYTES` and finishes in seconds. Waiting half an hour to
 learn that this loop had stopped would outlast the form it stopped in front of
 (app/documents/extraction/heartbeat.py, docs/adr/0072).
 

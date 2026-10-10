@@ -28,6 +28,7 @@ from types import SimpleNamespace
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -486,6 +487,9 @@ def test_a_promoted_staged_failure_carries_the_readers_reason(
     assert version.extraction_note == reason
 
 
+# With the suggestions on, because only then is a staged success promoted
+# INTAKE_READ (AUD-025, D-6); the note rule is the same either way.
+@override_settings(MATTER_INTAKE_SUGGESTIONS_ENABLED=True)
 def test_a_promoted_staged_success_carries_no_note(signed_in, staged_file) -> None:
     MatterIntakeFile.objects.filter(pk=staged_file.pk).update(
         extraction_state=ExtractionState.DONE, extraction_note="2 lehekülge 2-st loeti OCR-iga."

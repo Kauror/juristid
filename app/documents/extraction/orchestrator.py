@@ -192,6 +192,10 @@ def pending_versions() -> Any:
     had the answer to — which is what this system did until docs/adr/0072.
     Nothing about that row is pending: it is finished, and it says so in a word
     that cannot be confused with `DONE` (`app.matters.intake_staging`).
+    Promotion writes it only while the form offers the reading; with the
+    suggestions withdrawn a file read on the form is promoted `PENDING` and is
+    offered here like any other upload (AUD-025, docs/adr/0072 amendment
+    2026-10-10).
 
     **There is no scan gate in front of this any more.** It used to exclude
     anything a scanner had not cleared, and the scanner is gone with the

@@ -102,7 +102,7 @@ def pending_intake_files() -> Any:
     `INTAKE_READER_STALE_CLAIM_MINUTES` rather than the corpus worker's
     `EXTRACTION_STALE_CLAIM_MINUTES`, and the difference is the work: a corpus
     parse may be a 500-page OCR run and needs half an hour of grace, while a
-    staged file is bounded by `MAX_INTAKE_UPLOAD_BYTES` and finishes in
+    staged file is bounded by `MAX_EVIDENCE_UPLOAD_BYTES` and finishes in
     seconds. Thirty minutes here would strand somebody's form behind a reader
     that died, for longer than they would keep the page open.
     """

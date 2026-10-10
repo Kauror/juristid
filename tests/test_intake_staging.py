@@ -413,10 +413,13 @@ def test_three_staged_files_become_three_documents(signed_in, evidence_root, min
         assert document.versions.count() == 1
         assert document.current_version.version_number == 1
         assert document.current_version.malware_scan_state == MalwareScanState.PENDING
-        # Read on the form, and therefore finished. Not PENDING: a corpus run
-        # must never open these bytes again merely because a Matter now exists
-        # to hang them off (docs/adr/0072, task §7).
-        assert document.current_version.extraction_state == ExtractionState.INTAKE_READ
+        # Under the shipped default the form offers no reading, so a file the
+        # reader understood was read for nobody and is owed like any other
+        # upload: PENDING, not INTAKE_READ. Until 2026-10-10 this asserted
+        # INTAKE_READ regardless, which made such files unsearchable on the
+        # strength of a reading nobody received (AUD-025, D-6; the switched-on
+        # half is `tests/test_intake_reader_truthful_state.py`).
+        assert document.current_version.extraction_state == ExtractionState.PENDING
 
 
 def test_an_email_is_filed_under_the_role_its_name_earns_it(signed_in, evidence_root):

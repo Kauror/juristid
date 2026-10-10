@@ -93,7 +93,7 @@ running the reader moves exactly one — the ten thousand are not merely
 unprocessed but unclaimed, because a claim is a write and writes are the thing.
 
 It keeps its own heartbeat and its own five-minute staleness window, against the
-corpus worker's thirty. A staged file is bounded by `MAX_INTAKE_UPLOAD_BYTES`
+corpus worker's thirty. A staged file is bounded by `MAX_EVIDENCE_UPLOAD_BYTES`
 and finishes in seconds; waiting half an hour to report that this loop had
 stopped would outlast the form it stopped in front of.
 
@@ -240,3 +240,67 @@ does not remove the fault.
 
 It does not deploy anything, and no production operation was performed as part
 of it. The production extractor remains stopped.
+
+## Amendment, 2026-10-10 — `INTAKE_READ` only when the form offered the reading
+
+- Status: accepted, amending Decision 4 and §4's table (the `DONE` row) and
+  §5's «put onto a form»; product decision D-6 of the 2026-10 audit (AUD-025,
+  DX-4/5/6)
+- Scope: the canonical state a promoted staged `DONE` receives; how long the
+  staged extracted text lives; no schema change
+
+### What was decided before
+
+A staged file the intake reader read successfully was always promoted
+`INTAKE_READ` — *read on the form, the answers went onto it, nothing owed* —
+terminal, never offered to `pending_versions`, never extracted and never
+searchable by content. The staged text was said to be «thrown away with the
+session», but `consume_session` deleted only the bytes; the text and parsed mail
+headers stayed on the staged row until an operator ran `prune_intake_staging`,
+which nothing schedules.
+
+### Why it is superseded
+
+ADR 0088 withdrew the suggestions from `Uus teema` on 2026-09-16 and left the
+reader running. From then on the reader read every staged file for nobody:
+nothing it found reached the form, yet promotion still recorded that it had —
+and on the strength of that claim the document was made permanently
+unsearchable by content. The state's meaning was true only while the feature
+it described was on. Separately, a full copy of each staged file's text (up to
+eight million characters of incoming correspondence) outlived the form it was
+read for by as long as nobody pruned.
+
+### What is decided now
+
+- The reader keeps operating with the suggestions off (D-6).
+- Promotion maps a staged `DONE` to `INTAKE_READ` **only when
+  `create_form_suggestions_offered()` is true at promotion time**; otherwise to
+  `PENDING`, so the ordinary worker owes it like any other upload and it becomes
+  searchable when that worker runs (`promoted_extraction_state`,
+  `app/matters/intake_staging.py`). `NOT_APPLICABLE` and `FAILED` (with its
+  carried reason) are verdicts about the bytes and are unchanged.
+- `consume_session` blanks the staged rows' `text`, `text_character_count` and
+  `email_metadata` as well as deleting the bytes; and the always-running reader
+  blanks the same columns for sessions that are expired or consumed
+  (`clear_expired_intake_text`), at most once every ten minutes and with no
+  write when nothing holds text. Rows, bytes of unconsumed sessions, states and
+  audit facts are not deleted by it; `prune_intake_staging` is unchanged and
+  still an operator's.
+- Statistika's wording for «Loetud teema loomisel» says the finding was
+  *offered* on the form, and «Eraldamise järjekorras» says `Uus teema` files can
+  be queued while the reading is withdrawn. The document page names
+  `INTAKE_READ` by its label instead of printing the enum.
+- §1's reference to `MAX_INTAKE_UPLOAD_BYTES` named a setting that never
+  existed; the bound is `MAX_EVIDENCE_UPLOAD_BYTES`, which `read_upload` applies
+  to every staged file, and the text above now says so.
+
+### What this amendment does not change
+
+The reader's universe and its structural separation from the corpus queue;
+that nothing derived from a staged parse is carried across; `INTAKE_READ` as a
+terminal state and its exclusion from `pending_versions` and from the
+searchability denominator; the corpus extractor remaining an operator command.
+**Existing rows are not touched**: versions promoted `INTAKE_READ` between
+2026-09-16 and this change, while the suggestions were off, keep that state —
+no data migration relabels them, because which of them a form actually offered
+is not recorded anywhere.
