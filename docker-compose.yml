@@ -6,6 +6,11 @@ name: juristid
 services:
   db:
     image: postgres:18
+    # JIT off for this OLTP workload (AUD-039, docs/adr/0153): it fires on the
+    # planner's estimated cost and spent 150-350 ms compiling statements that
+    # run in 15-70 ms. `core/0002` sets the same per database, so a restore
+    # into a server started without this line still answers `jit = off`.
+    command: ["postgres", "-c", "jit=off"]
     environment:
       POSTGRES_DB: juristid
       POSTGRES_USER: juristid

@@ -618,6 +618,20 @@ def postgresql_version_from_num(number: int) -> tuple[int, int]:
     return number // 10000, number % 10000
 
 
+#: What a database this build is ready to serve answers to `SHOW jit`
+#: (docs/adr/0153). JIT compiled the register's statements for longer than they
+#: ran (AUD-039); `core/0002` and every Compose database service turn it off.
+EXPECTED_JIT = "off"
+
+
+def jit_setting() -> str:
+    """This connection's `SHOW jit`: what a new session of this database gets."""
+    with connection.cursor() as cursor:
+        cursor.execute("SHOW jit")
+        row = cursor.fetchone()
+    return str(row[0]) if row else ""
+
+
 def postgresql_version() -> tuple[int, int]:
     """The server's major and minor, for a restore that has to match it.
 
@@ -771,6 +785,17 @@ def readiness_report(*, search_phase: str = SEARCH_PHASE_FINAL) -> ReadinessRepo
             f"does not have: {', '.join(state.unknown[:5])}"
             f"{' …' if len(state.unknown) > 5 else ''}. "
             "This build is older than its database."
+        )
+
+    # Asked once the schema is this build's: `core/0002` is what sets it on the
+    # database, and an unapplied migration is already the problem above. A
+    # database restored into a server started without `-c jit=off` lands here
+    # too, because `pg_dump` does not carry `ALTER DATABASE` settings.
+    if not state.pending and (jit := jit_setting()) != EXPECTED_JIT:
+        problems.append(
+            f"PostgreSQL JIT is {jit!r} for this database; this build expects "
+            f"{EXPECTED_JIT!r} (docs/adr/0153). Start the server with `-c jit=off` "
+            "or run `manage.py migrate core`."
         )
 
     roots = storage_roots()

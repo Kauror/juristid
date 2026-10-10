@@ -90,6 +90,11 @@ services:
     # rehearsal restored an 18.6 dump into 18.6.
     image: postgres:18
     container_name: juristid-recovery-rehearsal-real-db
+    # JIT off for this OLTP workload (AUD-039, docs/adr/0153): it fires on the
+    # planner's estimated cost and spent 150-350 ms compiling statements that
+    # run in 15-70 ms. `core/0002` sets the same per database, so a restore
+    # into a server started without this line still answers `jit = off`.
+    command: ["postgres", "-c", "jit=off"]
     # No `restart:`. A rehearsal database that comes back after a reboot is a
     # copy of member material nobody remembered to delete.
     env_file:

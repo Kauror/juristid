@@ -704,7 +704,10 @@ SETTLED_LEAVES = {
     # Seotud materjalid, and the next release carries that into a database
     # that already has 0015, so CI steps the app back and applies it forwards
     # from exactly that state (docs/adr/0062).
-    "core": "0001_initial",
+    # `core` is not here any more: 0002 sets `jit = off` on the database
+    # (docs/adr/0153), and the next release carries it into a database that
+    # already has 0001, so CI steps the app back and applies it forwards from
+    # exactly that state.
     # `documents` is not here any more: 0007 adds the `INTAKE_READ` extraction
     # state, and the next release carries it into a database that already has
     # 0006, so CI steps the app back and applies it forwards from exactly that
