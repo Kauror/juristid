@@ -16,6 +16,7 @@ nothing here may need a click to become true.
 
 from __future__ import annotations
 
+import re
 from datetime import date, timedelta
 from uuid import uuid4
 
@@ -24,6 +25,7 @@ from playwright.sync_api import expect
 
 from e2e.conftest import (
     MARTIN,
+    SANDRA,
     VALDKONNAD_FIELD,
     go_to,
     open_hetkeseis,
@@ -428,7 +430,11 @@ def test_the_step_takes_the_owner_chosen_on_the_same_form(page, base_url):
 
     expect(page.locator("#praegune-tegevus .curact__text")).to_have_text("Tutvu materjaliga")
     go_to(page, "Minu asjad")
-    expect(page.locator(".workrow2").filter(has_text=title).first).to_be_visible()
+    # Counted, not looked at: since `Uus teema` makes its creator the owner
+    # (docs/adr/0150 §1) every Teema this suite files lands on a desk, and a
+    # long desk folds its later rows behind «Näita veel». In the queue is the
+    # claim; on the first screen of it is not.
+    expect(page.locator(".workrow2").filter(has_text=title)).to_have_count(1)
 
 
 # ---------------------------------------------------------------------------
@@ -1149,3 +1155,101 @@ def test_a_refused_save_still_says_what_the_form_resembles(page, base_url):
 
     expect(page.locator("#id_title")).to_have_value(SIMILAR_SUBJECT)
     expect(page.locator(SIMILAR_SECTION)).to_be_visible()
+
+
+# ---------------------------------------------------------------------------
+# The creator is the Vastutaja (docs/adr/0150 §1)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("persona", [MARTIN, SANDRA], ids=["martin", "sandra"])
+def test_the_page_opens_with_whoever_files_it_as_vastutaja(page, base_url, persona):
+    """Rendered chosen by the server — visible at once, and no script needed."""
+    sign_in(page, base_url, persona)
+    create_form(page, base_url)
+
+    owner = page.locator('fieldset:has(input[name="owner"])').get_by_role(
+        "radio", name=persona.short_name, exact=True
+    )
+    expect(owner).to_be_checked()
+    assert page.locator('input[name="owner"]:checked').count() == 1
+
+
+# ---------------------------------------------------------------------------
+# Seo olemasoleva teemaga (docs/adr/0150 §3)
+# ---------------------------------------------------------------------------
+
+
+def _file(page, base_url, title: str) -> str:
+    create_form(page, base_url)
+    page.fill("#id_title", title)
+    page.fill("#id_response_deadline", typed_date(21))
+    page.get_by_role("button", name="Salvesta", exact=True).click()
+    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    start_first_step(page)
+    return page.url
+
+
+def _search_related(page, term: str) -> None:
+    box = page.locator("#seotud-teema-otsing")
+    box.fill(term)
+    page.wait_for_selector("#seotud-teema-tulemused [data-related-pick], #seotud-teema-tulemused p")
+
+
+def test_a_teema_found_by_hand_is_linked_when_the_new_one_is_saved(page, base_url):
+    """Search by title and by reference, choose, take back, choose again, save."""
+    sign_in(page, base_url, MARTIN)
+    earlier_title = unique_title("Käsitsi leitav varasem teema")
+    earlier_url = _file(page, base_url, earlier_title)
+    reference = (page.locator("#teemaviide").text_content() or "").strip()
+    assert re.fullmatch(r"\d{4}_\d+", reference), reference
+
+    create_form(page, base_url)
+    block = page.locator("#seo-olemasoleva-teemaga")
+    expect(block).to_be_visible()
+
+    # By title — and Enter searches rather than filing the Teema.
+    _search_related(page, earlier_title.split()[-1])
+    page.locator("#seotud-teema-otsing").press("Enter")
+    assert page.url.endswith("/teemad/uus/")
+    pick = page.locator("#seotud-teema-tulemused").get_by_role(
+        "button", name=f"Vali seotud teemaks: {earlier_title}"
+    )
+    expect(pick).to_be_visible()
+    pick.click()
+    chosen = page.locator("[data-related-chosen] li")
+    expect(chosen).to_have_count(1)
+    expect(chosen.first).to_contain_text(earlier_title)
+    expect(chosen.first).to_contain_text(reference)
+
+    # Taken back, then found again by its reference.
+    chosen.first.get_by_role("button").click()
+    expect(chosen).to_have_count(0)
+    _search_related(page, reference)
+    page.locator("#seotud-teema-tulemused [data-related-pick]").first.click()
+    expect(chosen).to_have_count(1)
+
+    page.fill("#id_title", unique_title("Käsitsi seotud uus teema"))
+    page.fill("#id_response_deadline", typed_date(21))
+    page.get_by_role("button", name="Salvesta", exact=True).click()
+    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    assert page.url != earlier_url
+    expect(page.locator("#seotud-materjalid")).to_contain_text(earlier_title)
+
+
+def test_a_refused_save_keeps_the_teema_chosen_by_hand(page, base_url):
+    sign_in(page, base_url, MARTIN)
+    earlier_title = unique_title("Valik jääb alles")
+    _file(page, base_url, earlier_title)
+
+    create_form(page, base_url)
+    _search_related(page, earlier_title.split()[-1])
+    page.locator("#seotud-teema-tulemused [data-related-pick]").first.click()
+    page.locator("form.createform").evaluate("form => form.noValidate = true")
+    page.get_by_role("button", name="Salvesta", exact=True).click()
+    page.wait_for_load_state("networkidle")
+
+    expect(page.locator(".field__error").first).to_be_visible()
+    chosen = page.locator("[data-related-chosen] li")
+    expect(chosen).to_have_count(1)
+    expect(chosen.first).to_contain_text(earlier_title)

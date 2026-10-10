@@ -352,7 +352,9 @@ def test_the_page_carries_the_matrix_once(signed_in):
     )
 
     assert found is not None
-    assert json.loads(found.group(1)) == stage_guidance_payload()
+    # With the prefill, which is `Uus teema`'s only (docs/adr/0130, amendment
+    # of 2026-10-09, «a stage chosen from the instrument»).
+    assert json.loads(found.group(1)) == stage_guidance_payload(prefill=True)
     assert body.count('id="hetkeseis-juhis"') == 1
 
 
@@ -374,11 +376,41 @@ def test_valdkonnad_carry_no_guidance_hooks(signed_in):
         assert "data-stage-key" not in tag
 
 
-def test_the_edit_page_draws_no_guidance(signed_in, specialist):
-    """`Uus teema` only — `Muuda teemat` is a correction surface (docs/adr/0130 §8)."""
+def test_the_edit_page_draws_the_same_guidance(signed_in, specialist):
+    """`Muuda teemat` draws it too since 2026-10-09 (docs/adr/0130 §8, amended; F5).
+
+    The same matrix, serialised the same way, on the same row wrapper — one
+    copy in Python, read by one script. Nothing is dimmed by the server: the
+    page arrives with no `chip--atypical`, as `Uus teema` does.
+    """
     matter = factories.MatterFactory(owner=specialist)
 
-    assert "hetkeseis-juhis" not in page(signed_in, edit_url(matter))
+    body = page(signed_in, edit_url(matter))
+    assert 'data-stage-guidance="hetkeseis-juhis"' in body
+    found = re.search(
+        r'<script id="hetkeseis-juhis" type="application/json">(.*?)</script>', body, re.S
+    )
+    assert found
+    assert json.loads(found.group(1)) == stage_guidance_payload()
+    assert "chip--atypical" not in body
+
+
+def test_the_edit_page_keeps_a_closed_files_stage_out_of_the_guidance(signed_in, specialist):
+    """A closed file's stage is stated, not offered — nothing there to dim (RULE-03)."""
+    from app.matters.services import close_matter
+    from app.workflow.enums import Disposition
+
+    matter = factories.MatterFactory(
+        owner=specialist, stage=StageVocabulary.objects.get(key="parliament")
+    )
+    close_matter(matter=matter, disposition=Disposition.OTHER, actor=specialist)
+    matter.refresh_from_db()
+    assert not matter.is_open
+
+    body = page(signed_in, edit_url(matter))
+    row = body.split('data-stage-guidance="hetkeseis-juhis"', 1)[1].split("</fieldset>", 1)[0]
+    assert 'type="radio"' not in row
+    assert f'type="hidden" name="stage" value="{matter.stage_id}"' in row
 
 
 @pytest.mark.parametrize(

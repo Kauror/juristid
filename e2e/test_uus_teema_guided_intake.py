@@ -8,11 +8,16 @@ What only a running page can settle:
   a dimmed `ELi menetluses` is still clickable, looks chosen once chosen, saves,
   and is exactly what the Teema then holds;
 * **C** — `ELi konsultatsioon` dims the domestic stages;
-* **D** — `ELi direktiiv` + `Seadus` combine by **union**;
+* **D** — one instrument at a time: choosing another re-dims at once, and a
+  historical pair (planted, as no page can make one now) still guides by
+  **union** on `Muuda teemat`;
 * **E** — changing the instruments re-dims immediately and never clears the
   chosen stage;
 * **G** — the dimming is not colour alone: a dotted edge, and one sentence in
   the explanation the radio is described by — chosen or not;
+* **H** — `VTK` and `Koja ettepanek või pöördumine` choose `Idee` on an empty,
+  untouched `Hetkeseis`, say so, take it back when the instrument changes, and
+  never again once the lawyer has chosen — `Määramata` included;
 * **F** — one realistic Teema through every section, files included — a signed
   container among them, so moving `Failid` cannot quietly regress
   docs/adr/0125.
@@ -31,7 +36,14 @@ import pytest
 from playwright.sync_api import expect
 
 from app.workflow.stage_guidance import ATYPICAL_STAGE_NOTE
-from e2e.conftest import MARTIN, give_first_step, sign_in, start_first_step, unique_title
+from e2e.conftest import (
+    MARTIN,
+    give_first_step,
+    plant_historical_instruments,
+    sign_in,
+    start_first_step,
+    unique_title,
+)
 from tests.synthetic_containers import signed_container
 
 pytestmark = pytest.mark.e2e
@@ -71,11 +83,23 @@ def _dimmed(page) -> set[str]:
 
 
 def _instrument(page, name: str):
-    return page.get_by_role("checkbox", name=name, exact=True)
+    """A chip in the `Õigusakt` row. Scoped, because «Määramata» is a radio in
+    both rows since the one-instrument rule (docs/adr/0070, 2026-10-09)."""
+    return page.locator('fieldset:has(input[name="legal_instruments"])').get_by_role(
+        "radio", name=name, exact=True
+    )
+
+
+def _no_instrument(page):
+    """«Määramata» in the `Õigusakt` row — the radio that takes the answer back."""
+    return page.locator('input[name="legal_instruments"][value=""]')
 
 
 def _stage(page, name: str):
-    return page.get_by_role("radio", name=name, exact=True)
+    """A chip in the `Hetkeseis` row, scoped for the same reason as `_instrument`."""
+    return page.locator('fieldset:has(> .chiprow input[name="stage"])').get_by_role(
+        "radio", name=name, exact=True
+    )
 
 
 def _chosen_stage(page) -> str:
@@ -228,13 +252,31 @@ def test_c_an_eu_consultation_dims_the_domestic_stages(page, base_url, screensho
 # ---------------------------------------------------------------------------
 
 
-def test_d_a_directive_and_a_law_combine_by_union(page, base_url):
+def test_d_one_instrument_at_a_time_and_a_historical_pair_by_union(page, base_url):
     _open(page, base_url)
 
     _instrument(page, "ELi direktiiv").check()
     assert "parliament" in _dimmed(page)
+    assert "awaiting_transposition" not in _dimmed(page)
 
+    # Choosing `Seadus` replaces the directive: the EU stages dim instead.
     _instrument(page, "Seadus").check()
+    expect(_instrument(page, "ELi direktiiv")).not_to_be_checked()
+    dimmed = _dimmed(page)
+    assert "parliament" not in dimmed
+    assert {"eu_procedure", "awaiting_transposition"} <= dimmed
+
+    # A Matter filed before the rule with both keeps them, and «Jäta alles»
+    # guides by their union on `Muuda teemat` (docs/adr/0070, 0130).
+    page.fill("#id_title", unique_title("Juhis ajalooline paar"))
+    give_first_step(page)
+    page.get_by_role("button", name="Salvesta", exact=True).click()
+    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    start_first_step(page)
+    plant_historical_instruments(page, ["ELi direktiiv", "Seadus"])
+    page.goto(page.url + "muuda/")
+    page.wait_for_load_state("networkidle")
+    expect(page.locator('input[name="legal_instruments"][value="jata-alles"]')).to_be_checked()
     dimmed = _dimmed(page)
     for normal in ("eu_procedure", "awaiting_transposition", "parliament"):
         assert normal not in dimmed, (normal, dimmed)
@@ -253,7 +295,7 @@ def test_e_changing_the_instruments_redims_and_keeps_the_choice(page, base_url):
     assert "parliament" not in _dimmed(page)
 
     # Swap the instrument: Riigikogus becomes atypical, and stays chosen.
-    _instrument(page, "Seadus").uncheck()
+    _no_instrument(page).check()
     assert _dimmed(page) == set()
     _instrument(page, "ELi määrus").check()
     assert "parliament" in _dimmed(page)
@@ -261,8 +303,8 @@ def test_e_changing_the_instruments_redims_and_keeps_the_choice(page, base_url):
     assert _chosen_stage(page) == "parliament"
     expect(_stage(page, "Riigikogus")).to_be_checked()
 
-    # And back to nothing ticked: nothing dimmed, choice unchanged.
-    _instrument(page, "ELi määrus").uncheck()
+    # And back to nothing chosen: nothing dimmed, choice unchanged.
+    _no_instrument(page).check()
     assert _dimmed(page) == set()
     assert _chosen_stage(page) == "parliament"
 
@@ -324,8 +366,8 @@ def test_g_a_dimmed_stage_says_so_without_colour(page, base_url):
     expect(bubble).to_be_visible()
     expect(bubble.locator(".stagehelp__note")).to_have_text(ATYPICAL_STAGE_NOTE)
 
-    # Nothing ticked again: both cues go, the choice stays.
-    _instrument(page, "ELi määrus").uncheck()
+    # Nothing chosen again: both cues go, the choice stays.
+    _no_instrument(page).check()
     assert _edge(page, "Riigikogus") == "solid"
     assert ATYPICAL_STAGE_NOTE not in _description(page, "Riigikogus")
     expect(_stage(page, "Riigikogus")).to_be_checked()
@@ -390,3 +432,86 @@ def test_f_a_full_creation_with_files(page, base_url, screenshots):
     page.wait_for_load_state("networkidle")
     expect(page.locator('input[name="policy_areas"]:checked')).to_have_count(2)
     expect(_stage(page, "ELi menetluses")).to_be_checked()
+
+
+# ---------------------------------------------------------------------------
+# H — a stage chosen from the instrument (docs/adr/0130, amendment of 2026-10-09)
+# ---------------------------------------------------------------------------
+
+
+def _prefill_note(page):
+    return page.locator("[data-stage-prefill-note]")
+
+
+def test_h_vtk_chooses_idee_on_an_untouched_hetkeseis_and_takes_it_back(page, base_url):
+    _open(page, base_url)
+    expect(_stage(page, "Määramata")).to_be_checked()
+    expect(_prefill_note(page)).to_be_hidden()
+
+    _instrument(page, "VTK").check()
+    assert _chosen_stage(page) == "idea"
+    expect(_prefill_note(page)).to_be_visible()
+
+    # An instrument that does not decide the stage takes back the one chosen
+    # for it — and only that one.
+    _instrument(page, "Seadus").check()
+    assert _chosen_stage(page) == ""
+    expect(_prefill_note(page)).to_be_hidden()
+
+    _instrument(page, "Koja ettepanek või pöördumine").check()
+    assert _chosen_stage(page) == "idea"
+
+    _no_instrument(page).check()
+    assert _chosen_stage(page) == ""
+
+
+def test_h_a_stage_the_lawyer_chose_is_never_replaced(page, base_url):
+    _open(page, base_url)
+    _stage(page, "Riigikogus").check()
+
+    _instrument(page, "VTK").check()
+
+    assert _chosen_stage(page) == "parliament"
+    expect(_prefill_note(page)).to_be_hidden()
+
+
+def test_h_a_cleared_stage_is_not_put_back(page, base_url):
+    _open(page, base_url)
+    _instrument(page, "VTK").check()
+    assert _chosen_stage(page) == "idea"
+
+    # The lawyer says «not decided yet» — deliberately.
+    _stage(page, "Määramata").check()
+    _instrument(page, "Seadus").check()
+    _instrument(page, "VTK").check()
+
+    assert _chosen_stage(page) == ""
+    expect(_prefill_note(page)).to_be_hidden()
+
+
+def test_h_the_keyboard_reaches_it_the_same_way(page, base_url):
+    _open(page, base_url)
+    _no_instrument(page).focus()
+    page.keyboard.press("ArrowRight")
+    expect(_instrument(page, "VTK")).to_be_checked()
+    assert _chosen_stage(page) == "idea"
+
+
+def test_h_the_chosen_stage_is_what_the_teema_holds(page, base_url):
+    _open(page, base_url)
+    page.fill("#id_title", unique_title("Eeltäidetud idee"))
+    _instrument(page, "VTK").check()
+    give_first_step(page)
+    page.get_by_role("button", name="Salvesta", exact=True).click()
+    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    start_first_step(page)
+
+    page.goto(page.url + "muuda/")
+    page.wait_for_load_state("networkidle")
+    expect(_stage(page, "Idee")).to_be_checked()
+    # And the edit page chooses nothing: taking the stage away and changing the
+    # instrument leaves it taken away.
+    _stage(page, "Määramata").check()
+    _instrument(page, "Seadus").check()
+    _instrument(page, "VTK").check()
+    assert _chosen_stage(page) == ""

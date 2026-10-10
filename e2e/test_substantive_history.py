@@ -165,7 +165,7 @@ def _matter_with_instrument(page, base_url: str, instrument: str, *, stage: str 
     page.goto(f"{base_url}/teemad/uus/")
     page.wait_for_load_state("networkidle")
     page.fill("#id_title", unique_title("Menetluse kulg"))
-    page.get_by_role("checkbox", name=instrument, exact=True).check()
+    page.get_by_role("radio", name=instrument, exact=True).check()
     if stage is not None:
         # Behind a menu since docs/adr/0094 §2; it shuts itself once answered.
         open_hetkeseis(page)

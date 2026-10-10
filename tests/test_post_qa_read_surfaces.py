@@ -324,12 +324,15 @@ def test_one_oigusakt_reads_on_teema_andmed(signed_in, specialist):
 
 
 def test_several_oigusakt_values_all_read(signed_in, specialist):
+    """A historical pair is still read whole on the Teema page.
+
+    No interactive path creates one since the one-instrument rule
+    (docs/adr/0070, amendment of 2026-10-09), so the pair is written straight to
+    the relation, the way a Matter filed before the rule or imported from a
+    register cell naming two holds it.
+    """
     matter = factories.MatterFactory(owner=specialist)
-    set_legal_instruments(
-        matter=matter,
-        legal_instruments=[instrument("seadus"), instrument("maarus")],
-        actor=specialist,
-    )
+    matter.legal_instruments.set([instrument("seadus"), instrument("maarus")])
 
     body = detail(signed_in, matter)
 

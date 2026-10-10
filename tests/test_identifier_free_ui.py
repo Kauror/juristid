@@ -112,15 +112,19 @@ def _sent_submission(matter, *, title: str, sent, sent_by=None):
 # ---------------------------------------------------------------------------
 
 
-def test_the_matter_page_names_the_topic_and_not_the_record(signed_in, marked_matter):
+def test_the_matter_page_names_the_topic_and_shows_the_reference_once(signed_in, marked_matter):
     """Title in the <h1> and in the tab title; the reference in neither.
 
-    The v2 design put the reference back in one place on this page — the
-    «Teema andmed» facts rail, under the label `Teemaviide`, beside the other
-    things somebody looks up (02-EKRAANID §C). The rule this file is about is
-    unchanged and is what the assertions below check: the *topic* is named by
-    its title, in the heading, the crumb and the tab title, and the reference
+    The rule this file is about is unchanged: the *topic* is named by its
+    title, in the heading, the crumb and the tab title, and the reference
     identifies rather than names.
+
+    Where the reference may appear has moved three times. The v2 design put it
+    in the «Teema andmed» rail; the owner's compact round (2026-10-07) took it
+    off the page altogether; and the owner's brief of 2026-10-09 (R4) brought it
+    back as `Teemaviide` — once, in the header's meta line, copyable — because
+    a colleague quotes it and nobody should have to read it out of a URL
+    (docs/adr/0150 §4). The rail still does not carry it.
     """
     body = _get(signed_in, "matters:matter_detail", pk=marked_matter.pk)
 
@@ -129,11 +133,42 @@ def test_the_matter_page_names_the_topic_and_not_the_record(signed_in, marked_ma
     assert TITLE in heading
     assert REFERENCE not in heading
     assert f"<title>{REFERENCE}" not in body
-    # Once, in the rail, under a label.
-    # Not in the rail either since the owner's compact round (2026-10-07):
-    # `Teemaviide` left `Teema andmed`, so the page carries no reference.
-    assert REFERENCE not in body
+    # Once, under its label, beside a button that copies it.
+    assert body.count(REFERENCE) == 1
+    shown = body.split('id="teemaviide">', 1)[1].split("</span>", 1)[0]
+    assert shown == REFERENCE
+    meta = body.split('class="metaline"', 1)[1].split("matters/partials/summary", 1)[0]
+    assert "Teemaviide" in meta
+    assert 'data-copy-from="teemaviide"' in body
     assert "railcard__ref" not in body
+
+
+def test_a_matter_without_a_reference_shows_no_teemaviide(signed_in, specialist):
+    """A historical record the register never numbered has none, and none is made up."""
+    matter = factories.MatterFactory(owner=specialist, reference_year=None, reference_number=None)
+    assert matter.display_reference == ""
+
+    body = _get(signed_in, "matters:matter_detail", pk=matter.pk)
+
+    assert 'id="teemaviide"' not in body
+    assert "Teemaviide" not in body
+    matter.refresh_from_db()
+    assert (matter.reference_year, matter.reference_number) == (None, None)
+
+
+def test_showing_the_reference_allocates_and_changes_nothing(signed_in, marked_matter):
+    """R4 is presentation: the number is read, never regenerated or reallocated."""
+    from app.matters.models import MatterReferenceSequence
+
+    before = (marked_matter.reference_year, marked_matter.reference_number)
+    sequences = list(MatterReferenceSequence.objects.values_list("year", "last_number"))
+
+    _get(signed_in, "matters:matter_detail", pk=marked_matter.pk)
+    _get(signed_in, "matters:matter_detail", pk=marked_matter.pk)
+
+    marked_matter.refresh_from_db()
+    assert (marked_matter.reference_year, marked_matter.reference_number) == before
+    assert list(MatterReferenceSequence.objects.values_list("year", "last_number")) == sequences
 
 
 def test_the_breadcrumb_stops_at_teemad(signed_in, marked_matter):

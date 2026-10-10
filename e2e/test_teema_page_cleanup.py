@@ -35,6 +35,7 @@ from e2e.conftest import (
     open_add_panel,
     open_hetkeseis,
     open_kaik_row,
+    plant_historical_instruments,
     sign_in,
     unique_title,
 )
@@ -67,8 +68,11 @@ def a_procedure_matter(
     page.goto(f"{base_url}/teemad/uus/")
     page.wait_for_load_state("networkidle")
     page.fill("#id_title", unique_title(label))
-    for instrument in instruments:
-        page.get_by_role("checkbox", name=instrument, exact=True).check()
+    # One through the page — the control takes one since the owner's
+    # decision of 2026-10-09 — and a pair planted after the save, the way a
+    # Matter filed before that decision holds it.
+    if instruments:
+        page.get_by_role("radio", name=instruments[0], exact=True).check()
     open_hetkeseis(page)
     page.get_by_role("radio", name=hetkeseis, exact=True).check()
     if deadline:
@@ -76,6 +80,8 @@ def a_procedure_matter(
     page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     page.wait_for_load_state("networkidle")
+    if len(instruments) > 1:
+        plant_historical_instruments(page, instruments)
     return page.url
 
 
@@ -585,3 +591,29 @@ def test_opinions_sent_after_the_file_opened_read_after_algus(page, base_url, wi
     )
     # Nine columns fit at 768 and above, so the rail itself does not scroll.
     assert geometry["scrollWidth"] <= geometry["clientWidth"] + 1, (width, geometry)
+
+
+# ---------------------------------------------------------------------------
+# Teemaviide, once, in the header (docs/adr/0150 §4)
+# ---------------------------------------------------------------------------
+
+
+def test_the_teemaviide_is_in_the_header_and_copies(page, base_url):
+    sign_in(page, base_url, SANDRA)
+    page.context.grant_permissions(["clipboard-read", "clipboard-write"], origin=base_url)
+    a_procedure_matter(
+        page, base_url, "Teemaviide päises", instruments=("Seadus",), hetkeseis="Idee"
+    )
+
+    reference = page.locator("#teemaviide")
+    expect(reference).to_be_visible()
+    value = (reference.text_content() or "").strip()
+    assert re.fullmatch(r"\d{4}_\d+", value), value
+    # Beside the title, never in it, and not on the rail.
+    assert value not in (page.locator("h1.matterhead__title").text_content() or "")
+    expect(page.locator("#teema-andmed")).not_to_contain_text("Teemaviide")
+
+    button = page.get_by_role("button", name="Kopeeri teemaviide")
+    button.click()
+    expect(button).to_have_text("Kopeeritud")
+    assert page.evaluate("() => navigator.clipboard.readText()") == value

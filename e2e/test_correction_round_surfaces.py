@@ -42,7 +42,7 @@ def _patterned(page, base_url: str, prefix: str) -> str:
     )
     page.goto(f"{url}muuda/")
     page.wait_for_load_state("networkidle")
-    page.get_by_role("checkbox", name="Seadus", exact=True).check()
+    page.get_by_role("radio", name="Seadus", exact=True).check()
     page.get_by_role("button", name="Salvesta").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     return url

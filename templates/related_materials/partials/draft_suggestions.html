@@ -81,8 +81,14 @@ one (docs/adr/0087 §2).
         </li>
       {% endfor %}
     </ul>
-    {% for pk in kept_links %}
-      <input type="hidden" name="seo_teemaga" value="{{ pk }}">
-    {% endfor %}
   </section>
 {% endif %}
+{% comment %}
+  Outside the `if`: a ticked card the new answer no longer shows is still a
+  link somebody chose, and an answer with no cards at all — or a refused save
+  re-read before the engine has anything to say — must not drop it either
+  (docs/adr/0150 §3).
+{% endcomment %}
+{% for pk in kept_links %}
+  <input type="hidden" name="seo_teemaga" value="{{ pk }}">
+{% endfor %}

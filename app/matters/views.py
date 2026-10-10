@@ -108,7 +108,7 @@ from app.matters import person_work as person_workspace
 from app.matters.deletion import delete_matter, plan_matter_deletion
 from app.matters.department_dashboard import SeisFigure
 from app.matters.document_context import related_records
-from app.matters.enums import MatterOrigin, RecordMode
+from app.matters.enums import MatterDataClass, MatterOrigin, RecordMode
 from app.matters.episode_timeline import matter_episode_timeline
 from app.matters.forms import (
     ENGAGEMENT_UNCHANGED,
@@ -284,7 +284,7 @@ from app.matters.timeline import (
 )
 from app.organisations.models import Organisation
 from app.related_materials.selectors import related_materials_for
-from app.related_materials.views import LINK_ON_CREATE_FIELD
+from app.related_materials.views import LINK_ON_CREATE_CHOSEN_FIELD, LINK_ON_CREATE_FIELD
 from app.search import services as search_services
 from app.submissions import embedded as opinions
 from app.submissions.forms import (
@@ -2143,9 +2143,17 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                 # anywhere takes the links with the Teema, and a link that cannot
                 # be made takes the Teema with it. Only Matters this reader may
                 # see; nothing is linked that was not ticked.
+                #
+                # **And the ones chosen by hand** through `Seo olemasoleva
+                # teemaga` (docs/adr/0150 §3): one list of targets, through the
+                # same resolution and the same service, in the same
+                # transaction. A Teema both ticked and chosen is linked once.
                 _link_ticked_similar_matters(
                     matter=matter,
-                    ticked=request.POST.getlist(LINK_ON_CREATE_FIELD),
+                    ticked=[
+                        *request.POST.getlist(LINK_ON_CREATE_FIELD),
+                        *request.POST.getlist(LINK_ON_CREATE_CHOSEN_FIELD),
+                    ],
                     actor=request.user,
                 )
 
@@ -2338,7 +2346,9 @@ def _create_context(
         # `Õigusakt -> Hetkeseis` guidance, for the page's script: which stages
         # stay normal for which instrument. Presentation only — nothing on the
         # write path reads it (app/workflow/stage_guidance.py, docs/adr/0130).
-        "stage_guidance": stage_guidance_payload(),
+        # With the conservative prefill, which is this page's alone (docs/adr/0130,
+        # amendment of 2026-10-09, «a stage chosen from the instrument»).
+        "stage_guidance": stage_guidance_payload(prefill=True),
         # The form's own answers, so a refused save's redisplay does not propose
         # a sender over one the person has already given. On a GET the form is
         # unbound and `answered_on` is empty, which is what it was before
@@ -2381,7 +2391,41 @@ def _create_context(
         # person may have typed the same words by hand
         # (docs/adr/0064 amended 2026-09-12, static/js/app.js).
         "suggestion_state": _echoed_suggestion_state(request),
+        # The related Matters a refused save was carrying, handed back so the
+        # choice survives the refusal (docs/adr/0150 §3): the ones chosen by
+        # hand as rows of the list they were chosen into, the ticked
+        # suggestions as the values the cards' re-read posts back. Both are
+        # re-resolved through what this reader may open — nothing invisible is
+        # echoed — and both are empty on every GET.
+        **_echoed_related_choices(request),
         "nav_active": "teemad",
+    }
+
+
+def _echoed_related_choices(request: HttpRequest) -> dict[str, Any]:
+    if request.method != "POST":
+        return {"related_chosen": [], "similar_ticked": []}
+
+    def visible(name: str) -> list[Matter]:
+        wanted: list[uuid.UUID] = []
+        for value in request.POST.getlist(name)[:50]:
+            try:
+                pk = uuid.UUID(str(value))
+            except ValueError:
+                continue
+            if pk not in wanted:
+                wanted.append(pk)
+        found = {
+            item.pk: item
+            for item in Matter.objects.visible_to(request.user).filter(
+                pk__in=wanted, data_class=MatterDataClass.REAL
+            )
+        }
+        return [found[pk] for pk in wanted if pk in found]
+
+    return {
+        "related_chosen": visible(LINK_ON_CREATE_CHOSEN_FIELD),
+        "similar_ticked": [str(item.pk) for item in visible(LINK_ON_CREATE_FIELD)],
     }
 
 
@@ -2686,7 +2730,15 @@ def _link_ticked_similar_matters(*, matter: Any, ticked: list[str], actor: Any) 
             wanted.append(pk)
     if not wanted:
         return
-    others = {other.pk: other for other in Matter.objects.visible_to(actor).filter(pk__in=wanted)}
+    # Only Matters this reader may open, and only of the new Matter's own data
+    # class: a REAL Teema is never linked to synthetic TEST work, which neither
+    # the suggestions nor the search ever offer (docs/adr/0150 §3).
+    others = {
+        other.pk: other
+        for other in Matter.objects.visible_to(actor).filter(
+            pk__in=wanted, data_class=matter.data_class
+        )
+    }
     if len(others) != len(wanted):
         raise DomainError(SIMILAR_LINK_NOT_FOUND)
     for pk in wanted:
@@ -5403,6 +5455,9 @@ def _edit_context(
         # so their absence reads as a decision rather than as an omission
         # (Teema QA §2.2).
         "immutable_facts": _immutable_facts(matter),
+        # The `Õigusakt -> Hetkeseis` guidance, the matrix `Uus teema` reads
+        # (docs/adr/0130, amendment of 2026-10-09, «Muuda teemat»).
+        "stage_guidance": stage_guidance_payload(),
         # The sent opinions a changed deadline may name as its answer
         # (`matters/partials/response_deadline_fields.html`).
         "answerable_submissions": answerable_submissions(matter, request.user),

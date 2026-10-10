@@ -192,7 +192,7 @@ SURFACES = {
     # (docs/adr/0130 §4): the quietest text the application draws.
     "uus-teema-hetkeseis": _then(
         _go("/teemad/uus/"),
-        lambda p: p.get_by_role("checkbox", name="Seadus", exact=True).check(),
+        lambda p: p.get_by_role("radio", name="Seadus", exact=True).check(),
         lambda p: p.wait_for_selector(".chip--atypical"),
     ),
     "uus-teema-viga": _then(

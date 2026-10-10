@@ -316,7 +316,7 @@
    */
   [
     ["#valdkond-muu input[type=checkbox]", "valdkond-muu-tekst"],
-    ['[data-reveals="oigusakt-muu-tekst"] input[type=checkbox]', "oigusakt-muu-tekst"]
+    ['[data-reveals="oigusakt-muu-tekst"] input', "oigusakt-muu-tekst"]
   ].forEach(function (pair) {
     var chips = document.querySelectorAll(pair[0]);
     var revealed = document.getElementById(pair[1]);
@@ -343,8 +343,21 @@
         }
       }
     };
+    /* Õigusakt is a radio group since the one-instrument rule (docs/adr/0070,
+       amendment of 2026-10-09). Choosing another radio unticks a `Muu` one
+       without a `change` on it, so the whole group is listened to — every
+       input sharing a name with a revealing chip. */
+    var listened = new Set();
     Array.prototype.forEach.call(chips, function (chip) {
-      chip.addEventListener("change", syncOther);
+      var group = chip.type === "radio" && chip.form
+        ? chip.form.querySelectorAll('input[name="' + chip.name + '"]')
+        : [chip];
+      Array.prototype.forEach.call(group, function (input) {
+        if (!listened.has(input)) {
+          listened.add(input);
+          input.addEventListener("change", syncOther);
+        }
+      });
     });
     syncOther();
   });
@@ -577,6 +590,16 @@
           return control.type !== "checkbox" && control.type !== "radio";
         })[0];
         var previous = autofilled[name] || [];
+
+        /* A radio group holds one answer — `Õigusakt` since docs/adr/0070's
+           amendment of 2026-10-09 — so two proposals for it are a conflict,
+           and a conflict fills nothing: ticking both would silently keep the
+           last. */
+        if (boxes.length && values.length > 1 && boxes.every(function (box) {
+          return box.type === "radio";
+        })) {
+          return;
+        }
 
         if (boxes.length) {
           var checked = boxes
@@ -3060,25 +3083,28 @@
     });
   }
 
-  /* ---- Õigusakt -> Hetkeseis guidance on Uus teema --------------------------
-   * Once an `Õigusakt` is ticked, the `Hetkeseis` chips that do not normally
-   * fit ANY ticked instrument get `chip--atypical`, which draws them quieter,
-   * and their explanation gains one sentence saying so (`atypical_note`). That
-   * is all this does (app/workflow/stage_guidance.py, docs/adr/0130).
+  /* ---- Õigusakt -> Hetkeseis guidance, on Uus teema and Muuda teemat -------
+   * Once an `Õigusakt` is chosen, the `Hetkeseis` chips that do not normally
+   * fit it get `chip--atypical`, which draws them quieter, and their
+   * explanation gains one sentence saying so (`atypical_note`). That is all
+   * this does (app/workflow/stage_guidance.py, docs/adr/0130).
    *
    *  - Two states only: a chip has the class or it does not.
    *  - Nothing is disabled, hidden, unticked or validated. A dimmed chip stays
    *    a radio like any other, and a chosen one looks chosen — the stylesheet
    *    stops dimming at `:checked`, so this never has to know what is chosen.
-   *  - Several instruments combine by UNION: a stage stays normal if it is
-   *    normal for at least one of them.
-   *  - Nothing ticked, or an instrument the matrix has no row for, means no
-   *    guidance at all — every chip normal.
+   *  - One instrument is chosen at a time since the one-instrument rule
+   *    (docs/adr/0070, amendment of 2026-10-09). The one choice that stands
+   *    for several — «Jäta alles» on a Matter that already holds them — names
+   *    every key in `data-instrument-keys`, and those still combine by UNION:
+   *    a stage stays normal if it is normal for at least one of them.
+   *  - Nothing chosen («Määramata»), or an instrument the matrix has no row
+   *    for, means no guidance at all — every chip normal.
    *
    * Keys, never labels: `data-instrument-key` on each `Õigusakt` input and
    * `data-stage-key` on each `Hetkeseis` input; `Määramata` has no key and is
    * never touched. The matrix arrives as JSON from the server, so there is one
-   * copy of it, in Python.
+   * copy of it, in Python — and the edit page reads the same one.
    */
   function bindStageGuidance(scope) {
     (scope || document).querySelectorAll("[data-stage-guidance]").forEach(function (row) {
@@ -3099,13 +3125,42 @@
       var always = guidance.always || [];
       var byInstrument = guidance.instruments || {};
       var note = guidance.atypical_note || "";
+      /* The conservative prefill (docs/adr/0130, amendment of 2026-10-09, «a
+         stage chosen from the instrument»). `Uus teema` only — the payload
+         carries no `prefill` on `Muuda teemat`. Rules:
+          - only on a `Hetkeseis` that arrived empty and nobody has touched: a
+            refused save that comes back holding a stage counts as touched;
+          - only for an instrument that names exactly one stage (`VTK`, `Koja
+            ettepanek või pöördumine` → `Idee`);
+          - a person's own choice — any stage, «Määramata» included — ends it
+            for good, so a stage they cleared is never put back;
+          - choosing another instrument takes back a stage this put there, and
+            only that one. */
+      var prefill = guidance.prefill || null;
+      var prefillNote = row.querySelector("[data-stage-prefill-note]");
+      var checkedStageKey = function () {
+        var checked = row.querySelector('input[name="stage"]:checked');
+        return checked ? checked.getAttribute("data-stage-key") || "" : "";
+      };
+      var stageTouched = checkedStageKey() !== "";
+      var stageChosenHere = null;
+
+      var chosenKeys = function () {
+        var keys = [];
+        form.querySelectorAll('input[name="legal_instruments"]:checked').forEach(function (input) {
+          var several = input.getAttribute("data-instrument-keys");
+          var one = input.getAttribute("data-instrument-key");
+          (several ? several.split(" ") : one ? [one] : []).forEach(function (key) {
+            if (key) {
+              keys.push(key);
+            }
+          });
+        });
+        return keys;
+      };
 
       var typicalStages = function () {
-        var chosen = Array.prototype.slice
-          .call(form.querySelectorAll('input[name="legal_instruments"]:checked'))
-          .map(function (input) {
-            return input.getAttribute("data-instrument-key") || "";
-          });
+        var chosen = chosenKeys();
         if (!chosen.length) {
           return null;
         }
@@ -3139,12 +3194,193 @@
         });
       };
 
+      var sayPrefill = function (on) {
+        if (!prefillNote) {
+          return;
+        }
+        prefillNote.textContent = on ? guidance.prefill_note || "" : "";
+        prefillNote.hidden = !on;
+      };
+
+      var chooseStage = function (key) {
+        var target = key
+          ? row.querySelector('input[name="stage"][data-stage-key="' + key + '"]')
+          : row.querySelector('input[name="stage"][value=""]');
+        if (target && !target.checked) {
+          target.checked = true;
+        }
+      };
+
+      var applyPrefill = function () {
+        if (!prefill || stageTouched) {
+          return;
+        }
+        var keys = chosenKeys();
+        var wanted = keys.length === 1 ? prefill[keys[0]] || null : null;
+        var now = checkedStageKey();
+        if (wanted && (now === "" || now === stageChosenHere)) {
+          chooseStage(wanted);
+          stageChosenHere = wanted;
+          sayPrefill(true);
+        } else if (!wanted && stageChosenHere !== null && now === stageChosenHere) {
+          chooseStage("");
+          stageChosenHere = null;
+          sayPrefill(false);
+        }
+      };
+
       form.addEventListener("change", function (event) {
         if (event.target && event.target.name === "legal_instruments") {
           sync();
+          applyPrefill();
+        } else if (event.target && event.target.name === "stage" && event.isTrusted) {
+          /* A person chose — a stage or «Määramata». It is theirs from now. */
+          stageTouched = true;
+          stageChosenHere = null;
+          sayPrefill(false);
         }
       });
       sync();
+    });
+  }
+
+  /* ---- «Seo olemasoleva teemaga» on Uus teema -------------------------------
+   * Search the register by title, `Teemaviide` or keyword and choose a Teema
+   * to link — including one the suggestions above never proposed
+   * (docs/adr/0150 §3). Choosing adds a row with a hidden
+   * `seo_teemaga_valitud` value and a × to take it back; nothing is linked
+   * until the Teema is created, by `matter_create`, in one transaction.
+   *
+   *  - The block is rendered `hidden` and shown here: a search box inside the
+   *    create form would submit the whole Teema on Enter without this, so
+   *    Enter searches instead.
+   *  - Results come from `related_materials:draft_picker` as HTML the server
+   *    escaped; a chosen row is built from the page's own `<template>` and
+   *    filled with `textContent`, never from a string.
+   *  - The chosen ones are sent with each search so a result can be picked
+   *    once; a stale answer is aborted rather than raced.
+   */
+  function bindRelatedPicker(scope) {
+    (scope || document).querySelectorAll("[data-related-picker]").forEach(function (block) {
+      if (!once(block, "RelatedPicker")) {
+        return;
+      }
+      var url = block.getAttribute("data-related-picker");
+      var box = block.querySelector('input[type="search"]');
+      var found = block.querySelector(".relpick__found");
+      var chosen = block.querySelector("[data-related-chosen]");
+      var template = block.querySelector("template[data-related-chosen-template]");
+      if (!url || !box || !found || !chosen || !template || !window.fetch) {
+        return;
+      }
+      block.hidden = false;
+
+      var timer = null;
+      var controller = null;
+      var asked = null;
+
+      var chosenIds = function () {
+        return Array.prototype.map.call(
+          chosen.querySelectorAll('input[name="seo_teemaga_valitud"]'),
+          function (input) {
+            return input.value;
+          }
+        );
+      };
+
+      var search = function () {
+        var query = box.value.trim();
+        if (query === asked) {
+          return;
+        }
+        asked = query;
+        if (controller) {
+          controller.abort();
+          controller = null;
+        }
+        if (!query) {
+          found.innerHTML = "";
+          return;
+        }
+        var params = new URLSearchParams();
+        params.set("q", query);
+        chosenIds().forEach(function (id) {
+          params.append("seo_teemaga_valitud", id);
+        });
+        controller = new AbortController();
+        fetch(url + "?" + params.toString(), {
+          credentials: "same-origin",
+          signal: controller.signal
+        })
+          .then(function (response) {
+            return response.ok ? response.text() : "";
+          })
+          .then(function (html) {
+            found.innerHTML = html;
+          })
+          .catch(function () {
+            /* Aborted by a newer search, or offline: the box keeps its text. */
+          });
+      };
+
+      box.addEventListener("input", function () {
+        window.clearTimeout(timer);
+        timer = window.setTimeout(search, 300);
+      });
+      box.addEventListener("keydown", function (event) {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          window.clearTimeout(timer);
+          asked = null;
+          search();
+        }
+      });
+
+      found.addEventListener("click", function (event) {
+        var button = event.target.closest("[data-related-pick]");
+        if (!button) {
+          return;
+        }
+        var id = button.getAttribute("data-related-pick");
+        if (chosenIds().indexOf(id) === -1) {
+          var row = template.content.firstElementChild.cloneNode(true);
+          var title = button.getAttribute("data-related-title") || "";
+          var reference = button.getAttribute("data-related-reference") || "";
+          row.setAttribute("data-related-id", id);
+          row.querySelector('input[name="seo_teemaga_valitud"]').value = id;
+          var referenceNode = row.querySelector(".relpick__ref");
+          if (reference) {
+            referenceNode.textContent = reference;
+          } else {
+            referenceNode.remove();
+          }
+          row.querySelector(".relpick__title").textContent = title;
+          row.querySelector("[data-related-remove]").setAttribute(
+            "aria-label",
+            "Eemalda valik: " + title
+          );
+          chosen.appendChild(row);
+        }
+        var result = button.closest("li");
+        if (result) {
+          result.remove();
+        }
+        box.focus();
+      });
+
+      chosen.addEventListener("click", function (event) {
+        var remove = event.target.closest("[data-related-remove]");
+        if (!remove) {
+          return;
+        }
+        var row = remove.closest("li");
+        if (row) {
+          row.remove();
+        }
+        /* The next search may offer it again. */
+        asked = null;
+        box.focus();
+      });
     });
   }
 
@@ -4579,6 +4815,7 @@
     bindChipCounts(document);
     bindStageHelp(document);
     bindStageGuidance(document);
+    bindRelatedPicker(document);
     bindRequiredAction(document);
     bindNextStepOffers(document);
     bindPhaseDateOffers(document);

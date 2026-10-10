@@ -122,6 +122,25 @@ def reserve_matter_reference(year: int, number: int) -> int:
     return sequence.last_number
 
 
+#: A Matter created or reclassified here names at most one `Õigusakt` (the
+#: owner's decision of 2026-10-09, docs/adr/0070's amendment of that date).
+#: The relation stays many-to-many, so a Matter that already holds several —
+#: filed before the rule, or imported from a register cell naming two — keeps
+#: them until somebody deliberately chooses one.
+ONE_LEGAL_INSTRUMENT_REFUSAL = "Teemal saab olla üks õigusakt. Vali üks."
+
+
+def refuse_several_legal_instruments(instruments: Any) -> None:
+    """The one-instrument rule, for the two writers a person reaches.
+
+    ``instruments`` is whatever the caller is about to store; duplicates of one
+    row are one answer, as `.set()` treats them.
+    """
+    distinct = {getattr(item, "pk", item) for item in (instruments or [])}
+    if len(distinct) > 1:
+        raise DomainError(ONE_LEGAL_INSTRUMENT_REFUSAL)
+
+
 @transaction.atomic
 def create_imported_matter(
     *,
@@ -246,6 +265,11 @@ def create_matter(
     # sets it is a form, and adding a keyword to a service twenty callers share
     # to serve one of them buys nothing (task §17).
     legal_instruments = extra.pop("legal_instruments", None)
+    # Native creation is a person filing new work, and new work names one
+    # instrument. An importer reads a register cell that may name two and
+    # records what it says (`create_imported_matter`, origin LEGACY_IMPORT).
+    if origin == MatterOrigin.NATIVE:
+        refuse_several_legal_instruments(legal_instruments)
     # Validated before the Matter exists, so a bad sender fails the whole
     # creation rather than leaving a titled Matter behind with no senders.
     senders = normalize_source_organisations(source_organisations)
@@ -1791,12 +1815,18 @@ def set_legal_instruments(
 
     Returns early when nothing moved, so a save that changed a title writes one
     event rather than two.
+
+    **A change leaves at most one** (docs/adr/0070, amendment of 2026-10-09).
+    The unchanged set of a Matter that already holds several is not a change —
+    that is the early return above the rule, and it is what lets `Muuda teemat`
+    keep a historical classification through a save about something else.
     """
     chosen = list(legal_instruments)
     before = {item.pk for item in matter.legal_instruments.all()}
     after = {item.pk for item in chosen}
     if before == after:
         return matter
+    refuse_several_legal_instruments(chosen)
 
     matter.legal_instruments.set(chosen)
     # `.set()` writes the join table and nothing else, so without this the

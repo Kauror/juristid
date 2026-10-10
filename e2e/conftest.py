@@ -13,9 +13,12 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from datetime import date, timedelta
+from pathlib import Path
 
 import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -576,6 +579,52 @@ def _reach_classification(page, selector: str) -> None:
 def open_valdkond(page) -> None:
     """Make `Valdkonnad` answerable on `Uus teema` — which it already is."""
     _reach_classification(page, VALDKONNAD_FIELD)
+
+
+#: The checkout, for the `manage.py` a planting helper runs.
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+
+#: Sets the Matter `E2E_PAIR_MATTER` to hold the instruments whose labels are
+#: `E2E_PAIR_LABELS` (`|`-separated). A literal with its values in the
+#: environment, the shape `e2e/test_substantive_history.py` uses for `Etapp`.
+_PAIR_SCRIPT = (
+    "import os;"
+    "from app.matters.models import Matter;"
+    "from app.taxonomy.models import LegalInstrumentType as T;"
+    "labels = os.environ['E2E_PAIR_LABELS'].split('|');"
+    "rows = [T.objects.get(label_et=label) for label in labels];"
+    "Matter.objects.get(pk=os.environ['E2E_PAIR_MATTER']).legal_instruments.set(rows);"
+    "print(len(rows))"
+)
+
+
+def plant_historical_instruments(page, labels) -> None:
+    """Give the Matter open in ``page`` several `Õigusakt`, the way history has them.
+
+    Since the one-instrument rule (docs/adr/0070, amendment of 2026-10-09)
+    nothing a person can reach writes two, but a Matter filed before it — or
+    imported from a register cell naming `S, M` — holds them, and the pages that
+    read such a file still have to read it. So a browser test about how the page
+    *reads* a pair plants it in the server's own database, then reloads.
+    """
+    matter_id = re.search(r"/teemad/([0-9a-f-]{36})/", page.url).group(1)
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, "manage.py", "shell", "-c", _PAIR_SCRIPT],
+        cwd=REPOSITORY_ROOT,
+        env={
+            **os.environ,
+            "DJANGO_SETTINGS_MODULE": "config.settings",
+            "E2E_PAIR_MATTER": matter_id,
+            "E2E_PAIR_LABELS": "|".join(labels),
+        },
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert result.returncode == 0, "\n".join(["stdout:", result.stdout, "stderr:", result.stderr])
+    page.reload()
+    page.wait_for_load_state("networkidle")
 
 
 def open_hetkeseis(page) -> None:

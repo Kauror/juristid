@@ -213,7 +213,10 @@ before.
 ### 7. Union, not intersection
 
 A stage stays normal when it is normal for **at least one** ticked instrument,
-and is dimmed only when it is atypical for **every** one. One living Teema can
+and is dimmed only when it is atypical for **every** one.
+**Narrowed on 2026-10-09** — one `Õigusakt` is chosen at a time since ADR
+0070's amendment of that date; the union now applies to a historical pair kept
+by «Jäta alles» on `Muuda teemat`. One living Teema can
 legitimately span `ELi direktiiv` and the `Seadus` transposing it, or a `VTK`
 and the law that follows it; an intersection would dim exactly the stages such
 a file moves through.
@@ -228,7 +231,10 @@ a file moves through.
   and neither is derived from the other (docs/adr/0090 §4).
 * **`Muuda teemat` does not draw the guidance.** It is a correction surface for
   files whose real history may be exactly the exception; the keys on its inputs
-  are inert there. Its own order is also deliberately left as it was — 0096 §1's
+  are inert there.
+  **Superseded on 2026-10-09 — see the amendment of that date («Muuda
+  teemat»).** The edit page draws the same guidance from the same matrix; it is
+  still presentation only and touches no stored value. Its own order is also deliberately left as it was — 0096 §1's
   «`Uus teema` is the master» is narrowed accordingly for order: the edit page
   keeps its order until the owner decides otherwise.
 
@@ -241,6 +247,10 @@ text extraction for classification, no LLM, no auto-selection. The seam it
 would use is the same one this ADR uses — stable keys on the inputs, guidance
 as a presentation layer over a form the server validates on its own — so it can
 be added beside §4 without changing it.
+**Narrowed on 2026-10-09, awaiting the product owner's approval — see the
+amendment of that date «a stage chosen from the instrument».** One rule only:
+an instrument whose matrix row names exactly one stage chooses it on an empty,
+untouched `Hetkeseis` on `Uus teema`.
 
 ## Alternatives considered
 
@@ -449,3 +459,99 @@ its own, to every terminal stage, not part of this amendment.
 - The ordinary chip, the chosen chip's fill and weight, focus ring, cursor and
   hit area.
 - Escape still closes a bubble until the pointer or focus leaves the chip.
+
+---
+
+## Amendment, 2026-10-09 — «Muuda teemat»: the same guidance on the edit page
+
+- Status: accepted, amending §8's «`Uus teema` only» and narrowing §7 to the
+  held pairs ADR 0070's amendment of the same day keeps.
+- Scope: presentation on `Muuda teemat` (F5 of the owner's brief of
+  2026-10-09). No validation, no inference, no stored value.
+
+### What was decided before
+
+§8: the edit page did not draw the guidance; it is a correction surface whose
+files may be exactly the exception.
+
+### Why it is superseded
+
+The live QA of 9 October 2026 found the two pages disagreeing about the same
+pair of fields: a lawyer who learned the dimming on `Uus teema` met none of it
+when correcting a Teema, and read the absence as «every stage fits».
+
+### What is decided now
+
+- `Muuda teemat` wraps its `Hetkeseis` row in the same `data-stage-guidance`
+  and serialises the same `stage_guidance_payload()` (`_edit_context`); one
+  script (`bindStageGuidance`) and one matrix serve both pages.
+- A **stored stage is never touched**: dimming is a class and a described note
+  (this ADR's «not colour alone» amendment), and a chosen atypical stage stays
+  chosen. Opening and saving the page moves nothing that was not changed.
+- A **closed file's stage is stated, not offered** (RULE-03): it has no chips,
+  so there is nothing to dim.
+- The **order** of the edit page is unchanged (`Valdkond`, `Hetkeseis`,
+  `Õigusakt`); the guidance does not depend on order.
+
+### What this amendment does not change
+
+- The matrix, its keys, `Määramata` and `Muu` never dimmed, missing guidance
+  dimming nothing; nothing disabled, hidden, refused or rewritten.
+- The server accepts every valid combination on both pages.
+
+---
+
+## Amendment, 2026-10-09 — a stage chosen from the instrument (awaiting the owner's approval)
+
+- Status: **proposed, awaiting the product owner's approval before merge**;
+  amends §9's «no auto-selection» for one rule, and §8's «Nothing writes
+  `Matter.stage` from the matrix» only in the sense that the page chooses a
+  radio the lawyer then saves — the server still infers nothing.
+- Scope: `Uus teema`'s script. No model, no validation, no server-side
+  inference; `Muuda teemat` never chooses a stage.
+
+### What was decided before
+
+§9: no auto-selection of any classification. The guidance dims; it never
+chooses.
+
+### Why it is proposed
+
+The owner asked for `Õigusakt` to fill `Hetkeseis` where that is safe. For most
+instruments it is not: a `Seadus` can be anywhere from an idea to in force, and
+choosing the first stage would record a fact nobody stated.
+
+### What is proposed
+
+1. **One rule, read off the approved matrix**
+   (`prefill_stage_by_instrument`): an instrument whose normal stages, apart
+   from `Muu` and `Rohkem ei tegele`, are exactly one stage chooses it. Today
+   that is `VTK` → `Idee` and `Koja ettepanek või pöördumine` → `Idee`; every
+   other instrument chooses nothing, and the dimming alone guides.
+2. **Only an empty, untouched `Hetkeseis`.** The page must have arrived with
+   «Määramata» chosen (a refused save holding a stage counts as touched), and
+   no person may have chosen a stage since. Any choice a person makes — a stage
+   or «Määramata» — ends the prefill for that page for good, so a stage the
+   lawyer cleared is never put back.
+3. **It follows the instrument while it is the page's own choice.** Choosing
+   an instrument that does not decide the stage, or «Määramata» in `Õigusakt`,
+   takes back a stage the page chose — and only that one.
+4. **It says so.** «Hetkeseis valiti õigusakti järgi — muuda, kui teema on
+   mujal.» appears beside the row, politely announced, while the choice is the
+   page's; it goes the moment the lawyer chooses.
+5. **The server is unchanged.** The radio is an ordinary answer; what is saved
+   is what the page shows. With scripting off nothing is chosen.
+
+### Alternatives for the ambiguous instruments, if the owner wants more
+
+| option | consequence |
+| --- | --- |
+| choose the first typical stage (`Seadus` → `Idee`) | records an idea stage for a draft already before the government; wrong for most incoming drafts |
+| choose by the sender (a ministry → `Kooskõlastusringil`) | inference from a second field the matrix does not cover; a new rule to review |
+| choose nothing (this proposal) | the lawyer picks among the highlighted typical stages, as today |
+
+### What this amendment does not change
+
+- The matrix, its keys, the dimming, the note, union for a historical pair.
+- `Muuda teemat` and every stored stage.
+- The server's acceptance of every combination.

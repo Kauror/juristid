@@ -182,7 +182,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # page asks (docs/adr/0090 §4).
     open_hetkeseis(page)
     page.get_by_role("radio", name="Kooskõlastusringil", exact=True).check()
-    page.get_by_role("checkbox", name="Seadus", exact=True).check()
+    page.get_by_role("radio", name="Seadus", exact=True).check()
 
     # One date: what Koda owes. It no longer makes a step (docs/adr/0133 §8);
     # the file's first step is written once it exists.

@@ -5684,6 +5684,51 @@ a.barchart__row:hover {
   border-top: 1px solid var(--border-subtle);
 }
 
+/* `Seo olemasoleva teemaga` (docs/adr/0150 §3): a search, its results, and the
+   Teemad chosen so far. The results borrow the fact list; the chosen rows are
+   one line each — reference, title, × — because the list is read before
+   saving, not studied. */
+.relpick .field {
+  max-width: 40rem;
+}
+
+.relpick__found:empty {
+  display: none;
+}
+
+.relpick__chosen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  margin: var(--spacing-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.relpick__chosen:empty {
+  display: none;
+}
+
+.relpick__item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-2);
+  min-width: 0;
+}
+
+.relpick__ref {
+  flex: none;
+  font-size: var(--typography-size-meta);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.relpick__title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-body);
+}
+
 .draftsimilar__lead {
   margin: var(--spacing-1) 0 var(--spacing-3);
   max-width: 68ch;
@@ -9177,6 +9222,15 @@ button.accordion__action:focus-visible {
 
 /* The register reference in the rail: an identity, so it is set in the same
    monospace the exact search matches on. */
+/* `Teemaviide` in the header's meta line (docs/adr/0150 §4): the register's
+   `2026_301`, in tabular figures so the digits read as a code, and selectable
+   as a whole for the copy button beside it. */
+.metaline__ref {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  user-select: all;
+}
+
 .railcard__ref {
   font-family: ui-monospace, Menlo, monospace;
   font-size: var(--typography-size-meta);

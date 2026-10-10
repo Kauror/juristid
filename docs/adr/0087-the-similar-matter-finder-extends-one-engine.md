@@ -249,3 +249,14 @@ the indicators are one dataclass, one batched read and one template block; the
 create surface is one route, one template and one `<div>`. Nothing is stored, no
 migration exists to reverse, and removing any of the three leaves ADR 0062's
 engine exactly as it was.
+
+---
+
+## Note, 2026-10-09 — a related Teema chosen by hand on `Uus teema`
+
+ADR 0150 §3 adds `Seo olemasoleva teemaga` beside `Sarnased teemad`: the header
+search's ranking and boundary, no threshold, nothing linked until the Teema is
+created. The suggestions, their threshold, their reasons, the dismissals and
+this ADR's create-time surface are unchanged; a ticked suggestion now also
+survives an answer with no cards and a refused save. Recorded as a note rather
+than an amendment because nothing decided here is reversed.

@@ -25,4 +25,7 @@ urlpatterns = [
     # about is not one yet. `Uus teema` asks it what the form so far resembles
     # (docs/adr/0087 §4).
     path("teemad/uus/sarnased/", views.draft_suggestions, name="draft_suggestions"),
+    # And the search beside it, for the Teema the suggestions did not propose
+    # (docs/adr/0150 §3). Read only; the link is made when the Teema is.
+    path("teemad/uus/seotud/otsi/", views.draft_picker, name="draft_picker"),
 ]

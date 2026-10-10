@@ -32,6 +32,7 @@ from e2e.conftest import (
     open_add_panel,
     open_hetkeseis,
     open_kaik_row,
+    plant_historical_instruments,
     record_marge,
     sign_in,
     start_first_step,
@@ -71,10 +72,14 @@ def _new_matter(page, base_url: str, prefix: str, *, stage: str | None = None, l
     if law:
         page.goto(f"{url}muuda/")
         page.wait_for_load_state("networkidle")
-        for name in law:
-            page.get_by_role("checkbox", name=name, exact=True).check()
+        # One through the page — the control takes one since the owner's
+        # decision of 2026-10-09 — and a pair planted after the save, the way
+        # a Matter filed before that decision holds it.
+        page.get_by_role("radio", name=law[0], exact=True).check()
         page.get_by_role("button", name="Salvesta").click()
         page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+        if len(law) > 1:
+            plant_historical_instruments(page, law)
     return url
 
 

@@ -285,6 +285,13 @@
     {% endcomment %}
     <div class="createform__row" data-stage-guidance="hetkeseis-juhis">
       {% include "matters/partials/hetkeseis_field.html" %}
+      {% comment %}
+        Said when, and only when, `Hetkeseis` was chosen from the instrument —
+        a `VTK` or the Chamber's own proposal is an idea — and gone the moment
+        the lawyer chooses anything themselves (`bindStageGuidance`,
+        docs/adr/0130, amendment of 2026-10-09).
+      {% endcomment %}
+      <p class="field__help" data-stage-prefill-note aria-live="polite" hidden></p>
       {{ stage_guidance|json_script:"hetkeseis-juhis" }}
     </div>
 
@@ -504,7 +511,65 @@
                      sarnased:restored"
          hx-params="title,policy_areas,legal_instruments,source_organisations,seo_teemaga,csrfmiddlewaretoken"
          hx-target="this"
-         hx-swap="innerHTML"></div>
+         hx-swap="innerHTML">{% for pk in similar_ticked %}<input type="hidden" name="seo_teemaga" value="{{ pk }}">{% endfor %}</div>
+
+    {% comment %}
+      `Seo olemasoleva teemaga` — the Teema the suggestions above did not
+      propose, found by hand (docs/adr/0150 §3).
+
+      The suggestions depend on a threshold and on what has been typed so far;
+      a lawyer who already knows which earlier file this one continues should
+      not have to coax the engine into proposing it. So this is a plain search
+      over the header search's own ranking and boundary — title, `Teemaviide`
+      or keyword — usable with an empty form and with no suggestions at all.
+
+      **Nothing is linked here.** «Vali» adds a row to the list below, with a
+      hidden `seo_teemaga_valitud` value and a × to take it back; the link is
+      made by `matter_create`, through `link_related_matters`, in the same
+      transaction that creates the Teema. A refused save comes back with the
+      list as it was (`related_chosen`), re-resolved through what this person
+      may open.
+
+      Its own name rather than `seo_teemaga`, because the suggestion cards post
+      `seo_teemaga` back and forth on every re-read: sharing it would let a
+      card resurrect a row somebody removed here.
+
+      A scripted control (`bindRelatedPicker`): rendered `hidden` and revealed
+      by the script, because a search box inside this form would submit the
+      whole Teema on Enter without it. With scripting off a Teema is linked
+      after it is created, through `Seotud materjalid → + Lisa`.
+    {% endcomment %}
+    <div class="createform__row relpick" id="seo-olemasoleva-teemaga" hidden
+         data-related-picker="{% url 'related_materials:draft_picker' %}">
+      <div class="field">
+        <label class="field__label" for="seotud-teema-otsing">Seo olemasoleva teemaga</label>
+        <input class="field__input field__input--compact" id="seotud-teema-otsing" type="search"
+               autocomplete="off" spellcheck="false" aria-controls="seotud-teema-tulemused"
+               placeholder="Otsi pealkirja, teemaviite või märksõna järgi">
+        <p class="field__help">Seos luuakse koos teemaga. Võid valida ka teema, mida soovitused ei paku.</p>
+      </div>
+      <div id="seotud-teema-tulemused" class="relpick__found" aria-live="polite"></div>
+      <ul class="relpick__chosen" data-related-chosen aria-label="Valitud seotud teemad">
+        {% for chosen in related_chosen %}
+          <li class="relpick__item" data-related-id="{{ chosen.pk }}">
+            <input type="hidden" name="seo_teemaga_valitud" value="{{ chosen.pk }}">
+            {% if chosen.display_reference %}<span class="relpick__ref">{{ chosen.display_reference }}</span>{% endif %}
+            <span class="relpick__title">{{ chosen.title }}</span>
+            <button class="button button--quiet button--tiny" type="button" data-related-remove
+                    aria-label="Eemalda valik: {{ chosen.title }}">×</button>
+          </li>
+        {% endfor %}
+      </ul>
+      <template data-related-chosen-template>
+        <li class="relpick__item" data-related-id="">
+          <input type="hidden" name="seo_teemaga_valitud" value="">
+          <span class="relpick__ref"></span>
+          <span class="relpick__title"></span>
+          <button class="button button--quiet button--tiny" type="button" data-related-remove
+                  aria-label="Eemalda valik">×</button>
+        </li>
+      </template>
+    </div>
   </form>
 </div>
 {% endblock %}
