@@ -106,7 +106,7 @@ from app.matters import (
     workspace,
 )
 from app.matters import person_work as person_workspace
-from app.matters.deletion import delete_matter, plan_matter_deletion
+from app.matters.deletion import delete_matter, deletion_may_be_offered, plan_matter_deletion
 from app.matters.department_dashboard import SeisFigure
 from app.matters.document_context import related_records
 from app.matters.enums import MatterDataClass, MatterOrigin, RecordMode
@@ -3210,15 +3210,14 @@ def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # route keeps every refusal it had; hiding the link is an offer withheld,
         # not the guard (docs/adr/0096 §4).
         #
-        # **A callable, so the walk runs only where the control is drawn.** The
-        # plan is most of this page's queries (≈150 of ≈210 on a busy file),
-        # and most re-renders of this context — every HTMX save and refusal in
-        # the column — never render `header.html` at all. The template calls it
-        # once, from `{% if can_delete %}`, and `cache` keeps a second reference
-        # from walking again.
-        "can_delete": functools.cache(
-            lambda: can_write and not plan_matter_deletion(matter).is_blocked
-        ),
+        # **Not the whole plan any more** (AUD-002). The walk was most of a
+        # writer's page (105–109 queries, 127–205 ms) to decide one link, so the
+        # offer asks `deletion_may_be_offered`'s handful of `EXISTS` instead; the
+        # plan is built where it is acted on — the confirmation page and
+        # `delete_matter` under the lock — and refuses whatever the offer did
+        # not ask about (docs/adr/0120 §7, amended 2026-10-10). Still a callable,
+        # so the check runs only where `header.html` is drawn.
+        "can_delete": functools.cache(lambda: can_write and deletion_may_be_offered(matter)),
         # No `submission_count`. The tab that displayed it is gone, and a count
         # nothing renders is a query nothing needs.
         "document_count": Document.objects.filter(matter=matter).visible_to(request.user).count(),
