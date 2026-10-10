@@ -51,6 +51,7 @@ from app.legacy_import.parser import SOURCE_SYSTEM
 from app.legacy_import.resolution import resolve_status
 from app.legacy_import.source_cells import contracts_by_sheet, source_cell
 from app.matters.enums import MatterOrigin, RecordMode
+from app.matters.locks import lock_matter_for_write, lock_matters_in_order
 from app.matters.models import Matter
 from app.matters.services import promote_matter_to_full
 from app.search.indexing import indexable_matters, refresh_matters
@@ -387,11 +388,14 @@ def apply_promotion_plan(plan: PromotionPlan, *, actor: Any = None) -> Promotion
 
     promoted = 0
     touched: list[Any] = []
+    # Every Matter the batch names, before any is written, in the interactive
+    # discipline: ascending id, `FOR NO KEY UPDATE` (AUD-043, docs/adr/0109 §1).
+    lock_matters_in_order(*(candidate.matter.pk for candidate in plan.promotable))
     for candidate in plan.promotable:
         # Re-read under the transaction: a plan is minutes old, and somebody
         # may have promoted or closed this in between. Re-running must be a
         # no-op, not a second promotion.
-        matter = Matter.objects.select_for_update().get(pk=candidate.matter.pk)
+        matter = lock_matter_for_write(candidate.matter.pk)
         if matter.record_mode == RecordMode.FULL or not matter.is_open:
             continue
         promote_matter_to_full(

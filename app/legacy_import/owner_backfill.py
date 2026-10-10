@@ -54,6 +54,7 @@ from app.legacy_import.resolution import (
     resolve_owner,
 )
 from app.legacy_import.source_cells import contracts_by_sheet, source_cell
+from app.matters.locks import lock_matter_for_write, lock_matters_in_order
 from app.matters.models import Matter
 from app.matters.services import assign_matter
 from app.search.indexing import indexable_matters, refresh_matters
@@ -376,10 +377,12 @@ def apply_backfill_plan(plan: BackfillPlan, *, actor: Any = None) -> BackfillRes
     """
     assigned = 0
     touched: list[Any] = []
+    # Ascending, `FOR NO KEY UPDATE`, before any write (AUD-043).
+    lock_matters_in_order(*(candidate.matter.pk for candidate in plan.assignable))
     for candidate in plan.assignable:
         # Re-read under the transaction. The plan may have been produced minutes
         # ago, and an owner set in the meantime outranks anything here.
-        matter = Matter.objects.select_for_update().get(pk=candidate.matter.pk)
+        matter = lock_matter_for_write(candidate.matter.pk)
         if matter.owner_id is not None:
             continue
         assign_matter(

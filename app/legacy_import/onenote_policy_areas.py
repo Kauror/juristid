@@ -65,6 +65,7 @@ from app.legacy_import.source_pages import (
     SourceSystem,
 )
 from app.matters.enums import MatterDataClass
+from app.matters.locks import lock_matter_for_write
 from app.matters.models import Matter
 from app.matters.services import add_source_derived_policy_areas
 from app.taxonomy.models import PolicyArea
@@ -543,7 +544,9 @@ def apply_policy_area_plan(
                 f"{items[0].matter_reference}: a proposed PolicyArea is gone or "
                 "inactive. Nothing was written."
             )
-        matter = Matter.objects.select_for_update().get(pk=matter_id)
+        # Already in ascending id order (the sort above); at the interactive
+        # strength, `FOR NO KEY UPDATE`, rather than `FOR UPDATE` (AUD-043).
+        matter = lock_matter_for_write(matter_id)
         added = add_source_derived_policy_areas(
             matter=matter,
             policy_areas=[areas[item.policy_area_id] for item in items],

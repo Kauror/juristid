@@ -95,6 +95,7 @@ from app.legacy_import.register_next_actions import (
     parse_instruction,
 )
 from app.matters.enums import MatterDataClass, RecordMode
+from app.matters.locks import lock_matter_for_write, lock_matters_in_order
 from app.matters.models import Matter
 from app.workflow.enums import ActionStatus, DatePrecision
 from app.workflow.models import NextAction
@@ -776,11 +777,17 @@ def apply_plan(plan: EnrichmentPlan, *, expect_plan_sha256: str, actor: Any = No
         )
 
     writing = plan.writing
+    # **Locked before authorship is read** (AUD-052 LI-4). Read first, a step a
+    # person saved between that read and the lock was never seen, and the
+    # refresh below superseded it. Every writer of a step takes this row's
+    # lock, so what `action_ownership` reads now is what the writes act on.
+    # Ascending, `FOR NO KEY UPDATE`, like every interactive writer (AUD-043).
+    lock_matters_in_order(*(proposal.matter_id for proposal in writing))
     ownership = action_ownership([proposal.matter_id for proposal in writing])
 
     created = refreshed = withdrawn = 0
     for proposal in writing:
-        matter = Matter.objects.select_for_update().get(pk=proposal.matter_id)
+        matter = lock_matter_for_write(proposal.matter_id)
         state = CurrentRegisterState.objects.filter(matter_id=proposal.matter_id).first()
         if state is None:
             raise PlanChanged(f"{proposal.matter_reference}: register state row is gone.")

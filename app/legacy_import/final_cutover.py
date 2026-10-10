@@ -82,6 +82,7 @@ from app.legacy_import.resolution import (
 )
 from app.legacy_import.source_cells import contracts_by_sheet, source_cell
 from app.matters.enums import MatterOrigin, RecordMode
+from app.matters.locks import lock_matter_for_write, lock_matters_in_order
 from app.matters.models import Matter
 from app.matters.services import (
     promote_matter_to_full,
@@ -853,8 +854,13 @@ def apply_cutover_plan(plan: CutoverPlan, *, actor: Any = None) -> CutoverResult
     activated = retired = kept = refreshed = held = 0
     touched: list[Any] = []
 
+    # Every Matter the plan names, before any is written: ascending id at
+    # `FOR NO KEY UPDATE`, as every interactive writer takes them, rather than
+    # `FOR UPDATE` in sheet order -- which blocked each Matter's child inserts
+    # for the whole refresh and could deadlock a two-Matter writer (AUD-043).
+    lock_matters_in_order(*(candidate.matter.pk for candidate in plan.candidates))
     for candidate in plan.candidates:
-        matter = Matter.objects.select_for_update().get(pk=candidate.matter.pk)
+        matter = lock_matter_for_write(candidate.matter.pk)
         provenance = candidate.provenance(plan.snapshot_sha256)
 
         if candidate.action == Action.ACTIVATE:

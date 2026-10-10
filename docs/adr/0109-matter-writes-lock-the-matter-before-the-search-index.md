@@ -47,6 +47,9 @@ never reaches the gate. The legacy import commands (`final_cutover`,
 same inside operator-run transactions. Neither was demonstrated to deadlock, and
 this ADR does not widen the change on static reading alone.
 
+**Superseded on 2026-10-10 for the legacy import applies — see the amendment
+at the end of this document.** They now take the interactive discipline.
+
 ## 2. The set editors lock the Matter first (ENG-029)
 
 `set_policy_areas`, `set_organisations` and `set_tags` wrote the join table with
@@ -118,3 +121,62 @@ before this; it prints the same `formerror` the header does.
 
 **None.** No schema change, no data migration, and no search-index version
 change: what is indexed is unchanged, only the order in which it is written.
+
+---
+
+## Amendment, 2026-10-10 — the import applies take the interactive lock discipline
+
+- Status: accepted, amending §1's «Not changed, reported instead» for the legacy
+  import commands
+- Scope: `current_register`, `final_cutover`, `historical_cutover`,
+  `owner_backfill`, `next_action_enrichment`, `onenote_policy_areas`,
+  `register_outreach` and the composed `register_refresh`; `set_next_action`
+  already locks at `FOR NO KEY UPDATE` and is not touched
+
+### What was decided before
+
+§1 left the import applies at `FOR UPDATE`, taken one Matter at a time in plan
+(sheet) order, because no deadlock had been demonstrated.
+
+### Why it is superseded
+
+Audit AUD-043 established new facts. `refresh_current_register` is the
+operation designed to repeat while lawyers work, and the commissioning import
+of ADR 0148 makes these commands the go-live toolchain. It composes the
+cutover, the enrichment and the outreach in one transaction. `register_outreach`
+locked every Matter carrying a reference, native ones included, in one
+unordered statement. While such a transaction ran:
+
+- every child insert on a held Matter waited, because `FOR UPDATE` blocks the
+  `FOR KEY SHARE` that inserting a `ChangeEvent`, an `Entry` or a search row
+  takes;
+- a two-Matter writer taking ascending ids (`lock_matters_in_order`, ADR 0111)
+  could deadlock against the sheet order.
+
+`tests/test_import_lock_concurrency.py` reproduces the first on the old code.
+The standalone enrichment apply also read «has a person touched this?» before
+taking its locks (AUD-052 LI-4).
+
+### What is decided now
+
+1. Each apply locks every Matter its plan names **before writing anything**,
+   through `lock_matters_in_order`: ascending id, `FOR NO KEY UPDATE`, one row
+   at a time.
+2. Each row is then re-read with `lock_matter_for_write`, which is a re-entry
+   under the lock already held. Every decision made from it (is it still open,
+   still unowned, still ARCHIVE, has native work arrived) reads the locked row,
+   as before.
+3. `register_outreach` resolves the mapping's references with a plain query
+   and locks only the Matters the mapping names.
+4. `register_next_action_enrichment` locks before it reads authorship.
+5. `apply_refresh_plan` locks the union of the three phases' Matters once,
+   ascending, before the first phase writes. Every later lock in the
+   transaction is then a re-entry, so the phases cannot interleave into a
+   second order.
+
+### What this amendment does not change
+
+The idempotency and convergence rules of every apply, the digest gates, the
+«planner's question asked again under the lock» re-checks (ENG-006), and the
+one-transaction-or-nothing shape. No migration, no data change. Interactive
+writers are untouched.

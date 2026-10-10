@@ -46,6 +46,7 @@ from django.db import transaction
 from app.legacy_import.models import MatterSourceReference
 from app.legacy_import.parser import SOURCE_SYSTEM
 from app.matters.enums import MatterOrigin, RecordMode
+from app.matters.locks import lock_matter_for_write, lock_matters_in_order
 from app.matters.models import Matter
 from app.matters.services import mark_historical_archive_inactive
 from app.search.indexing import indexable_matters, refresh_matters
@@ -353,11 +354,13 @@ def apply_cutover_plan(
 
     closed = held = 0
     touched: list[Any] = []
+    # Ascending, `FOR NO KEY UPDATE`, before any write (AUD-043).
+    lock_matters_in_order(*(candidate.matter.pk for candidate in plan.closable))
     for candidate in plan.closable:
         # Re-read under the lock. A plan is minutes old, and somebody may have
         # closed or activated this in between; re-running must be a no-op
         # rather than a second write.
-        matter = Matter.objects.select_for_update().get(pk=candidate.matter.pk)
+        matter = lock_matter_for_write(candidate.matter.pk)
         if matter.record_mode != RecordMode.ARCHIVE or not matter.is_open:
             continue
         # The planner's live-work question, asked again under the lock: every
