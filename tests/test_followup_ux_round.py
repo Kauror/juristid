@@ -14,6 +14,8 @@ e2e/test_followup_ux_round.py.)
 
 from __future__ import annotations
 
+import email.message
+import http.client
 import re
 from datetime import timedelta
 
@@ -192,6 +194,106 @@ def test_a_the_suite_never_fetches(signed_in, normal_matter, monkeypatch):
 )
 def test_a_only_https_koda_pages_are_ever_fetched(url, fetchable):
     assert publication_title.fetchable_url(url) == fetchable
+
+
+# The fetch itself, with the opener answered locally (AUD-052 DX-8): whatever
+# the page or the connection does, the answer is a title or "", never a raise,
+# and never a wait longer than the whole-fetch deadline.
+
+
+class _FakeResponse:
+    def __init__(self, body=b"", *, charset="utf-8", clock=None, trickle=False):
+        self.headers = email.message.Message()
+        self.headers["Content-Type"] = f"text/html; charset={charset}"
+        self._body = body
+        self._clock = clock
+        self._trickle = trickle
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def read(self, amt=None):
+        if self._trickle:
+            # `read(n)` blocks until n bytes came; one byte a second.
+            self._clock[0] += amt
+            return b" " * amt
+        body, self._body = self._body, b""
+        return body
+
+    def read1(self, amt=-1):
+        if self._trickle:
+            self._clock[0] += 1
+            return b" "
+        return self.read(amt)
+
+
+@pytest.fixture
+def koda_opener(monkeypatch, settings):
+    """Swap the module's opener for one answering ``answer`` (a response or an error)."""
+    settings.PUBLICATION_TITLE_FETCH = True
+    answers = []
+
+    class _Opener:
+        def open(self, request, timeout):
+            answer = answers[0]
+            if isinstance(answer, BaseException):
+                raise answer
+            return answer
+
+    monkeypatch.setattr(publication_title, "_OPENER", _Opener())
+    return answers
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        http.client.IncompleteRead(b"<title>Pool"),
+        http.client.BadStatusLine("garbage"),
+        http.client.LineTooLong("header line"),
+    ],
+)
+def test_a_a_broken_response_is_an_empty_title_not_an_error(koda_opener, error):
+    koda_opener.append(error)
+
+    assert publication_title.fetch_publication_title(NEWS_URL) == ""
+
+
+def test_a_a_truncated_body_is_an_empty_title_not_an_error(koda_opener):
+    class _Truncated(_FakeResponse):
+        def read(self, amt=None):
+            raise http.client.IncompleteRead(b"<title>Pool")
+
+        read1 = read
+
+    koda_opener.append(_Truncated())
+
+    assert publication_title.fetch_publication_title(NEWS_URL) == ""
+
+
+def test_a_an_unknown_charset_still_yields_the_title(koda_opener):
+    koda_opener.append(
+        _FakeResponse(
+            "<title>Koja hinnangul näidis | Eesti Kaubandus-Tööstuskoda</title>".encode(),
+            charset="x-bogus",
+        )
+    )
+
+    assert publication_title.fetch_publication_title(NEWS_URL) == "Koja hinnangul näidis"
+
+
+def test_a_a_trickling_page_is_given_up_after_the_whole_fetch_deadline(koda_opener, monkeypatch):
+    clock = [0.0]
+    # `raising=False`: a module without the clock still runs, and must still stop.
+    monkeypatch.setattr(publication_title, "monotonic", lambda: clock[0], raising=False)
+    koda_opener.append(_FakeResponse(clock=clock, trickle=True))
+
+    assert publication_title.fetch_publication_title(NEWS_URL) == ""
+    # The whole-fetch deadline plus at most one socket read; the old single
+    # `read(MAX_BYTES)` sat here for half a million (fake) seconds.
+    assert clock[0] <= 8 + 4
 
 
 def test_a_the_save_still_classifies_on_its_own(signed_in, normal_matter):

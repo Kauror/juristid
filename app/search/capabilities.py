@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from django.conf import settings
 from django.db import connection
 
+from app.core.deployment import postgresql_version_from_num
+
 REQUIRED_EXTENSIONS = ("pg_trgm", "unaccent")
 ESTONIAN_TEXT_SEARCH_CONFIG = "estonian"
 
@@ -58,7 +60,8 @@ class CapabilityReport:
 
 def postgresql_version() -> tuple[int, int]:
     number: int = connection.pg_version  # type: ignore[attr-defined]  # e.g. 180002
-    return number // 10000, (number % 10000) // 100
+    # The deployment check's reading, so 18.6 is not reported as 18.0 (AUD-050).
+    return postgresql_version_from_num(number)
 
 
 def installed_extensions() -> set[str]:

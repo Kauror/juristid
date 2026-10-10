@@ -607,6 +607,17 @@ def runtime_identity() -> RuntimeIdentity:
     )
 
 
+def postgresql_version_from_num(number: int) -> tuple[int, int]:
+    """Major and minor from `server_version_num`: 180006 is 18.6.
+
+    Since PostgreSQL 10 the number is major × 10000 + minor; the older
+    major.major.minor reading (`% 10000 // 100`) turns 18.6 into 18.0. The one
+    place both the recovery fingerprint and the search probe read it from
+    (AUD-050).
+    """
+    return number // 10000, number % 10000
+
+
 def postgresql_version() -> tuple[int, int]:
     """The server's major and minor, for a restore that has to match it.
 
@@ -616,8 +627,7 @@ def postgresql_version() -> tuple[int, int]:
     with connection.cursor() as cursor:
         cursor.execute("SHOW server_version_num")
         row = cursor.fetchone()
-    raw = int(row[0]) if row else 0
-    return raw // 10000, raw % 10000
+    return postgresql_version_from_num(int(row[0]) if row else 0)
 
 
 # --------------------------------------------------------------------------

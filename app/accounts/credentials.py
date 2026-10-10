@@ -180,7 +180,10 @@ def request_password_reset(request: HttpRequest, *, email: str) -> None:
     detail: dict[str, object] = {
         "email": address if email_policy.looks_like_an_address(email) else "(malformed)"
     }
-    if throttle.is_locked(counters):
+    # The unlocked read answers most requests over the limit cheaply; the
+    # charge decides on the locked rows, so requests that passed the read
+    # together cannot all be acted on (AUD-052 AU-3).
+    if throttle.is_locked(counters) or throttle.charge(counters).already_locked:
         detail["outcome"] = "throttled"
         record_security_event(
             event_type=SecurityEventType.PASSWORD_RESET_REQUESTED,
@@ -189,7 +192,6 @@ def request_password_reset(request: HttpRequest, *, email: str) -> None:
             detail=detail,
         )
         return
-    throttle.charge(counters)
 
     user = User.objects.filter(upn=address).first() if address else None
     eligible = (

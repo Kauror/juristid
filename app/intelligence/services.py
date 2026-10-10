@@ -160,6 +160,11 @@ FACT_EDIT_CONFLICT = (
     "vaata see üle ja salvesta uuesti."
 )
 
+#: What a write to a record a lawyer removed from the file is told, in the
+#: words the module uses for a fact that is no longer current (AUD-052 WF-7).
+#: One sentence for all three: removal is the same act for each of them.
+REMOVED_FACT_REFUSAL = "Ainult teemal olevat kirjet saab muuta. See kirje on teemalt eemaldatud."
+
 
 class FactEditConflict(DomainError):
     """A structured fact changed elsewhere between opening its edit form and saving."""
@@ -191,8 +196,19 @@ def _lock_for_edit(record: Any, expected_revision: str | None) -> Any:
     a service or a test — and those keep the old behaviour. The edit views
     always pass the form's value, so from them an empty one is a conflict: a
     page older than the guard must not be the way around it.
+
+    The Matter is locked first, then the fact — the Matter-then-child order
+    `remove_matter_record` takes — and a fact removed from the file is refused
+    on the locked row: the default manager does not exclude removed rows, so
+    a tab drawn before the removal could otherwise still cancel, confirm or
+    edit it (AUD-052 WF-7).
     """
+    from app.matters.locks import lock_matter_for_write
+
+    lock_matter_for_write(record.matter_id)
     locked = type(record)._default_manager.select_for_update(no_key=True).get(pk=record.pk)
+    if locked.removed_at is not None:
+        raise DomainError(REMOVED_FACT_REFUSAL)
     if expected_revision is not None and (
         not expected_revision or fact_revision(locked) != expected_revision
     ):

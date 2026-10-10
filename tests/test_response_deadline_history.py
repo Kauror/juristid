@@ -43,6 +43,7 @@ from app.matters.response_deadlines import (
     FOREIGN_SUBMISSION,
     REPLACED_NEEDS_AN_OUTCOME,
     STALE_DEADLINE_REFUSAL,
+    UNSENT_SUBMISSION,
     change_response_deadline,
     deadline_revision,
     ended_deadlines,
@@ -56,6 +57,7 @@ from app.submissions.services import withdraw_submission
 from app.workflow.enums import Disposition
 from app.workflow.models import StageVocabulary
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -110,6 +112,30 @@ def test_a_deadline_set_where_there_was_none_is_a_request_recorded_now(specialis
     assert matter.response_deadline == _days(10)
     assert matter.response_requested_at is not None
     assert not MatterResponseDeadline.objects.filter(matter=matter).exists()
+
+
+def test_an_opinion_withdrawn_after_the_form_loaded_it_answers_nothing(specialist, send):
+    # The form loads the SENT opinion before the Matter lock; a withdrawal
+    # commits in between. The deadline is decided on the locked row (AUD-052 WF-2).
+    matter = _requested(specialist, _days(3))
+    stale = send(matter)
+    withdraw_submission(
+        submission=Submission.objects.get(pk=stale.pk),
+        reason="Sünteetiline tagasivõtmine",
+        actor=specialist,
+    )
+    assert stale.status == SubmissionStatus.SENT
+
+    with refused(UNSENT_SUBMISSION):
+        resolve_response_deadline(
+            matter=matter,
+            outcome=ResponseDeadlineOutcome.ANSWERED,
+            actor=specialist,
+            submission=stale,
+        )
+    assert not MatterResponseDeadline.objects.filter(matter=matter).exists()
+    matter.refresh_from_db()
+    assert matter.response_deadline == _days(3)
 
 
 def test_uus_teema_records_its_deadline_as_a_request(signed_in, specialist):
