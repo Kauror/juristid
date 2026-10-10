@@ -5372,11 +5372,6 @@ a.barchart__row:hover {
 }
 
 
-.senderpick__new {
-  max-width: 20rem;
-}
-
-
 /* -- the unified organisation picker --------------------------------------- *
  *
  * Search first, quick choices under it, and a `+` attached to the box that

@@ -111,7 +111,39 @@ decides it, not a field every filer meets (docs/adr/0096 §3).
         {% if form.owner.errors %}<span class="field__error" id="{{ form.owner.auto_id }}_error">{{ form.owner.errors|first }}</span>{% endif %}
       </fieldset>
 
-      {% include "matters/partials/sender_control.html" with list_id="saabunud-saatja-nimekiri" %}
+      {% comment %}
+        Saatja, through the one control `Uus teema` and `Muuda teemat` use.
+
+        This was the last page drawing the older `sender_control.html` (removed
+        with this change) — chips,
+        a «Vali nimekirjast (N)» disclosure and a separate `Uus saatja` box — and
+        its catalogue carried no recorded spellings, so «MKM» found the ministry
+        on the other two sender pages and nothing here, where a ministry's
+        letter actually lands. Same concept, same interaction: one box that
+        searches names *and* aliases, a `+` that proposes a body the catalogue
+        does not hold, and the save resolving that name once, server-side,
+        through `resolve_source_organisations` (product decision D-4, AUD-011,
+        docs/adr/0073 amendment of 2026-10-10).
+
+        Not `quiet`: the shortlist stays drawn as chips, as it was here and as
+        it is on `Muuda teemat`. The `<noscript>` fallback is the partial's own
+        and the markup contract is the same — the hidden carrier before it, so
+        with scripting off the box somebody typed into is the one Django reads
+        (docs/adr/0144 §4). No `sender_row`: this page asks no Adressaat for a
+        sender to answer.
+      {% endcomment %}
+      <fieldset class="field senderpick">
+        <legend class="field__label">
+          {% field_label form.source_organisations %}
+          <span class="field__count" data-chipcount-for="source_organisations"></span>
+        </legend>
+        {% include "matters/partials/organisation_picker.html" with picker_id="saabunud-saatja" legend=form.source_organisations.label chips=form.sender_chip_choices tail=form.sender_tail_choices typed_field=form.sender_name add_label="Lisa uus saatja" clearable=True typed_hook="sender" %}
+        {% if form.source_organisations.errors %}
+          <span class="field__error" id="{{ form.source_organisations.auto_id }}_error">{{ form.source_organisations.errors|first }}</span>
+        {% elif form.source_organisations_other.errors %}
+          <span class="field__error" id="{{ form.source_organisations_other.auto_id }}_error">{{ form.source_organisations_other.errors|first }}</span>
+        {% endif %}
+      </fieldset>
     </div>
 
     {# 5 — what whoever picks this up needs to know. #}

@@ -14,6 +14,9 @@
   folds away), ADR 0025 (senders are a set), ADR 0032 (`Uus teema` redesign)
 - Scope: `/teemad/uus/` only. `Muuda teemat` and `Saabunud` keep
   `sender_control.html` unchanged.
+  **Superseded on 2026-10-10 for `Saabunud` — see the amendment at the end of
+  this document.** All three sender pages draw this control (`Muuda teemat`
+  since post-QA R2-12), and `sender_control.html` is removed.
 
 ## Context
 
@@ -178,3 +181,67 @@ High. The partial, one CSS block and one JavaScript module are additive and
 narrowly named; `sender_control.html` is still in the tree and still rendering
 the previous shape on two surfaces. Reverting is a template swap plus the CSS
 and JS deletions, with no data to migrate in either direction.
+
+---
+
+## Amendment, 2026-10-10 — `Saabunud` asks Saatja through the same control
+
+- Status: accepted (product decision D-4, audit finding AUD-011), amending the
+  Scope line's «`Muuda teemat` and `Saabunud` keep `sender_control.html`
+  unchanged» and the Consequences' «`sender_control.html` survives unchanged for
+  `Muuda teemat` and `Saabunud`».
+- Scope: `/saabunud/lisa/` (`IncomingIntakeForm`, `templates/matters/intake.html`)
+  and how the three sender forms are fed. No model, migration, stored value,
+  service or authorization change.
+
+### What was decided before
+
+This record redesigned Saatja on `Uus teema` only, and left the other two sender
+pages on `sender_control.html` — chips, a «Vali nimekirjast (N)» disclosure with
+a name-only search, and a separate `Uus saatja` box — because their interaction
+contract was argued to differ and they were not part of the review. Post-QA
+R2-12 moved `Muuda teemat` onto this control; `Saabunud` stayed behind.
+
+### Why it is superseded
+
+AUD-011 found the consequence: `Saabunud`'s sender fields were plain
+`CheckboxSelectMultiple`, so the recorded spellings never reached its page, and
+«MKM» found `Majandus- ja Kommunikatsiooniministeerium` on `Uus teema` and
+`Muuda teemat` and nothing on the page where a ministry's letter actually lands.
+The same audit found the three forms each carrying their own copy of the
+shortlist/tail slicing and of the sender union, and the shortlist ranked by two
+implementations of one order (`organisations_by_usage` and
+`OrganisationChoices.shortlist_and_tail`) — which is how the third surface fell
+out of step. The owner decided (D-4) that one organisation must be findable by
+the same aliases in every equivalent picker.
+
+### What is decided now
+
+1. **`Saabunud` draws `organisation_picker.html`** — one box reading «Otsi või
+   lisa asutus…» that searches names and recorded aliases, a `+` that proposes a
+   body the catalogue does not hold as a provisional chip, and the shortlist as
+   visible chips (not `quiet`, as on `Muuda teemat`). The typed name is resolved
+   once, server-side, in the save's own transaction by
+   `resolve_source_organisations`: alias and exact reuse, creation of a
+   genuinely new body, refusal of an ambiguous spelling — unchanged.
+2. **One feeding and one union.** `OrganisationPickerChoicesMixin` gives all
+   three sender forms `attach_sender_choices(viewer, extra=())` (whole-catalogue
+   validation, chips, tail, spellings on both widgets, catalogue read once),
+   `clean_senders` (the union of both halves, by name) and `clean_sender_name`.
+   `Muuda teemat` passes the Matter's current and suggested senders as `extra`,
+   so they stay chips.
+3. **One ranking.** `read_organisation_choices(...).shortlist_and_tail()` is the
+   order; `organisations_by_usage` returns its shortlist rather than ranking a
+   second time. The order itself is unchanged: sender usage, then addressee
+   usage, both scoped by `visible_to`, topped up alphabetically to eight.
+4. `sender_control.html` and its `.senderpick__new` rule are removed; nothing
+   renders them.
+
+### What this amendment does not change
+
+The resolver and every identity rule above; that the search box posts nothing
+and only `+` writes `sender_name`; the `<noscript>` fallback and its markup
+contract (the hidden carrier before the block, docs/adr/0144 §4); Saatja's
+cardinality (0..N); which bodies are valid senders (all of them); `Saabunud`'s
+other fields, its file-first rule and its `--people` row order (docs/adr/0130);
+and `Uus teema`'s `quiet` presentation (docs/adr/0088).
