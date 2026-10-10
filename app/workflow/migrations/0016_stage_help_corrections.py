@@ -15,17 +15,20 @@ brief of 9 October 2026, F2 and F3):
   guidance matrix deliberately dims for ``el-maarus`` because a regulation is
   directly applicable and is not transposed (docs/adr/0130 §5). The rule is a
   directive's, and now says so; a regulation that has entered into force is in
-  force, including when Estonia has to supplement its law to implement it, and
-  including when it applies only from a later date.
+  force, including when Estonian implementing measures are still pending, and
+  including when it applies only from a later date. Where a distinct Estonian
+  implementing process is actually being followed, it is its own linked Teema;
+  and the text says that «Jõustunud» ends the Teema, so outstanding work is
+  placed before it closes (the owner's answer of 2026-10-10).
 * **``awaiting_transposition`` («ELi õiguse ülevõtmise ootel»)** began «ELi
   õigusakti jõustumisest» — any EU act. Transposition is a directive's (or another
   act that requires it); it now says so, and that a regulation is not transposed.
 
 Nothing else moves: no key, label, sort order, matrix row or stored ``Matter.stage``,
-and no historical record is re-read. Whether the Chamber needs a stage of its own for
-«a regulation is in force and Estonian implementing measures are still pending» is a
-product decision recorded in docs/adr/0130's amendment of 2026-10-09 («not colour alone»), not
-something this migration settles by rewording.
+and no historical record is re-read. The owner decided on 2026-10-10 that no stage is
+added for «a regulation in force, Estonian implementing measures pending»: the
+regulation's Teema is «Jõustunud», and a real Estonian implementing process is followed
+as its own linked Teema (docs/adr/0130, amendment of 2026-10-09, «not colour alone»).
 
 **Fails closed**, as ``workflow/0006`` did: a row whose text is no longer exactly the
 one ``workflow/0006`` wrote has been edited by somebody, and is left as it is. The
@@ -70,7 +73,9 @@ CORRECTED = {
         "seda siseriiklikku õigusesse üle võtma; seni on hetkeseis „ELi õiguse "
         "ülevõtmise ootel“. ELi määrus kohaldub vahetult ja seda üle ei võeta: "
         "jõustunud määrus on „jõustunud“ ka siis, kui seda hakatakse kohaldama "
-        "hiljem või kui Eesti peab selle rakendamiseks oma õigust täiendama."
+        "hiljem või kui Eesti rakendusmeetmed on veel pooleli. Kui Eestis on "
+        "käimas eraldi rakendusakti menetlus, mida Koda jälgib, ava selle jaoks "
+        "seotud teema. „Jõustunud“ lõpetab teema."
     ),
     "awaiting_transposition": (
         "ELi direktiivi (või muu ülevõtmist vajava ELi akti) jõustumisest kuni "

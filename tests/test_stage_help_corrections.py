@@ -80,7 +80,13 @@ def test_jõustunud_keeps_the_transposition_rule_for_a_directive_only():
     # supplement its own law to implement it.
     assert "ELi määrus kohaldub vahetult ja seda üle ei võeta" in text
     assert "hakatakse kohaldama hiljem" in text
-    assert "rakendamiseks" in text
+    assert "Eesti rakendusmeetmed on veel pooleli" in text
+    # The owner's answer of 2026-10-10: a real Estonian implementing process is
+    # its own linked Teema — not one for every regulation — and the stage says
+    # that it ends the Teema, so nothing outstanding is left behind unseen.
+    assert "Kui Eestis on käimas eraldi rakendusakti menetlus" in text
+    assert "ava selle jaoks seotud teema" in text
+    assert text.endswith("„Jõustunud“ lõpetab teema.")
 
     # The sentence that sent a regulation towards transposition is gone.
     assert "kui jõustub ELi akt" not in text
