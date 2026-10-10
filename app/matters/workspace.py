@@ -64,6 +64,7 @@ from app.documents.models import Document
 from app.documents.services import capture_supporting_evidence
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import EngagementKind, ExternalPositionProvenance
+from app.matters.initiative import is_koda_initiative
 from app.matters.locks import (
     lock_open_matter_for_business_write,
     lock_submission_for_evidence_integrity,
@@ -1165,7 +1166,7 @@ def add_matter_koda_opinion(
         read_uploads,
     )
     from app.documents.uploads import UploadRejected, document_title_for, read_upload
-    from app.submissions.enums import SentAtPrecision
+    from app.submissions.enums import SentAtPrecision, SubmissionKind
     from app.submissions.services import register_sent_opinion_on_open_matter
 
     sent_files = ([upload] if upload is not None else []) + _uploads(uploads)
@@ -1279,6 +1280,15 @@ def add_matter_koda_opinion(
             document=document,
             version=version,
             title=document.title,
+            # On a Teema the Chamber started itself, what goes out is its
+            # proposal or appeal, and is recorded as one; the thirty-day check
+            # that every send schedules then asks about the proposal
+            # (docs/adr/0151 §5). Every other Teema sends an opinion, as before.
+            kind=(
+                SubmissionKind.KODA_PROPOSAL
+                if is_koda_initiative(locked_matter)
+                else SubmissionKind.FORMAL_OPINION
+            ),
             actor=author,
             summary=summary,
             recipients=list(recipients),

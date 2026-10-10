@@ -38,6 +38,7 @@ from app.matters.enums import (
     ResponseDeadlineOutcome,
     WebsiteOverviewKind,
 )
+from app.matters.initiative import is_koda_initiative
 from app.matters.models import (
     DEVELOPMENT_TITLE_MAX_LENGTH,
     EXTERNAL_POSITION_LAWYER_NOTE_MAX_LENGTH,
@@ -1339,6 +1340,15 @@ class MatterCreateForm(
     #: the Teema rail's `Kellele` row, `Muuda teemat`, the submission workflow
     #: and every Matter already carrying one are all as they were. What is gone
     #: is the question on the capture screen.
+    #: `Koja ettepanek või pöördumine` — the Chamber started this itself
+    #: (owner's R5, docs/adr/0151). Stored as `Matter.track` «Koja algatus»,
+    #: the process kind it is; a Teema like this has no `Saabus` and no
+    #: `Arvamuse tähtaeg`, so `clean` sees to both (app/matters/initiative.py).
+    koda_initiative = forms.BooleanField(
+        label="Koja ettepanek või pöördumine",
+        required=False,
+        widget=forms.CheckboxInput(attrs={"data-initiative-toggle": "true"}),
+    )
     received_date = EstonianDateField(
         label="Saabus",
         required=False,
@@ -1423,6 +1433,15 @@ class MatterCreateForm(
 
         clean_policy_area_answer(self, cleaned)
         clean_legal_instrument_answer(self, cleaned)
+
+        # **A Chamber initiative records neither incoming date** (docs/adr/0151
+        # §2). Not refused: `Saabus` arrives pre-filled with today, and the box
+        # that holds it is hidden the moment the initiative is ticked, so the
+        # only honest reading of whatever is still in the two fields is «not
+        # applicable». Nothing is recorded, and no response obligation begins.
+        if cleaned.get("koda_initiative"):
+            cleaned["received_date"] = None
+            cleaned["response_deadline"] = None
 
         return cleaned
 
@@ -1730,6 +1749,15 @@ class MatterEditForm(
     #: field-level default would only ever apply where a date is genuinely
     #: empty — and there, pre-filling today would invent a fact nobody stated
     #: (Teema QA §5.2).
+    #: `Koja ettepanek või pöördumine` — the Chamber started this itself
+    #: (owner's R5, docs/adr/0151). Stored as `Matter.track` «Koja algatus»,
+    #: the process kind it is; a Teema like this has no `Saabus` and no
+    #: `Arvamuse tähtaeg`, so `clean` sees to both (app/matters/initiative.py).
+    koda_initiative = forms.BooleanField(
+        label="Koja ettepanek või pöördumine",
+        required=False,
+        widget=forms.CheckboxInput(attrs={"data-initiative-toggle": "true"}),
+    )
     received_date = EstonianDateField(label="Saabus", required=False, widget=DATE_WIDGET)
     response_deadline = EstonianDateField(
         label="Arvamuse tähtaeg", required=False, widget=DATE_WIDGET
@@ -1941,6 +1969,7 @@ class MatterEditForm(
         # and false on the page they correct from is a rule people learn twice.
         clean_policy_area_answer(self, cleaned)
         clean_legal_instrument_answer(self, cleaned)
+        clean_initiative_dates(self, cleaned)
         return cleaned
 
     def clean_sender_name(self) -> str:
@@ -1986,7 +2015,31 @@ def edit_initial(matter: Matter) -> dict[str, Any]:
         ],
         "received_date": matter.received_date,
         "response_deadline": matter.response_deadline,
+        "koda_initiative": is_koda_initiative(matter),
     }
+
+
+def clean_initiative_dates(form: Any, cleaned: dict[str, Any]) -> None:
+    """`Muuda teemat`: a Chamber initiative is never *given* an incoming date.
+
+    A date the Teema already holds stays — kept, moved or cleared through the
+    ordinary audited correction — because marking a Teema as an initiative is
+    not a reason to erase what was recorded about it (docs/adr/0151 §2). What
+    is refused is establishing one where there is none, on the box that holds
+    it, with the same sentence the services say.
+    """
+    from app.matters.initiative import (
+        INITIATIVE_HAS_NO_RECEIVED_DATE,
+        INITIATIVE_HAS_NO_RESPONSE_DEADLINE,
+    )
+
+    matter = getattr(form, "matter", None)
+    if matter is None or not cleaned.get("koda_initiative"):
+        return
+    if cleaned.get("received_date") and matter.received_date is None:
+        form.add_error("received_date", INITIATIVE_HAS_NO_RECEIVED_DATE)
+    if cleaned.get("response_deadline") and matter.response_deadline is None:
+        form.add_error("response_deadline", INITIATIVE_HAS_NO_RESPONSE_DEADLINE)
 
 
 def matter_edit_conflict_changes(
@@ -2023,6 +2076,10 @@ def matter_edit_conflict_changes(
         "legal_instruments": "Õigusakt",
         "legal_instrument_other": "Õigusakt — muu",
         "source_organisations": "Saatja",
+        # Compared like every other fact the page carries: a colleague who
+        # marked or unmarked the Teema meanwhile must be named, or the second
+        # Salvesta silently undoes it (docs/adr/0151 §3).
+        "koda_initiative": "Koja ettepanek või pöördumine",
     }
     names = {
         "owner": lambda value: _display_owner(current, value),
@@ -2030,6 +2087,7 @@ def matter_edit_conflict_changes(
         "policy_areas": lambda value: _display_many(PolicyArea, value),
         "legal_instruments": lambda value: _display_many(LegalInstrumentType, value),
         "source_organisations": lambda value: _display_many(Organisation, value),
+        "koda_initiative": lambda value: "jah" if value else "ei",
     }
     stored = edit_initial(current)
     # The instruments as the record holds them, not as the page offers them:
@@ -2049,7 +2107,7 @@ def matter_edit_conflict_changes(
 
 def _comparable(value: Any) -> Any:
     """One shape for «the same answer», across a pk, a model and a list of them."""
-    if value is None or value == "":
+    if value is None or value == "" or value is False:
         return None
     if isinstance(value, (list, tuple, set)):
         return frozenset(str(getattr(item, "pk", item)) for item in value)

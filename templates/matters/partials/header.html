@@ -354,6 +354,18 @@ rather than read.
       The only change is which element it renders inside — and the swap target,
       which follows it from `#teema-andmed` to `#teema-pais`.
     {% endcomment %}
+    {% if koda_initiative %}
+      {% comment %}
+        `Koja ettepanek või pöördumine` (docs/adr/0151 §3): the Chamber started
+        this one, so the meta line says so where `Saabus` would have stood, and
+        offers no `+ Saabus` — a date it already holds is still shown and still
+        correctable, because marking a Teema is not a reason to erase it.
+      {% endcomment %}
+      <span class="metaline__item">
+        <span class="metaline__value metaline__initiative">{{ koda_initiative_label }}</span>
+      </span>
+    {% endif %}
+    {% if not koda_initiative or matter.received_date %}
     <span class="metaline__item">
       <span class="metaline__label">Saabus</span>
       {% if can_write %}
@@ -387,6 +399,7 @@ rather than read.
         <span class="metaline__value">{{ matter.received_date|date:"j.n.Y" }}</span>
       {% endif %}
     </span>
+    {% endif %}
 
     {% comment %}
       TÄHTAEG — `Arvamuse tähtaeg`, and nothing else.
@@ -483,8 +496,11 @@ rather than read.
           </span>
         {% endif %}
       {% endwith %}
-      {% if can_write %}
+      {% if can_write and not koda_initiative %}
         {% comment %}
+          Never on a Chamber initiative, which owes nobody an opinion by a day
+          (docs/adr/0151 §2).
+
           A Matter with no deadline at all still needs a way to gain one. A quiet
           invitation rather than a label over an em dash, which is what made the
           old band read as a data-quality report (Teema redesign §5.5, §24).

@@ -64,6 +64,10 @@ FOLLOW_UP_DAYS = 30
 #: a sentence that named one ministry would be wrong for a letter to three.
 FOLLOW_UP_TEXT_ONE = "Kontrolli, kas adressaat on Koja arvamusele vastanud"
 FOLLOW_UP_TEXT_MANY = "Kontrolli, kas adressaadid on Koja arvamusele vastanud"
+#: The same check after a Chamber proposal or appeal (docs/adr/0151 §5): the
+#: answer awaited is to what Koda proposed, not to an opinion it was asked for.
+FOLLOW_UP_PROPOSAL_TEXT_ONE = "Kontrolli, kas adressaat on Koja ettepanekule vastanud"
+FOLLOW_UP_PROPOSAL_TEXT_MANY = "Kontrolli, kas adressaadid on Koja ettepanekule vastanud"
 
 #: A form named a check that is no longer planned or current (stale tab).
 FOLLOW_UP_CHANGED = "See järelkontroll on vahepeal muutunud. Värskenda lehte ja vaata uuesti."
@@ -103,8 +107,13 @@ class FollowUpClosureUnconfirmed(DomainError):
         super().__init__(FOLLOW_UP_CLOSURE_WARNING)
 
 
-def follow_up_text(addressee_count: int) -> str:
-    """The check's sentence: one addressee, or several."""
+def follow_up_text(addressee_count: int, kind: str = "") -> str:
+    """The check's sentence: one addressee, or several — and, after a Chamber
+    proposal or appeal, about the proposal rather than an opinion."""
+    from app.submissions.enums import SubmissionKind
+
+    if kind == SubmissionKind.KODA_PROPOSAL:
+        return FOLLOW_UP_PROPOSAL_TEXT_MANY if addressee_count > 1 else FOLLOW_UP_PROPOSAL_TEXT_ONE
     return FOLLOW_UP_TEXT_MANY if addressee_count > 1 else FOLLOW_UP_TEXT_ONE
 
 
@@ -208,7 +217,7 @@ def schedule_first_check(*, submission: Any, actor: Any = None) -> NextAction | 
     follow_up = OpinionFollowUp.objects.create(
         submission=locked, sent_on=sent_on, first_due_on=due, created_by=actor
     )
-    text = follow_up_text(_addressee_count(locked))
+    text = follow_up_text(_addressee_count(locked), locked.kind)
     action = NextAction.objects.create(
         matter=matter,
         text=text,

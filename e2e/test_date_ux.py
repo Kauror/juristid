@@ -21,7 +21,7 @@ from datetime import date, timedelta
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, sign_in
+from e2e.conftest import MARTIN, sign_in, start_first_step, unique_title
 
 pytestmark = pytest.mark.e2e
 
@@ -372,3 +372,80 @@ def test_the_calendar_stays_inside_the_window(page, base_url, width):
     assert box is not None
     assert box["x"] >= 0, box
     assert box["x"] + box["width"] <= width + 1, box
+
+
+# ---------------------------------------------------------------------------
+# Koja ettepanek või pöördumine (docs/adr/0151)
+# ---------------------------------------------------------------------------
+
+INITIATIVE = 'input[name="koda_initiative"]'
+
+
+def _date_box(page, field_id: str):
+    return page.locator(f"[data-initiative-date]:has({field_id})")
+
+
+def test_an_initiative_sets_both_dates_aside_and_unticking_brings_them_back(page, base_url):
+    """Ticked, the two dates go and the note says why; unticked, `Saabus` is
+    back with what it held — nothing is invented and nothing typed is lost."""
+    sign_in(page, base_url, MARTIN)
+    create_form(page, base_url)
+    note = page.locator("[data-initiative-note]")
+    expect(note).to_be_hidden()
+    held = page.locator("#id_received_date").input_value()
+    assert held
+
+    page.locator(INITIATIVE).check()
+    expect(_date_box(page, "#id_received_date")).to_be_hidden()
+    expect(_date_box(page, "#id_response_deadline")).to_be_hidden()
+    expect(note).to_be_visible()
+    assert page.locator("#id_received_date").input_value() == ""
+
+    page.locator(INITIATIVE).uncheck()
+    expect(_date_box(page, "#id_received_date")).to_be_visible()
+    expect(note).to_be_hidden()
+    assert page.locator("#id_received_date").input_value() == held
+
+
+def test_an_initiative_is_filed_with_neither_date_and_says_so(page, base_url):
+    sign_in(page, base_url, MARTIN)
+    create_form(page, base_url)
+    title = unique_title("Koja ettepanek brauserist")
+    page.fill("#id_title", title)
+    page.fill("#id_response_deadline", typed(10))
+    page.locator(INITIATIVE).check()
+    page.get_by_role("button", name="Salvesta", exact=True).click()
+    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    start_first_step(page)
+
+    meta = page.locator(".metaline")
+    expect(meta).to_contain_text("Koja ettepanek või pöördumine")
+    expect(meta).not_to_contain_text("+ Saabus")
+    expect(meta).not_to_contain_text("+ Arvamuse tähtaeg")
+    expect(meta).not_to_contain_text(typed(10))
+
+
+def test_marking_an_existing_teema_keeps_its_saabus_on_muuda_teemat(page, base_url):
+    """`Muuda teemat` keeps a held date on the page beside the note."""
+    sign_in(page, base_url, MARTIN)
+    create_form(page, base_url)
+    page.fill("#id_title", unique_title("Hiljem Koja algatus"))
+    page.get_by_role("button", name="Salvesta", exact=True).click()
+    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    start_first_step(page)
+    url = page.url
+
+    page.goto(f"{url}muuda/")
+    page.wait_for_load_state("networkidle")
+    received = page.locator("#id_received_date").input_value()
+    assert received
+    page.locator(INITIATIVE).check()
+    expect(_date_box(page, "#id_received_date")).to_be_visible()
+    expect(_date_box(page, "#id_response_deadline")).to_be_hidden()
+    expect(page.locator("[data-initiative-note]")).to_be_visible()
+    page.get_by_role("button", name="Salvesta").click()
+    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+
+    meta = page.locator(".metaline")
+    expect(meta).to_contain_text("Koja ettepanek või pöördumine")
+    expect(meta).to_contain_text(received)

@@ -148,9 +148,27 @@
       </label>
     </div>
 
+    {% comment %}
+      `Koja ettepanek või pöördumine`, the same question `Uus teema` asks
+      (docs/adr/0151). Ticking it sets `Matter.track` to «Koja algatus» and
+      unticking clears only that, both through the audited track writer.
+
+      **A date the Teema already holds is not erased** by ticking it: the box
+      stays on the page with the note beside it, and removing the date is the
+      ordinary correction it always was. An empty box is hidden, and the server
+      refuses to establish either date on an initiative (`clean_initiative_dates`).
+    {% endcomment %}
+    <div class="createform__row" data-initiative-mode="keep">
+      <label class="checkline">
+        {{ form.koda_initiative }}
+        <span>{{ form.koda_initiative.label }}</span>
+      </label>
+      <p class="field__help" data-initiative-note hidden>Koda algatas selle ise: uut saabumise kuupäeva ega arvamuse tähtaega ei lisata. Juba salvestatud kuupäev jääb alles, kuni selle eemaldad.</p>
+    </div>
+
     {# 3 — Saabus, where the master asks it: beside the file, before the people. #}
     <div class="createform__row">
-      <label class="field createform__field--date">
+      <label class="field createform__field--date" data-initiative-date>
         <span class="field__label">{% field_label form.received_date %}</span>
         {{ form.received_date }}
         {% if form.received_date.errors %}
@@ -246,7 +264,7 @@
 
     {# 8 — Arvamuse tähtaeg, the master's last question. #}
     <div class="createform__row">
-      <label class="field createform__field--date">
+      <label class="field createform__field--date" data-initiative-date>
         <span class="field__label">{% field_label form.response_deadline %}</span>
         {{ form.response_deadline }}
         {% comment %}

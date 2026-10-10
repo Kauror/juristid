@@ -18,6 +18,10 @@ class SubmissionKind(models.TextChoices):
     PARLIAMENTARY_SUBMISSION = "PARLIAMENTARY_SUBMISSION", "Pöördumine Riigikogule"
     JOINT_LETTER = "JOINT_LETTER", "Ühispöördumine"
     INFORMAL_WRITTEN_RESPONSE = "INFORMAL_WRITTEN_RESPONSE", "Mitteametlik kirjalik vastus"
+    #: What Koda sends on a Teema it started itself — a proposal or an appeal
+    #: nobody asked for (docs/adr/0151 §5). Recorded and evidenced like every
+    #: other send, and followed up thirty days later like every other send.
+    KODA_PROPOSAL = "KODA_PROPOSAL", "Koja ettepanek või pöördumine"
     OTHER = "OTHER", "Muu"
 
 

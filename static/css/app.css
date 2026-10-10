@@ -9222,6 +9222,27 @@ button.accordion__action:focus-visible {
 
 /* The register reference in the rail: an identity, so it is set in the same
    monospace the exact search matches on. */
+/* One checkbox and its words on a form row: `Koja ettepanek või pöördumine`
+   on both Teema forms (docs/adr/0151). The words are the label, so the whole
+   line is the hit area. */
+.checkline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  color: var(--text-body);
+  cursor: pointer;
+}
+
+.checkline input {
+  margin: 0;
+}
+
+/* The same fact on the Teema's meta line, where `Saabus` would have stood. */
+.metaline__initiative {
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-secondary);
+}
+
 /* `Teemaviide` in the header's meta line (docs/adr/0150 §4): the register's
    `2026_301`, in tabular figures so the digits read as a code, and selectable
    as a whole for the copy button beside it. */

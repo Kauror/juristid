@@ -3384,6 +3384,73 @@
     });
   }
 
+  /* ---- «Koja ettepanek või pöördumine» ------------------------------------
+   * A Teema the Chamber starts itself has no `Saabus` and no `Arvamuse
+   * tähtaeg` (docs/adr/0151). Ticking the box sets both dates aside and the
+   * note beside it says why; unticking brings them back.
+   *
+   *  - `Uus teema` (`data-initiative-mode="clear"`): both boxes are emptied and
+   *    hidden, and what they held — `Saabus`'s default today, or anything
+   *    typed — is put back if the box is unticked again. The server sets both
+   *    aside on its own, so this is the page agreeing with it, not the rule.
+   *  - `Muuda teemat` (`"keep"`): a date the Teema already holds stays on the
+   *    page, because marking a Teema is not a reason to erase it; only an
+   *    empty box is hidden, so nothing new can be typed into one.
+   *
+   * With scripting off every box stays visible and the server's rule applies.
+   */
+  function bindInitiative(scope) {
+    (scope || document).querySelectorAll("input[data-initiative-toggle]").forEach(function (box) {
+      if (!once(box, "Initiative")) {
+        return;
+      }
+      var form = box.form;
+      var row = box.closest("[data-initiative-mode]");
+      if (!form || !row) {
+        return;
+      }
+      var mode = row.getAttribute("data-initiative-mode") || "clear";
+      var note = row.querySelector("[data-initiative-note]");
+      var fields = form.querySelectorAll("[data-initiative-date]");
+      var held = new Map();
+
+      var sync = function () {
+        var on = box.checked;
+        fields.forEach(function (field) {
+          var input = field.querySelector("input[name]");
+          if (!input) {
+            return;
+          }
+          if (on) {
+            if (mode === "clear") {
+              if (!held.has(input)) {
+                held.set(input, input.value);
+              }
+              input.value = "";
+              field.hidden = true;
+            } else {
+              field.hidden = !input.value.trim();
+            }
+          } else {
+            if (held.has(input)) {
+              if (!input.value) {
+                input.value = held.get(input);
+              }
+              held.delete(input);
+            }
+            field.hidden = false;
+          }
+        });
+        if (note) {
+          note.hidden = !on;
+        }
+      };
+
+      box.addEventListener("change", sync);
+      sync();
+    });
+  }
+
   /* ---- A primary action that says whether it can do anything --------------
    * "Loo teema" reads inactive until there is a title, and it stays a working
    * button: pressing it anyway produces the server's refusal beside the field
@@ -4816,6 +4883,7 @@
     bindStageHelp(document);
     bindStageGuidance(document);
     bindRelatedPicker(document);
+    bindInitiative(document);
     bindRequiredAction(document);
     bindNextStepOffers(document);
     bindPhaseDateOffers(document);
