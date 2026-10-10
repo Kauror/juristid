@@ -2076,6 +2076,10 @@ def matter_edit_conflict_changes(
         "legal_instruments": "Õigusakt",
         "legal_instrument_other": "Õigusakt — muu",
         "source_organisations": "Saatja",
+        # Compared like every other fact the page carries: a colleague who
+        # marked or unmarked the Teema meanwhile must be named, or the second
+        # Salvesta silently undoes it (docs/adr/0151 §3).
+        "koda_initiative": "Koja ettepanek või pöördumine",
     }
     names = {
         "owner": lambda value: _display_owner(current, value),
@@ -2083,6 +2087,7 @@ def matter_edit_conflict_changes(
         "policy_areas": lambda value: _display_many(PolicyArea, value),
         "legal_instruments": lambda value: _display_many(LegalInstrumentType, value),
         "source_organisations": lambda value: _display_many(Organisation, value),
+        "koda_initiative": lambda value: "jah" if value else "ei",
     }
     stored = edit_initial(current)
     # The instruments as the record holds them, not as the page offers them:
@@ -2102,7 +2107,7 @@ def matter_edit_conflict_changes(
 
 def _comparable(value: Any) -> Any:
     """One shape for «the same answer», across a pk, a model and a list of them."""
-    if value is None or value == "":
+    if value is None or value == "" or value is False:
         return None
     if isinstance(value, (list, tuple, set)):
         return frozenset(str(getattr(item, "pk", item)) for item in value)

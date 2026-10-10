@@ -430,3 +430,90 @@ def test_the_edit_page_arrives_ticked_for_an_initiative(signed_in, specialist):
     box = body.split('name="koda_initiative"', 1)[1].split(">", 1)[0]
     assert "checked" in box
     assert 'data-initiative-mode="keep"' in body
+
+
+# ---------------------------------------------------------------------------
+# Review fixes
+# ---------------------------------------------------------------------------
+
+
+def test_a_stale_edit_names_the_initiative_a_colleague_set(signed_in, specialist):
+    """The conflict list says what moved, so a second Salvesta does not undo it."""
+    matter = create_matter(title="Kaks toimetajat", actor=specialist)
+    stale = edit_payload(matter)
+    set_koda_initiative(matter=matter, value=True, actor=specialist)
+
+    response = signed_in.post(edit_url(matter), stale)
+
+    assert response.status_code == 409
+    changes = {item["label"]: item for item in response.context["conflict_changes"]}
+    assert changes["Koja ettepanek või pöördumine"]["current"] == "jah"
+    assert changes["Koja ettepanek või pöördumine"]["submitted"] == "ei"
+    matter.refresh_from_db()
+    assert matter.track == Track.KODA_INITIATIVE
+
+
+def test_the_assisted_review_proposes_no_deadline_for_an_initiative(monkeypatch):
+    """`Muuda teemat → dokumendist` would otherwise fill a date its own save refuses."""
+    from types import SimpleNamespace
+
+    from app.matters.intake_suggestions import prefill as prefill_module
+    from app.matters.intake_suggestions.analysis import CurrentValues
+    from app.matters.intake_suggestions.types import SuggestedField
+
+    # The analysis objects are frozen dataclasses; stand-ins need `replace` to
+    # hand them back unchanged, which is all the tail of `prefill_initial` does.
+    monkeypatch.setattr(prefill_module, "replace", lambda obj, **_: obj)
+    due = (today() + timedelta(days=9)).isoformat()
+    analysis = SimpleNamespace(
+        fields={
+            SuggestedField.RESPONSE_DEADLINE: SimpleNamespace(
+                prefill_candidate=SimpleNamespace(value=due), candidates=()
+            )
+        }
+    )
+
+    ordinary, _ = prefill_module.prefill_initial(analysis, base={}, current=CurrentValues())
+    initiative, _ = prefill_module.prefill_initial(
+        analysis, base={}, current=CurrentValues(track=Track.KODA_INITIATIVE)
+    )
+
+    assert ordinary["response_deadline"] == date.fromisoformat(due)
+    assert "response_deadline" not in initiative
+
+
+def test_replacing_a_held_deadline_is_refused_on_an_initiative(specialist):
+    from app.matters.enums import ResponseDeadlineChange
+
+    due = today() + timedelta(days=4)
+    matter = create_matter(
+        title="Asendamine",
+        actor=specialist,
+        response_deadline=due,
+        response_requested_at=timezone.now(),
+    )
+    set_koda_initiative(matter=matter, value=True, actor=specialist)
+    matter.refresh_from_db()
+
+    with refused(INITIATIVE_HAS_NO_RESPONSE_DEADLINE):
+        change_response_deadline(
+            matter=matter,
+            deadline=due + timedelta(days=9),
+            change=ResponseDeadlineChange.REPLACED,
+            previous_outcome="CANCELLED",
+            actor=specialist,
+        )
+    matter.refresh_from_db()
+    assert matter.response_deadline == due
+
+
+def test_a_saabus_is_judged_against_the_stored_track_not_a_stale_copy(specialist):
+    """The header editor holds no lock of its own; the service reads the track under one."""
+    matter = create_matter(title="Vana koopia", actor=specialist)
+    stale = Matter.objects.get(pk=matter.pk)
+    set_koda_initiative(matter=matter, value=True, actor=specialist)
+
+    with refused(INITIATIVE_HAS_NO_RECEIVED_DATE):
+        set_matter_dates(matter=stale, received_date=today(), actor=specialist)
+    matter.refresh_from_db()
+    assert matter.received_date is None

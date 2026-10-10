@@ -1272,6 +1272,16 @@ def set_matter_dates(
     from app.matters.initiative import refuse_new_incoming_dates
 
     proposed: dict[str, Any] = {}
+    if received_date is not _UNSET and received_date and matter.received_date is None:
+        # Establishing one: read the track under the row lock, so a colleague
+        # marking the Teema as an initiative in a transaction that commits first
+        # is seen here rather than after (the header editor takes no lock of its
+        # own — `GUARDED_MATTER_FIELDS`).
+        matter.track = (
+            Matter.objects.select_for_update(no_key=True)
+            .values_list("track", flat=True)
+            .get(pk=matter.pk)
+        )
     if received_date is not _UNSET:
         proposed["received_date"] = received_date
     if response_deadline is not _UNSET:

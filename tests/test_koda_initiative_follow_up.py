@@ -79,9 +79,7 @@ def test_several_addressees_read_in_the_plural(specialist, ministry, committee):
     assert checks_of(proposal)[0].text == FOLLOW_UP_PROPOSAL_TEXT_MANY
 
 
-def test_an_ordinary_teema_still_sends_an_opinion_and_its_check_is_unchanged(
-    specialist, ministry
-):
+def test_an_ordinary_teema_still_sends_an_opinion_and_its_check_is_unchanged(specialist, ministry):
     matter = factories.MatterFactory(owner=specialist)
     opinion = send_koja_arvamus(matter, specialist, [ministry], day(-2))
 

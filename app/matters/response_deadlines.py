@@ -252,6 +252,13 @@ def change_response_deadline(
         return matter
 
     if change == ResponseDeadlineChange.REPLACED:
+        # A replacement is a new request, which a Chamber initiative does not
+        # have; moving or clearing the deadline it holds stays allowed
+        # (docs/adr/0151 §2).
+        from app.matters.initiative import INITIATIVE_HAS_NO_RESPONSE_DEADLINE, is_koda_initiative
+
+        if is_koda_initiative(locked):
+            raise DomainError(INITIATIVE_HAS_NO_RESPONSE_DEADLINE)
         if previous_outcome not in REPLACED_OUTCOMES:
             raise DomainError(REPLACED_NEEDS_AN_OUTCOME)
         _end_current(

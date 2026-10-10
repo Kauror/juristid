@@ -147,7 +147,12 @@ def prefill_initial(
             prefilled[SuggestedField.SOURCE_ORGANISATIONS] = (chosen.value,)
 
     deadline = analysis.fields.get(SuggestedField.RESPONSE_DEADLINE)
-    if deadline is not None and current.response_deadline is None:
+    # Never for a Chamber initiative: it owes nobody an opinion by a day, and
+    # the edit form would refuse the very date it filled (docs/adr/0151 §2).
+    from app.workflow.enums import Track
+
+    is_initiative = current.track == Track.KODA_INITIATIVE
+    if deadline is not None and current.response_deadline is None and not is_initiative:
         chosen = deadline.prefill_candidate
         if chosen is not None:
             initial["response_deadline"] = date.fromisoformat(chosen.value)
