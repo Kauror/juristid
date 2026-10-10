@@ -8,6 +8,28 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-10-10
+basis = "deployment"
+# Juristide UX-voor: PR #418 (F1–F4, ADR 0130/0032), #419 (R1–R4, F5, ADR 0150,
+# 0070), #420 (R5, ADR 0151), #421 (ADR 0152). Migratsioonid workflow/0016
+# (andmed: kolme hetkeseisu selgitus) ja submissions/0010 (ainult valikud).
+# Otsinguindeksit ei ehitata uuesti. Kui väljalase ei jõua tootmisse 10.10
+# (Tallinna aja järgi), liiguvad need read väljalaske päeva kirjesse.
+changes = [
+  "Uut teemat luues on vastutajana vaikimisi valitud teema looja; vajadusel saab valida kolleegi.",
+  "Teemal on nüüd üks õigusakt. Teema, millel on varasemast mitu õigusakti, hoiab need alles, kuni valid «Muuda teemat» lehel ühe.",
+  "Uut teemat luues saab «Seo olemasoleva teemaga» abil otsida ja siduda ka teema, mida soovitused ei paku — pealkirja, teemaviite või märksõna järgi. Seos luuakse koos teemaga.",
+  "Teema päises on taas teemaviide (näiteks 2026_301) koos «Kopeeri» nupuga.",
+  "Kui valid uuel teemal õigusaktiks VTK või Koja ettepaneku või pöördumise ja hetkeseis on veel valimata, valitakse hetkeseisuks «Idee». Selle saab muuta; kui hetkeseisu ise valid või tühjendad, ei vali Juristid seda enam sinu eest.",
+  "Õigusakti järgi tuhmimad hetkeseisud on nüüd ka «Muuda teemat» lehel. Need on tähistatud punktiirjoonega äärisega, nende tekst on paremini loetav ja selgitus ütleb seda ka sõnadega; neid saab endiselt valida.",
+  "Hetkeseisu selgitused mahuvad nüüd ka kitsal ekraanil, näiteks telefonis, tervenisti ekraanile.",
+  "«Muu» hetkeseisu selgitus ütleb nüüd, millal «Muu» valida. «Jõustunud» ja «ELi õiguse ülevõtmise ootel» selgitused eristavad ELi direktiivi ülevõtmist ELi määruse vahetust kohaldamisest; jõustunud ELi määrus on «Jõustunud» ka siis, kui Eesti rakendusmeetmed on veel pooleli.",
+  "Uut teemat luues saab märkida «Koja ettepanek või pöördumine» — Koja enda algatus. Sellisel teemal ei ole saabumise kuupäeva ega arvamuse tähtaega ning seda ei loeta koostamisel olevaks arvamuseks.",
+  "Kui Koja ettepanek või pöördumine registreeritakse saadetuks («+ Koja arvamus»), lisandub 30 päeva pärast järelkontroll, kas adressaat vastas.",
+  "Kui teema sulgemisel («Jõustunud» või «Rohkem ei tegele») jääks pooleli tegevusi, planeeritud ülevaateid või kaasamise ootusi, küsib Juristid enne kinnitust ja ütleb, mis lõpetatakse.",
+]
+
+[[day]]
 date = 2026-10-09
 basis = "deployment"
 # Hele teema ja teemalüliti, ADR 0147. Ainult kuvamine: migratsioone ei ole,
