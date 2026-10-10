@@ -8,9 +8,8 @@ would not catch (master specification 5.2).
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date
 from typing import Any
 
 from django.db.models import Exists, OuterRef, Prefetch, Q, QuerySet
@@ -18,18 +17,14 @@ from django.utils import timezone
 
 from app.core.dates import format_estonian_date
 from app.matters.activity import annotate_last_activity
-from app.matters.enums import REGISTER_YEAR_ORIGINS, MatterDataClass, RecordMode
+from app.matters.enums import REGISTER_YEAR_ORIGINS, MatterDataClass
 from app.matters.models import Matter
 from app.matters.next_step import upcoming_milestone_prefetch, without_next_step
-from app.submissions.enums import SubmissionStatus
-from app.submissions.models import Submission
 from app.workflow.enums import (
     ActionStatus,
 )
 from app.workflow.lateness import overdue_q, review_due_q
 from app.workflow.models import NextAction
-
-HORIZON_DAYS = 7
 
 #: The URL value that means "no usable reporting year". A word rather than a
 #: blank, so that `?aasta=` (a cleared filter) and `?aasta=teadmata` (a
@@ -625,258 +620,6 @@ def planned_actions_of(matter: Matter, user: Any) -> list[NextAction]:
     if user is None:
         return []
     return list(NextAction.objects.visible_to(user).filter(matter=matter).planned())
-
-
-def visible_actions(user: Any) -> QuerySet[NextAction]:
-    return (
-        NextAction.objects.visible_to(user)
-        .filter(status=ActionStatus.OPEN)
-        .select_related(
-            "matter",
-            "matter__stage",
-            "matter__owner",
-            "responsible",
-        )
-    )
-
-
-@dataclass(frozen=True)
-class WorkGroup:
-    """One band of the work timeline, ordered by when it needs attention."""
-
-    key: str
-    label: str
-    actions: list[NextAction]
-
-    @property
-    def count(self) -> int:
-        return len(self.actions)
-
-
-def my_work_timeline(user: Any, today: date | None = None) -> list[WorkGroup]:
-    """Everything assigned to one person, in one list, ordered by its date.
-
-    The redesign split this in two: DO actions banded by urgency on the left,
-    WAIT and MONITOR in a separate column on the right. Hands-on QA rejected
-    the split, and the reason is the one organising question this page exists to
-    answer:
-
-        **when do I need to care about this again?**
-
-    That question has one answer per action and it is a date, whatever the mode.
-    A ministry's answer expected on Thursday and an opinion due on Thursday are
-    both Thursday's problem, and putting them in two columns made a lawyer read
-    two lists and merge them in their head.
-
-    So: one chronological list of every open action this person is responsible
-    for, in five bands.
-
-    **The mode still means what it meant.** The date says *where* the action
-    belongs in time; the chip says *what the date means*, and the presentation
-    layer keeps them apart — only DO + DEADLINE is ever described as late.
-    Unifying the list is not unifying the vocabulary (master specification
-    18.8).
-
-    **The old banding had a hole**, which is the other half of the reported
-    defect. `overdue`, `today` and `soon` each required `date_semantics =
-    DEADLINE`, while `later` required a date beyond the horizon or none at all —
-    so a DO carrying any other semantics, dated inside the next seven days, was
-    in no band at all and vanished from the page. The register's own parser
-    produces exactly that combination: a DO whose source names a vague month is
-    recorded as an expectation, not a deadline
-    (app/legacy_import/register_next_actions.py). Banding now reads the date and
-    nothing else.
-    """
-    today = today or timezone.localdate()
-    horizon = today + timedelta(days=HORIZON_DAYS)
-
-    mine = visible_actions(user).filter(responsible=user)
-
-    dated = mine.filter(target_date__isnull=False)
-    # Banding, not lateness. These five groups partition *every* open action by
-    # the day it sorts on, review kinds included, and the anchor is exactly the
-    # right value to band on — «Tähtaeg või ülevaatus möödas» is where a date
-    # went, not a claim that anybody missed anything. Only DO + DEADLINE is ever
-    # described as late, and that reading is `overdue_date_q`'s.
-    past = list(dated.filter(target_date__lt=today).order_by("target_date"))
-    now = list(dated.filter(target_date=today).order_by("matter__title"))
-    soon = list(
-        dated.filter(target_date__gt=today, target_date__lte=horizon).order_by("target_date")
-    )
-    later = list(dated.filter(target_date__gt=horizon).order_by("target_date"))
-    undated = list(mine.filter(target_date__isnull=True).order_by("matter__title"))
-
-    return [
-        WorkGroup("passed", "Tähtaeg või ülevaatus möödas", past),
-        WorkGroup("today", "Täna", now),
-        WorkGroup("soon", f"Järgmise {HORIZON_DAYS} päeva jooksul", soon),
-        WorkGroup("later", "Hiljem", later),
-        WorkGroup("undated", "Kuupäevata", undated),
-    ]
-
-
-def overdue_count(actions: Sequence[NextAction], today: date | None = None) -> int:
-    """How many of these are genuinely late.
-
-    Only DO + DEADLINE. The page's summary line has to be able to say "two are
-    late" without counting a ministry that has not replied yet, which is not
-    lateness and must never be presented as it (master specification 18.8).
-    """
-    day = today or timezone.localdate()
-    return sum(1 for action in actions if action.is_overdue(day))
-
-
-def matters_without_next_action(user: Any) -> QuerySet[Matter]:
-    """Open FULL Matters carrying no current instruction.
-
-    This is the one attention state that cannot be derived from a date, which is
-    exactly why it needs a query of its own: without it a Matter simply stops
-    appearing anywhere and goes quiet (design handoff, recommendation 1).
-
-    ``visible_to`` on the subquery, like `filter_by_next_action` beside it: a
-    `NextAction` can be restricted below its Matter, and an unscoped probe lets
-    a step nobody here may read decide whether a visible Matter is listed.
-    Both through `without_next_step`, so an upcoming `Oluline tähtaeg` counts as
-    a next step here exactly as it does on the register (docs/adr/0120).
-    """
-    return without_next_step(
-        matter_list_queryset(user).filter(is_open=True, record_mode=RecordMode.FULL), user
-    )
-
-
-@dataclass(frozen=True)
-class AttentionItem:
-    """A deterministic, actionable data-quality problem.
-
-    Nothing speculative appears here. A warning a lawyer cannot act on, or
-    disagrees with, teaches them to ignore the panel.
-    """
-
-    key: str
-    label: str
-    matter: Matter
-    detail: str = ""
-
-
-def my_attention_items(user: Any, today: date | None = None) -> list[AttentionItem]:
-    # Imported here rather than at module scope: `app.legacy_import` imports the
-    # matters app, so a top-level import would close the circle. The same reason
-    # `register_display.source_instructions_for` defers its own model import.
-    from app.legacy_import.current_state import RegisterCurrency
-    from app.legacy_import.register_display import source_instructions_for
-
-    today = today or timezone.localdate()
-    items: list[AttentionItem] = []
-
-    # Annotated like every other population that reaches a row showing
-    # *viimane tegevus*. `matters_without_next_action` inherits it from
-    # `matter_list_queryset`; this one builds its own query, so it says so here
-    # rather than rendering an import timestamp beside rows that do not
-    # (ADR 0026).
-    owned = annotate_last_activity(
-        Matter.objects.visible_to(user)
-        .filter(owner=user, is_open=True, record_mode="FULL")
-        .select_related("stage"),
-        user,
-    )
-
-    # "Nothing to do next" means neither a structured action nor a sentence the
-    # register left behind. Flagging on the structured action alone would put
-    # every Matter whose JÄRGMISEKS still carries the instruction on this
-    # panel — 185 of the current portfolio on the approved snapshot — and a
-    # warning that fires on almost everything is one nobody reads.
-    #
-    # The source instruction is *not* promoted to an action by being counted
-    # here. It only decides whether the Matter has gone quiet.
-    without_action = list(matters_without_next_action(user).filter(owner=user)[:200])
-    source_texts = source_instructions_for(without_action)
-    for matter in without_action[:50]:
-        if source_texts.get(matter.pk):
-            continue
-        items.append(
-            AttentionItem(
-                key="no_next_action",
-                label="Järgmiseks puudub",
-                matter=matter,
-                detail="Aktiivsel teemal ei ole järgmist tegevust ega registri juhist.",
-            )
-        )
-
-    # Deliberately no "vastutaja puudub" here. It is a real attention state and
-    # it is not a *personal* one: an unowned Matter is on nobody's list by
-    # definition, so putting it on everybody's would make each lawyer's panel
-    # grow with work that is not theirs. Saabunud already leads with exactly
-    # that population, and Osakonna töö carries it for the department head.
-
-    # No HETKESEIS on live work. Read from the derived register state rather
-    # than guessed from the stage: a blank status column is a recorded gap in
-    # the register, and `stage` is this system's own vocabulary, which a Matter
-    # can legitimately carry while the register says nothing.
-    for matter in owned.filter(
-        current_register_state__currency=RegisterCurrency.CURRENT,
-        current_register_state__status_label="",
-    )[:50]:
-        items.append(
-            AttentionItem(
-                key="no_status",
-                label="Hetkeseis puudub",
-                matter=matter,
-                detail="Jooksval teemal ei ole registris hetkeseisu märgitud.",
-            )
-        )
-
-    # A response deadline that has passed with nothing sent. Only flagged where
-    # the question is meaningful: the Matter is still open and a deadline was
-    # actually recorded.
-    # Scoped even though `owned` is this person's own work, where participation
-    # already opens every child: the population is one `.filter(owner=user)`
-    # away from being somebody else's, and a probe that is only safe because of
-    # its caller is a probe that stops being safe when the caller moves.
-    sent_submission = Submission.objects.visible_to(user).filter(
-        matter=OuterRef("pk"), status=SubmissionStatus.SENT
-    )
-    overdue_response = (
-        owned.filter(response_deadline__lt=today)
-        .annotate(has_sent=Exists(sent_submission))
-        .filter(has_sent=False)
-    )
-    for matter in overdue_response[:50]:
-        items.append(
-            AttentionItem(
-                key="deadline_without_submission",
-                label="Tähtaeg möödas, arvamust ei ole saadetud",
-                matter=matter,
-                detail=(f"Arvamuse tähtaeg oli {format_estonian_date(matter.response_deadline)}."),
-            )
-        )
-
-    # Deliberately no "overdue NextAction" item. `my_work_timeline` already leads
-    # Minu töö with a *Tähtaeg möödas* band built from exactly those actions,
-    # and repeating them here would make the same task look like two problems.
-
-    return items
-
-
-def my_active_matters(user: Any) -> QuerySet[Matter]:
-    """The signed-in person's open portfolio.
-
-    Called inventory, never workload: a count of open files says nothing about
-    effort, and the specification forbids presenting it as if it did
-    (master specification 7.2, 18.8).
-
-    FULL only, like every other current-work surface. Until Stage 2F this was
-    the one selector that did not say so, and it did not matter because
-    imported archive rows had no owner and so matched nobody. Restoring the
-    register's owners makes it matter a great deal: without this filter, every
-    lawyer's Minu töö would fill with a decade of archive records the moment
-    the backfill runs. An archive row is history, not a work queue.
-    """
-    return (
-        matter_list_queryset(user)
-        .filter(Q(owner=user) | Q(collaborators=user), is_open=True, record_mode=RecordMode.FULL)
-        .distinct()
-        .order_by("-updated_at")
-    )
 
 
 def latest_overview_url(matter: Any, user: Any) -> str:

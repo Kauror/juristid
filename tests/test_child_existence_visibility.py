@@ -45,7 +45,7 @@ from django.utils import timezone
 
 from app.accounts.enums import UserRole
 from app.core.enums import Visibility
-from app.matters import dashboard, selectors
+from app.matters import dashboard
 from app.matters import work_items as wi
 from app.submissions.enums import SubmissionStatus
 from app.workflow.enums import ActionKind, ActionStatus, DatePrecision, DateSemantics
@@ -189,12 +189,10 @@ def test_a_restricted_step_does_not_remove_a_matter_from_the_quiet_population(mi
     matter = mixed_matter["matter"]
 
     assert matter in dashboard.without_next_action(reader)
-    assert matter in selectors.matters_without_next_action(reader)
 
     restricted_action(mixed_matter)
 
     assert matter in dashboard.without_next_action(reader), "Osakond's column dropped it"
-    assert matter in selectors.matters_without_next_action(reader), "the selector dropped it"
 
 
 def test_a_restricted_step_does_not_discharge_a_response_deadline(mixed_matter):

@@ -221,12 +221,6 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         events=(ChangeEventType.MATTER_DELETED,),
     ),
     WriteRoute(
-        name="matters:set_data_class",
-        label="Andmeklassi muutmine",
-        request=lambda w: ({"pk": w["matter"].pk}, {"data_class": "TEST"}),
-        probe=lambda w: Matter.objects.values_list("data_class", flat=True).get(pk=w["matter"].pk),
-    ),
-    WriteRoute(
         name="matters:set_action",
         label="Järgmiseks määramine",
         request=lambda w: (

@@ -262,7 +262,6 @@ from app.matters.services import (
     set_brief_summary,
     set_legal_instrument_other,
     set_legal_instruments,
-    set_matter_data_class,
     set_matter_dates,
     set_matter_title,
     set_organisations,
@@ -5672,40 +5671,6 @@ _FIELD_SURFACES = {
     # band with a rail and the value it just wrote disappears
     # (docs/adr/0074 §2, templates/matters/partials/header.html).
 }
-
-
-@login_required
-@business_write_required
-@require_http_methods(["POST"])
-def set_data_class(request: HttpRequest, pk: Any) -> HttpResponse:
-    """Reclassify a Matter as real business data or as development data.
-
-    Its own endpoint rather than another `update_field` case, for one reason:
-    this value is rendered in three places at once — the TEST badge in the
-    header, the class on the facts rail, and the flag on every register row —
-    and `update_field` swaps exactly one surface. Marking a Matter TEST and
-    leaving the header still saying nothing is the precise failure this
-    classification exists to prevent, so the whole page re-renders instead
-    (Agent-C brief 18, 22).
-    """
-    matter = get_visible_matter(request, pk)
-    form = MatterFieldForm(request.POST, matter=matter)
-    # `data_class` is `required=False` on that form, because one POST carries
-    # one field. An absent value is refused here rather than defaulted: a
-    # malformed request must not quietly make a development record real.
-    value = form.cleaned_data.get("data_class", "") if form.is_valid() else ""
-    try:
-        set_matter_data_class(matter=matter, data_class=value, actor=request.user)
-    except DomainError as error:
-        messages.error(request, str(error))
-        return redirect("matters:matter_detail", pk=matter.pk)
-
-    matter.refresh_from_db()
-    if matter.is_test_data:
-        messages.success(request, "Teema on märgitud testandmeteks.")
-    else:
-        messages.success(request, "Teema on märgitud pärisandmeteks.")
-    return redirect("matters:matter_detail", pk=matter.pk)
 
 
 @login_required

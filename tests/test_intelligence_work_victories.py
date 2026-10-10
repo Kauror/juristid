@@ -279,25 +279,6 @@ def test_the_unknown_period_sentinel_never_reaches_a_year_lookup(specialist):
     assert selectors.work_victories(user=specialist, year=selectors.UNKNOWN_PERIOD).count() == 1
 
 
-def test_the_count_and_the_rows_come_from_the_same_population(specialist, department_head):
-    matter = factories.MatterFactory(owner=specialist)
-    for index in range(3):
-        record = add_work_victory_candidate(
-            matter=matter, title=f"Võit {index}", actor=specialist, **_year(2026)
-        )
-        if index == 0:
-            confirm_work_victory(record=record, actor=department_head)
-
-    queryset = selectors.work_victories(
-        user=specialist, status=WorkVictoryStatus.CANDIDATE, year=2026
-    )
-    counts = selectors.work_victory_counts(specialist)
-
-    assert queryset.count() == len(list(queryset)) == 2
-    assert counts[WorkVictoryStatus.CANDIDATE.value] == 2
-    assert counts[WorkVictoryStatus.CONFIRMED.value] == 1
-
-
 def test_an_unknown_status_is_refused_rather_than_ignored(specialist):
     with pytest.raises(ValueError, match="Unknown work victory status"):
         selectors.work_victories(user=specialist, status="VOITSIME")

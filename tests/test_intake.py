@@ -279,9 +279,9 @@ def test_the_dashboard_sees_it_immediately(client, specialist) -> None:
     from app.matters import dashboard
 
     client.force_login(specialist)
-    before = next(c for c in dashboard.summary_cards(specialist) if c.key == "active").count
+    before = dashboard.active_matters(specialist).count()
     _post(client, [_file("x.pdf", PDF)], title="Uus saadetis", owner=specialist.pk)
-    after = next(c for c in dashboard.summary_cards(specialist) if c.key == "active").count
+    after = dashboard.active_matters(specialist).count()
     assert after == before + 1
 
 

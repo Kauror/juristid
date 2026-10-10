@@ -46,12 +46,13 @@ from app.core.enums import Visibility
 from app.intelligence.services import add_important_date
 from app.matters import work_items as wi
 from app.matters.department_dashboard import seis_figures, upcoming_groups
-from app.matters.enums import MatterOrigin, RecordMode
+from app.matters.enums import MatterOrigin, RecordMode, ResponseDeadlineChange
 from app.matters.forms import MatterCreateForm
 from app.matters.models import Matter
 from app.matters.my_work import build_my_work
 from app.matters.register_filters import register_population
-from app.matters.services import assign_matter, close_matter, create_matter, set_matter_dates
+from app.matters.response_deadlines import change_response_deadline
+from app.matters.services import assign_matter, close_matter, create_matter
 from app.submissions.services import create_submission
 from app.workflow.enums import ActionKind, ActionStatus, DateSemantics, Disposition
 from app.workflow.models import NextAction
@@ -537,8 +538,11 @@ def test_the_department_seis_counts_it_and_stops_when_the_date_moves(department_
     assert week_figure() == before + 1
     assert matter.pk in _register(department_head, anchor, too=wi.WORK_DEADLINE_THIS_WEEK)
 
-    set_matter_dates(
-        matter=matter, actor=specialist, response_deadline=week_end + timedelta(days=14)
+    change_response_deadline(
+        matter=matter,
+        actor=specialist,
+        deadline=week_end + timedelta(days=14),
+        change=ResponseDeadlineChange.MOVED,
     )
 
     assert week_figure() == before
@@ -720,7 +724,12 @@ def test_editing_a_deadline_moves_it_immediately(specialist):
 
     assert TITLE in _titles(_bands(specialist, anchor).get(wi.BAND_WEEK))
 
-    set_matter_dates(matter=matter, actor=specialist, response_deadline=anchor + timedelta(days=20))
+    change_response_deadline(
+        matter=matter,
+        actor=specialist,
+        deadline=anchor + timedelta(days=20),
+        change=ResponseDeadlineChange.MOVED,
+    )
 
     bands = _bands(specialist, anchor)
     assert TITLE not in _titles(bands.get(wi.BAND_WEEK))
@@ -732,7 +741,7 @@ def test_clearing_a_deadline_removes_the_item_immediately(specialist, today):
 
     assert _response_items(_mine(specialist, today))
 
-    set_matter_dates(matter=matter, actor=specialist, response_deadline=None)
+    change_response_deadline(matter=matter, actor=specialist, deadline=None)
 
     assert not _response_items(_mine(specialist, today))
     matter.refresh_from_db()

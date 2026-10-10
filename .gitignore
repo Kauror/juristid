@@ -27,6 +27,8 @@ evidence/
 # one directory makes the second one's checksums answer for the first one's
 # files. Same bytes, same reason to stay out of Git.
 evidence-*/
+# A local browser run's evidence store. Synthetic, but output, not source.
+.e2e-evidence/
 .uv/
 
 # Real source material and import output never enter Git.

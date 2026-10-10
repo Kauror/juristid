@@ -22,12 +22,10 @@ from app.intelligence.models import MatterImportantDate
 from app.intelligence.services import (
     add_important_date,
     cancel_important_date,
-    supersede_important_date,
     update_important_date,
 )
 from app.workflow.dates import bounds_for, quarter_bounds
 from app.workflow.enums import DatePrecision
-from tests import factories
 from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
@@ -177,21 +175,6 @@ def test_a_cancelled_milestone_cannot_be_edited_or_cancelled_twice(normal_matter
         )
 
 
-def test_superseding_links_the_old_record_to_its_replacement(normal_matter, specialist):
-    original = add_important_date(
-        matter=normal_matter, title="Esialgne plaan", actor=specialist, **_quarter(2027, 1)
-    )
-    replacement = supersede_important_date(
-        record=original, title="Uus plaan", actor=specialist, **_quarter(2027, 3)
-    )
-
-    original.refresh_from_db()
-    assert original.status == FactStatus.SUPERSEDED
-    assert original.replaced_by == replacement
-    assert replacement.status == FactStatus.ACTIVE
-    assert replacement.display_date == "III kvartal 2027"
-
-
 # -- past and future --------------------------------------------------------
 
 
@@ -244,78 +227,3 @@ def test_the_matter_page_keeps_showing_a_cancelled_milestone(normal_matter, spec
     view = selectors.matter_intelligence(normal_matter, specialist)
     assert [item.title for item in view.upcoming_dates] == ["Ärajäänud"]
     assert view.upcoming_dates[0].is_cancelled is True
-
-
-# -- the generated calendar -------------------------------------------------
-
-
-def test_the_calendar_orders_by_period_start_then_by_precision(specialist):
-    matter = factories.MatterFactory(owner=specialist)
-    year_start, year_end = bounds_for(DatePrecision.YEAR, year=2030)
-    quarter_start, quarter_end = quarter_bounds(2030, 3)
-
-    add_important_date(
-        matter=matter,
-        title="Aasta",
-        actor=specialist,
-        date_value=year_start,
-        period_end=year_end,
-        date_precision=DatePrecision.YEAR,
-    )
-    add_important_date(
-        matter=matter,
-        title="Kvartal",
-        actor=specialist,
-        date_value=quarter_start,
-        period_end=quarter_end,
-        date_precision=DatePrecision.QUARTER,
-    )
-    add_important_date(matter=matter, title="Täpne", actor=specialist, **_exact(date(2030, 7, 1)))
-
-    rows = list(
-        selectors.calendar_rows(user=specialist, today=date(2030, 1, 1), direction=selectors.ALL)
-    )
-    titles = [entry.title for entry in selectors.hydrate_calendar(rows, specialist)]
-    # 2030 starts first; among the two beginning on 1 July, the quarter is
-    # narrower than the year and the exact day narrower still.
-    assert titles == ["Aasta", "Täpne", "Kvartal"]
-
-
-def test_the_calendar_groups_approximate_periods_under_their_own_heading(specialist):
-    matter = factories.MatterFactory(owner=specialist)
-    add_important_date(matter=matter, title="Kvartal", actor=specialist, **_quarter(2030, 3))
-
-    rows = list(
-        selectors.calendar_rows(user=specialist, today=date(2030, 1, 1), direction=selectors.ALL)
-    )
-    groups = selectors.group_by_period(selectors.hydrate_calendar(rows, specialist))
-    assert [group.label for group in groups] == ["III kvartal 2030"]
-
-
-def test_a_cancelled_milestone_leaves_the_department_calendar(specialist):
-    matter = factories.MatterFactory(owner=specialist)
-    record = add_important_date(
-        matter=matter, title="Ärajäänud", actor=specialist, **_quarter(2030, 3)
-    )
-    cancel_important_date(record=record, actor=specialist)
-
-    rows = selectors.calendar_rows(user=specialist, today=date(2030, 1, 1), direction=selectors.ALL)
-    assert rows.count() == 0
-
-
-def test_the_year_filter_places_an_approximate_period_in_its_own_year(specialist):
-    matter = factories.MatterFactory(owner=specialist)
-    add_important_date(matter=matter, title="Poolaasta", actor=specialist, **_quarter(2031, 4))
-
-    assert (
-        selectors.calendar_rows(
-            user=specialist, today=date(2030, 1, 1), direction=selectors.ALL, year=2031
-        ).count()
-        == 1
-    )
-    assert (
-        selectors.calendar_rows(
-            user=specialist, today=date(2030, 1, 1), direction=selectors.ALL, year=2030
-        ).count()
-        == 0
-    )

@@ -296,57 +296,6 @@ def cancel_important_date(
     return record
 
 
-@transaction.atomic
-def supersede_important_date(
-    *,
-    record: MatterImportantDate,
-    title: str,
-    date_value: date,
-    period_end: date,
-    date_precision: str,
-    note: str = "",
-    actor: Any = None,
-) -> MatterImportantDate:
-    """Replace a milestone with a new one, keeping both.
-
-    The counterpart to `update_important_date`, and a different fact. An edit
-    says *we recorded this wrongly*; superseding says *the plan changed, and
-    here is what it changed to*. Both are kept because a lawyer reading the file
-    in two years needs to be able to tell those apart (Stage-2G brief 5, 33).
-    """
-    if record.status != FactStatus.ACTIVE:
-        raise DomainError("Ainult kehtivat tähtaega saab asendada.")
-
-    replacement = add_important_date(
-        matter=record.matter,
-        title=title,
-        date_value=date_value,
-        period_end=period_end,
-        date_precision=date_precision,
-        note=note,
-        actor=actor,
-    )
-    record.status = FactStatus.SUPERSEDED
-    # Written after the replacement exists, so the chain is navigable in both
-    # directions without a nullable placeholder — the same shape `NextAction`
-    # already uses for the same reason.
-    record.replaced_by = replacement
-    record.save(update_fields=["status", "replaced_by", "updated_at"])
-    record_change_event(
-        event_type=ChangeEventType.IMPORTANT_DATE_CHANGED,
-        matter=record.matter,
-        actor=actor,
-        obj=record,
-        summary=record.title[:SUMMARY_LIMIT],
-        payload={
-            "superseded_by": str(replacement.id),
-            "from": {"date": _iso(record.date_value), "precision": record.date_precision},
-            "to": {"date": _iso(date_value), "precision": date_precision},
-        },
-    )
-    return replacement
-
-
 # ---------------------------------------------------------------------------
 # Jõustumine
 # ---------------------------------------------------------------------------

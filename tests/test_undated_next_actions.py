@@ -313,9 +313,6 @@ def test_a_cleared_date_can_be_set_again(signed_in, normal_matter, specialist):
     assert response.status_code == 200
     open_now = NextAction.objects.get(matter=normal_matter, status=ActionStatus.OPEN)
     assert open_now.target_date == when
-    groups = {group.key: group.actions for group in selectors.my_work_timeline(specialist)}
-    assert open_now in groups["soon"]
-    assert open_now not in groups["undated"]
 
 
 # ---------------------------------------------------------------------------
@@ -486,45 +483,6 @@ def test_a_matter_with_an_undated_action_has_an_action(normal_matter, specialist
     assert row.next_action is not None
     assert row.action is None
     assert row.next_action.date_display == NO_DATE_LABEL
-
-
-# ---------------------------------------------------------------------------
-# 23–24 — Tähtajad
-# ---------------------------------------------------------------------------
-
-
-def test_an_undated_action_is_absent_from_every_dated_band(normal_matter, specialist):
-    """23. It is in `Kuupäevata` and in none of the four date bands."""
-    action = _undated(normal_matter, specialist)
-    groups = {group.key: group.actions for group in selectors.my_work_timeline(specialist)}
-
-    assert action in groups["undated"]
-    for band in ("passed", "today", "soon", "later"):
-        assert action not in groups[band], band
-    assert selectors.overdue_count(groups["undated"]) == 0
-
-
-def test_an_undated_action_is_absent_from_the_upcoming_window(normal_matter, specialist):
-    """23, on the department's own deadline surface."""
-    from app.matters import dashboard
-
-    _undated(normal_matter, specialist)
-    result = dashboard.upcoming_rows(specialist)
-
-    assert all(row.matter.pk != normal_matter.pk for row in result.rows)
-
-
-def test_adding_a_date_puts_it_on_the_deadline_surfaces(normal_matter, specialist):
-    """24. Nothing else has to happen — the surfaces read the column."""
-    _undated(normal_matter, specialist, text="Koostan arvamuse")
-    when = timezone.localdate() + dt.timedelta(days=2)
-    set_next_action_for_new_work(
-        matter=normal_matter, text="Koostan arvamuse", target_date=when, actor=specialist
-    )
-
-    groups = {group.key: group.actions for group in selectors.my_work_timeline(specialist)}
-    assert [a.text for a in groups["soon"]] == ["Koostan arvamuse"]
-    assert groups["undated"] == []
 
 
 # ---------------------------------------------------------------------------

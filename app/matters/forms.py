@@ -3246,13 +3246,6 @@ class MatterFieldForm(forms.Form):
     policy_areas = forms.ModelMultipleChoiceField(
         queryset=PolicyArea.objects.none(), required=False
     )
-    # `required=False` like every other field on this form: one POST carries
-    # one field, so demanding this one would refuse every other inline edit.
-    # An absent or empty value is still refused — by the service, which knows
-    # no blank data class — rather than being defaulted to REAL, because a
-    # malformed POST must not quietly reclassify a development record as
-    # business data.
-    data_class = forms.ChoiceField(choices=MatterDataClass.choices, required=False)
 
     def __init__(self, *args: Any, matter: Matter | None = None, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -7910,9 +7903,8 @@ class MatterProgressForm(forms.Form):
         """The offer `Märgi ka menetluse kulgu` is drawn with, or ``None``.
 
         For the stage and the day the panel holds as it is drawn: none on a fresh
-        panel, whose select says «Jätan muutmata». The script re-decides on every
-        change (static/js/app.js, `bindPhaseDateOffers`); this is the answer
-        without it.
+        panel, whose select says «Jätan muutmata». No script re-decides it: no
+        template draws the controls the retired `bindPhaseDateOffers` drove.
         """
         offer = self.phase_offers.get(self._drawn_stage_key())
         if offer is None or not offer.allows(self._drawn_day(), self.today):
@@ -7949,8 +7941,8 @@ class MatterProgressForm(forms.Form):
 
         True when the day in the box — the default on a fresh panel, the typed
         value on a refused one — is after `today`. A value that does not read
-        as a date is not ahead. The script re-decides on every change of the box
-        (static/js/app.js, `bindNextStepOffers`); this is the answer without it.
+        as a date is not ahead. No script re-decides it: no template draws the
+        row the retired `bindNextStepOffers` drove.
         """
         value = self["occurred_on"].value()
         try:

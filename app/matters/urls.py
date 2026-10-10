@@ -531,7 +531,6 @@ urlpatterns = [
         views.add_working_document,
         name="add_working_document",
     ),
-    path("teemad/<uuid:pk>/andmeklass/", views.set_data_class, name="set_data_class"),
     path("teemad/<uuid:pk>/ajalugu/", views.timeline_page, name="timeline_page"),
     # `Kõik muudatused` — the technical change log behind `Teema käik`. Its own
     # page rather than a third tab: the Matter has two tabs deliberately, and an

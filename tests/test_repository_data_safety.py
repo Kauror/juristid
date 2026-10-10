@@ -92,6 +92,15 @@ def test_no_import_report_is_currently_tracked() -> None:
     assert offenders == [], f"import material is tracked: {offenders}"
 
 
+@requires_git
+def test_no_local_evidence_store_is_tracked() -> None:
+    """A browser run's `.e2e-evidence/` is output and stays out of Git."""
+    tracked = _git("ls-files").stdout.splitlines()
+    offenders = [path for path in tracked if path.startswith(".e2e-evidence/")]
+    assert offenders == [], f"a local evidence store is tracked: {offenders}"
+    assert _git("check-ignore", "-q", ".e2e-evidence/anything").returncode == 0
+
+
 def test_the_report_classes_do_not_overlap() -> None:
     """A file is publishable or it is not. There is no third state."""
     assert not set(AGGREGATE_REPORTS) & set(ROW_LEVEL_REPORTS)

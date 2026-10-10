@@ -37,7 +37,8 @@ from app.matters.department_dashboard import (
     team_rows,
 )
 from app.matters.models import Matter
-from app.matters.selectors import my_active_matters
+from app.matters.register_filters import register_population
+from app.matters.work_items import open_matters
 from app.workflow.enums import ActionKind, DateSemantics
 from app.workflow.services import set_next_action
 from tests import factories
@@ -335,7 +336,7 @@ def test_a_genuinely_late_action_is_counted_as_overdue(portfolio: Portfolio) -> 
     assert figures["overdue"] == 1
 
 
-def test_the_head_page_and_ulevaade_agree_about_what_is_overdue(portfolio: Portfolio) -> None:
+def test_the_head_page_and_the_register_agree_about_what_is_overdue(portfolio: Portfolio) -> None:
     head = portfolio.people.head
     today = timezone.localdate()
     set_next_action(
@@ -348,8 +349,8 @@ def test_the_head_page_and_ulevaade_agree_about_what_is_overdue(portfolio: Portf
     )
 
     figures = {figure.key: figure.value for figure in seis_figures(head, today)}
-    overview_cards = {card.key: card.count for card in overview.summary_cards(head, today)}
-    assert figures["overdue"] == overview_cards["overdue"]
+    late = register_population(head, {"olek": "avatud", "tegevus": "hilinenud"}, today=today)
+    assert figures["overdue"] == late.count()
 
 
 def test_the_team_table_does_not_query_once_per_lawyer(
@@ -459,19 +460,20 @@ def test_ulevaade_shows_the_restored_current_work(portfolio: Portfolio) -> None:
     before = overview.active_matters(head).count()
     assert before >= 4
 
-    owners = {row.label: row.count for row in overview.owner_inventory(head)}
-    assert portfolio.people.sandra.display_name in owners
-    assert owners["Vastutajata"] >= 1
+
+def _minu_asjad(user):
+    """The population Minu asjad lists for its own reader (`my_work.build_portfolio`)."""
+    return open_matters(user).filter(owner=user)
 
 
 def test_minu_too_shows_a_specialist_their_own_promoted_matters(portfolio: Portfolio) -> None:
     sandra = portfolio.people.sandra
-    titles = {matter.title for matter in my_active_matters(sandra)}
+    titles = {matter.title for matter in _minu_asjad(sandra)}
     assert OWNED_CANDIDATE in titles
 
 
 def test_minu_too_does_not_show_one_specialists_work_to_another(portfolio: Portfolio) -> None:
-    titles = {matter.title for matter in my_active_matters(portfolio.people.martin)}
+    titles = {matter.title for matter in _minu_asjad(portfolio.people.martin)}
     assert OWNED_CANDIDATE not in titles
 
 
@@ -482,12 +484,12 @@ def test_a_matter_with_no_next_action_is_still_in_the_owner_inventory(
     sandra = portfolio.people.sandra
     matter = Matter.objects.get(title=OWNED_CANDIDATE)
     assert not matter.next_actions.exists()
-    assert matter in list(my_active_matters(sandra))
+    assert matter in list(_minu_asjad(sandra))
 
 
 def test_an_archive_matter_is_not_current_work(portfolio: Portfolio) -> None:
     former = portfolio.people.former
-    titles = {matter.title for matter in my_active_matters(former)}
+    titles = {matter.title for matter in _minu_asjad(former)}
     assert HISTORICAL not in titles, "an archive record is history, not a work queue"
 
 

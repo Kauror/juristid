@@ -6,13 +6,6 @@ Two metrics arrive with ADR 0021 and both are easy to get subtly wrong.
 Matters: it is the intersection of a canonical fact (open FULL) and a source
 fact (no recorded send date), and it has to keep working when a lawyer changes
 the canonical half without anybody re-running the cutover.
-
-The responsibility breakdown counts the register's own first names rather than
-resolved accounts, because two current Matters name somebody with no account and
-filing them under *Määramata* would throw away the one thing the register is
-certain about.
-
-Neither is a ranking, and one test says so.
 """
 
 from __future__ import annotations
@@ -28,7 +21,6 @@ from tests.synthetic_cutover import (
     CURRENT_OTHER_STATUS,
     CURRENT_SENT,
     FINAL_SNAPSHOT,
-    OWNER_KNOWN,
     RETIRING_IN_FORCE,
     approve_snapshot,
     build_world,
@@ -47,14 +39,6 @@ def applied(monkeypatch: pytest.MonkeyPatch):
 
 def titles(queryset) -> set[str]:
     return set(queryset.values_list("title", flat=True))
-
-
-def card(user, key):
-    return next(c for c in dashboard.summary_cards(user) if c.key == key)
-
-
-def rows(entries) -> dict[str, int]:
-    return {row.label: row.count for row in entries}
 
 
 # =========================================================================
@@ -80,11 +64,6 @@ def test_a_retired_matter_is_not_being_drafted(applied) -> None:
     assert RETIRING_IN_FORCE not in titles(dashboard.drafting_matters(applied.people.head))
 
 
-def test_the_card_counts_what_the_selector_returns(applied) -> None:
-    head = applied.people.head
-    assert card(head, "drafting").count == dashboard.drafting_matters(head).count()
-
-
 def test_closing_a_matter_here_removes_it_from_drafting_immediately(applied) -> None:
     """The canonical half leads, which is what makes the number self-correcting.
 
@@ -107,74 +86,12 @@ def test_closing_a_matter_here_removes_it_from_drafting_immediately(applied) -> 
 
 def test_drafting_never_exceeds_the_active_set(applied) -> None:
     head = applied.people.head
-    assert dashboard.drafting_matters(head).count() <= card(head, "active").count
+    assert dashboard.drafting_matters(head).count() <= dashboard.active_matters(head).count()
 
 
 # =========================================================================
-# Source responsibility
+# Scoping
 # =========================================================================
-
-
-def test_responsibility_is_counted_under_the_name_the_register_gives(applied) -> None:
-    breakdown = rows(dashboard.source_responsibility(applied.people.head))
-    assert breakdown.get(OWNER_KNOWN, 0) >= 1
-
-
-def test_the_responsibility_rows_sum_to_the_matters_they_describe(applied) -> None:
-    """A breakdown that does not add up is worse than no breakdown."""
-    head = applied.people.head
-    breakdown = dashboard.source_responsibility(head)
-    covered = dashboard.active_matters(head).filter(current_register_state__isnull=False)
-    assert sum(row.count for row in breakdown) == covered.distinct().count()
-
-
-def test_the_drafting_breakdown_sums_to_the_drafting_card(applied) -> None:
-    head = applied.people.head
-    breakdown = dashboard.drafting_by_responsibility(head)
-    assert sum(row.count for row in breakdown) == dashboard.drafting_matters(head).count()
-
-
-def test_a_specialist_and_the_head_agree_on_the_breakdown(applied) -> None:
-    """The visibility predicate joins the collaborators many-to-many for
-    everybody except the head, so a count that fanned out would differ between
-    the two (app/core/authorization.py)."""
-    assert rows(dashboard.source_responsibility(applied.people.head)) == rows(
-        dashboard.source_responsibility(applied.people.sandra)
-    )
-
-
-def test_the_breakdown_publishes_no_rate_or_ranking(applied) -> None:
-    """Source responsibility, never productivity (specification 18.8).
-
-    Rows carry a name and a count and nothing that reads as a score, and they
-    are not links: the register filters on the *resolved* owner while this
-    counts the source name, so a link would open a list disagreeing with the
-    number above it.
-    """
-    for row in dashboard.source_responsibility(applied.people.head):
-        assert row.url == ""
-        assert isinstance(row.count, int)
-
-
-def test_a_source_name_is_never_shortened_to_its_first_word(applied) -> None:
-    """Short names are for resolved accounts. This is somebody's provenance.
-
-    The rail counts the register's own VASTUTAJA text, and the register names a
-    colleague who has no account here. Running that string through the
-    short-name rule would file a decade of somebody's work under a first name
-    the source never wrote, which is the opposite of what keeping the raw text
-    is for (docs/adr/0021).
-    """
-    from app.legacy_import.current_state import CurrentRegisterState
-
-    matter = applied.refresh(CURRENT_DRAFTING)
-    state = CurrentRegisterState.objects.get(matter=matter)
-    state.owner_raw = "Former Lawyer Fullname"
-    state.save(update_fields=["owner_raw", "updated_at"])
-
-    breakdown = rows(dashboard.source_responsibility(applied.people.head))
-    assert "Former Lawyer Fullname" in breakdown
-    assert "Former" not in breakdown
 
 
 def test_a_restricted_matter_contributes_to_no_breakdown_it_should_not(applied) -> None:

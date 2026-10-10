@@ -1163,10 +1163,6 @@
       "seconds": 1.758,
       "tests": 23
     },
-    "tests/test_overview_deadlines.py": {
-      "seconds": 2.489,
-      "tests": 27
-    },
     "tests/test_overview_drilldowns.py": {
       "seconds": 14.658,
       "tests": 8

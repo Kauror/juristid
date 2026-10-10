@@ -16,16 +16,13 @@ from django.utils import timezone
 from app.audit.enums import ChangeEventType, SecurityEventType
 from app.audit.services import record_security_event
 from app.core.enums import Visibility
-from app.matters import selectors
 from app.matters.services import add_entry, close_matter, create_matter
 from app.matters.timeline import matter_timeline
 from app.search.services import search_matters
 from app.submissions.services import (
-    attach_final_evidence,
     create_submission,
-    mark_submission_sent,
 )
-from app.workflow.enums import ActionKind, DateSemantics
+from app.workflow.enums import ActionKind
 from app.workflow.services import set_next_action
 from tests import factories
 
@@ -36,171 +33,6 @@ PDF = b"%PDF-1.4 arvamus"
 
 def _days(offset: int):
     return timezone.localdate() + timedelta(days=offset)
-
-
-# -- Minu töö ---------------------------------------------------------------
-
-
-def _bands(user):
-    return {group.key: group for group in selectors.my_work_timeline(user)}
-
-
-def test_work_is_banded_by_date_not_by_mode(specialist):
-    passed = factories.MatterFactory(owner=specialist)
-    today = factories.MatterFactory(owner=specialist)
-    soon = factories.MatterFactory(owner=specialist)
-    later = factories.MatterFactory(owner=specialist)
-
-    for matter, day in ((passed, -3), (today, 0), (soon, 3), (later, 40)):
-        set_next_action(
-            matter=matter, text="Koosta arvamus", actor=specialist, target_date=_days(day)
-        )
-
-    groups = _bands(specialist)
-    assert [action.matter_id for action in groups["passed"].actions] == [passed.id]
-    assert [action.matter_id for action in groups["today"].actions] == [today.id]
-    assert [action.matter_id for action in groups["soon"].actions] == [soon.id]
-    assert [action.matter_id for action in groups["later"].actions] == [later.id]
-
-
-def test_waiting_and_monitoring_are_in_the_same_list(specialist):
-    """The QA correction: one list, banded by date, whatever the mode.
-
-    The split columns made a lawyer read two lists and merge them in their head.
-    """
-    doing = factories.MatterFactory(owner=specialist)
-    waiting = factories.MatterFactory(owner=specialist)
-    monitoring = factories.MatterFactory(owner=specialist)
-
-    set_next_action(matter=doing, text="Teen", actor=specialist, target_date=_days(2))
-    set_next_action(
-        matter=waiting,
-        text="Ootan ministeeriumi",
-        kind=ActionKind.WAIT,
-        date_semantics=DateSemantics.REVIEW_ON,
-        target_date=_days(3),
-        actor=specialist,
-    )
-    set_next_action(
-        matter=monitoring,
-        text="Jälgin",
-        kind=ActionKind.MONITOR,
-        date_semantics=DateSemantics.REVIEW_ON,
-        target_date=_days(4),
-        actor=specialist,
-    )
-
-    soon = _bands(specialist)["soon"]
-    assert [action.matter_id for action in soon.actions] == [doing.id, waiting.id, monitoring.id]
-
-
-def test_a_do_action_without_deadline_semantics_still_appears(specialist):
-    """The band that used to swallow it.
-
-    `overdue`, `today` and `soon` each required DEADLINE semantics while `later`
-    required a date beyond the horizon, so a DO dated inside the next week with
-    any other semantics fell into no band at all and vanished from the page —
-    which is exactly what the register's own parser produces for a vague month
-    (Teema QA §4).
-    """
-    matter = factories.MatterFactory(owner=specialist)
-    set_next_action(
-        matter=matter,
-        text="Eeldatavasti augustis",
-        kind=ActionKind.DO,
-        date_semantics=DateSemantics.EXPECTED_AROUND,
-        target_date=_days(5),
-        actor=specialist,
-    )
-    assert [action.matter_id for action in _bands(specialist)["soon"].actions] == [matter.id]
-
-
-def test_a_passed_review_is_not_counted_as_late(specialist):
-    """One list does not mean one vocabulary. Only DO + DEADLINE is overdue."""
-    late = factories.MatterFactory(owner=specialist)
-    review = factories.MatterFactory(owner=specialist)
-    set_next_action(matter=late, text="Tähtaeg", actor=specialist, target_date=_days(-2))
-    set_next_action(
-        matter=review,
-        text="Ootan vastust",
-        kind=ActionKind.WAIT,
-        date_semantics=DateSemantics.REVIEW_ON,
-        target_date=_days(-2),
-        actor=specialist,
-    )
-
-    passed = _bands(specialist)["passed"]
-    assert passed.count == 2
-    assert selectors.overdue_count(passed.actions) == 1
-
-
-def test_an_undated_action_has_its_own_band(specialist):
-    # Not DO + DEADLINE: a deadline with no date cannot be met, missed or
-    # planned against, and the domain refuses one (app/workflow/services.py).
-    # Every other combination may legitimately have no date at all.
-    matter = factories.MatterFactory(owner=specialist)
-    set_next_action(
-        matter=matter,
-        text="Millalgi",
-        kind=ActionKind.MONITOR,
-        date_semantics=DateSemantics.REVIEW_ON,
-        actor=specialist,
-    )
-    groups = _bands(specialist)
-    assert [action.matter_id for action in groups["undated"].actions] == [matter.id]
-    assert groups["later"].count == 0
-
-
-def test_another_persons_actions_are_not_mine(specialist, other_specialist):
-    matter = factories.MatterFactory(owner=other_specialist)
-    set_next_action(matter=matter, text="Nende töö", actor=other_specialist, target_date=_days(1))
-    assert sum(group.count for group in selectors.my_work_timeline(specialist)) == 0
-
-
-def test_attention_flags_an_active_matter_without_a_next_action(specialist):
-    factories.MatterFactory(owner=specialist)
-    items = selectors.my_attention_items(specialist)
-    assert any(item.key == "no_next_action" for item in items)
-
-
-def test_attention_stops_once_an_action_exists(specialist):
-    matter = factories.MatterFactory(owner=specialist)
-    set_next_action(matter=matter, text="Tegevus", actor=specialist, target_date=_days(1))
-    items = selectors.my_attention_items(specialist)
-    assert not any(item.key == "no_next_action" for item in items)
-
-
-def test_attention_flags_a_passed_deadline_with_nothing_sent(specialist):
-    matter = factories.MatterFactory(owner=specialist, response_deadline=_days(-2))
-    set_next_action(matter=matter, text="Tegevus", actor=specialist, target_date=_days(1))
-
-    items = selectors.my_attention_items(specialist)
-    assert any(
-        item.key == "deadline_without_submission" and item.matter.id == matter.id for item in items
-    )
-
-
-def test_attention_clears_once_a_submission_is_sent(specialist):
-    matter = factories.MatterFactory(owner=specialist, response_deadline=_days(-2))
-    submission = create_submission(matter=matter, title="Arvamus", actor=specialist)
-    attach_final_evidence(
-        submission=submission,
-        content=PDF,
-        original_filename="a.pdf",
-        mime_type="application/pdf",
-        actor=specialist,
-    )
-    submission.refresh_from_db()
-    mark_submission_sent(submission=submission, actor=specialist)
-
-    items = selectors.my_attention_items(specialist)
-    assert not any(item.key == "deadline_without_submission" for item in items)
-
-
-def test_attention_never_reveals_someone_elses_restricted_matter(specialist, other_specialist):
-    factories.MatterFactory(owner=other_specialist, visibility=Visibility.RESTRICTED)
-    items = selectors.my_attention_items(specialist)
-    assert items == []
 
 
 # -- Minu töö through the browser ------------------------------------------

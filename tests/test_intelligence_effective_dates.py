@@ -8,20 +8,17 @@ and a test.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 
 import pytest
 from django.db import IntegrityError, transaction
-from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
-from app.intelligence import selectors
-from app.intelligence.enums import EffectiveDateKind, FactStatus
+from app.intelligence.enums import EffectiveDateKind
 from app.intelligence.models import MatterEffectiveDate
 from app.intelligence.services import (
     add_effective_date,
-    cancel_effective_date,
     update_effective_date,
 )
 from app.workflow.dates import quarter_bounds
@@ -154,27 +151,19 @@ def test_editing_the_date_moves_the_row_and_creates_no_copy(specialist):
         matter=matter, description="põhiosa", actor=specialist, **_on(date(2030, 11, 1))
     )
 
-    november = selectors.effective_dates(
-        user=specialist, today=date(2030, 1, 1), direction=selectors.ALL, year=2030
-    )
-    assert november.count() == 1
+    def in_year(year: int) -> int:
+        return (
+            MatterEffectiveDate.objects.visible_to(specialist).filter(date_value__year=year).count()
+        )
+
+    assert in_year(2030) == 1
 
     update_effective_date(
         record=record, description="põhiosa", actor=specialist, **_on(date(2031, 1, 1))
     )
 
-    assert (
-        selectors.effective_dates(
-            user=specialist, today=date(2030, 1, 1), direction=selectors.ALL, year=2030
-        ).count()
-        == 0
-    )
-    assert (
-        selectors.effective_dates(
-            user=specialist, today=date(2030, 1, 1), direction=selectors.ALL, year=2031
-        ).count()
-        == 1
-    )
+    assert in_year(2030) == 0
+    assert in_year(2031) == 1
     assert MatterEffectiveDate.objects.filter(matter=matter).count() == 1
 
 
@@ -189,96 +178,3 @@ def test_the_change_records_where_the_date_moved_from(normal_matter, specialist)
     event = ChangeEvent.objects.get(event_type=ChangeEventType.EFFECTIVE_DATE_CHANGED)
     assert event.payload["from"]["date"] == "2026-09-27"
     assert event.payload["to"]["date"] == "2026-11-01"
-
-
-def test_the_default_window_looks_a_year_ahead_without_hiding_the_rest(specialist):
-    matter = factories.MatterFactory(owner=specialist)
-    today = timezone.localdate()
-    add_effective_date(
-        matter=matter, description="peagi", actor=specialist, **_on(today + timedelta(days=30))
-    )
-    add_effective_date(
-        matter=matter, description="kaugel", actor=specialist, **_on(today + timedelta(days=900))
-    )
-
-    horizon = selectors.effective_dates(user=specialist, today=today, direction=selectors.HORIZON)
-    assert [record.description for record in horizon] == ["peagi"]
-
-    everything = selectors.effective_dates(user=specialist, today=today, direction=selectors.ALL)
-    assert everything.count() == 2
-
-
-def test_past_commencements_are_their_own_view(specialist):
-    matter = factories.MatterFactory(owner=specialist)
-    today = timezone.localdate()
-    add_effective_date(
-        matter=matter, description="möödas", actor=specialist, **_on(today - timedelta(days=10))
-    )
-
-    assert (
-        selectors.effective_dates(user=specialist, today=today, direction=selectors.HORIZON).count()
-        == 0
-    )
-    assert (
-        selectors.effective_dates(user=specialist, today=today, direction=selectors.PAST).count()
-        == 1
-    )
-
-
-def test_undated_commencements_are_grouped_apart_from_the_chronology(specialist):
-    matter = factories.MatterFactory(owner=specialist)
-    today = timezone.localdate()
-    add_effective_date(matter=matter, kind=EffectiveDateKind.GENERAL_ORDER, actor=specialist)
-    add_effective_date(matter=matter, kind=EffectiveDateKind.UNKNOWN, actor=specialist)
-    add_effective_date(
-        matter=matter, description="teada", actor=specialist, **_on(today + timedelta(days=20))
-    )
-
-    dated = selectors.effective_dates(user=specialist, today=today, direction=selectors.HORIZON)
-    assert dated.count() == 1
-
-    undated = selectors.effective_dates(user=specialist, today=today, direction=selectors.UNDATED)
-    assert undated.count() == 2
-    assert selectors.undated_effective_count(specialist) == 2
-
-
-def test_a_cancelled_commencement_leaves_the_generated_page(specialist):
-    matter = factories.MatterFactory(owner=specialist)
-    today = timezone.localdate()
-    record = add_effective_date(
-        matter=matter, description="tühistatud", actor=specialist, **_on(today + timedelta(days=20))
-    )
-    cancel_effective_date(record=record, actor=specialist, reason="Eelnõu võeti tagasi")
-
-    record.refresh_from_db()
-    assert record.status == FactStatus.CANCELLED
-    assert (
-        selectors.effective_dates(user=specialist, today=today, direction=selectors.HORIZON).count()
-        == 0
-    )
-    assert ChangeEvent.objects.filter(event_type=ChangeEventType.EFFECTIVE_DATE_CANCELLED).exists()
-
-
-def test_a_known_commencement_also_appears_in_the_combined_calendar(specialist):
-    """One source of truth, two presentations (Stage-2G brief 47)."""
-    matter = factories.MatterFactory(owner=specialist)
-    add_effective_date(
-        matter=matter, description="põhiosa", actor=specialist, **_on(date(2030, 11, 1))
-    )
-
-    rows = list(
-        selectors.calendar_rows(user=specialist, today=date(2030, 1, 1), direction=selectors.ALL)
-    )
-    entries = selectors.hydrate_calendar(rows, specialist)
-    assert len(entries) == 1
-    assert entries[0].is_effective_date is True
-    assert entries[0].title == "põhiosa"
-
-    # And it can be filtered back out, without a second table existing.
-    only_dates = selectors.calendar_rows(
-        user=specialist,
-        today=date(2030, 1, 1),
-        direction=selectors.ALL,
-        sources=selectors.SOURCE_IMPORTANT,
-    )
-    assert only_dates.count() == 0

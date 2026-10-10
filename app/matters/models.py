@@ -55,9 +55,6 @@ class MatterQuerySet(models.QuerySet):
     def full_records(self) -> MatterQuerySet:
         return self.filter(record_mode=RecordMode.FULL)
 
-    def archive_records(self) -> MatterQuerySet:
-        return self.filter(record_mode=RecordMode.ARCHIVE)
-
     def real_data(self) -> MatterQuerySet:
         """Business data. **Every statistic starts here** (Agent-C brief 28, 63).
 
@@ -3555,10 +3552,6 @@ class MatterResponseDeadline(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.deadline:%d.%m.%Y} — {self.get_outcome_display()}"
-
-    @property
-    def display_deadline(self) -> str:
-        return format_estonian_date(self.deadline)
 
 
 class MatterSaveOnce(models.Model):

@@ -312,11 +312,6 @@
   color: var(--status-success);
 }
 
-.uxtl__kind--meeting {
-  background: var(--status-info-soft);
-  color: var(--status-info);
-}
-
 .uxtl__kind--closed {
   background: var(--surface-elevated);
   color: var(--text-secondary);

@@ -73,7 +73,7 @@ def human_size(size: int) -> str:
     """A file size the way the browser's own preview writes it.
 
     Deliberately the same rounding and the same Estonian decimal comma as
-    `humanSize` in ``static/js/app.js``. Three kinds of row can sit in the same
+    `uploadSize` in ``static/js/ux.js``. Three kinds of row can sit in the same
     list under the file control — one the browser is showing from the input, one
     a refused save is holding, one staged and being read — and any two of them
     disagreeing about «1.4 MB» and «1,4 MB» would look like two different kinds

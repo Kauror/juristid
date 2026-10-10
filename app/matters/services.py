@@ -1261,9 +1261,10 @@ def set_matter_dates(
     *,
     matter: Matter,
     received_date: Any = _UNSET,
-    response_deadline: Any = _UNSET,
     actor: Any = None,
 ) -> Matter:
+    """`Saabunud`. The deadline has its own writer, which keeps its history
+    (`app.matters.response_deadlines.change_response_deadline`)."""
     changed: dict[str, Any] = {}
     fields: list[str] = []
 
@@ -1284,8 +1285,6 @@ def set_matter_dates(
         )
     if received_date is not _UNSET:
         proposed["received_date"] = received_date
-    if response_deadline is not _UNSET:
-        proposed["response_deadline"] = response_deadline
     refuse_new_incoming_dates(matter, **proposed)
     if received_date is not _UNSET and received_date != matter.received_date:
         changed["received_from"] = (
@@ -1294,14 +1293,6 @@ def set_matter_dates(
         changed["received_to"] = received_date.isoformat() if received_date else None
         matter.received_date = received_date
         fields.append("received_date")
-
-    if response_deadline is not _UNSET and response_deadline != matter.response_deadline:
-        changed["deadline_from"] = (
-            matter.response_deadline.isoformat() if matter.response_deadline else None
-        )
-        changed["deadline_to"] = response_deadline.isoformat() if response_deadline else None
-        matter.response_deadline = response_deadline
-        fields.append("response_deadline")
 
     if not fields:
         return matter
@@ -1984,38 +1975,6 @@ def add_source_derived_policy_areas(
     return missing
 
 
-def _normalize_public_link(
-    value: str | None,
-    *,
-    max_length: int,
-    reject_credentials: bool = False,
-    not_a_url: str = "Link peab sisaldama veebiaadressi.",
-    not_web_scheme: str = "Link peab algama http:// või https:// aadressiga.",
-    has_credentials: str = "Link ei tohi sisaldada kasutajanime ega parooli.",
-    too_long: str | None = None,
-) -> str:
-    """«A public http(s) address, or nothing», for the Teema page's link columns.
-
-    `app.core.web_addresses.normalize_web_address` is the rule, and this is the
-    name the four link families here have always called it by
-    (`normalize_engagement_url`, `normalize_external_position_url`,
-    `normalize_overview_news_url`, `normalize_procedural_link_url`). Since
-    docs/adr/0121 §5 it accepts an address typed without a scheme —
-    `www.delfi.ee`, `delfi.ee/uudised` — and stores it with `https://`; a scheme
-    somebody did type is never changed, and text that is not a host is still
-    refused.
-    """
-    return normalize_web_address(
-        value,
-        max_length=max_length,
-        reject_credentials=reject_credentials,
-        not_a_url=not_a_url,
-        not_web_scheme=not_web_scheme,
-        has_credentials=has_credentials,
-        too_long=too_long,
-    )
-
-
 def normalize_engagement_url(value: str | None) -> str:
     """Trim it, allow it to be empty, refuse anything not http(s), bound it.
 
@@ -2038,7 +1997,7 @@ def normalize_engagement_url(value: str | None) -> str:
     follow and is the one shape whose «host» is nothing but credentials
     (red-team finding F-2, and `MatterEngagement._hostname` is its other half).
     """
-    return _normalize_public_link(value, max_length=ENGAGEMENT_URL_MAX_LENGTH)
+    return normalize_web_address(value, max_length=ENGAGEMENT_URL_MAX_LENGTH)
 
 
 def normalize_external_position_url(value: str | None) -> str:
@@ -2066,7 +2025,7 @@ def normalize_external_position_url(value: str | None) -> str:
     address at all, and which of the two it has is decided by
     :func:`record_external_position`, where both halves are visible.
     """
-    return _normalize_public_link(value, max_length=EXTERNAL_POSITION_URL_MAX_LENGTH)
+    return normalize_web_address(value, max_length=EXTERNAL_POSITION_URL_MAX_LENGTH)
 
 
 def _engagement_kind(value: str) -> str:
@@ -3144,7 +3103,7 @@ def normalize_overview_news_url(value: str | None) -> str:
     plan legitimately has no address — and that question is answered by
     `publish_website_overview`, which is the only caller that requires one.
     """
-    return _normalize_public_link(
+    return normalize_web_address(
         value,
         max_length=WEBSITE_OVERVIEW_URL_MAX_LENGTH,
         reject_credentials=True,
@@ -3616,7 +3575,7 @@ def normalize_procedural_link_url(value: str | None) -> str:
     page than the one somebody opened.
 
     **What is kept** is the safety half, shared with the three other public-link
-    columns through `_normalize_public_link` rather than copied: `http` and
+    columns through `normalize_web_address` rather than copied: `http` and
     `https` only — `javascript:` and `data:` are script delivery dressed as an
     address and `file:` and `ftp:` point where the reader's browser cannot
     usefully follow — a **parsed host** rather than a substring, userinfo
@@ -3634,7 +3593,7 @@ def normalize_procedural_link_url(value: str | None) -> str:
     state of this record that legitimately has no address: a procedural link
     with nothing to open is not a reference to anything.
     """
-    url = _normalize_public_link(
+    url = normalize_web_address(
         value,
         max_length=PROCEDURAL_LINK_URL_MAX_LENGTH,
         reject_credentials=True,
@@ -3673,7 +3632,7 @@ def normalize_procedural_link_label(value: str | None) -> str:
     beside it already says what it is.
 
     Refused rather than truncated past the column's width, for
-    `_normalize_public_link`'s reason: a name cut off mid-word is a name that
+    `normalize_web_address`'s reason: a name cut off mid-word is a name that
     says something its author did not write.
     """
     label = (value or "").strip()
