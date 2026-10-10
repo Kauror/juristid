@@ -245,6 +245,65 @@ def test_a_candidate_naming_a_restricted_matter_is_not_counted_for_everyone(
     assert compute(keys.OPINION_ARCHIVE_UNRESOLVED, context(reader)).value == 0
 
 
+def _sees(user, matter) -> bool:
+    from app.matters.models import Matter
+
+    return Matter.objects.visible_to(user).filter(pk=matter.pk).exists()
+
+
+@pytest.mark.parametrize("state", [OpinionCandidateState.APPLIED, OpinionCandidateState.LINKED])
+def test_matter_coverage_counts_a_restricted_link_only_for_who_may_see_it(
+    context, specialist, reader, state
+):
+    """AUD-044: the numerator is the reader's; the archive inventory is everyone's."""
+    restricted = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
+    batch, item = catalogue()
+    candidate(batch, item, matter=restricted, state=state)
+    assert _sees(specialist, restricted) and not _sees(reader, restricted)
+
+    participant = compute(keys.OPINION_ARCHIVE_MATTER_COVERAGE, context(specialist))
+    outsider = compute(keys.OPINION_ARCHIVE_MATTER_COVERAGE, context(reader))
+
+    assert (participant.value, participant.coverage_count) == (100, 1)
+    # The outsider's figure does not move, and its denominator is the same
+    # archive — so nothing about the restricted Matter can be read off it.
+    assert (outsider.value, outsider.coverage_count) == (0, 0)
+    assert participant.coverage_denominator == outsider.coverage_denominator == 1
+
+
+def test_matter_coverage_counts_a_file_once_however_many_matters_it_reached(context, specialist):
+    batch, item = catalogue()
+    for _ in range(2):
+        candidate(
+            batch,
+            item,
+            matter=factories.MatterFactory(owner=specialist),
+            state=OpinionCandidateState.LINKED,
+        )
+
+    result = compute(keys.OPINION_ARCHIVE_MATTER_COVERAGE, context(specialist))
+
+    assert (result.value, result.coverage_count) == (100, 1)
+
+
+def test_historical_submission_coverage_counts_a_restricted_reconstruction_only_for_who_may_see_it(
+    context, specialist, reader
+):
+    from app.legacy_import.opinion_archive import OpinionSubmissionImport
+
+    restricted = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
+    batch, item = catalogue()
+    submission = sent_submission(restricted, sent=datetime.date(2024, 4, 10))
+    OpinionSubmissionImport.objects.create(item=item, batch=batch, submission=submission)
+
+    participant = compute(keys.HISTORICAL_SUBMISSION_COVERAGE, context(specialist))
+    outsider = compute(keys.HISTORICAL_SUBMISSION_COVERAGE, context(reader))
+
+    assert (participant.value, participant.coverage_count) == (100, 1)
+    assert (outsider.value, outsider.coverage_count) == (0, 0)
+    assert participant.coverage_denominator == outsider.coverage_denominator == 1
+
+
 # ---------------------------------------------------------------------------
 # The submission metrics Stage 2H unlocks
 # ---------------------------------------------------------------------------
