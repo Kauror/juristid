@@ -934,12 +934,22 @@ jobs:
     # Informational, twice over: not a required check, and `continue-on-error`
     # with a script that exits 0 whatever it finds. Hosted runners have slow
     # days, and a red build over runner noise would teach people to ignore it.
+    #
+    # It is the last job of every run, so it collects nothing: each suite's
+    # files and test counts come from the reports themselves, which together
+    # are the whole collection (the quality job reports staleness from a real
+    # one). Each runner's job and test-step times come from the API, so setup
+    # and tests are reported apart, per runner, on the run's summary page.
     name: Shard balance, predicted against actual (informational)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [tests, browser]
     if: always()
     continue-on-error: true
+    permissions:
+      contents: read
+      # This run's own job and step times. Nothing else.
+      actions: read
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -961,12 +971,21 @@ jobs:
 
       - name: Predicted against actual
         env:
-          DJANGO_SECRET_KEY: ci-only-secret-not-used-anywhere-else
-          DJANGO_DEBUG: "0"
-          DJANGO_ALLOWED_HOSTS: localhost
-          E2E_BASE_URL: http://127.0.0.1:8000
-          E2E_GATE_BASE_URL: http://127.0.0.1:8001
-        run: uv run python scripts/ci/report_shard_health.py --durations junit
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          uv run python scripts/ci/report_shard_health.py
+          --durations junit --no-collect
+          --run-id ${{ github.run_id }} --repository ${{ github.repository }}
+          --summary-json shard-health.json
+
+      - name: Upload the numbers
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shard-health
+          path: shard-health.json
+          if-no-files-found: warn
+          retention-days: 30
 
   recovery:
     name: Backup and restore rehearsal

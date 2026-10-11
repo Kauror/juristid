@@ -37,6 +37,7 @@ import argparse
 import collections
 import datetime
 import json
+import os
 import pathlib
 import re
 import statistics
@@ -138,28 +139,20 @@ def collect(arguments: list[str]) -> dict[str, int]:
     return dict(counts)
 
 
-def actual_durations(directory: pathlib.Path) -> dict[str, float]:
-    """Seconds of test time each downloaded JUnit report accounts for.
-
-    One report per shard, so the spread across them is what those runners
-    actually did — the only honest check on what the table predicted.
-    """
-    durations: dict[str, float] = {}
-    for report in sorted(directory.rglob("*.xml")):
-        # This repository's own CI artifacts, downloaded by the person running
-        # this. Reaching for defusedxml here would be theatre.
-        root = ElementTree.parse(report).getroot()  # noqa: S314
-        durations[report.stem] = sum(
-            float(case.get("time", "0") or 0) for case in root.iter("testcase")
-        )
-    return durations
-
-
 #: Where each suite's files live, which is how its session setup is keyed.
 SUITE_DIRECTORY = {"tests": "tests", "browser": "e2e"}
 
 #: `junit-tests-3.xml`, `junit-browser-2.xml`: the job and the 1-based shard.
 REPORT_NAME = re.compile(r"^junit-(?P<job>[a-z]+)-(?P<shard>\d+)$")
+
+#: `shard-tests-3.json`: what scripts/ci/run_slices.py recorded about a shard.
+RECORD_NAME = re.compile(r"^shard-(?P<job>[a-z]+)-(?P<shard>\d+)$")
+
+#: The sharded jobs' names as the Actions API reports them, one per runner.
+JOB_NAME = re.compile(r"^(?P<kind>PostgreSQL tests|Browser), runner (?P<runner>\d+) of \d+$")
+
+#: The step of each sharded job that runs its tests; everything else is setup.
+SUITE_STEP = {job: ci_workflow_selection.SUITE_STEPS[job][0] for job in ("tests", "browser")}
 
 
 def predicted_shards(
@@ -244,64 +237,273 @@ def report_suite(
     return warnings
 
 
+def _cases(report: pathlib.Path) -> list[tuple[str, float]]:
+    """(file, seconds) for each test case in one JUnit report, in run order."""
+    # This repository's own CI artifacts, downloaded by the person running
+    # this. Reaching for defusedxml here would be theatre.
+    cases = []
+    for case in ElementTree.parse(report).getroot().iter("testcase"):  # noqa: S314
+        parts = (case.get("classname") or "").split(".")
+        while parts and not (ROOT / ("/".join(parts) + ".py")).exists():
+            parts.pop()
+        path = "/".join(parts) + ".py" if parts else "?"
+        cases.append((path, float(case.get("time", "0") or 0)))
+    return cases
+
+
+def shard_reports(directory: pathlib.Path) -> dict[str, dict[int, list[tuple[str, float]]]]:
+    """Each sharded suite's JUnit cases, by 1-based shard, from one run's artifacts."""
+    found: dict[str, dict[int, list[tuple[str, float]]]] = collections.defaultdict(dict)
+    for report in sorted(directory.rglob("*.xml")):
+        match = REPORT_NAME.match(report.stem)
+        if match and match.group("job") in SUITES:
+            found[match.group("job")][int(match.group("shard"))] = _cases(report)
+    return found
+
+
+def shard_records(directory: pathlib.Path) -> dict[str, dict[int, dict]]:
+    """What `run_slices.py` recorded per shard: its runner, pytest wall time, world setup."""
+    found: dict[str, dict[int, dict]] = collections.defaultdict(dict)
+    for record in sorted(directory.rglob("shard-*-*.json")):
+        match = RECORD_NAME.match(record.stem)
+        if match:
+            found[match.group("job")][int(match.group("shard"))] = json.loads(
+                record.read_text(encoding="utf-8")
+            )
+    return found
+
+
+def counts_from_reports(reports: dict[int, list[tuple[str, float]]]) -> dict[str, int]:
+    """Tests per file across every shard of a suite: the collection, as it ran.
+
+    Every collected test is in exactly one shard's report (the completeness
+    proof's property), so the union is what pytest collected — without paying
+    for a collection to learn it.
+    """
+    counts: collections.Counter[str] = collections.Counter()
+    for cases in reports.values():
+        counts.update(path for path, _ in cases)
+    return dict(counts)
+
+
+def job_timings(run_id: str, repository: str, token: str) -> dict[str, dict[int, dict]]:
+    """Per runner: the job's wall time and its test step's, from the Actions API."""
+    import urllib.request
+
+    found: dict[str, dict[int, dict]] = collections.defaultdict(dict)
+    request = urllib.request.Request(
+        f"https://api.github.com/repos/{repository}/actions/runs/{run_id}/jobs?per_page=100",
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {token}",
+            "User-Agent": "juristid-shard-health",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310
+        jobs = json.load(response).get("jobs", [])
+
+    def seconds(item: dict) -> float | None:
+        if not item.get("started_at") or not item.get("completed_at"):
+            return None
+        started = datetime.datetime.fromisoformat(item["started_at"].replace("Z", "+00:00"))
+        done = datetime.datetime.fromisoformat(item["completed_at"].replace("Z", "+00:00"))
+        return (done - started).total_seconds()
+
+    for job in jobs:
+        match = JOB_NAME.match(job.get("name", ""))
+        if not match:
+            continue
+        suite = "tests" if match.group("kind") == "PostgreSQL tests" else "browser"
+        test_step = SUITE_STEP[suite]
+        step = next((s for s in job.get("steps", []) if s.get("name") == test_step), {})
+        found[suite][int(match.group("runner"))] = {
+            "job_seconds": seconds(job),
+            "test_step_seconds": seconds(step),
+        }
+    return found
+
+
+def _ratio(values: list[float]) -> str:
+    if not values or min(values) <= 0:
+        return "n/a"
+    slowest, median, fastest = max(values), statistics.median(values), min(values)
+    return (
+        f"slowest / median {slowest:.0f}s / {median:.0f}s = {slowest / median:.2f}, "
+        f"slowest / fastest {slowest:.0f}s / {fastest:.0f}s = {slowest / fastest:.2f}"
+    )
+
+
 def report_durations(
     directory: pathlib.Path,
     collected: dict[str, dict[str, int]],
     shard_counts_by_job: dict[str, int],
     timings: dict[str, ci_sharding.Measurement],
     setup: dict[str, float],
-) -> None:
+    *,
+    runners_by_job: dict[str, int] | None = None,
+    jobs: dict[str, dict[int, dict]] | None = None,
+) -> dict[str, object]:
     """What this run's shards were predicted to take, beside what they took.
 
     ENG-139. The build printed only the prediction, and a model balances
     perfectly against itself: «slowest / median 1.00» while the same run's
     PostgreSQL shards took 338/283/384/275/344/286 s. Read from the reports the
     shards of *this* run uploaded, so the two columns describe one run.
+
+    Per shard: the prediction, the test time its JUnit report accounts for, the
+    ratio of the two (a runner that is simply slower shows as a ratio well
+    above the rest — balance cannot fix that, a better runner can), the wall
+    time of its pytest process and, for a browser shard, of building its world.
+    Per runner: its job and its test step, so setup and tests are seen apart —
+    the round waits for the slowest *runner*, which is the number to tune.
+    Returns the same numbers as data, for the job summary and for later tuning.
     """
     print("\npredicted against actual, this run")
-    durations = actual_durations(directory)
-    by_job: dict[str, dict[int, float]] = collections.defaultdict(dict)
-    for name, seconds in durations.items():
-        match = REPORT_NAME.match(name)
-        if match:
-            by_job[match.group("job")][int(match.group("shard"))] = seconds
-    if not by_job:
+    reports = shard_reports(directory)
+    records = shard_records(directory)
+    summary: dict[str, object] = {}
+    if not reports:
         print(f"  no shard JUnit reports under {directory}")
-        return
+        return summary
     for job in SUITES:
-        actual = by_job.get(job)
-        if not actual:
+        actual_cases = reports.get(job)
+        if not actual_cases:
             continue
         count = shard_counts_by_job[job]
-        predicted = (
-            predicted_shards(job, collected[job], count, timings, setup)
-            if collected.get(job)
-            else []
-        )
-        print(f"\n  {SUITES[job][0]}")
-        print("    shard   predicted     actual")
+        runners = (runners_by_job or {}).get(job, count)
+        per_runner = max(count // runners, 1)
+        counts = collected.get(job) or counts_from_reports(actual_cases)
+        files = sorted(counts)
+        partition = ci_sharding.partition(files, count, timings, counts)
+        fixed = setup.get(SUITE_DIRECTORY.get(job, job), 0.0)
+        predicted = [
+            sum(ci_sharding.weight_of(path, counts.get(path), timings) for path in shard) + fixed
+            for shard in partition
+        ]
+        actual = {
+            index: sum(seconds for _, seconds in cases) for index, cases in actual_cases.items()
+        }
+        # The partition recomputed here is the one the shards ran, or the
+        # prediction describes some other run. Same inputs, same pure function.
+        diverged = [
+            index
+            for index, cases in actual_cases.items()
+            if 1 <= index <= count and {path for path, _ in cases} != set(partition[index - 1])
+        ]
+
+        print(f"\n  {SUITES[job][0]}: {count} shards on {runners} runners")
+        print("    shard runner  predicted     actual  actual/pred  pytest wall  world setup")
+        rows = []
         for index in range(1, count + 1):
-            guess = f"{predicted[index - 1]:9.0f}s" if predicted else "        ?"
-            took = f"{actual[index]:9.0f}s" if index in actual else "  missing"
-            print(f"    {index:5d}  {guess}  {took}")
-        for name, values in (("predicted", predicted), ("actual", list(actual.values()))):
-            if values:
-                slowest, median = max(values), statistics.median(values)
-                print(
-                    f"    {name:<10} slowest / median {slowest:.0f}s / {median:.0f}s "
-                    f"= {slowest / median:.2f}"
-                )
-        # The spread, beside the ratio. «slowest / median 1.04» read as
-        # balanced on 2026-10-02 while the same run's PostgreSQL shards took
-        # 312s to 525s: with most shards slow, the median sits with them and
-        # hides the idle ones. The round waits for the slowest; the fastest
-        # says how much of that wait better balance could take back.
-        took = list(actual.values())
-        if took and min(took) > 0:
-            print(
-                f"    actual     slowest / fastest {max(took):.0f}s / {min(took):.0f}s "
-                f"= {max(took) / min(took):.2f}"
+            record = records.get(job, {}).get(index, {})
+            runner = record.get("runner") or (index - 1) // per_runner + 1
+            took = actual.get(index)
+            world = (record.get("setup_seconds") or {}).get("total")
+            wall = record.get("pytest_seconds")
+            factor = took / predicted[index - 1] if took and predicted[index - 1] else None
+            rows.append(
+                {
+                    "shard": index,
+                    "runner": runner,
+                    "predicted": round(predicted[index - 1], 1),
+                    "actual": None if took is None else round(took, 1),
+                    "pytest_wall": wall,
+                    "world_setup": None if world is None else round(world, 1),
+                }
             )
+            print(
+                f"    {index:5d} {runner:6d}  {predicted[index - 1]:8.0f}s  "
+                + (f"{took:8.0f}s" if took is not None else "   missing")
+                + (f"  {factor:11.2f}" if factor else "            -")
+                + (f"  {wall:10.0f}s" if wall else "            -")
+                + (f"  {world:10.0f}s" if world else "            -")
+            )
+        print(f"    predicted  {_ratio(predicted)}")
+        print(f"    actual     {_ratio(list(actual.values()))}")
+        factors = [
+            actual[index] / predicted[index - 1]
+            for index in actual
+            if 1 <= index <= count and predicted[index - 1]
+        ]
+        if factors:
+            # The spread here is what runners add beyond the table: a shard on a
+            # slow runner reads high whatever its files. Wide spread with a fresh
+            # table is runner variance, not balance.
+            print(
+                f"    actual/predicted  min {min(factors):.2f}  median "
+                f"{statistics.median(factors):.2f}  max {max(factors):.2f}"
+            )
+        walls = [row["pytest_wall"] for row in rows if row["pytest_wall"]]
+        if walls:
+            print(f"    pytest wall {_ratio(walls)}")
+        runner_rows = []
+        for runner, timing in sorted((jobs or {}).get(job, {}).items()):
+            job_seconds, step_seconds = timing.get("job_seconds"), timing.get("test_step_seconds")
+            if job_seconds is None or step_seconds is None:
+                continue
+            runner_rows.append(
+                {
+                    "runner": runner,
+                    "job": round(job_seconds),
+                    "tests": round(step_seconds),
+                    "setup": round(job_seconds - step_seconds),
+                }
+            )
+        if runner_rows:
+            print("    runner     job   test step   everything else (setup, uploads)")
+            for row in runner_rows:
+                runner, total, tests, rest = row["runner"], row["job"], row["tests"], row["setup"]
+                print(f"    {runner:6d}  {total:5d}s  {tests:9d}s  {rest:9d}s")
+            print(f"    runner job {_ratio([float(row['job']) for row in runner_rows])}")
+        if diverged:
+            print(
+                f"    NOTE: shard(s) {sorted(diverged)} ran other files than the partition "
+                "recomputed here; the table or the collection differs from the run's"
+            )
+        summary[job] = {
+            "shard_count": count,
+            "runners": runners,
+            "shards": rows,
+            "runner_jobs": runner_rows,
+            "partition_reproduced": not diverged,
+        }
+    return summary
+
+
+def write_step_summary(summary: dict[str, object], path: str) -> None:
+    """The same numbers as a table on the run's page."""
+    lines = ["## Shard balance, predicted against actual", ""]
+    for job, data in summary.items():
+        if not isinstance(data, dict):
+            continue
+        lines += [
+            f"### {SUITES[job][0]}: {data['shard_count']} shards on {data['runners']} runners",
+            "",
+            "| shard | runner | predicted | actual | pytest wall | world setup |",
+            "| ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+        for row in data["shards"]:
+
+            def cell(value: object) -> str:
+                return "–" if value is None else f"{float(value):.0f} s"
+
+            lines.append(
+                f"| {row['shard']} | {row['runner']} | {cell(row['predicted'])} | "
+                f"{cell(row['actual'])} | {cell(row['pytest_wall'])} | {cell(row['world_setup'])} |"
+            )
+        if data["runner_jobs"]:
+            lines += [
+                "",
+                "| runner | job | test step | everything else |",
+                "| ---: | ---: | ---: | ---: |",
+            ]
+            for row in data["runner_jobs"]:
+                lines.append(
+                    f"| {row['runner']} | {row['job']} s | {row['tests']} s | {row['setup']} s |"
+                )
+        lines.append("")
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write("\n".join(lines) + "\n")
 
 
 def main() -> int:
@@ -316,6 +518,26 @@ def main() -> int:
         "--today",
         default=datetime.date.today().isoformat(),
         help="the date to age the table against; for testing this script",
+    )
+    parser.add_argument(
+        "--no-collect",
+        action="store_true",
+        help=(
+            "take each suite's files and test counts from the --durations reports instead "
+            "of collecting them; the quality job already reports staleness from a collection"
+        ),
+    )
+    parser.add_argument(
+        "--run-id",
+        default=None,
+        help="this run's id, to read each runner's job and test-step times (needs GH_TOKEN)",
+    )
+    parser.add_argument("--repository", default="Kauror/juristid")
+    parser.add_argument(
+        "--summary-json",
+        type=pathlib.Path,
+        default=None,
+        help="also write the predicted-against-actual numbers here, as data",
     )
     arguments = parser.parse_args()
 
@@ -332,7 +554,12 @@ def main() -> int:
         document = json.loads(TIMINGS.read_text(encoding="utf-8"))
         measured_from = document.get("measured_from", "unrecorded")
         measured_at = document.get("measured_at")
-        print(f"\ntable measured from {measured_from}")
+        if isinstance(measured_from, list):
+            print(f"\ntable is the median of {len(measured_from)} runs:")
+            for run in measured_from:
+                print(f"           {run}")
+        else:
+            print(f"\ntable measured from {measured_from}")
         if measured_at:
             age = (
                 datetime.date.fromisoformat(arguments.today)
@@ -351,9 +578,12 @@ def main() -> int:
 
     timings = ci_sharding.load_timings()
     setup = ci_sharding.load_session_setup()
-    counts = shard_counts()
+    layout = ci_workflow_selection.topology(WORKFLOW)
+    counts = {job: layout[job].shard_count for job in SUITES}
     collected: dict[str, dict[str, int]] = {}
     for job, (label, arguments_for_pytest) in SUITES.items():
+        if arguments.no_collect:
+            continue
         collected[job] = collect(arguments_for_pytest)
         warnings.extend(
             report_suite(
@@ -366,7 +596,28 @@ def main() -> int:
         )
 
     if arguments.durations is not None:
-        report_durations(arguments.durations, collected, counts, timings, setup)
+        jobs: dict[str, dict[int, dict]] = {}
+        token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+        if arguments.run_id and token:
+            try:
+                jobs = job_timings(arguments.run_id, arguments.repository, token)
+            except (OSError, ValueError, KeyError) as error:
+                print(f"\n(the runners' job times could not be read: {error})")
+        summary = report_durations(
+            arguments.durations,
+            collected,
+            counts,
+            timings,
+            setup,
+            runners_by_job={job: layout[job].runners for job in SUITES},
+            jobs=jobs,
+        )
+        if arguments.summary_json is not None:
+            arguments.summary_json.write_text(
+                json.dumps(summary, indent=2) + "\n", encoding="utf-8"
+            )
+        if os.environ.get("GITHUB_STEP_SUMMARY") and summary:
+            write_step_summary(summary, os.environ["GITHUB_STEP_SUMMARY"])
 
     print()
     if warnings:
@@ -374,9 +625,8 @@ def main() -> int:
         for warning in warnings:
             print(f"  - {warning}")
         print()
-        print("  Refresh it from any ordinary green run (docs/ci-architecture.md):")
-        print("    gh run download <run-id> --dir /tmp/junit --pattern 'test-report-*'")
-        print("    uv run python scripts/ci/update_shard_timings.py /tmp/junit --run <run-id>")
+        print("  Refresh it from the median of recent green runs (docs/ci-architecture.md):")
+        print("    uv run python scripts/ci/update_shard_timings.py --latest 5")
     else:
         print("shard timings are current; nothing to do")
 

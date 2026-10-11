@@ -4,6 +4,14 @@ Balance metadata that nobody can refresh is metadata that rots, and a rotted
 table shows up as one shard carrying the suite while the others idle. This is
 the refresh, and it takes one command:
 
+    uv run python scripts/ci/update_shard_timings.py --latest 5
+
+which downloads the newest five green runs' shard reports (with the `gh` CLI)
+and weighs each file at the median of its per-test rate across them, so one
+slow runner does not set a file's weight. The table records which runs it was
+taken from, so the same runs always regenerate the same table. One run still
+works, from reports already on disk:
+
     gh run download <run-id> --dir /tmp/junit --pattern 'test-report-*'
     uv run python scripts/ci/update_shard_timings.py /tmp/junit --run <run-id>
 
@@ -26,7 +34,9 @@ import datetime
 import json
 import pathlib
 import statistics
+import subprocess
 import sys
+import tempfile
 import xml.etree.ElementTree as ElementTree
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -135,23 +145,153 @@ def read_reports(
     return dict(seconds), dict(counts), setup
 
 
+def combine_runs(
+    runs: list[tuple[dict[str, float], dict[str, int], dict[str, float]]],
+) -> tuple[dict[str, float], dict[str, int], dict[str, float]]:
+    """One table from several runs: each file at its median per-test rate.
+
+    `runs` is newest first. A file's test count is the newest run's that holds
+    it — the suite as it is now — and its seconds are that count times the
+    median of its per-test rate across every run that ran it, so one slow
+    runner's afternoon does not become the file's weight (2026-10-11: the same
+    PostgreSQL files ran 0.6x to 1.6x their usual time depending on the
+    runner). The session setup is the median of the runs' medians. A pure
+    function of its inputs: the same runs always give the same table.
+    """
+    rates: dict[str, list[float]] = collections.defaultdict(list)
+    newest_count: dict[str, int] = {}
+    setups: dict[str, list[float]] = collections.defaultdict(list)
+    for seconds, counts, setup in runs:
+        for path, total in seconds.items():
+            if counts.get(path):
+                rates[path].append(total / counts[path])
+                newest_count.setdefault(path, counts[path])
+        for suite, value in setup.items():
+            setups[suite].append(value)
+    combined = {
+        path: statistics.median(values) * newest_count[path] for path, values in rates.items()
+    }
+    return (
+        combined,
+        newest_count,
+        {suite: round(statistics.median(values), 3) for suite, values in setups.items()},
+    )
+
+
+def _gh(*arguments: str) -> str:
+    # A fixed command line built here; `gh` is the operator's own GitHub CLI.
+    completed = subprocess.run(  # noqa: S603
+        ["gh", *arguments],  # noqa: S607
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    )
+    return completed.stdout
+
+
+def latest_green_runs(count: int, repository: str) -> list[tuple[str, str]]:
+    """(run id, date) of the newest `count` green `ci.yml` runs, newest first."""
+    listed = json.loads(
+        _gh(
+            "run",
+            "list",
+            "--repo",
+            repository,
+            "--workflow",
+            "ci.yml",
+            "--status",
+            "success",
+            "--limit",
+            str(max(count * 4, 20)),
+            "--json",
+            "databaseId,createdAt",
+        )
+    )
+    runs = sorted(listed, key=lambda run: run["createdAt"], reverse=True)[:count]
+    if len(runs) < count:
+        raise SystemExit(f"only {len(runs)} green ci.yml runs are listed; asked for {count}")
+    return [(str(run["databaseId"]), run["createdAt"][:10]) for run in runs]
+
+
+def download_reports(run_id: str, repository: str, into: pathlib.Path) -> pathlib.Path:
+    """One run's shard reports — the JUnit files every sharded job uploads."""
+    target = into / run_id
+    if not any(target.rglob("*.xml")):
+        _gh(
+            "run",
+            "download",
+            run_id,
+            "--repo",
+            repository,
+            "--dir",
+            str(target),
+            "--pattern",
+            "test-report-tests-*",
+            "--pattern",
+            "test-report-browser-*",
+        )
+    return target
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("reports", type=pathlib.Path, help="directory of downloaded JUnit XML")
-    parser.add_argument("--run", required=True, help="the CI run id these numbers came from")
+    parser.add_argument(
+        "reports",
+        type=pathlib.Path,
+        nargs="*",
+        help="directories of downloaded JUnit XML, one per run, newest first",
+    )
+    parser.add_argument(
+        "--run",
+        action="append",
+        default=[],
+        help="the CI run id each directory came from, in the same order",
+    )
+    parser.add_argument(
+        "--latest",
+        type=int,
+        default=None,
+        help="download and combine the newest N green ci.yml runs (needs the `gh` CLI)",
+    )
+    parser.add_argument("--repository", default="Kauror/juristid")
+    parser.add_argument(
+        "--download-dir",
+        type=pathlib.Path,
+        default=pathlib.Path(tempfile.gettempdir()) / "juristid-shard-reports",
+    )
     parser.add_argument(
         "--measured-at",
-        default=datetime.date.today().isoformat(),
+        default=None,
         help=(
-            "the date that run happened, ISO 8601. Defaults to today, which is right "
-            "when you refresh from a run you have just downloaded, and is what "
-            "scripts/ci/report_shard_health.py ages the table against."
+            "the date of the newest run, ISO 8601. --latest reads it from GitHub; "
+            "otherwise it defaults to today, which is right when you refresh from a run "
+            "you have just downloaded, and is what scripts/ci/report_shard_health.py ages "
+            "the table against."
         ),
     )
     parser.add_argument("--out", type=pathlib.Path, default=OUTPUT)
     arguments = parser.parse_args()
 
-    seconds, counts, setup = read_reports(arguments.reports)
+    measured_at = arguments.measured_at
+    if arguments.latest:
+        if arguments.reports or arguments.run:
+            parser.error("give either --latest or report directories with --run, not both")
+        chosen = latest_green_runs(arguments.latest, arguments.repository)
+        run_ids = [run_id for run_id, _ in chosen]
+        directories = [
+            download_reports(run_id, arguments.repository, arguments.download_dir)
+            for run_id in run_ids
+        ]
+        measured_at = measured_at or chosen[0][1]
+    else:
+        if not arguments.reports or len(arguments.reports) != len(arguments.run):
+            parser.error("give one --run per report directory, in the same order")
+        run_ids, directories = list(arguments.run), list(arguments.reports)
+    measured_at = measured_at or datetime.date.today().isoformat()
+
+    seconds, counts, setup = combine_runs([read_reports(directory) for directory in directories])
+    print(f"combined {len(run_ids)} run(s): {', '.join(run_ids)}")
     for suite, value in sorted(setup.items()):
         print(
             f"session setup in {suite}/: {value:.1f}s per shard, taken off each shard's first file"
@@ -162,9 +302,11 @@ def main() -> int:
     if vanished:
         print(f"dropping {len(vanished)} file(s) that no longer exist, for example {vanished[0]}")
 
+    urls = [f"https://github.com/Kauror/juristid/actions/runs/{run_id}" for run_id in run_ids]
     document = {
-        "measured_from": f"https://github.com/Kauror/juristid/actions/runs/{arguments.run}",
-        "measured_at": arguments.measured_at,
+        # One run's URL, or the list a median was taken over.
+        "measured_from": urls[0] if len(urls) == 1 else urls,
+        "measured_at": measured_at,
         "note": (
             "Balance input for ci_sharding.py, regenerated with "
             "scripts/ci/update_shard_timings.py. Nothing about which tests run "
