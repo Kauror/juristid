@@ -39,8 +39,6 @@ import subprocess
 import sys
 from collections.abc import Callable
 
-import yaml
-
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
@@ -84,37 +82,23 @@ def collect(arguments: list[str]) -> set[str]:
 
 
 def shard_counts(workflow_path: pathlib.Path, suites: dict) -> dict[str, int]:
-    """How many runners the workflow gives each job, checked against its command.
+    """How many shards the workflow runs of each suite, checked against its runners.
 
-    The matrix and the `--shard-count` in the command are two statements of the
-    same fact; a disagreement means some shard index runs a partition computed
-    for a different number of runners.
+    The runner matrix, the runner script's `--runners` and the command's
+    `--shard-count` are statements of the same layout
+    (`ci_workflow_selection.topology`); a disagreement means some shard index
+    runs a partition computed for a different count, or is hosted by no runner.
     """
-    workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
-    counts: dict[str, int] = {}
-    for name, suite in suites.items():
-        job = workflow["jobs"].get(name)
-        if job is None:
-            raise SystemExit(
-                f"the workflow no longer has a `{name}` job; this script is out of date"
-            )
-        shards = job.get("strategy", {}).get("matrix", {}).get("shard")
-        if shards is None:
-            counts[name] = 1
-        else:
-            expected = list(range(1, len(shards) + 1))
-            if list(shards) != expected:
-                raise SystemExit(
-                    f"job `{name}` has shard indexes {list(shards)}; they must be exactly "
-                    f"{expected}, or some slice of the suite runs twice and another not at all"
-                )
-            counts[name] = len(shards)
-        if suite.shard_count != counts[name]:
-            raise SystemExit(
-                f"job `{name}` runs {counts[name]} shard(s) but its command says "
-                f"--shard-count={suite.shard_count}"
-            )
-    return counts
+    try:
+        layout = ci_workflow_selection.topology(workflow_path)
+    except (ci_workflow_selection.InconsistentTopology, KeyError) as error:
+        raise SystemExit(f"the workflow's shards do not add up: {error}") from error
+    missing = sorted(set(suites) - set(layout))
+    if missing:
+        raise SystemExit(
+            f"the workflow no longer has a `{missing[0]}` job; this script is out of date"
+        )
+    return {name: layout[name].shard_count for name in suites}
 
 
 def check(

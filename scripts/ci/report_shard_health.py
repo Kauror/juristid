@@ -44,8 +44,6 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ElementTree
 
-import yaml
-
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
@@ -102,14 +100,9 @@ HEADLINE = "CI SHARD TIMINGS NEED REFRESH"
 
 
 def shard_counts() -> dict[str, int]:
-    """How many runners the workflow gives each sharded job, read from the matrix."""
-    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
-    counts: dict[str, int] = {}
-    for name in SUITES:
-        job = workflow["jobs"].get(name) or {}
-        shards = job.get("strategy", {}).get("matrix", {}).get("shard")
-        counts[name] = len(shards) if shards else 1
-    return counts
+    """How many shards the workflow runs of each sharded suite (runners x shards each)."""
+    layout = ci_workflow_selection.topology(WORKFLOW)
+    return {name: layout[name].shard_count for name in SUITES}
 
 
 def collect(arguments: list[str]) -> dict[str, int]:

@@ -350,12 +350,12 @@ jobs:
           rm -f isolation.log
 
   tests:
-    name: "PostgreSQL tests, shard ${{ matrix.shard }} of 7"
+    name: "PostgreSQL tests, runner ${{ matrix.runner }} of 7"
     runs-on: ubuntu-latest
-    # Was 25 for the whole serial suite. A shard is roughly a 7th of it, and
-    # the same reasoning applies at the smaller size: generous slack so that a
-    # slow runner is never mistaken for a broken branch, and a number that gets
-    # noticed if the suite ever grows into it.
+    # Was 25 for the whole serial suite. A runner now carries two 14ths of it
+    # at the same time, and the same reasoning applies at the smaller size:
+    # generous slack so that a slow runner is never mistaken for a broken
+    # branch, and a number that gets noticed if the suite ever grows into it.
     timeout-minutes: 15
 
     strategy:
@@ -364,15 +364,25 @@ jobs:
       # re-runs.
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7]
+        runner: [1, 2, 3, 4, 5, 6, 7]
 
-    # A whole PostgreSQL of its own per shard, which is the point of sharding
-    # here rather than reaching for `pytest -n`. Each runner gets its own
-    # database server, its own filesystem, its own process environment and its
-    # own port space, so the isolation the suite already relies on is not
-    # weakened by running it in 7 places at once — and the assignment is a
-    # pure function of the collected files rather than of which worker happened
-    # to be free (ci_sharding.py, docs/ci-architecture.md).
+    # The suite is cut into 14 shards and each of these 7 runners hosts two of
+    # them at once, because a runner has four cores and one shard used about
+    # one (ci_slices.py). Each shard on a runner has its own database on the
+    # runner's PostgreSQL, its own temporary directory and its own coverage
+    # fragment, so the isolation the suite relies on is the isolation it had on
+    # a runner of its own — and which tests a shard runs is still a pure
+    # function of the collected files rather than of which worker happened to
+    # be free (ci_sharding.py, docs/ci-architecture.md). Inside a database,
+    # tests still run one at a time.
+    #
+    # The data directory is in memory (`--tmpfs`). Same PostgreSQL 18, same
+    # configuration, same SQL and transaction semantics; what it removes is the
+    # runner's disk, whose fsync latency made the same files run anywhere from
+    # 0.6x to 1.6x their usual time depending on the runner they landed on
+    # (2026-10-11). A test database lives and dies inside the job, so there is
+    # no durability for it to lose. The migration safety job and the recovery
+    # rehearsal keep a disk.
     services:
       postgres:
         image: postgres:18
@@ -387,6 +397,7 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
+          --tmpfs /var/lib/postgresql
 
     env:
       DJANGO_SECRET_KEY: ci-only-secret-not-used-anywhere-else
@@ -451,9 +462,12 @@ jobs:
             grep -qx "$lang" <<<"$langs" || { echo "tesseract has no '$lang'"; echo "$langs"; exit 1; }
           done
 
-      # The suite, partitioned. `--shard-count` and the matrix above are held to
-      # each other by tests/test_ci_sharding.py, and the union is proved to be
-      # the whole suite by the quality job.
+      # The suite, partitioned: this runner's two shards of 14 at the same
+      # time, each with `{shard}` replaced by its own index and with its own
+      # database, temporary directory and coverage fragment
+      # (scripts/ci/run_slices.py). `--shard-count`, `--runners` and the
+      # matrix above are held to each other by tests/test_ci_sharding.py, and
+      # the union is proved to be the whole suite by the quality job.
       #
       # Coverage is measured per shard and combined by the gate below, so the
       # instrumentation cost is divided by the shard count along with everything else and
@@ -462,29 +476,32 @@ jobs:
       # collapse.
       - name: Test suite
         env:
-          COVERAGE_FILE: .coverage.shard-${{ matrix.shard }}
           # Python 3.13's `sys.monitoring` core (AUD-031). Rejected once because
           # it reported a different number; on coverage 7.15 it reports the
           # same data, line for line, at a fraction of the default tracer's
           # cost (docs/ci-architecture.md).
           COVERAGE_CORE: sysmon
         run: >-
+          uv run python scripts/ci/run_slices.py run --suite tests
+          --runner ${{ matrix.runner }} --runners 7 --
           uv run pytest
-          --shard-count=7 --shard-index=${{ matrix.shard }}
+          --shard-count=14 --shard-index={shard}
           --cov --cov-report=
-          --junitxml=artifacts/junit-tests-${{ matrix.shard }}.xml
+          --junitxml=artifacts/junit-tests-{shard}.xml
 
       # Two things the gate needs and one thing a person needs: the coverage
       # fragment, the durations that keep ci/shard-timings.json refreshable, and
       # a report to read when a shard is red.
-      - name: Upload this shard's report
+      - name: Upload this runner's reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-report-tests-${{ matrix.shard }}
+          name: test-report-tests-runner-${{ matrix.runner }}
           path: |
-            artifacts/junit-tests-${{ matrix.shard }}.xml
-            .coverage.shard-${{ matrix.shard }}
+            artifacts/junit-tests-*.xml
+            artifacts/shard-tests-*.json
+            artifacts/tests-*.log
+            .coverage.shard-*
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 14
@@ -520,7 +537,7 @@ jobs:
               exit 1
             fi
           done
-          echo "all 7 shards and the safety checks passed"
+          echo "all 14 shards (7 runners) and the safety checks passed"
 
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -573,15 +590,17 @@ jobs:
         run: uvx pip-audit --strict --no-deps --requirement requirements.txt
 
   browser:
-    name: "Browser, shard ${{ matrix.shard }} of 7"
+    name: "Browser, runner ${{ matrix.runner }} of 7"
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7]
+        runner: [1, 2, 3, 4, 5, 6, 7]
 
+    # In memory, as in the PostgreSQL shards above and for the same reason;
+    # same server, same configuration, same semantics.
     services:
       postgres:
         image: postgres:18
@@ -596,11 +615,20 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
+          --tmpfs /var/lib/postgresql
 
+    # The browser suite runs against a real server on real PostgreSQL. It is
+    # the authoritative check that the workflow works for a person, because
+    # the development machine cannot open a browser.
+    #
+    # What is *not* here is everything that names a shard's own world: its
+    # database, its three servers' ports, its evidence, derivative,
+    # legacy-source and pending-upload roots, its mail directory, its
+    # screenshots and its temporary directory. Each of the two shards a runner
+    # hosts gets its own from `ci_slices.shard_environment`, for its servers
+    # and its pytest process alike — so a value missed there is missing, never
+    # silently the neighbour's (scripts/ci/run_slices.py).
     env:
-      # The browser suite runs against a real server on real PostgreSQL. It is
-      # the authoritative check that the workflow works for a person, because
-      # the development machine cannot open a browser.
       DJANGO_SECRET_KEY: ci-only-secret-not-used-anywhere-else
       DJANGO_DEBUG: "1"
       DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,[::1]"
@@ -609,35 +637,30 @@ jobs:
       DEV_LOGIN_ENABLED: "1"
       REAL_DATA_ALLOWED: "0"
       APPLICATION_ENVIRONMENT: ci
-      POSTGRES_DB: juristid
       POSTGRES_USER: juristid
       POSTGRES_PASSWORD: juristid
       POSTGRES_HOST: localhost
       POSTGRES_PORT: "5432"
       POSTGRES_SSLMODE: disable
-      EVIDENCE_ROOT: /tmp/juristid-evidence
-      E2E_BASE_URL: http://127.0.0.1:8000
-      E2E_SCREENSHOT_DIR: artifacts/screenshots
-      # A second server, same database, running the shared gate. The persona
-      # switcher exists only in that mode — the routes 404 in the other two —
-      # and converting the whole browser suite to type a password before every
-      # unrelated test would have been the alternative. One extra `runserver`
-      # is cheaper and leaves the rest of the suite exactly as it was
-      # (docs/adr/0034).
-      E2E_GATE_BASE_URL: http://127.0.0.1:8001
+      # A second server per shard, same database, running the shared gate. The
+      # persona switcher exists only in that mode — the routes 404 in the other
+      # two — and converting the whole browser suite to type a password before
+      # every unrelated test would have been the alternative. One extra
+      # `runserver` is cheaper and leaves the rest of the suite exactly as it
+      # was (docs/adr/0034).
+      #
       # A rehearsal password for a throwaway server on localhost, under a
       # test-only name. The deployment variable it stands in for is deliberately
       # absent from every tracked YAML file in this repository — a committed
       # shared password does not look wrong in a diff, it looks like a default
       # (tests/test_repository_data_safety.py, config/e2e_gate_settings.py).
       E2E_GATE_PASSWORD: ci-jagatud-parool-mitte-kusagil-mujal
-      # A third server, on a database of its own, running personal sign-in
-      # (docs/adr/0145). It is dormant in every deployment, so this is the only
-      # place it runs at all. Mail goes to files in this directory, where
-      # e2e/test_local_auth.py reads the one-time links; nothing is sent
-      # anywhere (config/e2e_local_auth_settings.py).
-      E2E_LOCAL_AUTH_BASE_URL: http://127.0.0.1:8002
-      E2E_LOCAL_AUTH_MAIL_DIR: /tmp/juristid-e2e-mail
+      # A third server per shard, on a database of its own, runs personal
+      # sign-in (docs/adr/0145). It is dormant in every deployment, so this is
+      # the only place it runs at all. Mail goes to files in the shard's own
+      # directory, where e2e/test_local_auth.py reads the one-time links;
+      # nothing is sent anywhere (config/e2e_local_auth_settings.py).
+      #
       # Set to "1" on a manual run to (re)generate the visual baselines. The
       # renderings land in the browser-artifacts upload; commit what you agree
       # with. Baselines have to come from this image, because font
@@ -669,89 +692,48 @@ jobs:
         timeout-minutes: 6
         run: uv run playwright install chromium
 
-      - name: Migrate and seed the deterministic world
-        run: |
-          uv run python manage.py migrate --noinput
-          uv run python manage.py seed_e2e_data
+      # For each of this runner's two shards, the world a single-shard runner
+      # built in four steps: its database migrated and seeded with the same
+      # deterministic `seed_e2e_data`, its personal sign-in database migrated,
+      # and its three servers — application, shared gate (same code and data
+      # behind the department password, a separate process because `AUTH_MODE`
+      # is read per request from settings) and personal sign-in, on a database
+      # of its own so the accounts it creates never reach the seeded world.
+      #
+      # Both shards at once, and inside a shard both databases at once: they are
+      # different databases, so neither waits on the other.
+      - name: Migrate, seed and serve each shard's world
+        run: >-
+          uv run python scripts/ci/run_slices.py browser-world
+          --runner ${{ matrix.runner }} --runners 7 --shard-count 14
 
-      - name: Start the application
-        run: |
-          mkdir -p artifacts
-          nohup uv run python manage.py runserver 127.0.0.1:8000 --noreload > artifacts/server.log 2>&1 &
-          for attempt in $(seq 1 40); do
-            if curl --fail --silent http://127.0.0.1:8000/healthz > /dev/null; then
-              echo "server is up"; exit 0
-            fi
-            sleep 1
-          done
-          echo "server did not start"; exit 1
-
-      # The same code and the same data, behind the department password. It is
-      # a separate process rather than a setting flipped mid-run because
-      # `AUTH_MODE` is read per request from settings: one process cannot be
-      # both, and a suite that restarted the server between files would be
-      # slower and harder to read than a second port.
-      - name: Start the shared-gate application
-        env:
-          # The mode, the password and the refusal to combine a gate with the
-          # synthetic sign-in all live in the settings module, not here.
-          DJANGO_SETTINGS_MODULE: config.e2e_gate_settings
-        run: |
-          nohup uv run python manage.py runserver 127.0.0.1:8001 --noreload > artifacts/server-gate.log 2>&1 &
-          for attempt in $(seq 1 40); do
-            if curl --fail --silent http://127.0.0.1:8001/healthz > /dev/null; then
-              echo "shared-gate server is up"; exit 0
-            fi
-            sleep 1
-          done
-          echo "shared-gate server did not start"; exit 1
-
-      # Personal sign-in, on its own database so that the accounts it creates
-      # never reach the seeded world the rest of the suite asserts about. The
-      # browser test empties it and appoints the first administrator itself,
-      # through the operator command, exactly as an activation would.
-      - name: Start the personal sign-in application
-        env:
-          DJANGO_SETTINGS_MODULE: config.e2e_local_auth_settings
-        run: |
-          PGPASSWORD="$POSTGRES_PASSWORD" createdb -h "$POSTGRES_HOST" -U "$POSTGRES_USER" "${POSTGRES_DB}_localauth"
-          mkdir -p "$E2E_LOCAL_AUTH_MAIL_DIR"
-          uv run python manage.py migrate --noinput
-          nohup uv run python manage.py runserver 127.0.0.1:8002 --noreload > artifacts/server-local-auth.log 2>&1 &
-          for attempt in $(seq 1 40); do
-            if curl --fail --silent http://127.0.0.1:8002/healthz > /dev/null; then
-              echo "personal sign-in server is up"; exit 0
-            fi
-            sleep 1
-          done
-          echo "personal sign-in server did not start"; exit 1
-
-      # This runner's slice of the browser suite. Whole files, chosen by
-      # measured cost, against this runner's own database, its own two servers
-      # and its own Chromium — which is what makes 7 of these safe when
-      # 7 pytest workers sharing one server would not be. The visual
-      # scenarios are not here; they have a job of their own below.
+      # This runner's two shards of the browser suite, at the same time. Whole
+      # files, chosen by measured cost, each against its own database, its own
+      # three servers and its own Chromium — which is what makes two of these
+      # on one runner safe when two pytest workers sharing one server would not
+      # be. The visual scenarios are not here; they have a job of their own
+      # below.
       - name: Browser workflow
         run: >-
+          uv run python scripts/ci/run_slices.py run --suite browser
+          --runner ${{ matrix.runner }} --runners 7 --
           uv run pytest e2e --ignore=e2e/test_ui_regression.py
-          --shard-count=7 --shard-index=${{ matrix.shard }}
+          --shard-count=14 --shard-index={shard}
           --browser chromium
           --tracing retain-on-failure
-          --output artifacts/playwright
-          --junitxml=artifacts/junit-browser-${{ matrix.shard }}.xml
+          --output artifacts/browser-{shard}/playwright
+          --junitxml=artifacts/junit-browser-{shard}.xml
 
       - name: Upload screenshots and traces
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-report-browser-${{ matrix.shard }}
+          name: test-report-browser-runner-${{ matrix.runner }}
           path: |
-            artifacts/screenshots
-            artifacts/playwright
-            artifacts/junit-browser-${{ matrix.shard }}.xml
-            artifacts/server.log
-            artifacts/server-gate.log
-            artifacts/server-local-auth.log
+            artifacts/browser-*
+            artifacts/junit-browser-*.xml
+            artifacts/shard-browser-*.json
+            artifacts/browser-*.log
           if-no-files-found: warn
           retention-days: 14
 
@@ -937,7 +919,7 @@ jobs:
               exit 1
             fi
           done
-          echo "all 7 browser shards and the visual suite passed"
+          echo "all 14 browser shards (7 runners) and the visual suite passed"
 
   shard-balance:
     # What this run's shards were predicted to take, beside what they took

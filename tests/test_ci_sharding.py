@@ -21,6 +21,8 @@ import pytest
 import yaml
 
 import ci_sharding
+import ci_slices
+import ci_workflow_selection
 
 ROOT = pathlib.Path(ci_sharding.REPOSITORY_ROOT)
 WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
@@ -149,29 +151,55 @@ def test_a_shard_that_does_not_exist_is_refused(shard_index: int, shard_count: i
 def test_the_workflow_matrix_covers_every_shard_exactly_once() -> None:
     """The other half of the same off-by-one, on the CI side of the line.
 
-    ``--shard-count`` is a number in the workflow and ``shard`` is a list in the
-    workflow, and nothing but this ties them together. A matrix of [1, 2, 3]
-    against a count of 4 leaves a quarter of the suite unrun, and every job
-    passes.
+    ``--shard-count`` is a number in the pytest command, ``runner`` is a list
+    in the matrix and ``--runners`` is a number given to the script that hosts
+    each runner's shards, and nothing but this ties them together. A matrix of
+    [1, 2, 3] against four runners' worth of shards leaves a quarter of the
+    suite unrun, and every job passes.
     """
     workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    layout = ci_workflow_selection.topology(WORKFLOW)
 
     for job_name in SHARDED_JOBS:
-        job = workflow["jobs"][job_name]
-        matrix = job.get("strategy", {}).get("matrix", {})
-        shards = matrix.get("shard")
-        if shards is None:
-            continue
+        shape = layout[job_name]
+        runners = workflow["jobs"][job_name]["strategy"]["matrix"]["runner"]
+        assert runners == list(range(1, shape.runners + 1))
+        assert shape.shard_count == shape.runners * shape.per_runner
 
-        assert list(shards) == list(range(1, len(shards) + 1)), (
-            f"job `{job_name}` has shard indexes {list(shards)}, which is not 1..{len(shards)}"
+        # Every shard index is hosted by exactly one runner.
+        hosted = [
+            shard
+            for runner in runners
+            for shard in ci_slices.slices_for(runner, shape.runners, shape.shard_count)
+        ]
+        assert sorted(hosted) == list(range(1, shape.shard_count + 1))
+
+        steps = json.dumps(workflow["jobs"][job_name]["steps"])
+        assert f"--shard-count={shape.shard_count}" in steps
+        assert "--shard-index={shard}" in steps, (
+            f"job `{job_name}` does not give each hosted shard its own shard index"
         )
 
-        steps = json.dumps(job["steps"])
-        assert f"--shard-count={len(shards)}" in steps, (
-            f"job `{job_name}` runs {len(shards)} runners but does not pass "
-            f"--shard-count={len(shards)} to pytest"
-        )
-        assert "--shard-index=${{ matrix.shard }}" in steps, (
-            f"job `{job_name}` does not give each runner its own shard index"
-        )
+
+def test_a_workflow_whose_runners_and_shards_disagree_is_refused(tmp_path) -> None:
+    """Seven runners and fifteen shards cannot be shared; neither can a stale count."""
+    original = WORKFLOW.read_text(encoding="utf-8")
+    shape = ci_workflow_selection.topology(WORKFLOW)["tests"]
+    mutations = [
+        original.replace(
+            f"--shard-count={shape.shard_count} --shard-index={{shard}}",
+            f"--shard-count={shape.shard_count + 1} --shard-index={{shard}}",
+            1,
+        ),
+        original.replace(
+            f"--runner ${{{{ matrix.runner }}}} --runners {shape.runners} --",
+            f"--runner ${{{{ matrix.runner }}}} --runners {shape.runners + 1} --",
+            1,
+        ),
+    ]
+    for number, text in enumerate(mutations):
+        assert text != original, "the mutation did not apply; this test proves nothing"
+        path = tmp_path / f"ci-{number}.yml"
+        path.write_text(text, encoding="utf-8")
+        with pytest.raises(ci_workflow_selection.InconsistentTopology):
+            ci_workflow_selection.topology(path)
