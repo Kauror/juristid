@@ -34,6 +34,7 @@ complete should not itself be on the critical path.
 from __future__ import annotations
 
 import concurrent.futures
+import os
 import pathlib
 import subprocess
 import sys
@@ -128,7 +129,10 @@ def check(
     for universe, (_, arguments) in ci_workflow_selection.UNIVERSES.items():
         jobs[f"universe:{universe}"] = list(arguments)
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=len(jobs)) as pool:
+    # Two collections per core at a time: each imports the whole application,
+    # and with three dozen shards at once a four-core runner only thrashes.
+    workers = min(len(jobs), 2 * (os.cpu_count() or 4))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
         collected = dict(zip(jobs, pool.map(collector, jobs.values()), strict=True))
 
     for name, suite in suites.items():

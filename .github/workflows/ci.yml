@@ -355,9 +355,9 @@ jobs:
   tests:
     name: "PostgreSQL tests, runner ${{ matrix.runner }} of 5"
     runs-on: ubuntu-latest
-    # Was 25 for the whole serial suite. A runner now carries two 14ths of it
-    # at the same time, and the same reasoning applies at the smaller size:
-    # generous slack so that a slow runner is never mistaken for a broken
+    # Was 25 for the whole serial suite. A runner now carries a few of its
+    # shards at the same time, and the same reasoning applies at the smaller
+    # size: generous slack so that a slow runner is never mistaken for a broken
     # branch, and a number that gets noticed if the suite ever grows into it.
     timeout-minutes: 15
 
@@ -369,15 +369,16 @@ jobs:
       matrix:
         runner: [1, 2, 3, 4, 5]
 
-    # The suite is cut into 14 shards and each of these 7 runners hosts two of
-    # them at once, because a runner has four cores and one shard used about
-    # one (ci_slices.py). Each shard on a runner has its own database on the
-    # runner's PostgreSQL, its own temporary directory and its own coverage
-    # fragment, so the isolation the suite relies on is the isolation it had on
-    # a runner of its own — and which tests a shard runs is still a pure
-    # function of the collected files rather than of which worker happened to
-    # be free (ci_sharding.py, docs/ci-architecture.md). Inside a database,
-    # tests still run one at a time.
+    # The suite is cut into `--shard-count` shards and each runner below hosts
+    # `--shard-count / --runners` of them at once, because a runner has four
+    # cores and one shard used about one (ci_slices.py; docs/ci-architecture.md
+    # says how the counts were chosen). Each shard on a runner has its own
+    # database on the runner's PostgreSQL, its own temporary directory and its
+    # own coverage fragment, so the isolation the suite relies on is the
+    # isolation it had on a runner of its own — and which tests a shard runs is
+    # still a pure function of the collected files rather than of which worker
+    # happened to be free (ci_sharding.py, docs/ci-architecture.md). Inside a
+    # database, tests still run one at a time.
     #
     # The data directory is in memory (`--tmpfs`). Same PostgreSQL 18, same
     # configuration, same SQL and transaction semantics; what it removes is the
@@ -465,8 +466,8 @@ jobs:
             grep -qx "$lang" <<<"$langs" || { echo "tesseract has no '$lang'"; echo "$langs"; exit 1; }
           done
 
-      # The suite, partitioned: this runner's two shards of 14 at the same
-      # time, each with `{shard}` replaced by its own index and with its own
+      # The suite, partitioned: this runner's shards at the same time, each
+      # with `{shard}` replaced by its own index and with its own
       # database, temporary directory and coverage fragment
       # (scripts/ci/run_slices.py). `--shard-count`, `--runners` and the
       # matrix above are held to each other by tests/test_ci_sharding.py, and
@@ -554,6 +555,33 @@ jobs:
           pattern: test-report-tests-*
           path: fragments
 
+      # A runner uploads several shards' files in one artifact, and an upload
+      # only refuses when *none* of its paths match — so a shard that never
+      # ran, or lost its report, would leave the gate combining whatever
+      # arrived: green, with less coverage than the suite has. Exactly one
+      # JUnit report and one coverage fragment per shard, 1..N, or red.
+      # `SHARD_COUNT` is held to the workflow's --shard-count by
+      # tests/test_ci_sharding.py.
+      - name: Every shard reported, and nothing else did
+        env:
+          SHARD_COUNT: "15"
+        run: |
+          set -euo pipefail
+          missing=""
+          for shard in $(seq 1 "$SHARD_COUNT"); do
+            for name in "junit-tests-$shard.xml" ".coverage.shard-$shard"; do
+              test -n "$(find fragments -name "$name" -print -quit)" || missing="$missing $name"
+            done
+          done
+          test -z "$missing" || { echo "no report from:$missing"; exit 1; }
+          found="$(find fragments \( -name 'junit-tests-*.xml' -o -name '.coverage.shard-*' \) | wc -l)"
+          test "$found" = "$(( 2 * SHARD_COUNT ))" || {
+            echo "expected $(( 2 * SHARD_COUNT )) reports, found $found:"
+            find fragments \( -name 'junit-tests-*.xml' -o -name '.coverage.shard-*' \) | sort
+            exit 1
+          }
+          echo "all $SHARD_COUNT shards reported a JUnit file and a coverage fragment"
+
       # One report for the whole suite, as before the split. Combining rather
       # than reporting per shard is what keeps this comparable to the number CI
       # printed when the suite ran in one process.
@@ -627,8 +655,8 @@ jobs:
     # What is *not* here is everything that names a shard's own world: its
     # database, its three servers' ports, its evidence, derivative,
     # legacy-source and pending-upload roots, its mail directory, its
-    # screenshots and its temporary directory. Each of the two shards a runner
-    # hosts gets its own from `ci_slices.shard_environment`, for its servers
+    # screenshots and its temporary directory. Each shard a runner hosts gets
+    # its own from `ci_slices.shard_environment`, for its servers
     # and its pytest process alike — so a value missed there is missing, never
     # silently the neighbour's (scripts/ci/run_slices.py).
     env:
@@ -695,7 +723,7 @@ jobs:
         timeout-minutes: 6
         run: uv run playwright install chromium
 
-      # For each of this runner's two shards, the world a single-shard runner
+      # For each of this runner's shards, the world a single-shard runner
       # built in four steps: its database migrated and seeded with the same
       # deterministic `seed_e2e_data`, its personal sign-in database migrated,
       # and its three servers — application, shared gate (same code and data
@@ -703,18 +731,18 @@ jobs:
       # is read per request from settings) and personal sign-in, on a database
       # of its own so the accounts it creates never reach the seeded world.
       #
-      # Both shards at once, and inside a shard both databases at once: they are
-      # different databases, so neither waits on the other.
+      # All of them at once, and inside a shard both databases at once: they
+      # are different databases, so neither waits on the other.
       - name: Migrate, seed and serve each shard's world
         run: >-
           uv run python scripts/ci/run_slices.py browser-world
           --runner ${{ matrix.runner }} --runners 9 --shard-count 18
 
-      # This runner's two shards of the browser suite, at the same time. Whole
+      # This runner's shards of the browser suite, at the same time. Whole
       # files, chosen by measured cost, each against its own database, its own
-      # three servers and its own Chromium — which is what makes two of these
-      # on one runner safe when two pytest workers sharing one server would not
-      # be. The visual scenarios are not here; they have a job of their own
+      # three servers and its own Chromium — which is what makes several of
+      # these on one runner safe when pytest workers sharing one server would
+      # not be. The visual scenarios are not here; they have a job of their own
       # below.
       - name: Browser workflow
         run: >-
@@ -726,6 +754,20 @@ jobs:
           --tracing retain-on-failure
           --output artifacts/browser-{shard}/playwright
           --junitxml=artifacts/junit-browser-{shard}.xml
+
+      # The JUnit reports and shard records again, on their own: small enough
+      # for the browser gate and the balance report to download without the
+      # screenshots and traces beside them.
+      - name: Upload this runner's shard reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shard-reports-browser-runner-${{ matrix.runner }}
+          path: |
+            artifacts/junit-browser-*.xml
+            artifacts/shard-browser-*.json
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Upload screenshots and traces
         if: always()
@@ -924,6 +966,31 @@ jobs:
           done
           echo "all 18 browser shards (9 runners) and the visual suite passed"
 
+      # A runner's shards report together, so a shard that never ran would
+      # otherwise pass unnoticed here. Exactly one JUnit report per shard,
+      # 1..N. `SHARD_COUNT` is held to the workflow's --shard-count by
+      # tests/test_ci_sharding.py.
+      - name: Collect the shard reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: shard-reports-browser-*
+          path: reports
+
+      - name: Every browser shard reported, and nothing else did
+        env:
+          SHARD_COUNT: "18"
+        run: |
+          set -euo pipefail
+          missing=""
+          for shard in $(seq 1 "$SHARD_COUNT"); do
+            test -n "$(find reports -name "junit-browser-$shard.xml" -print -quit)" \
+              || missing="$missing junit-browser-$shard.xml"
+          done
+          test -z "$missing" || { echo "no report from:$missing"; exit 1; }
+          found="$(find reports -name 'junit-browser-*.xml' | wc -l)"
+          test "$found" = "$SHARD_COUNT" || { echo "expected $SHARD_COUNT reports, found $found"; exit 1; }
+          echo "all $SHARD_COUNT browser shards reported"
+
   shard-balance:
     # What this run's shards were predicted to take, beside what they took
     # (ENG-139). The quality job prints the prediction alone, and a model
@@ -957,19 +1024,26 @@ jobs:
           enable-cache: true
       - run: uv sync --frozen
 
+      # `continue-on-error` on every step as well as on the job: the release
+      # gate requires every job of a run to conclude `success`, and a job-level
+      # `continue-on-error` keeps the run green but not the job — so an
+      # informational report that crashed would block a release.
       - name: This run's PostgreSQL shard reports
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           pattern: test-report-tests-*
           path: junit
 
       - name: This run's browser shard reports
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
-          pattern: test-report-browser-*
+          pattern: shard-reports-browser-*
           path: junit
 
       - name: Predicted against actual
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
@@ -980,6 +1054,7 @@ jobs:
 
       - name: Upload the numbers
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: shard-health

@@ -181,6 +181,21 @@ def test_the_workflow_matrix_covers_every_shard_exactly_once() -> None:
         )
 
 
+@pytest.mark.parametrize(("gate", "job"), [("tests-gate", "tests"), ("browser-gate", "browser")])
+def test_each_gate_requires_a_report_from_every_shard(gate: str, job: str) -> None:
+    """The runtime half: a runner reports its shards together, so a shard that
+    never ran would otherwise leave nothing missing that an upload notices.
+    Each gate counts the reports against the layout's shard count."""
+    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    shape = ci_workflow_selection.topology(WORKFLOW)[job]
+    (step,) = [
+        step for step in workflow["jobs"][gate]["steps"] if "SHARD_COUNT" in step.get("env", {})
+    ]
+    assert int(step["env"]["SHARD_COUNT"]) == shape.shard_count
+    assert 'seq 1 "$SHARD_COUNT"' in step["run"]
+    assert f"junit-{job}-$shard.xml" in step["run"]
+
+
 def test_a_workflow_whose_runners_and_shards_disagree_is_refused(tmp_path) -> None:
     """Seven runners and fifteen shards cannot be shared; neither can a stale count."""
     original = WORKFLOW.read_text(encoding="utf-8")

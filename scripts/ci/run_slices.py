@@ -280,7 +280,9 @@ def browser_world(arguments: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 
-def _stream(prefix: str, process: subprocess.Popen[str], log: Path) -> None:
+def _stream(
+    prefix: str, process: subprocess.Popen[str], log: Path, finished: dict[str, float]
+) -> None:
     if process.stdout is None:
         raise RuntimeError(f"{prefix}: the shard has no output to stream")
     with log.open("w", encoding="utf-8") as handle:
@@ -289,6 +291,59 @@ def _stream(prefix: str, process: subprocess.Popen[str], log: Path) -> None:
             with _print_lock:
                 sys.stdout.write(f"[{prefix}] {line}")
                 sys.stdout.flush()
+    process.wait()
+    # Here, not after waiting on the shards in turn: a shard that finished
+    # first would otherwise be timed until its sibling finished.
+    finished[prefix] = time.monotonic()
+
+
+class Sampler(threading.Thread):
+    """The runner's lowest available memory and highest load while its shards run.
+
+    Its shards share one machine and one PostgreSQL server, whose data
+    directory is in memory, so this is the number that says whether a runner
+    has room for another shard — and, if a server ever dies under them, why.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(daemon=True)
+        self.lowest_available_mb: float | None = None
+        self.highest_load: float | None = None
+        self._stop = threading.Event()
+
+    def run(self) -> None:
+        while not self._stop.wait(5):
+            try:
+                for line in Path("/proc/meminfo").read_text(encoding="utf-8").splitlines():
+                    if line.startswith("MemAvailable:"):
+                        available = int(line.split()[1]) / 1024
+                        if self.lowest_available_mb is None or available < self.lowest_available_mb:
+                            self.lowest_available_mb = available
+                load = float(Path("/proc/loadavg").read_text(encoding="utf-8").split()[0])
+                if self.highest_load is None or load > self.highest_load:
+                    self.highest_load = load
+            except (OSError, ValueError, IndexError):
+                return
+
+    def stop(self) -> dict[str, object]:
+        self._stop.set()
+        return {
+            "lowest_available_mb": None
+            if self.lowest_available_mb is None
+            else round(self.lowest_available_mb),
+            "highest_load_1m": self.highest_load,
+        }
+
+
+#: What a shard's log says when the cause was the runner's shared PostgreSQL
+#: server rather than its own tests: every backend in every database is reset
+#: when one crashes, so the neighbour goes red too.
+SHARED_SERVER_SIGNS = (
+    "crash of another server process",
+    "terminating connection because of crash",
+    "too many clients already",
+    "the database system is in recovery mode",
+)
 
 
 def run(arguments: argparse.Namespace) -> int:
@@ -316,6 +371,9 @@ def run(arguments: argparse.Namespace) -> int:
     streams: list[threading.Thread] = []
     started: dict[int, float] = {}
     started_at: dict[int, float] = {}
+    finished: dict[str, float] = {}
+    sampler = Sampler()
+    sampler.start()
     for position, shard in enumerate(shards, start=1):
         environment = environment_for(arguments.suite, shard, position)
         if arguments.suite == "tests":
@@ -341,7 +399,7 @@ def run(arguments: argparse.Namespace) -> int:
         processes[shard] = process
         stream = threading.Thread(
             target=_stream,
-            args=(prefix, process, ARTIFACTS / f"{arguments.suite}-{shard}.log"),
+            args=(prefix, process, ARTIFACTS / f"{arguments.suite}-{shard}.log", finished),
             daemon=True,
         )
         stream.start()
@@ -352,16 +410,25 @@ def run(arguments: argparse.Namespace) -> int:
             if process.poll() is None:
                 process.send_signal(signum)
 
-    signal.signal(signal.SIGTERM, forward)
-    signal.signal(signal.SIGINT, forward)
-
-    results: dict[int, int] = {}
-    durations: dict[int, float] = {}
-    for shard, process in processes.items():
-        results[shard] = process.wait()
-        durations[shard] = time.monotonic() - started[shard]
-    for stream in streams:
-        stream.join()
+    # Forward a cancellation to the shards, and put the handlers back after:
+    # the same function also runs inside the test suite, in-process.
+    previous = {
+        signum: signal.signal(signum, forward) for signum in (signal.SIGTERM, signal.SIGINT)
+    }
+    try:
+        results: dict[int, int] = {}
+        for shard, process in processes.items():
+            results[shard] = process.wait()
+        for stream in streams:
+            stream.join()
+    finally:
+        for signum, handler in previous.items():
+            signal.signal(signum, handler)
+    resources = sampler.stop()
+    durations = {
+        shard: finished.get(f"{arguments.suite} {shard}", time.monotonic()) - started[shard]
+        for shard in shards
+    }
 
     print()
     print(f"{arguments.suite} shards on runner {arguments.runner}:")
@@ -380,11 +447,25 @@ def run(arguments: argparse.Namespace) -> int:
                 "started_at": started_at[shard],
                 "pytest_seconds": round(durations[shard], 3),
                 "exit_code": results[shard],
+                "resources": resources,
             },
         )
+    print(
+        f"  lowest available memory {resources['lowest_available_mb']} MB, "
+        f"highest 1-minute load {resources['highest_load_1m']}"
+    )
     failed = [shard for shard in shards if results[shard] != 0]
     if failed:
         print(f"shard(s) {failed} failed; their output above is prefixed [{arguments.suite} N]")
+        for shard in shards:
+            log = ARTIFACTS / f"{arguments.suite}-{shard}.log"
+            seen = log.read_text(encoding="utf-8", errors="replace") if log.exists() else ""
+            signs = [sign for sign in SHARED_SERVER_SIGNS if sign in seen]
+            if signs:
+                print(
+                    f"  shard {shard}'s log says {signs[0]!r}: the runner's shared "
+                    "PostgreSQL server failed, so a neighbour's red may be this, not its tests"
+                )
         return 1
     return 0
 

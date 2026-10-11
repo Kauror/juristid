@@ -10,11 +10,14 @@ so they run in every PostgreSQL shard.
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import itertools
+import json
 import pathlib
 import re
 import shlex
+import signal
 import sys
 
 import pytest
@@ -306,3 +309,104 @@ def test_a_command_without_the_placeholder_is_refused(isolated_runner) -> None:
                 "--shard-count=4",
             ]
         )
+
+
+# -- guards on the code, so the next change cannot quietly share ------------------------
+
+
+def _string_literals(path: pathlib.Path):
+    """(line, text) of every string constant in a module that is not a docstring."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    docstrings = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            first = node.body[0] if node.body else None
+            if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant):
+                docstrings.add(id(first.value))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if id(node) not in docstrings:
+                yield node.lineno, node.value
+
+
+def _python_sources() -> list[pathlib.Path]:
+    return [
+        path
+        for directory in ("app", "config", "tests", "e2e")
+        for path in sorted((ROOT / directory).rglob("*.py"))
+        if path.resolve() != pathlib.Path(__file__).resolve()
+    ]
+
+
+def test_every_query_of_a_server_wide_view_is_scoped_to_its_own_database() -> None:
+    """`pg_stat_activity` and `pg_locks` show every database on the server.
+
+    Two shards share their runner's PostgreSQL, so an unscoped poll for a
+    blocked backend is satisfied by the neighbour's, and the race the test
+    exists to force is quietly not forced — green, alone or together. Six
+    such reads were found and scoped on 2026-10-11; this keeps it that way.
+    """
+    unscoped = [
+        f"{path.relative_to(ROOT).as_posix()}:{line}"
+        for path in _python_sources()
+        for line, text in _string_literals(path)
+        if ("pg_stat_activity" in text or "pg_locks" in text)
+        and ("FROM" in text.upper() or "JOIN" in text.upper())
+        and "current_database()" not in text
+    ]
+    assert not unscoped, f"scope these to current_database(): {unscoped}"
+
+
+def test_no_source_names_a_fixed_temporary_path() -> None:
+    """A fixed `/tmp/...` would be one file for every shard on the runner.
+
+    Everything temporary comes from `tempfile`, which honours each shard's own
+    `TMPDIR`; the one deliberate exception is where those directories live.
+    """
+    fixed = [
+        f"{path.relative_to(ROOT).as_posix()}:{line}"
+        for path in _python_sources()
+        for line, text in _string_literals(path)
+        if text.startswith(("/tmp", "/var/tmp"))  # noqa: S108 - the paths it forbids
+    ]
+    assert not fixed, f"use tempfile, not a fixed temporary path: {fixed}"
+    assert str(ci_slices.SLICE_ROOT).startswith("/tmp/")  # noqa: S108 - the one allowed
+
+
+def test_every_path_variable_the_browser_suite_reads_is_given_to_each_shard() -> None:
+    """The settings are checked above; the browser suite's own modules too."""
+    pattern = re.compile(
+        r'(?:env|os\.environ\.get|os\.getenv)\(\s*"([A-Z0-9_]+_(?:ROOT|PATH|DIR))"'
+    )
+    read = {
+        name
+        for module in (ROOT / "e2e").rglob("*.py")
+        for name in pattern.findall(module.read_text(encoding="utf-8"))
+    }
+    assert read, "no path variables were found in e2e/, so this proves nothing"
+    unhandled = read - set(ci_slices.PER_SHARD_VARIABLES["browser"])
+    assert not unhandled, f"give each shard its own {sorted(unhandled)} in ci_slices.py"
+
+
+# -- the runner leaves its process as it found it ---------------------------------
+
+
+def test_the_runner_puts_the_signal_handlers_back(isolated_runner) -> None:
+    """It runs in-process here, inside a shard: it must not keep that shard's handlers."""
+    before = {signum: signal.getsignal(signum) for signum in (signal.SIGTERM, signal.SIGINT)}
+    runner_script.main(
+        ["run", "--suite", "tests", "--runner", "1", "--runners", "2", *_program("pass")]
+    )
+    assert {signum: signal.getsignal(signum) for signum in before} == before
+
+
+def test_each_shard_is_timed_to_its_own_finish(isolated_runner) -> None:
+    """Not to its sibling's: a quick shard beside a slow one reads as quick."""
+    source = "import time; time.sleep(3 if '{shard}' == '1' else 0)"
+    runner_script.main(
+        ["run", "--suite", "tests", "--runner", "1", "--runners", "2", *_program(source)]
+    )
+    quick = json.loads((isolated_runner / "artifacts" / "shard-tests-2.json").read_text())
+    slow = json.loads((isolated_runner / "artifacts" / "shard-tests-1.json").read_text())
+    assert slow["pytest_seconds"] >= 3
+    assert quick["pytest_seconds"] < slow["pytest_seconds"] - 1

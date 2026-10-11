@@ -59,11 +59,20 @@ import ci_workflow_selection  # noqa: E402  (after sys.path, like ci_sharding)
 #: read from the workflow's own commands by `ci_workflow_selection`, the one
 #: definition ``scripts/ci/assert_shard_completeness.py`` also works from. This
 #: used to be a second hand-copied list that nothing tied to either (ENG-110).
-SUITES: dict[str, tuple[str, list[str]]] = {
-    name: (suite.label, list(suite.selection))
-    for name, suite in ci_workflow_selection.suites(WORKFLOW).items()
-    if name in ("tests", "browser")
-}
+#:
+#: Read at import, but never allowed to stop the import: this is the last job of
+#: every run, and a crash there fails a job the release gate requires to
+#: succeed. A workflow this cannot read is reported by `main()` instead.
+try:
+    SUITES: dict[str, tuple[str, list[str]]] = {
+        name: (suite.label, list(suite.selection))
+        for name, suite in ci_workflow_selection.suites(WORKFLOW).items()
+        if name in ("tests", "browser")
+    }
+    _UNREADABLE: str | None = None
+except (ci_workflow_selection.UnknownSelection, OSError, KeyError, ValueError) as error:
+    SUITES = {}
+    _UNREADABLE = f"{type(error).__name__}: {error}"
 
 # ---------------------------------------------------------------------------
 # Thresholds
@@ -513,6 +522,20 @@ def write_step_summary(summary: dict[str, object], path: str) -> None:
 
 
 def main() -> int:
+    # Always 0, including when it cannot report at all: see the module docstring
+    # and the note on SUITES.
+    try:
+        return _main()
+    except Exception as error:  # a report must not fail its job
+        print()
+        print(f"the shard health report could not be produced: {type(error).__name__}: {error}")
+        return 0
+
+
+def _main() -> int:
+    if _UNREADABLE is not None:
+        print(f"the workflow's suites cannot be read; nothing to report: {_UNREADABLE}")
+        return 0
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--durations",
