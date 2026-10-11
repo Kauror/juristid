@@ -191,6 +191,11 @@ def _wait_for_a_waiting_backend() -> None:
     deadline = time.monotonic() + WAIT
     while time.monotonic() < deadline:
         with connection.cursor() as cursor:
+            # A fresh look each time: inside a transaction `pg_stat_activity` is a
+            # snapshot taken on first access, and a backend caught while it was still
+            # connecting has no `datname` in it yet, so the filter below would never
+            # match it (2026-10-11).
+            cursor.execute("SELECT pg_stat_clear_snapshot()")
             cursor.execute(
                 "SELECT count(*) FROM pg_stat_activity "
                 "WHERE datname = current_database() "
