@@ -213,7 +213,7 @@ class DocumentVersion(BaseModel):
     # by EXTRACTION_MAX_ATTEMPTS, after which the claim settles it FAILED
     # instead (AUD-045).
     extraction_attempts = models.PositiveSmallIntegerField(
-        default=0, verbose_name="töötlemiskatseid"
+        default=0, db_default=0, verbose_name="töötlemiskatseid"
     )
 
     class Meta:
