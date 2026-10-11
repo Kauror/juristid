@@ -1,9 +1,12 @@
 name: CI
 
+# Pull requests, and a run started by hand or by `main-proof.yml` — which
+# starts one on main only when no pull request's run proves the merge. Main does
+# not re-run this on every push: the pull request's run already tested the exact
+# tree the merge commits (docs/ci-architecture.md).
 on:
-  push:
-    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

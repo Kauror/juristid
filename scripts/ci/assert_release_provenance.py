@@ -21,11 +21,15 @@ It needs `GH_TOKEN` (the workflow's own token, with `actions: read`).
    backwards past what production runs.
 2. *CI passed on exactly the bytes being released.* Either of two proofs:
 
-   a. **Main's own run.** The latest run of `ci.yml` for a **push to main**
-      with this **head SHA** has completed, concluded `success`, and every job
-      in its latest attempt concluded `success`. A run for another SHA is not
-      this commit's; a run where "the required jobs" passed while another was
-      skipped or cancelled is not a green run.
+   a. **Main's own run.** The latest run of `ci.yml` on **main** — a push, or
+      (since 2026-10-11) a run started on main by hand or by
+      `.github/workflows/main-proof.yml` — with this **head SHA** has
+      completed, concluded `success`, and every job in its latest attempt
+      concluded `success`. A run for another SHA is not this commit's; a run
+      where "the required jobs" passed while another was skipped or cancelled
+      is not a green run. Main no longer runs `ci.yml` on every push: a merge
+      the pull request's run already proved has no main run, and proof (b)
+      below is what releases it.
    b. **The pull request's run, on the identical tree** (added 2026-10-02, so a
       release does not wait ~11 minutes for main to re-test what the pull
       request already tested). Tried only while main's own run is *absent or
@@ -112,6 +116,14 @@ def on_first_parent_history(target: str, history: Sequence[str]) -> Verdict:
 # ---------------------------------------------------------------------------
 
 
+#: The events whose runs on main are main's own CI: a push, and a run started on
+#: main through the API or the Actions tab — which is how
+#: `.github/workflows/main-proof.yml` runs the whole of CI on a merge no pull
+#: request's run proves. Never `pull_request`: that is proof (b), with its own
+#: conditions.
+MAIN_EVENTS = frozenset({"push", "workflow_dispatch"})
+
+
 def main_push_runs(target: str, runs: Sequence[dict[str, Any]], workflow: str) -> list[dict]:
     """The runs that are main's CI for this commit, and nothing else.
 
@@ -122,7 +134,7 @@ def main_push_runs(target: str, runs: Sequence[dict[str, Any]], workflow: str) -
         run
         for run in runs
         if run.get("head_sha") == target
-        and run.get("event") == "push"
+        and run.get("event") in MAIN_EVENTS
         and run.get("head_branch") == "main"
         and str(run.get("path", "")).endswith(WORKFLOW_PATH_SUFFIX + workflow)
     ]
@@ -140,8 +152,9 @@ def ci_verdict(
         seen = f" (runs seen: {', '.join(other)})" if other else ""
         return Verdict(
             False,
-            f"no {workflow} run for a push to main at {target}{seen}. A pull request's checks "
-            "are not main's; the merge commit is tested when it lands on main.",
+            f"no {workflow} run on main at {target}{seen}. A pull request's checks are not "
+            "main's own run; the merge is released on its pull request's run only through "
+            "proof (b).",
         )
     latest = max(candidates, key=lambda run: (run.get("run_number", 0), run.get("id", 0)))
     url = latest.get("html_url", f"run {latest.get('id')}")
@@ -334,11 +347,13 @@ def fetch_runs(
     repository: str, workflow: str, target: str, token: str, event: str = "push"
 ) -> list[dict]:
     runs: list[dict] = []
-    branch = "&branch=main" if event == "push" else ""
+    # Main's own runs are every event in MAIN_EVENTS, so for those the query
+    # filters by branch alone and `main_push_runs` decides the events.
+    selector = "&branch=main" if event == "push" else f"&event={event}"
     for page in range(1, 11):
         body = _get(
             f"{API}/repos/{repository}/actions/workflows/{workflow}/runs"
-            f"?head_sha={target}&event={event}{branch}&per_page=100&page={page}",
+            f"?head_sha={target}{selector}&per_page=100&page={page}",
             token,
         )
         batch = body.get("workflow_runs", [])

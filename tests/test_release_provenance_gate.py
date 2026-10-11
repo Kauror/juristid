@@ -275,6 +275,25 @@ def test_the_latest_run_decides() -> None:
     ).ok
 
 
+def test_the_whole_of_ci_started_on_main_is_mains_own_run() -> None:
+    """main-proof.yml starts ci.yml on main when no pull request's run proves a merge."""
+    verdict = gate.ci_verdict(SHA, [run(event="workflow_dispatch")], green)
+    assert verdict.ok
+
+
+def test_ci_started_on_another_branch_is_not_mains() -> None:
+    assert not gate.ci_verdict(
+        SHA, [run(event="workflow_dispatch", head_branch="feature/one")], green
+    ).ok
+
+
+def test_a_started_run_that_finished_red_is_never_overridden() -> None:
+    """A red run on main — pushed or started — keeps proof (b) from being tried."""
+    runs = [run(event="workflow_dispatch", conclusion="failure")]
+    assert gate.main_run_state(SHA, runs) == "finished"
+    assert not gate.ci_verdict(SHA, runs, green).ok
+
+
 # ---------------------------------------------------------------------------
 # The command, end to end, against the repository and a fake API
 # ---------------------------------------------------------------------------
