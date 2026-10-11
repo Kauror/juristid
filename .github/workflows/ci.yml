@@ -353,7 +353,7 @@ jobs:
           rm -f isolation.log
 
   tests:
-    name: "PostgreSQL tests, runner ${{ matrix.runner }} of 6"
+    name: "PostgreSQL tests, runner ${{ matrix.runner }} of 7"
     runs-on: ubuntu-latest
     # Was 25 for the whole serial suite. A runner now carries a few of its
     # shards at the same time, and the same reasoning applies at the smaller
@@ -367,7 +367,7 @@ jobs:
       # re-runs.
       fail-fast: false
       matrix:
-        runner: [1, 2, 3, 4, 5, 6]
+        runner: [1, 2, 3, 4, 5, 6, 7]
 
     # The suite is cut into `--shard-count` shards and each runner below hosts
     # `--shard-count / --runners` of them at once, because a runner has four
@@ -382,11 +382,11 @@ jobs:
     #
     # The data directory is in memory (`--tmpfs`). Same PostgreSQL 18, same
     # configuration, same SQL and transaction semantics; what it removes is the
-    # runner's disk, whose fsync latency made the same files run anywhere from
-    # 0.6x to 1.6x their usual time depending on the runner they landed on
-    # (2026-10-11). A test database lives and dies inside the job, so there is
-    # no durability for it to lose. The migration safety job and the recovery
-    # rehearsal keep a disk.
+    # runner's disk. Measured A/B on 2026-10-11, same layout and commit: the
+    # PostgreSQL runners ran about 10% faster on matching hardware and the
+    # round took 371 s instead of 411 s. A test database lives and dies inside
+    # the job, so there is no durability for it to lose. The migration safety
+    # job and the recovery rehearsal keep a disk.
     services:
       postgres:
         image: postgres:18
@@ -487,9 +487,9 @@ jobs:
           COVERAGE_CORE: sysmon
         run: >-
           uv run python scripts/ci/run_slices.py run --suite tests
-          --runner ${{ matrix.runner }} --runners 6 --
+          --runner ${{ matrix.runner }} --runners 7 --
           uv run pytest
-          --shard-count=12 --shard-index={shard}
+          --shard-count=14 --shard-index={shard}
           --cov --cov-report=
           --junitxml=artifacts/junit-tests-{shard}.xml
 
@@ -541,7 +541,7 @@ jobs:
               exit 1
             fi
           done
-          echo "all 12 shards (6 runners) and the safety checks passed"
+          echo "all 14 shards (7 runners) and the safety checks passed"
 
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -564,7 +564,7 @@ jobs:
       # tests/test_ci_sharding.py.
       - name: Every shard reported, and nothing else did
         env:
-          SHARD_COUNT: "12"
+          SHARD_COUNT: "14"
         run: |
           set -euo pipefail
           missing=""
@@ -621,14 +621,14 @@ jobs:
         run: uvx pip-audit --strict --no-deps --requirement requirements.txt
 
   browser:
-    name: "Browser, runner ${{ matrix.runner }} of 8"
+    name: "Browser, runner ${{ matrix.runner }} of 9"
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
     strategy:
       fail-fast: false
       matrix:
-        runner: [1, 2, 3, 4, 5, 6, 7, 8]
+        runner: [1, 2, 3, 4, 5, 6, 7, 8, 9]
 
     # In memory, as in the PostgreSQL shards above and for the same reason;
     # same server, same configuration, same semantics.
@@ -736,7 +736,7 @@ jobs:
       - name: Migrate, seed and serve each shard's world
         run: >-
           uv run python scripts/ci/run_slices.py browser-world
-          --runner ${{ matrix.runner }} --runners 8 --shard-count 16
+          --runner ${{ matrix.runner }} --runners 9 --shard-count 18
 
       # This runner's shards of the browser suite, at the same time. Whole
       # files, chosen by measured cost, each against its own database, its own
@@ -747,9 +747,9 @@ jobs:
       - name: Browser workflow
         run: >-
           uv run python scripts/ci/run_slices.py run --suite browser
-          --runner ${{ matrix.runner }} --runners 8 --
+          --runner ${{ matrix.runner }} --runners 9 --
           uv run pytest e2e --ignore=e2e/test_ui_regression.py
-          --shard-count=16 --shard-index={shard}
+          --shard-count=18 --shard-index={shard}
           --browser chromium
           --tracing retain-on-failure
           --output artifacts/browser-{shard}/playwright
@@ -964,7 +964,7 @@ jobs:
               exit 1
             fi
           done
-          echo "all 16 browser shards (8 runners) and the visual suite passed"
+          echo "all 18 browser shards (9 runners) and the visual suite passed"
 
       # A runner's shards report together, so a shard that never ran would
       # otherwise pass unnoticed here. Exactly one JUnit report per shard,
@@ -978,7 +978,7 @@ jobs:
 
       - name: Every browser shard reported, and nothing else did
         env:
-          SHARD_COUNT: "16"
+          SHARD_COUNT: "18"
         run: |
           set -euo pipefail
           missing=""
@@ -1066,6 +1066,16 @@ jobs:
     name: Backup and restore rehearsal
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # After the migration safety job, for a slot rather than for a result. The account runs
+    # twenty jobs at once and every one of them is in use from the first
+    # second, so two short independent jobs run one after the other in one
+    # slot, and the slot they free goes to another shard runner. `!cancelled()`
+    # because this job proves something of its own: it runs whether the migration safety job
+    # passed or failed, and reports under its own name either way. Together
+    # they finish well inside the slowest shard runner
+    # (docs/ci-architecture.md, "2026-10-11").
+    needs: [postgres-safety]
+    if: ${{ !cancelled() }}
 
     # The strongest claim this repository can make about its backups without
     # touching production: a set is created by the production script, verified,
@@ -1789,6 +1799,16 @@ jobs:
     name: Container and compose smoke test
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # After the dependency scan, for a slot rather than for a result. The account runs
+    # twenty jobs at once and every one of them is in use from the first
+    # second, so two short independent jobs run one after the other in one
+    # slot, and the slot they free goes to another shard runner. `!cancelled()`
+    # because this job proves something of its own: it runs whether the dependency scan
+    # passed or failed, and reports under its own name either way. Together
+    # they finish well inside the slowest shard runner
+    # (docs/ci-architecture.md, "2026-10-11").
+    needs: [dependency-scan]
+    if: ${{ !cancelled() }}
     steps:
       - uses: actions/checkout@v4
 

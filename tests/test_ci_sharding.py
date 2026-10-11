@@ -196,6 +196,32 @@ def test_each_gate_requires_a_report_from_every_shard(gate: str, job: str) -> No
     assert f"junit-{job}-$shard.xml" in step["run"]
 
 
+#: The aggregators and the report, which wait for their dependencies' *results*.
+AGGREGATORS = {"tests-gate", "browser-gate", "shard-balance"}
+
+
+def test_a_job_that_waits_only_for_a_slot_still_runs_when_its_predecessor_fails() -> None:
+    """Chaining is how two short jobs share one of the account's twenty slots.
+
+    A job with `needs:` is skipped when what it needs fails — and a skipped
+    required check blocks nothing. So every non-aggregating job that waits
+    for another must say `!cancelled()`: it runs and reports under its own
+    name whatever its predecessor did. And the aggregators must say
+    `always()`, so they run and refuse.
+    """
+    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    for name, job in workflow["jobs"].items():
+        if not job.get("needs"):
+            continue
+        condition = str(job.get("if", "")).replace(" ", "")
+        if name in AGGREGATORS:
+            assert condition == "always()", f"`{name}` must run whatever it aggregates did"
+        else:
+            assert condition == "${{!cancelled()}}", (
+                f"`{name}` waits for {job['needs']} but would be skipped if it failed"
+            )
+
+
 def test_a_workflow_whose_runners_and_shards_disagree_is_refused(tmp_path) -> None:
     """Seven runners and fifteen shards cannot be shared; neither can a stale count."""
     original = WORKFLOW.read_text(encoding="utf-8")

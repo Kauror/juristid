@@ -37,10 +37,15 @@ cannot be greener than what they aggregate:
 * they fail unless every dependency reported exactly `success`. `cancelled` and
   `skipped` fail too: a cancelled shard proved nothing.
 
-Every job still starts immediately. Nothing waits for lint. If quality fails in
-half a minute, that is visible in half a minute, and
-`cancel-in-progress` still stops the whole run — matrix jobs included — when a
-newer commit arrives.
+Nothing waits for lint: if quality fails, that is visible as soon as quality
+finishes, and `cancel-in-progress` still stops the whole run — matrix jobs
+included — when a newer commit arrives. Two short jobs wait for another job,
+for a slot rather than a result: `Container and compose smoke test` runs after
+`Dependency vulnerability baseline`, and `Backup and restore rehearsal` after
+`PostgreSQL migration and runtime safety`, each with `!cancelled()` so it runs
+and reports whatever its predecessor did. Both pairs finish well inside the
+slowest shard runner, and the two slots they free are two more shard runners
+(`tests/test_ci_sharding.py` refuses a chained job that a failure would skip).
 
 ## How the suites are split
 
@@ -106,9 +111,12 @@ neighbour is not blamed on its own tests.
 **The test and browser PostgreSQL keep their data in memory** (`--tmpfs
 /var/lib/postgresql` on the service). Same PostgreSQL 18, same configuration,
 same SQL and transaction semantics; only crash durability changes, and a test
-database lives and dies inside its job. Before it, the same PostgreSQL files ran
-anywhere from 0.6x to 1.6x their usual time depending on the runner's disk. The
-migration safety job and the recovery rehearsal keep a disk.
+database lives and dies inside its job. Measured A/B on one commit and layout,
+the PostgreSQL runners ran about 10% faster on matching hardware (EPYC 9V45
+196 s against 245 s, Xeon 8573C 348 s against 388 s) and the round took 371 s
+instead of 411 s. It did not narrow the spread between runners: that is the
+CPU a runner draws (below), not its disk. The migration safety job and the
+recovery rehearsal keep a disk.
 
 ### Reproducing a shard locally
 

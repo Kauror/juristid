@@ -16,12 +16,14 @@ any gate. Eight green runs before the change (the latest, 38110923538) measured:
   were not available.
 * **The cores were idle.** A runner for a public repository has four vCPUs, and
   each shard used about one.
-* **The disk set PostgreSQL's speed.** The same PostgreSQL files ran 0.57x to
-  1.63x their usual time depending on the runner they landed on, and the test
-  database's own setup took 14–35 s. The shard timing model predicted 402 s for
-  every shard; they took 237–382 s. Runner variance, not the assignment,
-  explained the gap. Disk fsync latency was the likely cause. Browser runners
-  varied far less (0.79–1.10).
+* **The runner set PostgreSQL's speed.** The same PostgreSQL files ran 0.57x
+  to 1.63x their usual time depending on the runner they landed on, and the
+  test database's own setup took 14–35 s. The shard timing model predicted
+  402 s for every shard; they took 237–382 s. Runner variance, not the
+  assignment, explained the gap. Logging each runner's CPU later showed it is
+  mostly the CPU generation a runner draws: an AMD EPYC 7763 ran the same shard
+  about 1.7x slower than an EPYC 9V45. Browser runners varied far less
+  (0.79–1.10).
 * **Main repeated a finished proof.** After a merge, main's push run re-tested
   the exact tree the pull request's run had just proved. For about eleven
   minutes it held every slot, so a pull request updated in that window ran
@@ -67,8 +69,12 @@ It is the same PostgreSQL 18, with the same configuration and the same SQL and
 transaction semantics. What changes is crash durability, and a test database
 lives and dies inside its job, so it has none to lose. GitHub service
 containers cannot pass `-c fsync=off`, so this is how the owner's approval of
-"fsync off for the throwaway test databases" is applied. Migration safety and
-the recovery rehearsal keep a disk.
+"fsync off for the throwaway test databases" is applied. The owner made that
+approval conditional on a measured win. The A/B on one commit and layout
+measured about 10% faster PostgreSQL runners on matching hardware, and a
+round of 371 s against 411 s. It did not narrow the spread between runners,
+which is CPU generation. Migration safety and the recovery rehearsal keep a
+disk.
 
 **5. Main is proved by its pull request's run** (`.github/workflows/main-proof.yml`,
 `scripts/ci/assert_main_proved.py`).
@@ -83,7 +89,17 @@ the recovery rehearsal keep a disk.
 * **The release gate.** It now accepts such a dispatched run as main's own, and
   still re-derives proof (b) itself.
 
-**6. The timing table is the median of several runs**
+**6. Two pairs of short fixed jobs share a slot.**
+* **The pairs.** `Container and compose smoke test` runs after `Dependency
+  vulnerability baseline`, and `Backup and restore rehearsal` runs after
+  `PostgreSQL migration and runtime safety`.
+* **Each still runs.** Each waits with `!cancelled()`, so it runs and reports
+  under its own name whatever its predecessor did. A job a failure would skip is
+  refused by `tests/test_ci_sharding.py`.
+* **The gain.** Both pairs finish inside the slowest shard runner, and the two
+  slots they free are two more shard runners.
+
+**7. The timing table is the median of several runs**
 (`update_shard_timings.py --latest N`). Each file's per-test rate is the median
 across the runs, so one slow runner's afternoon does not become a file's
 weight. The balance report reads the run's own reports instead of collecting,
