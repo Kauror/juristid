@@ -37,6 +37,7 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.contrib import admin
+from django.contrib.admin import AdminSite
 from django.contrib.auth.views import redirect_to_login
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.urls import reverse
@@ -48,10 +49,12 @@ from app.core.request_params import safe_local_path
 
 
 @never_cache
-def admin_sign_in(request: HttpRequest) -> HttpResponse:
+def admin_sign_in(request: HttpRequest, extra_context: dict | None = None) -> HttpResponse:
     """`/admin/login/`: Django's page under `none`, a redirect in every other mode."""
     if current_mode() == AuthMode.NONE:
-        return admin.site.login(request)
+        # Django's own view, called on the class: `admin.site.login` is this
+        # function now (config/urls.py).
+        return AdminSite.login(admin.site, request)
 
     target = safe_local_path(
         request.GET.get("next"), host=request.get_host(), require_https=request.is_secure()
