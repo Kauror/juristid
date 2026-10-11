@@ -607,6 +607,55 @@ def runtime_identity() -> RuntimeIdentity:
     )
 
 
+def postgresql_version_from_num(number: int) -> tuple[int, int]:
+    """Major and minor from `server_version_num`: 180006 is 18.6.
+
+    Since PostgreSQL 10 the number is major × 10000 + minor; the older
+    major.major.minor reading (`% 10000 // 100`) turns 18.6 into 18.0. The one
+    place both the recovery fingerprint and the search probe read it from
+    (AUD-050).
+    """
+    return number // 10000, number % 10000
+
+
+#: What a database this build is ready to serve answers to `SHOW jit`
+#: (docs/adr/0153). JIT compiled the register's statements for longer than they
+#: ran (AUD-039); `core/0002` and every Compose database service turn it off.
+EXPECTED_JIT = "off"
+
+
+#: The deliberate, documented route from canonical `PENDING` to a terminal
+#: extraction state (docs/adr/0072 §3): an operator run, outside working hours.
+EXTRACTION_RUN_COMMAND = "manage.py run_extraction_worker --once --limit 50"
+
+
+def extraction_backlog() -> tuple[int, Any]:
+    """(canonical versions waiting for extraction, when the oldest of them was filed).
+
+    The same population the worker would take (`pending_versions`): `PENDING`
+    and stale `PROCESSING`. Since ADR 0072 §3 nothing deployed drains it on its
+    own, and since docs/adr/0072's 2026-10-10 amendment a file read on
+    `Uus teema` while suggestions are off joins it honestly instead of being
+    labelled read. So it is reported where an operator reads a deployment's
+    state, rather than left for somebody to notice in Statistika.
+    """
+    from django.db.models import Min
+
+    from app.documents.extraction.orchestrator import pending_versions
+
+    waiting = pending_versions().order_by()
+    summary = waiting.aggregate(oldest=Min("created_at"))
+    return waiting.count(), summary["oldest"]
+
+
+def jit_setting() -> str:
+    """This connection's `SHOW jit`: what a new session of this database gets."""
+    with connection.cursor() as cursor:
+        cursor.execute("SHOW jit")
+        row = cursor.fetchone()
+    return str(row[0]) if row else ""
+
+
 def postgresql_version() -> tuple[int, int]:
     """The server's major and minor, for a restore that has to match it.
 
@@ -616,8 +665,7 @@ def postgresql_version() -> tuple[int, int]:
     with connection.cursor() as cursor:
         cursor.execute("SHOW server_version_num")
         row = cursor.fetchone()
-    raw = int(row[0]) if row else 0
-    return raw // 10000, raw % 10000
+    return postgresql_version_from_num(int(row[0]) if row else 0)
 
 
 # --------------------------------------------------------------------------
@@ -763,6 +811,17 @@ def readiness_report(*, search_phase: str = SEARCH_PHASE_FINAL) -> ReadinessRepo
             "This build is older than its database."
         )
 
+    # Asked once the schema is this build's: `core/0002` is what sets it on the
+    # database, and an unapplied migration is already the problem above. A
+    # database restored into a server started without `-c jit=off` lands here
+    # too, because `pg_dump` does not carry `ALTER DATABASE` settings.
+    if not state.pending and (jit := jit_setting()) != EXPECTED_JIT:
+        problems.append(
+            f"PostgreSQL JIT is {jit!r} for this database; this build expects "
+            f"{EXPECTED_JIT!r} (docs/adr/0153). Start the server with `-c jit=off` "
+            "or run `manage.py migrate core`."
+        )
+
     roots = storage_roots()
     problems.extend(root.problem for root in roots if root.problem)
 
@@ -773,6 +832,18 @@ def readiness_report(*, search_phase: str = SEARCH_PHASE_FINAL) -> ReadinessRepo
         f"{name}={value!r} is neither true nor false and is being read as false."
         for name, value in sorted(unparseable_boolean_variables().items())
     ]
+
+    # A warning, not a problem: the backlog exists by decision (ADR 0072 §3) and
+    # a release must not fail on it. But it must never be silent.
+    if not state.pending:
+        waiting, oldest = extraction_backlog()
+        if waiting:
+            since = f", the oldest filed {oldest:%Y-%m-%d}" if oldest else ""
+            warnings.append(
+                f"{waiting} document version(s) wait for text extraction{since}. Nothing "
+                "deployed extracts them on its own (docs/adr/0072 §3); run "
+                f"`{EXTRACTION_RUN_COMMAND}` deliberately, outside working hours."
+            )
 
     if search_phase not in SEARCH_PHASES:
         raise ValueError(f"unknown search phase {search_phase!r}")

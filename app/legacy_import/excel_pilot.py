@@ -202,6 +202,16 @@ def read_pilot_sheet(path: str | Path) -> SheetReading:
     with RegisterWorkbook(path) as workbook:
         if contract.sheet not in workbook.sheet_names:
             raise PilotError(f"The workbook has no sheet {contract.sheet!r}.")
+        # A header that does not match the contract stops the pilot before a
+        # row is read (AUD-041, docs/adr/0012): the aliases ADR 0148 §2 accepts
+        # are honoured by `check_headers`, and anything else is a shifted layout
+        # that would import every column one to the left.
+        drift = workbook.header_mismatches(contract)
+        if drift:
+            raise PilotError(
+                "The 2026 sheet's header does not match its contract: "
+                + "; ".join(finding.describe() for finding in drift)
+            )
         file_name = workbook.path.name
         sha256 = workbook.sha256
         for source in workbook.rows(contract):
@@ -939,11 +949,20 @@ def apply_plan(
     if plan.database_state == "applied":
         return ApplyReport(already_applied=True, matters=len(plan.rows))
 
-    from app.search.indexing import indexable_matters, refresh_matters, suspend_indexing
+    from app.search.indexing import indexable_matters, refresh_matters
 
-    with transaction.atomic(), suspend_indexing():
+    # **Indexed as it is written, not suspended** (AUD-042). Under
+    # `suspend_indexing` the Entry, Submission and Document handlers stood down
+    # and only the Matter rows were refreshed afterwards, so the pilot's notes,
+    # sent opinions and placeholder documents were never findable until
+    # somebody rebuilt the index. Thirty-odd Matters cost nothing to index row
+    # by row, and every service then writes its own search row in this
+    # transaction, as an interactive save does (docs/adr/0109). The closing
+    # refresh stays, inside the transaction, for the Matter fields written
+    # beside the services.
+    with transaction.atomic():
         report, touched = _write(plan, backup_set=backup_set)
-    refresh_matters(indexable_matters().filter(pk__in=touched))
+        refresh_matters(indexable_matters().filter(pk__in=touched))
     return report
 
 

@@ -59,6 +59,11 @@ services:
   db:
     image: postgres:18
     container_name: juristid-main-db
+    # JIT off for this OLTP workload (AUD-039, docs/adr/0153): it fires on the
+    # planner's estimated cost and spent 150-350 ms compiling statements that
+    # run in 15-70 ms. `core/0002` sets the same per database, so a restore
+    # into a server started without this line still answers `jit = off`.
+    command: ["postgres", "-c", "jit=off"]
     restart: unless-stopped
     logging: *bounded-logs
     env_file:
@@ -226,7 +231,7 @@ services:
     # failure that made a lawyer watch «Loen faili…» for half an hour.
     #
     # The window is INTAKE_READER_STALE_CLAIM_MINUTES, five rather than the old
-    # worker's thirty. A staged file is bounded by MAX_INTAKE_UPLOAD_BYTES and
+    # worker's thirty. A staged file is bounded by MAX_EVIDENCE_UPLOAD_BYTES and
     # finishes in seconds, so a loop that has not turned in five minutes has
     # stopped — and waiting half an hour to say so would outlast the form.
     healthcheck:

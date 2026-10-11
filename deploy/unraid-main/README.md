@@ -254,10 +254,28 @@ docker compose -p juristid-main -f compose.yml run --rm \
     web python manage.py run_extraction_worker --once --limit 50
 ```
 
+**What waits for it, and how you see it.** A canonical document version waits
+in `PENDING` («Järjekorras» on Statistika) until this command reaches it. That
+includes imported material, files attached through `Saabunud` and the Teema
+panels, and — while intake suggestions are switched off (ADR 0088) — files read
+on `Uus teema`. Those are promoted `PENDING` rather than as already read,
+because nothing they yielded went onto the form (docs/adr/0072, amendment of
+2026-10-10). Nothing deployed drains the queue: this is a deliberate operator
+run. `deployment_readiness` prints the backlog as a warning on every run —
+how many versions wait and when the oldest was filed — so it is never silent,
+and it does not fail a release. A file that keeps killing the worker is settled
+`FAILED` after `EXTRACTION_MAX_ATTEMPTS` (3) claims, with its reason on the
+version, and leaves the queue. Running the worker as a standing service again
+is a product-owner decision that would amend ADR 0072 §3.
+
 ### 6. Accounts
 
 Create the real people, by hand, once. There is no self-service and no
-auto-provisioning:
+auto-provisioning. This command is for the shared gate and Cloudflare Access
+only: under personal sign-in (`AUTH_MODE=local_password`) it refuses, and people
+are added in Haldus → Kasutajad (`+ Uus kasutaja` → `Kinnita ja saada kutse`),
+the first administrator with `bootstrap_account_admin`
+(docs/LOCAL_AUTH_ACTIVATION_RUNBOOK.md, AUD-051):
 
 ```bash
 docker compose -p juristid-main -f compose.yml run --rm web \
@@ -268,8 +286,9 @@ docker compose -p juristid-main -f compose.yml run --rm web \
 `SPECIALIST`. These become the persona list behind the gate, and later the
 accounts Cloudflare Access asserts against — which is why the UPN must be the
 person's real address. The command refuses anything else: an address that is
-not one, an `.invalid` identity, a role that is not department work. It gives
-the account no password, because neither mode reads one.
+not one, an `.invalid` identity, a second spelling of an address (`+tag`,
+non-ASCII), a role that is not department work, and personal sign-in being on.
+It gives the account no password, because neither mode reads one.
 
 Running it again for somebody who already exists exactly so changes nothing. If
 the existing account differs — another name, another role, deactivated, a
@@ -284,7 +303,13 @@ for the one technical administrator account, which never appears as a persona
 (ENG-013). That account's admin is for reference data: every business record
 there is read-only and shows only what the account may read through the
 product, which for an administrator excludes RESTRICTED Matters; a role, a
-superuser flag or a break-glass grant is not set there (ENG-008).
+superuser flag or a break-glass grant is not set there (ENG-008). Outside
+`AUTH_MODE=none`, `/admin/login/` checks no password (AUD-051 AU-2): it sends a
+signed-in staff account on to the admin and everybody else to the mode's own
+sign-in. Behind the shared gate no staff account is a persona and none has a
+usable password, so the admin has no browser entrance there; reference data is
+maintained through the reviewed `reference_data` commands until personal
+sign-in is activated.
 
 ## Importing the historical corpus
 

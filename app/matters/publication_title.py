@@ -27,11 +27,14 @@ then says nothing and the person types the title, as before.
 
 from __future__ import annotations
 
+import codecs
 import html
+import http.client
 import re
 import urllib.error
 import urllib.request
 from html.parser import HTMLParser
+from time import monotonic
 from typing import Any
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
@@ -41,8 +44,14 @@ from app.matters.publication_kind import KODA_HOSTS
 
 #: Seconds for each request; the preview is a convenience, never a wait.
 TIMEOUT_SECONDS = 4
+#: Seconds for the whole fetch, redirects and reading included. The timeout
+#: above bounds each socket operation, so a page trickling a byte at a time
+#: would otherwise hold the preview for as long as it liked (AUD-052 DX-8).
+TOTAL_SECONDS = 8
 #: A koda.ee article is ~90 KB; the title is in the first few.
 MAX_BYTES = 512 * 1024
+#: How much one read asks for; the total deadline is checked between reads.
+CHUNK_BYTES = 16 * 1024
 MAX_REDIRECTS = 3
 SITE_SUFFIX = re.compile(r"\s*[|–-]\s*Eesti Kaubandus-Tööstuskoda\s*$")
 USER_AGENT = "Juristid (Eesti Kaubandus-Tööstuskoda; pealkirja eelvaade)"
@@ -124,18 +133,52 @@ def title_from_html(body: str) -> str:
     return _clean(reader.og_title) or _clean(reader.title)
 
 
+def _charset(declared: str | None) -> str:
+    """The page's declared encoding if Python knows it, else UTF-8 (AUD-052 DX-8)."""
+    try:
+        return codecs.lookup(declared or "utf-8").name
+    except LookupError:
+        return "utf-8"
+
+
+def _read(response: Any, deadline: float) -> bytes | None:
+    """Up to `MAX_BYTES`, in chunks; ``None`` once the total deadline has passed.
+
+    `read1` returns what one socket read brings, so each step is bounded by
+    `TIMEOUT_SECONDS`; `read(n)` would keep reading until it had all n bytes.
+    """
+    read = getattr(response, "read1", response.read)
+    chunks: list[bytes] = []
+    size = 0
+    while size < MAX_BYTES:
+        if monotonic() > deadline:
+            return None
+        chunk = read(min(CHUNK_BYTES, MAX_BYTES - size))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        size += len(chunk)
+    return b"".join(chunks)
+
+
 def _fetch(url: str) -> str:
+    deadline = monotonic() + TOTAL_SECONDS
     for _hop in range(MAX_REDIRECTS + 1):
         # Every address here came through `fetchable_url`: `https`, koda.ee.
         if not url.startswith("https://"):
+            return ""
+        remaining = deadline - monotonic()
+        if remaining <= 0:
             return ""
         request = urllib.request.Request(  # noqa: S310 — https and koda.ee only, checked above
             url, headers={"User-Agent": USER_AGENT, "Accept": "text/html"}
         )
         try:
-            with _OPENER.open(request, timeout=TIMEOUT_SECONDS) as response:
-                raw = response.read(MAX_BYTES)
-                charset = response.headers.get_content_charset() or "utf-8"
+            with _OPENER.open(request, timeout=min(TIMEOUT_SECONDS, remaining)) as response:
+                raw = _read(response, deadline)
+                if raw is None:
+                    return ""
+                charset = _charset(response.headers.get_content_charset())
                 return raw.decode(charset, errors="replace")
         except urllib.error.HTTPError as error:
             if error.code not in (301, 302, 303, 307, 308):
@@ -155,6 +198,10 @@ def fetch_publication_title(url: str | None) -> str:
         return ""
     try:
         body = _fetch(target)
-    except (OSError, ValueError):
+    # Named rather than `Exception`: a socket or TLS failure (OSError), a bad
+    # address or decode (ValueError), an unknown codec (LookupError) and a
+    # malformed or truncated response — `BadStatusLine`, `IncompleteRead`,
+    # `LineTooLong` — which `http.client` raises outside OSError (AUD-052 DX-8).
+    except (OSError, ValueError, LookupError, http.client.HTTPException):
         return ""
     return title_from_html(body)

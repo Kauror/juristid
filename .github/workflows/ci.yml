@@ -301,6 +301,7 @@ jobs:
           uv run python manage.py migrate reporting 0001 --noinput
           uv run python manage.py migrate organisations 0001 --noinput
           uv run python manage.py migrate accounts 0003 --noinput
+          uv run python manage.py migrate core 0001 --noinput
           uv run python manage.py migrate --noinput
 
       - name: Estonian search capabilities are available
@@ -462,11 +463,11 @@ jobs:
       - name: Test suite
         env:
           COVERAGE_FILE: .coverage.shard-${{ matrix.shard }}
-        # The default tracer, deliberately. `COVERAGE_CORE=sysmon` was measured
-        # and rejected: it is nearly free where this is not, but it reported 39%
-        # against the same subset the default core reported 40% on, and a
-        # cheaper number that means something slightly different is not the same
-        # number (docs/ci-architecture.md).
+          # Python 3.13's `sys.monitoring` core (AUD-031). Rejected once because
+          # it reported a different number; on coverage 7.15 it reports the
+          # same data, line for line, at a fraction of the default tracer's
+          # cost (docs/ci-architecture.md).
+          COVERAGE_CORE: sysmon
         run: >-
           uv run pytest
           --shard-count=7 --shard-index=${{ matrix.shard }}

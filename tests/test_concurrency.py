@@ -554,6 +554,43 @@ def test_a_first_failure_from_two_connections_at_once_raises_nothing(gate_limits
     assert record.lockout_cycles == 1
 
 
+RESET_PARALLEL_REQUESTS = 3
+
+
+def test_parallel_reset_requests_send_no_more_links_than_the_limit(settings):
+    """`Unustasid parooli?` pressed from three connections at once (AUD-052 AU-3).
+
+    All three may pass the unlocked lockout read before any of them counts;
+    the charge under the row locks is what decides, so a limit of one sends
+    one link however the requests interleave.
+    """
+    from django.core import mail as django_mail
+
+    from app.accounts import credentials
+    from tests.local_auth import apply_local_password, person
+
+    apply_local_password(settings)
+    settings.LOCAL_AUTH_THROTTLE_RESET_ACCOUNT = {"max_failures": 1}
+    user, _ = person()
+    start = threading.Barrier(RESET_PARALLEL_REQUESTS, timeout=LOCK_WAIT_TIMEOUT)
+    failures: list[BaseException] = []
+
+    def one_request() -> None:
+        try:
+            start.wait()
+            request = RequestFactory().post("/konto/parool/", REMOTE_ADDR="203.0.113.21")
+            credentials.request_password_reset(request, email=user.upn)
+        except BaseException as exc:  # pragma: no cover - reported by the assert
+            failures.append(exc)
+
+    threads = [run_in_thread(one_request) for _ in range(RESET_PARALLEL_REQUESTS)]
+    for thread in threads:
+        thread.join(timeout=40)
+
+    assert failures == [], failures
+    assert len(django_mail.outbox) == 1
+
+
 def test_a_row_deleted_by_a_successful_sign_in_does_not_break_the_attempt(gate_limits):
     """The window the locking read opened, closed by fault injection.
 

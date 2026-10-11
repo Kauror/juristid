@@ -51,6 +51,7 @@ from typing import Any
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
+from django.db import DatabaseError
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,16 @@ logger = logging.getLogger(__name__)
 #: not read anything sooner — there is nothing else waiting — and smaller would
 #: make a five-file drop take two turns for no reason.
 BATCH = 10
+
+#: How often, at most, the loop blanks the extracted text of sessions nobody can
+#: use any more (`app.matters.intake_staging.clear_expired_intake_text`).
+#:
+#: Ten minutes against a twelve-hour session life: the text outlives its form
+#: by minutes rather than until somebody remembers `prune_intake_staging`, and
+#: the loop — which turns twice a second — issues one bounded ``UPDATE`` six
+#: times an hour rather than seven thousand (AUD-025). The first turn sweeps
+#: too, so a reader restarted after a long stop catches up at once.
+TEXT_SWEEP_SECONDS = 600.0
 
 
 class Command(BaseCommand):
@@ -92,6 +103,7 @@ class Command(BaseCommand):
         # decision somebody has to make on purpose.
         from app.documents.extraction.heartbeat import INTAKE_READER as mark
         from app.matters.intake_extraction import drain, pending_intake_files
+        from app.matters.intake_staging import clear_expired_intake_text
 
         idle = options["idle_seconds"]
         if idle is None:
@@ -115,6 +127,7 @@ class Command(BaseCommand):
         self.stdout.write(f"Uus teema lugeja käivitus. Ootel: {waiting} faili.")
 
         processed = 0
+        swept_at: float | None = None
         while not stopping["now"]:
             # Before the query, not after it. The point of the mark is that the
             # loop is turning; recording it only on the way out would make a
@@ -125,6 +138,25 @@ class Command(BaseCommand):
             # which on the production host sits behind the parity disk this
             # whole round is about (app/documents/extraction/heartbeat.py).
             mark.touch_periodically()
+
+            # The extracted text of forms nobody can use any more, at most once
+            # per TEXT_SWEEP_SECONDS. Here because this is the one process that
+            # is always running: `prune_intake_staging` is an operator's, and a
+            # copy of somebody's correspondence must not live as long as an
+            # operator's memory (AUD-025). Text only — no row, byte or audit
+            # fact is deleted by this loop.
+            if swept_at is None or time.monotonic() - swept_at >= TEXT_SWEEP_SECONDS:
+                swept_at = time.monotonic()
+                try:
+                    cleared = clear_expired_intake_text()
+                except DatabaseError:
+                    # The next window tries again. A housekeeping write that
+                    # failed must not stop the reader somebody's form is
+                    # waiting on — the same rule as one bad file.
+                    logger.warning("clearing expired intake text failed", exc_info=True)
+                else:
+                    if cleared:
+                        logger.info("cleared extracted text of %d expired intake files", cleared)
 
             reports = drain(limit=BATCH)
             for report in reports:

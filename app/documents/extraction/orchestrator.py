@@ -123,10 +123,49 @@ def claim_version(version_id: Any, *, force: bool = False) -> DocumentVersion | 
             return None
         if not force and not _is_claimable(locked, stale_before):
             return None
+        # A stale PROCESSING row is a claim that never reached a terminal write.
+        # Past the attempt budget that is the file's doing, not bad luck, and
+        # taking it again would only hand the next worker the same crash
+        # (AUD-045). It is settled through the ordinary failure path, inside
+        # this same locked statement, so it reads like any other FAILED file.
+        reclaiming = not force and locked.extraction_state == ExtractionState.PROCESSING
+        if reclaiming and locked.extraction_attempts >= settings.EXTRACTION_MAX_ATTEMPTS:
+            _record_failure(
+                locked,
+                code=ATTEMPTS_EXHAUSTED,
+                detail=attempts_exhausted_note(locked.extraction_attempts),
+                started=time.monotonic(),
+                fence=locked.extraction_claimed_at,
+            )
+            return None
         locked.extraction_state = ExtractionState.PROCESSING
         locked.extraction_claimed_at = timezone.now()
-        locked.save(update_fields=["extraction_state", "extraction_claimed_at", "updated_at"])
+        # Counted from the last time somebody asked for this file: a fresh
+        # request (PENDING) or an operator's --force starts at one, and only a
+        # reclaim of an unfinished claim adds to it.
+        locked.extraction_attempts = locked.extraction_attempts + 1 if reclaiming else 1
+        locked.save(
+            update_fields=[
+                "extraction_state",
+                "extraction_claimed_at",
+                "extraction_attempts",
+                "updated_at",
+            ]
+        )
     return locked
+
+
+#: The error code a file gets when its claims keep dying (AUD-045).
+ATTEMPTS_EXHAUSTED = "attempts_exhausted"
+
+
+def attempts_exhausted_note(attempts: int) -> str:
+    """The operator-facing reason for a file that kept killing its worker.
+
+    Shared with the intake reader, which settles its own staged rows the same
+    way and must say the same thing about the same kind of file.
+    """
+    return f"Faili töötlemine katkes korduvalt; märgitud ebaõnnestunuks pärast {attempts} katset."
 
 
 def _is_claimable(version: DocumentVersion, stale_before: Any) -> bool:
@@ -153,6 +192,10 @@ def pending_versions() -> Any:
     had the answer to — which is what this system did until docs/adr/0072.
     Nothing about that row is pending: it is finished, and it says so in a word
     that cannot be confused with `DONE` (`app.matters.intake_staging`).
+    Promotion writes it only while the form offers the reading; with the
+    suggestions withdrawn a file read on the form is promoted `PENDING` and is
+    offered here like any other upload (AUD-025, docs/adr/0072 amendment
+    2026-10-10).
 
     **There is no scan gate in front of this any more.** It used to exclude
     anything a scanner had not cleared, and the scanner is gone with the

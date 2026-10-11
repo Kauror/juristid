@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.core.deployment import postgresql_version_from_num
 from app.search.capabilities import (
     ESTONIAN_TEXT_SEARCH_CONFIG,
     REQUIRED_EXTENSIONS,
@@ -70,3 +71,22 @@ def test_a_server_that_would_narrow_the_fuzzy_tier_is_refused():
     assert report.word_similarity_threshold == pytest.approx(0.7)
     assert not report.fuzzy_index_ok
     assert not report.ok
+
+
+@pytest.mark.parametrize(
+    ("number", "version"),
+    [(180006, (18, 6)), (170002, (17, 2)), (180000, (18, 0)), (100023, (10, 23))],
+)
+def test_server_version_num_reads_as_major_and_minor(number, version):
+    # One reading for the search probe and the recovery fingerprint (AUD-050).
+    assert postgresql_version_from_num(number) == version
+
+
+def test_the_search_probe_reports_the_minor_release(monkeypatch):
+    """18.6 was reported as 18.0 by the pre-10 reading (AUD-050)."""
+    from django.db import connection
+
+    monkeypatch.setattr(connection, "pg_version", 180006)
+
+    assert postgresql_version() == (18, 6)
+    assert build_report().postgresql_version == (18, 6)

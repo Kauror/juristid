@@ -429,6 +429,31 @@ def test_reset_requests_are_throttled_quietly(client):
     assert len(django_mail.outbox) == 3
 
 
+def test_a_reset_request_that_finds_the_lock_at_charge_time_sends_nothing(client, monkeypatch):
+    # Two requests can both pass the unlocked `is_locked` read; the later one
+    # then meets the lockout under the row locks and must not be acted on
+    # (AUD-052 AU-3). The stale read is stood in for by a read that sees nothing.
+    from app.accounts import throttle
+
+    user, _ = person()
+    for _ in range(3):
+        client.post(reverse("accounts:forgot_password"), {"email": user.upn})
+    assert len(django_mail.outbox) == 3
+    monkeypatch.setattr(throttle, "is_locked", lambda counters: 0)
+
+    response = client.post(reverse("accounts:forgot_password"), {"email": user.upn})
+
+    assert response.status_code == 200
+    assert response.content.decode().count("Kui see aadress") == 1
+    assert len(django_mail.outbox) == 3
+    assert (
+        SecurityAuditEvent.objects.filter(
+            event_type=SecurityEventType.PASSWORD_RESET_REQUESTED, detail__outcome="throttled"
+        ).count()
+        == 1
+    )
+
+
 def test_an_account_without_a_password_here_gets_no_reset_link(client):
     legacy = factories.UserFactory(upn="vana@koda.ee", email="vana@koda.ee")
 

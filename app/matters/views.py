@@ -54,9 +54,10 @@ from app.accounts.selectors import (
     owner_filter_choices,
 )
 from app.audit.models import ChangeEvent
-from app.audit.operations import composer_operation, stage_episode_scope
+from app.audit.operations import stage_episode_scope
 from app.audit.visibility import change_log_event_types, scope_change_events
 from app.core.authorization import (
+    distinct_if_fans_out,
     may_assign_work,
     may_write_business_content,
 )
@@ -105,7 +106,7 @@ from app.matters import (
     workspace,
 )
 from app.matters import person_work as person_workspace
-from app.matters.deletion import delete_matter, plan_matter_deletion
+from app.matters.deletion import delete_matter, deletion_may_be_offered, plan_matter_deletion
 from app.matters.department_dashboard import SeisFigure
 from app.matters.document_context import related_records
 from app.matters.enums import MatterDataClass, MatterOrigin, RecordMode
@@ -167,7 +168,12 @@ from app.matters.forms import (
     visible_engagements_of,
 )
 from app.matters.initiative import KODA_INITIATIVE_LABEL, is_koda_initiative, set_koda_initiative
-from app.matters.intake import file_incoming, register_incoming, validate_uploads
+from app.matters.intake import (
+    file_incoming,
+    file_new_matter,
+    register_incoming,
+    validate_uploads,
+)
 from app.matters.intake_suggestions import (
     CurrentValues,
     SuggestedField,
@@ -233,13 +239,11 @@ from app.matters.services import (
     acknowledge_assignment_notice,
     assign_matter,
     change_stage,
-    close_matter_for_terminal_stage,
     complete_engagement_feedback,
     correct_engagement,
     correct_external_position,
     correct_procedural_development,
     correct_procedural_link,
-    create_matter,
     edit_entry,
     engagement_revision_token,
     entry_revision_token,
@@ -258,7 +262,6 @@ from app.matters.services import (
     set_brief_summary,
     set_legal_instrument_other,
     set_legal_instruments,
-    set_matter_data_class,
     set_matter_dates,
     set_matter_title,
     set_organisations,
@@ -310,13 +313,8 @@ from app.workflow import plan as work_plan
 from app.workflow.enums import Track
 from app.workflow.follow_ups import FOLLOW_UP_CHANGED, FollowUpClosureUnconfirmed
 from app.workflow.models import MatterPlanStep, NextAction, StageVocabulary
-from app.workflow.plan import seed_standard_plan
 from app.workflow.selectors import stages_including
-from app.workflow.services import (
-    acknowledge_review,
-    set_next_action_for_new_work,
-)
-from app.workflow.stage_flow import is_terminal as is_terminal_stage
+from app.workflow.services import acknowledge_review
 from app.workflow.stage_guidance import stage_guidance_payload
 
 #: `TWO_FIRST_STEPS_REFUSAL` stood here, and is retired with the question that
@@ -350,6 +348,9 @@ PAGE_SIZE_CHOICES: tuple[int, ...] = (12, 30, 50)
 PAGE_SIZE_ALL = "koik"
 PAGE_SIZE_ALL_BOUND = 2000
 TIMELINE_PAGE_SIZE = 30
+#: `?kaik=koik` reads the grouped `Teema käik` whole (AUD-008).
+TIMELINE_HISTORY_PARAM = "kaik"
+TIMELINE_HISTORY_ALL = "koik"
 
 
 def page_size_from(raw: str | None) -> tuple[int, str]:
@@ -711,7 +712,12 @@ def intake(request: HttpRequest) -> HttpResponse:
                     owner=data.get("owner"),
                     source_organisations=list(data.get("source_organisations") or []),
                     sender_name=data.get("sender_name") or "",
-                    received_date=data.get("received_date") or timezone.localdate(),
+                    # Exactly as the box was left. The unbound form shows today
+                    # as a prefill the person can clear; a cleared box means
+                    # the date is not known, and the server does not invent
+                    # today in its place — the rule `Uus teema` keeps too (D-3,
+                    # AUD-010).
+                    received_date=data.get("received_date"),
                     response_deadline=data.get("response_deadline"),
                     # Decided here, never read from the form — the same rule
                     # `matter_create` follows one screen over. The control is
@@ -1491,7 +1497,10 @@ def matter_list(request: HttpRequest) -> HttpResponse:
     queryset = _ordered(queryset, sort, request.user)
 
     per_page, page_size_key = page_size_from(params.get(PAGE_SIZE_PARAM))
-    paginator = _RegisterPaginator(queryset.distinct(), per_page)
+    # DISTINCT only when a join can repeat a row (AUD-001): on the default
+    # register it bought nothing and cost every row's subqueries before the
+    # page limit — and, in the production image, JIT compilation besides.
+    paginator = _RegisterPaginator(distinct_if_fans_out(queryset), per_page)
     page = paginator.get_page(params.get("leht"))
 
     query_without_page = params.copy()
@@ -2007,96 +2016,19 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                 if claim.replayed:
                     raise _FormAlreadySubmitted(claim.session)
 
-                # Resolved *inside* the transaction, and before the Matter, so a
-                # brand-new institution and the Teema that names it are one
-                # write. A rejected attachment, a refused next action or any
-                # other late failure below takes the institution with it rather
-                # than leaving an orphan in the catalogue nobody asked for
-                # (§6, app/matters/services.py `resolve_source_organisations`).
-                #
-                # **Only the sender side.** `Uus teema` no longer asks Adressaat
-                # and no longer answers it from Saatja, so a Matter is created
-                # with no addressee and gains one when Koda decides who to send
-                # to (docs/adr/0090 §5).
-                senders = resolve_source_organisations(
-                    chosen=data.get("source_organisations"),
-                    typed_name=data.get("sender_name") or "",
-                )
-                instruments = list(data.get("legal_instruments") or [])
-                matter = create_matter(
-                    title=data["title"],
-                    actor=request.user,
-                    owner=data.get("owner"),
-                    # Blank, by decision rather than by omission. `Uus teema`
-                    # no longer asks «Millest teema räägib»: the dossier is
-                    # created first and described later, on the Teema page or
-                    # `Muuda teemat`, which still write `brief_summary` exactly
-                    # as before (docs/adr/0130 §2).
-                    brief_summary="",
-                    stage=data.get("stage"),
-                    # **Not asked and not derived.** `Menetlusliik` is a
-                    # statement about the *procedure*, and no `Õigusakt` type
-                    # entails one: a `Seadus` transposing a directive is a
-                    # domestic instrument on a transposition track. Writing
-                    # `DOMESTIC` from the type would reduce a seven-value
-                    # classification to a domestic/EU boolean and be wrong about
-                    # exactly the files that matter. It is answered where it is
-                    # known — by a person, on `Muuda teemat` and in the Teema
-                    # rail, both of which offer the whole vocabulary
-                    # (docs/adr/0090 §4).
-                    #
-                    # **One exception, and it is asked rather than derived:**
-                    # `Koja ettepanek või pöördumine` *is* a statement about the
-                    # procedure — the Chamber started it — and is recorded as
-                    # the track it names, `Koja algatus` (docs/adr/0151 §1).
-                    # The form has already set both incoming dates aside.
-                    track=Track.KODA_INITIATIVE if data.get("koda_initiative") else "",
-                    source_organisations=senders,
-                    received_date=data.get("received_date"),
-                    response_deadline=data.get("response_deadline"),
-                    # A deadline typed here is a request recorded now: it is
-                    # answered only by an answer that names it
-                    # (`app/matters/response_deadlines.py`).
-                    response_requested_at=(
-                        timezone.now() if data.get("response_deadline") else None
-                    ),
-                    policy_areas=list(data.get("policy_areas") or []),
-                    policy_area_other=data.get("policy_area_other") or "",
-                    # Handed to the service as part of the creation operation
-                    # rather than written onto the Matter afterwards. One
-                    # transaction, one MATTER_CREATED event, and no path where
-                    # a Teema exists for an instant carrying a classification
-                    # nobody chose (task §17, §19).
-                    legal_instruments=instruments,
-                    legal_instrument_other=data.get("legal_instrument_other") or "",
-                    # Decided here, never read from the form. The control is gone
-                    # from the page and an omitted field must not become a blank
-                    # value the model would refuse (brief 21).
-                    visibility=Visibility.NORMAL,
-                    # Unlike visibility, this one *is* on the page — as one
-                    # checkbox, unticked. The form turns it into the stored
-                    # vocabulary; the service validates it and refuses TEST on
-                    # anything not created here (Agent-C brief 15, 16, 17).
-                    data_class=form.data_class,
-                )
-                # Staged first, because they were chosen first. Each becomes
-                # one Document with one immutable version from the bytes the
-                # browser sent, verified against the checksum recorded when
-                # they arrived — nothing is re-uploaded and nothing is rebuilt
-                # from extracted text (`promote_intake_files`).
-                if claim.session is not None:
-                    intake_staging.record_created_matter(session=claim.session, matter=matter)
-                # **Every file this press files is one operation** (docs/adr/0121
-                # §6): the staged ones and the ones posted with the form share
-                # one `operation_id`, so `Teema käik` reads «lisas 7 dokumenti»
-                # once instead of «lisas dokumendi» seven times. Only the files —
-                # `Teema loodud`, the scratch note and the first step below are
-                # separate facts with rows of their own. Each document keeps its
-                # own `DOCUMENT_CREATED` and `EVIDENCE_VERSION_ADDED`; the
-                # grouping is the chronology's reading, never a merged record.
-                # A second upload is a second request and a new identifier, so
-                # two uploads in the same second are still two rows.
-                with composer_operation():
+                # The files this press files. Staged first, because they were
+                # chosen first: each becomes one Document with one immutable
+                # version from the bytes the browser sent, verified against the
+                # checksum recorded when they arrived — nothing is re-uploaded
+                # and nothing is rebuilt from extracted text
+                # (`promote_intake_files`). Run by `file_new_matter` inside its
+                # one `composer_operation` (docs/adr/0121 §6).
+                def attach_files(matter: Any) -> None:
+                    nonlocal promoted, uploads
+                    # Remembered first, so a repeated submission of this form
+                    # finds the Teema the first one created (ENG-074).
+                    if claim.session is not None:
+                        intake_staging.record_created_matter(session=claim.session, matter=matter)
                     if intake_session is not None:
                         promoted = intake_staging.promote_intake_files(
                             session=intake_session,
@@ -2119,104 +2051,110 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                             *intake_staging.without_staged_copies(chosen, promoted),
                         ]
                     for upload in uploads:
+                        # Looked up from this module at call time: it is the
+                        # seam the creation tests replace to fail one file of
+                        # several (tests/test_matter_create_form.py).
                         _attach_incoming_file(matter, upload, actor=request.user)
 
-                # The private scratch pad, through its own service, and only when
-                # something was typed. An empty note would create a row recording
-                # that somebody wrote nothing — the same reason an untouched
-                # Järgmine tegevus creates no NextAction below
-                # (app/matters/services.py, `save_personal_note`).
-                note = (data.get("notes") or "").strip()
-                if note:
-                    save_personal_note(matter=matter, author=request.user, body=note)
+                # What only `Uus teema` asks, after the files and in the same
+                # transaction (`file_new_matter` step 5).
+                def after_files(matter: Any) -> None:
+                    # The private scratch pad, through its own service, and only
+                    # when something was typed. An empty note would create a
+                    # row recording that somebody wrote nothing
+                    # (app/matters/services.py, `save_personal_note`).
+                    note = (data.get("notes") or "").strip()
+                    if note:
+                        save_personal_note(matter=matter, author=request.user, body=note)
 
-                # `Menetluse link`, inside this same transaction and only where
-                # somebody typed an address. **Atomic with the Teema**: a refusal
-                # anywhere below takes the link with it, and a link the service
-                # refuses takes the Teema with it, so there is no path on which a
-                # Matter exists carrying half of what was submitted
-                # (docs/adr/0089 §13).
-                #
-                # `record_procedural_link` rather than the workspace wrapper,
-                # like `create_matter` and `save_personal_note` directly above:
-                # the wrapper's job is the closed-Matter lock, and this Matter is
-                # being created open inside this transaction.
-                #
-                # A retry after a refusal creates a *different* Teema, so there
-                # is no duplicate to collapse here — and the per-Matter
-                # uniqueness stands behind a double-submitted create either way.
-                # **The similar Matters somebody ticked** (`Sarnased teemad →
-                # Seo uue teemaga`, owner's round 2026-10-07), linked through the
-                # one relation service inside this same transaction: a refusal
-                # anywhere takes the links with the Teema, and a link that cannot
-                # be made takes the Teema with it. Only Matters this reader may
-                # see; nothing is linked that was not ticked.
-                #
-                # **And the ones chosen by hand** through `Seo olemasoleva
-                # teemaga` (docs/adr/0150 §3): one list of targets, through the
-                # same resolution and the same service, in the same
-                # transaction. A Teema both ticked and chosen is linked once.
-                _link_ticked_similar_matters(
-                    matter=matter,
-                    ticked=[
-                        *request.POST.getlist(LINK_ON_CREATE_FIELD),
-                        *request.POST.getlist(LINK_ON_CREATE_CHOSEN_FIELD),
-                    ],
-                    actor=request.user,
-                )
-
-                if wants_procedural_link:
-                    link = procedural_form.cleaned_data
-                    record_procedural_link(
+                    # **The similar Matters somebody ticked** (`Sarnased teemad
+                    # → Seo uue teemaga`, owner's round 2026-10-07), **and the
+                    # ones chosen by hand** through `Seo olemasoleva teemaga`
+                    # (docs/adr/0150 §3): one list of targets, through the one
+                    # relation service, in this same transaction — a refusal
+                    # anywhere takes the links with the Teema, and a link that
+                    # cannot be made takes the Teema with it. Only Matters this
+                    # reader may see; a Teema both ticked and chosen is linked
+                    # once.
+                    _link_ticked_similar_matters(
                         matter=matter,
-                        # Not asked, and not guessed either. `Uus teema` takes an
-                        # address and nothing else; what the row is filed under
-                        # is the enum's own value for a link nobody has
-                        # classified, and the reasoning is on the constant
-                        # (`ProceduralLinkCreateForm.STORED_KIND`,
-                        # docs/adr/0094 §3).
-                        kind=ProceduralLinkCreateForm.STORED_KIND,
-                        url=link.get("url"),
-                        # `Nimetus` is no longer asked, and nothing is made up
-                        # in its place — no title read off the address
-                        # (docs/adr/0130 §3).
-                        label="",
+                        ticked=[
+                            *request.POST.getlist(LINK_ON_CREATE_FIELD),
+                            *request.POST.getlist(LINK_ON_CREATE_CHOSEN_FIELD),
+                        ],
                         actor=request.user,
                     )
 
-                # **`Arvamuse tähtaeg` is an obligation, not the current task**
-                # (docs/adr/0133 §8). `create_matter` above writes it onto the
-                # Matter as `response_deadline`, and it stays visible there — in
-                # the header, on the rail and as the secondary obligation under
-                # whatever step is current — until a sent opinion discharges it.
-                #
-                # Until docs/adr/0133 this block also wrote `Koostan arvamuse`
-                # as the first `NextAction` from that same date
-                # (`establish_opinion_preparation_action`, docs/adr/0094 §5). A
-                # deadline three months away then occupied `PRAEGUNE TEGEVUS`
-                # while every real task before it — reading the draft, writing
-                # it up, asking the members — had nowhere to be. So a new Teema
-                # gets no first step from the deadline any more: the service is
-                # untouched, every step it ever wrote is untouched, and nothing
-                # is superseded or migrated.
-                #
-                # **The background sequence instead** (docs/adr/0133 §5, 0141):
-                # five `SUGGESTED` steps behind `Soovitatud järgmisena`, none
-                # started, no `NextAction`, no date and no work item, and no
-                # plan drawn. Importers, the register refresh, cutovers and the
-                # seed commands never come through here, and a Teema filed
-                # already closed gets none.
-                #
-                # **A Teema filed as «Jõustunud» or «Rohkem ei tegele» is filed
-                # closed** (docs/adr/0131 §10): the same rule every other place
-                # a `Hetkeseis` is chosen keeps, closed last in this same
-                # transaction so the files and the link above are written on an
-                # open Matter.
-                ends_on_creation = is_terminal_stage(getattr(data.get("stage"), "key", None))
-                if not ends_on_creation:
-                    seed_standard_plan(matter=matter, actor=request.user)
-                if ends_on_creation:
-                    close_matter_for_terminal_stage(matter=matter, actor=request.user)
+                    # `Menetluse link`, only where somebody typed an address.
+                    # **Atomic with the Teema**: a link the service refuses
+                    # takes the Teema with it (docs/adr/0089 §13).
+                    # `record_procedural_link` rather than the workspace
+                    # wrapper: the wrapper's job is the closed-Matter lock, and
+                    # this Matter is being created open inside this transaction
+                    # — a terminal `Hetkeseis` closes it only after this step.
+                    if wants_procedural_link:
+                        link = procedural_form.cleaned_data
+                        record_procedural_link(
+                            matter=matter,
+                            # Not asked, and not guessed either: the enum's own
+                            # value for a link nobody has classified
+                            # (`ProceduralLinkCreateForm.STORED_KIND`,
+                            # docs/adr/0094 §3).
+                            kind=ProceduralLinkCreateForm.STORED_KIND,
+                            url=link.get("url"),
+                            # `Nimetus` is no longer asked, and nothing is made
+                            # up in its place (docs/adr/0130 §3).
+                            label="",
+                            actor=request.user,
+                        )
+
+                # **The one creation sequence** both doors share (AUD-010,
+                # `app.matters.intake.file_new_matter`): senders resolved inside
+                # this transaction, the Matter, the files as one operation, the
+                # extras above, then a terminal `Hetkeseis` closes the file or
+                # the standard plan is seeded (docs/adr/0131 §10, 0133 §5). No
+                # first `NextAction` from `Arvamuse tähtaeg`: it is an
+                # obligation on the Matter, not its current task (docs/adr/0133
+                # §8). The claim above stays first and outside it, so a replay
+                # writes nothing at all.
+                matter = file_new_matter(
+                    title=data["title"],
+                    actor=request.user,
+                    owner=data.get("owner"),
+                    # Blank, by decision rather than by omission. `Uus teema`
+                    # no longer asks «Millest teema räägib»: the dossier is
+                    # created first and described later (docs/adr/0130 §2).
+                    brief_summary="",
+                    stage=data.get("stage"),
+                    # **Not asked and not derived**, with one exception that is
+                    # asked: `Koja ettepanek või pöördumine` is recorded as the
+                    # track it names, `Koja algatus` (docs/adr/0090 §4, 0151 §1).
+                    # The form has already set both incoming dates aside.
+                    track=Track.KODA_INITIATIVE if data.get("koda_initiative") else "",
+                    # **Only the sender side.** `Uus teema` no longer asks
+                    # Adressaat (docs/adr/0090 §5).
+                    source_organisations=data.get("source_organisations"),
+                    sender_name=data.get("sender_name") or "",
+                    # As the box was left: a cleared date stays unknown (D-3).
+                    received_date=data.get("received_date"),
+                    response_deadline=data.get("response_deadline"),
+                    policy_areas=list(data.get("policy_areas") or []),
+                    policy_area_other=data.get("policy_area_other") or "",
+                    legal_instruments=list(data.get("legal_instruments") or []),
+                    legal_instrument_other=data.get("legal_instrument_other") or "",
+                    # Decided here, never read from the form. The control is gone
+                    # from the page and an omitted field must not become a blank
+                    # value the model would refuse (brief 21).
+                    visibility=Visibility.NORMAL,
+                    # Unlike visibility, this one *is* on the page — as one
+                    # checkbox, unticked. The form turns it into the stored
+                    # vocabulary; the service validates it and refuses TEST on
+                    # anything not created here (Agent-C brief 15, 16, 17).
+                    data_class=form.data_class,
+                    attach_files=attach_files,
+                    after_files=after_files,
+                    seed_plan=True,
+                )
 
         except _FormAlreadySubmitted as replay:
             return _answer_repeated_create(request, replay.session)
@@ -2892,6 +2830,10 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # `Teema käik`, under the `Hetkeseis` period each act was done in
     # (docs/adr/0131 §7) — or, for a Matter that has never had a period, the
     # flat chronology paged exactly as before.
+    #
+    # **Bounded unless the whole history is asked for** (AUD-008, D-2): the
+    # newest rows on every page view and every column re-render, every row on
+    # `?kaik=koik` — «Näita kogu käik» in the section.
     episode_timeline = matter_episode_timeline(
         matter=matter,
         user=request.user,
@@ -2899,6 +2841,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         intelligence=intelligence,
         current_action=current_action,
         episodes=episodes,
+        whole_history=request.GET.get(TIMELINE_HISTORY_PARAM) == TIMELINE_HISTORY_ALL,
     )
     if episode_timeline is None:
         items, has_more = matter_timeline(
@@ -2911,7 +2854,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         )
     else:
         items = [item for group in episode_timeline.groups for item in group.items]
-        has_more = False
+        has_more = episode_timeline.has_more
     # Each `Kaasamine` row on the chronology gets its own `Lõpeta kaasamine`
     # form, with its own ids and its own revision token. Here rather than in the
     # template because a template must not build a form, and on the record
@@ -2974,6 +2917,9 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "timeline_items": items,
         # The same rows in their `Hetkeseis` periods, or `None` for the flat list.
         "timeline_groups": episode_timeline.groups if episode_timeline is not None else None,
+        # Older rows exist beyond the grouped read: the section offers them.
+        "timeline_groups_more": episode_timeline is not None and episode_timeline.has_more,
+        "timeline_history_param": TIMELINE_HISTORY_PARAM,
         # `Teema käik` — the file's course above the chronology that explains
         # it: `Tagasiside tähtaeg`, `Koja arvamus`, `Arvamuse tähtaeg`,
         # `Jõustumine`, `Lõpetatud`, the pattern's own phases, and nothing else.
@@ -3209,15 +3155,14 @@ def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # route keeps every refusal it had; hiding the link is an offer withheld,
         # not the guard (docs/adr/0096 §4).
         #
-        # **A callable, so the walk runs only where the control is drawn.** The
-        # plan is most of this page's queries (≈150 of ≈210 on a busy file),
-        # and most re-renders of this context — every HTMX save and refusal in
-        # the column — never render `header.html` at all. The template calls it
-        # once, from `{% if can_delete %}`, and `cache` keeps a second reference
-        # from walking again.
-        "can_delete": functools.cache(
-            lambda: can_write and not plan_matter_deletion(matter).is_blocked
-        ),
+        # **Not the whole plan any more** (AUD-002). The walk was most of a
+        # writer's page (105–109 queries, 127–205 ms) to decide one link, so the
+        # offer asks `deletion_may_be_offered`'s handful of `EXISTS` instead; the
+        # plan is built where it is acted on — the confirmation page and
+        # `delete_matter` under the lock — and refuses whatever the offer did
+        # not ask about (docs/adr/0120 §7, amended 2026-10-10). Still a callable,
+        # so the check runs only where `header.html` is drawn.
+        "can_delete": functools.cache(lambda: can_write and deletion_may_be_offered(matter)),
         # No `submission_count`. The tab that displayed it is gone, and a count
         # nothing renders is a query nothing needs.
         "document_count": Document.objects.filter(matter=matter).visible_to(request.user).count(),
@@ -4494,21 +4439,26 @@ def set_action(request: HttpRequest, pk: Any) -> HttpResponse:
     # without one — and the shared helper still falls back to the
     # workspace-level slot for a Matter closed meanwhile, bringing its header.
     #
-    # **This is the direct route and the `Muuda` route at once.** With no step
-    # the reader can see, `NextActionForm.as_service_kwargs` writes new work
-    # (`DO` / `DEADLINE`); with one, it keeps that step's kind and date meaning
-    # and the service supersedes it. Either way it is the one canonical
-    # `set_next_action_for_new_work` that `+ Märge`'s ticked day ahead and
-    # `Uus teema` call too — there is no second way to write a step
-    # (docs/adr/0124 §2, docs/adr/0126 §1).
+    # **This is the direct route and the `Muuda` route at once.** `Muuda`
+    # names its step and keeps that step's kind and date meaning; the direct
+    # route names none and writes new work (`DO` / `DEADLINE`). Either way the
+    # step is written by the one canonical `set_next_action_for_new_work` that
+    # `+ Märge`'s ticked day ahead and `Uus teema` call too — there is no second
+    # way to write a step (docs/adr/0124 §2, docs/adr/0126 §1).
     if not form.is_valid():
         return _workspace_refusal(request, matter, key="action_form", form=form)
 
     # **`Muuda` names the step it was drawn beside** (docs/adr/0133 §4). With an
     # `action_id`, the save is an edit of that step: it is re-read under the
     # Matter's lock, a stale one refuses, and the replacement keeps the step's
-    # restriction (docs/adr/0139). Without one it is new work, exactly as before. The id
-    # is fetched through `visible_to` first, so a foreign or hidden one is a 404.
+    # restriction (docs/adr/0139). The id is fetched through `visible_to` first,
+    # so a foreign or hidden one is a 404.
+    #
+    # **Without one it is new work, decided under the lock** (AUD-004,
+    # AUD-040): the current step if none is open by then, a planned one if a
+    # step has appeared and this one has a day, a refusal if it has none — never
+    # a supersession of a step this page did not draw. Always `DO` /
+    # `DEADLINE`: the kind of a step somebody else wrote is not this one's.
     named = form.cleaned_data.get("action_id")
     try:
         if named is not None:
@@ -4522,8 +4472,14 @@ def set_action(request: HttpRequest, pk: Any) -> HttpResponse:
                 **form.as_service_kwargs(),
             )
         else:
-            set_next_action_for_new_work(
-                matter=matter, actor=request.user, **form.as_service_kwargs()
+            step = form.as_service_kwargs()
+            workspace.add_unnamed_step(
+                matter=matter,
+                actor=request.user,
+                text=step["text"],
+                target_date=step["target_date"],
+                date_precision=step["date_precision"],
+                responsible=step["responsible"],
             )
     except DomainError as error:
         return _workspace_refusal(request, matter, key="action_form", form=form, error=str(error))
@@ -4544,29 +4500,20 @@ def add_planned_action_view(request: HttpRequest, pk: Any) -> HttpResponse:
 
     Never replaces the current action. On a Matter with no current action at
     all the same save becomes the current one, as `+ Määra järgmine tegevus`
-    always made it (a stale tab drawn while one was current).
+    always made it (a stale tab drawn while one was current). Which of the two
+    is decided under the Matter's lock (`workspace.add_unnamed_step`, AUD-004).
     """
-    from app.workflow.services import add_planned_action, current_next_action
-
     matter = get_visible_matter(request, pk)
     form = PlannedActionForm(request.POST)
     if not form.is_valid():
         return _workspace_refusal(request, matter, key="planned_action_form", form=form)
     try:
-        if current_next_action(matter) is None:
-            set_next_action_for_new_work(
-                matter=matter,
-                actor=request.user,
-                text=form.cleaned_data["text"],
-                target_date=form.cleaned_data["target_date"],
-            )
-        else:
-            add_planned_action(
-                matter=matter,
-                actor=request.user,
-                text=form.cleaned_data["text"],
-                target_date=form.cleaned_data["target_date"],
-            )
+        workspace.add_unnamed_step(
+            matter=matter,
+            actor=request.user,
+            text=form.cleaned_data["text"],
+            target_date=form.cleaned_data["target_date"],
+        )
     except DomainError as error:
         return _workspace_refusal(
             request, matter, key="planned_action_form", form=form, error=str(error)
@@ -5724,40 +5671,6 @@ _FIELD_SURFACES = {
     # band with a rail and the value it just wrote disappears
     # (docs/adr/0074 §2, templates/matters/partials/header.html).
 }
-
-
-@login_required
-@business_write_required
-@require_http_methods(["POST"])
-def set_data_class(request: HttpRequest, pk: Any) -> HttpResponse:
-    """Reclassify a Matter as real business data or as development data.
-
-    Its own endpoint rather than another `update_field` case, for one reason:
-    this value is rendered in three places at once — the TEST badge in the
-    header, the class on the facts rail, and the flag on every register row —
-    and `update_field` swaps exactly one surface. Marking a Matter TEST and
-    leaving the header still saying nothing is the precise failure this
-    classification exists to prevent, so the whole page re-renders instead
-    (Agent-C brief 18, 22).
-    """
-    matter = get_visible_matter(request, pk)
-    form = MatterFieldForm(request.POST, matter=matter)
-    # `data_class` is `required=False` on that form, because one POST carries
-    # one field. An absent value is refused here rather than defaulted: a
-    # malformed request must not quietly make a development record real.
-    value = form.cleaned_data.get("data_class", "") if form.is_valid() else ""
-    try:
-        set_matter_data_class(matter=matter, data_class=value, actor=request.user)
-    except DomainError as error:
-        messages.error(request, str(error))
-        return redirect("matters:matter_detail", pk=matter.pk)
-
-    matter.refresh_from_db()
-    if matter.is_test_data:
-        messages.success(request, "Teema on märgitud testandmeteks.")
-    else:
-        messages.success(request, "Teema on märgitud pärisandmeteks.")
-    return redirect("matters:matter_detail", pk=matter.pk)
 
 
 @login_required

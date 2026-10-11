@@ -25,7 +25,6 @@ from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.core.enums import Visibility
 from app.intelligence.forms import EffectiveDateForm
-from app.matters import selectors
 from app.matters.forms import (
     EngagementForm,
     IncomingIntakeForm,
@@ -466,12 +465,7 @@ def test_handing_the_matter_over_takes_the_open_step_with_it(specialist, other_s
 
     action = NextAction.objects.get(matter=matter, status=ActionStatus.OPEN)
     assert action.responsible == other_specialist
-    assert any(
-        action.matter_id == matter.id
-        for group in selectors.my_work_timeline(other_specialist)
-        for action in group.actions
-    )
-    assert sum(group.count for group in selectors.my_work_timeline(specialist)) == 0
+    assert not NextAction.objects.filter(status=ActionStatus.OPEN, responsible=specialist).exists()
 
 
 def test_a_step_someone_else_was_named_for_stays_theirs(specialist, other_specialist):
@@ -508,32 +502,6 @@ def test_the_handover_is_named_in_the_assignment_event(specialist, other_special
         matter=matter, event_type=ChangeEventType.MATTER_ASSIGNED
     ).latest("occurred_at")
     assert event.payload["next_action_moved"] is not None
-
-
-def test_a_do_action_dated_inside_the_horizon_is_never_swallowed(specialist):
-    """The second, latent half of §4.
-
-    `overdue`, `today` and `soon` each required DEADLINE semantics while `later`
-    required a date past the horizon, so a DO carrying any other semantics and
-    dated inside the next week belonged to no band at all. The register's own
-    parser produces exactly that for a source naming a vague month.
-    """
-    matter = factories.MatterFactory(owner=specialist)
-    set_next_action(
-        matter=matter,
-        text="Eeldatavasti sel nädalal",
-        kind=ActionKind.DO,
-        date_semantics=DateSemantics.EXPECTED_AROUND,
-        target_date=_days(3),
-        actor=specialist,
-    )
-
-    found = [
-        action.matter_id
-        for group in selectors.my_work_timeline(specialist)
-        for action in group.actions
-    ]
-    assert found == [matter.id]
 
 
 # ---------------------------------------------------------------------------

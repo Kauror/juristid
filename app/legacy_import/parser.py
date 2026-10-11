@@ -145,6 +145,12 @@ class HeaderFinding:
         )
 
 
+#: The finding that means the columns cannot be trusted to hold what the
+#: contract says they hold (docs/adr/0012: «an imported year whose columns are
+#: one to the left»). Every reader that writes or compares refuses on it.
+HEADER_MISMATCH = "mismatch"
+
+
 @dataclass
 class SheetInventory:
     name: str
@@ -237,7 +243,10 @@ def check_headers(headers: dict[str, str], contract: EraContract) -> list[Header
         if not column.accepts_header(found):
             findings.append(
                 HeaderFinding(
-                    column=column.letter, expected=column.header, found=found, kind="mismatch"
+                    column=column.letter,
+                    expected=column.header,
+                    found=found,
+                    kind=HEADER_MISMATCH,
                 )
             )
 
@@ -349,6 +358,22 @@ class RegisterWorkbook:
                         inventory.uncontracted_columns_with_data.get(letter, 0) + 1
                     )
         _ = worksheet
+
+    def header_mismatches(self, contract: EraContract) -> list[HeaderFinding]:
+        """The contracted columns whose header this sheet does not carry.
+
+        One sheet only, so a reader that promises to open nothing else keeps
+        the promise. Only ``mismatch``: a column the contract does not describe
+        (``uncontracted``) is a finding to print, not a shifted layout — the
+        2026 sheet carries two such columns legitimately.
+        """
+        worksheet = self._workbook[contract.sheet]
+        headers = _headers_of(worksheet, contract.header_row)
+        return [
+            finding
+            for finding in check_headers(headers, contract)
+            if finding.kind == HEADER_MISMATCH
+        ]
 
     def rows(self, contract: EraContract) -> list[SourceRow]:
         """Every row below the header, blanks included and counted."""

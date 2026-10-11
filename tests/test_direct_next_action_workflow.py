@@ -294,7 +294,9 @@ def test_a_direct_step_with_no_sentence_is_refused_in_its_own_panel(signed_in, m
 def test_editing_through_muuda_supersedes_and_leaves_one_open_step(signed_in, matter, specialist):
     first = _step(matter, specialist)
 
-    response = _set_directly(signed_in, matter, text=STEP + " ja edasta EIS-i")
+    response = _set_directly(
+        signed_in, matter, action_id=str(first.pk), text=STEP + " ja edasta EIS-i"
+    )
 
     assert response.status_code == 200
     first.refresh_from_db()
@@ -744,8 +746,13 @@ def test_the_following_step_reads_on_every_work_surface(
     step = _step(matter, specialist)
     _koja_arvamus(signed_in, matter, organisation, complete_action=str(step.pk))
 
-    response = _set_directly(signed_in, matter, text=FOLLOWING, target_date=_et(_day(6)))
-    assert response.status_code == 200
+    # The opinion's check is now the open step. `+ Määra järgmine tegevus` beside
+    # it only plans (AUD-040, D-7), so the following step is written through
+    # the new-work service the other doors share (`+ Märge` dated ahead,
+    # `Järgmisena`, an import), which is what puts work over a current check.
+    set_next_action_for_new_work(
+        matter=matter, text=FOLLOWING, target_date=_day(6), actor=specialist
+    )
 
     following = _open_steps(matter).get()
     assert following.text == FOLLOWING

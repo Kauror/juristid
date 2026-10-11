@@ -862,30 +862,11 @@ p.formnote {
   border-color: var(--border-default);
 }
 
-.badge--draft {
-  color: var(--status-warning);
-  background: transparent;
-  border-color: var(--status-warning-border);
-  font-weight: var(--typography-weight-bold);
-}
-
 .badge--sent {
   color: var(--text-inverse);
   background: var(--accent-link);
   border-color: var(--accent-link);
   font-weight: var(--typography-weight-bold);
-}
-
-.badge--withdrawn {
-  color: var(--status-danger);
-  background: transparent;
-  border-color: var(--status-danger-border);
-}
-
-.badge--superseded {
-  color: var(--text-muted);
-  background: transparent;
-  border-color: var(--border-default);
 }
 
 .badge--evidence {
@@ -5369,11 +5350,6 @@ a.barchart__row:hover {
   flex-direction: column;
   gap: var(--spacing-2);
   min-width: 0;
-}
-
-
-.senderpick__new {
-  max-width: 20rem;
 }
 
 
@@ -10527,25 +10503,6 @@ section:has(.pw-more[open]) tbody.uxextra {
   color: var(--text-secondary);
 }
 
-/* `Kuupäev` and what the day offers beside it — `+ Märge`'s `Märgi järgmiseks
-   tegevuseks`, shown only for a day after today (docs/adr/0124 §2). One row,
-   the checkbox beside the date box rather than under it, so it reads as a
-   property of that day and not as a section of its own; it wraps under the
-   date on a panel too narrow for both. The checkbox row is as tall as the date
-   box (34px, `.datepicker__trigger`'s reasoning) and bottom-aligned with it, so
-   the box and its words sit on the input's centre line whatever the label
-   above the date measures. */
-#teema-vaade-wrap .cx-dated {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 9px var(--spacing-3);
-}
-
-#teema-vaade-wrap .cx-dated .cx-check {
-  min-height: 34px;
-}
-
 /* `Märgi praegune tegevus tehtuks` — the box a Koja arvamus or a finished
    Kaasamine offers while the file has an open step. The step's own sentence is
    part of the label, so it reads in the body colour and weight the step has in
@@ -10836,17 +10793,6 @@ section:has(.pw-more[open]) tbody.uxextra {
   content: "·";
   margin-right: var(--spacing-2);
   color: var(--text-muted);
-}
-
-/* An entry's kind badge is hidden; an event's is not. A badge on almost every
- * row carried no information — every note said «Märkus» — while «Järgmiseks
- * tehtud» and «Väljasaadetud · arvamus» each say something that is nowhere
- * else on the line (handoff §14, C16). The badge is hidden rather than
- * dropped: `item.kind_label` still renders, the class is still on the element,
- * and every reporting surface still reads the stored kind. */
-.teemamain .uxtl__meta .uxtl__kind--entry,
-.teemamain .uxtl__meta .uxtl__kind--meeting {
-  display: none;
 }
 
 /* -- inline editing: information first -------------------------------------

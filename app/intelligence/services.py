@@ -160,6 +160,11 @@ FACT_EDIT_CONFLICT = (
     "vaata see üle ja salvesta uuesti."
 )
 
+#: What a write to a record a lawyer removed from the file is told, in the
+#: words the module uses for a fact that is no longer current (AUD-052 WF-7).
+#: One sentence for all three: removal is the same act for each of them.
+REMOVED_FACT_REFUSAL = "Ainult teemal olevat kirjet saab muuta. See kirje on teemalt eemaldatud."
+
 
 class FactEditConflict(DomainError):
     """A structured fact changed elsewhere between opening its edit form and saving."""
@@ -191,8 +196,19 @@ def _lock_for_edit(record: Any, expected_revision: str | None) -> Any:
     a service or a test — and those keep the old behaviour. The edit views
     always pass the form's value, so from them an empty one is a conflict: a
     page older than the guard must not be the way around it.
+
+    The Matter is locked first, then the fact — the Matter-then-child order
+    `remove_matter_record` takes — and a fact removed from the file is refused
+    on the locked row: the default manager does not exclude removed rows, so
+    a tab drawn before the removal could otherwise still cancel, confirm or
+    edit it (AUD-052 WF-7).
     """
+    from app.matters.locks import lock_matter_for_write
+
+    lock_matter_for_write(record.matter_id)
     locked = type(record)._default_manager.select_for_update(no_key=True).get(pk=record.pk)
+    if locked.removed_at is not None:
+        raise DomainError(REMOVED_FACT_REFUSAL)
     if expected_revision is not None and (
         not expected_revision or fact_revision(locked) != expected_revision
     ):
@@ -278,57 +294,6 @@ def cancel_important_date(
         payload={"reason": reason.strip()[:500], "date": _iso(record.date_value)},
     )
     return record
-
-
-@transaction.atomic
-def supersede_important_date(
-    *,
-    record: MatterImportantDate,
-    title: str,
-    date_value: date,
-    period_end: date,
-    date_precision: str,
-    note: str = "",
-    actor: Any = None,
-) -> MatterImportantDate:
-    """Replace a milestone with a new one, keeping both.
-
-    The counterpart to `update_important_date`, and a different fact. An edit
-    says *we recorded this wrongly*; superseding says *the plan changed, and
-    here is what it changed to*. Both are kept because a lawyer reading the file
-    in two years needs to be able to tell those apart (Stage-2G brief 5, 33).
-    """
-    if record.status != FactStatus.ACTIVE:
-        raise DomainError("Ainult kehtivat tähtaega saab asendada.")
-
-    replacement = add_important_date(
-        matter=record.matter,
-        title=title,
-        date_value=date_value,
-        period_end=period_end,
-        date_precision=date_precision,
-        note=note,
-        actor=actor,
-    )
-    record.status = FactStatus.SUPERSEDED
-    # Written after the replacement exists, so the chain is navigable in both
-    # directions without a nullable placeholder — the same shape `NextAction`
-    # already uses for the same reason.
-    record.replaced_by = replacement
-    record.save(update_fields=["status", "replaced_by", "updated_at"])
-    record_change_event(
-        event_type=ChangeEventType.IMPORTANT_DATE_CHANGED,
-        matter=record.matter,
-        actor=actor,
-        obj=record,
-        summary=record.title[:SUMMARY_LIMIT],
-        payload={
-            "superseded_by": str(replacement.id),
-            "from": {"date": _iso(record.date_value), "precision": record.date_precision},
-            "to": {"date": _iso(date_value), "precision": date_precision},
-        },
-    )
-    return replacement
 
 
 # ---------------------------------------------------------------------------

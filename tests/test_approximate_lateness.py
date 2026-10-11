@@ -30,7 +30,6 @@ import datetime
 
 import pytest
 
-from app.matters.dashboard import overdue_actions
 from app.matters.selectors import filter_by_next_action
 from app.workflow.enums import ActionKind, ActionStatus, DatePrecision, DateSemantics
 from app.workflow.lateness import days_past_period, overdue_date_q, period_end_for
@@ -335,13 +334,6 @@ def test_the_queryset_and_the_object_agree_over_a_mixed_population(specialist):
 
     assert from_sql == expected
     assert from_python == expected
-
-
-def test_the_department_dashboard_counts_the_same_rows(specialist, department_head):
-    """`dashboard.overdue_actions` is the department head's reading of it."""
-    day, expected = _mixed_population(specialist)
-
-    assert {action.pk for action in overdue_actions(department_head, day)} == expected
 
 
 def test_the_register_chip_selects_the_same_matters(specialist, department_head):

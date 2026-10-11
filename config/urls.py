@@ -1,6 +1,15 @@
 from django.contrib import admin
 from django.urls import include, path
 
+from app.accounts.admin_sign_in import admin_sign_in
+
+# `/admin/login/` is the admin site's own login view, replaced rather than
+# shadowed by a second route: outside AUTH_MODE=none the admin is reached
+# through the mode's own sign-in, never a second, unthrottled password check
+# (app/accounts/admin_sign_in.py, AUD-051 AU-2). Set before `admin.site.urls`
+# is read, which is when the admin builds its URL patterns.
+admin.site.login = admin_sign_in  # type: ignore[method-assign]
+
 urlpatterns = [
     path("", include(("app.core.urls", "core"), namespace="core")),
     path("", include(("app.matters.urls", "matters"), namespace="matters")),

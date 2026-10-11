@@ -369,16 +369,6 @@
    * save each of these is an immutable version and removing it is a different
    * kind of act (app/documents, Uus teema redesign §9).
    */
-  function humanSize(bytes) {
-    if (bytes < 1024) {
-      return bytes + " B";
-    }
-    if (bytes < 1024 * 1024) {
-      return Math.round(bytes / 1024) + " KB";
-    }
-    return (bytes / (1024 * 1024)).toFixed(1).replace(".", ",") + " MB";
-  }
-
   var fileInput = document.getElementById("id_files");
   var fileList = document.getElementById("valitud-failid");
   if (fileInput && fileList) {
@@ -3479,109 +3469,6 @@
     });
   }
 
-  /* ---- `Märgi järgmiseks tegevuseks` follows `Kuupäev` ---------------------
-   * `+ Märge · Tavaline` offers to make the activity the next step only when
-   * its day is after today (docs/adr/0124 §2). The server draws the row from
-   * the same rule (`MatterProgressForm.next_step_offered`) and applies it again
-   * on save; this keeps the row in step with the date box while somebody edits
-   * it — typing fires `input`, and a calendar pick fires `input` and `change`.
-   *
-   * "Today" is the server's (`data-today`, the application's clock), never
-   * `new Date()`: the rule the save applies and the box the page shows must
-   * agree about where «ahead» starts.
-   *
-   * **Hidden is disabled**, so a box that is not shown is not sent, and a tick
-   * left from a moment the date was ahead cannot make a step. Each time the
-   * row appears the box arrives ticked, which is its default; somebody who
-   * unticks it and then moves between two days ahead keeps their answer.
-   *
-   * Progressive enhancement: with scripting off the row is what the server
-   * drew for the day it was drawn with, and the save applies the rule anyway.
-   */
-  function bindNextStepOffers(scope) {
-    (scope || document).querySelectorAll("[data-next-step-offer]").forEach(function (row) {
-      if (!once(row, "NextStepOffer")) {
-        return;
-      }
-      var date = row.querySelector("input[data-datepicker]");
-      var choice = row.querySelector("[data-next-step-choice]");
-      var box = choice ? choice.querySelector("input[type=checkbox]") : null;
-      var today = parseEstonian(row.getAttribute("data-today"));
-      if (!date || !box || !today) {
-        return;
-      }
-      var sync = function () {
-        var when = parseEstonian(date.value);
-        var ahead = !!when && when > today;
-        if (ahead && choice.hidden) {
-          box.checked = true;
-        }
-        choice.hidden = !ahead;
-        box.disabled = !ahead;
-      };
-      date.addEventListener("input", sync);
-      date.addEventListener("change", sync);
-      sync();
-    });
-  }
-
-  /* ---- «Märgi ka menetluse kulgu» on + Märge --------------------------------
-   * Shown when the chosen «Uus hetkeseis» is one the server offered
-   * (`data-phase-offers`, by the stage key each option carries) and the day has
-   * come and keeps the roadmap in order; its label names the phase and the day
-   * it will write. Re-ticked each time it appears, and hidden means disabled,
-   * so a tick left from a moment it applied is not sent. The form and the use
-   * case decide again on the server (docs/adr/0128 §1).
-   */
-  function bindPhaseDateOffers(scope) {
-    (scope || document).querySelectorAll("[data-phase-date-choice]").forEach(function (choice) {
-      if (!once(choice, "PhaseDateOffer")) {
-        return;
-      }
-      var form = choice.closest("form");
-      var box = choice.querySelector("input[type=checkbox]");
-      var text = choice.querySelector("[data-phase-date-text]");
-      var select = form ? form.querySelector("select[name=stage]") : null;
-      var date = form ? form.querySelector("[data-next-step-offer] input[data-datepicker]") : null;
-      var today = parseEstonian(choice.getAttribute("data-today"));
-      var offers;
-      try {
-        offers = JSON.parse(choice.getAttribute("data-phase-offers") || "{}");
-      } catch (error) {
-        offers = {};
-      }
-      if (!box || !select || !date || !today) {
-        return;
-      }
-      var sync = function () {
-        var option = select.options[select.selectedIndex];
-        var offer = option ? offers[option.getAttribute("data-stage-key") || ""] : null;
-        var when = parseEstonian(date.value);
-        var earliest = offer ? parseEstonian(offer.earliest) : null;
-        var latest = offer ? parseEstonian(offer.latest) : null;
-        var applies =
-          !!offer &&
-          !!when &&
-          when <= today &&
-          (!earliest || when >= earliest) &&
-          (!latest || when <= latest);
-        if (applies && choice.hidden) {
-          box.checked = true;
-        }
-        if (applies && text) {
-          text.textContent =
-            offer.label + " " + when.getDate() + "." + (when.getMonth() + 1) + "." + when.getFullYear();
-        }
-        choice.hidden = !applies;
-        box.disabled = !applies;
-      };
-      select.addEventListener("change", sync);
-      date.addEventListener("input", sync);
-      date.addEventListener("change", sync);
-      sync();
-    });
-  }
-
   /* ---- «Kasuta» on Dokumendist leitud --------------------------------------
    * A suggestion the person chooses is written into the real form control
    * beside it — the title box, the deadline box, the Menetlusliik radio, a
@@ -4885,8 +4772,6 @@
     bindRelatedPicker(document);
     bindInitiative(document);
     bindRequiredAction(document);
-    bindNextStepOffers(document);
-    bindPhaseDateOffers(document);
     bindSuggestionUse(document);
     bindPersonaMenu(document);
     focusFragmentTarget();
@@ -4907,8 +4792,6 @@
     bindStageHelp(event.target.querySelector ? event.target : document);
     bindStageGuidance(event.target.querySelector ? event.target : document);
     bindRequiredAction(event.target.querySelector ? event.target : document);
-    bindNextStepOffers(event.target.querySelector ? event.target : document);
-    bindPhaseDateOffers(event.target.querySelector ? event.target : document);
     bindSuggestionUse(event.target.querySelector ? event.target : document);
     bindPersonaMenu(event.target.querySelector ? event.target : document);
   });

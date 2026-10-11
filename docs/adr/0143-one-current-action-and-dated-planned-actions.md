@@ -97,3 +97,27 @@ set:
   the work surfaces (`NextAction.is_overdue`), which no other planned action is.
 - New work written over a *current* check sends it back to the plan instead of
   superseding it.
+
+## Amendment of 2026-10-10 — the step added without naming one is decided under the lock
+
+Audit AUD-004 and AUD-040 reproduced two ways a person's current step was
+silently superseded: two saves of `+ Määra järgmine tegevus` landing together,
+and a page drawn before a colleague's save. Both forms decided «is a step
+open?» on a read taken before the Matter's lock. The product owner's decision
+D-7 (2026-10-10) settles the stale case. Both forms now call one use case,
+`workspace.add_unnamed_step`, which locks the Matter and then decides:
+
+- **No step is open** → the save is the current step (`DO` / `DEADLINE`).
+- **A step is open and the save has a day** → a planned row on that day, as
+  §A2 always said. It keeps the period a person chose on the current-step
+  panel («oktoober 2026»), rather than becoming the 1st.
+- **A step is open and the save has no day** → refused with the stale-step
+  sentence (`STALE_ACTION_REFUSAL`), and nothing is written.
+
+The open step stays open in every case, including one the saver may not see
+(a step restricted below its Matter). That step is not superseded either, and
+new work over it still inherits nothing (docs/adr/0139 §5). New work never
+borrows the kind or date meaning of the step that is open. The owner the step
+defaults to is read from the locked row (AUD-052 WF-4). The other new-work
+doors are unchanged: `+ Märge` with a day ahead, `Järgmisena` after a
+completion, `Alusta`, and `+ Menetluse areng` with a next step.

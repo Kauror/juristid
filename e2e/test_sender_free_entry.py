@@ -18,9 +18,9 @@ Since docs/adr/0073 there is no disclosure and no second box on `Uus teema`: one
 field searches the catalogue and the `+` beside it proposes what was typed. The
 rules underneath are untouched, which is why this file kept every assertion
 about them and changed only how the browser reaches them. `Muuda teemat` asks
-the question through that same control since post-QA R2-12; `Saabunud` still
-renders `sender_control.html`, and the tests below that drive it are untouched
-(task §26).
+the question through that same control since post-QA R2-12, and `Saabunud`
+since 2026-10-10 (docs/adr/0073 amendment; its browser proof is
+`e2e/test_saabunud_organisation_picker.py`). `sender_control.html` is gone.
 """
 
 from __future__ import annotations

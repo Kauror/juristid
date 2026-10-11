@@ -96,7 +96,8 @@ class MsgParser:
                 parsed.body_text = html_body_to_text(html)
                 parsed.body_was_html = True
 
-        attachments = _attachments(message)
+        attachments, export_notes = _attachments(message)
+        parsed.notes.extend(export_notes)
         parsed.attachments, notes = split_attachments(
             attachments,
             limits.max_email_attachments,  # type: ignore[attr-defined]
@@ -149,8 +150,10 @@ def _sent_at(message: object) -> str:
     return ""
 
 
-def _attachments(message: object) -> list[ParsedAttachment]:
+def _attachments(message: object) -> tuple[list[ParsedAttachment], list[str]]:
+    """The message's attachments, and a note for each one that could not be kept."""
     found: list[ParsedAttachment] = []
+    lost = 0
     for index, attachment in enumerate(getattr(message, "attachments", []) or []):
         data = getattr(attachment, "data", None)
         if data is None or data == b"":
@@ -158,38 +161,77 @@ def _attachments(message: object) -> list[ParsedAttachment]:
             # parser skips the part. An empty attachment is nothing anybody
             # sent, and passing it on failed the whole message (ENG-033).
             continue
+        embedded = False
         if not isinstance(data, bytes | bytearray):
             # A nested `.msg` arrives as a parsed message object rather than
             # bytes. Preserved whole as its own file, not expanded here: Stage
             # 2B keeps an attached message as evidence, and does not become a
             # recursive mail-archive crawler (Stage-2B brief 28).
-            export = getattr(data, "export", None)
+            #
+            # `exportBytes()`, not `export()`: in extract-msg the latter writes
+            # to a path it requires, so calling it bare raised a TypeError that
+            # was logged at INFO and every forwarded message silently vanished
+            # from its parent (AUD-046).
+            export = getattr(data, "exportBytes", None)
             if not callable(export):
+                lost += 1
+                logger.warning("Nested attachment #%d has no exportable form", index + 1)
                 continue
             try:
                 data = export()
             except Exception:
-                logger.info("Nested message attachment #%d could not be exported", index + 1)
+                lost += 1
+                logger.warning("Nested message attachment #%d could not be exported", index + 1)
                 continue
             if not isinstance(data, bytes | bytearray) or not data:
+                lost += 1
+                logger.warning("Nested message attachment #%d exported nothing", index + 1)
                 continue
+            embedded = True
 
-        name = (
-            _text(attachment, "longFilename")
-            or _text(attachment, "shortFilename")
-            or f"manus-{index + 1}.bin"
-        )
+        name = _text(attachment, "longFilename") or _text(attachment, "shortFilename")
+        mime_type = _text(attachment, "mimetype") or "application/octet-stream"
+        if embedded:
+            # Outlook names an attached message after its subject, with no
+            # extension, and the evidence store decides a type by extension:
+            # without `.msg` the message would be dropped as an unknown format.
+            name = name or _text(attachment, "displayName") or f"manus-{index + 1}"
+            if not name.lower().endswith(".msg"):
+                name += ".msg"
+            mime_type = "application/vnd.ms-outlook"
+        name = name or f"manus-{index + 1}.bin"
         content_id = _text(attachment, "cid")
         found.append(
             ParsedAttachment(
                 content=bytes(data),
                 filename=normalise(name),
-                mime_type=_text(attachment, "mimetype") or "application/octet-stream",
+                mime_type=mime_type,
                 content_id=content_id,
-                inline=bool(content_id),
+                inline=_is_inline(attachment, content_id),
             )
         )
-    return found
+    notes = []
+    if lost:
+        notes.append(f"{lost} manust ei õnnestunud kirjast eraldada; originaalkiri on alles.")
+    return found, notes
+
+
+def _is_inline(attachment: object, content_id: str) -> bool:
+    """Whether an attachment is part of how the message draws itself.
+
+    A Content-ID alone does not say so: Outlook gives one to ordinary attached
+    files too, and treating every such file as a signature logo meant a real
+    annex never became a Document (AUD-047). Only an attachment Outlook itself
+    hides from the attachment list — which is what it does with images the body
+    references — and that carries a Content-ID is taken as inline. Erring the
+    other way costs a logo stored as a Document; erring this way cost evidence.
+    """
+    if not content_id:
+        return False
+    try:
+        return bool(getattr(attachment, "hidden", False))
+    except Exception:
+        return False
 
 
 registry.register(MsgParser())

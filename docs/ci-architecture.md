@@ -171,12 +171,29 @@ Nothing about that changed, and the instrumentation was not removed from pull
 requests to buy time — sharding pays for it instead.
 
 `COVERAGE_CORE=sysmon` — the PEP 669 core, which on 3.13 is close to free where
-the default tracer roughly doubles a run — was measured and **rejected**. On the
-same subset it reported 39% where the default core reported 40%, missing 328
-lines the default one saw. A cheaper number that means something slightly
-different is not the same number, and quietly lowering the reported figure is
-not a performance improvement. If the gap closes in a later coverage.py, this is
-worth revisiting.
+the default tracer roughly doubles a run — was measured and **rejected** at
+first. On the same subset it reported 39% where the default core reported 40%,
+missing 328 lines the default one saw. A cheaper number that means something
+slightly different is not the same number, and quietly lowering the reported
+figure is not a performance improvement. If the gap closes in a later
+coverage.py, this is worth revisiting.
+
+**Revisited 2026-10-10, and adopted** (audit AUD-031). On coverage 7.15 the gap
+is gone:
+
+- The codebase audit ran shard 4 of 7 on PostgreSQL 18.6 three ways. Without
+  coverage it took 662.8 s. With the default core it took 961.4 s (+45 %).
+  With `COVERAGE_CORE=sysmon` it took 638.0 s, which is within noise of no
+  coverage. Both coverage runs produced identical data: 42,255 statements,
+  13,970 missed.
+- A local re-check on coverage 7.15.4 ran six test files with each core and
+  compared `coverage report --show-missing` file by file. The reports did not
+  differ in a single line (42,718 statements, 25,025 missed).
+
+The PostgreSQL shard step therefore sets `COVERAGE_CORE: sysmon`. Per-PR
+coverage, the combined report and the completeness proof are unchanged. Only
+the tracer differs. Re-check the equality with the same file-by-file
+comparison whenever coverage.py is upgraded.
 
 ## The timing table
 
@@ -493,8 +510,8 @@ cheaper by being made weaker.
   win, and a second overlapping cache would only add a way to be stale.
 * **Playwright** — `~/.cache/ms-playwright` is hitting; `Install the browser`
   takes **1s**. Left alone.
-* **Coverage** stays on every shard, and `COVERAGE_CORE=sysmon` stays rejected
-  for the reason recorded above: it reports a different number.
+* **Coverage** stays on every shard, measured with `COVERAGE_CORE=sysmon` since
+  2026-10-10. It now reports the same data as the default core (see above).
 
 ## The order dependency it turned up, since closed
 

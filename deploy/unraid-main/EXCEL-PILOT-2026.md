@@ -89,8 +89,12 @@ is the same folder as the container sees it (mounted read-only).
          --operator-intent excel-pilot-2026 --backup-set <set>
 
 9. **Health before serving:** `check_domain_invariants`,
-   `deployment_readiness`, `check_evidence_integrity --verify-sha`, and the
-   counts the manifest promises for the 35-Matter sample:
+   `deployment_readiness`, `check_evidence_integrity --verify-sha`,
+   `check_search_integrity --full` (must end «Otsinguindeks on terve»: the
+   apply indexes every note, sent opinion and placeholder document as it
+   writes it — if any kind reads `ERINEVUS`, run `rebuild_search_index`, which
+   is always safe, and check again), and the counts the manifest promises for
+   the 35-Matter sample:
 
    | | |
    | --- | --- |
@@ -121,7 +125,10 @@ defence; `juristid-restore.sh` the third.
 - A fresh database ends every gate session: everyone re-enters the department
   password once.
 - The intake reader extracts the placeholder PDFs (eleven) after serving; a
-  search for «PROOVIMPORT» finds them.
+  search for «PROOVIMPORT» then also finds their text. The notes, opinions and
+  document rows themselves are searchable at once: the apply no longer suspends
+  indexing (AUD-042), so step 9's `check_search_integrity --full` is a proof,
+  not a repair.
 - `juristid_pre_pilot_<stamp>` and the moved trees are removed later, by name,
   with the owner — never as part of this procedure.
 - At commissioning this database is replaced again by a new import with real

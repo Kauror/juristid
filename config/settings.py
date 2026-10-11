@@ -275,7 +275,7 @@ LOCAL_AUTH_BREACHED_PASSWORDS_PATH = env("LOCAL_AUTH_BREACHED_PASSWORDS_PATH", "
 # -- the second factor -------------------------------------------------------
 #
 # The key TOTP secrets are encrypted under. A deployment secret of its own,
-# rather than SECRET_KEY, so rotating the Django secret does not unenrol every
+# rather than SECRET_KEY, so rotating the Django secret does not break every
 # authenticator; `juristid.E033` requires it on a real-data local-password
 # deployment. Empty falls back to SECRET_KEY, for laptops and CI only.
 LOCAL_AUTH_MFA_ENCRYPTION_KEY = env("LOCAL_AUTH_MFA_ENCRYPTION_KEY", "")
@@ -556,6 +556,12 @@ EXTRACTION_OCR_TIMEOUT_SECONDS = env_int("EXTRACTION_OCR_TIMEOUT_SECONDS", 120)
 # writing, so the pass that lost it writes nothing at all
 # (app/documents/extraction/orchestrator.py).
 EXTRACTION_STALE_CLAIM_MINUTES = env_int("EXTRACTION_STALE_CLAIM_MINUTES", 30)
+# How many claims a file gets before a stale one is treated as the file's fault.
+# A claim that never finishes is usually a worker the file itself killed (out of
+# memory, a native crash); reclaiming it for ever kills the worker for ever. The
+# corpus worker and the intake reader both count claims and settle the row
+# FAILED instead of taking it again past this number (AUD-045).
+EXTRACTION_MAX_ATTEMPTS = env_int("EXTRACTION_MAX_ATTEMPTS", 3)
 EXTRACTION_WORKER_IDLE_SECONDS = env_int("EXTRACTION_WORKER_IDLE_SECONDS", 10)
 
 # Where the worker marks that its loop turned, so a container healthcheck can
@@ -599,8 +605,9 @@ INTAKE_READER_IDLE_SECONDS = env_float("INTAKE_READER_IDLE_SECONDS", 0.5)
 # Its own number rather than EXTRACTION_STALE_CLAIM_MINUTES, because the two
 # describe different work. A corpus parse may be a 500-page OCR run and needs
 # half an hour of grace; a staged intake file is bounded by
-# MAX_INTAKE_UPLOAD_BYTES and finishes in seconds, so a claim older than this
-# belongs to a reader that died — and waiting thirty minutes to find that out
+# MAX_EVIDENCE_UPLOAD_BYTES (the ceiling `read_upload` puts on every staged
+# file; there is no intake-specific limit, DX-5) and finishes in seconds, so a
+# claim older than this belongs to a reader that died — and waiting thirty minutes to find that out
 # would strand the form it was reading for long past the session's own life.
 INTAKE_READER_STALE_CLAIM_MINUTES = env_int("INTAKE_READER_STALE_CLAIM_MINUTES", 5)
 

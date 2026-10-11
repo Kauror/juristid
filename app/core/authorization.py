@@ -745,6 +745,27 @@ def apply[QuerySetT: QuerySet](queryset: QuerySetT, condition: Q) -> QuerySetT:
     return filtered.distinct() if _fans_out(filtered) else filtered
 
 
+def distinct_if_fans_out(queryset: QuerySet) -> QuerySet:
+    """``.distinct()`` only when a join in the query can repeat a row (AUD-001).
+
+    The register used to apply it unconditionally, and on its annotated row
+    query that is not free: ``SELECT DISTINCT`` over thirty-odd columns and
+    fifteen correlated subqueries makes PostgreSQL evaluate every subquery for
+    every visible row before the page limit — and the plan's estimated cost
+    then crosses ``jit_above_cost``, which is where the 150–350 ms went in the
+    production image. With no fanning join there is nothing to de-duplicate.
+
+    Not simply removed: ``?ulatus=minu`` (owner *or* collaborator) and
+    ``?asutus=`` join a many-to-many and repeat a Matter once per match. This
+    asks the same question :func:`apply` asks of its own joins, so a query that
+    can repeat rows still gets the guarantee. A queryset a filter has already
+    made distinct is returned as it is.
+    """
+    if queryset.query.distinct or not _fans_out(queryset):
+        return queryset
+    return queryset.distinct()
+
+
 def _fans_out(queryset: QuerySet) -> bool:
     """Whether the query joins a one-to-many or many-to-many relation."""
     return any(

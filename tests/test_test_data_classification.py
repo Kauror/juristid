@@ -310,46 +310,15 @@ def test_the_change_is_not_in_the_professional_timeline():
     assert ChangeEventType.MATTER_DATA_CLASS_CHANGED not in TIMELINE_EVENT_TYPES
 
 
-def test_the_endpoint_reclassifies(signed_in, specialist):
-    matter = factories.MatterFactory(owner=specialist)
-    url = reverse("matters:set_data_class", kwargs={"pk": matter.pk})
-
-    response = signed_in.post(url, {"data_class": MatterDataClass.TEST})
-
-    assert response.status_code == 302
-    matter.refresh_from_db()
-    assert matter.data_class == MatterDataClass.TEST
-
-
-def test_the_endpoint_refuses_an_imported_row(signed_in, specialist):
-    archive = factories.ArchiveMatterFactory(owner=specialist)
-    url = reverse("matters:set_data_class", kwargs={"pk": archive.pk})
-
-    signed_in.post(url, {"data_class": MatterDataClass.TEST})
-
-    archive.refresh_from_db()
-    assert archive.data_class == MatterDataClass.REAL
-
-
-def test_an_omitted_value_does_not_silently_become_real(signed_in, specialist):
-    matter = _test_matter(owner=specialist)
-    url = reverse("matters:set_data_class", kwargs={"pk": matter.pk})
-
-    signed_in.post(url, {})
-
-    matter.refresh_from_db()
-    assert matter.data_class == MatterDataClass.TEST
-
-
 def test_the_whole_page_reflects_a_reclassification(signed_in, specialist):
     """The badge, and the register row, and every other reader of the class.
 
     **Not the rail.** `Andmeklass` and `Märgi testandmeteks` are retired from the
     Teema page: the badge beside the title still makes a development record
     impossible to mistake for business data, and what left a reading surface is
-    the ability to *change* what a record is (docs/adr/0074 §17). The endpoint,
-    the service, the column and every stored value are untouched, and the
-    reclassification below goes through the service exactly as before.
+    the ability to *change* what a record is (docs/adr/0074 §17). The service,
+    the column and every stored value are untouched, and the reclassification
+    below goes through the service exactly as before.
     """
     matter = factories.MatterFactory(owner=specialist, data_class=MatterDataClass.REAL)
 
@@ -404,7 +373,7 @@ def test_the_helpers_compose_with_the_record_mode_filters(specialist):
 
     assert Matter.objects.full_records().test_data().count() == 1
     assert Matter.objects.full_records().real_data().count() == 1
-    assert Matter.objects.archive_records().test_data().count() == 0
+    assert Matter.objects.filter(record_mode=RecordMode.ARCHIVE).test_data().count() == 0
 
 
 # ---------------------------------------------------------------------------

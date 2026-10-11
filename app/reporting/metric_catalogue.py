@@ -933,7 +933,13 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         key=EXTRACTION_PENDING,
         version=1,
         label_et="Eraldamise järjekorras",
-        description_et="Versioonid, mis ootavad töötlemist või on töös.",
+        # Wording only: the measurement is unchanged. What the sentence adds is
+        # that a file filed on `Uus teema` can be here too — while the form does
+        # not offer its reading, promotion leaves it PENDING (AUD-025, D-6).
+        description_et=(
+            "Versioonid, mis ootavad töötlemist või on töös. Siia kuuluvad ka "
+            "teema loomisel lisatud failid, kui vorm loetust soovitusi ei paku."
+        ),
         source_population_et="Nähtavate teemade tõendiversioonid",
         drillthrough_et="Tõendiversioonide eraldi loendit ei ole; failid avanevad teema juurest",
         time_basis=TimeBasis.POINT_IN_TIME,
@@ -945,7 +951,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         label_et="Loetud teema loomisel",
         description_et=(
             "Failid, mille teksti loeti siis, kui teemat alles loodi, ja mille "
-            "vastused läksid vormile. Neid ei loeta uuesti: sisestuslugeja töö "
+            "leitu pakuti vormile. Neid ei loeta uuesti: sisestuslugeja töö "
             "on tehtud ja püsivat teksti sellest ei sünni. Ei ole viga ega "
             "järjekord."
         ),

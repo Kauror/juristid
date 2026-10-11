@@ -553,6 +553,61 @@ def change_current_action(*, matter: Matter, actor: Any, action_id: Any, **step:
 
 
 @transaction.atomic
+def add_unnamed_step(
+    *,
+    matter: Matter,
+    actor: Any,
+    text: str,
+    target_date: Any = None,
+    date_precision: str = DatePrecision.EXACT,
+    responsible: Any = None,
+) -> NextAction:
+    """A step a person adds without naming one: current, planned, or refused.
+
+    The one decision behind `+ Määra järgmine tegevus` on both of its forms —
+    the panel drawn with no step open (`set_action` with no `action_id`) and
+    the one drawn beside a current step (`add_planned_action_view`). **Made
+    under the Matter's lock, off the row as it is now** (AUD-004, AUD-040):
+
+    * no step is open → this one becomes the current step, `DO` / `DEADLINE`
+      like all new work;
+    * a step is open — a colleague's, another tab's, or one this reader may not
+      see — and this one has a day → it is filed as a planned step on that day
+      (docs/adr/0143 §A2: a planned action never supersedes the current one);
+    * a step is open and this one has no day → refused with
+      `STALE_ACTION_REFUSAL` and nothing written, because an undated step
+      cannot wait in the plan (`PLANNED_ACTION_NEEDS_DATE`).
+
+    Never a supersession: the open step stays open whoever wrote it. Deciding
+    on a read taken before the lock let two saves that both saw «no step» each
+    write the current one, the second silently replacing the first.
+    """
+    from app.workflow.services import add_planned_action
+
+    locked_matter = lock_open_matter_for_business_write(matter.pk)
+    open_now = NextAction.objects.filter(matter=locked_matter, status=ActionStatus.OPEN).exists()
+    if not open_now:
+        return set_next_action_for_new_work(
+            matter=locked_matter,
+            actor=actor,
+            text=text,
+            target_date=target_date,
+            date_precision=date_precision,
+            responsible=responsible,
+        )
+    if target_date is None:
+        raise DomainError(STALE_ACTION_REFUSAL)
+    return add_planned_action(
+        matter=locked_matter,
+        actor=actor,
+        text=text,
+        target_date=target_date,
+        date_precision=date_precision,
+        responsible=responsible,
+    )
+
+
+@transaction.atomic
 def add_matter_engagement(
     *,
     matter: Matter,

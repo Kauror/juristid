@@ -1,30 +1,26 @@
-"""A number on Ülevaade and the list behind it are the same query.
+"""The register filters the retired Ülevaade cards linked to, and their rows.
 
-The failure this file exists to prevent is quiet and was live: a card reading
-*15 Arvamusi koostamisel* linked to an unfiltered register, so a lawyer clicking
-it landed on two hundred rows and had to rebuild the filter by hand. Four of the
-six cards shared one link.
-
-Every test here asserts the same shape twice: the card's *count* and the
-register's *rows* for the card's own URL, compared as sets of primary keys
-rather than as two integers. Two counts can agree by accident on a small
-fixture; two identical row sets cannot.
+The cards are gone; the filters are the register's own and other surfaces link
+to them. Each test asserts the rows a filter opens, as sets of primary keys
+rather than as a count — two counts can agree by accident on a small fixture,
+two identical row sets cannot.
 """
 
 from __future__ import annotations
 
 from datetime import timedelta
-from urllib.parse import parse_qsl, urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse
 
 import pytest
 from django.utils import timezone
 
+from app.core.dates import format_estonian_date
 from app.core.enums import Visibility
 from app.legacy_import.current_state import CurrentRegisterState, RegisterCurrency
 from app.legacy_import.register_semantics import OpinionSentState
-from app.matters import dashboard
 from app.matters.enums import RecordMode
-from app.matters.register_filters import register_population
+from app.matters.register_filters import OPINION_DRAFTING, register_population
+from app.matters.selectors import MISSING
 from app.matters.services import close_matter, create_matter
 from app.workflow.enums import ActionKind, DateSemantics, Disposition
 from app.workflow.services import set_next_action
@@ -32,13 +28,25 @@ from tests import factories
 
 pytestmark = pytest.mark.django_db
 
-#: The cards a lawyer clicks. Kept as data so a card added to the dashboard
-#: without a test here shows up as a missing key rather than as silence.
+#: The filters the five cards applied, by the key each card had.
 CLICKABLE = ("active", "deadlines", "overdue", "drafting", "unassigned")
 
 
-def card(user, key):
-    return next(entry for entry in dashboard.summary_cards(user) if entry.key == key)
+def _url(key: str) -> str:
+    today = timezone.localdate()
+    current = {"olek": "avatud", "liik": RecordMode.FULL}
+    params = {
+        "active": current,
+        "deadlines": {
+            **current,
+            "tahtaeg_alates": format_estonian_date(today),
+            "tahtaeg_kuni": format_estonian_date(today + timedelta(days=7)),
+        },
+        "overdue": {"olek": "avatud", "tegevus": "hilinenud"},
+        "drafting": {**current, "arvamus": OPINION_DRAFTING},
+        "unassigned": {**current, "vastutaja": MISSING},
+    }[key]
+    return f"/teemad/?{urlencode(params)}"
 
 
 def params_of(card_url: str) -> dict[str, str]:
@@ -156,58 +164,35 @@ def world(db, specialist, other_specialist):
 
 
 # ---------------------------------------------------------------------------
-# Parity: the count is the list
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("key", CLICKABLE)
-def test_every_card_counts_exactly_the_rows_its_link_opens(world, other_specialist, key):
-    """The whole point of the branch, asserted five times.
-
-    Compared as row identities, not as two integers: two counts can coincide on
-    a small fixture, two row sets cannot.
-    """
-    entry = card(other_specialist, key)
-    assert entry.count == len(register_ids(other_specialist, entry.url))
-
-
-@pytest.mark.parametrize("key", CLICKABLE)
-def test_every_card_carries_a_filter(world, other_specialist, key):
-    """A card that links to the bare register is the defect this replaced."""
-    entry = card(other_specialist, key)
-    assert params_of(entry.url), f"card {key!r} opens an unfiltered register"
-
-
-# ---------------------------------------------------------------------------
 # Identity: the right rows, not merely the right number
 # ---------------------------------------------------------------------------
 
 
 def test_deadlines_opens_the_matters_inside_the_horizon(world, other_specialist):
-    rows = register_ids(other_specialist, card(other_specialist, "deadlines").url)
+    rows = register_ids(other_specialist, _url("deadlines"))
     assert world["soon"].pk in rows
     assert world["unassigned"].pk not in rows, "no deadline recorded"
 
 
 def test_drafting_opens_the_unsent_opinion_and_not_the_sent_one(world, other_specialist):
-    rows = register_ids(other_specialist, card(other_specialist, "drafting").url)
+    rows = register_ids(other_specialist, _url("drafting"))
     assert rows == {world["drafting"].pk}
 
 
 def test_unassigned_opens_only_matters_with_no_owner(world, other_specialist):
-    rows = register_ids(other_specialist, card(other_specialist, "unassigned").url)
+    rows = register_ids(other_specialist, _url("unassigned"))
     assert rows == {world["unassigned"].pk}
 
 
 def test_overdue_opens_late_work_and_not_a_passed_review(world, other_specialist):
     """A WAIT past its review date is due for a look, never late."""
-    rows = register_ids(other_specialist, card(other_specialist, "overdue").url)
+    rows = register_ids(other_specialist, _url("overdue"))
     assert world["overdue"].pk in rows
     assert world["waiting"].pk not in rows
 
 
 def test_active_excludes_closed_and_archive_rows(world, other_specialist):
-    rows = register_ids(other_specialist, card(other_specialist, "active").url)
+    rows = register_ids(other_specialist, _url("active"))
     titles = {"Suletud teema", "Arhiivirida"}
     from app.matters.models import Matter
 
@@ -232,14 +217,11 @@ def test_a_restricted_matter_is_absent_from_both_halves(world, reader, key):
     reader it exists. Both halves come from `visible_to`, so this asserts the
     property rather than the implementation.
     """
-    entry = card(reader, key)
-    assert world["hidden"].pk not in register_ids(reader, entry.url)
+    assert world["hidden"].pk not in register_ids(reader, _url(key))
 
 
 def test_the_owner_of_a_restricted_matter_sees_it_in_both_halves(world, specialist):
-    entry = card(specialist, "deadlines")
-    assert world["hidden"].pk in register_ids(specialist, entry.url)
-    assert entry.count == len(register_ids(specialist, entry.url))
+    assert world["hidden"].pk in register_ids(specialist, _url("deadlines"))
 
 
 # ---------------------------------------------------------------------------
@@ -247,25 +229,9 @@ def test_the_owner_of_a_restricted_matter_sees_it_in_both_halves(world, speciali
 # ---------------------------------------------------------------------------
 
 
-def test_the_missing_next_action_card_is_gone(world, other_specialist):
-    """It measured how far the migration had got, not a problem to act on.
-
-    The condition is not gone with it — `?tegevus=puudub` still opens exactly
-    those Matters, which is what makes removing the card safe.
-    """
-    assert "no_action" not in {entry.key for entry in dashboard.summary_cards(other_specialist)}
+def test_the_quiet_population_is_still_one_filter_away(world, other_specialist):
+    """`?tegevus=puudub` opens the Matters with no next step."""
     assert register_ids(other_specialist, "/teemad/?olek=avatud&tegevus=puudub")
-
-
-def test_no_card_note_names_a_register_column(world, other_specialist):
-    """Subtitles explain the metric, never where the data came from.
-
-    *Registris puudub VÄLJA märge* described an import column to somebody who
-    wanted to know which opinions still need writing.
-    """
-    notes = " ".join(entry.note for entry in dashboard.summary_cards(other_specialist))
-    for jargon in ("VÄLJA", "VASTUTAJA", "Registripõhine"):
-        assert jargon not in notes
 
 
 # ---------------------------------------------------------------------------
@@ -280,7 +246,7 @@ def test_the_register_shows_a_chip_for_every_filter_a_card_applies(world, client
     register, and the reader has no way to get back to the whole list.
     """
     client.force_login(other_specialist)
-    response = client.get(card(other_specialist, "drafting").url)
+    response = client.get(_url("drafting"))
 
     assert response.status_code == 200
     chips = {chip["name"] for chip in response.context["active_filters"]}
@@ -293,7 +259,7 @@ def test_the_register_shows_a_chip_for_every_filter_a_card_applies(world, client
 
 def test_clearing_the_filter_returns_the_whole_register(world, client, other_specialist):
     client.force_login(other_specialist)
-    filtered = client.get(card(other_specialist, "drafting").url)
+    filtered = client.get(_url("drafting"))
     cleared = client.get(f"/teemad/?{filtered.context['cleared_query']}")
 
     assert cleared.context["total"] > filtered.context["total"]

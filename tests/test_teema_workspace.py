@@ -409,7 +409,11 @@ def test_muuda_supersedes_rather_than_completes(signed_in, normal_matter, specia
 
     response = signed_in.post(
         reverse("matters:set_action", kwargs={"pk": normal_matter.pk}),
-        {"text": "Hoopis midagi muud", "target_date": "20.10.2026"},
+        {
+            "action_id": str(action.pk),
+            "text": "Hoopis midagi muud",
+            "target_date": "20.10.2026",
+        },
         headers={"HX-Request": "true"},
     )
 

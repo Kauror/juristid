@@ -217,20 +217,6 @@ def test_the_parsed_date_would_have_disagreed(applied):
 # ---------------------------------------------------------------------------
 
 
-def test_drafting_responsibility_counts_only_blank_cells(applied):
-    """The breakdown follows the population, so it inherits the correction.
-
-    In production it read 13/8/7/1 against an expected 7/5/2/1 for the same
-    reason this world would: the unparseable row carries a responsibility too.
-    """
-    rows = dashboard.drafting_by_responsibility(applied.people.head)
-    total = sum(row.count for row in rows)
-    assert total == dashboard.drafting_matters(applied.people.head).count()
-
-    drafting = titles(dashboard.drafting_matters(applied.people.head))
-    assert CURRENT_SENT_UNPARSEABLE not in drafting
-
-
 def test_the_count_is_still_authorized_before_it_is_counted(applied):
     """A hidden Matter must not appear in somebody else's total.
 

@@ -208,7 +208,7 @@ def build_department(
         ov.CountRow(label=row.name, count=row.open_count, url=row.url)
         for row in ov.area_rows(viewer, today, items, pop=people)[0][:AREA_RAIL_ROWS]
     ]
-    page.incoming = dd.incoming_rail(viewer, today)
+    page.incoming = dd.incoming_rail(viewer, today, items=items)
     page.reporting = dd.reporting_rail(viewer, today)
 
     if is_head:

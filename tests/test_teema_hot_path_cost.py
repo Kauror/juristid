@@ -3,7 +3,8 @@
 Three costs the 2026-10-02 code-health review measured and removed, pinned
 here so they cannot come back unnoticed:
 
-* **The deletion plan is walked only where «Kustuta» is drawn.** `_header_context`
+* **The deletion plan is never walked to draw «Kustuta»** (AUD-002 since
+  2026-10-10; before that, only where the header was drawn). `_header_context`
   is built for the whole page and for every HTMX save and refusal in the
   column, but only `header.html` reads `can_delete`, and a save response does
   not render the header. The plan was most of those responses' queries
@@ -66,12 +67,14 @@ def test_a_save_response_never_walks_the_deletion_plan(signed_in, busy_matter, m
     assert response.status_code == 200
     assert calls == [], "an HTMX save response walked the deletion plan"
 
-    # The full page draws the header, so it still asks — once.
+    # The full page draws the header, and since AUD-002 the header asks the
+    # cheap `deletion_may_be_offered` instead: the plan is walked only on the
+    # confirmation page (`tests/test_deletion_offer_is_cheap.py`).
     assert (
         signed_in.get(reverse("matters:matter_detail", kwargs={"pk": busy_matter.pk})).status_code
         == 200
     )
-    assert calls == [busy_matter.pk]
+    assert calls == []
 
 
 def test_the_memo_changes_nothing_the_plan_says(busy_matter, monkeypatch):

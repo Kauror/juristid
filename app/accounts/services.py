@@ -6,10 +6,10 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from django.core.exceptions import ValidationError
-from django.core.validators import validate_email
 from django.db import transaction
 from django.utils import timezone
 
+from app.accounts import email_policy
 from app.accounts.enums import UserRole
 from app.accounts.models import BreakGlassGrant, User
 from app.accounts.selectors import DEPARTMENT_WORK_ROLES, is_department_worker
@@ -43,6 +43,17 @@ class ProvisioningRefused(DomainError):
     """The account was not created or changed, and the message says why."""
 
 
+#: Why `provision_user` is no onboarding path once people sign in personally
+#: (AUD-051 AU-1, docs/adr/0145 §5 and its 2026-10-11 amendment).
+PROVISIONING_REFUSED_UNDER_PERSONAL_SIGN_IN = (
+    "Personal sign-in is on (AUTH_MODE=local_password), and there an account is made "
+    "through its lifecycle: Haldus → Kasutajad → «+ Uus kasutaja» → «Kinnita ja saada kutse», "
+    "after which the person sets their own password through the one-time link; the very "
+    "first administrator is `manage.py bootstrap_account_admin`. provision_user would make "
+    "an account that is active at once, outside that lifecycle. Nothing was changed."
+)
+
+
 @dataclass(frozen=True)
 class Provisioned:
     user: User
@@ -72,6 +83,20 @@ def provision_department_user(
       and a usable password on a real account is a way in nobody decided on.
     * **The Entra object id is left alone.** It is immutable once set and
       reserved for an authentication mode not yet in use.
+    * **Not under personal sign-in.** Under `local_password` an account is
+      created PENDING, approved and invited, and activated by its owner through
+      a one-time link (docs/adr/0145 §5). An account made here would be active
+      at once, with no invitation and nobody's approval behind it, so this
+      refuses before it reads anything and names the lifecycle that applies
+      instead (AUD-051 AU-1). The shared gate and Cloudflare Access onboard
+      exactly as before.
+    * **One spelling of one mailbox.** The address goes through
+      `email_policy.clean`, the rule the lifecycle uses: normalised, no `+tag`,
+      no non-ASCII address — so an account made here is never a second
+      identity for a mailbox that already has one. The *domain* rule
+      (`ACCOUNT_ALLOWED_EMAIL_DOMAINS`) is not asked: it is a decision of the
+      personal sign-in lifecycle, which this no longer serves, and the gate and
+      Access modes onboard whatever address their own door admits.
 
     Idempotent, and never an edit: asking again for exactly the account that
     exists changes nothing; asking for anything different about an existing
@@ -79,14 +104,23 @@ def provision_department_user(
     reactivation is a decision about a person, and it is not made here by
     accident.
     """
-    upn = (upn or "").strip().lower()
+    from app.accounts.local_auth import is_local_password
+
+    if is_local_password():
+        raise ProvisioningRefused(PROVISIONING_REFUSED_UNDER_PERSONAL_SIGN_IN)
+    raw = upn or ""
     display_name = (display_name or "").strip()
     try:
-        validate_email(upn)
+        upn = email_policy.clean(raw)
     except ValidationError as error:
+        shown = email_policy.normalise(raw)
+        if error.code == "invalid":
+            raise ProvisioningRefused(
+                f"'{shown}' is not an e-mail address. The UPN is the address Cloudflare Access "
+                "asserts, so it has to be the person's real one."
+            ) from error
         raise ProvisioningRefused(
-            f"'{upn}' is not an e-mail address. The UPN is the address Cloudflare Access "
-            "asserts, so it has to be the person's real one."
+            f"'{shown}' is not one unambiguous address: {error.messages[0]}"
         ) from error
     if upn.endswith(".invalid"):
         raise ProvisioningRefused(

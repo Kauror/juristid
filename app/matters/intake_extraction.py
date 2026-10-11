@@ -53,7 +53,11 @@ from django.utils import timezone
 
 from app.documents.enums import DerivativeKind, ExtractionState
 from app.documents.extraction import parsers  # noqa: F401  (registers every parser)
-from app.documents.extraction.orchestrator import parse_source
+from app.documents.extraction.orchestrator import (
+    ATTEMPTS_EXHAUSTED,
+    attempts_exhausted_note,
+    parse_source,
+)
 from app.matters.intake_staging import staging_storage
 from app.matters.staging import MatterIntakeFile
 
@@ -98,7 +102,7 @@ def pending_intake_files() -> Any:
     `INTAKE_READER_STALE_CLAIM_MINUTES` rather than the corpus worker's
     `EXTRACTION_STALE_CLAIM_MINUTES`, and the difference is the work: a corpus
     parse may be a 500-page OCR run and needs half an hour of grace, while a
-    staged file is bounded by `MAX_INTAKE_UPLOAD_BYTES` and finishes in
+    staged file is bounded by `MAX_EVIDENCE_UPLOAD_BYTES` and finishes in
     seconds. Thirty minutes here would strand somebody's form behind a reader
     that died, for longer than they would keep the page open.
     """
@@ -143,9 +147,43 @@ def claim_intake_file(file_id: Any, *, force: bool = False) -> MatterIntakeFile 
             return None
         if not force and not _is_claimable(locked, stale_before):
             return None
+        # The corpus worker's attempt budget, for the same reason: a staged file
+        # that kills the reader (out of memory, a native crash) never settles,
+        # and reclaiming its stale claim for ever would take the reader down
+        # behind every open form in the department (AUD-045). Settled FAILED
+        # through the ordinary fenced write, so the form shows it like any
+        # other file the reader could not read.
+        reclaiming = not force and locked.extraction_state == ExtractionState.PROCESSING
+        if reclaiming and locked.extraction_attempts >= settings.EXTRACTION_MAX_ATTEMPTS:
+            _settle(
+                locked,
+                state=ExtractionState.FAILED,
+                note=attempts_exhausted_note(locked.extraction_attempts),
+                fence=locked.extraction_claimed_at,
+                fragments=[],
+                email_metadata=None,
+                characters=0,
+            )
+            logger.warning(
+                "intake extraction failed file=%s mime=%s code=%s",
+                locked.pk,
+                locked.mime_type,
+                ATTEMPTS_EXHAUSTED,
+            )
+            return None
         locked.extraction_state = ExtractionState.PROCESSING
         locked.extraction_claimed_at = timezone.now()
-        locked.save(update_fields=["extraction_state", "extraction_claimed_at", "updated_at"])
+        # A fresh request or a forced one starts at one; only a reclaim of an
+        # unfinished claim adds to it.
+        locked.extraction_attempts = locked.extraction_attempts + 1 if reclaiming else 1
+        locked.save(
+            update_fields=[
+                "extraction_state",
+                "extraction_claimed_at",
+                "extraction_attempts",
+                "updated_at",
+            ]
+        )
     return locked
 
 

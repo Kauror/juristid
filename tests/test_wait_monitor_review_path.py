@@ -83,8 +83,10 @@ def _muuda(action, text):
 
     Built from `period_initial`, which is what the page prefills the editor
     with — so this is the date and the `Täpsus` chip the person saw, left alone.
+    The hidden `action_id` names the open step the editor was drawn beside, as
+    the real form always does (docs/adr/0133 §4).
     """
-    data = {"text": text}
+    data = {"action_id": str(action.pk), "text": text}
     for key, value in period_initial(
         "next", action.target_date, action.date_precision, date_field="target_date"
     ).items():

@@ -9,7 +9,7 @@ by adding another view (master specification 12.4, 23.4).
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Any, cast
@@ -833,8 +833,13 @@ class LegalInstrumentChoicesMixin:
         return list(cast(Any, self.fields["legal_instruments"]).held)
 
 
+#: Saatja's two checkbox fields — the shortlist and the searchable rest — named
+#: once, because every sender form declares, feeds and unions exactly these two.
+SENDER_FIELDS = ("source_organisations", "source_organisations_other")
+
+
 class OrganisationPickerChoicesMixin:
-    """What `organisation_picker.html` needs, on both forms that draw it.
+    """What `organisation_picker.html` needs, on every form that draws Saatja.
 
     `organisation_picker.html` renders one control wherever a counterparty is
     asked for, and it offers the same two things every time: a handful of
@@ -867,9 +872,95 @@ class OrganisationPickerChoicesMixin:
     *fed*, never what either of them writes: creating a Matter and correcting one
     are different transactions with different services and different rules about
     defaults, and §11 of the same brief turns on their staying that way.
+
+    **Three forms since 2026-10-10, and the feeding moved in here too.**
+    `Saabunud` was the third sender surface and the one left out: a plain
+    `CheckboxSelectMultiple` and the older `sender_control.html` (now removed),
+    so «MKM» found the ministry on `Uus teema` and `Muuda teemat` and nothing on
+    the page where a ministry's letter actually lands. Each of the three forms also carried its
+    own copy of the shortlist/tail slicing in `__init__` and of the sender union
+    in `clean`, which is how the third copy stopped being kept in step. They are
+    written once now — `attach_sender_choices`, `clean_senders` and
+    `clean_sender_name` — over the one ranking `read_organisation_choices`
+    produces (AUD-011, product decision D-4, docs/adr/0073 amendment of
+    2026-10-10).
     """
 
     fields: dict[str, forms.Field]
+    #: The chips, best first: the ranked shortlist plus whatever ``extra`` the
+    #: form insisted on. What the template draws visibly.
+    frequent_senders: list[Any]
+    #: How many institutions are behind the search rather than on the row.
+    sender_tail_count: int
+
+    def attach_sender_choices(self, viewer: Any, *, extra: Iterable[Any] = ()) -> None:
+        """Feed Saatja: the validating queryset, the chips, the tail, the spellings.
+
+        * **Validation runs against the whole catalogue.** Every institution is
+          a valid sender, so narrowing the queryset to what is on screen would
+          refuse a correct answer given through the search — and on an edit page
+          the value the record already carries.
+        * **The order is the one ranking**, read once: the catalogue, the two
+          usage passes (scoped by `visible_to`) and the spellings, sliced in
+          Python. The catalogue used to be read two or three times per form
+          (AUD-011).
+        * ``extra`` are bodies that must be chips whatever the ranking says —
+          `Muuda teemat` passes the Matter's current senders and the document
+          analysis's suggested ones, because an edit page that hides the current
+          value in the tail looks like it cleared it, and a pre-filled tick in
+          the tail is invisible. Offered, never chosen: this decides which chips
+          render, not which are ticked.
+        * **The spellings go onto both widgets**, so «MKM» finds
+          `Majandus- ja Kommunikatsiooniministeerium` whichever half holds it,
+          on whichever of the three pages is asking (docs/adr/0073 task §13).
+
+        With no viewer there is nothing to rank by, so there is no tail and the
+        whole catalogue is chips — `OrganisationChoices.shortlist_and_tail`'s
+        rule, the same one `attach_organisation_picker` follows.
+        """
+        reading = read_organisation_choices(viewer)
+        # A lazy queryset: it validates the POST and is never iterated here,
+        # because the rendered choices below replace it.
+        validating = Organisation.objects.order_by("name")
+        for field_name in SENDER_FIELDS:
+            set_choices(cast(Any, self), field_name, validating)
+
+        shortlist, tail = reading.shortlist_and_tail()
+        offered = {organisation.pk for organisation in shortlist}
+        for organisation in extra:
+            if organisation.pk not in offered:
+                shortlist.append(organisation)
+                offered.add(organisation.pk)
+        tail = [organisation for organisation in tail if organisation.pk not in offered]
+
+        self.frequent_senders = shortlist
+        self.sender_tail_count = len(tail)
+        cast(Any, self.fields["source_organisations"]).choices = [
+            (organisation.pk, organisation.name) for organisation in shortlist
+        ]
+        cast(Any, self.fields["source_organisations_other"]).choices = [
+            (organisation.pk, organisation.name) for organisation in tail
+        ]
+        for field_name in SENDER_FIELDS:
+            cast(Any, self.fields[field_name].widget).alias_terms = reading.alias_terms
+
+    def clean_senders(self, cleaned: dict[str, Any]) -> None:
+        """The two sender controls are two ways into one set; keep their union.
+
+        Nothing is privileged for having been on the shortlist, an organisation
+        ticked in both places appears once, and the answer is in name order
+        (Agent-E brief 31). The typed `sender_name` is not merged here: what a
+        typed name *means* is decided by `resolve_source_organisations` inside
+        the save's own transaction, never by a form (docs/adr/0063).
+        """
+        senders: dict[Any, Organisation] = {}
+        for source in SENDER_FIELDS:
+            for organisation in cleaned.get(source) or []:
+                senders.setdefault(organisation.pk, organisation)
+        cleaned["source_organisations"] = sorted(senders.values(), key=lambda o: o.name)
+
+    def clean_sender_name(self) -> str:
+        return clean_typed_organisation_name(cast(Any, self).cleaned_data.get("sender_name"))
 
     @property
     def sender_chip_choices(self) -> list[Any]:
@@ -927,12 +1018,13 @@ def sender_name_field() -> forms.CharField:
     creating a body and coming back to find it again is not a workflow anybody
     used; they filed the Teema with no sender.
 
-    **It is no longer a visible box on `Uus teema`.** That surface asks one
-    question — «Otsi või lisa asutus…» — and this field is what the `+` beside
-    it writes into, so the distinction between *finding* an institution and
-    *naming* one survives in the posted data without being two controls on the
-    screen. `Muuda teemat` and `Saabunud` still render it as an ordinary text
-    box, and so does the `<noscript>` fallback (docs/adr/0073, task §2, §22).
+    **It is no longer a visible box on any sender page.** `Uus teema`, `Muuda
+    teemat` and (since 2026-10-10) `Saabunud` ask one question — «Otsi või lisa
+    asutus…» — and this field is what the `+` beside it writes into, so the
+    distinction between *finding* an institution and *naming* one survives in
+    the posted data without being two controls on the screen. Only the
+    `<noscript>` fallback renders it as an ordinary text box (docs/adr/0073 and
+    its amendment of 2026-10-10, task §2, §22).
 
     What has not changed is the rule underneath, and it is the reason the field
     still exists at all: the search box posts nothing. Somebody who types
@@ -997,9 +1089,122 @@ def _usage_order(viewer: Any, field: str, limit: int) -> list[Any]:
     return [row[field] for row in usage]
 
 
-def organisations_by_usage(
-    viewer: Any, *, limit: int = SENDER_SHORTLIST_SIZE
-) -> list[Organisation]:
+@dataclass(frozen=True)
+class OrganisationChoices:
+    """One reading of the institution catalogue, for every control on one page.
+
+    **Three controls on the Teema page ask the same question**, and until this
+    existed each of them answered it with its own queries: the catalogue, two
+    usage passes and the recorded spellings, four reads apiece. That was the
+    right trade while `+ Väline seisukoht` was the only such panel — it is a
+    closed panel most visits never open, so one extra read was cheap. It stopped
+    being cheap the moment there were three of them: the Teema page went from 38
+    queries to 49 and blew the budget `tests/test_teema_redesign.py` holds
+    (docs/adr/0091 §3.5).
+
+    So the reading is hoisted to the page. `workspace_forms` builds one of these
+    and hands it to every control; each control still slices its own shortlist
+    and tail out of it in Python, which is where that work always happened.
+
+    **It is a reading, not a cache.** It is built per request and never stored,
+    memoised or shared between them: the catalogue changes when somebody adds an
+    institution, and a stale shortlist is a control offering a body that is not
+    there. Nothing here is scoped by viewer except ``ranked``, which is — inside
+    `_usage_order`, by `visible_to`, so no restricted Matter can move a chip.
+    """
+
+    #: Every institution, in name order. The validating queryset is separate and
+    #: stays the whole catalogue, because every institution is a valid answer.
+    catalogue: list[Any]
+    #: The primary keys this reader's own Matters involve most, best first.
+    #:
+    #: Empty both for a caller with no viewer **and** for a reader whose visible
+    #: Matters involve nobody yet — which is why :attr:`ranked_for_a_reader`
+    #: exists rather than this being tested for truth. Those two states look the
+    #: same here and are completely different on the page: the first has no
+    #: shortlist at all and renders every institution as a chip, the second has a
+    #: shortlist topped up alphabetically so two readers with no history see the
+    #: same eight. Collapsing them put every catalogue behind the search on a
+    #: fresh database (`test_every_institution_is_offered_even_when_it_is_not_a_chip`).
+    ranked: list[Any]
+    #: Whether this reading was made for somebody, as opposed to for a form with
+    #: no viewer at all.
+    ranked_for_a_reader: bool
+    #: Recorded spellings by primary key, so «MKM» finds the ministry through an
+    #: alias rather than through a similarity score.
+    alias_terms: dict[str, str]
+
+    def shortlist_and_tail(self) -> tuple[list[Any], list[Any]]:
+        """The chips and the searchable rest, sliced out of one reading.
+
+        The one ranking every sender and organisation control offers — usage
+        first, topped up alphabetically so two readers with no history see the
+        same eight and neither sees none. `organisations_by_usage` is this
+        method's first half, not a second implementation of it (AUD-011).
+        Pure Python over :attr:`catalogue`; no query.
+
+        **A reading with no reader has no shortlist**, and returns the whole
+        catalogue as chips with an empty tail — which is what a form built without
+        a viewer has always rendered. That is decided from
+        :attr:`ranked_for_a_reader` and never from `ranked` being empty: a reader
+        whose visible Matters involve nobody yet still gets the alphabetical eight.
+        """
+        if not self.ranked_for_a_reader:
+            return list(self.catalogue), []
+        by_pk = {organisation.pk: organisation for organisation in self.catalogue}
+        shortlist = [by_pk[pk] for pk in self.ranked[:SENDER_SHORTLIST_SIZE] if pk in by_pk]
+        if len(shortlist) < SENDER_SHORTLIST_SIZE:
+            chosen = {organisation.pk for organisation in shortlist}
+            shortlist.extend(
+                organisation for organisation in self.catalogue if organisation.pk not in chosen
+            )
+            shortlist = shortlist[:SENDER_SHORTLIST_SIZE]
+        chosen = {organisation.pk for organisation in shortlist}
+        tail = [organisation for organisation in self.catalogue if organisation.pk not in chosen]
+        return shortlist, tail
+
+
+def read_organisation_choices(viewer: Any, *, spellings: bool = True) -> OrganisationChoices:
+    """Read the catalogue, the usage ranking and the spellings, once.
+
+    Four queries at most, and the same four every control used to make for
+    itself. The two usage passes are scoped by `visible_to` inside
+    `_usage_order`; the second runs only when the sender history did not fill
+    the row.
+
+    **This is the one ranking.** `organisations_by_usage` used to be a second
+    implementation of «eight chips, topped up alphabetically, the rest is the
+    tail» — its own two passes, its own fetch of the ranked rows and its own
+    alphabetical top-up query — and the three sender forms each sliced their
+    tail out of yet another read of the catalogue. Two implementations of one
+    order are two orders the day one of them is touched, so it now delegates
+    here (AUD-011, docs/adr/0073 amendment of 2026-10-10).
+
+    ``spellings=False`` skips the alias read for a caller that renders no
+    picker and only wants the order (`organisations_by_usage`).
+    """
+    from app.organisations.models import Organisation
+
+    catalogue = list(Organisation.objects.order_by("name"))
+    ranked: list[Any] = []
+    if viewer is not None:
+        seen: set[Any] = set()
+        for field_name in ("source_organisations", "addressee_organisation"):
+            if len(ranked) >= SENDER_SHORTLIST_SIZE:
+                break
+            for pk in _usage_order(viewer, field_name, SENDER_SHORTLIST_SIZE):
+                if pk not in seen:
+                    seen.add(pk)
+                    ranked.append(pk)
+    return OrganisationChoices(
+        catalogue=catalogue,
+        ranked=ranked,
+        ranked_for_a_reader=viewer is not None,
+        alias_terms=organisation_alias_terms() if spellings else {},
+    )
+
+
+def organisations_by_usage(viewer: Any) -> list[Organisation]:
     """The bodies to offer as senders without being asked, best first.
 
     Three sources, in descending order of how much they actually say about this
@@ -1030,37 +1235,15 @@ def organisations_by_usage(
     Authorization is `visible_to` on both usage passes, so a restricted Matter
     cannot move a chip and cannot put a body on this row that the reader would
     otherwise have no reason to see there.
+
+    **One ranking, not two.** This is the shortlist half of
+    `read_organisation_choices(...).shortlist_and_tail()`, read without the
+    spellings because nothing here renders a picker. It used to be a second
+    implementation of the same order beside that one, and every sender form now
+    reads the order through `OrganisationPickerChoicesMixin.attach_sender_choices`
+    instead of calling this (AUD-011, docs/adr/0073 amendment of 2026-10-10).
     """
-    order: list[Any] = []
-    seen: set[Any] = set()
-
-    def take(pks: list[Any]) -> None:
-        for pk in pks:
-            if pk not in seen:
-                seen.add(pk)
-                order.append(pk)
-
-    take(_usage_order(viewer, "source_organisations", limit))
-    if len(order) < limit:
-        # Asked only when the sender history did not fill the row, so a
-        # department with eight active senders never pays for this query.
-        take(_usage_order(viewer, "addressee_organisation", limit))
-
-    order = order[:limit]
-    # One query for the rows, whatever the two passes above found. Ranked in
-    # Python rather than in SQL, because the order is the union's and not any
-    # single query's.
-    found = {
-        organisation.pk: organisation for organisation in Organisation.objects.filter(pk__in=order)
-    }
-    shortlist = [found[pk] for pk in order if pk in found]
-
-    if len(shortlist) < limit:
-        shortlist.extend(
-            Organisation.objects.exclude(pk__in=[item.pk for item in shortlist]).order_by("name")[
-                : limit - len(shortlist)
-            ]
-        )
+    shortlist, _tail = read_organisation_choices(viewer, spellings=False).shortlist_and_tail()
     return shortlist
 
 
@@ -1421,15 +1604,9 @@ class MatterCreateForm(
     def clean(self) -> dict[str, Any]:
         cleaned = super().clean() or {}
 
-        # The two sender controls are two ways into one set, so the canonical
-        # answer is their union. Nothing is privileged for having come from the
-        # frequent list, and an organisation ticked in both places appears once
-        # (Agent-E brief 31).
-        senders: dict[Any, Organisation] = {}
-        for source in ("source_organisations", "source_organisations_other"):
-            for organisation in cleaned.get(source) or []:
-                senders.setdefault(organisation.pk, organisation)
-        cleaned["source_organisations"] = sorted(senders.values(), key=lambda o: o.name)
+        # The union of the two sender controls, by the rule all three sender
+        # forms share (`OrganisationPickerChoicesMixin.clean_senders`).
+        self.clean_senders(cleaned)
 
         clean_policy_area_answer(self, cleaned)
         clean_legal_instrument_answer(self, cleaned)
@@ -1444,9 +1621,6 @@ class MatterCreateForm(
             cleaned["response_deadline"] = None
 
         return cleaned
-
-    def clean_sender_name(self) -> str:
-        return clean_typed_organisation_name(self.cleaned_data.get("sender_name"))
 
     @property
     def data_class(self) -> str:
@@ -1500,13 +1674,11 @@ class MatterCreateForm(
         self.stage_help = stage_help_texts()
         cast(Any, self.fields["stage"].widget).descriptions = self.stage_help
 
-        # Every organisation is a *valid* sender; only the frequent ones are
-        # offered as chips. Validation therefore runs against the full set —
-        # narrowing it to the visible ten would reject a correct answer given
-        # through the search control.
-        everything = Organisation.objects.order_by("name")
-        set_choices(self, "source_organisations", everything)
-        set_choices(self, "source_organisations_other", everything)
+        # Saatja: every organisation is a *valid* sender and only the ranked
+        # shortlist is drawn as chips; the rest is the searchable tail, and the
+        # recorded spellings ride on both halves. One call, shared with
+        # `Muuda teemat` and `Saabunud`, reading the catalogue once (AUD-011).
+        self.attach_sender_choices(viewer)
 
         set_choices(self, "policy_areas", selectable_policy_areas())
         # «Valdkond» is the shared field's own label since docs/adr/0131 §14,
@@ -1517,60 +1689,6 @@ class MatterCreateForm(
         # has to accept what a Matter already carries.
         set_choices(self, "legal_instruments", selectable_legal_instrument_types())
         self.offer_legal_instruments(list(selectable_legal_instrument_types()))
-
-        # Ordering is a presentation concern, so it is applied to the rendered
-        # choices rather than to the validating queryset.
-        if viewer is not None:
-            # `fields[...]` is typed as the base Field, which has no `choices`.
-            # These two are ChoiceFields by construction a few lines above.
-            senders = cast(Any, self.fields["source_organisations"])
-            self.frequent_senders = organisations_by_usage(viewer)
-            senders.choices = [
-                (organisation.pk, organisation.name) for organisation in self.frequent_senders
-            ]
-            # The rest of the catalogue, beside the chips rather than behind a
-            # door. Offering the same bodies twice is what made "Muu / lisa
-            # saatja" read as a second sender control that contradicted the
-            # first, so the shortlist is excluded here.
-            #
-            frequent = {organisation.pk for organisation in self.frequent_senders}
-            rest = cast(Any, self.fields["source_organisations_other"])
-            tail = [
-                organisation
-                for organisation in Organisation.objects.order_by("name")
-                if organisation.pk not in frequent
-            ]
-            rest.choices = [(organisation.pk, organisation.name) for organisation in tail]
-            # `sender_tail_count` is back, and so is the door it labels.
-            #
-            # It was removed when the catalogue came out from behind the
-            # disclosure and onto the page, on the argument that a door reading
-            # «Vali nimekirjast (15)» is a door somebody has to guess is worth
-            # opening. What that traded away was the shape of the row: a
-            # permanent search box and a scrolling catalogue sat in the Saatja
-            # column on every visit, including the overwhelming majority where
-            # the answer was one of the chips already on screen.
-            #
-            # Adressaat kept the disclosure and read better for it, so Saatja
-            # matches it: chips first, the whole catalogue and its search one
-            # click away, `Uus saatja` outside where it answers "the body I need
-            # is not here" without anything having to be opened
-            # (task §9, matter_create.html). Adressaat itself is no longer on
-            # this form; the shape it argued for is (docs/adr/0090 §5).
-            self.sender_tail_count = len(tail)
-
-            # The recorded spellings, onto the controls that carry them.
-            #
-            # Read once for the whole catalogue and handed to both sender
-            # fields, because the picker searches one pool of institutions and
-            # «MKM» has to find the same ministry from either of them
-            # (docs/adr/0073, task §13).
-            spellings = organisation_alias_terms()
-            for field_name in ("source_organisations", "source_organisations_other"):
-                cast(Any, self.fields[field_name].widget).alias_terms = spellings
-        else:
-            self.frequent_senders = []
-            self.sender_tail_count = 0
 
 
 class MatterEditForm(
@@ -1858,49 +1976,16 @@ class MatterEditForm(
         self.stage_held = matter is not None and not matter.is_open
         self.stage_held_note = CLOSED_MATTER_STAGE_REFUSAL
 
-        # Every organisation is a *valid* answer; only the offered chips are
-        # narrowed. Validation therefore runs against the whole catalogue —
-        # narrowing it to the visible few would reject a correct answer given
-        # through the search control, and on an *edit* page it would reject the
-        # value the record already carries.
-        organisations = Organisation.objects.order_by("name")
-        set_choices(self, "source_organisations", organisations)
-        set_choices(self, "source_organisations_other", organisations)
-
-        # The frequent bodies as chips and the rest behind «Vali nimekirjast»,
-        # the same split `Uus teema` uses — plus, always, whatever this Matter
-        # already names, because an edit page that hides the current value in a
-        # disclosure is an edit page that looks like it cleared it.
+        # Saatja, fed exactly as `Uus teema` and `Saabunud` feed it: the whole
+        # catalogue validates, the ranked shortlist is the chips, the rest is
+        # the searchable tail, and «MKM» finds the same ministry on all three
+        # pages (`attach_sender_choices`, AUD-011). Plus, always, whatever this
+        # Matter already names — an edit page that hides the current value in
+        # the tail is an edit page that looks like it cleared it — and whatever
+        # the document analysis proposes, so a pre-filled tick is a visible
+        # chip rather than one lost in the tail (app/matters/intake_suggestions).
         current_senders = list(matter.source_organisations.all()) if matter else []
-        frequent = list(organisations_by_usage(viewer)) if viewer is not None else []
-        known = {organisation.pk for organisation in frequent}
-        # And whatever the document analysis proposes as a sender, so the
-        # assisted review can show it as a chip beside the frequent ones rather
-        # than leaving it inside the long tail where a pre-filled tick would be
-        # invisible (app/matters/intake_suggestions). Offered, not chosen:
-        # this list decides which chips render, never which are ticked.
-        for organisation in (*current_senders, *suggested_senders):
-            if organisation.pk not in known:
-                frequent.append(organisation)
-                known.add(organisation.pk)
-        self.frequent_senders = frequent
-        senders = cast(Any, self.fields["source_organisations"])
-        senders.choices = [(item.pk, item.name) for item in frequent]
-        rest = cast(Any, self.fields["source_organisations_other"])
-        tail = [item for item in organisations if item.pk not in known]
-        rest.choices = [(item.pk, item.name) for item in tail]
-        self.sender_tail_count = len(tail)
-
-        # The recorded spellings, onto the controls that carry them.
-        #
-        # Read once for the whole catalogue and handed to all three choice
-        # fields, exactly as `Uus teema` does it: the picker searches one pool
-        # of institutions through two questions, and «MKM» has to find the same
-        # ministry whichever of them is being answered — and on whichever of the
-        # two pages is asking (docs/adr/0073 task §13, post-QA R2-12).
-        spellings = organisation_alias_terms()
-        for field_name in ("source_organisations", "source_organisations_other"):
-            cast(Any, self.fields[field_name].widget).alias_terms = spellings
+        self.attach_sender_choices(viewer, extra=(*current_senders, *suggested_senders))
 
         # Validation accepts the whole vocabulary; only the *offered* list is
         # narrowed. A Matter filed years ago under a since-retired area keeps
@@ -1956,14 +2041,8 @@ class MatterEditForm(
 
     def clean(self) -> dict[str, Any]:
         cleaned = super().clean() or {}
-        # The two sender controls are two ways into one set, so the canonical
-        # answer is their union. Nothing is privileged for having been on the
-        # shortlist, and an organisation ticked in both places appears once.
-        senders: dict[Any, Organisation] = {}
-        for source in ("source_organisations", "source_organisations_other"):
-            for organisation in cleaned.get(source) or []:
-                senders.setdefault(organisation.pk, organisation)
-        cleaned["source_organisations"] = sorted(senders.values(), key=lambda o: o.name)
+        # The sender union, by the rule all three sender forms share.
+        self.clean_senders(cleaned)
         # One rule about what `Muu` means, shared with `Uus teema`, on both
         # classifications. A rule that is true on the page somebody files from
         # and false on the page they correct from is a rule people learn twice.
@@ -1971,9 +2050,6 @@ class MatterEditForm(
         clean_legal_instrument_answer(self, cleaned)
         clean_initiative_dates(self, cleaned)
         return cleaned
-
-    def clean_sender_name(self) -> str:
-        return clean_typed_organisation_name(self.cleaned_data.get("sender_name"))
 
     def clean_title(self) -> str:
         value = (self.cleaned_data.get("title") or "").strip()
@@ -3035,108 +3111,6 @@ def external_position_period_initial(record: Any) -> dict[str, Any]:
     }
 
 
-@dataclass(frozen=True)
-class OrganisationChoices:
-    """One reading of the institution catalogue, for every control on one page.
-
-    **Three controls on the Teema page ask the same question**, and until this
-    existed each of them answered it with its own queries: the catalogue, two
-    usage passes and the recorded spellings, four reads apiece. That was the
-    right trade while `+ Väline seisukoht` was the only such panel — it is a
-    closed panel most visits never open, so one extra read was cheap. It stopped
-    being cheap the moment there were three of them: the Teema page went from 38
-    queries to 49 and blew the budget `tests/test_teema_redesign.py` holds
-    (docs/adr/0091 §3.5).
-
-    So the reading is hoisted to the page. `workspace_forms` builds one of these
-    and hands it to every control; each control still slices its own shortlist
-    and tail out of it in Python, which is where that work always happened.
-
-    **It is a reading, not a cache.** It is built per request and never stored,
-    memoised or shared between them: the catalogue changes when somebody adds an
-    institution, and a stale shortlist is a control offering a body that is not
-    there. Nothing here is scoped by viewer except ``ranked``, which is — inside
-    `_usage_order`, by `visible_to`, so no restricted Matter can move a chip.
-    """
-
-    #: Every institution, in name order. The validating queryset is separate and
-    #: stays the whole catalogue, because every institution is a valid answer.
-    catalogue: list[Any]
-    #: The primary keys this reader's own Matters involve most, best first.
-    #:
-    #: Empty both for a caller with no viewer **and** for a reader whose visible
-    #: Matters involve nobody yet — which is why :attr:`ranked_for_a_reader`
-    #: exists rather than this being tested for truth. Those two states look the
-    #: same here and are completely different on the page: the first has no
-    #: shortlist at all and renders every institution as a chip, the second has a
-    #: shortlist topped up alphabetically so two readers with no history see the
-    #: same eight. Collapsing them put every catalogue behind the search on a
-    #: fresh database (`test_every_institution_is_offered_even_when_it_is_not_a_chip`).
-    ranked: list[Any]
-    #: Whether this reading was made for somebody, as opposed to for a form with
-    #: no viewer at all.
-    ranked_for_a_reader: bool
-    #: Recorded spellings by primary key, so «MKM» finds the ministry through an
-    #: alias rather than through a similarity score.
-    alias_terms: dict[str, str]
-
-    def shortlist_and_tail(self) -> tuple[list[Any], list[Any]]:
-        """The chips and the searchable rest, sliced out of one reading.
-
-        The ranking `organisations_by_usage` produces, topped up alphabetically
-        so two readers with no history see the same eight and neither sees none.
-        Pure Python over :attr:`catalogue`; no query.
-
-        **A reading with no reader has no shortlist**, and returns the whole
-        catalogue as chips with an empty tail — which is what a form built without
-        a viewer has always rendered. That is decided from
-        :attr:`ranked_for_a_reader` and never from `ranked` being empty: a reader
-        whose visible Matters involve nobody yet still gets the alphabetical eight.
-        """
-        if not self.ranked_for_a_reader:
-            return list(self.catalogue), []
-        by_pk = {organisation.pk: organisation for organisation in self.catalogue}
-        shortlist = [by_pk[pk] for pk in self.ranked[:SENDER_SHORTLIST_SIZE] if pk in by_pk]
-        if len(shortlist) < SENDER_SHORTLIST_SIZE:
-            chosen = {organisation.pk for organisation in shortlist}
-            shortlist.extend(
-                organisation for organisation in self.catalogue if organisation.pk not in chosen
-            )
-            shortlist = shortlist[:SENDER_SHORTLIST_SIZE]
-        chosen = {organisation.pk for organisation in shortlist}
-        tail = [organisation for organisation in self.catalogue if organisation.pk not in chosen]
-        return shortlist, tail
-
-
-def read_organisation_choices(viewer: Any) -> OrganisationChoices:
-    """Read the catalogue, the usage ranking and the spellings, once.
-
-    Four queries at most, and the same four every control used to make for
-    itself. The two usage passes are `organisations_by_usage`'s own, in its
-    order and scoped by `visible_to` inside `_usage_order`; the second runs only
-    when the sender history did not fill the row.
-    """
-    from app.organisations.models import Organisation
-
-    catalogue = list(Organisation.objects.order_by("name"))
-    ranked: list[Any] = []
-    if viewer is not None:
-        seen: set[Any] = set()
-        for field_name in ("source_organisations", "addressee_organisation"):
-            if len(ranked) >= SENDER_SHORTLIST_SIZE:
-                break
-            for pk in _usage_order(viewer, field_name, SENDER_SHORTLIST_SIZE):
-                if pk not in seen:
-                    seen.add(pk)
-                    ranked.append(pk)
-    return OrganisationChoices(
-        catalogue=catalogue,
-        ranked=ranked,
-        ranked_for_a_reader=viewer is not None,
-        alias_terms=organisation_alias_terms(),
-    )
-
-
 def attach_organisation_picker(
     form: forms.Form, *, viewer: Any, choices: OrganisationChoices | None = None
 ) -> None:
@@ -3153,8 +3127,8 @@ def attach_organisation_picker(
       correct answer given through the search;
     * the *rendered* order is presentation — the bodies this reader's own
       Matters actually involve first, then the rest alphabetically — and it is
-      scoped by `visible_to` inside `organisations_by_usage`, so no restricted
-      Matter can move a chip;
+      scoped by `visible_to` inside `_usage_order`, so no restricted Matter
+      can move a chip;
     * `organisation_split` is where the shortlist ends and the searchable tail
       begins, computed here because a template cannot slice on a primary key;
     * the recorded spellings go onto the widget, so «MKM» finds
@@ -3174,10 +3148,9 @@ def attach_organisation_picker(
     from app.organisations.models import Organisation
 
     # **The catalogue is read once**, and both halves are sliced out of that one
-    # reading in Python. `organisations_by_usage` is the shared shortlist helper
-    # and is deliberately *not* called here: it re-reads the rows it ranked and
-    # tops the row up with a second catalogue query, which is the right trade on
-    # a page built around one Organisation question and the wrong one here.
+    # reading in Python — the same reading and the same slicing the sender
+    # forms use (`OrganisationPickerChoicesMixin.attach_sender_choices`), so one
+    # institution is offered in one order on every picker (AUD-011).
     #
     # ``choices`` hoists the reading one level further, to the *page*. A caller
     # rendering three of these controls — which the Teema page now does — reads
@@ -3273,13 +3246,6 @@ class MatterFieldForm(forms.Form):
     policy_areas = forms.ModelMultipleChoiceField(
         queryset=PolicyArea.objects.none(), required=False
     )
-    # `required=False` like every other field on this form: one POST carries
-    # one field, so demanding this one would refuse every other inline edit.
-    # An absent or empty value is still refused — by the service, which knows
-    # no blank data class — rather than being defaulted to REAL, because a
-    # malformed POST must not quietly reclassify a development record as
-    # business data.
-    data_class = forms.ChoiceField(choices=MatterDataClass.choices, required=False)
 
     def __init__(self, *args: Any, matter: Matter | None = None, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -3665,7 +3631,7 @@ class WorkingDocumentForm(forms.Form):
     )
 
 
-class IncomingIntakeForm(forms.Form):
+class IncomingIntakeForm(OrganisationPickerChoicesMixin, forms.Form):
     """Filing material that has just arrived.
 
     The file-first counterpart to `Uus teema`. Only the files are required:
@@ -3706,22 +3672,29 @@ class IncomingIntakeForm(forms.Form):
             }
         ),
     )
-    #: Chips, and the long tail behind «Vali nimekirjast», exactly as `Uus
-    #: teema` does it. Two fields rather than one because a checkbox group
-    #: cannot be split without splitting the field; `clean` unions them back
-    #: into one answer, so nothing is privileged for having been on the
+    #: The shortlist chips and the searchable rest, exactly as `Uus teema` and
+    #: `Muuda teemat` split them. Two fields rather than one because a checkbox
+    #: group cannot be split without splitting the field; `clean` unions them
+    #: back into one answer, so nothing is privileged for having been on the
     #: shortlist (ADR 0025).
+    #:
+    #: `OrganisationCheckboxSelect` since 2026-10-10, not a plain one. The
+    #: widget is what writes each institution's recorded spellings onto its
+    #: control, and without it «MKM» found the ministry on the other two sender
+    #: pages and nothing here — on the page where a ministry's letter actually
+    #: lands (product decision D-4, AUD-011, docs/adr/0073 amendment of
+    #: 2026-10-10).
     source_organisations = forms.ModelMultipleChoiceField(
         label="Saatja või algataja",
         queryset=Organisation.objects.none(),
         required=False,
-        widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
+        widget=OrganisationCheckboxSelect(attrs={"class": "chip__input"}),
     )
     source_organisations_other = forms.ModelMultipleChoiceField(
         label="Muu saatja",
         queryset=Organisation.objects.none(),
         required=False,
-        widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
+        widget=OrganisationCheckboxSelect(attrs={"class": "chip__input"}),
     )
     #: Saatja's typed half, here too. Saabunud is where a letter from a body
     #: nobody has filed before is most likely to land, so of the three capture
@@ -3778,41 +3751,15 @@ class IncomingIntakeForm(forms.Form):
         set_choices(self, "owner", assignable_users())
         restrict_owner_to_self(self, viewer)
 
-        # Every organisation is a *valid* sender; only the frequent ones are
-        # offered as chips. Validation therefore runs against the full set —
-        # narrowing it to the visible few would reject a correct answer given
-        # through the search control.
-        everything = Organisation.objects.order_by("name")
-        set_choices(self, "source_organisations", everything)
-        set_choices(self, "source_organisations_other", everything)
-
-        self.frequent_senders: list[Organisation] = []
-        self.sender_tail_count = 0
-        if viewer is not None:
-            senders = cast(Any, self.fields["source_organisations"])
-            self.frequent_senders = list(organisations_by_usage(viewer))
-            senders.choices = [
-                (organisation.pk, organisation.name) for organisation in self.frequent_senders
-            ]
-            frequent = {organisation.pk for organisation in self.frequent_senders}
-            rest = cast(Any, self.fields["source_organisations_other"])
-            tail = [organisation for organisation in everything if organisation.pk not in frequent]
-            rest.choices = [(organisation.pk, organisation.name) for organisation in tail]
-            self.sender_tail_count = len(tail)
+        # Saatja, fed and unioned by the same mixin `Uus teema` and `Muuda
+        # teemat` use, so the chips, the tail, the order and the alias search
+        # are the same on all three sender pages (AUD-011).
+        self.attach_sender_choices(viewer)
 
     def clean(self) -> dict[str, Any]:
         cleaned = super().clean() or {}
-        # The two sender controls are two ways into one set, so the canonical
-        # answer is their union — the same rule `Uus teema` applies.
-        senders: dict[Any, Organisation] = {}
-        for source in ("source_organisations", "source_organisations_other"):
-            for organisation in cleaned.get(source) or []:
-                senders.setdefault(organisation.pk, organisation)
-        cleaned["source_organisations"] = sorted(senders.values(), key=lambda o: o.name)
+        self.clean_senders(cleaned)
         return cleaned
-
-    def clean_sender_name(self) -> str:
-        return clean_typed_organisation_name(self.cleaned_data.get("sender_name"))
 
 
 # ---------------------------------------------------------------------------
@@ -7956,9 +7903,8 @@ class MatterProgressForm(forms.Form):
         """The offer `Märgi ka menetluse kulgu` is drawn with, or ``None``.
 
         For the stage and the day the panel holds as it is drawn: none on a fresh
-        panel, whose select says «Jätan muutmata». The script re-decides on every
-        change (static/js/app.js, `bindPhaseDateOffers`); this is the answer
-        without it.
+        panel, whose select says «Jätan muutmata». No script re-decides it: no
+        template draws the controls the retired `bindPhaseDateOffers` drove.
         """
         offer = self.phase_offers.get(self._drawn_stage_key())
         if offer is None or not offer.allows(self._drawn_day(), self.today):
@@ -7995,8 +7941,8 @@ class MatterProgressForm(forms.Form):
 
         True when the day in the box — the default on a fresh panel, the typed
         value on a refused one — is after `today`. A value that does not read
-        as a date is not ahead. The script re-decides on every change of the box
-        (static/js/app.js, `bindNextStepOffers`); this is the answer without it.
+        as a date is not ahead. No script re-decides it: no template draws the
+        row the retired `bindNextStepOffers` drove.
         """
         value = self["occurred_on"].value()
         try:

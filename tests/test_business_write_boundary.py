@@ -221,12 +221,6 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         events=(ChangeEventType.MATTER_DELETED,),
     ),
     WriteRoute(
-        name="matters:set_data_class",
-        label="Andmeklassi muutmine",
-        request=lambda w: ({"pk": w["matter"].pk}, {"data_class": "TEST"}),
-        probe=lambda w: Matter.objects.values_list("data_class", flat=True).get(pk=w["matter"].pk),
-    ),
-    WriteRoute(
         name="matters:set_action",
         label="Järgmiseks määramine",
         request=lambda w: (
@@ -1765,6 +1759,9 @@ def test_a_specialist_may_still_do_ordinary_next_action_work(client, world):
     response = client.post(
         reverse("matters:set_action", kwargs={"pk": world["matter"].pk}),
         {
+            # The world's Matter already has an open step, so this is `Muuda`
+            # on it, naming the step as the real form does.
+            "action_id": str(world["action"].pk),
             "text": "Koosta arvamus",
             "kind": ActionKind.DO,
             "target_date": (timezone.localdate() + timedelta(days=7)).strftime("%d.%m.%Y"),

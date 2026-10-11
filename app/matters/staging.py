@@ -225,10 +225,23 @@ class MatterIntakeFile(BaseModel):
         null=True, blank=True, verbose_name="töötlemine algas"
     )
     extraction_note = models.CharField(max_length=300, blank=True, verbose_name="eraldamise märkus")
+    # How many times a worker has claimed this row since it was last asked for.
+    # A file that kills the worker outright (out of memory, a segfault in a
+    # native parser) never reaches a terminal write, so its stale claim would
+    # otherwise be re-taken — and the worker killed again — for ever. Bounded
+    # by EXTRACTION_MAX_ATTEMPTS, after which the claim settles it FAILED
+    # instead (AUD-045).
+    extraction_attempts = models.PositiveSmallIntegerField(
+        default=0, db_default=0, verbose_name="töötlemiskatseid"
+    )
     #: The parser's fragments, as JSON rather than as ``DocumentTextFragment``
     #: rows. Those belong to a ``DocumentVersion``, are what search reads and
     #: carry a rebuild contract; this is a handful of paragraphs read once, by
-    #: one caller, and deleted with the row.
+    #: one caller, and deleted with the row. Blanked earlier than that — with
+    #: ``text_character_count`` and ``email_metadata`` — the moment the session
+    #: is consumed or expires, because the row itself waits for an operator's
+    #: sweep and the text must not wait with it (`consume_session`,
+    #: `clear_expired_intake_text`, AUD-025).
     text = models.JSONField(default=list, blank=True, verbose_name="eraldatud tekst")
     #: What the budget planner reads, so a file whose text the analysis will not
     #: reach is never loaded (`intake_suggestions/input.py`).

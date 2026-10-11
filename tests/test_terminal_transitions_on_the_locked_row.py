@@ -18,15 +18,17 @@ import pytest
 
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
-from app.intelligence.enums import WorkVictoryStatus
+from app.intelligence.enums import FactStatus, WorkVictoryStatus
 from app.intelligence.models import MatterEffectiveDate, MatterImportantDate, MatterWorkVictory
 from app.intelligence.services import (
+    REMOVED_FACT_REFUSAL,
     add_work_victory_candidate,
     cancel_effective_date,
     cancel_important_date,
     confirm_work_victory,
     reject_work_victory,
 )
+from app.matters.removal import remove_matter_record
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
 from app.submissions.services import withdraw_submission
@@ -105,3 +107,48 @@ def test_a_decision_from_a_stale_tab_records_what_it_actually_overturned(
     assert rejection.payload["from_status"] == WorkVictoryStatus.CONFIRMED.value
     with refused("Töövõit on juba märgitud mitterealiseerunuks."):
         reject_work_victory(record=stale, actor=department_head)
+
+
+# A fact removed from the file after the page was drawn (AUD-052 WF-7). The
+# default manager does not hide removed rows, so the locked row's `removed_at`
+# is what refuses.
+
+
+def test_a_removed_milestone_cannot_be_cancelled_from_a_stale_copy(normal_matter, specialist):
+    record = factories.ImportantDateFactory(matter=normal_matter)
+    stale = MatterImportantDate.objects.get(pk=record.pk)
+    remove_matter_record(
+        matter_id=normal_matter.pk, kind_key="tahtaeg", record_id=record.pk, actor=specialist
+    )
+    events = ChangeEvent.objects.count()
+
+    with refused(REMOVED_FACT_REFUSAL):
+        cancel_important_date(record=stale, actor=specialist)
+
+    assert ChangeEvent.objects.count() == events
+    assert MatterImportantDate.objects.get(pk=record.pk).status == FactStatus.ACTIVE
+
+
+def test_a_removed_work_victory_cannot_be_confirmed_from_a_stale_copy(
+    normal_matter, specialist, department_head
+):
+    start, end = year_bounds(2026)
+    record = add_work_victory_candidate(
+        matter=normal_matter,
+        title="Ettepanek arvestati",
+        actor=specialist,
+        period_date=start,
+        period_end=end,
+        date_precision=DatePrecision.YEAR,
+    )
+    stale = MatterWorkVictory.objects.get(pk=record.pk)
+    remove_matter_record(
+        matter_id=normal_matter.pk, kind_key="toovoit", record_id=record.pk, actor=specialist
+    )
+    events = ChangeEvent.objects.count()
+
+    with refused(REMOVED_FACT_REFUSAL):
+        confirm_work_victory(record=stale, actor=department_head)
+
+    assert ChangeEvent.objects.count() == events
+    assert MatterWorkVictory.objects.get(pk=record.pk).confirmed_at is None

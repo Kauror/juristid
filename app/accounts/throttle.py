@@ -267,12 +267,30 @@ def _register_failure(row: AuthenticationThrottle, *, now: datetime) -> int:
     return seconds
 
 
-def charge(counters: list[Counter]) -> int:
-    """Count one failure against these counters, in a transaction of its own."""
+@dataclass(frozen=True)
+class Charge:
+    """What one charge found and did, read under the counters' row locks.
+
+    ``already_locked`` is the answer a caller acts on: `is_locked` is an
+    unlocked read, so two requests can both pass it and then reach the locks
+    one after the other — the later one finds the lockout the earlier one
+    earned and is not counted (AUD-052 AU-3).
+    """
+
+    already_locked: bool
+    wait: int
+
+
+def charge(counters: list[Counter]) -> Charge:
+    """Count one failure against these counters, in a transaction of its own.
+
+    Nothing is counted when a counter is already locked; the result says so,
+    decided on the locked rows, so the caller can refuse the act it guards.
+    """
     with transaction.atomic(), holding(counters) as held:
-        if held.wait():
-            return held.wait()
-        return held.fail()
+        if waiting := held.wait():
+            return Charge(already_locked=True, wait=waiting)
+        return Charge(already_locked=False, wait=held.fail())
 
 
 def is_locked(counters: list[Counter]) -> int:

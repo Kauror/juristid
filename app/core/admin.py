@@ -110,7 +110,8 @@ class UserAdmin(admin.ModelAdmin):
         return tuple(name for name in names if name not in editable and name != "password")
 
     def has_add_permission(self, request: Any) -> bool:
-        # `manage.py provision_user`, which refuses what the product would refuse.
+        # `manage.py provision_user`, which refuses what the product would refuse
+        # — or, under personal sign-in, Haldus → Kasutajad (AUD-051 AU-1).
         return False
 
     def has_delete_permission(self, request: Any, obj: Any = None) -> bool:

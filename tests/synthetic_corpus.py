@@ -405,11 +405,16 @@ def consultation_eml(
             filename="markmed.txt",
         )
     if inline_logo:
+        # Declared inline, the way a mail client sends a signature image. A
+        # Content-ID on a part whose disposition says `attachment` is an
+        # ordinary attachment and becomes a Document (AUD-047), so the fixture
+        # has to say what it means.
         part = message.add_attachment(
             scanned_png("LOGO"),
             maintype="image",
             subtype="png",
             filename="allkiri-logo.png",
+            disposition="inline",
             cid="<logo@naidisministeerium.invalid>",
         )
         del part  # add_attachment returns None; the cid is what matters
@@ -421,8 +426,15 @@ def malformed_eml() -> bytes:
     return "Subject: katkine\r\nFrom: keegi\r\n\x00\x00binaarne prügi".encode()
 
 
+#: The subject of the message `outlook_msg(embedded_message=True)` forwards.
+EMBEDDED_MSG_SUBJECT = "Edastatud kiri ministeeriumilt"
+
+
 def outlook_msg(
-    *, attachment: bool = True, extra_attachments: tuple[tuple[str, bytes], ...] = ()
+    *,
+    attachment: bool = True,
+    extra_attachments: tuple[tuple[str, bytes], ...] = (),
+    embedded_message: bool = False,
 ) -> bytes:
     """A synthetic Outlook message, built with `extract-msg`'s own OLE writer.
 
@@ -430,6 +442,11 @@ def outlook_msg(
     end. The property streams below are the minimum a real `.msg` carries for
     the fields Juristid extracts; anything more would be testing Outlook rather
     than this parser.
+
+    ``embedded_message`` adds a forwarded Outlook message as a last attachment,
+    stored the way Outlook stores one: an attachment storage with
+    ``PR_ATTACH_METHOD = afEmbeddedMessage`` and the inner message's own
+    streams in a sub-storage, not as bytes (AUD-046).
     """
     from extract_msg.ole_writer import OleWriter
 
@@ -462,8 +479,9 @@ def outlook_msg(
         )
     parts.extend(extra_attachments)
 
+    count = len(parts) + (1 if embedded_message else 0)
     writer = OleWriter()
-    header = b"\x00" * 8 + struct.pack("<IIII", 0, len(parts), 0, len(parts)) + b"\x00" * 8
+    header = b"\x00" * 8 + struct.pack("<IIII", 0, count, 0, count) + b"\x00" * 8
     properties = bytearray(header)
     for name, payload in streams.items():
         tag = int(name.rsplit("_", 1)[-1], 16)
@@ -498,6 +516,37 @@ def outlook_msg(
         writer.addEntry(f"{folder}/__properties_version1.0", bytes(attachment_properties))
         for name, blob in attachment_streams.items():
             writer.addEntry(name, blob)
+
+    if embedded_message:
+        folder = f"__attach_version1.0_#{len(parts):08X}"
+        # Outlook names an attached message after its subject, without `.msg`.
+        display = unicode_property(EMBEDDED_MSG_SUBJECT)
+        attachment_properties = bytearray(b"\x00" * 8)
+        # PR_ATTACH_METHOD (fixed-length, stored inline) = 5, afEmbeddedMessage.
+        attachment_properties += struct.pack("<IIII", 0x37050003, 6, 5, 0)
+        attachment_properties += struct.pack("<IIII", 0x3001001F, 6, len(display) + 2, 0)
+        attachment_properties += struct.pack("<IIII", 0x3701000D, 6, 0xFFFFFFFF, 0)
+        writer.addEntry(folder, storage=True)
+        writer.addEntry(f"{folder}/__properties_version1.0", bytes(attachment_properties))
+        writer.addEntry(f"{folder}/__substg1.0_3001001F", display)
+
+        inner = f"{folder}/__substg1.0_3701000D"
+        inner_streams = {
+            "__substg1.0_001A001F": unicode_property("IPM.Note"),
+            "__substg1.0_0037001F": unicode_property(EMBEDDED_MSG_SUBJECT),
+            "__substg1.0_1000001F": unicode_property(
+                "Tere\r\n\r\nEdastan ministeeriumi kirja.\r\n"
+            ),
+        }
+        # An embedded message's property header is 24 bytes, not 32.
+        inner_properties = bytearray(b"\x00" * 8 + struct.pack("<IIII", 0, 0, 0, 0))
+        for name, payload in inner_streams.items():
+            tag = int(name.rsplit("_", 1)[-1], 16)
+            inner_properties += struct.pack("<IIII", tag, 6, len(payload) + 2, 0)
+        writer.addEntry(inner, storage=True)
+        writer.addEntry(f"{inner}/__properties_version1.0", bytes(inner_properties))
+        for name, payload in inner_streams.items():
+            writer.addEntry(f"{inner}/{name}", payload)
 
     buffer = io.BytesIO()
     writer.write(buffer)

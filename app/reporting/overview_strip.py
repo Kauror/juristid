@@ -66,9 +66,15 @@ def _open_full() -> dict[str, Any]:
     return {"olek": "avatud", "liik": RecordMode.FULL.value}
 
 
-def _count(viewer: Any, params: dict[str, Any], today: date, population: Any) -> int:
+def _count(
+    viewer: Any,
+    params: dict[str, Any],
+    today: date,
+    population: Any,
+    shared_items: list[Any] | None = None,
+) -> int:
     return register_filters.register_population(
-        viewer, params, today=today, population=population
+        viewer, params, today=today, population=population, shared_items=shared_items
     ).count()
 
 
@@ -146,6 +152,12 @@ def rail(viewer: Any, today: date, results: dict[str, Any]) -> list[RailBlock]:
     """
     population = Matter.objects.visible_to(viewer)
     window_end = today + timedelta(days=DEADLINE_WINDOW_DAYS)
+    # **One read of the work model for the strip** (AUD-003). The two `?too=`
+    # rows each read it again through `filter_by_work_state` — two full reads
+    # of every open Matter's dated work per Statistika load, for one list. The
+    # department page has handed its read down since PERF-02; this is the same
+    # list for the same reader on the same day, so no number changes.
+    items = work_items.work_items(viewer, today=today)
 
     now_rows: list[Figure] = []
     for params, caption, tone in (
@@ -165,7 +177,12 @@ def rail(viewer: Any, today: date, results: dict[str, Any]) -> list[RailBlock]:
         ({**_open_full(), "tegevus": selectors.MISSING}, "järgmise tegevuseta", "warning"),
     ):
         now_rows.append(
-            Figure(_count(viewer, params, today, population), caption, register_url(**params), tone)
+            Figure(
+                _count(viewer, params, today, population, shared_items=items),
+                caption,
+                register_url(**params),
+                tone,
+            )
         )
 
     reporting_rows: list[Figure] = []

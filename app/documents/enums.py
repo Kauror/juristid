@@ -97,6 +97,11 @@ class ExtractionState(models.TextChoices):
     # run merely because a Matter now exists to hang it off — that re-read is
     # exactly the write amplification docs/adr/0072 was written to end. This
     # state is how the queue knows (app/matters/intake_staging.py).
+    #
+    # Written only while `Uus teema` offers the reading. With the suggestions
+    # withdrawn nobody looked at what was read, so promotion writes PENDING
+    # instead and the file is owed like any other upload (AUD-025, docs/adr/0072
+    # amendment 2026-10-10).
     INTAKE_READ = "INTAKE_READ", "Loetud teema loomisel"
 
 

@@ -106,19 +106,28 @@ def opinion_archive_distinct_binaries(context: ReportingContext) -> MetricResult
 # ---------------------------------------------------------------------------
 
 
+#: Said beside both coverage figures below, as `archive.py` says it beside its own.
+VISIBLE_MATTERS_ONLY_NOTE = "Loetakse ainult seoseid teemadega, mida sina näed."
+
+
 def opinion_archive_matter_coverage(context: ReportingContext) -> MetricResult:
-    """Share of archive files that reached a Matter, resolved or reviewed."""
+    """Share of archive files that reached a Matter, resolved or reviewed.
+
+    **The numerator is the reader's, the denominator the archive's** (AUD-044).
+    A file that reached a Matter names that Matter, so it counts only when the
+    reader may see the Matter — through `visible_candidates`, as the queue
+    figure beside it already did; a file linked to a restricted Matter would
+    otherwise move this percentage for somebody who may not know the Matter
+    exists. The inventory itself names no Matter and stays the whole archive,
+    the rule `archive.py`'s link coverage follows.
+    """
     spec = definition(keys.OPINION_ARCHIVE_MATTER_COVERAGE)
     total = OpinionArchiveItem.objects.count()
-    settled = count(
-        OpinionArchiveItem.objects.filter(
-            candidates__matter__isnull=False,
-            candidates__state__in=(
-                OpinionCandidateState.APPLIED,
-                OpinionCandidateState.LINKED,
-            ),
-        )
+    settled_candidates = visible_candidates(context).filter(
+        matter__isnull=False,
+        state__in=(OpinionCandidateState.APPLIED, OpinionCandidateState.LINKED),
     )
+    settled = count(OpinionArchiveItem.objects.filter(pk__in=settled_candidates.values("item_id")))
     percent = round(settled / total * 100) if total else 0
     return simple_result(
         spec,
@@ -128,6 +137,7 @@ def opinion_archive_matter_coverage(context: ReportingContext) -> MetricResult:
         coverage_count=settled,
         coverage_denominator=total,
         url=_queue_url(context, olek=OpinionCandidateState.PENDING.value),
+        notes=(VISIBLE_MATTERS_ONLY_NOTE,),
     )
 
 
@@ -144,9 +154,24 @@ def opinion_archive_unresolved(context: ReportingContext) -> MetricResult:
 
 
 def historical_submission_coverage(context: ReportingContext) -> MetricResult:
+    """Archive files reconstructed into a submission, as distinct bytes.
+
+    Scoped like the figure above (AUD-044): a reconstruction is a submission on
+    a Matter, so it counts only where the reader may see that submission
+    (`child_visibility_q`, the rule `_sent_submissions` follows). The
+    denominator is the archive inventory, which names no Matter.
+    """
     spec = definition(keys.HISTORICAL_SUBMISSION_COVERAGE)
     total = OpinionArchiveItem.objects.values("sha256").distinct().count()
-    reconstructed = OpinionSubmissionImport.objects.values("item__sha256").distinct().count()
+    visible_submissions = apply_scope(
+        Submission.objects.all(), child_visibility_q(scope_for_user(context.viewer))
+    )
+    reconstructed = (
+        OpinionSubmissionImport.objects.filter(submission__in=visible_submissions.values("pk"))
+        .values("item__sha256")
+        .distinct()
+        .count()
+    )
     percent = round(reconstructed / total * 100) if total else 0
     return simple_result(
         spec,
@@ -155,6 +180,7 @@ def historical_submission_coverage(context: ReportingContext) -> MetricResult:
         population_count=total,
         coverage_count=reconstructed,
         coverage_denominator=total,
+        notes=(VISIBLE_MATTERS_ONLY_NOTE,),
     )
 
 

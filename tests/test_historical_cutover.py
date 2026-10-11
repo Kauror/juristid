@@ -584,13 +584,13 @@ def test_a_historical_matter_is_still_reachable_in_teemad(client, specialist) ->
 
 def test_minu_too_stays_full_only(specialist) -> None:
     """The Stage 2F invariant. A retired archive row was never in it anyway."""
-    from app.matters.selectors import my_active_matters
+    from app.matters.work_items import open_matters
 
     register_matter(2014, owner=specialist)
-    assert my_active_matters(specialist).count() == 0
+    assert open_matters(specialist).filter(owner=specialist).count() == 0
 
     apply_cutover_plan(build_cutover_plan(cutover_year=CUTOVER))
-    assert my_active_matters(specialist).count() == 0
+    assert open_matters(specialist).filter(owner=specialist).count() == 0
 
 
 def test_visibility_is_untouched(specialist) -> None:

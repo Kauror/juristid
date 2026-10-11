@@ -99,6 +99,7 @@ from app.legacy_import.resolution import (
     resolve_status,
 )
 from app.matters.enums import MatterDataClass
+from app.matters.locks import lock_matters_in_order
 from app.matters.models import Matter
 
 #: Bumped when this operation's composition changes — a phase added, a field
@@ -812,6 +813,18 @@ def apply_refresh_plan(
             "The database no longer matches the approved plan "
             f"({fresh.digest[:16]}… against {expected[:16]}…). Nothing was written."
         )
+
+    # **Every Matter any phase will write, locked once, in one order** (AUD-043).
+    # Each phase locks its own Matters ascending, but three ascending runs in a
+    # row are not one: the outreach phase could ask for a Matter below one the
+    # cutover already holds, the order a two-Matter interactive writer takes
+    # the other way round. Taking the union first, ascending, at `FOR NO KEY
+    # UPDATE`, makes every later lock in this transaction a re-entry.
+    lock_matters_in_order(
+        *(candidate.matter.pk for candidate in fresh.cutover.candidates),
+        *(proposal.matter_id for proposal in fresh.next_actions.writing),
+        *outreach.matter_ids_for_references(link.reference for link in links).values(),
+    )
 
     cutover = apply_cutover_plan(fresh.cutover, actor=actor)
 

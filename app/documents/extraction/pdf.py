@@ -28,7 +28,12 @@ from app.documents.extraction.base import (
     registry,
 )
 from app.documents.extraction.errors import ExtractionFailed
-from app.documents.extraction.limits import current_limits, guard_character_budget
+from app.documents.extraction.limits import (
+    Limits,
+    bounded_render_scale,
+    current_limits,
+    guard_character_budget,
+)
 from app.documents.extraction.ocr import (
     OcrUnavailable,
     ocr_engine_version,
@@ -92,10 +97,12 @@ class PdfParser:
         ocr_text: dict[int, str] = {}
         ocr_version = ""
         ocr_note = ""
+        reduced_note = ""
         if thin and ocr_is_available():
             try:
                 ocr_version = ocr_engine_version()
-                ocr_text = _ocr_pages(source.content, thin)
+                ocr_text, reduced = _ocr_pages(source.content, thin, limits)
+                reduced_note = _reduced_resolution_note(reduced)
             except OcrUnavailable as error:  # pragma: no cover - probed above
                 ocr_note = f"OCR ei olnud kättesaadav: {error}"
         elif thin:
@@ -129,7 +136,9 @@ class PdfParser:
                 )
             )
 
-        notes = [note for note in (ocr_note, _coverage_note(fragments, page_count)) if note]
+        notes = [
+            note for note in (ocr_note, _coverage_note(fragments, page_count), reduced_note) if note
+        ]
         # A PDF that yields nothing at all is reported, not quietly stored as an
         # empty success. "Extraction complete, no text" and "extraction never
         # looked" are indistinguishable to everybody downstream.
@@ -192,22 +201,36 @@ def _native_text_per_page(reader: object, page_count: int) -> list[str]:
     return texts
 
 
-def _ocr_pages(content: bytes, pages: list[int]) -> dict[int, str]:
+def _ocr_pages(
+    content: bytes, pages: list[int], limits: Limits
+) -> tuple[dict[int, str], list[int]]:
     """Rasterise and recognise only the pages that need it.
 
     PDFium renders here rather than poppler: it arrives as a self-contained
     wheel, so there is no system package to install on one machine and forget on
     another (docs/adr/0014).
+
+    Returns the recognised text per page and the pages that had to be rendered
+    below the configured DPI to stay inside the pixel budget. The page size is
+    a claim the file makes, and PDFium allocates whatever it claims before any
+    later guard runs (AUD-045); an oversized page is still read, just more
+    coarsely, and the result says so rather than looking like a normal OCR.
     """
     import pypdfium2
 
-    scale = settings.EXTRACTION_OCR_DPI / 72
+    wanted = settings.EXTRACTION_OCR_DPI / 72
     results: dict[int, str] = {}
+    reduced: list[int] = []
     document = pypdfium2.PdfDocument(io.BytesIO(content))
     try:
         for number in pages:
             try:
-                bitmap = document[number - 1].render(scale=scale)
+                page = document[number - 1]
+                width, height = page.get_size()
+                scale = bounded_render_scale(width, height, wanted, limits)
+                if scale < wanted:
+                    reduced.append(number)
+                bitmap = page.render(scale=scale)
                 image = bitmap.to_pil()
             except Exception:
                 logger.warning("PDF page %d could not be rasterised for OCR", number)
@@ -218,7 +241,19 @@ def _ocr_pages(content: bytes, pages: list[int]) -> dict[int, str]:
                 image.close()
     finally:
         document.close()
-    return results
+    return results, reduced
+
+
+def _reduced_resolution_note(pages: list[int]) -> str:
+    if not pages:
+        return ""
+    listed = ", ".join(str(number) for number in pages[:10])
+    if len(pages) > 10:
+        listed += ", …"
+    return (
+        f"{len(pages)} lehekülge (lk {listed}) olid OCR jaoks liiga suured ja loeti "
+        "vähendatud eraldusvõimega; tekst võib olla ebatäpsem."
+    )
 
 
 def _coverage_note(fragments: list[Fragment], page_count: int) -> str:

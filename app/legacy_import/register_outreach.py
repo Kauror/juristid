@@ -72,13 +72,16 @@ import hashlib
 import json
 import re
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
 from django.db import transaction
+from django.db.models import Q
 
 from app.legacy_import.models import OutreachChannel, RegisterEngagementImport
 from app.matters.enums import EngagementKind
+from app.matters.locks import lock_matter_for_write, lock_matters_in_order
 from app.matters.models import Matter, MatterEngagement
 from app.matters.services import add_engagement, update_engagement
 from app.search.indexing import indexable_matters, refresh_matters
@@ -681,6 +684,24 @@ def campaign_note(enqueues: int | None) -> str:
     return f"Sendsmaily adressaate: {enqueues}" if enqueues is not None else ""
 
 
+def matter_ids_for_references(references: Iterable[str]) -> dict[str, Any]:
+    """`YYYY_N` -> the Matter it names, read without a lock. Unknown ones are absent."""
+    pairs = {
+        pair for pair in (Matter.parse_reference(reference) for reference in references) if pair
+    }
+    if not pairs:
+        return {}
+    by_pair = Q()
+    for year, number in sorted(pairs):
+        by_pair |= Q(reference_year=year, reference_number=number)
+    return {
+        matter.display_reference: matter.pk
+        for matter in Matter.objects.filter(by_pair).only(
+            "pk", "reference_year", "reference_number"
+        )
+    }
+
+
 @transaction.atomic
 def apply_mapping(
     *, links: tuple[ReviewedLink, ...], expect_mapping_sha256: str, actor: Any = None
@@ -703,14 +724,16 @@ def apply_mapping(
         )
 
     references = sorted({link.reference for link in links})
-    matters = {
-        matter.display_reference: matter
-        for matter in Matter.objects.filter(reference_number__isnull=False).select_for_update()
-        if matter.display_reference in references
-    }
-    missing = [reference for reference in references if reference not in matters]
+    named = matter_ids_for_references(references)
+    missing = [reference for reference in references if reference not in named]
     if missing:
         raise MappingError(f"Mapping names Matters this database does not hold: {missing}.")
+    # Only the Matters the mapping names, ascending, `FOR NO KEY UPDATE`
+    # (AUD-043). This used to lock every Matter that has a reference -- native
+    # ones too -- in one unordered `FOR UPDATE`, the shape `app.matters.locks`
+    # forbids, and hold them all for the rest of the refresh.
+    lock_matters_in_order(*named.values())
+    matters = {reference: lock_matter_for_write(pk) for reference, pk in named.items()}
 
     existing = {
         (row.matter_id, row.channel, row.source_key): row

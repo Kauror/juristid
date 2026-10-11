@@ -42,6 +42,9 @@ from app.matters.models import Matter
 
 logger = logging.getLogger(__name__)
 
+#: The column's own bound, read off the model so the two cannot drift.
+_EXTRACTION_NOTE_LENGTH: int = DocumentVersion._meta.get_field("extraction_note").max_length or 300
+
 #: Roles `↑ Lae dokument` refuses outright, not merely leaves off its menu.
 #:
 #: `KODA_SUBMISSION_FINAL` — «Arvamus». A file uploaded under it was an opinion
@@ -406,15 +409,19 @@ def add_evidence_version(
     source_identifier: str = "",
     sharepoint_item_version: str = "",
     extraction_state: str = ExtractionState.PENDING,
+    extraction_note: str = "",
     make_current: bool = True,
 ) -> DocumentVersion:
     """Store one immutable binary as the next version of ``document``.
 
     ``extraction_state`` is the caller's when the caller already knows. Every
     ordinary upload leaves it ``PENDING`` — nothing has read the bytes — but a
-    file promoted out of `Uus teema` was read while the form was open, and
-    saying so is what keeps a corpus run from reading it a second time
-    (``INTAKE_READ``; app/matters/intake_staging.py, docs/adr/0072).
+    file promoted out of `Uus teema` while the form offered its reading was read
+    for that form, and saying so is what keeps a corpus run from reading it a
+    second time (``INTAKE_READ``; app/matters/intake_staging.py, docs/adr/0072).
+    ``extraction_note`` goes with it: a version that arrives already FAILED
+    must say why, or nobody can (DX-4). Truncated to the column, as every
+    other writer of that note does.
 
     There is no ``malware_scan_state`` parameter. The column still exists on
     the model and still defaults to ``PENDING``, and nothing anywhere reads it
@@ -468,6 +475,7 @@ def add_evidence_version(
             source_identifier=source_identifier,
             sharepoint_item_version=sharepoint_item_version,
             extraction_state=extraction_state,
+            extraction_note=extraction_note[:_EXTRACTION_NOTE_LENGTH],
         )
 
         if make_current:

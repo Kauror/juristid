@@ -15,7 +15,7 @@ from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
-from app.matters import selectors
+from app.matters import dashboard
 from app.matters.services import close_matter
 from app.submissions.enums import RecipientRole
 from app.submissions.models import SubmissionJointSubmitter, SubmissionRecipient
@@ -281,7 +281,7 @@ def test_matters_without_next_action_finds_the_quiet_ones(specialist):
     busy = factories.MatterFactory(owner=specialist)
     set_next_action(matter=busy, text="Tegevus", target_date=_days(3), actor=specialist)
 
-    found = set(selectors.matters_without_next_action(specialist).values_list("id", flat=True))
+    found = set(dashboard.without_next_action(specialist).values_list("id", flat=True))
     assert quiet.id in found
     assert busy.id not in found
 
@@ -293,14 +293,14 @@ def test_a_closed_matter_is_not_flagged_as_missing_a_next_step(specialist):
         follow_ups_confirmed=True, matter=matter, disposition="COMPLETED", actor=specialist
     )
 
-    found = set(selectors.matters_without_next_action(specialist).values_list("id", flat=True))
+    found = set(dashboard.without_next_action(specialist).values_list("id", flat=True))
     assert matter.id not in found
 
 
 def test_an_archive_matter_is_not_flagged_either(specialist):
     """Archive rows never had a next step and are not supposed to acquire one."""
     archive = factories.ArchiveMatterFactory()
-    found = set(selectors.matters_without_next_action(specialist).values_list("id", flat=True))
+    found = set(dashboard.without_next_action(specialist).values_list("id", flat=True))
     assert archive.id not in found
 
 
@@ -308,4 +308,4 @@ def test_the_query_respects_authorization(specialist, reader):
     from app.core.enums import Visibility
 
     factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
-    assert selectors.matters_without_next_action(reader).count() == 0
+    assert dashboard.without_next_action(reader).count() == 0

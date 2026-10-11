@@ -556,6 +556,61 @@ def _deletion_order(owned: _Owned) -> list[str]:
     return order
 
 
+def deletion_may_be_offered(matter: Matter) -> bool:
+    """Whether the header may offer `Kustuta`, without walking the ownership graph.
+
+    `plan_matter_deletion` is the authoritative answer, and it stays where the
+    answer is acted on: the confirmation page renders it and `delete_matter`
+    rebuilds it under the row lock. Asked on every writer's Teema page only to
+    decide whether to draw one link, the walk was most of the page — 105–109
+    queries, 127–205 ms (AUD-002).
+
+    So the offer asks the blockers that are facts about this Matter's own rows,
+    each one `EXISTS`, in the order the plan checks them:
+
+    * a document under a legal hold (`BLOCKED_BY_LEGAL_HOLD`);
+    * another Matter naming this one as its successor (`BLOCKED_BY_RELATED_MATTER`);
+    * a corrected entry, whose append-only revisions would keep it alive
+      (`BLOCKED_BY_APPEND_ONLY_CHILD`, `EntryRevision` — the case that exists);
+    * the cross-Matter dependencies the walk exists to find
+      (`BLOCKED_BY_OUTSIDE_REFERENCE`, `BLOCKED_BY_STRADDLING_ROW`): another
+      Matter's opinion standing on a version filed here, another Matter citing
+      an opinion of this one as background, and an e-mail attachment link that
+      joins a version here to one elsewhere.
+
+    A blocker none of these names — a structural one a future relation adds
+    before this list learns it — is still refused, by the confirmation page and
+    by `delete_matter`, exactly as before (docs/adr/0120 §7, amended
+    2026-10-10). The offer can only be wrong towards offering; it never hides
+    a deletion that could succeed.
+    """
+    from app.documents.derivatives import EmailAttachmentLink
+    from app.documents.models import Document
+    from app.matters.models import EntryRevision
+    from app.related_materials.models import MatterBackgroundMaterial
+    from app.submissions.models import Submission
+
+    pk = matter.pk
+    blocked = (
+        Document._base_manager.filter(matter_id=pk, legal_hold=True),
+        Matter.all_objects.filter(superseded_by=pk).exclude(pk=pk),
+        EntryRevision.objects.filter(entry__matter_id=pk),
+        Submission._base_manager.filter(final_version__document__matter_id=pk).exclude(
+            matter_id=pk
+        ),
+        MatterBackgroundMaterial._base_manager.filter(submission__matter_id=pk).exclude(
+            matter_id=pk
+        ),
+        EmailAttachmentLink._base_manager.filter(parent_version__document__matter_id=pk).exclude(
+            attachment_version__document__matter_id=pk
+        ),
+        EmailAttachmentLink._base_manager.filter(
+            attachment_version__document__matter_id=pk
+        ).exclude(parent_version__document__matter_id=pk),
+    )
+    return not any(queryset.exists() for queryset in blocked)
+
+
 def plan_matter_deletion(matter: Matter) -> DeletionPlan:
     """Inventory what deleting this Matter would do. Reads only.
 

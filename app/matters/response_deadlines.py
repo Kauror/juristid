@@ -103,10 +103,17 @@ def _checked_submission(locked: Matter, submission: Any) -> Any:
     if submission is None:
         return None
     from app.submissions.enums import SubmissionStatus
+    from app.submissions.models import Submission
 
     if submission.matter_id != locked.pk:
         raise DomainError(FOREIGN_SUBMISSION)
-    if submission.status != SubmissionStatus.SENT:
+    # Decided on the row as it is under the Matter's lock, not on the copy the
+    # form loaded before it: an opinion withdrawn in between answers nothing
+    # (AUD-052 WF-2). A withdrawal takes this Matter's lock first, so it cannot
+    # land between this read and the write that follows.
+    if not Submission.objects.filter(
+        pk=submission.pk, matter_id=locked.pk, status=SubmissionStatus.SENT
+    ).exists():
         raise DomainError(UNSENT_SUBMISSION)
     return submission
 

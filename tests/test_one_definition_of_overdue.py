@@ -38,8 +38,6 @@ from pathlib import Path
 
 import pytest
 
-from app.intelligence import selectors as isel
-from app.intelligence.enums import EventKind
 from app.matters import overview as ov
 
 pytestmark = pytest.mark.django_db
@@ -131,55 +129,3 @@ def test_the_area_line_carries_the_day_it_was_read_against(department_head):
     late = _area_line(department_head, deadline + datetime.timedelta(days=5), deadline)
 
     assert late.is_overdue is True
-
-
-# ---------------------------------------------------------------------------
-# The calendar rows
-# ---------------------------------------------------------------------------
-
-
-def _entry(kind, period_end, today):
-    record = type("Rec", (), {"period_end": period_end})()
-    field = "important_date" if kind == EventKind.IMPORTANT_DATE else "effective_date"
-    return isel.CalendarEntry(event_kind=kind.value, today=today, **{field: record})
-
-
-def test_a_passed_deadline_is_late():
-    today = datetime.date(2026, 9, 2)
-
-    entry = _entry(EventKind.IMPORTANT_DATE, today - datetime.timedelta(days=1), today)
-
-    assert entry.is_overdue is True
-
-
-def test_a_passed_commencement_is_never_late():
-    """*Jõustuvad aktid* is not a list of obligations.
-
-    A commencement that has passed is not a failure — the act came into force,
-    which is the thing everybody was waiting for (02-EKRAANID §D). The old
-    template knew this and said so with `not row.is_effective_date`; the rule
-    now lives where the tense does.
-    """
-    today = datetime.date(2026, 9, 2)
-
-    entry = _entry(EventKind.EFFECTIVE_DATE, today - datetime.timedelta(days=1), today)
-
-    assert entry.is_overdue is False
-    assert entry.has_taken_effect is True
-
-
-def test_a_future_commencement_has_not_taken_effect():
-    today = datetime.date(2026, 9, 2)
-
-    entry = _entry(EventKind.EFFECTIVE_DATE, today + datetime.timedelta(days=1), today)
-
-    assert entry.has_taken_effect is False
-
-
-def test_a_row_with_no_end_date_is_neither_late_nor_in_force():
-    """An approximate date can carry no period end, and `None < today` is a
-    `TypeError` in Python and a silent falsehood in a Django template."""
-    today = datetime.date(2026, 9, 2)
-
-    assert _entry(EventKind.IMPORTANT_DATE, None, today).is_overdue is False
-    assert _entry(EventKind.EFFECTIVE_DATE, None, today).has_taken_effect is False

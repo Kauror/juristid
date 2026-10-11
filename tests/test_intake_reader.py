@@ -32,6 +32,7 @@ import pytest
 from django.conf import settings as django_settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
+from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -430,6 +431,7 @@ def test_polling_the_status_route_reads_and_never_parses(signed_in, evidence_roo
 # ---------------------------------------------------------------------------
 
 
+@override_settings(MATTER_INTAKE_SUGGESTIONS_ENABLED=True)
 def test_a_promoted_file_is_not_read_again_by_the_corpus_worker(signed_in, evidence_root):
     """§27.25 — the second half of §7, at the point it would have happened.
 
@@ -437,6 +439,11 @@ def test_a_promoted_file_is_not_read_again_by_the_corpus_worker(signed_in, evide
     the ordinary worker would parse the same bytes a second time. It no longer
     does, and the proof is that a corpus run started immediately afterwards
     finds nothing to do.
+
+    **With the suggestions on**, since 2026-10-10 (AUD-025, D-6): only a reading
+    the form actually offered settles the file. With them off — the shipped
+    default — the same file is promoted PENDING and is owed, which
+    `tests/test_intake_reader_truthful_state.py` asserts.
     """
     session = stage(signed_in, upload())
     run_reader()
@@ -505,9 +512,14 @@ def test_the_promoted_state_is_a_table_rather_than_a_guess():
 
     Asserted directly on the mapping, so a new `ExtractionState` cannot quietly
     fall through to "read me again" without somebody choosing that.
+
+    ``DONE`` is asked with the form's answer spelled out: since 2026-10-10 it
+    settles as INTAKE_READ only when the form offered the reading, and is owed
+    (PENDING) otherwise (AUD-025, D-6, docs/adr/0072 amendment).
     """
     promoted = intake_staging.promoted_extraction_state
-    assert promoted(ExtractionState.DONE) == ExtractionState.INTAKE_READ
+    assert promoted(ExtractionState.DONE, suggestions_offered=True) == ExtractionState.INTAKE_READ
+    assert promoted(ExtractionState.DONE, suggestions_offered=False) == ExtractionState.PENDING
     assert promoted(ExtractionState.NOT_APPLICABLE) == ExtractionState.NOT_APPLICABLE
     assert promoted(ExtractionState.FAILED) == ExtractionState.FAILED
     assert promoted(ExtractionState.PENDING) == ExtractionState.PENDING
@@ -545,7 +557,7 @@ def test_a_dead_readers_claim_comes_back_on_the_readers_own_clock(
     A reader that dies holding a claim leaves the row `PROCESSING`. Waiting the
     corpus worker's thirty minutes to reclaim it would strand somebody's form
     for longer than they would keep the page open — and a staged file is
-    bounded by `MAX_INTAKE_UPLOAD_BYTES` and finishes in seconds, so a claim
+    bounded by `MAX_EVIDENCE_UPLOAD_BYTES` and finishes in seconds, so a claim
     older than five minutes belongs to a reader that is not coming back.
     """
     session = stage(signed_in, upload())

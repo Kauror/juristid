@@ -19,6 +19,7 @@ from app.audit.models import ChangeEvent
 from app.matters import selectors
 from app.matters.deletion import plan_matter_deletion
 from app.matters.models import Matter
+from app.matters.response_deadlines import change_response_deadline
 from app.matters.services import (
     assign_matter,
     change_stage,
@@ -147,16 +148,13 @@ def test_setting_one_institution_leaves_the_other_alone(normal_matter, specialis
 
 
 def test_dates_are_recorded_and_clearable(normal_matter, specialist):
-    set_matter_dates(
-        matter=normal_matter,
-        received_date=_days(-5),
-        response_deadline=_days(10),
-        actor=specialist,
-    )
+    set_matter_dates(matter=normal_matter, received_date=_days(-5), actor=specialist)
+    change_response_deadline(matter=normal_matter, deadline=_days(10), actor=specialist)
     normal_matter.refresh_from_db()
     assert normal_matter.received_date == _days(-5)
+    assert normal_matter.response_deadline == _days(10)
 
-    set_matter_dates(matter=normal_matter, response_deadline=None, actor=specialist)
+    change_response_deadline(matter=normal_matter, deadline=None, actor=specialist)
     normal_matter.refresh_from_db()
     assert normal_matter.response_deadline is None
     assert normal_matter.received_date == _days(-5)

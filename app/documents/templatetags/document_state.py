@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from django import template
 
+from app.documents.enums import ExtractionState
 from app.documents.preview import STATE_LABELS, STATE_TONES
 
 register = template.Library()
@@ -21,7 +22,18 @@ register = template.Library()
 
 @register.filter
 def extraction_label(state: str) -> str:
-    return STATE_LABELS.get(state, state)
+    """The page's own words for a state, else the enum's label — never its value.
+
+    The fallback is the enum's label rather than the raw value, so a state added
+    to `ExtractionState` without a line in `STATE_LABELS` still reads as Estonian
+    rather than as `INTAKE_READ` did on the version table (DX-6).
+    """
+    if state in STATE_LABELS:
+        return STATE_LABELS[state]
+    try:
+        return str(ExtractionState(state).label)
+    except ValueError:
+        return state
 
 
 @register.filter

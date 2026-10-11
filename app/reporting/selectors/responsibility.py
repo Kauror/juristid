@@ -9,8 +9,7 @@ steps and the order is load-bearing:
    resolved account on purpose. Colleagues named in the register have no login
    here, and grouping by ``Matter.owner`` would file them under *Määramata* —
    discarding the one thing the register is certain about. Inventing an account
-   to hold them would be worse (Stage-2F owner resolver, and the same reasoning
-   as ``app.matters.dashboard.source_responsibility``).
+   to hold them would be worse (Stage-2F owner resolver).
 2. **The canonical ``Matter.owner``**, for genuinely native work that has no
    register row behind it. Current staff appear under their display name.
 3. **``Määramata``**, only when neither exists. A source that names somebody

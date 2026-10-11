@@ -31,10 +31,6 @@ REQUIRED_MARKER = mark_safe(
 )
 
 
-def required_marker() -> SafeString:
-    return REQUIRED_MARKER
-
-
 @register.simple_tag
 def field_label(bound_field: Any) -> SafeString:
     """The field's label, with the required marker when the field must be filled in."""
@@ -44,14 +40,14 @@ def field_label(bound_field: Any) -> SafeString:
         return format_html("{}", bound_field.get("label", ""))
     label = conditional_escape(bound_field.label)
     if is_required(bound_field):
-        return format_html("{}{}", label, required_marker())
+        return format_html("{}{}", label, REQUIRED_MARKER)
     return format_html("{}", label)
 
 
 @register.simple_tag
 def required_mark() -> SafeString:
     """The marker alone, for a label whose text is not a form field's."""
-    return required_marker()
+    return REQUIRED_MARKER
 
 
 @register.filter(name="is_required")

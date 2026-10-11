@@ -206,6 +206,15 @@ class DocumentVersion(BaseModel):
     # that no parser handles has no derivative at all, and this is where its
     # reason lives.
     extraction_note = models.CharField(max_length=300, blank=True, verbose_name="eraldamise märkus")
+    # How many times a worker has claimed this row since it was last asked for.
+    # A file that kills the worker outright (out of memory, a segfault in a
+    # native parser) never reaches a terminal write, so its stale claim would
+    # otherwise be re-taken — and the worker killed again — for ever. Bounded
+    # by EXTRACTION_MAX_ATTEMPTS, after which the claim settles it FAILED
+    # instead (AUD-045).
+    extraction_attempts = models.PositiveSmallIntegerField(
+        default=0, db_default=0, verbose_name="töötlemiskatseid"
+    )
 
     class Meta:
         verbose_name = "dokumendi versioon"

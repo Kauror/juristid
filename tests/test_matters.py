@@ -65,7 +65,7 @@ def test_full_and_archive_matters_coexist_in_one_model(specialist):
 
     assert Matter.objects.count() == 2
     assert full in Matter.objects.full_records()
-    assert archive in Matter.objects.archive_records()
+    assert archive in Matter.objects.filter(record_mode=RecordMode.ARCHIVE)
     assert archive.origin == MatterOrigin.LEGACY_IMPORT
 
 

@@ -1127,3 +1127,37 @@ def test_the_opinions_being_written_count_as_drafting_with_no_draft_created(
     drafting = {m.display_reference for m in drafting_matters(reader)}
     assert drafting == {"2026_1", "2026_2", "2026_3"}
     assert not Submission.objects.filter(status=SubmissionStatus.DRAFT).exists()
+
+
+def test_the_apply_leaves_every_record_it_wrote_findable(world, workbook, selection, pilot_on):
+    """AUD-042: notes, sent opinions and placeholder documents are indexed at once.
+
+    The apply used to suspend the child handlers and refresh only the Matter
+    rows, so `check_search_integrity --full` found every note, opinion and
+    document missing until somebody rebuilt the index.
+    """
+    from app.documents.models import Document
+    from app.search.management.commands.check_search_integrity import build_report
+    from app.search.models import SearchDocument, SearchSourceKind
+
+    _apply(workbook, _manifest(workbook, selection))
+
+    pilot = Matter.all_objects.filter(reference_year=2026)
+    entries = Entry.objects.filter(matter__in=pilot)
+    submissions = Submission.objects.filter(matter__in=pilot)
+    documents = Document.objects.filter(matter__in=pilot)
+    assert entries.exists() and submissions.exists() and documents.exists()
+
+    def indexed(kind: str) -> set:
+        return set(
+            SearchDocument.objects.filter(source_kind=kind).values_list(
+                "source_object_id", flat=True
+            )
+        )
+
+    assert set(pilot.values_list("pk", flat=True)) <= indexed(SearchSourceKind.MATTER)
+    assert set(entries.values_list("pk", flat=True)) <= indexed(SearchSourceKind.ENTRY)
+    assert set(submissions.values_list("pk", flat=True)) <= indexed(SearchSourceKind.SUBMISSION)
+
+    report = build_report(full=True)
+    assert report.ok, [f"{finding.label}: {finding.detail}" for finding in report.findings]

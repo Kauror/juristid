@@ -307,3 +307,45 @@ def test_the_denominators_are_read_once_per_page(client, department_head):
     assert not repeated, "a statement ran more than three times on one page: " + "; ".join(
         f"x{count}" for count in repeated.values()
     )
+
+
+# ---------------------------------------------------------------------------
+# AUD-003 / AUD-009 — Statistika and Osakond's incoming rail share the one read
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("persona", ["department_head", "specialist", "administrator"])
+def test_statistika_reads_the_work_model_once(client, counting, persona, request):
+    """The strip's two `?too=` rows used to read it once each (AUD-003)."""
+    client.force_login(request.getfixturevalue(persona))
+
+    assert client.get(reverse("reporting:overview")).status_code == 200
+    assert sum(counting) == 1
+
+
+def test_the_strip_figures_are_the_same_with_one_read(department_head, specialist, today):
+    """Praegu's five figures equal their register lists counted without sharing."""
+    from app.reporting import overview_strip
+
+    _seeded(specialist, today)
+    praegu = overview_strip.rail(department_head, today, {})[0]
+    assert praegu.rows
+    for figure in praegu.rows:
+        assert figure.value == _count_fresh(department_head, today, figure.url), figure
+
+
+def test_the_incoming_rail_counts_the_same_with_the_shared_list(department_head, specialist, today):
+    _seeded(specialist, today)
+    items = wi.work_items(department_head, today=today)
+
+    assert dd.incoming_rail(department_head, today, items=items) == dd.incoming_rail(
+        department_head, today
+    )
+
+
+def _count_fresh(user, today, url: str) -> int:
+    """The register population the figure links to, counted without any sharing."""
+    from urllib.parse import parse_qsl, urlsplit
+
+    params = dict(parse_qsl(urlsplit(url).query))
+    return rf.register_population(user, params, today=today).count()

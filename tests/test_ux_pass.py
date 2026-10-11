@@ -27,7 +27,6 @@ from app.matters import department as dep
 from app.matters import department_dashboard as dd
 from app.matters.services import (
     add_entry,
-    assign_matter,
     change_stage,
     close_matter,
     create_matter,
@@ -287,44 +286,13 @@ def test_today_says_today_and_nobody_says_so_in_more_than_colour(client, departm
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.django_db
-def test_adjacent_system_events_fold_and_a_note_breaks_the_run(
-    specialist, other_specialist
-) -> None:
-    """Folding is by adjacency in the rendered order, not by kind.
-
-    A colleague's note between two field changes is what the reader came for, so
-    the run stops there. Folding across it would hide the shape of the file's
-    month (design handoff 1b).
-    """
-    from app.matters import timeline as tl
-
-    matter = factories.MatterFactory(owner=specialist)
-    change_stage(matter=matter, stage=factories.StageFactory(), actor=specialist)
-    add_entry(matter=matter, author=specialist, body="<p>Kohtusin ministeeriumiga.</p>")
-    change_stage(matter=matter, stage=factories.StageFactory(), actor=specialist)
-    assign_matter(matter=matter, owner=other_specialist, actor=specialist)
-
-    items, _ = tl.matter_timeline(matter=matter, user=specialist)
-    rows = tl.collapse_system_runs(items)
-
-    runs = [row for row in rows if row.is_run]
-    assert runs, "adjacent system events must fold into one row"
-    assert all(item.is_system for row in runs for item in row.items)
-    assert any(not row.is_run and row.item.is_entry for row in rows), (
-        "a note is its own line and is never inside a run"
-    )
-    # Nothing is dropped by folding.
-    assert sum(row.count for row in rows) == len(items)
-
-
 def _three_system_events(actor) -> object:
     """A Matter whose first three timeline events sit together in one run.
 
     Through `create_matter` rather than the factory, because the point of these
     tests is the `MATTER_CREATED` event and the factory writes the row without
-    one. Nothing else is added between them, so `collapse_system_runs` folds all
-    three into a single line.
+    one. Nothing else is added between them, so the retired folding would have
+    put all three on a single line.
     """
     matter = create_matter(title="Pakendiseaduse muutmise eelnõu", actor=actor, owner=actor)
     change_stage(matter=matter, stage=factories.StageFactory(), actor=actor)
@@ -340,62 +308,6 @@ def _three_system_events(actor) -> object:
 
 
 @pytest.mark.django_db
-def test_the_folded_run_holding_the_creation_says_when_the_file_started(specialist) -> None:
-    """«Teema loodud 25.08, tegevusi 3», and nothing about event types.
-
-    The two facts a reader deciding whether to open the row can act on: when
-    this file began, and how much is folded in here. The row used to lead with
-    «3 süsteemimuudatust — Järgmiseks määratud, Tõendiversioon lisatud, Teema
-    loodud», which is the application reading its own event vocabulary out at
-    somebody — at the top of nearly every Matter, since a file's own creation
-    ends up in a run on almost all of them.
-    """
-    from app.core.dates import short_day_month
-    from app.matters import timeline as tl
-
-    matter = _three_system_events(specialist)
-
-    items, _ = tl.matter_timeline(matter=matter, user=specialist)
-    runs = [row for row in tl.collapse_system_runs(items) if row.is_run]
-
-    assert len(runs) == 1
-    run = runs[0]
-    # **Two, not three, since docs/adr/0092 §8.** The step this save set is the
-    # one that is still open, and an open `Järgmiseks` reads at the top of the
-    # page under `PRAEGUNE TEGEVUS` rather than a second time as history. What
-    # this test is about — that the summary names the creation day and a count,
-    # and recites no event vocabulary — is unchanged.
-    assert run.count == 2
-    assert run.summary == f"Teema loodud {short_day_month(timezone.localdate())}, tegevusi 2"
-    for word in ("süsteemimuudatus", "Järgmiseks määratud", "Hetkeseis muudetud"):
-        assert word not in run.summary
-
-
-@pytest.mark.django_db
-def test_a_later_system_run_never_claims_a_creation_date(specialist, other_specialist) -> None:
-    """A run that does not hold the creation must not print one.
-
-    The quiet form is a count and nothing else. Naming the file's creation on a
-    run of two ordinary field changes would be the summary stating a fact its
-    own contents do not contain, and picking the earliest day *in the run* to
-    print it with would be a manufactured creation date.
-    """
-    from app.matters import timeline as tl
-
-    matter = factories.MatterFactory(owner=specialist)
-    change_stage(matter=matter, stage=factories.StageFactory(), actor=specialist)
-    assign_matter(matter=matter, owner=other_specialist, actor=specialist)
-
-    items, _ = tl.matter_timeline(matter=matter, user=specialist)
-    run = next(row for row in tl.collapse_system_runs(items) if row.is_run)
-
-    assert run.created_on is None
-    assert run.summary == f"Tegevusi {run.count}"
-    for word in ("Teema loodud", "süsteemimuudatus", "Hetkeseis muudetud", "Teema määratud"):
-        assert word not in run.summary
-
-
-@pytest.mark.django_db
 def test_the_events_a_folded_run_used_to_hide_are_all_on_the_page(client, specialist) -> None:
     """The collapsed «tegevusi 3 — näita ▸» row is gone, and nothing went with it.
 
@@ -405,9 +317,7 @@ def test_the_events_a_folded_run_used_to_hide_are_all_on_the_page(client, specia
     on its own line instead of behind a disclosure counting them
     (TEEMA_TARGET_SPEC §E, docs/adr/0074 §14).
 
-    `collapse_system_runs` itself is unchanged and still tested above: it is a
-    projection helper, not a page. What changed is that the Teema page stopped
-    calling it.
+    The folding helper went with it (docs/adr/0074 §14).
     """
     from app.audit.enums import ChangeEventType
     from app.audit.models import ChangeEvent

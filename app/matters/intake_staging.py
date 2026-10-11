@@ -40,7 +40,7 @@ from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import storages
 from django.db import transaction
-from django.db.models import Max
+from django.db.models import Max, Q
 from django.utils import timezone
 
 from app.core.errors import DomainError
@@ -48,6 +48,7 @@ from app.core.ids import uuid7
 from app.documents.enums import ExtractionState
 from app.documents.uploads import AcceptedUpload
 from app.matters.intake import MAX_INTAKE_FILES, file_incoming, role_for
+from app.matters.intake_suggestions.availability import create_form_suggestions_offered
 from app.matters.staging import MatterIntakeFile, MatterIntakeSession
 
 logger = logging.getLogger(__name__)
@@ -306,10 +307,14 @@ def remove_file(*, session: MatterIntakeSession, file_id: Any) -> bool:
 
 
 #: What the intake reader's verdict on a staged file becomes on the canonical
-#: version promoted from it. Anything not named here — ``PENDING`` and
-#: ``PROCESSING``, the two states meaning "nobody has read this yet" — falls
-#: through to ``PENDING``, which is the only honest reading of a binary the
-#: reader never reached (docs/adr/0072).
+#: version promoted from it **while the form offers what the reader found**.
+#: Anything not named here — ``PENDING`` and ``PROCESSING``, the two states
+#: meaning "nobody has read this yet" — falls through to ``PENDING``, which is
+#: the only honest reading of a binary the reader never reached
+#: (docs/adr/0072).
+#:
+#: ``DONE`` is the one row that depends on the form, and
+#: :func:`promoted_extraction_state` is where that is decided (D-6, AUD-025).
 PROMOTED_EXTRACTION_STATE: dict[str, str] = {
     ExtractionState.DONE: ExtractionState.INTAKE_READ,
     ExtractionState.NOT_APPLICABLE: ExtractionState.NOT_APPLICABLE,
@@ -317,9 +322,48 @@ PROMOTED_EXTRACTION_STATE: dict[str, str] = {
 }
 
 
-def promoted_extraction_state(staged_state: str) -> str:
-    """The canonical version's extraction state, from the staged file's."""
-    return PROMOTED_EXTRACTION_STATE.get(staged_state, ExtractionState.PENDING)
+def promoted_extraction_state(staged_state: str, *, suggestions_offered: bool | None = None) -> str:
+    """The canonical version's extraction state, from the staged file's.
+
+    **``INTAKE_READ`` only when the reading reached the form.** That state says
+    *read on the form; the answers went onto it; nothing owed* — and it is
+    terminal, so `pending_versions` never offers the version again and no text
+    or search row is ever made from it. Both halves are acceptable only because
+    the first half is true. With the suggestions withdrawn (docs/adr/0088) the
+    reader still reads the staged file, but nothing it found is shown to
+    anybody: no panel, no pre-fill. Recording ``INTAKE_READ`` then would claim a
+    reading the person never received *and* would make the document
+    unsearchable by content for good, on the strength of that claim. So a
+    staged ``DONE`` is promoted ``PENDING`` instead — not extracted canonically
+    yet, owed to the ordinary worker like any other upload (AUD-025, D-6).
+
+    ``suggestions_offered`` is the caller's when it has already asked; ``None``
+    asks the same predicate the create form asks
+    (`create_form_suggestions_offered`), at promotion time. ``FAILED`` and
+    ``NOT_APPLICABLE`` are verdicts about the bytes rather than about the form,
+    and carry across either way.
+    """
+    promoted = PROMOTED_EXTRACTION_STATE.get(staged_state, ExtractionState.PENDING)
+    if promoted == ExtractionState.INTAKE_READ:
+        if suggestions_offered is None:
+            suggestions_offered = create_form_suggestions_offered()
+        if not suggestions_offered:
+            return ExtractionState.PENDING
+    return promoted
+
+
+def promoted_extraction_note(staged: MatterIntakeFile) -> str:
+    """The reason a promoted version carries, from the staged file's.
+
+    Only for ``FAILED``. A canonical version that is FAILED and silent about why
+    is exactly what data-quality tooling cannot explain, and the reader *did*
+    say why — on the staged row that is thrown away with the session (DX-4).
+    The other states need no reason carried: ``INTAKE_READ`` and ``PENDING``
+    are not failures, and ``NOT_APPLICABLE`` is the format's, not this file's.
+    """
+    if promoted_extraction_state(staged.extraction_state) != ExtractionState.FAILED:
+        return ""
+    return staged.extraction_note
 
 
 def promote_intake_files(
@@ -366,7 +410,9 @@ def promote_intake_files(
     ==================  ====================  =======================================
     staged              promoted              what it says
     ==================  ====================  =======================================
-    ``DONE``            ``INTAKE_READ``       read once, on the form; nothing owed
+    ``DONE``            ``INTAKE_READ``       read once, on the form; nothing owed —
+                                              **only while the form offers the
+                                              reading** (otherwise ``PENDING``)
     ``NOT_APPLICABLE``  ``NOT_APPLICABLE``    no parser opens this format, ever
     ``FAILED``          ``FAILED``            a parser opened these exact bytes and
                                               could not read them
@@ -374,8 +420,16 @@ def promote_intake_files(
     ``PROCESSING``                            the reader reached it
     ==================  ====================  =======================================
 
-    Only the last of those is offered to `pending_versions`, and it is the only
-    one that is honestly still pending. An operator who wants text out of a
+    "Nothing owed" is true only when the answers did go onto the form. With the
+    suggestions withdrawn (docs/adr/0088) a staged ``DONE`` was read for nobody,
+    so it is promoted ``PENDING`` like a file nothing has read — the honest
+    state, and the one that keeps it searchable once the ordinary worker runs
+    (`promoted_extraction_state`, AUD-025, docs/adr/0072 amendment 2026-10-10).
+    The predicate is asked once per promotion, so every file of one press gets
+    the same answer.
+
+    Only ``PENDING`` is offered to `pending_versions`, and it is the only
+    state that is honestly still pending. An operator who wants text out of a
     promoted file anyway runs `extract_document_version` on it deliberately;
     what is refused is the automatic re-read.
 
@@ -386,6 +440,7 @@ def promote_intake_files(
     """
     storage = staging_storage()
     promoted: list[MatterIntakeFile] = []
+    offered = create_form_suggestions_offered()
 
     for staged in session.files.live().in_order():
         try:
@@ -421,7 +476,10 @@ def promote_intake_files(
             content=content,
             mime_type=staged.mime_type,
             actor=actor,
-            extraction_state=promoted_extraction_state(staged.extraction_state),
+            extraction_state=promoted_extraction_state(
+                staged.extraction_state, suggestions_offered=offered
+            ),
+            extraction_note=promoted_extraction_note(staged),
             title=(titles or {}).get(str(staged.pk), ""),
         )
         promoted.append(staged)
@@ -467,18 +525,80 @@ def without_staged_copies(
     return kept
 
 
+#: The columns the reader writes from a staged file's contents — everything on
+#: the row that is *about what the file says* rather than about the bytes. One
+#: definition, so `consume_session` and the reader's sweep cannot disagree about
+#: what "the extracted text is gone" means. ``extraction_state`` and
+#: ``extraction_note`` stay: they say what happened, not what was read.
+_EXTRACTED_PAYLOAD_CLEARED: dict[str, Any] = {
+    "text": [],
+    "text_character_count": 0,
+    "email_metadata": None,
+}
+
+
+def _still_holding_text() -> Q:
+    """Rows whose extracted payload has not been cleared yet."""
+    return ~Q(text=[]) | Q(text_character_count__gt=0) | Q(email_metadata__isnull=False)
+
+
 def consume_session(session: MatterIntakeSession) -> None:
-    """The Teema exists, so the staging is over: stamp it and drop the bytes.
+    """The Teema exists, so the staging is over: stamp it, drop the bytes and the text.
 
     Called after the commit rather than inside it. Deleting a staged object is
     not part of the business operation, and a storage backend having a bad
     minute must not take a written Matter with it — the sweeper will find
     anything left behind.
+
+    **The extracted text goes too.** The reader writes a file's whole text — up
+    to millions of characters of somebody's incoming correspondence — and a
+    message's parsed headers onto the staged row, and once the Teema exists no
+    caller will ever read them again: promotion carries the bytes and not the
+    reading, and the form they were for is gone. Deleting only the bytes left
+    that copy in the database until an operator ran `prune_intake_staging`,
+    which nothing schedules (AUD-025). The rows themselves stay for the sweeper,
+    so a repeated submission still finds a closed door rather than an empty one.
     """
+    now = timezone.now()
     MatterIntakeSession.objects.filter(pk=session.pk, consumed_at__isnull=True).update(
-        consumed_at=timezone.now(), updated_at=timezone.now()
+        consumed_at=now, updated_at=now
+    )
+    MatterIntakeFile.objects.filter(session_id=session.pk).filter(_still_holding_text()).update(
+        **_EXTRACTED_PAYLOAD_CLEARED, updated_at=now
     )
     _discard_objects(session)
+
+
+def clear_expired_intake_text() -> int:
+    """Blank the extracted text of every session no form can use any more.
+
+    The other half of `consume_session`'s rule: a form that was opened, read and
+    abandoned is never consumed, so its text would otherwise sit in the database
+    until somebody ran `prune_intake_staging`. Called by the always-running
+    intake reader at a bounded cadence (`run_intake_reader`), which makes the
+    text's lifetime the session's own rather than an operator's memory.
+
+    **One ``UPDATE``, and only of text.** Rows, bytes, stamps and states are left
+    exactly as they were — deleting is `sweep_stale_sessions`' decision and stays
+    an operator's (task §25). The scope is the sessions `stale()` already names
+    — expired, or consumed but somehow still holding text because the
+    after-commit clear in `consume_session` never ran — and within them only
+    rows that still hold something, so a turn with nothing to clear writes
+    nothing: on the production array a write is the cost (docs/adr/0072).
+
+    An expired session's files are offered to nothing: `get_session` refuses
+    it, so neither the panel nor promotion reads them again, and the reader's
+    own queue already excludes it (`pending_intake_files`). Returns the number
+    of rows cleared.
+    """
+    holding = MatterIntakeFile.objects.filter(
+        session__in=MatterIntakeSession.objects.stale()
+    ).filter(_still_holding_text())
+    # Asked before written, so the usual answer — nothing to clear — is one
+    # read and no statement a write-counting test or the array would see.
+    if not holding.exists():
+        return 0
+    return holding.update(**_EXTRACTED_PAYLOAD_CLEARED, updated_at=timezone.now())
 
 
 def _discard_objects(session: MatterIntakeSession) -> int:

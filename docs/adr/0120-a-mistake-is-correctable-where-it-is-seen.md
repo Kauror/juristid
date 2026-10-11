@@ -187,6 +187,10 @@ queries, so only a writer's header asks it; the Matter page's query budget test
 now measures the page against its ceiling plus the plan's own count.
 **Supersedes docs/adr/0096 §4's unconditional offer**; its safety rules stand.
 
+**Superseded on 2026-10-10 for how the header asks — see the amendment at the
+end of this document.** The header asks a few `EXISTS` instead of the plan; the
+plan is still built where the deletion is confirmed and carried out.
+
 ---
 
 ## Dates: valid input versus what a date means
@@ -210,3 +214,45 @@ The timeline's phase logic, anchors and staleness (UQ-02–UQ-08, UQ-14), the
 Osakond and register populations beyond `?tegevus=puudub`, `DocumentVersion`
 immutability, the evidence triggers, the deletion guard, and the withdrawal
 domain behaviour.
+
+---
+
+## Amendment, 2026-10-10 — the offer asks a few `EXISTS`, not the whole plan
+
+- Status: accepted, amending §7's «The header asks `plan_matter_deletion(matter).is_blocked`»
+- Scope: the header's `Kustuta` offer only; the confirmation page, `Muuda
+  teemat`'s danger zone and `delete_matter` are unchanged
+
+### What was decided before
+
+Every writer's Teema page, documents tab and edit page built the whole
+deletion plan to decide whether to draw one link.
+
+### Why it is superseded
+
+Audit AUD-002 measured the plan at 105–109 queries and 127–205 ms of every
+writer's page view. Most pages are viewed many times and deleted never.
+
+### What is decided now
+
+The header asks `deletion_may_be_offered(matter)`. It runs one `EXISTS` for
+each blocker that is a fact about this Matter's own rows:
+
+- a legal hold;
+- a successor Matter;
+- a corrected entry;
+- another Matter's opinion standing on a version filed here;
+- a background citation of this Matter's opinion;
+- an e-mail attachment link that crosses Matters.
+
+The plan is built where it is acted on: the confirmation page renders it, and
+`delete_matter` rebuilds it under the lock.
+
+### What this amendment does not change
+
+The rule itself stands: an action that can only fail is not offered, for every
+blocker the check names. Every refusal is the route's, as before. A structural
+blocker the check does not yet name is told on the confirmation page rather
+than by withholding the link, so the offer can be wrong only towards offering.
+It never hides a deletion that could succeed. Permissions, the evidence
+safety rules and the deletion semantics are untouched.

@@ -176,16 +176,24 @@ def set_next_action_for_new_work(
     through here. Import, enrichment and the seed commands keep calling
     `set_next_action` and keep preserving whatever the source says, including a
     responsible colleague who left years ago.
+
+    **The owner the step defaults to is read under the Matter's lock** (AUD-052
+    WF-4). The caller's instance may be older than a reassignment committed a
+    moment ago, and the step would then land in the previous owner's queue.
+    The lock is the one `set_next_action` takes anyway, and re-entrant.
     """
+    from app.matters.locks import lock_matter_for_write
+
+    locked_matter = lock_matter_for_write(matter.pk)
     return set_next_action(
-        matter=matter,
+        matter=locked_matter,
         text=text,
         kind=kind,
         date_semantics=date_semantics,
         target_date=target_date,
         date_precision=date_precision,
         source_text=source_text,
-        responsible=responsible_for_new_work(matter=matter, explicit=responsible),
+        responsible=responsible_for_new_work(matter=locked_matter, explicit=responsible),
         actor=actor,
         plan_step=plan_step,
         carry_plan_step=carry_plan_step,
@@ -833,13 +841,19 @@ def add_planned_action(
     target_date: date | None,
     actor: Any = None,
     responsible: Any = None,
+    date_precision: str = DatePrecision.EXACT,
 ) -> NextAction:
     """`+ Määra järgmine tegevus` beside a current action: a dated future one.
 
     Never supersedes the current action or another planned one. `DO` /
-    `DEADLINE` / `EXACT`, like every step a person writes; the departed-owner
-    rule is the one new work follows. Audited as `NEXT_ACTION_SET` with
-    ``planned`` in the payload.
+    `DEADLINE`, like every step a person writes; the departed-owner rule is the
+    one new work follows. Audited as `NEXT_ACTION_SET` with ``planned`` in the
+    payload.
+
+    ``date_precision`` is `EXACT` from this panel, which offers only a day. A
+    step written on the current-step panel with a period — «oktoober 2026» —
+    that finds a step already open is filed here with that period, rather than
+    as a day nobody chose (`workspace.add_unnamed_step`, docs/adr/0079 §1).
     """
     from app.matters.locks import lock_matter_for_write
 
@@ -848,6 +862,7 @@ def add_planned_action(
         raise DomainError("Järgmiseks vajab teksti.")
     if target_date is None:
         raise DomainError(PLANNED_ACTION_NEEDS_DATE)
+    refuse_an_unsupported_precision(target_date, date_precision)
     locked_matter = lock_matter_for_write(matter.pk)
     if not locked_matter.is_open:
         raise DomainError("Suletud teemale ei saa järgmist tegevust määrata.")
@@ -857,7 +872,7 @@ def add_planned_action(
         kind=ActionKind.DO,
         date_semantics=DateSemantics.DEADLINE,
         target_date=target_date,
-        date_precision=DatePrecision.EXACT,
+        date_precision=date_precision,
         status=ActionStatus.PLANNED,
         responsible=responsible_for_new_work(matter=locked_matter, explicit=responsible)
         or locked_matter.owner,
