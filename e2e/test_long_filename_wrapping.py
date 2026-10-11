@@ -118,6 +118,39 @@ def test_a_long_compound_title_does_not_widen_muuda_teemat(page, base_url):
     _holds(_readings(page, url, ".matterhead__title", LONG_WORD), LONG_WORD)
 
 
+def test_a_long_compound_title_does_not_widen_minu_asjad(page, base_url):
+    """The owner's desk lists the same title in several bands.
+
+    The one-line rows clip it, but the «Järgmise tegevuseta» rail shows it
+    whole, and did not wrap it: on 2026-10-11 a CI shard that ran this file
+    before `e2e/test_work_surfaces_review.py` found Minu asjad scrolling 225px
+    sideways at 375px. That rail lists the quietest Matters first, so a title
+    filed now may fall past its limit in a busy world. The whole page is
+    therefore measured at every width with the title on it (the newest event
+    always is), and every title the rail does show must be one that wraps.
+    """
+    sign_in(page, base_url, MARTIN)
+    create_matter(page, base_url, unique_title(LONG_WORD))
+    for width in WIDTHS:
+        page.set_viewport_size({"width": width, "height": 900})
+        page.goto(f"{base_url}/minu-asjad/")
+        page.wait_for_load_state("networkidle")
+        assert LONG_WORD in (page.locator("main").text_content() or ""), (
+            f"the long title is nowhere on Minu asjad at {width}px; this proves nothing"
+        )
+        width_of = page.evaluate(
+            "() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]"
+        )
+        assert width_of[0] <= width_of[1] + ROUNDING, (
+            f"Minu asjad at {width}px is {width_of[0]}px wide in {width_of[1]}px"
+        )
+        wraps = page.locator(".quietrow__title").evaluate_all(
+            "els => els.map(el => getComputedStyle(el).overflowWrap)"
+        )
+        assert all(value == "anywhere" for value in wraps), wraps
+    page.set_viewport_size({"width": 1440, "height": 900})
+
+
 def test_ordinary_headings_are_laid_out_as_before_at_desktop(page, base_url):
     """`anywhere` breaks inside a word only when the word cannot fit: a normal
     title still occupies one line at 1440."""
