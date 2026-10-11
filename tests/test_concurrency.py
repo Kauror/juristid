@@ -69,7 +69,8 @@ def wait_for_a_blocked_backend(expected: int = 1) -> bool:
     while timezone.now() < deadline:
         with connection.cursor() as cursor:
             cursor.execute(
-                "SELECT count(*) FROM pg_stat_activity WHERE cardinality(pg_blocking_pids(pid)) > 0"
+                "SELECT count(*) FROM pg_stat_activity "
+                "WHERE datname = current_database() AND cardinality(pg_blocking_pids(pid)) > 0"
             )
             if cursor.fetchone()[0] >= expected:
                 return True
@@ -322,7 +323,8 @@ def wait_for_a_queued_throttle_writer() -> bool:
         with connection.cursor() as cursor:
             cursor.execute(
                 "SELECT count(*) FROM pg_stat_activity a "
-                "WHERE cardinality(pg_blocking_pids(a.pid)) > 0 AND EXISTS ("
+                "WHERE a.datname = current_database() "
+                "AND cardinality(pg_blocking_pids(a.pid)) > 0 AND EXISTS ("
                 "  SELECT 1 FROM pg_locks l JOIN pg_class c ON c.oid = l.relation"
                 "  WHERE l.pid = a.pid AND c.relname = %s)",
                 [THROTTLE_TABLE],

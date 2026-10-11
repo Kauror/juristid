@@ -193,7 +193,8 @@ def _wait_for_a_waiting_backend() -> None:
         with connection.cursor() as cursor:
             cursor.execute(
                 "SELECT count(*) FROM pg_stat_activity "
-                "WHERE pid <> pg_backend_pid() AND wait_event_type = 'Lock'"
+                "WHERE datname = current_database() "
+                "AND pid <> pg_backend_pid() AND wait_event_type = 'Lock'"
             )
             if cursor.fetchone()[0]:
                 return

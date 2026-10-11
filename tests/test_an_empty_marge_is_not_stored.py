@@ -434,7 +434,8 @@ def wait_for_a_blocked_backend() -> bool:
     while timezone.now() < deadline:
         with connection.cursor() as cursor:
             cursor.execute(
-                "SELECT count(*) FROM pg_stat_activity WHERE cardinality(pg_blocking_pids(pid)) > 0"
+                "SELECT count(*) FROM pg_stat_activity "
+                "WHERE datname = current_database() AND cardinality(pg_blocking_pids(pid)) > 0"
             )
             if cursor.fetchone()[0] >= 1:
                 return True
