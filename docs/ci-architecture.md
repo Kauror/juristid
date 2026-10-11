@@ -593,6 +593,72 @@ The OCR runtime is now installed from `.deb` files cached per runner image. The
 step was 18s when Ubuntu's mirror was quick and up to four minutes when it was
 not, and one slow shard is the whole round waiting.
 
+### 2026-10-11: four cores per runner, and the CPU each one draws
+
+The bar moved again: the owner asked for a materially shorter round with every
+gate kept. Eight green runs before the change (38110923538 among them) took
+692–710 s. Their critical path was the slowest browser shard, a ~663 s job of
+which ~80 s was setup, followed by 30–40 s of the balance report collecting
+both suites. The twenty slots were all in use from the first second, so more
+runners were not on offer — but each runner has four vCPUs and a shard used
+about one.
+
+**What the model gap was.** The table predicted 402 s for every PostgreSQL
+shard; they took 237–382 s. Not the assignment: the same files ran 0.57x to
+1.63x their usual time depending on the runner, and the test database's own
+setup took 14–35 s. Logging each runner's CPU (the shard records now do)
+named it: an AMD EPYC 7763 runs a PostgreSQL shard about 1.7x slower than an
+EPYC 9V45, with the 9V74 and the Xeon 8573C in between. The table was also
+~10% stale (the sysmon coverage core made everything faster), which costs
+nothing in balance and is now refreshed from a median of runs.
+
+**What two shards on one runner cost.** Per file, a median of 1.09x — the
+cores really were idle. Three on a runner was measured and rejected: on an
+EPYC 7763 its PostgreSQL shards ran 1.5–1.7x the prediction.
+
+| run | layout (PostgreSQL / browser) | wall clock | slowest PG runner | slowest browser runner |
+| --- | --- | --- | --- | --- |
+| [38110923538](https://github.com/Kauror/juristid/actions/runs/38110923538) (before) | 7 / 7 shards, one per runner | 697 s | 445 s | 666 s |
+| [38117799736](https://github.com/Kauror/juristid/actions/runs/38117799736) | 7x2 / 7x2, old table | 454 s | 360 s | 410 s |
+| [38118423762](https://github.com/Kauror/juristid/actions/runs/38118423762) | 5x3 / 9x2 | 367 s | 339 s (EPYC 7763) | 341 s |
+| [38118903791](https://github.com/Kauror/juristid/actions/runs/38118903791) | 6x2 / 8x2 | 371 s | 348 s | 346 s |
+| [38119307615](https://github.com/Kauror/juristid/actions/runs/38119307615) | 6x2 / 8x2 on disk (A/B) | 411 s | 388 s | 349 s |
+| [38120321976](https://github.com/Kauror/juristid/actions/runs/38120321976) | **7x2 / 9x2, chained fixed jobs** | **352 s** | 297 s | 328 s |
+
+The A/B row is the same commit with the PostgreSQL data directory on disk:
+the in-memory one is about 10% faster on matching hardware and does not
+narrow the spread between runners.
+
+The last row is the layout this round settled on: fourteen PostgreSQL shards
+on seven runners and eighteen browser shards on nine, two to a runner, with
+the container smoke test after the dependency scan and the recovery rehearsal
+after the migration safety job, which frees the two slots. On it:
+
+| | before (38110923538) | after (38120321976) |
+| --- | --- | --- |
+| Wall clock | 697 s | 352 s (−49%); required checks done at 335 s |
+| Slowest PostgreSQL shard (tests / job) | 382 s / 445 s | 239 s / 297 s (runner) |
+| PostgreSQL slowest/median, slowest/fastest | 1.25, 1.61 | 1.30, 1.67 — the CPU drawn, see above |
+| Slowest browser shard (tests / job) | 570 s / 666 s | 246 s / 328 s (runner) |
+| Browser slowest/median, slowest/fastest | 1.06, 1.12 | 1.05, 1.39 |
+| Shards (runners) | 7 (7) + 7 (7) | 14 (7) + 18 (9) |
+| Setup outside the tests, per runner | PG ~66 s + ~22 s test DB; browser ~79 s | PG 32–44 s + ~20 s; browser 57–78 s (worlds built concurrently, 21–39 s) |
+| Tests | 14552 + 1364 browser (22 deliberate skips) + 87 visual | 14612 + 1365 (the same 22 skips) + 87 |
+| Coverage | 42370 statements, 2609 missed, 94% | 42370, 2609, 94% |
+
+Two latent defects surfaced on the way, both fixed rather than worked
+around: five lock-wait helpers and `rebuild_is_running()` read server-wide
+views that two databases on one server share (scoped to `current_database()`,
+and the helpers re-read the statistics snapshot), and a new partition put
+`e2e/test_long_filename_wrapping.py` before `e2e/test_work_surfaces_review.py`
+for the first time, which showed Minu asjad scrolling 225px sideways on a phone
+when a Teema's title is one long compound (the quiet rail now wraps it, and the
+file that files such a title proves it).
+
+What is left on the critical path is a runner's fixed cost — ~70 s for a
+browser runner, ~35 s for a PostgreSQL one — and which CPU it draws. A 40-job
+plan would still be the larger lever.
+
 ### The slow files, and why none of them were touched
 
 The ten slowest files in each suite were read. Nothing in them is a defect:
