@@ -401,7 +401,6 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
-          --tmpfs /var/lib/postgresql
 
     env:
       DJANGO_SECRET_KEY: ci-only-secret-not-used-anywhere-else
@@ -646,7 +645,6 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
-          --tmpfs /var/lib/postgresql
 
     # The browser suite runs against a real server on real PostgreSQL. It is
     # the authoritative check that the workflow works for a person, because
