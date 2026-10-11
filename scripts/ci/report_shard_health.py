@@ -409,6 +409,7 @@ def report_durations(
                     "actual": None if took is None else round(took, 1),
                     "pytest_wall": wall,
                     "world_setup": None if world is None else round(world, 1),
+                    "cpu": record.get("cpu"),
                 }
             )
             print(
@@ -441,19 +442,23 @@ def report_durations(
             job_seconds, step_seconds = timing.get("job_seconds"), timing.get("test_step_seconds")
             if job_seconds is None or step_seconds is None:
                 continue
+            cpus = {row["cpu"] for row in rows if row["runner"] == runner and row["cpu"]}
             runner_rows.append(
                 {
                     "runner": runner,
                     "job": round(job_seconds),
                     "tests": round(step_seconds),
                     "setup": round(job_seconds - step_seconds),
+                    "cpu": ", ".join(sorted(cpus)) or None,
                 }
             )
         if runner_rows:
-            print("    runner     job   test step   everything else (setup, uploads)")
+            print("    runner     job   test step   everything else   hardware")
             for row in runner_rows:
                 runner, total, tests, rest = row["runner"], row["job"], row["tests"], row["setup"]
-                print(f"    {runner:6d}  {total:5d}s  {tests:9d}s  {rest:9d}s")
+                print(
+                    f"    {runner:6d}  {total:5d}s  {tests:9d}s  {rest:15d}s   {row['cpu'] or '?'}"
+                )
             print(f"    runner job {_ratio([float(row['job']) for row in runner_rows])}")
         if diverged:
             print(
@@ -494,12 +499,13 @@ def write_step_summary(summary: dict[str, object], path: str) -> None:
         if data["runner_jobs"]:
             lines += [
                 "",
-                "| runner | job | test step | everything else |",
-                "| ---: | ---: | ---: | ---: |",
+                "| runner | job | test step | everything else | hardware |",
+                "| ---: | ---: | ---: | ---: | --- |",
             ]
             for row in data["runner_jobs"]:
                 lines.append(
-                    f"| {row['runner']} | {row['job']} s | {row['tests']} s | {row['setup']} s |"
+                    f"| {row['runner']} | {row['job']} s | {row['tests']} s | {row['setup']} s "
+                    f"| {row['cpu'] or '?'} |"
                 )
         lines.append("")
     with open(path, "a", encoding="utf-8") as handle:

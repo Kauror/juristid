@@ -107,11 +107,27 @@ def ensure_database(name: str, environment: dict[str, str]) -> None:
             connection.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
 
 
+def machine() -> dict[str, object]:
+    """Which hardware this runner drew. Hosted runners differ by up to ~1.4x in
+    the same run (2026-10-11), and a report that cannot say which runner was a
+    slow one reads that as imbalance."""
+    model = "unknown"
+    try:
+        for line in Path("/proc/cpuinfo").read_text(encoding="utf-8").splitlines():
+            if line.startswith("model name"):
+                model = line.split(":", 1)[1].strip()
+                break
+    except OSError:
+        pass
+    return {"cpu": model, "cpus": os.cpu_count()}
+
+
 def write_record(suite: str, shard: int, record: dict[str, object]) -> None:
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
     path = ARTIFACTS / f"shard-{suite}-{shard}.json"
     existing = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-    path.write_text(json.dumps({**existing, **record}, indent=2) + "\n", encoding="utf-8")
+    merged = {**existing, **machine(), **record}
+    path.write_text(json.dumps(merged, indent=2) + "\n", encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -292,6 +308,8 @@ def run(arguments: argparse.Namespace) -> int:
         f"runner {arguments.runner} of {arguments.runners} runs {arguments.suite} shards "
         f"{shards} of {shard_count}, concurrently"
     )
+    hardware = machine()
+    print(f"on {hardware['cpus']} x {hardware['cpu']}")
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
 
     processes: dict[int, subprocess.Popen[str]] = {}
@@ -310,7 +328,9 @@ def run(arguments: argparse.Namespace) -> int:
         process = subprocess.Popen(  # noqa: S603 - the workflow's own pytest command
             ci_slices.substitute(command, shard),
             cwd=ROOT,
-            env=environment,
+            # Unbuffered so the job log shows each shard's progress as it
+            # happens; a pipe would otherwise hold it back in blocks.
+            env={**environment, "PYTHONUNBUFFERED": "1"},
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             stdin=subprocess.DEVNULL,
@@ -385,6 +405,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     each.add_argument("command", nargs=argparse.REMAINDER)
 
     arguments = parser.parse_args(argv)
+    # Line by line into the job log, interleaved correctly with the shards'.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(line_buffering=True)
     if arguments.action == "browser-world":
         return browser_world(arguments)
     return run(arguments)
