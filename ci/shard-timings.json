@@ -1,5 +1,6 @@
 {
   "measured_from": [
+    "https://github.com/Kauror/juristid/actions/runs/38118423762",
     "https://github.com/Kauror/juristid/actions/runs/38117799736",
     "https://github.com/Kauror/juristid/actions/runs/38111899438",
     "https://github.com/Kauror/juristid/actions/runs/38110923538",
@@ -8,476 +9,476 @@
   "measured_at": "2026-10-11",
   "note": "Balance input for ci_sharding.py, regenerated with scripts/ci/update_shard_timings.py. Nothing about which tests run depends on it; see docs/ci-architecture.md.",
   "session_setup_seconds": {
-    "e2e": 1.317,
-    "tests": 20.517
+    "e2e": 1.583,
+    "tests": 22.006
   },
   "files": {
     "e2e/test_add_launcher_stability.py": {
-      "seconds": 24.273,
+      "seconds": 25.741,
       "tests": 11
     },
     "e2e/test_assisted_intake.py": {
-      "seconds": 6.828,
+      "seconds": 7.093,
       "tests": 2
     },
     "e2e/test_bounded_teema_history.py": {
-      "seconds": 19.152,
+      "seconds": 19.069,
       "tests": 3
     },
     "e2e/test_browser_policy.py": {
-      "seconds": 5.336,
+      "seconds": 5.438,
       "tests": 6
     },
     "e2e/test_correction_round_surfaces.py": {
-      "seconds": 73.896,
+      "seconds": 78.564,
       "tests": 19
     },
     "e2e/test_date_precision.py": {
-      "seconds": 27.366,
+      "seconds": 28.106,
       "tests": 10
     },
     "e2e/test_date_ux.py": {
-      "seconds": 36.149,
+      "seconds": 37.031,
       "tests": 21
     },
     "e2e/test_datepicker_target_size.py": {
-      "seconds": 37.589,
+      "seconds": 37.778,
       "tests": 23
     },
     "e2e/test_department_page.py": {
-      "seconds": 67.692,
+      "seconds": 68.975,
       "tests": 28
     },
     "e2e/test_development_evidence.py": {
-      "seconds": 18.322,
+      "seconds": 18.386,
       "tests": 6
     },
     "e2e/test_direct_next_action_workflow.py": {
-      "seconds": 22.013,
+      "seconds": 20.96,
       "tests": 5
     },
     "e2e/test_document_content.py": {
-      "seconds": 12.843,
+      "seconds": 13.075,
       "tests": 3
     },
     "e2e/test_document_menu.py": {
-      "seconds": 18.929,
+      "seconds": 19.544,
       "tests": 5
     },
     "e2e/test_engagement.py": {
-      "seconds": 40.087,
+      "seconds": 40.049,
       "tests": 12
     },
     "e2e/test_engagement_correction.py": {
-      "seconds": 46.38,
+      "seconds": 46.911,
       "tests": 12
     },
     "e2e/test_entry_correction.py": {
-      "seconds": 15.535,
+      "seconds": 15.488,
       "tests": 4
     },
     "e2e/test_external_position.py": {
-      "seconds": 51.641,
+      "seconds": 52.274,
       "tests": 19
     },
     "e2e/test_focus_after_history_swaps.py": {
-      "seconds": 25.124,
+      "seconds": 24.859,
       "tests": 3
     },
     "e2e/test_focus_visible_and_clear.py": {
-      "seconds": 18.675,
+      "seconds": 19.64,
       "tests": 6
     },
     "e2e/test_followup_ux_round.py": {
-      "seconds": 23.723,
+      "seconds": 25.079,
       "tests": 7
     },
     "e2e/test_header_search.py": {
-      "seconds": 28.058,
+      "seconds": 27.953,
       "tests": 19
     },
     "e2e/test_historical_corpus.py": {
-      "seconds": 14.002,
+      "seconds": 14.268,
       "tests": 7
     },
     "e2e/test_historical_files.py": {
-      "seconds": 12.467,
+      "seconds": 12.255,
       "tests": 8
     },
     "e2e/test_history_privacy.py": {
-      "seconds": 16.602,
+      "seconds": 16.681,
       "tests": 6
     },
     "e2e/test_incoming_email_role.py": {
-      "seconds": 8.026,
+      "seconds": 7.818,
       "tests": 2
     },
     "e2e/test_integration_169_172.py": {
-      "seconds": 7.481,
+      "seconds": 7.499,
       "tests": 2
     },
     "e2e/test_integration_420px.py": {
-      "seconds": 27.568,
+      "seconds": 28.168,
       "tests": 13
     },
     "e2e/test_integration_batch_149_152.py": {
-      "seconds": 9.895,
+      "seconds": 9.984,
       "tests": 2
     },
     "e2e/test_kpi_navigation.py": {
-      "seconds": 121.448,
+      "seconds": 121.227,
       "tests": 17
     },
     "e2e/test_lawyer_classification_round.py": {
-      "seconds": 22.425,
+      "seconds": 22.563,
       "tests": 12
     },
     "e2e/test_lawyer_day_workflows.py": {
-      "seconds": 34.516,
+      "seconds": 33.58,
       "tests": 4
     },
     "e2e/test_lawyer_workflow.py": {
-      "seconds": 29.966,
+      "seconds": 30.63,
       "tests": 7
     },
     "e2e/test_lawyer_workflow_package.py": {
-      "seconds": 84.71,
+      "seconds": 85.906,
       "tests": 27
     },
     "e2e/test_local_auth.py": {
-      "seconds": 23.458,
+      "seconds": 28.493,
       "tests": 8
     },
     "e2e/test_long_filename_wrapping.py": {
-      "seconds": 21.614,
+      "seconds": 21.707,
       "tests": 3
     },
     "e2e/test_long_token_wrapping.py": {
-      "seconds": 17.502,
+      "seconds": 17.498,
       "tests": 3
     },
     "e2e/test_matter_form_ux.py": {
-      "seconds": 143.762,
+      "seconds": 144.468,
       "tests": 59
     },
     "e2e/test_matter_intelligence.py": {
-      "seconds": 54.146,
+      "seconds": 54.764,
       "tests": 21
     },
     "e2e/test_new_assignment_notices.py": {
-      "seconds": 8.997,
+      "seconds": 9.073,
       "tests": 2
     },
     "e2e/test_next_step_arrival.py": {
-      "seconds": 6.62,
+      "seconds": 6.46,
       "tests": 2
     },
     "e2e/test_note_concurrency.py": {
-      "seconds": 36.55,
+      "seconds": 36.583,
       "tests": 5
     },
     "e2e/test_october_followups.py": {
-      "seconds": 19.057,
+      "seconds": 20.754,
       "tests": 9
     },
     "e2e/test_oigusakt_row.py": {
-      "seconds": 32.736,
+      "seconds": 32.814,
       "tests": 19
     },
     "e2e/test_opinion_archive.py": {
-      "seconds": 40.979,
+      "seconds": 41.76,
       "tests": 26
     },
     "e2e/test_opinion_follow_up.py": {
-      "seconds": 11.151,
+      "seconds": 11.552,
       "tests": 3
     },
     "e2e/test_opinion_metadata.py": {
-      "seconds": 52.484,
+      "seconds": 55.908,
       "tests": 10
     },
     "e2e/test_opinion_recipients.py": {
-      "seconds": 20.913,
+      "seconds": 21.311,
       "tests": 3
     },
     "e2e/test_opinion_working_documents.py": {
-      "seconds": 29.462,
+      "seconds": 28.587,
       "tests": 5
     },
     "e2e/test_organisation_after_swap.py": {
-      "seconds": 16.066,
+      "seconds": 16.447,
       "tests": 4
     },
     "e2e/test_panel_reopen_after_save.py": {
-      "seconds": 3.363,
+      "seconds": 3.491,
       "tests": 1
     },
     "e2e/test_persona_switcher.py": {
-      "seconds": 34.319,
+      "seconds": 34.26,
       "tests": 11
     },
     "e2e/test_phone_popovers_and_document_actions.py": {
-      "seconds": 21.145,
+      "seconds": 21.177,
       "tests": 6
     },
     "e2e/test_post_qa_surfaces.py": {
-      "seconds": 89.157,
+      "seconds": 86.654,
       "tests": 46
     },
     "e2e/test_procedural_development_correction.py": {
-      "seconds": 15.982,
+      "seconds": 16.342,
       "tests": 4
     },
     "e2e/test_procedural_links.py": {
-      "seconds": 44.5,
+      "seconds": 47.711,
       "tests": 21
     },
     "e2e/test_process_strip.py": {
-      "seconds": 177.775,
+      "seconds": 187.934,
       "tests": 51
     },
     "e2e/test_real_data_ux.py": {
-      "seconds": 17.988,
+      "seconds": 18.477,
       "tests": 15
     },
     "e2e/test_record_context_and_process.py": {
-      "seconds": 20.68,
+      "seconds": 21.048,
       "tests": 4
     },
     "e2e/test_refusal_focus.py": {
-      "seconds": 15.943,
+      "seconds": 16.015,
       "tests": 8
     },
     "e2e/test_register_columns.py": {
-      "seconds": 79.083,
+      "seconds": 79.313,
       "tests": 41
     },
     "e2e/test_register_search.py": {
-      "seconds": 27.558,
+      "seconds": 29.979,
       "tests": 18
     },
     "e2e/test_related_materials.py": {
-      "seconds": 19.955,
+      "seconds": 21.058,
       "tests": 6
     },
     "e2e/test_release_notes.py": {
-      "seconds": 28.876,
+      "seconds": 30.244,
       "tests": 14
     },
     "e2e/test_response_obligation_row.py": {
-      "seconds": 18.383,
+      "seconds": 18.767,
       "tests": 12
     },
     "e2e/test_review_waiting_step.py": {
-      "seconds": 21.57,
+      "seconds": 21.272,
       "tests": 6
     },
     "e2e/test_row_scoped_refusals.py": {
-      "seconds": 24.278,
+      "seconds": 24.536,
       "tests": 5
     },
     "e2e/test_saabunud_organisation_picker.py": {
-      "seconds": 9.338,
+      "seconds": 9.471,
       "tests": 4
     },
     "e2e/test_search_results_phone.py": {
-      "seconds": 10.691,
+      "seconds": 11.297,
       "tests": 12
     },
     "e2e/test_select_commit.py": {
-      "seconds": 18.523,
+      "seconds": 18.641,
       "tests": 4
     },
     "e2e/test_sender_free_entry.py": {
-      "seconds": 11.173,
+      "seconds": 11.324,
       "tests": 5
     },
     "e2e/test_signed_containers.py": {
-      "seconds": 12.62,
+      "seconds": 11.953,
       "tests": 4
     },
     "e2e/test_similar_matters_request.py": {
-      "seconds": 26.719,
+      "seconds": 27.205,
       "tests": 8
     },
     "e2e/test_simplified_next_action.py": {
-      "seconds": 47.755,
+      "seconds": 48.116,
       "tests": 17
     },
     "e2e/test_soovitatud_jargmisena.py": {
-      "seconds": 4.24,
+      "seconds": 4.347,
       "tests": 1
     },
     "e2e/test_statistics.py": {
-      "seconds": 51.837,
+      "seconds": 52.137,
       "tests": 26
     },
     "e2e/test_structural_placement.py": {
-      "seconds": 54.698,
+      "seconds": 56.524,
       "tests": 24
     },
     "e2e/test_substantive_history.py": {
-      "seconds": 132.13,
+      "seconds": 133.535,
       "tests": 36
     },
     "e2e/test_table_rows_are_reachable.py": {
-      "seconds": 12.559,
+      "seconds": 13.332,
       "tests": 9
     },
     "e2e/test_teema_closing_flow.py": {
-      "seconds": 13.197,
+      "seconds": 13.377,
       "tests": 4
     },
     "e2e/test_teema_composer_simplification.py": {
-      "seconds": 42.873,
+      "seconds": 43.328,
       "tests": 15
     },
     "e2e/test_teema_kaik_accordion.py": {
-      "seconds": 38.874,
+      "seconds": 40.467,
       "tests": 14
     },
     "e2e/test_teema_page_cleanup.py": {
-      "seconds": 54.989,
+      "seconds": 57.255,
       "tests": 9
     },
     "e2e/test_teema_rail.py": {
-      "seconds": 50.745,
+      "seconds": 51.125,
       "tests": 18
     },
     "e2e/test_teema_redesign.py": {
-      "seconds": 60.119,
+      "seconds": 60.708,
       "tests": 14
     },
     "e2e/test_teema_workspace.py": {
-      "seconds": 37.712,
+      "seconds": 38.238,
       "tests": 12
     },
     "e2e/test_theme.py": {
-      "seconds": 27.831,
+      "seconds": 28.328,
       "tests": 20
     },
     "e2e/test_theme_contrast.py": {
-      "seconds": 33.261,
+      "seconds": 33.196,
       "tests": 2
     },
     "e2e/test_timeline_add_step.py": {
-      "seconds": 10.698,
+      "seconds": 10.734,
       "tests": 2
     },
     "e2e/test_timeline_long_token_wrapping.py": {
-      "seconds": 51.033,
+      "seconds": 53.458,
       "tests": 8
     },
     "e2e/test_ui_shell.py": {
-      "seconds": 122.668,
+      "seconds": 125.816,
       "tests": 65
     },
     "e2e/test_ultrawide_workspace.py": {
-      "seconds": 51.799,
+      "seconds": 51.87,
       "tests": 16
     },
     "e2e/test_undated_next_actions.py": {
-      "seconds": 25.55,
+      "seconds": 25.645,
       "tests": 8
     },
     "e2e/test_unified_organisation_picker.py": {
-      "seconds": 67.374,
+      "seconds": 68.975,
       "tests": 28
     },
     "e2e/test_upload_queue.py": {
-      "seconds": 10.86,
+      "seconds": 11.755,
       "tests": 4
     },
     "e2e/test_user_correction_batch_two.py": {
-      "seconds": 4.882,
+      "seconds": 4.996,
       "tests": 2
     },
     "e2e/test_uus_teema_files.py": {
-      "seconds": 25.918,
+      "seconds": 26.908,
       "tests": 9
     },
     "e2e/test_uus_teema_guided_intake.py": {
-      "seconds": 29.138,
+      "seconds": 29.228,
       "tests": 12
     },
     "e2e/test_uus_teema_manual_first.py": {
-      "seconds": 11.436,
+      "seconds": 11.961,
       "tests": 8
     },
     "e2e/test_uus_teema_menus.py": {
-      "seconds": 40.389,
+      "seconds": 41.814,
       "tests": 27
     },
     "e2e/test_uus_teema_reading.py": {
-      "seconds": 0.003,
+      "seconds": 0.002,
       "tests": 21
     },
     "e2e/test_uus_teema_refusal_and_restore.py": {
-      "seconds": 7.423,
+      "seconds": 7.676,
       "tests": 1
     },
     "e2e/test_uus_teema_row_composition.py": {
-      "seconds": 21.825,
+      "seconds": 22.578,
       "tests": 15
     },
     "e2e/test_ux_pass.py": {
-      "seconds": 61.276,
+      "seconds": 62.691,
       "tests": 25
     },
     "e2e/test_website_overview.py": {
-      "seconds": 70.426,
+      "seconds": 70.382,
       "tests": 25
     },
     "e2e/test_whole_record_concurrency.py": {
-      "seconds": 14.71,
+      "seconds": 14.861,
       "tests": 3
     },
     "e2e/test_work_assignment.py": {
-      "seconds": 13.7,
+      "seconds": 13.811,
       "tests": 7
     },
     "e2e/test_work_surfaces_review.py": {
-      "seconds": 39.135,
+      "seconds": 39.458,
       "tests": 21
     },
     "e2e/test_workspace_failures_and_drafts.py": {
-      "seconds": 66.647,
+      "seconds": 66.961,
       "tests": 17
     },
     "tests/test_access_log_privacy.py": {
-      "seconds": 0.307,
+      "seconds": 0.124,
       "tests": 9
     },
     "tests/test_accounts.py": {
-      "seconds": 2.337,
+      "seconds": 4.218,
       "tests": 23
     },
     "tests/test_action_edit_keeps_restriction.py": {
-      "seconds": 2.052,
+      "seconds": 1.688,
       "tests": 12
     },
     "tests/test_action_kind_is_not_user_facing.py": {
-      "seconds": 2.064,
+      "seconds": 2.191,
       "tests": 18
     },
     "tests/test_addressee_free_entry.py": {
-      "seconds": 4.712,
+      "seconds": 3.877,
       "tests": 35
     },
     "tests/test_admin_is_not_a_back_door.py": {
-      "seconds": 2.687,
+      "seconds": 3.565,
       "tests": 20
     },
     "tests/test_admin_sign_in.py": {
-      "seconds": 0.729,
+      "seconds": 0.634,
       "tests": 7
     },
     "tests/test_an_empty_marge_is_not_stored.py": {
-      "seconds": 9.754,
+      "seconds": 2.78,
       "tests": 19
     },
     "tests/test_approximate_lateness.py": {
-      "seconds": 3.592,
+      "seconds": 3.581,
       "tests": 85
     },
     "tests/test_architecture_decisions.py": {
@@ -485,35 +486,35 @@
       "tests": 3
     },
     "tests/test_arvamus_koostamisel_one_definition.py": {
-      "seconds": 1.581,
+      "seconds": 1.958,
       "tests": 13
     },
     "tests/test_arvamused_under_teemad.py": {
-      "seconds": 8.284,
+      "seconds": 10.303,
       "tests": 59
     },
     "tests/test_arvamused_workspace_retirement.py": {
-      "seconds": 1.909,
+      "seconds": 1.99,
       "tests": 16
     },
     "tests/test_assignment_takes_the_unheld_step.py": {
-      "seconds": 0.784,
+      "seconds": 0.851,
       "tests": 13
     },
     "tests/test_assisted_intake.py": {
-      "seconds": 15.779,
+      "seconds": 16.616,
       "tests": 113
     },
     "tests/test_audit.py": {
-      "seconds": 0.099,
+      "seconds": 0.101,
       "tests": 5
     },
     "tests/test_authentication_attempts.py": {
-      "seconds": 8.725,
+      "seconds": 9.205,
       "tests": 6
     },
     "tests/test_authorization.py": {
-      "seconds": 1.476,
+      "seconds": 1.483,
       "tests": 32
     },
     "tests/test_backup_membership_race.py": {
@@ -521,619 +522,619 @@
       "tests": 10
     },
     "tests/test_backup_verification_health.py": {
-      "seconds": 1.208,
+      "seconds": 1.104,
       "tests": 53
     },
     "tests/test_bounded_teema_history.py": {
-      "seconds": 3.82,
+      "seconds": 3.917,
       "tests": 4
     },
     "tests/test_browser_policy.py": {
-      "seconds": 2.119,
+      "seconds": 2.1,
       "tests": 399
     },
     "tests/test_build_stamp.py": {
-      "seconds": 0.037,
+      "seconds": 0.032,
       "tests": 10
     },
     "tests/test_business_write_boundary.py": {
-      "seconds": 73.899,
+      "seconds": 79.82,
       "tests": 840
     },
     "tests/test_child_existence_visibility.py": {
-      "seconds": 3.147,
+      "seconds": 3.857,
       "tests": 10
     },
     "tests/test_child_projection_visibility.py": {
-      "seconds": 3.538,
+      "seconds": 3.028,
       "tests": 36
     },
     "tests/test_chronology_scope_once.py": {
-      "seconds": 2.353,
+      "seconds": 2.507,
       "tests": 5
     },
     "tests/test_ci_sharding.py": {
-      "seconds": 0.438,
+      "seconds": 0.458,
       "tests": 21
     },
     "tests/test_ci_skip_policy.py": {
-      "seconds": 1.097,
+      "seconds": 0.951,
       "tests": 13
     },
     "tests/test_ci_slices.py": {
-      "seconds": 0.669,
+      "seconds": 0.573,
       "tests": 30
     },
     "tests/test_ci_workflow_selection.py": {
-      "seconds": 0.173,
+      "seconds": 0.2,
       "tests": 21
     },
     "tests/test_closed_matter_documents.py": {
-      "seconds": 3.236,
+      "seconds": 3.677,
       "tests": 21
     },
     "tests/test_closed_matter_stage_boundary.py": {
-      "seconds": 2.557,
+      "seconds": 2.347,
       "tests": 15
     },
     "tests/test_closure_confirms_live_work.py": {
-      "seconds": 0.843,
+      "seconds": 0.76,
       "tests": 9
     },
     "tests/test_cloudflare_access.py": {
-      "seconds": 2.026,
+      "seconds": 1.937,
       "tests": 24
     },
     "tests/test_compact_teema_round.py": {
-      "seconds": 1.612,
+      "seconds": 1.945,
       "tests": 10
     },
     "tests/test_completion_entry_inherits_action_restriction.py": {
-      "seconds": 1.717,
+      "seconds": 1.814,
       "tests": 14
     },
     "tests/test_concurrency.py": {
-      "seconds": 16.816,
+      "seconds": 14.693,
       "tests": 15
     },
     "tests/test_consistency_batch_three.py": {
-      "seconds": 17.269,
+      "seconds": 17.452,
       "tests": 90
     },
     "tests/test_content_authorization.py": {
-      "seconds": 13.516,
+      "seconds": 13.519,
       "tests": 19
     },
     "tests/test_content_disposition.py": {
-      "seconds": 0.176,
+      "seconds": 0.192,
       "tests": 15
     },
     "tests/test_content_search.py": {
-      "seconds": 16.794,
+      "seconds": 17.025,
       "tests": 35
     },
     "tests/test_correction_is_only_what_moved.py": {
-      "seconds": 2.959,
+      "seconds": 3.11,
       "tests": 13
     },
     "tests/test_correction_round_polish.py": {
-      "seconds": 2.241,
+      "seconds": 2.368,
       "tests": 21
     },
     "tests/test_counterparty_promotion.py": {
-      "seconds": 1.873,
+      "seconds": 1.924,
       "tests": 10
     },
     "tests/test_create_form_is_submitted_once.py": {
-      "seconds": 2.476,
+      "seconds": 2.495,
       "tests": 7
     },
     "tests/test_create_pressed_during_upload.py": {
-      "seconds": 0.926,
+      "seconds": 0.92,
       "tests": 4
     },
     "tests/test_creator_owns_new_teema.py": {
-      "seconds": 0.557,
+      "seconds": 0.608,
       "tests": 9
     },
     "tests/test_cross_matter_write_skew.py": {
-      "seconds": 9.149,
+      "seconds": 11.196,
       "tests": 8
     },
     "tests/test_csv_safety.py": {
-      "seconds": 0.19,
+      "seconds": 0.188,
       "tests": 31
     },
     "tests/test_current_capture_is_searchable.py": {
-      "seconds": 0.62,
+      "seconds": 0.627,
       "tests": 10
     },
     "tests/test_current_register_promotion.py": {
-      "seconds": 9.717,
+      "seconds": 9.747,
       "tests": 25
     },
     "tests/test_current_register_refresh.py": {
-      "seconds": 7.234,
+      "seconds": 8.808,
       "tests": 66
     },
     "tests/test_current_register_state_verify.py": {
-      "seconds": 1.205,
+      "seconds": 1.121,
       "tests": 11
     },
     "tests/test_current_work_refreshes_after_round_answer.py": {
-      "seconds": 1.163,
+      "seconds": 1.328,
       "tests": 8
     },
     "tests/test_cutover_dashboard.py": {
-      "seconds": 8.909,
+      "seconds": 10.099,
       "tests": 10
     },
     "tests/test_dashboard.py": {
-      "seconds": 0.715,
+      "seconds": 0.757,
       "tests": 10
     },
     "tests/test_dashboard_kpi_links.py": {
-      "seconds": 2.751,
+      "seconds": 2.918,
       "tests": 16
     },
     "tests/test_date_precision_composer.py": {
-      "seconds": 10.056,
+      "seconds": 10.065,
       "tests": 44
     },
     "tests/test_deadline_grouping.py": {
-      "seconds": 2.78,
+      "seconds": 2.652,
       "tests": 12
     },
     "tests/test_default_home.py": {
-      "seconds": 2.753,
+      "seconds": 2.793,
       "tests": 14
     },
     "tests/test_deletion_offer_is_cheap.py": {
-      "seconds": 1.901,
+      "seconds": 2.115,
       "tests": 8
     },
     "tests/test_deletion_stays_inside_its_matter.py": {
-      "seconds": 1.196,
+      "seconds": 1.37,
       "tests": 6
     },
     "tests/test_department_dashboard.py": {
-      "seconds": 20.261,
+      "seconds": 20.291,
       "tests": 34
     },
     "tests/test_department_page.py": {
-      "seconds": 32.584,
+      "seconds": 34.662,
       "tests": 96
     },
     "tests/test_department_team_population.py": {
-      "seconds": 6.087,
+      "seconds": 6.895,
       "tests": 32
     },
     "tests/test_department_wide_lawyer_access.py": {
-      "seconds": 1.93,
+      "seconds": 2.369,
       "tests": 14
     },
     "tests/test_department_workers.py": {
-      "seconds": 0.219,
+      "seconds": 0.222,
       "tests": 22
     },
     "tests/test_deployment_image.py": {
-      "seconds": 0.049,
+      "seconds": 0.041,
       "tests": 14
     },
     "tests/test_deployment_recovery_rehearsal.py": {
-      "seconds": 0.083,
+      "seconds": 0.068,
       "tests": 29
     },
     "tests/test_deployment_runbooks.py": {
-      "seconds": 0.491,
+      "seconds": 0.599,
       "tests": 78
     },
     "tests/test_deployment_scripts.py": {
-      "seconds": 1.611,
+      "seconds": 0.682,
       "tests": 50
     },
     "tests/test_deployment_state.py": {
-      "seconds": 2.949,
+      "seconds": 2.944,
       "tests": 70
     },
     "tests/test_deployment_target_image.py": {
-      "seconds": 0.099,
+      "seconds": 0.103,
       "tests": 30
     },
     "tests/test_deployment_unraid.py": {
-      "seconds": 0.114,
+      "seconds": 0.131,
       "tests": 40
     },
     "tests/test_deployment_unraid_main.py": {
-      "seconds": 0.165,
+      "seconds": 0.143,
       "tests": 52
     },
     "tests/test_derivative_deletion.py": {
-      "seconds": 1.848,
+      "seconds": 2.152,
       "tests": 11
     },
     "tests/test_derivative_text_integrity.py": {
-      "seconds": 0.656,
+      "seconds": 0.762,
       "tests": 8
     },
     "tests/test_describedby_resolves.py": {
-      "seconds": 8.421,
+      "seconds": 8.867,
       "tests": 31
     },
     "tests/test_design_support.py": {
-      "seconds": 0.935,
+      "seconds": 0.861,
       "tests": 20
     },
     "tests/test_design_v2_surfaces.py": {
-      "seconds": 3.602,
+      "seconds": 3.606,
       "tests": 18
     },
     "tests/test_development_evidence.py": {
-      "seconds": 3.887,
+      "seconds": 4.066,
       "tests": 31
     },
     "tests/test_direct_next_action_workflow.py": {
-      "seconds": 10.416,
+      "seconds": 10.533,
       "tests": 29
     },
     "tests/test_document_record_context.py": {
-      "seconds": 3.073,
+      "seconds": 3.496,
       "tests": 15
     },
     "tests/test_document_title_and_kaasamine_split.py": {
-      "seconds": 3.437,
+      "seconds": 3.604,
       "tests": 15
     },
     "tests/test_documents.py": {
-      "seconds": 2.597,
+      "seconds": 2.465,
       "tests": 20
     },
     "tests/test_documents_tab_pagination.py": {
-      "seconds": 3.104,
+      "seconds": 3.643,
       "tests": 4
     },
     "tests/test_dokumendid_opinion_block_retired.py": {
-      "seconds": 6.059,
+      "seconds": 6.12,
       "tests": 23
     },
     "tests/test_drafting_presence.py": {
-      "seconds": 8.408,
+      "seconds": 8.38,
       "tests": 11
     },
     "tests/test_drilldown_arrival.py": {
-      "seconds": 1.734,
+      "seconds": 1.876,
       "tests": 12
     },
     "tests/test_e2e_title_namespacing.py": {
-      "seconds": 0.014,
+      "seconds": 0.013,
       "tests": 3
     },
     "tests/test_email_provenance.py": {
-      "seconds": 3.103,
+      "seconds": 2.903,
       "tests": 18
     },
     "tests/test_empty_application.py": {
-      "seconds": 11.186,
+      "seconds": 11.991,
       "tests": 79
     },
     "tests/test_engagement_correction.py": {
-      "seconds": 5.843,
+      "seconds": 5.935,
       "tests": 53
     },
     "tests/test_engagement_count_and_evidence_together.py": {
-      "seconds": 0.29,
+      "seconds": 0.279,
       "tests": 2
     },
     "tests/test_engagement_date_precision.py": {
-      "seconds": 5.759,
+      "seconds": 5.748,
       "tests": 51
     },
     "tests/test_engagement_dates.py": {
-      "seconds": 3.513,
+      "seconds": 3.522,
       "tests": 25
     },
     "tests/test_engagement_feedback_wait.py": {
-      "seconds": 7.439,
+      "seconds": 6.755,
       "tests": 60
     },
     "tests/test_entries_and_composer.py": {
-      "seconds": 0.815,
+      "seconds": 0.78,
       "tests": 21
     },
     "tests/test_entry_correction.py": {
-      "seconds": 3.426,
+      "seconds": 3.453,
       "tests": 31
     },
     "tests/test_era_contracts.py": {
-      "seconds": 0.302,
+      "seconds": 0.299,
       "tests": 94
     },
     "tests/test_estonian_counts.py": {
-      "seconds": 0.657,
+      "seconds": 0.758,
       "tests": 14
     },
     "tests/test_estonian_dates.py": {
-      "seconds": 6.689,
+      "seconds": 6.568,
       "tests": 43
     },
     "tests/test_estonian_recall.py": {
-      "seconds": 0.52,
+      "seconds": 0.426,
       "tests": 2
     },
     "tests/test_evidence_concurrency.py": {
-      "seconds": 27.071,
+      "seconds": 34.059,
       "tests": 26
     },
     "tests/test_evidence_integrity.py": {
-      "seconds": 3.622,
+      "seconds": 3.602,
       "tests": 27
     },
     "tests/test_evidence_integrity_every_holder.py": {
-      "seconds": 0.622,
+      "seconds": 0.527,
       "tests": 6
     },
     "tests/test_evidence_reliability.py": {
-      "seconds": 2.546,
+      "seconds": 2.68,
       "tests": 28
     },
     "tests/test_excel_pilot_2026.py": {
-      "seconds": 16.512,
+      "seconds": 18.843,
       "tests": 63
     },
     "tests/test_external_positions.py": {
-      "seconds": 8.844,
+      "seconds": 7.836,
       "tests": 117
     },
     "tests/test_extraction_attempts_are_additive.py": {
-      "seconds": 0.037,
+      "seconds": 0.035,
       "tests": 2
     },
     "tests/test_extraction_backlog_is_visible.py": {
-      "seconds": 0.22,
+      "seconds": 0.218,
       "tests": 2
     },
     "tests/test_extraction_parsers.py": {
-      "seconds": 2.121,
+      "seconds": 2.239,
       "tests": 42
     },
     "tests/test_extraction_report_scope.py": {
-      "seconds": 0.8,
+      "seconds": 0.928,
       "tests": 7
     },
     "tests/test_extraction_robustness.py": {
-      "seconds": 2.692,
+      "seconds": 2.461,
       "tests": 19
     },
     "tests/test_extraction_worker.py": {
-      "seconds": 5.6,
+      "seconds": 5.605,
       "tests": 55
     },
     "tests/test_feedback_deadline_strip_and_overview_form.py": {
-      "seconds": 3.871,
+      "seconds": 4.589,
       "tests": 26
     },
     "tests/test_file_intake_robustness.py": {
-      "seconds": 4.108,
+      "seconds": 4.367,
       "tests": 23
     },
     "tests/test_final_register_cutover.py": {
-      "seconds": 32.54,
+      "seconds": 35.118,
       "tests": 45
     },
     "tests/test_final_register_scope.py": {
-      "seconds": 5.636,
+      "seconds": 5.71,
       "tests": 23
     },
     "tests/test_followup_ux_round.py": {
-      "seconds": 5.414,
+      "seconds": 5.428,
       "tests": 40
     },
     "tests/test_form_help_accessibility.py": {
-      "seconds": 1.275,
+      "seconds": 1.263,
       "tests": 9
     },
     "tests/test_future_dated_records.py": {
-      "seconds": 3.927,
+      "seconds": 3.928,
       "tests": 40
     },
     "tests/test_header_search_suggestions.py": {
-      "seconds": 4.527,
+      "seconds": 4.412,
       "tests": 33
     },
     "tests/test_held_uploads.py": {
-      "seconds": 0.828,
+      "seconds": 0.839,
       "tests": 13
     },
     "tests/test_historical_corpus.py": {
-      "seconds": 14.389,
+      "seconds": 14.388,
       "tests": 53
     },
     "tests/test_historical_cutover.py": {
-      "seconds": 3.003,
+      "seconds": 3.464,
       "tests": 45
     },
     "tests/test_historical_import_command.py": {
-      "seconds": 9.243,
+      "seconds": 9.022,
       "tests": 23
     },
     "tests/test_hostile_input.py": {
-      "seconds": 15.065,
+      "seconds": 15.806,
       "tests": 68
     },
     "tests/test_htmx_failure_answers.py": {
-      "seconds": 1.109,
+      "seconds": 1.158,
       "tests": 13
     },
     "tests/test_identifier_free_ui.py": {
-      "seconds": 4.976,
+      "seconds": 4.878,
       "tests": 47
     },
     "tests/test_identifiers.py": {
-      "seconds": 0.017,
+      "seconds": 0.018,
       "tests": 4
     },
     "tests/test_import_lock_concurrency.py": {
-      "seconds": 1.496,
+      "seconds": 1.483,
       "tests": 1
     },
     "tests/test_import_lock_discipline.py": {
-      "seconds": 0.379,
+      "seconds": 0.417,
       "tests": 2
     },
     "tests/test_import_search_integration.py": {
-      "seconds": 2.072,
+      "seconds": 2.091,
       "tests": 14
     },
     "tests/test_important_date_visibility.py": {
-      "seconds": 0.577,
+      "seconds": 0.581,
       "tests": 7
     },
     "tests/test_important_dates_are_personal_work.py": {
-      "seconds": 1.713,
+      "seconds": 1.623,
       "tests": 12
     },
     "tests/test_incoming_file_roles.py": {
-      "seconds": 1.144,
+      "seconds": 1.167,
       "tests": 6
     },
     "tests/test_index_operations.py": {
-      "seconds": 15.284,
+      "seconds": 15.5,
       "tests": 5
     },
     "tests/test_inline_files.py": {
-      "seconds": 1.159,
+      "seconds": 1.174,
       "tests": 19
     },
     "tests/test_intake.py": {
-      "seconds": 1.72,
+      "seconds": 1.963,
       "tests": 28
     },
     "tests/test_intake_corpus_quality.py": {
-      "seconds": 1.14,
+      "seconds": 1.099,
       "tests": 18
     },
     "tests/test_intake_reader.py": {
-      "seconds": 5.557,
+      "seconds": 5.43,
       "tests": 28
     },
     "tests/test_intake_reader_cost.py": {
-      "seconds": 0.857,
+      "seconds": 0.83,
       "tests": 8
     },
     "tests/test_intake_reader_truthful_state.py": {
-      "seconds": 0.636,
+      "seconds": 0.779,
       "tests": 9
     },
     "tests/test_intake_staging.py": {
-      "seconds": 6.133,
+      "seconds": 6.153,
       "tests": 62
     },
     "tests/test_integration_post_qa_sep11.py": {
-      "seconds": 1.611,
+      "seconds": 1.588,
       "tests": 9
     },
     "tests/test_integration_seams.py": {
-      "seconds": 2.78,
+      "seconds": 2.852,
       "tests": 16
     },
     "tests/test_integration_sep10_composition.py": {
-      "seconds": 1.526,
+      "seconds": 1.757,
       "tests": 10
     },
     "tests/test_integration_uus_teema_overview.py": {
-      "seconds": 1.754,
+      "seconds": 2.147,
       "tests": 7
     },
     "tests/test_intelligence_authorization.py": {
-      "seconds": 0.912,
+      "seconds": 0.953,
       "tests": 12
     },
     "tests/test_intelligence_dates.py": {
-      "seconds": 0.126,
+      "seconds": 0.13,
       "tests": 60
     },
     "tests/test_intelligence_effective_dates.py": {
-      "seconds": 0.44,
+      "seconds": 0.445,
       "tests": 11
     },
     "tests/test_intelligence_important_dates.py": {
-      "seconds": 0.662,
+      "seconds": 0.692,
       "tests": 14
     },
     "tests/test_intelligence_views.py": {
-      "seconds": 2.881,
+      "seconds": 3.006,
       "tests": 31
     },
     "tests/test_intelligence_work_victories.py": {
-      "seconds": 0.855,
+      "seconds": 0.98,
       "tests": 20
     },
     "tests/test_invariants_below_the_form.py": {
-      "seconds": 2.849,
+      "seconds": 2.971,
       "tests": 49
     },
     "tests/test_invariants_cross_matter.py": {
-      "seconds": 2.784,
+      "seconds": 2.886,
       "tests": 16
     },
     "tests/test_jit_is_off.py": {
-      "seconds": 0.146,
+      "seconds": 0.14,
       "tests": 3
     },
     "tests/test_kaasamine_deadline_is_optional.py": {
-      "seconds": 11.343,
+      "seconds": 13.575,
       "tests": 25
     },
     "tests/test_koda_initiative.py": {
-      "seconds": 2.059,
+      "seconds": 1.965,
       "tests": 24
     },
     "tests/test_koda_initiative_follow_up.py": {
-      "seconds": 0.503,
+      "seconds": 0.517,
       "tests": 5
     },
     "tests/test_lawyer_classification_round.py": {
-      "seconds": 2.299,
+      "seconds": 2.322,
       "tests": 29
     },
     "tests/test_lawyer_workflow_package.py": {
-      "seconds": 9.34,
+      "seconds": 9.874,
       "tests": 103
     },
     "tests/test_legacy_import.py": {
-      "seconds": 0.271,
+      "seconds": 0.279,
       "tests": 6
     },
     "tests/test_legal_process_rail.py": {
-      "seconds": 3.962,
+      "seconds": 4.647,
       "tests": 41
     },
     "tests/test_local_auth_admin_views.py": {
-      "seconds": 2.104,
+      "seconds": 2.173,
       "tests": 30
     },
     "tests/test_local_auth_audit.py": {
-      "seconds": 0.277,
+      "seconds": 0.272,
       "tests": 3
     },
     "tests/test_local_auth_capabilities.py": {
-      "seconds": 1.23,
+      "seconds": 1.257,
       "tests": 36
     },
     "tests/test_local_auth_lifecycle.py": {
-      "seconds": 1.94,
+      "seconds": 2.222,
       "tests": 59
     },
     "tests/test_local_auth_passwords.py": {
-      "seconds": 0.114,
+      "seconds": 0.11,
       "tests": 19
     },
     "tests/test_local_auth_production_safety.py": {
-      "seconds": 6.821,
+      "seconds": 7.221,
       "tests": 79
     },
     "tests/test_local_auth_review_fixes.py": {
-      "seconds": 1.519,
+      "seconds": 1.703,
       "tests": 15
     },
     "tests/test_local_auth_runbook_invariants.py": {
@@ -1141,99 +1142,99 @@
       "tests": 5
     },
     "tests/test_local_auth_sign_in.py": {
-      "seconds": 2.137,
+      "seconds": 2.094,
       "tests": 43
     },
     "tests/test_main_proof.py": {
-      "seconds": 0.123,
+      "seconds": 0.125,
       "tests": 17
     },
     "tests/test_management_commands.py": {
-      "seconds": 0.511,
+      "seconds": 0.402,
       "tests": 166
     },
     "tests/test_matter_activity.py": {
-      "seconds": 2.256,
+      "seconds": 2.261,
       "tests": 25
     },
     "tests/test_matter_create_form.py": {
-      "seconds": 1.782,
+      "seconds": 1.814,
       "tests": 29
     },
     "tests/test_matter_creation_use_case.py": {
-      "seconds": 0.684,
+      "seconds": 0.695,
       "tests": 11
     },
     "tests/test_matter_engagement.py": {
-      "seconds": 8.909,
+      "seconds": 8.855,
       "tests": 91
     },
     "tests/test_matter_form_controls.py": {
-      "seconds": 1.331,
+      "seconds": 1.447,
       "tests": 24
     },
     "tests/test_matter_process_phases.py": {
-      "seconds": 9.431,
+      "seconds": 11.371,
       "tests": 46
     },
     "tests/test_matter_reference_isolation.py": {
-      "seconds": 0.665,
+      "seconds": 0.626,
       "tests": 15
     },
     "tests/test_matter_workflow.py": {
-      "seconds": 3.336,
+      "seconds": 4.133,
       "tests": 21
     },
     "tests/test_matter_write_serialization.py": {
-      "seconds": 27.915,
+      "seconds": 27.828,
       "tests": 19
     },
     "tests/test_matters.py": {
-      "seconds": 0.85,
+      "seconds": 0.849,
       "tests": 21
     },
     "tests/test_merge_hygiene.py": {
-      "seconds": 0.153,
+      "seconds": 0.192,
       "tests": 5
     },
     "tests/test_mfa_key_loss.py": {
-      "seconds": 0.262,
+      "seconds": 0.266,
       "tests": 12
     },
     "tests/test_migration_data_proof.py": {
-      "seconds": 0.195,
+      "seconds": 0.193,
       "tests": 5
     },
     "tests/test_migrations.py": {
-      "seconds": 0.128,
+      "seconds": 0.145,
       "tests": 3
     },
     "tests/test_multiple_senders.py": {
-      "seconds": 5.08,
+      "seconds": 5.093,
       "tests": 37
     },
     "tests/test_multiple_senders_migration.py": {
-      "seconds": 92.731,
+      "seconds": 93.719,
       "tests": 6
     },
     "tests/test_my_work_opinion_kpis.py": {
-      "seconds": 4.152,
+      "seconds": 4.207,
       "tests": 42
     },
     "tests/test_my_work_timeline.py": {
-      "seconds": 14.584,
+      "seconds": 16.955,
       "tests": 32
     },
     "tests/test_negative_tests_name_their_refusal.py": {
-      "seconds": 2.682,
+      "seconds": 2.69,
       "tests": 3
     },
     "tests/test_new_assignment_notices.py": {
-      "seconds": 4.476,
+      "seconds": 4.064,
       "tests": 46
     },
     "tests/test_next_action.py": {
-      "seconds": 0.973,
+      "seconds": 1.198,
       "tests": 26
     },
     "tests/test_next_action_candidates.py": {
@@ -1241,571 +1242,571 @@
       "tests": 13
     },
     "tests/test_next_action_enrichment.py": {
-      "seconds": 1.205,
+      "seconds": 1.368,
       "tests": 28
     },
     "tests/test_next_action_lock_strength.py": {
-      "seconds": 6.676,
+      "seconds": 7.263,
       "tests": 6
     },
     "tests/test_next_action_plaanis_wording.py": {
-      "seconds": 1.521,
+      "seconds": 1.472,
       "tests": 26
     },
     "tests/test_next_step_from_the_record.py": {
-      "seconds": 1.621,
+      "seconds": 1.66,
       "tests": 15
     },
     "tests/test_next_step_rule_parity.py": {
-      "seconds": 0.037,
+      "seconds": 0.029,
       "tests": 9
     },
     "tests/test_october_ux_round.py": {
-      "seconds": 6.171,
+      "seconds": 6.222,
       "tests": 45
     },
     "tests/test_oigusakt_field.py": {
-      "seconds": 1.471,
+      "seconds": 1.483,
       "tests": 34
     },
     "tests/test_oigusakt_intake.py": {
-      "seconds": 1.074,
+      "seconds": 1.09,
       "tests": 26
     },
     "tests/test_one_definition_of_overdue.py": {
-      "seconds": 0.404,
+      "seconds": 0.458,
       "tests": 6
     },
     "tests/test_one_legal_instrument.py": {
-      "seconds": 1.288,
+      "seconds": 1.287,
       "tests": 17
     },
     "tests/test_one_read_per_page.py": {
-      "seconds": 3.314,
+      "seconds": 3.29,
       "tests": 21
     },
     "tests/test_one_write_gate.py": {
-      "seconds": 1.21,
+      "seconds": 1.223,
       "tests": 26
     },
     "tests/test_onenote_export.py": {
-      "seconds": 0.107,
+      "seconds": 0.119,
       "tests": 30
     },
     "tests/test_onenote_policy_area_enrichment.py": {
-      "seconds": 1.72,
+      "seconds": 1.711,
       "tests": 26
     },
     "tests/test_operator_paths.py": {
-      "seconds": 0.82,
+      "seconds": 0.993,
       "tests": 13
     },
     "tests/test_operator_queue_cost.py": {
-      "seconds": 0.341,
+      "seconds": 0.345,
       "tests": 4
     },
     "tests/test_opinion_apply_hardening.py": {
-      "seconds": 3.43,
+      "seconds": 3.9,
       "tests": 35
     },
     "tests/test_opinion_apply_state.py": {
-      "seconds": 4.119,
+      "seconds": 3.652,
       "tests": 40
     },
     "tests/test_opinion_archive.py": {
-      "seconds": 2.942,
+      "seconds": 3.004,
       "tests": 58
     },
     "tests/test_opinion_archive_evidence.py": {
-      "seconds": 0.944,
+      "seconds": 0.961,
       "tests": 19
     },
     "tests/test_opinion_archive_review.py": {
-      "seconds": 2.73,
+      "seconds": 3.073,
       "tests": 42
     },
     "tests/test_opinion_archive_search.py": {
-      "seconds": 9.347,
+      "seconds": 9.716,
       "tests": 126
     },
     "tests/test_opinion_archive_surfaces.py": {
-      "seconds": 1.111,
+      "seconds": 1.218,
       "tests": 21
     },
     "tests/test_opinion_archive_workspace.py": {
-      "seconds": 8.049,
+      "seconds": 8.07,
       "tests": 45
     },
     "tests/test_opinion_catalogue_phase.py": {
-      "seconds": 1.329,
+      "seconds": 1.523,
       "tests": 22
     },
     "tests/test_opinion_finishes_named_work.py": {
-      "seconds": 2.729,
+      "seconds": 3.052,
       "tests": 8
     },
     "tests/test_opinion_follow_up.py": {
-      "seconds": 11.777,
+      "seconds": 11.653,
       "tests": 68
     },
     "tests/test_opinion_follow_up_concurrency.py": {
-      "seconds": 1.308,
+      "seconds": 1.238,
       "tests": 1
     },
     "tests/test_opinion_follow_up_surfaces.py": {
-      "seconds": 7.617,
+      "seconds": 8.849,
       "tests": 28
     },
     "tests/test_opinion_manage_overview_link.py": {
-      "seconds": 0.934,
+      "seconds": 0.894,
       "tests": 4
     },
     "tests/test_opinion_marksonad_and_overview_links.py": {
-      "seconds": 3.953,
+      "seconds": 3.676,
       "tests": 54
     },
     "tests/test_opinion_register_snapshot.py": {
-      "seconds": 0.531,
+      "seconds": 0.519,
       "tests": 12
     },
     "tests/test_opinion_sent_files.py": {
-      "seconds": 4.61,
+      "seconds": 5.366,
       "tests": 22
     },
     "tests/test_opinion_sent_means_sent.py": {
-      "seconds": 0.822,
+      "seconds": 0.997,
       "tests": 14
     },
     "tests/test_opinion_working_documents.py": {
-      "seconds": 8.635,
+      "seconds": 8.649,
       "tests": 43
     },
     "tests/test_opinion_zip_paths.py": {
-      "seconds": 0.071,
+      "seconds": 0.061,
       "tests": 20
     },
     "tests/test_opinions_under_documents.py": {
-      "seconds": 11.666,
+      "seconds": 11.639,
       "tests": 69
     },
     "tests/test_opinions_workspace.py": {
-      "seconds": 4.085,
+      "seconds": 4.072,
       "tests": 26
     },
     "tests/test_organisation_identity.py": {
-      "seconds": 1.43,
+      "seconds": 1.445,
       "tests": 70
     },
     "tests/test_organisation_identity_concurrency.py": {
-      "seconds": 4.939,
+      "seconds": 5.42,
       "tests": 5
     },
     "tests/test_organisation_pool.py": {
-      "seconds": 2.618,
+      "seconds": 2.912,
       "tests": 28
     },
     "tests/test_organisations.py": {
-      "seconds": 1.136,
+      "seconds": 1.16,
       "tests": 23
     },
     "tests/test_osakond_week_and_drafting.py": {
-      "seconds": 3.305,
+      "seconds": 3.901,
       "tests": 25
     },
     "tests/test_overview_drilldowns.py": {
-      "seconds": 9.573,
+      "seconds": 9.176,
       "tests": 8
     },
     "tests/test_overview_news_publication.py": {
-      "seconds": 2.796,
+      "seconds": 3.181,
       "tests": 45
     },
     "tests/test_overview_news_unknown_date.py": {
-      "seconds": 2.07,
+      "seconds": 2.352,
       "tests": 23
     },
     "tests/test_overview_scopes.py": {
-      "seconds": 1.796,
+      "seconds": 2.031,
       "tests": 19
     },
     "tests/test_overview_simplification.py": {
-      "seconds": 3.257,
+      "seconds": 3.231,
       "tests": 14
     },
     "tests/test_owner_backfill.py": {
-      "seconds": 5.863,
+      "seconds": 5.869,
       "tests": 31
     },
     "tests/test_participation_one_shape.py": {
-      "seconds": 2.611,
+      "seconds": 2.655,
       "tests": 9
     },
     "tests/test_period_taken_effect.py": {
-      "seconds": 4.812,
+      "seconds": 4.755,
       "tests": 50
     },
     "tests/test_person_workspace.py": {
-      "seconds": 3.884,
+      "seconds": 3.917,
       "tests": 26
     },
     "tests/test_persona_candidates.py": {
-      "seconds": 0.126,
+      "seconds": 0.118,
       "tests": 18
     },
     "tests/test_persona_switch.py": {
-      "seconds": 9.74,
+      "seconds": 10.34,
       "tests": 52
     },
     "tests/test_personal_note_concurrency.py": {
-      "seconds": 1.62,
+      "seconds": 1.654,
       "tests": 17
     },
     "tests/test_pilot_identity_and_visibility.py": {
-      "seconds": 0.844,
+      "seconds": 0.946,
       "tests": 21
     },
     "tests/test_pilot_p1_workflows.py": {
-      "seconds": 0.207,
+      "seconds": 0.233,
       "tests": 2
     },
     "tests/test_planned_action_tehtud.py": {
-      "seconds": 1.738,
+      "seconds": 1.729,
       "tests": 17
     },
     "tests/test_planned_actions_and_teema_ux_round.py": {
-      "seconds": 3.392,
+      "seconds": 3.514,
       "tests": 20
     },
     "tests/test_policy_area_other.py": {
-      "seconds": 0.672,
+      "seconds": 0.694,
       "tests": 12
     },
     "tests/test_post_qa_read_surfaces.py": {
-      "seconds": 7.316,
+      "seconds": 7.323,
       "tests": 49
     },
     "tests/test_procedural_development_correction.py": {
-      "seconds": 4.626,
+      "seconds": 4.691,
       "tests": 42
     },
     "tests/test_procedural_links.py": {
-      "seconds": 3.627,
+      "seconds": 3.371,
       "tests": 50
     },
     "tests/test_procedural_links_on_uus_teema.py": {
-      "seconds": 1.477,
+      "seconds": 1.473,
       "tests": 23
     },
     "tests/test_production_status.py": {
-      "seconds": 1.353,
+      "seconds": 1.315,
       "tests": 15
     },
     "tests/test_provision_user.py": {
-      "seconds": 0.257,
+      "seconds": 0.254,
       "tests": 31
     },
     "tests/test_qa_round_wording_and_navigation.py": {
-      "seconds": 1.44,
+      "seconds": 1.683,
       "tests": 13
     },
     "tests/test_quality_regressions.py": {
-      "seconds": 1.199,
+      "seconds": 1.505,
       "tests": 14
     },
     "tests/test_rail_followup_round.py": {
-      "seconds": 0.757,
+      "seconds": 0.878,
       "tests": 11
     },
     "tests/test_rail_is_the_road_ahead.py": {
-      "seconds": 1.034,
+      "seconds": 1.053,
       "tests": 16
     },
     "tests/test_rail_milestones_follow_the_beginning.py": {
-      "seconds": 2.852,
+      "seconds": 2.613,
       "tests": 20
     },
     "tests/test_rail_phase_order_after_reclassification.py": {
-      "seconds": 0.896,
+      "seconds": 0.928,
       "tests": 10
     },
     "tests/test_read_side_existence_oracles.py": {
-      "seconds": 90.85,
+      "seconds": 93.054,
       "tests": 11
     },
     "tests/test_readability_rounds_and_rows.py": {
-      "seconds": 1.159,
+      "seconds": 1.309,
       "tests": 7
     },
     "tests/test_reader_is_offered_no_write_controls.py": {
-      "seconds": 0.448,
+      "seconds": 0.522,
       "tests": 3
     },
     "tests/test_recipient_resolution.py": {
-      "seconds": 0.12,
+      "seconds": 0.15,
       "tests": 8
     },
     "tests/test_record_context.py": {
-      "seconds": 2.248,
+      "seconds": 2.826,
       "tests": 22
     },
     "tests/test_record_evidence_inherits_restriction.py": {
-      "seconds": 5.391,
+      "seconds": 4.93,
       "tests": 31
     },
     "tests/test_recovery_fingerprint_accuracy.py": {
-      "seconds": 0.96,
+      "seconds": 0.994,
       "tests": 15
     },
     "tests/test_reference_data_coverage.py": {
-      "seconds": 0.999,
+      "seconds": 1.087,
       "tests": 20
     },
     "tests/test_reference_data_foundation.py": {
-      "seconds": 37.605,
+      "seconds": 37.297,
       "tests": 68
     },
     "tests/test_reference_data_isolation.py": {
-      "seconds": 62.053,
+      "seconds": 61.659,
       "tests": 10
     },
     "tests/test_reference_legal_instruments.py": {
-      "seconds": 0.209,
+      "seconds": 0.173,
       "tests": 80
     },
     "tests/test_reference_stages.py": {
-      "seconds": 0.068,
+      "seconds": 0.057,
       "tests": 13
     },
     "tests/test_register_conditional_distinct.py": {
-      "seconds": 20.26,
+      "seconds": 23.694,
       "tests": 6
     },
     "tests/test_register_continuation_link.py": {
-      "seconds": 0.91,
+      "seconds": 0.971,
       "tests": 10
     },
     "tests/test_register_count_cost.py": {
-      "seconds": 0.308,
+      "seconds": 0.316,
       "tests": 4
     },
     "tests/test_register_header_drift.py": {
-      "seconds": 0.226,
+      "seconds": 0.233,
       "tests": 6
     },
     "tests/test_register_import.py": {
-      "seconds": 6.679,
+      "seconds": 6.986,
       "tests": 48
     },
     "tests/test_register_interactive_columns.py": {
-      "seconds": 8.061,
+      "seconds": 7.504,
       "tests": 51
     },
     "tests/test_register_next_action_parser.py": {
-      "seconds": 0.139,
+      "seconds": 0.155,
       "tests": 52
     },
     "tests/test_register_next_action_parser_12.py": {
-      "seconds": 0.138,
+      "seconds": 0.144,
       "tests": 48
     },
     "tests/test_register_next_action_parser_20.py": {
-      "seconds": 0.092,
+      "seconds": 0.084,
       "tests": 28
     },
     "tests/test_register_next_action_parser_21.py": {
-      "seconds": 0.054,
+      "seconds": 0.055,
       "tests": 16
     },
     "tests/test_register_next_step.py": {
-      "seconds": 1.819,
+      "seconds": 1.822,
       "tests": 10
     },
     "tests/test_register_outreach.py": {
-      "seconds": 1.529,
+      "seconds": 1.831,
       "tests": 32
     },
     "tests/test_register_parser.py": {
-      "seconds": 0.517,
+      "seconds": 0.492,
       "tests": 37
     },
     "tests/test_register_retirement_closure.py": {
-      "seconds": 13.171,
+      "seconds": 13.434,
       "tests": 22
     },
     "tests/test_register_search.py": {
-      "seconds": 11.212,
+      "seconds": 11.81,
       "tests": 62
     },
     "tests/test_register_search_runs_once.py": {
-      "seconds": 0.481,
+      "seconds": 0.49,
       "tests": 3
     },
     "tests/test_register_selectors.py": {
-      "seconds": 0.963,
+      "seconds": 0.976,
       "tests": 13
     },
     "tests/test_register_semantics.py": {
-      "seconds": 0.128,
+      "seconds": 0.127,
       "tests": 42
     },
     "tests/test_register_snapshot_label.py": {
-      "seconds": 0.467,
+      "seconds": 0.488,
       "tests": 15
     },
     "tests/test_register_work_filter.py": {
-      "seconds": 1.628,
+      "seconds": 1.702,
       "tests": 18
     },
     "tests/test_related_materials.py": {
-      "seconds": 9.857,
+      "seconds": 11.309,
       "tests": 69
     },
     "tests/test_related_materials_concurrency.py": {
-      "seconds": 3.684,
+      "seconds": 3.585,
       "tests": 3
     },
     "tests/test_related_materials_text.py": {
-      "seconds": 0.13,
+      "seconds": 0.133,
       "tests": 42
     },
     "tests/test_related_record_visibility.py": {
-      "seconds": 3.582,
+      "seconds": 3.772,
       "tests": 19
     },
     "tests/test_release_note_gate.py": {
-      "seconds": 0.258,
+      "seconds": 0.257,
       "tests": 41
     },
     "tests/test_release_notes.py": {
-      "seconds": 0.728,
+      "seconds": 0.736,
       "tests": 48
     },
     "tests/test_release_provenance_gate.py": {
-      "seconds": 0.469,
+      "seconds": 0.484,
       "tests": 71
     },
     "tests/test_removing_a_mistaken_record.py": {
-      "seconds": 2.145,
+      "seconds": 2.195,
       "tests": 29
     },
     "tests/test_reporting_archive_trends.py": {
-      "seconds": 2.402,
+      "seconds": 2.022,
       "tests": 38
     },
     "tests/test_reporting_authorization.py": {
-      "seconds": 1.789,
+      "seconds": 1.736,
       "tests": 20
     },
     "tests/test_reporting_catalogue.py": {
-      "seconds": 0.04,
+      "seconds": 0.042,
       "tests": 18
     },
     "tests/test_reporting_contract.py": {
-      "seconds": 0.021,
+      "seconds": 0.018,
       "tests": 8
     },
     "tests/test_reporting_count_parity.py": {
-      "seconds": 8.193,
+      "seconds": 8.239,
       "tests": 4
     },
     "tests/test_reporting_drillthrough.py": {
-      "seconds": 4.184,
+      "seconds": 5.141,
       "tests": 42
     },
     "tests/test_reporting_intake.py": {
-      "seconds": 1.135,
+      "seconds": 1.136,
       "tests": 17
     },
     "tests/test_reporting_measured_window_tallinn.py": {
-      "seconds": 0.813,
+      "seconds": 0.801,
       "tests": 5
     },
     "tests/test_reporting_metrics.py": {
-      "seconds": 1.405,
+      "seconds": 1.431,
       "tests": 56
     },
     "tests/test_reporting_pagination_determinism.py": {
-      "seconds": 2.827,
+      "seconds": 2.572,
       "tests": 9
     },
     "tests/test_reporting_responsibility.py": {
-      "seconds": 1.316,
+      "seconds": 1.297,
       "tests": 24
     },
     "tests/test_reporting_snapshots.py": {
-      "seconds": 1.142,
+      "seconds": 1.046,
       "tests": 20
     },
     "tests/test_reporting_views.py": {
-      "seconds": 3.29,
+      "seconds": 3.384,
       "tests": 47
     },
     "tests/test_repository_data_safety.py": {
-      "seconds": 0.475,
+      "seconds": 0.615,
       "tests": 24
     },
     "tests/test_response_deadline_history.py": {
-      "seconds": 2.856,
+      "seconds": 2.905,
       "tests": 24
     },
     "tests/test_response_deadline_work.py": {
-      "seconds": 6.138,
+      "seconds": 5.614,
       "tests": 70
     },
     "tests/test_response_obligation_display.py": {
-      "seconds": 6.243,
+      "seconds": 6.565,
       "tests": 22
     },
     "tests/test_response_obligation_state.py": {
-      "seconds": 2.51,
+      "seconds": 3.151,
       "tests": 29
     },
     "tests/test_retired_write_doors.py": {
-      "seconds": 0.848,
+      "seconds": 0.862,
       "tests": 9
     },
     "tests/test_review_due_rule.py": {
-      "seconds": 9.663,
+      "seconds": 11.089,
       "tests": 124
     },
     "tests/test_role_predicates_and_routes.py": {
-      "seconds": 0.188,
+      "seconds": 0.199,
       "tests": 6
     },
     "tests/test_row_scoped_refusals.py": {
-      "seconds": 2.889,
+      "seconds": 3.062,
       "tests": 12
     },
     "tests/test_running_work_scenarios.py": {
-      "seconds": 2.525,
+      "seconds": 2.306,
       "tests": 3
     },
     "tests/test_runtime_safety.py": {
-      "seconds": 0.037,
+      "seconds": 0.038,
       "tests": 11
     },
     "tests/test_saaja_means_addressee.py": {
-      "seconds": 3.462,
+      "seconds": 3.377,
       "tests": 11
     },
     "tests/test_schema_completeness.py": {
-      "seconds": 0.161,
+      "seconds": 0.159,
       "tests": 5
     },
     "tests/test_scope_query_cost.py": {
-      "seconds": 9.74,
+      "seconds": 11.427,
       "tests": 28
     },
     "tests/test_scoped_counting.py": {
-      "seconds": 0.566,
+      "seconds": 0.705,
       "tests": 4
     },
     "tests/test_scoped_history_per_event.py": {
-      "seconds": 3.234,
+      "seconds": 3.184,
       "tests": 7
     },
     "tests/test_search_authorization.py": {
-      "seconds": 1.962,
+      "seconds": 2.452,
       "tests": 20
     },
     "tests/test_search_capabilities.py": {
@@ -1813,411 +1814,411 @@
       "tests": 13
     },
     "tests/test_search_differential.py": {
-      "seconds": 15.264,
+      "seconds": 13.214,
       "tests": 2
     },
     "tests/test_search_freshness.py": {
-      "seconds": 42.653,
+      "seconds": 40.878,
       "tests": 66
     },
     "tests/test_search_generations.py": {
-      "seconds": 16.631,
+      "seconds": 14.18,
       "tests": 16
     },
     "tests/test_search_match_context.py": {
-      "seconds": 0.394,
+      "seconds": 0.323,
       "tests": 6
     },
     "tests/test_search_new_sources.py": {
-      "seconds": 5.395,
+      "seconds": 5.429,
       "tests": 38
     },
     "tests/test_search_pagination_and_access.py": {
-      "seconds": 13.49,
+      "seconds": 14.189,
       "tests": 18
     },
     "tests/test_search_plan_shape.py": {
-      "seconds": 30.06,
+      "seconds": 29.06,
       "tests": 8
     },
     "tests/test_search_projection.py": {
-      "seconds": 5.508,
+      "seconds": 5.557,
       "tests": 38
     },
     "tests/test_search_projection_correctness.py": {
-      "seconds": 3.626,
+      "seconds": 3.852,
       "tests": 39
     },
     "tests/test_search_recovery_guardrails.py": {
-      "seconds": 25.159,
+      "seconds": 31.368,
       "tests": 43
     },
     "tests/test_search_reliability.py": {
-      "seconds": 14.074,
+      "seconds": 14.13,
       "tests": 50
     },
     "tests/test_seed_data.py": {
-      "seconds": 4.606,
+      "seconds": 4.598,
       "tests": 10
     },
     "tests/test_seed_showcase_data.py": {
-      "seconds": 23.805,
+      "seconds": 23.996,
       "tests": 13
     },
     "tests/test_seis_contract.py": {
-      "seconds": 1.234,
+      "seconds": 1.061,
       "tests": 10
     },
     "tests/test_select_commit_markup.py": {
-      "seconds": 0.421,
+      "seconds": 0.452,
       "tests": 4
     },
     "tests/test_send_requires_addressee.py": {
-      "seconds": 2.433,
+      "seconds": 2.975,
       "tests": 17
     },
     "tests/test_sender_free_entry.py": {
-      "seconds": 3.284,
+      "seconds": 3.213,
       "tests": 27
     },
     "tests/test_shard_session_setup.py": {
-      "seconds": 0.508,
-      "tests": 4
+      "seconds": 0.631,
+      "tests": 5
     },
     "tests/test_shared_gate.py": {
-      "seconds": 7.355,
+      "seconds": 7.827,
       "tests": 57
     },
     "tests/test_signed_containers.py": {
-      "seconds": 1.897,
+      "seconds": 1.972,
       "tests": 61
     },
     "tests/test_similar_matters.py": {
-      "seconds": 4.099,
+      "seconds": 4.631,
       "tests": 31
     },
     "tests/test_simplified_next_action.py": {
-      "seconds": 4.932,
+      "seconds": 4.915,
       "tests": 25
     },
     "tests/test_snapshot_delta.py": {
-      "seconds": 1.239,
+      "seconds": 1.263,
       "tests": 17
     },
     "tests/test_soovitatud_jargmisena.py": {
-      "seconds": 6.88,
+      "seconds": 5.711,
       "tests": 23
     },
     "tests/test_stable_add_launcher.py": {
-      "seconds": 2.365,
+      "seconds": 2.16,
       "tests": 15
     },
     "tests/test_stage1_authorization.py": {
-      "seconds": 2.407,
+      "seconds": 2.403,
       "tests": 12
     },
     "tests/test_stage_2g_integration.py": {
-      "seconds": 0.683,
+      "seconds": 0.759,
       "tests": 11
     },
     "tests/test_stage_2h_integration.py": {
-      "seconds": 0.642,
+      "seconds": 0.722,
       "tests": 4
     },
     "tests/test_stage_episodes.py": {
-      "seconds": 4.278,
+      "seconds": 5.041,
       "tests": 52
     },
     "tests/test_stage_guidance.py": {
-      "seconds": 0.13,
+      "seconds": 0.105,
       "tests": 51
     },
     "tests/test_stage_help_corrections.py": {
-      "seconds": 0.051,
+      "seconds": 0.052,
       "tests": 9
     },
     "tests/test_stage_move_dates_its_phase.py": {
-      "seconds": 4.769,
+      "seconds": 4.69,
       "tests": 40
     },
     "tests/test_stage_retirement_preservation.py": {
-      "seconds": 2.09,
+      "seconds": 1.812,
       "tests": 25
     },
     "tests/test_stage_vocabulary_seed.py": {
-      "seconds": 0.038,
+      "seconds": 0.04,
       "tests": 9
     },
     "tests/test_submissions.py": {
-      "seconds": 1.606,
+      "seconds": 1.543,
       "tests": 21
     },
     "tests/test_substantive_matter_history.py": {
-      "seconds": 12.238,
+      "seconds": 11.535,
       "tests": 68
     },
     "tests/test_superseded_needs_a_successor.py": {
-      "seconds": 1.43,
+      "seconds": 1.481,
       "tests": 17
     },
     "tests/test_tallinn_sent_dates.py": {
-      "seconds": 0.319,
+      "seconds": 0.33,
       "tests": 5
     },
     "tests/test_teema_approved_target.py": {
-      "seconds": 16.556,
+      "seconds": 18.791,
       "tests": 98
     },
     "tests/test_teema_cleanup_round.py": {
-      "seconds": 2.527,
+      "seconds": 2.618,
       "tests": 24
     },
     "tests/test_teema_closing_flow.py": {
-      "seconds": 2.871,
+      "seconds": 2.743,
       "tests": 18
     },
     "tests/test_teema_composer_simplification.py": {
-      "seconds": 12.209,
+      "seconds": 11.501,
       "tests": 61
     },
     "tests/test_teema_hot_path_cost.py": {
-      "seconds": 0.812,
+      "seconds": 0.84,
       "tests": 3
     },
     "tests/test_teema_human_qa.py": {
-      "seconds": 2.699,
+      "seconds": 2.834,
       "tests": 34
     },
     "tests/test_teema_kaik_accordion.py": {
-      "seconds": 3.009,
+      "seconds": 3.266,
       "tests": 13
     },
     "tests/test_teema_kaik_and_marge_cleanup.py": {
-      "seconds": 2.974,
+      "seconds": 3.062,
       "tests": 13
     },
     "tests/test_teema_live_audit_round_2.py": {
-      "seconds": 9.695,
+      "seconds": 9.513,
       "tests": 51
     },
     "tests/test_teema_page_cleanup.py": {
-      "seconds": 6.515,
+      "seconds": 7.16,
       "tests": 25
     },
     "tests/test_teema_rail.py": {
-      "seconds": 4.047,
+      "seconds": 4.237,
       "tests": 25
     },
     "tests/test_teema_redesign.py": {
-      "seconds": 11.016,
+      "seconds": 10.82,
       "tests": 69
     },
     "tests/test_teema_ux_consolidation.py": {
-      "seconds": 5.673,
+      "seconds": 5.447,
       "tests": 47
     },
     "tests/test_teema_workspace.py": {
-      "seconds": 11.302,
+      "seconds": 14.01,
       "tests": 62
     },
     "tests/test_teemad_consolidation.py": {
-      "seconds": 7.003,
+      "seconds": 8.057,
       "tests": 60
     },
     "tests/test_templates.py": {
-      "seconds": 4.322,
+      "seconds": 4.306,
       "tests": 1134
     },
     "tests/test_terminal_transitions_on_the_locked_row.py": {
-      "seconds": 0.473,
+      "seconds": 0.472,
       "tests": 6
     },
     "tests/test_test_data_classification.py": {
-      "seconds": 5.069,
+      "seconds": 5.849,
       "tests": 60
     },
     "tests/test_test_isolation.py": {
-      "seconds": 2.515,
+      "seconds": 2.537,
       "tests": 32
     },
     "tests/test_text_contrast.py": {
-      "seconds": 1.745,
+      "seconds": 1.741,
       "tests": 431
     },
     "tests/test_text_normalisation.py": {
-      "seconds": 0.232,
+      "seconds": 0.24,
       "tests": 7
     },
     "tests/test_theme_contract.py": {
-      "seconds": 1.614,
+      "seconds": 1.507,
       "tests": 20
     },
     "tests/test_timeline_added_steps.py": {
-      "seconds": 8.394,
+      "seconds": 8.286,
       "tests": 33
     },
     "tests/test_timeline_bounded_history.py": {
-      "seconds": 39.145,
+      "seconds": 41.007,
       "tests": 4
     },
     "tests/test_timeline_pagination_walk.py": {
-      "seconds": 32.365,
+      "seconds": 32.229,
       "tests": 9
     },
     "tests/test_topnav_order_and_labels.py": {
-      "seconds": 2.04,
+      "seconds": 2.052,
       "tests": 16
     },
     "tests/test_ui_cleanup_teema.py": {
-      "seconds": 5.484,
+      "seconds": 5.791,
       "tests": 21
     },
     "tests/test_ui_contract.py": {
-      "seconds": 0.633,
+      "seconds": 0.632,
       "tests": 25
     },
     "tests/test_undated_link_and_documents.py": {
-      "seconds": 3.179,
+      "seconds": 3.192,
       "tests": 7
     },
     "tests/test_undated_next_actions.py": {
-      "seconds": 2.874,
+      "seconds": 3.244,
       "tests": 35
     },
     "tests/test_undated_round_stays_undated_when_closed.py": {
-      "seconds": 0.57,
+      "seconds": 0.669,
       "tests": 3
     },
     "tests/test_unified_marge_activity.py": {
-      "seconds": 4.59,
+      "seconds": 5.354,
       "tests": 38
     },
     "tests/test_unified_organisation_picker.py": {
-      "seconds": 2.003,
+      "seconds": 1.998,
       "tests": 16
     },
     "tests/test_unified_sender_picker.py": {
-      "seconds": 3.587,
+      "seconds": 4.128,
       "tests": 12
     },
     "tests/test_unnamed_step_concurrency.py": {
-      "seconds": 3.369,
+      "seconds": 4.195,
       "tests": 3
     },
     "tests/test_unnamed_step_decided_under_lock.py": {
-      "seconds": 1.625,
+      "seconds": 1.928,
       "tests": 9
     },
     "tests/test_user_correction_batch.py": {
-      "seconds": 12.443,
+      "seconds": 12.348,
       "tests": 57
     },
     "tests/test_user_correction_batch_two.py": {
-      "seconds": 8.554,
+      "seconds": 9.936,
       "tests": 83
     },
     "tests/test_uus_teema_guided_intake.py": {
-      "seconds": 3.926,
+      "seconds": 3.911,
       "tests": 42
     },
     "tests/test_uus_teema_manual_first.py": {
-      "seconds": 1.372,
+      "seconds": 1.401,
       "tests": 21
     },
     "tests/test_uus_teema_redesign.py": {
-      "seconds": 1.814,
+      "seconds": 1.845,
       "tests": 28
     },
     "tests/test_uus_teema_related_search.py": {
-      "seconds": 1.282,
+      "seconds": 1.25,
       "tests": 22
     },
     "tests/test_uus_teema_ux_corrections.py": {
-      "seconds": 0.662,
+      "seconds": 0.739,
       "tests": 16
     },
     "tests/test_ux_pass.py": {
-      "seconds": 5.171,
+      "seconds": 5.251,
       "tests": 30
     },
     "tests/test_valja_completion_semantics.py": {
-      "seconds": 1.568,
+      "seconds": 1.836,
       "tests": 30
     },
     "tests/test_views.py": {
-      "seconds": 0.238,
+      "seconds": 0.278,
       "tests": 9
     },
     "tests/test_visual_comparator.py": {
-      "seconds": 0.705,
+      "seconds": 0.694,
       "tests": 12
     },
     "tests/test_wait_monitor_review_path.py": {
-      "seconds": 5.213,
+      "seconds": 5.289,
       "tests": 33
     },
     "tests/test_wave1_integration.py": {
-      "seconds": 1.811,
+      "seconds": 1.844,
       "tests": 13
     },
     "tests/test_wave2_eg_integration.py": {
-      "seconds": 2.544,
+      "seconds": 2.517,
       "tests": 10
     },
     "tests/test_website_overviews.py": {
-      "seconds": 4.521,
+      "seconds": 4.406,
       "tests": 65
     },
     "tests/test_whole_record_concurrency.py": {
-      "seconds": 1.165,
+      "seconds": 1.264,
       "tests": 15
     },
     "tests/test_work_activity.py": {
-      "seconds": 3.401,
+      "seconds": 3.34,
       "tests": 31
     },
     "tests/test_work_assignment_eligibility.py": {
-      "seconds": 7.481,
+      "seconds": 7.405,
       "tests": 70
     },
     "tests/test_work_list_compact_dates.py": {
-      "seconds": 0.99,
+      "seconds": 1.005,
       "tests": 17
     },
     "tests/test_work_status_badge.py": {
-      "seconds": 1.142,
+      "seconds": 1.159,
       "tests": 14
     },
     "tests/test_work_surface_cleanup.py": {
-      "seconds": 1.402,
+      "seconds": 1.437,
       "tests": 14
     },
     "tests/test_work_surfaces.py": {
-      "seconds": 3.959,
+      "seconds": 3.942,
       "tests": 20
     },
     "tests/test_workflow_transition_serialization.py": {
-      "seconds": 11.734,
+      "seconds": 13.389,
       "tests": 10
     },
     "tests/test_workflow_vocabulary.py": {
-      "seconds": 0.053,
+      "seconds": 0.052,
       "tests": 11
     },
     "tests/test_working_document_url_integrity.py": {
-      "seconds": 0.501,
+      "seconds": 0.548,
       "tests": 14
     },
     "tests/test_workspace_refusal_visibility.py": {
-      "seconds": 2.413,
+      "seconds": 2.677,
       "tests": 13
     },
     "tests/test_write_services_own_their_transaction.py": {
-      "seconds": 1.253,
+      "seconds": 1.251,
       "tests": 6
     },
     "tests/test_year_bounds.py": {
-      "seconds": 6.799,
+      "seconds": 6.616,
       "tests": 142
     }
   }

@@ -353,7 +353,7 @@ jobs:
           rm -f isolation.log
 
   tests:
-    name: "PostgreSQL tests, runner ${{ matrix.runner }} of 5"
+    name: "PostgreSQL tests, runner ${{ matrix.runner }} of 6"
     runs-on: ubuntu-latest
     # Was 25 for the whole serial suite. A runner now carries a few of its
     # shards at the same time, and the same reasoning applies at the smaller
@@ -367,7 +367,7 @@ jobs:
       # re-runs.
       fail-fast: false
       matrix:
-        runner: [1, 2, 3, 4, 5]
+        runner: [1, 2, 3, 4, 5, 6]
 
     # The suite is cut into `--shard-count` shards and each runner below hosts
     # `--shard-count / --runners` of them at once, because a runner has four
@@ -487,9 +487,9 @@ jobs:
           COVERAGE_CORE: sysmon
         run: >-
           uv run python scripts/ci/run_slices.py run --suite tests
-          --runner ${{ matrix.runner }} --runners 5 --
+          --runner ${{ matrix.runner }} --runners 6 --
           uv run pytest
-          --shard-count=15 --shard-index={shard}
+          --shard-count=12 --shard-index={shard}
           --cov --cov-report=
           --junitxml=artifacts/junit-tests-{shard}.xml
 
@@ -541,7 +541,7 @@ jobs:
               exit 1
             fi
           done
-          echo "all 15 shards (5 runners) and the safety checks passed"
+          echo "all 12 shards (6 runners) and the safety checks passed"
 
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -564,7 +564,7 @@ jobs:
       # tests/test_ci_sharding.py.
       - name: Every shard reported, and nothing else did
         env:
-          SHARD_COUNT: "15"
+          SHARD_COUNT: "12"
         run: |
           set -euo pipefail
           missing=""
@@ -621,14 +621,14 @@ jobs:
         run: uvx pip-audit --strict --no-deps --requirement requirements.txt
 
   browser:
-    name: "Browser, runner ${{ matrix.runner }} of 9"
+    name: "Browser, runner ${{ matrix.runner }} of 8"
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
     strategy:
       fail-fast: false
       matrix:
-        runner: [1, 2, 3, 4, 5, 6, 7, 8, 9]
+        runner: [1, 2, 3, 4, 5, 6, 7, 8]
 
     # In memory, as in the PostgreSQL shards above and for the same reason;
     # same server, same configuration, same semantics.
@@ -736,7 +736,7 @@ jobs:
       - name: Migrate, seed and serve each shard's world
         run: >-
           uv run python scripts/ci/run_slices.py browser-world
-          --runner ${{ matrix.runner }} --runners 9 --shard-count 18
+          --runner ${{ matrix.runner }} --runners 8 --shard-count 16
 
       # This runner's shards of the browser suite, at the same time. Whole
       # files, chosen by measured cost, each against its own database, its own
@@ -747,9 +747,9 @@ jobs:
       - name: Browser workflow
         run: >-
           uv run python scripts/ci/run_slices.py run --suite browser
-          --runner ${{ matrix.runner }} --runners 9 --
+          --runner ${{ matrix.runner }} --runners 8 --
           uv run pytest e2e --ignore=e2e/test_ui_regression.py
-          --shard-count=18 --shard-index={shard}
+          --shard-count=16 --shard-index={shard}
           --browser chromium
           --tracing retain-on-failure
           --output artifacts/browser-{shard}/playwright
@@ -964,7 +964,7 @@ jobs:
               exit 1
             fi
           done
-          echo "all 18 browser shards (9 runners) and the visual suite passed"
+          echo "all 16 browser shards (8 runners) and the visual suite passed"
 
       # A runner's shards report together, so a shard that never ran would
       # otherwise pass unnoticed here. Exactly one JUnit report per shard,
@@ -978,7 +978,7 @@ jobs:
 
       - name: Every browser shard reported, and nothing else did
         env:
-          SHARD_COUNT: "18"
+          SHARD_COUNT: "16"
         run: |
           set -euo pipefail
           missing=""
