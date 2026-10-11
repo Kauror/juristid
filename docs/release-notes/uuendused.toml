@@ -8,6 +8,21 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-10-11
+basis = "deployment"
+# Koodibaasi auditi parandusvoor, PR #422 (AUD-001…052, otsused D-1…D-9).
+# Migratsioonid core/0002 (andmebaasi jit=off), documents/0015 ja matters/0048
+# (lisavad). Otsinguindeksit ei ehitata uuesti. Kui väljalase ei jõua tootmisse
+# 11.10 (Tallinna aja järgi), liiguvad need read väljalaske päeva kirjesse.
+changes = [
+  "Pika ajalooga teema «Tegevused» näitab nüüd kõigepealt viimased kirjed; varasemad näed nupuga «Näita kogu käik». Kui hetkeseisu periood ulatub nähtavast kaugemale, on selle kirjete arvu järel «+».",
+  "«Saabunud → Lisa» saatja valik töötab nüüd nagu uut teemat luues: asutuse leiad ka lühendi järgi (näiteks «MKM») ja uue asutuse saad lisada samast väljast nupuga «+».",
+  "Kui «Saabunud → Lisa» lehel saabumise kuupäeva kustutad, jääb see tühjaks; Juristid ei pane sinna enam tänast kuupäeva.",
+  "Kui «+ Lisa tegevus» salvestamise ajal on kolleeg teemale juba praeguse tegevuse määranud, jääb tema tegevus alles: sinu kuupäevaga tegevus lisatakse planeeritud tegevuseks, kuupäevata tegevuse kohta palub Juristid lehte värskendada.",
+  "Teemade loend avaneb suure teemade arvu juures kiiremini.",
+]
+
+[[day]]
 date = 2026-10-10
 basis = "deployment"
 # Juristide UX-voor: PR #418 (F1–F4, ADR 0130/0032), #419 (R1–R4, F5, ADR 0150,
