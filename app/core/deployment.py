@@ -624,6 +624,30 @@ def postgresql_version_from_num(number: int) -> tuple[int, int]:
 EXPECTED_JIT = "off"
 
 
+#: The deliberate, documented route from canonical `PENDING` to a terminal
+#: extraction state (docs/adr/0072 §3): an operator run, outside working hours.
+EXTRACTION_RUN_COMMAND = "manage.py run_extraction_worker --once --limit 50"
+
+
+def extraction_backlog() -> tuple[int, Any]:
+    """(canonical versions waiting for extraction, when the oldest of them was filed).
+
+    The same population the worker would take (`pending_versions`): `PENDING`
+    and stale `PROCESSING`. Since ADR 0072 §3 nothing deployed drains it on its
+    own, and since docs/adr/0072's 2026-10-10 amendment a file read on
+    `Uus teema` while suggestions are off joins it honestly instead of being
+    labelled read. So it is reported where an operator reads a deployment's
+    state, rather than left for somebody to notice in Statistika.
+    """
+    from django.db.models import Min
+
+    from app.documents.extraction.orchestrator import pending_versions
+
+    waiting = pending_versions().order_by()
+    summary = waiting.aggregate(oldest=Min("created_at"))
+    return waiting.count(), summary["oldest"]
+
+
 def jit_setting() -> str:
     """This connection's `SHOW jit`: what a new session of this database gets."""
     with connection.cursor() as cursor:
@@ -808,6 +832,18 @@ def readiness_report(*, search_phase: str = SEARCH_PHASE_FINAL) -> ReadinessRepo
         f"{name}={value!r} is neither true nor false and is being read as false."
         for name, value in sorted(unparseable_boolean_variables().items())
     ]
+
+    # A warning, not a problem: the backlog exists by decision (ADR 0072 §3) and
+    # a release must not fail on it. But it must never be silent.
+    if not state.pending:
+        waiting, oldest = extraction_backlog()
+        if waiting:
+            since = f", the oldest filed {oldest:%Y-%m-%d}" if oldest else ""
+            warnings.append(
+                f"{waiting} document version(s) wait for text extraction{since}. Nothing "
+                "deployed extracts them on its own (docs/adr/0072 §3); run "
+                f"`{EXTRACTION_RUN_COMMAND}` deliberately, outside working hours."
+            )
 
     if search_phase not in SEARCH_PHASES:
         raise ValueError(f"unknown search phase {search_phase!r}")

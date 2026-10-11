@@ -254,6 +254,20 @@ docker compose -p juristid-main -f compose.yml run --rm \
     web python manage.py run_extraction_worker --once --limit 50
 ```
 
+**What waits for it, and how you see it.** A canonical document version waits
+in `PENDING` («Järjekorras» on Statistika) until this command reaches it. That
+includes imported material, files attached through `Saabunud` and the Teema
+panels, and — while intake suggestions are switched off (ADR 0088) — files read
+on `Uus teema`. Those are promoted `PENDING` rather than as already read,
+because nothing they yielded went onto the form (docs/adr/0072, amendment of
+2026-10-10). Nothing deployed drains the queue: this is a deliberate operator
+run. `deployment_readiness` prints the backlog as a warning on every run —
+how many versions wait and when the oldest was filed — so it is never silent,
+and it does not fail a release. A file that keeps killing the worker is settled
+`FAILED` after `EXTRACTION_MAX_ATTEMPTS` (3) claims, with its reason on the
+version, and leaves the queue. Running the worker as a standing service again
+is a product-owner decision that would amend ADR 0072 §3.
+
 ### 6. Accounts
 
 Create the real people, by hand, once. There is no self-service and no
