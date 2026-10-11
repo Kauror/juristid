@@ -2,16 +2,23 @@
 
     manage.py provision_user --upn <address> --display-name "<name>" [--role SPECIALIST]
 
-The supported way to onboard a person (deploy/unraid-main/README.md, step 6).
-`createsuperuser` is not: it makes an ADMINISTRATOR superuser, which by design is
-never a persona and can never be given work (docs/adr/0034) — and which the
-Django admin would hand everything once authentication identifies people
-(ENG-013).
+The supported way to onboard a person **under the shared gate or Cloudflare
+Access** (deploy/unraid-main/README.md, step 6). `createsuperuser` is not: it
+makes an ADMINISTRATOR superuser, which by design is never a persona and can
+never be given work (docs/adr/0034) — and which the Django admin would hand
+everything once authentication identifies people (ENG-013).
+
+**Refused under `AUTH_MODE=local_password`.** There an account is created,
+approved and invited in Haldus → Kasutajad and activated by its owner through a
+one-time link; the first administrator is `bootstrap_account_admin`. An account
+this made would be active at once, outside that lifecycle (docs/adr/0145 §5,
+AUD-051 AU-1). The refusal is the service's, so a shell session gets it too.
 
 Exit 0 when the account now exists as asked, whether this run created it or it
-was already there exactly so. Anything else — an address that is not one, a
-role that is not a department role, an existing account that differs — stops
-with nothing written. There is no password option, on purpose.
+was already there exactly so. Anything else — an address that is not one or is
+a second spelling of one (`+tag`, non-ASCII), a role that is not a department
+role, an existing account that differs, personal sign-in being on — stops with
+nothing written. There is no password option, on purpose.
 """
 
 from __future__ import annotations

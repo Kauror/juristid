@@ -275,7 +275,7 @@ LOCAL_AUTH_BREACHED_PASSWORDS_PATH = env("LOCAL_AUTH_BREACHED_PASSWORDS_PATH", "
 # -- the second factor -------------------------------------------------------
 #
 # The key TOTP secrets are encrypted under. A deployment secret of its own,
-# rather than SECRET_KEY, so rotating the Django secret does not unenrol every
+# rather than SECRET_KEY, so rotating the Django secret does not break every
 # authenticator; `juristid.E033` requires it on a real-data local-password
 # deployment. Empty falls back to SECRET_KEY, for laptops and CI only.
 LOCAL_AUTH_MFA_ENCRYPTION_KEY = env("LOCAL_AUTH_MFA_ENCRYPTION_KEY", "")

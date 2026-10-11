@@ -396,3 +396,79 @@ High while dormant: nothing reads the new columns in `shared_gate` mode except
 the capability resolution, whose defaults equal the old rules. After activation,
 rolling back is `AUTH_MODE=shared_gate` (runbook §13); the migrations need not
 be reversed.
+
+## Amendment, 2026-10-11 — one door to each account, and a way back from a lost MFA key
+
+- Status: accepted, closing audit finding AUD-051 (AU-1, AU-2, AU-6, AU-7);
+  personal sign-in stays dormant and no default, setting or deployment changes
+- Scope: `provision_department_user` / `manage.py provision_user`, `/admin/login/`
+  (`app/accounts/admin_sign_in.py`), `manage.py reset_second_factor`
+  (`credentials.operator_reset_second_factor`), `mfa.unreadable_devices`, and
+  docs/LOCAL_AUTH_ACTIVATION_RUNBOOK.md; no migration
+
+### What was decided before
+
+§5 made creation never activation for Haldus → Kasutajad, but
+`provision_user` — the shared gate's onboarding — still made an account
+ACTIVATED and active at once in every mode, checking the address only with
+Django's `validate_email`. §8 made the second factor mandatory for every
+`is_staff` account, while Django's own `/admin/login/` went on checking a staff
+password through `ModelBackend` with no throttle and no second factor, past the
+shared gate and inside a personal sign-in session alike. §8 encrypted TOTP
+secrets under `LOCAL_AUTH_MFA_ENCRYPTION_KEY`, and the runbook said losing the
+key "unenrols every authenticator".
+
+### Why
+
+Each was a second way round a rule this ADR makes. An account `provision_user`
+made under `local_password` would skip approval, invitation and the owner's
+own password; `/admin/login/` was a password oracle for every technical account
+and a sign-in without the mandatory second factor. And the key-loss sentence
+was false: a device whose secret no longer decrypts stays on record, so
+`has_second_factor` stays true, nobody is asked to enrol, and no code is ever
+accepted — with no tool to get out, for administrators included.
+
+### What is decided now
+
+1. **`provision_department_user` refuses under `local_password`**, before it
+   reads anything, naming the lifecycle that applies (Haldus → Kasutajad, and
+   `bootstrap_account_admin` for the first administrator). In the other modes
+   it onboards as before, and its address check is now `email_policy.clean`
+   (normal form, no `+tag`, no non-ASCII) — the same identity rule as §4. The
+   `koda.ee` domain rule is not applied there: it belongs to the personal
+   sign-in lifecycle, which that command no longer serves, and the gate's
+   onboarding and the `.test` fixtures keep working.
+2. **`/admin/login/` validates no credentials outside `AUTH_MODE=none`.** It
+   redirects: a signed-in active staff account to the admin, anybody else
+   signed in to the product, and a signed-out visitor to `settings.LOGIN_URL`.
+   Under `local_password` the admin is reached through `/konto/sisene/` with
+   password and code; under the shared gate, whose persona list offers no staff
+   account, the Django admin has no browser entrance (a staff account is never
+   a persona, ADR 0034); under Cloudflare Access the verified account is
+   already signed in. `AUTH_MODE=none` keeps Django's page.
+3. **A lost MFA key is recovered explicitly, never automatically.** In order:
+   restore the key; a recovery code (hashed, not key-bound) and then replacing
+   the authenticator; an administrator's «Lähtesta teine tegur»; and only then
+   `manage.py reset_second_factor --email … --note …` — one named account, a
+   required note, the device and recovery codes removed exactly as the
+   administrator's reset removes them, sessions ended, an `MFA_REMOVED` event
+   with `by: operator`. It works in every mode and only on an account with
+   something to reset; `--dry-run` and `--list-undecryptable` write nothing.
+   The second factor stays mandatory for whoever it was mandatory for.
+4. **The runbook describes the code as it is**: archive link review moves to
+   the ADMINISTRATOR at activation (a decision to take, §1); business
+   capability overrides stay effective after a rollback (`has_capability` is
+   mode-independent); rotating `SECRET_KEY` ends sessions and re-keys the
+   throttles and trusted sources but leaves one-time links valid; the
+   shared-gate throttle is retired at the switch, not before; §15 is the
+   lost-key procedure. `tests/test_local_auth_runbook_invariants.py` holds the
+   executable ones.
+
+### What this amendment does not change
+
+`AUTH_MODE` stays `shared_gate` in production, and nothing here activates
+personal sign-in. No authentication implementation is added: the admin is
+entered through each mode's existing sign-in. The Django admin's own rules
+(read-only business records, `is_active` read-only under `local_password`) are
+unchanged. No throttle is merged or retired in code. No MFA device is reset
+automatically, no key is rotated, and there is no migration.

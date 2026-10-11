@@ -25,9 +25,10 @@ from django.utils import timezone
 
 from app.accounts import email_policy, mail, mfa, passwords, throttle, tokens
 from app.accounts.enums import CredentialTokenPurpose, ProvisioningState, ThrottleScope
-from app.accounts.models import AccountCredentialToken, User
+from app.accounts.models import AccountCredentialToken, RecoveryCode, TotpDevice, User
 from app.audit.enums import SecurityEventType
 from app.audit.services import record_security_event
+from app.core.errors import DomainError
 
 logger = logging.getLogger(__name__)
 
@@ -330,3 +331,89 @@ def regenerate_recovery_codes(*, user: User) -> list[str]:
         detail={"count": len(codes)},
     )
     return codes
+
+
+# -- the operator's reset, for a lost or changed MFA key ------------------------------
+
+SECOND_FACTOR_RESET_NEEDS_A_NOTE = (
+    "Märkus on kohustuslik: kes seda käivitab ja miks. See jääb turvalogisse. Midagi ei muudetud."
+)
+SECOND_FACTOR_RESET_UNKNOWN_ACCOUNT = "Sellise aadressiga kontot ei ole. Midagi ei muudetud."
+SECOND_FACTOR_RESET_NOTHING_TO_RESET = (
+    "Sellel kontol ei ole autentimisrakendust ega taastekoode. Midagi ei muudetud."
+)
+
+
+class SecondFactorResetRefused(DomainError):
+    """The second factor was not reset, and the message says why."""
+
+
+@dataclass(frozen=True)
+class SecondFactorReset:
+    user: User
+    #: Whether the device's secret was still readable under the current key.
+    #: False is the lost-key case; True is a lost phone with nobody left who
+    #: could reset it from Haldus → Kasutajad.
+    secret_was_readable: bool | None
+    recovery_codes_left: int
+    #: False for a dry run: nothing was written.
+    applied: bool
+
+
+def operator_reset_second_factor(
+    *, email: str, note: str, dry_run: bool = False
+) -> SecondFactorReset:
+    """Retire somebody's authenticator and recovery codes, by an operator, audited.
+
+    The way out when the MFA key is lost or changed and nothing inside the
+    application can help: every confirmed device still counts as a second
+    factor (`mfa.has_second_factor`), so nobody is asked to enrol, and none of
+    them can ever produce an accepted code (docs/LOCAL_AUTH_ACTIVATION_RUNBOOK.md
+    §15). It removes exactly what an administrator's «Lähtesta teine tegur»
+    removes — the device and the recovery codes, which enrolment replaces with a
+    new set anyway — ends the person's sessions, and records who ran it and why.
+
+    **The second factor stays mandatory.** Nothing here changes who must have
+    one: for whoever must, `local_auth.must_enrol` answers "yes" again at the
+    next sign-in and they reach nothing but the enrolment page until a new
+    device is confirmed under the current key.
+
+    Works in every mode, because a key can be lost after a rollback too, but
+    acts only on an account that has something to reset, and never without a
+    note. ``dry_run`` reports and writes nothing.
+    """
+    if not (note or "").strip():
+        raise SecondFactorResetRefused(SECOND_FACTOR_RESET_NEEDS_A_NOTE)
+    address = email_policy.normalise(email)
+    with transaction.atomic():
+        user = User.objects.select_for_update().filter(upn__iexact=address).first()
+        if user is None:
+            raise SecondFactorResetRefused(SECOND_FACTOR_RESET_UNKNOWN_ACCOUNT)
+        device = mfa.confirmed_device(user)
+        readable = mfa.secret_is_readable(device) if device is not None else None
+        codes_left = mfa.remaining_recovery_codes(user)
+        # An unconfirmed device counts too: an enrolment abandoned under the
+        # old key is as dead as a confirmed one.
+        has_anything = (
+            TotpDevice.objects.filter(user=user).exists()
+            or RecoveryCode.objects.filter(user=user).exists()
+        )
+        if not has_anything:
+            raise SecondFactorResetRefused(SECOND_FACTOR_RESET_NOTHING_TO_RESET)
+        if dry_run:
+            return SecondFactorReset(user, readable, codes_left, applied=False)
+        mfa.remove_second_factor(user)
+        _bump_epoch(user)
+        record_security_event(
+            event_type=SecurityEventType.MFA_REMOVED,
+            actor=None,
+            subject=user,
+            detail={
+                "by": "operator",
+                "via": "manage.py reset_second_factor",
+                "note": note.strip()[:500],
+                "secret_was_readable": readable,
+                "recovery_codes_left": codes_left,
+            },
+        )
+    return SecondFactorReset(user, readable, codes_left, applied=True)

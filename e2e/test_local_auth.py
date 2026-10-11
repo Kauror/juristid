@@ -261,6 +261,25 @@ def test_a_forgotten_password_is_recovered(browser, local_base_url, first_admini
     context.close()
 
 
+def test_the_django_admin_offers_no_password_form(browser, local_base_url, first_administrator):
+    """`/admin/login/` checks no password here: the admin is reached through `/konto/sisene/`.
+
+    Signed out, it is personal sign-in; signed in as a colleague who is not
+    staff, it is the product — never Django's form inviting them to try a
+    technical account's password without a second factor (AUD-051 AU-2).
+    """
+    context = browser.new_context(locale="et-EE")
+    page = context.new_page()
+    page.goto(f"{local_base_url}/admin/login/")
+    expect(page).to_have_url(re.compile(r"/konto/sisene/"))
+
+    _sign_in(page, local_base_url, COLLEAGUE, NEW_PASSWORD)
+    page.goto(f"{local_base_url}/admin/login/")
+    expect(page).not_to_have_url(re.compile(r"/admin/"))
+    expect(page.locator("input[name=username]")).to_have_count(0)
+    context.close()
+
+
 # -- failure states ---------------------------------------------------------------------------
 
 

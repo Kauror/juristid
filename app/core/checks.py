@@ -251,7 +251,7 @@ def _local_password_problems() -> list[Error | Warning]:
                 "LOCAL_AUTH_MFA_ENCRYPTION_KEY is empty on a real-data deployment.",
                 hint=(
                     "TOTP secrets would be encrypted under a key derived from SECRET_KEY, so "
-                    "rotating SECRET_KEY would silently unenrol every authenticator. Set a "
+                    "rotating SECRET_KEY would silently break every enrolled authenticator. Set a "
                     "dedicated host-side secret."
                 ),
                 id="juristid.E033",

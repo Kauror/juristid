@@ -65,6 +65,17 @@ Write each down, with who decided it:
    corpus, one password per line, gzipped). Django's 20,000-entry list applies
    regardless. An online breach API is a separate decision (it sends a hash
    prefix off the host on every password change).
+8. **Who files archive letters.** Under the shared gate the department head
+   records and withdraws reviewed archive links; under `local_password` only an
+   ADMINISTRATOR does (`may_manage_archive_links` in
+   `app/legacy_import/opinion_access.py` — the rule is mode-dependent, not a
+   capability, and Haldus → Kasutajad cannot change it). The switch therefore
+   moves that work from the head to the technical administrator role. Decide
+   that this is wanted, and who holds the ADMINISTRATOR role afterwards; if the
+   head must keep filing, that is a code change before activation, not a
+   setting.
+9. **Who keeps the MFA key** (`LOCAL_AUTH_MFA_ENCRYPTION_KEY`, step 3), where
+   its backup lives, and who may run the lost-key procedure (§15).
 
 ---
 
@@ -95,12 +106,22 @@ openssl rand -base64 48
 
 | variable | what | note |
 | --- | --- | --- |
-| `LOCAL_AUTH_MFA_ENCRYPTION_KEY` | encrypts TOTP secrets at rest | Required on real data (`juristid.E033`). **Losing or changing it unenrols every authenticator** — every person must enrol again. Back it up with the same care as the database dump, separately from it. Rotating `DJANGO_SECRET_KEY` does *not* affect it. |
+| `LOCAL_AUTH_MFA_ENCRYPTION_KEY` | encrypts TOTP secrets at rest | Required on real data (`juristid.E033`). **Losing or changing it does not unenrol anybody — it breaks every authenticator in place**: each device stays on record, so the person is still asked for a code, and no code is ever accepted again. Recovery codes keep working (they are hashed, not encrypted with this key). The way back is §15. Back the key up with the same care as the database dump, separately from it, and keep it across a rollback. Rotating `DJANGO_SECRET_KEY` does *not* affect it. |
 | `DJANGO_EMAIL_HOST_PASSWORD` | SMTP credential | From the mail transport owner. |
 
-`DJANGO_SECRET_KEY` stays as it is. Rotating it later invalidates sessions and
-outstanding one-time links (and the throttle counters), not passwords or
-authenticators.
+`DJANGO_SECRET_KEY` stays as it is. Rotating it later:
+
+- **ends every session** (session data and the session authentication hash are
+  keyed by it), under either mode;
+- **resets every throttle counter**, personal sign-in's and the shared gate's
+  alike — they are keyed by an HMAC under it, so a running lockout is forgotten;
+- **forgets every trusted sign-in source** (same HMAC), so the account-wide
+  counter applies to everybody again until their next successful sign-in;
+- does **not** invalidate outstanding one-time links (only an unkeyed SHA-256
+  of the link's secret is stored — `app/accounts/tokens.py`), and does not touch
+  passwords or authenticators — unless `LOCAL_AUTH_MFA_ENCRYPTION_KEY` is empty,
+  which `juristid.E033` refuses on real data. To kill outstanding links, cancel
+  the invitation or send a new link (each supersedes the last).
 
 ---
 
@@ -161,6 +182,15 @@ defaults for the limits unless there is a reason:
 it out with the date): it no longer guards anything, and a retired secret left in
 place is one somebody may reuse.
 
+**The shared-gate throttle is retired here, at the switch — not before.** Until
+this step it guards the door production actually runs (`SharedGateThrottle`,
+`SHARED_GATE_MAX_ATTEMPTS` / `SHARED_GATE_LOCKOUT_SECONDS` /
+`SHARED_GATE_MAX_LOCKOUT_SECONDS`, AUD-038), and nothing in the dormant build
+replaces it. Under `local_password` the gate's pages answer nothing, so its
+counter is never consulted again: comment out any `SHARED_GATE_*` lines together
+with the password. Removing its table and code is a later change, once the
+switch is confirmed permanent — the rollback in §13 needs the gate whole.
+
 Before restarting, check the configuration in a throwaway container from the
 running image with the new file (the same pattern as the release runbook's
 `run --rm`):
@@ -191,7 +221,8 @@ mode), `E037` (link base not https / no sender), `E038` (non-delivering backend)
    redirects to `/konto/sisene/` while signed out and is a 404 once signed in).
    Every persona session is signed out at its next request (the middleware ends
    any session not signed in under `local_password`, audited as `SESSION_ENDED`
-   `not_signed_in_here`).
+   `not_signed_in_here`). `/admin/login/` shows no password form: it redirects
+   to `/konto/sisene/` (AUD-051 AU-2).
 
 ---
 
@@ -230,7 +261,9 @@ In Haldus → Kasutajad, as an administrator:
    move their address, by design.
 2. For each existing account: **Saada parooli seadistamise link**. The person
    sets their first password; nothing else about the account changes.
-3. New people: **+ Uus kasutaja** → **Kinnita ja saada kutse**.
+3. New people: **+ Uus kasutaja** → **Kinnita ja saada kutse**. Not
+   `manage.py provision_user`: under `local_password` it refuses, because the
+   account it makes would be active at once, outside this lifecycle.
 4. Set capabilities where the defaults are not wanted (e.g. lend
    `Osakonna juhtimisvaade` to a deputy).
 5. Accounts nobody should use: **Lülita välja** — never deleted; the register
@@ -247,6 +280,10 @@ In Haldus → Kasutajad, as an administrator:
 - Lost phone: an administrator uses **Lähtesta teine tegur** on that account; the
   person enrols again at the next sign-in. An administrator's own factor is reset
   by *another* delegating administrator — hence step 7's second administrator.
+- Lost or changed MFA key: everybody at once, administrators included — §15.
+- Technical (`is_staff`) accounts reach the Django admin only by signing in at
+  `/konto/sisene/` with password **and** code (the second factor is mandatory for
+  them); `/admin/login/` checks no password. Enrol them like administrators.
 
 ---
 
@@ -287,6 +324,12 @@ removed from the environment in step 5. Confirm:
 - No `juristid.E0xx` in `docker logs juristid-main-web` since the restart.
 - No one-time link, password or code in `docker logs` (spot-check: the access log
   records paths only; `?kood=` never appears).
+- Archive filing moved as decided in step 1.8: a department head can no longer
+  record or withdraw a reviewed archive link; an ADMINISTRATOR can.
+- `/admin/login/` while signed out → a redirect to `/konto/sisene/`, never a
+  password form; a POST to it signs nobody in.
+- `manage.py reset_second_factor --list-undecryptable` → "Every confirmed
+  authenticator opens under the current key."
 
 ---
 
@@ -295,18 +338,42 @@ removed from the environment in step 5. Confirm:
 Rollback is a configuration change; the schema stays (it is additive and the
 shared gate ignores it).
 
-1. Restore the pre-switch environment file copy from step 2 (it has
-   `AUTH_MODE=shared_gate` and the gate password; `ACCOUNT_EMAIL_DELIVERY_ENABLED`
-   unset).
+1. Restore the pre-switch environment file copy from step 2. What it must say,
+   variable by variable:
+   - `AUTH_MODE=shared_gate`;
+   - `JURISTID_SHARED_GATE_PASSWORD` back, and any `SHARED_GATE_*` lines step 5
+     commented out — the gate throttle guards the door again from this restart;
+   - `ACCOUNT_EMAIL_DELIVERY_ENABLED` unset or `0` (`juristid.E036` refuses
+     delivery beside the shared gate);
+   - the `DJANGO_EMAIL_*`, `ACCOUNT_EMAIL_FROM`, `ACCOUNT_LINK_BASE_URL` and
+     `LOCAL_AUTH_*` lines may stay or go; nothing reads them under the gate.
+     **Keep `LOCAL_AUTH_MFA_ENCRYPTION_KEY` safe** (in the file or in its separate
+     backup): a later retry with a different key meets every enrolled
+     authenticator broken (§15).
 2. Restart the same services as in step 6.
 3. Confirm `/konto/varav/` answers with the password form and `/konto/sisene/`
    offers nothing (a redirect to the gate, then a 404 behind it). Personal sessions
    are signed out by the shared-gate middleware (a persona-less session without
    the gate flag is logged out).
-4. Passwords, authenticators, capabilities and the audit trail stay in the
-   database, inert, for a later retry. If the rollback is permanent, an operator
-   may clear capability overrides with the owner's approval; nothing needs
-   deleting.
+4. What stays, and what it does under the gate:
+   - passwords, authenticators, recovery codes and outstanding one-time links stay
+     in the database, **inert** — no page under the gate reads them;
+   - administrative capabilities (`accounts.manage`, `accounts.delegate`) are
+     inert too: Haldus → Kasutajad is a 404 and every administration service
+     refuses outside `local_password`;
+   - **business capability overrides stay effective.** `has_capability` does not
+     ask the mode, so a capability lent or withdrawn during personal sign-in (e.g.
+     `Osakonna juhtimisvaade` lent to a deputy, assignment withdrawn from
+     somebody) goes on applying to that person's persona behind the gate. List
+     them and decide each with the owner:
+
+     ```bash
+     docker exec juristid-main-web python manage.py shell -c "from app.accounts.models import User; [print(u.upn, u.capability_overrides) for u in User.objects.exclude(capability_overrides={})]"
+     ```
+
+     An override nobody wants under the gate is cleared by an operator, with the
+     owner's approval, in that shell; nothing else needs deleting;
+   - archive link review returns to the department head (step 1.8).
 
 A database restore is **not** part of rollback: nothing in the switch writes
 business data.
@@ -324,3 +391,68 @@ business data.
   deployment.
 - Never run `bootstrap_account_admin` with its output captured to a file or a
   log when printing a link.
+- Never script `reset_second_factor` over every account, and never "fix" a lost
+  key by switching the second factor off: it stays mandatory (§15).
+
+---
+
+## 15. A lost or changed MFA encryption key
+
+**What happens.** Every TOTP secret is encrypted under a key derived from
+`LOCAL_AUTH_MFA_ENCRYPTION_KEY` (`app/accounts/mfa.py`). With a different key —
+lost, mistyped, replaced, or a restored environment file without it — every
+confirmed authenticator **stays on record**: the person still counts as having
+a second factor, is still asked for a code at sign-in, and no code from their
+phone is ever accepted again. Nobody is unenrolled automatically, and nothing
+asks anybody to enrol. Administrators are hit like everybody else, so Haldus →
+Kasutajad may be unreachable for all of them at once. Recovery codes are **not**
+affected: they are stored as salted SHA-256 digests, not encrypted with the key.
+
+**First: get the key back.** If the right key exists anywhere — the separate
+backup from step 3, the environment copy from step 2 — put it back and restart
+the services as in step 6. Every authenticator works again and nothing else is
+needed. Only when the key is truly gone, continue.
+
+**See the blast radius** (read-only):
+
+```bash
+docker exec juristid-main-web python manage.py reset_second_factor --list-undecryptable
+```
+
+**Then, per person, in this order:**
+
+1. **A recovery code.** At the code step, the person chooses a recovery code
+   instead of the app. Signed in, they go straight to Turvalisus → replace the
+   authenticator (the sign-in counts as a fresh proof for the re-authentication
+   window, 15 minutes by default; after that, re-authentication asks for an app
+   code that cannot work, so sign in again with another recovery code). The new
+   device is encrypted under the current key; the old one is replaced in the same
+   write, and a new set of recovery codes is shown.
+2. **An administrator's reset.** For somebody without recovery codes: once at
+   least one administrator is back in (by step 1), they use **Lähtesta teine
+   tegur** on that account (an administrator's own factor needs another
+   *delegating* administrator). The person enrols again at the next sign-in
+   (or, where a second factor is optional for them, from Turvalisus).
+3. **The operator command**, only when neither can help — typically an
+   administrator without recovery codes and nobody left to reset them. On the
+   host, one named account at a time, with a note the audit keeps:
+
+   ```bash
+   docker exec juristid-main-web python manage.py reset_second_factor --email <address> --note "<operator name>: MFA key lost <date>, <who approved>" --dry-run
+   docker exec juristid-main-web python manage.py reset_second_factor --email <address> --note "<operator name>: MFA key lost <date>, <who approved>"
+   ```
+
+   The first line only reports. The second removes that person's authenticator
+   and recovery codes, ends their sessions, and writes an `MFA_REMOVED` security
+   event with `by: operator`, the note and whether the old secret was still
+   readable. It refuses without a note, for an unknown address, and for an
+   account with nothing to reset. **The second factor stays mandatory** wherever
+   it was: for an administrator, a staff account, or everybody under
+   `LOCAL_AUTH_MFA_REQUIRED_FOR_ALL=1`, the next sign-in takes them to the
+   enrolment page and nowhere else until a new authenticator is confirmed under
+   the current key. Somebody for whom it is optional signs in with the password
+   and may enrol again from Turvalisus.
+
+Afterwards, `--list-undecryptable` again should report that every confirmed
+authenticator opens. Store the new key the way step 3 says, separately from the
+database backup.

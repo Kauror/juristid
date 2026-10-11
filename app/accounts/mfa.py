@@ -67,7 +67,7 @@ def _fernet() -> Fernet:
 
     A dedicated key rather than `SECRET_KEY` itself, because the two rotate for
     different reasons: rotating the Django secret is routine (it was done on
-    2026-09-10) and must not silently unenrol every authenticator. Where no
+    2026-09-10) and must not silently break every authenticator. Where no
     dedicated key is configured — a laptop, CI — `SECRET_KEY` stands in, under
     its own HKDF label; `juristid.E033` refuses that on a real-data
     local-password deployment.
@@ -93,9 +93,28 @@ def _decrypt(token: str) -> str | None:
         return _fernet().decrypt(token.encode("ascii")).decode("ascii")
     except (InvalidToken, ValueError):
         # A device enrolled under a key that is no longer configured cannot
-        # verify anything. Answering "no" is the only safe reading; the
-        # runbook's key-rotation section is the remedy.
+        # verify anything. Answering "no" is the only safe reading. The device
+        # still *counts* — `has_second_factor` stays true and nobody is asked
+        # to enrol — so the remedy is explicit, never automatic: a recovery
+        # code, then replacing the authenticator; or an administrator's reset;
+        # or `manage.py reset_second_factor` (docs/LOCAL_AUTH_ACTIVATION_RUNBOOK.md §15).
         return None
+
+
+def secret_is_readable(device: TotpDevice) -> bool:
+    """Whether the current key still opens this device's secret. Writes nothing."""
+    return _decrypt(device.encrypted_secret) is not None
+
+
+def unreadable_devices() -> list[TotpDevice]:
+    """Every confirmed authenticator the current key can no longer open.
+
+    The blast radius of a lost or changed `LOCAL_AUTH_MFA_ENCRYPTION_KEY`, for
+    `manage.py reset_second_factor --list-undecryptable`: these people have a
+    second factor on record that can never produce an accepted code. Read-only.
+    """
+    devices = TotpDevice.objects.filter(confirmed_at__isnull=False).select_related("user")
+    return [device for device in devices.order_by("user__upn") if not secret_is_readable(device)]
 
 
 # -- the device -----------------------------------------------------------------

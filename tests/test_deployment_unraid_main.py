@@ -718,6 +718,8 @@ def test_nothing_starts_through_the_development_entrypoint() -> None:
 #: none of them may be reachable from a container start.
 DATA_APPLY_COMMANDS = (
     "provision_user",
+    "bootstrap_account_admin",
+    "reset_second_factor",
     "historical_import",
     "import_legacy_register",
     "promote_current_register",

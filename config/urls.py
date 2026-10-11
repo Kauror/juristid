@@ -1,6 +1,8 @@
 from django.contrib import admin
 from django.urls import include, path
 
+from app.accounts.admin_sign_in import admin_sign_in
+
 urlpatterns = [
     path("", include(("app.core.urls", "core"), namespace="core")),
     path("", include(("app.matters.urls", "matters"), namespace="matters")),
@@ -40,5 +42,10 @@ urlpatterns = [
         "organisatsioonid/",
         include(("app.organisations.urls", "organisations"), namespace="organisations"),
     ),
+    # Before `admin.site.urls`, so it answers `/admin/login/` instead of
+    # Django's password form: outside AUTH_MODE=none the admin is reached
+    # through the mode's own sign-in, never a second, unthrottled one
+    # (app/accounts/admin_sign_in.py, AUD-051 AU-2).
+    path("admin/login/", admin_sign_in, name="admin_sign_in"),
     path("admin/", admin.site.urls),
 ]
