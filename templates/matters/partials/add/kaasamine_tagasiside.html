@@ -14,6 +14,9 @@ amendment). `Tehtud` on the PRAEGUNE wait row opens this same form.
 rounds as this reader may see them, and is filled in only when there is exactly
 one. With none, the panel says so and draws no form that could only refuse.
 
+**No `Märkus`** (owner's review, 2026-10-12): everything relevant goes into
+`Saadud tagasiside`; the form does not declare a note field at all.
+
     form    `EngagementReplyForm`, bound or unbound
 {% endcomment %}
 {% if form.open_round_count %}
@@ -47,10 +50,6 @@ one. With none, the panel says so and draws no form that could only refuse.
         {{ form.stated_on.errors|first }}</p>
     {% endif %}
     {% include "matters/partials/add_files.html" with field=form.attachments %}
-    <label class="cx-f" for="{{ form.lawyer_note.id_for_label }}">
-      <span class="cx-f__lab">{% field_label form.lawyer_note %}</span>
-      {{ form.lawyer_note }}
-    </label>
     <div class="addform__actions">
       <button class="button button--primary" type="submit">Salvesta</button>
     </div>

@@ -231,6 +231,14 @@ def test_an_engagement_is_started_then_its_replies_are_added(page, base_url, tmp
     expect(page.locator("#kaasamine-tagasiside-valik")).to_be_checked()
     reply = page.locator("#kaasamine-tagasiside")
     expect(reply.locator("[name=engagement] option:checked")).to_contain_text("liikmed")
+    # Four questions and the save — no `Märkus` (owner's review, 2026-10-12):
+    # everything relevant goes into `Saadud tagasiside`.
+    expect(reply.get_by_label("Saadud tagasiside")).to_be_visible()
+    expect(reply.locator("[name=stated_on]")).to_be_visible()
+    expect(reply.locator("input[type=file]")).to_have_count(1)
+    expect(reply.locator("[name=lawyer_note]")).to_have_count(0)
+    expect(reply.locator(".cx-f__lab", has_text="Märkus")).to_have_count(0)
+    expect(reply.locator("textarea")).to_have_count(1)
     reply.locator("[name=summary]").fill("Kaks liiget vastasid, mõlemad toetavad.")
     reply.locator("input[type=file]").set_input_files(
         [_pdf(tmp_path, "vastus1.pdf"), _pdf(tmp_path, "vastus2.pdf", b"kaks")]
