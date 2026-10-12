@@ -149,7 +149,6 @@ from app.matters.forms import (
     PlanRevisionForm,
     PositionForm,
     ProceduralDevelopmentEditForm,
-    ProceduralLinkCreateForm,
     ProceduralLinkEditForm,
     ReceivedFeedbackForm,
     ReopenForm,
@@ -167,7 +166,12 @@ from app.matters.forms import (
     read_organisation_choices,
     visible_engagements_of,
 )
-from app.matters.initiative import KODA_INITIATIVE_LABEL, is_koda_initiative, set_koda_initiative
+from app.matters.initiative import (
+    KODA_INITIATIVE_LABEL,
+    apply_initiative_after_edit,
+    is_koda_initiative,
+    names_koda_proposal,
+)
 from app.matters.intake import (
     file_incoming,
     file_new_matter,
@@ -254,7 +258,6 @@ from app.matters.services import (
     open_engagement_feedback_wait,
     personal_note_record,
     personal_note_revision,
-    record_procedural_link,
     reopen_matter_into_stage,
     resolve_addressee,
     resolve_source_organisations,
@@ -1914,17 +1917,11 @@ def matter_create(request: HttpRequest) -> HttpResponse:
     # Which also closes the collision the two blocks had with each other: a
     # Matter has one open step, so answering both had to be a refusal. One
     # question cannot disagree with itself.
-    # `Menetluse link`, bound *and* empty-permitted. Bound, because the block has
-    # to come back holding what was typed into it when the save is refused for a
-    # reason somewhere else — and it is on screen from the first render now, so
-    # there is more of it to lose (docs/adr/0094 §3). Empty-permitted, because a
-    # bound form validates and this one has nothing to validate until somebody
-    # types an address: without it every save that had not used the block came
-    # back with «Menetluse link vajab veebiaadressi.» under a box nobody had
-    # touched. `ProceduralLinkCreateForm.has_changed` is where that is settled,
-    # off the same `wants_link` this line reads (docs/adr/0089 §13, QA-01).
-    procedural_form = ProceduralLinkCreateForm(request.POST or None, prefix="menetlus")
-    wants_procedural_link = procedural_form.wants_link
+    # **No `Menetluse link` here** (owner's decision of 2026-10-12, docs/adr/0130
+    # amendment). A lawyer does not need to answer it while filing a Teema; the
+    # link is added and corrected on the Teema page, where it always could be,
+    # and every stored link is untouched. A forged `menetlus-url=` binds to
+    # nothing on this page.
     uploads: list[Any] = []
     upload_refusals: tuple[str, ...] = ()
     # What an earlier refusal is holding, and which of it this attempt still
@@ -1958,13 +1955,6 @@ def matter_create(request: HttpRequest) -> HttpResponse:
         # `Arvamuse tähtaeg` is a field on `form`, so a badly typed date is
         # already counted above and comes back in its own box. There is no
         # separate next-step form left to validate (docs/adr/0094 §5).
-        #
-        # Validated *before* anything is written, like every other half of this
-        # save: a refused address must not leave a Teema behind carrying the
-        # rest. What was typed comes back in the box, because the form travels
-        # bound into `_create_context` (docs/adr/0089 §13).
-        if wants_procedural_link and not procedural_form.is_valid():
-            refused = True
 
         if refused:
             # One message per refused file. The messages block renders each as
@@ -1986,7 +1976,6 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                 _create_context(
                     request,
                     form,
-                    procedural_form=procedural_form,
                     held_keys=held_keys,
                     # Always a token on the re-rendered form, so the corrected
                     # save is protected like the first one (ENG-074).
@@ -1999,6 +1988,14 @@ def matter_create(request: HttpRequest) -> HttpResponse:
     if request.method == "POST" and form.is_valid():
         data = form.cleaned_data
         promoted: list[Any] = []
+        # **«Märgi saadetud Koja arvamuseks»** (docs/adr/0151, amendment of
+        # 2026-10-12): the files this press files are the Chamber's sent
+        # proposal, filed as `Koja arvamus` and recorded as sent in the same
+        # operation. The form has already refused it on any other `Õigusakt`;
+        # the service refuses it without a file.
+        sends_proposal = bool(data.get("koda_sent"))
+        filed_role = DocumentRole.KODA_SUBMISSION_FINAL if sends_proposal else ""
+        filed: list[Any] = []
         try:
             with transaction.atomic():
                 # **This form, exactly once** (ENG-074). The form's session is
@@ -2034,6 +2031,8 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                             session=intake_session,
                             matter=matter,
                             actor=request.user,
+                            role=filed_role,
+                            filed=filed,
                             # The display title typed on each staged row
                             # (templates/matters/partials/intake_files.html).
                             titles={
@@ -2054,7 +2053,25 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                         # Looked up from this module at call time: it is the
                         # seam the creation tests replace to fail one file of
                         # several (tests/test_matter_create_form.py).
-                        _attach_incoming_file(matter, upload, actor=request.user)
+                        filed.append(
+                            _attach_incoming_file(
+                                matter, upload, actor=request.user, role=filed_role
+                            )
+                        )
+                    # The send, on exactly those documents, in the order they
+                    # were offered — one `Submission`, the first file its
+                    # letter and the rest its further sent files. Inside this
+                    # step, so `Teema käik` reads it as the one act it is.
+                    if sends_proposal:
+                        workspace.record_sent_proposal_on_new_matter(
+                            matter=matter,
+                            documents=filed,
+                            author=request.user,
+                            recipients=_named_addressees(
+                                data.get("sent_recipients"), data.get("sent_recipient_name")
+                            ),
+                            sent_on=data.get("sent_on"),
+                        )
 
                 # What only `Uus teema` asks, after the files and in the same
                 # transaction (`file_new_matter` step 5).
@@ -2085,29 +2102,6 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                         actor=request.user,
                     )
 
-                    # `Menetluse link`, only where somebody typed an address.
-                    # **Atomic with the Teema**: a link the service refuses
-                    # takes the Teema with it (docs/adr/0089 §13).
-                    # `record_procedural_link` rather than the workspace
-                    # wrapper: the wrapper's job is the closed-Matter lock, and
-                    # this Matter is being created open inside this transaction
-                    # — a terminal `Hetkeseis` closes it only after this step.
-                    if wants_procedural_link:
-                        link = procedural_form.cleaned_data
-                        record_procedural_link(
-                            matter=matter,
-                            # Not asked, and not guessed either: the enum's own
-                            # value for a link nobody has classified
-                            # (`ProceduralLinkCreateForm.STORED_KIND`,
-                            # docs/adr/0094 §3).
-                            kind=ProceduralLinkCreateForm.STORED_KIND,
-                            url=link.get("url"),
-                            # `Nimetus` is no longer asked, and nothing is made
-                            # up in its place (docs/adr/0130 §3).
-                            label="",
-                            actor=request.user,
-                        )
-
                 # **The one creation sequence** both doors share (AUD-010,
                 # `app.matters.intake.file_new_matter`): senders resolved inside
                 # this transaction, the Matter, the files as one operation, the
@@ -2126,10 +2120,12 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                     # created first and described later (docs/adr/0130 §2).
                     brief_summary="",
                     stage=data.get("stage"),
-                    # **Not asked and not derived**, with one exception that is
-                    # asked: `Koja ettepanek või pöördumine` is recorded as the
-                    # track it names, `Koja algatus` (docs/adr/0090 §4, 0151 §1).
-                    # The form has already set both incoming dates aside.
+                    # **Not asked**, and derived in one case only: `Õigusakt`
+                    # «Koja ettepanek või pöördumine» is a Teema the Chamber
+                    # started, recorded as the track `Koja algatus` — the
+                    # owner's decision of 2026-10-12, amending docs/adr/0090 §4
+                    # and 0151 §1 (`initiative_on_create`). The form has already
+                    # set both incoming dates aside.
                     track=Track.KODA_INITIATIVE if data.get("koda_initiative") else "",
                     # **Only the sender side.** `Uus teema` no longer asks
                     # Adressaat (docs/adr/0090 §5).
@@ -2153,7 +2149,10 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                     data_class=form.data_class,
                     attach_files=attach_files,
                     after_files=after_files,
-                    seed_plan=True,
+                    # No standard plan on a Teema filed already sent: its next
+                    # work is the thirty-day check, and a faint «Tutvu
+                    # materjaliga» beside it would be work nobody has left.
+                    seed_plan=not sends_proposal,
                 )
 
         except _FormAlreadySubmitted as replay:
@@ -2178,7 +2177,6 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                 _create_context(
                     request,
                     form,
-                    procedural_form=procedural_form,
                     held_keys=[*held_keys, *(item.key for item in newly_held)],
                     # Always a token on the re-rendered form, so the corrected
                     # save is protected like the first one (ENG-074).
@@ -2200,11 +2198,16 @@ def matter_create(request: HttpRequest) -> HttpResponse:
         if intake_session is not None:
             intake_staging.consume_session(intake_session)
 
-        filed = len(uploads) + len(promoted)
-        if filed:
+        count = len(uploads) + len(promoted)
+        if sends_proposal:
             messages.success(
                 request,
-                f"Teema „{matter.title}” on loodud koos {filed} failiga.",
+                f"Teema „{matter.title}” on loodud ja saadetud Koja arvamus on salvestatud.",
+            )
+        elif count:
+            messages.success(
+                request,
+                f"Teema „{matter.title}” on loodud koos {count} failiga.",
             )
         else:
             messages.success(request, f"Teema „{matter.title}” on loodud.")
@@ -2224,11 +2227,37 @@ def matter_create(request: HttpRequest) -> HttpResponse:
         _create_context(
             request,
             form,
-            procedural_form=procedural_form,
             intake_session=intake_staging.open_session(owner=request.user),
         ),
         status=200,
     )
+
+
+def _sent_proposal_offered(form: Any, *, has_files: bool) -> bool:
+    """Whether «Märgi saadetud Koja arvamuseks» applies to the form as it stands:
+    `Õigusakt` «Koja ettepanek või pöördumine» and at least one file."""
+    if not has_files or not form.is_bound:
+        return False
+    chosen = form.cleaned_data.get("legal_instruments") if hasattr(form, "cleaned_data") else None
+    return names_koda_proposal(chosen or [])
+
+
+def _named_addressees(chosen: Any, typed: Any) -> list[Any]:
+    """The addressees a save names: the ones ticked, then the one typed.
+
+    `resolve_addressee` decides what a typed name means — reuse an exact or alias
+    match, create only a genuinely new body, refuse a spelling that names two —
+    inside the caller's transaction (docs/adr/0073). De-duplicated, so a typed
+    name that resolves to a ticked body is one addressee.
+    """
+    named_list = list(chosen or [])
+    name = (typed or "").strip()
+    if not name:
+        return named_list
+    named = resolve_addressee(chosen=None, typed_name=name)
+    if named is not None and not any(row.pk == named.pk for row in named_list):
+        named_list.append(named)
+    return named_list
 
 
 class _FormAlreadySubmitted(Exception):
@@ -2271,24 +2300,15 @@ def _create_context(
     # docs/adr/0091 and `Menetluse link` from docs/adr/0089 — and while they were
     # positional the merge that brought them together handed each block the
     # other's form. Both were `Any`, so nothing complained; what a person saw was
-    # a refused save with everything they had typed gone from the page. One of
-    # those two forms is left and it is still keyword-only, because the reason was
-    # never the count.
-    procedural_form: Any = None,
+    # a refused save with everything they had typed gone from the page. Neither
+    # block is on the page now (docs/adr/0130, amendment of 2026-10-12), and what
+    # is left stays keyword-only, because the reason was never the count.
     held_keys: list[str] | None = None,
     intake_session: Any = None,
 ) -> dict[str, Any]:
+    held_files = pending_uploads.describe(request.session, held_keys or [])
+    intake = _intake_context(intake_session, answered=CurrentValues.answered_on(form))
     return {
-        # `Menetluse link`. Bound on a refusal and unbound on a GET, like the
-        # main form itself, so an address somebody pasted survives a rejected file
-        # or a mistyped valdkond — the property the whole refusal path on this
-        # page exists to keep (docs/adr/0089 §13).
-        #
-        # The partial reads it under the same name the Teema page's launcher
-        # panel reads its own form by, because the two are the same block asking
-        # the same question and a second spelling would be a second place for the
-        # template to drift.
-        "procedural_link_form": procedural_form,
         # `Õigusakt -> Hetkeseis` guidance, for the page's script: which stages
         # stay normal for which instrument. Presentation only — nothing on the
         # write path reads it (app/workflow/stage_guidance.py, docs/adr/0130).
@@ -2299,14 +2319,21 @@ def _create_context(
         # a sender over one the person has already given. On a GET the form is
         # unbound and `answered_on` is empty, which is what it was before
         # (R2-03, `app.matters.intake_suggestions.analysis.CurrentValues`).
-        **_intake_context(intake_session, answered=CurrentValues.answered_on(form)),
+        **intake,
         "form": form,
+        # «Märgi saadetud Koja arvamuseks» drawn open by the server too — on a
+        # refused save that comes back holding the instrument and files — so a
+        # page whose script has not run yet does not hide what was answered. The
+        # script decides it from then on (`bindSentProposal`).
+        "sent_proposal_offered": _sent_proposal_offered(
+            form, has_files=bool(held_files or intake.get("intake_files"))
+        ),
         # The files a refusal is holding, described for the page: the same
         # filename and size the browser's own preview shows, plus the key the
         # next attempt carries them back on. Empty on every GET, so a fresh form
         # never offers somebody an attachment they abandoned an hour ago
         # (app/documents/pending.py).
-        "held_files": pending_uploads.describe(request.session, held_keys or []),
+        "held_files": held_files,
         # `action_form` and `opinion_action_form` were here, and both are gone with
         # the blocks they drew. `Järgmiseks` is not a question `Uus teema` asks any
         # more, and `Arvamuse tähtaeg` is a field on `form` — so the page has one
@@ -2729,7 +2756,7 @@ def _read_new_matter_files(request: HttpRequest) -> tuple[list[Any], tuple[str, 
     return accepted, tuple(refusals)
 
 
-def _attach_incoming_file(matter: Any, upload: Any, *, actor: Any) -> None:
+def _attach_incoming_file(matter: Any, upload: Any, *, actor: Any, role: str = "") -> Any:
     """One uploaded file as one Document with one immutable version.
 
     Through the ordinary services, so a file arriving with a new Matter is
@@ -2749,13 +2776,14 @@ def _attach_incoming_file(matter: Any, upload: Any, *, actor: Any) -> None:
     because it is the seam the creation tests replace to fail one file of
     several (tests/test_matter_create_form.py).
     """
-    file_incoming(
+    return file_incoming(
         matter=matter,
         filename=upload.filename,
         content=upload.content,
         mime_type=upload.mime_type,
         actor=actor,
         title=getattr(upload, "display_title", ""),
+        role=role,
     )
 
 
@@ -3203,6 +3231,9 @@ def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "policy_areas_revision": matter_field_revision(matter, "policy_areas"),
         "senders_revision": matter_field_revision(matter, "source_organisations"),
         "summary_revision": matter_field_revision(matter, "brief_summary"),
+        # What the header's `Hetkeseis` menu showed, sent back with the choice
+        # and with the closure confirmation (docs/adr/0156).
+        "stage_revision": matter_field_revision(matter, "stage"),
         "matter_policy_areas": list(matter.policy_areas.all()),
         "matter_legal_instruments": _legal_instrument_line(matter),
         # **The header's `Tähtaeg` is `Arvamuse tähtaeg`, and only that.** The
@@ -4985,6 +5016,9 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
             # the committed version, never the instance this request arrived
             # with (QA-002, `guard_matter_revision`).
             guard_matter_revision(matter=matter, expected_revision=data.get("revision") or None)
+            # The instrument as it stood before this save: only a change of it
+            # can move `Koja algatus` (`initiative_after_edit`).
+            held_instruments = list(matter.legal_instruments.all())
             set_matter_title(matter=matter, value=data["title"], actor=request.user)
             set_brief_summary(
                 matter=matter, value=data.get("brief_summary") or "", actor=request.user
@@ -5018,11 +5052,17 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
                 ),
                 actor=request.user,
             )
-            # `Koja ettepanek või pöördumine` before the dates, so the date
-            # writers below judge them against the answer this save gives
-            # (docs/adr/0151 §2). Through the audited track writer.
-            set_koda_initiative(
-                matter=matter, value=bool(data.get("koda_initiative")), actor=request.user
+            # `Koja algatus` before the dates, so the date writers below judge
+            # them against the answer this save gives (docs/adr/0151 §2).
+            # Moved only by a change of `Õigusakt` to or from «Koja ettepanek
+            # või pöördumine» in this save — never by an unrelated correction —
+            # and through the audited track writer (docs/adr/0151, amendment of
+            # 2026-10-12, `apply_initiative_after_edit`).
+            apply_initiative_after_edit(
+                matter=matter,
+                held=held_instruments,
+                chosen=list(data.get("legal_instruments") or []),
+                actor=request.user,
             )
             set_matter_dates(
                 matter=matter, received_date=data.get("received_date"), actor=request.user
@@ -5343,7 +5383,7 @@ def _save_procedural_link(*, matter: Matter, form: Any, actor: Any) -> None:
       from, so a stale copy is refused rather than allowed to overwrite a newer
       one;
     * the Matter has none and somebody typed an address — a new row under
-      `STORED_KIND`, exactly as `Uus teema` files one;
+      `STORED_KIND`, as `Uus teema` filed one until 2026-10-12;
     * nobody answered the block — nothing at all. No row, no event, no empty
       record (docs/adr/0089 §7).
 
@@ -5420,6 +5460,11 @@ def _edit_context(
         # so their absence reads as a decision rather than as an omission
         # (Teema QA §2.2).
         "immutable_facts": _immutable_facts(matter),
+        # What `initiative_after_edit` starts from, for the page's script: the
+        # track as stored, and whether the stored instrument is «Koja ettepanek
+        # või pöördumine» (docs/adr/0151, amendment of 2026-10-12).
+        "koda_initiative": is_koda_initiative(matter),
+        "holds_koda_proposal_instrument": names_koda_proposal(list(matter.legal_instruments.all())),
         # The `Õigusakt -> Hetkeseis` guidance, the matrix `Uus teema` reads
         # (docs/adr/0130, amendment of 2026-10-09, «Muuda teemat»).
         "stage_guidance": stage_guidance_payload(),
@@ -8059,14 +8104,9 @@ def _koda_opinion_recipients(form: Any) -> list[Any]:
     in any case; doing it here keeps what this function returns honest about how
     many bodies the letter went to.
     """
-    chosen = list(form.cleaned_data.get("recipients") or [])
-    typed = (form.cleaned_data.get("recipient_name") or "").strip()
-    if not typed:
-        return chosen
-    named = resolve_addressee(chosen=None, typed_name=typed)
-    if named is not None and not any(row.pk == named.pk for row in chosen):
-        chosen.append(named)
-    return chosen
+    return _named_addressees(
+        form.cleaned_data.get("recipients"), form.cleaned_data.get("recipient_name")
+    )
 
 
 @login_required

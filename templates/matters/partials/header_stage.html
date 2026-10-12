@@ -11,48 +11,72 @@ the whole header, because the header holds five inline editors and re-rendering
 them on every note would close whichever one somebody had open
 (`app/matters/views.py` `_render_overview`).
 
-`can_change_stage`, not `can_write`: a closed file states its stage and is moved
-on only through the closed banner's `Ava uuesti` (RULE-03, docs/adr/0131 §12).
+**Directly editable** (owner's decision of 2026-10-12, docs/adr/0156): the value
+is a menu, and choosing a stage *is* the save — one click to open, one to
+choose. No `+ Märge`, no note and no dummy activity: the stage change is the
+business operation, through the one canonical writer (`update_field` →
+`change_stage`), so the Matter lock, the `Hetkeseis` periods, `Teema käik`, the
+legal-process rail and the search refresh are exactly what any other stage
+change gets. It replaced a select plus `Salvesta`, which a lawyer reading the
+header did not recognise as an editor.
+
+- **Each option is a submit button**, not an option in a `<select>`: a keyboard
+  walk through a select fires `change` on every stop, which is why that control
+  never saved on change (ENG-035); a button saves only when pressed. Tab and
+  Enter work, the `<details>` announces its state, Escape closes it and a click
+  outside does (`details[data-uxpopover]`, static/js/ux.js). Nothing is
+  hover-only.
+- **The stage this page showed travels with the choice** (`revision`), so a
+  colleague's change in between is refused rather than overwritten.
+- **A stage that would close the Matter still asks first** when there is live
+  work (docs/adr/0152): the header comes back with the warning and the one
+  confirming button, and nothing was saved.
+- `can_change_stage`, not `can_write`: a closed file states its stage and is
+  moved on only through the closed banner's `Ava uuesti` (RULE-03,
+  docs/adr/0131 §12). A reader sees the value and no control.
 {% endcomment %}
 <span class="metaline__item" id="teema-hetkeseis"{% if stage_out_of_band %} hx-swap-oob="true"{% endif %}>
-  <span class="metaline__label">Hetkeseis</span>
+  <span class="metaline__label" id="teema-hetkeseis-silt">Hetkeseis</span>
   {% if not can_change_stage %}
     {% if matter.stage %}<span class="metaline__value">{{ matter.stage.label_et }}</span>
     {% else %}<span class="metaline__value metafield__missing">—</span>{% endif %}
   {% else %}
-  <details class="inlineedit">
-    <summary class="inlineedit__trigger">
+  <details class="inlineedit" data-uxpopover data-stagepick>
+    <summary class="inlineedit__trigger"
+             aria-describedby="teema-hetkeseis-silt">
       {% if matter.stage %}<span class="metaline__value">{{ matter.stage.label_et }}</span>
-      {% else %}<span class="metaline__value metafield__missing">—</span>{% endif %}
+      {% else %}<span class="metaline__value metafield__missing">Vali</span>{% endif %}
       <span class="inlineedit__caret" aria-hidden="true">▾</span>
     </summary>
-    <form class="inlineedit__form inlineform"
+    <form class="inlineedit__form stagepick__menu"
           hx-post="{% url 'matters:update_field' pk=matter.pk field='stage' %}"
           hx-target="#teema-pais" hx-swap="outerHTML">
       {% csrf_token %}
+      <input type="hidden" name="revision" value="{{ stage_revision }}">
       {% comment %}
-        The governed vocabulary, plus the stage this Matter already stands
-        in. A retired stage is named as one — the same thing the Valdkond
-        control above says with «varasem valdkond» — so it is offered back
-        and kept without reading as an ordinary current choice
-        (app/workflow/selectors.py, docs/adr/0032 §Amendment).
+        The governed vocabulary, plus the stage this Matter already stands in.
+        A retired stage is named as one — «varasem hetkeseis» — so it reads as
+        what it is rather than as an ordinary current choice
+        (app/workflow/selectors.py, docs/adr/0032 §Amendment). The current
+        stage is marked and not pressable: choosing it again would change
+        nothing.
       {% endcomment %}
-      {% comment %}
-        No `data-autosubmit` (ENG-035): a stage change is a recorded fact on
-        Menetluse kulg, and a keyboard walk through the options is not a
-        decision. `Salvesta` is.
-      {% endcomment %}
-      <select class="field__input field__input--compact" name="stage"
-              aria-label="Hetkeseis">
-        <option value="">—</option>
+      <ul class="stagepick__list" role="list" aria-label="Vali hetkeseis">
         {% for stage in stages %}
-          <option value="{{ stage.pk }}" {% if matter.stage_id == stage.pk %}selected{% endif %}>
-            {{ stage.label_et }}{% if not stage.is_active %} — varasem hetkeseis{% endif %}
-          </option>
+          <li>
+            {% if matter.stage_id == stage.pk %}
+              <span class="stagepick__option stagepick__option--current" aria-current="true">{{ stage.label_et }}{% if not stage.is_active %} — varasem hetkeseis{% endif %}</span>
+            {% else %}
+              <button class="stagepick__option" type="submit" name="stage" value="{{ stage.pk }}">{{ stage.label_et }}{% if not stage.is_active %} — varasem hetkeseis{% endif %}</button>
+            {% endif %}
+          </li>
         {% endfor %}
-      </select>
-      <button class="button button--quiet button--tiny" type="submit"
-              aria-label="Salvesta hetkeseisu muudatus">Salvesta</button>
+        {% if matter.stage %}
+          <li class="stagepick__clear">
+            <button class="stagepick__option stagepick__option--quiet" type="submit" name="stage" value="">Määramata</button>
+          </li>
+        {% endif %}
+      </ul>
     </form>
   </details>
   {% endif %}

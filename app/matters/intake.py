@@ -74,6 +74,7 @@ def file_incoming(
     extraction_state: str = ExtractionState.PENDING,
     extraction_note: str = "",
     title: str = "",
+    role: str = "",
 ) -> Document:
     """One incoming file as one Document with one immutable version.
 
@@ -89,6 +90,12 @@ def file_incoming(
     «Algne e-kiri» however it reached the Teema (ENG-066: the three copies this
     replaces had each needed that fix separately).
 
+    ``role`` overrides the classifier for one deliberate case: `Uus teema`'s
+    «Märgi saadetud Koja arvamuseks», where the person has just said these
+    files are the Chamber's own sent letter — filed as `Koja arvamus`, the role
+    `+ Koja arvamus` gives the same bytes (docs/adr/0151, amendment of
+    2026-10-12). Left empty, the role is :func:`role_for`'s, as always.
+
     ``extraction_state`` is the staging area's: a file it has already read
     arrives with that reading's state (`promoted_extraction_state`), and a
     file it failed to read arrives with the reader's reason in
@@ -99,7 +106,7 @@ def file_incoming(
     document = create_document(
         matter=matter,
         title=clean_display_title(title) or filename,
-        role=role_for(filename),
+        role=role or role_for(filename),
         created_by=actor,
     )
     add_evidence_version(

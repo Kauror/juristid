@@ -20,10 +20,13 @@
   the chip control, which is the same input with a smaller skin
   (design/mockups/Uus teema.dc.html 8a/8b/8c, Uus teema redesign §2, §3).
 
-  `Menetluse link` asks for an address and nothing about it, and `Arvamuse
-  tähtaeg` is the one date, with `Järgmiseks` gone from creation altogether
-  (docs/adr/0094). The order of the page, and what it no longer asks —
-  `Millest teema räägib` and the link's `Nimetus` — is docs/adr/0130.
+  `Arvamuse tähtaeg` is the one date, with `Järgmiseks` gone from creation
+  altogether (docs/adr/0094). The order of the page, and what it no longer asks
+  — `Millest teema räägib`, `Menetluse link`, the separate «Koja ettepanek või
+  pöördumine» checkbox and two helper sentences — is docs/adr/0130 and its
+  amendment of 2026-10-12. Those removals are product contracts, pinned by
+  tests/test_retired_ui_contract.py: a refactor may not bring a retired control
+  back because the capability behind it still exists (docs/adr/0155).
 
   **Every vocabulary is drawn at rest again.** `Valdkonnad` and `Hetkeseis`
   spent a round as `chipmenu`s — a pill carrying the answer and a panel taken
@@ -126,16 +129,21 @@
     {% endcomment %}
 
     {% comment %}
-      **The order is the owner's, after lawyer feedback (docs/adr/0130 §1).**
-      Pealkiri; who sent it and who owns it; the three facts that arrive with
-      the file — when Koda's opinion is due, where the proceeding lives, when
-      it arrived; then the three classifications — the instrument, the stage it
-      guides, the subject area; then the private note; then the files, last, directly above the button.
+      **The order is the owner's, after lawyer feedback (docs/adr/0130 §1, and
+      its amendment of 2026-10-12).** Pealkiri; who sent it and who owns it; the
+      two dates that arrive with the file — when Koda's opinion is due, when it
+      arrived; then the three classifications — the instrument, the stage it
+      guides, the subject area; then the private note; then the files; then,
+      only for a Chamber proposal with files, «Märgi saadetud Koja arvamuseks»;
+      then `Seo olemasoleva teemaga`; and the action bar **last**, right-aligned,
+      `Loobu` then `Salvesta`.
 
-      What the page no longer asks: `Millest teema räägib` and the link's
-      `Nimetus`. Both are deferred, not deleted — the summary is written on the
-      Teema page or `Muuda teemat` once the file has been read, and a stored
-      link name is kept and shown wherever one exists (docs/adr/0130 §2, §3).
+      What the page no longer asks: `Millest teema räägib`, `Menetluse link`
+      and the separate «Koja ettepanek või pöördumine» checkbox. Each is
+      deferred or derived, not deleted — the summary and a procedural link are
+      added on the Teema page, and `Õigusakt` «Koja ettepanek või pöördumine»
+      is what makes a Teema the Chamber's own initiative (docs/adr/0130 §2, §3;
+      docs/adr/0151, amendment of 2026-10-12).
     {% endcomment %}
 
     {# 1 — Pealkiri. The only field above the first rule. #}
@@ -206,10 +214,10 @@
     </div>
 
     {% comment %}
-      3 — The three facts that arrive with the file, on one row: when Koda's
-      opinion is due, where the proceeding lives, and when it arrived
-      (docs/adr/0130 §1). The two dates are compact and the address takes the
-      width between them.
+      3 — The two dates that arrive with the file, on one row: when Koda's
+      opinion is due and when it arrived (docs/adr/0130 §1). `Menetluse link`
+      stood between them until 2026-10-12 and is added on the Teema page now
+      (docs/adr/0130, amendment of 2026-10-12).
 
       **`Arvamuse tähtaeg` is the obligation, and only that** (docs/adr/0133
       §8). It records `Matter.response_deadline`, which stays visible on the
@@ -227,27 +235,18 @@
       the refusal path and the browser suite find it.
     {% endcomment %}
     {% comment %}
-      `Koja ettepanek või pöördumine` — the Chamber starts this one itself
-      (owner's R5, docs/adr/0151). Asked here, beside the two dates it decides
-      about, because it is the one thing that makes both of them not apply:
-      nothing arrived, and nobody asked Koda for an opinion by a day.
-
-      Ticked, the two date boxes are hidden and emptied (`bindInitiative`) and
-      the note says why; the form also sets both aside on the server, so a
-      `Saabus` still holding today's default, or anything else left in them,
-      is never recorded. Stored as `Matter.track` «Koja algatus», the process
-      kind it names. Not derived from `Õigusakt` «Koja ettepanek või
-      pöördumine» — a proposal may concern a regulation (docs/adr/0090 §4).
+      **A Chamber proposal has neither date** (docs/adr/0151 §2). With
+      `Õigusakt` «Koja ettepanek või pöördumine» chosen, the two boxes are
+      emptied and hidden — and this row with them, so no empty band is left —
+      and choosing another instrument brings back what they held
+      (`bindInitiative`). The form sets both aside on the server as well, so a
+      `Saabus` still holding today's default is never recorded. No sentence
+      explains it: the separate checkbox and its note are retired, and the
+      instrument the person just chose is the explanation (owner's decision of
+      2026-10-12).
     {% endcomment %}
-    <div class="createform__row" data-initiative-mode="clear">
-      <label class="checkline">
-        {{ form.koda_initiative }}
-        <span>{{ form.koda_initiative.label }}</span>
-      </label>
-      <p class="field__help" data-initiative-note hidden>Koda algatab selle ise: saabumise kuupäeva ega arvamuse tähtaega ei ole.</p>
-    </div>
-
-    <div class="createform__row createform__trio createform__trio--dates">
+    <div class="createform__row createform__pair createform__pair--dates"
+         data-initiative-mode="clear" data-initiative-instrument="koja-ettepanek">
       <label class="field" id="arvamuse-tahtaeg" data-initiative-date>
         <span class="field__label">{% field_label form.response_deadline %}</span>
         {{ form.response_deadline }}
@@ -255,8 +254,6 @@
           <span class="field__error" id="{{ form.response_deadline.auto_id }}_error">{{ form.response_deadline.errors|first }}</span>
         {% endif %}
       </label>
-
-      {% include "matters/partials/procedural_link_create.html" %}
 
       <label class="field" data-initiative-date>
         <span class="field__label">{% field_label form.received_date %}</span>
@@ -307,12 +304,12 @@
     <div class="createform__row" data-stage-guidance="hetkeseis-juhis">
       {% include "matters/partials/hetkeseis_field.html" %}
       {% comment %}
-        Said when, and only when, `Hetkeseis` was chosen from the instrument —
-        a `VTK` or the Chamber's own proposal is an idea — and gone the moment
-        the lawyer chooses anything themselves (`bindStageGuidance`,
-        docs/adr/0130, amendment of 2026-10-09).
+        The prefill still chooses `Idee` for a `VTK` or the Chamber's own
+        proposal (docs/adr/0130, amendment of 2026-10-09), and **says nothing
+        about it**: the chosen chip is the feedback. «Hetkeseis valiti
+        õigusakti järgi — muuda, kui teema on mujal.» is retired (owner's
+        decision of 2026-10-12, tests/test_retired_ui_contract.py).
       {% endcomment %}
-      <p class="field__help" data-stage-prefill-note aria-live="polite" hidden></p>
       {{ stage_guidance|json_script:"hetkeseis-juhis" }}
     </div>
 
@@ -440,19 +437,54 @@
       {% include "matters/partials/intake_panel.html" %}
     </div>
 
-    {# 8 — One primary action, and the way out. #}
-    <div class="createform__actions">
-      {% comment %}
-        `data-needs`, not `aria-disabled`. The button reads inactive until there
-        is a title, and it still submits — somebody who presses it anyway gets
-        the server's refusal beside the field rather than a control that does
-        nothing and explains nothing. `aria-disabled` would say the opposite to
-        anything that reads it: a screen reader announces the button as
-        unavailable, and a browser driver refuses to click it at all, which is
-        how the browser suite found this (Uus teema redesign §7, §15).
-      {% endcomment %}
-      <button type="submit" class="button button--primary" data-needs="id_title">Salvesta</button>
-      <a class="button button--quiet" href="{% url 'matters:matter_list' %}">Loobu</a>
+    {% comment %}
+      9 — «Märgi saadetud Koja arvamuseks»: the Chamber's proposal already went
+      out, and this save records the send as well (owner's decision of
+      2026-10-12, docs/adr/0151 amendment).
+
+      **Only where it makes sense**: `Õigusakt` «Koja ettepanek või pöördumine»
+      *and* at least one file above. Anything else hides it and clears what was
+      ticked (`bindSentProposal`); the server refuses it on any other
+      instrument and without a file, so a crafted POST cannot reach the send.
+      With scripting off it stays hidden unless a refused save comes back
+      holding both (`sent_proposal_offered`) — the send can always be recorded
+      later with `+ Koja arvamus`.
+
+      Ticked, it applies to **the whole file package**: one sent `Koja ettepanek
+      või pöördumine`, the first file its letter and the rest its further sent
+      files, the same documents listed once under `Dokumendid`. It asks what a
+      real send needs and nothing else: `Saadetud`, today's date until
+      corrected, and `Adressaat` — the picker `+ Koja arvamus` uses, opening
+      empty, because who sent the file and who the proposal went to are two
+      facts.
+    {% endcomment %}
+    <div class="createform__row sentproposal" id="saadetud-koja-arvamus"
+         data-sent-proposal data-initiative-instrument="koja-ettepanek"
+         {% if not sent_proposal_offered %}hidden{% endif %}>
+      <label class="checkline">
+        {{ form.koda_sent }}
+        <span>{{ form.koda_sent.label }}</span>
+      </label>
+      {% if form.koda_sent.errors %}
+        <span class="field__error" id="{{ form.koda_sent.auto_id }}_error">{{ form.koda_sent.errors|first }}</span>
+      {% endif %}
+      <div class="createform__pair createform__pair--sentproposal" data-sent-proposal-fields
+           {% if not sent_proposal_offered or not form.koda_sent.value %}hidden{% endif %}>
+        <label class="field">
+          <span class="field__label">{% field_label form.sent_on %}</span>
+          {{ form.sent_on }}
+          {% if form.sent_on.errors %}
+            <span class="field__error" id="{{ form.sent_on.auto_id }}_error">{{ form.sent_on.errors|first }}</span>
+          {% endif %}
+        </label>
+        <fieldset class="field senderpick">
+          <legend class="field__label">{% field_label form.sent_recipients %}</legend>
+          {% include "matters/partials/organisation_picker.html" with picker_id="saadetud-adressaat" legend=form.sent_recipients.label chips=form.sent_recipients_chip_choices tail=form.sent_recipients_tail_choices typed_field=form.sent_recipient_name add_label="Lisa uus adressaat" clearable=True quiet=True only %}
+          {% if form.sent_recipients.errors %}
+            <span class="field__error" id="{{ form.sent_recipients.auto_id }}_error">{{ form.sent_recipients.errors|first }}</span>
+          {% endif %}
+        </fieldset>
+      </div>
     </div>
 
     {% comment %}
@@ -567,7 +599,6 @@
         <input class="field__input field__input--compact" id="seotud-teema-otsing" type="search"
                autocomplete="off" spellcheck="false" aria-controls="seotud-teema-tulemused"
                placeholder="Otsi pealkirja, teemaviite või märksõna järgi">
-        <p class="field__help">Seos luuakse koos teemaga. Võid valida ka teema, mida soovitused ei paku.</p>
       </div>
       <div id="seotud-teema-tulemused" class="relpick__found" aria-live="polite"></div>
       <ul class="relpick__chosen" data-related-chosen aria-label="Valitud seotud teemad">
@@ -590,6 +621,24 @@
                   aria-label="Eemalda valik">×</button>
         </li>
       </template>
+    </div>
+
+    {% comment %}
+      10 — The action bar, **last** (owner's decision of 2026-10-12): after
+      `Seo olemasoleva teemaga`, right-aligned, `Loobu` then `Salvesta` — the
+      primary action right-most, where a form ends. No prose around it.
+
+      `data-needs`, not `aria-disabled`. The button reads inactive until there
+      is a title, and it still submits — somebody who presses it anyway gets
+      the server's refusal beside the field rather than a control that does
+      nothing and explains nothing. `aria-disabled` would say the opposite to
+      anything that reads it: a screen reader announces the button as
+      unavailable, and a browser driver refuses to click it at all, which is
+      how the browser suite found this (Uus teema redesign §7, §15).
+    {% endcomment %}
+    <div class="createform__actions createform__actions--end">
+      <a class="button button--quiet" href="{% url 'matters:matter_list' %}">Loobu</a>
+      <button type="submit" class="button button--primary" data-needs="id_title">Salvesta</button>
     </div>
   </form>
 </div>

@@ -64,10 +64,12 @@ FOLLOW_UP_DAYS = 30
 #: a sentence that named one ministry would be wrong for a letter to three.
 FOLLOW_UP_TEXT_ONE = "Kontrolli, kas adressaat on Koja arvamusele vastanud"
 FOLLOW_UP_TEXT_MANY = "Kontrolli, kas adressaadid on Koja arvamusele vastanud"
-#: The same check after a Chamber proposal or appeal (docs/adr/0151 §5): the
-#: answer awaited is to what Koda proposed, not to an opinion it was asked for.
-FOLLOW_UP_PROPOSAL_TEXT_ONE = "Kontrolli, kas adressaat on Koja ettepanekule vastanud"
-FOLLOW_UP_PROPOSAL_TEXT_MANY = "Kontrolli, kas adressaadid on Koja ettepanekule vastanud"
+#: The same check after a Chamber proposal or appeal — the owner's words of
+#: 2026-10-12 (docs/adr/0151 §5, amendment of 2026-10-12). What is checked is
+#: what became of the proposal, not only whether somebody wrote back, and the
+#: sentence names no addressee, so one wording serves one body and several.
+#: Checks scheduled before keep the words they were written with.
+FOLLOW_UP_PROPOSAL_TEXT = "Kontrolli, mis on pöördumisest saanud"
 
 #: A form named a check that is no longer planned or current (stale tab).
 FOLLOW_UP_CHANGED = "See järelkontroll on vahepeal muutunud. Värskenda lehte ja vaata uuesti."
@@ -120,7 +122,7 @@ def follow_up_text(addressee_count: int, kind: str = "") -> str:
     from app.submissions.enums import SubmissionKind
 
     if kind == SubmissionKind.KODA_PROPOSAL:
-        return FOLLOW_UP_PROPOSAL_TEXT_MANY if addressee_count > 1 else FOLLOW_UP_PROPOSAL_TEXT_ONE
+        return FOLLOW_UP_PROPOSAL_TEXT
     return FOLLOW_UP_TEXT_MANY if addressee_count > 1 else FOLLOW_UP_TEXT_ONE
 
 

@@ -101,10 +101,11 @@ TYPICAL_STAGES_BY_INSTRUMENT: Mapping[str, frozenset[str]] = {
 ATYPICAL_STAGE_NOTE = "Valitud õigusakti puhul tavaliselt ei kasutata, kuid valida võib."
 
 
-#: What `Uus teema` says beside `Hetkeseis` after choosing it from the
-#: instrument — that it was chosen, why, and that it is the lawyer's to change
-#: (docs/adr/0130, amendment of 2026-10-09, «a stage chosen from the instrument»).
-STAGE_PREFILL_NOTE = "Hetkeseis valiti õigusakti järgi — muuda, kui teema on mujal."
+#: `STAGE_PREFILL_NOTE` («Hetkeseis valiti õigusakti järgi — muuda, kui teema on
+#: mujal.») was here. The prefill still chooses the stage; the sentence that
+#: announced it is retired by the owner's decision of 2026-10-12 — the chosen
+#: chip is the feedback (docs/adr/0130, amendment of 2026-10-12;
+#: tests/test_retired_ui_contract.py).
 
 
 def prefill_stage_by_instrument() -> dict[str, str]:
@@ -168,8 +169,8 @@ def stage_guidance_payload(*, prefill: bool = False) -> dict[str, Any]:
     suite holds the two to each other.
 
     ``prefill`` is `Uus teema`'s only: the instruments that choose a stage on
-    an empty, untouched `Hetkeseis`, and the note that says so. `Muuda teemat`
-    never chooses a stage for a Teema that already exists.
+    an empty, untouched `Hetkeseis` — silently, since 2026-10-12. `Muuda
+    teemat` never chooses a stage for a Teema that already exists.
     """
     payload: dict[str, Any] = {
         "always": sorted(ALWAYS_TYPICAL_STAGE_KEYS),
@@ -180,5 +181,4 @@ def stage_guidance_payload(*, prefill: bool = False) -> dict[str, Any]:
     }
     if prefill:
         payload["prefill"] = prefill_stage_by_instrument()
-        payload["prefill_note"] = STAGE_PREFILL_NOTE
     return payload
