@@ -126,3 +126,21 @@ or a new request starts it again; Osakond's seven figures and its team table;
 the register's filters; the timeline, its «sel nädalal» band, the notes, the
 unread assignments and the horizon control on Minu asjad. No migration, no DRAFT
 created, nothing about sending.
+
+## Amendment, 2026-10-12 — shorter captions on Minu asjad
+
+The owner's UX review of 2026-10-12. **Captions only; no migration.**
+
+- «arvamust koostada sel nädalal» reads **«arvamust sellel nädalal»**, and
+  «arvamust koostamisel kokku» reads **«arvamust kokku»**; for exactly one,
+  «arvamus sellel nädalal» and «arvamus kokku».
+- The first figure, «avatud teemat», reads **«teemat menetluses»** («teema
+  menetluses» for one). It is the same open-Matter count (`open_matters`, the
+  desk owner's FULL Matters, every stage including `Määramata`) on the same
+  register link, and it gains a quiet `i` beside the link — a sibling button,
+  never inside it — whose explanation «Menetluses olev teema» is the owner's
+  text with two clarifications to match the count: the consultation stage is
+  named by its label, «kooskõlastusringil», and the list ends with Matters whose
+  `Hetkeseis` is still unset. Only this figure has one
+  (`components/seis.html`, `help`).
+- Keys, values, queries, links, order, tones and the zero rule are unchanged.

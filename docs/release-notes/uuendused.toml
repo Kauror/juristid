@@ -8,6 +8,18 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-10-13
+basis = "deployment"
+# Omaniku UX-ülevaatus 12.10 (ADR 0142 ja 0149 muudatused). Migratsioone ei
+# ole. KUUPÄEV ON AJUTINE: pane siia päev, mil väljalase tootmisse jõuab
+# (Tallinna aja järgi).
+changes = [
+  "«+ Kaasamine → Lisa tagasiside» ei küsi enam eraldi märkust: kirjuta kõik oluline lahtrisse «Saadud tagasiside». Varem lisatud juristi märkused jäävad alles.",
+  "«Minu asjade» ülemises reas on lühemad nimed: «teemat menetluses», «arvamust sellel nädalal» ja «arvamust kokku». Arvud ja lingid on samad.",
+  "«teemat menetluses» kõrval on «i»: hõljuta, vajuta või puuduta seda, et lugeda, millised teemad on menetluses.",
+]
+
+[[day]]
 date = 2026-10-12
 basis = "deployment"
 prs = [425]

@@ -98,3 +98,20 @@ A news address is refused. The start form takes files again. They belong to the 
   - An unclassified address leaves `Liik` to the person.
 - `Kuupäev` opens on today (Europe/Tallinn). No publication day is read off the page.
 - `settings.PUBLICATION_TITLE_FETCH` is off in the test suite, CI and rehearsals.
+
+## Amendment of 2026-10-12 — `Lisa tagasiside` asks no `Märkus`
+
+The owner's UX review of 2026-10-12. **No migration.**
+
+- `+ Kaasamine · Lisa tagasiside` asks `Kaasamine`, `Saadud tagasiside`,
+  `Kuupäev` and the files, then `Salvesta`. The separate `Märkus` box is gone:
+  the lawyer writes everything relevant into `Saadud tagasiside`.
+- `EngagementReplyForm` no longer declares `lawyer_note`, so a crafted
+  `lawyer_note=` has nowhere to arrive and the record this panel writes has a
+  blank note — the boundary docs/adr/0095 §5 drew for the sibling panel.
+- Nothing else moves: the chosen round, the received-feedback record, its date,
+  files, the completion of the chosen wait in the same transaction, the
+  refusals and `Lõpeta kaasamine`.
+- `MatterExternalPosition.lawyer_note` stays. Rows that carry one keep it, read
+  it under «Juristi märkus» on their chronology row, and correct it through
+  `Muuda`, which still asks. Nothing is copied into the feedback text.
