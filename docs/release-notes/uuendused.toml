@@ -8,12 +8,13 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
-date = 2026-10-13
+date = 2026-10-12
 basis = "deployment"
+prs = [425]
 # Uus teema ja Koja ettepanek, omaniku otsused 12.10 (ADR 0151, 0130, 0150
-# muudatused; ADR 0155, 0156). Migratsioone ei ole. Kuupäev on kavandatud
-# tootmisse jõudmise päev: kui väljalase jõuab tootmisse muul päeval
-# (Tallinna aja järgi), liiguvad need read selle päeva kirjesse.
+# muudatused; ADR 0155, 0156). Migratsioone ei ole. Väljalase 12.10 (Tallinna
+# aja järgi); kui see ei jõua tootmisse 12.10, liiguvad need read väljalaske
+# päeva kirjesse.
 changes = [
   "Uue teema leht on lihtsam: eraldi märget «Koja ettepanek või pöördumine» ja menetluse linki seal enam ei küsita. Menetluse lingi saab lisada teema lehel.",
   "Koja ettepanekut või pöördumist saab sisestada kahel viisil. Kui see on alles koostamisel, vali uue teema õigusaktiks «Koja ettepanek või pöördumine». Kui see on juba saadetud, lisa ka saadetud failid ja märgi «Märgi saadetud Koja arvamuseks» — teema ja saadetud Koja arvamus salvestatakse korraga.",
