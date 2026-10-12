@@ -207,6 +207,12 @@ each offered type belongs to.
 **It is a reading, not a source.** Nothing writes `Matter.track` from it, and
 that is the decision rather than an omission.
 
+**Superseded in part on 2026-10-12, for one instrument:** `Õigusakt` «Koja
+ettepanek või pöördumine» establishes `Track.KODA_INITIATIVE` on a new Teema,
+and a change of that instrument on `Muuda teemat` moves it (docs/adr/0151,
+amendment of 2026-10-12). Every other instrument still writes nothing, and the
+argument below still holds for them.
+
 `Menetlusliik` says what kind of **procedure** a file is on. It has seven values,
 not two, and no instrument type entails one. A `Seadus` transposing a directive
 is a domestic *instrument* on a `NATIONAL_TRANSPOSITION` *track*; a rule writing

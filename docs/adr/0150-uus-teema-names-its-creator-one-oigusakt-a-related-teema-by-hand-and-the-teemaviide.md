@@ -81,8 +81,14 @@ text unchanged.
   search box inside the create form would otherwise submit the whole Teema on
   Enter. With scripting off a Teema is linked after it exists, through
   `Seotud materjalid → + Lisa`.
+- *(2026-10-12: the helper sentence under the search is retired, and the block
+  now comes before the action bar — docs/adr/0130's amendment of that date.)*
 
 ### 4. The Teemaviide is shown again — once, in the header, copyable (R4)
+
+**Superseded on 2026-10-12 for *where* and *copyable* — see the amendment at the
+end of this document.** The reference is now under `Teema andmed` in the rail,
+as plain selectable text, and there is no «Kopeeri».
 
 The Teema page's header meta line ends with `Teemaviide 2026_301` and a
 «Kopeeri» button (`bindCopyLink`, which now copies an element's text as well as
@@ -133,3 +139,40 @@ Recorded in full as ADR 0130's amendment of this date («Muuda teemat»).
 
 Entirely, by code: no migration and no data change. Restoring checkboxes would
 not need a data repair, because every stored pair is still there.
+
+---
+
+## Amendment, 2026-10-12 — the Teemaviide moves to «Teema andmed», without «Kopeeri»
+
+- Status: accepted (product owner's decision of 2026-10-12), amending §4's
+  placement («in the header», «never on the rail») and its copy button.
+- Scope: the Teema page's header and rail. Presentation only.
+
+### What was decided before
+
+§4: `Teemaviide 2026_301` last on the header's meta line with a «Kopeeri»
+button, and nowhere on the rail.
+
+### Why it is superseded
+
+The owner wants the header to carry the facts read at a glance, and the
+reference with the Teema's other looked-up facts — Saatja, Õigusakt — where a
+colleague finds it to quote or search. The copy button was a control for an
+act the browser already performs on selected text.
+
+### What is decided now
+
+- `Teemaviide` is a stacked row in `Teema andmed`, directly under `Õigusakt`
+  (`templates/matters/partials/rail.html`), the value in the rail's ordinary
+  voice with tabular figures (`.railcard__ref`), id `teemaviide` kept.
+- It is removed from the header's meta line, and «Kopeeri» is removed with no
+  other copy control in its place. The value is ordinary selectable text.
+- Still only a reference the record has; a historical Teema without one shows
+  no row.
+
+### What this amendment does not change
+
+Generation, uniqueness, search by `Teemaviide`, linking, the related-Teema
+search by reference, and §4's rule that lists, dashboards and timelines name a
+Teema by its title. The copy behaviour (`data-copy-from`) stays for the
+register's own link button, which is not this decision's subject.

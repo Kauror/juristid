@@ -1,7 +1,11 @@
 # ADR 0151 — `Koja ettepanek või pöördumine` is a Teema the Chamber starts, recorded as the `Koja algatus` track
 
 - **Status:** accepted for §1–§4; §5 (the thirty-day check) **awaiting the
-  product owner's choice of trigger**
+  product owner's choice of trigger** — **amended 2026-10-12**: the checkbox
+  is retired, `Õigusakt` «Koja ettepanek või pöördumine» establishes the track
+  on a new Teema, `Uus teema` can record an already-sent proposal in the same
+  save, and §5 is resolved (trigger A, the owner's wording). See the amendment
+  at the end of this document.
 - **Date:** 2026-10-09
 - **Context:** the product owner's brief of 2026-10-09, R5.
 - **Narrows:** 0097 §3 (`Menetlusliik` left the ordinary UI — one of its values
@@ -32,11 +36,19 @@ migration is needed. `Õigusakt` «Koja ettepanek või pöördumine» stays the 
 instrument and implies nothing (0090 §4: no track is derived from an
 instrument); a Chamber proposal about its own idea simply carries both.
 
+**Superseded on 2026-10-12 for «implies nothing» — see the amendment at the end
+of this document.** The stored fact is unchanged (`Matter.track` «Koja
+algatus», no new column), but on a new Teema choosing `Õigusakt` «Koja
+ettepanek või pöördumine» now establishes it, and on `Muuda teemat` a change of
+that instrument moves it.
+
 `app/matters/initiative.py` is the one place that knows what the fact means
 (`is_koda_initiative`, `set_koda_initiative`, `refuse_new_incoming_dates`).
 
 ### 2. No incoming dates are established, and none is erased
 
+- **Superseded on 2026-10-12 — the checkbox is retired; see the amendment.**
+  The two dates are still set aside, now when the instrument is chosen.
 - **`Uus teema`** asks «Koja ettepanek või pöördumine» as a checkbox beside the
   two dates. Ticked, both date boxes are hidden and emptied by the page
   (`bindInitiative`) and set aside by the form (`MatterCreateForm.clean`):
@@ -62,6 +74,9 @@ instrument); a Chamber proposal about its own idea simply carries both.
 - The header's meta line says «Koja ettepanek või pöördumine» where `Saabus`
   would stand, and offers no `+ Saabus`, no `+ Arvamuse tähtaeg` and no
   `+ Lisa → Arvamuse tähtaeg`. A held date is still shown and still editable.
+- **Superseded on 2026-10-12 — the checkbox is retired on this page too; a
+  change of `Õigusakt` to or from «Koja ettepanek või pöördumine» marks or
+  unmarks, and nothing else does. See the amendment.**
 - `Muuda teemat` carries the same checkbox, arriving ticked for an initiative.
   Marking sets the track through `change_track` (`MATTER_TRACK_CHANGED`, the
   previous track in `from`); unmarking clears only «Koja algatus» — a Teema on
@@ -76,6 +91,10 @@ Unticked — the default — nothing changes: `Saabus` today, `Arvamuse tähtaeg
 typed, the request recorded, the obligation outstanding.
 
 ### 5. The thirty-day check — the trigger is the owner's decision
+
+**Resolved on 2026-10-12: trigger A, the recorded send, and the check reads
+«Kontrolli, mis on pöördumisest saanud». See the amendment at the end of this
+document.**
 
 The owner asked for a check thirty calendar days after «the relevant
 initiating/outgoing event» and has not yet said which event. The existing
@@ -143,3 +162,124 @@ as it already is today when a lawyer registers one through `+ Koja arvamus`.
 
 Entirely, by code: no migration. Unmarking an initiative restores the ordinary
 behaviour at once; every date and every track change is in the audit trail.
+
+---
+
+## Amendment, 2026-10-12 — the instrument is the control, a sent proposal can be filed in one save, and §5 is resolved
+
+- Status: accepted (product owner's decisions of 2026-10-12), amending §1's
+  «`Õigusakt` … implies nothing», §2's and §3's checkbox, and resolving §5.
+  Narrows docs/adr/0090 §4 for this one instrument.
+- Scope: `Uus teema`, `Muuda teemat`, `app/matters/initiative.py`, the
+  thirty-day check's wording for `KODA_PROPOSAL`. **No migration** and no
+  stored flag: `Track.KODA_INITIATIVE`, `SubmissionKind.KODA_PROPOSAL`, the SENT
+  `Submission`, `SubmissionSentFile`, `OpinionFollowUp` and `NextAction`
+  already represent every fact.
+
+### What was decided before
+
+- §1: the initiative is `Matter.track` «Koja algatus», and `Õigusakt` «Koja
+  ettepanek või pöördumine» implies nothing (0090 §4).
+- §2/§3: a separate checkbox «Koja ettepanek või pöördumine» on `Uus teema`
+  (with the note «Koda algatab selle ise: saabumise kuupäeva ega arvamuse
+  tähtaega ei ole.») and on `Muuda teemat`.
+- §5: the thirty-day check's trigger awaited the owner; A (the recorded send)
+  was recommended and the wording «Kontrolli, kas adressaat on Koja
+  ettepanekule vastanud» prepared.
+
+### Why it is superseded
+
+The form asked the same thing twice: `Õigusakt` offers «Koja ettepanek või
+pöördumine» and a checkbox below asked «Koja ettepanek või pöördumine» again.
+Duplicate input is what the product exists to remove. And the lawyers file
+Chamber proposals two ways — as work still to be prepared («prepare an appeal
+in two weeks»), and as a proposal that has already gone out — and the second
+had to be entered as a Teema and then sent again through `+ Koja arvamus`.
+
+### What is decided now
+
+1. **The standalone «Koja ettepanek või pöördumine» checkbox is retired** from
+   `Uus teema` and `Muuda teemat`, and with it the note «Koda algatab selle
+   ise: …» — replaced by nothing. A forged `koda_initiative=on` binds to
+   nothing. No other visible «Koja algatus» control is added.
+2. **On a new Teema, `Õigusakt` «Koja ettepanek või pöördumine» establishes
+   `Track.KODA_INITIATIVE`** (`initiative_on_create`). The stored fact is still
+   the track; there is no new boolean. `Saabus` and `Arvamuse tähtaeg` are set
+   aside exactly as §2 says (the page hides both and their row; the form
+   drops whatever they held), so no response obligation begins. A two-week
+   internal target belongs to the ordinary `NextAction`, never to `Arvamuse
+   tähtaeg`.
+3. **On `Muuda teemat` only a change of that instrument in the same save moves
+   the track** (`initiative_after_edit`, `apply_initiative_after_edit`):
+   - changed *to* «Koja ettepanek või pöördumine» → `Koja algatus` (replacing
+     another track, audited with what it replaced; nothing written when it
+     already is one);
+   - changed *away from* it on a Teema that is `Koja algatus` → the track is
+     cleared (`MATTER_TRACK_CHANGED` from `KODA_INITIATIVE`). On such a Teema
+     the instrument and the track said the same thing and the instrument is the
+     only control left for it, so correcting one corrects the other;
+   - any other save — the instrument unchanged, or changed between two other
+     kinds — leaves the track exactly as it is. **A historical `Koja algatus`
+     on another instrument (a `Määrus`, say) survives every such save**, and no
+     historical row is rewritten or migrated. The page carries the stored
+     answer (`data-initiative-held`, `data-initiative-held-instrument`) so its
+     script reaches the same answer the server will, and `clean_initiative_dates`
+     still refuses to establish a date on the answer the save gives.
+4. **Two entry paths, one architecture.**
+   - **A — still to be prepared.** Nothing else ticked: a working Teema, no
+     `Submission`, no invented send date or recipient, no check; the files are
+     ordinary documents (`role_for`); the standard plan is offered as for any
+     new Teema. When the proposal goes out, `+ Koja arvamus` records a
+     `KODA_PROPOSAL` (unchanged since §5's prepared commit) with the real day,
+     addressees and evidence, and schedules the check.
+   - **B — already sent.** «Märgi saadetud Koja arvamuseks», offered only for
+     that instrument *with at least one file* (and refused by the server
+     otherwise: `SENT_PROPOSAL_NEEDS_THE_INSTRUMENT`,
+     `SENT_PROPOSAL_NEEDS_A_FILE`). It reveals `Saadetud` (today's
+     Europe/Tallinn date, editable, never in the future — the person has just
+     said it went) and `Adressaat` (the `+ Koja arvamus` organisation picker
+     and `resolve_addressee`, with no default from `Saatja`). The whole file
+     package is **one** `Submission`: the files are filed once, as `Koja
+     arvamus` documents, and `record_sent_proposal_on_new_matter` stands the
+     send on them through `register_sent_opinion_on_open_matter` — the
+     Dokumendid send — with the first file as `final_version` and the rest as
+     `SubmissionSentFile`s, kind `KODA_PROPOSAL`, `SentAtPrecision.DATE`.
+     Everything is inside the creation transaction and the same operation as
+     the files (`Teema käik` reads one act); the form's one-time token keeps a
+     double submit to one Teema, one send and one check. A closing `Hetkeseis`
+     is refused with it (the check would end at once).
+5. **The send, not the creation, triggers the check** (§5 resolved, trigger A),
+   through ADR 0146's one scheduler: `Submission.sent_at`'s business day + 30
+   calendar days. Creating a Teema schedules nothing.
+6. **The wording for `KODA_PROPOSAL` is «Kontrolli, mis on pöördumisest
+   saanud»** — the owner's words, one sentence for one addressee and several
+   (`FOLLOW_UP_PROPOSAL_TEXT`). The check stays linked to its `OpinionFollowUp`
+   and `Submission`, never matched by text. Checks scheduled before keep the
+   words they were written with.
+7. **On path B the check is the current work.** No standard plan is seeded, so
+   no «Tutvu materjaliga» competes; the check is promoted by ADR 0143 §A4's
+   `promote_next_planned_action`, and `PRAEGUNE TEGEVUS` reads it rather than
+   «Järgmine samm on määramata».
+8. **Reporting needs nothing new.** The Teema counts under `Menetlusliik` «Koja
+   algatus», the send under SENT submissions and under «Arvamused liigi järgi»
+   as «Koja ettepanek või pöördumine», its addressee under the recipient
+   breakdown and its day in the send-date reporting — the same rows a later
+   `+ Koja arvamus` writes (tests/test_koda_proposal_create_flow.py proves the
+   two paths converge).
+
+### What this amendment does not change
+
+- The stored model: no migration, no new flag, no rewrite of a historical
+  `KODA_INITIATIVE` row or of a historical combination of track and instrument.
+- §2's protections: every writer still refuses to *establish* `Saabus` or
+  `Arvamuse tähtaeg` on an initiative (`refuse_new_incoming_dates`), held dates
+  are still kept and correctable, and imports still record what a register
+  says.
+- §3's header line «Koja ettepanek või pöördumine» and the absent `+ Saabus` /
+  `+ Arvamuse tähtaeg`.
+- ADR 0146's scheduler, rules and outcomes for every kind; the wording of every
+  `FORMAL_OPINION` check.
+- `+ Koja arvamus`, `Märgi saadetuks` and `Registreeri saatmine` — path B
+  composes the latter's service and adds none.
+- Authorization: only those who may write business content may create a Teema
+  or record a send.
