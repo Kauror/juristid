@@ -1442,7 +1442,12 @@ MATTER_FIELD_CONFLICT = (
 )
 
 #: The inline editors that replace a whole value and carry a revision of it.
-GUARDED_MATTER_FIELDS = frozenset({"policy_areas", "source_organisations", "brief_summary"})
+#: `stage` joined on 2026-10-12, when the header's `Hetkeseis` became a one-click
+#: menu (docs/adr/0156): a choice made on a stale page must not overwrite the
+#: stage a colleague set meanwhile.
+GUARDED_MATTER_FIELDS = frozenset(
+    {"policy_areas", "source_organisations", "brief_summary", "stage"}
+)
 
 
 class MatterFieldConflict(MatterEditConflict):
@@ -1483,6 +1488,12 @@ def matter_field_revision(matter: Matter, field: str) -> str:
         parts = [
             Matter.objects.filter(pk=matter.pk).values_list("brief_summary", flat=True).first()
             or ""
+        ]
+    elif field == "stage":
+        parts = [
+            str(
+                Matter.objects.filter(pk=matter.pk).values_list("stage_id", flat=True).first() or ""
+            )
         ]
     else:  # pragma: no cover - a programming error, not a request
         raise ValueError(f"no revision for {field!r}")

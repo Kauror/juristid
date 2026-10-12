@@ -594,26 +594,23 @@ def test_opinions_sent_after_the_file_opened_read_after_algus(page, base_url, wi
 
 
 # ---------------------------------------------------------------------------
-# Teemaviide, once, in the header (docs/adr/0150 §4)
+# Teemaviide, once, under Teema andmed (docs/adr/0150 §4, amended 2026-10-12)
 # ---------------------------------------------------------------------------
 
 
-def test_the_teemaviide_is_in_the_header_and_copies(page, base_url):
+def test_the_teemaviide_is_under_teema_andmed_without_a_copy_button(page, base_url):
+    """**Superseded on 2026-10-12**: this test pinned the reference in the
+    header with «Kopeeri». The owner moved it to `Teema andmed` as plain
+    selectable text and removed the button (docs/adr/0150 amendment)."""
     sign_in(page, base_url, SANDRA)
-    page.context.grant_permissions(["clipboard-read", "clipboard-write"], origin=base_url)
     a_procedure_matter(
-        page, base_url, "Teemaviide päises", instruments=("Seadus",), hetkeseis="Idee"
+        page, base_url, "Teemaviide andmetes", instruments=("Seadus",), hetkeseis="Idee"
     )
 
-    reference = page.locator("#teemaviide")
+    reference = page.locator("#teema-andmed #teemaviide")
     expect(reference).to_be_visible()
     value = (reference.text_content() or "").strip()
     assert re.fullmatch(r"\d{4}_\d+", value), value
-    # Beside the title, never in it, and not on the rail.
     assert value not in (page.locator("h1.matterhead__title").text_content() or "")
-    expect(page.locator("#teema-andmed")).not_to_contain_text("Teemaviide")
-
-    button = page.get_by_role("button", name="Kopeeri teemaviide")
-    button.click()
-    expect(button).to_have_text("Kopeeritud")
-    assert page.evaluate("() => navigator.clipboard.readText()") == value
+    expect(page.locator(".metaline")).not_to_contain_text("Teemaviide")
+    expect(page.get_by_role("button", name="Kopeeri teemaviide")).to_have_count(0)

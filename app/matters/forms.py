@@ -38,7 +38,10 @@ from app.matters.enums import (
     ResponseDeadlineOutcome,
     WebsiteOverviewKind,
 )
-from app.matters.initiative import is_koda_initiative
+from app.matters.initiative import (
+    initiative_after_edit,
+    initiative_on_create,
+)
 from app.matters.models import (
     DEVELOPMENT_TITLE_MAX_LENGTH,
     EXTERNAL_POSITION_LAWYER_NOTE_MAX_LENGTH,
@@ -935,6 +938,10 @@ class OrganisationPickerChoicesMixin:
 
         self.frequent_senders = shortlist
         self.sender_tail_count = len(tail)
+        #: Kept for a second picker on the same page — `Uus teema`'s
+        #: «Adressaat» under «Märgi saadetud Koja arvamuseks» — so the
+        #: catalogue is still read once per form (AUD-011).
+        self.organisation_reading = reading
         cast(Any, self.fields["source_organisations"]).choices = [
             (organisation.pk, organisation.name) for organisation in shortlist
         ]
@@ -1523,15 +1530,12 @@ class MatterCreateForm(
     #: the Teema rail's `Kellele` row, `Muuda teemat`, the submission workflow
     #: and every Matter already carrying one are all as they were. What is gone
     #: is the question on the capture screen.
-    #: `Koja ettepanek või pöördumine` — the Chamber started this itself
-    #: (owner's R5, docs/adr/0151). Stored as `Matter.track` «Koja algatus»,
-    #: the process kind it is; a Teema like this has no `Saabus` and no
-    #: `Arvamuse tähtaeg`, so `clean` sees to both (app/matters/initiative.py).
-    koda_initiative = forms.BooleanField(
-        label="Koja ettepanek või pöördumine",
-        required=False,
-        widget=forms.CheckboxInput(attrs={"data-initiative-toggle": "true"}),
-    )
+    #: **No «Koja ettepanek või pöördumine» checkbox** (owner's decision of
+    #: 2026-10-12, docs/adr/0151 amendment). It asked again what `Õigusakt`
+    #: already asks: choosing the instrument «Koja ettepanek või pöördumine» is
+    #: what makes the new Teema a Chamber initiative (`Matter.track` «Koja
+    #: algatus», `initiative_on_create`), and `clean` sets both incoming dates
+    #: aside for it. A forged `koda_initiative=on` binds to nothing.
     received_date = EstonianDateField(
         label="Saabus",
         required=False,
@@ -1600,6 +1604,42 @@ class MatterCreateForm(
     #: authorization and every existing restricted record are untouched; what is
     #: gone is the control. New Matters are NORMAL, decided server-side rather
     #: than inferred from a field somebody could omit (brief 21).
+    #:
+    #: **«Märgi saadetud Koja arvamuseks» — the already-sent Chamber proposal,
+    #: recorded in the same save** (owner's decision of 2026-10-12, docs/adr/0151
+    #: amendment). Offered by the page only for `Õigusakt` «Koja ettepanek või
+    #: pöördumine» with at least one file in `Failid`; ticked, the whole file
+    #: package is one sent `Koja ettepanek või pöördumine` through the canonical
+    #: send (`workspace.record_sent_proposal_on_new_matter`). Unticked — the
+    #: default — the files are ordinary documents and nothing is sent.
+    #:
+    #: Only what a real send needs: the day it went (`Saadetud`, today's
+    #: Europe/Tallinn date until corrected — the person has just said it went,
+    #: so today is a statement they can see and change, never a guess made
+    #: behind them) and who it went to (`Adressaat`, the same organisation
+    #: picker and resolution `+ Koja arvamus` uses, with **no default from
+    #: `Saatja`**: the sender of a file and the addressee of a proposal are two
+    #: facts). `required=False` on each and the refusals in `clean`, so a box
+    #: nobody was offered never says «See lahter on nõutav.».
+    koda_sent = forms.BooleanField(
+        label="Märgi saadetud Koja arvamuseks",
+        required=False,
+        widget=forms.CheckboxInput(attrs={"data-sent-fast-toggle": "true"}),
+    )
+    sent_on = EstonianDateField(
+        label="Saadetud",
+        required=False,
+        widget=EstonianDateInput(),
+        initial=timezone.localdate,
+    )
+    sent_recipients = forms.ModelMultipleChoiceField(
+        label="Adressaat",
+        queryset=Organisation.objects.none(),
+        required=False,
+        widget=OrganisationCheckboxSelect(attrs={"class": "chip__input"}),
+    )
+    sent_recipient_name = _typed_organisation_field("Uus adressaat")
+    sent_recipients_split: int | None = None
 
     def clean(self) -> dict[str, Any]:
         cleaned = super().clean() or {}
@@ -1611,16 +1651,42 @@ class MatterCreateForm(
         clean_policy_area_answer(self, cleaned)
         clean_legal_instrument_answer(self, cleaned)
 
+        # **`Õigusakt` «Koja ettepanek või pöördumine» is a Chamber initiative**
+        # (docs/adr/0151, amendment of 2026-10-12): derived here, once, and
+        # handed to the view as `koda_initiative` — the stored fact is still
+        # `Matter.track` «Koja algatus» and nothing else.
+        initiative = initiative_on_create(cleaned.get("legal_instruments"))
+        cleaned["koda_initiative"] = initiative
+
         # **A Chamber initiative records neither incoming date** (docs/adr/0151
         # §2). Not refused: `Saabus` arrives pre-filled with today, and the box
-        # that holds it is hidden the moment the initiative is ticked, so the
+        # that holds it is hidden the moment the instrument is chosen, so the
         # only honest reading of whatever is still in the two fields is «not
         # applicable». Nothing is recorded, and no response obligation begins.
-        if cleaned.get("koda_initiative"):
+        if initiative:
             cleaned["received_date"] = None
             cleaned["response_deadline"] = None
 
+        clean_sent_proposal(self, cleaned, initiative=initiative)
         return cleaned
+
+    def clean_sent_recipient_name(self) -> str:
+        """Collapse the typed name. Resolve nothing, create nothing — the
+        save's own transaction does, through `resolve_addressee`."""
+        return clean_typed_organisation_name(self.cleaned_data.get("sent_recipient_name"))
+
+    @property
+    def sent_recipients_chip_choices(self) -> list[Any]:
+        """The addressees offered on screen without being searched for."""
+        offered = list(cast(Any, self)["sent_recipients"])
+        split = self.sent_recipients_split
+        return offered if split is None else offered[:split]
+
+    @property
+    def sent_recipients_tail_choices(self) -> list[Any]:
+        """Every other institution, reachable through the search."""
+        split = self.sent_recipients_split
+        return [] if split is None else list(cast(Any, self)["sent_recipients"])[split:]
 
     @property
     def data_class(self) -> str:
@@ -1689,6 +1755,80 @@ class MatterCreateForm(
         # has to accept what a Matter already carries.
         set_choices(self, "legal_instruments", selectable_legal_instrument_types())
         self.offer_legal_instruments(list(selectable_legal_instrument_types()))
+
+        # «Adressaat» under «Märgi saadetud Koja arvamuseks»: the whole
+        # catalogue validates, the shortlist is drawn, the rest is searched —
+        # the same offer `+ Koja arvamus` makes (`KodaOpinionForm`), from the
+        # reading Saatja has just made. Nothing is ticked for anybody.
+        self.sent_recipients_split = offer_addressees(
+            self, "sent_recipients", self.organisation_reading
+        )
+
+
+#: What the fast path is refused with, each on its own control.
+SENT_PROPOSAL_NEEDS_THE_INSTRUMENT = (
+    "Saadetud Koja arvamuseks saab märkida ainult õigusakti «Koja ettepanek või pöördumine» teema."
+)
+SENT_PROPOSAL_NEEDS_A_DAY = "Märgi, mil kuupäeval see välja saadeti."
+SENT_PROPOSAL_NEEDS_AN_ADDRESSEE = "Vali vähemalt üks adressaat."
+SENT_PROPOSAL_CANNOT_CLOSE = (
+    "Saadetud Koja arvamusega teemat ei saa luua lõpetava hetkeseisuga — selle "
+    "järelkontroll jääks kohe pooleli. Vali teine hetkeseis."
+)
+
+
+def clean_sent_proposal(form: Any, cleaned: dict[str, Any], *, initiative: bool) -> None:
+    """Settle «Märgi saadetud Koja arvamuseks» and the two answers it reveals.
+
+    **Unticked, nothing of it survives**: the date, the addressees and a typed
+    name are set aside, so a box the page hid can never send anything. Ticked,
+    it is refused unless it can be a real send — the instrument is «Koja
+    ettepanek või pöördumine», a day not in the future, at least one addressee
+    — and a `Hetkeseis` that would close the new Teema is refused too, because
+    the check this send schedules would end the moment it began. Whether there
+    is a file is the view's to know (the staged, held and chosen files are not
+    this form's), and the send itself refuses a package with none.
+    """
+    from app.submissions.services import SENT_DATE_IN_THE_FUTURE
+
+    if not cleaned.get("koda_sent"):
+        cleaned["koda_sent"] = False
+        cleaned["sent_on"] = None
+        cleaned["sent_recipients"] = []
+        cleaned["sent_recipient_name"] = ""
+        return
+    if not initiative:
+        form.add_error("koda_sent", SENT_PROPOSAL_NEEDS_THE_INSTRUMENT)
+        return
+    sent_on = cleaned.get("sent_on")
+    if sent_on is None:
+        if not form.errors.get("sent_on"):
+            form.add_error("sent_on", SENT_PROPOSAL_NEEDS_A_DAY)
+    elif sent_on > timezone.localdate():
+        form.add_error("sent_on", SENT_DATE_IN_THE_FUTURE)
+    if not cleaned.get("sent_recipients") and not (cleaned.get("sent_recipient_name") or ""):
+        form.add_error("sent_recipients", SENT_PROPOSAL_NEEDS_AN_ADDRESSEE)
+    stage = cleaned.get("stage")
+    if stage is not None and getattr(stage, "key", None) in TERMINAL_STAGE_KEYS:
+        form.add_error("stage", SENT_PROPOSAL_CANNOT_CLOSE)
+
+
+def offer_addressees(form: Any, field_name: str, reading: Any) -> int | None:
+    """Feed an addressee picker: validate against the catalogue, draw the
+    shortlist, keep the rest searchable, carry the recorded spellings.
+
+    Returns where the drawn chips end, or ``None`` when nothing ranks them and
+    the whole catalogue is chips (`OrganisationChoices.shortlist_and_tail`).
+    The offer `KodaOpinionForm` makes for `+ Koja arvamus`, for `Uus teema`'s
+    sent proposal, which asks the same question of the same catalogue.
+    """
+    set_choices(form, field_name, Organisation.objects.order_by("name"))
+    field = cast(Any, form.fields[field_name])
+    shortlist, tail = reading.shortlist_and_tail()
+    offered = [*shortlist, *tail]
+    field.choices = [(organisation.pk, organisation.name) for organisation in offered]
+    cast(Any, field.widget).alias_terms = reading.alias_terms
+    return len(shortlist) if reading.ranked_for_a_reader else None
 
 
 class MatterEditForm(
@@ -1867,15 +2007,12 @@ class MatterEditForm(
     #: field-level default would only ever apply where a date is genuinely
     #: empty — and there, pre-filling today would invent a fact nobody stated
     #: (Teema QA §5.2).
-    #: `Koja ettepanek või pöördumine` — the Chamber started this itself
-    #: (owner's R5, docs/adr/0151). Stored as `Matter.track` «Koja algatus»,
-    #: the process kind it is; a Teema like this has no `Saabus` and no
-    #: `Arvamuse tähtaeg`, so `clean` sees to both (app/matters/initiative.py).
-    koda_initiative = forms.BooleanField(
-        label="Koja ettepanek või pöördumine",
-        required=False,
-        widget=forms.CheckboxInput(attrs={"data-initiative-toggle": "true"}),
-    )
+    #: **No «Koja ettepanek või pöördumine» checkbox here either** (owner's
+    #: decision of 2026-10-12, docs/adr/0151 amendment). `Koja algatus` moves
+    #: only with a change of `Õigusakt` to or from that instrument in the same
+    #: save (`initiative_after_edit`); every other save leaves the track as it
+    #: is, a historical initiative on another instrument included. `clean`
+    #: refuses to establish an incoming date on the answer the save gives.
     received_date = EstonianDateField(label="Saabus", required=False, widget=DATE_WIDGET)
     response_deadline = EstonianDateField(
         label="Arvamuse tähtaeg", required=False, widget=DATE_WIDGET
@@ -2048,6 +2185,13 @@ class MatterEditForm(
         # and false on the page they correct from is a rule people learn twice.
         clean_policy_area_answer(self, cleaned)
         clean_legal_instrument_answer(self, cleaned)
+        matter = getattr(self, "matter", None)
+        if matter is not None:
+            cleaned["koda_initiative"] = initiative_after_edit(
+                matter=matter,
+                held=list(matter.legal_instruments.all()),
+                chosen=list(cleaned.get("legal_instruments") or []),
+            )
         clean_initiative_dates(self, cleaned)
         return cleaned
 
@@ -2091,7 +2235,6 @@ def edit_initial(matter: Matter) -> dict[str, Any]:
         ],
         "received_date": matter.received_date,
         "response_deadline": matter.response_deadline,
-        "koda_initiative": is_koda_initiative(matter),
     }
 
 
@@ -2152,10 +2295,6 @@ def matter_edit_conflict_changes(
         "legal_instruments": "Õigusakt",
         "legal_instrument_other": "Õigusakt — muu",
         "source_organisations": "Saatja",
-        # Compared like every other fact the page carries: a colleague who
-        # marked or unmarked the Teema meanwhile must be named, or the second
-        # Salvesta silently undoes it (docs/adr/0151 §3).
-        "koda_initiative": "Koja ettepanek või pöördumine",
     }
     names = {
         "owner": lambda value: _display_owner(current, value),
@@ -2163,7 +2302,6 @@ def matter_edit_conflict_changes(
         "policy_areas": lambda value: _display_many(PolicyArea, value),
         "legal_instruments": lambda value: _display_many(LegalInstrumentType, value),
         "source_organisations": lambda value: _display_many(Organisation, value),
-        "koda_initiative": lambda value: "jah" if value else "ei",
     }
     stored = edit_initial(current)
     # The instruments as the record holds them, not as the page offers them:
@@ -7373,7 +7511,13 @@ class ProceduralLinkEditForm(ProceduralLinkFieldsMixin, forms.Form):
 
 
 class ProceduralLinkCreateForm(ProceduralLinkFieldsMixin, forms.Form):
-    """One `Menetluse link`, asked while the Teema is being created.
+    """One `Menetluse link` box — today the base of `MatterLinkForm` only.
+
+    **`Uus teema` no longer asks it** (owner's decision of 2026-10-12,
+    docs/adr/0130 amendment): a lawyer does not need to answer it while filing a
+    Teema, and adds it on the Teema page or `Muuda teemat`, which this class
+    still serves through `MatterLinkForm`. What follows is why it was asked at
+    creation, kept as the record of that decision.
 
     The lawyer feedback that produced docs/adr/0089 asked for this by name:
     a Matter frequently arrives *from* a proceeding — an EIS notification, a

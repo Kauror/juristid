@@ -48,10 +48,11 @@ whose addressee nobody recorded should look short, not incomplete.
     {% endif %}
 
     {% comment %}
-      **No `Teemaviide`** (owner's compact round, 2026-10-07). The register
-      reference is an internal identity: it stays on the record, in search, the
-      audit trail and reporting, and leaves this reading surface — the topic is
-      named by its title everywhere a lawyer reads it.
+      **`Teemaviide` is here, under `Õigusakt`** (owner's decision of
+      2026-10-12). The compact round of 2026-10-07 took it out of this card and
+      docs/adr/0150 §4 put it back on the header's meta line with a `Kopeeri`
+      button; the owner moved it here instead, as an ordinary fact a colleague
+      quotes or types into the search — plain selectable text, no copy control.
     {% endcomment %}
 
     {% comment %}
@@ -208,6 +209,22 @@ whose addressee nobody recorded should look short, not incomplete.
       <div class="railcard__row railcard__row--stacked">
         <span class="railcard__key">Õigusakt</span>
         <span class="railcard__value">{% for label in matter_legal_instruments %}{{ label }}{% if not forloop.last %}, {% endif %}{% endfor %}</span>
+      </div>
+    {% endif %}
+
+    {% comment %}
+      TEEMAVIIDE — the register's own name for this file, `2026_301`
+      (docs/adr/0150 §4, moved here by the owner's decision of 2026-10-12).
+      Only a reference the record really has: a historical file without one
+      shows nothing, and nothing is invented, regenerated or reallocated.
+      Selectable text and nothing else — the owner removed `Kopeeri` and asked
+      for no other copy control in its place. The id stays, because the search
+      and the browser suite find the value by it.
+    {% endcomment %}
+    {% if matter.display_reference %}
+      <div class="railcard__row railcard__row--stacked">
+        <span class="railcard__key">Teemaviide</span>
+        <span class="railcard__value railcard__ref" id="teemaviide">{{ matter.display_reference }}</span>
       </div>
     {% endif %}
 

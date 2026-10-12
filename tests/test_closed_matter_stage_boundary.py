@@ -31,6 +31,7 @@ from app.matters.services import (
     change_stage,
     close_matter,
     create_matter,
+    matter_field_revision,
     reopen_matter_into_stage,
 )
 from app.workflow.enums import Disposition
@@ -158,7 +159,7 @@ def test_a_stale_header_save_is_refused_and_moves_nothing(client, specialist):
 
     response = client.post(
         reverse("matters:update_field", kwargs={"pk": matter.pk, "field": "stage"}),
-        {"stage": str(_stage("parliament").pk)},
+        {"stage": str(_stage("parliament").pk), "revision": matter_field_revision(matter, "stage")},
         HTTP_HX_REQUEST="true",
     )
 

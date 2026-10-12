@@ -28,6 +28,7 @@ from app.matters.services import (
     add_engagement,
     change_stage,
     create_matter,
+    matter_field_revision,
     plan_website_overview,
 )
 from app.matters.workspace import complete_current_action
@@ -215,7 +216,7 @@ def test_the_header_offers_the_confirming_button_in_its_words(signed_in, special
 
     response = signed_in.post(
         reverse("matters:update_field", kwargs={"pk": matter.pk, "field": "stage"}),
-        {"stage": str(stage("in_force").pk)},
+        {"stage": str(stage("in_force").pk), "revision": matter_field_revision(matter, "stage")},
         HTTP_HX_REQUEST="true",
     )
 

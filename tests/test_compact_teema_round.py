@@ -9,7 +9,8 @@ C. `Arvamuse tähtaeg` is not repeated inside `PRAEGUNE TEGEVUS`; the header
 D. `Menetluse link` shows the address and `Muuda`, not the kind label.
 E. `Seotud materjalid`: the count and `+ Lisa` in the heading row, one add
    control, title and `×` in one row, unlink still works.
-F. `Teema andmed` carries no `Teemaviide`.
+F. `Teema andmed` carries no `Teemaviide` — **superseded on 2026-10-12**: it
+   carries it again, under `Õigusakt` (docs/adr/0150 amendment).
 """
 
 from __future__ import annotations
@@ -252,14 +253,15 @@ def test_unlinking_still_removes_only_the_relation(client, specialist, normal_ma
 # ---------------------------------------------------------------------------
 
 
-def test_teema_andmed_carries_no_reference(client, specialist, normal_matter):
+def test_teema_andmed_carries_the_reference_again(client, specialist, normal_matter):
+    """**Superseded on 2026-10-12** (docs/adr/0150 amendment): this pinned
+    «carries no reference». The owner moved `Teemaviide` here from the header."""
     client.force_login(specialist)
 
     body = _detail(client, normal_matter)
     card = body[body.index('id="teema-andmed"') :]
     card = card[: card.index('id="koja-arvamus"')]
 
-    assert "Teemaviide" not in card
-    assert "railcard__ref" not in card
-    assert normal_matter.display_reference not in card
+    assert "Teemaviide" in card
+    assert normal_matter.display_reference in card
     assert "Saatja" in card

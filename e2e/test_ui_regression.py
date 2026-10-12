@@ -108,6 +108,7 @@ import os
 import pathlib
 
 import pytest
+from playwright.sync_api import expect
 
 from app.core.management.commands.seed_e2e_data import ARCHIVE_TITLE, OPEN_TITLE
 from e2e.conftest import (
@@ -1509,6 +1510,43 @@ def test_create_matter_form_with_stage_guidance(page, base_url):
     page.evaluate("() => document.activeElement && document.activeElement.blur()")
     _at_rest(page)
     compare("uus-teema-hetkeseis-juhis", capture(page, "uus-teema-hetkeseis-juhis"))
+
+
+def test_create_matter_with_an_already_sent_proposal(page, base_url):
+    """«Märgi saadetud Koja arvamuseks», ticked, with its two answers open.
+
+    The owner's fast path of 2026-10-12 (docs/adr/0151 amendment): `Õigusakt`
+    «Koja ettepanek või pöördumine», one file in `Failid`, the box ticked —
+    so the picture holds the file package, the box, `Saadetud` and `Adressaat`
+    under it, then `Seo olemasoleva teemaga` and the action bar ending the form.
+    The dates' row is gone for a Chamber proposal, which this also locks.
+
+    `Saadetud` arrives holding today; a fixed day is typed over it so the
+    capture does not move with the calendar. Read-only: nothing is submitted
+    (the staged file is never promoted).
+    """
+    signed_in(page, base_url, "/teemad/uus/")
+    page.get_by_role("radio", name="Koja ettepanek või pöördumine", exact=True).check()
+    page.locator("#id_files").set_input_files(
+        [
+            {
+                "name": "Pöördumine.pdf",
+                "mimeType": "application/pdf",
+                "buffer": b"%PDF-1.4\n% visual: sent proposal\n%%EOF\n",
+            }
+        ]
+    )
+    expect(page.locator("#intake-failid .dropzone__file")).to_have_count(1)
+    page.locator('input[name="koda_sent"]').check()
+    expect(page.locator("[data-sent-proposal-fields]")).to_be_visible()
+    page.locator("#id_sent_on").fill("1.10.2026")
+    # The instrument asks `Sarnased teemad` after its debounce; let that answer
+    # land, and take focus and the pointer off the last control touched.
+    page.wait_for_timeout(700)
+    page.wait_for_load_state("networkidle")
+    page.evaluate("() => document.activeElement && document.activeElement.blur()")
+    _at_rest(page)
+    compare("uus-teema-saadetud", capture(page, "uus-teema-saadetud"))
 
 
 def test_matter_edit_form(page, base_url):

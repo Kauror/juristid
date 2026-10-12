@@ -696,7 +696,7 @@ def record_marge(
     inside the page, with its session and CSRF token, so it is the same request
     the panel sent; the page is reloaded afterwards so it shows the result.
 
-    ``stage`` is a `Hetkeseis` label as the header's own select lists it. A
+    ``stage`` is a `Hetkeseis` label as the header's own menu lists it. A
     stage that ends the Matter closes it, as the panel's did. Returns the
     response status.
 
@@ -708,8 +708,11 @@ def record_marge(
     if stage:
         stage_id = page.evaluate(
             """(label) => {
-                const select = document.querySelector('#teema-hetkeseis select[name=stage]');
-                const option = select && Array.from(select.options)
+                // The header's `Hetkeseis` menu: one submit button per stage
+                // (docs/adr/0156). The stage the Matter stands in is marked
+                // and not a button, so it is not offered here.
+                const buttons = document.querySelectorAll('#teema-hetkeseis button[name=stage]');
+                const option = Array.from(buttons)
                     .find((o) => o.textContent.trim().split(' — ')[0] === label);
                 return option ? option.value : '';
             }""",
@@ -916,11 +919,11 @@ def close_through_stage(page, stage: str = "Rohkem ei tegele", title: str = "") 
     else:
         control = page.locator("#teema-hetkeseis")
         control.locator("summary").click()
-        control.locator("select[name=stage]").select_option(label=stage)
+        # One choice is the save (docs/adr/0156).
         with page.expect_response(
             lambda r: r.request.method == "POST" and "/vali/stage/" in r.url
         ) as answer:
-            control.get_by_role("button", name="Salvesta hetkeseisu muudatus").click()
+            control.get_by_role("button", name=stage, exact=True).click()
         if answer.value.status == 400:
             # The one button that closes past the warning. Its words follow
             # what the closure would end — «… lõpeta ka järelkontroll» for a

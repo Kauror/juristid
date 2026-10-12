@@ -181,7 +181,8 @@ def test_a_marge_that_moves_the_stage_moves_the_header_at_once(page, base_url):
     `#teema-vaade` — and the page is not reloaded before the header is read.
     """
     url = _teema_with_a_step(page, base_url)
-    chosen = page.locator("#teema-hetkeseis select[name=stage] option:not([value=''])").nth(1)
+    # The header's menu (docs/adr/0156): one submit button per stage.
+    chosen = page.locator("#teema-hetkeseis button[name=stage]:not([value=''])").nth(1)
     label = (chosen.text_content() or "").strip().split(" — ")[0]
     page.evaluate(
         """async (stage) => {
@@ -199,14 +200,14 @@ def test_a_marge_that_moves_the_stage_moves_the_header_at_once(page, base_url):
     wait_for_htmx(page)
 
     header = page.locator("#teema-hetkeseis")
-    expect(header.locator(".metaline__value")).to_have_text(label)
-    expect(header.locator("select[name=stage] option:checked")).to_contain_text(label)
+    expect(header.locator("summary .metaline__value")).to_have_text(label)
+    expect(header.locator('[aria-current="true"]')).to_contain_text(label)
     assert _duplicate_ids(page) == []
 
     # And a hard reload says the same thing.
     page.goto(url)
     page.wait_for_load_state("networkidle")
-    expect(page.locator("#teema-hetkeseis .metaline__value")).to_have_text(label)
+    expect(page.locator("#teema-hetkeseis summary .metaline__value")).to_have_text(label)
 
 
 def test_a_saved_file_moves_the_document_count(page, base_url):

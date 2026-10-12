@@ -371,7 +371,9 @@ def test_the_search_input_posts_nothing(signed_in):
     matter = factories.MatterFactory()
 
     for page, expected in (
-        (signed_in.get(CREATE).content.decode(), 1),
+        # Plus the sent proposal's `Adressaat` on `Uus teema` since 2026-10-12
+        # (docs/adr/0151 amendment) — still no Matter-level addressee.
+        (signed_in.get(CREATE).content.decode(), 2),
         (signed_in.get(_edit(matter)).content.decode(), 1),
     ):
         boxes = [tag for tag in re.findall(r"<input[^>]*>", page) if "data-orgfind-input" in tag]

@@ -1388,6 +1388,97 @@ def add_matter_koda_opinion(
         return result
 
 
+#: The fast path names a Teema that is not a Chamber proposal (a forged POST).
+SENT_PROPOSAL_NEEDS_AN_INITIATIVE = (
+    "Saadetud Koja arvamuseks saab märkida ainult õigusakti «Koja ettepanek või pöördumine» teema."
+)
+#: The fast path with no file in `Failid` — nothing to stand the send on.
+SENT_PROPOSAL_NEEDS_A_FILE = "Saadetud Koja arvamuseks märkimiseks lisa fail, mis välja saadeti."
+
+
+@transaction.atomic
+def record_sent_proposal_on_new_matter(
+    *,
+    matter: Matter,
+    documents: Sequence[Document],
+    author: Any,
+    recipients: Sequence[Any],
+    sent_on: Any,
+) -> Any:
+    """«Märgi saadetud Koja arvamuseks» — the proposal already went out (2026-10-12).
+
+    `Uus teema` files a Chamber proposal or appeal that has **already been
+    sent**, with the files that went, and records the send in the same save
+    (docs/adr/0151, amendment of 2026-10-12). This is convenience over the
+    existing send, not a second one:
+
+    * **The files are the Teema's documents, once.** The caller has just filed
+      them through the ordinary `Uus teema` paths — one `Document` and one
+      immutable `DocumentVersion` per file, filed as the Chamber's own letter —
+      and they are handed here in the order they were offered. Nothing is
+      uploaded, copied or re-read: the first is the letter (`final_version`),
+      each further one a further sent file of **this same** `Submission`
+      (`bind_further_sent_files`, docs/adr/0144 §5). One package, one record.
+    * **The canonical send.** `register_sent_opinion_on_open_matter` — the act
+      the Dokumendid «Registreeri saatmine» panel posts to — creates the
+      `Submission` as kind `KODA_PROPOSAL`, binds the evidence under the locks,
+      stamps the supplied day (`SentAtPrecision.DATE`, Tallinn midnight) and
+      writes the creation and send events; then `schedule_follow_up_of`
+      schedules the thirty-day check off that recorded day (docs/adr/0146).
+      Nothing here writes a status, a date or a check of its own.
+    * **The check is the next work.** Nothing else is current on a Teema created
+      a moment ago with no plan, so the check is promoted by the established
+      rule (`promote_next_planned_action`, docs/adr/0143 §A4) and `PRAEGUNE
+      TEGEVUS` reads «Kontrolli, mis on pöördumisest saanud» — not «Järgmine
+      samm on määramata», and no «Tutvu materjaliga» beside it.
+
+    Refused — and with it the whole creation, because this runs inside it —
+    when the Teema is not a Chamber initiative or there is no file. The
+    service below refuses a missing day, a future day and a send with no
+    addressee in its own words.
+    """
+    from datetime import datetime, time
+
+    from app.submissions.enums import SentAtPrecision, SubmissionKind
+    from app.submissions.services import register_sent_opinion_on_open_matter
+    from app.workflow.services import promote_next_planned_action
+
+    locked_matter = lock_open_matter_for_business_write(matter.pk)
+    if not is_koda_initiative(locked_matter):
+        raise DomainError(SENT_PROPOSAL_NEEDS_AN_INITIATIVE)
+    package = [document for document in documents if document is not None]
+    if not package:
+        raise DomainError(SENT_PROPOSAL_NEEDS_A_FILE)
+    if sent_on is None:
+        raise DomainError("Saatmise registreerimiseks on vaja saatmise kuupäeva.")
+    # Read from the rows, not from the instances the caller holds: the version
+    # each file was filed with is the exact bytes that went out.
+    for document in package:
+        document.refresh_from_db(fields=["current_version"])
+    versions = [
+        document.current_version for document in package if document.current_version is not None
+    ]
+    if len(versions) != len(package):
+        raise DomainError(SENT_PROPOSAL_NEEDS_A_FILE)
+    letter = package[0]
+    sent = register_sent_opinion_on_open_matter(
+        document=letter,
+        version=versions[0],
+        title=letter.title,
+        kind=SubmissionKind.KODA_PROPOSAL,
+        actor=author,
+        recipients=list(recipients),
+        # Midnight in Europe/Tallinn, carried as a day — the same anchor
+        # `+ Koja arvamus` writes, so no surface reads «00:00» back
+        # (app/submissions/enums.py, docs/adr/0079 §2).
+        sent_at=timezone.make_aware(datetime.combine(sent_on, time.min)),
+        sent_at_precision=SentAtPrecision.DATE,
+        further_versions=versions[1:],
+    )
+    promote_next_planned_action(matter=locked_matter, actor=author)
+    return sent
+
+
 #: What `+ Lisa töödokument` answers for anything but a letter that went out.
 OPINION_WORKING_DOCUMENTS_NEED_A_SEND = (
     "Töödokumendi saab lisada ainult välja saadetud Koja arvamusele."

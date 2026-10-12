@@ -797,12 +797,12 @@ def test_a_row_nobody_placed_reads_where_its_date_puts_it(page, base_url):
         """The header's own `Hetkeseis` disclosure, and only that one.
 
         Five controls in the band share `.inlineedit__trigger`, so the selector
-        has to name the one holding the stage select — and the assertion has to
-        read the *trigger* rather than the disclosure, because the disclosure
-        holds the whole `<option>` list and «contains Riigikogus» is true of it
-        before the save as well as after.
+        has to name the stage menu — and the assertion has to read the
+        *trigger* rather than the disclosure, because the disclosure holds every
+        stage's button and «contains Riigikogus» is true of it before the save
+        as well as after.
         """
-        return page.locator('#teema-pais details:has(select[aria-label="Hetkeseis"])')
+        return page.locator("#teema-hetkeseis details[data-stagepick]")
 
     control = stage_control(page)
     # Look first, and click only a disclosure just seen closed — a `<summary>`
@@ -810,12 +810,9 @@ def test_a_row_nobody_placed_reads_where_its_date_puts_it(page, base_url):
     # idiom `open_add_panel` uses, for the same reason (e2e/conftest.py).
     if not control.evaluate("el => el.open"):
         control.locator(".inlineedit__trigger").click()
-    expect(control.locator('select[aria-label="Hetkeseis"]')).to_be_visible()
-    # **Choosing is not saving** (ENG-035): the header's stage select has no
-    # `data-autosubmit`, so the decision is its own `Salvesta`, and the response
-    # swaps `#teema-pais` wholesale.
-    control.locator('select[aria-label="Hetkeseis"]').select_option(label="Riigikogus")
-    control.get_by_role("button", name="Salvesta hetkeseisu muudatus").click()
+    # Since 2026-10-12 each stage is a submit button and pressing one is the
+    # save (docs/adr/0156); the response swaps `#teema-pais` wholesale.
+    control.get_by_role("button", name="Riigikogus", exact=True).click()
     page.wait_for_load_state("networkidle")
     expect(stage_control(page).locator(".inlineedit__trigger")).to_contain_text("Riigikogus")
     _record_koda_opinion(page, sent_on=_past(2), filename="arvamus.pdf")

@@ -124,7 +124,9 @@ def test_the_matter_page_names_the_topic_and_shows_the_reference_once(signed_in,
     off the page altogether; and the owner's brief of 2026-10-09 (R4) brought it
     back as `Teemaviide` — once, in the header's meta line, copyable — because
     a colleague quotes it and nobody should have to read it out of a URL
-    (docs/adr/0150 §4). The rail still does not carry it.
+    (docs/adr/0150 §4). The owner's decision of 2026-10-12 moved it to
+    `Teema andmed`, as plain selectable text with no «Kopeeri» (docs/adr/0150
+    amendment of 2026-10-12) — superseding «the rail still does not carry it».
     """
     body = _get(signed_in, "matters:matter_detail", pk=marked_matter.pk)
 
@@ -133,14 +135,15 @@ def test_the_matter_page_names_the_topic_and_shows_the_reference_once(signed_in,
     assert TITLE in heading
     assert REFERENCE not in heading
     assert f"<title>{REFERENCE}" not in body
-    # Once, under its label, beside a button that copies it.
+    # Once, under its label in `Teema andmed`, with no copy button.
     assert body.count(REFERENCE) == 1
-    shown = body.split('id="teemaviide">', 1)[1].split("</span>", 1)[0]
+    rail = body.split('id="teema-andmed"', 1)[1].split("</aside>", 1)[0]
+    shown = rail.split('id="teemaviide">', 1)[1].split("</span>", 1)[0]
     assert shown == REFERENCE
-    meta = body.split('class="metaline"', 1)[1].split("matters/partials/summary", 1)[0]
-    assert "Teemaviide" in meta
-    assert 'data-copy-from="teemaviide"' in body
-    assert "railcard__ref" not in body
+    assert "Teemaviide" in rail
+    head = body.split('id="teema-pais"', 1)[1].split("</header>", 1)[0]
+    assert "Teemaviide" not in head
+    assert 'data-copy-from="teemaviide"' not in body
 
 
 def test_a_matter_without_a_reference_shows_no_teemaviide(signed_in, specialist):

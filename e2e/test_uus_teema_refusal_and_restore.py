@@ -75,24 +75,17 @@ def test_a_refused_save_and_the_back_that_follows_it(page, base_url):
     _create_form(page, base_url)
     subject = _coined_subject()
 
-    # A refusal that belongs to the title, with the link block never touched.
+    # A refusal that belongs to the title.
     page.fill("#id_title", "")
     _settle(page)
     page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
 
     assert "/teemad/uus/" in page.url, "the blank-title save was not refused"
-    assert LINK_REFUSAL not in page.content(), "an untouched procedural link block was refused"
-    # The block is open by default now, so what it must not do is carry a
-    # refusal it does not own — the same rule the fold served, reached from the
-    # other side. A visible block reporting errors nobody caused is a
-    # permanently mandatory-looking panel (docs/adr/0094 §3).
-    assert page.locator("#menetluse-link .field__error").count() == 0, (
-        "the untouched block shows a refusal it does not own"
-    )
-    assert page.locator("#menetluse-link").is_visible(), (
-        "the block a lawyer is meant to type into on arrival is not on screen"
-    )
+    # `Menetluse link` left `Uus teema` on 2026-10-12 (docs/adr/0130
+    # amendment), so there is no block to carry a refusal it does not own.
+    assert LINK_REFUSAL not in page.content(), "a procedural link refusal reached Uus teema"
+    assert page.locator("#menetluse-link").count() == 0
 
     # Fix the real problem and file the Teema.
     page.fill("#id_title", subject)

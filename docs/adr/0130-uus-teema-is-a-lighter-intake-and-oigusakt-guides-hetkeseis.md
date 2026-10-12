@@ -72,6 +72,11 @@ FAILID
 amendment at the end of this document.** `HETKESEIS` now comes directly after
 `ÕIGUSAKT`, and the subject-area row follows it, headed `VALDKOND`.
 
+**Superseded on 2026-10-12 for `MENETLUSE LINK` and the action bar — see the
+amendment of that date.** The arrival row is the two dates; the action bar is
+the last element of the form, after `Seo olemasoleva teemaga`, right-aligned,
+`Loobu` then `Salvesta`.
+
 * **Saatja left, Vastutaja right** (`.createform__pair--sender`). Its own
   modifier rather than `--people` reversed: `Muuda teemat` and `Saabunud` keep
   `--people` the other way round, and this order is a decision about this page.
@@ -539,6 +544,9 @@ choosing the first stage would record a fact nobody stated.
 4. **It says so.** «Hetkeseis valiti õigusakti järgi — muuda, kui teema on
    mujal.» appears beside the row, politely announced, while the choice is the
    page's; it goes the moment the lawyer chooses.
+   **Superseded on 2026-10-12: the sentence is retired and nothing replaces
+   it — the chosen chip is the feedback. Rules 1–3 and 5 stand. See the
+   amendment of 2026-10-12.**
 5. **The server is unchanged.** The radio is an ordinary answer; what is saved
    is what the page shows. With scripting off nothing is chosen.
 
@@ -555,3 +563,63 @@ choosing the first stage would record a fact nobody stated.
 - The matrix, its keys, the dimming, the note, union for a historical pair.
 - `Muuda teemat` and every stored stage.
 - The server's acceptance of every combination.
+
+---
+
+## Amendment, 2026-10-12 — what `Uus teema` no longer asks or says, and where its buttons are
+
+- Status: accepted (product owner's decisions of 2026-10-12), amending §1's
+  order (`MENETLUSE LINK` and the action bar) and rule 4 of the amendment of
+  2026-10-09 («a stage chosen from the instrument»). Related: docs/adr/0151 and
+  0150 amendments of the same date, docs/adr/0155.
+- Scope: the `Uus teema` page only.
+
+### What was decided before
+
+- §1: `ARVAMUSE TÄHTAEG | MENETLUSE LINK | SAABUS` on one row, and
+  `[Loo teema] [Loobu]` directly after `Failid` — which, once `Seo olemasoleva
+  teemaga` arrived (docs/adr/0150 §3), put the buttons *before* it.
+- The separate «Koja ettepanek või pöördumine» checkbox and its note
+  (docs/adr/0151 §2).
+- Amendment of 2026-10-09, rule 4: the prefill says «Hetkeseis valiti õigusakti
+  järgi — muuda, kui teema on mujal.».
+- docs/adr/0150 §3: the helper «Seos luuakse koos teemaga. Võid valida ka
+  teema, mida soovitused ei paku.» under the search.
+
+### Why it is superseded
+
+The owner reviewed the page as a lawyer uses it: a link nobody needs to answer
+while filing, a checkbox repeating `Õigusakt`, two sentences explaining what
+the page already shows, and buttons that did not end the form.
+
+### What is decided now
+
+1. **`Uus teema` no longer asks `Menetluse link`.** The control and the view's
+   link form are gone from creation; a forged `menetlus-url` binds to nothing.
+   The arrival row is `Arvamuse tähtaeg | Saabus` (`.createform__pair--dates`).
+2. **No separate initiative checkbox** (docs/adr/0151 amendment): the
+   instrument is the answer, and the dates' row hides itself with the dates.
+3. **The prefill stays and says nothing.** `prefill_stage_by_instrument` and
+   rules 1–3 and 5 are unchanged; `STAGE_PREFILL_NOTE` and its element are
+   removed. The atypical-stage dimming, its words inside each chip's
+   description and every valid stage choice are unchanged.
+4. **`Seo olemasoleva teemaga` keeps its label and its search** and loses the
+   helper sentence; nothing replaces it.
+5. **The order of the form's end**: `Märkmed`, `Failid`, then — only for a
+   Chamber proposal with files — «Märgi saadetud Koja arvamuseks» (docs/adr/0151
+   amendment), then `Sarnased teemad` and `Seo olemasoleva teemaga`, then the
+   **action bar, last**: right-aligned on its own rule
+   (`.createform__actions--end`), `Loobu` then `Salvesta`, the primary action
+   right-most; on a phone the two stay at the right edge and wrap rather than
+   overflow. No prose around them. The other forms' action rows are unchanged.
+
+### What this amendment does not change
+
+- `MatterProceduralLink`, every stored link, and adding or correcting one on the
+  Teema page and `Muuda teemat` (`MatterLinkForm`, which still builds on
+  `ProceduralLinkCreateForm`).
+- §2 (`Millest teema räägib` deferred), §3 (`Nimetus`), §4–§8 (the guidance, the
+  matrix, union, presentation only), and the accessibility descriptions.
+- Every field the page still asks and every value it posts.
+- These removals are product contracts: tests/test_retired_ui_contract.py and
+  e2e/test_koda_proposal_create_flow.py, under docs/adr/0155.

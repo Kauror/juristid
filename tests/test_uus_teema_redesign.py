@@ -24,7 +24,6 @@ from app.accounts.enums import UserRole
 from app.core.enums import Visibility
 from app.documents.enums import DocumentRole
 from app.documents.models import Document, DocumentVersion
-from app.matters.enums import ProceduralLinkKind
 from app.matters.forms import MatterCreateForm
 from app.matters.models import Matter, MatterPersonalNote
 from app.submissions.models import Submission
@@ -177,11 +176,10 @@ def test_a_full_create_stores_exactly_what_was_entered(signed_in, specialist, ev
     version = DocumentVersion.objects.get(document__matter=matter)
     assert version.original_filename == "eelnou.pdf"
 
-    # One address, filed under the neutral kind nobody was asked to choose
-    # (docs/adr/0094 §3).
-    link = matter.procedural_links.get()
-    assert link.url == "https://eelnoud.valitsus.ee/main/mount/docList/abc"
-    assert link.kind == ProceduralLinkKind.OTHER
+    # `Menetluse link` is not asked on `Uus teema` since 2026-10-12
+    # (docs/adr/0130 amendment): the address this POST still carries binds to
+    # nothing, superseding the stored link this test used to read.
+    assert not matter.procedural_links.exists()
 
     # **No step from the deadline** (docs/adr/0133 §8): the date is the
     # obligation on the Matter, and the work towards it is the faint standard

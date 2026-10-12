@@ -76,7 +76,9 @@ def _header_select(page, label: str):
     ("label", "field", "save"),
     [
         ("Vastutaja", "owner", "Salvesta vastutaja muudatus"),
-        ("Hetkeseis", "stage", "Salvesta hetkeseisu muudatus"),
+        # `Hetkeseis` left this list on 2026-10-12: it is a menu of submit
+        # buttons now (docs/adr/0156), which a keyboard walk cannot fire —
+        # tests/test_select_commit_markup.py pins that shape.
     ],
 )
 def test_a_keyboard_walk_through_a_business_select_writes_nothing(

@@ -40,6 +40,7 @@ from app.accounts.enums import UserRole
 from app.core.dates import format_estonian_date
 from app.core.enums import Visibility
 from app.matters.models import Matter
+from app.matters.services import matter_field_revision
 from app.workflow.enums import ActionKind, DateSemantics
 from app.workflow.models import NextAction
 from app.workflow.services import INELIGIBLE_RESPONSIBLE_REFUSAL
@@ -668,7 +669,7 @@ def test_an_inline_edit_of_another_field_leaves_a_departed_owner_alone(client, s
 
     response = client.post(
         reverse("matters:update_field", kwargs={"pk": matter.pk, "field": "stage"}),
-        {"stage": str(stage.pk)},
+        {"stage": str(stage.pk), "revision": matter_field_revision(matter, "stage")},
     )
 
     assert response.status_code == 200

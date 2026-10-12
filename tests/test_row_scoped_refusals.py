@@ -26,7 +26,11 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from django.utils import timezone
 
-from app.matters.services import plan_website_overview, record_external_position
+from app.matters.services import (
+    matter_field_revision,
+    plan_website_overview,
+    record_external_position,
+)
 from app.matters.workspace import add_procedural_development
 from tests import factories
 
@@ -266,7 +270,10 @@ def test_a_marge_that_moves_the_stage_answers_with_the_header_stage(signed_in, s
     fragment = html[html.index('id="teema-hetkeseis"') - 40 :]
     assert 'hx-swap-oob="true"' in fragment[:200]
     assert stage.label_et in fragment.split("</summary>")[0]
-    assert re.search(rf'<option value="{stage.pk}"\s*selected', fragment)
+    # The header's menu marks the stage it now stands in (docs/adr/0156), and
+    # carries the revision the next choice must match.
+    assert 'aria-current="true">' + stage.label_et in fragment
+    assert f'name="revision" value="{matter_field_revision(matter, "stage")}"' in fragment
     # One fragment, not the whole header: the other inline editors are left be.
     assert 'id="teema-pais"' not in html
     assert _duplicate_ids(html) == []

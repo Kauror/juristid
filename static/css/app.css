@@ -1769,6 +1769,73 @@ th[aria-sort="descending"] .colhead__mark::after {
   width: min(22rem, calc(100vw - var(--spacing-8)));
 }
 
+/* The header's `Hetkeseis` menu (owner's decision of 2026-10-12, docs/adr/0156):
+   the stages as a list of buttons, each one a save, the current one marked and
+   not pressable. Narrow and plain — a short vocabulary read top to bottom — and
+   wrapping a long label inside its own row rather than widening the popover. */
+.stagepick__menu {
+  white-space: normal;
+  width: max-content;
+  max-width: min(18rem, calc(100vw - var(--spacing-8)));
+  padding: var(--spacing-1);
+  /* Placed by the popover contract (`data-uxfloat="fit"`, static/js/ux.js):
+     under its trigger, end-aligned and clamped inside the window, upwards when
+     there is more room there, scrolling inside itself when taller — so the
+     menu stays whole at a phone's width wherever the value sits on the meta
+     line. With no script it opens where it sits. */
+  position: fixed;
+  top: auto;
+  left: auto;
+  overflow-y: auto;
+}
+
+.stagepick__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stagepick__option {
+  display: block;
+  width: 100%;
+  padding: var(--spacing-1) var(--spacing-25);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--typography-size-row);
+  text-align: left;
+  cursor: pointer;
+}
+
+.stagepick__option:hover,
+.stagepick__option:focus-visible {
+  background: var(--surface-hover);
+}
+
+.stagepick__option--current {
+  background: var(--surface-selected);
+  font-weight: 600;
+  cursor: default;
+}
+
+.stagepick__option--current:hover {
+  background: var(--surface-selected);
+}
+
+.stagepick__option--quiet {
+  color: var(--text-secondary);
+}
+
+.stagepick__clear {
+  margin-top: var(--spacing-1);
+  padding-top: var(--spacing-1);
+  border-top: 1px solid var(--border-subtle);
+}
+
 /* A closed inline editor's popover is out of layout. Chromium still gave an
  * absolutely positioned form inside a closed `<details>` a box, so a header
  * that wrapped one item further right took a narrow page sideways although
@@ -4587,28 +4654,28 @@ a.barchart__row:hover {
   grid-template-columns: minmax(0, 1fr) minmax(0, 320px);
 }
 
-/* Uus teema's arrival row: `Arvamuse tähtaeg`, `Menetluse link`, `Saabus`. The
-   two dates keep the 146px every date on this page has, and the address takes
-   what is left (docs/adr/0130 §1). */
-.createform__trio--dates {
-  grid-template-columns: 146px minmax(0, 1fr) 146px;
+/* Uus teema's arrival row: `Arvamuse tähtaeg` and `Saabus`, each the 146px
+   every date on this page has. `Menetluse link` stood between them until the
+   owner's decision of 2026-10-12 and is added on the Teema page now
+   (docs/adr/0130, amendment of 2026-10-12); the row starts at the left rather
+   than spreading two short boxes across the form. */
+.createform__pair--dates {
+  grid-template-columns: 146px 146px;
 }
 
-/* The address box is compact wherever else it is drawn (the Teema page's
-   `Paranda`), and on this row it stands between two full-height date boxes, so
-   it takes their height and the whole track rather than reading as a smaller
-   kind of field. */
-.createform__trio--dates .field__input--compact {
-  width: 100%;
-  padding: var(--spacing-2) var(--spacing-25);
+/* «Märgi saadetud Koja arvamuseks» (docs/adr/0151, amendment of 2026-10-12):
+   one checkbox line under the files and, once ticked, `Saadetud` beside
+   `Adressaat` — the date the 146px every date here has, the picker the rest.
+   No rule above it: it is the file block's own continuation, not a section
+   of its own. */
+.createform__row.sentproposal {
+  border-top: 0;
+  padding-top: 0;
 }
 
-/* `Saabus` is the row's right-hand field, so its calendar opens leftwards —
-   anchored at the left it ran 78px past a 1024px window. Stacked, the field is
-   capped at 18rem and the panel still fits inside it. */
-.createform__trio--dates > .field:last-child .datepicker__panel {
-  left: auto;
-  right: 0;
+.createform__pair--sentproposal {
+  grid-template-columns: 146px minmax(0, 1fr);
+  margin-top: var(--spacing-25);
 }
 
 /* `createform__trio--people` was here, and is gone with the field it existed
@@ -4641,7 +4708,9 @@ a.barchart__row:hover {
      reason other than sharing a row with a checkbox that genuinely is small.
      A field is compact because of what it holds, never because of what it sits
      beside, so the cap is now named on the fields that want it. */
-  .createform__trio .field:has(.dateinput) {
+  .createform__trio .field:has(.dateinput),
+  .createform__pair--dates .field:has(.dateinput),
+  .createform__pair--sentproposal .field:has(.dateinput) {
     max-width: 18rem;
   }
 
@@ -4669,8 +4738,12 @@ a.barchart__row:hover {
    fields side by side would not. Below 720px they stack like the rest, and the
    18rem date cap above applies (docs/adr/0130 §1). */
 @media (min-width: 721px) and (max-width: 1080px) {
-  .createform__trio--dates {
-    grid-template-columns: 146px minmax(0, 1fr) 146px;
+  .createform__pair--dates {
+    grid-template-columns: 146px 146px;
+  }
+
+  .createform__pair--sentproposal {
+    grid-template-columns: 146px minmax(0, 1fr);
   }
 
   .createform__pair--sender {
@@ -5634,6 +5707,11 @@ a.barchart__row:hover {
 
 /* -- the actions ------------------------------------------------------------ */
 
+/* `--end` is Uus teema's (owner's decision of 2026-10-12): the last thing on
+   the form, after `Seo olemasoleva teemaga`, on a rule of its own,
+   right-aligned, `Loobu` then `Salvesta` — the primary action right-most. On a
+   phone the two still sit at the right edge, where a thumb ends the form, and
+   wrap rather than overflow. The other forms keep their actions as they were. */
 .createform__actions {
   display: flex;
   flex-wrap: wrap;
@@ -5642,15 +5720,20 @@ a.barchart__row:hover {
   margin-top: var(--spacing-4);
 }
 
+.createform__actions--end {
+  justify-content: flex-end;
+  padding-top: var(--spacing-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
 /* `Sarnased teemad` under the create form: what the register already holds
  * about this subject, while it is being typed.
  *
- * Below the actions on purpose. It answers «has Koda done this before», which
- * is a question about whether to press `Loo teema` — but it is an aside, and
- * putting it above the button would make an optional reading surface stand
- * between a lawyer and the one thing this page is for. There is no empty state
- * and no reserved height: with nothing to suggest the element is empty and the
- * page ends at the actions row, exactly as it did before this existed.
+ * Above `Seo olemasoleva teemaga` and the action bar since the owner's
+ * decision of 2026-10-12, which made the action bar the form's last element:
+ * the suggestions and the hand search are one «related Teema» answer, and the
+ * buttons end the page. There is no empty state and no reserved height: with
+ * nothing to suggest the element is empty.
  *
  * The cards themselves are `.relatedcard`, unforked from the Matter page, so
  * the two surfaces cannot drift apart. */
@@ -6343,10 +6426,41 @@ fieldset,
   font-size: 12.5px;
   color: var(--text-muted);
   min-width: 0;
+  /* The anchor for this fact's inline editor. `.inlineedit__form` is
+     `position: absolute; top: calc(100% + …)`, and the header's anchor used to
+     be `.metafield`, a class nothing draws any more — so every header editor
+     (Hetkeseis, Vastutaja, Valdkond, Saabus, the deadline) opened against the
+     initial containing block, one viewport height down the page, off screen.
+     The disclosure toggled; its control was simply somewhere else, which is
+     why `Hetkeseis` read as not editable (owner's round of 2026-10-12,
+     docs/adr/0156). The rail's editors have the same anchor on
+     `.railcard__editable`. */
+  position: relative;
 }
 
 .metaline__label {
   flex: none;
+}
+
+/* On a phone the meta line wraps, and a fact's editor anchored on the fact ran
+   past the right edge for whatever sat at the end of a line (the deadline's
+   editor by 39px at 375px). There the whole line is the anchor, and an editor
+   opens beneath it at the line's width. `Hetkeseis` places its own menu inside
+   the window (`data-uxfloat="fit"`) and is left to that. */
+@media (max-width: 720px) {
+  .metaline {
+    position: relative;
+  }
+
+  .metaline__item {
+    position: static;
+  }
+
+  .metaline .inlineedit__form:not([data-uxfloat]) {
+    left: 0;
+    right: 0;
+    max-width: none;
+  }
 }
 
 .metaline__value {
@@ -9223,20 +9337,12 @@ button.accordion__action:focus-visible {
   color: var(--text-secondary);
 }
 
-/* `Teemaviide` in the header's meta line (docs/adr/0150 §4): the register's
-   `2026_301`, in tabular figures so the digits read as a code, and selectable
-   as a whole for the copy button beside it. */
-.metaline__ref {
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
-  user-select: all;
-}
-
+/* `Teemaviide` in `Teema andmed` (docs/adr/0150 §4, moved from the header's
+   meta line by the owner's decision of 2026-10-12): the register's `2026_301`
+   in the rail's ordinary value voice, in tabular figures so the digits read as
+   a code. Ordinary selectable text — there is no copy button any more. */
 .railcard__ref {
-  font-family: ui-monospace, Menlo, monospace;
-  font-size: var(--typography-size-meta);
-  font-weight: var(--typography-weight-semibold);
-  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
 }
 

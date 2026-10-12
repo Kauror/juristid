@@ -8,6 +8,24 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-10-12
+basis = "deployment"
+prs = [425]
+# Uus teema ja Koja ettepanek, omaniku otsused 12.10 (ADR 0151, 0130, 0150
+# muudatused; ADR 0155, 0156). Migratsioone ei ole. Väljalase 12.10 (Tallinna
+# aja järgi); kui see ei jõua tootmisse 12.10, liiguvad need read väljalaske
+# päeva kirjesse.
+changes = [
+  "Uue teema leht on lihtsam: eraldi märget «Koja ettepanek või pöördumine» ja menetluse linki seal enam ei küsita. Menetluse lingi saab lisada teema lehel.",
+  "Koja ettepanekut või pöördumist saab sisestada kahel viisil. Kui see on alles koostamisel, vali uue teema õigusaktiks «Koja ettepanek või pöördumine». Kui see on juba saadetud, lisa ka saadetud failid ja märgi «Märgi saadetud Koja arvamuseks» — teema ja saadetud Koja arvamus salvestatakse korraga.",
+  "Saadetud Koja ettepanekule või pöördumisele lisandub 30 päeva pärast saatmist järelkontroll «Kontrolli, mis on pöördumisest saanud».",
+  "Uue teema lehel on «Loobu» ja «Salvesta» nüüd vormi lõpus paremal.",
+  "Hetkeseisu saab muuta otse teema päisest: klõpsa hetkeseisul ja vali uus.",
+  "Teema päises vastutaja, valdkonna, saabumise kuupäeva ja arvamuse tähtaja muutmise valikud avanevad nüüd kohe väärtuse all, ka telefonis.",
+  "Teemaviide on nüüd teema lehel paremal «Teema andmed» all.",
+]
+
+[[day]]
 date = 2026-10-11
 basis = "deployment"
 # Koodibaasi auditi parandusvoor, PR #422 (AUD-001…052, otsused D-1…D-9).

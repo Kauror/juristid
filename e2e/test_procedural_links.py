@@ -35,8 +35,6 @@ does.
 
 from __future__ import annotations
 
-import re
-
 import pytest
 from playwright.sync_api import expect
 
@@ -72,21 +70,6 @@ def open_edit(page, base_url: str) -> None:
 
 def card(page):
     return page.locator("#menetluse-lingid")
-
-
-def create_block(page):
-    """`Menetluse link` on `Uus teema`, which is on screen when the page loads.
-
-    It was a shut `<details>` and this helper opened it. docs/adr/0088's
-    complaint was about *four* blocks expanded at once; there are two now, and
-    what the fold cost instead was a click before the box could be typed into, on
-    the one question whose answer is already on the reader's screen
-    (docs/adr/0094 §3). Nothing to open, so this only names the block and waits
-    for the box to be real.
-    """
-    block = page.locator("#menetluse-link")
-    block.locator("[name='menetlus-url']").wait_for(state="visible")
-    return block
 
 
 def save_link(page, *, url: str) -> None:
@@ -242,30 +225,18 @@ def test_an_emptied_address_is_refused_rather_than_silently_ignored(page, base_u
 # ---------------------------------------------------------------------------
 
 
-def test_a_reference_can_be_recorded_while_the_teema_is_created(page, base_url):
-    """The lawyer feedback's own request: the address is on screen *now*."""
+def test_uus_teema_asks_no_menetluse_link_and_the_teema_page_takes_one(page, base_url):
+    """**Superseded on 2026-10-12** (docs/adr/0130 amendment): this test filed
+    a link from `Uus teema`. The owner removed the question from creation; the
+    link is added on the Teema page, where it always could be."""
     sign_in(page, base_url, SANDRA)
     page.goto(f"{base_url}/teemad/uus/")
     page.wait_for_load_state("networkidle")
-    page.fill("#id_title", unique_title("Menetluse link loomisel"))
-    block = create_block(page)
-    block.locator("[name='menetlus-url']").fill(EIS_URL)
-    # One box: `Nimetus` is not asked here since docs/adr/0130 §3.
-    expect(block.locator("[name='menetlus-label']")).to_have_count(0)
-    page.get_by_role("button", name="Salvesta", exact=True).click()
-    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    expect(page.locator("[name='menetlus-url']")).to_have_count(0)
+    expect(page.get_by_label("Menetluse link")).to_have_count(0)
 
-    # The lawyer's own name for it is what the card reads by. The *source* was a
-    # chip row on this form and is not asked here any more, so a row filed from
-    # `Uus teema` carries the enum's neutral value — asserted on the record by
-    # `tests/test_procedural_links_on_uus_teema.py` rather than on this card,
-    # because the card contains the inline `Paranda` form and that form offers
-    # every kind by name. A `not_to_contain_text("EIS")` here would be reading
-    # an option nobody chose, which is the trap
-    # `test_an_eu_matter_needs_no_second_european_question` documents about the
-    # rail's own editor (docs/adr/0094 §3). With no name asked, the row reads
-    # as its host (docs/adr/0089, docs/adr/0130 §3).
-    expect(card(page).get_by_role("link", name="eelnoud.valitsus.ee")).to_be_visible()
+    create_matter(page, base_url, unique_title("Menetluse link hiljem"))
+    expect(card(page).get_by_role("link", name="Lisa menetluse link")).to_be_visible()
 
 
 def test_creating_a_teema_without_touching_the_block_records_nothing(page, base_url):
@@ -279,24 +250,6 @@ def test_creating_a_teema_without_touching_the_block_records_nothing(page, base_
 
     expect(card(page).get_by_role("link", name="Lisa menetluse link")).to_be_visible()
     expect(card(page).locator(".proclink")).to_have_count(0)
-
-
-def test_a_refused_create_keeps_the_typed_address(page, base_url):
-    """Scenario D. The Teema is refused and the address is still in the box."""
-    sign_in(page, base_url, SANDRA)
-    page.goto(f"{base_url}/teemad/uus/")
-    page.wait_for_load_state("networkidle")
-    page.fill("#id_title", unique_title("Menetluse link keeldumisel"))
-    block = create_block(page)
-    block.locator("[name='menetlus-url']").fill("javascript:alert(1)")
-    page.get_by_role("button", name="Salvesta", exact=True).click()
-    page.wait_for_load_state("networkidle")
-
-    # The box to correct and the sentence explaining it are both simply on the
-    # page: there is nothing to open, which is the whole of docs/adr/0094 §3.
-    expect(page.locator("[name='menetlus-url']")).to_be_visible()
-    expect(page.locator("[name='menetlus-url']")).to_have_value("javascript:alert(1)")
-    expect(page.locator("#menetluse-link")).to_contain_text("http:// või https://")
 
 
 # ---------------------------------------------------------------------------
@@ -369,59 +322,3 @@ def test_a_long_register_address_does_not_destroy_the_layout(page, base_url, wid
         "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
     )
     assert not overflows, "a long register address makes the Teema page scroll sideways"
-
-
-def test_the_create_block_is_on_screen_when_the_page_loads(page, base_url):
-    """docs/adr/0094 §3: the answer is already on the reader's screen.
-
-    It was a shut `<details>`, on docs/adr/0088's argument that the capture page
-    reads as a survey when too much is expanded at once. That argument was about
-    four blocks and there are two; what the fold cost was a click before the box
-    could be typed into.
-    """
-    sign_in(page, base_url, SANDRA)
-    page.goto(f"{base_url}/teemad/uus/")
-    page.wait_for_load_state("networkidle")
-
-    block = page.locator("#menetluse-link")
-    expect(block).to_be_visible()
-    expect(block.locator("[name='menetlus-url']")).to_be_visible()
-    expect(block.locator("[name='menetlus-label']")).to_have_count(0)
-    # Nothing to open, and nothing to classify.
-    expect(block.locator("summary")).to_have_count(0)
-    expect(block.locator("[name='menetlus-kind']")).to_have_count(0)
-
-
-def test_the_box_is_reachable_from_the_keyboard(page, base_url):
-    """A labelled input in the tab order, and nothing in front of it.
-
-    It used to take a `<summary>` press to reach it. The block is open, so the
-    claim is simply that the box is a real control a keyboard can land on
-    (docs/adr/0094 §3) — and its name is the block's own (docs/adr/0130 §3).
-    """
-    sign_in(page, base_url, SANDRA)
-    page.goto(f"{base_url}/teemad/uus/")
-    page.wait_for_load_state("networkidle")
-
-    control = page.get_by_label("Menetluse link")
-    control.focus()
-    expect(control).to_be_focused()
-    control.type("x")
-    expect(control).to_have_value("x")
-    control.fill("")
-
-
-@pytest.mark.parametrize("width", [420, 375])
-def test_the_uus_teema_block_does_not_scroll_the_form_sideways(page, base_url, width):
-    sign_in(page, base_url, SANDRA)
-    page.set_viewport_size({"width": width, "height": 812})
-    page.goto(f"{base_url}/teemad/uus/")
-    page.wait_for_load_state("networkidle")
-    create_block(page)
-    page.locator("[name='menetlus-url']").fill(LONG_REGISTER_URL)
-
-    expect(page.locator("#menetluse-link")).to_be_visible()
-    overflows = page.evaluate(
-        "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
-    )
-    assert not overflows, "the Menetluse link block makes Uus teema scroll sideways"

@@ -460,10 +460,10 @@ def test_the_other_rail_blocks_are_still_there(signed_in, specialist):
 
     assert "Märkmed" in body
     assert "Teema andmed" in body
-    # Not in the rail since the owner's compact round (2026-10-07); back on the
-    # page in the header's meta line since 2026-10-09 (docs/adr/0150 §4).
+    # In the rail again since 2026-10-12, under `Õigusakt`, and no longer in
+    # the header (docs/adr/0150, amendment of 2026-10-12).
     rail = body.split('id="teema-andmed"', 1)[1].split("</aside>", 1)[0]
-    assert "Teemaviide" not in rail
+    assert "Teemaviide" in rail
     assert "Sildid" not in body
 
 

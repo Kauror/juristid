@@ -378,32 +378,38 @@ def test_the_calendar_stays_inside_the_window(page, base_url, width):
 # Koja ettepanek või pöördumine (docs/adr/0151)
 # ---------------------------------------------------------------------------
 
-INITIATIVE = 'input[name="koda_initiative"]'
+#: Since 2026-10-12 the initiative is the instrument itself (docs/adr/0151
+#: amendment): the separate checkbox is retired.
+INITIATIVE = 'input[name="legal_instruments"][data-instrument-key="koja-ettepanek"]'
+ORDINARY = 'input[name="legal_instruments"][data-instrument-key="seadus"]'
 
 
 def _date_box(page, field_id: str):
     return page.locator(f"[data-initiative-date]:has({field_id})")
 
 
-def test_an_initiative_sets_both_dates_aside_and_unticking_brings_them_back(page, base_url):
-    """Ticked, the two dates go and the note says why; unticked, `Saabus` is
-    back with what it held — nothing is invented and nothing typed is lost."""
+def test_an_initiative_sets_both_dates_aside_and_another_instrument_brings_them_back(
+    page, base_url
+):
+    """`Õigusakt` «Koja ettepanek või pöördumine» takes both dates — and their
+    row, so no empty band is left — with no sentence about it (the retired
+    note); another instrument brings `Saabus` back with what it held."""
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
-    note = page.locator("[data-initiative-note]")
-    expect(note).to_be_hidden()
+    expect(page.locator("[data-initiative-note]")).to_have_count(0)
     held = page.locator("#id_received_date").input_value()
     assert held
+    row = page.locator("[data-initiative-mode]")
 
     page.locator(INITIATIVE).check()
     expect(_date_box(page, "#id_received_date")).to_be_hidden()
     expect(_date_box(page, "#id_response_deadline")).to_be_hidden()
-    expect(note).to_be_visible()
+    expect(row).to_be_hidden()
     assert page.locator("#id_received_date").input_value() == ""
 
-    page.locator(INITIATIVE).uncheck()
+    page.locator(ORDINARY).check()
+    expect(row).to_be_visible()
     expect(_date_box(page, "#id_received_date")).to_be_visible()
-    expect(note).to_be_hidden()
     assert page.locator("#id_received_date").input_value() == held
 
 
@@ -439,6 +445,7 @@ def test_marking_an_existing_teema_keeps_its_saabus_on_muuda_teemat(page, base_u
     page.wait_for_load_state("networkidle")
     received = page.locator("#id_received_date").input_value()
     assert received
+    expect(page.locator("[data-initiative-note]")).to_be_hidden()
     page.locator(INITIATIVE).check()
     expect(_date_box(page, "#id_received_date")).to_be_visible()
     expect(_date_box(page, "#id_response_deadline")).to_be_hidden()

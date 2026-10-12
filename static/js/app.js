@@ -3125,9 +3125,10 @@
           - a person's own choice — any stage, «Määramata» included — ends it
             for good, so a stage they cleared is never put back;
           - choosing another instrument takes back a stage this put there, and
-            only that one. */
+            only that one.
+         No sentence announces it: the chosen chip is the feedback, and «Hetkeseis
+         valiti õigusakti järgi …» is retired (owner's decision of 2026-10-12). */
       var prefill = guidance.prefill || null;
-      var prefillNote = row.querySelector("[data-stage-prefill-note]");
       var checkedStageKey = function () {
         var checked = row.querySelector('input[name="stage"]:checked');
         return checked ? checked.getAttribute("data-stage-key") || "" : "";
@@ -3184,14 +3185,6 @@
         });
       };
 
-      var sayPrefill = function (on) {
-        if (!prefillNote) {
-          return;
-        }
-        prefillNote.textContent = on ? guidance.prefill_note || "" : "";
-        prefillNote.hidden = !on;
-      };
-
       var chooseStage = function (key) {
         var target = key
           ? row.querySelector('input[name="stage"][data-stage-key="' + key + '"]')
@@ -3211,11 +3204,9 @@
         if (wanted && (now === "" || now === stageChosenHere)) {
           chooseStage(wanted);
           stageChosenHere = wanted;
-          sayPrefill(true);
         } else if (!wanted && stageChosenHere !== null && now === stageChosenHere) {
           chooseStage("");
           stageChosenHere = null;
-          sayPrefill(false);
         }
       };
 
@@ -3227,7 +3218,6 @@
           /* A person chose — a stage or «Määramata». It is theirs from now. */
           stageTouched = true;
           stageChosenHere = null;
-          sayPrefill(false);
         }
       });
       sync();
@@ -3376,36 +3366,61 @@
 
   /* ---- «Koja ettepanek või pöördumine» ------------------------------------
    * A Teema the Chamber starts itself has no `Saabus` and no `Arvamuse
-   * tähtaeg` (docs/adr/0151). Ticking the box sets both dates aside and the
-   * note beside it says why; unticking brings them back.
+   * tähtaeg` (docs/adr/0151). Since the owner's decision of 2026-10-12 the
+   * question is `Õigusakt` itself — the separate checkbox is retired — so the
+   * page reads the instrument radios (`data-instrument-key`).
    *
-   *  - `Uus teema` (`data-initiative-mode="clear"`): both boxes are emptied and
-   *    hidden, and what they held — `Saabus`'s default today, or anything
-   *    typed — is put back if the box is unticked again. The server sets both
-   *    aside on its own, so this is the page agreeing with it, not the rule.
-   *  - `Muuda teemat` (`"keep"`): a date the Teema already holds stays on the
-   *    page, because marking a Teema is not a reason to erase it; only an
-   *    empty box is hidden, so nothing new can be typed into one.
+   *  - `Uus teema` (`data-initiative-mode="clear"`): an initiative exactly when
+   *    the instrument is «Koja ettepanek või pöördumine». Both boxes are emptied
+   *    and hidden, the row with them, and what they held — `Saabus`'s default
+   *    today, or anything typed — comes back with another instrument. The
+   *    server sets both aside on its own; this is the page agreeing with it.
+   *  - `Muuda teemat` (`"keep"`): the answer `initiative_after_edit` will give —
+   *    changing the instrument to it marks, changing away from it unmarks,
+   *    anything else keeps what the Matter holds (`data-initiative-held`). A
+   *    date the Teema already holds stays on the page; only an empty box is
+   *    hidden, and the note says why.
    *
    * With scripting off every box stays visible and the server's rule applies.
    */
+  function proposalChosen(form, key) {
+    var chosen = form.querySelectorAll('input[name="legal_instruments"]:checked');
+    if (chosen.length !== 1 || chosen[0].getAttribute("data-instrument-keys")) {
+      return false;
+    }
+    return chosen[0].getAttribute("data-instrument-key") === key;
+  }
+
   function bindInitiative(scope) {
-    (scope || document).querySelectorAll("input[data-initiative-toggle]").forEach(function (box) {
-      if (!once(box, "Initiative")) {
+    (scope || document).querySelectorAll("[data-initiative-mode]").forEach(function (row) {
+      if (!once(row, "Initiative")) {
         return;
       }
-      var form = box.form;
-      var row = box.closest("[data-initiative-mode]");
-      if (!form || !row) {
+      var form = row.closest("form");
+      var key = row.getAttribute("data-initiative-instrument");
+      if (!form || !key) {
         return;
       }
       var mode = row.getAttribute("data-initiative-mode") || "clear";
+      var held = row.getAttribute("data-initiative-held") === "true";
+      var heldInstrument = row.getAttribute("data-initiative-held-instrument") === "true";
       var note = row.querySelector("[data-initiative-note]");
       var fields = form.querySelectorAll("[data-initiative-date]");
-      var held = new Map();
+      var stash = new Map();
+
+      var initiative = function () {
+        var now = proposalChosen(form, key);
+        if (now && !heldInstrument) {
+          return true;
+        }
+        if (heldInstrument && !now) {
+          return false;
+        }
+        return held;
+      };
 
       var sync = function () {
-        var on = box.checked;
+        var on = initiative();
         fields.forEach(function (field) {
           var input = field.querySelector("input[name]");
           if (!input) {
@@ -3413,8 +3428,8 @@
           }
           if (on) {
             if (mode === "clear") {
-              if (!held.has(input)) {
-                held.set(input, input.value);
+              if (!stash.has(input)) {
+                stash.set(input, input.value);
               }
               input.value = "";
               field.hidden = true;
@@ -3422,21 +3437,108 @@
               field.hidden = !input.value.trim();
             }
           } else {
-            if (held.has(input)) {
+            if (stash.has(input)) {
               if (!input.value) {
-                input.value = held.get(input);
+                input.value = stash.get(input);
               }
-              held.delete(input);
+              stash.delete(input);
             }
             field.hidden = false;
           }
         });
-        if (note) {
-          note.hidden = !on;
+        if (mode === "clear") {
+          /* The dates' own row goes with them: two hidden boxes would leave an
+             empty band between two rules. */
+          row.hidden = on;
+        } else {
+          row.hidden = !on;
+          if (note) {
+            note.hidden = !on;
+          }
         }
       };
 
-      box.addEventListener("change", sync);
+      form.addEventListener("change", function (event) {
+        if (event.target && event.target.name === "legal_instruments") {
+          sync();
+        }
+      });
+      sync();
+    });
+  }
+
+  /* ---- «Märgi saadetud Koja arvamuseks» on Uus teema -----------------------
+   * The already-sent Chamber proposal, recorded in the same save (owner's
+   * decision of 2026-10-12, docs/adr/0151 amendment).
+   *
+   *  - Offered only while `Õigusakt` is «Koja ettepanek või pöördumine» *and*
+   *    `Failid` holds at least one file: held after a refusal, staged, or still
+   *    in the browser's input. The three lists are rebuilt wholesale by their
+   *    owners, so the count is re-read whenever anything inside the file area
+   *    changes rather than tracked.
+   *  - When it stops applying — another instrument, the last file removed —
+   *    the tick is cleared and the section disabled, so nothing hidden is
+   *    posted. Choosing the instrument and a file again offers it unticked.
+   *  - Ticked, `Saadetud` and `Adressaat` open under it.
+   *
+   * The server refuses the fast path on any other instrument and without a
+   * file; this only decides what the page offers.
+   */
+  function bindSentProposal(scope) {
+    (scope || document).querySelectorAll("[data-sent-proposal]").forEach(function (section) {
+      if (!once(section, "SentProposal")) {
+        return;
+      }
+      var form = section.closest("form");
+      var key = section.getAttribute("data-initiative-instrument");
+      var box = section.querySelector("input[data-sent-fast-toggle]");
+      var fields = section.querySelector("[data-sent-proposal-fields]");
+      var zone = form ? form.querySelector("[data-upload-zone]") : null;
+      if (!form || !key || !box || !fields) {
+        return;
+      }
+      var controls = function () {
+        return section.querySelectorAll("input, select, textarea, button");
+      };
+
+      var hasFiles = function () {
+        if (!zone) {
+          return false;
+        }
+        var listed = zone.querySelectorAll(
+          "#hoitud-failid .dropzone__file, #intake-failid .dropzone__file, #valitud-failid .dropzone__file"
+        ).length;
+        var input = zone.querySelector('input[type="file"][name="files"]');
+        return listed > 0 || Boolean(input && input.files && input.files.length);
+      };
+
+      var sync = function () {
+        var offered = proposalChosen(form, key) && hasFiles();
+        if (!offered && box.checked) {
+          box.checked = false;
+        }
+        section.hidden = !offered;
+        controls().forEach(function (control) {
+          control.disabled = !offered;
+        });
+        fields.hidden = !(offered && box.checked);
+      };
+
+      form.addEventListener("change", function (event) {
+        if (event.target && (event.target.name === "legal_instruments" || event.target === box)) {
+          sync();
+        } else if (event.target && event.target.name === "files") {
+          sync();
+        }
+      });
+      if (zone && window.MutationObserver) {
+        new MutationObserver(sync).observe(zone, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: ["hidden"],
+        });
+      }
       sync();
     });
   }
@@ -4771,6 +4873,7 @@
     bindStageGuidance(document);
     bindRelatedPicker(document);
     bindInitiative(document);
+    bindSentProposal(document);
     bindRequiredAction(document);
     bindSuggestionUse(document);
     bindPersonaMenu(document);

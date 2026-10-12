@@ -372,8 +372,14 @@ def promote_intake_files(
     matter: Any,
     actor: Any,
     titles: dict[str, str] | None = None,
+    role: str = "",
+    filed: list[Any] | None = None,
 ) -> list[MatterIntakeFile]:
     """Every file still on the form becomes one Document with one version.
+
+    ``role`` is `file_incoming`'s override (empty: the classifier's), and
+    ``filed``, when given, receives each `Document` in the order it was filed —
+    what `Uus teema`'s sent proposal stands its send on.
 
     ``titles`` maps a staged file's id to the display title typed on its row
     (`intake_title__<id>`); a file without one keeps its filename as the title.
@@ -470,7 +476,7 @@ def promote_intake_files(
         # filed a row with a blank role as `INCOMING_AUTHORITY` whatever it
         # was — and keeps every path that turns an incoming file into a
         # Document on one classifier (ENG-066).
-        file_incoming(
+        document = file_incoming(
             matter=matter,
             filename=staged.original_filename,
             content=content,
@@ -481,7 +487,10 @@ def promote_intake_files(
             ),
             extraction_note=promoted_extraction_note(staged),
             title=(titles or {}).get(str(staged.pk), ""),
+            role=role,
         )
+        if filed is not None:
+            filed.append(document)
         promoted.append(staged)
 
     return promoted
