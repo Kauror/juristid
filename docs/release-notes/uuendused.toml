@@ -8,23 +8,12 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
-date = 2026-10-13
-basis = "deployment"
-# Omaniku UX-ülevaatus 12.10 (ADR 0142 ja 0149 muudatused). Migratsioone ei
-# ole. KUUPÄEV ON AJUTINE: pane siia päev, mil väljalase tootmisse jõuab
-# (Tallinna aja järgi).
-changes = [
-  "«+ Kaasamine → Lisa tagasiside» ei küsi enam eraldi märkust: kirjuta kõik oluline lahtrisse «Saadud tagasiside». Varem lisatud juristi märkused jäävad alles.",
-  "«Minu asjade» ülemises reas on lühemad nimed: «teemat menetluses», «arvamust sellel nädalal» ja «arvamust kokku». Arvud ja lingid on samad.",
-  "«teemat menetluses» kõrval on «i»: hõljuta, vajuta või puuduta seda, et lugeda, millised teemad on menetluses.",
-]
-
-[[day]]
 date = 2026-10-12
 basis = "deployment"
-prs = [425]
+prs = [425, 426]
 # Uus teema ja Koja ettepanek, omaniku otsused 12.10 (ADR 0151, 0130, 0150
-# muudatused; ADR 0155, 0156). Migratsioone ei ole. Väljalase 12.10 (Tallinna
+# muudatused; ADR 0155, 0156); omaniku UX-ülevaatus 12.10 (ADR 0142, 0149
+# muudatused). Migratsioone ei ole. Väljalase 12.10 (Tallinna
 # aja järgi); kui see ei jõua tootmisse 12.10, liiguvad need read väljalaske
 # päeva kirjesse.
 changes = [
@@ -35,6 +24,9 @@ changes = [
   "Hetkeseisu saab muuta otse teema päisest: klõpsa hetkeseisul ja vali uus.",
   "Teema päises vastutaja, valdkonna, saabumise kuupäeva ja arvamuse tähtaja muutmise valikud avanevad nüüd kohe väärtuse all, ka telefonis.",
   "Teemaviide on nüüd teema lehel paremal «Teema andmed» all.",
+  "«+ Kaasamine → Lisa tagasiside» ei küsi enam eraldi märkust: kirjuta kõik oluline lahtrisse «Saadud tagasiside». Varem lisatud juristi märkused jäävad alles.",
+  "«Minu asjade» ülemises reas on lühemad nimed: «teemat menetluses», «arvamust sellel nädalal» ja «arvamust kokku». Arvud ja lingid on samad.",
+  "«teemat menetluses» kõrval on «i»: hõljuta, vajuta või puuduta seda, et lugeda, millised teemad on menetluses.",
 ]
 
 [[day]]
