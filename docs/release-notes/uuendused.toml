@@ -20,6 +20,7 @@ changes = [
   "Saadetud Koja ettepanekule või pöördumisele lisandub 30 päeva pärast saatmist järelkontroll «Kontrolli, mis on pöördumisest saanud».",
   "Uue teema lehel on «Loobu» ja «Salvesta» nüüd vormi lõpus paremal.",
   "Hetkeseisu saab muuta otse teema päisest: klõpsa hetkeseisul ja vali uus.",
+  "Teema päises vastutaja, valdkonna, saabumise kuupäeva ja arvamuse tähtaja muutmise valikud avanevad nüüd kohe väärtuse all, ka telefonis.",
   "Teemaviide on nüüd teema lehel paremal «Teema andmed» all.",
 ]
 

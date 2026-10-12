@@ -45,6 +45,18 @@ weakening closure confirmation or closed-Matter rules.
    states the stage with no menu, and the stage moves only through `Ava
    uuesti`. A reader sees the value and no control; the route refuses them.
 
+7. **The header's editors are anchored again.** Investigating why the
+   existing select was not recognised found the real cause: every header
+   inline editor (`Hetkeseis`, `Vastutaja`, `Valdkond`, `Saabus`, the
+   deadline) was anchored on `.metafield`, a class nothing draws any more, so
+   its panel opened against the initial containing block — one viewport height
+   down the page, off screen. `.metaline__item` is the anchor now (the whole
+   meta line under 720px, so a panel opens beneath it at the line's width), and
+   the stage menu is placed inside the window by the popover contract
+   (`data-uxfloat="fit"`). `e2e/test_koda_proposal_create_flow.py` pins that
+   every header editor opens on screen at 1440 and 375px; against the old
+   stylesheet `Vastutaja`'s panel measured y=804 in an 800px window.
+
 ## Consequences
 
 - `+ Märge` with `Uus hetkeseis` remains for a move that belongs with a note; it
