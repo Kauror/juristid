@@ -176,6 +176,10 @@ def test_a_closing_stage_with_live_work_asks_first_and_then_closes(signed_in, sp
     body = asked.content.decode()
     assert asked.status_code == 400
     assert f">{LIVE_WORK_LABEL}</button>" in body
+    # The header still states the stage that is stored — nothing was saved.
+    slot = body.split('id="teema-hetkeseis"', 1)[1].split("</summary>", 1)[0]
+    assert stage("awaiting_entry").label_et in slot
+    assert stage("in_force").label_et not in slot
     confirm = body.split('class="inlineform followupconfirm"', 1)[1].split("</form>", 1)[0]
     assert f'name="revision" value="{matter_field_revision(matter, "stage")}"' in confirm
     matter.refresh_from_db()

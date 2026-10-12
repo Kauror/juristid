@@ -5561,13 +5561,17 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
     except FollowUpClosureUnconfirmed as refusal:
         # The stage would close a file with a pending `Arvamuse järelkontroll`:
         # the warning, and one button that posts the same stage again with the
-        # confirmation (docs/adr/0146 §8).
+        # confirmation (docs/adr/0146 §8). Read back first: the refused move was
+        # rolled back, and the instance it was tried on must not show the
+        # header a stage that was never saved.
+        matter.refresh_from_db()
         context = _header_context(request, matter)
         context["field_error"] = str(refusal)
         context["follow_up_closure_stage"] = getattr(value, "pk", value)
         context["follow_up_closure_label"] = refusal.label
         return render(request, surface, context, status=400)
     except DomainError as error:
+        matter.refresh_from_db()
         context = _header_context(request, matter)
         context["field_error"] = str(error)
         return render(request, surface, context, status=400)

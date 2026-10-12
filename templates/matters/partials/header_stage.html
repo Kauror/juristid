@@ -48,7 +48,7 @@ header did not recognise as an editor.
       {% else %}<span class="metaline__value metafield__missing">Vali</span>{% endif %}
       <span class="inlineedit__caret" aria-hidden="true">▾</span>
     </summary>
-    <form class="inlineedit__form stagepick__menu"
+    <form class="inlineedit__form stagepick__menu" data-uxfloat="fit"
           hx-post="{% url 'matters:update_field' pk=matter.pk field='stage' %}"
           hx-target="#teema-pais" hx-swap="outerHTML">
       {% csrf_token %}

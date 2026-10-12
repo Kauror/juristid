@@ -1778,6 +1778,15 @@ th[aria-sort="descending"] .colhead__mark::after {
   width: max-content;
   max-width: min(18rem, calc(100vw - var(--spacing-8)));
   padding: var(--spacing-1);
+  /* Placed by the popover contract (`data-uxfloat="fit"`, static/js/ux.js):
+     under its trigger, end-aligned and clamped inside the window, upwards when
+     there is more room there, scrolling inside itself when taller — so the
+     menu stays whole at a phone's width wherever the value sits on the meta
+     line. With no script it opens where it sits. */
+  position: fixed;
+  top: auto;
+  left: auto;
+  overflow-y: auto;
 }
 
 .stagepick__list {
@@ -6417,10 +6426,41 @@ fieldset,
   font-size: 12.5px;
   color: var(--text-muted);
   min-width: 0;
+  /* The anchor for this fact's inline editor. `.inlineedit__form` is
+     `position: absolute; top: calc(100% + …)`, and the header's anchor used to
+     be `.metafield`, a class nothing draws any more — so every header editor
+     (Hetkeseis, Vastutaja, Valdkond, Saabus, the deadline) opened against the
+     initial containing block, one viewport height down the page, off screen.
+     The disclosure toggled; its control was simply somewhere else, which is
+     why `Hetkeseis` read as not editable (owner's round of 2026-10-12,
+     docs/adr/0156). The rail's editors have the same anchor on
+     `.railcard__editable`. */
+  position: relative;
 }
 
 .metaline__label {
   flex: none;
+}
+
+/* On a phone the meta line wraps, and a fact's editor anchored on the fact ran
+   past the right edge for whatever sat at the end of a line (the deadline's
+   editor by 39px at 375px). There the whole line is the anchor, and an editor
+   opens beneath it at the line's width. `Hetkeseis` places its own menu inside
+   the window (`data-uxfloat="fit"`) and is left to that. */
+@media (max-width: 720px) {
+  .metaline {
+    position: relative;
+  }
+
+  .metaline__item {
+    position: static;
+  }
+
+  .metaline .inlineedit__form:not([data-uxfloat]) {
+    left: 0;
+    right: 0;
+    max-width: none;
+  }
 }
 
 .metaline__value {

@@ -358,7 +358,11 @@ def test_the_deadline_opens_the_arrival_row(page, base_url):
     files = box("#failid")
     actions = box(".createform__actions")
     assert deadline["x"] < received["x"], (deadline, received)
-    assert abs(deadline["y"] - received["y"]) < 10, (deadline, received)
+    # The deadline's box is its labelled field, Saabus's its input: same row.
+    assert abs((deadline["y"] + deadline["height"]) - (received["y"] + received["height"])) < 10, (
+        deadline,
+        received,
+    )
     assert deadline["y"] < files["y"] < actions["y"], (deadline, files, actions)
     expect(page.locator("#menetluse-link")).to_have_count(0)
 

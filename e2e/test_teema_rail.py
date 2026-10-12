@@ -168,9 +168,10 @@ def test_a_sparse_matter_gives_a_compact_facts_block(page, base_url):
     # the file was classified and the other a developer's switch. Every column,
     # value and endpoint is untouched (TEEMA_TARGET_SPEC §G.1,
     # docs/adr/0074 §2, §17).
-    # `Teemaviide` left the card in the owner's compact round (2026-10-07).
-    assert keys[:1] == ["Saatja"], keys
-    assert "Teemaviide" not in keys, keys
+    # `Teemaviide` is back in the card since 2026-10-12, stacked under
+    # `Õigusakt` (docs/adr/0150 amendment, superseding the compact round's
+    # removal); a sparse Matter has no `Õigusakt`, so it follows `Saatja`.
+    assert keys[:2] == ["Saatja", "Teemaviide"], keys
     # `Menetlusliik` and `Kellele` were rows three and four until
     # docs/adr/0097 §3, §4: the two Teema forms stopped asking about either, and
     # a read-only rail row is the easiest place for a withdrawn question to
@@ -179,13 +180,16 @@ def test_a_sparse_matter_gives_a_compact_facts_block(page, base_url):
         assert gone not in keys, f"{gone} is retired from this rail"
 
     for row in rows:
-        if row["key"] == "Saatja":
+        if row["key"] in ("Saatja", "Teemaviide"):
             # **Stacked** since the owner's UX round (2026-10-06): the label
             # above, one sender per line — so one sender is two short lines,
             # and the value sits under its label rather than beside it.
-            assert row["height"] <= 44, f"Saatja is {row['height']:.1f}px tall for one sender"
-            assert row["minHeight"] in ("auto", "0px"), "Saatja has a minimum height"
-            assert row["valueTop"] > row["keyTop"] + 4, "Saatja's value is not under its label"
+            # `Teemaviide` is stacked the same way (2026-10-12).
+            assert row["height"] <= 44, f"{row['key']} is {row['height']:.1f}px tall for one value"
+            assert row["minHeight"] in ("auto", "0px"), f"{row['key']} has a minimum height"
+            assert row["valueTop"] > row["keyTop"] + 4, (
+                f"{row['key']}'s value is not under its label"
+            )
             continue
         # One short fact is one line. 12.5px text on a 1.35 line-height is
         # ~17px; the ceiling leaves room for the dashed affordance under an

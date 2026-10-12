@@ -26,17 +26,30 @@ def _select(html: str, attribute: str) -> str:
     return match.group(0)
 
 
-@pytest.mark.parametrize("label", ["Vastutaja", "Hetkeseis"])
-def test_a_business_select_does_not_submit_itself(signed_in, normal_matter, label):
+def test_a_business_select_does_not_submit_itself(signed_in, normal_matter):
     html = signed_in.get(
         reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk})
     ).content.decode()
 
-    select = _select(html, f'aria-label="{label}"')
+    select = _select(html, 'aria-label="Vastutaja"')
     assert "data-autosubmit" not in select
     # And the decision it waits for is on the page.
     assert "Salvesta vastutaja muudatus" in html
-    assert "Salvesta hetkeseisu muudatus" in html
+
+
+def test_hetkeseis_is_a_menu_of_buttons_not_a_select(signed_in, normal_matter):
+    """Since 2026-10-12 the header's `Hetkeseis` is a list of submit buttons
+    (docs/adr/0156): a keyboard moves between them without firing anything, and
+    only a pressed button saves — ENG-035's rule kept by a different control
+    (superseding the `Hetkeseis` case this test used to parametrize)."""
+    html = signed_in.get(
+        reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk})
+    ).content.decode()
+    slot = html.split('id="teema-hetkeseis"', 1)[1].split("</details>", 1)[0]
+
+    assert "<select" not in slot
+    assert 'type="submit" name="stage"' in slot
+    assert "data-autosubmit" not in slot
 
 
 def test_the_document_filters_still_submit_themselves(signed_in, normal_matter):

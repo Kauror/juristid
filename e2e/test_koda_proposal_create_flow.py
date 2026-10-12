@@ -205,3 +205,24 @@ def test_teemaviide_reads_under_teema_andmed(page, base_url):
     rail = page.locator("#teema-andmed")
     expect(rail).to_contain_text("Teemaviide")
     expect(rail.locator("#teemaviide")).to_have_text(re.compile(r"^\d{4}_\d+$"))
+
+
+@pytest.mark.parametrize("width", [1440, 375])
+def test_the_header_stage_menu_opens_on_screen(page, base_url, width):
+    """The defect behind «Hetkeseis is not editable»: the header's editors were
+    anchored to nothing and opened one viewport height down the page. The menu
+    must open beside its value and inside the window (docs/adr/0156)."""
+    sign_in(page, base_url, MARTIN)
+    page.set_viewport_size({"width": width, "height": 800})
+    _new_matter(page, base_url)
+    trigger = page.locator("#teema-hetkeseis summary")
+    trigger.click()
+    menu = page.locator("#teema-hetkeseis .stagepick__menu")
+    expect(menu).to_be_visible()
+
+    box, anchor = menu.bounding_box(), trigger.bounding_box()
+    assert box and anchor
+    assert box["x"] >= 0 and box["x"] + box["width"] <= width, box
+    assert box["y"] >= 0 and box["y"] + box["height"] <= 800, box
+    assert abs(box["y"] - (anchor["y"] + anchor["height"])) < 40, (box, anchor)
+    assert page.evaluate("() => document.documentElement.scrollWidth") <= width

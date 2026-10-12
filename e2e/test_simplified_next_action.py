@@ -286,8 +286,9 @@ def test_the_rail_carries_the_target_rows_and_no_maintenance_ones(page, base_url
 
     rail = page.locator("#teema-andmed")
     expect(rail).to_contain_text("Saatja")
-    # `Teemaviide` left the card in the owner's compact round (2026-10-07).
-    expect(rail).not_to_contain_text("Teemaviide")
+    # `Teemaviide` is back in the card since 2026-10-12 (docs/adr/0150
+    # amendment), superseding the compact round's removal.
+    expect(rail).to_contain_text("Teemaviide")
     for gone in (
         "Muu valdkond",
         "Andmeklass",
