@@ -100,29 +100,36 @@ def _workflow(tmp_path: pathlib.Path, *, tests: str = "", browser: str = "") -> 
     """A scratch workflow with the three suite steps, optionally mutated."""
     document = {
         "jobs": {
+            # One runner hosting both shards here, two runners hosting one
+            # each in the browser job: both layouts the topology accepts.
             "tests": {
-                "strategy": {"matrix": {"shard": [1, 2]}},
+                "strategy": {"matrix": {"runner": [1]}},
                 "steps": [
                     {
                         "name": "Test suite",
                         "run": (
+                            "uv run python scripts/ci/run_slices.py run --suite tests "
+                            "--runner ${{ matrix.runner }} --runners 1 -- "
                             f"uv run pytest {tests} --shard-count=2 "
-                            "--shard-index=${{ matrix.shard }} --cov --cov-report= "
-                            "--junitxml=artifacts/junit-tests-${{ matrix.shard }}.xml"
+                            "--shard-index={shard} --cov --cov-report= "
+                            "--junitxml=artifacts/junit-tests-{shard}.xml"
                         ),
                     }
                 ],
             },
             "browser": {
-                "strategy": {"matrix": {"shard": [1, 2]}},
+                "strategy": {"matrix": {"runner": [1, 2]}},
                 "steps": [
                     {
                         "name": "Browser workflow",
                         "run": (
+                            "uv run python scripts/ci/run_slices.py run --suite browser "
+                            "--runner ${{ matrix.runner }} --runners 2 -- "
                             f"uv run pytest e2e --ignore=e2e/test_ui_regression.py {browser} "
-                            "--shard-count=2 --shard-index=${{ matrix.shard }} "
+                            "--shard-count=2 --shard-index={shard} "
                             "--browser chromium --tracing retain-on-failure "
-                            "--output artifacts/playwright --junitxml=artifacts/junit.xml"
+                            "--output artifacts/browser-{shard}/playwright "
+                            "--junitxml=artifacts/junit-browser-{shard}.xml"
                         ),
                     }
                 ],
@@ -213,7 +220,7 @@ def test_an_unknown_flag_in_the_workflow_fails_the_proof(tmp_path):
 def test_a_matrix_and_a_command_that_disagree_are_refused(tmp_path):
     workflow = _workflow(tmp_path)
     document = yaml.safe_load(workflow.read_text())
-    document["jobs"]["tests"]["strategy"]["matrix"]["shard"] = [1]
+    document["jobs"]["tests"]["strategy"]["matrix"]["runner"] = [1, 2, 3]
     workflow.write_text(yaml.safe_dump(document))
 
     with pytest.raises(SystemExit):

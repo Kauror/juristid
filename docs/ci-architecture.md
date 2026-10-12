@@ -4,10 +4,13 @@ What runs on every pull request, why it is split the way it is, and what to do
 when a piece of it goes red.
 
 The short version: nothing was removed to make CI faster. The two suites that
-took the time — the PostgreSQL suite and the browser suite — were split across
-independent runners, and the visual scenarios were given a world of their own.
-Every test that ran before still runs, exactly once, and there are two
-independent proofs of that.
+took the time — the PostgreSQL suite and the browser suite — were split into
+shards, each runner hosts two of them at once in worlds of their own, and the
+visual scenarios were given a world of their own. Every test that ran before
+still runs, exactly once, and there are three independent proofs of that. Main
+does not run the suite again after a merge: the pull request's run already
+tested the exact tree the merge commits (see "Main is proved by its pull
+request's run").
 
 ## The six logical gates
 
@@ -18,8 +21,8 @@ still says it today.
 | Gate | Job that reports it | What stands behind it |
 | --- | --- | --- |
 | Quality | `Format, lint, types and system checks` | ruff, mypy, Django checks, shellcheck, era contracts, shard completeness, shard health |
-| PostgreSQL tests | `PostgreSQL 18 test suite` | `PostgreSQL migration and runtime safety` + 6 test shards |
-| Browser | `Browser workflow (Playwright on PostgreSQL 18)` | 7 browser shards + `Visual regression` |
+| PostgreSQL tests | `PostgreSQL 18 test suite` | `PostgreSQL migration and runtime safety` + the test shards, two per runner |
+| Browser | `Browser workflow (Playwright on PostgreSQL 18)` | the browser shards, two per runner, + `Visual regression` |
 | Container/compose | `Container and compose smoke test` | unchanged |
 | Backup/restore | `Backup and restore rehearsal` | unchanged |
 | Dependency baseline | `Dependency vulnerability baseline` | unchanged |
@@ -34,10 +37,15 @@ cannot be greener than what they aggregate:
 * they fail unless every dependency reported exactly `success`. `cancelled` and
   `skipped` fail too: a cancelled shard proved nothing.
 
-Every job still starts immediately. Nothing waits for lint. If quality fails in
-half a minute, that is visible in half a minute, and
-`cancel-in-progress` still stops the whole run — matrix jobs included — when a
-newer commit arrives.
+Nothing waits for lint: if quality fails, that is visible as soon as quality
+finishes, and `cancel-in-progress` still stops the whole run — matrix jobs
+included — when a newer commit arrives. Two short jobs wait for another job,
+for a slot rather than a result: `Container and compose smoke test` runs after
+`Dependency vulnerability baseline`, and `Backup and restore rehearsal` after
+`PostgreSQL migration and runtime safety`, each with `!cancelled()` so it runs
+and reports whatever its predecessor did. Both pairs finish well inside the
+slowest shard runner, and the two slots they free are two more shard runners
+(`tests/test_ci_sharding.py` refuses a chained job that a failure would skip).
 
 ## How the suites are split
 
@@ -64,17 +72,67 @@ each shard is an **order-preserving subsequence** of the serial run that is
 green on `main`: a shard can never reach a file *earlier* than the unsharded
 suite reaches it.
 
+### Several shards on one runner
+
+A runner has four vCPUs and a shard used about one, while the account's twenty
+concurrent jobs were all in use. So the suites are cut into more shards than
+there are runners, and each runner hosts a consecutive block of them at the same
+time: runner *r* of *R* runs shards `ci_slices.slices_for(r, R, shard_count)`.
+The workflow states it three times — the `runner` matrix, `run_slices.py
+--runners`, and pytest's `--shard-count` — and `ci_workflow_selection.topology`
+refuses any layout where they disagree or the shards cannot be shared equally.
+
+**What a shard runs does not change.** It is still the partition above, so
+hosting changes which machine a shard runs on, never what is in it, and inside
+a database tests still run one at a time.
+
+**What a shard shares with its neighbour is the machine, and nothing else.**
+`ci_slices.shard_environment` gives each hosted shard its own database on the
+runner's PostgreSQL (`juristid_<suite>_<n>`, so pytest-django creates
+`test_juristid_tests_<n>`), its own `TMPDIR`, its own coverage fragment and, for
+the browser suite, its own three servers on its own ports (8000/8001/8002 for the
+first shard on a runner, ten higher for the next), its own evidence, derivative,
+legacy-source and pending-upload roots, mail directory, screenshot directory and
+Playwright output. The servers and the pytest process are started from the same
+environment, which matters because browser tests start `manage.py` subprocesses
+that read the pytest process's variables, not the server's.
+`tests/test_ci_slices.py` proves the property: two shards on one runner differ in
+every one of those variables, no path of one contains or lies inside the other's,
+every `*_ROOT`/`*_PATH`/`*_DIR` the settings or `e2e/` read is either per shard
+or a named read-only input, no source names a fixed `/tmp` path, and every SQL
+string that reads `pg_stat_activity` or `pg_locks` — views that show every
+database on the server — is scoped to `current_database()`.
+
+The one thing two shards on a runner do share is the PostgreSQL *server*, so a
+crash of one backend resets every shard's connections. `run_slices.py` names
+that in a failing runner's output («crash of another server process»), so a red
+neighbour is not blamed on its own tests.
+
+**The test and browser PostgreSQL keep their data in memory** (`--tmpfs
+/var/lib/postgresql` on the service). Same PostgreSQL 18, same configuration,
+same SQL and transaction semantics; only crash durability changes, and a test
+database lives and dies inside its job. Measured A/B on one commit and layout,
+the PostgreSQL runners ran about 10% faster on matching hardware (EPYC 9V45
+196 s against 245 s, Xeon 8573C 348 s against 388 s) and the round took 371 s
+instead of 411 s. It did not narrow the spread between runners: that is the
+CPU a runner draws (below), not its disk. The migration safety job and the
+recovery rehearsal keep a disk.
+
 ### Reproducing a shard locally
 
-The command in the workflow is the whole mechanism, so it works anywhere:
+The pytest command in the workflow is the whole of what decides a shard, so it
+works anywhere; take the counts from the workflow:
 
 ```bash
-uv run pytest --shard-count=7 --shard-index=3
+uv run pytest --shard-count=12 --shard-index=3
 ```
 
 ```bash
-uv run pytest e2e --ignore=e2e/test_ui_regression.py --shard-count=7 --shard-index=2 --browser chromium
+uv run pytest e2e --ignore=e2e/test_ui_regression.py --shard-count=16 --shard-index=2 --browser chromium
 ```
+
+Which database or port a shard used on CI does not matter locally — those only
+keep two shards on one runner apart.
 
 To see which files a shard holds without running them, add `--collect-only -q`.
 Omit both options — or pass `--shard-count=1` — and pytest behaves exactly as it
@@ -96,6 +154,11 @@ first, and only then consider the split. Three things are worth knowing:
   list in order; do not paper over it by moving the file. The one such
   dependency this repository is known to have had is closed, and guarded — see
   "The order dependency it turned up, since closed".
+* **A runner's log interleaves its shards**, each line prefixed `[tests 5]` or
+  `[browser 11]`; each shard's own log is also uploaded (`tests-5.log`,
+  `artifacts/browser-11/…`). If both shards on a runner fail at once on
+  connection errors, read for «crash of another server process» before reading
+  the tests.
 
 ## Visual regression runs in its own world
 
@@ -159,8 +222,16 @@ the same number CI printed when the suite ran in one process, and now also
 uploaded as an artifact. The instrumentation cost is divided across the shards
 along with everything else, so keeping it costs a fraction of what it did.
 
-Shards pass `--cov-report=` deliberately: a partial report printed five times
-reads as a coverage collapse.
+Shards pass `--cov-report=` deliberately: a partial report printed once per
+shard reads as a coverage collapse.
+
+**The gate checks that every shard's fragment arrived.** A runner uploads its
+shards' fragments together, and an upload only refuses when *none* of its paths
+match — so a shard that never ran would have left `coverage combine` combining
+whatever arrived, green, with less coverage than the suite has. The gate counts
+one `.coverage.shard-N` and one `junit-tests-N.xml` for every N up to the shard
+count before it combines, and the browser gate counts the browser reports the
+same way.
 
 The combination is exact rather than approximately exact. The unsharded baseline
 reported `24408 statements, 2174 missing, 91%`; five shards combined report
@@ -208,20 +279,22 @@ it**. A wrong table costs balance, never correctness:
 * a file with neither falls back to the median measured file.
 
 That is why a branch that adds tests needs to do nothing at all. Refresh the
-table when balance has visibly drifted — one shard finishing minutes after the
-others — from any ordinary green run:
+table when balance has visibly drifted — one runner finishing minutes after the
+others — from the newest green runs:
 
 ```bash
-gh run download <run-id> --dir /tmp/junit --pattern 'test-report-*'
+uv run python scripts/ci/update_shard_timings.py --latest 5
 ```
 
-```bash
-uv run python scripts/ci/update_shard_timings.py /tmp/junit --run <run-id>
-```
-
-Every sharded job uploads a JUnit report, so one run's reports describe the
-whole suite. `tests/test_ci_sharding.py` fails if the table names files that no
-longer exist, so it cannot quietly rot.
+It downloads those runs' shard reports with `gh` and weighs each file at the
+**median** of its per-test rate across them, at today's test count. One run is
+not enough: the same files run up to 1.6x slower on one hosted runner than on
+another, and a table taken from a single run takes that runner's afternoon as
+the file's weight. The table records which runs it came from, so the same runs
+always regenerate the same table; one run's reports on disk still work too
+(`update_shard_timings.py DIR --run ID`). Every sharded job uploads a JUnit
+report, so a run's reports describe the whole suite. `tests/test_ci_sharding.py`
+fails if the table names files that no longer exist, so it cannot quietly rot.
 
 ### "Refresh it when balance has visibly drifted" was not enough
 
@@ -258,7 +331,18 @@ run 36282670062 it came to 21.5 s per PostgreSQL shard and 1.4 s per browser
 shard.
 
 When something crosses a threshold it says `CI SHARD TIMINGS NEED REFRESH` and
-names which one, with the two commands above. The thresholds are the numbers the
+names which one, with the command above.
+
+**The balance job reports per runner, with setup apart.** It reads the run's own
+reports instead of collecting (every collected test is in exactly one shard's
+report, so their union is the collection), and prints, per shard, the
+prediction, the test time its JUnit accounts for and the ratio of the two, the
+wall time of its pytest process and of building its browser world; per runner,
+the job, its test step and everything else, and the CPU the runner drew. The
+same numbers go to the run's summary page and to a `shard-health` artifact. A
+high actual/predicted ratio on every shard of one runner is that runner, not
+the table. It cannot fail its job: the release gate requires every job of a run
+to succeed, so every step of it continues on error. The thresholds are the numbers the
 2026-08-30 table crossed — 15% of collected tests unmeasured, 20% of files, 30
 days old, or a predicted slowest shard 1.25x the median — so each is set where
 it would have fired while the drift was still cheap.
@@ -288,10 +372,16 @@ from 1 to 13 over the repository's real file list: the union of the shards is
 the input, no file is in two shards, the result does not depend on the order the
 files were given, an unmeasured file still lands in exactly one shard, and an
 out-of-range index raises rather than silently running the wrong slice. It also
-reads `.github/workflows/ci.yml` and asserts the matrix indexes are exactly
-`1..N` and that the job passes the matching `--shard-count` — the one place a
-matrix of `[1, 2, 3]` against a count of 4 would otherwise leave a quarter of the
-suite unrun with every job green.
+reads `.github/workflows/ci.yml` through `ci_workflow_selection.topology`: the
+runner matrix is exactly `1..R`, every `run_slices.py` step says `--runners R`,
+the shard count is a multiple of `R`, every shard index is hosted by exactly one
+runner, and each gate counts reports against that same shard count — the places
+a matrix of `[1, 2, 3]` against four runners' worth of shards would otherwise
+leave a quarter of the suite unrun with every job green.
+
+**The gates prove it about the run.** The PostgreSQL gate requires a JUnit
+report and a coverage fragment from every shard, 1..N, and the browser gate a
+report from every browser shard, before either can pass.
 
 **`scripts/ci/assert_shard_completeness.py`** proves it end to end. It runs the
 same pytest commands the workflow runs — every shard, plus the unsharded suite —
@@ -317,6 +407,34 @@ them. See docs/adr/0115.
 
 It runs in the quality job, which has no database and finishes in well under a
 minute. The proof that the slow jobs are complete should not itself be slow.
+
+## Main is proved by its pull request's run
+
+`ci.yml` runs for pull requests and when it is started by hand or by
+`main-proof.yml`. It does **not** run on a push to main.
+
+A pull request merges only when it is up to date with main and green (branch
+protection, `strict`), and its run tests GitHub's test merge — the exact tree
+the merge commit then has. Main's own push run used to test those identical
+bytes again, holding all twenty of the account's concurrent jobs for about
+eleven minutes, so every pull request updated in that window queued behind it:
+rounds of 21–25 minutes instead of 11.
+
+On a push to main, `main-proof.yml` runs one small job,
+`scripts/ci/assert_main_proved.py`. It applies the release gate's own proof (b),
+imported from `assert_release_provenance.py` rather than copied: the commit is a
+two-parent merge, the latest `ci.yml` run for its pull request (waited for if it
+is still finishing) completed green in **every** job, and the tree that run
+recorded as tested is byte-for-byte this commit's tree. **Anything short of that
+starts the whole of `ci.yml` on main** — a squash or direct push, a red, missing
+or other-tree run, an API failure — and that run is then the commit's proof. If
+main has already moved on, the newer commit's own proof covers it and nothing is
+started for the old one (the release gate would refuse the old one).
+
+The release gate (`release-image.yml`) is unchanged in what it requires: main's
+own green run, now including a run started on main, or — while that is absent
+or still running, never over a red one — proof (b), which it re-derives itself
+rather than trusting the proof job.
 
 ## What was measured, when it was split (2026-08-30)
 
@@ -468,11 +586,78 @@ half before — the refreshed table and the OCR cache, not the count.
 **On a 40-job plan, 12 + 12 is the setting** (measured above: ~5.5–6.5 minutes a
 shard, so a round of ~7–7.5). It is a one-line change per matrix plus the two
 `--shard-count`s and the gate messages; `tests/test_ci_sharding.py` holds the
-matrix and the count to each other.
+matrix and the count to each other. *(Superseded on 2026-10-11 by hosting
+several shards per runner; see below.)*
 
 The OCR runtime is now installed from `.deb` files cached per runner image. The
 step was 18s when Ubuntu's mirror was quick and up to four minutes when it was
 not, and one slow shard is the whole round waiting.
+
+### 2026-10-11: four cores per runner, and the CPU each one draws
+
+The bar moved again: the owner asked for a materially shorter round with every
+gate kept. Eight green runs before the change (38110923538 among them) took
+692–710 s. Their critical path was the slowest browser shard, a ~663 s job of
+which ~80 s was setup, followed by 30–40 s of the balance report collecting
+both suites. The twenty slots were all in use from the first second, so more
+runners were not on offer — but each runner has four vCPUs and a shard used
+about one.
+
+**What the model gap was.** The table predicted 402 s for every PostgreSQL
+shard; they took 237–382 s. Not the assignment: the same files ran 0.57x to
+1.63x their usual time depending on the runner, and the test database's own
+setup took 14–35 s. Logging each runner's CPU (the shard records now do)
+named it: an AMD EPYC 7763 runs a PostgreSQL shard about 1.7x slower than an
+EPYC 9V45, with the 9V74 and the Xeon 8573C in between. The table was also
+~10% stale (the sysmon coverage core made everything faster), which costs
+nothing in balance and is now refreshed from a median of runs.
+
+**What two shards on one runner cost.** Per file, a median of 1.09x — the
+cores really were idle. Three on a runner was measured and rejected: on an
+EPYC 7763 its PostgreSQL shards ran 1.5–1.7x the prediction.
+
+| run | layout (PostgreSQL / browser) | wall clock | slowest PG runner | slowest browser runner |
+| --- | --- | --- | --- | --- |
+| [38110923538](https://github.com/Kauror/juristid/actions/runs/38110923538) (before) | 7 / 7 shards, one per runner | 697 s | 445 s | 666 s |
+| [38117799736](https://github.com/Kauror/juristid/actions/runs/38117799736) | 7x2 / 7x2, old table | 454 s | 360 s | 410 s |
+| [38118423762](https://github.com/Kauror/juristid/actions/runs/38118423762) | 5x3 / 9x2 | 367 s | 339 s (EPYC 7763) | 341 s |
+| [38118903791](https://github.com/Kauror/juristid/actions/runs/38118903791) | 6x2 / 8x2 | 371 s | 348 s | 346 s |
+| [38119307615](https://github.com/Kauror/juristid/actions/runs/38119307615) | 6x2 / 8x2 on disk (A/B) | 411 s | 388 s | 349 s |
+| [38120321976](https://github.com/Kauror/juristid/actions/runs/38120321976) | **7x2 / 9x2, chained fixed jobs** | **352 s** | 297 s | 328 s |
+
+The A/B row is the same commit with the PostgreSQL data directory on disk:
+the in-memory one is about 10% faster on matching hardware and does not
+narrow the spread between runners.
+
+The last row is the layout this round settled on: fourteen PostgreSQL shards
+on seven runners and eighteen browser shards on nine, two to a runner, with
+the container smoke test after the dependency scan and the recovery rehearsal
+after the migration safety job, which frees the two slots. On it:
+
+| | before (38110923538) | after (38120321976) |
+| --- | --- | --- |
+| Wall clock | 697 s | 352 s (−49%); required checks done at 335 s |
+| Slowest PostgreSQL shard (tests / job) | 382 s / 445 s | 239 s / 297 s (runner) |
+| PostgreSQL slowest/median, slowest/fastest | 1.25, 1.61 | 1.30, 1.67 — the CPU drawn, see above |
+| Slowest browser shard (tests / job) | 570 s / 666 s | 246 s / 328 s (runner) |
+| Browser slowest/median, slowest/fastest | 1.06, 1.12 | 1.05, 1.39 |
+| Shards (runners) | 7 (7) + 7 (7) | 14 (7) + 18 (9) |
+| Setup outside the tests, per runner | PG ~66 s + ~22 s test DB; browser ~79 s | PG 32–44 s + ~20 s; browser 57–78 s (worlds built concurrently, 21–39 s) |
+| Tests | 14552 + 1364 browser (22 deliberate skips) + 87 visual | 14612 + 1365 (the same 22 skips) + 87 |
+| Coverage | 42370 statements, 2609 missed, 94% | 42370, 2609, 94% |
+
+Two latent defects surfaced on the way, both fixed rather than worked
+around: five lock-wait helpers and `rebuild_is_running()` read server-wide
+views that two databases on one server share (scoped to `current_database()`,
+and the helpers re-read the statistics snapshot), and a new partition put
+`e2e/test_long_filename_wrapping.py` before `e2e/test_work_surfaces_review.py`
+for the first time, which showed Minu asjad scrolling 225px sideways on a phone
+when a Teema's title is one long compound (the quiet rail now wraps it, and the
+file that files such a title proves it).
+
+What is left on the critical path is a runner's fixed cost — ~70 s for a
+browser runner, ~35 s for a PostgreSQL one — and which CPU it draws. A 40-job
+plan would still be the larger lever.
 
 ### The slow files, and why none of them were touched
 

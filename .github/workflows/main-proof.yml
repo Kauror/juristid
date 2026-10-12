@@ -1,0 +1,50 @@
+name: Main proof
+
+# What runs when a pull request lands on main — instead of the whole of CI again.
+#
+# A pull request merges only when it is up to date with main and green, and its
+# CI run tested GitHub's test merge: the exact tree the merge commit then has.
+# Main's own push run used to test those identical bytes a second time, holding
+# all twenty of the account's concurrent jobs for about eleven minutes, so every
+# pull request updated in that window queued behind it.
+#
+# This job proves instead that the pull request's run already tested this
+# commit's tree, green in every job — the proof the release gate has accepted
+# since 2026-10-02 (scripts/ci/assert_release_provenance.py, proof b). When it
+# cannot prove that — a squash or direct push, a red or missing run, a different
+# tree, an API failure — it starts the whole of `ci.yml` on main, which is then
+# the commit's proof. Nothing is assumed either way, and the release gate
+# re-derives its proof itself rather than trusting this job (docs/ci-architecture.md).
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  # Reading the pull request's run, and starting `ci.yml` on main when that run
+  # does not prove this commit. Nothing else.
+  actions: write
+
+jobs:
+  proof:
+    name: Main's tree was tested green before it merged
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # Two commits deep: the merge and its parents are all the proof reads.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: The pull request's run tested this exact tree, or CI runs on main now
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
+        run: >-
+          python3 scripts/ci/assert_main_proved.py
+          --target "$TARGET"
+          --repository "$REPOSITORY"
+          --git-dir "$GITHUB_WORKSPACE"
+          --dispatch

@@ -787,10 +787,18 @@ def _sole_rebuild() -> Iterator[None]:
 
 
 def rebuild_is_running() -> bool:
-    """Whether some session holds the rebuild lock right now."""
+    """Whether some session holds the rebuild lock right now.
+
+    In *this* database. An advisory lock belongs to the database it was taken
+    in, but `pg_locks` shows every database on the server, so without the
+    filter a rebuild in a neighbouring database — another CI shard's, on the
+    same runner — would read as one here. A deployment has one database per
+    server, where the two questions have the same answer.
+    """
     with connection.cursor() as cursor:
         cursor.execute(
             "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' "
+            "AND database = (SELECT oid FROM pg_database WHERE datname = current_database()) "
             "AND classid = %s AND objid = %s AND objsubid = 2 AND granted)",
             [_LOCK_NAMESPACE, _REBUILD_OWNER],
         )

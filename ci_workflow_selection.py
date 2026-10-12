@@ -174,3 +174,94 @@ def suites(workflow_path: pathlib.Path = WORKFLOW) -> dict[str, Suite]:
         selection, shard_count = parse_selection(run)
         found[job] = Suite(job, step_name, label, selection, shard_count)
     return found
+
+
+#: The matrix key that numbers a sharded job's runners. Each runner hosts
+#: ``shard_count / runners`` consecutive shards at once (ci_slices.py).
+RUNNER_KEY = "runner"
+
+
+class InconsistentTopology(Exception):
+    """The matrix, the runner script and the pytest command disagree about the shards."""
+
+
+@dataclass(frozen=True)
+class Topology:
+    """How one suite's shards are laid out on runners."""
+
+    job: str
+    runners: int
+    shard_count: int
+
+    @property
+    def per_runner(self) -> int:
+        return self.shard_count // self.runners
+
+
+def topology(workflow_path: pathlib.Path = WORKFLOW) -> dict[str, Topology]:
+    """Runners from each job's matrix and shards from its command, held to each other.
+
+    Three statements of one fact live in the workflow: the matrix numbers the
+    runners, every ``run_slices.py`` step says how many runners there are (and
+    the world-preparing one how many shards), and the pytest command says how
+    many shards. A disagreement means some shard index is computed for a
+    different partition — or hosted by no runner at all — so it is refused
+    here rather than discovered as a quarter of a suite that quietly stopped
+    running.
+    """
+    workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+    found: dict[str, Topology] = {}
+    for job, suite in suites(workflow_path).items():
+        definition = workflow["jobs"][job]
+        matrix = definition.get("strategy", {}).get("matrix", {})
+        if "shard" in matrix:
+            raise InconsistentTopology(
+                f"job `{job}` numbers its matrix by `shard`; runners are numbered by "
+                f"`{RUNNER_KEY}` and each hosts shard_count / runners shards"
+            )
+        runners = matrix.get(RUNNER_KEY)
+        if runners is None:
+            if suite.shard_count != 1:
+                raise InconsistentTopology(
+                    f"job `{job}` says --shard-count={suite.shard_count} but has no "
+                    f"`{RUNNER_KEY}` matrix to run them on"
+                )
+            found[job] = Topology(job, 1, 1)
+            continue
+        expected = list(range(1, len(runners) + 1))
+        if list(runners) != expected:
+            raise InconsistentTopology(
+                f"job `{job}` has runners {list(runners)}; they must be exactly {expected}, "
+                "or some shards run twice and others not at all"
+            )
+        count = len(runners)
+        if suite.shard_count < count or suite.shard_count % count:
+            raise InconsistentTopology(
+                f"job `{job}` has {count} runners but --shard-count={suite.shard_count}, "
+                "which they cannot share equally"
+            )
+        if "--shard-index={shard}" not in _step(workflow, job, suite.step).get("run", ""):
+            raise InconsistentTopology(
+                f"job `{job}` does not give each hosted shard its own --shard-index={{shard}}"
+            )
+        hosting = [
+            step.get("run", "")
+            for step in definition.get("steps", [])
+            if "run_slices.py" in step.get("run", "")
+        ]
+        if not hosting:
+            raise InconsistentTopology(f"job `{job}` runs its shards without run_slices.py")
+        for run in hosting:
+            if "--runner ${{ matrix.runner }}" not in run or f"--runners {count} " not in f"{run} ":
+                raise InconsistentTopology(
+                    f"job `{job}` has a run_slices.py step that does not say "
+                    f"`--runner ${{{{ matrix.runner }}}} --runners {count}`"
+                )
+            stated = re.search(r"--shard-count (\d+)", run)
+            if stated and int(stated.group(1)) != suite.shard_count:
+                raise InconsistentTopology(
+                    f"job `{job}` prepares {stated.group(1)} shards but its pytest command "
+                    f"runs --shard-count={suite.shard_count}"
+                )
+        found[job] = Topology(job, count, suite.shard_count)
+    return found

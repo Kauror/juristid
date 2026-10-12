@@ -127,3 +127,29 @@ def test_the_report_prints_predicted_and_actual_side_by_side(tmp_path, capsys):
     assert "actual     slowest / median 40s / 35s = 1.14" in printed
     # The visual suite's report is not a shard and is not read as one.
     assert "99s" not in printed
+
+
+def test_several_runs_combine_to_each_files_median_rate_at_its_newest_count():
+    """One slow runner's afternoon must not become a file's weight (2026-10-11)."""
+    newest = (
+        {"tests/a.py": 12.0, "tests/b.py": 4.0},
+        {"tests/a.py": 6, "tests/b.py": 2},
+        {"tests": 20.0},
+    )
+    middle = ({"tests/a.py": 50.0}, {"tests/a.py": 5}, {"tests": 30.0})
+    oldest = (
+        {"tests/a.py": 15.0, "tests/c.py": 9.0},
+        {"tests/a.py": 5, "tests/c.py": 3},
+        {"tests": 22.0},
+    )
+
+    seconds, counts, setup = update.combine_runs([newest, middle, oldest])
+
+    # a.py: rates 2.0, 10.0 (the slow runner), 3.0 -> median 3.0, at today's 6 tests.
+    assert seconds["tests/a.py"] == pytest.approx(18.0)
+    assert counts["tests/a.py"] == 6
+    # A file only one run holds keeps that run's numbers.
+    assert seconds["tests/c.py"] == pytest.approx(9.0) and counts["tests/c.py"] == 3
+    assert setup == {"tests": 22.0}
+    # Deterministic: the same runs, the same table.
+    assert update.combine_runs([newest, middle, oldest]) == (seconds, counts, setup)

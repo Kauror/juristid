@@ -8559,6 +8559,10 @@ button.accordion__action:focus-visible {
   font-weight: var(--typography-weight-regular);
   color: var(--text-primary);
   text-decoration: none;
+  /* The whole title, wrapped — not clipped like the one-line rows: this rail
+     is where a stalled Matter must be read. A long compound («Pakendiseaduse…»,
+     the ENG-094 class) otherwise pushed Minu asjad 225px sideways on a phone. */
+  overflow-wrap: anywhere;
 }
 
 .quietrow__title:hover {
