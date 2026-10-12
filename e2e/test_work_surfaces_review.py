@@ -370,7 +370,7 @@ def test_the_strip_figures_are_the_counts_of_the_bands_they_open(page, base_url)
 #: `OpinionWork`). Martin owns the seeded opinions in preparation — the DRAFT on
 #: the overdue Matter and the register row with a blank VÄLJA — so his total is
 #: never a zero the strip would leave out.
-OPINION_TOTAL = '.seis__figure:has(.seis__caption:text-is("arvamust koostamisel kokku"))'
+OPINION_TOTAL = '.seis__figure:has(.seis__caption:text-matches("^arvamust? kokku$"))'
 
 
 @pytest.mark.parametrize("theme", ["dark", "light"])
@@ -392,7 +392,7 @@ def test_the_opinion_figures_read_in_both_themes_and_open_their_list(page, base_
     assert page.evaluate("() => document.documentElement.dataset.theme") == theme
 
     figure = page.locator(OPINION_TOTAL)
-    assert figure.count() == 1, "Martin's strip draws no «arvamust koostamisel kokku»"
+    assert figure.count() == 1, "Martin's strip draws no «arvamust kokku»"
     assert figure.is_visible()
     failing = [found for found in page.evaluate(AUDIT) if "seis__" in found["element"]]
     assert not failing, f"{theme}: strip text under AA: {failing}"

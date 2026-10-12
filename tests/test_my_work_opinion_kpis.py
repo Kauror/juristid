@@ -1,9 +1,10 @@
 """Minu asjad's two opinion figures: this week's, and every opinion in preparation.
 
-«arvamust koostada sel nädalal» and «arvamust koostamisel kokku» close the Seis
-strip, on one's own desk and on a colleague's (`app/matters/my_work.py`,
-`OpinionWork`). Neither is a new definition, and the tests below hold them to
-that:
+«arvamust sellel nädalal» and «arvamust kokku» close the Seis strip (shortened
+from «arvamust koostada sel nädalal» and «arvamust koostamisel kokku» in the
+owner's review of 2026-10-12 — captions only), on one's own desk and on a
+colleague's (`app/matters/my_work.py`, `OpinionWork`). Neither is a new
+definition, and the tests below hold them to that:
 
 * **in preparation** is ``dashboard.drafting_matters`` — Osakond's ARVAMUS
   KOOSTAMISEL population, the register's ``?arvamus=koostamisel`` — narrowed to
@@ -63,8 +64,11 @@ SUNDAY = dt.date(2026, 10, 11)
 
 WEEK_KEY = "opinions_week"
 TOTAL_KEY = "opinions_drafting"
-WEEK_CAPTION = "arvamust koostada sel nädalal"
-TOTAL_CAPTION = "arvamust koostamisel kokku"
+WEEK_CAPTION = "arvamust sellel nädalal"
+TOTAL_CAPTION = "arvamust kokku"
+#: What a figure of exactly one reads, in the nominative.
+WEEK_CAPTION_ONE = "arvamus sellel nädalal"
+TOTAL_CAPTION_ONE = "arvamus kokku"
 
 
 # ---------------------------------------------------------------------------
@@ -418,7 +422,7 @@ def test_nobody_else_may_open_a_colleagues_desk(client, request, specialist, who
     response = client.get(reverse("matters:person_work", kwargs={"pk": specialist.pk}))
 
     assert response.status_code == 404
-    assert TOTAL_CAPTION not in response.content.decode()
+    assert TOTAL_CAPTION_ONE not in response.content.decode()
 
 
 # ---------------------------------------------------------------------------
@@ -568,8 +572,8 @@ def test_the_page_draws_a_count_as_a_link_and_drops_a_zero(client, specialist) -
     figure = body[body.index(f'href="{href}"') :]
     figure = figure[: figure.index("</a>")]
     assert '<span class="seis__number">1</span>' in figure
-    assert f'<span class="seis__caption">{TOTAL_CAPTION}</span>' in figure
-    assert WEEK_CAPTION not in body
+    assert f'<span class="seis__caption">{TOTAL_CAPTION_ONE}</span>' in figure
+    assert WEEK_CAPTION not in body and WEEK_CAPTION_ONE not in body
 
 
 # ---------------------------------------------------------------------------
