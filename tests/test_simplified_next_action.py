@@ -612,8 +612,10 @@ def test_muu_valdkond_left_the_teema_rail_without_leaving_the_record(signed_in, 
     assert "Märgi testandmeteks" not in rail
     assert "Saabus" not in rail
     assert "Saatja" in rail
-    # `Teemaviide` left the rail in the owner's compact round (2026-10-07).
-    for gone in ("Teemaviide", "Menetlusliik", "Kellele"):
+    # `Teemaviide` is back in this card since 2026-10-12, under `Õigusakt`
+    # (docs/adr/0150 amendment of 2026-10-12, superseding the compact round's removal).
+    assert "Teemaviide" in rail
+    for gone in ("Menetlusliik", "Kellele"):
         assert gone not in rail
     # Stored, and unchanged by any of that.
     normal_matter.refresh_from_db()

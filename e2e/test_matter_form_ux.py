@@ -341,8 +341,9 @@ def test_the_deadline_opens_the_arrival_row(page, base_url):
 
     A row can be a later sibling and still paint above, and where somebody reads
     it is the decision. `Arvamuse tähtaeg` was the last question (docs/adr/0094
-    §4); it now opens the row it shares with `Menetluse link` and `Saabus`, and
-    `Failid` is the last section before the button (docs/adr/0130 §1).
+    §4); it now opens the row it shares with `Saabus` — `Menetluse link` left
+    the page on 2026-10-12 — and the action bar ends the form (docs/adr/0130
+    §1 and its amendment of 2026-10-12).
     """
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
@@ -353,13 +354,13 @@ def test_the_deadline_opens_the_arrival_row(page, base_url):
         return found
 
     deadline = box("#arvamuse-tahtaeg")
-    link = box("#menetluse-link")
     received = box("#id_received_date")
     files = box("#failid")
     actions = box(".createform__actions")
-    assert deadline["x"] < link["x"] < received["x"], (deadline, link, received)
-    assert abs(deadline["y"] - link["y"]) < 10, (deadline, link)
+    assert deadline["x"] < received["x"], (deadline, received)
+    assert abs(deadline["y"] - received["y"]) < 10, (deadline, received)
     assert deadline["y"] < files["y"] < actions["y"], (deadline, files, actions)
+    expect(page.locator("#menetluse-link")).to_have_count(0)
 
 
 def test_the_typed_deadline_is_the_obligation_and_starts_nothing(page, base_url):
@@ -651,7 +652,6 @@ def test_the_whole_form_is_reachable_without_opening_anything(page, base_url, wi
         "received_date",
         "response_deadline",
         "policy_area_other_selected",
-        "menetlus-url",
     ):
         expect(page.locator(f'[name="{name}"]')).to_have_count(1)
     for group in ("owner", "source_organisations", "policy_areas", "stage", "legal_instruments"):
@@ -671,6 +671,10 @@ def test_the_whole_form_is_reachable_without_opening_anything(page, base_url, wi
         # `Millest teema räägib` and the link's `Nimetus` (docs/adr/0130 §2, §3).
         "brief_summary",
         "menetlus-label",
+        # `Menetluse link` and the initiative checkbox (owner's decision of
+        # 2026-10-12, docs/adr/0130 and 0151 amendments).
+        "menetlus-url",
+        "koda_initiative",
     ):
         expect(page.locator(f'[name="{gone}"]')).to_have_count(0)
 

@@ -31,7 +31,7 @@ from app.audit.models import ChangeEvent
 from app.core.enums import Visibility
 from app.matters.forms import MatterCreateForm, MatterEditForm, MatterFieldForm
 from app.matters.models import Matter
-from app.matters.services import change_stage
+from app.matters.services import change_stage, matter_field_revision
 from app.workflow.selectors import selectable_stages, stage_help_texts, stages_including
 from tests import factories
 
@@ -208,9 +208,11 @@ def test_the_held_stage_can_still_be_deliberately_left_behind(signed_in, matter_
 
 
 def test_the_header_control_offers_the_held_stage(signed_in, matter_a, retired_stage):
+    """The header's menu (docs/adr/0156) names the retired stage the Matter
+    stands in as its current one, marked rather than pressable."""
     body = _body(signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter_a.pk})))
-    assert f'value="{retired_stage.pk}"' in body
-    assert "varasem hetkeseis" in body
+    slot = body.split('id="teema-hetkeseis"', 1)[1].split("</details>", 1)[0]
+    assert f'aria-current="true">{retired_stage.label_et} — varasem hetkeseis' in slot
 
 
 def test_the_field_form_accepts_the_held_stage(matter_a, retired_stage):
@@ -223,7 +225,7 @@ def test_the_field_form_accepts_the_held_stage(matter_a, retired_stage):
 def test_resaving_the_held_stage_from_the_header_is_a_save(signed_in, matter_a, retired_stage):
     response = signed_in.post(
         reverse("matters:update_field", kwargs={"pk": matter_a.pk, "field": "stage"}),
-        {"stage": str(retired_stage.pk)},
+        {"stage": str(retired_stage.pk), "revision": matter_field_revision(matter_a, "stage")},
     )
     assert response.status_code == 200
     assert "Vigane väärtus." not in _body(response)

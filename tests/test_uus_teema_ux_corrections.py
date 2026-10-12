@@ -261,8 +261,9 @@ def test_a_refused_save_gives_back_every_answer_the_four_controls_hold(signed_in
     assert "checked" in chosen[: chosen.index(">")]
     assert hetkeseis.count("checked") == 1
 
-    # Menetluse link and the deadline.
-    assert 'value="https://eelnoud.valitsus.ee/main/mount/docList/abc"' in page
+    # The deadline. `Menetluse link` left the page on 2026-10-12 (docs/adr/0130
+    # amendment), so the address this POST carries is not drawn back.
+    assert 'value="https://eelnoud.valitsus.ee/main/mount/docList/abc"' not in page
     assert 'value="18.9.2026"' in page
 
     # And nothing the removed block used to post comes back.

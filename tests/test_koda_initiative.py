@@ -3,8 +3,14 @@
 docs/adr/0151. What is pinned here:
 
 * **One stored fact, the one that already existed**: `Matter.track` «Koja
-  algatus». Marking and unmarking go through the audited track writer; nothing
-  is derived from `Õigusakt`.
+  algatus». Marking and unmarking go through the audited track writer.
+* **`Õigusakt` is the control since 2026-10-12** (docs/adr/0151, amendment of
+  2026-10-12, superseding §1's «nothing is derived from `Õigusakt`» and §2–§3's
+  checkbox). On `Uus teema` the instrument «Koja ettepanek või pöördumine» makes
+  the new Teema an initiative; on `Muuda teemat` only a change of that
+  instrument in the same save moves the track, so a historical initiative on
+  another instrument survives every unrelated save. The tests below that used
+  to tick the checkbox now choose the instrument, and say so.
 * **No incoming dates are established.** `Uus teema` records neither `Saabus`
   nor `Arvamuse tähtaeg` for an initiative, whatever the two boxes held — so no
   response obligation begins and nothing reads «arvamust koostamisel». Every
@@ -77,10 +83,18 @@ def edit_payload(matter: Matter, **overrides: object) -> dict[str, object]:
         "response_deadline": (
             estonian(initial["response_deadline"]) if initial["response_deadline"] else ""
         ),
-        "koda_initiative": "on" if initial["koda_initiative"] else "",
     }
     payload.update(overrides)
-    return {key: value for key, value in payload.items() if value != "" or key != "koda_initiative"}
+    return payload
+
+
+def instrument(key: str) -> LegalInstrumentType:
+    return LegalInstrumentType.objects.get(key=key)
+
+
+def proposal_instrument() -> list[str]:
+    """`Õigusakt` «Koja ettepanek või pöördumine», as the radio posts it."""
+    return [str(instrument("koja-ettepanek").pk)]
 
 
 def track_events(matter: Matter) -> list[dict]:
@@ -99,12 +113,13 @@ def track_events(matter: Matter) -> list[dict]:
 
 def test_an_initiative_is_filed_with_no_incoming_dates(signed_in, specialist):
     """`Saabus` arrives holding today and a deadline may have been typed —
-    neither is recorded, and no response obligation begins."""
+    neither is recorded, and no response obligation begins. The initiative is
+    the instrument since 2026-10-12 (docs/adr/0151 amendment)."""
     response = signed_in.post(
         CREATE,
         {
             "title": "Koja ettepanek maksukorralduse muutmiseks",
-            "koda_initiative": "on",
+            "legal_instruments": proposal_instrument(),
             "received_date": estonian(today()),
             "response_deadline": estonian(today() + timedelta(days=14)),
         },
@@ -140,44 +155,47 @@ def test_an_ordinary_teema_is_filed_exactly_as_before(signed_in, specialist):
     assert response_obligation_of(matter, specialist).is_outstanding
 
 
-def test_the_instrument_koja_ettepanek_marks_nothing_by_itself(signed_in):
-    """`Õigusakt` is the kind of instrument; who started the work is asked."""
-    instrument = LegalInstrumentType.objects.get(key="koja-ettepanek")
+def test_the_instrument_koja_ettepanek_makes_the_teema_an_initiative(signed_in):
+    """**Superseded on 2026-10-12** (docs/adr/0151 amendment): this test pinned
+    «the instrument marks nothing by itself». The owner retired the duplicate
+    checkbox, and the instrument is now the source of truth on a new Teema."""
     signed_in.post(
         CREATE,
         {
             "title": "Ainult õigusakti liik",
-            "legal_instruments": [str(instrument.pk)],
+            "legal_instruments": proposal_instrument(),
             "received_date": estonian(today()),
         },
     )
 
     matter = Matter.objects.get(title="Ainult õigusakti liik")
+    assert matter.track == Track.KODA_INITIATIVE
+    assert matter.received_date is None
+
+
+def test_a_forged_initiative_box_marks_nothing_on_another_instrument(signed_in):
+    """The retired checkbox binds to nothing: a `Määrus` filed with a forged
+    `koda_initiative=on` is an ordinary Teema with its dates."""
+    signed_in.post(
+        CREATE,
+        {
+            "title": "Määrus võltsitud märkega",
+            "koda_initiative": "on",
+            "legal_instruments": [str(instrument("maarus").pk)],
+            "received_date": estonian(today()),
+        },
+    )
+
+    matter = Matter.objects.get(title="Määrus võltsitud märkega")
     assert matter.track == ""
     assert matter.received_date == today()
 
 
-def test_an_initiative_may_concern_any_instrument(signed_in):
-    maarus = LegalInstrumentType.objects.get(key="maarus")
-    signed_in.post(
-        CREATE,
-        {
-            "title": "Koja ettepanek määruse muutmiseks",
-            "koda_initiative": "on",
-            "legal_instruments": [str(maarus.pk)],
-        },
-    )
-
-    matter = Matter.objects.get(title="Koja ettepanek määruse muutmiseks")
-    assert matter.track == Track.KODA_INITIATIVE
-    assert [item.key for item in matter.legal_instruments.all()] == ["maarus"]
-
-
-def test_a_refused_initiative_save_comes_back_ticked(signed_in):
-    response = signed_in.post(CREATE, {"title": "", "koda_initiative": "on"})
+def test_a_refused_initiative_save_comes_back_holding_the_instrument(signed_in):
+    response = signed_in.post(CREATE, {"title": "", "legal_instruments": proposal_instrument()})
 
     assert response.status_code == 400
-    assert response.context["form"]["koda_initiative"].value() is True
+    assert response.context["form"]["legal_instruments"].value() == proposal_instrument()
     assert not Matter.objects.filter(track=Track.KODA_INITIATIVE).exists()
 
 
@@ -226,7 +244,9 @@ def test_marking_keeps_the_dates_a_teema_already_holds(signed_in, specialist):
         response_requested_at=timezone.now(),
     )
 
-    response = signed_in.post(edit_url(matter), edit_payload(matter, koda_initiative="on"))
+    response = signed_in.post(
+        edit_url(matter), edit_payload(matter, legal_instruments=proposal_instrument())
+    )
 
     assert response.status_code == 302
     matter.refresh_from_db()
@@ -273,16 +293,23 @@ def test_a_held_date_may_still_be_cleared_on_an_initiative(signed_in, specialist
 
 
 def test_unmarking_and_adding_a_deadline_in_one_save_is_an_ordinary_teema(signed_in, specialist):
-    matter = create_matter(title="Muutub tavaliseks", actor=specialist, track=Track.KODA_INITIATIVE)
+    """Correcting the instrument away from «Koja ettepanek või pöördumine» is
+    what unmarks the Teema now (docs/adr/0151, amendment of 2026-10-12)."""
+    matter = create_matter(
+        title="Muutub tavaliseks",
+        actor=specialist,
+        track=Track.KODA_INITIATIVE,
+        legal_instruments=[instrument("koja-ettepanek")],
+    )
     due = today() + timedelta(days=7)
 
     response = signed_in.post(
         edit_url(matter),
-        {
-            key: value
-            for key, value in edit_payload(matter, response_deadline=estonian(due)).items()
-            if key != "koda_initiative"
-        },
+        edit_payload(
+            matter,
+            response_deadline=estonian(due),
+            legal_instruments=[str(instrument("seadus").pk)],
+        ),
     )
 
     assert response.status_code == 302
@@ -290,6 +317,46 @@ def test_unmarking_and_adding_a_deadline_in_one_save_is_an_ordinary_teema(signed
     assert matter.track == ""
     assert matter.response_deadline == due
     assert track_events(matter)[-1] == {"from": Track.KODA_INITIATIVE, "to": ""}
+
+
+def test_a_historical_initiative_on_another_instrument_survives_unrelated_saves(
+    signed_in, specialist
+):
+    """`Koja algatus` on a `Määrus` — valid history from before 2026-10-12 —
+    is kept by a save that renames the Teema, and by one that changes the
+    instrument between two other kinds: only «Koja ettepanek või pöördumine»
+    moves the track."""
+    matter = create_matter(
+        title="Ajalooline algatus",
+        actor=specialist,
+        track=Track.KODA_INITIATIVE,
+        legal_instruments=[instrument("maarus")],
+    )
+
+    first = signed_in.post(edit_url(matter), edit_payload(matter, title="Ajalooline, uus nimi"))
+    matter.refresh_from_db()
+    second = signed_in.post(
+        edit_url(matter),
+        edit_payload(matter, legal_instruments=[str(instrument("seadus").pk)]),
+    )
+
+    assert (first.status_code, second.status_code) == (302, 302)
+    matter.refresh_from_db()
+    assert matter.track == Track.KODA_INITIATIVE
+    assert [item.key for item in matter.legal_instruments.all()] == ["seadus"]
+    assert track_events(matter) == []
+
+
+def test_choosing_the_instrument_over_another_track_says_what_it_replaced(signed_in, specialist):
+    matter = create_matter(
+        title="ELi algatusest Koja omaks", actor=specialist, track=Track.EU_INITIATIVE
+    )
+
+    signed_in.post(edit_url(matter), edit_payload(matter, legal_instruments=proposal_instrument()))
+
+    matter.refresh_from_db()
+    assert matter.track == Track.KODA_INITIATIVE
+    assert track_events(matter) == [{"from": Track.EU_INITIATIVE, "to": Track.KODA_INITIATIVE}]
 
 
 def test_another_track_is_left_alone_by_an_unrelated_save(signed_in, specialist):
@@ -315,7 +382,9 @@ def test_somebody_who_may_not_write_cannot_mark_one(client, reader, specialist):
     matter = create_matter(title="Lugeja ei muuda", actor=specialist)
     client.force_login(reader)
 
-    response = client.post(edit_url(matter), edit_payload(matter, koda_initiative="on"))
+    response = client.post(
+        edit_url(matter), edit_payload(matter, legal_instruments=proposal_instrument())
+    )
 
     assert response.status_code in (403, 404)
     matter.refresh_from_db()
@@ -423,13 +492,17 @@ def test_a_held_saabus_is_still_shown_on_an_initiative(signed_in, specialist):
     )
 
 
-def test_the_edit_page_arrives_ticked_for_an_initiative(signed_in, specialist):
+def test_the_edit_page_carries_the_initiative_without_a_checkbox(signed_in, specialist):
+    """**Superseded on 2026-10-12**: the page arrived with the box ticked. The
+    box is retired; the page carries what the Matter holds, for the script that
+    hides an empty date box, and says why in its note."""
     matter = factories.MatterFactory(owner=specialist, track=Track.KODA_INITIATIVE)
 
     body = signed_in.get(edit_url(matter)).content.decode()
-    box = body.split('name="koda_initiative"', 1)[1].split(">", 1)[0]
-    assert "checked" in box
-    assert 'data-initiative-mode="keep"' in body
+    assert 'name="koda_initiative"' not in body
+    row = body.split('data-initiative-mode="keep"', 1)[1].split(">", 1)[0]
+    assert 'data-initiative-held="true"' in row
+    assert 'data-initiative-held-instrument="false"' in row
 
 
 # ---------------------------------------------------------------------------
@@ -437,18 +510,23 @@ def test_the_edit_page_arrives_ticked_for_an_initiative(signed_in, specialist):
 # ---------------------------------------------------------------------------
 
 
-def test_a_stale_edit_names_the_initiative_a_colleague_set(signed_in, specialist):
-    """The conflict list says what moved, so a second Salvesta does not undo it."""
+def test_a_stale_edit_cannot_undo_the_initiative_a_colleague_set(signed_in, specialist):
+    """A stale copy is refused, and — the checkbox being retired — the page has
+    nothing that could undo the colleague's `Koja algatus` on a second press
+    either: an unrelated save leaves the track alone (docs/adr/0151 amendment
+    of 2026-10-12, superseding the conflict-list entry this test pinned)."""
     matter = create_matter(title="Kaks toimetajat", actor=specialist)
     stale = edit_payload(matter)
     set_koda_initiative(matter=matter, value=True, actor=specialist)
 
     response = signed_in.post(edit_url(matter), stale)
-
     assert response.status_code == 409
-    changes = {item["label"]: item for item in response.context["conflict_changes"]}
-    assert changes["Koja ettepanek või pöördumine"]["current"] == "jah"
-    assert changes["Koja ettepanek või pöördumine"]["submitted"] == "ei"
+    matter.refresh_from_db()
+    again = signed_in.post(
+        edit_url(matter), {**stale, "revision": edit_initial(matter)["revision"]}
+    )
+
+    assert again.status_code == 302
     matter.refresh_from_db()
     assert matter.track == Track.KODA_INITIATIVE
 

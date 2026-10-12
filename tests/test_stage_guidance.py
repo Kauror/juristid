@@ -276,12 +276,12 @@ def test_only_an_instrument_with_exactly_one_meaningful_stage_chooses_one():
 
 
 def test_the_prefill_travels_to_uus_teema_only():
-    from app.workflow.stage_guidance import STAGE_PREFILL_NOTE
-
+    """…and carries no sentence: `prefill_note` is retired by the owner's
+    decision of 2026-10-12 (docs/adr/0130 amendment); the prefill still chooses."""
     assert "prefill" not in stage_guidance_payload()
     created = stage_guidance_payload(prefill=True)
     assert created["prefill"] == {"koja-ettepanek": "idea", "vtk": "idea"}
-    assert created["prefill_note"] == STAGE_PREFILL_NOTE
+    assert "prefill_note" not in created
     # Everything else is the same payload.
     assert {key: value for key, value in created.items() if not key.startswith("prefill")} == (
         stage_guidance_payload()

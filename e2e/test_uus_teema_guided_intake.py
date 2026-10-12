@@ -49,7 +49,6 @@ from tests.synthetic_containers import signed_container
 pytestmark = pytest.mark.e2e
 
 PDF = b"%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n"
-EIS_URL = "https://eelnoud.valitsus.ee/main/mount/docList/qa-0130"
 
 STAGE_KEYS = (
     "idea",
@@ -132,34 +131,35 @@ def test_a_the_order_and_what_is_no_longer_asked(page, base_url, screenshots):
     sender = box("#saatja-otsi")
     owner = box('input[name="owner"]')
     deadline = box("#id_response_deadline")
-    link = box('input[name="menetlus-url"]')
     received = box("#id_received_date")
     oigusakt = box('input[name="legal_instruments"]')
     valdkonnad = box('input[name="policy_areas"]')
     hetkeseis = box('input[name="stage"]')
     notes = box("#id_notes")
     files = box("#failid")
+    related = box("#seo-olemasoleva-teemaga")
     button = box(".createform__actions")
 
     # Saatja left, Vastutaja right, on one row.
     assert sender["x"] < owner["x"]
     assert abs(sender["y"] - owner["y"]) < 40, (sender, owner)
-    # Tähtaeg | Menetluse link | Saabus, on one row, the link the widest.
-    assert deadline["x"] < link["x"] < received["x"]
-    assert abs(deadline["y"] - link["y"]) < 10 and abs(link["y"] - received["y"]) < 10
-    assert link["width"] > deadline["width"] and link["width"] > received["width"]
+    # Tähtaeg | Saabus, on one row — `Menetluse link` left the page on
+    # 2026-10-12 (docs/adr/0130 amendment).
+    assert deadline["x"] < received["x"]
+    assert abs(deadline["y"] - received["y"]) < 10
     # And down the page, in the owner's order.
     # Hetkeseis directly under the Õigusakt that guides it, then Valdkond
     # (docs/adr/0130, amendment of 2026-10-02).
-    rows = [title, sender, deadline, oigusakt, hetkeseis, valdkonnad, notes, files, button]
+    # The action bar last, after `Seo olemasoleva teemaga` (2026-10-12).
+    rows = [title, sender, deadline, oigusakt, hetkeseis, valdkonnad, notes, files, related, button]
     tops = [row["y"] for row in rows]
     assert tops == sorted(tops), tops
 
     expect(page.get_by_text("Millest teema räägib")).to_have_count(0)
     expect(page.locator('[name="brief_summary"]')).to_have_count(0)
     expect(page.locator('[name="menetlus-label"]')).to_have_count(0)
-    expect(page.locator("#menetluse-link")).not_to_contain_text("Nimetus")
-    expect(page.get_by_label("Menetluse link")).to_be_visible()
+    expect(page.locator('[name="menetlus-url"]')).to_have_count(0)
+    expect(page.get_by_label("Menetluse link")).to_have_count(0)
 
     # «Valdkond», in the singular, directly after Hetkeseis — and still a
     # group of checkboxes (docs/adr/0130, amendment of 2026-10-02).
@@ -390,7 +390,6 @@ def test_f_a_full_creation_with_files(page, base_url, screenshots):
     page.get_by_role("radio", name=MARTIN.short_name, exact=True).check()
 
     give_first_step(page, days=14)
-    page.fill('input[name="menetlus-url"]', EIS_URL)
     _instrument(page, "ELi direktiiv").check()
     # Several Valdkond values, as before — the heading is singular, the field
     # is not.
@@ -419,7 +418,6 @@ def test_f_a_full_creation_with_files(page, base_url, screenshots):
 
     body = page.locator("main").inner_text()
     assert title in body
-    expect(page.locator(f'a[href="{EIS_URL}"]').first).to_be_attached()
 
     matter_url = page.url
     page.get_by_role("link", name=re.compile(r"^Dokumendid")).click()
@@ -440,6 +438,8 @@ def test_f_a_full_creation_with_files(page, base_url, screenshots):
 
 
 def _prefill_note(page):
+    """Retired on 2026-10-12 (docs/adr/0130 amendment): the prefill still
+    chooses, and no sentence announces it. Every test below asserts it absent."""
     return page.locator("[data-stage-prefill-note]")
 
 
@@ -450,7 +450,7 @@ def test_h_vtk_chooses_idee_on_an_untouched_hetkeseis_and_takes_it_back(page, ba
 
     _instrument(page, "VTK").check()
     assert _chosen_stage(page) == "idea"
-    expect(_prefill_note(page)).to_be_visible()
+    expect(_prefill_note(page)).to_have_count(0)
 
     # An instrument that does not decide the stage takes back the one chosen
     # for it — and only that one.

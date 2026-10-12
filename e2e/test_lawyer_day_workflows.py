@@ -188,11 +188,10 @@ def test_journey_consultation_to_repeat_opinion_and_closure(page, base_url, tmp_
     expect(page.locator("#teema-pais")).to_contain_text(re.compile("vastatud", re.IGNORECASE))
 
     # The file moves on, then closes — and owes nothing afterwards.
-    control = page.locator('#teema-pais details:has(select[aria-label="Hetkeseis"])')
+    control = page.locator("#teema-hetkeseis details[data-stagepick]")
     if not control.evaluate("el => el.open"):
         control.locator(".inlineedit__trigger").click()
-    control.locator('select[aria-label="Hetkeseis"]').select_option(label="Riigikogus")
-    control.get_by_role("button", name="Salvesta hetkeseisu muudatus").click()
+    control.get_by_role("button", name="Riigikogus", exact=True).click()
     page.wait_for_load_state("networkidle")
     expect(page.locator("#teema-pais")).to_contain_text("Riigikogus")
 

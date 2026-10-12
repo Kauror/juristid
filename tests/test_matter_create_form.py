@@ -410,11 +410,13 @@ def test_a_storage_failure_leaves_no_reachable_matter_behind(signed_in, evidence
 
     calls = {"n": 0}
 
-    def fail_on_the_second(matter, upload, *, actor):
+    # `role` since 2026-10-12: the sent-proposal fast path files its
+    # documents as the Chamber's letter (docs/adr/0151 amendment).
+    def fail_on_the_second(matter, upload, *, actor, role=""):
         calls["n"] += 1
         if calls["n"] == 2:
             raise OSError("evidence store unavailable")
-        return real(matter, upload, actor=actor)
+        return real(matter, upload, actor=actor, role=role)
 
     monkeypatch.setattr(matter_views, "_attach_incoming_file", fail_on_the_second)
 
@@ -452,7 +454,7 @@ def test_a_storage_failure_leaves_no_stray_sender_behind_either(
     real = matter_views.__dict__.get("_attach_incoming_file")
     assert real is not None, "the attachment helper was renamed"
 
-    def fail(matter, upload, *, actor):
+    def fail(matter, upload, *, actor, role=""):
         raise OSError("evidence store unavailable")
 
     monkeypatch.setattr(matter_views, "_attach_incoming_file", fail)

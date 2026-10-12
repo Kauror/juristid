@@ -210,13 +210,14 @@ def test_the_matter_page_names_the_topic_rather_than_the_record(populated, clien
     edit = client.get(reverse("matters:matter_edit", kwargs={"pk": matter.pk})).content.decode()
 
     assert matter.title in detail
-    # `Teemaviide` left the rail in the owner's compact round (2026-10-07) and
-    # came back on 2026-10-09 once, in the header's meta line, under its label
-    # and beside a copy button (docs/adr/0150 §4) — never in the rail.
+    # `Teemaviide` is shown once, under `Teema andmed`, as plain text with no
+    # copy button — moved there from the header's meta line by the owner's
+    # decision of 2026-10-12 (docs/adr/0150 amendment), superseding the
+    # «never in the rail» this test pinned since 2026-10-09.
     assert detail.count(matter.display_reference) == 1
-    assert 'id="teemaviide">' + matter.display_reference + "</span>" in detail
     rail = detail.split('id="teema-andmed"', 1)[1].split("</aside>", 1)[0]
-    assert "Teemaviide" not in rail
+    assert 'id="teemaviide">' + matter.display_reference + "</span>" in rail
+    assert "Kopeeri teemaviide" not in detail
     # Not in the heading, and not in the crumb.
     heading = detail.split('matterhead__title">', 1)[1].split("</h1>", 1)[0]
     assert matter.display_reference not in heading

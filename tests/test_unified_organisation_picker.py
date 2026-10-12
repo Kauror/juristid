@@ -66,13 +66,16 @@ def edit_url(specialist) -> str:
 def both_teema_pages(signed_in, specialist) -> list[tuple[str, int]]:
     """Each Teema form, with how many organisation pickers it draws.
 
-    One each. `Muuda teemat` drew two until docs/adr/0097 §4 withdrew the
-    Matter-level `Kellele`, and the count is still written out per page rather
-    than assumed equal — a page that grew a second picker is exactly what this
-    number is here to catch.
+    One each, except `Uus teema`'s second since 2026-10-12: the sent
+    proposal's `Adressaat` under «Märgi saadetud Koja arvamuseks», a
+    Submission recipient and not the Matter-level `Kellele` (docs/adr/0151
+    amendment). `Muuda teemat` drew two until docs/adr/0097 §4 withdrew
+    `Kellele`, and the count is still written out per page rather than assumed
+    equal — a page that grew another picker is exactly what this number is here
+    to catch.
     """
     return [
-        (scripted(signed_in.get(CREATE).content.decode()), 1),
+        (scripted(signed_in.get(CREATE).content.decode()), 2),
         (scripted(signed_in.get(edit_url(specialist)).content.decode()), 1),
     ]
 
@@ -155,7 +158,8 @@ def test_both_teema_forms_offer_the_same_search_and_add_control(signed_in, speci
     drawing one identical control — the sameness §1 of docs/adr/0096 was for.
     """
     for page in (
-        scripted(signed_in.get(CREATE).content.decode()),
+        # `Uus teema` up to the sent proposal's own picker (2026-10-12).
+        scripted(signed_in.get(CREATE).content.decode()).split('id="saadetud-koja-arvamus"')[0],
         scripted(signed_in.get(edit_url(specialist)).content.decode()),
     ):
         assert page.count(PLACEHOLDER) == 1

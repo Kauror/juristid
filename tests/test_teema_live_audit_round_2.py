@@ -135,7 +135,19 @@ SHARED_FACTS = (
     "response_deadline",
 )
 
-CREATE_ONLY = {"notes", "uploads", "suggestion_state"}
+#: «Märgi saadetud Koja arvamuseks» and its two answers (owner's decision of
+#: 2026-10-12, docs/adr/0151 amendment) are `Uus teema`'s alone: they record a
+#: send in the same save that files a new Teema, which a correction page has no
+#: business doing — `+ Koja arvamus` records a send on an existing one.
+CREATE_ONLY = {
+    "notes",
+    "uploads",
+    "suggestion_state",
+    "koda_sent",
+    "sent_on",
+    "sent_recipients",
+    "sent_recipient_name",
+}
 #: `revision` is the version of the record the correction form was filled from.
 #:
 #: It is a field on `Muuda teemat` and not on `Uus teema` because there is
@@ -230,12 +242,9 @@ CLASSIFICATION_PARTIALS = (
     "matters/partials/valdkonnad_field.html",
     "matters/partials/hetkeseis_field.html",
     "matters/partials/oigusakt_field.html",
-    # `Menetluse link` joined them on 2026-09-20. It is not a classification,
-    # but it is the same claim: one question, one block of markup, included by
-    # both pages — which is what makes the address incapable of drifting
-    # between the page somebody files from and the page they correct from
-    # (docs/adr/0097 §5). Neither asks `Nimetus` since docs/adr/0130 §3.
-    "matters/partials/procedural_link_create.html",
+    # `Menetluse link` joined them on 2026-09-20 and left on 2026-10-12, when
+    # the owner removed it from `Uus teema` (docs/adr/0130 amendment). It is
+    # still asked on `Muuda teemat` and the Teema page.
 )
 
 

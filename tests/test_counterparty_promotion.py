@@ -84,9 +84,10 @@ def test_the_sender_control_is_a_search_box_and_then_chips(signed_in, komisjon):
 
     assert "Otsi või lisa asutus…" in page
     assert "Lisa uus saatja" in page
-    # `Lisa uus adressaat` is on `Muuda teemat`, not here: `Uus teema` asks one
-    # counterparty question now (docs/adr/0090 §5).
-    assert "Lisa uus adressaat" not in page
+    # `Uus teema` asks one counterparty question about the Matter (docs/adr/0090
+    # §5); the only addressee on it since 2026-10-12 is the sent proposal's,
+    # inside «Märgi saadetud Koja arvamuseks» (docs/adr/0151 amendment).
+    assert "Lisa uus adressaat" not in page.split('id="saadetud-koja-arvamus"')[0]
 
 
 def test_the_retired_controls_are_gone_from_the_scripted_page(signed_in, komisjon):

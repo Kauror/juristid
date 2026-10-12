@@ -109,7 +109,12 @@ def test_neither_question_is_drawn_on_the_page(signed_in):
     page = signed_in.get(CREATE).content.decode()
 
     assert "Menetlusliik" not in page
-    assert "Adressaat" not in page
+    # The Matter's `Adressaat` is not asked. The only «Adressaat» on the page
+    # since 2026-10-12 is the *sent proposal's* addressee — a different fact,
+    # `SubmissionRecipient`, inside «Märgi saadetud Koja arvamuseks»
+    # (docs/adr/0151 amendment of 2026-10-12).
+    outside = page.split('id="saadetud-koja-arvamus"', 1)[0]
+    assert "Adressaat" not in outside
     assert 'name="track"' not in page
     assert 'name="addressee_organisation"' not in page
     assert "addressee_is_manual" not in page
@@ -278,7 +283,10 @@ def test_nothing_anywhere_infers_a_track_from_an_instrument(signed_in):
     """The refusal, over the whole vocabulary rather than over an example.
 
     Every offered type, one Matter each, and not one of them arrives carrying a
-    `Menetlusliik` — least of all `NATIONAL_TRANSPOSITION`.
+    `Menetlusliik` — least of all `NATIONAL_TRANSPOSITION`. The one exception
+    since 2026-10-12 is the owner's: «Koja ettepanek või pöördumine» is the
+    Chamber's own initiative and is filed as `Koja algatus` (docs/adr/0151
+    amendment, narrowing docs/adr/0090 §4 for this instrument only).
     """
     for item in LegalInstrumentType.objects.filter(is_active=True):
         title = f"Ainult õigusakt {item.key}"
@@ -291,7 +299,8 @@ def test_nothing_anywhere_infers_a_track_from_an_instrument(signed_in):
         signed_in.post(CREATE, payload)
         matter = Matter.objects.filter(title=title).first()
         assert matter is not None, item.key
-        assert matter.track == "", f"{item.key} wrote {matter.track!r}"
+        expected = Track.KODA_INITIATIVE if item.key == "koja-ettepanek" else ""
+        assert matter.track == expected, f"{item.key} wrote {matter.track!r}"
 
 
 def test_a_forged_menetlusliik_is_still_not_part_of_the_request(signed_in):

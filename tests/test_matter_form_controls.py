@@ -381,19 +381,20 @@ def test_the_deadline_opens_the_arrival_row(signed_in):
     """Order, measured on the document rather than assumed from the template.
 
     `Arvamuse tähtaeg` was the last question on the form (docs/adr/0094 §4). The
-    owner moved it up to open the row it shares with `Menetluse link` and
-    `Saabus` — the three facts that arrive with the file — and moved `Failid`
-    to the end instead (docs/adr/0130 §1). It is still the one date.
+    owner moved it up to open the row it shares with `Saabus` and moved
+    `Failid` towards the end instead (docs/adr/0130 §1). `Menetluse link` stood
+    between the dates until the owner removed it on 2026-10-12 (docs/adr/0130
+    amendment). It is still the one date.
     """
     body = signed_in.get(CREATE).content.decode()
 
     deadline = body.index('id="arvamuse-tahtaeg"')
-    link = body.index('id="menetluse-link"')
     received = body.index('name="received_date"')
     files = body.index('id="failid"')
     actions = body.index("createform__actions")
 
-    assert deadline < link < received < files < actions
+    assert deadline < received < files < actions
+    assert 'id="menetluse-link"' not in body
 
 
 def test_a_matter_can_still_be_created_with_no_date_at_all(signed_in):

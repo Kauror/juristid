@@ -71,19 +71,23 @@ def stage(key: str) -> StageVocabulary:
 
 #: One marker per section, each unique in the form, in the owner's order —
 #: Hetkeseis directly under the Õigusakt that guides it, then Valdkond
-#: (docs/adr/0130 §1 and its 2026-10-02 amendment).
+#: (docs/adr/0130 §1 and its 2026-10-02 amendment). Since 2026-10-12 there is no
+#: `Menetluse link` between the dates, and after `Failid` come «Märgi saadetud
+#: Koja arvamuseks» and `Seo olemasoleva teemaga`, with the action bar last
+#: (docs/adr/0130 amendment of 2026-10-12).
 ORDER = [
     ('name="title"', "Pealkiri"),
     ('name="sender_name"', "Saatja"),
     ('name="owner"', "Vastutaja"),
     ('name="response_deadline"', "Arvamuse tähtaeg"),
-    ('name="menetlus-url"', "Menetluse link"),
     ('name="received_date"', "Saabus"),
     ('name="legal_instruments"', "Õigusakt"),
     ('name="stage"', "Hetkeseis"),
     ('name="policy_areas"', "Valdkond"),
     ('name="notes"', "Märkmed"),
     ('name="files"', "Failid"),
+    ('id="saadetud-koja-arvamus"', "Märgi saadetud Koja arvamuseks"),
+    ('id="seo-olemasoleva-teemaga"', "Seo olemasoleva teemaga"),
     ("createform__actions", "Salvesta"),
 ]
 
@@ -100,13 +104,14 @@ def test_the_sections_are_in_the_owners_order(signed_in):
     ("earlier", "later"),
     [
         ("Saatja", "Vastutaja"),
-        ("Arvamuse tähtaeg", "Menetluse link"),
-        ("Menetluse link", "Saabus"),
+        ("Arvamuse tähtaeg", "Saabus"),
         ("Õigusakt", "Hetkeseis"),
         ("Hetkeseis", "Valdkond"),
         ("Valdkond", "Märkmed"),
         ("Märkmed", "Failid"),
-        ("Failid", "Salvesta"),
+        ("Failid", "Märgi saadetud Koja arvamuseks"),
+        ("Märgi saadetud Koja arvamuseks", "Seo olemasoleva teemaga"),
+        ("Seo olemasoleva teemaga", "Salvesta"),
     ],
 )
 def test_each_named_pair_is_in_order(signed_in, earlier, later):
@@ -116,7 +121,7 @@ def test_each_named_pair_is_in_order(signed_in, earlier, later):
     assert where[earlier] < where[later]
 
 
-def test_saatja_and_vastutaja_share_one_row_and_the_three_arrival_facts_another(signed_in):
+def test_saatja_and_vastutaja_share_one_row_and_the_two_arrival_dates_another(signed_in):
     """Side by side is the stylesheet's; sharing a grid row is the markup's."""
     body = form_body(page(signed_in))
 
@@ -129,10 +134,11 @@ def test_saatja_and_vastutaja_share_one_row_and_the_three_arrival_facts_another(
     assert 'name="sender_name"' in sender_row.group(1)
     assert 'name="owner"' in sender_row.group(1)
 
-    start = body.index("createform__trio--dates")
+    start = body.index("createform__pair--dates")
     row = body[start : body.index('name="legal_instruments"')]
-    for marker in ('name="response_deadline"', 'name="menetlus-url"', 'name="received_date"'):
+    for marker in ('name="response_deadline"', 'name="received_date"'):
         assert marker in row
+    assert 'name="menetlus-url"' not in body
 
 
 def test_files_are_the_last_section_before_the_button(signed_in):
@@ -213,41 +219,16 @@ def test_an_existing_summary_is_not_touched_by_this_change(signed_in, specialist
 # ---------------------------------------------------------------------------
 
 
-def test_nimetus_is_not_on_uus_teema(signed_in):
+def test_uus_teema_asks_no_link_and_no_nimetus(signed_in):
+    """**Superseded on 2026-10-12** (docs/adr/0130 amendment): the link block
+    is gone from `Uus teema`, `Nimetus` with it; the three tests that saved a
+    link from here are retired with the control. A crafted link writes nothing
+    (tests/test_procedural_links_on_uus_teema.py)."""
     body = page(signed_in)
-    block = body[body.index('id="menetluse-link"') : body.index('name="received_date"')]
 
-    assert "Nimetus" not in block
+    assert 'id="menetluse-link"' not in body
     assert 'name="menetlus-label"' not in body
     assert "label" not in ProceduralLinkCreateForm().fields
-
-
-def test_a_link_is_saved_from_its_address_alone(signed_in):
-    response = signed_in.post(CREATE, {"title": "Ainult aadress", "menetlus-url": EIS_URL})
-
-    assert response.status_code == 302
-    link = MatterProceduralLink.objects.get(matter__title="Ainult aadress")
-    assert link.url == EIS_URL
-    # Nothing fabricated in its place — no title read off the address.
-    assert link.label == ""
-
-
-def test_a_forged_name_is_not_written_from_uus_teema(signed_in):
-    signed_in.post(
-        CREATE,
-        {"title": "Võltsitud nimetus", "menetlus-url": EIS_URL, "menetlus-label": "Eelnõu 1 SE"},
-    )
-
-    assert MatterProceduralLink.objects.get(matter__title="Võltsitud nimetus").label == ""
-
-
-def test_a_url_only_link_renders_on_the_teema_page(signed_in):
-    signed_in.post(CREATE, {"title": "Lingiga teema", "menetlus-url": EIS_URL})
-    matter = Matter.objects.get(title="Lingiga teema")
-
-    body = page(signed_in, reverse("matters:matter_detail", kwargs={"pk": matter.pk}))
-
-    assert EIS_URL in body
 
 
 def _historical_link(matter, actor):
@@ -477,7 +458,6 @@ def test_a_full_creation_writes_one_matter_with_every_answer(signed_in, speciali
             "owner": specialist.pk,
             "response_deadline": "30.10.2026",
             "received_date": "1.10.2026",
-            "menetlus-url": EIS_URL,
             "legal_instruments": [instrument("seadus").pk],
             "policy_areas": [area.pk],
             "stage": stage("consultation").pk,
@@ -494,7 +474,8 @@ def test_a_full_creation_writes_one_matter_with_every_answer(signed_in, speciali
     assert matter.stage == stage("consultation")
     assert list(matter.policy_areas.all()) == [area]
     assert matter.brief_summary == ""
-    assert MatterProceduralLink.objects.filter(matter=matter, url=EIS_URL, label="").count() == 1
+    # No link is asked here since 2026-10-12 (docs/adr/0130 amendment).
+    assert not MatterProceduralLink.objects.filter(matter=matter).exists()
     # The deadline is the obligation only, and the faint plan is the path
     # (docs/adr/0133 §8): no step is made from it.
     assert NextAction.objects.filter(matter=matter).count() == 0

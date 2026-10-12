@@ -30,7 +30,7 @@ from app.core.enums import Visibility
 from app.documents.enums import DocumentRole
 from app.documents.models import Document
 from app.documents.services import add_evidence_version, create_document
-from app.matters.services import create_matter
+from app.matters.services import create_matter, matter_field_revision
 from app.matters.work_items import work_items
 from app.submissions.enums import SentAtPrecision
 from app.submissions.models import Submission
@@ -522,7 +522,10 @@ def test_the_header_stage_asks_before_closing_and_closes_once_confirmed(
     url = reverse("matters:update_field", kwargs={"pk": matter.pk, "field": "stage"})
     stage = str(_stage("monitoring_stopped").pk)
 
-    refused = signed_in.post(url, {"stage": stage}, headers={"HX-Request": "true"})
+    revision = matter_field_revision(matter, "stage")
+    refused = signed_in.post(
+        url, {"stage": stage, "revision": revision}, headers={"HX-Request": "true"}
+    )
 
     assert refused.status_code == 400
     body = refused.content.decode()
@@ -532,7 +535,9 @@ def test_the_header_stage_asks_before_closing_and_closes_once_confirmed(
     assert matter.is_open
 
     confirmed = signed_in.post(
-        url, {"stage": stage, "confirm_follow_up_closure": "on"}, headers={"HX-Request": "true"}
+        url,
+        {"stage": stage, "revision": revision, "confirm_follow_up_closure": "on"},
+        headers={"HX-Request": "true"},
     )
 
     assert confirmed.status_code == 200

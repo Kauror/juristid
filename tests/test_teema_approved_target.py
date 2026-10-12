@@ -2316,9 +2316,10 @@ def test_teema_andmed_holds_the_target_rows_that_are_still_asked(signed_in, norm
     card = card[: card.index('id="koja-arvamus"')]
 
     assert "Saatja" in card
-    # `Teemaviide` left the card in the owner's compact round (2026-10-07).
+    # `Teemaviide` is back in this card since 2026-10-12, under `Õigusakt`
+    # (docs/adr/0150 amendment of 2026-10-12, superseding the compact round's removal).
+    assert "Teemaviide" in card
     for gone in (
-        "Teemaviide",
         "Saabus",
         "Muu valdkond",
         "Andmeklass",
