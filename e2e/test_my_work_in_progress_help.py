@@ -24,7 +24,7 @@ from e2e.conftest import MARTIN, sign_in
 
 pytestmark = pytest.mark.e2e
 
-FIGURE = '.seis__item[data-seishelp] a.seis__figure'
+FIGURE = ".seis__item[data-seishelp] a.seis__figure"
 INFO = ".seis__item[data-seishelp] .seis__info"
 TIP = "#seis-selgitus-menetluses"
 
@@ -39,9 +39,7 @@ def _open(page, base_url: str, width: int = 1440) -> None:
 def _boxes(page) -> list[tuple[float, float, float, float]]:
     return [
         (box["x"], box["y"], box["width"], box["height"])
-        for box in (
-            figure.bounding_box() for figure in page.locator(".seis__figure").all()
-        )
+        for box in (figure.bounding_box() for figure in page.locator(".seis__figure").all())
         if box
     ]
 
