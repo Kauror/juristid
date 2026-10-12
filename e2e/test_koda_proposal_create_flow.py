@@ -226,3 +226,21 @@ def test_the_header_stage_menu_opens_on_screen(page, base_url, width):
     assert box["y"] >= 0 and box["y"] + box["height"] <= 800, box
     assert abs(box["y"] - (anchor["y"] + anchor["height"])) < 40, (box, anchor)
     assert page.evaluate("() => document.documentElement.scrollWidth") <= width
+
+
+@pytest.mark.parametrize("width", [1440, 375])
+def test_the_other_header_editors_open_on_screen_too(page, base_url, width):
+    """The same anchor serves `Vastutaja`, `Valdkond`, `Saabus` and the deadline,
+    which have no placement script: each opens inside the window."""
+    sign_in(page, base_url, MARTIN)
+    page.set_viewport_size({"width": width, "height": 800})
+    _new_matter(page, base_url)
+    editors = page.locator(".metaline details:not([data-stagepick])")
+    for index in range(editors.count()):
+        holder = editors.nth(index)
+        holder.locator("summary").first.click()
+        box = holder.locator("form").first.bounding_box()
+        assert box, index
+        assert 0 <= box["x"] and box["x"] + box["width"] <= width, (index, box)
+        assert 0 <= box["y"] and box["y"] + box["height"] <= 800, (index, box)
+        holder.evaluate("el => { el.open = false; }")
