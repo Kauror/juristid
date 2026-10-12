@@ -5867,9 +5867,17 @@ class EngagementReplyForm(ExternalPositionFieldsMixin, forms.Form):
       may see them (`work_items.open_feedback_waits`). Preselected only when
       there is exactly one; with several, the person chooses and nothing is
       guessed from a date or a title;
-    * `Saadud tagasiside` — what came back, in writing;
+    * `Saadud tagasiside` — what came back, in writing, and the whole of it;
     * `Kuupäev` — opening on today, clearable, as on the sibling panel;
-    * the files, and `Märkus` — this office's own note, never part of the reply.
+    * the files.
+
+    **No `Märkus`** (owner's review, 2026-10-12). The lawyer writes everything
+    relevant into `Saadud tagasiside`, so the field is not declared at all
+    rather than hidden: `_clean_external_position` reads `lawyer_note` through
+    `.get()` and gets `None`, and a crafted `lawyer_note=` reaches a form with
+    nowhere to put it — the record this panel writes has a blank note. Rows
+    that already carry one keep it, render it under its own label and are
+    corrected through `Muuda`, which still asks (docs/adr/0142 amendment).
 
     No organisation: received feedback may name nobody (docs/adr/0101), and a
     round's answers are the round's. `Muuda` on the record still asks for one.
@@ -5904,7 +5912,6 @@ class EngagementReplyForm(ExternalPositionFieldsMixin, forms.Form):
         initial=timezone.localdate,
     )
     attachments = workspace_attachments("id_kaasamise_tagasiside_failid")
-    lawyer_note = _external_position_lawyer_note_field()
 
     def __init__(
         self,
@@ -5917,7 +5924,6 @@ class EngagementReplyForm(ExternalPositionFieldsMixin, forms.Form):
         kwargs.setdefault("auto_id", f"id_{self.panel_slug}_%s")
         super().__init__(*args, **kwargs)
         self.fields["summary"].label = "Saadud tagasiside"
-        self.fields["lawyer_note"].label = "Märkus"
         field = cast(Any, self.fields["engagement"])
         #: How many open rounds this reader may attach feedback to. With none,
         #: the panel says so instead of drawing a form that can only refuse.

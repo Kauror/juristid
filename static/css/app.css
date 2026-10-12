@@ -8102,6 +8102,86 @@ button.accordion__action:focus-visible {
   color: var(--text-secondary);
 }
 
+/* A figure that explains itself (components/seis.html, `help`): the link as it
+   was, a quiet `i` button beside it — a sibling, never nested — and the
+   explanation under them. Only Minu asjad's «teemat menetluses» has one. */
+.seis__item {
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--spacing-1);
+}
+
+.seis__info {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-circle);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: help;
+}
+
+.seis__info:hover,
+.seis__info:focus-visible,
+.seis__item.is-open .seis__info {
+  color: var(--accent-link);
+}
+
+/* The bubble the Hetkeseis chips use (`.stagehelp`), wider because it holds
+   three short paragraphs rather than one line. `display: none` until opened, so
+   a closed bubble adds no overflow at any width; `bindSeisHelp` slides an open
+   one inside the window. Opening it moves nothing: it is out of flow. */
+.seis__tip {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+  width: max-content;
+  max-width: min(26rem, calc(100vw - 40px));
+  padding: var(--spacing-25) var(--spacing-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-menu);
+  color: var(--text-body);
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-regular);
+  line-height: var(--typography-line-body);
+  white-space: normal;
+  display: none;
+}
+
+.seis__item:hover .seis__tip,
+.seis__item:focus-within .seis__tip,
+.seis__item.is-open .seis__tip {
+  display: block;
+}
+
+.seis__item.is-suppressed .seis__tip {
+  display: none;
+}
+
+.seis__tiptitle {
+  display: block;
+  margin-bottom: var(--spacing-1);
+  color: var(--text-primary);
+  font-weight: var(--typography-weight-bold);
+}
+
+.seis__tippara {
+  display: block;
+}
+
+.seis__tippara + .seis__tippara {
+  margin-top: var(--spacing-2);
+}
+
 /* ---- body grids ---------------------------------------------------- */
 
 .worklayout2 {

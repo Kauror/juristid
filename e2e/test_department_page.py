@@ -393,7 +393,7 @@ def test_a_lawyers_open_count_opens_exactly_that_list(page, base_url):
     answers "what is this Matter", and the question a head clicks a name to ask
     is "what is on this person's desk" (design handoff, Minu asjad §A). The
     promise is unchanged and is asserted one step further along — the desk's
-    own «avatud teemat» figure is the same number, and *its* link is the
+    own «teemat menetluses» figure is the same number, and *its* link is the
     register list.
     """
     sign_in(page, base_url, HEAD)
@@ -409,7 +409,7 @@ def test_a_lawyers_open_count_opens_exactly_that_list(page, base_url):
     page.wait_for_load_state("networkidle")
     expect(page.get_by_role("heading", name=f"{MARTIN.display_name} · asjad")).to_be_visible()
 
-    figure = page.locator(".seis__figure").filter(has_text="avatud teemat").first
+    figure = page.locator(".seis__figure").filter(has_text="menetluses").first
     expect(figure.locator(".seis__number")).to_have_text(str(expected))
 
     figure.click()
@@ -433,7 +433,7 @@ def test_a_native_draft_is_counted_and_opens_in_the_drafting_list(page, base_url
     too; the only claim is that *this* draft adds exactly one.
 
     The drill-through is the path the page offers: the row opens Martin's desk,
-    the desk's «avatud teemat» opens his register, and the register's own
+    the desk's «teemat menetluses» opens his register, and the register's own
     Arvamus control narrows it — to exactly as many rows as the cell counted,
     with this Matter among them.
     """
@@ -465,7 +465,7 @@ def test_a_native_draft_is_counted_and_opens_in_the_drafting_list(page, base_url
     team_row(page, MARTIN.display_name).click()
     page.wait_for_load_state("networkidle")
     expect(page.get_by_role("heading", name=f"{MARTIN.display_name} · asjad")).to_be_visible()
-    page.locator(".seis__figure").filter(has_text="avatud teemat").first.click()
+    page.locator(".seis__figure").filter(has_text="menetluses").first.click()
     page.wait_for_load_state("networkidle")
 
     panel = page.locator("#tapsem-otsing")

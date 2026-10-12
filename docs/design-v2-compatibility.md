@@ -62,7 +62,9 @@ coming back either.
 
 The strip ends with two figures, after the four it already had and in this
 order: **«N arvamust koostada sel nädalal»** and **«N arvamust koostamisel
-kokku»**. Both appear on one's own desk and on a colleague's
+kokku»** — since 2026-10-12 captioned **«N arvamust sellel nädalal»** and **«N
+arvamust kokku»**, and the first figure **«N teemat menetluses»** with an
+explanation beside it (docs/adr/0149, amendment of 2026-10-12). Both appear on one's own desk and on a colleague's
 (`/inimesed/<id>/asjad/`), from the one read model (`OpinionWork` in
 `app/matters/my_work.py`).
 

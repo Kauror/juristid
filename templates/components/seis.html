@@ -37,10 +37,20 @@ one surface that dropped the band was Jälgimine, which is retired
 `figures` is duck-typed on `value`, `caption`, `url` and `tone`. Several
 different dataclasses feed this and only some carry `key`, which no template has
 ever read.
+
+**`help` is optional and rare.** A figure that carries one (Minu asjad's «teemat
+menetluses», app/matters/my_work.py `FigureHelp`, owner's review 2026-10-12) is
+drawn inside `.seis__item` with a quiet `i` button *beside* its link, never
+inside it: a button nested in an anchor is two controls in one, and the figure
+must stay exactly the link it was. The explanation is the button's
+`aria-describedby`, shown on hover, on focus and on a tap, and closed by Escape
+or a tap elsewhere (static/js/app.js, `bindSeisHelp`). Every other caller feeds
+a dataclass without the attribute, so no other strip can grow the icon.
 {% endcomment %}
 <div class="seis{% if compact %} seis--compact{% endif %}">
   {% for figure in figures %}
     {% if show_zeros or figure.value %}
+      {% if figure.help %}<span class="seis__item" data-seishelp>{% endif %}
       {% if figure.url %}
         <a class="seis__figure" href="{{ figure.url }}">
           <span class="seis__number{% if figure.tone and figure.value %} seis__number--{{ figure.tone }}{% endif %}">{{ figure.value }}</span>
@@ -51,6 +61,20 @@ ever read.
           <span class="seis__number{% if figure.tone and figure.value %} seis__number--{{ figure.tone }}{% endif %}">{{ figure.value }}</span>
           <span class="seis__caption">{{ figure.caption }}</span>
         </span>
+      {% endif %}
+      {% if figure.help %}
+        <button type="button" class="seis__info"
+                aria-label="Selgitus: {{ figure.help.title }}"
+                aria-describedby="seis-selgitus-{{ figure.help.slug }}"
+                aria-controls="seis-selgitus-{{ figure.help.slug }}"
+                aria-expanded="false">
+          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="5" r="0.9" fill="currentColor"/><path d="M8 7.2v4.3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        </button>
+        <span class="seis__tip" role="tooltip" id="seis-selgitus-{{ figure.help.slug }}">
+          <strong class="seis__tiptitle">{{ figure.help.title }}</strong>
+          {% for paragraph in figure.help.paragraphs %}<span class="seis__tippara">{{ paragraph }}</span> {% endfor %}
+        </span>
+      </span>
       {% endif %}
     {% endif %}
   {% endfor %}

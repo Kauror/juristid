@@ -570,12 +570,60 @@ def recent_changes(user: Any, subject: Any, limit: int = CHANGE_LIMIT) -> list[C
 
 
 @dataclass(frozen=True)
+class FigureHelp:
+    """The explanation one figure carries beside its link (components/seis.html).
+
+    A title and plain paragraphs, nothing else: it is read on hover, on focus
+    and on a tap, and by a screen reader as the description of its button.
+    ``slug`` makes the element id, so two explained figures on one page could
+    never share one.
+    """
+
+    slug: str
+    title: str
+    paragraphs: tuple[str, ...]
+
+
+#: «Menetluses olev teema» — the product owner's explanation (review of
+#: 2026-10-12), adapted from the earlier interface. Two words differ from what
+#: was supplied, both to match what the figure actually counts: the stage list
+#: names «Kooskõlastusringil» by its own label, and it ends with the Matters
+#: whose `Hetkeseis` is not chosen yet, because `open_matters` counts every open
+#: file whatever its stage — a `Määramata` one included. The figure itself is
+#: unchanged (docs/adr/0149 amendment of 2026-10-12).
+IN_PROGRESS_HELP = FigureHelp(
+    slug="menetluses",
+    title="Menetluses olev teema",
+    paragraphs=(
+        "Menetluses olev teema on teema, millega tuleb veel tegeleda – näiteks "
+        "koostada arvamus või hoida pärast arvamuse saatmist teemal silma peal.",
+        "Menetluses on teemad, mille hetkeseis on idee, kooskõlastusringil, "
+        "valitsuses, Riigikogus, jõustumise ootel, Eesti seisukoht koostamisel, "
+        "ELi menetluses, ELi õiguse ülevõtmise ootel või muu, ning teemad, mille "
+        "hetkeseis on veel määramata.",
+        "Kui teemaga ei ole vaja enam tegeleda, näiteks teema on jõustunud või "
+        "rohkem ei tegele, kuulub see lõpetatud teemade hulka.",
+    ),
+)
+
+
+def _counted(value: int, one: str, many: str) -> str:
+    """The caption that reads after ``value``: «1 teema …», «2 teemat …»."""
+    return one if value == 1 else many
+
+
+@dataclass(frozen=True)
 class SeisFigure:
     """One number on the strip, with the list it opens.
 
     Zeros are never rendered — the template drops them — because "0 üle
     tähtaja" is a warning about nothing, and a page that cries wolf every
     morning is a page people stop reading (01 §3.7).
+
+    ``help`` is the one optional explanation a figure may carry; only the
+    first figure here sets it. The other surfaces that render this component
+    feed it different dataclasses without the attribute, so none of them can
+    grow the icon by accident.
     """
 
     key: str
@@ -583,6 +631,7 @@ class SeisFigure:
     caption: str
     url: str
     tone: str = ""
+    help: FigureHelp | None = None
 
 
 @dataclass(frozen=True)
@@ -892,8 +941,19 @@ def build_my_work(
     # them. «sel nädalal» counts every kind of dated work in the band it opens,
     # and the opinion figure beside it counts opinions only — so it is a
     # separate figure with its own list rather than a narrowing of that band.
+    #
+    # **Captions only, owner's review of 2026-10-12.** «avatud teemat» became
+    # «teemat menetluses» with an explanation beside it, and the two opinion
+    # captions were shortened to «arvamust sellel nädalal» and «arvamust
+    # kokku». Every key, value, query and link is what it was.
     seis = [
-        SeisFigure("open", open_matters, "avatud teemat", _register_url(subject)),
+        SeisFigure(
+            "open",
+            open_matters,
+            _counted(open_matters, "teema menetluses", "teemat menetluses"),
+            _register_url(subject),
+            help=IN_PROGRESS_HELP,
+        ),
         SeisFigure("overdue", overdue, "üle tähtaja", f"#{wi.BAND_OVERDUE}", "danger"),
         SeisFigure("week", week, "sel nädalal", f"#{wi.BAND_WEEK}", "warning"),
         SeisFigure(
@@ -906,13 +966,13 @@ def build_my_work(
         SeisFigure(
             "opinions_week",
             opinions.due_this_week,
-            "arvamust koostada sel nädalal",
+            _counted(opinions.due_this_week, "arvamus sellel nädalal", "arvamust sellel nädalal"),
             opinions.due_url,
         ),
         SeisFigure(
             "opinions_drafting",
             opinions.in_preparation,
-            "arvamust koostamisel kokku",
+            _counted(opinions.in_preparation, "arvamus kokku", "arvamust kokku"),
             opinions.preparation_url,
         ),
     ]

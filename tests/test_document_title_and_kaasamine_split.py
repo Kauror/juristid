@@ -259,9 +259,11 @@ def test_e_feedback_attaches_to_the_named_round_with_its_files(
     reply = body[body.index('id="kaasamine-tagasiside"') :]
     reply = reply[: reply.index("</form>")]
 
-    for name in ("engagement", "summary", "stated_on", "attachments", "lawyer_note"):
+    for name in ("engagement", "summary", "stated_on", "attachments"):
         assert f'name="{name}"' in reply, name
-    for name in ("audience", "feedback_deadline", "smaily_url", "organisation"):
+    # No `Märkus` since the owner's review of 2026-10-12: everything relevant
+    # goes into `Saadud tagasiside`.
+    for name in ("audience", "feedback_deadline", "smaily_url", "organisation", "lawyer_note"):
         assert f'name="{name}"' not in reply, name
     # One open round: preselected.
     assert re.search(rf'<option value="{round_.pk}"[^>]*selected', reply)
@@ -272,6 +274,7 @@ def test_e_feedback_attaches_to_the_named_round_with_its_files(
             "engagement": str(round_.pk),
             "summary": "Liikmed toetavad, kaubandus soovib pikemat üleminekut.",
             "stated_on": "3.10.2026",
+            # Crafted: the form no longer declares it, so nothing is stored.
             "lawyer_note": "Kokkuvõte telefonist.",
             "attachments": SimpleUploadedFile(
                 "vastused.pdf", b"%PDF-1.4\nvastused", content_type="application/pdf"
@@ -286,7 +289,7 @@ def test_e_feedback_attaches_to_the_named_round_with_its_files(
     assert position.engagement_id == round_.pk
     assert position.provenance == ExternalPositionProvenance.RECEIVED
     assert position.summary.startswith("Liikmed toetavad")
-    assert position.lawyer_note == "Kokkuvõte telefonist."
+    assert position.lawyer_note == ""
     assert position.stated_on.isoformat() == "2026-10-03"
     link = DocumentLink.objects.get(external_position=position)
     assert link.document.matter_id == normal_matter.pk

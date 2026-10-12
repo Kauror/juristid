@@ -3073,6 +3073,96 @@
     });
   }
 
+  /* ---- The explanation beside a Seis figure ---------------------------------
+   * components/seis.html, `help`: Minu asjad's «teemat menetluses». Hover and
+   * focus open it in CSS, exactly as the Hetkeseis bubble above opens; this
+   * adds what CSS cannot do:
+   *
+   *  - a **tap** opens it. A touch screen has no hover, and a tapped button is
+   *    not reliably focused (Safari never focuses one), so the button toggles
+   *    `is-open` itself, and a tap anywhere else closes it again;
+   *  - **Escape** closes it, suppressed until the pointer or focus leaves;
+   *  - the bubble is **slid inside the window**, with the same margin and the
+   *    same both-edges rule as `bindStageHelp`.
+   *
+   * The figure's own link is a sibling of the button and is never touched.
+   * Without scripting the bubble still opens on hover and on focus.
+   */
+  function bindSeisHelp(scope) {
+    (scope || document).querySelectorAll("[data-seishelp]").forEach(function (item) {
+      if (!once(item, "SeisHelp")) {
+        return;
+      }
+      var button = item.querySelector(".seis__info");
+      var bubble = item.querySelector(".seis__tip");
+      if (!button || !bubble) {
+        return;
+      }
+      var place = function () {
+        bubble.style.left = "";
+        var box = bubble.getBoundingClientRect();
+        if (!box.width) {
+          return;
+        }
+        var view = document.documentElement.clientWidth;
+        var shift = 0;
+        if (box.right > view - STAGE_HELP_MARGIN) {
+          shift = view - STAGE_HELP_MARGIN - box.right;
+        }
+        if (box.left + shift < STAGE_HELP_MARGIN) {
+          shift = STAGE_HELP_MARGIN - box.left;
+        }
+        if (shift) {
+          bubble.style.left = Math.round(shift) + "px";
+        }
+      };
+      var show = function () {
+        item.classList.remove("is-suppressed");
+        button.setAttribute("aria-expanded", "true");
+        place();
+      };
+      var close = function () {
+        item.classList.remove("is-open");
+        button.setAttribute("aria-expanded", "false");
+      };
+      item.addEventListener("mouseenter", show);
+      item.addEventListener("focusin", show);
+      item.addEventListener("mouseleave", function () {
+        item.classList.remove("is-suppressed");
+        if (!item.classList.contains("is-open")) {
+          button.setAttribute("aria-expanded", "false");
+        }
+      });
+      item.addEventListener("focusout", function (event) {
+        if (!item.contains(event.relatedTarget)) {
+          item.classList.remove("is-suppressed");
+          close();
+        }
+      });
+      button.addEventListener("click", function (event) {
+        event.preventDefault();
+        if (item.classList.contains("is-open")) {
+          close();
+          item.classList.add("is-suppressed");
+          return;
+        }
+        item.classList.add("is-open");
+        show();
+      });
+      item.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") {
+          close();
+          item.classList.add("is-suppressed");
+        }
+      });
+      document.addEventListener("click", function (event) {
+        if (item.classList.contains("is-open") && !item.contains(event.target)) {
+          close();
+        }
+      });
+    });
+  }
+
   /* ---- Õigusakt -> Hetkeseis guidance, on Uus teema and Muuda teemat -------
    * Once an `Õigusakt` is chosen, the `Hetkeseis` chips that do not normally
    * fit it get `chip--atypical`, which draws them quieter, and their
@@ -4870,6 +4960,7 @@
     bindOpenChosenDetails(document);
     bindChipCounts(document);
     bindStageHelp(document);
+    bindSeisHelp(document);
     bindStageGuidance(document);
     bindRelatedPicker(document);
     bindInitiative(document);
@@ -4893,6 +4984,7 @@
     bindOpenChosenDetails(event.target.querySelector ? event.target : document);
     bindChipCounts(event.target.querySelector ? event.target : document);
     bindStageHelp(event.target.querySelector ? event.target : document);
+    bindSeisHelp(event.target.querySelector ? event.target : document);
     bindStageGuidance(event.target.querySelector ? event.target : document);
     bindRequiredAction(event.target.querySelector ? event.target : document);
     bindSuggestionUse(event.target.querySelector ? event.target : document);
