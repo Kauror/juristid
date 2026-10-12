@@ -185,6 +185,12 @@ def test_c_long_rows_keep_their_columns_and_their_controls(page, base_url, width
         page.locator("#lisa-planeeritud [name=target_date]").fill(_et(days))
         page.locator("#lisa-planeeritud button[type=submit]").click()
         page.wait_for_load_state("networkidle")
+    # `networkidle` is not the end of an HTMX swap: measured while
+    # `#teema-vaade` was still `htmx-swapping`, the row's text was a detached
+    # node and read as a zero box (CI run 38263250956). Measure the settled page.
+    page.wait_for_function(
+        "() => !document.querySelector('.htmx-request, .htmx-swapping, .htmx-settling')"
+    )
 
     zone = page.locator("#praegune-tegevus")
     task = zone.locator(".curact__task").first
