@@ -8,10 +8,10 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
-date = 2026-10-14
+date = 2026-10-13
 basis = "deployment"
 # Uus teema: kuupäevad ja seotud teemad, omaniku otsused 13.10 (ADR 0130, 0150,
-# 0151 muudatused). Migratsioone ei ole. Kui väljalase ei jõua tootmisse 14.10
+# 0151 muudatused). Migratsioone ei ole. Kui väljalase ei jõua tootmisse 13.10
 # (Tallinna aja järgi), liiguvad need read väljalaske päeva kirjesse.
 changes = [
   "Uue teema lehel on «Saabus» nüüd enne «Arvamuse tähtaega».",
