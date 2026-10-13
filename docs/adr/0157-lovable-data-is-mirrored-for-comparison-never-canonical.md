@@ -1,6 +1,6 @@
 # 0157 — Lovable data is mirrored for comparison, never canonical
 
-**Status:** proposed (five-track round of 2026-10-13, track A; awaiting owner review)
+**Status:** accepted for the read-only mirror ARCHITECTURE only — owner's decision of 2026-10-13 (release preparation). Real-data activation is NOT approved: no real snapshot import and no live reader until every item under «Activation conditions» is met and the owner approves activation in an amendment. The fail-closed unmatched-row rule (§5a) stands for now; retention and broader reviewer permissions are future activation decisions. The live Lovable schema is not approved for import.
 **Date:** 2026-10-13
 
 ## Context
