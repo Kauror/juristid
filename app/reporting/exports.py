@@ -44,6 +44,7 @@ from app.reporting.context import ReportingContext
 from app.reporting.selectors import historical, quality
 from app.reporting.selectors import submissions as submission_selectors
 from app.reporting.selectors.base import in_reporting_year, visible_matters
+from app.reporting.selectors.management import RowList
 from app.submissions.enums import RecipientRole
 
 #: Delimiter and byte-order mark, in one place. See the module docstring.
@@ -204,6 +205,27 @@ def submissions_csv(context: ReportingContext, **filters: Any) -> StreamingHttpR
             ]
 
     return _stream(rows(), "arvamused.csv")
+
+
+# ---------------------------------------------------------------------------
+# Statistika loend (docs/adr/0160)
+# ---------------------------------------------------------------------------
+
+
+def metric_rows_csv(listing: RowList, key: str) -> StreamingHttpResponse:
+    """The rows behind one group of a management metric, as the list shows them.
+
+    The listing arrives already computed by `management.metric_rows` — the same
+    observation list the card counted — so the file and the number cannot
+    disagree, and nothing here filters.
+    """
+
+    def rows() -> Iterator[list[Any]]:
+        yield ["naitaja", "ruhm", "teema", *listing.columns]
+        for row in listing.rows:
+            yield [key, listing.group_label, row.title, *row.cells]
+
+    return _stream(rows(), f"loend-{key.lower()}.csv")
 
 
 # ---------------------------------------------------------------------------

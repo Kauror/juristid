@@ -142,6 +142,14 @@ localStorage (Stage-2E.1 brief 12).
       <form class="formgrid" method="get">
         <input type="hidden" name="q" value="{{ query }}">
         <input type="hidden" name="olek" value="{{ filters.olek }}">
+        {% comment %}
+          The commencement presentation survives a narrowing, as `olek` does.
+          The month does not: a changed window re-anchors the calendar on its
+          own first month (docs/adr/0158).
+        {% endcomment %}
+        {% if commencement_view %}
+          <input type="hidden" name="vaade" value="{{ commencement_view }}">
+        {% endif %}
 
         <label class="field">
           <span class="field__label">Ulatus</span>

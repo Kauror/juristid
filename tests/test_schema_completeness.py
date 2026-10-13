@@ -182,6 +182,12 @@ EXPECTED_TRIGGERS: dict[str, str] = {
     "documents_relied_upon_evidence_stays_restricted": "documents_document",
     "documents_relied_upon_evidence_stays_in_matter": "documents_document",
     "matters_relied_upon_evidence_stays_restricted": "matters_matter",
+    # The Lovable mirror (docs/adr/0157): a stored snapshot is what the export
+    # said and is never edited. UPDATE only — deleting a whole snapshot is the
+    # retention path for real data.
+    "lovable_mirror_sourcesnapshot_immutable": "lovable_mirror_sourcesnapshot",
+    "lovable_mirror_sourcerecord_immutable": "lovable_mirror_sourcerecord",
+    "lovable_mirror_sourcefieldvalue_immutable": "lovable_mirror_sourcefieldvalue",
 }
 
 #: `O` fires on an ordinary connection and `A` fires always. `D` is disabled,

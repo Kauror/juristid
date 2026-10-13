@@ -250,6 +250,28 @@ asks a different question: how much of the corpus is placed at all.
 An unlinked archive file is never called a missing opinion. It is evidence Koda
 holds that has not yet been tied to a Teema.
 
+## Management statistics (docs/adr/0160)
+
+Six definitions answer the questions a department head brings to a year. Two
+rules are new and worth stating here.
+
+**A ratio names its numerator and its denominator.** `MetricDefinition` gained
+`numerator_et` and `denominator_et`, rendered as *Lugeja* and *Nimetaja*. A share
+whose denominator has to be read out of a description is a share two readers
+compute differently.
+
+**A deadline is judged as it stood when the letter went.** `OPINIONS_ON_TIME`
+reads the `Arvamuse tähtaeg` history (docs/adr/0135). Where the history cannot
+prove which deadline was in force at sending — it changed or was recorded after
+the send, it predates the history, or the answer was withdrawn — the answer is
+*not verifiable*: counted and listed, never in the percentage, and never judged
+against today's revised date. A Chamber initiative (`Koja algatus`) is not an
+incoming request and is excluded from both deadline metrics, with the excluded
+count on the card.
+
+The groups no register filter can express open `/statistika/loend/`, which pages
+the observation list the number was computed from.
+
 ## Owner
 
 Metric catalogue owner and the coverage thresholds are an open business decision

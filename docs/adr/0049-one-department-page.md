@@ -199,6 +199,15 @@ and the filter answers "show me one kind of it".
 There is no separate *Viimased muudatused* feed. Its question is what *Tehtud*
 answers, from canonical records rather than from the audit stream.
 
+> **Amended 2026-10-13 by [ADR 0159](0159-a-department-wide-change-view-reads-state-changes-beside-tehtud.md)**
+> (owner's decision of 2026-10-13). The sentence above still holds for this
+> page: `/osakond/` carries no activity feed. The *state changes* the feed used
+> to carry and *Tehtud* does not — a `Hetkeseis` move, a hand-over, a next
+> step, a new or reopened Teema — are answered by a separate department-head
+> page, `/osakond/muudatused/`, reached from the *Tehtud* heading. *Tehtud*
+> remains the answer for outputs, and the change page reuses its numbers rather
+> than restating them. DS-25 is answered by that page.
+
 ### 8. One business fact, one definition
 
 The team table's `ARVAMUSI VÄLJA · <aasta>` Kokku cell and Aruandlus's «Saadetud

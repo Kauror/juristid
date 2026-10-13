@@ -1,0 +1,62 @@
+{% extends "reporting/base.html" %}
+{% block title %}Statistika · {{ listing.heading }} · {{ application_name }}{% endblock %}
+
+{% comment %}
+The rows behind one group of a management metric (docs/adr/0160).
+
+A day bucket, an answer that cannot be verified or a year's European Matters has
+no filter in the register, so the rows come from the observation list the number
+was taken from, under the same reporting context. The count above the table is
+the number the card or the table cell showed.
+{% endcomment %}
+
+{% block page_actions %}
+  <a class="button button--quiet" href="{{ export_url }}">Laadi CSV</a>
+{% endblock %}
+
+{% block statistics %}
+  <section aria-labelledby="loend-heading">
+    <h2 class="sectionlabel" id="loend-heading">
+      {{ listing.heading }} · {{ listing.group_label }}
+      <span class="sectionlabel__count">{{ total }}</span>
+    </h2>
+
+    {% if page.object_list %}
+      <div class="tablewrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th scope="col">Teema</th>
+              {% for column in listing.columns %}
+                <th scope="col">{{ column }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in page.object_list %}
+              <tr>
+                <td class="table__title">
+                  <a href="{% url 'matters:matter_detail' pk=row.matter_id %}">{{ row.title }}</a>
+                </td>
+                {% for cell in row.cells %}
+                  <td>{% if cell %}{{ cell }}{% else %}<span class="table__missing">—</span>{% endif %}</td>
+                {% endfor %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% include "components/pagination.html" with page=page query_string=query_string %}
+    {% else %}
+      <p class="empty">Valitud filtritega kirjeid selles rühmas ei ole.</p>
+    {% endif %}
+
+    <details class="definition">
+      <summary class="definition__summary">Kuidas arvutatakse?</summary>
+      <div class="definition__body">
+        {% include "reporting/_definition.html" with definition=metric %}
+      </div>
+    </details>
+  </section>
+{% endblock %}
