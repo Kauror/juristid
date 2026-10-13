@@ -223,13 +223,19 @@ read them.
 
 The services that run the release image move together: `web`,
 `intake-reader` and `searchindex`. The replacement command names none of
-them — it is
+them when it can — it is
 unqualified, so Compose starts what the file defines and a fourth application
 service added later moves with the other three rather than being forgotten.
 
 `db` and `tunnel` are not part of a code release. They run pinned upstream
 images, no `build:` stanza can touch them, and Compose leaves a container whose
-definition has not changed exactly where it is. So the `docker ps` check above,
+definition has not changed exactly where it is. **But theirs has changed**: since
+ENG-071 (26.09.2026) the running `db` and `tunnel` containers have not matched
+`compose.yml`'s logging settings, so an unqualified replacement would recreate
+both. That is why [`README.md`](README.md) step 9 runs a dry run first and,
+while it shows either of them being recreated, names the application services
+instead. The drift is a host fact — re-check it with that dry run on every
+release rather than trusting this paragraph. So the `docker ps` check above,
 run again afterwards, should show the three with a new image tag and a fresh
 uptime, and those two with the uptime they had before. A `db` that restarted
 during a code deployment is a question, not a detail — it is in the stop list
@@ -325,8 +331,14 @@ safer by being passed quickly.
 - `/app/GIT_SHA` in the loaded image is not `$JURISTID_GIT_SHA`
 - the migration plan holds a migration the review and the release note did not
   mention
+- the recovery fingerprint before the release is empty or not a fingerprint
 - the backup fails, or the newest set is not fresh
+- the replacement's dry run would recreate `db` or `tunnel` and the next command
+  is the unqualified one
 - `deployment_readiness` fails, or names an authenticator nobody intended
+- the fingerprint comparison after the release reports a difference the
+  migration plan does not explain (any difference at all, for a release with
+  no migration)
 - `healthz` reports a revision other than the one deployed
 - `db` or `tunnel` restarted when only the application services should have moved
 - a search-integrity or evidence-integrity check reports a finding

@@ -113,6 +113,14 @@ committed; it never lists or deletes any other session's prefix.
 
 ## Backing up
 
+**Every command in this file runs from the checkout.** The scripts are named
+`scripts/deploy/…` and the Compose file `deploy/unraid-main/compose.yml`, both
+relative to the repository root, so start every shell this file is used in with:
+
+```bash
+cd /mnt/user/appdata/juristid-main/repo
+```
+
 Written out in full, because the arguments are the safety — the project and the
 compose file are named rather than discovered, and the script refuses any
 project it does not recognise:
@@ -138,6 +146,25 @@ It produces:
     evidence.files0             which evidence objects are this set's
     legacy-source.files0        which page-XML files are this set's
 ```
+
+The script writes only those. Other things live in the same root and are **not
+part of any set**:
+
+| Path | What it is | Restorable by `juristid-restore.sh`? |
+| --- | --- | --- |
+| `fingerprints/` | recovery fingerprints taken by hand before an operation ([Fingerprinting the live system](#fingerprinting-the-live-system)) | no — they are the comparison, not the data |
+| `operator-reports/` | operator output from data operations, mode 700 | no |
+| `evidence-2026-08-21-1601/`, `*.sql.gz`, `legacy-source-*.tar.gz` | pre-set backups from August 2026, before this layout existed | no; the `.sql.gz` dumps restore by hand with `psql` |
+
+Whether the pre-set leftovers are kept, and whether they belong in an off-host
+copy, is undecided ([`OFFHOST-BACKUP.md`](OFFHOST-BACKUP.md)). Nothing here
+deletes them.
+
+The dump is of the `juristid` database only (`pg_dump --dbname=juristid`). A
+database kept beside it in the same cluster as a rollback point — the
+`juristid_pre_*` copies some data operations leave — is in no set and lives only
+in the cluster's data directory. The recovery point for such an operation is the
+set taken before it, not the copy.
 
 ### The pool is bytes; the set is membership
 
@@ -295,7 +322,7 @@ also reads the set's membership inventory and proves every path in it is a
 regular file in the pool, and that the members' sizes add up to **exactly** the
 byte total the set recorded. Exactly, not at least: the pool grows, membership
 does not — which is what lets a member truncated in place be caught by
-arithmetic rather than by hashing 7.4 GB.
+arithmetic rather than by hashing the whole pool.
 
 A pool-wide count cannot answer the second question. "The pool holds at least N
 files" is satisfiable entirely by history that has nothing to do with this set —
@@ -322,8 +349,13 @@ because that restore reads no pool (ENG-054).
 invent one for it after the fact. Those sets stay verifiable on pool counts, and
 the verifier names what it is not proving rather than passing quietly.
 
-**It hashes nothing.** The evidence tree is ~7.4 GB and a routine check that
-reads all of it is a check somebody switches off. Proving the bytes is
+**It hashes nothing.** Two sizes, which are easy to confuse: the **pool** under
+the backup root holds every object that ever existed (about 7.6 GB, 20 196
+files, measured 13.10.2026), while the **live** evidence tree and a recent set's
+membership are small (4.0 MB and 13 objects on the same day, after the
+September reset). Both are dated observations; re-measure rather than quote
+them. A routine check that reads the pool is a check somebody switches off,
+and the live tree can grow back to the old size. Proving the bytes is
 `recovery_fingerprint` without `--skip-evidence-bytes`, and that stays a
 deliberate exercise.
 
@@ -374,16 +406,84 @@ unfinished run is worth looking at, but it is not a backup.
 same script, the database and the storage trees are destroyed, the same restore
 script brings them back, and the canonical fingerprint — row counts, evidence
 byte digests, page-XML digests, migration leaves — has to match what was
-recorded before. It runs on every pull request.
+recorded before. It runs on every pull request, and on main only when
+`main-proof.yml` (or a person) dispatches `ci.yml` there; main pushes no longer
+run it by themselves.
+
+CI runs the command directly on the runner, not inside a container, so its
+`--out` and `--compare` paths are ordinary runner paths. That proves what the
+command measures. It does not prove how a file gets into or out of the
+production `web` container — which is why the commands below differ in shape
+from CI's.
 
 That proves the procedure. It does not prove any particular production set, and
 nothing except restoring one would.
 
 ### Fingerprinting the live system
 
+**The `web` container does not mount the backup root.** `compose.yml` gives it
+evidence, derivatives, page XML, the read-only corpus and the upload volume —
+nothing under `/mnt/user/backups`. So a host path handed to `--out` or
+`--compare` inside `exec` names a file the process cannot see: `--out` fails or
+writes into the container's own layer, which the next release throws away, and
+`--compare` reports that it cannot read the file. Earlier versions of this file
+printed exactly that, and a release stopped on it (2026-10-03).
+
+What works, and what every release since has run: the fingerprint goes to
+**stdout**, and the **host** shell redirects it into the host file. From the
+checkout:
+
 ```bash
-docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py recovery_fingerprint --skip-evidence-bytes --out /mnt/user/backups/juristid-main/fingerprints/fp-before-<what-you-are-about-to-do>.json
+cd /mnt/user/appdata/juristid-main/repo
 ```
+
+```bash
+mkdir -p /mnt/user/backups/juristid-main/fingerprints
+```
+
+```bash
+FP=/mnt/user/backups/juristid-main/fingerprints/fp-before-<what-you-are-about-to-do>.json
+```
+
+```bash
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py recovery_fingerprint --skip-evidence-bytes > "$FP"
+```
+
+Then prove the file is a fingerprint before relying on it — the redirect
+creates the file even when the command fails, and an empty file is not a
+fingerprint:
+
+```bash
+test -s "$FP" && grep -q '"fingerprint_version"' "$FP" && echo "fingerprint OK: $FP"
+```
+
+No `OK`, or a non-zero exit from the `exec` above: move the file aside, keep
+its error output, and stop. Never add `2>&1` to the capture — warnings would
+land inside the JSON.
+
+To compare later, hand the file to the container on **stdin**, then compare
+against the copy inside it. `-T` is what lets the redirect reach the process:
+
+```bash
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web sh -c 'cat > /tmp/fp-before.json' < "$FP"
+```
+
+```bash
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py recovery_fingerprint --skip-evidence-bytes --compare /tmp/fp-before.json
+```
+
+It prints the current fingerprint first and the verdict last; the **exit
+status** is the verdict. 0 and «Canonical state matches the earlier
+fingerprint» means identical. Non-zero names every field that moved. A
+fingerprint taken with `--skip-evidence-bytes` compares cleanly against one
+taken without it and the other way round: the evidence comparison uses the
+count, the byte total and the digest rollup the database records, never how
+hard either run looked.
+
+`/tmp` inside the container is gone when the container is replaced. Copy the
+file in again after a `up -d` that recreated `web`, and with `run --rm`, which
+starts a fresh container every time, use a mounted path instead (the rehearsal
+below does).
 
 Non-secret: counts, digests and schema state, no content and no filenames.
 
@@ -410,9 +510,9 @@ Three reasons it cannot be a property of a set, in the order they bite:
 
 So what a fingerprint is actually for is a **round trip**: take one before a
 risky operation, do the operation, take another, `--compare`. That is how the
-CI rehearsal uses it and how the two files in
-`/mnt/user/backups/juristid-main/fingerprints/` were used for the release they
-are named after. Name the file after the operation, not after "latest": a file
+CI rehearsal uses it and how the files in
+`/mnt/user/backups/juristid-main/fingerprints/` (`fp-before-release-<sha12>.json`,
+one per release) were used for the release they are named after. Name the file after the operation, not after "latest": a file
 called `latest` that is nine days old is worse than no file.
 
 What a fingerprint leaves open, and what closed it: levels 1 and 2 prove a set
@@ -478,14 +578,36 @@ the stack to use; its header carries the preparation steps, and
 `deploy/recovery-rehearsal/compose.yml` — that one is synthetic-only and
 publishes a host port. Never copy production's environment file into either.
 
+From the checkout, with the scratch root's variables exported as the stack's
+header says:
+
 ```bash
+cd /mnt/user/appdata/juristid-main/repo
 docker compose -p juristid-recovery-rehearsal -f deploy/recovery-rehearsal/compose.real-data.yml up -d --wait db
 scripts/deploy/juristid-verify-backup.sh --project juristid-recovery-rehearsal --compose-file deploy/recovery-rehearsal/compose.real-data.yml --set /mnt/user/backups/juristid-main/sets/<stamp> --backup-root /mnt/user/backups/juristid-main --level 2
-scripts/deploy/juristid-restore.sh --project juristid-recovery-rehearsal --compose-file deploy/recovery-rehearsal/compose.real-data.yml --set /mnt/user/backups/juristid-main/sets/<stamp> --backup-root /mnt/user/backups/juristid-main --data-root <scratch root>
+scripts/deploy/juristid-restore.sh --project juristid-recovery-rehearsal --compose-file deploy/recovery-rehearsal/compose.real-data.yml --set /mnt/user/backups/juristid-main/sets/<stamp> --backup-root /mnt/user/backups/juristid-main --data-root "$JURISTID_REHEARSAL_DATA_ROOT"
 docker compose -p juristid-recovery-rehearsal -f deploy/recovery-rehearsal/compose.real-data.yml run --rm -T web python manage.py deployment_readiness
-docker compose -p juristid-recovery-rehearsal -f deploy/recovery-rehearsal/compose.real-data.yml run --rm -T web python manage.py recovery_fingerprint --out /app/derivatives/fp-restored.json
+docker compose -p juristid-recovery-rehearsal -f deploy/recovery-rehearsal/compose.real-data.yml run --rm -T web python manage.py recovery_fingerprint > "$JURISTID_REHEARSAL_DATA_ROOT/fp-restored.json"
 docker compose -p juristid-recovery-rehearsal -f deploy/recovery-rehearsal/compose.real-data.yml run --rm -T web python manage.py check_evidence_integrity
 ```
+
+The fingerprint is full-bytes (no `--skip-evidence-bytes`) and goes to stdout,
+redirected into the scratch root on the host — the same shape as on production.
+
+To compare it with the fingerprint production took at the release that set
+belongs to, put that file where the rehearsal container can read it. Its
+`derivatives/` is mounted at `/app/derivatives`; `run --rm` starts a fresh
+container each time, so a copy into its `/tmp` would not survive to the next
+command:
+
+```bash
+cp /mnt/user/backups/juristid-main/fingerprints/fp-before-release-<sha12>.json "$JURISTID_REHEARSAL_DATA_ROOT/derivatives/fp-before.json"
+docker compose -p juristid-recovery-rehearsal -f deploy/recovery-rehearsal/compose.real-data.yml run --rm -T web python manage.py recovery_fingerprint --compare /app/derivatives/fp-before.json
+```
+
+That pair is "near-identical", not a proof: the release fingerprint was taken a
+minute after the set, from the live system, and anything written in that minute
+is a real difference (see the three reasons above).
 
 Then take the stack down with the volume-removing form of
 `docker compose down` — the one this runbook forbids everywhere else — and
@@ -547,6 +669,12 @@ Evidence before the database, so that the moment rows exist their bytes already
 do. The tunnel last, because an unverified restore must not be reachable.
 
 ### The steps
+
+The checkout from step 1 is the working directory for everything below:
+
+```bash
+cd /mnt/user/appdata/juristid-main/repo
+```
 
 ```bash
 install -d -m 700 /mnt/user/appdata/juristid-main/config
@@ -647,8 +775,21 @@ a missing mount, a writable source corpus, a PostgreSQL major that is too old,
 or a build that cannot say which commit it is.
 
 ```bash
-docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py recovery_fingerprint --compare /mnt/user/backups/juristid-main/fingerprints/fp-before-<the-operation>.json
+FP=/mnt/user/backups/juristid-main/fingerprints/fp-before-<the-operation>.json
 ```
+
+```bash
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web sh -c 'cat > /tmp/fp-before.json' < "$FP"
+```
+
+```bash
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py recovery_fingerprint --compare /tmp/fp-before.json
+```
+
+The file stays on the host; the container gets a copy on stdin, because it
+does not mount the backup root ([Fingerprinting the live system](#fingerprinting-the-live-system)).
+No `--skip-evidence-bytes` here: after a restore, re-hashing every object the
+database names is the point. The exit status is the verdict.
 
 The fingerprint taken **before the operation this restore is undoing** — not a
 "latest" file, and not one taken beside the backup. See
@@ -874,9 +1015,9 @@ out loud before doing it.
 
 ## Disaster recovery
 
-### Three layers, and only one of them is the Juristid backup
+### Several layers, and only one of them is the Juristid backup
 
-Three different things on this host make copies of Juristid data. They are not
+Several different things on this host make copies of Juristid data. They are not
 interchangeable, and reaching for the wrong one during an incident is the
 mistake worth naming.
 
@@ -884,7 +1025,17 @@ mistake worth naming.
 | --- | --- | --- | --- |
 | **The Juristid backup set** | `juristid-backup.sh` — the thing this file is about | `database.dump` + the evidence and page-XML mirrors, with a manifest and checksums | whenever somebody runs it |
 | **Unraid *Appdata Backup*** | a host plugin, unrelated to this repository | tar archives of the containers' appdata volumes, taken with the containers **stopped** | weekly |
+| **The KOCORP nightly USB snapshot** — INFERRED, verify on host | a host job outside this repository (`/mnt/user/appdata/kocorp-backup/run_backup.sh`, per operations notes) | rsync snapshots of `backups/`, `appdata/` — so very likely `config/juristid.env` and `cloudflared/` in plaintext — and `juristid-main/source`, onto a USB disk in the same host | nightly, about 23:30 UTC, per operations notes |
 | **The historical source corpus** | the read-only import material | the Excel register, the OneNote export, the migration audit | copied once, never since |
+
+**The USB snapshot row is not verified by this repository.** On 13.10.2026 a
+read-only look at the host found the disk's UUID present and a `last-backup-ok`
+marker dated 12.10.2026 23:49 UTC. What it copies, how long it keeps it, and
+whether a restore from it works were **not** checked. Re-verify on the host
+before relying on any of it. Even as described it is not off-host: same host,
+same room, unencrypted, writable and deletable by root, and checked by no
+Juristid tool. It does not meet the contract in
+[What an off-host copy has to satisfy](#what-an-off-host-copy-has-to-satisfy).
 
 **Only the first is a set-consistent Juristid backup.** Appdata Backup stops the
 containers and tars their volumes, so what it produces is crash-consistent in
@@ -893,15 +1044,18 @@ safety net, not this application's backup. It carries no manifest, no
 `SHA256SUMS`, no `pg_restore --list`, and nothing in this repository verifies or
 restores it. Treat it as a second chance, never as the plan.
 
-**Do not disable it.** It is currently the only thing copying some
-configuration state off the appdata tree — the tunnel credential among it — and
-until the secrets have a deliberate backup of their own, switching it off would
+**Do not disable it.** It is one of at most two things copying some
+configuration state off the appdata tree — the tunnel credential among it; the
+other is the USB snapshot above, if that is what it appears to be — and until
+the secrets have a deliberate backup of their own, switching it off would
 quietly remove a recovery path nobody replaced. Its cost is real and should be
 recorded rather than hidden: it stops `juristid-main-web` and `juristid-main-db`
 for the length of the run. In the 31.08.2026 run that was **41 minutes** —
 `juristid-main-db` stopped at 01:01:17Z and started again at 01:42:22Z — most of
-it spent tarring the ~7 GB evidence tree that the Juristid backup already
-mirrors. The plugin's cron is `00 01 * * 1` and the host runs in UTC, so the
+it spent tarring the ~7 GB evidence tree of that time. The live tree has since
+shrunk to a few MB, so the stop is probably much shorter now (INFERRED from a
+container uptime on 13.10.2026); treat 41 minutes as a historical measurement
+and re-measure before using it in a decision. The plugin's cron is `00 01 * * 1` and the host runs in UTC, so the
 window is Monday 01:00–01:45 UTC, which is 04:00–04:45 in Tallinn. (The
 plugin's own log stamps that as "04:00" — it renders local time while the host
 clock is UTC, which is worth knowing before comparing its lines against
@@ -927,9 +1081,13 @@ At the time of writing that is not a theoretical caveat. Measured on the host on
 01.09.2026, production's appdata, the Juristid backup sets, the historical source
 corpus **and** the weekly Appdata Backup destination all resolve to the same
 single physical data disk. One disk, four things that were supposed to be
-independent. Array parity protects against that disk failing; it protects
-against nothing else — not a deletion, not ransomware, not filesystem
-corruption, not the loss of the host or the room.
+independent; on 13.10.2026 they still all resolved to `/mnt/disk4`. At most,
+array parity protects against that disk failing — and **parity may no longer
+exist**: operations notes record it being removed on 10.09.2026. That is
+unverified here; check the array on the host before counting on it. If it is
+gone, one disk failure takes the data and every on-array backup together.
+Parity, where present, protects against nothing else — not a deletion, not
+ransomware, not filesystem corruption, not the loss of the host or the room.
 
 The disk layout is an observation with a date on it, not architecture: shares
 move, disks get added, and the next reader should re-check rather than trust
@@ -997,9 +1155,12 @@ repository that quietly implements those acquires policy nobody agreed to.
 physical disk.** Not merely one host: measured on 01.09.2026 and again on
 03.09.2026, production's appdata, the backup sets, the historical corpus and the
 weekly Appdata Backup destination all resolve to the same data disk. Array
-parity protects against that disk failing and against nothing else. This is the
-one that outranks everything below, and the contract a fix has to meet is in
+parity, if the array still has it (re-verify: see above), protects against that
+disk failing and against nothing else. This is the one that outranks everything
+below, and the contract a fix has to meet is in
 [What an off-host copy has to satisfy](#what-an-off-host-copy-has-to-satisfy).
+The prepared procedure is [`OFFHOST-BACKUP.md`](OFFHOST-BACKUP.md); it waits on
+an owner-approved destination.
 
 **DR1-A — a backup is taken before a deploy and never after, so there is no
 recovery point for the revision that is running.** The newest set always
@@ -1033,7 +1194,11 @@ deliberate; the point is that the runbook does not say where, so nobody can
 check, and a restore that recovers the database, the evidence and the page XML
 still cannot bring the deployment back without them. See [Secrets](#secrets).
 Naming the destination is a custody decision, which is why this file records the
-gap instead of choosing one.
+gap instead of choosing one. Still open on 13.10.2026: the only copies anybody
+can point to are probably the Appdata Backup archives and the plaintext USB
+snapshot (both INFERRED). [`OFFHOST-BACKUP.md`](OFFHOST-BACKUP.md) proposes
+escrowing the values in the Chamber's password manager, next to the off-host
+repository keys, and keeps them out of every backup set.
 
 ## Scenarios
 
@@ -1042,7 +1207,7 @@ gap instead of choosing one.
 | A | A bad application deploy. Database and evidence are fine. | Redeploy the previous reviewed commit. Minutes. |
 | B | Database corruption or loss. | Restore the newest set. Everything since that dump is gone. |
 | C | The evidence directory is lost. | Restore the evidence mirror, then `recovery_fingerprint` to prove every row's bytes came back and `check_evidence_integrity` to prove nothing came back that no row refers to. |
-| D | The whole disk or host is lost. | Needs an off-host copy. **There is not one yet.** |
+| D | The whole disk or host is lost. | Needs an off-host copy. **There is not one yet.** The procedure is prepared in [`OFFHOST-BACKUP.md`](OFFHOST-BACKUP.md) and waits on an owner-approved destination. Neither the local sets nor the CI rehearsal is an off-host copy. The owner decided on 13.10.2026 that off-host backup is not required for the current release cycle and accepted this residual risk; the procedure stays inactive. |
 | E | The Cloudflare credential is lost. | Reissue the tunnel and move the DNS route. No host port, ever, as a workaround. |
 | F | Derivatives are lost. | `rebuild_document_derivatives --all`. Slow, complete, no decision needed. |
 | G | The search projection is corrupt. | `rebuild_search_index`. It is atomic, so the previous index serves until the new one is ready. |
@@ -1079,7 +1244,8 @@ These are operations decisions, recorded rather than invented
   describes the previous release. Restoring it into the running image is safe
   only while the release in between carried no migration — see
   [What is not yet fixed](#what-is-not-yet-fixed);
-* whether the weekly Appdata Backup's ~41-minute stop is a price worth paying
+* whether the weekly Appdata Backup's stop (41 minutes when measured on
+  31.08.2026; re-measure) is a price worth paying
   weekly, and what would have to exist first — a deliberate backup of the
   configuration and tunnel credential — before it could be narrowed or switched
   off.
