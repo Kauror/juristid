@@ -1,5 +1,12 @@
 # Off-host backup — prepared procedure, destination pending owner
 
+> **Owner decision, 13.10.2026: inactive for the current release cycle.**
+> Off-host backup is **not** a release gate for Releases 0, 1 and 2. The owner
+> explicitly accepts the residual risk of losing production *and* its local
+> backups in a catastrophic host or storage failure. Nothing in this file is
+> configured or run. Every local backup, verification, recovery-fingerprint,
+> rollback and integrity requirement still applies to every release.
+
 > **Status (13.10.2026): not in use, and not usable yet.** No off-host
 > destination has been approved, so nothing here has been run against one.
 > This file is the procedure to follow once the owner has completed the

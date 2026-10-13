@@ -1207,7 +1207,7 @@ repository keys, and keeps them out of every backup set.
 | A | A bad application deploy. Database and evidence are fine. | Redeploy the previous reviewed commit. Minutes. |
 | B | Database corruption or loss. | Restore the newest set. Everything since that dump is gone. |
 | C | The evidence directory is lost. | Restore the evidence mirror, then `recovery_fingerprint` to prove every row's bytes came back and `check_evidence_integrity` to prove nothing came back that no row refers to. |
-| D | The whole disk or host is lost. | Needs an off-host copy. **There is not one yet.** The procedure is prepared in [`OFFHOST-BACKUP.md`](OFFHOST-BACKUP.md) and waits on an owner-approved destination. Neither the local sets nor the CI rehearsal is an off-host copy. |
+| D | The whole disk or host is lost. | Needs an off-host copy. **There is not one yet.** The procedure is prepared in [`OFFHOST-BACKUP.md`](OFFHOST-BACKUP.md) and waits on an owner-approved destination. Neither the local sets nor the CI rehearsal is an off-host copy. The owner decided on 13.10.2026 that off-host backup is not required for the current release cycle and accepted this residual risk; the procedure stays inactive. |
 | E | The Cloudflare credential is lost. | Reissue the tunnel and move the DNS route. No host port, ever, as a workaround. |
 | F | Derivatives are lost. | `rebuild_document_derivatives --all`. Slow, complete, no decision needed. |
 | G | The search projection is corrupt. | `rebuild_search_index`. It is atomic, so the previous index serves until the new one is ready. |
