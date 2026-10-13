@@ -25,6 +25,7 @@ from app.reporting.selectors import (
     archive,
     documents,
     historical,
+    management,
     opinions,
     organisations,
     portfolio,
@@ -133,6 +134,13 @@ COMPUTERS: dict[str, Computer] = {
     keys.RECONCILIATION_BY_CLASS: quality.reconciliation_by_class,
     keys.UNLINKED_SUBSTANTIVE_PAGES: quality.unlinked_substantive_pages,
     keys.DATA_QUALITY_ATTENTION: quality.data_quality_attention,
+    # Juhtimise statistika (docs/adr/0160)
+    keys.RESPONSE_PREPARATION_TIME: management.response_preparation_time,
+    keys.OPINIONS_ON_TIME: management.opinions_on_time,
+    keys.SUBMISSIONS_SENT_YOY_CHANGE: management.submissions_sent_yoy_change,
+    keys.EU_RELATED_MATTERS_BY_YEAR: management.eu_related_matters_by_year,
+    keys.KODA_INITIATIVES_BY_YEAR: management.koda_initiatives_by_year,
+    keys.SUBMISSIONS_SENT_BY_MONTH_AND_YEAR: management.submissions_sent_by_month_and_year,
 }
 
 _missing = set(CATALOGUE) - set(COMPUTERS)
@@ -325,6 +333,31 @@ ACTIVITY_TABLES = [
     keys.SUBMISSIONS_BY_RECIPIENT,
 ]
 
+#: How long Koda was given, and whether the answer went in time. Incoming
+#: requests only: a Chamber initiative has no `Arvamuse tähtaeg` to meet
+#: (docs/adr/0151, docs/adr/0160).
+ACTIVITY_DEADLINE_CHARTS = [
+    keys.RESPONSE_PREPARATION_TIME,
+    keys.OPINIONS_ON_TIME,
+]
+
+#: This year so far against the same stretch of last year, cut on one day.
+ACTIVITY_COMPARISONS = [
+    keys.SUBMISSIONS_SENT_YOY_CHANGE,
+]
+
+#: Canonical sending by month, one column per measured year.
+ACTIVITY_VOLUME_MATRICES = [
+    keys.SUBMISSIONS_SENT_BY_MONTH_AND_YEAR,
+]
+
+#: What each year's work was made of — European or domestic, started by the
+#: Chamber or asked of it. Each a table with its share printed beside it.
+MATTERS_COMPOSITION_MATRICES = [
+    keys.EU_RELATED_MATTERS_BY_YEAR,
+    keys.KODA_INITIATIVES_BY_YEAR,
+]
+
 HISTORICAL_CARDS = [
     keys.LEGACY_SOURCE_PAGES,
     keys.HISTORICAL_RESOURCE_OCCURRENCES,
@@ -387,6 +420,7 @@ PAGE_GROUPS: tuple[tuple[str, list[str]], ...] = (
     ("MATTERS_MATRICES", MATTERS_MATRICES),
     ("MATTERS_CHARTS", MATTERS_CHARTS),
     ("MATTERS_TABLES", MATTERS_TABLES),
+    ("MATTERS_COMPOSITION_MATRICES", MATTERS_COMPOSITION_MATRICES),
     ("ACTIVITY_CARDS", ACTIVITY_CARDS),
     ("ACTIVITY_TRENDS", ACTIVITY_TRENDS),
     ("ACTIVITY_ARCHIVE_TRENDS", ACTIVITY_ARCHIVE_TRENDS),
@@ -394,6 +428,9 @@ PAGE_GROUPS: tuple[tuple[str, list[str]], ...] = (
     ("ACTIVITY_ARCHIVE_MATRICES", ACTIVITY_ARCHIVE_MATRICES),
     ("ACTIVITY_CHARTS", ACTIVITY_CHARTS),
     ("ACTIVITY_TABLES", ACTIVITY_TABLES),
+    ("ACTIVITY_DEADLINE_CHARTS", ACTIVITY_DEADLINE_CHARTS),
+    ("ACTIVITY_COMPARISONS", ACTIVITY_COMPARISONS),
+    ("ACTIVITY_VOLUME_MATRICES", ACTIVITY_VOLUME_MATRICES),
     ("HISTORICAL_CARDS", HISTORICAL_CARDS),
     ("HISTORICAL_CHARTS", HISTORICAL_CHARTS),
     ("HISTORICAL_TABLES", HISTORICAL_TABLES),
@@ -409,6 +446,7 @@ def matters_page(context: ReportingContext) -> Page:
         matrices=compute_many(MATTERS_MATRICES, context),
         charts=compute_many(MATTERS_CHARTS, context),
         tables=compute_many(MATTERS_TABLES, context),
+        groups={"composition_matrices": compute_many(MATTERS_COMPOSITION_MATRICES, context)},
     )
 
 
@@ -422,7 +460,10 @@ def activity_page(context: ReportingContext) -> Page:
             "archive_trends": compute_many(ACTIVITY_ARCHIVE_TRENDS, context),
             "archive_charts": compute_many(ACTIVITY_ARCHIVE_CHARTS, context),
             "archive_matrices": compute_many(ACTIVITY_ARCHIVE_MATRICES, context),
+            "deadline_charts": compute_many(ACTIVITY_DEADLINE_CHARTS, context),
+            "volume_matrices": compute_many(ACTIVITY_VOLUME_MATRICES, context),
         },
+        comparisons=compute_many(ACTIVITY_COMPARISONS, context),
     )
 
 

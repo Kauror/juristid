@@ -1,0 +1,50 @@
+{% comment %}
+  One list of Lovable rows by match class. A matched row links its Matter —
+  which the reader can read, because matching ran over their visible population
+  only — and sets each catalogued field beside the canonical value. Only
+  COMPARABLE fields can show «Erineb»; the rest are for reading.
+{% endcomment %}
+<h2 class="sectionlabel" id="{{ anchor }}">{{ title }} <span class="sectionlabel__count">{{ rows|length }}</span></h2>
+{% if not rows %}
+<p class="empty">Ei ole.</p>
+{% else %}
+<div class="tablewrap">
+  <table class="table table--mirror">
+    <caption class="visually-hidden">{{ title }}</caption>
+    <thead>
+      <tr>
+        <th scope="col">NR</th>
+        <th scope="col">Teema (Lovable)</th>
+        <th scope="col">Seos</th>
+        <th scope="col">Väljad</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in rows|slice:":200" %}
+        <tr>
+          <td class="mono table__nr">{{ item.row.key|default:"—" }}</td>
+          <td>{{ item.row.title|default:"—" }}</td>
+          <td>
+            {% if item.matter %}
+              <a class="table__nr" href="{% url 'matters:matter_detail' pk=item.matter.pk %}">{{ item.matter.display_reference }}</a>
+            {% else %}
+              {{ item.match_label }}
+            {% endif %}
+            <span class="muted">{{ item.reason_label }}</span>
+          </td>
+          <td>
+            {% for comparison in item.comparisons %}
+              {% if not conflicts_only or comparison.outcome == "DIFFERENT" %}
+                <span class="mono">{{ comparison.field }}</span>
+                <span class="muted">{{ comparison.label }} · {{ comparison.outcome_label }}</span>:
+                Lovable {{ comparison.source|default:"—" }} · Juristid {{ comparison.canonical|default:"—" }}<br>
+              {% endif %}
+            {% empty %}—{% endfor %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% if rows|length > 200 %}<p class="cardnote">Kuvatud 200 rida {{ rows|length }}-st.</p>{% endif %}

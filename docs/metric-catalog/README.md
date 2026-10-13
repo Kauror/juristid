@@ -43,7 +43,12 @@ Each metric file records:
    shows *insufficient data* rather than a precise-looking figure.
 2. **Every metric drills through.** Clicking a number opens the exact records
    the viewer is authorized to see, through the same authorization chokepoint as
-   any other read.
+   any other read. Every population is real data only, so every link into the
+   Teemad register carries `andmed=paris` (`register_url`); the register's own
+   default shows TEST Matters too. A share, a sum or a "how many of them have X"
+   links to the population it was measured over, and is compared with that
+   population rather than with the figure
+   (`tests/test_reporting_drillthrough_data_scope.py`).
 3. **Authorization is not applied after aggregation.** Counts are computed over
    the scoped queryset.
 4. **Era boundaries are visible.** A trend line may not silently span a schema
@@ -249,6 +254,42 @@ asks a different question: how much of the corpus is placed at all.
 
 An unlinked archive file is never called a missing opinion. It is evidence Koda
 holds that has not yet been tied to a Teema.
+
+## Management statistics (docs/adr/0160)
+
+Six definitions answer the questions a department head brings to a year. Two
+rules are new and worth stating here.
+
+**A ratio names its numerator and its denominator.** `MetricDefinition` gained
+`numerator_et` and `denominator_et`, rendered as *Lugeja* and *Nimetaja*. A share
+whose denominator has to be read out of a description is a share two readers
+compute differently.
+
+**A deadline is judged as it stood when the letter went.** `OPINIONS_ON_TIME`
+reads the `Arvamuse tähtaeg` history (docs/adr/0135). Where the history cannot
+prove which deadline was in force at sending — it changed or was recorded after
+the send, it predates the history, or the answer was withdrawn — the answer is
+*not verifiable*: counted and listed, never in the percentage, and never judged
+against today's revised date. A Chamber initiative (`Koja algatus`) is not an
+incoming request and is excluded from both deadline metrics, with the excluded
+count on the card.
+
+The groups no register filter can express open `/statistika/loend/`, which pages
+the observation list the number was computed from.
+
+**ELiga seotud has two bases, `Õigusakt` first.** `EU_RELATED_MATTERS_BY_YEAR`
+counts a Matter as European on its instrument group, or — only when that group
+is unclassified — on its `Menetlusliik` («ELi algatus», «ELi õiguse
+ülevõtmine»). The two bases are separate columns and every Matter is in exactly
+one. The historical «EL teatis» counts as EU-related on the `Õigusakt` basis for
+statistics only (owner's decision 2026-10-13; still retired for capture) and is
+shown as its own «sh …» subset with its own list. The share does not measure
+every domestic matter influenced by EU law.
+
+**Every new card states its coverage on the card** («Katvus: …»), and every
+drill-through — the Statistika list, the submission list, both CSVs, and any
+register link (which carries `andmed=paris`) — opens the same real-data,
+reader-visible population the number counted.
 
 ## Owner
 
