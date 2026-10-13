@@ -82,7 +82,9 @@ def test_the_list_buckets_and_precision(page, base_url):
     expect(undated).to_contain_text("rakendusmäärus")
     expect(undated).to_contain_text("Jõustub üldises korras")
     expect(results(page)).to_contain_text("osad sätted")
-    expect(page.locator(".jcover")).to_contain_text("Kuupäevi ei tuletata pealkirjast")
+    expect(page.locator(".jcover:not([data-status-scope])")).to_contain_text(
+        "Kuupäevi ei tuletata pealkirjast"
+    )
 
 
 def test_a_restricted_commencement_reaches_only_those_who_may_read_it(page, base_url):
@@ -120,3 +122,21 @@ def test_the_calendar_fits_a_phone(page, base_url):
 
     expect(page.locator(".jcal")).to_be_visible()
     assert not document_overflows(page)
+
+
+def test_the_view_says_which_statuses_it_shows_and_narrows_on_request(page, base_url):
+    """No `?olek=`: open and closed files, said in words; the link narrows to
+    open files and writes `olek=avatud` into the address (docs/adr/0158 §2)."""
+    sign_in(page, base_url, MARTIN)
+    page.goto(f"{base_url}/teemad/?joustumine=on&vaade=joustumised")
+
+    scope = page.locator("[data-status-scope]")
+    expect(scope).to_contain_text("Kuvatud: avatud ja suletud teemad")
+    expect(scope).to_contain_text("jõustumiste vaikimisi valik")
+    expect(page.locator('nav[aria-label="Kirje seis"] .is-active')).to_contain_text("Kõik")
+
+    scope.get_by_role("link", name="näita ainult avatud").click()
+    page.wait_for_load_state("networkidle")
+    assert "olek=avatud" in page.url
+    assert "vaade=joustumised" in page.url
+    expect(page.locator("[data-status-scope]")).to_contain_text("Kuvatud: ainult avatud teemad")

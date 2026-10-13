@@ -63,10 +63,40 @@ The view hands `app/intelligence/commencements.py` the register's own queryset
 every dimension — as a subquery of primary keys. *Vastutaja* and *Valdkond* are
 therefore the register's own `?vastutaja=` and `?valdkond=`, chosen in Täpsem
 otsing or from the Vastutaja heading, and shown as chips; no new filter
-parameter exists. The status segment applies too: the register opens on
-*Avatud*, so the view says «Näidatakse avatud teemasid — kuva kõik olekud»
-while it does (a commencement often lands after the department closed its
-file; the retired-page redirect already carries `olek=koik`).
+parameter exists. The status segment applies too, with one difference of
+default — see *The status default* below.
+
+#### The status default (owner's final-readiness decision, 2026-10-13)
+
+A commencement often lands after the department has closed its file, so a
+commencement presentation opened on *Avatud* hid exactly the dates people come
+to it for. Corrected by the owner's final-readiness decision, 2026-10-13:
+
+* **Under `?vaade=joustumised` or `?vaade=kalender`, an address with no
+  `?olek=` shows open and closed files** (`koik`). The ordinary register —
+  bare `/teemad/`, and the Matter table under a Jõustumine filter — keeps its
+  `avatud` default, unchanged.
+* **Default versus chosen is the presence of `?olek=` in the address.** Any
+  `olek`, including `olek=avatud`, is the reader's choice and is honoured
+  exactly; no `olek` is the default. Nothing is written into the address on the
+  reader's behalf, so a shared link means the same for everybody
+  (`commencements.status_scope`).
+* **The scope is always said.** Above the coverage note: «Kuvatud: avatud ja
+  suletud teemad (jõustumiste vaikimisi valik) · näita ainult avatud», or
+  «Kuvatud: ainult avatud teemad · näita avatud ja suletud teemasid» when a
+  status was chosen. The link writes `?olek=` out. The status segments light
+  *Kõik* under the default, so the segments and the caption agree.
+* **One population across the switch.** Leaving a defaulted presentation for
+  the Matter table writes `olek=koik` into that link, so the same click does not
+  silently drop the closed files. The coverage link («N teemal … jõustumist
+  kirjas ei ole») carries the view's status for the same reason.
+* Filter semantics (containment), chips, `Tühjenda kõik` and authorization are
+  unchanged. Closed Matters are read through the same `visible_to` scope as
+  open ones; a restricted closed Matter, or a restricted record on a readable
+  one, stays out of rows, counts and the calendar.
+
+ADR 0071 sets no status default for the register and its redirect already
+carries `olek=koik`; this correction does not touch it.
 
 Every presentation parameter (`vaade`, `kuu`, `joustumiste_jarjestus`) is in
 the URL, carried by the live search box, the status segments and the
@@ -108,6 +138,16 @@ Every date is written by `display_when` / `format_at_precision`: «III kvartal
 Past rows appear whenever the population has them; a window starting today or
 later has none.
 
+**A long bucket is bounded; its count is not** (Round 2, 2026-10-13). Each
+bucket shows at most 100 rows (`commencements.BUCKET_LIMIT`) in the chosen
+order; its heading keeps the exact count, and «Näidatud 100 / N — näita kõiki N»
+opens that bucket whole at `?joustumised_koik=<bucket>`, an address like any
+other (dropped by `Tühjenda kõik` and by the switch). Measured on synthetic
+data with an ANALYZEd local PostgreSQL 18: unbounded, 1,500 active
+commencements were 1.2 MB of HTML in 0.77 s and 5,000 were 4.0 MB in 2.5 s;
+bounded, 0.29 MB in 0.47 s and 0.32 MB in 0.85 s. 29 statements at every
+scale — the bound is applied in Python over rows already read.
+
 **The calendar** (Monday first) places a day — `EXACT` or `INFERRED` — on its
 cell. A `MONTH` row recorded for the shown month is listed above the grid as
 «Kuu jooksul, päev teadmata». A quarter, half-year or year that overlaps the
@@ -142,10 +182,11 @@ asjad or is «üle aja». The view only reads.
   is active, and then only the switch is added above the unchanged table. No
   new query runs on the ordinary page (`_commencement_context` returns before
   reading anything).
-* Under the view, the page reads the commencement rows once (bounded by the
-  department's commencement records — hundreds, not the register) plus one
-  coverage `COUNT`. The Matter page of the register is still computed for the
-  count line.
+* Under the view, the page reads the commencement rows once plus one coverage
+  `COUNT`; the statement count does not grow with the rows (29 at 20, 1,500
+  and 5,000 commencements). The Matter page of the register is still computed
+  for the count line. The list renders at most 100 rows a bucket unless one
+  bucket is asked for whole; the calendar renders only the shown month.
 * No migration, no new model, no index, no search-index change, no URL route,
   no navigation item. `app/intelligence/commencements.py` is the read-only
   selector module; `app/matters/views.py` wires it into `matter_list`.
@@ -168,4 +209,6 @@ precision is already visible on every row.
 
 **Paginating the commencement list.** The register pages Matters; paging
 commencements by a Matter-sized page would split one file's stages across
-pages. The population is small enough to render whole.
+pages, and a page boundary across buckets would hide which bucket a row is
+in. The per-bucket bound above was chosen instead: every bucket's count stays
+exact and visible, and the rest of a bucket is one click away.

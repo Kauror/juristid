@@ -1488,7 +1488,12 @@ COMMENCEMENT_COVERAGE_NOTE = (
 
 
 def _commencement_context(
-    request: HttpRequest, params: Any, queryset: Any, before_status: Any
+    request: HttpRequest,
+    params: Any,
+    queryset: Any,
+    before_status: Any,
+    status: str = "avatud",
+    status_defaulted: bool = True,
 ) -> dict[str, Any]:
     """The register's Jõustumised presentation, when one is asked for.
 
@@ -1502,6 +1507,12 @@ def _commencement_context(
     ``before_status`` is the searched but otherwise unfiltered population, from
     which the coverage figure asks the register's own question: the same
     narrowing, with ``?joustumine=puudub`` instead of the commencement filter.
+
+    ``status`` is the status the register was filtered by and
+    ``status_defaulted`` whether the reader left it unchosen
+    (`commencements.status_scope`). Under a presentation the unchosen status is
+    `koik`, so the switch back to the Matter table writes it out: the three
+    readings of one register keep one population.
     """
     if not commencements.presentation_available(params):
         return {}
@@ -1515,12 +1526,23 @@ def _commencement_context(
                 params,
                 **{
                     commencements.VIEW_PARAM: key or None,
+                    # Leaving a presentation that defaulted to every status:
+                    # the table would otherwise fall back to `avatud` and the
+                    # same click would silently drop the closed files.
+                    "olek": (
+                        status if not key and status_defaulted and view else params.get("olek")
+                    ),
                     # The month and the list's order are the presentation's
                     # own; leaving them behind on the Matter table would be
                     # parameters nothing on that page reads.
                     commencements.MONTH_PARAM: None,
                     commencements.SORT_PARAM: (
                         params.get(commencements.SORT_PARAM)
+                        if key == commencements.VIEW_LIST
+                        else None
+                    ),
+                    commencements.EXPAND_PARAM: (
+                        params.get(commencements.EXPAND_PARAM)
                         if key == commencements.VIEW_LIST
                         else None
                     ),
@@ -1541,6 +1563,9 @@ def _commencement_context(
     for name in (*COMMENCEMENT_DIMENSIONS, *commencements.PRESENTATION_PARAMS, "leht"):
         missing_params.pop(name, None)
     missing_params[register_filters.COMMENCEMENT_PARAM] = register_filters.FACT_ABSENT
+    # The same status as the rows above it, written out: the link opens the
+    # Matter table, whose own default would be `avatud`.
+    missing_params["olek"] = status
     missing = _count_matters(
         register_filters.apply_register_filters(before_status, request.user, missing_params)[0]
     )
@@ -1550,10 +1575,18 @@ def _commencement_context(
             "note": COMMENCEMENT_COVERAGE_NOTE,
             "missing": missing,
             "missing_query": missing_params.urlencode(),
-            # The register opens on open files, and so does this. A
-            # commencement often lands after the department closed its file,
-            # so the wider status is offered rather than silently assumed.
-            "open_only": params.get("olek", "avatud") == "avatud",
+        },
+        # Which files are in the view, by status, always said: the default
+        # here (`koik`) is not the register's (`avatud`), so a reader must not
+        # have to infer it from the segments (docs/adr/0158 §2). One link
+        # narrows or widens it, writing `?olek=` explicitly.
+        "commencement_status": {
+            "label": commencements.STATUS_SCOPE_LABELS.get(
+                status, commencements.STATUS_SCOPE_LABELS["koik"]
+            ),
+            "is_default": status_defaulted,
+            "all": status not in ("avatud", "suletud", "arhiiv"),
+            "open_query": register_filters.register_query(params, olek="avatud"),
             "all_query": register_filters.register_query(params, olek="koik"),
         },
     }
@@ -1566,7 +1599,19 @@ def _commencement_context(
             else commencements.SORT_DATE
         )
         context |= {
-            "commencement_buckets": commencements.bucketed(records, day=day, sort=sort),
+            # Bounded per bucket, counts exact (docs/adr/0158 §4, measured
+            # 2026-10-13). The bound is in Python over rows already read, so the
+            # query count does not move with the number of commencements.
+            "commencement_buckets": commencements.bucketed(
+                records,
+                day=day,
+                sort=sort,
+                limit=commencements.BUCKET_LIMIT,
+                expanded=(params.get(commencements.EXPAND_PARAM) or "").strip(),
+                expand_query=lambda key: register_filters.register_query(
+                    params, **{commencements.EXPAND_PARAM: key}
+                ),
+            ),
             "commencement_sort": sort,
             "commencement_sort_date_query": register_filters.register_query(
                 params, **{commencements.SORT_PARAM: next_date_sort}
@@ -1667,13 +1712,26 @@ def matter_list(request: HttpRequest) -> HttpResponse:
     # register and the KPI above it therefore cannot disagree about what
     # "Arvamusi koostamisel" means — there is one definition, in one place
     # (app/matters/register_filters.py).
-    status = params.get("olek", "avatud")
+    #
+    # The status has two defaults and the address says which applies: with no
+    # `?olek=`, the register opens on `avatud` and a commencement presentation
+    # on `koik` (docs/adr/0158 §2). `status_params` is the address with that
+    # default written in, read wherever the *population* is decided; `params`
+    # stays what the reader actually has, so every link built from it keeps
+    # «not chosen» as not chosen.
+    status, status_defaulted = commencements.status_scope(params)
+    status_params: Any = params
+    if status_defaulted and status != "avatud":
+        status_params = params.copy()
+        status_params["olek"] = status
     scope = params.get("ulatus", "koik")
     # Held before the status filter narrows it, so an empty answer can ask the
     # one further question that is worth asking: «are the matches simply in
     # another status» (`_matches_elsewhere`, QA-019). Nothing is evaluated here.
     before_status = queryset
-    queryset, date_echo = register_filters.apply_register_filters(queryset, request.user, params)
+    queryset, date_echo = register_filters.apply_register_filters(
+        queryset, request.user, status_params
+    )
 
     # The database orders, and it orders before the page boundary is drawn. A
     # sort applied to `page.object_list` would order the twenty-five rows that
@@ -1728,12 +1786,14 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         # page number the smaller size no longer has.
         "page_size": page_size_key,
         "page_size_options": _page_size_options(params, page_size_key),
-        "status_options": _status_options(request, params),
+        "status_options": _status_options(request, status_params),
         # `None` unless the page is empty *and* a status filter is narrowing —
         # the one case where the register knows something useful it was not
         # asked. One extra `COUNT(*)`, never on a page with rows.
         "matches_elsewhere": (
-            _matches_elsewhere(request, params, before_status) if not page.object_list else None
+            _matches_elsewhere(request, status_params, before_status)
+            if not page.object_list
+            else None
         ),
         "elsewhere_hint": ELSEWHERE_HINT,
         "active_filters": chips,
@@ -1800,7 +1860,7 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         # a page of its own (docs/adr/0158). Inside the fragment, because the
         # switch and the calendar sit in the results region a keystroke in the
         # search box replaces. Empty unless a Jõustumine filter is active.
-        **_commencement_context(request, params, queryset, before_status),
+        **_commencement_context(request, params, queryset, before_status, status, status_defaulted),
     }
 
     if _wants_fragment(request):

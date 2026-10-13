@@ -18,7 +18,9 @@ import datetime
 from urllib.parse import parse_qs
 
 import pytest
+from django.db import connection
 from django.http import QueryDict
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
@@ -318,17 +320,134 @@ def test_responsible_lawyer_and_policy_area_narrow_the_commencements(
     assert every_description(by_area) == ["minu"]
 
 
-def test_the_register_status_still_applies(signed_in):
-    closed = factories.MatterFactory(
-        is_open=False, disposition=Disposition.COMPLETED, closed_at=timezone.now()
+def closed_matter(**extra):
+    return factories.MatterFactory(
+        is_open=False, disposition=Disposition.COMPLETED, closed_at=timezone.now(), **extra
     )
-    commence(closed, datetime.date(2027, 1, 1), description="suletud teema")
 
-    open_only = signed_in.get(REGISTER, {"joustumine": "on", "vaade": "joustumised"})
-    assert every_description(open_only) == []
-    assert open_only.context["commencement_coverage"]["open_only"] is True
 
-    assert every_description(listing(signed_in)) == ["suletud teema"]
+def active_statuses(response) -> list[str]:
+    return [option["key"] for option in response.context["status_options"] if option["active"]]
+
+
+@pytest.mark.parametrize("view", ["joustumised", "kalender"])
+def test_a_commencement_view_opens_on_open_and_closed_files(signed_in, view):
+    """No `?olek=`: a commencement view shows closed files too (owner's
+    final-readiness decision, 2026-10-13; docs/adr/0158 §2)."""
+    commence(factories.MatterFactory(), datetime.date(2027, 1, 4), description="avatud teema")
+    commence(closed_matter(), datetime.date(2027, 1, 5), description="suletud teema")
+
+    response = signed_in.get(REGISTER, {"joustumine": "on", "vaade": view, "kuu": "2027-01"})
+
+    assert response.context["commencement_total"] == 2
+    assert response.context["total"] == 2
+    scope = response.context["commencement_status"]
+    assert scope["is_default"] is True
+    assert scope["all"] is True
+    body = response.content.decode()
+    assert "Kuvatud: <strong>avatud ja suletud teemad</strong>" in body
+    assert "(jõustumiste vaikimisi valik)" in body
+    assert "suletud teema" in body
+    # The narrowing link writes the status out and keeps the view.
+    narrowed = parse_qs(scope["open_query"])
+    assert narrowed["olek"] == ["avatud"]
+    assert narrowed["vaade"] == [view]
+    # The segments say what the caption says.
+    assert active_statuses(response) == ["koik"]
+    # And nothing was written into the reader's address: the search box still
+    # carries the address as it is, so the default stays a default.
+    assert "olek" not in dict(response.context["carried_params"])
+
+
+@pytest.mark.parametrize("view", ["joustumised", "kalender"])
+@pytest.mark.parametrize(
+    ("olek", "expected", "label"),
+    [
+        ("avatud", ["lahtise kirje"], "ainult avatud teemad"),
+        ("suletud", ["lõpetatud kirje"], "ainult suletud teemad"),
+        ("koik", ["lahtise kirje", "lõpetatud kirje"], "avatud ja suletud teemad"),
+    ],
+)
+def test_an_explicit_status_is_honoured(signed_in, view, olek, expected, label):
+    commence(factories.MatterFactory(), datetime.date(2027, 1, 4), description="lahtise kirje")
+    commence(closed_matter(), datetime.date(2027, 1, 5), description="lõpetatud kirje")
+
+    response = signed_in.get(
+        REGISTER, {"joustumine": "on", "vaade": view, "kuu": "2027-01", "olek": olek}
+    )
+
+    body = response.content.decode()
+    for description in ("lahtise kirje", "lõpetatud kirje"):
+        assert (description in body) is (description in expected), description
+    assert response.context["commencement_total"] == len(expected)
+    scope = response.context["commencement_status"]
+    assert scope["is_default"] is False
+    assert scope["label"] == label
+    assert "(jõustumiste vaikimisi valik)" not in body
+    if olek != "koik":
+        assert parse_qs(scope["all_query"])["olek"] == ["koik"]
+        assert "näita avatud ja suletud teemasid" in body
+    assert active_statuses(response) == [olek]
+
+
+def test_the_register_default_is_still_open_files(signed_in):
+    """The ordinary register — bare, under a Jõustumine filter, and with a
+    stray `?vaade=` — keeps `avatud` when no `?olek=` is given."""
+    commence(factories.MatterFactory(title="Avatud"), datetime.date(2027, 1, 4))
+    commence(closed_matter(title="Suletud"), datetime.date(2027, 1, 5))
+
+    for params in ({}, {"joustumine": "on"}, {"vaade": "joustumised"}):
+        response = signed_in.get(REGISTER, params)
+        assert [m.title for m in response.context["page"].object_list] == ["Avatud"], params
+        assert response.context["filters"]["olek"] == "avatud"
+        assert active_statuses(response) == ["avatud"]
+        assert "commencement_status" not in response.context
+
+    assert commencements.status_scope(QueryDict("")) == ("avatud", True)
+    assert commencements.status_scope(QueryDict("joustumine=on")) == ("avatud", True)
+    assert commencements.status_scope(QueryDict("vaade=kalender")) == ("avatud", True)
+    assert commencements.status_scope(QueryDict("joustumine=on&vaade=kalender")) == (
+        "koik",
+        True,
+    )
+    assert commencements.status_scope(QueryDict("joustumine=on&vaade=kalender&olek=avatud")) == (
+        "avatud",
+        False,
+    )
+
+
+def test_leaving_a_defaulted_view_keeps_its_population(signed_in):
+    """The switch back to the Matter table writes the status out, so the same
+    click does not silently drop the closed files. Between the two
+    presentations «not chosen» stays not chosen, and a chosen status travels."""
+    response = signed_in.get(REGISTER, {"joustumine": "on", "vaade": "joustumised"})
+    switch = {o["label"]: parse_qs(o["query"]) for o in response.context["commencement_switch"]}
+    assert switch["Teemad"]["olek"] == ["koik"]
+    assert "olek" not in switch["Jõustumiste kalender"]
+
+    explicit = signed_in.get(
+        REGISTER, {"joustumine": "on", "vaade": "joustumised", "olek": "avatud"}
+    )
+    switch = {o["label"]: parse_qs(o["query"]) for o in explicit.context["commencement_switch"]}
+    assert switch["Teemad"]["olek"] == ["avatud"]
+    assert switch["Jõustumiste kalender"]["olek"] == ["avatud"]
+
+
+def test_the_coverage_figure_follows_the_view_status(signed_in):
+    commence(factories.MatterFactory(), datetime.date(2027, 1, 4))
+    factories.MatterFactory(title="Avatud, kirjeta")
+    closed_matter(title="Suletud, kirjeta")
+
+    defaulted = signed_in.get(REGISTER, {"joustumine": "on", "vaade": "joustumised"})
+    coverage = defaulted.context["commencement_coverage"]
+    assert coverage["missing"] == 2
+    # The link opens the Matter table, whose own default would be `avatud`.
+    assert parse_qs(coverage["missing_query"])["olek"] == ["koik"]
+
+    open_only = signed_in.get(
+        REGISTER, {"joustumine": "on", "vaade": "joustumised", "olek": "avatud"}
+    )
+    assert open_only.context["commencement_coverage"]["missing"] == 1
 
 
 def test_the_coverage_note_counts_the_files_without_a_record(signed_in):
@@ -390,6 +509,37 @@ def test_a_restricted_matters_commencements_never_reach_a_non_participant(client
     assert response.context["commencement_total"] == 0
     assert response.context["commencement_coverage"]["missing"] == 0
     assert "peidus" not in response.content.decode()
+
+
+@pytest.mark.parametrize("view", ["joustumised", "kalender"])
+def test_a_closed_restricted_matter_stays_hidden_under_the_wider_default(client, reader, view):
+    """Widening the default status to closed files widens nothing about who may
+    read them: a restricted closed Matter's commencements, and a restricted
+    record on a readable closed Matter, stay out of rows, counts and the
+    calendar."""
+    hidden = closed_matter(title="Salajane suletud", visibility=Visibility.RESTRICTED)
+    commence(hidden, datetime.date(2027, 1, 4), description="peidus suletud")
+    readable = closed_matter(title="Loetav suletud")
+    commence(readable, datetime.date(2027, 1, 5), description="loetav kirje")
+    commence(
+        readable,
+        datetime.date(2027, 1, 6),
+        description="piiratud kirje",
+        visibility_override=Visibility.RESTRICTED,
+    )
+    client.force_login(reader)
+
+    response = client.get(REGISTER, {"joustumine": "on", "vaade": view, "kuu": "2027-01"})
+
+    assert response.context["commencement_status"]["is_default"] is True
+    assert response.context["commencement_total"] == 1
+    assert response.context["total"] == 1
+    assert response.context["commencement_coverage"]["missing"] == 0
+    body = response.content.decode()
+    assert "loetav kirje" in body
+    assert "peidus suletud" not in body
+    assert "Salajane suletud" not in body
+    assert "piiratud kirje" not in body
 
 
 def test_a_participant_sees_their_own_restricted_commencement(client, specialist):
@@ -637,3 +787,94 @@ def test_tallinn_decides_what_today_is(monkeypatch):
     monkeypatch.setattr(timezone, "now", lambda: instant)
 
     assert commencements.today() == datetime.date(2027, 2, 1)
+
+
+# ---------------------------------------------------------------------------
+# H. a long bucket is bounded; its count is not (Round 2, measured 2026-10-13)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def small_buckets(monkeypatch):
+    monkeypatch.setattr(commencements, "BUCKET_LIMIT", 3)
+    return 3
+
+
+def later_rows(count: int) -> None:
+    for number in range(count):
+        commence(
+            factories.MatterFactory(title=f"Hilisem {number:02d}"),
+            datetime.date(2027, 3, 1) + datetime.timedelta(days=number),
+            description=f"hiljem {number:02d}",
+        )
+
+
+def test_a_long_bucket_shows_its_first_rows_and_its_exact_count(signed_in, small_buckets):
+    later_rows(5)
+
+    response = listing(signed_in)
+    (bucket,) = response.context["commencement_buckets"]
+
+    assert bucket.key == commencements.BUCKET_LATER
+    assert bucket.total == 5
+    assert [e.record.description for e in bucket.entries] == [
+        "hiljem 00",
+        "hiljem 01",
+        "hiljem 02",
+    ]
+    assert response.context["commencement_total"] == 5
+    body = response.content.decode()
+    assert '<span class="sectionlabel__count">· 5</span>' in body
+    assert "Näidatud 3 / 5" in body
+    expand = parse_qs(bucket.expand_query)
+    assert expand[commencements.EXPAND_PARAM] == [commencements.BUCKET_LATER]
+    assert expand["joustumine"] == ["on"]
+    assert expand["vaade"] == ["joustumised"]
+
+
+def test_the_whole_bucket_is_one_address_away(signed_in, small_buckets):
+    later_rows(5)
+    commence(factories.MatterFactory(), None, description="teadmata 1")
+
+    response = listing(signed_in, **{commencements.EXPAND_PARAM: commencements.BUCKET_LATER})
+    buckets = {bucket.key: bucket for bucket in response.context["commencement_buckets"]}
+
+    assert len(buckets[commencements.BUCKET_LATER].entries) == 5
+    assert not buckets[commencements.BUCKET_LATER].truncated
+    assert "Näidatud" not in response.content.decode()
+    # Tühjenda kõik and the switch to the calendar drop it like every other
+    # presentation parameter.
+    assert response.context["cleared_query"] == ""
+    switch = {o["label"]: parse_qs(o["query"]) for o in response.context["commencement_switch"]}
+    assert commencements.EXPAND_PARAM not in switch["Jõustumiste kalender"]
+    assert commencements.EXPAND_PARAM not in switch["Teemad"]
+
+
+def test_the_bound_follows_the_chosen_order(signed_in, small_buckets):
+    later_rows(5)
+
+    response = listing(signed_in, joustumiste_jarjestus="kuupaev_desc")
+    (bucket,) = response.context["commencement_buckets"]
+
+    assert [e.record.description for e in bucket.entries] == [
+        "hiljem 04",
+        "hiljem 03",
+        "hiljem 02",
+    ]
+
+
+@pytest.mark.parametrize("view", ["joustumised", "kalender"])
+def test_the_query_count_does_not_grow_with_the_commencements(
+    signed_in, small_buckets, django_assert_max_num_queries, view
+):
+    """Rows are read once and bucketed, bounded and placed in Python; ten times
+    the commencements costs not one more statement."""
+    params = {"joustumine": "on", "vaade": view, "kuu": "2027-03"}
+    later_rows(2)
+    signed_in.get(REGISTER, params)
+    with CaptureQueriesContext(connection) as few:
+        signed_in.get(REGISTER, params)
+    later_rows(20)
+    with django_assert_max_num_queries(len(few.captured_queries)):
+        response = signed_in.get(REGISTER, params)
+    assert response.context["commencement_total"] == 22

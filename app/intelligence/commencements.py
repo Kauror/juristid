@@ -85,11 +85,23 @@ SORT_DATE_DESC = "kuupaev_desc"
 SORT_MATTER = "teema"
 SORT_CHOICES = (SORT_DATE, SORT_DATE_DESC, SORT_MATTER)
 
+#: The list shows at most this many rows per bucket unless the reader asks for
+#: one bucket whole. Measured, not guessed (Round 2, 2026-10-13): 1,500 active
+#: commencements rendered whole were 1.2 MB of HTML and 0.8 s; 5,000 were 4 MB
+#: and 2.5 s. A hundred rows a bucket keeps the page under half a megabyte at
+#: any scale, and every bucket heading still carries its exact count.
+BUCKET_LIMIT = 100
+
+#: ``?joustumised_koik=<bucket key>`` — that one bucket in full. One bucket at
+#: a time: it is the reader's own request for a long page, made where they can
+#: see how long.
+EXPAND_PARAM = "joustumised_koik"
+
 #: Every parameter that steers the presentation rather than the population.
 #: Dropped by `Tühjenda kõik`, and dropped by a chip's `×` when that chip was
 #: the last Jõustumine filter — a view switch with no commencement filter
 #: behind it would be a word in the address that nothing reads.
-PRESENTATION_PARAMS = (VIEW_PARAM, MONTH_PARAM, SORT_PARAM)
+PRESENTATION_PARAMS = (VIEW_PARAM, MONTH_PARAM, SORT_PARAM, EXPAND_PARAM)
 
 #: How far ahead the first bucket reaches, both ends inclusive.
 SOON_DAYS = 30
@@ -164,6 +176,49 @@ def requested_view(params: Any) -> str:
     return value if value in (VIEW_LIST, VIEW_CALENDAR) else ""
 
 
+#: The register's status parameter and its own default (`register_filters.status_q`).
+STATUS_PARAM = "olek"
+REGISTER_DEFAULT_STATUS = "avatud"
+
+#: What a commencement presentation opens on when the reader has not chosen a
+#: status: open *and* closed files. A commencement is a fact about the act, and
+#: it very often lands after the department has closed its file — opening the
+#: list on `avatud` hid exactly the dates people come to it for. Owner's
+#: final-readiness decision, 2026-10-13 (docs/adr/0158 §2).
+PRESENTATION_DEFAULT_STATUS = "koik"
+
+
+def status_scope(params: Any) -> tuple[str, bool]:
+    """The status the register is filtered by, and whether it is the default.
+
+    **Default versus chosen is the presence of `?olek=` in the address.** No
+    `olek` at all is the default; any `olek`, including `olek=avatud`, is a
+    choice and is honoured exactly. So a link stays the whole state: a shared
+    `?joustumine=on&vaade=joustumised` opens on open and closed files for
+    everybody, and `…&olek=avatud` opens on open files for everybody.
+
+    The default differs only under a commencement presentation
+    (:func:`requested_view`). The ordinary Matter table — including the table
+    under a Jõustumine filter — keeps the register's `avatud`.
+    """
+    if STATUS_PARAM in params:
+        return params.get(STATUS_PARAM) or "", False
+    if requested_view(params):
+        return PRESENTATION_DEFAULT_STATUS, True
+    return REGISTER_DEFAULT_STATUS, True
+
+
+#: The caption under the view that says which files are in it, by status.
+#: `koik` covers archived files too: archive is a record mode, each archived
+#: file is either open or closed.
+STATUS_SCOPE_LABELS = {
+    "koik": "avatud ja suletud teemad",
+    "avatud": "ainult avatud teemad",
+    "suletud": "ainult suletud teemad",
+    "arhiiv": "ainult arhiivi teemad",
+}
+
+
 def requested_sort(params: Any) -> str:
     value = (params.get(SORT_PARAM) or "").strip()
     return value if value in SORT_CHOICES else SORT_DATE
@@ -185,8 +240,9 @@ def active_commencements(
     *one* of its commencements is inside the window; only the ones that are
     inside it are listed, or the list would contradict the filter above it.
 
-    Bounded by the department's commencement records rather than the register:
-    a few hundred rows at most, read once and bucketed in Python.
+    Read once and bucketed in Python, so the statement count does not grow
+    with the rows. Measured at 5,000 active records: one read, well under a
+    second; what the *list* renders is bounded separately (`BUCKET_LIMIT`).
     """
     records = (
         MatterEffectiveDate.objects.visible_to(user)
@@ -238,6 +294,14 @@ class Bucket:
     label: str
     note: str
     entries: list[Entry] = field(default_factory=list)
+    #: How many rows the bucket holds — exact, whether or not all are shown.
+    total: int = 0
+    #: The address that shows this bucket whole; empty when nothing is held back.
+    expand_query: str = ""
+
+    @property
+    def truncated(self) -> bool:
+        return len(self.entries) < self.total
 
 
 def bucket_of(record: MatterEffectiveDate, day: date) -> str:
@@ -277,9 +341,22 @@ def _sorted(records: Iterable[MatterEffectiveDate], sort: str) -> list[MatterEff
 
 
 def bucketed(
-    records: Iterable[MatterEffectiveDate], *, day: date, sort: str = SORT_DATE
+    records: Iterable[MatterEffectiveDate],
+    *,
+    day: date,
+    sort: str = SORT_DATE,
+    limit: int | None = None,
+    expanded: str = "",
+    expand_query: Callable[[str], str] | None = None,
 ) -> list[Bucket]:
-    """The commencements in their buckets, empty buckets left out."""
+    """The commencements in their buckets, empty buckets left out.
+
+    With ``limit``, a bucket shows its first ``limit`` rows in the chosen order
+    unless it is the ``expanded`` one; its ``total`` stays exact and
+    ``expand_query(key)`` is the address that shows it whole. Bucketing and
+    sorting happen before the cut, so the rows shown are the same first rows a
+    whole bucket would start with.
+    """
     grouped: dict[str, list[MatterEffectiveDate]] = {key: [] for key, _l, _n in BUCKETS}
     for record in records:
         grouped[bucket_of(record, day)].append(record)
@@ -290,15 +367,19 @@ def bucketed(
             continue
         # A row with no date has nothing to order by but its file.
         order = SORT_MATTER if key == BUCKET_UNDATED else sort
+        ordered = _sorted(rows, order)
+        shown = ordered if limit is None or key == expanded else ordered[:limit]
+        held_back = len(shown) < len(ordered)
         buckets.append(
             Bucket(
                 key=key,
                 label=label,
                 note=note,
                 entries=[
-                    Entry(record=record, running=_is_running(record, day))
-                    for record in _sorted(rows, order)
+                    Entry(record=record, running=_is_running(record, day)) for record in shown
                 ],
+                total=len(ordered),
+                expand_query=expand_query(key) if held_back and expand_query else "",
             )
         )
     return buckets

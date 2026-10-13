@@ -10,16 +10,29 @@ Never a manufactured day. A date is written at the precision it was recorded at
 (`display_when`), a period is never drawn on a calendar cell, and a 30-day
 bucket holds a period only when the whole of it is inside.
 {% endcomment %}
+{% with scope=commencement_status %}
+{% comment %}
+  Which files are in this view, by status, always in words. Without `?olek=`
+  a commencement view opens on open *and* closed files — not the register's
+  `avatud` — because a commencement often lands after the file was closed
+  (owner's final-readiness decision, 2026-10-13; docs/adr/0158 §2). The link
+  writes `?olek=` out, so a narrowed view is a shareable address too.
+{% endcomment %}
+<p class="jcover" data-status-scope="{% if scope.all %}koik{% else %}osa{% endif %}">
+  Kuvatud: <strong>{{ scope.label }}</strong>{% if scope.is_default %} (jõustumiste vaikimisi valik){% endif %} ·
+  {% if scope.all %}
+    <a href="?{{ scope.open_query }}#tulemused">näita ainult avatud</a>
+  {% else %}
+    <a href="?{{ scope.all_query }}#tulemused">näita avatud ja suletud teemasid</a>
+  {% endif %}
+</p>
+{% endwith %}
 {% with coverage=commencement_coverage %}
 <p class="jcover">
   {{ coverage.note }}
   {% if coverage.missing %}
     <a href="?{{ coverage.missing_query }}#tulemused">{{ coverage.missing }} teemal</a>
     selles valikus jõustumist kirjas ei ole.
-  {% endif %}
-  {% if coverage.open_only %}
-    Näidatakse avatud teemasid —
-    <a href="?{{ coverage.all_query }}#tulemused">kuva kõik olekud</a>.
   {% endif %}
 </p>
 {% endwith %}
@@ -119,7 +132,7 @@ bucket holds a period only when the whole of it is inside.
   {% for bucket in commencement_buckets %}
     <section class="jbucket" aria-labelledby="jbucket-{{ bucket.key }}">
       <h2 class="sectionlabel" id="jbucket-{{ bucket.key }}">
-        {{ bucket.label }} <span class="sectionlabel__count">· {{ bucket.entries|length }}</span>
+        {{ bucket.label }} <span class="sectionlabel__count">· {{ bucket.total }}</span>
       </h2>
       <p class="jbucket__note">{{ bucket.note }}</p>
       <div class="tablewrap">
@@ -175,6 +188,17 @@ bucket holds a period only when the whole of it is inside.
           </tbody>
         </table>
       </div>
+      {% if bucket.truncated %}
+        {% comment %}
+          A long bucket shows its first rows in the chosen order; the heading
+          above keeps the exact count. The whole bucket is one click away and
+          is an address like any other (docs/adr/0158 §4).
+        {% endcomment %}
+        <p class="jbucket__note">
+          Näidatud {{ bucket.entries|length }} / {{ bucket.total }} —
+          <a href="?{{ bucket.expand_query }}#jbucket-{{ bucket.key }}">näita kõiki {{ bucket.total }}</a>
+        </p>
+      {% endif %}
     </section>
   {% empty %}
     <p class="empty">Selle valikuga jõustumisi ei leitud.</p>
