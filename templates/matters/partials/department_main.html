@@ -213,9 +213,15 @@ control that promised one of them would be lying about what it does
 </section>
 
 {% if page.digest %}
-  <section class="ovsection" aria-label="Tehtud">
+  <section class="ovsection" id="tehtud" aria-label="Tehtud">
     <div class="ovsection__head">
       <h2 class="ovsection__title">Tehtud</h2>
+      {% comment %}
+        What *changed* in the same window, beside what it produced. Inside
+        the digest's own condition, so it is the head's exactly as the digest is
+        (docs/adr/0159).
+      {% endcomment %}
+      <a class="ovsection__link" href="{{ page.changes_url }}">Muudatused →</a>
       <span class="ovsection__spacer"></span>
       {% comment %}
         The period is in the URL, so a report somebody is reading can be sent to
