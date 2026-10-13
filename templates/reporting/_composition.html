@@ -21,6 +21,36 @@ from geometry (master specification 17.8, 18.10; Stage-2E brief 46, 60).
 
   <p class="chart__summary">{{ item.summary }}</p>
 
+  {% if item.result.distribution and not item.result.distribution.is_empty %}
+    {% comment %}
+      Order statistics, for the skewed durations that carry them (docs/adr/0160).
+      Absent on every composition that has no distribution, so those render
+      exactly as before.
+    {% endcomment %}
+    <div class="distribution">
+      <span class="distribution__cell">
+        <span class="distribution__key">Mediaan</span>
+        <span class="distribution__number">{{ item.result.distribution.median|floatformat:1 }}</span>
+      </span>
+      <span class="distribution__cell">
+        <span class="distribution__key">p75</span>
+        <span class="distribution__number">{{ item.result.distribution.p75|floatformat:0 }}</span>
+      </span>
+      <span class="distribution__cell">
+        <span class="distribution__key">p90</span>
+        <span class="distribution__number">{{ item.result.distribution.p90|floatformat:0 }}</span>
+      </span>
+      <span class="distribution__cell">
+        <span class="distribution__key">Suurim</span>
+        <span class="distribution__number">{{ item.result.distribution.maximum }}</span>
+      </span>
+      <span class="distribution__cell">
+        <span class="distribution__key">N</span>
+        <span class="distribution__number">{{ item.result.distribution.n }}</span>
+      </span>
+    </div>
+  {% endif %}
+
   {% if item.bars %}
     <div class="barchart">
       {% for bar in item.bars %}

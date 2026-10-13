@@ -32,7 +32,7 @@ matrix must never push the page sideways.
     <div class="tablewrap">
       <table class="data-table matrix">
         <caption class="visually-hidden">
-          {{ item.result.definition.label_et }} — {{ item.matrix.row_header }} ja vastutaja kaupa
+          {{ item.result.definition.label_et }} — {{ item.matrix.row_header }} ja {{ item.matrix.column_header }} kaupa
         </caption>
         <thead>
           <tr>
@@ -41,6 +41,9 @@ matrix must never push the page sideways.
               <th scope="col" class="numeric">{{ column }}</th>
             {% endfor %}
             <th scope="col" class="numeric">Kokku</th>
+            {% if item.matrix.share_header %}
+              <th scope="col" class="numeric">{{ item.matrix.share_header }}</th>
+            {% endif %}
           </tr>
         </thead>
         <tbody>
@@ -48,9 +51,12 @@ matrix must never push the page sideways.
             <tr {% if row.is_unknown %}class="matrix__row--unknown"{% endif %}>
               <th scope="row">{{ row.label }}{% if row.is_unknown %} (määramata){% endif %}</th>
               {% for cell in row.cells %}
-                <td class="numeric">{{ cell.value }}</td>
+                <td class="numeric">{% if cell.missing %}<span class="muted" aria-label="mõõtmata">—</span>{% elif cell.url %}<a href="{{ cell.url }}">{{ cell.value }}</a>{% else %}{{ cell.value }}{% endif %}</td>
               {% endfor %}
               <td class="numeric matrix__total">{{ row.total }}</td>
+              {% if item.matrix.share_header %}
+                <td class="numeric">{{ row.share_text }}</td>
+              {% endif %}
             </tr>
           {% endfor %}
         </tbody>
@@ -61,6 +67,9 @@ matrix must never push the page sideways.
               <td class="numeric matrix__total">{{ total }}</td>
             {% endfor %}
             <td class="numeric matrix__total">{{ item.matrix.grand_total }}</td>
+            {% if item.matrix.share_header %}
+              <td class="numeric"></td>
+            {% endif %}
           </tr>
         </tfoot>
       </table>

@@ -57,6 +57,18 @@ number that means neither (Stage-2E brief 27).
     {% endfor %}
   </section>
 
+  <section aria-labelledby="teemad-koosseis-heading">
+    <h2 class="sectionlabel" id="teemad-koosseis-heading">Aastate koosseis</h2>
+    <p class="chart__summary">
+      Iga aasta teemad salvestatud õigusakti rühma ja menetlusliigi järgi, osakaal
+      tabeli viimases veerus. Midagi ei tuletata pealkirjast ega märkustest;
+      määramata on oma veerus, mitte null.
+    </p>
+    {% for item in composition_matrices %}
+      {% include "reporting/_matrix.html" with item=item %}
+    {% endfor %}
+  </section>
+
   <section aria-labelledby="teemad-jaotus-heading">
     <h2 class="sectionlabel" id="teemad-jaotus-heading">Jaotused</h2>
     <div class="chartgrid">
