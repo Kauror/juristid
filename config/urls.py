@@ -46,6 +46,10 @@ urlpatterns = [
         include(("app.accounts.admin_urls", "account_admin"), namespace="account_admin"),
     ),
     path(
+        "haldus/lovable/",
+        include(("app.lovable_mirror.urls", "lovable_mirror"), namespace="lovable_mirror"),
+    ),
+    path(
         "organisatsioonid/",
         include(("app.organisations.urls", "organisations"), namespace="organisations"),
     ),
