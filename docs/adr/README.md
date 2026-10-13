@@ -166,6 +166,7 @@ consequences and reversibility.
 | [0154](0154-ci-shards-share-runners-and-main-is-proved-by-its-pull-request.md) | CI shards share runners, and main is proved by its pull request's run | Accepted; CI only, no migrations; scopes `rebuild_is_running()` to the current database |
 | [0155](0155-a-retired-user-facing-control-stays-retired.md) | A retired user-facing control stays retired | Accepted; owner's decision of 2026-10-12; a refactor or consolidation may not resurrect a retired control because its backend capability still exists; retirements are pinned by absence tests (`tests/test_retired_ui_contract.py`); bringing one back needs a new owner decision |
 | [0156](0156-hetkeseis-is-changed-directly-from-the-teema-header.md) | `Hetkeseis` is changed directly from the Teema header | Accepted; owner's decision of 2026-10-12; a menu of stage buttons through `update_field` → `change_stage`, no `Märge`; `stage` joins the guarded inline fields (revision, 409 on a stale page); 0152's closure confirmation and RULE-03 unchanged; no migration |
+| [0161](0161-a-current-step-the-record-shows-done-is-flagged-beside-it.md) | A current step the record already shows done is flagged beside it | Proposed (five-track round, track E); no migrations; read-only alert under `PRAEGUNE TEGEVUS` when a step started from the standard sequence is proven done by records entered after it was set (`RecordedWork.of(since=…)`, `app/workflow/consistency.py`); reader-scoped; gap matrix for stage/opinion/no-action candidates |
 
 Naming: `NNNN-short-decision-title.md`.
 

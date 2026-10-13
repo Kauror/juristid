@@ -313,6 +313,7 @@ from app.taxonomy.legal_instruments import OTHER_LEGAL_INSTRUMENT_KEYS
 from app.taxonomy.models import PolicyArea
 from app.taxonomy.vocabulary import selectable_policy_areas
 from app.workflow import plan as work_plan
+from app.workflow.consistency import current_work_alerts
 from app.workflow.enums import Track
 from app.workflow.follow_ups import FOLLOW_UP_CHANGED, FollowUpClosureUnconfirmed
 from app.workflow.models import MatterPlanStep, NextAction, StageVocabulary
@@ -2932,6 +2933,10 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         ),
         "matter": matter,
         "current_action": current_action,
+        # Read-only workflow-consistency alerts about that step, for this reader
+        # — today one: a standard step the record shows done since it was set
+        # (docs/adr/0161, `app.workflow.consistency`). Shown under the step only.
+        "consistency_alerts": current_work_alerts(matter, current_action, request.user),
         "recommendation": recommendation,
         "planned_actions": planned_actions,
         "upcoming_step": upcoming_step,
