@@ -286,7 +286,7 @@ def test_both_ends_of_the_window_are_inclusive_in_tallinn(department_head, speci
 
 @pytest.mark.parametrize(
     ("key", "days"),
-    [("7", 7), ("14", 14), ("30", 30), ("kvartal", 7), ("tundmatu", 7), ("", 7)],
+    [("7", 7), ("14", 14), ("30", 30), ("kvartal", 91), ("tundmatu", 7), ("", 7)],
 )
 def test_the_named_windows_are_tehtuds(key, days):
     today = date(2026, 10, 13)
@@ -297,8 +297,7 @@ def test_the_named_windows_are_tehtuds(key, days):
     # N days are N calendar dates ending today, both ends included.
     assert (period.start, period.end) == (today - timedelta(days=days - 1), today)
     # One parser: the same key gives Tehtud the same window.
-    if key in {"7", "14", "30"}:
-        assert dd.period_from({"periood": key}, today) == period
+    assert dd.period_from({"periood": key}, today) == period
 
 
 @pytest.mark.parametrize(
@@ -707,11 +706,11 @@ def test_the_link_from_tehtud_keeps_tehtuds_window():
     today = date(2026, 10, 13)
 
     assert dc.changes_url(dd.period_from({"periood": "30"}, today)) == f"{PAGE}?periood=30"
+    # Every named window travels as its key now that Muudatused reads them all.
     quarter = dd.period_from({"periood": "kvartal"}, today)
-    assert dc.changes_url(quarter) == (
-        f"{PAGE}?periood=vahemik&alates={quarter.start.day}.{quarter.start.month}."
-        f"{quarter.start.year}&kuni=13.10.2026"
-    )
+    assert dc.changes_url(quarter) == f"{PAGE}?periood=kvartal"
+    custom = dd.period_from({"periood": "vahemik", "alates": "1.9.2026", "kuni": "30.9.2026"})
+    assert dc.changes_url(custom) == f"{PAGE}?periood=vahemik&alates=1.9.2026&kuni=30.9.2026"
 
 
 def test_the_osakond_link_is_the_heads_alone(client, department_head, specialist):
@@ -758,8 +757,7 @@ def test_n_days_are_n_calendar_dates_ending_today(key, first, days):
     assert (period.start, period.end) == (first, EDGE_TODAY)
     assert (period.end - period.start).days + 1 == days
     # Muudatused reads the same window from the same parser.
-    if key != "kvartal":
-        assert dc.changes_period({"periood": key}, EDGE_TODAY)[0] == period
+    assert dc.changes_period({"periood": key}, EDGE_TODAY)[0] == period
 
 
 def test_the_bounds_state_both_included_dates():
@@ -881,3 +879,64 @@ def test_both_sections_print_the_dates_they_cover(client, department_head, today
     assert f"data-period-bounds>{expected}</span>" in tehtud
     assert f"data-period-bounds>{expected}</span>" in changes
     assert expected.startswith(dd.format_estonian_date(today - timedelta(days=13)))
+
+
+# =========================================================================
+# One calculation for both pages; «Viimased 13 nädalat» (owner, 2026-10-13)
+# =========================================================================
+
+SAME_WINDOW_PARAMS = [
+    {"periood": "7"},
+    {"periood": "14"},
+    {"periood": "30"},
+    {"periood": "kvartal"},
+    {"periood": "aasta"},
+    {"periood": "vahemik", "alates": "1.9.2026", "kuni": "30.9.2026"},
+]
+
+
+@pytest.mark.parametrize("params", SAME_WINDOW_PARAMS, ids=lambda p: p["periood"])
+def test_the_same_periood_gives_both_pages_the_same_bounds(params):
+    tehtud = dd.period_from(params, EDGE_TODAY)
+    changes, error = dc.changes_period(params, EDGE_TODAY)
+
+    assert error == ""
+    assert changes == tehtud
+    assert changes.bounds == tehtud.bounds
+
+
+@pytest.mark.parametrize("params", SAME_WINDOW_PARAMS, ids=lambda p: p["periood"])
+def test_both_pages_render_the_same_bounds_for_one_periood(client, department_head, params):
+    client.force_login(department_head)
+
+    tehtud = client.get(OSAKOND, params).context["page"].digest.period
+    changes = client.get(PAGE, params).context["page"].period
+
+    assert (changes.key, changes.start, changes.end) == (tehtud.key, tehtud.start, tehtud.end)
+
+
+def test_aasta_is_the_calendar_year_to_date():
+    year = dd.period_from({"periood": "aasta"}, EDGE_TODAY)
+
+    assert (year.start, year.end) == (date(2026, 1, 1), EDGE_TODAY)
+    assert year.label == "Aasta"
+
+
+def test_periood_kvartal_still_resolves_under_its_new_label(client, department_head, today):
+    quarter = dd.period_from({"periood": "kvartal"}, EDGE_TODAY)
+    assert quarter.key == dd.PERIOD_QUARTER == "kvartal"
+    assert quarter.label == "Viimased 13 nädalat"
+    assert (quarter.start, quarter.end) == (date(2026, 7, 15), EDGE_TODAY)
+    assert (quarter.end - quarter.start).days + 1 == 91
+
+    client.force_login(department_head)
+    tehtud = client.get(OSAKOND, {"periood": "kvartal"}).content.decode()
+    changes = client.get(PAGE, {"periood": "kvartal"}).content.decode()
+    bounds = dd.period_from({"periood": "kvartal"}, today).bounds
+
+    assert 'aria-current="true"' in tehtud
+    assert "Viimased 13 nädalat</a>" in tehtud
+    assert "Kvartal</a>" not in tehtud
+    assert f"data-period-bounds>{bounds}</span>" in tehtud
+    assert "<span data-period-label>Viimased 13 nädalat</span>" in changes
+    assert f"data-period-bounds>{bounds}</span>" in changes

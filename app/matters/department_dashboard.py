@@ -1038,7 +1038,9 @@ PERIOD_CUSTOM = "vahemik"
 PERIOD_LABELS: tuple[tuple[str, str], ...] = (
     (PERIOD_7, "7 päeva"),
     (PERIOD_30, "30 päeva"),
-    (PERIOD_QUARTER, "Kvartal"),
+    # Thirteen rolling weeks, not a calendar quarter; the URL value stays
+    # `kvartal` so saved links keep working (owner's decision 2026-10-13).
+    (PERIOD_QUARTER, "Viimased 13 nädalat"),
     (PERIOD_YEAR, "Aasta"),
 )
 
@@ -1147,8 +1149,8 @@ class Period:
         return f"{format_estonian_date(self.start)}–{format_estonian_date(self.end)}"
 
 
-#: How many calendar days each rolling window holds, today included. «Kvartal»
-#: is thirteen weeks rather than a calendar quarter, as it always was here.
+#: How many calendar days each rolling window holds, today included. `kvartal`
+#: is «Viimased 13 nädalat» — 91 dates, not a calendar quarter (docs/adr/0159 §5).
 ROLLING_DAYS: dict[str, int] = {
     PERIOD_7: 7,
     PERIOD_14: 14,
@@ -1162,7 +1164,8 @@ def last_days(today: date, days: int) -> date:
 
     Both ends are inclusive, so «7 päeva» on Monday 13 October is 7–13 October:
     seven dates, ``today − 6 … today``. It used to be ``today − 7``, which was
-    eight dates under a label that says seven (docs/adr/0159 §5). ``today`` is
+    eight dates under a label that says seven. Owner's decision 2026-10-13
+    (docs/adr/0159 §5). ``today`` is
     the Europe/Tallinn date, and the queries compare local dates, so the window
     turns over at Tallinn midnight and not at UTC's.
     """

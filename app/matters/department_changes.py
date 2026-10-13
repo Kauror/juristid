@@ -329,7 +329,9 @@ def changes_period(params: Any, today: date | None = None) -> tuple[dd.Period, s
         if error or start.value is None or end.value is None:
             return dd.period_from({}, today), error
         return dd.Period(dd.PERIOD_CUSTOM, start.value, end.value), ""
-    if key not in {choice for choice, _ in PERIOD_CHOICES}:
+    # Every window Tehtud's parser names, not only the three chips drawn here:
+    # the same `periood` must give the same dates on both pages (ADR 0159 §5).
+    if key not in dict(dd.PERIOD_NAMES):
         key = dd.PERIOD_7
     return dd.period_from({dd.PERIOD_PARAM: key}, today), ""
 
@@ -345,11 +347,11 @@ def _range_params(period: dd.Period) -> dict[str, str]:
 def changes_url(period: dd.Period) -> str:
     """This view on Tehtud's window — the «Muudatused →» link in its heading.
 
-    A window this view names (7 / 14 / 30) travels as its key; any other —
-    Kvartal, Aasta, a custom range — as the two dates it covers, so the link
-    never lands on a different period than the section it sits in.
+    A named window — 7 / 14 / 30 päeva, «Viimased 13 nädalat», «Aasta» —
+    travels as its key, which this view reads with Tehtud's parser; a custom
+    range as its two dates. Either way the link lands on the section's window.
     """
-    named = {key for key, _ in PERIOD_CHOICES}
+    named = dict(dd.PERIOD_NAMES)
     params = {dd.PERIOD_PARAM: period.key} if period.key in named else _range_params(period)
     return f"{reverse('matters:department_changes')}?{urlencode(params)}"
 

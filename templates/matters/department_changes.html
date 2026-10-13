@@ -24,7 +24,7 @@ know (both in the rail). Everything is computed by
       The window's two dates, both included — `Period.bounds`, the string Tehtud
       prints beside its own heading, so the two sections state one window one way.
     {% endcomment %}
-    <span class="ovhead__date" data-period-bounds>{{ page.period.bounds }}</span>
+    <span class="ovhead__date">{% if not page.period.is_custom %}<span data-period-label>{{ page.period.label }}</span> · {% endif %}<span data-period-bounds>{{ page.period.bounds }}</span></span>
     <span class="ovhead__spacer"></span>
     <a class="ovsection__link" href="{% url 'matters:department' %}">← Osakond</a>
   </div>
