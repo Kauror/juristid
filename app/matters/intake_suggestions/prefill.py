@@ -147,8 +147,10 @@ def prefill_initial(
             prefilled[SuggestedField.SOURCE_ORGANISATIONS] = (chosen.value,)
 
     deadline = analysis.fields.get(SuggestedField.RESPONSE_DEADLINE)
-    # Never for a Chamber initiative: it owes nobody an opinion by a day, and
-    # the edit form would refuse the very date it filled (docs/adr/0151 §2).
+    # Never for a Chamber initiative. Its `Arvamuse tähtaeg` may exist since the
+    # amendment of 2026-10-13, but only as a date the lawyer states: a date read
+    # off a document would be somebody else's request, which an initiative does
+    # not have (docs/adr/0151).
     from app.workflow.enums import Track
 
     is_initiative = current.track == Track.KODA_INITIATIVE

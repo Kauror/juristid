@@ -216,11 +216,9 @@ def change_response_deadline(
     current = locked.response_deadline
     if deadline == current:
         return matter
-    # A Chamber initiative is never given a deadline it did not have; one it
-    # holds may still be moved or cleared (docs/adr/0151 §2).
-    from app.matters.initiative import refuse_new_incoming_dates
-
-    refuse_new_incoming_dates(locked, response_deadline=deadline)
+    # A Chamber initiative may set, move and clear its own deadline since the
+    # owner's decision of 2026-10-13 (docs/adr/0151 amendment); only a *new
+    # request* below is refused on one.
     now = timezone.now()
 
     if current is None:
@@ -260,12 +258,12 @@ def change_response_deadline(
 
     if change == ResponseDeadlineChange.REPLACED:
         # A replacement is a new request, which a Chamber initiative does not
-        # have; moving or clearing the deadline it holds stays allowed
-        # (docs/adr/0151 §2).
-        from app.matters.initiative import INITIATIVE_HAS_NO_RESPONSE_DEADLINE, is_koda_initiative
+        # have; setting, moving or clearing its own deadline stays allowed
+        # (docs/adr/0151, amendment of 2026-10-13).
+        from app.matters.initiative import INITIATIVE_HAS_NO_NEW_REQUEST, is_koda_initiative
 
         if is_koda_initiative(locked):
-            raise DomainError(INITIATIVE_HAS_NO_RESPONSE_DEADLINE)
+            raise DomainError(INITIATIVE_HAS_NO_NEW_REQUEST)
         if previous_outcome not in REPLACED_OUTCOMES:
             raise DomainError(REPLACED_NEEDS_AN_OUTCOME)
         _end_current(
@@ -323,11 +321,12 @@ def request_response_deadline(
     locked = lock_open_matter_for_business_write(matter.pk)
     _check_revision(locked, expected_revision)
     # A new request is exactly what a Chamber initiative does not have
-    # (docs/adr/0151 §2).
-    from app.matters.initiative import INITIATIVE_HAS_NO_RESPONSE_DEADLINE, is_koda_initiative
+    # (docs/adr/0151 §2); its own deadline is the header's (amendment of
+    # 2026-10-13).
+    from app.matters.initiative import INITIATIVE_HAS_NO_NEW_REQUEST, is_koda_initiative
 
     if is_koda_initiative(locked):
-        raise DomainError(INITIATIVE_HAS_NO_RESPONSE_DEADLINE)
+        raise DomainError(INITIATIVE_HAS_NO_NEW_REQUEST)
     if locked.response_deadline is not None:
         legacy_settled = (
             locked.response_requested_at is None

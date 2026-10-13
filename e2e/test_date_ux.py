@@ -388,32 +388,35 @@ def _date_box(page, field_id: str):
     return page.locator(f"[data-initiative-date]:has({field_id})")
 
 
-def test_an_initiative_sets_both_dates_aside_and_another_instrument_brings_them_back(
+def test_an_initiative_sets_saabus_aside_keeps_the_deadline_and_another_instrument_brings_it_back(
     page, base_url
 ):
-    """`Õigusakt` «Koja ettepanek või pöördumine» takes both dates — and their
-    row, so no empty band is left — with no sentence about it (the retired
-    note); another instrument brings `Saabus` back with what it held."""
+    """`Õigusakt` «Koja ettepanek või pöördumine» takes `Saabus` away with no
+    sentence about it (the retired note); `Arvamuse tähtaeg` stays, holding what
+    was typed (docs/adr/0151, amendment of 2026-10-13). Another instrument
+    brings `Saabus` back with what it held."""
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
     expect(page.locator("[data-initiative-note]")).to_have_count(0)
     held = page.locator("#id_received_date").input_value()
     assert held
     row = page.locator("[data-initiative-mode]")
+    page.fill("#id_response_deadline", typed(10))
 
     page.locator(INITIATIVE).check()
     expect(_date_box(page, "#id_received_date")).to_be_hidden()
-    expect(_date_box(page, "#id_response_deadline")).to_be_hidden()
-    expect(row).to_be_hidden()
+    expect(row).to_be_visible()
+    expect(page.locator("#id_response_deadline")).to_be_visible()
+    expect(page.locator("#id_response_deadline")).to_have_value(typed(10))
     assert page.locator("#id_received_date").input_value() == ""
 
     page.locator(ORDINARY).check()
-    expect(row).to_be_visible()
     expect(_date_box(page, "#id_received_date")).to_be_visible()
     assert page.locator("#id_received_date").input_value() == held
+    expect(page.locator("#id_response_deadline")).to_have_value(typed(10))
 
 
-def test_an_initiative_is_filed_with_neither_date_and_says_so(page, base_url):
+def test_an_initiative_is_filed_with_its_deadline_and_no_saabus(page, base_url):
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
     title = unique_title("Koja ettepanek brauserist")
@@ -427,8 +430,8 @@ def test_an_initiative_is_filed_with_neither_date_and_says_so(page, base_url):
     meta = page.locator(".metaline")
     expect(meta).to_contain_text("Koja ettepanek või pöördumine")
     expect(meta).not_to_contain_text("+ Saabus")
-    expect(meta).not_to_contain_text("+ Arvamuse tähtaeg")
-    expect(meta).not_to_contain_text(typed(10))
+    expect(meta).to_contain_text("Arvamuse tähtaeg")
+    expect(meta).to_contain_text(typed(10))
 
 
 def test_marking_an_existing_teema_keeps_its_saabus_on_muuda_teemat(page, base_url):
@@ -448,7 +451,8 @@ def test_marking_an_existing_teema_keeps_its_saabus_on_muuda_teemat(page, base_u
     expect(page.locator("[data-initiative-note]")).to_be_hidden()
     page.locator(INITIATIVE).check()
     expect(_date_box(page, "#id_received_date")).to_be_visible()
-    expect(_date_box(page, "#id_response_deadline")).to_be_hidden()
+    # The deadline is asked on an initiative too (amendment of 2026-10-13).
+    expect(page.locator("#id_response_deadline")).to_be_visible()
     expect(page.locator("[data-initiative-note]")).to_be_visible()
     page.get_by_role("button", name="Salvesta").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))

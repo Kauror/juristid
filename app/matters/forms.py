@@ -1534,8 +1534,9 @@ class MatterCreateForm(
     #: 2026-10-12, docs/adr/0151 amendment). It asked again what `Õigusakt`
     #: already asks: choosing the instrument «Koja ettepanek või pöördumine» is
     #: what makes the new Teema a Chamber initiative (`Matter.track` «Koja
-    #: algatus», `initiative_on_create`), and `clean` sets both incoming dates
-    #: aside for it. A forged `koda_initiative=on` binds to nothing.
+    #: algatus», `initiative_on_create`), and `clean` sets `Saabus` aside for
+    #: it — `Arvamuse tähtaeg` stays, optional (amendment of 2026-10-13). A
+    #: forged `koda_initiative=on` binds to nothing.
     received_date = EstonianDateField(
         label="Saabus",
         required=False,
@@ -1658,14 +1659,17 @@ class MatterCreateForm(
         initiative = initiative_on_create(cleaned.get("legal_instruments"))
         cleaned["koda_initiative"] = initiative
 
-        # **A Chamber initiative records neither incoming date** (docs/adr/0151
-        # §2). Not refused: `Saabus` arrives pre-filled with today, and the box
-        # that holds it is hidden the moment the instrument is chosen, so the
-        # only honest reading of whatever is still in the two fields is «not
-        # applicable». Nothing is recorded, and no response obligation begins.
+        # **A Chamber initiative records no `Saabus`** (docs/adr/0151 §2). Not
+        # refused: the box arrives pre-filled with today and is hidden the
+        # moment the instrument is chosen, so the only honest reading of
+        # whatever is still in it is «not applicable».
+        #
+        # **`Arvamuse tähtaeg` is kept** (owner's decision of 2026-10-13,
+        # docs/adr/0151 amendment): it stays on the page, starts empty, and a
+        # date the lawyer gives is the Teema's own deadline. Empty is no
+        # deadline; nothing is derived from the creation day.
         if initiative:
             cleaned["received_date"] = None
-            cleaned["response_deadline"] = None
 
         clean_sent_proposal(self, cleaned, initiative=initiative)
         return cleaned
@@ -2239,26 +2243,24 @@ def edit_initial(matter: Matter) -> dict[str, Any]:
 
 
 def clean_initiative_dates(form: Any, cleaned: dict[str, Any]) -> None:
-    """`Muuda teemat`: a Chamber initiative is never *given* an incoming date.
+    """`Muuda teemat`: a Chamber initiative is never *given* a `Saabus`.
 
     A date the Teema already holds stays — kept, moved or cleared through the
     ordinary audited correction — because marking a Teema as an initiative is
     not a reason to erase what was recorded about it (docs/adr/0151 §2). What
     is refused is establishing one where there is none, on the box that holds
     it, with the same sentence the services say.
+
+    `Arvamuse tähtaeg` is not refused: since the amendment of 2026-10-13 an
+    initiative may be given one, and it is corrected like any other.
     """
-    from app.matters.initiative import (
-        INITIATIVE_HAS_NO_RECEIVED_DATE,
-        INITIATIVE_HAS_NO_RESPONSE_DEADLINE,
-    )
+    from app.matters.initiative import INITIATIVE_HAS_NO_RECEIVED_DATE
 
     matter = getattr(form, "matter", None)
     if matter is None or not cleaned.get("koda_initiative"):
         return
     if cleaned.get("received_date") and matter.received_date is None:
         form.add_error("received_date", INITIATIVE_HAS_NO_RECEIVED_DATE)
-    if cleaned.get("response_deadline") and matter.response_deadline is None:
-        form.add_error("response_deadline", INITIATIVE_HAS_NO_RESPONSE_DEADLINE)
 
 
 def matter_edit_conflict_changes(
