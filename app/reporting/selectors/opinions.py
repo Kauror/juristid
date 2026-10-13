@@ -33,7 +33,7 @@ from app.reporting import metric_catalogue as keys
 from app.reporting.context import ReportingContext
 from app.reporting.metric_catalogue import definition
 from app.reporting.metric_types import MetricResult
-from app.reporting.selectors.base import count, simple_result
+from app.reporting.selectors.base import count, reporting_population, simple_result
 from app.submissions.enums import RecipientRole, SubmissionStatus
 from app.submissions.models import Submission
 
@@ -62,9 +62,19 @@ def _queue_url(context: ReportingContext, **params: str) -> str:
 
 
 def _sent_submissions(context: ReportingContext) -> QuerySet[Submission]:
+    """Sent opinions this viewer may read, on real-data Matters only.
+
+    An opinion sent on a TEST Matter is a test of the sending form, not a
+    letter Koda wrote, and every other submission figure already leaves it out
+    by starting at `visible_matters`. This one is not narrowed by the filter
+    bar, so it starts at the population beneath it, `reporting_population`.
+    """
     scope = scope_for_user(context.viewer)
     return apply_scope(
-        Submission.objects.filter(status=SubmissionStatus.SENT),
+        Submission.objects.filter(
+            status=SubmissionStatus.SENT,
+            matter__in=reporting_population(context),
+        ),
         child_visibility_q(scope),
     )
 
