@@ -3,8 +3,11 @@
   no canonical value appears here.
 {% endcomment %}
 <h2 class="sectionlabel" id="{{ anchor }}">{{ title }} <span class="sectionlabel__count">{{ rows|length }}</span></h2>
+{% if not rows %}
+<p class="empty">Ei ole.</p>
+{% else %}
 <div class="tablewrap">
-  <table class="table">
+  <table class="table table--mirror">
     <caption class="visually-hidden">{{ title }}</caption>
     <thead>
       <tr>
@@ -16,7 +19,7 @@
     <tbody>
       {% for row in rows|slice:":200" %}
         <tr>
-          <td class="mono">{{ row.key }}</td>
+          <td class="mono table__nr">{{ row.key }}</td>
           <td>{{ row.title|default:"—" }}</td>
           <td>
             {% for change in row.fields %}
@@ -26,10 +29,9 @@
             {% empty %}—{% endfor %}
           </td>
         </tr>
-      {% empty %}
-        <tr><td colspan="3"><span class="empty">Ei ole.</span></td></tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
+{% endif %}
 {% if rows|length > 200 %}<p class="cardnote">Kuvatud 200 rida {{ rows|length }}-st.</p>{% endif %}

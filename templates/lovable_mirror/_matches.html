@@ -5,8 +5,11 @@
   COMPARABLE fields can show «Erineb»; the rest are for reading.
 {% endcomment %}
 <h2 class="sectionlabel" id="{{ anchor }}">{{ title }} <span class="sectionlabel__count">{{ rows|length }}</span></h2>
+{% if not rows %}
+<p class="empty">Ei ole.</p>
+{% else %}
 <div class="tablewrap">
-  <table class="table">
+  <table class="table table--mirror">
     <caption class="visually-hidden">{{ title }}</caption>
     <thead>
       <tr>
@@ -19,11 +22,11 @@
     <tbody>
       {% for item in rows|slice:":200" %}
         <tr>
-          <td class="mono">{{ item.row.key|default:"—" }}</td>
+          <td class="mono table__nr">{{ item.row.key|default:"—" }}</td>
           <td>{{ item.row.title|default:"—" }}</td>
           <td>
             {% if item.matter %}
-              <a href="{% url 'matters:matter_detail' pk=item.matter.pk %}">{{ item.matter.display_reference }}</a>
+              <a class="table__nr" href="{% url 'matters:matter_detail' pk=item.matter.pk %}">{{ item.matter.display_reference }}</a>
             {% else %}
               {{ item.match_label }}
             {% endif %}
@@ -39,10 +42,9 @@
             {% empty %}—{% endfor %}
           </td>
         </tr>
-      {% empty %}
-        <tr><td colspan="4"><span class="empty">Ei ole.</span></td></tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
+{% endif %}
 {% if rows|length > 200 %}<p class="cardnote">Kuvatud 200 rida {{ rows|length }}-st.</p>{% endif %}

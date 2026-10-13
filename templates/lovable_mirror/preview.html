@@ -28,13 +28,13 @@
   {% else %}
     <div class="card card--tight">
       <h2 class="sectionlabel">Hetktõmmis</h2>
-      <dl class="metaline">
-        <div class="metaline__item"><dt class="metaline__label">Eksporditud</dt><dd class="metaline__value">{{ report.snapshot.source_exported_at|date:"d.m.Y H:i" }}</dd></div>
-        <div class="metaline__item"><dt class="metaline__label">Imporditud</dt><dd class="metaline__value">{{ report.snapshot.imported_at|date:"d.m.Y H:i" }}</dd></div>
-        <div class="metaline__item"><dt class="metaline__label">Andmeklass</dt><dd class="metaline__value">{{ report.snapshot.get_data_class_display }}</dd></div>
-        <div class="metaline__item"><dt class="metaline__label">Allika skeem</dt><dd class="metaline__value">{{ report.snapshot.source_schema_version }}</dd></div>
-        <div class="metaline__item"><dt class="metaline__label">SHA-256</dt><dd class="metaline__value mono">{{ report.snapshot.manifest_sha256 }}</dd></div>
-        <div class="metaline__item"><dt class="metaline__label">Eelmine</dt><dd class="metaline__value">{% if report.previous %}{{ report.previous.source_exported_at|date:"d.m.Y H:i" }}{% else %}—{% endif %}</dd></div>
+      <dl class="mirrorfacts">
+        <div class="mirrorfacts__item"><dt class="mirrorfacts__label">Eksporditud</dt><dd class="mirrorfacts__value">{{ report.snapshot.source_exported_at|date:"d.m.Y H:i" }}</dd></div>
+        <div class="mirrorfacts__item"><dt class="mirrorfacts__label">Imporditud</dt><dd class="mirrorfacts__value">{{ report.snapshot.imported_at|date:"d.m.Y H:i" }}</dd></div>
+        <div class="mirrorfacts__item"><dt class="mirrorfacts__label">Andmeklass</dt><dd class="mirrorfacts__value">{{ report.snapshot.get_data_class_display }}</dd></div>
+        <div class="mirrorfacts__item"><dt class="mirrorfacts__label">Allika skeem</dt><dd class="mirrorfacts__value">{{ report.snapshot.source_schema_version }}</dd></div>
+        <div class="mirrorfacts__item"><dt class="mirrorfacts__label">Eelmine</dt><dd class="mirrorfacts__value">{% if report.previous %}{{ report.previous.source_exported_at|date:"d.m.Y H:i" }}{% else %}—{% endif %}</dd></div>
+        <div class="mirrorfacts__item"><dt class="mirrorfacts__label">SHA-256</dt><dd class="mirrorfacts__value mono mirrorfacts__value--hash">{{ report.snapshot.manifest_sha256 }}</dd></div>
       </dl>
     </div>
 
@@ -89,7 +89,7 @@
 
   <h2 class="sectionlabel">Väljade kaardistus</h2>
   <div class="tablewrap" id="kaardistus">
-    <table class="table">
+    <table class="table table--mirror">
       <caption class="visually-hidden">Lovable'i väljad ja mida Juristid nendega teha tohib</caption>
       <thead>
         <tr>
