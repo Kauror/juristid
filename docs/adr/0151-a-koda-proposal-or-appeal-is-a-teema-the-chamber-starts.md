@@ -283,3 +283,53 @@ had to be entered as a Teema and then sent again through `+ Koja arvamus`.
   composes the latter's service and adds none.
 - Authorization: only those who may write business content may create a Teema
   or record a send.
+
+## Amendment, 2026-10-13 — an initiative may have an `Arvamuse tähtaeg`
+
+- Status: accepted (product owner's decision of 2026-10-13), superseding §2's
+  «no `Arvamuse tähtaeg` is established» and the 2026-10-12 amendment's «both
+  dates are set aside». **No migration.**
+- Scope: `Uus teema`, `Muuda teemat`, the Teema header,
+  `app/matters/initiative.py`, `app/matters/response_deadlines.py`,
+  `create_matter`, `record_sent_proposal_on_new_matter`.
+
+### What was decided before
+
+A Chamber initiative could never be given an `Arvamuse tähtaeg`: `Uus teema`
+discarded one, and every writer refused to establish one
+(`INITIATIVE_HAS_NO_RESPONSE_DEADLINE`).
+
+### Why it is superseded
+
+A proposal or appeal the Chamber starts may still have a date it is due by. The
+blanket rule threw away a date the lawyer had typed.
+
+### What is decided now
+
+1. **`Saabus` is unchanged.** Nothing arrived, so none is recorded or
+   established; the box is hidden on `Uus teema`, and a held one is still kept
+   and correctable.
+2. **`Arvamuse tähtaeg` is optional and explicit.** On `Uus teema` it stays
+   visible and empty when «Koja ettepanek või pöördumine» is chosen; a date
+   given is saved as `Matter.response_deadline` through the ordinary writers,
+   and an empty box is no deadline. Nothing is derived from the creation day.
+   The header offers `+ Arvamuse tähtaeg`, and the deadline is set, moved and
+   cleared in the header and on `Muuda teemat` like any other.
+3. **A deadline is not a request.** The two acts that mean Koda was asked —
+   `+ Lisa → Arvamuse tähtaeg` (`request_response_deadline`) and «Uus arvamuse
+   küsimine» (`REPLACED`) — stay refused on an initiative
+   (`INITIATIVE_HAS_NO_NEW_REQUEST`), and «Uus arvamuse küsimine» is not
+   offered there. No addressee, incoming document or external request is
+   created. The document assist still proposes no deadline for an initiative.
+4. **A deadline is not a send.** Until the proposal goes out the deadline is
+   outstanding work like any other. The thirty-day check still starts only
+   from an actual SENT `Submission`. When «Märgi saadetud Koja arvamuseks»
+   records the send in the same save as a deadline, that send **answers** the
+   deadline through `answer_current_deadline_with` (ended `ANSWERED`, linked to
+   the `Submission`), so nothing is left outstanding.
+
+### What this amendment does not change
+
+The track, the two `Uus teema` paths, `SubmissionKind.KODA_PROPOSAL`, the
+thirty-day check and its wording, `initiative_after_edit`, the ordinary
+deadline lifecycle and every ordinary Teema.
