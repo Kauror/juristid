@@ -558,18 +558,32 @@ def filter_by_commencement(
         if start is None and end is None:
             # A window was asked for and could not be read.
             return queryset.none()
-        dated = commencements
-        if start is not None:
-            # The period begins no earlier than the lower bound.
-            dated = dated.filter(date_value__gte=start)
-        if end is not None:
-            # And ends no later than the upper one, which is what excludes a
-            # quarter that merely overlaps the window.
-            dated = dated.filter(period_end__lte=end)
+        dated = commencements.filter(commencement_window_q(start, end))
         queryset = queryset.annotate(commences_in_window=Exists(dated)).filter(
             commences_in_window=True
         )
     return queryset
+
+
+def commencement_window_q(start: date | None, end: date | None) -> Q:
+    """The containment rule, as a condition on ``MatterEffectiveDate`` rows.
+
+    One statement of it, read twice: by :func:`filter_by_commencement`, which
+    asks whether a Matter has *any* commencement inside the window, and by the
+    register's commencement presentation (`app.intelligence.commencements`,
+    docs/adr/0158), which lists *which* ones are — so the rows under a window
+    can never be a different set from the one that selected their Matters.
+
+    The period begins no earlier than the lower bound and ends no later than
+    the upper one, which is what excludes a quarter that merely overlaps the
+    window. An undated row has neither, so it matches no bound.
+    """
+    condition = Q()
+    if start is not None:
+        condition &= Q(date_value__gte=start)
+    if end is not None:
+        condition &= Q(period_end__lte=end)
+    return condition
 
 
 def filter_by_work_state(

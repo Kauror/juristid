@@ -13457,3 +13457,207 @@ section:has(.pw-more[open]) tbody.uxextra {
 .avatar--link:hover {
   border-color: var(--accent-border);
 }
+
+/* ====================================================================
+ * Jõustumised — the register's commencement presentation (docs/adr/0158)
+ *
+ * A reading of the filtered Teemad register, never a page of its own: the
+ * switch sits under the chips and only appears while a Jõustumine filter is
+ * active. A period is never drawn on a day — it has its own strips above the
+ * grid — so nothing here has to look like a date it is not.
+ * ==================================================================== */
+
+.registerview {
+  margin: 0 0 var(--spacing-3);
+}
+
+.jcover {
+  margin: 0 0 var(--spacing-3);
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+.jbucket {
+  margin: 0 0 var(--spacing-5);
+}
+
+.jbucket__note {
+  margin: 0 0 var(--spacing-2);
+  padding: 0 var(--spacing-3);
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+/* Rows wrap rather than clip: «Mis jõustub» is somebody's sentence, and the
+   register's single-line rhythm would cut off the half that says which part
+   of the act it is. */
+/* Fixed, so the columns line up from one bucket's table to the next.
+ *
+ * Teema is the one column without a width, so it takes everything the four
+ * fixed ones leave. The fixed four add up to 36rem and the table's floor is
+ * 54rem, so Teema never gets less than 18rem: below that width the table
+ * scrolls inside `.tablewrap` rather than squeezing the title to a letter per
+ * line (visual QA ISSUE-1, 2026-10-13 — at 48rem with 47rem of fixed columns
+ * Teema got 16px on a phone and 200px at 1024). Allikas is narrow and wraps:
+ * it mostly says «—» or «Ametlik allikas». */
+.jtable {
+  min-width: 54rem;
+  table-layout: fixed;
+}
+
+.jtable tbody td {
+  height: auto;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.jtable__what {
+  width: 13rem;
+}
+
+.jtable__date {
+  width: 9rem;
+}
+
+.jtable__owner {
+  width: 7rem;
+}
+
+.jtable__source {
+  width: 7rem;
+}
+
+.jtable__meta {
+  display: block;
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-muted);
+}
+
+.jcal {
+  margin: 0 0 var(--spacing-5);
+}
+
+.jcal__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin: 0 0 var(--spacing-3);
+}
+
+.jcal__title {
+  margin: 0 var(--spacing-2);
+  font-size: var(--typography-size-lg);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.jcal__title a {
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.jcal__title a:hover {
+  text-decoration: underline;
+}
+
+.jcal__strip {
+  margin: 0 0 var(--spacing-3);
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-panel);
+}
+
+.jcal__striptitle {
+  margin: 0 0 var(--spacing-1);
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-secondary);
+}
+
+.jcal__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--spacing-1);
+}
+
+.jcal__grid {
+  width: 100%;
+  min-width: 42rem;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+.jcal__grid th {
+  padding: var(--spacing-15) var(--spacing-2);
+  font-size: var(--typography-size-chip);
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  text-align: left;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.jcal__day {
+  height: 6rem;
+  padding: var(--spacing-1) var(--spacing-15);
+  vertical-align: top;
+  border: 1px solid var(--border-subtle);
+}
+
+.jcal__day--outside {
+  background: var(--surface-base);
+}
+
+.jcal__day--outside .jcal__daynum {
+  color: var(--text-muted);
+}
+
+.jcal__day--today {
+  box-shadow: inset 0 2px 0 0 var(--accent-primary);
+}
+
+.jcal__daynum {
+  display: inline-block;
+  margin: 0 0 var(--spacing-1);
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-secondary);
+}
+
+a.jcal__daynum {
+  color: var(--accent-link);
+}
+
+.jcal__item {
+  display: block;
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-primary);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.jcal__item:hover,
+.jcal__item:focus-visible {
+  text-decoration: underline;
+}
+
+/* The entry is a link to its Teema; the link colour on what commences says
+   so without underlining every line of a dense grid (visual QA C-2). */
+.jcal__what {
+  font-weight: var(--typography-weight-semibold);
+  color: var(--accent-link);
+}
+
+.jcal__matter {
+  display: block;
+  color: var(--text-muted);
+}
+
+.jcal__undated {
+  margin: var(--spacing-2) 0 0;
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
