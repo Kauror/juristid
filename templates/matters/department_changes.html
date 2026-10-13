@@ -20,11 +20,11 @@ know (both in the rail). Everything is computed by
 <div class="page page--overview">
   <div class="ovhead">
     <h1 class="ovhead__title">Muudatused</h1>
-    <span class="ovhead__date">
-      <time datetime="{{ page.period.start|date:'Y-m-d' }}">{{ page.period.start|date:"j.n.Y" }}</time>
-      –
-      <time datetime="{{ page.period.end|date:'Y-m-d' }}">{{ page.period.end|date:"j.n.Y" }}</time>
-    </span>
+    {% comment %}
+      The window's two dates, both included — `Period.bounds`, the string Tehtud
+      prints beside its own heading, so the two sections state one window one way.
+    {% endcomment %}
+    <span class="ovhead__date" data-period-bounds>{{ page.period.bounds }}</span>
     <span class="ovhead__spacer"></span>
     <a class="ovsection__link" href="{% url 'matters:department' %}">← Osakond</a>
   </div>

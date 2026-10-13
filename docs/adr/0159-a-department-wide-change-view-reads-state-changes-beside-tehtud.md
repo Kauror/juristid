@@ -106,6 +106,19 @@ be read, is incomplete or is reversed is refused **in words** and the window
 falls back to the default — where an unknown named key falls back silently, as
 `kind_from` does.
 
+> **Round 2 correction, 2026-10-13 — pending owner acceptance.** A named window
+> of N days is now **N calendar dates ending today**: `today − (N − 1) … today`
+> (`department_dashboard.last_days`, `ROLLING_DAYS`). «7 päeva» on 13 October is
+> 7–13 October; «14 päeva» fourteen dates, «30 päeva» thirty, «Kvartal» 91. It
+> was `today − N … today`, N + 1 dates under a label that says N. A custom range
+> is unchanged: both typed dates included. «Aasta» is unchanged: 1 January to
+> today. The change is in the one shared parser, so *Tehtud* and *Muudatused*
+> move together and still agree; both now print the dates they cover beside the
+> window (`Period.bounds`, e.g. «7.10.2026–13.10.2026»). This replaces the
+> «Known item for the owner» under Consequences, which recorded the old meaning;
+> until the owner accepts it, that sentence is the accepted text and this block
+> is the branch's proposal.
+
 Queries are bounded: one grouped count, one capped row query per category
 (`ROW_LIMIT` = 50, with `truncated` when the count is larger), four coverage
 aggregates, at most three snapshot queries, plus the digest. The count does not
@@ -144,7 +157,8 @@ exactly as Tehtud is. No top-bar item (the bar is coordinator-owned).
 
 - One additive key in `period_from` (`?periood=14` on `/osakond/` now reads a
   fortnight where it used to fall back to seven days).
-- **Known item for the owner:** `period_from`'s «7 päeva» is `today − 7 …
+- **Known item for the owner (superseded on the branch by the §5 round 2
+  correction, pending owner acceptance):** `period_from`'s «7 päeva» is `today − 7 …
   today`, eight calendar days inclusive («14 päeva» fifteen, «30 päeva»
   thirty-one). Kept identical to *Tehtud* by the owner's instruction of
   2026-10-13, so the two sections agree; changing the meaning would change both.

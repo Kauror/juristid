@@ -294,7 +294,8 @@ def test_the_named_windows_are_tehtuds(key, days):
     period, error = dc.changes_period({"periood": key}, today)
 
     assert error == ""
-    assert (period.start, period.end) == (today - timedelta(days=days), today)
+    # N days are N calendar dates ending today, both ends included.
+    assert (period.start, period.end) == (today - timedelta(days=days - 1), today)
     # One parser: the same key gives Tehtud the same window.
     if key in {"7", "14", "30"}:
         assert dd.period_from({"periood": key}, today) == period
@@ -731,3 +732,152 @@ def test_the_link_carries_the_window_tehtud_is_showing(client, department_head):
     body = client.get(OSAKOND, {"periood": "30"}).content.decode()
 
     assert f'href="{PAGE}?periood=30">Muudatused →</a>' in body
+
+
+# =========================================================================
+# N days are N calendar dates (docs/adr/0159 §5, round 2)
+# =========================================================================
+
+#: A Tuesday; «7 päeva» is then 7–13 October.
+EDGE_TODAY = date(2026, 10, 13)
+
+
+@pytest.mark.parametrize(
+    ("key", "first", "days"),
+    [
+        ("7", date(2026, 10, 7), 7),
+        ("14", date(2026, 9, 30), 14),
+        ("30", date(2026, 9, 14), 30),
+        ("kvartal", date(2026, 7, 15), 91),
+        ("", date(2026, 10, 7), 7),
+    ],
+)
+def test_n_days_are_n_calendar_dates_ending_today(key, first, days):
+    period = dd.period_from({"periood": key}, EDGE_TODAY)
+
+    assert (period.start, period.end) == (first, EDGE_TODAY)
+    assert (period.end - period.start).days + 1 == days
+    # Muudatused reads the same window from the same parser.
+    if key != "kvartal":
+        assert dc.changes_period({"periood": key}, EDGE_TODAY)[0] == period
+
+
+def test_the_bounds_state_both_included_dates():
+    assert dd.period_from({"periood": "7"}, EDGE_TODAY).bounds == "7.10.2026–13.10.2026"
+    custom = dd.period_from(
+        {"periood": "vahemik", "alates": "1.9.2026", "kuni": "30.9.2026"}, EDGE_TODAY
+    )
+    assert custom.bounds == "1.9.2026–30.9.2026"
+
+
+def _stage_event(matter, actor, moment: datetime, label: str) -> None:
+    ChangeEvent.objects.create(
+        event_type=ChangeEventType.MATTER_STAGE_CHANGED,
+        matter=matter,
+        actor=actor,
+        occurred_at=moment,
+        summary=label,
+        payload={"from_label": "Idee", "to_label": label},
+    )
+
+
+def _hetkeseis(user, params) -> set[str]:
+    changes = dc.build_changes(user, params, today=EDGE_TODAY)
+    return {row.detail.split(" → ", 1)[1] for row in _category(changes, "hetkeseis").rows}
+
+
+def test_muudatused_seven_days_stop_at_today_minus_six_in_tallinn(department_head, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    moments = {
+        "t-7 last minute": _at(EDGE_TODAY - timedelta(days=7), time(23, 59)),
+        "t-6 first minute": _at(EDGE_TODAY - timedelta(days=6), time(0, 0, 30)),
+        "today last minute": _at(EDGE_TODAY, time(23, 59)),
+    }
+    for label, moment in moments.items():
+        _stage_event(matter, specialist, moment, label)
+
+    week = _hetkeseis(department_head, {"periood": "7"})
+    fortnight = _hetkeseis(department_head, {"periood": "14"})
+
+    assert week == {"t-6 first minute", "today last minute"}
+    assert fortnight == set(moments)
+    # 00:00:30 on t−6 in Tallinn is still t−7 in UTC: only a Tallinn-local
+    # comparison puts it inside the week.
+    utc = ZoneInfo("UTC")
+    assert moments["t-6 first minute"].astimezone(utc).date() == EDGE_TODAY - timedelta(days=7)
+
+
+def test_muudatused_custom_range_keeps_both_typed_ends(department_head, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    start, end = date(2026, 9, 1), date(2026, 9, 30)
+    for label, moment in {
+        "before": _at(start - timedelta(days=1), time(23, 59)),
+        "first": _at(start, time(0, 0, 30)),
+        "last": _at(end, time(23, 59)),
+        "after": _at(end + timedelta(days=1), time(0, 0, 30)),
+    }.items():
+        _stage_event(matter, specialist, moment, label)
+
+    typed = _hetkeseis(
+        department_head, {"periood": "vahemik", "alates": "1.9.2026", "kuni": "30.9.2026"}
+    )
+
+    assert typed == {"first", "last"}
+
+
+def _entries(user, params) -> set[str]:
+    digest = dd.build_digest(user, dd.period_from(params, EDGE_TODAY))
+    return {row.text for row in digest.rows if row.kind == "entry"}
+
+
+def _entry_on(specialist, title: str, moment: datetime) -> None:
+    factories.EntryFactory(
+        matter=factories.MatterFactory(owner=specialist, title=title),
+        author=specialist,
+        occurred_at=moment,
+    )
+
+
+def test_tehtud_seven_days_stop_at_today_minus_six_in_tallinn(department_head, specialist):
+    _entry_on(specialist, "t-7 last minute", _at(EDGE_TODAY - timedelta(days=7), time(23, 59)))
+    _entry_on(specialist, "t-6 first minute", _at(EDGE_TODAY - timedelta(days=6), time(0, 0, 30)))
+    _entry_on(specialist, "today last minute", _at(EDGE_TODAY, time(23, 59)))
+
+    assert _entries(department_head, {"periood": "7"}) == {"t-6 first minute", "today last minute"}
+    assert _entries(department_head, {"periood": "14"}) == {
+        "t-7 last minute",
+        "t-6 first minute",
+        "today last minute",
+    }
+    digest = dd.build_digest(department_head, dd.period_from({"periood": "7"}, EDGE_TODAY))
+    assert digest.entries == 2
+
+
+def test_tehtud_thirty_days_are_thirty_dates(department_head, specialist):
+    _entry_on(specialist, "t-30", _at(EDGE_TODAY - timedelta(days=30), time(12, 0)))
+    _entry_on(specialist, "t-29", _at(EDGE_TODAY - timedelta(days=29), time(12, 0)))
+
+    assert _entries(department_head, {"periood": "30"}) == {"t-29"}
+
+
+def test_tehtud_custom_range_keeps_both_typed_ends(department_head, specialist):
+    start, end = date(2026, 9, 1), date(2026, 9, 30)
+    _entry_on(specialist, "before", _at(start - timedelta(days=1), time(23, 59)))
+    _entry_on(specialist, "first", _at(start, time(0, 0, 30)))
+    _entry_on(specialist, "last", _at(end, time(23, 59)))
+    _entry_on(specialist, "after", _at(end + timedelta(days=1), time(0, 0, 30)))
+
+    typed = {"periood": "vahemik", "alates": "1.9.2026", "kuni": "30.9.2026"}
+    assert _entries(department_head, typed) == {"first", "last"}
+
+
+def test_both_sections_print_the_dates_they_cover(client, department_head, today):
+    client.force_login(department_head)
+    expected = dd.period_from({"periood": "14"}, today).bounds
+
+    tehtud = client.get(OSAKOND, {"periood": "14"}).content.decode()
+    changes = client.get(PAGE, {"periood": "14"}).content.decode()
+
+    assert f"data-period-bounds>{expected}</span>" in tehtud
+    assert f"data-period-bounds>{expected}</span>" in changes
+    assert expected.startswith(dd.format_estonian_date(today - timedelta(days=13)))

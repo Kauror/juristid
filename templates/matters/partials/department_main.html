@@ -217,6 +217,11 @@ control that promised one of them would be lying about what it does
     <div class="ovsection__head">
       <h2 class="ovsection__title">Tehtud</h2>
       {% comment %}
+        The dates the selected window covers, both included, so «7 päeva» is
+        read as seven dates and not left to arithmetic (docs/adr/0159 §5).
+      {% endcomment %}
+      <span class="ovsection__meta" data-period-bounds>{{ page.digest.period.bounds }}</span>
+      {% comment %}
         What *changed* in the same window, beside what it produced. Inside
         the digest's own condition, so it is the head's exactly as the digest is
         (docs/adr/0159).
