@@ -84,8 +84,13 @@ says so (master specification 18.8).
       {% endfor %}
     </div>
     <div class="chartgrid">
+      {% comment %}
+        The cards above already print each metric's notes, so the charts do not
+        repeat them; the bar labels wrap, because three «ei saa kontrollida»
+        reasons must stay distinguishable at phone width.
+      {% endcomment %}
       {% for item in deadline_compositions %}
-        {% include "reporting/_composition.html" with item=item %}
+        {% include "reporting/_composition.html" with item=item wrap_labels=True hide_notes=True %}
       {% endfor %}
     </div>
   </section>

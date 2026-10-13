@@ -1152,3 +1152,26 @@ def test_register_links_carry_the_data_class_once_even_if_the_helper_adds_it(mgm
             )
         for url in urls:
             assert parse_qs(urlparse(url).query)["andmed"] == ["paris"], url
+
+
+def test_the_unverifiable_bars_lead_with_their_reason_and_wrap(mgmt, client):
+    """Visual QA 2026-10-13: three «ei saa kontrollida» bars must be told apart."""
+    result = compute(keys.OPINIONS_ON_TIME, ctx(mgmt.head))
+    unverifiable = [segment for segment in result.segments if segment.is_unknown]
+    labels = [segment.label for segment in unverifiable]
+    # Distinct within their first three words, which survive any narrow cut.
+    assert len(labels) == 3 and len({" ".join(label.split()[:3]) for label in labels}) == 3
+    assert not any(label.startswith("Ei saa kontrollida") for label in labels)
+    assert {segment.note for segment in unverifiable} == {management.UNVERIFIABLE_NOTE}
+    client.force_login(mgmt.head)
+    page = client.get("/statistika/tegevus/", {"periood": "2026"}).content.decode()
+    deadlines = page[page.index('id="tegevus-tahtajad-heading"') :]
+    deadlines = deadlines[: deadlines.index('id="tegevus-arhiiv-heading"')]
+    assert deadlines.count("barchart barchart--wrap") == 2
+    for label in labels:
+        assert f'title="{label}"' in deadlines
+    # Each card's notes once: on the card, not again under its chart.
+    assert deadlines.count("Katvus: arvesse lähevad ainult seotud tähtajad") == 1
+    assert deadlines.count("tähtaegade ajalugu peetakse alates") == 1
+    listing = management.metric_rows(ctx(mgmt.head), keys.OPINIONS_ON_TIME, management.WITHDRAWN)
+    assert listing.group_label == "Vastus on tagasi võetud — ei saa kontrollida"

@@ -395,10 +395,14 @@ ANSWER_GROUP_LABELS: dict[str, str] = {
     VERIFIABLE: "Kontrollitavad vastused",
     ON_TIME: "Tähtajaks",
     LATE: "Pärast tähtaega",
-    CHANGED_AFTER_SENDING: "Ei saa kontrollida: tähtaeg muutus või lisati pärast saatmist",
-    BEFORE_HISTORY: "Ei saa kontrollida: tähtaeg on ajast enne tähtaegade ajalugu",
-    WITHDRAWN: "Ei saa kontrollida: vastuseks nimetatud arvamus on tagasi võetud",
+    # The reason comes first, so three bars that cannot be verified can be told
+    # apart however narrowly they are cut; «ei saa kontrollida» is their note
+    # and the list heading (visual QA 2026-10-13, ISSUE-4).
+    CHANGED_AFTER_SENDING: "Tähtaeg muutus või lisati pärast saatmist",
+    BEFORE_HISTORY: "Tähtaeg on enne tähtaegade ajalugu",
+    WITHDRAWN: "Vastus on tagasi võetud",
 }
+UNVERIFIABLE_NOTE = "Ei saa kontrollida · ei ole protsendis"
 UNVERIFIABLE_GROUPS: tuple[str, ...] = (CHANGED_AFTER_SENDING, BEFORE_HISTORY, WITHDRAWN)
 
 
@@ -541,7 +545,7 @@ def opinions_on_time(context: ReportingContext) -> MetricResult:
             label=ANSWER_GROUP_LABELS[key],
             value=by_group[key],
             url=link(key),
-            note="Ei ole protsendis",
+            note=UNVERIFIABLE_NOTE,
             is_unknown=True,
         )
         for key in UNVERIFIABLE_GROUPS
@@ -1171,7 +1175,8 @@ def _answer_list(context: ReportingContext, group: str, year: str) -> RowList:
     ]
     return RowList(
         heading=definition(keys.OPINIONS_ON_TIME).label_et,
-        group_label=ANSWER_GROUP_LABELS[group],
+        group_label=ANSWER_GROUP_LABELS[group]
+        + (" — ei saa kontrollida" if group in UNVERIFIABLE_GROUPS else ""),
         columns=("Arvamus", "Saadetud", "Tähtaeg, millele vastati", "Päevi pärast tähtaega"),
         rows=tuple(
             ListRow(

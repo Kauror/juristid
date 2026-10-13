@@ -52,7 +52,7 @@ from geometry (master specification 17.8, 18.10; Stage-2E brief 46, 60).
   {% endif %}
 
   {% if item.bars %}
-    <div class="barchart">
+    <div class="barchart{% if wrap_labels %} barchart--wrap{% endif %}">
       {% for bar in item.bars %}
         {% if bar.url %}
           <a class="barchart__row {% if bar.is_unknown %}barchart__row--unknown{% endif %}"
@@ -113,9 +113,11 @@ from geometry (master specification 17.8, 18.10; Stage-2E brief 46, 60).
     </p>
   {% endif %}
 
-  {% for note in item.result.notes %}
-    <p class="metric__note">{{ note }}</p>
-  {% endfor %}
+  {% if not hide_notes %}
+    {% for note in item.result.notes %}
+      <p class="metric__note">{{ note }}</p>
+    {% endfor %}
+  {% endif %}
 
   <details class="definition">
     <summary class="definition__summary">Kuidas arvutatakse?</summary>
