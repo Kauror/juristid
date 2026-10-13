@@ -8,6 +8,13 @@ urlpatterns = [
     # `/osakonna-too/` answered the same question — «kus osakond seisab» — and
     # printed several of the same numbers twice (docs/adr/0049).
     path("osakond/", department_views.department, name="department"),
+    # What changed in the department's work over a window — the head's, beside
+    # Tehtud's outputs (docs/adr/0159).
+    path(
+        "osakond/muudatused/",
+        department_views.department_changes,
+        name="department_changes",
+    ),
     # Both old addresses, permanently, with their query strings. Every bookmark,
     # every pasted link and every `?vaade=`, `?periood=` or custom date range
     # somebody saved still opens the page it described: `?vaade=valdkonniti` is

@@ -614,7 +614,8 @@ def test_the_department_page_carries_no_change_feed_and_no_feed_filter(page, bas
     of thing a server-side test would not notice. What the feed's rows *say*
     when something does render them is still asserted in full against the read
     model (`tests/test_identifier_free_ui.py`), so nothing about the wording
-    stopped being checked — where the events belong is DS-25.
+    stopped being checked. DS-25 is answered by docs/adr/0159: the state
+    changes live on the head's own `/osakond/muudatused/`, not on this page.
     """
     sign_in(page, base_url, SANDRA)
     page.set_viewport_size({"width": 1440, "height": 900})
