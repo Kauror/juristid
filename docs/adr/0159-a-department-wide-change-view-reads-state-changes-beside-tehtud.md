@@ -1,7 +1,8 @@
 # 0159 — A department-wide change view reads state changes beside Tehtud
 
-**Status:** proposed — the read model is built; the page waits on an owner decision (§6)
+**Status:** accepted — owner's decision of 2026-10-13 («Separate head-only page», option 1 of §6)
 **Date:** 2026-10-13
+**Amends:** ADR 0049 §7; answers DS-25
 
 ## Context
 
@@ -24,10 +25,10 @@ Two existing decisions stand in the way of simply drawing it.
   as an ADR amendment.
 
 A page at `/osakond/muudatused/` is neither of DS-25's two options; it is a
-third, and it is the department feed ADR 0049 removed in a new shape. So the
-part of this work that renders it is **stopped and put to the owner** (§6). The
-part that does not render anything — the read model — is built, because it is
-the same work whichever way DS-25 is answered.
+third, and it is the department feed ADR 0049 removed in a new shape. The first
+round of this work therefore built only the read model and put the page to the
+owner (§6). **The owner decided on 2026-10-13: a separate page, the department
+head's only** — ADR 0049 §7 is amended to say so, and DS-25 is answered by it.
 
 ## Decision
 
@@ -110,32 +111,46 @@ Queries are bounded: one grouped count, one capped row query per category
 aggregates, at most three snapshot queries, plus the digest. The count does not
 grow with rows (asserted).
 
-### 6. Stopped for the owner: the page
+### 6. The page — `/osakond/muudatused/`
 
-Proposed, **not built**: `GET /osakond/muudatused/` (`matters:department_changes`)
-in `app/matters/department_views.py`, `@gate_required`, 404 unless
-`may_view_department_management(request.user)`, rendering the five categories
-with counts, a «Tehtud samal perioodil» line linking to `/osakond/?periood=…#tehtud`,
-the snapshot comparison and the coverage block; entry point one link from the
-*Tehtud* section heading («Muudatused →»), no top-bar item (CONTRACT §1).
+Three options were put to the owner: (1) amend ADR 0049 §7 and build a separate
+page; (2) answer DS-25 «inside Tehtud» as new `DigestRow` kinds; (3) answer it
+«no» and withdraw this module with `activity_feed`. **The owner chose (1) on
+2026-10-13.**
 
-It needs one of:
+`GET /osakond/muudatused/` (`matters:department_changes`,
+`app/matters/department_views.py`), `@gate_required`, and **404** unless
+`may_view_department_management(request.user)` — the authenticated identity,
+the rule Meeskond and Tehtud are built by. Those two are sections and are not
+built for anybody else; a page of its own answers the way the manager-only
+`/osakonna-too/` did and a colleague's desk still does: it does not exist.
+Nothing is computed before the check, so a shared-gate session without a
+persona and a specialist get the same 404.
 
-1. **Amend ADR 0049 §7** to say a separate state-change view beside *Tehtud* is
-   wanted, and close DS-25 that way — then the page above is built; or
-2. **Answer DS-25 «yes, inside Tehtud»** — the categories become new
-   `DigestRow` kinds read from this module, no new route; or
-3. **Answer DS-25 «no»** — this module and its tests are withdrawn with
-   `overview.activity_feed`.
+The page draws the five categories with counts and rows (title, verb,
+before → after, actor, date, linking to the Teema), the window control (7 / 14 /
+30 päeva and a custom range whose refusal is printed with the typed dates
+redisplayed), an empty state, and a rail with three blocks kept apart:
+«Tehtud samal perioodil» (Tehtud's own numbers and a link to `/osakond/` on the
+same window, `#tehtud`), «Hetktõmmiste võrdlus», and «Mida see ei näita»
+(coverage). Existing components and tokens only; no CSS changed.
+
+**Entry point:** one «Muudatused →» link in the *Tehtud* section heading on
+`/osakond/`, carrying Tehtud's window (Kvartal / Aasta / a custom range travel as
+their dates). It sits inside the digest's own condition, so it is the head's
+exactly as Tehtud is. No top-bar item (the bar is coordinator-owned).
 
 ## Consequences
 
 - One additive key in `period_from` (`?periood=14` on `/osakond/` now reads a
   fortnight where it used to fall back to seven days).
-- Inherited, not fixed here: `period_from`'s «7 päeva» is `today − 7 … today`,
-  eight calendar days inclusive (and «30 päeva» thirty-one). The change view
-  matches *Tehtud* so the two agree; changing the meaning is an owner call for
-  both.
+- **Known item for the owner:** `period_from`'s «7 päeva» is `today − 7 …
+  today`, eight calendar days inclusive («14 päeva» fifteen, «30 päeva»
+  thirty-one). Kept identical to *Tehtud* by the owner's instruction of
+  2026-10-13, so the two sections agree; changing the meaning would change both.
+- `ENGAGEMENT_ADDED` (a Kaasamine added), which the old feed carried, is not a
+  category; nor are important dates, effective dates or work-victory proposals.
+- `overview.activity_feed` and its tests stay; retiring them is separate.
 - `NEXT_ACTION_SET` is written for a new step and for a `Muuda` that replaces
   one; both read «määras järgmise tegevuse». One act that moved the stage and
   set a step counts once in each category; `operation_id` grouping is not used.

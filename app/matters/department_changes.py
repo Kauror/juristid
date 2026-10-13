@@ -57,6 +57,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any
+from urllib.parse import urlencode
 
 from django.db.models import Count, Max, Min, Q, QuerySet
 from django.urls import reverse
@@ -67,7 +68,7 @@ from app.audit.models import ChangeEvent
 from app.audit.visibility import scope_change_events
 from app.core.authorization import apply as apply_scope
 from app.core.authorization import matter_visibility_q, scope_for_user
-from app.core.dates import read_flexible_date
+from app.core.dates import format_estonian_date, read_flexible_date
 from app.matters import department_dashboard as dd
 from app.matters.enums import MatterOrigin, RecordMode, StageEpisodeOrigin
 from app.matters.models import Matter, MatterStageEpisode
@@ -96,6 +97,8 @@ class Category:
 
     key: str
     label: str
+    #: The one-word badge a row carries, so a mixed list still reads by kind.
+    badge: str
     #: Event type → the past-tense phrase a row reads as.
     verbs: tuple[tuple[str, str], ...]
 
@@ -106,21 +109,25 @@ class Category:
 
 NEW_MATTERS = Category(
     key="uued",
+    badge="Uus",
     label="Uued teemad",
     verbs=((ChangeEventType.MATTER_CREATED, "avas teema"),),
 )
 STAGE_CHANGES = Category(
     key="hetkeseis",
+    badge="Hetkeseis",
     label="Hetkeseisu muutused",
     verbs=((ChangeEventType.MATTER_STAGE_CHANGED, "muutis hetkeseisu"),),
 )
 TRANSFERS = Category(
     key="vastutaja",
+    badge="Vastutaja",
     label="Vastutaja muutused",
     verbs=((ChangeEventType.MATTER_ASSIGNED, "määras vastutaja"),),
 )
 NEXT_ACTIONS = Category(
     key="tegevused",
+    badge="Tegevus",
     label="Järgmised tegevused",
     verbs=(
         (ChangeEventType.NEXT_ACTION_SET, "määras järgmise tegevuse"),
@@ -131,6 +138,7 @@ NEXT_ACTIONS = Category(
 )
 REOPENINGS = Category(
     key="taasavatud",
+    badge="Taasavatud",
     label="Taasavatud teemad",
     verbs=((ChangeEventType.MATTER_REOPENED, "avas teema uuesti"),),
 )
@@ -155,6 +163,9 @@ CURATED_EVENT_TYPES: frozenset[str] = frozenset(
 _VERBS: dict[str, str] = {
     event_type: verb for category in CATEGORIES for event_type, verb in category.verbs
 }
+_BADGES: dict[str, str] = {
+    event_type: category.badge for category in CATEGORIES for event_type in category.event_types
+}
 
 
 @dataclass(frozen=True)
@@ -163,6 +174,7 @@ class ChangeRow:
 
     at: datetime
     event_type: str
+    badge: str
     verb: str
     detail: str
     actor_name: str
@@ -264,6 +276,30 @@ class DepartmentChanges:
     def is_empty(self) -> bool:
         return self.total == 0
 
+    @property
+    def partial_coverage(self) -> bool:
+        """The window reaches back before the first recorded change."""
+        return self.coverage.starts_after(self.period)
+
+    @property
+    def period_options(self) -> list[dd.PeriodOption]:
+        """The three named windows. None is selected while a typed range was
+        refused, so the page never claims the reader chose the fallback."""
+        return [
+            dd.PeriodOption(
+                key=key,
+                label=label,
+                active=self.period.key == key and not self.period_error,
+                query=urlencode({dd.PERIOD_PARAM: key}),
+            )
+            for key, label in PERIOD_CHOICES
+        ]
+
+    @property
+    def tehtud_url(self) -> str:
+        """*Tehtud* on the identical window, where the outputs are listed."""
+        return tehtud_url(self.period)
+
 
 # ---------------------------------------------------------------------------
 # The window
@@ -296,6 +332,40 @@ def changes_period(params: Any, today: date | None = None) -> tuple[dd.Period, s
     if key not in {choice for choice, _ in PERIOD_CHOICES}:
         key = dd.PERIOD_7
     return dd.period_from({dd.PERIOD_PARAM: key}, today), ""
+
+
+def _range_params(period: dd.Period) -> dict[str, str]:
+    return {
+        dd.PERIOD_PARAM: dd.PERIOD_CUSTOM,
+        dd.PERIOD_START_PARAM: format_estonian_date(period.start),
+        dd.PERIOD_END_PARAM: format_estonian_date(period.end),
+    }
+
+
+def changes_url(period: dd.Period) -> str:
+    """This view on Tehtud's window — the «Muudatused →» link in its heading.
+
+    A window this view names (7 / 14 / 30) travels as its key; any other —
+    Kvartal, Aasta, a custom range — as the two dates it covers, so the link
+    never lands on a different period than the section it sits in.
+    """
+    named = {key for key, _ in PERIOD_CHOICES}
+    params = {dd.PERIOD_PARAM: period.key} if period.key in named else _range_params(period)
+    return f"{reverse('matters:department_changes')}?{urlencode(params)}"
+
+
+def tehtud_url(period: dd.Period) -> str:
+    """Tehtud on this view's window, its section addressed by `#tehtud`."""
+    params = dd._page_params(
+        period_key=period.key,
+        kind=dd.KIND_ALL,
+        start=period.start,
+        end=period.end,
+    )
+    if period.key == dd.PERIOD_14:
+        # Tehtud's parser reads the fortnight; its control just does not offer it.
+        params[dd.PERIOD_PARAM] = dd.PERIOD_14
+    return f"{reverse('matters:department')}?{urlencode(params)}#tehtud"
 
 
 # ---------------------------------------------------------------------------
@@ -372,6 +442,7 @@ def _row(event: ChangeEvent) -> ChangeRow:
     return ChangeRow(
         at=event.occurred_at,
         event_type=event.event_type,
+        badge=_BADGES[event.event_type],
         verb=_VERBS[event.event_type],
         detail=_detail(event),
         actor_name=actor.display_name if actor is not None else "",

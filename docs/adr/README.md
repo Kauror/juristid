@@ -58,7 +58,7 @@ consequences and reversibility.
 | [0046](0046-two-deadline-groups-a-week-and-the-rest-of-the-month.md) | Tähtajad in two groups: the calendar week whole, the rest of the month behind «Näita veel», and one line past it | Accepted |
 | [0047](0047-arvamused-as-a-section-of-teemad.md) | Arvamused as a section of Teemad, with two searches that never meet | Accepted |
 | [0048](0048-the-v2-design-implementation.md) | Implementing the v2 design over the application that exists | Accepted |
-| [0049](0049-one-department-page.md) | One department page: `/ulevaade/` and `/osakonna-too/` become `/osakond/` | Accepted |
+| [0049](0049-one-department-page.md) | One department page: `/ulevaade/` and `/osakonna-too/` become `/osakond/` | Accepted; §7 amended 2026-10-13 by 0159 (a separate head-only `/osakond/muudatused/` for state changes) |
 | [0050](0050-an-open-jargmiseks-outranks-arvamuse-tahtaeg.md) | An open `Järgmiseks` outranks `Arvamuse tähtaeg` in the work model | Accepted |
 | [0051](0051-uus-asi-new-assignment-notices.md) | «Uus asi»: a personal receipt for a Matter somebody just put on your desk | Accepted |
 | [0052](0052-the-simplified-teema-next-action-workflow.md) | The simplified Teema next-action workflow | Accepted; §5's «a step needs a date» row superseded by 0106, the rest stands |
@@ -166,7 +166,7 @@ consequences and reversibility.
 | [0154](0154-ci-shards-share-runners-and-main-is-proved-by-its-pull-request.md) | CI shards share runners, and main is proved by its pull request's run | Accepted; CI only, no migrations; scopes `rebuild_is_running()` to the current database |
 | [0155](0155-a-retired-user-facing-control-stays-retired.md) | A retired user-facing control stays retired | Accepted; owner's decision of 2026-10-12; a refactor or consolidation may not resurrect a retired control because its backend capability still exists; retirements are pinned by absence tests (`tests/test_retired_ui_contract.py`); bringing one back needs a new owner decision |
 | [0156](0156-hetkeseis-is-changed-directly-from-the-teema-header.md) | `Hetkeseis` is changed directly from the Teema header | Accepted; owner's decision of 2026-10-12; a menu of stage buttons through `update_field` → `change_stage`, no `Märge`; `stage` joins the guarded inline fields (revision, 409 on a stale page); 0152's closure confirmation and RULE-03 unchanged; no migration |
-| [0159](0159-a-department-wide-change-view-reads-state-changes-beside-tehtud.md) | A department-wide change view reads state changes beside Tehtud | Proposed; owner's five-track brief of 2026-10-13 (track C); read model `app.matters.department_changes` built (five `ChangeEvent` categories, Tehtud's digest reused, snapshot comparison, coverage), `period_from` gains `14`; **no migrations**; the `/osakond/muudatused/` page is stopped pending an owner decision on ADR 0049 §7 / DS-25 |
+| [0159](0159-a-department-wide-change-view-reads-state-changes-beside-tehtud.md) | A department-wide change view reads state changes beside Tehtud | Accepted; owner's decision of 2026-10-13 (separate head-only page); amends 0049 §7 and answers DS-25; `/osakond/muudatused/` (404 unless `department.view_management`) over `app.matters.department_changes` — five `ChangeEvent` categories, Tehtud's digest reused, snapshot comparison and coverage shown apart; «Muudatused →» in the Tehtud heading; `period_from` gains `14`; **no migrations** |
 
 Naming: `NNNN-short-decision-title.md`.
 

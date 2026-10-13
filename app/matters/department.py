@@ -50,6 +50,7 @@ from django.utils import timezone
 from app.matters import department_dashboard as dd
 from app.matters import overview as ov
 from app.matters import work_items as wi
+from app.matters.department_changes import changes_url
 
 #: How many *Vajab sekkumist* rows stand above the disclosure. Five, which is
 #: what frame C draws; the rest open in place on the same page, so a scan never
@@ -85,6 +86,9 @@ class Department:
     upcoming: list[dd.UpcomingGroup] = field(default_factory=list)
     digest: dd.Digest | None = None
     periods: list[dd.PeriodOption] = field(default_factory=list)
+    #: «Muudatused →» on the same window, head only like the digest beside it
+    #: (docs/adr/0159).
+    changes_url: str = ""
 
     # The rail
     areas: list[ov.CountRow] = field(default_factory=list)
@@ -221,5 +225,6 @@ def build_department(
         kind = dd.kind_from(params)
         page.digest = dd.build_digest(viewer, period, kind)
         page.periods = dd.period_options(period, kind)
+        page.changes_url = changes_url(period)
 
     return page

@@ -565,3 +565,169 @@ def test_more_changes_cost_no_more_queries(department_head, specialist, other_sp
 
     assert many == few
     assert few <= 25
+
+
+# =========================================================================
+# The page — /osakond/muudatused/ (docs/adr/0159 §6)
+# =========================================================================
+
+PAGE = "/osakond/muudatused/"
+OSAKOND = "/osakond/"
+
+
+def _lend_management_view(person):
+    person.capability_overrides = {
+        **(person.capability_overrides or {}),
+        "department.view_management": "allow",
+    }
+    person.save(update_fields=["capability_overrides"])
+    return person
+
+
+def test_the_route_is_where_the_adr_puts_it():
+    assert reverse("matters:department_changes") == PAGE
+
+
+def test_the_head_reads_the_page(client, department_head, specialist):
+    matter = create_matter(title="Pealik näeb seda", owner=specialist, actor=specialist)
+    change_stage(matter=matter, stage=_stage("idea"), actor=specialist)
+    client.force_login(department_head)
+
+    response = client.get(PAGE)
+
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert '<h1 class="ovhead__title">Muudatused</h1>' in body
+    for result in response.context["page"].categories:
+        assert f'data-category="{result.key}"' in body
+        assert result.label in body
+    assert "Pealik näeb seda — muutis hetkeseisu: määramata → Idee" in body
+    assert reverse("matters:matter_detail", kwargs={"pk": matter.pk}) in body
+    assert "data-outputs" in body and "data-snapshots" in body and "data-coverage" in body
+    assert "data-changes-empty" not in body
+
+
+@pytest.mark.parametrize("who", ["specialist", "reader", "administrator"])
+def test_anybody_else_is_refused_with_a_404(client, request, who):
+    client.force_login(request.getfixturevalue(who))
+
+    assert client.get(PAGE).status_code == 404
+
+
+def test_nothing_is_built_before_the_refusal(client, specialist, monkeypatch):
+    def refuse(*args, **kwargs):
+        raise AssertionError("built for somebody who may not open the page")
+
+    monkeypatch.setattr("app.matters.department_views.build_changes", refuse)
+    client.force_login(specialist)
+
+    assert client.get(PAGE).status_code == 404
+
+
+def test_a_reader_lent_the_view_opens_it_and_sees_no_restricted_teema(client, reader, specialist):
+    create_matter(
+        title="SALAJANE-TEEMA-411",
+        owner=specialist,
+        actor=specialist,
+        visibility=Visibility.RESTRICTED,
+    )
+    create_matter(title="Avalik teema 411", owner=specialist, actor=specialist)
+    client.force_login(_lend_management_view(reader))
+
+    response = client.get(PAGE)
+
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert "Avalik teema 411" in body
+    assert "SALAJANE-TEEMA-411" not in body
+    assert response.context["page"].categories[0].count == 1
+
+
+class TestBehindTheSharedGate:
+    PASSWORD = "muudatuste-lehe-test-parool"  # noqa: S105
+
+    @pytest.fixture(autouse=True)
+    def gate_mode(self, settings):
+        from tests.gate import apply_shared_gate
+
+        return apply_shared_gate(settings, self.PASSWORD)
+
+    def test_a_session_with_no_persona_is_refused(self, client):
+        response = client.post(reverse("accounts:shared_gate"), {"password": self.PASSWORD})
+        assert response.status_code == 302
+
+        assert client.get(PAGE).status_code == 404
+
+
+def test_the_empty_state_is_said_in_words(client, department_head):
+    client.force_login(department_head)
+
+    body = client.get(PAGE).content.decode()
+
+    assert "data-changes-empty" in body
+    assert "Valitud perioodil ei ole ühtegi muudatust salvestatud." in body
+    assert "Ühtegi muudatust ei ole veel salvestatud." in body
+    assert "võrdlust ei ole" in body
+
+
+def test_a_refused_range_says_why_and_keeps_what_was_typed(client, department_head):
+    client.force_login(department_head)
+
+    response = client.get(PAGE, {"periood": "vahemik", "alates": "10.10.2026", "kuni": "1.10.2026"})
+
+    body = response.content.decode()
+    assert dc.CUSTOM_RANGE_REVERSED in body
+    assert 'value="10.10.2026"' in body and 'value="1.10.2026"' in body
+    assert response.context["page"].period.key == dd.PERIOD_7
+    assert not any(option.active for option in response.context["page"].period_options)
+
+
+def test_the_fortnight_chip_selects_the_fortnight(client, department_head):
+    client.force_login(department_head)
+
+    response = client.get(PAGE, {"periood": "14"})
+
+    options = {option.key: option.active for option in response.context["page"].period_options}
+    assert options == {"7": False, "14": True, "30": False}
+    assert 'href="?periood=14"' in response.content.decode()
+
+
+def test_the_outputs_link_opens_tehtud_on_the_same_window(department_head):
+    custom = dd.Period(dd.PERIOD_CUSTOM, date(2026, 9, 1), date(2026, 9, 30))
+
+    assert dc.tehtud_url(custom) == (
+        "/osakond/?vaade=osakond&periood=vahemik&alates=1.9.2026&kuni=30.9.2026&liik=koik#tehtud"
+    )
+    fortnight = dd.period_from({"periood": "14"}, date(2026, 10, 13))
+    assert dc.tehtud_url(fortnight).startswith("/osakond/?vaade=osakond&periood=14&")
+
+
+def test_the_link_from_tehtud_keeps_tehtuds_window():
+    today = date(2026, 10, 13)
+
+    assert dc.changes_url(dd.period_from({"periood": "30"}, today)) == f"{PAGE}?periood=30"
+    quarter = dd.period_from({"periood": "kvartal"}, today)
+    assert dc.changes_url(quarter) == (
+        f"{PAGE}?periood=vahemik&alates={quarter.start.day}.{quarter.start.month}."
+        f"{quarter.start.year}&kuni=13.10.2026"
+    )
+
+
+def test_the_osakond_link_is_the_heads_alone(client, department_head, specialist):
+    client.force_login(department_head)
+    head_body = client.get(OSAKOND).content.decode()
+    client.force_login(specialist)
+    specialist_body = client.get(OSAKOND).content.decode()
+
+    assert f'href="{PAGE}?periood=7">Muudatused →</a>' in head_body
+    assert 'id="tehtud"' in head_body
+    assert "Muudatused →" not in specialist_body
+    assert PAGE not in specialist_body
+
+
+def test_the_link_carries_the_window_tehtud_is_showing(client, department_head):
+    client.force_login(department_head)
+
+    body = client.get(OSAKOND, {"periood": "30"}).content.decode()
+
+    assert f'href="{PAGE}?periood=30">Muudatused →</a>' in body
