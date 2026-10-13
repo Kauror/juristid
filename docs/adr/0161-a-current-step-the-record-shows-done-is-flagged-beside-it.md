@@ -1,6 +1,6 @@
 # 0161 — A current step the record already shows done is flagged beside it
 
-**Status:** proposed (five-track round, track E, 2026-10-13; draft for owner review)
+**Status:** accepted — owner's decision of 2026-10-13 (release preparation): the single deterministic, read-only workflow-consistency warning is accepted as specified here. No further alerts are authorised by this record.
 **Date:** 2026-10-13
 
 **No migrations**, no data migration, no backfill, nothing written by the
