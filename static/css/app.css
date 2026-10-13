@@ -13670,3 +13670,52 @@ a.jcal__daynum {
   font-size: var(--typography-size-meta);
   color: var(--text-muted);
 }
+
+/* The Lovable mirror (/haldus/lovable/, docs/adr/0157). A desktop tool whose
+   rows carry several fields each: below the minimum width the tables scroll
+   inside `.tablewrap` rather than squeezing «Väljad» to a sliver, and a
+   Teemaviide never breaks inside itself («2026 / _2», visual QA ISSUE-7). */
+.table--mirror {
+  min-width: 56rem;
+}
+
+.table--mirror .table__nr {
+  white-space: nowrap;
+}
+
+/* The snapshot's facts: one aligned grid of label over value, read-only, so
+   without the dashed edit affordance `.metaline__value` carries (C-11). */
+.mirrorfacts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: var(--spacing-3) var(--spacing-4);
+  margin: var(--spacing-2) 0 0;
+}
+
+.mirrorfacts__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  min-width: 0;
+}
+
+.mirrorfacts__label {
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+.mirrorfacts__value {
+  margin: 0;
+  color: var(--text-primary);
+  font-weight: var(--typography-weight-semibold);
+}
+
+/* 64 hex characters: the one fact that spans the grid and may break anywhere. */
+.mirrorfacts__item:has(.mirrorfacts__value--hash) {
+  grid-column: 1 / -1;
+}
+
+.mirrorfacts__value--hash {
+  overflow-wrap: anywhere;
+  font-weight: var(--typography-weight-regular);
+}
