@@ -138,6 +138,10 @@ Every date is written by `display_when` / `format_at_precision`: «III kvartal
 Past rows appear whenever the population has them; a window starting today or
 later has none.
 
+**Wording and bound accepted** (owner's decision of 2026-10-13, release
+preparation): the current Estonian captions, the 100-row-per-bucket bound and
+its explicit «näita kõiki N» expansion are accepted as they stand.
+
 **A long bucket is bounded; its count is not** (Round 2, 2026-10-13). Each
 bucket shows at most 100 rows (`commencements.BUCKET_LIMIT`) in the chosen
 order; its heading keeps the exact count, and «Näidatud 100 / N — näita kõiki N»
