@@ -83,6 +83,7 @@ from app.documents.services import (
     offered_document_roles,
 )
 from app.documents.uploads import UploadRejected
+from app.intelligence import commencements
 from app.intelligence.selectors import (
     VISIBLE_VICTORY_STATUS,
     matter_intelligence,
@@ -849,7 +850,25 @@ DATA_CLASS_LABELS = {
 #: text. Used to decide whether `Tühjenda kõik` has anything to clear and to
 #: build the hidden inputs the search box carries, so a dimension added to
 #: `FILTER_LABELS` is picked up by both without a second list to keep in step.
-REGISTER_PARAMS = (*FILTER_LABELS, "olek", "jarjestus", "q")
+#:
+#: The commencement presentation's own parameters are in it too
+#: (docs/adr/0158): `Tühjenda kõik` returns to the bare register, and a view
+#: switch left behind with no Jõustumine filter would be a word nothing reads.
+REGISTER_PARAMS = (
+    *FILTER_LABELS,
+    "olek",
+    "jarjestus",
+    "q",
+    *commencements.PRESENTATION_PARAMS,
+)
+
+#: The dimensions a commencement presentation is a presentation *of*. Removing
+#: the last of them by its chip also removes the presentation parameters.
+COMMENCEMENT_DIMENSIONS = (
+    register_filters.COMMENCEMENT_PARAM,
+    register_filters.COMMENCEMENT_START_PARAM,
+    register_filters.COMMENCEMENT_END_PARAM,
+)
 
 #: Suffix of a parameter that steers a *control* rather than the population.
 #: The organisation chooser's own search box lives inside the filter form, so
@@ -1275,7 +1294,7 @@ def _filter_display(request: HttpRequest, name: str, value: str) -> str:
     return value
 
 
-def _without_dimension(params: Any, name: str) -> str:
+def _without_dimension(params: Any, name: str, also: tuple[str, ...] = ()) -> str:
     """The same address, minus one narrowing dimension. The chip `×` contract.
 
     Every `×` in the chip row means the same thing — *stop narrowing by this
@@ -1294,6 +1313,8 @@ def _without_dimension(params: Any, name: str) -> str:
     without = params.copy()
     without.pop(name, None)
     without.pop("leht", None)
+    for companion in also:
+        without.pop(companion, None)
     return without.urlencode()
 
 
@@ -1314,12 +1335,21 @@ def _active_filters(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
             register_filters.WORK_WINDOW_END_PARAM,
         ) and not params.get(register_filters.WORK_PARAM):
             continue
+        # The last Jõustumine filter takes the commencement presentation with
+        # it: what is left is the ordinary register, and the switch has nothing
+        # to present (docs/adr/0158).
+        also: tuple[str, ...] = ()
+        if name in COMMENCEMENT_DIMENSIONS:
+            remaining = params.copy()
+            remaining.pop(name, None)
+            if not commencements.presentation_available(remaining):
+                also = commencements.PRESENTATION_PARAMS
         chips.append(
             {
                 "name": name,
                 "label": label,
                 "value": _filter_display(request, name, value),
-                "remove_query": _without_dimension(params, name),
+                "remove_query": _without_dimension(params, name, also),
             }
         )
     return chips
@@ -1445,6 +1475,159 @@ class _RegisterPaginator(Paginator):
     @cached_property
     def count(self) -> int:
         return _count_matters(self.object_list)
+
+
+#: Under the commencement presentation, always. A record that nobody entered is
+#: not a commencement that does not exist, and the register cannot tell the
+#: two apart — so it says how many files in the same narrowing carry none, and
+#: that nothing is read out of a title or a sentence to fill the gap.
+COMMENCEMENT_COVERAGE_NOTE = (
+    "Jõustumised on näha ainult siis, kui need on teemale struktureeritult lisatud. "
+    "Kuupäevi ei tuletata pealkirjast, Hetkeseisust ega Järgmiseks-tekstist."
+)
+
+
+def _commencement_context(
+    request: HttpRequest, params: Any, queryset: Any, before_status: Any
+) -> dict[str, Any]:
+    """The register's Jõustumised presentation, when one is asked for.
+
+    Nothing at all unless a Jõustumine filter is active, so the ordinary
+    register renders exactly as before (docs/adr/0158). With one active, the
+    switch is offered; with ``?vaade=`` set, the commencements of the
+    already-filtered ``queryset`` are read through
+    `app.intelligence.commencements` — reader-scoped before anything is
+    bucketed or counted.
+
+    ``before_status`` is the searched but otherwise unfiltered population, from
+    which the coverage figure asks the register's own question: the same
+    narrowing, with ``?joustumine=puudub`` instead of the commencement filter.
+    """
+    if not commencements.presentation_available(params):
+        return {}
+    view = commencements.requested_view(params)
+    switch = [
+        {
+            "key": key,
+            "label": label,
+            "active": key == view,
+            "query": register_filters.register_query(
+                params,
+                **{
+                    commencements.VIEW_PARAM: key or None,
+                    # The month and the list's order are the presentation's
+                    # own; leaving them behind on the Matter table would be
+                    # parameters nothing on that page reads.
+                    commencements.MONTH_PARAM: None,
+                    commencements.SORT_PARAM: (
+                        params.get(commencements.SORT_PARAM)
+                        if key == commencements.VIEW_LIST
+                        else None
+                    ),
+                },
+            ),
+        }
+        for key, label in commencements.VIEW_CHOICES
+    ]
+    context: dict[str, Any] = {"commencement_switch": switch, "commencement_view": view}
+    if not view:
+        return context
+
+    window, _echo = register_filters.commencement_window(params)
+    records = commencements.active_commencements(request.user, queryset, window)
+    day = commencements.today()
+
+    missing_params = params.copy()
+    for name in (*COMMENCEMENT_DIMENSIONS, *commencements.PRESENTATION_PARAMS, "leht"):
+        missing_params.pop(name, None)
+    missing_params[register_filters.COMMENCEMENT_PARAM] = register_filters.FACT_ABSENT
+    missing = _count_matters(
+        register_filters.apply_register_filters(before_status, request.user, missing_params)[0]
+    )
+    context |= {
+        "commencement_total": len(records),
+        "commencement_coverage": {
+            "note": COMMENCEMENT_COVERAGE_NOTE,
+            "missing": missing,
+            "missing_query": missing_params.urlencode(),
+            # The register opens on open files, and so does this. A
+            # commencement often lands after the department closed its file,
+            # so the wider status is offered rather than silently assumed.
+            "open_only": params.get("olek", "avatud") == "avatud",
+            "all_query": register_filters.register_query(params, olek="koik"),
+        },
+    }
+
+    if view == commencements.VIEW_LIST:
+        sort = commencements.requested_sort(params)
+        next_date_sort = (
+            commencements.SORT_DATE_DESC
+            if sort == commencements.SORT_DATE
+            else commencements.SORT_DATE
+        )
+        context |= {
+            "commencement_buckets": commencements.bucketed(records, day=day, sort=sort),
+            "commencement_sort": sort,
+            "commencement_sort_date_query": register_filters.register_query(
+                params, **{commencements.SORT_PARAM: next_date_sort}
+            ),
+            "commencement_sort_matter_query": register_filters.register_query(
+                params, **{commencements.SORT_PARAM: commencements.SORT_MATTER}
+            ),
+        }
+        return context
+
+    month = commencements.month_from(params.get(commencements.MONTH_PARAM), window, day)
+
+    def day_query(cell: date) -> str:
+        text = format_estonian_date(cell)
+        return register_filters.register_query(
+            params,
+            **{
+                commencements.VIEW_PARAM: commencements.VIEW_LIST,
+                commencements.MONTH_PARAM: None,
+                register_filters.COMMENCEMENT_START_PARAM: text,
+                register_filters.COMMENCEMENT_END_PARAM: text,
+            },
+        )
+
+    def month_query(target: date) -> str:
+        return register_filters.register_query(
+            params, **{commencements.MONTH_PARAM: commencements.month_key(target)}
+        )
+
+    context |= {
+        "commencement_calendar": commencements.month_calendar(
+            records, month=month, day=day, day_query=day_query
+        ),
+        "commencement_previous_month": month_query(commencements.shift_month(month, -1)),
+        "commencement_next_month": month_query(commencements.shift_month(month, 1)),
+        "commencement_this_month": month_query(day.replace(day=1)),
+        "commencement_previous_label": commencements.month_label(
+            commencements.shift_month(month, -1)
+        ),
+        "commencement_next_label": commencements.month_label(commencements.shift_month(month, 1)),
+        # Where the undated rows are: the list has a bucket for them, a
+        # calendar has no honest cell.
+        "commencement_list_query": register_filters.register_query(
+            params,
+            **{commencements.VIEW_PARAM: commencements.VIEW_LIST, commencements.MONTH_PARAM: None},
+        ),
+        # The whole month as the list's window. Containment, so it holds this
+        # month's days and the rows recorded to this month, and no quarter.
+        "commencement_month_query": register_filters.register_query(
+            params,
+            **{
+                commencements.VIEW_PARAM: commencements.VIEW_LIST,
+                commencements.MONTH_PARAM: None,
+                register_filters.COMMENCEMENT_START_PARAM: format_estonian_date(month),
+                register_filters.COMMENCEMENT_END_PARAM: format_estonian_date(
+                    commencements.month_end(month)
+                ),
+            },
+        ),
+    }
+    return context
 
 
 @login_required
@@ -1613,6 +1796,11 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         "stages": StageVocabulary.objects.filter(is_active=True).order_by("sort_order"),
         "next_action_options": list(NEXT_ACTION_LABELS.items()),
         **register_columns(params),
+        # Jõustumised as a presentation of this same filtered register, never
+        # a page of its own (docs/adr/0158). Inside the fragment, because the
+        # switch and the calendar sit in the results region a keystroke in the
+        # search box replaces. Empty unless a Jõustumine filter is active.
+        **_commencement_context(request, params, queryset, before_status),
     }
 
     if _wants_fragment(request):

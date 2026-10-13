@@ -2,6 +2,12 @@
 
 **Status:** accepted
 **Date:** 2026-09-10
+**Amended by** ADR 0158 (2026-10-13): the register gains a commencement
+*presentation* — a list and a month calendar of the filtered register's
+`MatterEffectiveDate` rows, offered only while a Jõustumine filter is active.
+It is not the retired destination: the page below stays retired and keeps
+redirecting, nothing returns to the bar, and the filters and the containment
+rule are unchanged.
 **Supersedes** the *«one navigation item and three tabs»* grouping of Stage-2G
 brief 38, and with it the three generated department-wide reading pages
 introduced by ADR 0018 as product destinations. ADR 0018's decision that these

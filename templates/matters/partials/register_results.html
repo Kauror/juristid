@@ -22,6 +22,15 @@ somebody is typing into would move the caret on every keystroke.
     {% else %}
       <strong>{{ total }}</strong> teemat
     {% endif %}
+    {% if commencement_view %}
+      {% comment %}
+        The commencement presentation lists every row of the narrowed register
+        at once, so the page-size control has nothing to page. How many
+        commencements those files carry is the figure that belongs here
+        (docs/adr/0158).
+      {% endcomment %}
+      <span class="registercount__note">· <b>{{ commencement_total }}</b> jõustumist</span>
+    {% else %}
     {% comment %}
       How many rows are on this page, and how many a reader may ask for
       instead. In the URL like every other choice here, so a size somebody
@@ -32,6 +41,7 @@ somebody is typing into would move the caret on every keystroke.
       · kuvatud {{ page.object_list|length }} · näita korraga
       {% for option in page_size_options %}{% if option.active %}<b>{{ option.label }}</b>{% else %}<a href="?{{ option.query }}#tulemused">{{ option.label }}</a>{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}
     </span>
+    {% endif %}
   </p>
 
   {% if active_filters or query %}
@@ -66,7 +76,26 @@ somebody is typing into would move the caret on every keystroke.
     </div>
   {% endif %}
 
-  {% if page.object_list %}
+  {% if commencement_switch %}
+    {% comment %}
+      Three readings of one filtered register, offered only while a Jõustumine
+      filter is narrowing it — never a destination, never on the bar. ADR 0071
+      retired the standalone «Jõustuvad aktid» page and it stays retired; this
+      is the same population, in the URL, under the same chips
+      (docs/adr/0158).
+    {% endcomment %}
+    <nav class="segmented registerview" aria-label="Esitus">
+      {% for option in commencement_switch %}
+        <a class="segmented__option {% if option.active %}is-active{% endif %}"
+           {% if option.active %}aria-current="true"{% endif %}
+           href="?{{ option.query }}#tulemused">{{ option.label }}</a>
+      {% endfor %}
+    </nav>
+  {% endif %}
+
+  {% if commencement_view %}
+    {% include "matters/partials/register_commencements.html" %}
+  {% elif page.object_list %}
     {% comment %}
       The register's own table, and the only one whose headings filter and
       sort. The flag is explicit rather than inferred: the same partial is
