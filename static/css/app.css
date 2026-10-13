@@ -5782,10 +5782,18 @@ a.barchart__row:hover {
 }
 
 /* The × stays at the right and in view whatever the title does: the title
-   takes the room and wraps, the button never shrinks. */
-.relpick__remove {
+   takes the room and wraps, the button never shrinks. A 24px square with a
+   glyph that reads as one — `button--tiny`'s label size drew an 8px cross. */
+.relpick .relpick__remove {
   flex: none;
+  align-self: center;
   margin-left: auto;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  /* Barlow's × is a small glyph: at 15px it drew about 7px. */
+  font-size: 20px;
+  line-height: 1;
 }
 
 .relpick__ref {
