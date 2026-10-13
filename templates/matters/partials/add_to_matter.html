@@ -223,9 +223,10 @@ row of controls that refuse (brief §30, §31).
             (`_workspace_choices`, docs/adr/0097 §8.3).
           {% endcomment %}
           {% comment %}
-            Not offered on a Chamber initiative: nobody asked Koda for an opinion
-            by a day, and the service refuses to start a request on one
-            (docs/adr/0151 §2).
+            Not offered on a Chamber initiative: this panel records a *new
+            request* for an opinion, and nobody asked Koda. Its own deadline is
+            set, moved and cleared in the header (docs/adr/0151, amendment of
+            2026-10-13).
           {% endcomment %}
           {% if not koda_initiative %}
           <input class="addpick" type="radio" name="marke-liik" id="marge-arvamuse-tahtaeg-valik"
