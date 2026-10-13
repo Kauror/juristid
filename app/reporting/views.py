@@ -18,6 +18,7 @@ to assert it without a browser.
 from __future__ import annotations
 
 import uuid
+from datetime import date
 from typing import Any
 from urllib.parse import urlencode
 
@@ -33,7 +34,7 @@ from app.reporting import metric_catalogue as metric_keys
 from app.reporting.context import ReportingContext
 from app.reporting.metric_catalogue import CATALOGUE, DEFERRED_METRICS, definition
 from app.reporting.metric_types import MetricResult
-from app.reporting.selectors import documents, historical, quality
+from app.reporting.selectors import documents, historical, management, quality
 from app.reporting.selectors import submissions as submission_selectors
 from app.workflow.dates import year_from
 
@@ -208,6 +209,7 @@ def matters(request: HttpRequest) -> HttpResponse:
             "matrices": _matrices(page.matrices),
             "compositions": _bars(page.charts),
             "organisation_tables": _bars(page.tables),
+            "composition_matrices": _matrices(page.groups.get("composition_matrices", [])),
             "export_url": exports.export_url(context, "teemad"),
         },
     )
@@ -237,6 +239,9 @@ def activity(request: HttpRequest) -> HttpResponse:
             "archive_compositions": _bars(page.groups.get("archive_charts", [])),
             "archive_matrices": _matrices(page.groups.get("archive_matrices", [])),
             "recipient_tables": _bars(page.tables),
+            "deadline_compositions": _bars(page.groups.get("deadline_charts", [])),
+            "comparisons": page.comparisons,
+            "volume_matrices": _matrices(page.groups.get("volume_matrices", [])),
             "export_url": exports.export_url(context, "arvamused"),
         },
     )
@@ -352,11 +357,7 @@ def submissions_list(request: HttpRequest) -> HttpResponse:
     disagreeing (brief 39).
     """
     context = reporting_context.from_request(request)
-    selection = {
-        "year": _year_param(request),
-        "recipient_id": _uuid_param(request, "saaja"),
-        "kind": request.GET.get("arvamus", "").strip(),
-    }
+    selection = _submission_selection(request)
     rows = submission_selectors.list_rows(context, **selection)
     paginator = Paginator(rows, PAGE_SIZE)
     page = paginator.get_page(request.GET.get("leht"))
@@ -379,6 +380,90 @@ def submissions_list(request: HttpRequest) -> HttpResponse:
                 aasta=request.GET.get("aasta", ""),
                 saaja=request.GET.get("saaja", ""),
                 arvamus=request.GET.get("arvamus", ""),
+                kuu=request.GET.get("kuu", ""),
+                kuni=request.GET.get("kuni", ""),
+            ),
+        },
+    )
+
+
+def _submission_selection(request: HttpRequest) -> dict[str, Any]:
+    """The submission list's own narrowing, shared by the list and its CSV.
+
+    ``kuu`` (1–12) and ``kuni`` (``MM-DD``, inclusive) only make sense inside a
+    year — they are the month × year table's cells and the same-period
+    comparison's two sides (docs/adr/0160) — so either one without ``aasta``,
+    or one that names no real day of that year, is a link nobody drew and is
+    refused rather than widened.
+    """
+    year = _year_param(request)
+    month: int | None = None
+    through: date | None = None
+    raw_month = request.GET.get("kuu", "").strip()
+    raw_through = request.GET.get("kuni", "").strip()
+    if (raw_month or raw_through) and year is None:
+        raise Http404("Kuu või lõppkuupäev vajab aastat.")
+    if raw_month:
+        if not raw_month.isdigit() or not 1 <= int(raw_month) <= 12:
+            raise Http404("Tundmatu kuu.")
+        month = int(raw_month)
+    if raw_through:
+        parts = raw_through.split("-")
+        if year is None or len(parts) != 2:
+            raise Http404("Tundmatu lõppkuupäev.")
+        try:
+            through = date(year, int(parts[0]), int(parts[1]))
+        except ValueError:
+            raise Http404("Tundmatu lõppkuupäev.") from None
+    return {
+        "year": year,
+        "recipient_id": _uuid_param(request, "saaja"),
+        "kind": request.GET.get("arvamus", "").strip(),
+        "month": month,
+        "through": through,
+    }
+
+
+@gate_required
+def metric_rows(request: HttpRequest) -> HttpResponse:
+    """The rows one group of a management metric counted (docs/adr/0160).
+
+    For the groups no existing list can express — a day bucket, an answer that
+    cannot be verified, a year's European Matters. The rows are the observation
+    list the number was taken from, under the same reporting context, so the
+    total here is the number on the card.
+    """
+    context = reporting_context.from_request(request)
+    key = request.GET.get(management.PARAM_METRIC, "").strip()
+    group = request.GET.get(management.PARAM_GROUP, "").strip()
+    year = request.GET.get(management.PARAM_YEAR, "").strip()
+    listing = management.metric_rows(context, key, group, year)
+    paginator = Paginator(listing.rows, PAGE_SIZE)
+    page = paginator.get_page(request.GET.get("leht"))
+
+    query = request.GET.copy()
+    query.pop("leht", None)
+    tab = "teemad" if key in services.MATTERS_COMPOSITION_MATRICES else "tegevus"
+
+    return render(
+        request,
+        "reporting/metric_rows.html",
+        {
+            **_shell(request, context, tab),
+            "listing": listing,
+            "metric": definition(key),
+            "page": page,
+            "paginator": paginator,
+            "total": paginator.count,
+            "query_string": query.urlencode(),
+            "export_url": exports.export_url(
+                context,
+                "loend",
+                **{
+                    management.PARAM_METRIC: key,
+                    management.PARAM_GROUP: group,
+                    management.PARAM_YEAR: year,
+                },
             ),
         },
     )
@@ -472,12 +557,16 @@ def export(request: HttpRequest, slug: str) -> StreamingHttpResponse:
     if slug == "teemad":
         return exports.matters_csv(context)
     if slug == "arvamused":
-        return exports.submissions_csv(
+        return exports.submissions_csv(context, **_submission_selection(request))
+    if slug == "loend":
+        key = request.GET.get(management.PARAM_METRIC, "").strip()
+        listing = management.metric_rows(
             context,
-            year=_year_param(request),
-            recipient_id=_uuid_param(request, "saaja"),
-            kind=request.GET.get("arvamus", "").strip(),
+            key,
+            request.GET.get(management.PARAM_GROUP, "").strip(),
+            request.GET.get(management.PARAM_YEAR, "").strip(),
         )
+        return exports.metric_rows_csv(listing, key)
     if slug == "materjalid":
         return exports.materials_csv(context, **_materials_selection(request))
     if slug == "andmekvaliteet":
