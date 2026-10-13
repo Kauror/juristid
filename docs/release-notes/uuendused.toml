@@ -15,6 +15,9 @@ basis = "deployment"
 # (Tallinna aja järgi), liiguvad need read väljalaske päeva kirjesse.
 # Väljalase 1 samal päeval: PR #431 (ADR 0158, jõustumised Teemade registris)
 # ja #430 (ADR 0161, tehtud tegevuse märguanne). Migratsioone ei ole.
+# Väljalase 2 samal päeval: PR #428 (ADR 0159, Muudatused ja perioodid), #432
+# (ADR 0160, juhtimisstatistika) ja #435 (statistika lingid päris andmetele).
+# Migratsioone ei ole.
 changes = [
   "Uue teema lehel on «Saabus» nüüd enne «Arvamuse tähtaega».",
   "Koja ettepanekule või pöördumisele saab nüüd lisada arvamuse tähtaja — uue teema lehel, teema päises ja «Muuda teemat» lehel. Tähtaeg ei ole kohustuslik.",
@@ -23,6 +26,12 @@ changes = [
   "Jõustumiste vaates on vaikimisi näha ka suletud teemade jõustumised; lehe ülaosas on kirjas, milliseid teemasid näidatakse, ja sealt saab valiku kitsendada.",
   "Kalendris on täpse kuupäevaga jõustumised päeva lahtris; kuu, kvartali või aasta täpsusega jõustumised on eraldi välja toodud. Kuupäeva ei arvata.",
   "Kui teema praegune tegevus on alustatud tavapärasest järjekorrast ja hiljem lisatud kirje näitab, et see on juba tehtud (näiteks kaasamine lisati või arvamus saadeti), kuvatakse tegevuse all märguanne. Märgi tegevus «✓ Tehtud» või muuda seda.",
+  "Osakonna juhataja näeb Osakonna lehe «Tehtud» pealkirja juurest linki «Muudatused →»: seal on valitud perioodi uued teemad, hetkeseisu ja vastutaja muutused, järgmiste tegevuste muutused ning taasavatud teemad.",
+  "«7 päeva», «14 päeva» ja «30 päeva» hõlmavad nüüd täpselt nii mitu kalendripäeva, tänane kaasa arvatud. Varasem «Kvartal» on nüüd «Viimased 13 nädalat». Lehel on näha valitud perioodi algus- ja lõppkuupäev.",
+  "Statistika «Tegevus» lehel on uued plokid: saadetud arvamuste võrdlus eelmise aasta sama perioodiga, arvamused kuude ja aastate kaupa ning «Arvamuse tähtajad» (ettevalmistusaeg ja tähtaegselt saadetud arvamused).",
+  "Statistika «Teemad» lehel on aastate kaupa ELiga seotud teemade ja Koja algatuste osakaal. Iga arv avab loendi teemadest, mida see loeb.",
+  "Tähtaegselt saadetud arvamusi hinnatakse saatmise hetkel kehtinud tähtaja järgi. Kui seda ei saa kindlaks teha, ei arvestata vastust protsendis. Koja algatusi tähtajanäitajates ei arvestata.",
+  "Statistika arvudelt Teemade registrisse viivad lingid näitavad nüüd sama valikut, mida arv loeb — testandmeid seal ei ole.",
 ]
 
 [[day]]
