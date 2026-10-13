@@ -1029,6 +1029,7 @@ PERIOD_START_PARAM = "alates"
 PERIOD_END_PARAM = "kuni"
 
 PERIOD_7 = "7"
+PERIOD_14 = "14"
 PERIOD_30 = "30"
 PERIOD_QUARTER = "kvartal"
 PERIOD_YEAR = "aasta"
@@ -1040,6 +1041,12 @@ PERIOD_LABELS: tuple[tuple[str, str], ...] = (
     (PERIOD_QUARTER, "Kvartal"),
     (PERIOD_YEAR, "Aasta"),
 )
+
+#: Every named window :func:`period_from` reads, which is more than Tehtud's own
+#: control offers. The fortnight is the department-wide *Muudatused* read
+#: model's (docs/adr/0159): one parser for both, so the two cannot disagree
+#: about where «14 päeva» starts, and Tehtud's control is unchanged.
+PERIOD_NAMES: tuple[tuple[str, str], ...] = (*PERIOD_LABELS, (PERIOD_14, "14 päeva"))
 
 #: How many digest rows are shown before the rest go behind a disclosure.
 DIGEST_PREVIEW = 6
@@ -1128,7 +1135,7 @@ class Period:
 
     @property
     def label(self) -> str:
-        return dict(PERIOD_LABELS).get(self.key, short_range(self.start, self.end))
+        return dict(PERIOD_NAMES).get(self.key, short_range(self.start, self.end))
 
 
 def period_from(params: Any, today: date | None = None) -> Period:
@@ -1146,6 +1153,8 @@ def period_from(params: Any, today: date | None = None) -> Period:
         if start is not None and end is not None and start <= end:
             return Period(PERIOD_CUSTOM, start, end)
         key = PERIOD_7
+    if key == PERIOD_14:
+        return Period(PERIOD_14, today - timedelta(days=14), today)
     if key == PERIOD_30:
         return Period(PERIOD_30, today - timedelta(days=30), today)
     if key == PERIOD_QUARTER:
