@@ -8,7 +8,12 @@ does, so ``--as`` is required: a report computed for nobody in particular would
 be computed over a population nobody reads (CONTRACT §3). Only a person who may
 open the preview page may be named.
 
-The JSON form names Matter references and Lovable titles. It is real register
+Withholding is the page's (docs/adr/0157 §5a): a row the named reader could not
+see is not printed — no nr, no title, no field — and is counted only in
+``hidden_rows`` / ``hidden_changes``, with ``unmatched_withheld`` saying whether
+rows without a Matter are withheld for this reader.
+
+What remains names Matter references and Lovable titles. It is real register
 content: print it to the terminal of the approved environment, never into a
 file under the repository, a ticket, a screenshot or a pull request.
 """
@@ -21,7 +26,9 @@ from typing import Any
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 
 from app.accounts.models import User
+from app.lovable_mirror import catalogue
 from app.lovable_mirror.reconcile import (
+    HIDDEN_REASON,
     ReconciliationReport,
     RowChange,
     RowReconciliation,
@@ -68,13 +75,18 @@ def as_dict(report: ReconciliationReport) -> dict[str, Any]:
         "coverage": {
             "tables_present": coverage.tables_present,
             "tables_absent": coverage.tables_absent,
-            "unverified_tables": list(coverage.unverified_tables),
+            "catalogue_status": catalogue.CATALOGUE_STATUS,
+            "unmapped_live_tables": list(coverage.unmapped_live_tables),
             "uncatalogued_fields": coverage.uncatalogued_fields,
             "dataset_boundary": coverage.dataset_boundary,
             "previous_boundary": coverage.previous_boundary,
             "unkeyed_rows": coverage.unkeyed_rows,
             "outcome_counts": coverage.outcome_counts,
+            "unmatched_withheld": coverage.unmatched_withheld,
         },
+        "hidden_rows": report.hidden_rows,
+        "hidden_changes": report.hidden_changes,
+        "hidden_reason": HIDDEN_REASON,
     }
 
 
@@ -109,6 +121,12 @@ class Command(BaseCommand):
             ("conflicts", "vastuolus"),
         ):
             write(f"  {label:<14} {len(data[key])}")
+        for where, message in (
+            ("Kehtivad read", report.hidden_rows_message),
+            ("Muudatused", report.hidden_changes_message),
+        ):
+            if message:
+                write(self.style.WARNING(f"  {where}: {message}"))
         for note in (data["coverage"]["dataset_boundary"], data["coverage"]["previous_boundary"]):
             if note:
                 write(self.style.WARNING(f"  {note}"))

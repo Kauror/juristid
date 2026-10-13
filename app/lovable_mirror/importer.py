@@ -72,7 +72,7 @@ def _prepare(bundle: ExportBundle) -> tuple[list[_PreparedRow], dict[str, list[s
     for table_name, rows in bundle.tables.items():
         spec = catalogue.table(table_name)
         if spec is None:  # the reader refuses this first; kept for any other reader
-            raise BundleRefused(f"Tundmatu tabel «{table_name}».")
+            raise BundleRefused(catalogue.catalogue_refusal(table_name))
         seen: set[str] = set()
         unknown: set[str] = set()
         for index, row in enumerate(rows, start=1):

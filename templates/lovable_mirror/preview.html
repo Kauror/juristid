@@ -5,7 +5,8 @@
   The Lovable mirror's reconciliation preview (docs/adr/0157). Read-only, for
   the administrator, under /haldus/ and on no navigation bar. Lovable's rows are
   evidence of what the alpha said, never canonical facts: nothing here writes,
-  and no list offers an action.
+  and no list offers an action. A row the reader could not see never reaches
+  this template (reconcile.py, docs/adr/0157 §5a); only its count does.
 {% endcomment %}
 
 {% block content %}
@@ -42,6 +43,7 @@
       <ul>
         <li>{{ report.coverage.canonical_note }}</li>
         <li>{{ report.coverage.visibility_note }}</li>
+        <li>{{ report.coverage.catalogue_status }}</li>
         {% if report.coverage.dataset_boundary %}<li>{{ report.coverage.dataset_boundary }}</li>{% endif %}
         {% if report.coverage.previous_boundary %}<li>{{ report.coverage.previous_boundary }}</li>{% endif %}
         <li>Tabelid hetktõmmises:
@@ -50,8 +52,8 @@
         {% if report.coverage.tables_absent %}
           <li>Kataloogis, kuid hetktõmmisest puudu: {% for name in report.coverage.tables_absent %}<span class="mono">{{ name }}</span>{% if not forloop.last %}, {% endif %}{% endfor %}.</li>
         {% endif %}
-        <li>Lovable'i skeemist kontrollimata (ei impordita):
-          {% for name in report.coverage.unverified_tables %}<span class="mono">{{ name }}</span>{% if not forloop.last %}, {% endif %}{% endfor %}.
+        <li>Lovable'is olemas, kuid kaardistamata (veerud teadmata, ei impordita):
+          {% for name in report.coverage.unmapped_live_tables %}<span class="mono">{{ name }}</span>{% if not forloop.last %}, {% endif %}{% endfor %}.
         </li>
         {% for name, fields in report.coverage.uncatalogued_fields.items %}
           <li>Kataloogimata väljad tabelis <span class="mono">{{ name }}</span> (hoiul, ei võrrelda): {{ fields|join:", " }}.</li>
@@ -65,14 +67,24 @@
       </ul>
     </div>
 
+    {% if report.hidden_changes_message %}<p class="notice">Muudatused: {{ report.hidden_changes_message }}.</p>{% endif %}
     {% include "lovable_mirror/_changes.html" with title="Lisandunud pärast eelmist hetktõmmist" rows=report.diff.added anchor="lisandunud" %}
     {% include "lovable_mirror/_changes.html" with title="Kadunud pärast eelmist hetktõmmist" rows=report.diff.removed anchor="kadunud" %}
     {% include "lovable_mirror/_changes.html" with title="Muutunud pärast eelmist hetktõmmist" rows=report.diff.changed anchor="muutunud" %}
 
+    {% if report.hidden_rows_message %}<p class="notice">Kehtivad read: {{ report.hidden_rows_message }}.</p>{% endif %}
     {% include "lovable_mirror/_matches.html" with title="Vastuolud kanooniliste andmetega" rows=report.conflicts anchor="vastuolud" conflicts_only=True %}
     {% include "lovable_mirror/_matches.html" with title="Seotud teemad" rows=report.matched anchor="seotud" %}
     {% include "lovable_mirror/_matches.html" with title="Mitmeti mõistetavad" rows=report.ambiguous anchor="mitmeti" %}
-    {% include "lovable_mirror/_matches.html" with title="Sidumata" rows=report.unmatched anchor="sidumata" %}
+    {% if report.coverage.unmatched_withheld %}
+      <h2 class="sectionlabel" id="sidumata">Sidumata</h2>
+      <p class="empty">
+        Sidumata ridu ei kuvata. Real, millele ei vasta ühtki teemat, ei ole nähtavust, mida pärida,
+        seega näeb seda ainult lugeja, kes näeb kõiki piiratud teemasid. Need read on loetud varjatud ridade hulka.
+      </p>
+    {% else %}
+      {% include "lovable_mirror/_matches.html" with title="Sidumata" rows=report.unmatched anchor="sidumata" %}
+    {% endif %}
   {% endif %}
 
   <h2 class="sectionlabel">Väljade kaardistus</h2>

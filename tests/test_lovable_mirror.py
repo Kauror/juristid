@@ -245,9 +245,13 @@ MALFORMED = {
         lambda d: write_bundle(d, {"leiutatud_tabel": [{"id": "1"}]}),
         "Tundmatu tabel",
     ),
-    "unverified_table": (
+    "unmapped_live_table": (
         lambda d: write_bundle(d, {"topic_change_event": [{"id": "1"}]}),
-        "ei ole kataloogis",
+        "elusskeemis teada, kuid ei ole kataloogis .NOT MAPPED.",
+    ),
+    "unmapped_live_table_topic": (
+        lambda d: write_bundle(d, {"topic": [{"id": "1"}]}),
+        "Schema-only export",
     ),
     "missing_required_column": (
         lambda d: write_bundle(d, {"topics": [{"id": "1", "nr": "2031_1", "dataset_id": "x"}]}),
@@ -414,10 +418,9 @@ def _by_nr(report: Any) -> dict[str, Any]:
     return {item.row.key: item for item in report.rows}
 
 
-def test_rows_are_classified_matched_unmatched_and_ambiguous(
-    tmp_path, administrator, department_head, specialist
-):
+def test_rows_are_classified_matched_unmatched_and_ambiguous(tmp_path, department_head, specialist):
     _matter(1, title="Näidisteema üks", owner=specialist)
+    _matter(2, title="Kahe reaga teema", owner=specialist)
     _matter(3, title="Piiratud näidisteema", owner=specialist, visibility=Visibility.RESTRICTED)
     run_import(
         write_bundle(
@@ -436,24 +439,19 @@ def test_rows_are_classified_matched_unmatched_and_ambiguous(
         )
     )
 
-    rows = _by_nr(build_report(administrator))
+    # The department head reads every Matter (docs/adr/0042), so nothing is
+    # withheld from them and every class appears.
+    report = build_report(department_head)
+    rows = _by_nr(report)
+    assert report.hidden_rows == 0
     assert rows[f"{YEAR}_1"].match_class == MatchClass.MATCHED
+    assert rows[f"{YEAR}_3"].match_class == MatchClass.MATCHED
     assert rows[f"{YEAR}_2"].match_class == MatchClass.AMBIGUOUS
     assert rows[f"{YEAR}_2"].reason == MatchReason.DUPLICATE_SOURCE_KEY
-    assert rows[f"{YEAR}_99"].reason == MatchReason.NO_READABLE_MATTER
+    assert rows[f"{YEAR}_99"].reason == MatchReason.NO_MATTER
     assert rows["mitte-viide"].reason == MatchReason.NO_KEY
-    # The administrator may not read the RESTRICTED Matter, so for them it is
-    # indistinguishable from no Matter — the title is not confirmed anywhere.
-    assert rows[f"{YEAR}_3"].match_class == MatchClass.UNMATCHED
-    assert rows[f"{YEAR}_3"].matter is None
-
-    report = build_report(administrator)
     assert len(report.ambiguous) == 2
-    assert len(report.matched) == 1
-
-    # The department head reads it (docs/adr/0042), so it matches for them.
-    head_rows = _by_nr(build_report(department_head))
-    assert head_rows[f"{YEAR}_3"].match_class == MatchClass.MATCHED
+    assert len(report.matched) == 2
 
 
 def test_only_comparable_fields_can_conflict_and_unknown_is_not_a_conflict(
@@ -562,6 +560,8 @@ def test_an_undeterminable_current_dataset_compares_nothing_and_says_why(tmp_pat
 
 
 def test_consecutive_snapshots_are_diffed_by_nr_not_by_lovable_row_id(tmp_path, administrator):
+    for number in (1, 2, 3, 4):
+        _matter(number, title=f"Teema {number}")
     run_import(
         write_bundle(
             tmp_path / "earlier",
@@ -771,3 +771,300 @@ def test_a_direct_bundle_import_with_an_unknown_table_is_refused():
     with pytest.raises(BundleRefused, match="Tundmatu tabel"):
         import_bundle(bundle)
     assert _nothing_written()
+
+
+# ---------------------------------------------------------------------------
+# Fail-closed visibility of Lovable source text (docs/adr/0157 §5a)
+# ---------------------------------------------------------------------------
+
+#: Seeded into every Lovable row the administrator may not see. It must never
+#: reach any page, report or JSON for an unauthorised reader.
+SENTINEL = "LOVABLE-SENTINEL-q7Zx"
+
+#: References that must never be printed for the administrator either: the
+#: RESTRICTED Matter's, and the ones no Matter has.
+HIDDEN_KEYS = (f"{YEAR}_7", f"{YEAR}_88", f"{YEAR}_9", f"{YEAR}_66", "mitte-viide")
+
+
+def _secret(nr: str | None, dataset: str, **extra: Any) -> dict[str, Any]:
+    return topic(
+        nr,
+        f"{SENTINEL} pealkiri",
+        dataset=dataset,
+        hetkeseis=f"{SENTINEL} hetkeseis",
+        jargmiseks=f"{SENTINEL} järgmiseks",
+        vastutaja=f"{SENTINEL}",
+        **extra,
+    )
+
+
+@pytest.fixture
+def visibility_world(tmp_path, specialist):
+    """A NORMAL Matter, a RESTRICTED one, and Lovable rows with and without a Matter.
+
+    Two snapshots, so the sentinel also travels through every change list:
+    a row about the RESTRICTED Matter changes, a Matter-less row is added and
+    another is removed.
+    """
+    _matter(1, title="Avalik näidisteema", owner=specialist)
+    _matter(7, title="Piiratud näidisteema", owner=specialist, visibility=Visibility.RESTRICTED)
+    run_import(
+        write_bundle(
+            tmp_path / "earlier",
+            {
+                "datasets": datasets("ds-1"),
+                "topics": [
+                    topic(f"{YEAR}_1", "Avalik näidisteema", dataset="ds-1", hetkeseis="Idee"),
+                    _secret(f"{YEAR}_7", "ds-1", sisse="2031-01-01"),
+                    _secret(f"{YEAR}_88", "ds-1"),
+                    _secret(f"{YEAR}_66", "ds-1"),
+                    _secret("mitte-viide", "ds-1"),
+                ],
+            },
+            exported_at="2031-03-01T09:00:00+02:00",
+        )
+    )
+    run_import(
+        write_bundle(
+            tmp_path / "later",
+            {
+                "datasets": datasets("ds-2", stale=("ds-1",)),
+                "topics": [
+                    topic(
+                        f"{YEAR}_1", "Avalik näidisteema", dataset="ds-2", hetkeseis="Riigikogus"
+                    ),
+                    _secret(f"{YEAR}_7", "ds-2", sisse="2031-01-02"),
+                    _secret(f"{YEAR}_88", "ds-2"),
+                    _secret(f"{YEAR}_9", "ds-2"),
+                    _secret("mitte-viide", "ds-2"),
+                ],
+            },
+            exported_at="2031-03-08T09:00:00+02:00",
+        )
+    )
+
+
+def _grant_break_glass(user: Any, granted_by: Any) -> None:
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from app.accounts.models import BreakGlassGrant
+
+    BreakGlassGrant.objects.create(
+        user=user,
+        granted_by=granted_by,
+        reason="Sünteetiline Lovable'i peegli kontroll",
+        starts_at=timezone.now() - timedelta(minutes=1),
+        expires_at=timezone.now() + timedelta(hours=1),
+    )
+
+
+def _report_json(upn: str, capsys: Any) -> str:
+    capsys.readouterr()
+    call_command("lovable_mirror_report", "--as", upn, "--json")
+    return str(capsys.readouterr().out)
+
+
+def _report_text(upn: str, capsys: Any) -> str:
+    capsys.readouterr()
+    call_command("lovable_mirror_report", "--as", upn)
+    return str(capsys.readouterr().out)
+
+
+def _assert_nothing_leaks(text: str) -> None:
+    assert SENTINEL not in text
+    for key in HIDDEN_KEYS:
+        assert key not in text, key
+
+
+def test_the_administrator_sees_only_rows_of_matters_they_may_read(visibility_world, administrator):
+    """Technical administration is not business access (AGENTS.md)."""
+    report = build_report(administrator)
+
+    assert [r.row.key for r in report.rows] == [f"{YEAR}_1"]
+    assert report.rows[0].matter is not None
+    # 7 (RESTRICTED), 88 and 9 (no Matter) and the row without a valid NR.
+    assert report.hidden_rows == 4
+    assert report.unmatched == [] and report.ambiguous == []
+    assert report.coverage.unmatched_withheld is True
+    # The NORMAL row's change is listed; the RESTRICTED row's change, the
+    # added Matter-less row and the removed one are only counted.
+    assert [c.key for c in report.diff.changed] == [f"{YEAR}_1"]
+    assert report.diff.added == [] and report.diff.removed == []
+    assert report.hidden_changes == 3  # 7 changed, 9 added, 66 removed
+    assert report.hidden_rows_message == (
+        "4 rida varjatud: puudub õigus vastava teema sisu nägemiseks"
+    )
+
+
+def test_a_restricted_matter_row_is_withheld_not_shown_as_unmatched(
+    visibility_world, administrator
+):
+    report = build_report(administrator)
+    assert f"{YEAR}_7" not in {r.row.key for r in report.rows}
+    assert f"{YEAR}_7" not in {c.key for c in report.diff.changed}
+    assert not any(r.reason == MatchReason.NO_MATTER for r in report.rows)
+
+
+def test_a_restricted_matter_is_indistinguishable_from_no_matter(visibility_world, administrator):
+    """No «restricted match» marker: the report reads the same as if 2031_7 had no Matter."""
+    from app.lovable_mirror.management.commands.lovable_mirror_report import as_dict
+
+    with_restricted = as_dict(build_report(administrator))
+    Matter.objects.filter(reference_year=YEAR, reference_number=7).update(reference_number=700)
+    without_matter = as_dict(build_report(administrator))
+
+    assert with_restricted == without_matter
+
+
+def test_an_unrestricted_matter_row_is_shown_with_its_comparison(visibility_world, administrator):
+    (row,) = build_report(administrator).matched
+    assert row.row.key == f"{YEAR}_1"
+    assert row.row.title == "Avalik näidisteema"
+    assert row.matter.title == "Avalik näidisteema"
+
+
+def test_a_participant_administrator_sees_the_restricted_row_but_not_unmatched_ones(
+    visibility_world, administrator
+):
+    """Visibility is the Matter's, so participation unlocks exactly that row."""
+    Matter.objects.get(reference_year=YEAR, reference_number=7).collaborators.add(administrator)
+    report = build_report(administrator)
+    assert {r.row.key for r in report.rows} == {f"{YEAR}_1", f"{YEAR}_7"}
+    assert report.hidden_rows == 3
+    assert report.coverage.unmatched_withheld is True
+
+
+def test_an_unmatched_row_is_withheld_from_the_administrator(visibility_world, administrator):
+    report = build_report(administrator)
+    keys = {r.row.key for r in report.rows}
+    assert not keys & {f"{YEAR}_88", f"{YEAR}_9", "mitte-viide"}
+
+
+def test_an_administrator_under_break_glass_sees_every_row(
+    visibility_world, administrator, department_head
+):
+    """The positive control: the sentinel is there to be found when access exists."""
+    _grant_break_glass(administrator, department_head)
+    report = build_report(administrator)
+    assert report.hidden_rows == 0 and report.hidden_changes == 0
+    assert report.coverage.unmatched_withheld is False
+    assert {r.row.key for r in report.unmatched} == {f"{YEAR}_88", f"{YEAR}_9", "mitte-viide"}
+    assert any(SENTINEL in r.row.title for r in report.rows)
+
+
+@pytest.mark.parametrize(
+    ("persona", "hidden"),
+    [("reader", 4), ("specialist", 0), ("department_head", 0)],
+)
+def test_the_selector_follows_matter_visibility_not_the_page_gate(
+    visibility_world, request, persona, hidden
+):
+    """Below the page gate the rule is still visibility: a READER reads NORMAL only."""
+    report = build_report(request.getfixturevalue(persona))
+    assert report.hidden_rows == hidden
+    if hidden:
+        _assert_nothing_leaks(repr([r.row for r in report.rows]))
+
+
+@pytest.mark.parametrize("persona", ["reader", "specialist", "department_head"])
+def test_the_page_is_404_for_non_administrators_and_shows_no_source_text(
+    visibility_world, client, request, persona
+):
+    client.force_login(request.getfixturevalue(persona))
+    response = client.get(URL)
+    assert response.status_code == 404
+    _assert_nothing_leaks(response.content.decode())
+
+
+@pytest.mark.parametrize("persona", ["reader", "specialist", "department_head"])
+def test_the_report_command_refuses_every_non_administrator(
+    visibility_world, request, persona, capsys
+):
+    with pytest.raises(CommandError, match="ei tohi Lovable'i peeglit vaadata"):
+        call_command("lovable_mirror_report", "--as", request.getfixturevalue(persona).upn)
+    _assert_nothing_leaks(capsys.readouterr().out)
+
+
+def test_no_lovable_source_text_reaches_the_administrator_without_business_access(
+    visibility_world, client, administrator, capsys
+):
+    client.force_login(administrator)
+    body = client.get(URL).content.decode()
+    _assert_nothing_leaks(body)
+    assert "4 rida varjatud: puudub õigus vastava teema sisu nägemiseks" in body
+    assert "Sidumata ridu ei kuvata." in body
+    assert "Avalik näidisteema" in body  # the readable row is still there
+
+    as_json = _report_json(administrator.upn, capsys)
+    _assert_nothing_leaks(as_json)
+    data = json.loads(as_json)
+    assert data["hidden_rows"] == 4 and data["hidden_changes"] == 3
+    assert data["coverage"]["unmatched_withheld"] is True
+    assert [r["nr"] for r in data["matched"]] == [f"{YEAR}_1"]
+
+    _assert_nothing_leaks(_report_text(administrator.upn, capsys))
+
+
+def test_the_sentinel_does_reach_an_administrator_under_break_glass(
+    visibility_world, client, administrator, department_head, capsys
+):
+    """Proves the leak test above would fail if redaction were removed."""
+    _grant_break_glass(administrator, department_head)
+    client.force_login(administrator)
+    assert SENTINEL in client.get(URL).content.decode()
+    assert f"{YEAR}_88" in _report_json(administrator.upn, capsys)
+
+
+# ---------------------------------------------------------------------------
+# Reconciliation cost is bounded
+# ---------------------------------------------------------------------------
+
+
+def _bounded_world(tmp_path: Path, size: int, offset: int) -> SourceSnapshot:
+    owner = factories.UserFactory(display_name=f"Omanik {offset}")
+    for number in range(offset, offset + size):
+        _matter(number, title=f"Teema {number}", owner=owner)
+    for label, exported in (("a", "2031-03-01"), ("b", "2031-03-08")):
+        run_import(
+            write_bundle(
+                tmp_path / f"{offset}-{label}",
+                {
+                    "datasets": datasets(f"ds-{offset}-{label}"),
+                    "topics": [
+                        topic(
+                            f"{YEAR}_{n}",
+                            f"Teema {n} {label}",
+                            dataset=f"ds-{offset}-{label}",
+                            vastutaja="Omanik",
+                            hetkeseis=label,
+                        )
+                        for n in range(offset, offset + size)
+                    ]
+                    + [topic(f"{YEAR}_{offset + 5000}", "Teemata", dataset=f"ds-{offset}-{label}")],
+                },
+                exported_at=f"{exported}T09:00:00+02:00",
+            )
+        )
+    latest = SourceSnapshot.objects.order_by("-source_exported_at").first()
+    assert latest is not None
+    return latest
+
+
+def test_the_report_issues_the_same_number_of_queries_for_5_and_60_rows(tmp_path, administrator):
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    small = _bounded_world(tmp_path, 5, 100)
+    with CaptureQueriesContext(connection) as few:
+        report = build_report(administrator, small)
+    assert len(report.matched) == 5
+
+    SourceSnapshot.objects.all().delete()
+    large = _bounded_world(tmp_path, 60, 1000)
+    with CaptureQueriesContext(connection) as many:
+        report = build_report(administrator, large)
+    assert len(report.matched) == 60
+
+    assert len(many) == len(few), [q["sql"][:120] for q in many.captured_queries]

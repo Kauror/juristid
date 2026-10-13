@@ -197,14 +197,8 @@ class FileExportReader:
         )
 
     def _read_table(self, directory: Path, name: str, spec: Any) -> list[dict[str, Any]]:
-        if name in catalogue.UNVERIFIED_TABLES:
-            raise BundleRefused(
-                f"Tabel «{name}» ei ole kataloogis: see puudub Lovable'i skeemist, mille "
-                f"järgi kataloog koostati ({catalogue.CATALOGUE_SOURCE}). Enne importi "
-                "on vaja ülevaadatud kataloogikirjet."
-            )
         if catalogue.table(name) is None:
-            raise BundleRefused(f"Tundmatu tabel «{name}». Kataloogimata tabelit ei impordita.")
+            raise BundleRefused(catalogue.catalogue_refusal(name))
         if not isinstance(spec, dict):
             raise BundleRefused(f"Tabeli «{name}» kirjeldus peab olema objekt.")
 

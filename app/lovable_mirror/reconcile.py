@@ -15,9 +15,31 @@ Matter population, and never written down anywhere:
    conflict: an empty side or a name that does not resolve is reported as a
    coverage limit, not as a difference.
 
-Matching runs over ``Matter.objects.visible_to(user)``. A Matter the reader
-cannot read is indistinguishable from no Matter here, exactly as on every other
-surface (CONTRACT §3, docs/adr/0005); the coverage block says so in words.
+**Who may see a Lovable row** (docs/adr/0157 §5a). A Lovable row is a copy of
+register content, so it is shown only to a reader who could see the canonical
+content it stands for, and the rule fails closed:
+
+* Each ``nr`` is first looked up against **every** Matter, tombstones included,
+  in one privileged internal step (:func:`source_access`). That answer never
+  leaves this module: it decides only whether the row may be shown.
+* A row whose ``nr`` belongs to a Matter is shown only if that Matter is in
+  ``Matter.objects.visible_to(reader)``. A technical administrator does not
+  read RESTRICTED Matters (AGENTS.md, ``app.core.authorization``), so such a
+  row is withheld — not shown as «unmatched», which would display its text.
+* A row with no Matter at all (or no valid ``nr``) has no canonical visibility
+  to inherit; it may be about anything, including restricted work. It is shown
+  only to a reader whose scope already reads every RESTRICTED Matter
+  (``Scope.sees_all_restricted``). On this ADMINISTRATOR-only page that means
+  an administrator under an active break-glass grant; without one the rows are
+  withheld.
+* A withheld row contributes only to one opaque count —
+  «N rida varjatud: puudub õigus vastava teema sisu nägemiseks» — with no
+  ``nr``, no title, no field and no match class. Rows about a RESTRICTED Matter
+  and rows with no Matter fall into the same count, so the count cannot be used
+  to learn that a restricted Matter exists.
+
+Withheld rows are dropped while the report is built, before any template or
+JSON writer sees it, so no presentation layer can leak them by mistake.
 
 Nothing here writes. There is no promotion path: turning a mirror value into a
 canonical fact is a future, separately reviewed decision (docs/adr/0157 §6).
@@ -28,9 +50,11 @@ from __future__ import annotations
 import datetime as dt
 import re
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.core.authorization import scope_for_user
 from app.core.text import normalize_for_matching
 from app.legacy_import.resolution import (
     METHOD_BLANK,
@@ -63,13 +87,13 @@ class MatchClass:
 class MatchReason:
     REFERENCE = "REFERENCE"
     NO_KEY = "NO_KEY"
-    NO_READABLE_MATTER = "NO_READABLE_MATTER"
+    NO_MATTER = "NO_MATTER"
     DUPLICATE_SOURCE_KEY = "DUPLICATE_SOURCE_KEY"
 
     LABELS = {
         REFERENCE: "Teemaviide kattub",
         NO_KEY: "Lovable'i real puudub kehtiv NR (YYYY_N)",
-        NO_READABLE_MATTER: "Selle viitega loetavat teemat ei ole",
+        NO_MATTER: "Selle viitega teemat ei ole",
         DUPLICATE_SOURCE_KEY: "Sama NR esineb Lovable'is mitmel real",
     }
 
@@ -111,15 +135,16 @@ class SourceRow:
 
 
 def _rows(snapshot: SourceSnapshot, table: str) -> list[SourceRow]:
+    """Every stored row of one table, in two queries whatever the row count."""
     records = list(
         SourceRecord.objects.filter(snapshot=snapshot, table=table).order_by(
             "stable_key", "source_id"
         )
     )
     values: dict[Any, dict[str, Any]] = defaultdict(dict)
-    for value in SourceFieldValue.objects.filter(record__in=records).only(
-        "record_id", "field", "value"
-    ):
+    for value in SourceFieldValue.objects.filter(
+        record__snapshot=snapshot, record__table=table
+    ).only("record_id", "field", "value"):
         values[value.record_id][value.field] = value.value
     return [
         SourceRow(table=table, source_id=r.source_id, key=r.stable_key, values=values[r.pk])
@@ -375,29 +400,86 @@ COMPARED_FIELDS: tuple[catalogue.FieldMapping, ...] = tuple(
 )
 
 
-def match_rows(rows: list[SourceRow], user: Any) -> list[RowReconciliation]:
+#: The one message a withheld row is ever represented by (docs/adr/0157 §5a).
+HIDDEN_REASON = "puudub õigus vastava teema sisu nägemiseks"
+
+
+def hidden_message(count: int) -> str:
+    return f"{count} rida varjatud: {HIDDEN_REASON}"
+
+
+@dataclass(frozen=True)
+class SourceAccess:
+    """Which Lovable rows one reader may see. Built once per report.
+
+    ``existing`` is the privileged part — which references belong to *any*
+    Matter — and is consulted only by :meth:`may_see`; it is never shown and
+    never handed to a template. ``readable`` holds the Matters the reader may
+    read, already loaded for the comparison.
+    """
+
+    existing: frozenset[tuple[int, int]]
+    readable: dict[tuple[int, int], Matter]
+    sees_unmatched: bool
+
+    def may_see(self, key: str) -> bool:
+        reference = parse_reference(key) if key else None
+        if reference is not None and reference in self.existing:
+            return reference in self.readable
+        # No Matter (or no valid key): nothing to inherit visibility from, so
+        # only a reader who already reads everything restricted sees the row.
+        return self.sees_unmatched
+
+
+def source_access(keys: Iterable[str], user: Any) -> SourceAccess:
+    """Decide visibility for every ``nr`` in a bounded number of queries.
+
+    Two Matter queries (plus the prefetch of legal instruments), whatever the
+    number of rows: the privileged existence lookup over ``Matter.all_objects``
+    — tombstones included, so a deleted Matter's reference stays withheld
+    rather than turning into an «unmatched» row with text — and the reader's
+    ``visible_to`` read of only those Matters.
+    """
+    wanted = {ref for key in keys if key and (ref := parse_reference(key))}
+    existing: dict[tuple[int, int], Any] = {}
+    if wanted:
+        for pk, year, number in Matter.all_objects.filter(
+            reference_year__in={year for year, _ in wanted},
+            reference_number__in={number for _, number in wanted},
+        ).values_list("pk", "reference_year", "reference_number"):
+            if year is not None and number is not None and (year, number) in wanted:
+                existing[(year, number)] = pk
+    readable: dict[tuple[int, int], Matter] = {}
+    if existing:
+        reference_of = {pk: reference for reference, pk in existing.items()}
+        for matter in (
+            Matter.objects.visible_to(user)
+            .filter(pk__in=list(reference_of))
+            .select_related("owner", "stage")
+            .prefetch_related("legal_instruments")
+        ):
+            readable[reference_of[matter.pk]] = matter
+    return SourceAccess(
+        existing=frozenset(existing),
+        readable=readable,
+        sees_unmatched=scope_for_user(user).sees_all_restricted,
+    )
+
+
+def match_rows(rows: list[SourceRow], access: SourceAccess) -> tuple[list[RowReconciliation], int]:
+    """The rows this reader may see, classified, and how many were withheld."""
     groups: dict[str, list[SourceRow]] = defaultdict(list)
     for row in rows:
         groups[row.key].append(row)
 
-    wanted = {ref for key in groups if key and (ref := parse_reference(key))}
-    visible: dict[tuple[int, int], Matter] = {}
-    if wanted:
-        years = {year for year, _ in wanted}
-        for matter in (
-            Matter.objects.visible_to(user)
-            .filter(reference_year__in=years)
-            .select_related("owner", "stage")
-            .prefetch_related("legal_instruments")
-        ):
-            pair = (matter.reference_year, matter.reference_number)
-            if pair in wanted:
-                visible[pair] = matter
-
-    people = KnownPeople.load()
+    people: KnownPeople | None = None
+    hidden = 0
     result: list[RowReconciliation] = []
     for key in sorted(groups):
         group = groups[key]
+        if not access.may_see(key):
+            hidden += len(group)
+            continue
         reference = parse_reference(key) if key else None
         for row in group:
             if reference is None:
@@ -406,12 +488,14 @@ def match_rows(rows: list[SourceRow], user: Any) -> list[RowReconciliation]:
                 result.append(
                     RowReconciliation(row, MatchClass.AMBIGUOUS, MatchReason.DUPLICATE_SOURCE_KEY)
                 )
-            elif reference not in visible:
-                result.append(
-                    RowReconciliation(row, MatchClass.UNMATCHED, MatchReason.NO_READABLE_MATTER)
-                )
+            elif reference not in access.readable:
+                # Reached only when no Matter has this reference at all: a
+                # Matter the reader cannot read was withheld by `may_see`.
+                result.append(RowReconciliation(row, MatchClass.UNMATCHED, MatchReason.NO_MATTER))
             else:
-                matter = visible[reference]
+                matter = access.readable[reference]
+                if people is None:
+                    people = KnownPeople.load()
                 result.append(
                     RowReconciliation(
                         row,
@@ -421,7 +505,24 @@ def match_rows(rows: list[SourceRow], user: Any) -> list[RowReconciliation]:
                         tuple(_compare(m, row.values, matter, people) for m in COMPARED_FIELDS),
                     )
                 )
-    return result
+    return result, hidden
+
+
+def redact_diff(diff: SnapshotDiff, access: SourceAccess) -> tuple[SnapshotDiff, int]:
+    """The changes this reader may see, and how many were withheld."""
+    kept = SnapshotDiff(unkeyed=diff.unkeyed)
+    hidden = 0
+    for source, target in (
+        (diff.added, kept.added),
+        (diff.removed, kept.removed),
+        (diff.changed, kept.changed),
+    ):
+        for change in source:
+            if access.may_see(change.key):
+                target.append(change)
+            else:
+                hidden += 1
+    return kept, hidden
 
 
 # ---------------------------------------------------------------------------
@@ -433,15 +534,19 @@ def match_rows(rows: list[SourceRow], user: Any) -> list[RowReconciliation]:
 class Coverage:
     tables_present: dict[str, int]
     tables_absent: list[str]
-    unverified_tables: tuple[str, ...]
+    unmapped_live_tables: tuple[str, ...]
     uncatalogued_fields: dict[str, list[str]]
     dataset_boundary: str
     previous_boundary: str
     unkeyed_rows: int
     outcome_counts: dict[str, int]
+    unmatched_withheld: bool = True
+    catalogue_status: str = catalogue.CATALOGUE_STATUS_ET
     visibility_note: str = (
-        "Sidumine arvestab ainult teemasid, mida sina näed. Teema, mida sa lugeda ei "
-        "tohi, paistab siin sidumata reana — nagu kõikjal mujal rakenduses."
+        "Lovable'i rea sisu näidatakse ainult siis, kui sa tohid näha teemat, millele "
+        "rea NR viitab. Rida, millele ei vasta ühtki teemat, näeb ainult lugeja, kes "
+        "näeb kõiki piiratud teemasid. Varjatud read on ainult kokku loetud — ilma NR-i, "
+        "pealkirja ja väljadeta."
     )
     canonical_note: str = (
         "Lovable'i andmed ei ole kanoonilised. Siit ei kirjutata ühtki Teemat, Arvamust, "
@@ -456,6 +561,17 @@ class ReconciliationReport:
     rows: list[RowReconciliation]
     diff: SnapshotDiff
     coverage: Coverage
+    #: Current rows withheld from this reader, and withheld snapshot changes.
+    hidden_rows: int = 0
+    hidden_changes: int = 0
+
+    @property
+    def hidden_rows_message(self) -> str:
+        return hidden_message(self.hidden_rows) if self.hidden_rows else ""
+
+    @property
+    def hidden_changes_message(self) -> str:
+        return hidden_message(self.hidden_changes) if self.hidden_changes else ""
 
     def _of(self, match_class: str) -> list[RowReconciliation]:
         return [r for r in self.rows if r.match_class == match_class]
@@ -486,17 +602,21 @@ def build_report(user: Any, snapshot: SourceSnapshot | None = None) -> Reconcili
     previous = previous_snapshot(snapshot)
 
     previous_boundary = ""
+    before_rows: list[SourceRow] = []
     if previous is None:
         previous_boundary = "Esimene hetktõmmis: varasemaga võrrelda ei ole."
         diff = SnapshotDiff()
         diff.unkeyed = _keyed(current.rows)[1]
     else:
         before = operative_rows(previous)
+        before_rows = before.rows
         if before.boundary:
             previous_boundary = f"Eelmine hetktõmmis: {before.boundary}"
         diff = diff_rows(before.rows, current.rows)
 
-    rows = match_rows(current.rows, user)
+    access = source_access([row.key for row in (*current.rows, *before_rows)], user)
+    rows, hidden_rows = match_rows(current.rows, access)
+    diff, hidden_changes = redact_diff(diff, access)
 
     outcome_counts: dict[str, int] = defaultdict(int)
     for row in rows:
@@ -508,7 +628,8 @@ def build_report(user: Any, snapshot: SourceSnapshot | None = None) -> Reconcili
     coverage = Coverage(
         tables_present=present,
         tables_absent=sorted(set(catalogue.TABLES) - set(present)),
-        unverified_tables=catalogue.UNVERIFIED_TABLES,
+        unmapped_live_tables=tuple(catalogue.UNMAPPED_LIVE_TABLES),
+        unmatched_withheld=not access.sees_unmatched,
         uncatalogued_fields=dict(snapshot.uncatalogued_fields),
         dataset_boundary=current.boundary,
         previous_boundary=previous_boundary,
@@ -517,4 +638,12 @@ def build_report(user: Any, snapshot: SourceSnapshot | None = None) -> Reconcili
             Outcome.LABELS[k]: v for k, v in sorted(outcome_counts.items()) if k != Outcome.SAME
         },
     )
-    return ReconciliationReport(snapshot, previous, rows, diff, coverage)
+    return ReconciliationReport(
+        snapshot,
+        previous,
+        rows,
+        diff,
+        coverage,
+        hidden_rows=hidden_rows,
+        hidden_changes=hidden_changes,
+    )

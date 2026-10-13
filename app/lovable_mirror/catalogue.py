@@ -8,8 +8,11 @@ it to decide which columns may be compared with a canonical value at all.
 `Kauror/cheerful-control`, at commit `f248d20b` (pushed 2026-08-17):
 `src/integrations/supabase/types.ts` for the tables and columns, and
 `src/lib/dashboard/{parse.server,upload.functions,snapshot.server,changes}.ts`
-for what each column means. The live Lovable project may have moved on since;
-nothing here was read from it. That is why an unknown *table* is refused rather
+for what each column means. **Live schema NOT verified.** The owner has since
+observed, through a read-only connector, that the live project holds tables the
+repository does not (`LIVE_TABLES_REPORTED`, `UNMAPPED_LIVE_TABLES`); their
+columns are unknown and are not invented here. Nothing in this module was read
+from the live project. That is why an unknown *table* is refused rather
 than skipped — a table the catalogue has not described is one nobody has decided
 anything about — while an unknown *column* on a known table is kept as
 ``UNCATALOGUED`` and shown in the coverage report, never compared.
@@ -282,16 +285,100 @@ TABLES: dict[str, TableMapping] = {
     ),
 }
 
-#: Tables a coordinator brief expected and the schema at `CATALOGUE_SOURCE`
-#: does not contain. They may exist in the live project; until a reviewed
-#: catalogue entry exists, a bundle carrying one is refused.
-UNVERIFIED_TABLES: tuple[str, ...] = (
+#: Where the catalogue stands. Shown on the page and in the report.
+CATALOGUE_STATUS = (
+    "Derived from the August 2026 repository (Kauror/cheerful-control@f248d20b); "
+    "live schema NOT verified."
+)
+CATALOGUE_STATUS_ET = (
+    "Kataloog on tuletatud 2026. aasta augusti repositooriumist "
+    "(Kauror/cheerful-control@f248d20b); Lovable'i elusskeemi EI OLE kontrollitud."
+)
+
+#: The tables the owner observed in the LIVE Lovable project on 2026-10-13
+#: through a read-only connector — names only, no columns and no rows. The
+#: August repository is therefore not the complete live schema.
+#: `longterm_topics` is catalogued from the repository but was not in that
+#: listing; whether it still exists live is unknown.
+LIVE_TABLES_REPORTED: tuple[str, ...] = (
+    "topic",
+    "topics",
     "topic_change_event",
     "topic_change_field",
     "topic_commencement",
     "topic_responsible_change",
     "topic_link",
+    "snapshots",
+    "snapshot_themes",
+    "datasets",
 )
+
+
+@dataclass(frozen=True)
+class UnmappedTable:
+    """A table known to exist live whose columns nobody has seen.
+
+    The probable role is read from the table's *name* only. No column is
+    invented: the column definitions are UNKNOWN until an operator-provided
+    schema-only export (docs/lovable-mirror.md, «Schema-only export») has been
+    reconciled with this catalogue. Until then a bundle carrying the table is
+    refused.
+    """
+
+    name: str
+    probable_role: str
+    status: str = "NOT MAPPED"
+
+
+#: Known live tables with no catalogue entry. Placeholders, NOT MAPPED.
+UNMAPPED_LIVE_TABLES: dict[str, UnmappedTable] = {
+    spec.name: spec
+    for spec in (
+        UnmappedTable(
+            "topic",
+            "Probably a single, longer-lived topic entity beside the per-upload `topics` "
+            "rows; its relation to `topics` and to `nr` is unknown.",
+        ),
+        UnmappedTable(
+            "topic_change_event",
+            "Probably one row per recorded change to a topic (when, by whom, of what kind).",
+        ),
+        UnmappedTable(
+            "topic_change_field",
+            "Probably the field-level detail of a change event (field, old and new value).",
+        ),
+        UnmappedTable(
+            "topic_commencement",
+            "Probably entry-into-force (jõustumine) dates recorded per topic.",
+        ),
+        UnmappedTable(
+            "topic_responsible_change",
+            "Probably the history of the responsible person (vastutaja) of a topic.",
+        ),
+        UnmappedTable(
+            "topic_link",
+            "Probably links from a topic to another topic or to an external address.",
+        ),
+    )
+}
+
+#: Where the refusal of an uncatalogued table points the operator.
+SCHEMA_EXPORT_PROCEDURE = "docs/lovable-mirror.md §«Schema-only export»"
+
+
+def catalogue_refusal(name: str) -> str:
+    """Why a table without a catalogue entry is refused, and what unblocks it."""
+    if name in UNMAPPED_LIVE_TABLES:
+        reason = (
+            f"Tabel «{name}» on Lovable'i elusskeemis teada, kuid ei ole kataloogis "
+            "(NOT MAPPED): selle veerud on teadmata."
+        )
+    else:
+        reason = f"Tundmatu tabel «{name}»: see ei ole kataloogis."
+    return (
+        f"{reason} Kataloogimata tabelit ei impordita. Kõigepealt on vaja operaatori "
+        f"skeemiekspordi (ainult skeem, ühtki rida) ülevaatust: {SCHEMA_EXPORT_PROCEDURE}."
+    )
 
 
 def table(name: str) -> TableMapping | None:
