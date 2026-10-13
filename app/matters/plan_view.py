@@ -36,7 +36,11 @@ as it did, and a step the record no longer proves comes back.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
+
+from django.db.models import Q
+from django.utils import timezone
 
 from app.matters.enums import RecordMode, WebsiteOverviewKind, WebsiteOverviewStatus
 from app.workflow.enums import PlanStepOperation
@@ -64,33 +68,49 @@ class RecordedWork:
     opinion_owed: bool
 
     @classmethod
-    def of(cls, matter: Any, viewer: Any) -> RecordedWork:
+    def of(cls, matter: Any, viewer: Any, *, since: datetime | None = None) -> RecordedWork:
         """One read per fact, each through the record's own `visible_to`.
 
         A record restricted below its Matter must not change, by suppressing a
         suggestion, what a reader who may not see it is shown (AUTH-003).
+
+        ``since`` narrows every *proof* to records entered after that moment —
+        the same facts, recorded later (docs/adr/0161): a published write-up
+        filed or dated after it, a `Kaasamine` filed after it, feedback closed
+        after it, an opinion filed or sent after it. Whether a request for an
+        opinion is still outstanding is a fact about now and is never narrowed.
+        Without ``since`` nothing changes.
         """
         from app.matters.models import MatterEngagement, MatterWebsiteOverview
         from app.matters.work_items import response_obligation_of
         from app.submissions.enums import SubmissionStatus
         from app.submissions.models import Submission
 
-        published = set(
-            MatterWebsiteOverview.objects.visible_to(viewer)
-            .filter(matter=matter, status=WebsiteOverviewStatus.PUBLISHED)
-            .values_list("kind", flat=True)
+        overviews = MatterWebsiteOverview.objects.visible_to(viewer).filter(
+            matter=matter, status=WebsiteOverviewStatus.PUBLISHED
         )
         engagements = MatterEngagement.objects.visible_to(viewer).filter(matter=matter)
+        filed = engagements
+        feedback = engagements.filter(feedback_closed_at__isnull=False)
+        sent = Submission.objects.visible_to(viewer).filter(
+            matter=matter, status=SubmissionStatus.SENT
+        )
+        if since is not None:
+            overviews = overviews.filter(
+                Q(created_at__gt=since) | Q(published_on__gt=timezone.localtime(since).date())
+            )
+            filed = engagements.filter(created_at__gt=since)
+            feedback = engagements.filter(feedback_closed_at__gt=since)
+            sent = sent.filter(Q(created_at__gt=since) | Q(sent_at__gt=since))
+        published = set(overviews.values_list("kind", flat=True))
         return cls(
             # A published write-up whose kind predates the choice reads as an
             # overview, which is what every one of them was filed as.
             published_overview=bool(published & {WebsiteOverviewKind.OVERVIEW, ""}),
             published_any=bool(published),
-            engagement=engagements.exists(),
-            feedback_recorded=engagements.filter(feedback_closed_at__isnull=False).exists(),
-            opinion_sent=Submission.objects.visible_to(viewer)
-            .filter(matter=matter, status=SubmissionStatus.SENT)
-            .exists(),
+            engagement=filed.exists(),
+            feedback_recorded=feedback.exists(),
+            opinion_sent=sent.exists(),
             opinion_owed=response_obligation_of(matter, viewer).is_outstanding,
         )
 
