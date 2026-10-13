@@ -1,0 +1,23 @@
+{% comment %}
+The custom-range form of *Muudatused* (docs/adr/0159 §6), drawn in the popover
+normally and inline under the message while a typed range is refused. A refused
+range redisplays what the reader typed.
+{% endcomment %}
+<form method="get">
+  <input type="hidden" name="periood" value="vahemik">
+  <label class="field">
+    <span class="field__label field__label--plain">Alates</span>
+    <input class="field__input field__input--compact dateinput" type="text"
+           inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa"
+           name="alates"
+           value="{% if page.period_error %}{{ typed_start }}{% else %}{{ page.period.start|date:'j.n.Y' }}{% endif %}">
+  </label>
+  <label class="field">
+    <span class="field__label field__label--plain">Kuni</span>
+    <input class="field__input field__input--compact dateinput" type="text"
+           inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa"
+           name="kuni"
+           value="{% if page.period_error %}{{ typed_end }}{% else %}{{ page.period.end|date:'j.n.Y' }}{% endif %}">
+  </label>
+  <button class="button button--quiet button--tiny" type="submit">Näita</button>
+</form>

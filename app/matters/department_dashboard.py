@@ -1029,6 +1029,7 @@ PERIOD_START_PARAM = "alates"
 PERIOD_END_PARAM = "kuni"
 
 PERIOD_7 = "7"
+PERIOD_14 = "14"
 PERIOD_30 = "30"
 PERIOD_QUARTER = "kvartal"
 PERIOD_YEAR = "aasta"
@@ -1037,9 +1038,17 @@ PERIOD_CUSTOM = "vahemik"
 PERIOD_LABELS: tuple[tuple[str, str], ...] = (
     (PERIOD_7, "7 päeva"),
     (PERIOD_30, "30 päeva"),
-    (PERIOD_QUARTER, "Kvartal"),
+    # Thirteen rolling weeks, not a calendar quarter; the URL value stays
+    # `kvartal` so saved links keep working (owner's decision 2026-10-13).
+    (PERIOD_QUARTER, "Viimased 13 nädalat"),
     (PERIOD_YEAR, "Aasta"),
 )
+
+#: Every named window :func:`period_from` reads, which is more than Tehtud's own
+#: control offers. The fortnight is the department-wide *Muudatused* read
+#: model's (docs/adr/0159): one parser for both, so the two cannot disagree
+#: about where «14 päeva» starts, and Tehtud's control is unchanged.
+PERIOD_NAMES: tuple[tuple[str, str], ...] = (*PERIOD_LABELS, (PERIOD_14, "14 päeva"))
 
 #: How many digest rows are shown before the rest go behind a disclosure.
 DIGEST_PREVIEW = 6
@@ -1128,7 +1137,39 @@ class Period:
 
     @property
     def label(self) -> str:
-        return dict(PERIOD_LABELS).get(self.key, short_range(self.start, self.end))
+        return dict(PERIOD_NAMES).get(self.key, short_range(self.start, self.end))
+
+    @property
+    def bounds(self) -> str:
+        """The two dates the window covers, both included: ``7.10.2026–13.10.2026``.
+
+        Printed beside a named window so «7 päeva» is never left to the reader's
+        arithmetic about whether today and the seventh day back are in it.
+        """
+        return f"{format_estonian_date(self.start)}–{format_estonian_date(self.end)}"
+
+
+#: How many calendar days each rolling window holds, today included. `kvartal`
+#: is «Viimased 13 nädalat» — 91 dates, not a calendar quarter (docs/adr/0159 §5).
+ROLLING_DAYS: dict[str, int] = {
+    PERIOD_7: 7,
+    PERIOD_14: 14,
+    PERIOD_30: 30,
+    PERIOD_QUARTER: 91,
+}
+
+
+def last_days(today: date, days: int) -> date:
+    """The first day of a window of ``days`` calendar days ending on ``today``.
+
+    Both ends are inclusive, so «7 päeva» on Monday 13 October is 7–13 October:
+    seven dates, ``today − 6 … today``. It used to be ``today − 7``, which was
+    eight dates under a label that says seven. Owner's decision 2026-10-13
+    (docs/adr/0159 §5). ``today`` is
+    the Europe/Tallinn date, and the queries compare local dates, so the window
+    turns over at Tallinn midnight and not at UTC's.
+    """
+    return today - timedelta(days=days - 1)
 
 
 def period_from(params: Any, today: date | None = None) -> Period:
@@ -1146,13 +1187,11 @@ def period_from(params: Any, today: date | None = None) -> Period:
         if start is not None and end is not None and start <= end:
             return Period(PERIOD_CUSTOM, start, end)
         key = PERIOD_7
-    if key == PERIOD_30:
-        return Period(PERIOD_30, today - timedelta(days=30), today)
-    if key == PERIOD_QUARTER:
-        return Period(PERIOD_QUARTER, today - timedelta(days=91), today)
     if key == PERIOD_YEAR:
         return Period(PERIOD_YEAR, date(today.year, 1, 1), today)
-    return Period(PERIOD_7, today - timedelta(days=7), today)
+    if key not in ROLLING_DAYS:
+        key = PERIOD_7
+    return Period(key, last_days(today, ROLLING_DAYS[key]), today)
 
 
 def period_options(period: Period, kind: str = KIND_ALL) -> list[PeriodOption]:

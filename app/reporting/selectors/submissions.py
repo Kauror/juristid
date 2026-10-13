@@ -24,6 +24,7 @@ equal the list (brief 66).
 from __future__ import annotations
 
 import uuid
+from datetime import date, datetime, time, timedelta
 from typing import Any
 from urllib.parse import urlencode
 
@@ -54,6 +55,11 @@ _ERA_NOTE = (
 )
 
 
+def local_day_start(day: date) -> datetime:
+    """Midnight at the start of ``day`` in the business time zone, as an aware time."""
+    return timezone.make_aware(datetime.combine(day, time.min))
+
+
 def all_sent(context: ReportingContext) -> QuerySet[Submission]:
     """Every sent Submission this viewer may read, before any period narrowing.
 
@@ -74,12 +80,25 @@ def sent_submissions(
     year: int | None = None,
     recipient_id: uuid.UUID | None = None,
     kind: str = "",
+    month: int | None = None,
+    through: date | None = None,
 ) -> QuerySet[Submission]:
-    """The one population behind every submission number on the site."""
+    """The one population behind every submission number on the site.
+
+    ``month`` narrows a ``year`` to one calendar month and ``through`` ends it
+    on a day, inclusive — the two windows the month × year table and the
+    same-period comparison count (docs/adr/0160). Both are read in
+    Europe/Tallinn, as ``sent_at__year`` already is, so a letter sent at 00:30
+    on 1 January belongs to the year and month a lawyer would name.
+    """
     queryset = all_sent(context)
 
     if year is not None:
         queryset = queryset.filter(sent_at__year=year)
+        if month is not None:
+            queryset = queryset.filter(sent_at__month=month)
+        if through is not None:
+            queryset = queryset.filter(sent_at__lt=local_day_start(through + timedelta(days=1)))
     elif not context.period.is_all:
         start, end = context.period.start_datetime(), context.period.end_datetime()
         queryset = queryset.filter(sent_at__gte=start, sent_at__lt=end)

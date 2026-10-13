@@ -528,16 +528,21 @@ ITEMS: tuple[StatusItem, ...] = (
             "kuuendat liigifiltrit (`DigestRow.kind` loeb kirjeid, mitte "
             "sündmusi). Lugemismudel `activity_feed` on alles ja testitud."
         ),
-        state=OPEN,
+        state=DECIDED,
         next_step=(
-            "Otsustada, kas need sündmused on Tehtud-plokis vajalikud. Kui jah, "
-            "on see uus liik, mis loeb `ChangeEvent`-e — see on definitsiooni-, "
-            "mitte malliotsus. Kui ei, võib `activity_feed` koos oma testidega "
-            "eraldi voorus ära kaduda."
+            "Otsustatud 13.10.2026 (omaniku otsus, ADR 0159): need sündmused ei "
+            "lähe Tehtud-plokki, vaid eraldi osakonnajuhataja lehele "
+            "/osakond/muudatused/ — hetkeseisu muutused, vastutaja muutused, "
+            "järgmised tegevused, uued ja taasavatud teemad. Tehtud jääb "
+            "väljundite vastuseks ja tema arvud on Muudatuste lehel samad. "
+            "Kaasamise lisamine ei ole Muudatuste liik. `activity_feed` jääb "
+            "alles; selle eemaldamine on eraldi otsus."
         ),
         sources=(
             "01-EHITUSPROMPT §3.3",
             "docs/adr/0049-one-department-page.md",
+            "docs/adr/0159-a-department-wide-change-view-reads-state-changes-beside-tehtud.md",
+            "app/matters/department_changes.py",
             "app/matters/overview.py, `activity_feed`",
         ),
     ),

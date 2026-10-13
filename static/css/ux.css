@@ -1081,6 +1081,28 @@ a.uxstat__row:hover {
   min-width: 0;
 }
 
+/* Muudatused only: the row's change (`.uxdg__change`) is what the row is for,
+   so it wraps rather than being cut by the digest's one-line ellipsis. Tehtud
+   does not carry the modifier and is unchanged. */
+.uxdg__text--wrap {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Muudatused' custom-range form, drawn in the flow under a refused range's
+   message rather than in a popover over it. */
+.uxdg__periodinline form {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.uxdg__periodinline .field__input {
+  width: 118px;
+}
+
 /* The period control, as one group in the section head. The head itself does
    not wrap — it is one line of title, spacer and meta on every other section —
    so the five chips wrap inside their own box instead of pushing the last of

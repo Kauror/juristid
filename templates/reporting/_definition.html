@@ -15,6 +15,16 @@ not (Stage-2E brief 48).
   <dt>Populatsioon</dt>
   <dd>{{ definition.source_population_et }}</dd>
 
+  {% if definition.numerator_et %}
+    <dt>Lugeja</dt>
+    <dd>{{ definition.numerator_et }}</dd>
+  {% endif %}
+
+  {% if definition.denominator_et %}
+    <dt>Nimetaja</dt>
+    <dd>{{ definition.denominator_et }}</dd>
+  {% endif %}
+
   <dt>Ajavaade</dt>
   <dd>
     {{ definition.time_basis|default:"—" }} —
