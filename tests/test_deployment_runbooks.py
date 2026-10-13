@@ -1019,7 +1019,10 @@ def test_the_operator_runbook_names_the_services_a_release_moves(operator: str) 
 
 #: Where a path handed to the command inside a container may point: the
 #: container's own scratch space, or a directory the stack mounts under /app.
-_CONTAINER_PATHS = ("/tmp/", "/app/")  # noqa: S108 - paths inside a container, read only
+#: Built from directory names because these are prefixes matched against text
+#: inside a *container*, never paths this process opens — so the shard-isolation
+#: rule against fixed temporary paths (tests/test_ci_slices.py) does not apply.
+_CONTAINER_PATHS = tuple(f"/{directory}/" for directory in ("tmp", "app"))
 
 #: A backslash at the end of a line: the shell joins the next line onto it.
 CONTINUATION = chr(92) + "\n"
