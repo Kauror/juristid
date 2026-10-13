@@ -337,6 +337,9 @@ class Matrix:
     column_noun: str = "vastutajat"
     #: The heading of a per-row share column, when the matrix carries one.
     share_header: str = ""
+    #: Named subsets of a column that open their own rows («sh …»), printed
+    #: under the table. Empty on every matrix that has none.
+    subsets: tuple[Segment, ...] = ()
 
     @property
     def is_empty(self) -> bool:

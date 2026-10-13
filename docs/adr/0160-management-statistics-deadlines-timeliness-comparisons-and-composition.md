@@ -1,6 +1,7 @@
 # 0160 — Management statistics: deadlines, timeliness, comparisons and composition
 
-**Status:** proposed (draft PR, five-track round of 2026-10-13; owner review pending)
+**Status:** accepted — owner's decision 2026-10-13 (incorporating the «EL teatis»
+decision in §6)
 **Date:** 2026-10-13
 **Extends:** 0017 (the metric catalogue), 0007 (reporting contract). **Reads:** 0135
 (a response deadline keeps its history), 0151 (a Koda proposal is a Teema the
@@ -115,7 +116,8 @@ separately identifiable. Four columns, each Matter in exactly one, decided by
 one ordered `Case` (the order is the precedence):
 
 1. *ELiga seotud õigusakti järgi* — at least one instrument in
-   `EU_LEGAL_INSTRUMENT_KEYS` (whatever the track);
+   `EU_LEGAL_INSTRUMENT_KEYS`, or the historical «EL teatis» (whatever the
+   track; see below);
 2. *Siseriiklik* — instruments present and all in
    `DOMESTIC_LEGAL_INSTRUMENT_KEYS` (also on an EU track: a `Seadus` transposing
    a directive stays domestic, and the card counts how many such Matters exist);
@@ -130,22 +132,37 @@ never domestic. Every cell opens exactly its Matters. Nothing is read from
 titles or notes. Year basis is the register reporting year; *Teadmata aasta*
 appears only over all years, as on the year chart.
 
-**The historical «EL teatis» (`el-teatis`) is not classified** — pending an owner
-decision. Evidence: it is a version-1.0 row (`taxonomy/0006`, «Euroopa Komisjoni
-teatis või muu ELi institutsiooni teatis», aliases «EL teatis», «EK teatis»);
-ADR 0090 retired it from selection (`RETIRED_LEGAL_INSTRUMENT_KEYS_V2`) and
-`legal_instruments.py` deliberately places *every* retired row in neither group
-(«a retired version-1.0 row is in neither, which is the honest answer»), with no
-reviewed equivalence to the new «Muu ELi dokument» (whose own description
-mentions a *teatis*, but which carries no aliases by design). The era contracts
-give `ÕIGUSAKT` the `mapped` authority — no importer writes it — and
-`current_legal_instrument_keys` refuses a 2026 cell that resolves only to a
-retired key, so `el-teatis` reaches a Matter only by a person's choice made
-while version 1.0 was offered, or kept by «Jäta alles». Its own description is
-unambiguously European, unlike «Konsultatsioon»; adding it to the EU group is a
-one-line change, but it would reverse an accepted ADR's explicit rule and is
-the owner's to make. Until then such a Matter is *määramata* (or, on an EU
-track, *ainult menetlusliigi järgi*), and the card names how many there are.
+**What the share does not measure.** The EU-related share counts Matters whose
+*recorded* classification is European. It does **not** measure every domestic
+legislative matter influenced by EU law: a domestic instrument — a law
+transposing a directive, say — stays *siseriiklik* even on an EU track, because
+`Õigusakt` takes precedence. The card and the definition both say so.
+
+**The historical «EL teatis» (`el-teatis`) is EU-related for statistics** —
+owner's decision 2026-10-13. Its historical definition («Euroopa Komisjoni teatis
+või muu ELi institutsiooni teatis», `taxonomy/0006`) refers explicitly to
+communications from EU institutions. It is a **reporting-only** classification:
+
+- the set is statistics-side, `REPORTING_EU_INSTRUMENT_KEYS` in
+  `app/reporting/selectors/management.py` (the reviewed EU group plus
+  `el-teatis`); `app.taxonomy.legal_instruments`' two groups, which every other
+  surface reads, are unchanged, and that module has no reporting hook;
+- the instrument stays retired for capture (ADR 0090,
+  `RETIRED_LEGAL_INSTRUMENT_KEYS_V2`): `Uus teema` and `Muuda teemat` do not
+  offer it, no historical record is changed and nothing is remapped;
+- it counts under *ELiga seotud õigusakti järgi*, once — together with an EU
+  track it is still one Matter in that column — and stays separately
+  identifiable: under the table, «sh N ajaloolise õigusaktiga «EL teatis»»
+  opens exactly that subset in `/statistika/loend/` (`ruhm=el-teatis`, the
+  period's years) with its CSV.
+
+Evidence gathered before the decision: ADR 0090 retired the row and
+`legal_instruments.py` places every retired row in neither group; it has no
+reviewed equivalence to «Muu ELi dokument»; the era contracts give `ÕIGUSAKT` the
+`mapped` authority (no importer writes it) and `current_legal_instrument_keys`
+refuses a 2026 cell that resolves only to a retired key, so `el-teatis` is on a
+Matter only by a person's choice made while version 1.0 was offered, or kept by
+«Jäta alles».
 
 ### 7. Initiatives by year
 
@@ -212,12 +229,15 @@ visual baseline does not move. No navigation item is added.
 1. ~~Should *ELiga seotud* also count «ELi algatus» / «ELi õiguse ülevõtmine» on a
    Matter whose `Õigusakt` is unclassified?~~ Decided 2026-10-13: yes, as its own
    basis, `Õigusakt` first (§6).
-2. Whether the historical «EL teatis» instrument should join the European group
-   (today: unclassified, named on the card; evidence in §6).
+2. ~~Whether the historical «EL teatis» instrument should join the European
+   group?~~ Decided 2026-10-13: yes, for statistics only, under *õigusakti järgi*
+   and identifiable as its own subset; still retired for capture (§6).
 3. ~~Whether a request recorded after the opinion was sent should be judged?~~
    Decided 2026-10-13: no, it stays not verifiable (§4).
 
 ## Reversibility
+
+None of the decisions above is open any more.
 
 Entirely by code: no migration, no stored value. Removing the six entries and the
 module restores the previous catalogue.

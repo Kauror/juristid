@@ -805,34 +805,42 @@ def test_eu_bases_count_each_matter_once_with_the_instrument_first(mgmt, eu_base
     result = compute(keys.EU_RELATED_MATTERS_BY_YEAR, ctx(mgmt.head, "2027"))
     cells = _matrix(result)["2027"]
     assert cells == {
-        "ELiga seotud õigusakti järgi": 2,  # instrument only, both bases
-        # track only, transposition, notice on a track, restricted track only
-        "ELiga seotud ainult menetlusliigi järgi": 4,
+        # instrument only, both bases, and — owner's decision 2026-10-13 — the
+        # historical «EL teatis», alone or on an EU track: once, on Õigusakt.
+        "ELiga seotud õigusakti järgi": 4,
+        "ELiga seotud ainult menetlusliigi järgi": 3,  # track, transposition, restricted
         "Siseriiklik": 1,  # domestic on an EU track
-        "Määramata": 2,  # notice only, nothing
+        "Määramata": 1,  # nothing
     }
     assert sum(cells.values()) == len(eu_bases)  # nobody twice, nobody lost
-    assert result.value == 6
-    assert result.matrix.rows[0].share_text == "85,7%"  # 6 / (6 + 1)
+    assert result.value == 7
+    assert result.matrix.rows[0].share_text == "87,5%"  # 7 / (7 + 1)
     notes = " ".join(result.notes)
-    assert "Katvus: 2 teemal 9-st on määramata" in notes
+    assert "Katvus: 1 teemal 9-st on määramata" in notes
     assert "1 siseriikliku õigusaktiga teemal on ELi menetlusliik" in notes
-    # «EL teatis» is named and left alone, pending the owner's decision.
-    assert "2 teemal on ajalooline õigusakt «EL teatis»" in notes
+    assert "ei mõõda kõiki siseriiklikke õigusloome teemasid" in notes
+    # The notice is identifiable: «sh 2 …», opening exactly those two.
+    (subset,) = result.matrix.subsets
+    assert subset.label == "sh 2 ajaloolise õigusaktiga «EL teatis»"
+    assert subset.value == 2
 
 
 def test_eu_basis_cells_open_exactly_their_matters(mgmt, eu_bases):
     context = ctx(mgmt.head, "2027")
     expected = {
-        management.EU_RELATED: {"instrument only", "both bases"},
+        management.EU_RELATED: {
+            "instrument only",
+            "both bases",
+            "notice only",
+            "notice on an EU track",
+        },
         management.EU_BY_TRACK: {
             "track only",
             "transposition, retired instrument",
-            "notice on an EU track",
             "restricted track only",
         },
         management.DOMESTIC: {"domestic on an EU track"},
-        management.UNCLASSIFIED: {"notice only", "nothing"},
+        management.UNCLASSIFIED: {"nothing"},
     }
     for group, names in expected.items():
         listing = management.metric_rows(context, keys.EU_RELATED_MATTERS_BY_YEAR, group, "2027")
@@ -841,7 +849,7 @@ def test_eu_basis_cells_open_exactly_their_matters(mgmt, eu_bases):
 
 def test_eu_bases_hide_a_restricted_matter_from_a_reader(mgmt, eu_bases):
     cells = _matrix(compute(keys.EU_RELATED_MATTERS_BY_YEAR, ctx(mgmt.reader, "2027")))["2027"]
-    assert cells["ELiga seotud ainult menetlusliigi järgi"] == 3
+    assert cells["ELiga seotud ainult menetlusliigi järgi"] == 2
 
 
 def _add_test_matters() -> None:
@@ -1084,3 +1092,63 @@ def test_the_query_count_does_not_grow_with_the_rows(mgmt, key):
     _grow(21)
     large = {period: _queries(key, mgmt.head, period) for period in ("2026", "koik")}
     assert large == small, (key, small, large)
+
+
+def test_the_eu_notice_subset_opens_its_rows_and_csv_with_test_matters_present(
+    mgmt, eu_bases, client
+):
+    test_notice = _matter("TEST teatis", reporting_year=2027, data_class=MatterDataClass.TEST)
+    _instruments(test_notice, "el-teatis")
+    client.force_login(mgmt.head)
+    result = compute(keys.EU_RELATED_MATTERS_BY_YEAR, ctx(mgmt.head, "2027"))
+    (subset,) = result.matrix.subsets
+    parsed = urlparse(subset.url)
+    query = {k: v[0] for k, v in parse_qs(parsed.query).items()}
+    assert query["ruhm"] == management.EU_NOTICE_SUBSET and "aasta" not in query
+    assert total_at(client, subset.url) == subset.value == 2
+    assert _csv_rows(client, "/statistika/eksport/loend.csv", query) == 2
+    listing = management.metric_rows(
+        ctx(mgmt.head, "2027"), keys.EU_RELATED_MATTERS_BY_YEAR, management.EU_NOTICE_SUBSET
+    )
+    assert {row.title for row in listing.rows} == {
+        "Näidisteema notice only",
+        "Näidisteema notice on an EU track",
+    }
+
+
+def test_the_notice_is_european_for_statistics_only(mgmt, client):
+    """Still retired for capture: neither Uus teema nor Muuda teemat offers it."""
+    from app.taxonomy.legal_instruments import EU_LEGAL_INSTRUMENT_KEYS
+    from app.taxonomy.vocabulary import selectable_legal_instrument_types
+
+    assert "el-teatis" not in EU_LEGAL_INSTRUMENT_KEYS  # the shared groups are untouched
+    assert "el-teatis" in management.REPORTING_EU_INSTRUMENT_KEYS
+    assert not selectable_legal_instrument_types().filter(key="el-teatis").exists()
+    client.force_login(mgmt.owner)
+    create = client.get("/teemad/uus/").content.decode()
+    edit = client.get(f"/teemad/{mgmt.matters['moved'].pk}/muuda/").content.decode()
+    for body in (create, edit):
+        assert "Õigusakt" in body
+        assert "EL teatis" not in body
+
+
+def test_register_links_carry_the_data_class_once_even_if_the_helper_adds_it(mgmt, monkeypatch):
+    """Idempotent: if `register_url` later defaults to `andmed=paris` itself, the
+    explicit value is an override of the same key, never a second parameter."""
+    from app.reporting.selectors import base
+
+    def future_register_url(context, **overrides):
+        return base.register_url(context, **{"andmed": "paris", **overrides})
+
+    context = ctx(mgmt.head, "koik")
+    for helper in (base.register_url, future_register_url):
+        monkeypatch.setattr(management, "register_url", helper)
+        urls = [compute(keys.KODA_INITIATIVES_BY_YEAR, context).drillthrough_url]
+        for group in (management.INITIATIVE, management.NO_TRACK):
+            urls.append(
+                management.metric_rows(
+                    context, keys.KODA_INITIATIVES_BY_YEAR, group, "2026"
+                ).register_url
+            )
+        for url in urls:
+            assert parse_qs(urlparse(url).query)["andmed"] == ["paris"], url

@@ -1448,7 +1448,8 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         (
             "Teemade arv aruandlusaasta ja ELiga seotuse aluse järgi: ELiga seotud "
             "õigusakti järgi, ELiga seotud ainult menetlusliigi järgi, siseriiklik "
-            "või määramata, ning ELiga seotud teemade osakaal."
+            "või määramata, ning ELiga seotud teemade osakaal. Osakaal ei mõõda kõiki "
+            "siseriiklikke õigusloome teemasid, mida EL-i õigus mõjutab."
         ),
         population="Nähtavad teemad, mille aruandlusaasta on registri aasta",
         exclusions_et=(
@@ -1459,8 +1460,9 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         ),
         numerator_et=(
             "Teemad, mille õigusaktide hulgas on vähemalt üks ELiga seotud liik "
-            "(ELi direktiiv, ELi määrus, ELi konsultatsioon, Muu ELi dokument), "
-            "ja teemad, mille õigusakti rühm on määramata, kuid menetlusliik on "
+            "(ELi direktiiv, ELi määrus, ELi konsultatsioon, Muu ELi dokument või "
+            "ajalooline «EL teatis»), ja teemad, mille õigusakti rühm on määramata, "
+            "kuid menetlusliik on "
             "«ELi algatus» või «ELi õiguse ülevõtmine»."
         ),
         denominator_et=(
@@ -1473,11 +1475,20 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
             "Rühm on kirjas ainult kümnel praegu pakutaval õigusakti liigil "
             "(versioon 2.0). Ajalooline liik, mis rühma ei kanna — näiteks "
             "«Konsultatsioon» või «Muu» — on määramata, sest allikas ei ütle "
-            "rohkem. Ajalooline «EL teatis» on samuti määramata, kuni omanik "
-            "otsustab, kas see kuulub ELi rühma; selliste teemade arv on näitaja "
-            "juures kirjas. " + _ERA_ONENOTE_YEAR
+            "rohkem. Ajalooline «EL teatis» (Euroopa Komisjoni või muu ELi "
+            "institutsiooni teatis) on omaniku otsusega 13.10.2026 statistikas ELiga "
+            "seotud õigusakti järgi; uute teemade jaoks see liik valitav ei ole ja "
+            "ajaloolisi kirjeid ei muudeta. " + _ERA_ONENOTE_YEAR
         ),
-        drillthrough_et="Statistika loend: iga lahter avab oma teemad",
+        notes_et=(
+            "ELiga seotud osakaal ei mõõda kõiki siseriiklikke õigusloome teemasid, "
+            "mida EL-i õigus mõjutab: siseriikliku õigusaktiga teema (nt ülevõttev "
+            "seadus) on siseriiklik ka ELi menetlusliigi korral."
+        ),
+        drillthrough_et=(
+            "Statistika loend: iga lahter avab oma teemad; «sh ajalooline «EL "
+            "teatis»» avab selle alamhulga"
+        ),
     ),
     _matter(
         KODA_INITIATIVES_BY_YEAR,

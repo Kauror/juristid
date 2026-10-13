@@ -276,8 +276,10 @@ the observation list the number was computed from.
 counts a Matter as European on its instrument group, or — only when that group
 is unclassified — on its `Menetlusliik` («ELi algatus», «ELi õiguse
 ülevõtmine»). The two bases are separate columns and every Matter is in exactly
-one. The historical «EL teatis» is left unclassified and named on the card until
-the owner decides.
+one. The historical «EL teatis» counts as EU-related on the `Õigusakt` basis for
+statistics only (owner's decision 2026-10-13; still retired for capture) and is
+shown as its own «sh …» subset with its own list. The share does not measure
+every domestic matter influenced by EU law.
 
 **Every new card states its coverage on the card** («Katvus: …»), and every
 drill-through — the Statistika list, the submission list, both CSVs, and any

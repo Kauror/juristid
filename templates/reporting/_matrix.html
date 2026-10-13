@@ -75,6 +75,10 @@ matrix must never push the page sideways.
       </table>
     </div>
 
+    {% for subset in item.matrix.subsets %}
+      <p class="metric__note">{% if subset.url %}<a href="{{ subset.url }}">{{ subset.label }}</a>{% else %}{{ subset.label }}{% endif %}</p>
+    {% endfor %}
+
     {% if item.matrix.folded_note %}
       <p class="metric__note">{{ item.matrix.folded_note }}</p>
     {% endif %}

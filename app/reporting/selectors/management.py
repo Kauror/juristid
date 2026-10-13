@@ -714,10 +714,20 @@ EU_GROUP_LABELS: dict[str, str] = {
 }
 #: The two `Menetlusliik` values that are European by definition.
 EU_TRACKS: tuple[str, ...] = (Track.EU_INITIATIVE.value, Track.NATIONAL_TRANSPOSITION.value)
-#: The historical version-1.0 instrument whose group awaits an owner decision.
-#: Retired by docs/adr/0090 and deliberately in neither reviewed group
-#: (``app.taxonomy.legal_instruments``); it is named on the card, not counted.
+#: The historical version-1.0 «EL teatis» — «Euroopa Komisjoni teatis või muu
+#: ELi institutsiooni teatis». **European for statistics only** (owner's
+#: decision 2026-10-13, docs/adr/0160 §6): it stays retired for capture
+#: (docs/adr/0090) and outside ``app.taxonomy.legal_instruments``' two groups,
+#: which every other surface reads. Counted under «õigusakti järgi» and kept
+#: identifiable as its own subset (:data:`EU_NOTICE_SUBSET`).
 EU_NOTICE_KEY = "el-teatis"
+#: The instrument keys this metric reads as European: the reviewed group plus
+#: the historical notice. A reporting-side set, never written back anywhere.
+REPORTING_EU_INSTRUMENT_KEYS: frozenset[str] = EU_LEGAL_INSTRUMENT_KEYS | {EU_NOTICE_KEY}
+#: The list group for «sh … «EL teatis»»: Matters in «õigusakti järgi» that
+#: carry the historical notice. A subset of a column, not a column.
+EU_NOTICE_SUBSET = "el-teatis"
+EU_NOTICE_SUBSET_LABEL = "ELiga seotud õigusakti järgi, sh ajalooline «EL teatis»"
 
 INITIATIVE = "algatus"
 OTHER_TRACK = "muu"
@@ -752,7 +762,8 @@ def _eu_group(queryset: QuerySet[Matter]) -> QuerySet[Matter]:
     ``Exists`` rather than a join, so a Matter with three instruments is still
     one row. The ``Case`` is evaluated in order, which *is* the precedence:
 
-    1. *õigusakti järgi* — any instrument in the European group;
+    1. *õigusakti järgi* — any instrument in the European group, or the
+       historical «EL teatis» (for statistics only, :data:`EU_NOTICE_KEY`);
     2. *siseriiklik* — instruments present and every one domestic;
     3. *ainult menetlusliigi järgi* — the `Õigusakt` group is unknown (none, or
        one the reviewed list puts in neither group) and the stored
@@ -765,9 +776,9 @@ def _eu_group(queryset: QuerySet[Matter]) -> QuerySet[Matter]:
     """
     through = Matter.legal_instruments.through
     mine = through.objects.filter(matter_id=OuterRef("pk"))
-    grouped = EU_LEGAL_INSTRUMENT_KEYS | DOMESTIC_LEGAL_INSTRUMENT_KEYS
+    grouped = REPORTING_EU_INSTRUMENT_KEYS | DOMESTIC_LEGAL_INSTRUMENT_KEYS
     return queryset.annotate(
-        has_eu=Exists(mine.filter(legalinstrumenttype__key__in=EU_LEGAL_INSTRUMENT_KEYS)),
+        has_eu=Exists(mine.filter(legalinstrumenttype__key__in=REPORTING_EU_INSTRUMENT_KEYS)),
         has_domestic=Exists(
             mine.filter(legalinstrumenttype__key__in=DOMESTIC_LEGAL_INSTRUMENT_KEYS)
         ),
@@ -878,15 +889,15 @@ def eu_related_matters_by_year(context: ReportingContext) -> MetricResult:
     grouped = _grouped_by_year(population, "eu_group", "has_eu_notice", "on_eu_track")
 
     counts: dict[tuple[int | None, str], int] = defaultdict(int)
-    notice_unclassified = 0
+    notice = 0
     domestic_on_eu_track = 0
     for row in grouped:
         if row["year_key"] is None and not context.period.is_all:
             # A period filter has already said unknown-year Matters are outside it.
             continue
         counts[(row["year_key"], row["eu_group"])] += row["total"]
-        if row["has_eu_notice"] and row["eu_group"] in (UNCLASSIFIED, EU_BY_TRACK):
-            notice_unclassified += row["total"]
+        if row["has_eu_notice"] and row["eu_group"] == EU_RELATED:
+            notice += row["total"]
         if row["on_eu_track"] and row["eu_group"] == DOMESTIC:
             domestic_on_eu_track += row["total"]
 
@@ -905,6 +916,15 @@ def eu_related_matters_by_year(context: ReportingContext) -> MetricResult:
         column_header="ELiga seotuse aluse",
         column_noun="alust",
         share_header="ELiga seotud osakaal",
+        subsets=(
+            Segment(
+                label=f"sh {notice} ajaloolise õigusaktiga «EL teatis»",
+                value=notice,
+                url=metric_list_url(context, keys.EU_RELATED_MATTERS_BY_YEAR, EU_NOTICE_SUBSET),
+            ),
+        )
+        if notice
+        else (),
     )
     notes = [
         f"Katvus: {totals[UNCLASSIFIED]} teemal {all_rows}-st on määramata, kas see "
@@ -922,12 +942,16 @@ def eu_related_matters_by_year(context: ReportingContext) -> MetricResult:
             f"{domestic_on_eu_track} siseriikliku õigusaktiga teemal on ELi "
             "menetlusliik; õigusakt on eelistatud, seega on need siseriiklikud."
         )
-    if notice_unclassified:
+    if notice:
         notes.append(
-            f"{notice_unclassified} teemal on ajalooline õigusakt «EL teatis». Seda "
-            "ei loeta ELiga seotuks, kuni omanik on otsustanud — teema on «Määramata» "
-            "või ELi menetlusliigi korral «ainult menetlusliigi järgi»."
+            "Ajalooline õigusakt «EL teatis» (Euroopa Komisjoni või muu ELi "
+            "institutsiooni teatis) on statistikas «õigusakti järgi» ELiga seotud; "
+            "uute teemade jaoks see liik valitav ei ole."
         )
+    notes.append(
+        "ELiga seotud osakaal ei mõõda kõiki siseriiklikke õigusloome teemasid, "
+        "mida EL-i õigus mõjutab: siseriiklik õigusakt jääb siseriiklikuks."
+    )
     return simple_result(
         spec,
         context=context,
@@ -1209,7 +1233,43 @@ def _year_list(
     )
 
 
+def _eu_notice_list(context: ReportingContext) -> RowList:
+    """«sh … «EL teatis»»: the counted subset of «õigusakti järgi», over the period.
+
+    The same annotated population and group as the column, narrowed to the
+    Matters carrying the historical notice — so the list is exactly the number
+    under the table. Unknown-year Matters belong to it only over all years, as
+    they belong to the matrix.
+    """
+    population = _eu_group(_year_population(context, keys.EU_RELATED_MATTERS_BY_YEAR)).filter(
+        # Annotations, so spelled as a mapping the type plugin does not resolve.
+        **{"eu_group": EU_RELATED, "has_eu_notice": True}
+    )
+    if not context.period.is_all:
+        population = population.filter(known_year_q())
+    return RowList(
+        heading=definition(keys.EU_RELATED_MATTERS_BY_YEAR).label_et,
+        group_label=EU_NOTICE_SUBSET_LABEL,
+        columns=("Aruandlusaasta", "Menetlusliik"),
+        rows=tuple(
+            ListRow(
+                matter_id=matter.pk,
+                title=matter.title,
+                cells=(
+                    "" if matter.reporting_year is None else str(matter.reporting_year),
+                    matter.get_track_display() if matter.track else "",
+                ),
+            )
+            for matter in population.order_by("title", "pk")
+        ),
+    )
+
+
 def _eu_list(context: ReportingContext, group: str, year: str) -> RowList:
+    if group == EU_NOTICE_SUBSET:
+        if year:
+            raise Http404("Tundmatu rühm.")
+        return _eu_notice_list(context)
     return _year_list(
         context,
         key=keys.EU_RELATED_MATTERS_BY_YEAR,
