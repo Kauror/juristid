@@ -10,7 +10,7 @@ a line (Stage-2F brief 31).
 
 from __future__ import annotations
 
-from django.http import HttpRequest, HttpResponse
+from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import render
 from django.utils import timezone
 
@@ -18,7 +18,8 @@ from app.core.authorization import may_view_department_management
 from app.core.decorators import gate_required, viewer_for
 from app.matters import overview as overview_module
 from app.matters.department import build_department
-from app.matters.department_dashboard import TEAM_COLUMNS
+from app.matters.department_changes import build_changes
+from app.matters.department_dashboard import PERIOD_END_PARAM, PERIOD_START_PARAM, TEAM_COLUMNS
 
 
 @gate_required
@@ -89,6 +90,39 @@ def department(request: HttpRequest) -> HttpResponse:
             # from, so a column added later cannot arrive under the wrong
             # heading (app/matters/department_dashboard.py, `TEAM_COLUMNS`).
             "team_columns": TEAM_COLUMNS,
+            "nav_active": "osakond",
+        },
+    )
+
+
+@gate_required
+def department_changes(request: HttpRequest) -> HttpResponse:
+    """Muudatused — which states moved in the department's work over a window.
+
+    **The department head's, by the same rule as Meeskond and Tehtud**
+    (docs/adr/0159 §4): `may_view_department_management(request.user)`, the
+    authenticated identity, never the viewer the shared gate lends the rest of
+    Osakond. Those two are sections and are simply not built for anybody else;
+    this is a page of its own, so for anybody else it does not exist — a 404,
+    the answer the manager-only `/osakonna-too/` gave and a colleague's desk
+    still gives (`person_work`). Nothing is computed before the check.
+
+    What the page shows is still `visible_to(viewer)`: the role decides that it
+    opens, not what it may count.
+    """
+    if not may_view_department_management(request.user):
+        raise Http404("Muudatused on osakonnajuhataja vaade.")
+    today = timezone.localdate()
+    return render(
+        request,
+        "matters/department_changes.html",
+        {
+            "page": build_changes(viewer_for(request), request.GET, today=today),
+            # What the reader typed, redisplayed as typed: a refused range
+            # shows the words that were refused, not the fallback's dates.
+            "typed_start": request.GET.get(PERIOD_START_PARAM, ""),
+            "typed_end": request.GET.get(PERIOD_END_PARAM, ""),
+            "today": today,
             "nav_active": "osakond",
         },
     )
