@@ -143,9 +143,9 @@ def test_a_the_order_and_what_is_no_longer_asked(page, base_url, screenshots):
     # Saatja left, Vastutaja right, on one row.
     assert sender["x"] < owner["x"]
     assert abs(sender["y"] - owner["y"]) < 40, (sender, owner)
-    # Tähtaeg | Saabus, on one row — `Menetluse link` left the page on
-    # 2026-10-12 (docs/adr/0130 amendment).
-    assert deadline["x"] < received["x"]
+    # Saabus | Arvamuse tähtaeg, on one row (owner's order of 2026-10-13); `Menetluse
+    # link` left the page on 2026-10-12.
+    assert received["x"] < deadline["x"]
     assert abs(deadline["y"] - received["y"]) < 10
     # And down the page, in the owner's order.
     # Hetkeseis directly under the Õigusakt that guides it, then Valdkond
