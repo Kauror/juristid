@@ -13469,31 +13469,40 @@ section:has(.pw-more[open]) tbody.uxextra {
 /* Rows wrap rather than clip: «Mis jõustub» is somebody's sentence, and the
    register's single-line rhythm would cut off the half that says which part
    of the act it is. */
-/* Fixed, so the columns line up from one bucket's table to the next. */
+/* Fixed, so the columns line up from one bucket's table to the next.
+ *
+ * Teema is the one column without a width, so it takes everything the four
+ * fixed ones leave. The fixed four add up to 36rem and the table's floor is
+ * 54rem, so Teema never gets less than 18rem: below that width the table
+ * scrolls inside `.tablewrap` rather than squeezing the title to a letter per
+ * line (visual QA ISSUE-1, 2026-10-13 — at 48rem with 47rem of fixed columns
+ * Teema got 16px on a phone and 200px at 1024). Allikas is narrow and wraps:
+ * it mostly says «—» or «Ametlik allikas». */
 .jtable {
-  min-width: 48rem;
+  min-width: 54rem;
   table-layout: fixed;
 }
 
 .jtable tbody td {
   height: auto;
   vertical-align: top;
+  overflow-wrap: anywhere;
 }
 
 .jtable__what {
-  width: 16rem;
+  width: 13rem;
 }
 
 .jtable__date {
-  width: 11rem;
+  width: 9rem;
 }
 
 .jtable__owner {
-  width: 8rem;
+  width: 7rem;
 }
 
 .jtable__source {
-  width: 12rem;
+  width: 7rem;
 }
 
 .jtable__meta {
@@ -13608,12 +13617,16 @@ a.jcal__daynum {
   overflow-wrap: anywhere;
 }
 
-.jcal__item:hover {
+.jcal__item:hover,
+.jcal__item:focus-visible {
   text-decoration: underline;
 }
 
+/* The entry is a link to its Teema; the link colour on what commences says
+   so without underlining every line of a dense grid (visual QA C-2). */
 .jcal__what {
   font-weight: var(--typography-weight-semibold);
+  color: var(--accent-link);
 }
 
 .jcal__matter {

@@ -6,5 +6,5 @@ outside a day cell, because «IV kvartal 2026» is the only date it has.
 <a class="jcal__item" href="{% url 'matters:matter_detail' pk=entry.record.matter.pk %}#joustumine">
   {% if show_when %}<span class="dateline--approximate">{{ entry.record.display_when }}</span> · {% endif %}
   <span class="jcal__what">{{ entry.record.description|default:"Jõustumine" }}</span>
-  <span class="jcal__matter">{{ entry.record.matter.title }}</span>
+  <span class="jcal__matter">{{ entry.record.matter.title }}{% if not entry.record.matter.is_open %} <span class="badge badge--closed">Suletud</span>{% endif %}</span>
 </a>

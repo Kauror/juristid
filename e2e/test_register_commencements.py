@@ -140,3 +140,19 @@ def test_the_view_says_which_statuses_it_shows_and_narrows_on_request(page, base
     assert "olek=avatud" in page.url
     assert "vaade=joustumised" in page.url
     expect(page.locator("[data-status-scope]")).to_contain_text("Kuvatud: ainult avatud teemad")
+
+
+@pytest.mark.parametrize("width", [375, 1024, 1440])
+def test_the_teema_column_keeps_a_readable_width(page, base_url, width):
+    """Teema is the flexible column with an 18rem floor; below that the table
+    scrolls inside its own box and the page does not (visual QA ISSUE-1)."""
+    sign_in(page, base_url, MARTIN)
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(f"{base_url}{LIST}")
+
+    header = page.locator(".jtable thead th").nth(2)
+    expect(header).to_contain_text("Teema")
+    box = header.bounding_box()
+    assert box is not None
+    assert box["width"] >= 260, box
+    assert not document_overflows(page)

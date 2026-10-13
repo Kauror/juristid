@@ -136,7 +136,16 @@ BUCKETS: tuple[tuple[str, str, str], ...] = (
     ),
 )
 
-WEEKDAY_LABELS = ("E", "T", "K", "N", "R", "L", "P")
+#: Monday first: the letter on the grid and the word a screen reader says.
+WEEKDAY_LABELS: tuple[tuple[str, str], ...] = (
+    ("E", "esmaspäev"),
+    ("T", "teisipäev"),
+    ("K", "kolmapäev"),
+    ("N", "neljapäev"),
+    ("R", "reede"),
+    ("L", "laupäev"),
+    ("P", "pühapäev"),
+)
 
 
 def today() -> date:
@@ -461,7 +470,7 @@ class MonthCalendar:
     wider_entries: list[Entry]
     #: How many commencements in the population carry no date at all.
     undated_count: int
-    weekdays: tuple[str, ...] = WEEKDAY_LABELS
+    weekdays: tuple[tuple[str, str], ...] = WEEKDAY_LABELS
 
     @property
     def has_any(self) -> bool:

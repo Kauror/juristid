@@ -86,7 +86,7 @@ bucket holds a period only when the whole of it is inside.
       <table class="jcal__grid">
         <caption class="visually-hidden">Jõustumised: {{ cal.label }}</caption>
         <thead>
-          <tr>{% for weekday in cal.weekdays %}<th scope="col">{{ weekday }}</th>{% endfor %}</tr>
+          <tr>{% for short, name in cal.weekdays %}<th scope="col" abbr="{{ name }}" title="{{ name }}">{{ short }}</th>{% endfor %}</tr>
         </thead>
         <tbody>
           {% for week in cal.weeks %}
