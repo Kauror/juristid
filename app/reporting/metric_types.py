@@ -138,6 +138,14 @@ class MetricDefinition:
     drillthrough_et: str = ""
     notes_et: str = ""
 
+    #: For a ratio, what is counted above the line and what below it, each in
+    #: one sentence. Empty for a plain count. Written separately rather than
+    #: folded into the description because a share whose denominator has to be
+    #: inferred from prose is a share two readers will compute differently
+    #: (docs/metric-catalog/README.md, "numerator / denominator").
+    numerator_et: str = ""
+    denominator_et: str = ""
+
     #: Whether the selected period narrows this metric. Archive-wide totals set
     #: this to False and say so on the card.
     respects_period: bool = True
@@ -233,6 +241,10 @@ class Comparison:
     #: What the cutoff means for this measure, in one sentence. Rendered beside
     #: the date, because "kuni 31.07" is only useful with "arhiivis on andmeid".
     cutoff_note: str = ""
+    #: Where each side's records open. Empty where no list can show exactly
+    #: that window — a link that opened a wider one would be worse than none.
+    current_url: str = ""
+    previous_url: str = ""
 
     @property
     def absolute_change(self) -> int:
@@ -277,6 +289,9 @@ class Comparison:
 class MatrixCell:
     value: int
     url: str = ""
+    #: A cell nobody measured yet — a month of this year still to come. Printed
+    #: as a dash rather than 0: an absent measurement is not a zero (brief 24).
+    missing: bool = False
 
 
 @dataclass(frozen=True)
@@ -285,6 +300,10 @@ class MatrixRow:
     cells: tuple[MatrixCell, ...]
     total: int
     is_unknown: bool = False
+    #: A share already computed for this row, as printed text («12,5%» or «—»).
+    #: Only rendered when the matrix names a ``share_header``; never derived in
+    #: a template (brief 54).
+    share_text: str = ""
 
 
 @dataclass(frozen=True)
@@ -311,6 +330,13 @@ class Matrix:
     #: column. Never silent: a matrix that dropped columns without saying so
     #: would read as the whole picture (brief, "no silent caps").
     folded_note: str = ""
+    #: What the columns are, for the caption and the text alternative. The
+    #: first matrices were all year or month × responsibility, and the defaults
+    #: keep their wording exactly.
+    column_header: str = "vastutaja"
+    column_noun: str = "vastutajat"
+    #: The heading of a per-row share column, when the matrix carries one.
+    share_header: str = ""
 
     @property
     def is_empty(self) -> bool:

@@ -20,6 +20,7 @@ urlpatterns = [
     path("andmekvaliteet/", views.data_quality, name="quality"),
     path("arvamused/", views.submissions_list, name="submissions"),
     path("materjalid/", views.materials_list, name="materials"),
+    path("loend/", views.metric_rows, name="metric_rows"),
     path("definitsioonid/", views.definitions, name="definitions"),
     path("eksport/<slug:slug>.csv", views.export, name="export"),
 ]

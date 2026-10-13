@@ -1,0 +1,206 @@
+{% comment %}
+Jõustumised — the register's commencement presentation (docs/adr/0158).
+
+The same filtered register as the Matter table above it would show, read one
+commencement per row: several per Matter are several rows. Active records only,
+read through `MatterEffectiveDate.objects.visible_to` before anything here is
+counted (app/intelligence/commencements.py).
+
+Never a manufactured day. A date is written at the precision it was recorded at
+(`display_when`), a period is never drawn on a calendar cell, and a 30-day
+bucket holds a period only when the whole of it is inside.
+{% endcomment %}
+{% with scope=commencement_status %}
+{% comment %}
+  Which files are in this view, by status, always in words. Without `?olek=`
+  a commencement view opens on open *and* closed files — not the register's
+  `avatud` — because a commencement often lands after the file was closed
+  (owner's final-readiness decision, 2026-10-13; docs/adr/0158 §2). The link
+  writes `?olek=` out, so a narrowed view is a shareable address too.
+{% endcomment %}
+<p class="jcover" data-status-scope="{% if scope.all %}koik{% else %}osa{% endif %}">
+  Kuvatud: <strong>{{ scope.label }}</strong>{% if scope.is_default %} (jõustumiste vaikimisi valik){% endif %} ·
+  {% if scope.all %}
+    <a href="?{{ scope.open_query }}#tulemused">näita ainult avatud</a>
+  {% else %}
+    <a href="?{{ scope.all_query }}#tulemused">näita avatud ja suletud teemasid</a>
+  {% endif %}
+</p>
+{% endwith %}
+{% with coverage=commencement_coverage %}
+<p class="jcover">
+  {{ coverage.note }}
+  {% if coverage.missing %}
+    <a href="?{{ coverage.missing_query }}#tulemused">{{ coverage.missing }} teemal</a>
+    selles valikus jõustumist kirjas ei ole.
+  {% endif %}
+</p>
+{% endwith %}
+
+{% if commencement_view == "kalender" %}
+  {% with cal=commencement_calendar %}
+  <section class="jcal" aria-labelledby="jcal-title">
+    <div class="jcal__head">
+      <a class="button button--quiet button--tiny" href="?{{ commencement_previous_month }}#tulemused"
+         aria-label="Eelmine kuu: {{ commencement_previous_label }}">‹ {{ commencement_previous_label }}</a>
+      {% comment %}
+        The month's own name opens the list narrowed to it — containment, so
+        this month's days and the rows recorded to this month, and no quarter.
+      {% endcomment %}
+      <h2 class="jcal__title" id="jcal-title">
+        <a href="?{{ commencement_month_query }}#tulemused"
+           title="Näita kuu jõustumisi loendina">{{ cal.label }}</a>
+      </h2>
+      <a class="button button--quiet button--tiny" href="?{{ commencement_next_month }}#tulemused"
+         aria-label="Järgmine kuu: {{ commencement_next_label }}">{{ commencement_next_label }} ›</a>
+      <a class="button button--quiet button--tiny" href="?{{ commencement_this_month }}#tulemused">Käesolev kuu</a>
+    </div>
+
+    {% if cal.month_entries %}
+      <div class="jcal__strip">
+        <h3 class="jcal__striptitle">Kuu jooksul, päev teadmata</h3>
+        <ul class="jcal__list">
+          {% for entry in cal.month_entries %}
+            <li>{% include "matters/partials/commencement_item.html" with entry=entry %}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+    {% if cal.wider_entries %}
+      {% comment %}
+        Not *in* this month by the containment rule, and said so. A quarter
+        that overlaps the month may commence here; drawing it on a day, or
+        counting it as the month's, would state a precision nobody recorded.
+      {% endcomment %}
+      <div class="jcal__strip">
+        <h3 class="jcal__striptitle">Pikem periood, mis hõlmab seda kuud — võib jõustuda ka sel kuul</h3>
+        <ul class="jcal__list">
+          {% for entry in cal.wider_entries %}
+            <li>{% include "matters/partials/commencement_item.html" with entry=entry show_when=True %}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+
+    <div class="tablewrap">
+      <table class="jcal__grid">
+        <caption class="visually-hidden">Jõustumised: {{ cal.label }}</caption>
+        <thead>
+          <tr>{% for weekday in cal.weekdays %}<th scope="col">{{ weekday }}</th>{% endfor %}</tr>
+        </thead>
+        <tbody>
+          {% for week in cal.weeks %}
+            <tr>
+              {% for cell in week %}
+                <td class="jcal__day{% if not cell.in_month %} jcal__day--outside{% endif %}{% if cell.is_today %} jcal__day--today{% endif %}"
+                    {% if cell.is_today %}aria-current="date"{% endif %}>
+                  {% if cell.in_month and cell.entries %}
+                    {% comment %}
+                      A day is a link to itself: the list, narrowed through the
+                      register's own window parameters to this one day.
+                    {% endcomment %}
+                    <a class="jcal__daynum" href="?{{ cell.query }}#tulemused"
+                       aria-label="Jõustumised {{ cell.day|date:'j.n.Y' }}">{{ cell.day.day }}</a>
+                    <ul class="jcal__list">
+                      {% for entry in cell.entries %}
+                        <li>{% include "matters/partials/commencement_item.html" with entry=entry %}</li>
+                      {% endfor %}
+                    </ul>
+                  {% else %}
+                    <span class="jcal__daynum">{{ cell.day.day }}</span>
+                  {% endif %}
+                </td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if not cal.has_any %}
+      <p class="empty">{{ cal.label }}: selle valikuga jõustumisi ei ole.</p>
+    {% endif %}
+    {% if cal.undated_count %}
+      <p class="jcal__undated">
+        {{ cal.undated_count }} jõustumist ilma kuupäevata (üldises korras või täpsustamisel) —
+        <a href="?{{ commencement_list_query }}#tulemused">vaata loendist</a>.
+      </p>
+    {% endif %}
+  </section>
+  {% endwith %}
+{% else %}
+  {% for bucket in commencement_buckets %}
+    <section class="jbucket" aria-labelledby="jbucket-{{ bucket.key }}">
+      <h2 class="sectionlabel" id="jbucket-{{ bucket.key }}">
+        {{ bucket.label }} <span class="sectionlabel__count">· {{ bucket.total }}</span>
+      </h2>
+      <p class="jbucket__note">{{ bucket.note }}</p>
+      <div class="tablewrap">
+        <table class="table jtable">
+          <thead>
+            <tr>
+              <th scope="col" class="jtable__date"
+                  {% if commencement_sort == "kuupaev" %}aria-sort="ascending"{% elif commencement_sort == "kuupaev_desc" %}aria-sort="descending"{% endif %}>
+                <a href="?{{ commencement_sort_date_query }}#tulemused">Kuupäev</a>
+              </th>
+              <th scope="col" class="jtable__what">Mis jõustub</th>
+              <th scope="col" {% if commencement_sort == "teema" %}aria-sort="ascending"{% endif %}>
+                <a href="?{{ commencement_sort_matter_query }}#tulemused">Teema</a>
+              </th>
+              <th scope="col" class="jtable__owner">Vastutaja</th>
+              <th scope="col" class="jtable__source">Allikas</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for entry in bucket.entries %}
+              {% with record=entry.record %}
+              <tr>
+                <td class="jtable__date">
+                  <span class="{% if record.is_approximate %}dateline--approximate{% endif %}">{{ record.display_when }}</span>
+                  {% if entry.precision_label %}
+                    <span class="jtable__meta">{{ entry.precision_label }}{% if entry.running %} · periood kestab{% endif %}</span>
+                  {% endif %}
+                </td>
+                <td>{{ record.description|default:"—" }}</td>
+                <td>
+                  <a href="{% url 'matters:matter_detail' pk=record.matter.pk %}#joustumine">{{ record.matter.title }}</a>
+                  {% if record.matter.is_restricted %}<span class="badge badge--restricted">Piiratud</span>{% endif %}
+                  {% if not record.matter.is_open %}<span class="badge badge--closed">Suletud</span>{% endif %}
+                </td>
+                <td class="jtable__owner">
+                  {% if record.matter.owner %}{{ record.matter.owner.get_short_name }}{% else %}<span class="jtable__meta">Määramata</span>{% endif %}
+                </td>
+                <td class="jtable__source">
+                  {% if record.source_url %}
+                    <a href="{{ record.source_url }}" rel="noopener noreferrer external" target="_blank">Ametlik allikas</a>
+                  {% endif %}
+                  {% if record.source_text %}
+                    <span class="jtable__meta">„{{ record.source_text|truncatechars:90 }}”</span>
+                  {% elif record.legacy_source_page_id %}
+                    <span class="jtable__meta">Ajalooline lähteleht</span>
+                  {% elif not record.source_url %}
+                    <span class="jtable__meta">—</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endwith %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if bucket.truncated %}
+        {% comment %}
+          A long bucket shows its first rows in the chosen order; the heading
+          above keeps the exact count. The whole bucket is one click away and
+          is an address like any other (docs/adr/0158 §4).
+        {% endcomment %}
+        <p class="jbucket__note">
+          Näidatud {{ bucket.entries|length }} / {{ bucket.total }} —
+          <a href="?{{ bucket.expand_query }}#jbucket-{{ bucket.key }}">näita kõiki {{ bucket.total }}</a>
+        </p>
+      {% endif %}
+    </section>
+  {% empty %}
+    <p class="empty">Selle valikuga jõustumisi ei leitud.</p>
+  {% endfor %}
+{% endif %}

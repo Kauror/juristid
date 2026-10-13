@@ -222,6 +222,6 @@ def describe_matrix(result: MetricResult) -> str:
 
     return (
         f"{len(matrix.rows)} rida ({matrix.row_header.lower()}) × "
-        f"{matrix.column_count} vastutajat, kokku {matrix.grand_total}. "
+        f"{matrix.column_count} {matrix.column_noun}, kokku {matrix.grand_total}. "
         "Täpsed arvud on tabelis; ükski väärtus ei ole edastatud ainult värviga."
     )
