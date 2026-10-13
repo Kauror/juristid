@@ -1,0 +1,49 @@
+{% comment %}
+One period measured against a comparable earlier one (docs/adr/0160).
+
+Both windows are printed with their dates, because «+4» means nothing until the
+reader knows the two sides end on the same day. Every figure arrives computed —
+the change, its sign and the percentage are the Comparison's own properties,
+never arithmetic here (brief 54). No colour says better or worse: more letters
+are more letters (brief 34).
+{% endcomment %}
+
+<div class="metric">
+  <span class="metric__label" id="comparison-{{ result.key }}-label">{{ result.definition.label_et }}</span>
+
+  {% if result.has_value and result.comparison %}
+    {% with comparison=result.comparison %}
+      {% if comparison.current_url %}
+        <a class="metric__value tabular" href="{{ comparison.current_url }}"
+           aria-describedby="comparison-{{ result.key }}-label">{{ comparison.current_value }}</a>
+      {% else %}
+        <span class="metric__value tabular">{{ comparison.current_value }}</span>
+      {% endif %}
+      <span class="metric__basis">{{ comparison.current_period_label }}</span>
+      <span class="metric__basis">
+        Eelmine aasta:
+        {% if comparison.previous_url %}<a href="{{ comparison.previous_url }}">{{ comparison.previous_value }}</a>{% else %}{{ comparison.previous_value }}{% endif %}
+        ({{ comparison.previous_period_label }})
+      </span>
+      <span class="metric__basis tabular">
+        {{ comparison.change_text }}{% if comparison.has_percent %} · {{ comparison.percent_text }}{% endif %}
+      </span>
+      {% if comparison.cutoff_note %}
+        <p class="metric__note">{{ comparison.cutoff_note }}</p>
+      {% endif %}
+    {% endwith %}
+  {% else %}
+    <span class="metric__unavailable">Ebapiisavad andmed</span>
+  {% endif %}
+
+  {% for note in result.notes %}
+    <p class="metric__note">{{ note }}</p>
+  {% endfor %}
+
+  <details class="definition">
+    <summary class="definition__summary">Kuidas arvutatakse?</summary>
+    <div class="definition__body">
+      {% include "reporting/_definition.html" with definition=result.definition result=result %}
+    </div>
+  </details>
+</div>
