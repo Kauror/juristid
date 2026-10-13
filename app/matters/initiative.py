@@ -19,11 +19,20 @@ kind of instrument, not who started the work, and it implies nothing here
 
 What it means, and nothing more:
 
-* **No incoming dates are established.** A Chamber initiative is never given a
-  `Saabus` or an `Arvamuse tähtaeg` it did not have: `Uus teema` records
-  neither, and every writer refuses to *establish* one on such a Teema
-  (:func:`refuse_new_incoming_dates`). So no response obligation can begin, and
-  nothing on it reads as «arvamust koostamisel».
+* **No arrival date is established.** A Chamber initiative is never given a
+  `Saabus` it did not have: nothing arrived. `Uus teema` records none, and every
+  writer refuses to *establish* one on such a Teema
+  (:func:`refuse_new_incoming_dates`).
+* **`Arvamuse tähtaeg` is the lawyer's own, and optional** (owner's decision of
+  2026-10-13, docs/adr/0151 amendment, superseding the earlier rule that an
+  initiative never has one). A Chamber proposal may have a date it is due by.
+  It is recorded, moved and cleared through the ordinary deadline writers
+  (`app.matters.response_deadlines.change_response_deadline`), and an empty
+  box means no deadline. It is not evidence that anybody asked Koda for
+  anything, so the two acts that *mean* a new request — `+ Lisa → Arvamuse
+  tähtaeg` and «Uus arvamuse küsimine» — stay refused on an initiative
+  (:data:`INITIATIVE_HAS_NO_NEW_REQUEST`). A sent proposal discharges it like
+  any sent `Submission` does.
 * **History is not erased.** A Teema marked as an initiative later keeps any
   date it already holds; changing or clearing one is the ordinary, audited
   correction it always was.
@@ -59,9 +68,13 @@ KODA_PROPOSAL_INSTRUMENT_KEY = "koja-ettepanek"
 INITIATIVE_HAS_NO_RECEIVED_DATE = (
     "Koja ettepanekul või pöördumisel ei ole saabumise kuupäeva — Koda algatas selle ise."
 )
-INITIATIVE_HAS_NO_RESPONSE_DEADLINE = (
-    "Koja ettepanekul või pöördumisel ei ole arvamuse tähtaega. Kui Kojalt "
-    "küsitakse arvamust, eemalda teemalt märge «Koja ettepanek või pöördumine»."
+#: `+ Lisa → Arvamuse tähtaeg` or «Uus arvamuse küsimine» on a Chamber
+#: initiative: both say Koda was asked for an opinion, which it was not. Its own
+#: deadline is set, moved and cleared in the header (docs/adr/0151, amendment of
+#: 2026-10-13).
+INITIATIVE_HAS_NO_NEW_REQUEST = (
+    "Koja ettepanekult või pöördumiselt ei küsita arvamust. Arvamuse tähtaega "
+    "saab lisada, muuta või eemaldada teema päises."
 )
 
 _UNSET: Any = object()
@@ -77,21 +90,21 @@ def refuse_new_incoming_dates(
     *,
     initiative: bool | None = None,
     received_date: Any = _UNSET,
-    response_deadline: Any = _UNSET,
 ) -> None:
-    """Refuse to *establish* `Saabus` or `Arvamuse tähtaeg` on a Chamber initiative.
+    """Refuse to *establish* `Saabus` on a Chamber initiative.
 
     ``initiative`` is the answer about to be stored, when the caller is changing
     it in the same save; otherwise the Matter's own. Only a date where the
     Matter holds none is refused: keeping, moving or clearing one it already
     holds is a correction of history and stays allowed.
+
+    `Arvamuse tähtaeg` is no longer refused here (docs/adr/0151, amendment of
+    2026-10-13): an initiative may have one the lawyer records.
     """
     if not (is_koda_initiative(matter) if initiative is None else initiative):
         return
     if received_date is not _UNSET and received_date and matter.received_date is None:
         raise DomainError(INITIATIVE_HAS_NO_RECEIVED_DATE)
-    if response_deadline is not _UNSET and response_deadline and matter.response_deadline is None:
-        raise DomainError(INITIATIVE_HAS_NO_RESPONSE_DEADLINE)
 
 
 def set_koda_initiative(*, matter: Any, value: bool, actor: Any = None) -> Any:

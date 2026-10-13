@@ -1426,6 +1426,9 @@ def record_sent_proposal_on_new_matter(
       writes the creation and send events; then `schedule_follow_up_of`
       schedules the thirty-day check off that recorded day (docs/adr/0146).
       Nothing here writes a status, a date or a check of its own.
+    * **A deadline given in the same save is answered by the send**
+      (amendment of 2026-10-13): ended as `ANSWERED`, linked to this
+      `Submission`, so nothing reads as still owed.
     * **The check is the next work.** Nothing else is current on a Teema created
       a moment ago with no plan, so the check is promoted by the established
       rule (`promote_next_planned_action`, docs/adr/0143 §A4) and `PRAEGUNE
@@ -1475,6 +1478,23 @@ def record_sent_proposal_on_new_matter(
         sent_at_precision=SentAtPrecision.DATE,
         further_versions=versions[1:],
     )
+    # **A deadline given in the same save is answered by this send** (owner's
+    # decision of 2026-10-13, docs/adr/0151 amendment). The optional
+    # `Arvamuse tähtaeg` is the day the proposal was due; it went out, so the
+    # deadline ends as answered by exactly this `Submission` — the canonical
+    # `answer_current_deadline_with`, as `+ Koja arvamus` does when it names
+    # one — and no outstanding opinion work is left behind. A tracked deadline
+    # is never discharged implicitly (`work_items._discharge_exists`).
+    if locked_matter.response_deadline is not None:
+        from app.matters.response_deadlines import answer_current_deadline_with
+
+        answer_current_deadline_with(
+            locked=locked_matter,
+            matter=matter,
+            submission=sent,
+            actor=author,
+            expected_revision=None,
+        )
     promote_next_planned_action(matter=locked_matter, actor=author)
     return sent
 

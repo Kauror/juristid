@@ -11,10 +11,13 @@ docs/adr/0151. What is pinned here:
   instrument in the same save moves the track, so a historical initiative on
   another instrument survives every unrelated save. The tests below that used
   to tick the checkbox now choose the instrument, and say so.
-* **No incoming dates are established.** `Uus teema` records neither `Saabus`
-  nor `Arvamuse tähtaeg` for an initiative, whatever the two boxes held — so no
-  response obligation begins and nothing reads «arvamust koostamisel». Every
-  writer refuses to *establish* either on an initiative, with one sentence.
+* **No `Saabus` is established.** `Uus teema` records none for an initiative,
+  whatever the box held, and every writer refuses to *establish* one.
+* **`Arvamuse tähtaeg` is optional and the lawyer's own** (amendment of
+  2026-10-13, superseding «an initiative never has one»): empty is no deadline,
+  a date given is saved, and it is set, moved and cleared through the ordinary
+  writers. Only the two acts that mean a *new request* — `+ Lisa → Arvamuse
+  tähtaeg` and «Uus arvamuse küsimine» — stay refused on an initiative.
 * **History is not erased.** A Teema marked later keeps the dates it holds;
   moving or clearing one is the ordinary audited correction.
 * **An ordinary Teema is unchanged.**
@@ -33,8 +36,8 @@ from app.audit.models import ChangeEvent
 from app.matters.dashboard import drafting_matters
 from app.matters.forms import edit_initial
 from app.matters.initiative import (
+    INITIATIVE_HAS_NO_NEW_REQUEST,
     INITIATIVE_HAS_NO_RECEIVED_DATE,
-    INITIATIVE_HAS_NO_RESPONSE_DEADLINE,
     is_koda_initiative,
     set_koda_initiative,
 )
@@ -111,17 +114,17 @@ def track_events(matter: Matter) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-def test_an_initiative_is_filed_with_no_incoming_dates(signed_in, specialist):
-    """`Saabus` arrives holding today and a deadline may have been typed —
-    neither is recorded, and no response obligation begins. The initiative is
-    the instrument since 2026-10-12 (docs/adr/0151 amendment)."""
+def test_an_initiative_is_filed_with_no_saabus_and_no_deadline_by_default(signed_in, specialist):
+    """`Saabus` arrives holding today and is not recorded; `Arvamuse tähtaeg`
+    left empty is no deadline, so no response obligation begins. The initiative
+    is the instrument since 2026-10-12 (docs/adr/0151 amendment)."""
     response = signed_in.post(
         CREATE,
         {
             "title": "Koja ettepanek maksukorralduse muutmiseks",
             "legal_instruments": proposal_instrument(),
             "received_date": estonian(today()),
-            "response_deadline": estonian(today() + timedelta(days=14)),
+            "response_deadline": "",
         },
     )
 
@@ -134,6 +137,31 @@ def test_an_initiative_is_filed_with_no_incoming_dates(signed_in, specialist):
     assert matter.response_requested_at is None
     assert not response_obligation_of(matter, specialist).is_outstanding
     assert matter not in drafting_matters(specialist)
+
+
+def test_an_initiative_keeps_the_deadline_the_lawyer_gives(signed_in, specialist):
+    """The owner's decision of 2026-10-13: a Chamber proposal may be due by a
+    day. The date is saved as the Teema's `Arvamuse tähtaeg`; `Saabus` is still
+    not recorded, whatever the box held."""
+    due = today() + timedelta(days=14)
+    response = signed_in.post(
+        CREATE,
+        {
+            "title": "Koja pöördumine tähtajaga",
+            "legal_instruments": proposal_instrument(),
+            "received_date": estonian(today()),
+            "response_deadline": estonian(due),
+        },
+    )
+
+    assert response.status_code == 302
+    matter = Matter.objects.get(title="Koja pöördumine tähtajaga")
+    assert matter.track == Track.KODA_INITIATIVE
+    assert matter.received_date is None
+    assert matter.response_deadline == due
+    assert matter.response_requested_at is not None
+    # A deadline nothing has answered is outstanding work, as on any Teema.
+    assert response_obligation_of(matter, specialist).is_outstanding
 
 
 def test_an_ordinary_teema_is_filed_exactly_as_before(signed_in, specialist):
@@ -199,14 +227,15 @@ def test_a_refused_initiative_save_comes_back_holding_the_instrument(signed_in):
     assert not Matter.objects.filter(track=Track.KODA_INITIATIVE).exists()
 
 
-def test_native_creation_refuses_incoming_dates_on_an_initiative(specialist):
-    with refused(INITIATIVE_HAS_NO_RESPONSE_DEADLINE):
-        create_matter(
-            title="Teenusest mööda",
-            actor=specialist,
-            track=Track.KODA_INITIATIVE,
-            response_deadline=today() + timedelta(days=3),
-        )
+def test_native_creation_refuses_a_saabus_and_accepts_a_deadline_on_an_initiative(specialist):
+    due = today() + timedelta(days=3)
+    matter = create_matter(
+        title="Tähtajaga algatus",
+        actor=specialist,
+        track=Track.KODA_INITIATIVE,
+        response_deadline=due,
+    )
+    assert matter.response_deadline == due
     with refused(INITIATIVE_HAS_NO_RECEIVED_DATE):
         create_matter(
             title="Teenusest mööda",
@@ -256,21 +285,54 @@ def test_marking_keeps_the_dates_a_teema_already_holds(signed_in, specialist):
     assert track_events(matter) == [{"from": "", "to": Track.KODA_INITIATIVE}]
 
 
-def test_an_initiative_is_not_given_a_new_saabus_or_deadline(signed_in, specialist):
+def test_an_initiative_is_not_given_a_new_saabus(signed_in, specialist):
     matter = create_matter(title="Algatus", actor=specialist, track=Track.KODA_INITIATIVE)
 
-    for field, refusal in (
-        ("received_date", INITIATIVE_HAS_NO_RECEIVED_DATE),
-        ("response_deadline", INITIATIVE_HAS_NO_RESPONSE_DEADLINE),
-    ):
-        response = signed_in.post(
-            edit_url(matter),
-            edit_payload(matter, **{field: estonian(today() + timedelta(days=5))}),
-        )
-        assert response.status_code == 400, field
-        assert response.context["form"].errors[field] == [refusal]
+    response = signed_in.post(
+        edit_url(matter),
+        edit_payload(matter, received_date=estonian(today() + timedelta(days=5))),
+    )
+
+    assert response.status_code == 400
+    assert response.context["form"].errors["received_date"] == [INITIATIVE_HAS_NO_RECEIVED_DATE]
     matter.refresh_from_db()
     assert (matter.received_date, matter.response_deadline) == (None, None)
+
+
+def test_muuda_teemat_adds_corrects_and_clears_an_initiative_deadline(signed_in, specialist):
+    """Added, moved and cleared through the ordinary correction; an unrelated
+    save keeps it (docs/adr/0151, amendment of 2026-10-13)."""
+    from app.matters.enums import ResponseDeadlineChange
+
+    matter = create_matter(title="Muudetav algatus", actor=specialist, track=Track.KODA_INITIATIVE)
+    due = today() + timedelta(days=5)
+
+    added = signed_in.post(edit_url(matter), edit_payload(matter, response_deadline=estonian(due)))
+    assert added.status_code == 302, added.context and added.context["form"].errors
+    matter.refresh_from_db()
+    assert matter.response_deadline == due
+
+    renamed = signed_in.post(edit_url(matter), edit_payload(matter, title="Ümbernimetatud algatus"))
+    assert renamed.status_code == 302
+    matter.refresh_from_db()
+    assert (matter.title, matter.response_deadline) == ("Ümbernimetatud algatus", due)
+
+    later = due + timedelta(days=4)
+    moved = signed_in.post(
+        edit_url(matter),
+        edit_payload(
+            matter, response_deadline=estonian(later), change=ResponseDeadlineChange.MOVED
+        ),
+    )
+    assert moved.status_code == 302
+    matter.refresh_from_db()
+    assert matter.response_deadline == later
+
+    cleared = signed_in.post(edit_url(matter), edit_payload(matter, response_deadline=""))
+    assert cleared.status_code == 302
+    matter.refresh_from_db()
+    assert matter.response_deadline is None
+    assert matter.track == Track.KODA_INITIATIVE
 
 
 def test_a_held_date_may_still_be_cleared_on_an_initiative(signed_in, specialist):
@@ -396,21 +458,33 @@ def test_somebody_who_may_not_write_cannot_mark_one(client, reader, specialist):
 # ---------------------------------------------------------------------------
 
 
-def test_every_writer_refuses_to_establish_a_date_on_an_initiative(specialist):
+def test_every_writer_refuses_a_saabus_and_a_new_request_on_an_initiative(specialist):
     matter = create_matter(title="Kõik kirjutajad", actor=specialist, track=Track.KODA_INITIATIVE)
 
     with refused(INITIATIVE_HAS_NO_RECEIVED_DATE):
         set_matter_dates(matter=matter, received_date=today(), actor=specialist)
-    with refused(INITIATIVE_HAS_NO_RESPONSE_DEADLINE):
-        change_response_deadline(
-            matter=matter, deadline=today() + timedelta(days=4), actor=specialist
-        )
-    with refused(INITIATIVE_HAS_NO_RESPONSE_DEADLINE):
+    # `+ Lisa → Arvamuse tähtaeg` says Koda was asked again; nobody asked.
+    with refused(INITIATIVE_HAS_NO_NEW_REQUEST):
         request_response_deadline(
             matter=matter, deadline=today() + timedelta(days=4), actor=specialist
         )
     matter.refresh_from_db()
     assert (matter.received_date, matter.response_deadline) == (None, None)
+
+
+def test_the_header_writer_sets_an_initiative_deadline(specialist):
+    """`change_response_deadline` — the header's `+ Arvamuse tähtaeg` — may
+    establish one since the amendment of 2026-10-13."""
+    matter = create_matter(title="Päise tähtaeg", actor=specialist, track=Track.KODA_INITIATIVE)
+    due = today() + timedelta(days=4)
+
+    change_response_deadline(matter=matter, deadline=due, actor=specialist)
+
+    matter.refresh_from_db()
+    assert matter.response_deadline == due
+    assert ChangeEvent.objects.filter(
+        matter=matter, event_type=ChangeEventType.MATTER_DATE_CHANGED
+    ).exists()
 
 
 def test_a_held_deadline_may_still_be_moved_on_an_initiative(specialist):
@@ -456,7 +530,9 @@ def test_the_header_inline_editor_refuses_a_new_saabus(signed_in, specialist):
 # ---------------------------------------------------------------------------
 
 
-def test_the_header_says_so_and_offers_no_incoming_date(signed_in, specialist):
+def test_the_header_says_so_offers_no_saabus_and_offers_a_deadline(signed_in, specialist):
+    """No `+ Saabus` on an initiative; `+ Arvamuse tähtaeg` since the amendment
+    of 2026-10-13. `+ Lisa → Arvamuse tähtaeg` — a new request — stays away."""
     initiative = create_matter(
         title="Algatus päises", actor=specialist, track=Track.KODA_INITIATIVE
     )
@@ -468,7 +544,7 @@ def test_the_header_says_so_and_offers_no_incoming_date(signed_in, specialist):
     meta = body.split('class="metaline"', 1)[1].split("matters/partials/summary", 1)[0]
     assert "Koja ettepanek või pöördumine" in meta
     assert "+ Saabus" not in meta
-    assert "+ Arvamuse tähtaeg" not in meta
+    assert "+ Arvamuse tähtaeg" in meta
     assert 'id="marge-arvamuse-tahtaeg-valik"' not in body
 
     plain = signed_in.get(
@@ -532,7 +608,9 @@ def test_a_stale_edit_cannot_undo_the_initiative_a_colleague_set(signed_in, spec
 
 
 def test_the_assisted_review_proposes_no_deadline_for_an_initiative(monkeypatch):
-    """`Muuda teemat → dokumendist` would otherwise fill a date its own save refuses."""
+    """`Muuda teemat → dokumendist` proposes no deadline for an initiative: its
+    deadline may exist, but only as the lawyer's own date, never one read off a
+    document (docs/adr/0151, amendment of 2026-10-13)."""
     from types import SimpleNamespace
 
     from app.matters.intake_suggestions import prefill as prefill_module
@@ -573,7 +651,7 @@ def test_replacing_a_held_deadline_is_refused_on_an_initiative(specialist):
     set_koda_initiative(matter=matter, value=True, actor=specialist)
     matter.refresh_from_db()
 
-    with refused(INITIATIVE_HAS_NO_RESPONSE_DEADLINE):
+    with refused(INITIATIVE_HAS_NO_NEW_REQUEST):
         change_response_deadline(
             matter=matter,
             deadline=due + timedelta(days=9),

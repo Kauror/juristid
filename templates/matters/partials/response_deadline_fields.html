@@ -9,6 +9,10 @@ A new request replaces the current one only with an outcome chosen here; an
 emptied box withdraws it unless an outcome is chosen.
 
 `prefix` is the id prefix for the two doors on one page.
+
+On a Chamber initiative «Uus arvamuse küsimine» is not offered: nobody asked
+Koda, and the service refuses a new request on one (docs/adr/0151, amendment of
+2026-10-13). Its own deadline is moved or cleared.
 {% endcomment %}
 <fieldset class="field">
   <legend class="field__label field__label--plain">Kui kuupäev muutub</legend>
@@ -16,10 +20,12 @@ emptied box withdraws it unless an outcome is chosen.
     <input type="radio" name="change" value="MOVED" id="{{ prefix }}-change-moved">
     <span>Sama küsimise tähtaeg muutus</span>
   </label>
+  {% if not koda_initiative %}
   <label class="cx-check" for="{{ prefix }}-change-replaced">
     <input type="radio" name="change" value="REPLACED" id="{{ prefix }}-change-replaced">
     <span>Uus arvamuse küsimine</span>
   </label>
+  {% endif %}
 </fieldset>
 <label class="field" for="{{ prefix }}-previous-outcome">
   <span class="field__label field__label--plain">Mis sai tähtajast {{ matter.response_deadline|date:"j.n.Y" }} (uue küsimise, tühjendamise või lõpetamise korral)</span>
