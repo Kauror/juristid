@@ -237,18 +237,15 @@ def create_matter(
     track = extra.get("track", "")
     if track and track not in Track.values:
         raise DomainError(f"Tundmatu menetlusliik {track!r}.")
-    # A Teema the Chamber starts itself has nothing that arrived and no opinion
-    # owed (docs/adr/0151 §2). An importer records whatever the register says.
+    # A Teema the Chamber starts itself has nothing that arrived (docs/adr/0151
+    # §2). Its `Arvamuse tähtaeg` is the lawyer's own and optional since the
+    # amendment of 2026-10-13, and is written like any other. An importer
+    # records whatever the register says.
     if track == Track.KODA_INITIATIVE and origin == MatterOrigin.NATIVE:
-        from app.matters.initiative import (
-            INITIATIVE_HAS_NO_RECEIVED_DATE,
-            INITIATIVE_HAS_NO_RESPONSE_DEADLINE,
-        )
+        from app.matters.initiative import INITIATIVE_HAS_NO_RECEIVED_DATE
 
         if extra.get("received_date"):
             raise DomainError(INITIATIVE_HAS_NO_RECEIVED_DATE)
-        if extra.get("response_deadline"):
-            raise DomainError(INITIATIVE_HAS_NO_RESPONSE_DEADLINE)
 
     year_number: tuple[int, int] | None = None
     if assign_reference:

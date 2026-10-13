@@ -498,10 +498,11 @@ rather than read.
           </span>
         {% endif %}
       {% endwith %}
-      {% if can_write and not koda_initiative %}
+      {% if can_write %}
         {% comment %}
-          Never on a Chamber initiative, which owes nobody an opinion by a day
-          (docs/adr/0151 §2).
+          On a Chamber initiative too, since the owner's decision of 2026-10-13:
+          a proposal may have a date it is due by, recorded by the lawyer
+          (docs/adr/0151 amendment). It was withheld before.
 
           A Matter with no deadline at all still needs a way to gain one. A quiet
           invitation rather than a label over an em dash, which is what made the

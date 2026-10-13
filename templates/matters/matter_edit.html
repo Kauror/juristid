@@ -156,10 +156,12 @@
       leaves `Menetlusliik` exactly as it is — a historical `Koja algatus` on
       another instrument included (`initiative_after_edit`).
 
-      While the answer this page would save is an initiative, an empty date box
+      While the answer this page would save is an initiative, an empty `Saabus`
       is hidden and the note says why; **a date the Teema already holds is not
-      erased** and stays on the page, and the server refuses to establish
-      either date on an initiative (`clean_initiative_dates`). The row carries
+      erased** and stays on the page, and the server refuses to establish a
+      `Saabus` on an initiative (`clean_initiative_dates`). `Arvamuse tähtaeg`
+      stays asked: an initiative may have one since the amendment of
+      2026-10-13 (docs/adr/0151). The row carries
       what the Matter holds now, so the script reaches the same answer the
       server will (`bindInitiative`).
     {% endcomment %}
@@ -167,7 +169,7 @@
          data-initiative-held="{% if koda_initiative %}true{% else %}false{% endif %}"
          data-initiative-held-instrument="{% if holds_koda_proposal_instrument %}true{% else %}false{% endif %}"
          {% if not koda_initiative %}hidden{% endif %}>
-      <p class="field__help" data-initiative-note>Koda algatas selle ise: uut saabumise kuupäeva ega arvamuse tähtaega ei lisata. Juba salvestatud kuupäev jääb alles, kuni selle eemaldad.</p>
+      <p class="field__help" data-initiative-note>Koda algatas selle ise: uut saabumise kuupäeva ei lisata. Juba salvestatud kuupäev jääb alles, kuni selle eemaldad.</p>
     </div>
 
     {# 3 — Saabus, where the master asks it: beside the file, before the people. #}
@@ -266,9 +268,9 @@
       {% include "matters/partials/oigusakt_field.html" %}
     </div>
 
-    {# 8 — Arvamuse tähtaeg, the master's last question. #}
+    {# 8 — Arvamuse tähtaeg, the master's last question — on an initiative too. #}
     <div class="createform__row">
-      <label class="field createform__field--date" data-initiative-date>
+      <label class="field createform__field--date">
         <span class="field__label">{% field_label form.response_deadline %}</span>
         {{ form.response_deadline }}
         {% comment %}

@@ -3329,6 +3329,9 @@
    *    filled with `textContent`, never from a string.
    *  - The chosen ones are sent with each search so a result can be picked
    *    once; a stale answer is aborted rather than raced.
+   *  - The chosen list is above the search box (owner's decision of
+   *    2026-10-13), so a choice lands where it will stay and the query, the
+   *    results and the focus below it are left alone.
    */
   function bindRelatedPicker(scope) {
     (scope || document).querySelectorAll("[data-related-picker]").forEach(function (block) {
@@ -3435,6 +3438,9 @@
         if (result) {
           result.remove();
         }
+        /* The same query asked again searches again, leaving out what is now
+           chosen — rather than finding the stale list it was answered with. */
+        asked = null;
         box.focus();
       });
 
@@ -3455,16 +3461,19 @@
   }
 
   /* ---- «Koja ettepanek või pöördumine» ------------------------------------
-   * A Teema the Chamber starts itself has no `Saabus` and no `Arvamuse
-   * tähtaeg` (docs/adr/0151). Since the owner's decision of 2026-10-12 the
-   * question is `Õigusakt` itself — the separate checkbox is retired — so the
-   * page reads the instrument radios (`data-instrument-key`).
+   * A Teema the Chamber starts itself has no `Saabus` (docs/adr/0151). Its
+   * `Arvamuse tähtaeg` is optional and stays on the page (amendment of
+   * 2026-10-13), so only the boxes marked `data-initiative-date` — `Saabus` —
+   * are governed here. Since the owner's decision of 2026-10-12 the question
+   * is `Õigusakt` itself, so the page reads the instrument radios
+   * (`data-instrument-key`).
    *
    *  - `Uus teema` (`data-initiative-mode="clear"`): an initiative exactly when
-   *    the instrument is «Koja ettepanek või pöördumine». Both boxes are emptied
-   *    and hidden, the row with them, and what they held — `Saabus`'s default
-   *    today, or anything typed — comes back with another instrument. The
-   *    server sets both aside on its own; this is the page agreeing with it.
+   *    the instrument is «Koja ettepanek või pöördumine». `Saabus` is emptied
+   *    and hidden, and what it held — the default today, or anything typed —
+   *    comes back with another instrument. The deadline beside it is never
+   *    touched. The server sets `Saabus` aside on its own; this is the page
+   *    agreeing with it.
    *  - `Muuda teemat` (`"keep"`): the answer `initiative_after_edit` will give —
    *    changing the instrument to it marks, changing away from it unmarks,
    *    anything else keeps what the Matter holds (`data-initiative-held`). A
@@ -3536,11 +3545,7 @@
             field.hidden = false;
           }
         });
-        if (mode === "clear") {
-          /* The dates' own row goes with them: two hidden boxes would leave an
-             empty band between two rules. */
-          row.hidden = on;
-        } else {
+        if (mode !== "clear") {
           row.hidden = !on;
           if (note) {
             note.hidden = !on;
