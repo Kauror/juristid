@@ -3977,6 +3977,15 @@ a.barchart__row:hover {
   white-space: nowrap;
 }
 
+/* Labels that must stay distinguishable at any width wrap instead of being
+   cut with an ellipsis (docs/adr/0160, the «ei saa kontrollida» reasons).
+   Scoped by the modifier, so every other bar chart is unchanged. */
+.barchart--wrap .barchart__label {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+}
+
 .barchart__track {
   height: 10px;
   background: var(--surface-hover);

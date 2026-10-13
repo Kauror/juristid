@@ -486,6 +486,41 @@ def test_the_archive_block_is_kept_apart_from_the_canonical_one(page, base_url, 
     screenshots(page, "statistika-arhiiv-ajas")
 
 
+@pytest.mark.parametrize("width", [1440, 1024])
+def test_the_management_sections_render_without_widening_the_page(
+    page, base_url, screenshots, width
+):
+    """docs/adr/0160: the deadline, comparison and composition sections.
+
+    The seeded e2e world is not changed for this (it is shared with the visual
+    suite); the counting rules are proved in tests/test_reporting_management.py.
+    Here the browser checks what only a browser can: the sections exist where
+    the ADR places them, the tables are real tables, and nothing scrolls the
+    page sideways.
+    """
+    sign_in(page, base_url, MARTIN)
+    page.set_viewport_size({"width": width, "height": 900})
+
+    open_statistics(page, base_url, "tegevus/")
+    expect(page.locator("h2#tegevus-tahtajad-heading")).to_have_text("Arvamuse tähtajad")
+    expect(page.locator("h2#tegevus-vordlus-heading")).to_be_visible()
+    expect(
+        page.locator("section.chart").filter(has_text="Saadetud arvamused kuude ja aastate kaupa")
+    ).to_be_visible()
+    assert page.evaluate("document.body.scrollWidth") <= width + 1
+
+    open_statistics(page, base_url, "teemad/")
+    expect(page.locator("h2#teemad-koosseis-heading")).to_be_visible()
+    for title in ("ELiga seotud teemad aastate kaupa", "Koja algatused aastate kaupa"):
+        section = page.locator("section.chart").filter(has_text=title)
+        expect(section).to_be_visible()
+        expect(section.locator("table.matrix thead th[scope='col']").last).to_contain_text(
+            "osakaal"
+        )
+    assert page.evaluate("document.body.scrollWidth") <= width + 1
+    screenshots(page, f"statistika-koosseis-{width}")
+
+
 def test_no_statistics_page_calls_a_count_a_workload(page, base_url):
     """The wording rule, checked where a reader actually meets it.
 
