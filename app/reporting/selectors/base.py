@@ -40,7 +40,7 @@ from django.urls import reverse
 from app.core.authorization import scoped_count
 from app.matters.enums import REGISTER_YEAR_ORIGINS, RecordMode
 from app.matters.models import Matter
-from app.matters.selectors import UNKNOWN_YEAR, register_year_q
+from app.matters.selectors import DATA_CLASS_REAL, UNKNOWN_YEAR, register_year_q
 from app.reporting.context import ReportingContext
 from app.reporting.metric_types import (
     Comparison,
@@ -139,6 +139,13 @@ def reporting_population(context: ReportingContext) -> QuerySet[Matter]:
     `owner_filter_choices`).
     """
     return Matter.objects.visible_to(context.viewer).real_data()
+
+
+#: The register's `?andmed=` value that selects what `reporting_population`
+#: selects. Every drill-through link carries it (`register_url`): a statistic
+#: counts real data only, and a link that opened the register's default —
+#: real and TEST together — would list rows the number never counted.
+REGISTER_DATA_SCOPE = DATA_CLASS_REAL
 
 
 def visible_matters(context: ReportingContext) -> QuerySet[Matter]:
@@ -292,8 +299,18 @@ def register_url(context: ReportingContext, **overrides: str) -> str:
     open records only, so a statistic over all Matters that linked without it
     would open a shorter list than the number it came from — the exact
     inconsistency the drill-through exists to rule out.
+
+    ``andmed=paris`` is passed on every link for the same reason, from the
+    other side. The register shows TEST Matters by default, so a developer
+    finds the record they just made, while every population in this package
+    is real data only (`reporting_population`). A link without it opened a
+    *longer* list than the number it came from whenever a TEST Matter matched.
+    The value is `REGISTER_DATA_SCOPE`, kept beside `reporting_population` so
+    the two cannot be changed apart, and a caller that already names it — as
+    the management metrics do — overrides it with the same value rather than
+    adding a second ``andmed``.
     """
-    params: dict[str, str] = {"olek": "koik"}
+    params: dict[str, str] = {"olek": "koik", "andmed": REGISTER_DATA_SCOPE}
 
     if context.record_mode:
         params["liik"] = context.record_mode

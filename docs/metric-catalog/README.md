@@ -43,7 +43,12 @@ Each metric file records:
    shows *insufficient data* rather than a precise-looking figure.
 2. **Every metric drills through.** Clicking a number opens the exact records
    the viewer is authorized to see, through the same authorization chokepoint as
-   any other read.
+   any other read. Every population is real data only, so every link into the
+   Teemad register carries `andmed=paris` (`register_url`); the register's own
+   default shows TEST Matters too. A share, a sum or a "how many of them have X"
+   links to the population it was measured over, and is compared with that
+   population rather than with the figure
+   (`tests/test_reporting_drillthrough_data_scope.py`).
 3. **Authorization is not applied after aggregation.** Counts are computed over
    the scoped queryset.
 4. **Era boundaries are visible.** A trend line may not silently span a schema
