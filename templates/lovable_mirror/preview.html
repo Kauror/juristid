@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Lovable'i peegel · {{ application_name }}{% endblock %}
+
+{% comment %}
+  The Lovable mirror's reconciliation preview (docs/adr/0157). Read-only, for
+  the administrator, under /haldus/ and on no navigation bar. Lovable's rows are
+  evidence of what the alpha said, never canonical facts: nothing here writes,
+  and no list offers an action. A row the reader could not see never reaches
+  this template (reconcile.py, docs/adr/0157 §5a); only its count does.
+{% endcomment %}
+
+{% block content %}
+<div class="page">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Lovable'i peegel</h1>
+    <span class="pagehead__context">
+      Ainult lugemiseks. Lovable'i andmed ei ole kanoonilised ega muuda ühtki teemat.
+    </span>
+  </div>
+
+  <p class="notice">
+    Otsevärskendus Lovable'ist on {% if live_reader_enabled %}seadistuses lubatud, kuid lugejat ei ole veel ehitatud{% else %}välja lülitatud{% endif %}.
+    Hetktõmmis imporditakse operaatori ekspordist käsuga <span class="mono">lovable_mirror_import</span>.
+  </p>
+
+  {% if not report %}
+    <p class="empty">Ühtki Lovable'i hetktõmmist ei ole imporditud.</p>
+  {% else %}
+    <div class="card card--tight">
+      <h2 class="sectionlabel">Hetktõmmis</h2>
+      <dl class="metaline">
+        <div class="metaline__item"><dt class="metaline__label">Eksporditud</dt><dd class="metaline__value">{{ report.snapshot.source_exported_at|date:"d.m.Y H:i" }}</dd></div>
+        <div class="metaline__item"><dt class="metaline__label">Imporditud</dt><dd class="metaline__value">{{ report.snapshot.imported_at|date:"d.m.Y H:i" }}</dd></div>
+        <div class="metaline__item"><dt class="metaline__label">Andmeklass</dt><dd class="metaline__value">{{ report.snapshot.get_data_class_display }}</dd></div>
+        <div class="metaline__item"><dt class="metaline__label">Allika skeem</dt><dd class="metaline__value">{{ report.snapshot.source_schema_version }}</dd></div>
+        <div class="metaline__item"><dt class="metaline__label">SHA-256</dt><dd class="metaline__value mono">{{ report.snapshot.manifest_sha256 }}</dd></div>
+        <div class="metaline__item"><dt class="metaline__label">Eelmine</dt><dd class="metaline__value">{% if report.previous %}{{ report.previous.source_exported_at|date:"d.m.Y H:i" }}{% else %}—{% endif %}</dd></div>
+      </dl>
+    </div>
+
+    <h2 class="sectionlabel">Ulatus ja piirid</h2>
+    <div class="card card--tight" id="ulatus">
+      <ul>
+        <li>{{ report.coverage.canonical_note }}</li>
+        <li>{{ report.coverage.visibility_note }}</li>
+        <li>{{ report.coverage.catalogue_status }}</li>
+        {% if report.coverage.dataset_boundary %}<li>{{ report.coverage.dataset_boundary }}</li>{% endif %}
+        {% if report.coverage.previous_boundary %}<li>{{ report.coverage.previous_boundary }}</li>{% endif %}
+        <li>Tabelid hetktõmmises:
+          {% for name, count in report.coverage.tables_present.items %}<span class="mono">{{ name }}</span> {{ count }}{% if not forloop.last %} · {% endif %}{% endfor %}.
+        </li>
+        {% if report.coverage.tables_absent %}
+          <li>Kataloogis, kuid hetktõmmisest puudu: {% for name in report.coverage.tables_absent %}<span class="mono">{{ name }}</span>{% if not forloop.last %}, {% endif %}{% endfor %}.</li>
+        {% endif %}
+        <li>Lovable'is olemas, kuid kaardistamata (veerud teadmata, ei impordita):
+          {% for name in report.coverage.unmapped_live_tables %}<span class="mono">{{ name }}</span>{% if not forloop.last %}, {% endif %}{% endfor %}.
+        </li>
+        {% for name, fields in report.coverage.uncatalogued_fields.items %}
+          <li>Kataloogimata väljad tabelis <span class="mono">{{ name }}</span> (hoiul, ei võrrelda): {{ fields|join:", " }}.</li>
+        {% endfor %}
+        {% if report.coverage.unkeyed_rows %}
+          <li>Muudatuste võrdlusest välja jäänud read (NR puudub või kordub): {{ report.coverage.unkeyed_rows }}.</li>
+        {% endif %}
+        {% for label, count in report.coverage.outcome_counts.items %}
+          <li>Võrreldavad väljad — {{ label }}: {{ count }}.</li>
+        {% endfor %}
+      </ul>
+    </div>
+
+    {% if report.hidden_changes_message %}<p class="notice">Muudatused: {{ report.hidden_changes_message }}.</p>{% endif %}
+    {% include "lovable_mirror/_changes.html" with title="Lisandunud pärast eelmist hetktõmmist" rows=report.diff.added anchor="lisandunud" %}
+    {% include "lovable_mirror/_changes.html" with title="Kadunud pärast eelmist hetktõmmist" rows=report.diff.removed anchor="kadunud" %}
+    {% include "lovable_mirror/_changes.html" with title="Muutunud pärast eelmist hetktõmmist" rows=report.diff.changed anchor="muutunud" %}
+
+    {% if report.hidden_rows_message %}<p class="notice">Kehtivad read: {{ report.hidden_rows_message }}.</p>{% endif %}
+    {% include "lovable_mirror/_matches.html" with title="Vastuolud kanooniliste andmetega" rows=report.conflicts anchor="vastuolud" conflicts_only=True %}
+    {% include "lovable_mirror/_matches.html" with title="Seotud teemad" rows=report.matched anchor="seotud" %}
+    {% include "lovable_mirror/_matches.html" with title="Mitmeti mõistetavad" rows=report.ambiguous anchor="mitmeti" %}
+    {% if report.coverage.unmatched_withheld %}
+      <h2 class="sectionlabel" id="sidumata">Sidumata</h2>
+      <p class="empty">
+        Sidumata ridu ei kuvata. Real, millele ei vasta ühtki teemat, ei ole nähtavust, mida pärida,
+        seega kuvatakse see ainult siis, kui sinu õigused katavad kõik teemad (nt hädaligipääsu ajal). Need read on loetud varjatud ridade hulka.
+      </p>
+    {% else %}
+      {% include "lovable_mirror/_matches.html" with title="Sidumata" rows=report.unmatched anchor="sidumata" %}
+    {% endif %}
+  {% endif %}
+
+  <h2 class="sectionlabel">Väljade kaardistus</h2>
+  <div class="tablewrap" id="kaardistus">
+    <table class="table">
+      <caption class="visually-hidden">Lovable'i väljad ja mida Juristid nendega teha tohib</caption>
+      <thead>
+        <tr>
+          <th scope="col">Tabel</th>
+          <th scope="col">Väli</th>
+          <th scope="col">Klass</th>
+          <th scope="col">Tähendus</th>
+          <th scope="col">Märkus</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for table_name, mapping in catalogue %}
+          <tr>
+            <td class="mono">{{ table_name }}</td>
+            <td class="mono">{{ mapping.name }}</td>
+            <td>{{ mapping.mapping_class }}</td>
+            <td>{{ mapping.concept }}</td>
+            <td>{{ mapping.note }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

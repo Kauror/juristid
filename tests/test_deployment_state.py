@@ -735,6 +735,10 @@ SETTLED_LEAVES = {
     # step does — so there is nothing this app could add to it. Recorded here
     # for the same reason `intelligence` above is (docs/adr/0062).
     "related_materials": "0001_initial",
+    # The same case: `lovable_mirror` is a brand-new app (docs/adr/0157) whose
+    # initial migration a deployment applies from nothing in the plain
+    # `migrate` that ends the step.
+    "lovable_mirror": "0001_initial",
 }
 
 
