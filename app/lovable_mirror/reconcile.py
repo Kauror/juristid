@@ -544,8 +544,9 @@ class Coverage:
     catalogue_status: str = catalogue.CATALOGUE_STATUS_ET
     visibility_note: str = (
         "Lovable'i rea sisu näidatakse ainult siis, kui sa tohid näha teemat, millele "
-        "rea NR viitab. Rida, millele ei vasta ühtki teemat, näeb ainult lugeja, kes "
-        "näeb kõiki piiratud teemasid. Varjatud read on ainult kokku loetud — ilma NR-i, "
+        "rea NR viitab. Rida, millele ei vasta ühtki teemat, kuvatakse ainult siis, kui "
+        "sinu õigused katavad kõik teemad (nt hädaligipääsu ajal). Varjatud read on ainult "
+        "kokku loetud — ilma NR-i, "
         "pealkirja ja väljadeta."
     )
     canonical_note: str = (
