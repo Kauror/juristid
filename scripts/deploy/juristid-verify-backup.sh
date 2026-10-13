@@ -22,8 +22,9 @@
 #            can read the register back out of it. Catches everything the first
 #            two cannot, which is most of what actually goes wrong. That is the
 #            rehearsal — `.github/workflows/ci.yml`, job `recovery`, and
-#            deploy/unraid-main/RECOVERY.md — and it runs on synthetic data,
-#            never on production.
+#            deploy/unraid-main/RECOVERY.md — and it restores into a
+#            disposable stack, never into production: synthetic data in CI,
+#            a real set only on the rehearsal stack (compose.real-data.yml).
 #
 # Level 1 and 2 say a file is intact. Only level 3 says a system comes back.
 #
@@ -48,8 +49,9 @@
 # however large the pool is.
 #
 # Neither is an integrity check. Nothing here hashes an evidence object, and it
-# cannot: the evidence tree is ~7.4 GB, and a routine verification that reads
-# all of it is a verification somebody switches off. What the byte total does
+# cannot: the shared pool holds every object that ever existed (gigabytes),
+# and a routine verification that reads all of it is a verification somebody
+# switches off. What the byte total does
 # catch without reading a byte is a member truncated in place, because
 # membership is fixed and its sum therefore has to be exact. Proving the
 # contents is `recovery_fingerprint` without `--skip-evidence-bytes`, and it

@@ -22,7 +22,7 @@ deliberately not written down here — the last section says how to ask it.
 
 | | Check | How |
 | --- | --- | --- |
-| 0.1 | The commit is reviewed and green | Enforced by `release-image.yml`, which builds only a commit on main's first-parent history whose own push-to-main `ci.yml` run passed in every job — or, while that run is absent or still running (never over one that finished red), whose merged pull request's green run recorded exactly this commit's tree as tested (2026-10-02); the preflight repeats the history half on the host (ENG-015). A PR's checks are not main's |
+| 0.1 | The commit is reviewed and green | Enforced by `release-image.yml`, which builds only a commit on main's first-parent history whose own `ci.yml` run on main passed in every job — or, while that run is absent or still running (never over one that finished red), whose merged pull request's green run recorded exactly this commit's tree as tested (2026-10-02). `ci.yml` no longer runs on a push to main: it runs on pull requests, by hand, and on main only when `main-proof.yml` cannot prove the pull request's run tested the merge commit's tree, so the pull-request proof is the usual one; the preflight repeats the history half on the host (ENG-015). A PR's checks are not main's |
 | 0.2 | The commit id is known and written down | Deploy a commit, never a branch (`scripts/deploy/juristid-deploy-preflight.sh`) |
 | 0.3 | The migration plan has been read | `manage.py migration_plan`, from the target image, before applying rather than after |
 | 0.4 | The running build is what you think it is | `manage.py deployment_readiness` |
@@ -89,8 +89,8 @@ already exists, and refuses outright on any conflict (ADR 0029).
 | 2.2 | It is a set, not a directory of hopes | `scripts/deploy/juristid-verify-backup.sh --set DIR --level 2 --compose-file …` (level 1 is checksums only; level 2 also reads every data block of the dump to the end) |
 | 2.3 | The evidence tree is in it | The backup refuses a data root with no evidence tree — that refusal is the check |
 | 2.4 | The set says which objects are its own | Manifest version 3 and later writes `evidence.files0` / `legacy-source.files0`; level 2 proves every path in them is still in the shared pool |
-| 2.5 | Canonical state is recorded | `manage.py recovery_fingerprint --out before.json` |
-| 2.6 | Restore has been rehearsed | The CI "Backup and restore rehearsal" job, on every commit |
+| 2.5 | Canonical state is recorded | `manage.py recovery_fingerprint --skip-evidence-bytes`, its **stdout** redirected by the host shell into `/mnt/user/backups/juristid-main/fingerprints/fp-before-<operation>.json`. Never `--out` inside the container: `web` does not mount the backup root, and a relative path lands in the container's own layer. The copyable commands are `deploy/unraid-main/RECOVERY.md` §"Fingerprinting the live system" |
+| 2.6 | Restore has been rehearsed | The CI "Backup and restore rehearsal" job, on every pull request (and on main when `main-proof.yml` dispatches `ci.yml`) — synthetic data, the procedure only. When a real production set was last restored is recorded in `deploy/unraid-main/RECOVERY.md`, not here. Neither is an off-host copy (`deploy/unraid-main/OFFHOST-BACKUP.md`) |
 
 `evidence/` and `legacy-source/` under the backup root are a shared, append-only
 **byte pool**, not a description of any one set: they hold every object that has
@@ -179,7 +179,7 @@ takes to notice.
 | 4.6 | Era contracts still describe the workbook | `manage.py check_era_contracts` |
 | 4.6a | No row breaks a rule the services keep | `manage.py check_domain_invariants` |
 | 4.6b | The derived register state is what today's code would derive | `manage.py check_current_register_state` — a difference means a cutover rerun is owed |
-| 4.7 | Canonical state changed the way the plan said | `manage.py recovery_fingerprint --compare before.json` |
+| 4.7 | Canonical state changed the way the plan said | `manage.py recovery_fingerprint --compare /tmp/fp-before.json`, after the 2.5 file has been copied into the container on stdin (`exec -T web sh -c 'cat > /tmp/fp-before.json' < "$FP"`) — RECOVERY.md §"Fingerprinting the live system". A data operation exits non-zero by design; read the differences against its plan |
 | 4.8 | It is usable | the A–M browser list in `deploy/unraid-main/README.md` |
 
 `check_search_integrity` reports stale indexed text as well as missing rows.

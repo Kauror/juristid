@@ -101,8 +101,10 @@ nobody agreed to. `deploy/unraid-main/RECOVERY.md`,
 carries the operational detail.
 
 * **DR0 — one physical disk holds the data, the backups and the source
-  corpus.** Not merely one host. Array parity covers that disk failing and
-  nothing else: not a deletion, not the loss of the host or the room. This
+  corpus.** Not merely one host. Array parity, if the array still has it
+  (operations notes say it was removed on 10.09.2026; re-verify on the host),
+  covers that disk failing and nothing else: not a deletion, not the loss of
+  the host or the room. This
   outranks everything else on this page, and the off-host destination is the
   decision that would close it.
 * **DR1-A — nothing takes a backup *after* a deploy,** so the newest set always
@@ -426,7 +428,7 @@ sections above stands as written.
 
 | Item | Status |
 | --- | --- |
-| Off-host disaster-recovery destination, retention, RPO and RTO | Genuinely open; `deploy/unraid-main/RECOVERY.md` states the contract and picks nothing |
+| Off-host disaster-recovery destination, retention, RPO and RTO | Genuinely open; `deploy/unraid-main/RECOVERY.md` states the contract and picks nothing, and `deploy/unraid-main/OFFHOST-BACKUP.md` is a prepared procedure that waits on the owner's choice of destination |
 | Trusted-extraction policy for the real opinions archive | Genuinely open, and no longer blocked on a scanner — there is none (ADR 0072). What it is blocked on now is storage: the run is affordable when PostgreSQL is not behind a parity-protected USB disk. The archive is metadata-searchable meanwhile (ADR 0023) |
 | Promotion criteria for `CONTENT_MULTI_SIGNAL` | Genuinely open; the measurement that would justify it is written down in ADR 0023 and has not been taken |
 | Global-search behaviour at real corpus scale | **Resolved by ADR 0116 (ENG-010).** Was open because it could not be answered without EXPLAIN on a realistic corpus, and no index had been added on intuition. Measured on synthetic corpora of 17,000–147,000 rows: every search was a sequential scan of the projection, because the tiers were ORed with arms no index could serve. Each arm is now index-servable; a rare word at 147,000 rows went from 1.4 s to 0.14 s, while a word in half the corpus is still, correctly, one parallel pass. Re-measure on the host after the historical import |

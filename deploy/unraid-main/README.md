@@ -24,6 +24,19 @@ The synthetic rehearsal at `juristid-test` keeps running, on its own project,
 network, database and appdata tree. Nothing here touches it, and it must not be
 stopped or removed as part of this deployment.
 
+**Working directory.** Every host command in this file and in
+[`RECOVERY.md`](RECOVERY.md) runs from the repository checkout. The
+scripts are `scripts/deploy/…` and the Compose file is
+`deploy/unraid-main/compose.yml`, both relative to it:
+
+```bash
+cd /mnt/user/appdata/juristid-main/repo
+```
+
+A command run from `deploy/unraid-main` instead finds neither the scripts nor
+`deploy/unraid-main/compose.yml`, and fails rather than doing something else —
+but only because every command names its file in full. Keep it that way.
+
 ## Why this environment is allowed to hold real data
 
 Four properties, each enforced somewhere a mistake would be visible rather than
@@ -115,8 +128,12 @@ change. Everyone's session survives until it ages out
 
 ## First deployment
 
-Everything below runs on the Unraid host. Nothing in it destroys anything; the
-one step that could is called out.
+Everything below runs on the Unraid host, from the checkout. Nothing in it
+destroys anything; the one step that could is called out.
+
+```bash
+cd /mnt/user/appdata/juristid-main/repo
+```
 
 ### 1. The source corpus
 
@@ -133,7 +150,7 @@ Then verify the transfer against the audit's own manifest — every file, by
 SHA-256, not by size or count:
 
 ```bash
-docker compose -p juristid-main -f compose.yml run --rm web python manage.py historical_import inspect
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml run --rm web python manage.py historical_import inspect
 ```
 
 `inspect` reads and writes nothing. It reports the register's digest, the
@@ -201,9 +218,9 @@ in this shell.
 ### 5. Start
 
 ```bash
-docker compose -p juristid-main -f compose.yml up -d db
-docker compose -p juristid-main -f compose.yml run --rm web python manage.py migrate
-docker compose -p juristid-main -f compose.yml up -d --no-build
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d db
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml run --rm web python manage.py migrate
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build
 ```
 
 `JURISTID_GIT_SHA` and `JURISTID_IMAGE_TAG` must still be exported here.
@@ -250,7 +267,7 @@ If text really is wanted out of imported material, run it deliberately, outside
 working hours, and watch the array:
 
 ```bash
-docker compose -p juristid-main -f compose.yml run --rm \
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml run --rm \
     web python manage.py run_extraction_worker --once --limit 50
 ```
 
@@ -278,7 +295,7 @@ the first administrator with `bootstrap_account_admin`
 (docs/LOCAL_AUTH_ACTIVATION_RUNBOOK.md, AUD-051):
 
 ```bash
-docker compose -p juristid-main -f compose.yml run --rm web \
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml run --rm web \
   python manage.py provision_user --upn <email> --display-name "<name>"
 ```
 
@@ -317,7 +334,7 @@ Six phases, in order. Each is a separate command rather than a flag, because
 they have genuinely different consequences and a flag is easy to mistype.
 
 ```bash
-C="docker compose -p juristid-main -f compose.yml run --rm web python manage.py"
+C="docker compose -p juristid-main -f deploy/unraid-main/compose.yml run --rm web python manage.py"
 
 $C historical_import plan          # reads everything, writes nothing
 $C historical_import dry-run       # the real apply, rolled back
@@ -369,11 +386,11 @@ as not found, which is correct behaviour and a wasted afternoon.
 ## Everyday operations
 
 ```bash
-docker compose -p juristid-main -f compose.yml ps
-docker compose -p juristid-main -f compose.yml logs -f web
-docker compose -p juristid-main -f compose.yml logs -f intake-reader
-docker compose -p juristid-main -f compose.yml logs -f searchindex
-docker compose -p juristid-main -f compose.yml restart web
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml ps
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml logs -f web
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml logs -f intake-reader
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml logs -f searchindex
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml restart web
 ```
 
 `searchindex` is the search freshness worker. It sleeps until a canonical change
@@ -383,7 +400,7 @@ rebuild (ADR 0041). Nothing is owed most of the time, so an empty log is the
 normal state. To ask the question directly:
 
 ```bash
-docker compose -p juristid-main -f compose.yml exec -T web python manage.py check_search_freshness
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py check_search_freshness
 ```
 
 If it says the index has been owed a rebuild for too long, the worker is what to
@@ -445,6 +462,7 @@ Two prefixes, because two of these steps need a writable path and the rest do
 not. Run them on the Unraid host, from the repository checkout:
 
 ```bash
+cd /mnt/user/appdata/juristid-main/repo
 # uid 10001 is the application user, fixed in the image so a rebuild cannot
 # change it (Dockerfile). Created root-owned, the container cannot even traverse
 # this directory, and `refresh_current_register plan` then dies *after* printing
@@ -453,8 +471,8 @@ not. Run them on the Unraid host, from the repository checkout:
 install -d -m 700 -o 10001 -g 10001 /mnt/user/juristid-main/refresh
 install -d -m 700 -o 10001 -g 10001 /mnt/user/juristid-main/refresh/2026-09-01
 
-C="docker compose -p juristid-main -f compose.yml run --rm web python manage.py"
-R="docker compose -p juristid-main -f compose.yml run --rm \
+C="docker compose -p juristid-main -f deploy/unraid-main/compose.yml run --rm web python manage.py"
+R="docker compose -p juristid-main -f deploy/unraid-main/compose.yml run --rm \
    -v /mnt/user/juristid-main/refresh:/refresh web python manage.py"
 ```
 
@@ -1013,14 +1031,23 @@ full 40-character one to build, and the full 40-character one production runs
 now — checks out exactly the first, refuses a dirty tree, refuses a commit that
 is not one of main's own revisions (on main's first-parent history: the merge
 commit, never the pull request's head) or that CI has not passed on in every
-job (ENG-015) — main's own push run, or, while that is absent or still running
+job (ENG-015) — main's own `ci.yml` run, or, while that is absent or still running
 and never over one that finished red, the merged pull request's run when the
 tree it recorded as tested is exactly this commit's tree — refuses a payload the
 Chamber's lawyers will notice that has no entry in
 `docs/release-notes/uuendused.toml` (see `docs/release-notes/README.md` for the
 rule and the waiver), builds `linux/amd64` with `GIT_SHA` baked in, asks the
 image which commit it is and refuses one that answers wrongly, proves the
-application imports inside it, and saves it. Run it from the Actions tab, or:
+application imports inside it, and saves it.
+
+`ci.yml` no longer runs on a push to main. It runs on pull requests and on
+manual dispatch; when a pull request lands, `main-proof.yml` checks that the
+pull request's green run tested exactly the merge commit's tree, and only when
+it cannot prove that does it dispatch `ci.yml` on main. So "main's own run" is
+usually absent, and the pull-request proof is the ordinary path, not a fallback
+anybody has to arrange.
+
+Run it from the Actions tab, or:
 
 ```bash
 gh workflow run release-image.yml -f sha=<full-40-char-sha> -f previous_sha=<the full commit production runs now>
@@ -1042,11 +1069,17 @@ where `<sha12>` is the first twelve characters of the commit:
 That is the whole artifact contract. There is no second format, no `latest`, and
 no image built anywhere else that counts as a release. Download the artifact
 from the workflow run and transfer all three files to the host — the path they
-land in is the operator's; nothing below depends on it.
+land in is the operator's; step 5 names it as `$RELEASE_DIR`.
 
 ### B. Deploy the release — on the Unraid host
 
-Everything from here runs on the host, in **one shell**, in this order.
+Everything from here runs on the host, in **one shell**, in this order, and from
+the checkout — every path below is relative to it, and the shell never leaves
+it (step 5 reads the release files through a variable instead):
+
+```bash
+cd /mnt/user/appdata/juristid-main/repo
+```
 
 How to get that shell — which address, how to prove the host that answered is
 this one, and why the steps below are typed or run from a file rather than piped
@@ -1128,8 +1161,19 @@ does not exist would make Compose build one, here, from the `build:` stanza.
 
 ### 5. Verify and load the release image
 
-With the three files from part A in the directory they were transferred to,
-check the digest **before** loading — the `.sha256` was written beside the
+The three files from part A are in the directory they were transferred to. The
+`.sha256` names the archive without a directory, so the check runs from there —
+the one step that leaves the checkout, and the step after it goes back:
+
+```bash
+RELEASE_DIR=<the directory the three files were transferred to>
+```
+
+```bash
+cd "$RELEASE_DIR"
+```
+
+Check the digest **before** loading — the `.sha256` was written beside the
 archive by the job that built it, and it is the only thing that proves the
 bytes the host is about to load are the bytes that job produced:
 
@@ -1161,6 +1205,12 @@ It must print the full `$JURISTID_GIT_SHA`. This is the line the preflight's
 printed plan carries, and it is load-bearing: it is the last check before a
 command that would *build* if the image were missing.
 
+Back to the checkout, which every step from here assumes:
+
+```bash
+cd /mnt/user/appdata/juristid-main/repo
+```
+
 Loading writes no business data, mutates no database and does not replace the
 running application — it only puts the candidate image on the host. Everything
 that changes something still happens after the backup in step 8.
@@ -1168,7 +1218,7 @@ that changes something still happens after the backup in step 8.
 ### 6. Read the migration plan — from the target image
 
 ```bash
-docker compose -p juristid-main -f compose.yml run --rm web python manage.py migration_plan
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml run --rm web python manage.py migration_plan
 ```
 
 `run --rm`, not `exec`. The distinction is the whole point of the step.
@@ -1213,7 +1263,7 @@ release's read-only integrity check against the still-unmigrated database
 first — for example:
 
 ```bash
-docker compose -p juristid-main -f compose.yml run --rm web python manage.py check_evidence_integrity --skip-storage-scan
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml run --rm web python manage.py check_evidence_integrity --skip-storage-scan
 ```
 
 `--skip-storage-scan` keeps it to the relational question — "does any row point
@@ -1265,7 +1315,7 @@ breaking one of them makes `migrate` fail half way through step 9. So ask first,
 from the target image, against the still-unmigrated database:
 
 ```bash
-docker compose -p juristid-main -f compose.yml run --rm web python manage.py check_domain_invariants
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml run --rm web python manage.py check_domain_invariants
 ```
 
 It reads and never writes: no repair, no audit row, and the output is primary
@@ -1284,7 +1334,32 @@ check above.
 
 ### 8. Back up
 
-Always, and immediately before the migration rather than that morning:
+First the **recovery fingerprint** of the running system, so step 10 can prove
+the release changed the canonical state the way the plan said and no other
+way. `exec`, into the image now serving: this is a statement about the state
+before the release, taken by the code that wrote it. The `web` container does
+not mount the backup root, so the fingerprint goes to stdout and this shell
+writes the host file — never `--out` with a host path (RECOVERY.md,
+*Fingerprinting the live system*):
+
+```bash
+FP=/mnt/user/backups/juristid-main/fingerprints/fp-before-release-${JURISTID_IMAGE_TAG}.json
+```
+
+```bash
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py recovery_fingerprint --skip-evidence-bytes > "$FP"
+```
+
+```bash
+test -s "$FP" && grep -q '"fingerprint_version"' "$FP" && echo "fingerprint OK: $FP"
+```
+
+No `OK` — or a non-zero exit from the `exec` — is a stop: move the file aside
+and find out why before anything changes. The fingerprint is read-only, which
+is why it can sit ahead of the backup without weakening the rule below.
+
+Then the backup — always, and immediately before the migration rather than
+that morning:
 
 ```bash
 scripts/deploy/juristid-backup.sh --project juristid-main --compose-file deploy/unraid-main/compose.yml --data-root /mnt/user/appdata/juristid-main --backup-root /mnt/user/backups/juristid-main
@@ -1302,20 +1377,46 @@ Still the same shell, so still the same two variables, so still the same image
 that step 6 read the plan from.
 
 ```bash
-docker compose -p juristid-main -f compose.yml run --rm web python manage.py migrate
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml run --rm web python manage.py migrate
 ```
 
+Before replacing anything, ask Compose what the replacement would do. Read-only:
+
 ```bash
-docker compose -p juristid-main -f compose.yml up -d --no-build
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --dry-run
+```
+
+**If the dry run would recreate `juristid-main-db` or `juristid-main-tunnel`,
+do not run the unqualified command below.** A code release must not move
+either. Since 26.09.2026 (ENG-071 changed every service's logging settings)
+their running containers have not matched `compose.yml`, and releases have
+replaced only the application services with the second form below. That drift
+is a host fact this repository cannot see: re-check it with this dry run every
+time, and apply the change to `db` and `tunnel` only as a separately announced
+maintenance step, when the owner decides to.
+
+If the dry run recreates only application services:
+
+```bash
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build
+```
+
+If it would recreate `db` or `tunnel`, name the services that run the release
+image instead — every one of them, read off `compose.yml` (today `web`,
+`intake-reader` and `searchindex`), so none is left on the old image:
+
+```bash
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-reader searchindex
 ```
 
 `--no-build` is not decoration. `compose.yml` has a `build:` stanza, and a plain
 `up -d` that found the tag missing — a typo in the export, a load that did not
 happen — would build the image on this host, silently, from whatever the
 checkout holds. With `--no-build` the same mistake is an error naming the
-missing image, which is the honest outcome. Unqualified otherwise: `web`,
-`intake-reader` and `searchindex` all run the release image and all move
-together.
+missing image, which is the honest outcome. Unqualified when the dry run allows
+it: `web`, `intake-reader` and `searchindex` all run the release image and all
+move together, and a fourth application service added later moves with them
+without anybody editing a list.
 
 Migrations are a deliberate step, never container start-up work: on boot they
 would run on every restart, including the restart that happens at three in the
@@ -1324,7 +1425,7 @@ morning because the host rebooted.
 ### 10. Post-flight
 
 ```bash
-docker compose -p juristid-main -f compose.yml exec -T web python manage.py deployment_readiness
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py deployment_readiness
 ```
 
 **If the release manifest says `search_rebuild_required: YES`,** run it with
@@ -1369,6 +1470,28 @@ time is the `build_stamp` from the release manifest and moves with the image on
 its own, so a revision that changed beside a build time that did not is a
 replacement that did not actually happen.
 
+Then compare with the fingerprint from step 8. `/tmp` in the new `web`
+container is empty, and the container cannot see the backup root, so the file
+goes in on stdin first:
+
+```bash
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web sh -c 'cat > /tmp/fp-before.json' < "$FP"
+```
+
+```bash
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py recovery_fingerprint --skip-evidence-bytes --compare /tmp/fp-before.json
+```
+
+The last line and the exit status are the verdict. **A release with no
+migration must exit 0** («Canonical state matches the earlier fingerprint»);
+anything else is a stop — the canonical state moved during a code-only release
+— and nothing is rolled back on reflex: follow [`RECOVERY.md`](RECOVERY.md).
+A release that migrated exits non-zero by design, because `migration_leaves`
+now names the new leaves: read the differences and check that they are exactly
+the migrations step 6 listed, and canonical counts only where a migration in
+that plan writes rows or adds a model (a new model appears as a new count). Anything outside the plan is a stop. The line that says
+the fingerprints «were taken by different builds» is expected on every release.
+
 Anything beyond this is release-specific and the release note names it. A
 release that changes how something is indexed, projected or derived may need a
 rebuild afterwards; a release that changes none of those needs nothing here.
@@ -1394,7 +1517,7 @@ reading the row. Search then returns too little and the reader can tell, rather
 than returning something they should not see and cannot.
 
 **Why nothing does it for you.** `searchindex` is running by now — step 9's
-unqualified `up -d` started it with everything else, and it needs no separate
+replacement started it with the other application services, and it needs no separate
 command. But what it consumes is `SearchRebuildDebt`, and every row in that
 table is recorded by a *vocabulary edit*: an Organisation renamed, an alias
 changed, a Tag or a PolicyArea renamed, a person's display name changed
@@ -1408,7 +1531,7 @@ rebuilt.** The two questions are answered by two different commands, and this is
 the one that answers the second:
 
 ```bash
-docker compose -p juristid-main -f compose.yml exec -T web python manage.py rebuild_search_index
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py rebuild_search_index
 ```
 
 `exec`, like the readiness check: by now the running image *is* the target
@@ -1425,8 +1548,8 @@ Then prove it, rather than assuming it — `--full`, because only the full pass
 recomputes every row's text; the default samples each kind:
 
 ```bash
-docker compose -p juristid-main -f compose.yml exec -T web python manage.py check_search_integrity --full
-docker compose -p juristid-main -f compose.yml exec -T web python manage.py deployment_readiness
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py check_search_integrity --full
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py deployment_readiness
 ```
 
 The second is the **final** post-flight, without `--search-phase`: it fails if
@@ -1443,11 +1566,11 @@ reads and reports; `rebuild_search_index` is the repair, and it is the only one.
 Last, the other question — is anything *owed* that has not been done:
 
 ```bash
-docker compose -p juristid-main -f compose.yml exec -T web python manage.py check_search_freshness
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py check_search_freshness
 ```
 
 ```bash
-docker compose -p juristid-main -f compose.yml ps
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml ps
 ```
 
 Nothing should be owed, and `ps` should show `juristid-main-searchindex`
@@ -1601,7 +1724,7 @@ this stack's tunnel, not creating a second name.
 # The rehearsal keeps running, on its own project, network and database.
 # Its data is preserved. Only the public name moves.
 cloudflared tunnel route dns juristid-main juristid.orgusaar.ee
-docker compose -p juristid-main -f compose.yml up -d tunnel
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d tunnel
 ```
 
 `juristid-test` is not stopped, not removed, and not migrated. If it needs a
