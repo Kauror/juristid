@@ -377,14 +377,14 @@ def test_the_page_asks_for_one_date_and_names_it(signed_in):
     assert "Mis kuupäevaks Koja arvamuse koostad" not in body
 
 
-def test_the_deadline_opens_the_arrival_row(signed_in):
+def test_saabus_opens_the_arrival_row_and_the_deadline_follows(signed_in):
     """Order, measured on the document rather than assumed from the template.
 
     `Arvamuse tähtaeg` was the last question on the form (docs/adr/0094 §4). The
-    owner moved it up to open the row it shares with `Saabus` and moved
-    `Failid` towards the end instead (docs/adr/0130 §1). `Menetluse link` stood
-    between the dates until the owner removed it on 2026-10-12 (docs/adr/0130
-    amendment). It is still the one date.
+    owner moved it up into the row it shares with `Saabus` and moved `Failid`
+    towards the end instead (docs/adr/0130 §1). `Menetluse link` stood between
+    the dates until the owner removed it on 2026-10-12, and since 2026-10-13
+    `Saabus` comes first (docs/adr/0130 amendments).
     """
     body = signed_in.get(CREATE).content.decode()
 
@@ -393,7 +393,7 @@ def test_the_deadline_opens_the_arrival_row(signed_in):
     files = body.index('id="failid"')
     actions = body.index("createform__actions")
 
-    assert deadline < received < files < actions
+    assert received < deadline < files < actions
     assert 'id="menetluse-link"' not in body
 
 

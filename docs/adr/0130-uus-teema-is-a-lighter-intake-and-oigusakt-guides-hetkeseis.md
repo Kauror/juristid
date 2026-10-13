@@ -623,3 +623,20 @@ the page already shows, and buttons that did not end the form.
 - Every field the page still asks and every value it posts.
 - These removals are product contracts: tests/test_retired_ui_contract.py and
   e2e/test_koda_proposal_create_flow.py, under docs/adr/0155.
+
+## Amendment, 2026-10-13 — `Saabus` before `Arvamuse tähtaeg`; the chosen related Teemad above the search
+
+- Status: accepted (product owner's decisions of 2026-10-13). **No migration.**
+
+1. The arrival row reads `Saabus` then `Arvamuse tähtaeg`: left to right at
+   desktop and tablet width, top to bottom on a phone. Widgets, formats and
+   defaults are unchanged (`Saabus` today, the deadline empty). With «Koja
+   ettepanek või pöördumine» chosen only `Saabus` is hidden (docs/adr/0151,
+   amendment of 2026-10-13).
+2. `Seo olemasoleva teemaga` (docs/adr/0150 §3) draws the chosen Teemad
+   directly under its heading and above the search box. Each row is the
+   reference, the title and a × named after the Teema, and an empty list takes
+   no space. The search results follow the box. Removing a row only takes it
+   out of the form; nothing is linked before the save. Choosing a result
+   clears the picker's memory of the last query, so the same query asked again
+   searches again.

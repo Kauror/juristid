@@ -74,13 +74,14 @@ def stage(key: str) -> StageVocabulary:
 #: (docs/adr/0130 §1 and its 2026-10-02 amendment). Since 2026-10-12 there is no
 #: `Menetluse link` between the dates, and after `Failid` come «Märgi saadetud
 #: Koja arvamuseks» and `Seo olemasoleva teemaga`, with the action bar last
-#: (docs/adr/0130 amendment of 2026-10-12).
+#: (docs/adr/0130 amendment of 2026-10-12). Since 2026-10-13 `Saabus` comes
+#: before `Arvamuse tähtaeg` (docs/adr/0130 amendment of 2026-10-13).
 ORDER = [
     ('name="title"', "Pealkiri"),
     ('name="sender_name"', "Saatja"),
     ('name="owner"', "Vastutaja"),
-    ('name="response_deadline"', "Arvamuse tähtaeg"),
     ('name="received_date"', "Saabus"),
+    ('name="response_deadline"', "Arvamuse tähtaeg"),
     ('name="legal_instruments"', "Õigusakt"),
     ('name="stage"', "Hetkeseis"),
     ('name="policy_areas"', "Valdkond"),
@@ -104,7 +105,7 @@ def test_the_sections_are_in_the_owners_order(signed_in):
     ("earlier", "later"),
     [
         ("Saatja", "Vastutaja"),
-        ("Arvamuse tähtaeg", "Saabus"),
+        ("Saabus", "Arvamuse tähtaeg"),
         ("Õigusakt", "Hetkeseis"),
         ("Hetkeseis", "Valdkond"),
         ("Valdkond", "Märkmed"),

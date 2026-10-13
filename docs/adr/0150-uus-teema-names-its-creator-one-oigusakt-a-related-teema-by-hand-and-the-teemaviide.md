@@ -176,3 +176,11 @@ Generation, uniqueness, search by `Teemaviide`, linking, the related-Teema
 search by reference, and §4's rule that lists, dashboards and timelines name a
 Teema by its title. The copy behaviour (`data-copy-from`) stays for the
 register's own link button, which is not this decision's subject.
+
+## Amendment, 2026-10-13 — the chosen list sits above the search
+
+§3's chosen Teemad render under the `Seo olemasoleva teemaga` heading and above
+the search box, rather than after the results, so what is already chosen is read
+first and stays put while the query changes (docs/adr/0130, amendment of
+2026-10-13). The selection model, the hidden `seo_teemaga_valitud` values, the
+server's re-resolution and `link_related_matters` are unchanged.

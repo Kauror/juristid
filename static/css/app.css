@@ -4654,8 +4654,9 @@ a.barchart__row:hover {
   grid-template-columns: minmax(0, 1fr) minmax(0, 320px);
 }
 
-/* Uus teema's arrival row: `Arvamuse tähtaeg` and `Saabus`, each the 146px
-   every date on this page has. `Menetluse link` stood between them until the
+/* Uus teema's arrival row: `Saabus` then `Arvamuse tähtaeg` (owner's order of
+   2026-10-13), each the 146px every date on this page has. On a Chamber
+   proposal `Saabus` is hidden and the deadline takes the first track. `Menetluse link` stood between them until the
    owner's decision of 2026-10-12 and is added on the Teema page now
    (docs/adr/0130, amendment of 2026-10-12); the row starts at the left rather
    than spreading two short boxes across the form. */
@@ -5743,10 +5744,12 @@ a.barchart__row:hover {
   border-top: 1px solid var(--border-subtle);
 }
 
-/* `Seo olemasoleva teemaga` (docs/adr/0150 §3): a search, its results, and the
-   Teemad chosen so far. The results borrow the fact list; the chosen rows are
-   one line each — reference, title, × — because the list is read before
-   saving, not studied. */
+/* `Seo olemasoleva teemaga` (docs/adr/0150 §3): the Teemad chosen so far,
+   then the search and its results. The chosen list sits under the heading and
+   above the search (owner's decision of 2026-10-13), so it stays put while
+   results come and go below. The results borrow the fact list; the chosen
+   rows are quiet lines — reference, title, × on the right — because the list
+   is read before saving, not studied. */
 .relpick .field {
   max-width: 40rem;
 }
@@ -5758,13 +5761,14 @@ a.barchart__row:hover {
 .relpick__chosen {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-1);
-  margin: var(--spacing-2) 0 0;
+  margin: 0 0 var(--spacing-2);
   padding: 0;
   list-style: none;
 }
 
-.relpick__chosen:empty {
+/* Nothing chosen takes no space. `:has`, not `:empty`: the server renders the
+   list with whitespace inside, which `:empty` counts as content. */
+.relpick__chosen:not(:has(li)) {
   display: none;
 }
 
@@ -5773,6 +5777,23 @@ a.barchart__row:hover {
   align-items: baseline;
   gap: var(--spacing-2);
   min-width: 0;
+  padding: var(--spacing-1) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/* The × stays at the right and in view whatever the title does: the title
+   takes the room and wraps, the button never shrinks. A 24px square with a
+   glyph that reads as one — `button--tiny`'s label size drew an 8px cross. */
+.relpick .relpick__remove {
+  flex: none;
+  align-self: center;
+  margin-left: auto;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  /* Barlow's × is a small glyph: at 15px it drew about 7px. */
+  font-size: 20px;
+  line-height: 1;
 }
 
 .relpick__ref {
@@ -5783,6 +5804,7 @@ a.barchart__row:hover {
 }
 
 .relpick__title {
+  flex: 1 1 auto;
   min-width: 0;
   overflow-wrap: anywhere;
   color: var(--text-body);

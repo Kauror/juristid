@@ -341,9 +341,9 @@ def test_the_deadline_opens_the_arrival_row(page, base_url):
 
     A row can be a later sibling and still paint above, and where somebody reads
     it is the decision. `Arvamuse tähtaeg` was the last question (docs/adr/0094
-    §4); it now opens the row it shares with `Saabus` — `Menetluse link` left
-    the page on 2026-10-12 — and the action bar ends the form (docs/adr/0130
-    §1 and its amendment of 2026-10-12).
+    §4); it now shares a row with `Saabus`, which comes first since 2026-10-13 —
+    `Menetluse link` left the page on 2026-10-12 — and the action bar ends the
+    form (docs/adr/0130 §1 and its amendments).
     """
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
@@ -357,7 +357,7 @@ def test_the_deadline_opens_the_arrival_row(page, base_url):
     received = box("#id_received_date")
     files = box("#failid")
     actions = box(".createform__actions")
-    assert deadline["x"] < received["x"], (deadline, received)
+    assert received["x"] < deadline["x"], (received, deadline)
     # The deadline's box is its labelled field, Saabus's its input: same row.
     assert abs((deadline["y"] + deadline["height"]) - (received["y"] + received["height"])) < 10, (
         deadline,

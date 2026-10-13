@@ -4,8 +4,9 @@ docs/adr/0151, amendment of 2026-10-12. Two legitimate journeys, one canonical
 architecture:
 
 * **A — still work to be done.** `Õigusakt` «Koja ettepanek või pöördumine»,
-  nothing ticked: a working Teema on the `Koja algatus` track, no `Saabus`, no
-  `Arvamuse tähtaeg`, no send, no check; the files are ordinary documents. When
+  nothing ticked: a working Teema on the `Koja algatus` track, no `Saabus`, an
+  optional `Arvamuse tähtaeg` kept as given (amendment of 2026-10-13), no send,
+  no check; the files are ordinary documents. When
   the proposal really goes out, `+ Koja arvamus` records it as a
   `KODA_PROPOSAL` and schedules the thirty-day check from that send.
 * **B/C — already sent.** The same instrument, the files that went, and
@@ -147,13 +148,16 @@ def segment(result: Any, label: str) -> int:
 
 
 def test_a_proposal_still_to_be_prepared_is_ordinary_work(signed_in, specialist, evidence_root):
+    """Path A. `Saabus` is not recorded; the optional `Arvamuse tähtaeg` is kept
+    (docs/adr/0151, amendment of 2026-10-13). No send, no sent date, no check."""
+    due = today() + dt.timedelta(days=14)
     response = signed_in.post(
         CREATE,
         {
             "title": "Pöördumine: koostada kahe nädala jooksul",
             "legal_instruments": instrument("koja-ettepanek"),
             "received_date": et(today()),
-            "response_deadline": et(today() + dt.timedelta(days=14)),
+            "response_deadline": et(due),
             "files": [pdf("taustamaterjal.pdf")],
         },
     )
@@ -161,8 +165,7 @@ def test_a_proposal_still_to_be_prepared_is_ordinary_work(signed_in, specialist,
     assert response.status_code == 302
     (matter,) = Matter.objects.filter(title="Pöördumine: koostada kahe nädala jooksul")
     assert matter.track == Track.KODA_INITIATIVE
-    assert (matter.received_date, matter.response_deadline) == (None, None)
-    assert matter.response_requested_at is None
+    assert (matter.received_date, matter.response_deadline) == (None, due)
     assert submissions_of(matter) == []
     assert not OpinionFollowUp.objects.filter(submission__matter=matter).exists()
     assert checks_of(matter) == []
