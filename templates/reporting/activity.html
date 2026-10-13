@@ -53,6 +53,43 @@ says so (master specification 18.8).
     </div>
   </section>
 
+  <section aria-labelledby="tegevus-vordlus-heading">
+    <h2 class="sectionlabel" id="tegevus-vordlus-heading">Võrdlus ja kuud</h2>
+    <p class="chart__summary">
+      Kanoonilised saadetud arvamused. Võrdluses on mõlemad aastad lõigatud sama
+      kuupäevaga; tabelis on iga kuu kõrvuti aastate kaupa. Arhiivi failid ei
+      kuulu siia.
+    </p>
+    <div class="metricgrid">
+      {% for result in comparisons %}
+        {% include "reporting/_comparison.html" with result=result %}
+      {% endfor %}
+    </div>
+    {% for item in volume_matrices %}
+      {% include "reporting/_matrix.html" with item=item %}
+    {% endfor %}
+  </section>
+
+  <section aria-labelledby="tegevus-tahtajad-heading">
+    <h2 class="sectionlabel" id="tegevus-tahtajad-heading">Arvamuse tähtajad</h2>
+    <p class="chart__summary">
+      Ainult väljast küsitud arvamused: Koja algatustel arvamuse tähtaega ei ole.
+      Saadetud arvamust võrreldakse tähtajaga, mis kehtis saatmise ajal; kui seda
+      ei saa tähtaegade ajaloost kindlaks teha, ei loeta vastust ei õigeaegseks
+      ega hilinenuks ja see on eraldi näha.
+    </p>
+    <div class="metricgrid">
+      {% for item in deadline_compositions %}
+        {% include "reporting/_metric.html" with result=item.result %}
+      {% endfor %}
+    </div>
+    <div class="chartgrid">
+      {% for item in deadline_compositions %}
+        {% include "reporting/_composition.html" with item=item %}
+      {% endfor %}
+    </div>
+  </section>
+
   <section aria-labelledby="tegevus-arhiiv-heading">
     <h2 class="sectionlabel" id="tegevus-arhiiv-heading">Arvamuste arhiiv ajas</h2>
     <p class="chart__summary">

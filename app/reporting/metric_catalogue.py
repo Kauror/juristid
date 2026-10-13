@@ -160,6 +160,18 @@ MATERIALISATION_FAILED = "MATERIALISATION_FAILED"
 ACTIVE_WITHOUT_STAGE = "ACTIVE_WITHOUT_STAGE"
 DATA_QUALITY_ATTENTION = "DATA_QUALITY_ATTENTION"
 
+# Management statistics (docs/adr/0160). Six questions a department head asks of
+# a year — how long Koda was given, whether the answer went in time, how this
+# year compares with the same stretch of the last, how much of the work is
+# European, how much the Chamber started itself, and how sending is spread over
+# the months — each answered from a field the product already stores.
+RESPONSE_PREPARATION_TIME = "RESPONSE_PREPARATION_TIME"
+OPINIONS_ON_TIME = "OPINIONS_ON_TIME"
+SUBMISSIONS_SENT_YOY_CHANGE = "SUBMISSIONS_SENT_YOY_CHANGE"
+EU_RELATED_MATTERS_BY_YEAR = "EU_RELATED_MATTERS_BY_YEAR"
+KODA_INITIATIVES_BY_YEAR = "KODA_INITIATIVES_BY_YEAR"
+SUBMISSIONS_SENT_BY_MONTH_AND_YEAR = "SUBMISSIONS_SENT_BY_MONTH_AND_YEAR"
+
 
 def _matter(
     key: str,
@@ -1311,6 +1323,198 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         time_basis=TimeBasis.POINT_IN_TIME,
         respects_period=False,
         drillthrough_et="Andmekvaliteedi vaade",
+    ),
+    # -- Juhtimise statistika (docs/adr/0160) --------------------------------
+    MetricDefinition(
+        key=RESPONSE_PREPARATION_TIME,
+        version=1,
+        label_et="Aeg arvamuse koostamiseks",
+        description_et=(
+            "Mitu kalendripäeva jäi saabumisest esimese teadaoleva arvamuse "
+            "tähtajani. Mediaan ja jaotus, mitte keskmine."
+        ),
+        source_population_et=(
+            "Nähtavad teemad, mille saabumise kuupäev on perioodis; Koja algatused "
+            "(menetlusliik «Koja algatus») ei kuulu siia"
+        ),
+        time_basis=TimeBasis.RECEIVED_DATE,
+        unit=Unit.MATTERS,
+        required_fields=("received_date", "response_deadline"),
+        exclusions_et=(
+            "Koja algatused: neil ei ole väljast küsitud arvamust ega arvamuse "
+            "tähtaega, ka siis, kui teemal on sisemine sihtkuupäev. Teemad ilma "
+            "arvamuse tähtajata ja teemad, mille tähtaeg on enne saabumist, "
+            "näidatakse eraldi ega arvestata jaotusesse."
+        ),
+        numerator_et=(
+            "Iga teema kohta päevade arv: esimene teadaolev arvamuse tähtaeg miinus "
+            "saabumise kuupäev."
+        ),
+        denominator_et=(
+            "Teemad, millel on nii saabumise kuupäev kui ka arvamuse tähtaeg ja "
+            "tähtaeg ei ole enne saabumist."
+        ),
+        coverage_description_et="Teemad, millel on arvamuse tähtaeg",
+        minimum_coverage=0.0,
+        minimum_population=1,
+        source_era_limitations_et=(
+            "Arvamuse tähtaja ajalugu peetakse alates 4.10.2026 (ADR 0135). "
+            "Varasem tähtaeg võib olla hilisem parandus, mida ei saa algsest eristada; "
+            "selliste teemade arv on näitaja juures kirjas."
+        ),
+        notes_et=(
+            "Esimene teadaolev tähtaeg on tähtaegade ajaloo vanim kirje või, kui "
+            "ajalugu ei ole, praegune tähtaeg. Hilisem uus küsimine ei muuda seda."
+        ),
+        drillthrough_et="Statistika loend: iga rühm avab oma teemad koos päevade arvuga",
+    ),
+    MetricDefinition(
+        key=OPINIONS_ON_TIME,
+        version=1,
+        label_et="Arvamused tähtajaks",
+        description_et=(
+            "Kui suur osa arvamuse küsimistest, millele vastati saadetud Koja "
+            "arvamusega, sai vastuse hiljemalt tähtajal, mis kehtis saatmise ajal."
+        ),
+        source_population_et=(
+            "Arvamuse tähtajad, mis on lõpetatud tulemusega «Vastatud» ja mille "
+            "juurde on nimetatud nähtav välja saadetud Koja arvamus; saatmise "
+            "kuupäev on perioodis; Koja algatused ei kuulu siia"
+        ),
+        time_basis=TimeBasis.SUBMISSION_SENT_AT,
+        unit=Unit.PERCENT,
+        required_fields=("sent_at", "deadline"),
+        exclusions_et=(
+            "Koja algatused. Tähtajad, millele vastati ilma Juristides saadetud "
+            "arvamuseta (ainult selgitusega). Tähtajad, mida ei saa kontrollida: "
+            "tähtaeg muutus pärast saatmist, tähtaeg pärineb ajast enne "
+            "tähtaegade ajaloo pidamist, või vastuseks nimetatud arvamus on "
+            "tagasi võetud. Neid ei loeta ei õigeaegseks ega hilinenuks; nende "
+            "arv on näha."
+        ),
+        numerator_et=(
+            "Kontrollitavad vastused, mille saatmise kuupäev (Europe/Tallinn) on "
+            "hiljemalt saatmise ajal kehtinud tähtaeg."
+        ),
+        denominator_et=(
+            "Kontrollitavad vastused: tähtaeg oli saatmise hetkel juba see, mida "
+            "vastus nimetab, ja selle ajalugu on teada."
+        ),
+        coverage_description_et="Kontrollitavad vastused",
+        minimum_coverage=0.0,
+        source_era_limitations_et=(
+            "Arvamuse ja tähtaja seos tekib ainult siis, kui inimene nimetab "
+            "arvamuse salvestamisel tähtaja, millele see vastab (ADR 0135, alates "
+            "4.10.2026). Arhiivist taastatud arvamustel seost ei ole ja neid ei "
+            "seota kuupäeva järgi."
+        ),
+        notes_et=(
+            "Praegust, hiljem muudetud tähtaega ei kasutata kunagi varem saadetud "
+            "arvamuse hindamiseks."
+        ),
+        drillthrough_et=(
+            "Statistika loend: iga rühm, ka mittekontrollitavad, avab oma "
+            "tähtajad koos saatmise kuupäevaga"
+        ),
+    ),
+    MetricDefinition(
+        key=SUBMISSIONS_SENT_YOY_CHANGE,
+        version=1,
+        label_et="Saadetud arvamused eelmise aasta sama ajaga",
+        description_et=(
+            "Saadetud arvamused 1. jaanuarist tänaseni, võrrelduna eelmise aasta "
+            "sama kalendrivahemikuga. Mahu muutus, mitte tulemuslikkus."
+        ),
+        source_population_et="Nähtavad arvamused olekus SAADETUD",
+        time_basis=TimeBasis.SUBMISSION_SENT_AT,
+        unit=Unit.SUBMISSIONS,
+        required_fields=("sent_at",),
+        respects_period=False,
+        minimum_population=1,
+        source_era_limitations_et=_ERA_SUBMISSION,
+        notes_et=(
+            "Mõlemad pooled on lõigatud samal kalendrikuupäeval (29. veebruar "
+            "võrdub eelmisel aastal 28. veebruariga). Kui eelmises võrreldavas "
+            "perioodis ei olnud ühtki arvamust, protsenti nullist ei arvutata."
+        ),
+        drillthrough_et="Arvamuste loend, kumbki pool eraldi sama kuupäevani",
+    ),
+    _matter(
+        EU_RELATED_MATTERS_BY_YEAR,
+        "ELiga seotud teemad aastate kaupa",
+        (
+            "Teemade arv aruandlusaasta ja õigusakti rühma järgi: ELiga seotud, "
+            "siseriiklik või määramata, ning ELiga seotud teemade osakaal."
+        ),
+        population="Nähtavad teemad, mille aruandlusaasta on registri aasta",
+        exclusions_et=(
+            "Midagi ei tuletata pealkirjast, märkustest ega menetluslingist. "
+            "Menetlusliik on eraldi fakt ja seda ei liideta siia."
+        ),
+        numerator_et=(
+            "Teemad, mille õigusaktide hulgas on vähemalt üks ELiga seotud liik "
+            "(Direktiiv, EL määrus, ELi konsultatsioon, Muu ELi dokument)."
+        ),
+        denominator_et=(
+            "Teemad, mille õigusakti rühm on teada: ELiga seotud või ainult "
+            "siseriiklikud liigid. Määramata teemad on eraldi veerus."
+        ),
+        coverage_description_et="Teemad, mille õigusakti rühm on teada",
+        minimum_coverage=0.0,
+        source_era_limitations_et=(
+            "Rühm on kirjas ainult kümnel praegu pakutaval õigusakti liigil "
+            "(versioon 2.0). Ajalooline liik, mis rühma ei kanna — näiteks «EL "
+            "teatis», «Konsultatsioon» või «Muu» — jääb määramata, sest allikas "
+            "ei ütle rohkem. " + _ERA_ONENOTE_YEAR
+        ),
+        drillthrough_et="Statistika loend: iga lahter avab oma teemad",
+    ),
+    _matter(
+        KODA_INITIATIVES_BY_YEAR,
+        "Koja algatused aastate kaupa",
+        (
+            "Teemad, mille menetlusliik on «Koja algatus», aruandlusaasta järgi, "
+            "ja nende osakaal kõigist selle aasta teemadest."
+        ),
+        population="Nähtavad teemad, mille aruandlusaasta on registri aasta",
+        numerator_et="Teemad menetlusliigiga «Koja algatus».",
+        denominator_et=("Kõik sama aasta teemad, ka need, mille menetlusliik on määramata."),
+        exclusions_et=(
+            "Algatust ei tuletata pealkirjast ega õigusaktist: loeb ainult "
+            "salvestatud menetlusliik."
+        ),
+        source_era_limitations_et=(
+            "Menetlusliik puudub paljudel ajaloolistel registriridadel, seega on "
+            "varasemate aastate algatuste arv alampiir, mitte täpne arv. "
+            "Määramata menetlusliigiga teemad on eraldi veerus. " + _ERA_ONENOTE_YEAR
+        ),
+        drillthrough_et=(
+            "Teemade register («Koja algatus», «määramata») ja Statistika loend "
+            "(«muu menetlusliik»), sama aastaga"
+        ),
+    ),
+    MetricDefinition(
+        key=SUBMISSIONS_SENT_BY_MONTH_AND_YEAR,
+        version=1,
+        label_et="Saadetud arvamused kuude ja aastate kaupa",
+        description_et=(
+            "Kanoonilised saadetud arvamused saatmise kuu ja aasta järgi, et "
+            "sama kuud saaks aastate vahel võrrelda."
+        ),
+        source_population_et="Nähtavad arvamused olekus SAADETUD",
+        time_basis=TimeBasis.SUBMISSION_SENT_AT,
+        unit=Unit.SUBMISSIONS,
+        required_fields=("sent_at",),
+        respects_period=False,
+        earliest_reliable_period=OPINION_ARCHIVE_FIRST_YEAR,
+        minimum_population=1,
+        source_era_limitations_et=_ERA_SUBMISSION,
+        notes_et=(
+            "Veerud on mõõdetud aastad esimesest salvestatud arvamusest tänaseni. "
+            "Jooksva aasta tulevased kuud on tühjad, mitte null. Arhiivi failid "
+            "on eraldi plokis ega kuulu siia."
+        ),
+        drillthrough_et="Arvamuste loend, filtreeritud aasta ja kuu järgi",
     ),
 )
 

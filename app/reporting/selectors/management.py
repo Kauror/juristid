@@ -1,0 +1,1121 @@
+"""Management statistics: deadlines, timeliness, comparisons and composition.
+
+Six questions a department head brings to a year, each answered from a field the
+product already stores and each with its own catalogue entry
+(docs/adr/0160, ``app/reporting/metric_catalogue.py``):
+
+* how long Koda was given to prepare an opinion — ``Saabus`` to the first known
+  ``Arvamuse tähtaeg`` (``RESPONSE_PREPARATION_TIME``);
+* whether the answer went in time — the actual send date against the deadline
+  that was in force **when it was sent** (``OPINIONS_ON_TIME``);
+* this year so far against the same stretch of last year
+  (``SUBMISSIONS_SENT_YOY_CHANGE``);
+* how much of each year's work is European, by the reviewed `Õigusakt` group
+  (``EU_RELATED_MATTERS_BY_YEAR``);
+* how much the Chamber started itself (``KODA_INITIATIVES_BY_YEAR``);
+* how sending is spread over the months of each year
+  (``SUBMISSIONS_SENT_BY_MONTH_AND_YEAR``).
+
+Three rules run through all of them, and each is a way these numbers would
+otherwise lie.
+
+**A Chamber initiative is not an incoming request.** A Teema on the «Koja
+algatus» track was started by Koda; nobody asked it for an opinion, and an
+internal target date on it is ordinary work, not an `Arvamuse tähtaeg`
+(docs/adr/0151). It is excluded from both deadline populations, and the number
+excluded is said beside them.
+
+**A deadline is judged as it stood when the letter went.** `Arvamuse tähtaeg`
+keeps its history (docs/adr/0135), so the deadline an answer named is checked
+against that history: if the deadline changed — moved, replaced, or recorded at
+all — after the opinion was sent, the deadline in force at sending cannot be
+established, and the answer is shown as *not verifiable* rather than judged
+against a later date. A deadline from before the history was kept has no record
+of its revisions and is not verifiable either. Neither is counted as on time or
+as late; both are counted, and both open their list.
+
+**Every number opens the rows it counted.** The deadline and composition
+metrics have no register filter that could express their groups, so their rows
+come from :func:`metric_rows` — the same observation lists the numbers were
+taken from — and the Statistika list (`/statistika/loend/`) pages them. Where
+the register *can* express a group exactly (a track and a year), it is linked to
+instead of being reimplemented.
+
+Authorization precedes aggregation here as everywhere: every population starts
+at ``visible_matters`` (and the opinion side at ``Submission.visible_to``), and
+nothing is filtered after counting.
+"""
+
+from __future__ import annotations
+
+from collections import defaultdict
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
+from datetime import date, datetime
+from typing import Any
+from urllib.parse import urlencode
+
+from django.db.models import Exists, OuterRef, Q, QuerySet
+from django.http import Http404
+from django.urls import reverse
+from django.utils import timezone
+
+from app.core.dates import format_estonian_date
+from app.matters.enums import ResponseDeadlineOutcome
+from app.matters.models import Matter, MatterResponseDeadline
+from app.matters.selectors import MISSING, UNKNOWN_YEAR
+from app.reporting import metric_catalogue as keys
+from app.reporting.context import ReportingContext
+from app.reporting.metric_catalogue import OPINION_ARCHIVE_FIRST_YEAR, definition
+from app.reporting.metric_types import (
+    Comparison,
+    Matrix,
+    MatrixCell,
+    MatrixRow,
+    MetricResult,
+    MetricStatus,
+    Segment,
+    distribution_from,
+)
+from app.reporting.selectors.base import (
+    count,
+    grouped_count,
+    known_year_q,
+    population_for,
+    register_url,
+    simple_result,
+    visible_matters,
+)
+from app.reporting.selectors.matters import UNKNOWN_YEAR_LABEL
+from app.reporting.selectors.portfolio import MONTH_LABELS, same_day_last_year
+from app.reporting.selectors.submissions import (
+    all_sent,
+    measured_window,
+    sent_submissions,
+)
+from app.submissions.enums import SentAtPrecision, SubmissionStatus
+from app.submissions.models import Submission
+from app.taxonomy.legal_instruments import DOMESTIC_LEGAL_INSTRUMENT_KEYS, EU_LEGAL_INSTRUMENT_KEYS
+from app.workflow.enums import Track
+
+#: The URL parameters of the Statistika list. ASCII, like the rest.
+PARAM_METRIC = "naitaja"
+PARAM_GROUP = "ruhm"
+PARAM_YEAR = "aasta"
+
+#: The note every deadline metric carries about the Chamber's own work.
+INITIATIVE_NOTE = (
+    "{count} Koja algatust (menetlusliik «Koja algatus») ei ole arvestatud: "
+    "neilt ei küsitud arvamust ja nende sisemine sihtaeg ei ole arvamuse tähtaeg."
+)
+
+
+def _share_text(numerator: int, denominator: int) -> str:
+    """«12,5%», or a dash when there is nothing to take a share of."""
+    if not denominator:
+        return "—"
+    return f"{100.0 * numerator / denominator:.1f}%".replace(".", ",")
+
+
+def metric_list_url(
+    context: ReportingContext, key: str, group: str, *, year: str | int | None = None
+) -> str:
+    """A link into the Statistika list for one group of one metric.
+
+    It carries every active filter, because the rows behind it are computed
+    from the same context the number was: the same period, the same owner, the
+    same policy area.
+    """
+    params = {**context.query_params(), PARAM_METRIC: key, PARAM_GROUP: group}
+    if year is not None:
+        params[PARAM_YEAR] = str(year)
+    return f"{reverse('reporting:metric_rows')}?{urlencode(params)}"
+
+
+def _submission_list_url(context: ReportingContext, **extra: str) -> str:
+    params = {**context.query_params(), **{k: v for k, v in extra.items() if v}}
+    return f"{reverse('reporting:submissions')}?{urlencode(params)}"
+
+
+def _real_matters(queryset: QuerySet[Matter]) -> QuerySet[Matter]:
+    """The same population through a primary-key subquery.
+
+    A narrowing by tag or policy area joins and can repeat a row; resolving the
+    population by key first means nothing below can count a Matter twice
+    (Stage-2E: "a join fan-out plus distinct()").
+    """
+    return Matter.objects.filter(pk__in=queryset.values("pk"))
+
+
+# ---------------------------------------------------------------------------
+# 1. Time available to prepare an opinion
+# ---------------------------------------------------------------------------
+
+#: Day buckets, inclusive at both ends. Calendar days, because that is how a
+#: deadline is given; working days would need a holiday calendar nobody has
+#: reviewed.
+DAY_BUCKETS: tuple[tuple[str, str, int, int | None], ...] = (
+    ("0-7", "0–7 päeva", 0, 7),
+    ("8-14", "8–14 päeva", 8, 14),
+    ("15-21", "15–21 päeva", 15, 21),
+    ("22-30", "22–30 päeva", 22, 30),
+    ("31-60", "31–60 päeva", 31, 60),
+    ("61+", "Üle 60 päeva", 61, None),
+)
+PREP_ALL = "koik"
+PREP_NO_DEADLINE = "puudub"
+PREP_BEFORE_RECEIPT = "enne-saabumist"
+PREP_GROUP_LABELS: dict[str, str] = {
+    PREP_ALL: "Mõõdetud teemad",
+    PREP_NO_DEADLINE: "Arvamuse tähtaeg puudub",
+    PREP_BEFORE_RECEIPT: "Tähtaeg on enne saabumist",
+    **{key: label for key, label, _low, _high in DAY_BUCKETS},
+}
+
+
+@dataclass(frozen=True)
+class PreparationRow:
+    """One incoming Matter and the time it was given."""
+
+    matter_id: Any
+    title: str
+    received: date
+    deadline: date | None
+    #: Whether the deadline used comes from before the history was kept.
+    legacy: bool
+    group: str
+
+    @property
+    def days(self) -> int | None:
+        return None if self.deadline is None else (self.deadline - self.received).days
+
+    @property
+    def is_measured(self) -> bool:
+        return self.group not in (PREP_NO_DEADLINE, PREP_BEFORE_RECEIPT)
+
+
+def _bucket(days: int) -> str:
+    for key, _label, low, high in DAY_BUCKETS:
+        if days >= low and (high is None or days <= high):
+            return key
+    raise ValueError(days)  # pragma: no cover - the last bucket is open-ended
+
+
+def _preparation_population(context: ReportingContext) -> QuerySet[Matter]:
+    """Incoming Matters whose arrival falls in the period, before the deadline test."""
+    spec = definition(keys.RESPONSE_PREPARATION_TIME)
+    return population_for(context, spec).filter(received_date__isnull=False)
+
+
+def preparation_rows(context: ReportingContext) -> list[PreparationRow]:
+    """Every incoming Matter in the population, classified once per page."""
+    return context.shared("management.preparation", lambda: _preparation_rows(context))
+
+
+def _preparation_rows(context: ReportingContext) -> list[PreparationRow]:
+    matters = list(
+        _real_matters(_preparation_population(context))
+        .exclude(track=Track.KODA_INITIATIVE)
+        .order_by("received_date", "pk")
+        .values("pk", "title", "received_date", "response_deadline", "response_requested_at")
+    )
+    # The first deadline each Matter was ever given: the oldest history row,
+    # or — with no history — the current field. A later request, a move or a
+    # replacement never shortens or lengthens the time Koda was first given.
+    first: dict[Any, tuple[date, bool]] = {}
+    history = (
+        MatterResponseDeadline.objects.filter(matter_id__in=[row["pk"] for row in matters])
+        .order_by("matter_id", "ended_at", "created_at")
+        .values("matter_id", "deadline", "requested_at")
+    )
+    for row in history:
+        first.setdefault(row["matter_id"], (row["deadline"], row["requested_at"] is None))
+
+    rows: list[PreparationRow] = []
+    for matter in matters:
+        received = matter["received_date"]
+        if received is None:  # pragma: no cover - filtered above
+            continue
+        deadline: date | None
+        if matter["pk"] in first:
+            deadline, legacy = first[matter["pk"]]
+        else:
+            deadline = matter["response_deadline"]
+            legacy = deadline is not None and matter["response_requested_at"] is None
+        if deadline is None:
+            group = PREP_NO_DEADLINE
+        elif deadline < received:
+            group = PREP_BEFORE_RECEIPT
+        else:
+            group = _bucket((deadline - received).days)
+        rows.append(
+            PreparationRow(
+                matter_id=matter["pk"],
+                title=matter["title"],
+                received=received,
+                deadline=deadline,
+                legacy=legacy,
+                group=group,
+            )
+        )
+    return rows
+
+
+def response_preparation_time(context: ReportingContext) -> MetricResult:
+    spec = definition(keys.RESPONSE_PREPARATION_TIME)
+    rows = preparation_rows(context)
+    measured = [row for row in rows if row.is_measured]
+    with_deadline = [row for row in rows if row.deadline is not None]
+    initiatives = count(_preparation_population(context).filter(track=Track.KODA_INITIATIVE))
+
+    def link(group: str) -> str:
+        return metric_list_url(context, keys.RESPONSE_PREPARATION_TIME, group)
+
+    by_group: dict[str, int] = defaultdict(int)
+    for row in rows:
+        by_group[row.group] += 1
+    segments = [
+        Segment(label=label, value=by_group.get(key, 0), url=link(key) if by_group.get(key) else "")
+        for key, label, _low, _high in DAY_BUCKETS
+    ]
+    for key in (PREP_BEFORE_RECEIPT, PREP_NO_DEADLINE):
+        if by_group.get(key):
+            segments.append(
+                Segment(
+                    label=PREP_GROUP_LABELS[key],
+                    value=by_group[key],
+                    url=link(key),
+                    note="Ei ole jaotuses",
+                    is_unknown=True,
+                )
+            )
+
+    distribution = distribution_from([row.days or 0 for row in measured])
+    notes: list[str] = []
+    if measured:
+        notes.append(
+            f"Mediaan {distribution.median:.0f} päeva".replace(".", ",")
+            + f" · p75 {distribution.p75:.0f} · p90 {distribution.p90:.0f} · "
+            f"lühim {min(row.days or 0 for row in measured)} · pikim {distribution.maximum}."
+        )
+    legacy = sum(1 for row in measured if row.legacy)
+    if legacy:
+        notes.append(
+            f"{legacy} mõõdetud tähtaega pärineb ajast enne tähtaegade ajaloo "
+            "pidamist; neist ei saa öelda, kas see oli esimene antud tähtaeg."
+        )
+    if initiatives:
+        notes.append(INITIATIVE_NOTE.format(count=initiatives))
+
+    status = None if measured else MetricStatus.INSUFFICIENT_DATA
+    return simple_result(
+        spec,
+        context=context,
+        value=len(measured),
+        population_count=len(rows),
+        eligible_count=len(measured),
+        coverage_count=len(with_deadline),
+        coverage_denominator=len(rows),
+        url=link(PREP_ALL) if measured else "",
+        segments=tuple(segments),
+        distribution=distribution,
+        notes=tuple(notes),
+        status=status,
+    )
+
+
+# ---------------------------------------------------------------------------
+# 2. Opinions submitted on time
+# ---------------------------------------------------------------------------
+
+ON_TIME = "ajal"
+LATE = "hiljem"
+VERIFIABLE = "kontrollitav"
+CHANGED_AFTER_SENDING = "muutus"
+BEFORE_HISTORY = "ajaloota"
+WITHDRAWN = "tagasi"
+ANSWER_GROUP_LABELS: dict[str, str] = {
+    VERIFIABLE: "Kontrollitavad vastused",
+    ON_TIME: "Tähtajaks",
+    LATE: "Pärast tähtaega",
+    CHANGED_AFTER_SENDING: "Ei saa kontrollida: tähtaeg muutus või lisati pärast saatmist",
+    BEFORE_HISTORY: "Ei saa kontrollida: tähtaeg on ajast enne tähtaegade ajalugu",
+    WITHDRAWN: "Ei saa kontrollida: vastuseks nimetatud arvamus on tagasi võetud",
+}
+UNVERIFIABLE_GROUPS: tuple[str, ...] = (CHANGED_AFTER_SENDING, BEFORE_HISTORY, WITHDRAWN)
+
+
+@dataclass(frozen=True)
+class AnswerRow:
+    """One answered request: the deadline it named and the opinion that answered it."""
+
+    matter_id: Any
+    matter_title: str
+    submission_title: str
+    deadline: date
+    sent_on: date
+    group: str
+
+    @property
+    def days_late(self) -> int:
+        return (self.sent_on - self.deadline).days
+
+    @property
+    def is_verifiable(self) -> bool:
+        return self.group in (ON_TIME, LATE)
+
+
+def _later_than_sending(
+    moment: datetime, sent_at: datetime, precision: str, *, same_day: bool
+) -> bool:
+    """Whether ``moment`` falls after the letter went.
+
+    With a real timestamp the two instants are compared. With a date-only send
+    — the anchor time in the column is nobody's statement — the comparison is
+    by Tallinn calendar day, and ``same_day`` says how a change on the sending
+    day itself is read: as *after* for a deadline revision (the order within
+    that day is unknown, so it cannot be ruled out), and as *not after* for the
+    moment a request was recorded.
+    """
+    if precision != SentAtPrecision.DATE:
+        return moment > sent_at
+    moment_day, sent_day = timezone.localdate(moment), timezone.localdate(sent_at)
+    return moment_day >= sent_day if same_day else moment_day > sent_day
+
+
+def _answered_population(context: ReportingContext) -> QuerySet[MatterResponseDeadline]:
+    """Answered requests on visible Matters, naming an opinion this reader may see.
+
+    The deadline history has no visibility of its own and is read only through
+    its Matter; the opinion keeps its own, so a restricted opinion on an
+    ordinary Matter takes its answer out of the population for a reader who may
+    not see it (docs/adr/0137).
+    """
+    sent = Submission.objects.visible_to(context.viewer).filter(
+        status__in=(SubmissionStatus.SENT, SubmissionStatus.WITHDRAWN, SubmissionStatus.SUPERSEDED),
+        sent_at__isnull=False,
+    )
+    queryset = MatterResponseDeadline.objects.filter(
+        outcome=ResponseDeadlineOutcome.ANSWERED,
+        submission__in=sent,
+        matter__in=visible_matters(context),
+    )
+    if not context.period.is_all:
+        queryset = queryset.filter(
+            submission__sent_at__gte=context.period.start_datetime(),
+            submission__sent_at__lt=context.period.end_datetime(),
+        )
+    return queryset
+
+
+def answer_rows(context: ReportingContext) -> list[AnswerRow]:
+    return context.shared("management.answers", lambda: _answer_rows(context))
+
+
+def _answer_rows(context: ReportingContext) -> list[AnswerRow]:
+    answered = list(
+        _answered_population(context)
+        .exclude(matter__track=Track.KODA_INITIATIVE)
+        .select_related("matter", "submission")
+        .order_by("submission__sent_at", "pk")
+    )
+    # Every history row of the same Matters, to see whether the current
+    # deadline changed between the send and the answer being recorded.
+    others: dict[Any, list[MatterResponseDeadline]] = defaultdict(list)
+    for row in MatterResponseDeadline.objects.filter(
+        matter_id__in={row.matter_id for row in answered}
+    ).only("pk", "matter_id", "ended_at"):
+        others[row.matter_id].append(row)
+
+    rows: list[AnswerRow] = []
+    for row in answered:
+        submission = row.submission
+        if submission is None or submission.sent_at is None:  # pragma: no cover - filtered above
+            continue
+        sent_at, precision = submission.sent_at, submission.sent_at_precision
+        sent_on = timezone.localdate(sent_at)
+        if submission.status == SubmissionStatus.WITHDRAWN:
+            group = WITHDRAWN
+        elif row.requested_at is None:
+            group = BEFORE_HISTORY
+        elif _later_than_sending(row.requested_at, sent_at, precision, same_day=False) or any(
+            other.pk != row.pk
+            and other.ended_at < row.ended_at
+            and _later_than_sending(other.ended_at, sent_at, precision, same_day=True)
+            for other in others[row.matter_id]
+        ):
+            group = CHANGED_AFTER_SENDING
+        else:
+            group = ON_TIME if sent_on <= row.deadline else LATE
+        rows.append(
+            AnswerRow(
+                matter_id=row.matter_id,
+                matter_title=row.matter.title,
+                submission_title=submission.title,
+                deadline=row.deadline,
+                sent_on=sent_on,
+                group=group,
+            )
+        )
+    return rows
+
+
+def opinions_on_time(context: ReportingContext) -> MetricResult:
+    spec = definition(keys.OPINIONS_ON_TIME)
+    rows = answer_rows(context)
+    by_group: dict[str, int] = defaultdict(int)
+    for row in rows:
+        by_group[row.group] += 1
+    verifiable = by_group[ON_TIME] + by_group[LATE]
+
+    def link(group: str) -> str:
+        return metric_list_url(context, keys.OPINIONS_ON_TIME, group)
+
+    segments = [
+        Segment(
+            label=ANSWER_GROUP_LABELS[key],
+            value=by_group[key],
+            url=link(key) if by_group[key] else "",
+        )
+        for key in (ON_TIME, LATE)
+    ]
+    segments.extend(
+        Segment(
+            label=ANSWER_GROUP_LABELS[key],
+            value=by_group[key],
+            url=link(key),
+            note="Ei ole protsendis",
+            is_unknown=True,
+        )
+        for key in UNVERIFIABLE_GROUPS
+        if by_group[key]
+    )
+
+    population = _answered_population(context)
+    initiatives = count(population.filter(matter__track=Track.KODA_INITIATIVE))
+    notes: list[str] = []
+    if verifiable:
+        notes.append(
+            f"{by_group[ON_TIME]} {verifiable}-st kontrollitavast vastusest saadeti "
+            "hiljemalt saatmise ajal kehtinud tähtajal."
+        )
+    unverifiable = len(rows) - verifiable
+    if unverifiable:
+        notes.append(
+            f"{unverifiable} vastust ei saa kontrollida ega ole protsendis — "
+            "praegust tähtaega nende hindamiseks ei kasutata."
+        )
+    note_only = count(
+        MatterResponseDeadline.objects.filter(
+            outcome=ResponseDeadlineOutcome.ANSWERED,
+            submission__isnull=True,
+            matter__in=visible_matters(context).exclude(track=Track.KODA_INITIATIVE),
+        ).filter(_ended_in_period(context))
+    )
+    if note_only:
+        notes.append(
+            f"{note_only} tähtajale vastati ilma Juristides saadetud arvamuseta "
+            "(ainult selgitusega); neil ei ole saatmise kuupäeva."
+        )
+    unnamed = count(
+        sent_submissions(context)
+        .exclude(matter__track=Track.KODA_INITIATIVE)
+        .filter(answered_response_deadlines__isnull=True)
+    )
+    if unnamed:
+        notes.append(
+            f"Perioodil saadetud {unnamed} arvamust ei ole ühegi tähtaja vastuseks "
+            "nimetatud ja ei kuulu siia."
+        )
+    if initiatives:
+        notes.append(INITIATIVE_NOTE.format(count=initiatives))
+
+    percent = round(100 * by_group[ON_TIME] / verifiable) if verifiable else 0
+    return simple_result(
+        spec,
+        context=context,
+        value=percent,
+        population_count=len(rows),
+        eligible_count=verifiable,
+        coverage_count=verifiable,
+        coverage_denominator=len(rows),
+        url=link(VERIFIABLE) if verifiable else "",
+        segments=tuple(segments),
+        notes=tuple(notes),
+        status=None if verifiable else MetricStatus.INSUFFICIENT_DATA,
+    )
+
+
+def _ended_in_period(context: ReportingContext) -> Q:
+    """An answer given in words has no send date; it is dated when it was recorded."""
+    if context.period.is_all:
+        return Q()
+    return Q(
+        ended_at__gte=context.period.start_datetime(),
+        ended_at__lt=context.period.end_datetime(),
+    )
+
+
+# ---------------------------------------------------------------------------
+# 3. This year so far against the same stretch of last year
+# ---------------------------------------------------------------------------
+
+
+def submissions_sent_yoy_change(context: ReportingContext) -> MetricResult:
+    """1 January to today, against 1 January to the same date last year.
+
+    Both sides are read in Tallinn and both end on the same calendar day, so
+    nine and a half months are never measured against twelve. A year before the
+    first recorded Submission is not a zero: it was never measured, and the card
+    declines rather than reporting a rise from nothing.
+    """
+    spec = definition(keys.SUBMISSIONS_SENT_YOY_CHANGE)
+    cutoff = context.today
+    previous_cutoff = same_day_last_year(cutoff)
+
+    current = count(sent_submissions(context, year=cutoff.year, through=cutoff))
+    previous = count(sent_submissions(context, year=cutoff.year - 1, through=previous_cutoff))
+
+    def label(day: date) -> str:
+        return f"1.1.{day.year} – {format_estonian_date(day)}"
+
+    comparison = Comparison(
+        current_value=current,
+        previous_value=previous,
+        current_period_label=label(cutoff),
+        previous_period_label=label(previous_cutoff),
+        coverage_cutoff=cutoff,
+        cutoff_note="Mõlemad perioodid algavad 1. jaanuaril ja lõpevad sama kuupäevaga.",
+        current_url=_submission_list_url(
+            context, aasta=str(cutoff.year), kuni=f"{cutoff.month:02d}-{cutoff.day:02d}"
+        ),
+        previous_url=_submission_list_url(
+            context,
+            aasta=str(previous_cutoff.year),
+            kuni=f"{previous_cutoff.month:02d}-{previous_cutoff.day:02d}",
+        ),
+    )
+
+    ever = count(all_sent(context))
+    window = measured_window(context)
+    notes = [
+        "Mahu muutus, mitte tulemuslikkus. Rohkem saadetud arvamusi ei ole "
+        "iseenesest parem ega halvem.",
+        "Arhiivist taastatud arvamused on kanoonilised kirjed ja kuuluvad siia; "
+        "arhiivi failid ise ei kuulu.",
+    ]
+    status: MetricStatus | None = None
+    if window is None:
+        status = MetricStatus.INSUFFICIENT_DATA
+    elif window[0] > previous_cutoff.year:
+        status = MetricStatus.INSUFFICIENT_DATA
+        notes.append(
+            f"Eelmise aasta kohta mõõtmist ei ole: esimene salvestatud arvamus on "
+            f"aastast {window[0]}."
+        )
+
+    return simple_result(
+        spec,
+        context=context,
+        value=current,
+        population_count=ever,
+        eligible_count=current,
+        url=comparison.current_url,
+        comparison=comparison,
+        notes=tuple(notes),
+        status=status,
+    )
+
+
+# ---------------------------------------------------------------------------
+# 4 and 5. Composition by reporting year
+# ---------------------------------------------------------------------------
+
+EU_RELATED = "el"
+DOMESTIC = "siseriiklik"
+UNCLASSIFIED = "maaramata"
+EU_GROUP_LABELS: dict[str, str] = {
+    EU_RELATED: "ELiga seotud",
+    DOMESTIC: "Siseriiklik",
+    UNCLASSIFIED: "Õigusakt määramata",
+}
+
+INITIATIVE = "algatus"
+OTHER_TRACK = "muu"
+NO_TRACK = "puudub"
+TRACK_GROUP_LABELS: dict[str, str] = {
+    INITIATIVE: "Koja algatus",
+    OTHER_TRACK: "Muu menetlusliik",
+    NO_TRACK: "Menetlusliik määramata",
+}
+
+
+def _annotated_instrument_groups(queryset: QuerySet[Matter]) -> QuerySet[Matter]:
+    """Which reviewed `Õigusakt` groups each Matter carries, as three booleans.
+
+    ``Exists`` rather than a join, so a Matter with three instruments is still
+    one row. A Matter is *ELiga seotud* when any instrument is in the European
+    group, *siseriiklik* when it has instruments and all of them are domestic,
+    and *määramata* otherwise — no instrument at all, or one the reviewed list
+    puts in neither group (docs/adr/0090 §4).
+    """
+    through = Matter.legal_instruments.through
+    mine = through.objects.filter(matter_id=OuterRef("pk"))
+    return queryset.annotate(
+        has_eu=Exists(mine.filter(legalinstrumenttype__key__in=EU_LEGAL_INSTRUMENT_KEYS)),
+        has_domestic=Exists(
+            mine.filter(legalinstrumenttype__key__in=DOMESTIC_LEGAL_INSTRUMENT_KEYS)
+        ),
+        has_ungrouped=Exists(
+            mine.exclude(
+                legalinstrumenttype__key__in=EU_LEGAL_INSTRUMENT_KEYS
+                | DOMESTIC_LEGAL_INSTRUMENT_KEYS
+            )
+        ),
+    )
+
+
+def _eu_group_q(group: str) -> Q:
+    if group == EU_RELATED:
+        return Q(has_eu=True)
+    if group == DOMESTIC:
+        return Q(has_eu=False, has_domestic=True, has_ungrouped=False)
+    return Q(has_eu=False) & (Q(has_domestic=False) | Q(has_ungrouped=True))
+
+
+def _track_group_q(group: str) -> Q:
+    if group == INITIATIVE:
+        return Q(track=Track.KODA_INITIATIVE)
+    if group == NO_TRACK:
+        return Q(track="")
+    return ~Q(track="") & ~Q(track=Track.KODA_INITIATIVE)
+
+
+def _year_population(context: ReportingContext, key: str) -> QuerySet[Matter]:
+    """Visible Matters of the metric, by *register* reporting year, in the period."""
+    return _real_matters(population_for(context, definition(key)))
+
+
+def _year_rows(
+    context: ReportingContext, key: str, population: QuerySet[Matter]
+) -> list[tuple[str, str, QuerySet[Matter], bool]]:
+    """(label, URL year value, queryset, is_unknown) per year that carries records.
+
+    The unknown-year row appears only when no period is chosen — exactly as on
+    the year chart, because a period filter has already said those Matters are
+    outside it.
+    """
+    dated = population.filter(known_year_q())
+    years: list[int] = sorted(
+        {
+            row["reporting_year"]
+            for row in dated.order_by().values("reporting_year").annotate(n=grouped_count())
+            if row["reporting_year"] is not None
+        }
+    )
+    rows = [(str(year), str(year), dated.filter(reporting_year=year), False) for year in years]
+    if context.period.is_all:
+        unknown = population.exclude(known_year_q())
+        if count(unknown):
+            rows.append((UNKNOWN_YEAR_LABEL, UNKNOWN_YEAR, unknown, True))
+    return rows
+
+
+def eu_related_matters_by_year(context: ReportingContext) -> MetricResult:
+    spec = definition(keys.EU_RELATED_MATTERS_BY_YEAR)
+    population = _annotated_instrument_groups(
+        _year_population(context, keys.EU_RELATED_MATTERS_BY_YEAR)
+    )
+    columns = (EU_RELATED, DOMESTIC, UNCLASSIFIED)
+
+    matrix_rows: list[MatrixRow] = []
+    totals = dict.fromkeys(columns, 0)
+    for label, year_value, queryset, unknown in _year_rows(
+        context, keys.EU_RELATED_MATTERS_BY_YEAR, population
+    ):
+        values = {group: count(queryset.filter(_eu_group_q(group))) for group in columns}
+        for group in columns:
+            totals[group] += values[group]
+        classified = values[EU_RELATED] + values[DOMESTIC]
+        matrix_rows.append(
+            MatrixRow(
+                label=label,
+                cells=tuple(
+                    MatrixCell(
+                        value=values[group],
+                        url=metric_list_url(
+                            context, keys.EU_RELATED_MATTERS_BY_YEAR, group, year=year_value
+                        )
+                        if values[group]
+                        else "",
+                    )
+                    for group in columns
+                ),
+                total=sum(values.values()),
+                is_unknown=unknown,
+                share_text=_share_text(values[EU_RELATED], classified),
+            )
+        )
+
+    all_rows = sum(totals.values())
+    classified = totals[EU_RELATED] + totals[DOMESTIC]
+    matrix = Matrix(
+        row_header="Aruandlusaasta",
+        columns=tuple(EU_GROUP_LABELS[group] for group in columns),
+        rows=tuple(matrix_rows),
+        column_totals=tuple(totals[group] for group in columns),
+        grand_total=all_rows,
+        column_header="õigusakti rühm",
+        column_noun="õigusakti rühma",
+        share_header="ELiga seotud osakaal",
+    )
+    notes = [
+        f"Kokku ELiga seotud {totals[EU_RELATED]} teemat; osakaal teemadest, mille "
+        f"õigusakti rühm on teada: {_share_text(totals[EU_RELATED], classified)}.",
+        "Osakaal on arvutatud teemadest, mille rühm on teada; määramata teemad ei "
+        "ole nimetajas ega ole siseriiklikud.",
+    ]
+    return simple_result(
+        spec,
+        context=context,
+        value=totals[EU_RELATED],
+        population_count=all_rows,
+        eligible_count=classified,
+        coverage_count=classified,
+        coverage_denominator=all_rows,
+        matrix=matrix,
+        notes=tuple(notes),
+        status=None if all_rows else MetricStatus.INSUFFICIENT_DATA,
+    )
+
+
+def koda_initiatives_by_year(context: ReportingContext) -> MetricResult:
+    spec = definition(keys.KODA_INITIATIVES_BY_YEAR)
+    population = _year_population(context, keys.KODA_INITIATIVES_BY_YEAR)
+    columns = (INITIATIVE, OTHER_TRACK, NO_TRACK)
+
+    def cell_url(group: str, year_value: str) -> str:
+        if group == INITIATIVE:
+            return register_url(context, menetlusliik=Track.KODA_INITIATIVE.value, aasta=year_value)
+        if group == NO_TRACK:
+            return register_url(context, menetlusliik=MISSING, aasta=year_value)
+        return metric_list_url(context, keys.KODA_INITIATIVES_BY_YEAR, group, year=year_value)
+
+    matrix_rows: list[MatrixRow] = []
+    totals = dict.fromkeys(columns, 0)
+    for label, year_value, queryset, unknown in _year_rows(
+        context, keys.KODA_INITIATIVES_BY_YEAR, population
+    ):
+        values = {group: count(queryset.filter(_track_group_q(group))) for group in columns}
+        for group in columns:
+            totals[group] += values[group]
+        year_total = sum(values.values())
+        matrix_rows.append(
+            MatrixRow(
+                label=label,
+                cells=tuple(
+                    MatrixCell(
+                        value=values[group],
+                        url=cell_url(group, year_value) if values[group] else "",
+                    )
+                    for group in columns
+                ),
+                total=year_total,
+                is_unknown=unknown,
+                share_text=_share_text(values[INITIATIVE], year_total),
+            )
+        )
+
+    all_rows = sum(totals.values())
+    matrix = Matrix(
+        row_header="Aruandlusaasta",
+        columns=tuple(TRACK_GROUP_LABELS[group] for group in columns),
+        rows=tuple(matrix_rows),
+        column_totals=tuple(totals[group] for group in columns),
+        grand_total=all_rows,
+        column_header="menetlusliik",
+        column_noun="menetlusliigi rühma",
+        share_header="Koja algatuste osakaal",
+    )
+    with_track = totals[INITIATIVE] + totals[OTHER_TRACK]
+    notes = [
+        f"Kokku {totals[INITIATIVE]} Koja algatust "
+        f"({_share_text(totals[INITIATIVE], all_rows)} kõigist teemadest).",
+    ]
+    if totals[NO_TRACK]:
+        notes.append(
+            f"{totals[NO_TRACK]} teemal ei ole menetlusliiki; nende seas võib olla "
+            "algatusi, mida ei ole märgitud, seega on arv alampiir."
+        )
+    return simple_result(
+        spec,
+        context=context,
+        value=totals[INITIATIVE],
+        population_count=all_rows,
+        eligible_count=with_track,
+        coverage_count=with_track,
+        coverage_denominator=all_rows,
+        url=register_url(context, menetlusliik=Track.KODA_INITIATIVE.value)
+        if totals[INITIATIVE]
+        else "",
+        matrix=matrix,
+        notes=tuple(notes),
+        status=None if all_rows else MetricStatus.INSUFFICIENT_DATA,
+    )
+
+
+# ---------------------------------------------------------------------------
+# 6. Sending by month, year beside year
+# ---------------------------------------------------------------------------
+
+
+def submissions_sent_by_month_and_year(context: ReportingContext) -> MetricResult:
+    """Months down, measured years across, so one month reads across the years.
+
+    The columns are the measured window — the first year a Submission was
+    recorded (never before the archive's first year) to this one. A month of
+    this year still to come is printed as a dash: it has not been measured, and
+    a 0 there would read as a quiet month.
+    """
+    spec = definition(keys.SUBMISSIONS_SENT_BY_MONTH_AND_YEAR)
+    ever = count(all_sent(context))
+    window = measured_window(context)
+    if window is None:
+        return simple_result(
+            spec,
+            context=context,
+            value=0,
+            population_count=0,
+            notes=("Ühtki struktuurset arvamuse kirjet ei ole veel salvestatud.",),
+        )
+
+    first_year = max(window[0], OPINION_ARCHIVE_FIRST_YEAR)
+    years = list(range(first_year, window[1] + 1))
+    population = all_sent(context)
+    counted: dict[tuple[int, int], int] = {
+        (row["sent_at__year"], row["sent_at__month"]): row["total"]
+        for row in population.order_by()
+        .values("sent_at__year", "sent_at__month")
+        .annotate(total=grouped_count())
+    }
+    today = context.today
+
+    rows: list[MatrixRow] = []
+    for month in range(1, 13):
+        cells = []
+        for year in years:
+            future = (year, month) > (today.year, today.month)
+            value = counted.get((year, month), 0)
+            cells.append(
+                MatrixCell(
+                    value=value,
+                    missing=future,
+                    url=_submission_list_url(context, aasta=str(year), kuu=str(month))
+                    if value
+                    else "",
+                )
+            )
+        rows.append(
+            MatrixRow(
+                label=MONTH_LABELS[month], cells=tuple(cells), total=sum(c.value for c in cells)
+            )
+        )
+    column_totals = tuple(
+        sum(value for (year, _month), value in counted.items() if year == column)
+        for column in years
+    )
+    before = sum(value for (year, _month), value in counted.items() if year < first_year)
+    notes = [
+        "Arhiivist taastatud arvamused on kanoonilised kirjed ja kuuluvad siia; "
+        "arhiivi failid on eraldi plokis.",
+    ]
+    if before:
+        notes.append(
+            f"{before} arvamust on dateeritud enne aastat {first_year}, millest "
+            "varasemat mõõtmist ei avaldata."
+        )
+    matrix = Matrix(
+        row_header="Kuu",
+        columns=tuple(str(year) for year in years),
+        rows=tuple(rows),
+        column_totals=column_totals,
+        grand_total=sum(column_totals),
+        column_header="aasta",
+        column_noun="aastat",
+    )
+    return simple_result(
+        spec,
+        context=context,
+        value=sum(column_totals),
+        population_count=ever,
+        eligible_count=sum(column_totals),
+        url=_submission_list_url(context, periood=f"{first_year}-{window[1]}"),
+        matrix=matrix,
+        notes=tuple(notes),
+    )
+
+
+# ---------------------------------------------------------------------------
+# The Statistika list: the rows behind a group
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ListRow:
+    matter_id: Any
+    title: str
+    cells: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class RowList:
+    """What one group of one metric counted, ready for a table and a CSV."""
+
+    heading: str
+    group_label: str
+    columns: tuple[str, ...]
+    rows: tuple[ListRow, ...]
+
+
+def _preparation_list(context: ReportingContext, group: str, year: str) -> RowList:
+    if group not in PREP_GROUP_LABELS or year:
+        raise Http404("Tundmatu rühm.")
+    rows = preparation_rows(context)
+    selected = [
+        row for row in rows if (row.is_measured if group == PREP_ALL else row.group == group)
+    ]
+    return RowList(
+        heading=definition(keys.RESPONSE_PREPARATION_TIME).label_et,
+        group_label=PREP_GROUP_LABELS[group],
+        columns=("Saabus", "Esimene teadaolev tähtaeg", "Päevi", "Märkus"),
+        rows=tuple(
+            ListRow(
+                matter_id=row.matter_id,
+                title=row.title,
+                cells=(
+                    format_estonian_date(row.received),
+                    format_estonian_date(row.deadline),
+                    "" if row.days is None else str(row.days),
+                    "enne tähtaegade ajalugu" if row.legacy else "",
+                ),
+            )
+            for row in selected
+        ),
+    )
+
+
+def _answer_list(context: ReportingContext, group: str, year: str) -> RowList:
+    if group not in ANSWER_GROUP_LABELS or year:
+        raise Http404("Tundmatu rühm.")
+    selected = [
+        row
+        for row in answer_rows(context)
+        if (row.is_verifiable if group == VERIFIABLE else row.group == group)
+    ]
+    return RowList(
+        heading=definition(keys.OPINIONS_ON_TIME).label_et,
+        group_label=ANSWER_GROUP_LABELS[group],
+        columns=("Arvamus", "Saadetud", "Tähtaeg, millele vastati", "Päevi pärast tähtaega"),
+        rows=tuple(
+            ListRow(
+                matter_id=row.matter_id,
+                title=row.matter_title,
+                cells=(
+                    row.submission_title,
+                    format_estonian_date(row.sent_on),
+                    format_estonian_date(row.deadline),
+                    str(row.days_late) if row.days_late > 0 and row.is_verifiable else "",
+                ),
+            )
+            for row in selected
+        ),
+    )
+
+
+def _year_list(
+    context: ReportingContext,
+    *,
+    key: str,
+    group: str,
+    year: str,
+    labels: dict[str, str],
+    group_q: Callable[[str], Q],
+    annotate: Callable[[QuerySet[Matter]], QuerySet[Matter]] | None = None,
+) -> RowList:
+    if group not in labels or not year:
+        raise Http404("Tundmatu rühm.")
+    population = _year_population(context, key)
+    if annotate is not None:
+        population = annotate(population)
+    rows = {
+        year_value: queryset
+        for _l, year_value, queryset, _u in _year_rows(context, key, population)
+    }
+    if year not in rows:
+        # A year with no records in this population is an honest empty list,
+        # unless it cannot be read at all.
+        if year != UNKNOWN_YEAR and not year.isdigit():
+            raise Http404("Tundmatu aasta.")
+        selected: Iterable[Matter] = []
+    else:
+        selected = rows[year].filter(group_q(group)).order_by("title", "pk")
+    return RowList(
+        heading=definition(key).label_et,
+        group_label=f"{labels[group]} · {UNKNOWN_YEAR_LABEL if year == UNKNOWN_YEAR else year}",
+        columns=("Aruandlusaasta", "Menetlusliik"),
+        rows=tuple(
+            ListRow(
+                matter_id=matter.pk,
+                title=matter.title,
+                cells=(
+                    "" if matter.reporting_year is None else str(matter.reporting_year),
+                    matter.get_track_display() if matter.track else "",
+                ),
+            )
+            for matter in selected
+        ),
+    )
+
+
+def _eu_list(context: ReportingContext, group: str, year: str) -> RowList:
+    return _year_list(
+        context,
+        key=keys.EU_RELATED_MATTERS_BY_YEAR,
+        group=group,
+        year=year,
+        labels=EU_GROUP_LABELS,
+        group_q=_eu_group_q,
+        annotate=_annotated_instrument_groups,
+    )
+
+
+def _initiative_list(context: ReportingContext, group: str, year: str) -> RowList:
+    # Only «muu menetlusliik» is listed here; the other two columns open the
+    # register, which can express them exactly.
+    if group != OTHER_TRACK:
+        raise Http404("Tundmatu rühm.")
+    return _year_list(
+        context,
+        key=keys.KODA_INITIATIVES_BY_YEAR,
+        group=group,
+        year=year,
+        labels=TRACK_GROUP_LABELS,
+        group_q=_track_group_q,
+    )
+
+
+ROW_SOURCES: dict[str, Callable[[ReportingContext, str, str], RowList]] = {
+    keys.RESPONSE_PREPARATION_TIME: _preparation_list,
+    keys.OPINIONS_ON_TIME: _answer_list,
+    keys.EU_RELATED_MATTERS_BY_YEAR: _eu_list,
+    keys.KODA_INITIATIVES_BY_YEAR: _initiative_list,
+}
+
+
+def metric_rows(context: ReportingContext, key: str, group: str, year: str = "") -> RowList:
+    """The rows one group of one metric counted, or a 404 for a link nobody drew."""
+    try:
+        source = ROW_SOURCES[key]
+    except KeyError:
+        raise Http404("Tundmatu näitaja.") from None
+    return source(context, group, year)
