@@ -1,6 +1,7 @@
 # ADR 0090 — One question per classification: the reviewed Hetkeseis and Õigusakt vocabularies, and the three questions `Uus teema` asks
 
 - Status: accepted
+- Amended for reporting by ADR 0160 (owner's decision 2026-10-13): the retired `el-teatis` («EL teatis») stays retired for capture but counts as EU-related in statistics.
 - Date: 2026-09-17
 - Stage: pre-QA (shared-gate development phase)
 - Related: ADR 0070 (`Õigusakt` is a governed vocabulary of its own, and it is

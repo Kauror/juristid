@@ -409,6 +409,8 @@ PERCENTAGE_METRICS = [
     keys.OPINION_ARCHIVE_LINK_COVERAGE,
     keys.HISTORICAL_SUBMISSION_COVERAGE,
     keys.SUBMISSION_RECIPIENT_COVERAGE,
+    # docs/adr/0160: a share of verifiable answers declines when there are none.
+    keys.OPINIONS_ON_TIME,
 ]
 
 
