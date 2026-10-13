@@ -182,3 +182,33 @@ def test_teemaviide_is_under_teema_andmed_and_not_in_the_header(signed_in, speci
     row = rail.split('<span class="railcard__key">Teemaviide</span>', 1)[1].split("</div>", 1)[0]
     assert matter.display_reference in row
     assert "Kopeeri" not in row
+
+
+# ---------------------------------------------------------------------------
+# «Jõustuvad aktid» — retired as a destination by docs/adr/0071
+#
+# The owner's decision of 2026-10-13 (docs/adr/0158) brings the commencement
+# calendar and list back *as a presentation of the Teemad register*, reachable
+# only from its Jõustumine filters. It explicitly does not restore the page:
+# the retired address keeps redirecting to the register, and nothing on the bar
+# names it. These pin that distinction.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("path", ["/jalgimine/joustumised/", "/joustuvad-aktid/"])
+def test_the_retired_commencement_page_still_redirects_to_the_register(signed_in, path):
+    response = signed_in.get(path)
+
+    assert response.status_code == 302
+    assert response["Location"] == f"{reverse('matters:matter_list')}?joustumine=on&olek=koik"
+
+
+@pytest.mark.parametrize("query", ["", "?joustumine=on&vaade=kalender"])
+def test_no_commencement_destination_is_on_the_bar(signed_in, query):
+    body = signed_in.get(f"{reverse('matters:matter_list')}{query}").content.decode()
+    start = body.index('<nav class="topnav"')
+    bar = body[start : body.index("</nav>", start)]
+
+    for label in ("Jõustumised", "Jõustuvad aktid", "Jõustumiste kalender", "Jälgimine"):
+        assert label not in bar
+    assert "/jalgimine/" not in bar
