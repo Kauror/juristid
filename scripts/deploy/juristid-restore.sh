@@ -391,9 +391,12 @@ The data is back. Nothing has been verified and nothing is published yet.
        docker compose ... exec -T web python manage.py deployment_readiness
 
   2. prove the canonical state came back, against the fingerprint taken before
-     the loss if there is one:
+     the loss if there is one. The web container does not mount the backup
+     root, so hand it the host file on stdin, then compare (RECOVERY.md):
+       docker compose ... exec -T web sh -c 'cat > /tmp/fp-before.json' \
+         < /mnt/user/backups/juristid-main/fingerprints/fp-before-<operation>.json
        docker compose ... exec -T web python manage.py recovery_fingerprint \
-         --compare /path/to/fingerprint.json
+         --compare /tmp/fp-before.json
 
   3. prove the restored store and database still describe each other. This is
      the different question: a fingerprint cannot see an object no row refers

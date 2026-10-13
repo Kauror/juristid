@@ -15,6 +15,7 @@ warning unwritable.
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -1001,3 +1002,167 @@ def test_the_operator_runbook_names_the_services_a_release_moves(operator: str) 
         assert f"`{name}`" in operator, (
             f"the operator runbook does not say that `{name}` is left alone by a code release"
         )
+
+
+# ---------------------------------------------------------------------------
+# The recovery fingerprint crosses a container boundary
+#
+# `recovery_fingerprint --out PATH` and `--compare PATH` open PATH in the process
+# that runs the command. In CI that process is on the runner, so a runner path
+# works. In production it is inside `web`, which mounts no part of the backup
+# root — so the host path the runbooks used to print either failed, or wrote
+# into the container's own layer, and `--compare` could not read the file. A
+# release stopped on it (2026-10-03). The shape that works: the fingerprint goes
+# to stdout and the host shell redirects it; the earlier file comes back in on
+# stdin, or through a path the stack mounts.
+# ---------------------------------------------------------------------------
+
+#: Where a path handed to the command inside a container may point: the
+#: container's own scratch space, or a directory the stack mounts under /app.
+_CONTAINER_PATHS = ("/tmp/", "/app/")  # noqa: S108 - paths inside a container, read only
+
+#: A backslash at the end of a line: the shell joins the next line onto it.
+CONTINUATION = chr(92) + "\n"
+
+#: A flag and the path it is given. Only a token that looks like a path counts —
+#: it has a slash or ends `.json` — so prose such as "a `--compare` against an
+#: earlier file" is not read as a path called `against`.
+_FINGERPRINT_PATH = re.compile(r"--(out|compare)(?:=|\s+)([^\s`|]*(?:/|\.json)[^\s`|]*)")
+
+
+def fingerprint_transport_defects(line: str) -> list[str]:
+    """What is wrong with one copyable line that fingerprints inside a container."""
+    if "recovery_fingerprint" not in line or "docker compose" not in line:
+        return []
+    if not re.search(r"\s(exec|run)\s", line):
+        return []
+    defects: list[str] = []
+    for flag, raw in _FINGERPRINT_PATH.findall(line):
+        path = raw.strip("\"'")
+        if flag == "out":
+            defects.append(
+                "`--out` inside a container writes where the container can see, not the "
+                "host; write to stdout and redirect it on the host"
+            )
+        elif not path.startswith(_CONTAINER_PATHS):
+            defects.append(
+                f"`--compare {path}` names a path the container does not have; copy the "
+                "file in on stdin (`sh -c 'cat > /tmp/fp-before.json' < host-file`) or "
+                "through a mounted directory first"
+            )
+    return defects
+
+
+def test_the_fingerprint_rule_catches_the_shape_that_failed_in_production() -> None:
+    """Guards the guard: the line the runbook printed until 2026-10-13 is caught."""
+    before = (
+        "docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web "
+        "python manage.py recovery_fingerprint --skip-evidence-bytes "
+        "--out /mnt/user/backups/juristid-main/fingerprints/fp-before-x.json"
+    )
+    after = (
+        "docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web "
+        "python manage.py recovery_fingerprint "
+        "--compare /mnt/user/backups/juristid-main/fingerprints/fp-before-x.json"
+    )
+    relative = (
+        "docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web "
+        "python manage.py recovery_fingerprint --compare before.json"
+    )
+    for line in (before, after, relative):
+        assert fingerprint_transport_defects(line), line
+
+    for line in (
+        "docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web "
+        'python manage.py recovery_fingerprint --skip-evidence-bytes > "$FP"',
+        "docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web "
+        "python manage.py recovery_fingerprint --compare /tmp/fp-before.json",
+        "docker compose -p juristid-recovery-rehearsal -f deploy/recovery-rehearsal/"
+        "compose.real-data.yml run --rm -T web python manage.py recovery_fingerprint "
+        "--compare /app/derivatives/fp-before.json",
+    ):
+        assert not fingerprint_transport_defects(line), line
+
+
+@pytest.mark.parametrize("runbook", RUNBOOKS, ids=lambda path: path.parent.name + "/" + path.name)
+def test_no_runbook_hands_a_host_path_to_a_fingerprint_in_a_container(runbook: Path) -> None:
+    for line in command_lines(runbook.read_text(encoding="utf-8")):
+        defects = fingerprint_transport_defects(line)
+        assert not defects, f"{runbook.name}: {'; '.join(defects)}\n  {line}"
+
+
+def test_every_fingerprint_path_the_documentation_names_is_a_container_path() -> None:
+    """Inline references count too: an operator copies a table cell as readily.
+
+    `docs/production-readiness.md` printed `recovery_fingerprint --out
+    before.json` — a relative path, inside the container's working directory,
+    owned by the application user — and the restore script ended by printing a
+    `--compare` against a host path. Any path either flag is given anywhere in
+    the deployment documentation, or in the restore script's printed next steps,
+    has to be one a container in these stacks actually has. The CI rehearsal is
+    deliberately not read: it runs the command on the runner, where a runner
+    path is correct.
+    """
+    sources = [
+        *RUNBOOKS,
+        ROOT / "docs" / "production-readiness.md",
+        SCRIPTS / "juristid-restore.sh",
+    ]
+    examined = 0
+    for source in sources:
+        text = source.read_text(encoding="utf-8")
+        # Join a shell continuation onto one line so a flag and its path meet.
+        text = text.replace(CONTINUATION, " ")
+        for line in text.splitlines():
+            if "recovery_fingerprint" not in line:
+                continue
+            for flag, raw in _FINGERPRINT_PATH.findall(line):
+                examined += 1
+                path = raw.strip("\"'`|")
+                assert path.startswith(_CONTAINER_PATHS), (
+                    f"{source.name}: `--{flag} {path}` is not a path inside the container\n  "
+                    f"{line.strip()}"
+                )
+    assert examined, "no fingerprint path found at all; the scan is reading the wrong files"
+
+
+# ---------------------------------------------------------------------------
+# The off-host wrapper draft: inert until the owner names a destination
+# ---------------------------------------------------------------------------
+
+OFFHOST_WRAPPER = DEPLOY / "unraid-main" / "offhost-backup.sh"
+
+
+def test_the_offhost_wrapper_parses_and_keeps_the_shell_rules() -> None:
+    """Syntax and the house rules only. It has never run against a destination."""
+    text = OFFHOST_WRAPPER.read_text(encoding="utf-8")
+    result = subprocess.run(  # noqa: S603 - a fixed interpreter and a repository path
+        [BASH, "-n", str(OFFHOST_WRAPPER)], capture_output=True, text=True, timeout=60
+    )
+    assert result.returncode == 0, result.stderr
+    assert "\r\n" not in text
+    assert "set -euo pipefail" in text
+    assert "UNTESTED AGAINST A REAL DESTINATION" in text
+    for line in executable_lines(text):
+        assert not re.search(r"\|\s*grep\s+(-\w*q|--quiet)", line), line
+        assert not re.search(r"\b(forget|prune)\b", line), (
+            f"the host-side wrapper deletes at the destination; that is a custodian's job\n  {line}"
+        )
+        assert not re.search(r"(^|\s)rm\s", line), f"the wrapper deletes a file\n  {line}"
+
+
+def test_the_offhost_wrapper_refuses_without_an_owner_supplied_destination(
+    tmp_path: Path,
+) -> None:
+    """No destination, no copy — and the refusal comes before anything else runs."""
+    environment = {"PATH": os.environ.get("PATH", "")}
+    result = subprocess.run(  # noqa: S603 - a fixed interpreter and a repository path
+        [BASH, str(OFFHOST_WRAPPER), "--set", str(tmp_path / "sets" / "x")],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env=environment,
+    )
+    assert result.returncode == 2, (result.stdout, result.stderr)
+    assert "No off-host destination is configured" in result.stderr
+    assert "restic" not in result.stdout
