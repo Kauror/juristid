@@ -39,9 +39,18 @@ in `app/reporting/selectors/management.py` and are reached only through
 
 `Matter.track = KODA_INITIATIVE` is the one stored fact (0151 §1). Such a Teema is
 excluded from both deadline populations — including a historical one that still
-holds dates — and each card says how many were excluded. A two-week internal
-target is a `NextAction`, never an `Arvamuse tähtaeg` (0151 amendment §2), and is
-not read here at all.
+holds dates — and each card says how many were excluded.
+
+Since the 0151 amendment of 2026-10-13 (PR #427) a native initiative may hold an
+optional `Arvamuse tähtaeg` of its own, never a `Saabus`, and «Märgi saadetud»
+answers that deadline with the sent proposal (`answer_current_deadline_with`).
+That deadline is still not one anybody gave Koda, so it changes nothing here:
+the answered row is excluded from `OPINIONS_ON_TIME` by the Matter's track and
+counted in its note; the initiative has no arrival, so it is not in the
+preparation population either, and the preparation note counts it separately
+(«neist N on ilma saabumiseta, kuid oma tähtajaga perioodis» — placed in the
+period by any deadline it held, current or historical). `KODA_INITIATIVES_BY_YEAR`
+reads the track alone and is unaffected by any deadline.
 
 ### 3. Time to prepare reads the *first* deadline
 
@@ -76,6 +85,11 @@ the percentage — when:
   were never kept;
 - the named opinion has since been withdrawn (0135 §4 «vajab ülevaatamist»).
 
+**A deadline recorded after the send stays not verifiable** (owner decision,
+round 2 of 2026-10-13). Writing a deadline down after the letter went does not
+establish what was in force when it went, so no historical certainty is
+manufactured from it; the definition says so in its exclusions and notes.
+
 For a date-only send (`SentAtPrecision.DATE`) a change on the sending day itself
 is treated as after it: the order within that day is unknown. The comparison is
 the Tallinn calendar date of `sent_at` ≤ the deadline. Value: on time / verifiable,
@@ -92,17 +106,46 @@ A previous year before the first recorded Submission is *not measured*, and the
 card declines rather than reporting a rise from zero. Each side opens the
 Statistika submission list cut at the same day (`?aasta=&kuni=MM-DD`).
 
-### 6. EU share reads only the reviewed `Õigusakt` group
+### 6. EU share: two bases, `Õigusakt` first
 
-*ELiga seotud*: at least one instrument in `EU_LEGAL_INSTRUMENT_KEYS`.
-*Siseriiklik*: instruments present and all in `DOMESTIC_LEGAL_INSTRUMENT_KEYS`.
-*Määramata*: no instrument, or one the reviewed list puts in neither group (a
-version-1.0 «EL teatis», «Konsultatsioon», «Muu» …). The share's denominator is
-the classified Matters; the unclassified are their own column, never counted as
-domestic. `Menetlusliik` (`EU_INITIATIVE`, `NATIONAL_TRANSPOSITION`) is a separate
-fact and is not merged in. Nothing is read from titles or notes. Year basis is
-the register reporting year; *Teadmata aasta* appears only over all years, as on
-the year chart.
+Owner decision of 2026-10-13: a Matter whose `Õigusakt` is unclassified but whose
+stored `Menetlusliik` is «ELi algatus» (`EU_INITIATIVE`) or «ELi õiguse
+ülevõtmine» (`NATIONAL_TRANSPOSITION`) counts as EU-related, on a basis kept
+separately identifiable. Four columns, each Matter in exactly one, decided by
+one ordered `Case` (the order is the precedence):
+
+1. *ELiga seotud õigusakti järgi* — at least one instrument in
+   `EU_LEGAL_INSTRUMENT_KEYS` (whatever the track);
+2. *Siseriiklik* — instruments present and all in
+   `DOMESTIC_LEGAL_INSTRUMENT_KEYS` (also on an EU track: a `Seadus` transposing
+   a directive stays domestic, and the card counts how many such Matters exist);
+3. *ELiga seotud ainult menetlusliigi järgi* — the `Õigusakt` group is unknown
+   (no instrument, or one the reviewed list puts in neither group) and the
+   track is one of the two above;
+4. *Määramata* — everything else.
+
+The share is (*õigusakti järgi* + *ainult menetlusliigi
+järgi*) / (those + *siseriiklik*); *määramata* is never in the denominator and
+never domestic. Every cell opens exactly its Matters. Nothing is read from
+titles or notes. Year basis is the register reporting year; *Teadmata aasta*
+appears only over all years, as on the year chart.
+
+**The historical «EL teatis» (`el-teatis`) is not classified** — pending an owner
+decision. Evidence: it is a version-1.0 row (`taxonomy/0006`, «Euroopa Komisjoni
+teatis või muu ELi institutsiooni teatis», aliases «EL teatis», «EK teatis»);
+ADR 0090 retired it from selection (`RETIRED_LEGAL_INSTRUMENT_KEYS_V2`) and
+`legal_instruments.py` deliberately places *every* retired row in neither group
+(«a retired version-1.0 row is in neither, which is the honest answer»), with no
+reviewed equivalence to the new «Muu ELi dokument» (whose own description
+mentions a *teatis*, but which carries no aliases by design). The era contracts
+give `ÕIGUSAKT` the `mapped` authority — no importer writes it — and
+`current_legal_instrument_keys` refuses a 2026 cell that resolves only to a
+retired key, so `el-teatis` reaches a Matter only by a person's choice made
+while version 1.0 was offered, or kept by «Jäta alles». Its own description is
+unambiguously European, unlike «Konsultatsioon»; adding it to the EU group is a
+one-line change, but it would reverse an accepted ADR's explicit rule and is
+the owner's to make. Until then such a Matter is *määramata* (or, on an EU
+track, *ainult menetlusliigi järgi*), and the card names how many there are.
 
 ### 7. Initiatives by year
 
@@ -119,13 +162,32 @@ Archive files stay in their own block on the same tab and are never added.
 
 ### 9. Every number opens its rows
 
-Register-expressible groups link to the register (initiative and no-track cells).
-Submission windows link to the Statistika submission list, which gains `kuu`
+Every matrix cell opens `/statistika/loend/` (which has a CSV). For the
+initiative and no-track groups the list also offers «Ava registris», the same
+group in the Teemad register. Submission windows link to the Statistika submission list, which gains `kuu`
 and `kuni` (each refused without `aasta` or when it names no real day). Every
 other group opens `/statistika/loend/?naitaja=<KEY>&ruhm=<group>[&aasta=]`, which
 pages the very observation list the number was taken from under the same
 reporting context, and exports it as CSV (`/statistika/eksport/loend.csv`). A
 group or metric nobody linked to is a 404.
+
+**Same data class, same population, everywhere.** Every population starts at
+`visible_matters` (authorization + `real_data()`). The Statistika list, the
+submission list and both CSVs are computed from the same reporting context, so
+TEST Matters never appear in them. The Teemad register defaults to `andmed=koik`,
+so every register link drawn by these metrics carries `andmed=paris`; a test per
+metric asserts cell = list = CSV with TEST and restricted Matters present.
+(The register links of the *older* metrics do not carry `andmed=paris` yet — out
+of this ADR's scope, reported to the coordinator.)
+
+**Coverage is on the card**, not only on the definitions page: each card's first
+note starts «Katvus:» — deadline history and linked deadlines since 4.10.2026,
+how many Teemad have no track, how many cannot be placed EU/domestic, and from
+which year sent opinions are structured.
+
+**Query count is constant in the rows.** Each metric is a fixed number of
+statements (1–5); the two composition matrices are one grouped query each. A
+test grows the data across more years and asserts the count does not move.
 
 ### 10. Placement
 
@@ -147,12 +209,13 @@ visual baseline does not move. No navigation item is added.
 
 ## Open owner decisions
 
-1. Whether *ELiga seotud* should also count `Menetlusliik` «ELi algatus» / «ELi
-   õiguse ülevõtmine» on a Matter whose `Õigusakt` is unclassified (today: no).
+1. ~~Should *ELiga seotud* also count «ELi algatus» / «ELi õiguse ülevõtmine» on a
+   Matter whose `Õigusakt` is unclassified?~~ Decided 2026-10-13: yes, as its own
+   basis, `Õigusakt` first (§6).
 2. Whether the historical «EL teatis» instrument should join the European group
-   (today: it stays unclassified, as `legal_instruments.py` decided).
-3. Whether a request recorded after the opinion was sent should be judged
-   (today: not verifiable).
+   (today: unclassified, named on the card; evidence in §6).
+3. ~~Whether a request recorded after the opinion was sent should be judged?~~
+   Decided 2026-10-13: no, it stays not verifiable (§4).
 
 ## Reversibility
 

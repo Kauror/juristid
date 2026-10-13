@@ -272,6 +272,18 @@ count on the card.
 The groups no register filter can express open `/statistika/loend/`, which pages
 the observation list the number was computed from.
 
+**ELiga seotud has two bases, `Õigusakt` first.** `EU_RELATED_MATTERS_BY_YEAR`
+counts a Matter as European on its instrument group, or — only when that group
+is unclassified — on its `Menetlusliik` («ELi algatus», «ELi õiguse
+ülevõtmine»). The two bases are separate columns and every Matter is in exactly
+one. The historical «EL teatis» is left unclassified and named on the card until
+the owner decides.
+
+**Every new card states its coverage on the card** («Katvus: …»), and every
+drill-through — the Statistika list, the submission list, both CSVs, and any
+register link (which carries `andmed=paris`) — opens the same real-data,
+reader-visible population the number counted.
+
 ## Owner
 
 Metric catalogue owner and the coverage thresholds are an open business decision

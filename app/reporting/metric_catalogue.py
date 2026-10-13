@@ -1341,8 +1341,8 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         unit=Unit.MATTERS,
         required_fields=("received_date", "response_deadline"),
         exclusions_et=(
-            "Koja algatused: neil ei ole väljast küsitud arvamust ega arvamuse "
-            "tähtaega, ka siis, kui teemal on sisemine sihtkuupäev. Teemad ilma "
+            "Koja algatused: neilt ei ole väljast arvamust küsitud, ka siis, kui "
+            "algatusel on oma arvamuse tähtaeg; nende arv on näitaja juures. Teemad ilma "
             "arvamuse tähtajata ja teemad, mille tähtaeg on enne saabumist, "
             "näidatakse eraldi ega arvestata jaotusesse."
         ),
@@ -1385,12 +1385,13 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         unit=Unit.PERCENT,
         required_fields=("sent_at", "deadline"),
         exclusions_et=(
-            "Koja algatused. Tähtajad, millele vastati ilma Juristides saadetud "
-            "arvamuseta (ainult selgitusega). Tähtajad, mida ei saa kontrollida: "
-            "tähtaeg muutus pärast saatmist, tähtaeg pärineb ajast enne "
-            "tähtaegade ajaloo pidamist, või vastuseks nimetatud arvamus on "
-            "tagasi võetud. Neid ei loeta ei õigeaegseks ega hilinenuks; nende "
-            "arv on näha."
+            "Koja algatused, ka need, millel on oma arvamuse tähtaeg. Tähtajad, "
+            "millele vastati ilma Juristides saadetud arvamuseta (ainult "
+            "selgitusega). Tähtajad, mida ei saa kontrollida: tähtaeg muutus "
+            "pärast saatmist; tähtaeg või arvamuse küsimine salvestati alles "
+            "pärast saatmist; tähtaeg pärineb ajast enne tähtaegade ajaloo "
+            "pidamist; või vastuseks nimetatud arvamus on tagasi võetud. Neid ei "
+            "loeta ei õigeaegseks ega hilinenuks; nende arv on näha."
         ),
         numerator_et=(
             "Kontrollitavad vastused, mille saatmise kuupäev (Europe/Tallinn) on "
@@ -1410,7 +1411,9 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         ),
         notes_et=(
             "Praegust, hiljem muudetud tähtaega ei kasutata kunagi varem saadetud "
-            "arvamuse hindamiseks."
+            "arvamuse hindamiseks. Tähtaeg, mis salvestati alles pärast arvamuse "
+            "saatmist, jääb alati kontrollimatuks: tagantjärele kirja pandud "
+            "tähtajast ei tuletata, kas vastus oli õigeaegne."
         ),
         drillthrough_et=(
             "Statistika loend: iga rühm, ka mittekontrollitavad, avab oma "
@@ -1443,29 +1446,36 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         EU_RELATED_MATTERS_BY_YEAR,
         "ELiga seotud teemad aastate kaupa",
         (
-            "Teemade arv aruandlusaasta ja õigusakti rühma järgi: ELiga seotud, "
-            "siseriiklik või määramata, ning ELiga seotud teemade osakaal."
+            "Teemade arv aruandlusaasta ja ELiga seotuse aluse järgi: ELiga seotud "
+            "õigusakti järgi, ELiga seotud ainult menetlusliigi järgi, siseriiklik "
+            "või määramata, ning ELiga seotud teemade osakaal."
         ),
         population="Nähtavad teemad, mille aruandlusaasta on registri aasta",
         exclusions_et=(
-            "Midagi ei tuletata pealkirjast, märkustest ega menetluslingist. "
-            "Menetlusliik on eraldi fakt ja seda ei liideta siia."
+            "Midagi ei tuletata pealkirjast, märkustest ega menetluslingist. Iga "
+            "teema on täpselt ühes veerus ja õigusakt on eelistatud: menetlusliiki "
+            "loetakse ainult siis, kui õigusakti rühm on määramata. Siseriikliku "
+            "õigusaktiga teema on siseriiklik ka ELi menetlusliigi korral."
         ),
         numerator_et=(
             "Teemad, mille õigusaktide hulgas on vähemalt üks ELiga seotud liik "
-            "(Direktiiv, EL määrus, ELi konsultatsioon, Muu ELi dokument)."
+            "(ELi direktiiv, ELi määrus, ELi konsultatsioon, Muu ELi dokument), "
+            "ja teemad, mille õigusakti rühm on määramata, kuid menetlusliik on "
+            "«ELi algatus» või «ELi õiguse ülevõtmine»."
         ),
         denominator_et=(
-            "Teemad, mille õigusakti rühm on teada: ELiga seotud või ainult "
-            "siseriiklikud liigid. Määramata teemad on eraldi veerus."
+            "Teemad, mille ELiga seotus on teada: ELiga seotud mõlemal alusel või "
+            "ainult siseriiklikud liigid. Määramata teemad on eraldi veerus."
         ),
-        coverage_description_et="Teemad, mille õigusakti rühm on teada",
+        coverage_description_et="Teemad, mille ELiga seotus on teada",
         minimum_coverage=0.0,
         source_era_limitations_et=(
             "Rühm on kirjas ainult kümnel praegu pakutaval õigusakti liigil "
-            "(versioon 2.0). Ajalooline liik, mis rühma ei kanna — näiteks «EL "
-            "teatis», «Konsultatsioon» või «Muu» — jääb määramata, sest allikas "
-            "ei ütle rohkem. " + _ERA_ONENOTE_YEAR
+            "(versioon 2.0). Ajalooline liik, mis rühma ei kanna — näiteks "
+            "«Konsultatsioon» või «Muu» — on määramata, sest allikas ei ütle "
+            "rohkem. Ajalooline «EL teatis» on samuti määramata, kuni omanik "
+            "otsustab, kas see kuulub ELi rühma; selliste teemade arv on näitaja "
+            "juures kirjas. " + _ERA_ONENOTE_YEAR
         ),
         drillthrough_et="Statistika loend: iga lahter avab oma teemad",
     ),
@@ -1489,8 +1499,9 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
             "Määramata menetlusliigiga teemad on eraldi veerus. " + _ERA_ONENOTE_YEAR
         ),
         drillthrough_et=(
-            "Teemade register («Koja algatus», «määramata») ja Statistika loend "
-            "(«muu menetlusliik»), sama aastaga"
+            "Statistika loend: iga lahter avab oma teemad ja CSV; «Koja algatus» "
+            "ja «määramata» saab avada ka teemade registris, sama aasta ja "
+            "andmeklassiga"
         ),
     ),
     MetricDefinition(

@@ -50,12 +50,25 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from typing import Any
 from urllib.parse import urlencode
 
-from django.db.models import Exists, OuterRef, Q, QuerySet
+from django.db.models import (
+    BooleanField,
+    Case,
+    CharField,
+    Count,
+    Exists,
+    F,
+    IntegerField,
+    OuterRef,
+    Q,
+    QuerySet,
+    Value,
+    When,
+)
 from django.http import Http404
 from django.urls import reverse
 from django.utils import timezone
@@ -63,7 +76,7 @@ from django.utils import timezone
 from app.core.dates import format_estonian_date
 from app.matters.enums import ResponseDeadlineOutcome
 from app.matters.models import Matter, MatterResponseDeadline
-from app.matters.selectors import MISSING, UNKNOWN_YEAR
+from app.matters.selectors import DATA_CLASS_REAL, MISSING, UNKNOWN_YEAR
 from app.reporting import metric_catalogue as keys
 from app.reporting.context import ReportingContext
 from app.reporting.metric_catalogue import OPINION_ARCHIVE_FIRST_YEAR, definition
@@ -79,6 +92,7 @@ from app.reporting.metric_types import (
 )
 from app.reporting.selectors.base import (
     count,
+    eligible_matters,
     grouped_count,
     known_year_q,
     population_for,
@@ -103,11 +117,18 @@ PARAM_METRIC = "naitaja"
 PARAM_GROUP = "ruhm"
 PARAM_YEAR = "aasta"
 
-#: The note every deadline metric carries about the Chamber's own work.
+#: The note every deadline metric carries about the Chamber's own work. Since
+#: docs/adr/0151 (amendment of 2026-10-13) an initiative may hold an
+#: `Arvamuse tähtaeg` of its own; it is still not a deadline anybody gave Koda.
 INITIATIVE_NOTE = (
     "{count} Koja algatust (menetlusliik «Koja algatus») ei ole arvestatud: "
-    "neilt ei küsitud arvamust ja nende sisemine sihtaeg ei ole arvamuse tähtaeg."
+    "neilt ei küsitud arvamust, ja tähtaeg, mille Koda endale paneb, ei ole "
+    "väljast antud arvamuse tähtaeg."
 )
+
+#: The day the `Arvamuse tähtaeg` history and the opinion-to-deadline link
+#: began (docs/adr/0135). Printed on the deadline cards as their coverage.
+DEADLINE_HISTORY_SINCE = date(2026, 10, 4)
 
 
 def _share_text(numerator: int, denominator: int) -> str:
@@ -212,6 +233,29 @@ def preparation_rows(context: ReportingContext) -> list[PreparationRow]:
     return context.shared("management.preparation", lambda: _preparation_rows(context))
 
 
+def _initiatives_with_deadline_but_no_arrival(context: ReportingContext) -> QuerySet[Matter]:
+    """Chamber initiatives with no `Saabus` that hold a deadline in the period.
+
+    Since docs/adr/0151 (amendment of 2026-10-13) an initiative may carry its own
+    `Arvamuse tähtaeg` and never a `Saabus`. It has no arrival to measure from
+    and is not in the population, but it is exactly what a reader might expect
+    to see counted, so it is named in the exclusion note. With no arrival date
+    it is placed in the period by any deadline it held — the current one or one
+    in its history.
+    """
+    spec = definition(keys.RESPONSE_PREPARATION_TIME)
+    history = MatterResponseDeadline.objects.all()
+    current = Q(response_deadline__isnull=False)
+    if not context.period.is_all:
+        start, end = context.period.start_date, context.period.end_date
+        history = history.filter(deadline__gte=start, deadline__lte=end)
+        current = Q(response_deadline__gte=start, response_deadline__lte=end)
+    return eligible_matters(context, spec).filter(
+        Q(track=Track.KODA_INITIATIVE, received_date__isnull=True)
+        & (current | Q(pk__in=history.values("matter_id")))
+    )
+
+
 def _preparation_rows(context: ReportingContext) -> list[PreparationRow]:
     matters = list(
         _real_matters(_preparation_population(context))
@@ -266,7 +310,11 @@ def response_preparation_time(context: ReportingContext) -> MetricResult:
     rows = preparation_rows(context)
     measured = [row for row in rows if row.is_measured]
     with_deadline = [row for row in rows if row.deadline is not None]
-    initiatives = count(_preparation_population(context).filter(track=Track.KODA_INITIATIVE))
+    arrived_initiatives = count(
+        _preparation_population(context).filter(track=Track.KODA_INITIATIVE)
+    )
+    unarrived_initiatives = count(_initiatives_with_deadline_but_no_arrival(context))
+    initiatives = arrived_initiatives + unarrived_initiatives
 
     def link(group: str) -> str:
         return metric_list_url(context, keys.RESPONSE_PREPARATION_TIME, group)
@@ -291,7 +339,11 @@ def response_preparation_time(context: ReportingContext) -> MetricResult:
             )
 
     distribution = distribution_from([row.days or 0 for row in measured])
-    notes: list[str] = []
+    notes: list[str] = [
+        f"Katvus: {len(with_deadline)} saabunud teemal {len(rows)}-st on arvamuse "
+        f"tähtaeg; tähtaegade ajalugu peetakse alates "
+        f"{format_estonian_date(DEADLINE_HISTORY_SINCE)}."
+    ]
     if measured:
         notes.append(
             f"Mediaan {distribution.median:.0f} päeva".replace(".", ",")
@@ -305,7 +357,12 @@ def response_preparation_time(context: ReportingContext) -> MetricResult:
             "pidamist; neist ei saa öelda, kas see oli esimene antud tähtaeg."
         )
     if initiatives:
-        notes.append(INITIATIVE_NOTE.format(count=initiatives))
+        note = INITIATIVE_NOTE.format(count=initiatives)
+        if unarrived_initiatives:
+            note += (
+                f" Neist {unarrived_initiatives} on ilma saabumiseta, kuid oma tähtajaga perioodis."
+            )
+        notes.append(note)
 
     status = None if measured else MetricStatus.INSUFFICIENT_DATA
     return simple_result(
@@ -493,7 +550,12 @@ def opinions_on_time(context: ReportingContext) -> MetricResult:
 
     population = _answered_population(context)
     initiatives = count(population.filter(matter__track=Track.KODA_INITIATIVE))
-    notes: list[str] = []
+    notes: list[str] = [
+        f"Katvus: arvesse lähevad ainult seotud tähtajad — alates "
+        f"{format_estonian_date(DEADLINE_HISTORY_SINCE)}, kui arvamuse salvestamisel "
+        "nimetatakse tähtaeg, millele see vastab. Varem saadetud ja arhiivist "
+        "taastatud arvamustel seost ei ole ja neid kuupäeva järgi ei seota."
+    ]
     if verifiable:
         notes.append(
             f"{by_group[ON_TIME]} {verifiable}-st kontrollitavast vastusest saadeti "
@@ -503,7 +565,8 @@ def opinions_on_time(context: ReportingContext) -> MetricResult:
     if unverifiable:
         notes.append(
             f"{unverifiable} vastust ei saa kontrollida ega ole protsendis — "
-            "praegust tähtaega nende hindamiseks ei kasutata."
+            "praegust tähtaega nende hindamiseks ei kasutata, ka siis, kui tähtaeg "
+            "lisati alles pärast saatmist."
         )
     note_only = count(
         MatterResponseDeadline.objects.filter(
@@ -605,6 +668,8 @@ def submissions_sent_yoy_change(context: ReportingContext) -> MetricResult:
         "arhiivi failid ise ei kuulu.",
     ]
     status: MetricStatus | None = None
+    if window is not None:
+        notes.insert(0, f"Katvus: struktuursed arvamuse kirjed alates aastast {window[0]}.")
     if window is None:
         status = MetricStatus.INSUFFICIENT_DATA
     elif window[0] > previous_cutoff.year:
@@ -631,18 +696,33 @@ def submissions_sent_yoy_change(context: ReportingContext) -> MetricResult:
 # 4 and 5. Composition by reporting year
 # ---------------------------------------------------------------------------
 
+#: *ELiga seotud* has two bases, kept apart so a reader can see which one a
+#: Matter was counted on (owner decision of 2026-10-13). The reviewed `Õigusakt`
+#: group comes first; only a Matter whose `Õigusakt` is unclassified may be
+#: counted European on its `Menetlusliik`. Each Matter lands in exactly one
+#: column — the order of the ``Case`` in :func:`_eu_group` is the precedence.
 EU_RELATED = "el"
+EU_BY_TRACK = "el-menetlus"
 DOMESTIC = "siseriiklik"
 UNCLASSIFIED = "maaramata"
+EU_COLUMNS: tuple[str, ...] = (EU_RELATED, EU_BY_TRACK, DOMESTIC, UNCLASSIFIED)
 EU_GROUP_LABELS: dict[str, str] = {
-    EU_RELATED: "ELiga seotud",
+    EU_RELATED: "ELiga seotud õigusakti järgi",
+    EU_BY_TRACK: "ELiga seotud ainult menetlusliigi järgi",
     DOMESTIC: "Siseriiklik",
-    UNCLASSIFIED: "Õigusakt määramata",
+    UNCLASSIFIED: "Määramata",
 }
+#: The two `Menetlusliik` values that are European by definition.
+EU_TRACKS: tuple[str, ...] = (Track.EU_INITIATIVE.value, Track.NATIONAL_TRANSPOSITION.value)
+#: The historical version-1.0 instrument whose group awaits an owner decision.
+#: Retired by docs/adr/0090 and deliberately in neither reviewed group
+#: (``app.taxonomy.legal_instruments``); it is named on the card, not counted.
+EU_NOTICE_KEY = "el-teatis"
 
 INITIATIVE = "algatus"
 OTHER_TRACK = "muu"
 NO_TRACK = "puudub"
+TRACK_COLUMNS: tuple[str, ...] = (INITIATIVE, OTHER_TRACK, NO_TRACK)
 TRACK_GROUP_LABELS: dict[str, str] = {
     INITIATIVE: "Koja algatus",
     OTHER_TRACK: "Muu menetlusliik",
@@ -650,45 +730,75 @@ TRACK_GROUP_LABELS: dict[str, str] = {
 }
 
 
-def _annotated_instrument_groups(queryset: QuerySet[Matter]) -> QuerySet[Matter]:
-    """Which reviewed `Õigusakt` groups each Matter carries, as three booleans.
+def _year_key() -> Case:
+    """The register reporting year, or NULL when the Matter has none (one bucket)."""
+    return Case(
+        When(known_year_q(), then=F("reporting_year")),
+        default=Value(None),
+        output_field=IntegerField(),
+    )
+
+
+def _year_q(year: str) -> Q:
+    """The Matters of one URL year value, by the same rule as :func:`_year_key`."""
+    if year == UNKNOWN_YEAR:
+        return ~known_year_q()
+    return known_year_q() & Q(reporting_year=int(year))
+
+
+def _eu_group(queryset: QuerySet[Matter]) -> QuerySet[Matter]:
+    """Each Matter's one EU group, and whether it carries the historical «EL teatis».
 
     ``Exists`` rather than a join, so a Matter with three instruments is still
-    one row. A Matter is *ELiga seotud* when any instrument is in the European
-    group, *siseriiklik* when it has instruments and all of them are domestic,
-    and *määramata* otherwise — no instrument at all, or one the reviewed list
-    puts in neither group (docs/adr/0090 §4).
+    one row. The ``Case`` is evaluated in order, which *is* the precedence:
+
+    1. *õigusakti järgi* — any instrument in the European group;
+    2. *siseriiklik* — instruments present and every one domestic;
+    3. *ainult menetlusliigi järgi* — the `Õigusakt` group is unknown (none, or
+       one the reviewed list puts in neither group) and the stored
+       `Menetlusliik` is «ELi algatus» or «ELi õiguse ülevõtmine»;
+    4. *määramata* — everything else.
+
+    A domestic instrument on a European track (a `Seadus` transposing a
+    directive) stays domestic: the `Õigusakt` answer is the one asked for and
+    takes precedence. Nothing is read from titles, notes or links.
     """
     through = Matter.legal_instruments.through
     mine = through.objects.filter(matter_id=OuterRef("pk"))
+    grouped = EU_LEGAL_INSTRUMENT_KEYS | DOMESTIC_LEGAL_INSTRUMENT_KEYS
     return queryset.annotate(
         has_eu=Exists(mine.filter(legalinstrumenttype__key__in=EU_LEGAL_INSTRUMENT_KEYS)),
         has_domestic=Exists(
             mine.filter(legalinstrumenttype__key__in=DOMESTIC_LEGAL_INSTRUMENT_KEYS)
         ),
-        has_ungrouped=Exists(
-            mine.exclude(
-                legalinstrumenttype__key__in=EU_LEGAL_INSTRUMENT_KEYS
-                | DOMESTIC_LEGAL_INSTRUMENT_KEYS
-            )
+        has_ungrouped=Exists(mine.exclude(legalinstrumenttype__key__in=grouped)),
+        has_eu_notice=Exists(mine.filter(legalinstrumenttype__key=EU_NOTICE_KEY)),
+    ).annotate(
+        eu_group=Case(
+            When(has_eu=True, then=Value(EU_RELATED)),
+            When(has_domestic=True, has_ungrouped=False, then=Value(DOMESTIC)),
+            When(track__in=EU_TRACKS, then=Value(EU_BY_TRACK)),
+            default=Value(UNCLASSIFIED),
+            output_field=CharField(),
+        ),
+        on_eu_track=Case(
+            When(track__in=EU_TRACKS, then=Value(True)),
+            default=Value(False),
+            output_field=BooleanField(),
         ),
     )
 
 
-def _eu_group_q(group: str) -> Q:
-    if group == EU_RELATED:
-        return Q(has_eu=True)
-    if group == DOMESTIC:
-        return Q(has_eu=False, has_domestic=True, has_ungrouped=False)
-    return Q(has_eu=False) & (Q(has_domestic=False) | Q(has_ungrouped=True))
-
-
-def _track_group_q(group: str) -> Q:
-    if group == INITIATIVE:
-        return Q(track=Track.KODA_INITIATIVE)
-    if group == NO_TRACK:
-        return Q(track="")
-    return ~Q(track="") & ~Q(track=Track.KODA_INITIATIVE)
+def _track_group(queryset: QuerySet[Matter]) -> QuerySet[Matter]:
+    """Each Matter's one track group: the Chamber's own, another, or none stored."""
+    return queryset.annotate(
+        track_group=Case(
+            When(track=Track.KODA_INITIATIVE, then=Value(INITIATIVE)),
+            When(track="", then=Value(NO_TRACK)),
+            default=Value(OTHER_TRACK),
+            output_field=CharField(),
+        )
+    )
 
 
 def _year_population(context: ReportingContext, key: str) -> QuerySet[Matter]:
@@ -696,56 +806,54 @@ def _year_population(context: ReportingContext, key: str) -> QuerySet[Matter]:
     return _real_matters(population_for(context, definition(key)))
 
 
-def _year_rows(
-    context: ReportingContext, key: str, population: QuerySet[Matter]
-) -> list[tuple[str, str, QuerySet[Matter], bool]]:
-    """(label, URL year value, queryset, is_unknown) per year that carries records.
+def _grouped_by_year(
+    population: QuerySet[Matter], group_field: str, *extra: str
+) -> list[dict[str, Any]]:
+    """One aggregate query: Matters per (year, group[, extra flags]).
 
-    The unknown-year row appears only when no period is chosen — exactly as on
-    the year chart, because a period filter has already said those Matters are
-    outside it.
+    The query count does not grow with the rows or the years — the whole matrix
+    is one statement (docs/adr/0160, round 2 performance check).
     """
-    dated = population.filter(known_year_q())
-    years: list[int] = sorted(
-        {
-            row["reporting_year"]
-            for row in dated.order_by().values("reporting_year").annotate(n=grouped_count())
-            if row["reporting_year"] is not None
-        }
+    return list(
+        population.annotate(year_key=_year_key())
+        .order_by()
+        .values("year_key", group_field, *extra)
+        .annotate(total=Count("pk"))
     )
-    rows = [(str(year), str(year), dated.filter(reporting_year=year), False) for year in years]
-    if context.period.is_all:
-        unknown = population.exclude(known_year_q())
-        if count(unknown):
-            rows.append((UNKNOWN_YEAR_LABEL, UNKNOWN_YEAR, unknown, True))
-    return rows
 
 
-def eu_related_matters_by_year(context: ReportingContext) -> MetricResult:
-    spec = definition(keys.EU_RELATED_MATTERS_BY_YEAR)
-    population = _annotated_instrument_groups(
-        _year_population(context, keys.EU_RELATED_MATTERS_BY_YEAR)
-    )
-    columns = (EU_RELATED, DOMESTIC, UNCLASSIFIED)
+def _matrix_rows(
+    context: ReportingContext,
+    key: str,
+    columns: tuple[str, ...],
+    counts: dict[tuple[int | None, str], int],
+    share: Callable[[dict[str, int]], str],
+) -> tuple[list[MatrixRow], dict[str, int]]:
+    """Year rows, oldest first, then *Teadmata aasta* last (only over all years).
 
-    matrix_rows: list[MatrixRow] = []
+    Every cell opens the Statistika list of exactly its Matters, which carries
+    the same reporting context — the same data class, visibility and filters.
+    """
+    years = sorted({year for year, _group in counts if year is not None})
+    keys_: list[tuple[str, str, int | None, bool]] = [
+        (str(year), str(year), year, False) for year in years
+    ]
+    if context.period.is_all and any(year is None for year, _group in counts):
+        keys_.append((UNKNOWN_YEAR_LABEL, UNKNOWN_YEAR, None, True))
+
     totals = dict.fromkeys(columns, 0)
-    for label, year_value, queryset, unknown in _year_rows(
-        context, keys.EU_RELATED_MATTERS_BY_YEAR, population
-    ):
-        values = {group: count(queryset.filter(_eu_group_q(group))) for group in columns}
+    rows: list[MatrixRow] = []
+    for label, year_value, year, unknown in keys_:
+        values = {group: counts.get((year, group), 0) for group in columns}
         for group in columns:
             totals[group] += values[group]
-        classified = values[EU_RELATED] + values[DOMESTIC]
-        matrix_rows.append(
+        rows.append(
             MatrixRow(
                 label=label,
                 cells=tuple(
                     MatrixCell(
                         value=values[group],
-                        url=metric_list_url(
-                            context, keys.EU_RELATED_MATTERS_BY_YEAR, group, year=year_value
-                        )
+                        url=metric_list_url(context, key, group, year=year_value)
                         if values[group]
                         else "",
                     )
@@ -753,32 +861,77 @@ def eu_related_matters_by_year(context: ReportingContext) -> MetricResult:
                 ),
                 total=sum(values.values()),
                 is_unknown=unknown,
-                share_text=_share_text(values[EU_RELATED], classified),
+                share_text=share(values),
             )
         )
+    return rows, totals
 
+
+def _eu_share(values: dict[str, int]) -> str:
+    european = values[EU_RELATED] + values[EU_BY_TRACK]
+    return _share_text(european, european + values[DOMESTIC])
+
+
+def eu_related_matters_by_year(context: ReportingContext) -> MetricResult:
+    spec = definition(keys.EU_RELATED_MATTERS_BY_YEAR)
+    population = _eu_group(_year_population(context, keys.EU_RELATED_MATTERS_BY_YEAR))
+    grouped = _grouped_by_year(population, "eu_group", "has_eu_notice", "on_eu_track")
+
+    counts: dict[tuple[int | None, str], int] = defaultdict(int)
+    notice_unclassified = 0
+    domestic_on_eu_track = 0
+    for row in grouped:
+        if row["year_key"] is None and not context.period.is_all:
+            # A period filter has already said unknown-year Matters are outside it.
+            continue
+        counts[(row["year_key"], row["eu_group"])] += row["total"]
+        if row["has_eu_notice"] and row["eu_group"] in (UNCLASSIFIED, EU_BY_TRACK):
+            notice_unclassified += row["total"]
+        if row["on_eu_track"] and row["eu_group"] == DOMESTIC:
+            domestic_on_eu_track += row["total"]
+
+    matrix_rows, totals = _matrix_rows(
+        context, keys.EU_RELATED_MATTERS_BY_YEAR, EU_COLUMNS, counts, _eu_share
+    )
     all_rows = sum(totals.values())
-    classified = totals[EU_RELATED] + totals[DOMESTIC]
+    european = totals[EU_RELATED] + totals[EU_BY_TRACK]
+    classified = european + totals[DOMESTIC]
     matrix = Matrix(
         row_header="Aruandlusaasta",
-        columns=tuple(EU_GROUP_LABELS[group] for group in columns),
+        columns=tuple(EU_GROUP_LABELS[group] for group in EU_COLUMNS),
         rows=tuple(matrix_rows),
-        column_totals=tuple(totals[group] for group in columns),
+        column_totals=tuple(totals[group] for group in EU_COLUMNS),
         grand_total=all_rows,
-        column_header="õigusakti rühm",
-        column_noun="õigusakti rühma",
+        column_header="ELiga seotuse aluse",
+        column_noun="alust",
         share_header="ELiga seotud osakaal",
     )
     notes = [
-        f"Kokku ELiga seotud {totals[EU_RELATED]} teemat; osakaal teemadest, mille "
-        f"õigusakti rühm on teada: {_share_text(totals[EU_RELATED], classified)}.",
-        "Osakaal on arvutatud teemadest, mille rühm on teada; määramata teemad ei "
-        "ole nimetajas ega ole siseriiklikud.",
+        f"Katvus: {totals[UNCLASSIFIED]} teemal {all_rows}-st on määramata, kas see "
+        "on ELiga seotud — õigusakti rühm ega ELi menetlusliik ei ütle seda.",
+        f"Kokku ELiga seotud {european} teemat: {totals[EU_RELATED]} õigusakti järgi "
+        f"ja {totals[EU_BY_TRACK]} ainult menetlusliigi («ELi algatus», «ELi õiguse "
+        "ülevõtmine») järgi. Osakaal teemadest, mille seos on teada: "
+        f"{_share_text(european, classified)}.",
+        "Iga teema on ühes veerus. Õigusakt on eelistatud: menetlusliiki loetakse "
+        "ainult siis, kui õigusakti rühm on määramata. Määramata teemad ei ole "
+        "nimetajas ega ole siseriiklikud.",
     ]
+    if domestic_on_eu_track:
+        notes.append(
+            f"{domestic_on_eu_track} siseriikliku õigusaktiga teemal on ELi "
+            "menetlusliik; õigusakt on eelistatud, seega on need siseriiklikud."
+        )
+    if notice_unclassified:
+        notes.append(
+            f"{notice_unclassified} teemal on ajalooline õigusakt «EL teatis». Seda "
+            "ei loeta ELiga seotuks, kuni omanik on otsustanud — teema on «Määramata» "
+            "või ELi menetlusliigi korral «ainult menetlusliigi järgi»."
+        )
     return simple_result(
         spec,
         context=context,
-        value=totals[EU_RELATED],
+        value=european,
         population_count=all_rows,
         eligible_count=classified,
         coverage_count=classified,
@@ -791,47 +944,25 @@ def eu_related_matters_by_year(context: ReportingContext) -> MetricResult:
 
 def koda_initiatives_by_year(context: ReportingContext) -> MetricResult:
     spec = definition(keys.KODA_INITIATIVES_BY_YEAR)
-    population = _year_population(context, keys.KODA_INITIATIVES_BY_YEAR)
-    columns = (INITIATIVE, OTHER_TRACK, NO_TRACK)
+    population = _track_group(_year_population(context, keys.KODA_INITIATIVES_BY_YEAR))
+    counts: dict[tuple[int | None, str], int] = defaultdict(int)
+    for row in _grouped_by_year(population, "track_group"):
+        if row["year_key"] is None and not context.period.is_all:
+            continue
+        counts[(row["year_key"], row["track_group"])] += row["total"]
 
-    def cell_url(group: str, year_value: str) -> str:
-        if group == INITIATIVE:
-            return register_url(context, menetlusliik=Track.KODA_INITIATIVE.value, aasta=year_value)
-        if group == NO_TRACK:
-            return register_url(context, menetlusliik=MISSING, aasta=year_value)
-        return metric_list_url(context, keys.KODA_INITIATIVES_BY_YEAR, group, year=year_value)
+    def share(values: dict[str, int]) -> str:
+        return _share_text(values[INITIATIVE], sum(values.values()))
 
-    matrix_rows: list[MatrixRow] = []
-    totals = dict.fromkeys(columns, 0)
-    for label, year_value, queryset, unknown in _year_rows(
-        context, keys.KODA_INITIATIVES_BY_YEAR, population
-    ):
-        values = {group: count(queryset.filter(_track_group_q(group))) for group in columns}
-        for group in columns:
-            totals[group] += values[group]
-        year_total = sum(values.values())
-        matrix_rows.append(
-            MatrixRow(
-                label=label,
-                cells=tuple(
-                    MatrixCell(
-                        value=values[group],
-                        url=cell_url(group, year_value) if values[group] else "",
-                    )
-                    for group in columns
-                ),
-                total=year_total,
-                is_unknown=unknown,
-                share_text=_share_text(values[INITIATIVE], year_total),
-            )
-        )
-
+    matrix_rows, totals = _matrix_rows(
+        context, keys.KODA_INITIATIVES_BY_YEAR, TRACK_COLUMNS, counts, share
+    )
     all_rows = sum(totals.values())
     matrix = Matrix(
         row_header="Aruandlusaasta",
-        columns=tuple(TRACK_GROUP_LABELS[group] for group in columns),
+        columns=tuple(TRACK_GROUP_LABELS[group] for group in TRACK_COLUMNS),
         rows=tuple(matrix_rows),
-        column_totals=tuple(totals[group] for group in columns),
+        column_totals=tuple(totals[group] for group in TRACK_COLUMNS),
         grand_total=all_rows,
         column_header="menetlusliik",
         column_noun="menetlusliigi rühma",
@@ -839,14 +970,12 @@ def koda_initiatives_by_year(context: ReportingContext) -> MetricResult:
     )
     with_track = totals[INITIATIVE] + totals[OTHER_TRACK]
     notes = [
+        f"Katvus: menetlusliik puudub {totals[NO_TRACK]} teemal {all_rows}-st "
+        "(peamiselt vanemad registriread); nende seas võib olla märkimata algatusi, "
+        "seega on algatuste arv alampiir.",
         f"Kokku {totals[INITIATIVE]} Koja algatust "
         f"({_share_text(totals[INITIATIVE], all_rows)} kõigist teemadest).",
     ]
-    if totals[NO_TRACK]:
-        notes.append(
-            f"{totals[NO_TRACK]} teemal ei ole menetlusliiki; nende seas võib olla "
-            "algatusi, mida ei ole märgitud, seega on arv alampiir."
-        )
     return simple_result(
         spec,
         context=context,
@@ -855,7 +984,7 @@ def koda_initiatives_by_year(context: ReportingContext) -> MetricResult:
         eligible_count=with_track,
         coverage_count=with_track,
         coverage_denominator=all_rows,
-        url=register_url(context, menetlusliik=Track.KODA_INITIATIVE.value)
+        url=register_url(context, menetlusliik=Track.KODA_INITIATIVE.value, andmed=DATA_CLASS_REAL)
         if totals[INITIATIVE]
         else "",
         matrix=matrix,
@@ -926,6 +1055,8 @@ def submissions_sent_by_month_and_year(context: ReportingContext) -> MetricResul
     )
     before = sum(value for (year, _month), value in counted.items() if year < first_year)
     notes = [
+        f"Katvus: struktuursed arvamuse kirjed alates aastast {window[0]}; "
+        "varasemaid aastaid ei ole mõõdetud.",
         "Arhiivist taastatud arvamused on kanoonilised kirjed ja kuuluvad siia; "
         "arhiivi failid on eraldi plokis.",
     ]
@@ -975,6 +1106,8 @@ class RowList:
     group_label: str
     columns: tuple[str, ...]
     rows: tuple[ListRow, ...]
+    #: The same group in the Teemad register, when the register can express it.
+    register_url: str = ""
 
 
 def _preparation_list(context: ReportingContext, group: str, year: str) -> RowList:
@@ -1039,26 +1172,25 @@ def _year_list(
     group: str,
     year: str,
     labels: dict[str, str],
-    group_q: Callable[[str], Q],
-    annotate: Callable[[QuerySet[Matter]], QuerySet[Matter]] | None = None,
+    group_field: str,
+    annotate: Callable[[QuerySet[Matter]], QuerySet[Matter]],
 ) -> RowList:
+    """The Matters of one matrix cell: the same population, group and year rule.
+
+    The cell was counted by grouping on ``group_field`` and :func:`_year_key`;
+    the list filters the identical annotated population on the same two values,
+    so the cell and its list cannot disagree.
+    """
     if group not in labels or not year:
         raise Http404("Tundmatu rühm.")
-    population = _year_population(context, key)
-    if annotate is not None:
-        population = annotate(population)
-    rows = {
-        year_value: queryset
-        for _l, year_value, queryset, _u in _year_rows(context, key, population)
-    }
-    if year not in rows:
-        # A year with no records in this population is an honest empty list,
-        # unless it cannot be read at all.
-        if year != UNKNOWN_YEAR and not year.isdigit():
-            raise Http404("Tundmatu aasta.")
+    if year != UNKNOWN_YEAR and not year.isdigit():
+        raise Http404("Tundmatu aasta.")
+    population = annotate(_year_population(context, key))
+    if year == UNKNOWN_YEAR and not context.period.is_all:
+        # The matrix shows no unknown-year row under a period; neither does this.
         selected: Iterable[Matter] = []
     else:
-        selected = rows[year].filter(group_q(group)).order_by("title", "pk")
+        selected = population.filter(_year_q(year), **{group_field: group}).order_by("title", "pk")
     return RowList(
         heading=definition(key).label_et,
         group_label=f"{labels[group]} · {UNKNOWN_YEAR_LABEL if year == UNKNOWN_YEAR else year}",
@@ -1084,23 +1216,29 @@ def _eu_list(context: ReportingContext, group: str, year: str) -> RowList:
         group=group,
         year=year,
         labels=EU_GROUP_LABELS,
-        group_q=_eu_group_q,
-        annotate=_annotated_instrument_groups,
+        group_field="eu_group",
+        annotate=_eu_group,
     )
 
 
 def _initiative_list(context: ReportingContext, group: str, year: str) -> RowList:
-    # Only «muu menetlusliik» is listed here; the other two columns open the
-    # register, which can express them exactly.
-    if group != OTHER_TRACK:
-        raise Http404("Tundmatu rühm.")
-    return _year_list(
+    listing = _year_list(
         context,
         key=keys.KODA_INITIATIVES_BY_YEAR,
         group=group,
         year=year,
         labels=TRACK_GROUP_LABELS,
-        group_q=_track_group_q,
+        group_field="track_group",
+        annotate=_track_group,
+    )
+    # The register can express two of the three groups exactly; offer it beside
+    # the list, with the same data class, so a reader can keep working there.
+    track = {INITIATIVE: Track.KODA_INITIATIVE.value, NO_TRACK: MISSING}.get(group)
+    if track is None:
+        return listing
+    return replace(
+        listing,
+        register_url=register_url(context, menetlusliik=track, aasta=year, andmed=DATA_CLASS_REAL),
     )
 
 

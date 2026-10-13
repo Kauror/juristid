@@ -11,6 +11,9 @@ the number the card or the table cell showed.
 {% endcomment %}
 
 {% block page_actions %}
+  {% if listing.register_url %}
+    <a class="button button--quiet" href="{{ listing.register_url }}">Ava registris</a>
+  {% endif %}
   <a class="button button--quiet" href="{{ export_url }}">Laadi CSV</a>
 {% endblock %}
 

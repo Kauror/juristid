@@ -24,6 +24,8 @@ What each block proves:
 
 from __future__ import annotations
 
+import csv
+import io
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from typing import Any
@@ -31,11 +33,13 @@ from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo
 
 import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from app.accounts.enums import UserRole
 from app.core.enums import Visibility
-from app.matters.enums import MatterOrigin, RecordMode, ResponseDeadlineOutcome
+from app.matters.enums import MatterDataClass, MatterOrigin, RecordMode, ResponseDeadlineOutcome
 from app.matters.models import Matter, MatterResponseDeadline
 from app.reporting import metric_catalogue as keys
 from app.reporting.context import ReportingContext, parse_period
@@ -569,11 +573,13 @@ def test_eu_share_reads_only_the_reviewed_instrument_group(mgmt):
     result = compute(keys.EU_RELATED_MATTERS_BY_YEAR, ctx(mgmt.head))
     cells = _matrix(result)["2026"]
     # EU: fast (direktiiv), legacy (seadus + direktiiv), restricted (EL määrus).
-    assert cells["ELiga seotud"] == 3
+    assert cells["ELiga seotud õigusakti järgi"] == 3
+    # `fast` is also on an EU track; Õigusakt comes first, so it is not here.
+    assert cells["ELiga seotud ainult menetlusliigi järgi"] == 0
     # Domestic: moved (seadus), init (koja-ettepanek). `bad` carries a
     # version-1.0 «Konsultatsioon», which belongs to neither group.
     assert cells["Siseriiklik"] == 2
-    assert cells["Õigusakt määramata"] == 7
+    assert cells["Määramata"] == 7
     row = result.matrix.rows[0]
     assert row.share_text == "60,0%"
     assert (result.coverage_count, result.coverage_denominator) == (5, 12)
@@ -581,7 +587,7 @@ def test_eu_share_reads_only_the_reviewed_instrument_group(mgmt):
 
 def test_eu_share_hides_a_restricted_matter(mgmt):
     cells = _matrix(compute(keys.EU_RELATED_MATTERS_BY_YEAR, ctx(mgmt.reader)))["2026"]
-    assert cells["ELiga seotud"] == 2
+    assert cells["ELiga seotud õigusakti järgi"] == 2
 
 
 def test_eu_share_shows_the_unknown_year_only_over_all_years(mgmt):
@@ -616,8 +622,9 @@ def test_every_initiative_cell_opens_exactly_its_matters(mgmt, client):
     client.force_login(mgmt.head)
     result = compute(keys.KODA_INITIATIVES_BY_YEAR, ctx(mgmt.head, "koik"))
     linked = [cell for row in result.matrix.rows for cell in row.cells if cell.url]
-    assert any("/teemad/" in cell.url for cell in linked)
-    assert any("/statistika/loend/" in cell.url for cell in linked)
+    # Every cell opens the Statistika list, which has a CSV; the register is
+    # offered from there for the groups it can express.
+    assert linked and all("/statistika/loend/" in cell.url for cell in linked)
     for cell in linked:
         assert total_at(client, cell.url) == cell.value, cell.url
 
@@ -691,7 +698,9 @@ def test_the_list_never_names_a_restricted_matter_to_a_reader(mgmt, client):
         {"naitaja": keys.OPINIONS_ON_TIME, "ruhm": "tundmatu"},
         {"naitaja": keys.EU_RELATED_MATTERS_BY_YEAR, "ruhm": "el"},
         {"naitaja": keys.EU_RELATED_MATTERS_BY_YEAR, "ruhm": "el", "aasta": "abc"},
-        {"naitaja": keys.KODA_INITIATIVES_BY_YEAR, "ruhm": "algatus", "aasta": "2026"},
+        {"naitaja": keys.KODA_INITIATIVES_BY_YEAR, "ruhm": "algatus"},
+        {"naitaja": keys.KODA_INITIATIVES_BY_YEAR, "ruhm": "x", "aasta": "2026"},
+        {"naitaja": keys.EU_RELATED_MATTERS_BY_YEAR, "ruhm": "el-menetlus", "aasta": "20x6"},
     ],
 )
 def test_a_list_link_nobody_drew_is_refused(mgmt, client, query):
@@ -723,3 +732,355 @@ def test_the_tabs_render_the_new_sections(mgmt, client):
     assert "Koja algatused aastate kaupa" in matters
     definitions = client.get("/statistika/definitsioonid/").content.decode()
     assert "Lugeja" in definitions and "Nimetaja" in definitions
+
+
+# ---------------------------------------------------------------------------
+# Round 2 (docs/adr/0160, 2026-10-13)
+# ---------------------------------------------------------------------------
+#
+# * a deadline recorded after the send stays not verifiable, and says so;
+# * *ELiga seotud* has two bases, Õigusakt first, each Matter counted once;
+# * TEST Matters and restricted Matters move nothing, and every drill-through —
+#   the Statistika list, the submission list, the register and both CSVs —
+#   opens exactly the rows its number counted;
+# * every new card states its coverage limit on the card itself;
+# * a Chamber initiative holding its own deadline (docs/adr/0151, amendment of
+#   2026-10-13, PR #427) stays out of both deadline populations, is named in
+#   both exclusion notes, and leaves the initiative-by-year counts alone. The
+#   rows are written directly, so these pass with and without #427;
+# * the number of queries per metric does not grow with the rows.
+
+ROUND2_METRICS = (
+    keys.RESPONSE_PREPARATION_TIME,
+    keys.OPINIONS_ON_TIME,
+    keys.SUBMISSIONS_SENT_YOY_CHANGE,
+    keys.EU_RELATED_MATTERS_BY_YEAR,
+    keys.KODA_INITIATIVES_BY_YEAR,
+    keys.SUBMISSIONS_SENT_BY_MONTH_AND_YEAR,
+)
+
+
+def test_a_deadline_recorded_after_the_send_is_not_verifiable(mgmt):
+    late_record = _matter("hiljem kirja pandud")
+    s = _sent(late_record, "Enne tähtaja kirjapanekut saadetud", at(date(2026, 6, 20)))
+    _ended(
+        late_record,
+        date(2026, 6, 30),
+        outcome=ANSWERED,
+        ended=at(date(2026, 6, 25)),
+        requested=at(date(2026, 6, 24)),  # recorded four days after the letter went
+        submission=s,
+    )
+    rows = {row.matter_title: row for row in management.answer_rows(ctx(mgmt.head))}
+    # Sent before the deadline it names, and still never called on time.
+    assert rows["Näidisteema hiljem kirja pandud"].sent_on <= date(2026, 6, 30)
+    assert rows["Näidisteema hiljem kirja pandud"].group == management.CHANGED_AFTER_SENDING
+    spec = compute(keys.OPINIONS_ON_TIME, ctx(mgmt.head)).definition
+    assert "salvestati alles pärast saatmist" in spec.exclusions_et
+    assert "jääb alati kontrollimatuks" in spec.notes_et
+
+
+@pytest.fixture
+def eu_bases(mgmt) -> dict[str, Matter]:
+    """One 2027 Matter per precedence case, so the 2027 row is all of them."""
+    cases: dict[str, Matter] = {}
+
+    def add(name: str, *instrument_keys: str, **fields: Any) -> None:
+        cases[name] = _matter(name, reporting_year=2027, **fields)
+        _instruments(cases[name], *instrument_keys)
+
+    add("instrument only", "direktiiv")
+    add("both bases", "el-maarus", track=Track.EU_INITIATIVE)  # counted once, on Õigusakt
+    add("track only", track=Track.EU_INITIATIVE)
+    add("transposition, retired instrument", "konsultatsioon", track=Track.NATIONAL_TRANSPOSITION)
+    add("domestic on an EU track", "seadus", track=Track.NATIONAL_TRANSPOSITION)
+    add("notice only", "el-teatis")
+    add("notice on an EU track", "el-teatis", track=Track.EU_INITIATIVE)
+    add("nothing", track=Track.DOMESTIC)
+    add("restricted track only", track=Track.EU_INITIATIVE, visibility=Visibility.RESTRICTED)
+    return cases
+
+
+def test_eu_bases_count_each_matter_once_with_the_instrument_first(mgmt, eu_bases):
+    result = compute(keys.EU_RELATED_MATTERS_BY_YEAR, ctx(mgmt.head, "2027"))
+    cells = _matrix(result)["2027"]
+    assert cells == {
+        "ELiga seotud õigusakti järgi": 2,  # instrument only, both bases
+        # track only, transposition, notice on a track, restricted track only
+        "ELiga seotud ainult menetlusliigi järgi": 4,
+        "Siseriiklik": 1,  # domestic on an EU track
+        "Määramata": 2,  # notice only, nothing
+    }
+    assert sum(cells.values()) == len(eu_bases)  # nobody twice, nobody lost
+    assert result.value == 6
+    assert result.matrix.rows[0].share_text == "85,7%"  # 6 / (6 + 1)
+    notes = " ".join(result.notes)
+    assert "Katvus: 2 teemal 9-st on määramata" in notes
+    assert "1 siseriikliku õigusaktiga teemal on ELi menetlusliik" in notes
+    # «EL teatis» is named and left alone, pending the owner's decision.
+    assert "2 teemal on ajalooline õigusakt «EL teatis»" in notes
+
+
+def test_eu_basis_cells_open_exactly_their_matters(mgmt, eu_bases):
+    context = ctx(mgmt.head, "2027")
+    expected = {
+        management.EU_RELATED: {"instrument only", "both bases"},
+        management.EU_BY_TRACK: {
+            "track only",
+            "transposition, retired instrument",
+            "notice on an EU track",
+            "restricted track only",
+        },
+        management.DOMESTIC: {"domestic on an EU track"},
+        management.UNCLASSIFIED: {"notice only", "nothing"},
+    }
+    for group, names in expected.items():
+        listing = management.metric_rows(context, keys.EU_RELATED_MATTERS_BY_YEAR, group, "2027")
+        assert {row.title for row in listing.rows} == {f"Näidisteema {n}" for n in names}, group
+
+
+def test_eu_bases_hide_a_restricted_matter_from_a_reader(mgmt, eu_bases):
+    cells = _matrix(compute(keys.EU_RELATED_MATTERS_BY_YEAR, ctx(mgmt.reader, "2027")))["2027"]
+    assert cells["ELiga seotud ainult menetlusliigi järgi"] == 3
+
+
+def _add_test_matters() -> None:
+    """TEST Matters mirroring every real case the new metrics count.
+
+    Each one would move some metric if the data class leaked anywhere: an
+    incoming Matter answered on time on an EU track, an initiative, an
+    unknown-year one, an unclassified one on a transposition track, and sent
+    opinions in months nothing real was sent in.
+    """
+    test_matter: dict[str, Any] = {"data_class": MatterDataClass.TEST}
+    t = _matter(
+        "TEST saabunud",
+        received_date=date(2026, 3, 2),
+        track=Track.EU_INITIATIVE,
+        **test_matter,
+    )
+    _instruments(t, "direktiiv")
+    s = _sent(t, "TEST arvamus", at(date(2026, 1, 20)))
+    _ended(
+        t,
+        date(2026, 3, 6),
+        outcome=ANSWERED,
+        ended=at(date(2026, 1, 20), 12),
+        requested=at(date(2026, 1, 10)),
+        submission=s,
+    )
+    _matter("TEST algatus", track=Track.KODA_INITIATIVE, **test_matter)
+    _matter("TEST aastata", reporting_year=None, **test_matter)
+    _matter("TEST ülevõtmine", track=Track.NATIONAL_TRANSPOSITION, **test_matter)
+    _sent(_matter("TEST mullu", reporting_year=2025, **test_matter), "TEST", at(date(2025, 8, 8)))
+
+
+@pytest.fixture
+def mixed(mgmt) -> Mgmt:
+    """The same department, with TEST Matters beside the restricted ones."""
+    _add_test_matters()
+    return mgmt
+
+
+def _values(result) -> Any:
+    matrix = result.matrix
+    return (
+        result.value,
+        result.coverage_count,
+        result.coverage_denominator,
+        tuple(segment.value for segment in result.segments),
+        None if matrix is None else tuple(tuple(c.value for c in r.cells) for r in matrix.rows),
+        None
+        if result.comparison is None
+        else (result.comparison.current_value, result.comparison.previous_value),
+    )
+
+
+@pytest.mark.parametrize("key", ROUND2_METRICS)
+@pytest.mark.parametrize("period", ["2026", "koik"])
+def test_test_matters_move_no_new_metric(mgmt, key, period):
+    before = _values(compute(key, ctx(mgmt.head, period)))
+    _add_test_matters()
+    assert _values(compute(key, ctx(mgmt.head, period))) == before
+
+
+def _drill_links(result) -> list[tuple[str, int, str]]:
+    """(what, expected rows, url) for every number on the card that is a link."""
+    links: list[tuple[str, int, str]] = []
+    if result.drillthrough_url:
+        if result.comparison is not None:
+            expected = result.comparison.current_value
+        elif result.definition.key == keys.OPINIONS_ON_TIME:
+            expected = result.coverage_count
+        else:
+            expected = result.value
+        links.append(("headline", expected, result.drillthrough_url))
+    for segment in result.segments:
+        if segment.url:
+            links.append((segment.label, segment.value, segment.url))
+    if result.matrix is not None:
+        for row in result.matrix.rows:
+            for column, cell in zip(result.matrix.columns, row.cells, strict=True):
+                if cell.url:
+                    links.append((f"{row.label}/{column}", cell.value, cell.url))
+    if result.comparison is not None and result.comparison.previous_url:
+        links.append(("previous", result.comparison.previous_value, result.comparison.previous_url))
+    return links
+
+
+CSV_FOR = {
+    "/statistika/loend/": "/statistika/eksport/loend.csv",
+    "/statistika/arvamused/": "/statistika/eksport/arvamused.csv",
+}
+
+
+def _csv_rows(client, path: str, query: dict[str, str]) -> int:
+    response = client.get(path, query)
+    assert response.status_code == 200, path
+    text = b"".join(response.streaming_content).decode("utf-8-sig")
+    return len(list(csv.reader(io.StringIO(text), delimiter=";"))) - 1
+
+
+@pytest.mark.parametrize("key", ROUND2_METRICS)
+@pytest.mark.parametrize("viewer", ["head", "reader"])
+@pytest.mark.parametrize("period", ["2026", "koik"])
+def test_cell_list_and_csv_agree_with_test_and_restricted_matters_present(
+    mixed, client, key, viewer, period
+):
+    user = getattr(mixed, viewer)
+    client.force_login(user)
+    links = _drill_links(compute(key, ctx(user, period)))
+    assert links, key
+    for what, expected, url in links:
+        parsed = urlparse(url)
+        query = {k: v[0] for k, v in parse_qs(parsed.query).items()}
+        assert total_at(client, url) == expected, (what, url)
+        if parsed.path in CSV_FOR:
+            assert _csv_rows(client, CSV_FOR[parsed.path], query) == expected, (what, url)
+        else:
+            # The register has no CSV; it must carry the reporting data class.
+            assert parsed.path.startswith("/teemad/"), url
+            assert query.get("andmed") == "paris", url
+
+
+def test_the_initiative_list_offers_the_register_with_the_same_rows(mixed, client):
+    client.force_login(mixed.head)
+    context = ctx(mixed.head, "koik")
+    for group in (management.INITIATIVE, management.NO_TRACK):
+        listing = management.metric_rows(context, keys.KODA_INITIATIVES_BY_YEAR, group, "2026")
+        assert listing.rows, group
+        assert "andmed=paris" in listing.register_url
+        assert total_at(client, listing.register_url) == len(listing.rows), group
+    other = management.metric_rows(
+        context, keys.KODA_INITIATIVES_BY_YEAR, management.OTHER_TRACK, "2026"
+    )
+    assert other.register_url == ""
+
+
+def test_every_new_card_states_its_coverage_on_the_card(mixed, client):
+    client.force_login(mixed.head)
+    activity = client.get("/statistika/tegevus/", {"periood": "2026"}).content.decode()
+    matters = client.get("/statistika/teemad/", {"periood": "2026"}).content.decode()
+    # On-time: only deadlines linked to an opinion, since 4.10.2026.
+    assert "Katvus: arvesse lähevad ainult seotud tähtajad — alates 4.10.2026" in activity
+    assert "tähtaegade ajalugu peetakse alates 4.10.2026" in activity
+    assert "Katvus: struktuursed arvamuse kirjed alates aastast 2025" in activity
+    # Initiatives: how many Teemad carry no track at all.
+    assert "Katvus: menetlusliik puudub 9 teemal 12-st" in matters
+    # EU: how many cannot be placed.
+    assert "Katvus: 7 teemal 12-st on määramata" in matters
+
+
+@pytest.fixture
+def initiative_with_deadline(mgmt) -> Matter:
+    """A native Chamber initiative after #427: no Saabus, its own deadline, answered.
+
+    Written straight to the tables — the deadline, the sent proposal and the
+    ANSWERED history row naming it — which is the state «Märgi saadetud» leaves
+    through `answer_current_deadline_with`, so the test does not depend on #427.
+    """
+    initiative = _matter("algatus tähtajaga", track=Track.KODA_INITIATIVE)
+    _instruments(initiative, "koja-ettepanek")
+    s = _sent(initiative, "Koja ettepanek tähtajaga", at(date(2026, 9, 20)))
+    _ended(
+        initiative,
+        date(2026, 9, 30),
+        outcome=ANSWERED,
+        ended=at(date(2026, 9, 20), 12),
+        requested=at(date(2026, 9, 1)),
+        submission=s,
+    )
+    # An unsent one holding a deadline is outstanding work, still not a request.
+    _matter(
+        "algatus saatmata",
+        track=Track.KODA_INITIATIVE,
+        response_deadline=date(2026, 11, 15),
+        response_requested_at=at(date(2026, 10, 1)),
+    )
+    return initiative
+
+
+def test_an_initiative_with_its_own_deadline_stays_out_of_preparation_time(
+    mgmt, initiative_with_deadline
+):
+    result = compute(keys.RESPONSE_PREPARATION_TIME, ctx(mgmt.head))
+    titles = {row.title for row in management.preparation_rows(ctx(mgmt.head))}
+    assert not any(title.startswith("Näidisteema algatus") for title in titles)
+    assert result.value == 4 and result.population_count == 6  # as without them
+    # The fixture's arrived initiative, and the two without Saabus.
+    assert any(
+        "3 Koja algatust" in note and "Neist 2 on ilma saabumiseta" in note for note in result.notes
+    )
+
+
+def test_an_initiative_with_its_own_deadline_stays_out_of_on_time(mgmt, initiative_with_deadline):
+    result = compute(keys.OPINIONS_ON_TIME, ctx(mgmt.head))
+    titles = {row.matter_title for row in management.answer_rows(ctx(mgmt.head))}
+    assert "Näidisteema algatus tähtajaga" not in titles
+    assert result.value == 75 and result.coverage_denominator == 8  # as without it
+    assert any("2 Koja algatust" in note for note in result.notes)
+    # Its sent proposal is not an «unnamed» opinion either.
+    assert any("Perioodil saadetud 3 arvamust" in note for note in result.notes)
+
+
+def test_initiative_deadlines_leave_the_initiative_counts_alone(mgmt, initiative_with_deadline):
+    cells = _matrix(compute(keys.KODA_INITIATIVES_BY_YEAR, ctx(mgmt.head)))["2026"]
+    # The fixture's one, plus the two new ones: counted on the track alone.
+    assert cells == {"Koja algatus": 3, "Muu menetlusliik": 2, "Menetlusliik määramata": 9}
+
+
+def _queries(key: str, viewer: Any, period: str) -> int:
+    with CaptureQueriesContext(connection) as captured:
+        compute(key, ctx(viewer, period))
+    return len(captured.captured_queries)
+
+
+def _grow(scale: int) -> None:
+    """More of everything, across more years, so a per-row or per-year query shows."""
+    for n in range(scale):
+        year = 2020 + n % 7
+        month = 1 + n % 12
+        matter = _matter(
+            f"kasv {n}",
+            reporting_year=year,
+            received_date=date(year, month, 1),
+            track=(Track.EU_INITIATIVE, Track.KODA_INITIATIVE, "")[n % 3],
+        )
+        _instruments(matter, ("direktiiv", "seadus", "el-teatis")[n % 3])
+        s = _sent(matter, f"Kasv {n}", at(date(year, month, 10)))
+        _ended(
+            matter,
+            date(year, month, 20),
+            outcome=ANSWERED,
+            ended=at(date(year, month, 10), 12),
+            requested=at(date(year, month, 2)),
+            submission=s,
+        )
+
+
+@pytest.mark.parametrize("key", ROUND2_METRICS)
+def test_the_query_count_does_not_grow_with_the_rows(mgmt, key):
+    small = {period: _queries(key, mgmt.head, period) for period in ("2026", "koik")}
+    _grow(21)
+    large = {period: _queries(key, mgmt.head, period) for period in ("2026", "koik")}
+    assert large == small, (key, small, large)
