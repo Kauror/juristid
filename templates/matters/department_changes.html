@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% load counts %}
+{% block title %}Muudatused · Osakond · {{ application_name }}{% endblock %}
+
+{% comment %}
+Muudatused — which states moved in the department's work over a window: new
+Teemad, Hetkeseis moves, hand-overs, next steps, reopenings (docs/adr/0159).
+
+The department head's, beside Tehtud: Tehtud lists what a period *produced*,
+this page what *changed*, and the outputs are not counted a second time — the
+rail carries Tehtud's own numbers for the same window and a link to its rows.
+
+Three kinds of knowledge are kept visibly apart: the recorded changes (main
+column), a comparison of two daily photographs, and what the record cannot
+know (both in the rail). Everything is computed by
+`app.matters.department_changes`; this template only draws it.
+{% endcomment %}
+
+{% block content %}
+<div class="page page--overview">
+  <div class="ovhead">
+    <h1 class="ovhead__title">Muudatused</h1>
+    {% comment %}
+      The window's two dates, both included — `Period.bounds`, the string Tehtud
+      prints beside its own heading, so the two sections state one window one way.
+    {% endcomment %}
+    <span class="ovhead__date">{% if not page.period.is_custom %}<span data-period-label>{{ page.period.label }}</span> · {% endif %}<span data-period-bounds>{{ page.period.bounds }}</span></span>
+    <span class="ovhead__spacer"></span>
+    <a class="ovsection__link" href="{% url 'matters:department' %}">← Osakond</a>
+  </div>
+
+  <div class="ovbody">
+    <div class="ovbody__main">
+      <section class="ovsection" aria-label="Periood">
+        <div class="ovsection__head">
+          <h2 class="ovsection__title">{% if page.unrecorded %}Muudatuste arv teadmata{% else %}{{ page.total|counted:"muudatus,muudatust" }}{% endif %}</h2>
+          <span class="ovsection__spacer"></span>
+          <span class="uxperiods">
+            {% for option in page.period_options %}
+              <a class="uxchip{% if option.active %} is-selected{% endif %}"
+                 {% if option.active %}aria-current="true"{% endif %}
+                 href="?{{ option.query }}">{{ option.label }}</a>
+            {% endfor %}
+            {% comment %}
+              While a typed range is refused, the form is drawn inline under the
+              message instead (below), so no popover covers the words that say
+              what was wrong.
+            {% endcomment %}
+            {% if not page.period_error %}
+              <details class="uxdg__period" data-uxpopover {% if page.period.is_custom %}open{% endif %}>
+                <summary class="uxchip uxchip--dashed{% if page.period.is_custom or page.off_chip %} is-selected{% endif %}"
+                         {% if page.period.is_custom or page.off_chip %}aria-current="true"{% endif %}>
+                  {% if page.period.is_custom %}{{ page.period.bounds }}{% elif page.off_chip %}{{ page.period.label }}{% else %}Vali periood…{% endif %}
+                </summary>
+                <div class="uxdg__periodbody">
+                  {% include "matters/partials/changes_range_form.html" %}
+                </div>
+              </details>
+            {% endif %}
+          </span>
+        </div>
+
+        {% if page.period_error %}
+          <p class="notice notice--warning" role="alert" data-period-error>
+            {{ page.period_error }} Näitan vaikimisi perioodi.
+          </p>
+          <div class="uxdg__periodinline" data-period-inline>
+            {% include "matters/partials/changes_range_form.html" %}
+          </div>
+        {% endif %}
+
+        <p class="uxdg__sum">
+          {% for result in page.categories %}
+            <span><b>{% if page.unrecorded %}—{% else %}{{ result.count }}{% endif %}</b> {{ result.label|lower }}</span>
+          {% endfor %}
+        </p>
+
+        {% if page.unrecorded %}
+          {% comment %}
+            Nothing was being recorded in this window, so its changes are
+            unknown: the counts read «—», never 0 (docs/adr/0159 §5).
+          {% endcomment %}
+          <p class="uxdl__empty" data-changes-unrecorded>
+            Sel perioodil muudatusi veel ei salvestatud.
+          </p>
+        {% elif page.is_empty %}
+          <p class="uxdl__empty" data-changes-empty>
+            Valitud perioodil ei ole ühtegi muudatust salvestatud.
+          </p>
+        {% endif %}
+      </section>
+
+      {% for result in page.categories %}
+        <section class="ovsection" aria-label="{{ result.label }}" data-category="{{ result.key }}">
+          <div class="ovsection__head">
+            <h2 class="ovsection__title">{{ result.label }}</h2>
+            <span class="ovsection__meta">{% if page.unrecorded %}—{% else %}{{ result.count }}{% endif %}</span>
+            <span class="ovsection__spacer"></span>
+            {% if result.breakdown and not page.unrecorded %}
+              <span class="ovsection__meta">
+                {% for verb, count in result.breakdown %}{{ verb }} {{ count }}{% if not forloop.last %} · {% endif %}{% endfor %}
+              </span>
+            {% endif %}
+          </div>
+          <div class="uxdg">
+            {% for row in result.rows %}
+              <a class="uxdg__row" href="{{ row.url }}">
+                <span class="uxdg__date">{{ row.when|date:page.row_date_format }}</span>
+                <span class="uxdg__kind">
+                  <span class="uxtl__kind uxtl__kind--closed">{{ row.badge }}</span>
+                </span>
+                {% comment %}
+                  The change in its own element, and allowed to wrap on this page
+                  only (`.uxdg__text--wrap`): on a phone a one-line ellipsis cut
+                  off exactly the part that says what changed. Tehtud's digest
+                  shares `.uxdg__row` and keeps its single line.
+                {% endcomment %}
+                <span class="uxdg__text uxdg__text--wrap"><span>{{ row.matter_title }}</span> <span class="uxdg__change" data-change>— {{ row.verb }}{% if row.detail %}: {{ row.detail }}{% endif %}</span></span>
+                <span class="uxav" title="{{ row.actor_name|default:'Teadmata' }}">
+                  <span aria-hidden="true">{{ row.initials }}</span>
+                  <span class="visually-hidden">{{ row.actor_name|default:'Teadmata' }}</span>
+                </span>
+              </a>
+            {% empty %}
+              <p class="uxdl__empty">{% if page.unrecorded %}Ei ole teada.{% else %}Valitud perioodil ei ole.{% endif %}</p>
+            {% endfor %}
+            {% if result.truncated %}
+              <p class="ovnote">Näidatud {{ result.rows|length }} uusimat {{ result.count }}-st.</p>
+            {% endif %}
+          </div>
+        </section>
+      {% endfor %}
+    </div>
+
+    <aside class="ovbody__rail" aria-label="Faktid">
+      {% if page.outputs %}
+        <section class="ovsection" aria-label="Tehtud samal perioodil" data-outputs>
+          <div class="ovsection__head">
+            <h2 class="ovsection__title">Tehtud samal perioodil</h2>
+            <span class="ovsection__spacer"></span>
+            <a class="ovsection__link" href="{{ page.tehtud_url }}">Tehtud →</a>
+          </div>
+          <p class="uxdg__sum">
+            <span><b>{{ page.outputs.sent }}</b> arvamust välja</span>
+            <span><b>{{ page.outputs.closed }}</b> teemat suletud</span>
+            <span><b>{{ page.outputs.victories }}</b> töövõitu</span>
+          </p>
+        </section>
+      {% endif %}
+
+      <section class="ovsection" aria-label="Hetktõmmiste võrdlus" data-snapshots>
+        <div class="ovsection__head">
+          <h2 class="ovsection__title">Hetktõmmiste võrdlus</h2>
+        </div>
+        {% if page.snapshots.available %}
+          <p class="ovnote">
+            Seis {{ page.snapshots.start_date|date:"j.n.Y" }} ja {{ page.snapshots.end_date|date:"j.n.Y" }}
+            päevase hetktõmmise järgi — kahe seisu võrdlus, mitte muudatuste arv.
+          </p>
+          <p class="uxdg__sum">
+            {% for figure in page.snapshots.figures %}
+              <span>{{ figure.label }}: <b>{{ figure.start }} → {{ figure.end }}</b></span>
+            {% endfor %}
+          </p>
+        {% else %}
+          <p class="ovnote">Perioodi algusest ja lõpust ei ole kahte erinevat hetktõmmist, seega võrdlust ei ole.</p>
+        {% endif %}
+      </section>
+
+      <section class="ovsection" aria-label="Katvus" data-coverage>
+        <div class="ovsection__head">
+          <h2 class="ovsection__title">Mida see ei näita</h2>
+        </div>
+        {% if page.coverage.recorded_since is None %}
+          <p class="ovnote">Ühtegi muudatust ei ole veel salvestatud.</p>
+        {% elif page.unrecorded %}
+          <p class="ovnote" data-unrecorded>
+            Muudatusi on salvestatud alates {{ page.coverage.recorded_since|date:"j.n.Y" }};
+            valitud periood jääb tervikuna enne seda ja selle muudatusi ei ole teada.
+          </p>
+        {% elif page.partial_coverage %}
+          <p class="ovnote" data-partial>
+            Muudatusi on salvestatud alates {{ page.coverage.recorded_since|date:"j.n.Y" }};
+            periood algab varem ja on osaliselt kaetud.
+          </p>
+        {% endif %}
+        <p class="ovnote">
+          Imporditud teemasid perioodil: <b>{{ page.coverage.imported_matters }}</b>.
+          Neid ei loeta uuteks ja nende varasem ajalugu ei ole siin.
+        </p>
+        <p class="ovnote">
+          Impordi- ja süsteemikirjeid, mida ei loeta: <b>{{ page.coverage.system_events }}</b>.
+        </p>
+        <p class="ovnote">
+          Avatud teemasid, mille hetkeseisu algus ei ole teada: <b>{{ page.coverage.stage_start_unknown }}</b>.
+        </p>
+      </section>
+    </aside>
+  </div>
+</div>
+{% endblock %}

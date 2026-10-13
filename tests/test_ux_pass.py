@@ -1017,7 +1017,8 @@ def test_the_tehtud_period_lives_in_the_url_and_a_bad_range_falls_back(
 
     today = date(2026, 8, 27)
     assert period_from({}, today).key == PERIOD_7
-    assert period_from({"periood": "30"}, today).start == today - timedelta(days=30)
+    # Thirty calendar dates ending today, both ends included (docs/adr/0159 §5).
+    assert period_from({"periood": "30"}, today).start == today - timedelta(days=29)
 
     chosen = period_from({"periood": "vahemik", "alates": "1.1.2026", "kuni": "31.3.2026"}, today)
     assert chosen.key == PERIOD_CUSTOM
