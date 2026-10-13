@@ -256,6 +256,14 @@ class Coverage:
         """Whether the window reaches back before anything was recorded."""
         return self.recorded_since is None or self.recorded_since > period.start
 
+    def covers_none_of(self, period: dd.Period) -> bool:
+        """Whether the whole window ends before anything was recorded.
+
+        Then a count of 0 would be a claim the record cannot make: nobody was
+        recording, so the window's changes are unknown, not absent.
+        """
+        return self.recorded_since is None or self.recorded_since > period.end
+
 
 @dataclass
 class DepartmentChanges:
@@ -277,9 +285,31 @@ class DepartmentChanges:
         return self.total == 0
 
     @property
+    def unrecorded(self) -> bool:
+        """No part of the window was recorded: its counts are unknown («—»)."""
+        return self.coverage.covers_none_of(self.period)
+
+    @property
     def partial_coverage(self) -> bool:
-        """The window reaches back before the first recorded change."""
-        return self.coverage.starts_after(self.period)
+        """The window starts before the first recorded change and ends after it."""
+        return self.coverage.starts_after(self.period) and not self.unrecorded
+
+    @property
+    def off_chip(self) -> bool:
+        """A named window this page draws no chip for — «Viimased 13 nädalat»,
+        «Aasta» — so the period control names it as the selected one."""
+        return not (
+            self.period.is_custom
+            or self.period_error
+            or self.period.key in {key for key, _ in PERIOD_CHOICES}
+        )
+
+    @property
+    def row_date_format(self) -> str:
+        """Row dates carry the year when the window is not this year's alone."""
+        this_year = timezone.localdate().year
+        same = self.period.start.year == self.period.end.year == this_year
+        return "d.m" if same else "d.m.Y"
 
     @property
     def period_options(self) -> list[dd.PeriodOption]:

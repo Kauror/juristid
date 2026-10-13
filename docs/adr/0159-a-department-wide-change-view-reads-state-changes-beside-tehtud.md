@@ -151,7 +151,16 @@ before → after, actor, date, linking to the Teema), the window control (7 / 14
 redisplayed), an empty state, and a rail with three blocks kept apart:
 «Tehtud samal perioodil» (Tehtud's own numbers and a link to `/osakond/` on the
 same window, `#tehtud`), «Hetktõmmiste võrdlus», and «Mida see ei näita»
-(coverage). Existing components and tokens only; no CSS changed.
+(coverage). Existing components and tokens only.
+
+> **Amended 2026-10-13 (visual QA).** A window that ends before the first
+> recorded change is **unknown, not empty**: its counts read «—», the heading
+> «Muudatuste arv teadmata», and the coverage note says the whole window lies
+> before recording began («Sel perioodil muudatusi veel ei salvestatud»). A
+> window that starts before and ends after keeps «osaliselt kaetud». A row's
+> change is its own element and wraps on this page only
+> (`.uxdg__text--wrap`; Tehtud's digest keeps one line), and a refused range
+> draws its form inline under the message rather than in a popover over it.
 
 **Entry point:** one «Muudatused →» link in the *Tehtud* section heading on
 `/osakond/`, carrying Tehtud's window (Kvartal / Aasta / a custom range travel as

@@ -33,7 +33,7 @@ know (both in the rail). Everything is computed by
     <div class="ovbody__main">
       <section class="ovsection" aria-label="Periood">
         <div class="ovsection__head">
-          <h2 class="ovsection__title">{{ page.total|counted:"muudatus,muudatust" }}</h2>
+          <h2 class="ovsection__title">{% if page.unrecorded %}Muudatuste arv teadmata{% else %}{{ page.total|counted:"muudatus,muudatust" }}{% endif %}</h2>
           <span class="ovsection__spacer"></span>
           <span class="uxperiods">
             {% for option in page.period_options %}
@@ -41,32 +41,22 @@ know (both in the rail). Everything is computed by
                  {% if option.active %}aria-current="true"{% endif %}
                  href="?{{ option.query }}">{{ option.label }}</a>
             {% endfor %}
-            <details class="uxdg__period" data-uxpopover
-                     {% if page.period.is_custom or page.period_error %}open{% endif %}>
-              <summary class="uxchip uxchip--dashed{% if page.period.is_custom %} is-selected{% endif %}">
-                {% if page.period.is_custom %}{{ page.period.label }}{% else %}Vali periood…{% endif %}
-              </summary>
-              <div class="uxdg__periodbody">
-                <form method="get">
-                  <input type="hidden" name="periood" value="vahemik">
-                  <label class="field">
-                    <span class="field__label field__label--plain">Alates</span>
-                    <input class="field__input field__input--compact dateinput" type="text"
-                           inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa"
-                           name="alates"
-                           value="{% if page.period_error %}{{ typed_start }}{% else %}{{ page.period.start|date:'j.n.Y' }}{% endif %}">
-                  </label>
-                  <label class="field">
-                    <span class="field__label field__label--plain">Kuni</span>
-                    <input class="field__input field__input--compact dateinput" type="text"
-                           inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa"
-                           name="kuni"
-                           value="{% if page.period_error %}{{ typed_end }}{% else %}{{ page.period.end|date:'j.n.Y' }}{% endif %}">
-                  </label>
-                  <button class="button button--quiet button--tiny" type="submit">Näita</button>
-                </form>
-              </div>
-            </details>
+            {% comment %}
+              While a typed range is refused, the form is drawn inline under the
+              message instead (below), so no popover covers the words that say
+              what was wrong.
+            {% endcomment %}
+            {% if not page.period_error %}
+              <details class="uxdg__period" data-uxpopover {% if page.period.is_custom %}open{% endif %}>
+                <summary class="uxchip uxchip--dashed{% if page.period.is_custom or page.off_chip %} is-selected{% endif %}"
+                         {% if page.period.is_custom or page.off_chip %}aria-current="true"{% endif %}>
+                  {% if page.period.is_custom %}{{ page.period.bounds }}{% elif page.off_chip %}{{ page.period.label }}{% else %}Vali periood…{% endif %}
+                </summary>
+                <div class="uxdg__periodbody">
+                  {% include "matters/partials/changes_range_form.html" %}
+                </div>
+              </details>
+            {% endif %}
           </span>
         </div>
 
@@ -74,15 +64,26 @@ know (both in the rail). Everything is computed by
           <p class="notice notice--warning" role="alert" data-period-error>
             {{ page.period_error }} Näitan vaikimisi perioodi.
           </p>
+          <div class="uxdg__periodinline" data-period-inline>
+            {% include "matters/partials/changes_range_form.html" %}
+          </div>
         {% endif %}
 
         <p class="uxdg__sum">
           {% for result in page.categories %}
-            <span><b>{{ result.count }}</b> {{ result.label|lower }}</span>
+            <span><b>{% if page.unrecorded %}—{% else %}{{ result.count }}{% endif %}</b> {{ result.label|lower }}</span>
           {% endfor %}
         </p>
 
-        {% if page.is_empty %}
+        {% if page.unrecorded %}
+          {% comment %}
+            Nothing was being recorded in this window, so its changes are
+            unknown: the counts read «—», never 0 (docs/adr/0159 §5).
+          {% endcomment %}
+          <p class="uxdl__empty" data-changes-unrecorded>
+            Sel perioodil muudatusi veel ei salvestatud.
+          </p>
+        {% elif page.is_empty %}
           <p class="uxdl__empty" data-changes-empty>
             Valitud perioodil ei ole ühtegi muudatust salvestatud.
           </p>
@@ -93,9 +94,9 @@ know (both in the rail). Everything is computed by
         <section class="ovsection" aria-label="{{ result.label }}" data-category="{{ result.key }}">
           <div class="ovsection__head">
             <h2 class="ovsection__title">{{ result.label }}</h2>
-            <span class="ovsection__meta">{{ result.count }}</span>
+            <span class="ovsection__meta">{% if page.unrecorded %}—{% else %}{{ result.count }}{% endif %}</span>
             <span class="ovsection__spacer"></span>
-            {% if result.breakdown %}
+            {% if result.breakdown and not page.unrecorded %}
               <span class="ovsection__meta">
                 {% for verb, count in result.breakdown %}{{ verb }} {{ count }}{% if not forloop.last %} · {% endif %}{% endfor %}
               </span>
@@ -104,18 +105,24 @@ know (both in the rail). Everything is computed by
           <div class="uxdg">
             {% for row in result.rows %}
               <a class="uxdg__row" href="{{ row.url }}">
-                <span class="uxdg__date">{{ row.when|date:"d.m" }}</span>
+                <span class="uxdg__date">{{ row.when|date:page.row_date_format }}</span>
                 <span class="uxdg__kind">
                   <span class="uxtl__kind uxtl__kind--closed">{{ row.badge }}</span>
                 </span>
-                <span class="uxdg__text">{{ row.matter_title }} — {{ row.verb }}{% if row.detail %}: {{ row.detail }}{% endif %}</span>
+                {% comment %}
+                  The change in its own element, and allowed to wrap on this page
+                  only (`.uxdg__text--wrap`): on a phone a one-line ellipsis cut
+                  off exactly the part that says what changed. Tehtud's digest
+                  shares `.uxdg__row` and keeps its single line.
+                {% endcomment %}
+                <span class="uxdg__text uxdg__text--wrap"><span>{{ row.matter_title }}</span> <span class="uxdg__change" data-change>— {{ row.verb }}{% if row.detail %}: {{ row.detail }}{% endif %}</span></span>
                 <span class="uxav" title="{{ row.actor_name|default:'Teadmata' }}">
                   <span aria-hidden="true">{{ row.initials }}</span>
                   <span class="visually-hidden">{{ row.actor_name|default:'Teadmata' }}</span>
                 </span>
               </a>
             {% empty %}
-              <p class="uxdl__empty">Valitud perioodil ei ole.</p>
+              <p class="uxdl__empty">{% if page.unrecorded %}Ei ole teada.{% else %}Valitud perioodil ei ole.{% endif %}</p>
             {% endfor %}
             {% if result.truncated %}
               <p class="ovnote">Näidatud {{ result.rows|length }} uusimat {{ result.count }}-st.</p>
@@ -166,6 +173,11 @@ know (both in the rail). Everything is computed by
         </div>
         {% if page.coverage.recorded_since is None %}
           <p class="ovnote">Ühtegi muudatust ei ole veel salvestatud.</p>
+        {% elif page.unrecorded %}
+          <p class="ovnote" data-unrecorded>
+            Muudatusi on salvestatud alates {{ page.coverage.recorded_since|date:"j.n.Y" }};
+            valitud periood jääb tervikuna enne seda ja selle muudatusi ei ole teada.
+          </p>
         {% elif page.partial_coverage %}
           <p class="ovnote" data-partial>
             Muudatusi on salvestatud alates {{ page.coverage.recorded_since|date:"j.n.Y" }};

@@ -20,6 +20,7 @@ What this file pins:
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -601,7 +602,11 @@ def test_the_head_reads_the_page(client, department_head, specialist):
     for result in response.context["page"].categories:
         assert f'data-category="{result.key}"' in body
         assert result.label in body
-    assert "Pealik näeb seda — muutis hetkeseisu: määramata → Idee" in body
+    # The change is its own element now (visual QA round 2c), after the title.
+    assert (
+        "Pealik näeb seda</span> "
+        '<span class="uxdg__change" data-change>— muutis hetkeseisu: määramata → Idee</span>'
+    ) in body
     assert reverse("matters:matter_detail", kwargs={"pk": matter.pk}) in body
     assert "data-outputs" in body and "data-snapshots" in body and "data-coverage" in body
     assert "data-changes-empty" not in body
@@ -664,8 +669,9 @@ def test_the_empty_state_is_said_in_words(client, department_head):
 
     body = client.get(PAGE).content.decode()
 
-    assert "data-changes-empty" in body
-    assert "Valitud perioodil ei ole ühtegi muudatust salvestatud." in body
+    # Nothing was ever recorded, so the window's changes are unknown, not 0.
+    assert "data-changes-unrecorded" in body
+    assert "Sel perioodil muudatusi veel ei salvestatud." in body
     assert "Ühtegi muudatust ei ole veel salvestatud." in body
     assert "võrdlust ei ole" in body
 
@@ -940,3 +946,132 @@ def test_periood_kvartal_still_resolves_under_its_new_label(client, department_h
     assert f"data-period-bounds>{bounds}</span>" in tehtud
     assert "<span data-period-label>Viimased 13 nädalat</span>" in changes
     assert f"data-period-bounds>{bounds}</span>" in changes
+
+
+# =========================================================================
+# Visual QA round 2c: coverage before recording, wrapping rows, the error form
+# =========================================================================
+
+
+def _recorded_from(specialist, day: date) -> None:
+    """The department's first recorded act, on `day`."""
+    _stage_event(factories.MatterFactory(owner=specialist), specialist, _at(day, time(12, 0)), "x")
+
+
+def test_a_window_wholly_before_recording_is_unknown_not_zero(client, department_head, specialist):
+    _recorded_from(specialist, date(2026, 9, 1))
+    params = {"periood": "vahemik", "alates": "1.1.2001", "kuni": "2.1.2001"}
+
+    changes = dc.build_changes(department_head, params, today=EDGE_TODAY)
+    assert changes.unrecorded
+    assert not changes.partial_coverage
+
+    client.force_login(department_head)
+    body = client.get(PAGE, params).content.decode()
+    assert "Muudatuste arv teadmata" in body
+    assert "data-changes-unrecorded" in body
+    assert "Sel perioodil muudatusi veel ei salvestatud." in body
+    assert "data-unrecorded" in body and "data-partial" not in body
+    assert "data-changes-empty" not in body
+    assert "<b>0</b>" not in body.split('aria-label="Faktid"')[0]
+    assert "<b>—</b> uued teemad" in body
+    assert "määras järgmise tegevuse 0" not in body
+
+
+def test_a_window_partly_before_recording_keeps_the_partial_wording(
+    client, department_head, specialist
+):
+    _recorded_from(specialist, date(2026, 9, 1))
+    params = {"periood": "vahemik", "alates": "1.8.2026", "kuni": "30.9.2026"}
+
+    changes = dc.build_changes(department_head, params, today=EDGE_TODAY)
+    assert changes.partial_coverage
+    assert not changes.unrecorded
+
+    client.force_login(department_head)
+    body = client.get(PAGE, params).content.decode()
+    assert "data-partial" in body and "data-unrecorded" not in body
+    assert "osaliselt kaetud" in body
+    assert "Muudatuste arv teadmata" not in body
+    assert "data-changes-unrecorded" not in body
+
+
+def test_a_window_wholly_after_recording_began_is_fully_covered(
+    client, department_head, specialist
+):
+    _recorded_from(specialist, date(2026, 9, 1))
+    params = {"periood": "vahemik", "alates": "1.9.2026", "kuni": "30.9.2026"}
+
+    changes = dc.build_changes(department_head, params, today=EDGE_TODAY)
+    assert not changes.partial_coverage
+    assert not changes.unrecorded
+
+    client.force_login(department_head)
+    body = client.get(PAGE, params).content.decode()
+    assert "data-partial" not in body and "data-unrecorded" not in body
+    assert "1 muudatus" in body
+    assert "Muudatuste arv teadmata" not in body
+
+
+def test_the_change_is_its_own_wrapping_element_here_and_not_on_tehtud(
+    client, department_head, specialist
+):
+    matter = create_matter(title="Mähkimise teema", owner=specialist, actor=specialist)
+    change_stage(matter=matter, stage=_stage("idea"), actor=specialist)
+    factories.EntryFactory(matter=matter, author=specialist)
+    client.force_login(department_head)
+
+    changes = client.get(PAGE).content.decode()
+    tehtud = client.get(OSAKOND).content.decode()
+
+    assert '<span class="uxdg__text uxdg__text--wrap"><span>Mähkimise teema' in changes
+    assert (
+        '<span class="uxdg__change" data-change>— muutis hetkeseisu: määramata → Idee</span>'
+        in changes
+    )
+    assert "uxdg__text--wrap" not in tehtud
+    assert "Mähkimise teema" in tehtud
+
+
+def test_a_refused_range_draws_its_form_inline_not_in_a_popover(client, department_head):
+    client.force_login(department_head)
+
+    body = client.get(
+        PAGE, {"periood": "vahemik", "alates": "10.10.2026", "kuni": "1.10.2026"}
+    ).content.decode()
+
+    assert "data-period-inline" in body
+    assert "uxdg__periodbody" not in body
+    assert body.index("data-period-error") < body.index("data-period-inline")
+    assert body.count('name="alates"') == 1
+    assert 'value="10.10.2026"' in body
+
+
+def test_an_off_chip_window_is_shown_as_selected(client, department_head):
+    client.force_login(department_head)
+
+    quarter = client.get(PAGE, {"periood": "kvartal"})
+    year = client.get(PAGE, {"periood": "aasta"})
+    week = client.get(PAGE, {"periood": "7"})
+
+    assert quarter.context["page"].off_chip and year.context["page"].off_chip
+    assert not week.context["page"].off_chip
+    selected = re.compile(
+        r'<summary class="uxchip uxchip--dashed is-selected"\s+aria-current="true">\s*'
+        r"Viimased 13 nädalat\s*</summary>"
+    )
+    assert selected.search(quarter.content.decode())
+    assert "Vali periood…" in week.content.decode()
+
+
+def test_the_custom_chip_and_cross_year_rows_carry_the_year(department_head, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    _stage_event(matter, specialist, _at(date(2025, 12, 30), time(12, 0)), "vana aasta")
+    params = {"periood": "vahemik", "alates": "1.12.2025", "kuni": "31.1.2026"}
+
+    changes = dc.build_changes(department_head, params, today=EDGE_TODAY)
+    this_week = dc.build_changes(department_head, {"periood": "7"}, today=EDGE_TODAY)
+
+    assert changes.row_date_format == "d.m.Y"
+    assert this_week.row_date_format == "d.m"
+    assert changes.period.bounds == "1.12.2025–31.1.2026"

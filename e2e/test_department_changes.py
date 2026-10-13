@@ -184,10 +184,13 @@ def test_an_empty_window_says_so(page, base_url):
 
     page.goto(f"{base_url}{PAGE_PATH}?periood=vahemik&alates=1.1.2001&kuni=2.1.2001")
 
-    expect(page.locator("[data-changes-empty]")).to_have_text(
-        "Valitud perioodil ei ole ühtegi muudatust salvestatud."
+    # Wholly before change recording began: unknown, not «0 muudatust».
+    expect(page.locator("[data-changes-unrecorded]")).to_have_text(
+        "Sel perioodil muudatusi veel ei salvestatud."
     )
-    expect(page.locator("[data-partial]")).to_be_visible()
+    expect(page.locator("[data-unrecorded]")).to_be_visible()
+    expect(page.locator("[data-partial]")).to_have_count(0)
+    expect(page.get_by_role("heading", name="Muudatuste arv teadmata")).to_be_visible()
     expect(page.locator(".uxdg__row")).to_have_count(0)
 
 
@@ -200,3 +203,51 @@ def test_a_reversed_range_is_refused_in_words(page, base_url):
         "Vahemiku algus on pärast selle lõppu."
     )
     expect(page.locator("input[name='alates']")).to_have_value("10.10.2026")
+
+
+# ---- Visual QA round 2c ----------------------------------------------------
+
+
+_NOT_CLIPPED = """el => {
+    const r = el.getBoundingClientRect();
+    return {right: r.right, width: window.innerWidth,
+            clipped: el.scrollWidth > el.clientWidth + 1};
+}"""
+
+_UNCOVERED = """el => {
+    const r = el.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return el.contains(hit);
+}"""
+
+
+def test_the_change_itself_is_readable_on_a_phone(page, base_url, planted):
+    page.set_viewport_size({"width": 375, "height": 900})
+    sign_in(page, base_url, HEAD)
+    page.goto(f"{base_url}{PAGE_PATH}?periood=30")
+
+    row = stage_rows(page).filter(has_text=planted["open"])
+    change = row.locator("[data-change]")
+    expect(change).to_have_text("— muutis hetkeseisu: määramata → Idee")
+    expect(change).to_be_visible()
+    text = row.locator(".uxdg__text").evaluate(_NOT_CLIPPED)
+    assert not text["clipped"], "the row text is still cut to one line"
+    box = change.evaluate(_NOT_CLIPPED)
+    assert box["right"] <= box["width"], box
+    assert not document_overflows(page)
+
+
+@pytest.mark.parametrize("width", [1440, 1024, 375])
+def test_a_refused_range_message_is_not_covered(page, base_url, width):
+    page.set_viewport_size({"width": width, "height": 900})
+    sign_in(page, base_url, HEAD)
+
+    page.goto(f"{base_url}{PAGE_PATH}?periood=vahemik&alates=10.10.2026&kuni=1.10.2026")
+
+    notice = page.locator("[data-period-error]")
+    expect(notice).to_be_visible()
+    assert notice.evaluate(_UNCOVERED), "something is drawn over the refusal"
+    assert not notice.evaluate(_NOT_CLIPPED)["clipped"]
+    expect(page.locator("[data-period-inline] input[name='alates']")).to_be_visible()
+    expect(page.locator(".uxdg__periodbody")).to_have_count(0)
+    assert not document_overflows(page)
