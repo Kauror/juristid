@@ -212,6 +212,21 @@ background sequence — which can be started (`Alusta`) or dismissed (`×`);
       {% endif %}
     </div>
 
+    {% for alert in consistency_alerts %}
+      {% comment %}
+        A read-only workflow-consistency alert about the step above, and only
+        here (docs/adr/0161): why it appears, from structured records this
+        reader may see, and what the controls already on the row can do.
+        Nothing is completed or changed by it.
+      {% endcomment %}
+      <div class="notice notice--warning" role="note" data-consistency-alert="{{ alert.key }}">
+        <p><strong>{{ alert.title }}.</strong> {{ alert.reason }}</p>
+        {% if can_write %}
+          <p>{{ alert.remedy }}</p>
+        {% endif %}
+      </div>
+    {% endfor %}
+
     {% comment %}
       **No `Arvamuse tähtaeg` line here** (owner's compact round, 2026-10-07).
       The deadline is stated in the header — amber when it is close or past —
