@@ -35,7 +35,13 @@ from app.matters import process_timeline
 from app.matters.enums import EngagementKind, MatterOrigin
 from app.matters.models import MatterEngagement
 from app.matters.process_timeline import process_steps
-from app.matters.services import add_engagement, change_stage, close_matter, reopen_matter
+from app.matters.services import (
+    add_engagement,
+    change_stage,
+    close_matter,
+    matter_field_revision,
+    reopen_matter,
+)
 from app.matters.timeline import matter_timeline
 from app.submissions.enums import SentAtPrecision
 from app.submissions.models import Submission
@@ -161,7 +167,14 @@ def test_the_saabus_editor_re_renders_the_surface_it_lives_on(signed_in, normal_
     """
     url = reverse("matters:update_field", kwargs={"pk": normal_matter.pk, "field": "received_date"})
 
-    body = signed_in.post(url, {"received_date": "14.8.2026"}).content.decode()
+    body = signed_in.post(
+        url,
+        {
+            "received_date": "14.8.2026",
+            # Guarded since docs/adr/0166 §1: the editor posts its revision.
+            "revision": matter_field_revision(normal_matter, "received_date"),
+        },
+    ).content.decode()
 
     assert 'id="teema-pais"' in body
     assert 'id="teema-andmed"' not in body
