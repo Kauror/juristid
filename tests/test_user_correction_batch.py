@@ -726,7 +726,9 @@ def test_a_sent_opinions_letter_cannot_be_removed_until_it_is_withdrawn(
     assert document.versions.count() == 1
     assert SENT_OPINION_EVIDENCE.startswith("See fail on saadetud")
 
-    withdraw_submission(submission=submission, actor=specialist)
+    withdraw_submission(
+        submission=submission, actor=specialist, reason="Sünteetiline tagasivõtmine"
+    )
     remove_document(document=document, actor=specialist)
 
     submission.refresh_from_db()
@@ -741,7 +743,9 @@ def test_a_withdrawn_letter_is_not_revised_or_reclassified(
     submission = _sent_opinion(
         factories.MatterFactory(owner=specialist), specialist, organisation, capture_evidence
     )
-    withdraw_submission(submission=submission, actor=specialist)
+    withdraw_submission(
+        submission=submission, actor=specialist, reason="Sünteetiline tagasivõtmine"
+    )
     document = submission.final_version.document
 
     with pytest.raises(DomainError, match="tagasi võetud Koja arvamuse tõend"):
@@ -882,7 +886,8 @@ def test_withdrawing_from_the_teema_page_uses_the_withdrawal_service(
     monkeypatch.setattr(submission_views, "withdraw_submission", spy)
 
     response = signed_in.post(
-        reverse("submissions:withdraw", kwargs={"pk": submission.pk}), {"tagasi": "teema"}
+        reverse("submissions:withdraw", kwargs={"pk": submission.pk}),
+        {"tagasi": "teema", "reason": "Saadeti ekslikult"},
     )
 
     assert response.status_code == 302

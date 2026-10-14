@@ -1369,7 +1369,13 @@ def add_matter_koda_opinion(
             actor=author,
             role=OPINION_WORKING_DOCUMENT_ROLE,
         )
-        if answers_deadline is not None:
+        # On a Chamber initiative the send itself has just answered the
+        # initiative's own deadline (`answer_initiative_deadline_of`, called by
+        # the send wrapper on its own lock of this row — QA-WORKFLOW-04). Read
+        # the field back so this save neither answers it a second time nor
+        # leaves the caller's instance saying it is still due.
+        _read_back_deadline(locked_matter, matter)
+        if answers_deadline is not None and locked_matter.response_deadline is not None:
             from app.matters.response_deadlines import answer_current_deadline_with
 
             answer_current_deadline_with(
@@ -1386,6 +1392,13 @@ def add_matter_koda_opinion(
         if named is not None:
             result.action = complete_next_action(action=named, actor=author)
         return result
+
+
+def _read_back_deadline(locked_matter: Matter, matter: Matter) -> None:
+    """The deadline fields as the row now holds them, on both instances."""
+    locked_matter.refresh_from_db(fields=["response_deadline", "response_requested_at"])
+    matter.response_deadline = locked_matter.response_deadline
+    matter.response_requested_at = locked_matter.response_requested_at
 
 
 #: The fast path names a Teema that is not a Chamber proposal (a forged POST).
@@ -1481,20 +1494,12 @@ def record_sent_proposal_on_new_matter(
     # **A deadline given in the same save is answered by this send** (owner's
     # decision of 2026-10-13, docs/adr/0151 amendment). The optional
     # `Arvamuse tähtaeg` is the day the proposal was due; it went out, so the
-    # deadline ends as answered by exactly this `Submission` — the canonical
-    # `answer_current_deadline_with`, as `+ Koja arvamus` does when it names
-    # one — and no outstanding opinion work is left behind. A tracked deadline
-    # is never discharged implicitly (`work_items._discharge_exists`).
-    if locked_matter.response_deadline is not None:
-        from app.matters.response_deadlines import answer_current_deadline_with
-
-        answer_current_deadline_with(
-            locked=locked_matter,
-            matter=matter,
-            submission=sent,
-            actor=author,
-            expected_revision=None,
-        )
+    # deadline ends as answered by exactly this `Submission`. The send wrapper
+    # above did that (`answer_initiative_deadline_of`) — the one rule every
+    # interactive send on an initiative follows, so a later `+ Koja arvamus`
+    # converges on the same state (QA-WORKFLOW-04). A tracked deadline is never
+    # discharged implicitly (`work_items._discharge_exists`).
+    _read_back_deadline(locked_matter, matter)
     promote_next_planned_action(matter=locked_matter, actor=author)
     return sent
 

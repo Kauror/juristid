@@ -14,6 +14,11 @@ second one, under a sentence saying exactly that. A native disclosure, like
 `Kustuta` on a `Teema käik` row (`matters/partials/row_remove.html`): no second
 page, no `confirm()`, and `Loobu` closes it again.
 
+**A reason is required** (owner decision D7, 2026-10-14): `Põhjus` is
+`required` here and refused empty by `withdraw_submission`, on an open and a
+closed Teema alike. It is kept in the audit row and read back under the
+withdrawal's line in `Teema käik`.
+
 **Nothing is deleted, and the sentence says so.** The opinion stays in `Teema
 käik` as sent on its day, with «Arvamus tagasi võetud» under it, and the file
 that went out stays its evidence (docs/adr/0102 §1, docs/adr/0092 §3).
@@ -41,6 +46,8 @@ distinguishable `Võta tagasi` controls.
       aruandluse arvestusse. Saatmise kirje, kuupäev ja saadetud fail jäävad
       teema käiku ja muudatuste logisse — midagi ei kustutata.
     </p>
+    <label class="uxtl__removeask" for="arvamus-{{ submission.pk }}-tagasi-pohjus">Põhjus</label>
+    <textarea name="reason" id="arvamus-{{ submission.pk }}-tagasi-pohjus" rows="2" maxlength="500" required></textarea>
     <div class="uxtl__editactions">
       <button class="button button--quiet button--tiny" type="submit">Kinnita tagasivõtmine</button>
       <button class="uxtl__edit" type="button" data-close-disclosure>Loobu</button>

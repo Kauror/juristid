@@ -389,6 +389,10 @@ ON_TIME = "ajal"
 LATE = "hiljem"
 VERIFIABLE = "kontrollitav"
 CHANGED_AFTER_SENDING = "muutus"
+#: A date-only send and the request recorded on that same Tallinn day: which
+#: came first is not known, so the answer is not judged (owner decision D10,
+#: 2026-10-14; DC-STATS-02).
+SAME_DAY_REQUEST = "samapaev"
 BEFORE_HISTORY = "ajaloota"
 WITHDRAWN = "tagasi"
 ANSWER_GROUP_LABELS: dict[str, str] = {
@@ -399,11 +403,17 @@ ANSWER_GROUP_LABELS: dict[str, str] = {
     # apart however narrowly they are cut; «ei saa kontrollida» is their note
     # and the list heading (visual QA 2026-10-13, ISSUE-4).
     CHANGED_AFTER_SENDING: "Tähtaeg muutus või lisati pärast saatmist",
+    SAME_DAY_REQUEST: "Küsiti saatmise päeval, järjekord teadmata",
     BEFORE_HISTORY: "Tähtaeg on enne tähtaegade ajalugu",
     WITHDRAWN: "Vastus on tagasi võetud",
 }
 UNVERIFIABLE_NOTE = "Ei saa kontrollida · ei ole protsendis"
-UNVERIFIABLE_GROUPS: tuple[str, ...] = (CHANGED_AFTER_SENDING, BEFORE_HISTORY, WITHDRAWN)
+UNVERIFIABLE_GROUPS: tuple[str, ...] = (
+    CHANGED_AFTER_SENDING,
+    SAME_DAY_REQUEST,
+    BEFORE_HISTORY,
+    WITHDRAWN,
+)
 
 
 @dataclass(frozen=True)
@@ -434,14 +444,29 @@ def _later_than_sending(
     With a real timestamp the two instants are compared. With a date-only send
     — the anchor time in the column is nobody's statement — the comparison is
     by Tallinn calendar day, and ``same_day`` says how a change on the sending
-    day itself is read: as *after* for a deadline revision (the order within
-    that day is unknown, so it cannot be ruled out), and as *not after* for the
-    moment a request was recorded.
+    day itself is read: as *after* (the order within that day is unknown, so it
+    cannot be ruled out). The moment a request was recorded is asked with
+    ``same_day=False`` and its sending-day case separately
+    (:func:`_on_the_sending_day`), so it reads «järjekord teadmata» rather than
+    either order (owner decision D10, 2026-10-14).
     """
     if precision != SentAtPrecision.DATE:
         return moment > sent_at
     moment_day, sent_day = timezone.localdate(moment), timezone.localdate(sent_at)
     return moment_day >= sent_day if same_day else moment_day > sent_day
+
+
+def _on_the_sending_day(moment: datetime, sent_at: datetime, precision: str) -> bool:
+    """A date-only send and ``moment`` on the same Tallinn day: their order is unknown.
+
+    With a real timestamp the instants are ordered and this is never true. With
+    a date-only send the anchor time is nobody's statement, so a request
+    recorded that day may have come before the letter or after it — neither is
+    invented (D10: «ei saa kontrollida», not on time or late).
+    """
+    if precision != SentAtPrecision.DATE:
+        return False
+    return timezone.localdate(moment) == timezone.localdate(sent_at)
 
 
 def _answered_population(context: ReportingContext) -> QuerySet[MatterResponseDeadline]:
@@ -506,6 +531,8 @@ def _answer_rows(context: ReportingContext) -> list[AnswerRow]:
             for other in others[row.matter_id]
         ):
             group = CHANGED_AFTER_SENDING
+        elif _on_the_sending_day(row.requested_at, sent_at, precision):
+            group = SAME_DAY_REQUEST
         else:
             group = ON_TIME if sent_on <= row.deadline else LATE
         rows.append(

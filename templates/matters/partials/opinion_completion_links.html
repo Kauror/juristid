@@ -6,6 +6,10 @@
   form drew it, so a deadline changed meanwhile refuses the save rather than
   being answered unseen. An opinion is never taken as the answer to a request
   just because it is the newest (`app/matters/response_deadlines.py`).
+  On a `Koja algatus` Teema there is no request to name: the deadline is the
+  proposal's own due day, and the send answers it whichever door records it
+  (`answer_initiative_deadline_of`, QA-WORKFLOW-04). The box is replaced by a
+  sentence saying so; no field is posted.
 * `Lõpeta kaasamise ootamine` — one box per open round, none ticked: with two
   rounds open, finishing one leaves the other exactly as it was. No summary is
   invented for the finished round.
@@ -15,7 +19,11 @@ drawn form is refused rather than recorded as a second opinion.
 {% endcomment %}
 <input type="hidden" name="salvestus" value="{{ save_once_token }}">
 {% if matter.is_open %}
-  {% if matter.response_deadline %}
+  {% if matter.response_deadline and koda_initiative %}
+    <p class="cx-check cx-check--action" id="id_koja_arvamus_tahtaeg_taidetud">
+      <span>Saatmine täidab ettepaneku tähtaja: <span class="cx-check__task">tähtaeg {{ matter.response_deadline|date:"j.n.Y" }}</span></span>
+    </p>
+  {% elif matter.response_deadline %}
     <label class="cx-check cx-check--action" for="id_koja_arvamus_vastab">
       <input type="checkbox" name="vastab_tahtajale" id="id_koja_arvamus_vastab" value="{{ deadline_revision }}"{% if refused_choices.answers_deadline %} checked{% endif %}>
       <span>Vastab arvamuse küsimisele: <span class="cx-check__task">tähtaeg {{ matter.response_deadline|date:"j.n.Y" }}</span></span>

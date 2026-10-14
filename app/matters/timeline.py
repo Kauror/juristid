@@ -993,11 +993,23 @@ def _milestone_for_event(event: ChangeEvent) -> ChronologyMilestone:
         # forty pixels up the page. Every other milestone's summary says
         # something the headline does not.
         sub = "" if event.event_type == ChangeEventType.MATTER_CREATED else (event.summary or "")
+    # A withdrawal says why, in the withdrawer's own words, under its own label
+    # (owner decision D7, 2026-10-14: the reason is required). Older withdrawals
+    # recorded none and draw no line.
+    reason = ""
+    if event.event_type == ChangeEventType.SUBMISSION_WITHDRAWN:
+        reason = str((event.payload or {}).get("reason") or "").strip()
     return ChronologyMilestone(
         what=what,
         display_date=format_estonian_date(_local_day(event.occurred_at)),
         sub=sub,
+        own_note=reason,
+        own_note_label=WITHDRAWAL_REASON_LABEL if reason else "",
     )
+
+
+#: The label of a withdrawal's reason on its `Teema käik` row.
+WITHDRAWAL_REASON_LABEL = "Põhjus"
 
 
 def _end_of_day(day: date) -> datetime:

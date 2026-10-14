@@ -51,9 +51,11 @@ def test_a_second_withdrawal_from_a_stale_copy_is_refused(
     submission = _sent_opinion(normal_matter, actor=specialist, organisation=organisation)
     stale = Submission.objects.get(pk=submission.pk)
 
-    withdraw_submission(submission=submission, actor=specialist)
+    withdraw_submission(
+        submission=submission, actor=specialist, reason="Sünteetiline tagasivõtmine"
+    )
     with refused("Tagasi võtta saab ainult saadetud arvamust."):
-        withdraw_submission(submission=stale, actor=specialist)
+        withdraw_submission(submission=stale, actor=specialist, reason="Sünteetiline tagasivõtmine")
 
     assert Submission.objects.get(pk=submission.pk).status == SubmissionStatus.WITHDRAWN
     assert _count(ChangeEventType.SUBMISSION_WITHDRAWN) == 1

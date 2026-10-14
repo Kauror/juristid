@@ -424,10 +424,13 @@ def test_a_sent_opinion_is_withdrawn_from_its_own_row_after_a_confirmation(page,
     expect(chronology(page)).not_to_contain_text("Arvamus tagasi võetud")
 
     chip.click()
+    # A reason is required (owner decision D7): the browser refuses an empty one.
+    row.get_by_label("Põhjus").fill("Saadeti vale versioon")
     confirm.click()
     page.wait_for_load_state("load")
 
     expect(chronology(page)).to_contain_text("Arvamus tagasi võetud")
+    expect(chronology(page)).to_contain_text("Saadeti vale versioon")
     expect(chronology(page)).to_contain_text("Arvamus välja")
     expect(page.locator("summary", has_text="Võta tagasi")).to_have_count(0)
 
