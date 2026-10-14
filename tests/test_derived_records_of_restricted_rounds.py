@@ -156,13 +156,21 @@ def _gate_client(settings) -> Client:
 # ---------------------------------------------------------------------------
 
 
-def test_a_new_reply_and_its_file_carry_the_rounds_restriction(people):
+def test_every_new_reply_and_its_file_carry_the_rounds_restriction(people):
     matter = factories.MatterFactory(owner=people["owner"], visibility=Visibility.NORMAL)
-    reply = _reply(matter, people["owner"], _round(matter, people["owner"]))
-    assert reply.visibility_override == Visibility.RESTRICTED
-    documents = Document.objects.filter(links__external_position=reply)
-    assert documents.exists()
-    assert set(documents.values_list("visibility_override", flat=True)) == {"RESTRICTED"}
+    round_ = _round(matter, people["owner"])
+    # Every answer to the round, not only the first (ADR 0162 §1; D8 later replies).
+    replies = [_reply(matter, people["owner"], round_) for _ in range(3)]
+    for reply in replies:
+        assert reply.visibility_override == Visibility.RESTRICTED
+        documents = Document.objects.filter(links__external_position=reply)
+        assert documents.exists()
+        assert set(documents.values_list("visibility_override", flat=True)) == {"RESTRICTED"}
+    assert (
+        not MatterExternalPosition.objects.visible_to(people["reader"])
+        .filter(engagement=round_)
+        .exists()
+    )
 
 
 def test_a_reply_to_an_unrestricted_round_is_unrestricted_and_readable(people):
