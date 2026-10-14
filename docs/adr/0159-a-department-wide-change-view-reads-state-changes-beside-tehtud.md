@@ -83,11 +83,16 @@ same window. No model, no migration, no new event type, no write.
 >   which carries the check's id as a string, stays the person's); a planned
 >   step made current because the current one was finished (`promoted` — it
 >   was «määras» once, when planned); a check re-dated from a corrected send
->   date (`recalculated`). These are **counted aside and marked as the
->   system's** (`Coverage.automatic_steps`, «Süsteemi automaatseid tegevuse
->   muudatusi … mida ei loeta kellegi tegevuseks»), never as «määras». A next
->   check the lawyer dated (`automatic: false`) and a check moved by a person
->   remain that person's acts.
+>   date (`recalculated`). A check cancelled because its opinion was withdrawn
+>   (reason «Arvamus võeti tagasi» with the `follow_up` block) is the
+>   withdrawal's consequence, not a separate «tühistas» (owner, 2026-10-14);
+>   so is one cancelled because its opinion was replaced (reason «Arvamus
+>   asendati», same shape) — the replacement's consequence.
+>   These are **counted aside and marked as the system's**
+>   (`Coverage.automatic_steps`, «Süsteemi automaatseid tegevuse muudatusi …
+>   mida ei loeta kellegi tegevuseks»), never as a person's «määras» or
+>   «tühistas». A next check the lawyer dated (`automatic: false`) and a check
+>   moved by a person remain that person's acts.
 > * **One closure is one entry.** The `NEXT_ACTION_CANCELLED` rows a closure
 >   writes for the current and every planned step (reason «Teema suleti», or a
 >   `closure` key should a writer add one) are grouped by **the closure that

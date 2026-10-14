@@ -511,3 +511,76 @@ def test_a_real_closure_writes_the_ids_it_ended_or_is_grouped_by_order(departmen
 
     [row] = _closure_rows(dc.build_changes(department_head))
     assert row.detail == "lõppes 3 tegevust"
+
+
+# ---------------------------------------------------------------------------
+# A withdrawal's check cancellation is the withdrawal's consequence
+# ---------------------------------------------------------------------------
+
+
+def test_withdrawing_an_opinion_is_not_a_person_cancelling_its_check(
+    department_head, specialist, ministry
+):
+    """Owner, 2026-10-14: the scheduled check that ends because its opinion was
+    withdrawn is not a separate «tühistas» in the withdrawer's name. It is the
+    system's, counted aside; the audit row stays."""
+    from app.submissions.services import withdraw_submission
+
+    matter = create_matter(title="Tagasi võetud", owner=specialist, actor=specialist)
+    opinion = mark_sent(matter, specialist, [ministry])
+    check = active_check(opinion)
+    before = dc.build_changes(department_head).coverage.automatic_steps
+
+    withdraw_submission(submission=opinion, actor=specialist, reason="Saadeti ekslikult")
+
+    changes = dc.build_changes(department_head)
+    assert _breakdown(changes)["tühistas järgmise tegevuse"] == 0
+    assert _tegevused(changes).count == 0
+    assert changes.coverage.automatic_steps == before + 1
+    event = ChangeEvent.objects.get(
+        event_type=ChangeEventType.NEXT_ACTION_CANCELLED, object_id=check.pk
+    )
+    assert event.actor == specialist
+    assert "follow_up" in event.payload
+
+
+def test_a_persons_own_cancellation_still_counts_beside_a_withdrawal(
+    department_head, specialist, ministry
+):
+    from app.submissions.services import withdraw_submission
+
+    matter = create_matter(title="Oma tühistus", owner=specialist, actor=specialist)
+    opinion = mark_sent(matter, specialist, [ministry])
+    withdraw_submission(submission=opinion, actor=specialist, reason="Saadeti ekslikult")
+    own = set_next_action(matter=matter, text="Helistan", actor=specialist)
+    cancel_next_action(action=own, actor=specialist, reason="Arvamus võeti tagasi")
+
+    breakdown = _breakdown(dc.build_changes(department_head))
+    # Even in the same words: a step that watched no opinion is the person's.
+    assert breakdown["tühistas järgmise tegevuse"] == 1
+    assert breakdown["määras järgmise tegevuse"] == 1
+
+
+def test_replacing_an_opinion_is_not_a_person_cancelling_its_check(
+    department_head, specialist, ministry
+):
+    """The check that ends because its opinion was replaced («Arvamus
+    asendati») is the replacement's consequence, counted aside; the audit row
+    stays and names the person."""
+    from app.submissions.services import supersede_submission
+
+    matter = create_matter(title="Asendatud", owner=specialist, actor=specialist)
+    opinion = mark_sent(matter, specialist, [ministry])
+    check = active_check(opinion)
+    before = dc.build_changes(department_head).coverage.automatic_steps
+
+    supersede_submission(submission=opinion, actor=specialist)
+
+    changes = dc.build_changes(department_head)
+    assert _breakdown(changes)["tühistas järgmise tegevuse"] == 0
+    assert changes.coverage.automatic_steps == before + 1
+    event = ChangeEvent.objects.get(
+        event_type=ChangeEventType.NEXT_ACTION_CANCELLED, object_id=check.pk
+    )
+    assert event.actor == specialist
+    assert event.payload["reason"] == "Arvamus asendati"
