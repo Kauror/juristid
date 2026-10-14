@@ -8,8 +8,8 @@ day fixed at 13.10.2026) and adding the shapes it does not hold:
   day in UTC) — late;
 * a TEST twin and a restricted Matter with the same full history — record
   identity of every list for head and reader;
-* a request recorded on the same day as a date-only send — documents that it is
-  judged (DESIGN CONCERN DC-STATS-02), not asserted to be wrong.
+* a request recorded on the same day as a date-only send — «ei saa kontrollida»
+  (DC-STATS-02, owner decision D10 of 2026-10-14).
 
 Every "after" figure uses a fresh context (`ctx` builds one per call).
 """
@@ -192,10 +192,13 @@ def test_an_initiative_with_an_arrival_and_its_own_deadline_is_excluded_and_name
     assert any("Koja algatust" in note for note in result.notes)
 
 
-def test_same_day_request_on_a_date_only_send_is_judged(mgmt):  # noqa: F811
-    """Documents DC-STATS-02: the request recorded on the sending day of a date-only
-    send is read as *before* the send and the answer is judged (code: same_day=False).
-    ADR 0160 §4 names only a deadline *change* on the sending day as unknowable."""
+def test_same_day_request_on_a_date_only_send_is_not_verifiable(mgmt):  # noqa: F811
+    """DC-STATS-02, decided by the owner (D10, 2026-10-14): a request recorded on the
+    sending day of a date-only send cannot be ordered against it, so the answer is
+    «ei saa kontrollida» — neither on time nor late, and outside the percentage.
+
+    (Was `test_same_day_request_on_a_date_only_send_is_judged`, which pinned the
+    old reading `same_day=False`: on time.)"""
     m = _matter("sama päeva küsimine")
     s = _sent(m, "Sama päeva arvamus", at(date(2026, 9, 15), 0), precision=SentAtPrecision.DATE)
     _ended(
@@ -206,4 +209,66 @@ def test_same_day_request_on_a_date_only_send_is_judged(mgmt):  # noqa: F811
         requested=at(date(2026, 9, 15), 16),
         submission=s,
     )
+    before = compute(keys.OPINIONS_ON_TIME, ctx(mgmt.head))
+    context = ctx(mgmt.head)
+    assert m.title not in _rows(context, keys.OPINIONS_ON_TIME, management.ON_TIME)
+    assert m.title not in _rows(context, keys.OPINIONS_ON_TIME, management.LATE)
+    assert m.title not in _rows(context, keys.OPINIONS_ON_TIME, management.VERIFIABLE)
+    assert m.title in _rows(context, keys.OPINIONS_ON_TIME, management.SAME_DAY_REQUEST)
+    assert management.SAME_DAY_REQUEST in management.UNVERIFIABLE_GROUPS
+    labels = {segment.label: segment for segment in before.segments}
+    same_day = labels[management.ANSWER_GROUP_LABELS[management.SAME_DAY_REQUEST]]
+    assert same_day.value == 1
+    assert same_day.is_unknown
+
+
+def test_a_request_recorded_the_day_before_a_date_only_send_is_still_judged(mgmt):  # noqa: F811
+    """D10 does not reach an ordinary verifiable case: the request day is earlier."""
+    m = _matter("eelmise päeva küsimine")
+    s = _sent(
+        m, "Järgmisel päeval saadetud", at(date(2026, 9, 15), 0), precision=SentAtPrecision.DATE
+    )
+    _ended(
+        m,
+        date(2026, 9, 20),
+        outcome=ANSWERED,
+        ended=at(date(2026, 9, 16)),
+        requested=at(date(2026, 9, 14), 16),
+        submission=s,
+    )
     assert m.title in _rows(ctx(mgmt.head), keys.OPINIONS_ON_TIME, management.ON_TIME)
+
+
+def test_a_same_day_request_before_a_timestamped_send_is_still_judged(mgmt):  # noqa: F811
+    """With a real send time the two instants are ordered: nothing is unknown."""
+    m = _matter("sama päeva küsimine kellaajaga")
+    s = _sent(m, "Kellaajaga arvamus", at(date(2026, 9, 15), 17))
+    _ended(
+        m,
+        date(2026, 9, 14),
+        outcome=ANSWERED,
+        ended=at(date(2026, 9, 16)),
+        requested=at(date(2026, 9, 15), 9),
+        submission=s,
+    )
+    assert m.title in _rows(ctx(mgmt.head), keys.OPINIONS_ON_TIME, management.LATE)
+
+
+def test_the_same_day_group_opens_its_own_list(mgmt, client):  # noqa: F811
+    m = _matter("sama päeva loend")
+    s = _sent(
+        m, "Sama päeva loendi arvamus", at(date(2026, 9, 15), 0), precision=SentAtPrecision.DATE
+    )
+    _ended(
+        m,
+        date(2026, 9, 20),
+        outcome=ANSWERED,
+        ended=at(date(2026, 9, 16)),
+        requested=at(date(2026, 9, 15), 11),
+        submission=s,
+    )
+    result = compute(keys.OPINIONS_ON_TIME, ctx(mgmt.head))
+    label = management.ANSWER_GROUP_LABELS[management.SAME_DAY_REQUEST]
+    (segment,) = [segment for segment in result.segments if segment.label == label]
+    client.force_login(mgmt.head)
+    assert m.title in _list_titles(client, segment.url)

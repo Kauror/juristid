@@ -283,7 +283,11 @@ def test_withdraw_twice_writes_one_event_and_cancels_the_check(signed_in, specia
 def test_withdrawn_opinion_cannot_be_sent_again(signed_in, specialist, organisation):
     matter = _matter(specialist)
     sent = send_koja_arvamus(matter, specialist, [organisation], day(-2))
-    signed_in.post(reverse("submissions:withdraw", kwargs={"pk": sent.pk}), {})
+    # A reason is required since D7 (2026-10-14); this test is about the
+    # re-send refusal, so the withdrawal itself must succeed.
+    signed_in.post(
+        reverse("submissions:withdraw", kwargs={"pk": sent.pk}), {"reason": "Saadeti ekslikult"}
+    )
 
     signed_in.post(
         reverse("submissions:mark_sent", kwargs={"pk": sent.pk}),

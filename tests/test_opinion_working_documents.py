@@ -417,7 +417,9 @@ def test_a_draft_is_refused(matter, specialist, organisation):
 
 def test_a_withdrawn_opinion_still_takes_its_working_document(matter, specialist, organisation):
     submission = _opinion(matter, specialist, organisation).record
-    withdraw_submission(submission=submission, actor=specialist)
+    withdraw_submission(
+        submission=submission, actor=specialist, reason="Sünteetiline tagasivõtmine"
+    )
 
     add_opinion_working_documents(submission=submission, author=specialist, uploads=[_docx()])
 
@@ -891,7 +893,9 @@ def test_two_opinions_are_told_apart_in_the_rail(signed_in, matter, specialist, 
 
 def test_a_withdrawn_opinion_says_so_in_the_rail(signed_in, matter, specialist, organisation):
     submission = _opinion(matter, specialist, organisation).record
-    withdraw_submission(submission=submission, actor=specialist)
+    withdraw_submission(
+        submission=submission, actor=specialist, reason="Sünteetiline tagasivõtmine"
+    )
 
     block = _rail_block(_teema(signed_in, matter))
 

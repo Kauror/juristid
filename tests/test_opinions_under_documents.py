@@ -801,7 +801,10 @@ def test_the_full_opinion_lifecycle_runs_from_documents(signed_in, specialist, o
     # The draft block no longer mentions it: one opinion, one representation.
     assert "draftrow" not in body
 
-    signed_in.post(reverse("submissions:withdraw", kwargs={"pk": submission.pk}))
+    signed_in.post(
+        reverse("submissions:withdraw", kwargs={"pk": submission.pk}),
+        {"reason": "Saadeti ekslikult"},
+    )
     submission.refresh_from_db()
     assert submission.status == SubmissionStatus.WITHDRAWN
     assert ChangeEvent.objects.filter(
@@ -1509,7 +1512,7 @@ def test_a_withdrawn_sends_evidence_is_complete_and_not_offered_again(
 
     from app.submissions.services import withdraw_submission
 
-    withdraw_submission(submission=sent, actor=specialist)
+    withdraw_submission(submission=sent, actor=specialist, reason="Sünteetiline tagasivõtmine")
 
     response = signed_in.get(_documents_url(matter))
     body = response.content.decode()

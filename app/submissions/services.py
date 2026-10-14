@@ -629,6 +629,10 @@ def _for_information_of(submission: Submission) -> list[Any]:
     ]
 
 
+#: `Võta tagasi` with an empty `Põhjus` (owner decision D7, 2026-10-14).
+WITHDRAWAL_NEEDS_A_REASON = "Tagasivõtmiseks kirjuta põhjus."
+
+
 @transaction.atomic
 def withdraw_submission(
     *, submission: Submission, actor: Any = None, reason: str = ""
@@ -640,7 +644,23 @@ def withdraw_submission(
     SENT copy would otherwise both pass the check and write two
     `SUBMISSION_WITHDRAWN` rows — two withdrawals in `Teema käik` for one act.
     Callers must use the returned instance.
+
+    **A reason is required, on every Matter** (owner decision D7, 2026-10-14).
+    A withdrawal takes a sent letter out of every count and every statistic,
+    so the person says why; the words are kept in the `SUBMISSION_WITHDRAWN`
+    row and read back in `Teema käik`. Required everywhere rather than only on
+    a closed Matter: the act and its consequences are the same on an open one.
+
+    **A closed Matter may be corrected this way** — no open-Matter lock, the
+    existing contract (`submissions.views.metadata`). The withdrawal changes the
+    opinion's status, cancels only that opinion's own live check
+    (docs/adr/0146 §9; a closed Matter has none left) and nothing else: the
+    Matter stays closed, its stage, steps and deadlines are untouched, and the
+    sent bytes and the send stay as evidence.
     """
+    reason = (reason or "").strip()
+    if not reason:
+        raise DomainError(WITHDRAWAL_NEEDS_A_REASON)
     matter = lock_matter_for_evidence_integrity(submission.matter_id)
     submission = lock_submission_for_evidence_integrity(submission.pk)
     if submission.status != SubmissionStatus.SENT:
@@ -1137,6 +1157,7 @@ def mark_submission_sent_on_open_matter(
             reference=reference,
         )
         schedule_follow_up_of(sent, actor=actor)
+        answer_initiative_deadline_of(sent, actor=actor)
     return sent
 
 
@@ -1199,6 +1220,7 @@ def register_sent_opinion_on_open_matter(
             further_versions=further_versions,
         )
         schedule_follow_up_of(sent, actor=actor)
+        answer_initiative_deadline_of(sent, actor=actor)
     return sent
 
 
@@ -1216,6 +1238,21 @@ def schedule_follow_up_of(submission: Submission, *, actor: Any = None) -> None:
     from app.workflow.follow_ups import schedule_first_check
 
     schedule_first_check(submission=submission, actor=actor)
+
+
+def answer_initiative_deadline_of(submission: Submission, *, actor: Any = None) -> None:
+    """On a `Koja algatus` Teema the interactive send answers its own deadline.
+
+    Called beside `schedule_follow_up_of`, by the same two interactive wrappers,
+    so every door that records a proposal going out — `Uus teema` «Märgi
+    saadetud Koja arvamuseks», `+ Koja arvamus`, «Registreeri saatmine»,
+    «Märgi saadetuks» — leaves the same state behind (QA-WORKFLOW-04,
+    docs/adr/0151 amendment of 2026-10-13). An ordinary Teema is untouched here:
+    its deadline is a request, answered only by an opinion a person names.
+    """
+    from app.matters.response_deadlines import answer_initiative_deadline_by_send
+
+    answer_initiative_deadline_by_send(submission=submission, actor=actor)
 
 
 # ---------------------------------------------------------------------------

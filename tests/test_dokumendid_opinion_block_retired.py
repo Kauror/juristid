@@ -364,7 +364,9 @@ def test_a_withdrawn_opinion_stays_an_arvamus_row_and_is_not_unfinished(
 ):
     matter = factories.MatterFactory(owner=specialist)
     submission = _sent_opinion(matter, actor=specialist, organisation=organisation)
-    withdraw_submission(submission=submission, actor=specialist)
+    withdraw_submission(
+        submission=submission, actor=specialist, reason="Sünteetiline tagasivõtmine"
+    )
 
     body = _documents(signed_in, matter)
 
@@ -467,7 +469,7 @@ def test_only_stranded_uploads_are_offered_for_registration(
     withdrawn = _sent_opinion(
         matter, actor=specialist, organisation=organisation, filename="Tagasi.pdf"
     )
-    withdraw_submission(submission=withdrawn, actor=specialist)
+    withdraw_submission(submission=withdrawn, actor=specialist, reason="Sünteetiline tagasivõtmine")
     stranded = _file(
         matter, name="Uksik.pdf", role=DocumentRole.KODA_SUBMISSION_FINAL, actor=specialist
     )

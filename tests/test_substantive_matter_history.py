@@ -1126,7 +1126,9 @@ def test_the_send_date_is_the_records_own_and_not_the_day_it_was_withdrawn(
         sent_on=sent_on,
         title="Koja arvamus",
     ).record
-    withdraw_submission(submission=submission, actor=specialist)
+    withdraw_submission(
+        submission=submission, actor=specialist, reason="Sünteetiline tagasivõtmine"
+    )
 
     rows = [item for item in _history(normal_matter, specialist) if item.submission]
     assert rows[0].milestone.display_date == _et(sent_on)
@@ -1147,7 +1149,9 @@ def test_a_restricted_withdrawn_opinion_stays_hidden(
         title="Koja salajane arvamus",
     )
     submission = result.record
-    withdraw_submission(submission=submission, actor=specialist)
+    withdraw_submission(
+        submission=submission, actor=specialist, reason="Sünteetiline tagasivõtmine"
+    )
     # The document first: `submissions_check_final_evidence` refuses final
     # evidence less restricted than the send it proves.
     document = result.documents[0]

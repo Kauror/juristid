@@ -333,3 +333,11 @@ blanket rule threw away a date the lawyer had typed.
 The track, the two `Uus teema` paths, `SubmissionKind.KODA_PROPOSAL`, the
 thirty-day check and its wording, `initiative_after_edit`, the ordinary
 deadline lifecycle and every ordinary Teema.
+
+---
+
+## Note, 2026-10-14 — §4 holds for every send door
+
+The 2026-10-13 amendment's §4 was implemented only on the fast path. ADR 0163 §1
+makes every interactive send on a `Koja algatus` Teema answer its own current
+deadline (QA-WORKFLOW-04); nothing above changes.

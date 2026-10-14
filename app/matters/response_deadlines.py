@@ -395,6 +395,52 @@ def answer_current_deadline_with(
     return row
 
 
+def answer_initiative_deadline_by_send(
+    *, submission: Any, actor: Any
+) -> MatterResponseDeadline | None:
+    """A Chamber initiative's own `Arvamuse tähtaeg` is met when its proposal goes out.
+
+    **QA-WORKFLOW-04 (2026-10-14).** On a `Koja algatus` Teema the deadline is
+    the day the Chamber's own proposal or appeal is due by — nobody asked Koda
+    for anything (docs/adr/0151, amendment of 2026-10-13, §3). So the send of
+    that proposal is the answer, whichever door records it: «Märgi saadetud
+    Koja arvamuseks» on `Uus teema`, a later `+ Koja arvamus`, Dokumendid
+    «Registreeri saatmine» or «Märgi saadetuks». Before this, only the first
+    answered it; the others left the deadline outstanding (and later overdue)
+    unless the person ticked a box worded for a request the initiative never had.
+
+    Called by the interactive send wrappers in `app.submissions.services`, after
+    the send is stamped and inside its transaction — the same place
+    `schedule_follow_up_of` is called from, so every interactive send converges
+    on one state. The importers and the archive apply call neither: a letter
+    from 2019 answers nothing today.
+
+    Nothing is fabricated: no request is created, and an ordinary Teema's
+    deadline is still answered only by an opinion a person names for it
+    (`answer_current_deadline_with`). With no current deadline, or on a Teema
+    that is not an initiative, this does nothing. A second send on the same
+    initiative finds the deadline already ended and does nothing either; a
+    deadline the lawyer set after the first send is the next proposal's due
+    day, and the next send answers it.
+    """
+    from app.matters.initiative import is_koda_initiative
+    from app.submissions.enums import SubmissionStatus
+
+    if getattr(submission, "status", None) != SubmissionStatus.SENT:
+        return None
+    locked = lock_matter_for_write(submission.matter_id)
+    if not is_koda_initiative(locked) or locked.response_deadline is None:
+        return None
+    row = _end_current(
+        locked=locked,
+        outcome=ResponseDeadlineOutcome.ANSWERED,
+        actor=actor,
+        submission=submission,
+    )
+    _write_field(locked=locked, matter=locked, deadline=None, requested_at=None, actor=actor)
+    return row
+
+
 def end_deadline_left_by_closure(*, locked: Matter, matter: Matter, actor: Any) -> None:
     """On reopening: the deadline the file closed with is not current work again.
 

@@ -241,3 +241,12 @@ None of the decisions above is open any more.
 
 Entirely by code: no migration, no stored value. Removing the six entries and the
 module restores the previous catalogue.
+
+---
+
+## Note, 2026-10-14 — a same-day request on a date-only send (owner decision D10)
+
+§4's date-only rule now covers the moment a request was recorded too: a
+request recorded on the sending day of a date-only send is not verifiable, in its
+own group «Küsiti saatmise päeval, järjekord teadmata» (ADR 0163 §3;
+`OPINIONS_ON_TIME` version 2). Everything else in §4 stands.

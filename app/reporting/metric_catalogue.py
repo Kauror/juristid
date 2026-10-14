@@ -1370,7 +1370,9 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
     ),
     MetricDefinition(
         key=OPINIONS_ON_TIME,
-        version=1,
+        # 2: a request recorded on the sending day of a date-only send is not
+        # judged (owner decision D10, 2026-10-14).
+        version=2,
         label_et="Arvamused tähtajaks",
         description_et=(
             "Kui suur osa arvamuse küsimistest, millele vastati saadetud Koja "
@@ -1389,7 +1391,9 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
             "millele vastati ilma Juristides saadetud arvamuseta (ainult "
             "selgitusega). Tähtajad, mida ei saa kontrollida: tähtaeg muutus "
             "pärast saatmist; tähtaeg või arvamuse küsimine salvestati alles "
-            "pärast saatmist; tähtaeg pärineb ajast enne tähtaegade ajaloo "
+            "pärast saatmist; arvamuse küsimine salvestati samal päeval, kui "
+            "ainult kuupäevaga saadetud arvamus, nii et järjekord on teadmata; "
+            "tähtaeg pärineb ajast enne tähtaegade ajaloo "
             "pidamist; või vastuseks nimetatud arvamus on tagasi võetud. Neid ei "
             "loeta ei õigeaegseks ega hilinenuks; nende arv on näha."
         ),
