@@ -695,8 +695,8 @@ def submissions_sent_yoy_change(context: ReportingContext) -> MetricResult:
         # could speak for.
         status = MetricStatus.INSUFFICIENT_DATA
         notes.append(
-            f"Eelmise aasta võrreldava perioodi kohta mõõtmist ei ole: esimene "
-            f"salvestatud arvamus on {format_estonian_date(first_day)}."
+            f"Eelmise aasta kohta mõõtmist ei ole: esimene salvestatud arvamus on "
+            f"{format_estonian_date(first_day)}."
         )
 
     return simple_result(
