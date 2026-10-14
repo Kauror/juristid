@@ -189,9 +189,10 @@ def test_minu_asjad_row_menus_are_named_for_their_teema(signed_in, specialist):
     body = signed_in.get(reverse("matters:my_work")).content.decode()
     names = re.findall(r'class="rowmenu__trigger" aria-label="([^"]+)"', body)
 
-    assert "Rea tegevused: Esimene rida" in names
-    assert "Rea tegevused: Teine rida" in names
+    assert any(name.startswith("Rea tegevused: Esimene rida · ") for name in names)
+    assert any(name.startswith("Rea tegevused: Teine rida · ") for name in names)
     assert "Rea tegevused" not in names
+    assert len(set(names)) == len(names)
 
 
 # ---------------------------------------------------------------------------
