@@ -487,8 +487,13 @@ def _automatic_q() -> Q:
     * a planned step made current because the current one was finished
       (``promoted``) — it was «määras» once, when it was planned, and the
       finishing is its own «lõpetas»;
-    * a check's day recalculated from a corrected send date (``recalculated``).
+    * a check's day recalculated from a corrected send date (``recalculated``);
+    * a check cancelled because its opinion was withdrawn (reason
+      `follow_ups.WITHDRAWN_OPINION` with the ``follow_up`` block) — the
+      withdrawal is the person's act, and the check ending is its consequence.
     """
+    from app.workflow.follow_ups import WITHDRAWN_OPINION
+
     # JSON containment (`@>`), never a key lookup: a missing key compares NULL,
     # and `exclude()` over a NULL drops the row it should keep.
     return (
@@ -504,6 +509,11 @@ def _automatic_q() -> Q:
         | Q(
             event_type=ChangeEventType.NEXT_ACTION_RESCHEDULED,
             payload__contains={"recalculated": True},
+        )
+        | Q(
+            event_type=ChangeEventType.NEXT_ACTION_CANCELLED,
+            payload__contains={"reason": WITHDRAWN_OPINION},
+            payload__has_key="follow_up",
         )
     )
 
