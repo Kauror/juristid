@@ -418,9 +418,11 @@ class TeamRow:
     is_outside_department: bool = False
     is_unassigned: bool = False
     is_total: bool = False
-    #: The whole display name, for the `title` beside a first name. Empty on the
-    #: rows that are not a person.
-    full_name: str = ""
+    #: What the row is *shown* as: a colleague's first name, lengthened only
+    #: where two colleagues share it (`app.accounts.naming`). ``name`` stays the
+    #: whole display name — the row's identity and its `title`. Empty on the
+    #: rows that are not a person, which show ``name``.
+    label: str = ""
     url: str = ""
 
 
@@ -631,8 +633,8 @@ def team_rows(
     rows = [
         TeamRow(
             key=str(person.pk),
-            name=names.get(person.pk) or person.display_name,
-            full_name=person.display_name,
+            name=person.display_name,
+            label=names.get(person.pk, ""),
             initials=person.initials,
             cells=tuple(
                 cell(column, sep, label_of(label, group), person.pk)

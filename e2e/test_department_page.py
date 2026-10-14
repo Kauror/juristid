@@ -84,7 +84,15 @@ def late_work(page):
 
 
 def team_row(page, name: str):
-    return page.locator(".uxstat__row").filter(has_text=name).first
+    """A colleague's Meeskond row, found by the whole display name.
+
+    The row *shows* the first name — the department addresses each other that
+    way (QA remediation 2026-10-14, «Marko») — and carries the whole name as
+    the name cell's `title` where the two differ.
+    """
+    rows = page.locator(".uxstat__row")
+    by_title = rows.filter(has=page.locator(f'.uxteam__name[title="{name}"]'))
+    return by_title.or_(rows.filter(has_text=name)).first
 
 
 def meeskond(page):

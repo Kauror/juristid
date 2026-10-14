@@ -190,14 +190,15 @@ second `tbody` of the same table. Two copies of a row are two rows that drift.
           **Late in words, not only in red** (QA-BROWSER-04, WCAG 1.4.1). The
           overdue colour and weight stay; «üle tähtaja» says the same thing to
           a reader who cannot tell the tints apart and to a screen reader, the
-          way Minu asjad and Osakond already say «N p üle».
+          way Minu asjad and Osakond already say «N p üle». Beside the date
+          rather than inside it, so the date is still the date.
         {% endcomment %}
         {% comment %}
           One line, and deliberately: the class list used to be written across
           four, which left the rendered attribute carrying the indentation
           between its names. Harmless to CSS and not harmless to read.
         {% endcomment %}
-        <span class="dateline{% if shown.is_overdue %} dateline--overdue{% elif shown.is_deadline %} dateline--deadline{% endif %}{% if shown.is_approximate %} dateline--approximate{% endif %}">{{ shown.display }}{% if shown.is_overdue %} · üle tähtaja{% endif %}{% if shown.settled %} · {{ shown.settled }}{% endif %}</span>
+        <span class="dateline{% if shown.is_overdue %} dateline--overdue{% elif shown.is_deadline %} dateline--deadline{% endif %}{% if shown.is_approximate %} dateline--approximate{% endif %}">{{ shown.display }}{% if shown.settled %} · {{ shown.settled }}{% endif %}</span>{% if shown.is_overdue %}<span class="dateline__late"> · üle tähtaja</span>{% endif %}
       {% else %}
         <span class="muted">—</span>
       {% endif %}

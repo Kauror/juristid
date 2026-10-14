@@ -732,6 +732,13 @@ p.formnote {
   font-weight: var(--typography-weight-bold);
 }
 
+/* «üle tähtaja» beside an overdue date: the same state in words, so it is
+   not carried by colour alone (QA-BROWSER-04, WCAG 1.4.1). */
+.dateline__late {
+  font-size: var(--typography-size-meta-sm);
+  color: var(--status-danger);
+}
+
 /* An approximate date is rendered at the precision it was known to, so it
    must not be shown in a way that implies a committed day. */
 .dateline--approximate {
