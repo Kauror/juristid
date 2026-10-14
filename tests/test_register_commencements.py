@@ -195,9 +195,11 @@ def test_a_quarter_is_written_as_a_quarter_and_never_as_a_day(signed_in):
 @pytest.mark.parametrize(
     ("start", "end", "precision", "bucket"),
     [
-        # A day: inside today … today+30 inclusive, both ends.
+        # A day: inside today … today+29 inclusive, both ends — 30 dates
+        # (docs/adr/0158 §4 amendment, owner's decision 2026-10-14).
         (TODAY, None, DatePrecision.EXACT, "jargmised"),
-        (TODAY + datetime.timedelta(days=30), None, DatePrecision.EXACT, "jargmised"),
+        (TODAY + datetime.timedelta(days=29), None, DatePrecision.EXACT, "jargmised"),
+        (TODAY + datetime.timedelta(days=30), None, DatePrecision.EXACT, "hiljem"),
         (TODAY + datetime.timedelta(days=31), None, DatePrecision.EXACT, "hiljem"),
         (TODAY - datetime.timedelta(days=1), None, DatePrecision.EXACT, "moodunud"),
         # A month wholly inside the next 30 days is in it; one that is not, is not.
@@ -225,7 +227,7 @@ def test_bucket_rules(start, end, precision, bucket):
 
 
 def test_a_month_wholly_inside_the_next_thirty_days_is_in_them():
-    """1 November with a 30-day window reaching 1 December: the whole of
+    """1 November with a 30-date window reaching 30 November: the whole of
     November is inside, so it is there by containment."""
     record = factories.EffectiveDateFactory.build(
         date_value=datetime.date(2026, 11, 1),
