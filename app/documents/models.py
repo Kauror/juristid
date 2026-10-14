@@ -14,10 +14,10 @@ from django.db import models
 
 from app.core.authorization import apply as apply_scope
 from app.core.authorization import (
-    child_visibility_q,
     effective_visibility_expression,
     scope_for_user,
 )
+from app.core.derived_visibility import document_visibility_q
 from app.core.enums import Visibility
 from app.core.models import BaseModel, RemovableRecord, VisibilityInheritingModel
 from app.documents.enums import (
@@ -40,8 +40,14 @@ class DocumentQuerySet(models.QuerySet):
         read through this, so none of them needs a filter of its own. The row,
         its versions and their bytes stay for the plain manager — the evidence
         integrity checks and a Matter's deletion plan read through that.
+
+        **A reply's file is never more visible than the round the reply
+        answers** (docs/adr/0162): the file of a reply to a restricted
+        `Kaasamine` is hidden from the readers the round excludes, read live
+        through its `DocumentLink`, so a file captured before replies inherited
+        the round's restriction is covered without rewriting it.
         """
-        scoped = apply_scope(self, child_visibility_q(scope_for_user(user)))
+        scoped = apply_scope(self, document_visibility_q(scope_for_user(user)))
         return scoped.filter(removed_at__isnull=True)
 
     def with_effective_visibility(self) -> DocumentQuerySet:
@@ -111,6 +117,11 @@ class Document(VisibilityInheritingModel, RemovableRecord):
     )
 
     objects = DocumentQuerySet.as_manager()
+
+    #: The scoping rule `app.core.authorization.child_scope_q` reads, so a
+    #: document event in Teema käik / Muudatused follows `visible_to` exactly
+    #: (docs/adr/0162).
+    visibility_rule = staticmethod(document_visibility_q)
 
     class Meta:
         verbose_name = "dokument"
@@ -215,6 +226,12 @@ class DocumentVersion(BaseModel):
     extraction_attempts = models.PositiveSmallIntegerField(
         default=0, db_default=0, verbose_name="töötlemiskatseid"
     )
+
+    #: A version has no visibility of its own: it is its document's. Read by
+    #: `child_scope_q` for `EVIDENCE_VERSION_ADDED`, so that event follows
+    #: `Document.visible_to` exactly, the derived-record half included
+    #: (docs/adr/0162).
+    visibility_rule = staticmethod(lambda scope: document_visibility_q(scope, prefix="document__"))
 
     class Meta:
         verbose_name = "dokumendi versioon"

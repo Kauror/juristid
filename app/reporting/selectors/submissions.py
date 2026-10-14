@@ -28,7 +28,8 @@ from datetime import date, datetime, time, timedelta
 from typing import Any
 from urllib.parse import urlencode
 
-from django.db.models import Count, Q, QuerySet
+from django.db.models import Count, IntegerField, OuterRef, QuerySet, Subquery, Value
+from django.db.models.functions import Coalesce
 from django.urls import reverse
 from django.utils import timezone
 
@@ -298,6 +299,26 @@ def submissions_by_kind(context: ReportingContext) -> MetricResult:
     )
 
 
+def visible_sent_count(context: ReportingContext) -> Coalesce:
+    """How many sent opinions on the outer Matter **this viewer may read**.
+
+    Authorization before aggregation (docs/adr/0005): a correlated count over
+    ``Submission.objects.visible_to(viewer)``, never ``Count("submissions")``
+    over the raw relation. A restricted opinion on a Matter the reader may see
+    otherwise moved the reader's buckets and so disclosed that it exists
+    (QA-STATS-03). The Matter population itself is the caller's, unchanged.
+    """
+    sent = (
+        Submission.objects.visible_to(context.viewer)
+        .filter(status=SubmissionStatus.SENT, matter=OuterRef("pk"))
+        .order_by()
+        .values("matter")
+        .annotate(total=Count("pk"))
+        .values("total")
+    )
+    return Coalesce(Subquery(sent, output_field=IntegerField()), Value(0))
+
+
 def matters_by_submission_count(context: ReportingContext) -> MetricResult:
     """0, 1, 2+. Kept as three buckets because the tail is what is interesting.
 
@@ -307,8 +328,7 @@ def matters_by_submission_count(context: ReportingContext) -> MetricResult:
     """
     spec = definition(keys.MATTERS_BY_SUBMISSION_COUNT)
     population = population_for(context, spec)
-    sent = Q(submissions__status=SubmissionStatus.SENT)
-    annotated = population.annotate(sent_count=Count("submissions", filter=sent, distinct=True))
+    annotated = population.annotate(sent_count=visible_sent_count(context))
 
     buckets = (
         ("Arvamust ei ole saadetud", annotated.filter(sent_count=0)),
@@ -335,9 +355,8 @@ def matters_by_submission_count(context: ReportingContext) -> MetricResult:
 def matters_with_multiple_submissions(context: ReportingContext) -> MetricResult:
     spec = definition(keys.MATTERS_WITH_MULTIPLE_SUBMISSIONS)
     population = population_for(context, spec)
-    sent = Q(submissions__status=SubmissionStatus.SENT)
     several = (
-        population.annotate(sent_count=Count("submissions", filter=sent, distinct=True))
+        population.annotate(sent_count=visible_sent_count(context))
         .filter(sent_count__gte=2)
         .distinct()
         .count()

@@ -31,6 +31,7 @@ from app.core.enums import Visibility
 from app.documents.models import Document, DocumentVersion
 from app.matters.enums import EngagementKind
 from app.matters.models import MatterEngagement, MatterExternalPosition
+from app.search.services import result_count
 from app.workflow.enums import ActionKind, ActionStatus, DatePrecision, DateSemantics
 from tests import factories
 from tests.gate import PASSWORD, apply_shared_gate
@@ -99,14 +100,6 @@ def test_the_lawyer_can_record_a_reply_to_a_restricted_round_and_sees_it(restric
     assert reply.summary == SECRET_REPLY
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "QA-AUTHZ-01: a reply recorded against a RESTRICTED Kaasamine round is created "
-        "NORMAL (no visibility_override), so its text and its file are shown to a READER "
-        "who may not know the round exists"
-    ),
-)
 def test_a_reply_to_a_restricted_round_is_not_shown_to_a_reader(restricted_round):
     reader = factories.ReaderFactory()
     _record_reply(restricted_round)
@@ -116,7 +109,7 @@ def test_a_reply_to_a_restricted_round_is_not_shown_to_a_reader(restricted_round
         "detail": reverse("matters:matter_detail", kwargs={"pk": matter.pk}),
         "timeline": reverse("matters:timeline_page", kwargs={"pk": matter.pk}),
         "documents": reverse("matters:matter_documents", kwargs={"pk": matter.pk}),
-        "search": reverse("search:search") + f"?q={SECRET_REPLY}",
+        "changes": reverse("matters:matter_changes", kwargs={"pk": matter.pk}),
     }
     leaked = {
         name: url
@@ -125,15 +118,20 @@ def test_a_reply_to_a_restricted_round_is_not_shown_to_a_reader(restricted_round
         or SECRET_FILE in client.get(url).content.decode()
     }
     assert leaked == {}
+    # `/otsing/` echoes the query in its search box and heading, so the page
+    # body always holds the term asked for; what must not appear is a *hit*.
+    # (Remediation A: the QA version compared the whole body, which no fix can
+    # satisfy.) The file name is never echoed, so it is checked in the body.
+    search = reverse("search:search")
+    for term in (SECRET_REPLY, "salajane-vastus-5512"):
+        assert result_count(query=term, user=reader) == 0, term
+        body = client.get(search, {"q": term}).content.decode()
+        assert "0 vastet" in body, term
+        assert SECRET_FILE not in body, term
+    # Allowed half: the same searches do find it for the lawyer.
+    assert result_count(query=SECRET_REPLY, user=restricted_round["owner"]) >= 1
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "QA-AUTHZ-01: the reply and its file are created NORMAL although the round "
-        "they answer is RESTRICTED (ADR 0137/0138 pattern not applied to replies)"
-    ),
-)
 def test_a_reply_and_its_file_are_never_less_restricted_than_the_round(restricted_round):
     reply = _record_reply(restricted_round)
     documents = Document.objects.filter(links__external_position=reply)
@@ -142,13 +140,6 @@ def test_a_reply_and_its_file_are_never_less_restricted_than_the_round(restricte
     assert {d.effective_visibility for d in documents} == {Visibility.RESTRICTED}
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "QA-AUTHZ-01: the reply's file is downloadable by the shared-gate reader "
-        "with no persona (documents routes are @gate_required)"
-    ),
-)
 def test_the_gate_reader_cannot_download_a_reply_file_of_a_restricted_round(
     restricted_round, settings
 ):

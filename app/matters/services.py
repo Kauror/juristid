@@ -22,6 +22,7 @@ from django.utils import timezone
 from app.audit.enums import ChangeEventType
 from app.audit.operations import pin_stage_episode
 from app.audit.services import record_change_event
+from app.core.derived_visibility import restriction_inherited_from
 from app.core.enums import Visibility, most_restrictive, validate_visibility_override
 from app.core.errors import DomainError
 from app.core.richtext import excerpt, is_empty, sanitize_entry_html
@@ -4225,6 +4226,9 @@ def record_external_position(
         lawyer_note=clean_note,
         source_is_member=bool(source_is_member),
         engagement=related,
+        # A reply is never less restricted than the round it answers; its files
+        # then inherit it through the capture (docs/adr/0162 §1, 0137).
+        visibility_override=restriction_inherited_from(related),
         created_by=actor,
     )
     record_change_event(
@@ -4463,6 +4467,15 @@ def correct_external_position(
         # changed no value would be a history of somebody pressing a button
         # (`update_engagement`).
         return current
+    if (
+        "engagement_id" in changed
+        and restriction_inherited_from(related) == Visibility.RESTRICTED
+        and current.visibility_override != Visibility.RESTRICTED
+    ):
+        # Re-pointed at a restricted round, the reply takes the round's
+        # restriction; never relaxed here (docs/adr/0162 §1).
+        proposed["visibility_override"] = Visibility.RESTRICTED.value
+        changed.append("visibility_override")
     payload: dict[str, Any] = {"fields": sorted(changed)}
     if "organisation_id" in changed:
         payload["organisation_from"] = (

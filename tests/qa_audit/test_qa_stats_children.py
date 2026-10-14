@@ -94,10 +94,6 @@ def test_submissions_sent_hides_a_restricted_opinion_from_the_reader(
     assert compute(keys.SUBMISSIONS_SENT, reporting_context(world.reader)).value == before
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="QA-STATS-03: submission-count buckets count a restricted opinion the reader may not see",  # noqa: E501
-)
 def test_submission_count_buckets_hide_a_restricted_opinion_from_the_reader(
     world, quiet_matter, reporting_context
 ):
@@ -107,10 +103,6 @@ def test_submission_count_buckets_hide_a_restricted_opinion_from_the_reader(
     assert _buckets(reporting_context(world.reader)) == before
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="QA-STATS-03: «mitu arvamust» counts restricted opinions the reader may not see",
-)
 def test_multiple_submissions_hides_restricted_opinions_from_the_reader(
     world, quiet_matter, reporting_context
 ):
