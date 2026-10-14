@@ -253,6 +253,14 @@ def create_matter_with_deadline(page, base_url: str, title: str, *, deadline: st
     page.fill("#id_title", title)
     page.fill("#id_response_deadline", deadline)
     page.get_by_role("button", name="Salvesta", exact=True).click()
+    page.wait_for_load_state("networkidle")
+    # A deadline already behind today's `Saabus` is warned about once and filed
+    # when confirmed (docs/adr/0166 §4) — what a lawyer recording an overdue
+    # file does. These tests want exactly such a file.
+    confirm = page.locator('#kinnita-kuupaevad input[name="kinnita_kuupaevad"]')
+    if confirm.count():
+        confirm.check()
+        page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     return page.url
 
