@@ -349,7 +349,8 @@ def test_uus_teema_makes_no_step_from_the_date_box(client, specialist):
     matter = Matter.objects.get()
     assert not NextAction.objects.exists()
     assert matter.response_deadline == PREPARE_BY
-    assert MatterPlanStep.objects.filter(matter=matter).count() == 5
+    # Four standard steps since version 2 (docs/adr/0168 §5).
+    assert MatterPlanStep.objects.filter(matter=matter).count() == 4
 
 
 def test_the_date_lands_on_the_matter_as_the_obligation_only(client, specialist):
@@ -411,7 +412,8 @@ def test_correcting_the_refusal_and_saving_once_leaves_exactly_one_plan(client, 
 
     assert response.status_code == 302
     assert not NextAction.objects.exists()
-    assert MatterPlanStep.objects.count() == 5
+    # Four standard steps since version 2 (docs/adr/0168 §5).
+    assert MatterPlanStep.objects.count() == 4
 
 
 def test_there_is_no_second_first_step_box_to_collide_with(client, specialist):

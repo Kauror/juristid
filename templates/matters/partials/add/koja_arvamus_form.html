@@ -12,6 +12,7 @@ panel. Under `PRAEGUNE TEGEVUS` it was drawn a second time for the current
             hx-target="#teema-vaade" hx-swap="outerHTML"
             hx-encoding="multipart/form-data">
         {% csrf_token %}
+        {% include "matters/partials/add/launch_step.html" with form_key="koda_opinion_form" %}
         {% comment %}
           What went out and when, paired on one row: they are the two halves of
           one fact and a lawyer answers them together.

@@ -31,6 +31,7 @@ from app.workflow.models import MatterPlanStep, NextAction
 from app.workflow.plan import plan_revision, plan_steps_of, seed_standard_plan, skip_plan_step
 from app.workflow.services import add_planned_action, set_next_action_for_new_work
 from tests import factories
+from tests.legacy_plans import seed_version_one_plan
 
 pytestmark = pytest.mark.django_db
 
@@ -115,7 +116,23 @@ def test_a_news_item_proves_the_reading_but_not_the_overview(planned, specialist
 def test_an_active_consultation_proves_the_invitation(planned, specialist):
     _overview(planned, specialist)
     _round(planned, specialist)
-    assert _suggested(planned, specialist) == POSITION
+    # No «Koonda tagasiside ja kujunda Koja seisukoht» between the round and
+    # the opinion since version 2 of the sequence (docs/adr/0168 §5).
+    assert _suggested(planned, specialist) == SEND
+
+
+def test_a_version_one_plan_never_suggests_the_retired_step(specialist):
+    """A Matter filed before version 2 still holds `form-position`; it is passed over."""
+    matter = factories.MatterFactory(owner=specialist)
+    seed_version_one_plan(matter=matter, actor=specialist)
+    assert MatterPlanStep.objects.filter(matter=matter, template_step_key=POSITION).exists()
+    _overview(matter, specialist)
+    _round(matter, specialist)
+
+    assert _suggested(matter, specialist) == SEND
+    # Nothing was rewritten to get there: the old row is still ahead.
+    position = MatterPlanStep.objects.get(matter=matter, template_step_key=POSITION)
+    assert position.state == PlanStepState.SUGGESTED
 
 
 def test_recorded_feedback_proves_the_consolidation(planned, specialist):
@@ -170,8 +187,8 @@ def test_a_dismissed_suggestion_stays_dismissed(planned, specialist):
     )
 
     assert MatterPlanStep.objects.get(pk=step.pk).state == PlanStepState.SKIPPED
-    assert _suggested(planned, specialist) == POSITION
-    assert _suggested(planned, specialist) == POSITION
+    assert _suggested(planned, specialist) == SEND
+    assert _suggested(planned, specialist) == SEND
 
 
 def test_the_page_heading_is_jargmisena(client, specialist, planned):

@@ -187,8 +187,8 @@ class PlanStepOperation(models.TextChoices):
 
     Stable keys, never inferred from the step's words. A `GENERIC` step is
     finished by `Mida tegid?`; the other three are finished by registering the
-    canonical record they name — but only when that record is entered *from the
-    current step* (docs/adr/0133 §6).
+    canonical record they name — but only when that record is saved through the
+    form the step itself opened (docs/adr/0168 §3).
     """
 
     GENERIC = "GENERIC", "Tavaline tegevus"

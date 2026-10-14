@@ -929,6 +929,104 @@
     }
   });
 
+  /* ---- A structured step opens its canonical form (docs/adr/0168) -------
+   * `Alusta` beside «Kaasa liikmeid / küsi tagasisidet», «Saada Koja arvamus»
+   * or «Koosta kodulehe ülevaade» — and `✓ Tehtud` beside such a step when it
+   * is current — opens the `LISA TEEMALE` form that does that work: every
+   * level of the launcher chosen, the step named in the form's hidden `samm`
+   * and on its «Samm:» line, the form scrolled to and its first field focused.
+   * Nothing is written until the form's own `Salvesta`. Without scripting the
+   * link is the page with `?ava=…`, which opens the same form on the server.
+   */
+  function launcherPicks(panel) {
+    /* The radios that reveal ``panel``: its own, then each enclosing panel's,
+       outermost first so a family is open before its sub-choice. */
+    var picks = [];
+    var node = panel;
+    while (node) {
+      var pick = node.id ? document.getElementById(node.id + "-valik") : null;
+      if (pick) {
+        picks.unshift(pick);
+      }
+      node = node.parentElement ? node.parentElement.closest("[data-addpanel]") : null;
+    }
+    return picks;
+  }
+
+  function setLaunch(form, stepId, title) {
+    var field = form && form.querySelector("[data-launch-step]");
+    var note = form && form.querySelector("[data-launch-note]");
+    if (field) {
+      field.value = stepId || "";
+    }
+    if (note) {
+      var text = note.querySelector("[data-launch-title]");
+      if (text) {
+        text.textContent = title || "";
+      }
+      note.hidden = !stepId;
+    }
+  }
+
+  document.addEventListener("click", function (event) {
+    var opener = event.target.closest ? event.target.closest("[data-open-canonical]") : null;
+    if (!opener) {
+      return;
+    }
+    var panel = document.getElementById(opener.getAttribute("data-open-canonical"));
+    var picks = panel ? launcherPicks(panel) : [];
+    if (!panel || !picks.length) {
+      return; /* The link's own address opens it on the server instead. */
+    }
+    event.preventDefault();
+    picks.forEach(function (radio) {
+      if (!radio.checked) {
+        radio.checked = true;
+        radio.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+    var form = panel.querySelector("form");
+    setLaunch(form, opener.getAttribute("data-launch-step"), opener.getAttribute("data-launch-title"));
+    panel.scrollIntoView({ block: "center" });
+    var first = panel.querySelector(
+      "[data-composer-focus], textarea, select, input:not([type=hidden]):not([type=file])"
+    );
+    if (first) {
+      focusQuietly(first);
+    }
+  });
+
+  /* `Loobu` on the «Samm:» line: the form forgets the step and closes; the
+     step stays exactly as it was. Without scripting it is the plain page. */
+  document.addEventListener("click", function (event) {
+    var cancel = event.target.closest ? event.target.closest("[data-cancel-launch]") : null;
+    if (!cancel) {
+      return;
+    }
+    var form = cancel.closest("form");
+    var panel = form && form.closest("[data-addpanel]");
+    if (!form || !panel) {
+      return;
+    }
+    event.preventDefault();
+    var stepId = (form.querySelector("[data-launch-step]") || {}).value || "";
+    setLaunch(form, "", "");
+    var picks = launcherPicks(panel);
+    var outer = picks.length ? picks[0] : null;
+    if (outer) {
+      outer.checked = false;
+      outer.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    var back = stepId
+      ? document.querySelector('[data-open-canonical][data-launch-step="' + stepId + '"]')
+      : null;
+    if (back) {
+      focusQuietly(back);
+    } else if (outer) {
+      outer.focus();
+    }
+  });
+
   function draggingFiles(event) {
     var types = event.dataTransfer && event.dataTransfer.types;
     return !!types && Array.prototype.indexOf.call(types, "Files") !== -1;

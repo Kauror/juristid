@@ -186,7 +186,8 @@ def test_a_full_create_stores_exactly_what_was_entered(signed_in, specialist, ev
     # `Tööplaan`, none of it started.
     assert not NextAction.objects.filter(matter=matter).exists()
     assert matter.response_deadline == date(2026, 9, 18)
-    assert matter.plan_steps.count() == 5
+    # Four standard steps since version 2 (docs/adr/0168 §5).
+    assert matter.plan_steps.count() == 4
 
 
 def test_the_summary_is_the_matters_own_field_and_not_an_entry(signed_in, specialist):

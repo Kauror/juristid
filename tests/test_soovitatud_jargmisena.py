@@ -30,13 +30,15 @@ from tests import factories
 
 pytestmark = pytest.mark.django_db
 
-FIRST, SECOND, THIRD, FOURTH, FIFTH = (
+#: The standard sequence since version 2 (docs/adr/0168 §5): «Koonda
+#: tagasiside ja kujunda Koja seisukoht» is no longer seeded or suggested.
+FIRST, SECOND, THIRD, FIFTH = (
     "Tutvu materjaliga",
     "Koosta kodulehe ülevaade",
     "Kaasa liikmeid / küsi tagasisidet",
-    "Koonda tagasiside ja kujunda Koja seisukoht",
     "Saada Koja arvamus",
 )
+RETIRED = "Koonda tagasiside ja kujunda Koja seisukoht"
 
 #: The plan administration this round removed, by route name.
 REMOVED_ROUTES = (
@@ -131,7 +133,7 @@ def test_a_no_visible_tooplaan(signed_in, planned):
     assert "taidab_sammu" not in body
     assert 'name="plan_step"' not in body
     # The rest of the sequence is not listed anywhere.
-    for title in (SECOND, THIRD, FOURTH, FIFTH):
+    for title in (SECOND, THIRD, FIFTH):
         assert title not in body, title
     # `+ Lisa samm` only as `Menetluse kulg`'s own editor (docs/adr/0119).
     index = body.find("+ Lisa samm")
@@ -176,7 +178,8 @@ def test_b_uus_teema_seeds_the_background_sequence(signed_in):
     signed_in.post(reverse("matters:matter_create"), {"title": "Soovitusega teema"})
 
     matter = Matter.objects.get(title="Soovitusega teema")
-    assert MatterPlanStep.objects.filter(matter=matter).count() == 5
+    assert MatterPlanStep.objects.filter(matter=matter).count() == 4
+    assert not MatterPlanStep.objects.filter(matter=matter, title=RETIRED).exists()
     assert not NextAction.objects.filter(matter=matter).exists()
     assert _suggested(_detail(signed_in, matter)) == FIRST
 
@@ -225,7 +228,7 @@ def test_e_dismiss_is_persistent_and_the_next_is_suggested(signed_in, planned):
 
 
 def test_e_with_every_suggestion_dismissed_the_block_is_gone(signed_in, planned):
-    for title in (FIRST, SECOND, THIRD, FOURTH, FIFTH):
+    for title in (FIRST, SECOND, THIRD, FIFTH):
         assert _dismiss(signed_in, planned, title).status_code == 200
 
     zone = _zone(_detail(signed_in, planned))

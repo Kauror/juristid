@@ -39,6 +39,7 @@ from app.workflow.models import MatterPlanStep, NextAction
 from app.workflow.plan import activate_plan_step, seed_standard_plan
 from app.workflow.services import set_next_action_for_new_work
 from tests import factories
+from tests.legacy_plans import seed_version_one_plan
 
 pytestmark = pytest.mark.django_db
 
@@ -147,12 +148,15 @@ def test_a_sent_opinion_proves_the_send_step(planned, specialist, organisation):
     assert _alert(planned, specialist).reason == PROOF_OPINION
 
 
-def test_recorded_feedback_proves_forming_the_position(planned, specialist):
-    engagement = _round(planned, specialist)
-    _start(planned, specialist, POSITION)
+def test_recorded_feedback_proves_forming_the_position(specialist):
+    """A `form-position` step started before version 2 retired it (docs/adr/0168 §5)."""
+    matter = factories.MatterFactory(owner=specialist)
+    seed_version_one_plan(matter=matter, actor=specialist)
+    engagement = _round(matter, specialist)
+    _start(matter, specialist, POSITION)
     ws.add_engagement_feedback(engagement=engagement, author=specialist, feedback_received="Viis.")
 
-    assert _alert(planned, specialist).reason == PROOF_FEEDBACK
+    assert _alert(matter, specialist).reason == PROOF_FEEDBACK
 
 
 def test_a_news_item_proves_reading_the_material(planned, specialist):

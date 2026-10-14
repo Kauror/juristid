@@ -4,7 +4,8 @@ One walk through the flow the Teema page keeps after the visible `Tööplaan`
 went: a new Teema suggests its first step; `Alusta` makes it the current step
 and the suggestion goes; `✓ Tehtud` finishes it and the next is suggested; `×`
 dismisses that one for good, a reload keeps it dismissed, and the one after it
-is suggested.
+is suggested — a structured step, whose `Alusta` opens its canonical form
+(docs/adr/0168).
 """
 
 from __future__ import annotations
@@ -14,7 +15,14 @@ import re
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import SANDRA, finish_current_action, sign_in, unique_title, wait_for_htmx
+from e2e.conftest import (
+    SANDRA,
+    finish_current_action,
+    sign_in,
+    start_first_step,
+    unique_title,
+    wait_for_htmx,
+)
 
 pytestmark = pytest.mark.e2e
 
@@ -57,12 +65,14 @@ def test_a_suggestion_is_started_finished_and_the_next_dismissed(page, base_url)
     expect(_suggestion(page)).to_have_text("Kaasa liikmeid / küsi tagasisidet")
     expect(page.locator("#praegune-tegevus")).not_to_contain_text("Koosta kodulehe ülevaade")
 
+    # A structured step's `Alusta` opens its canonical form and starts nothing
+    # by itself (docs/adr/0168); e2e/test_structured_action_forms.py walks it.
+    expect(page.locator("#praegune-tegevus #alusta-samm")).to_have_count(0)
+    page.locator("#praegune-tegevus #soovitus [data-open-canonical]").click()
+    expect(page.locator("#kaasamine-alusta")).to_be_visible()
+    expect(page.locator("#praegune-tegevus .curact__text")).to_have_count(0)
+
     # The manual way is always there. Leave the Teema with an open step, as
     # every file this suite creates must (e2e/conftest.py `give_first_step`).
     expect(page.locator("#praegune-tegevus")).to_contain_text("+ Lisa tegevus")
-    page.locator("#praegune-tegevus #alusta-samm > summary").click()
-    page.locator("#praegune-tegevus #alusta-samm button[type=submit]").click()
-    wait_for_htmx(page)
-    expect(page.locator("#praegune-tegevus .curact__text")).to_have_text(
-        "Kaasa liikmeid / küsi tagasisidet"
-    )
+    start_first_step(page)
