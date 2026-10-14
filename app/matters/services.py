@@ -933,7 +933,7 @@ def _move_locked_stage(
 
 
 def close_matter_for_terminal_stage(
-    *, matter: Matter, actor: Any = None, follow_ups_confirmed: bool = False
+    *, matter: Matter, actor: Any = None, follow_ups_confirmed: bool | str = False
 ) -> bool:
     """Close an open Matter whose `Hetkeseis` ends it. Returns whether it closed.
 
@@ -966,7 +966,7 @@ def stage_transition(
     stage: Any,
     actor: Any = None,
     origin: str = StageEpisodeOrigin.RECORDED,
-    follow_ups_confirmed: bool = False,
+    follow_ups_confirmed: bool | str = False,
 ) -> Iterator[StageMove]:
     """Move `Hetkeseis`, let the caller record the act, then close if the stage ends the Matter.
 
@@ -1003,7 +1003,7 @@ def change_stage(
     stage: Any,
     actor: Any = None,
     origin: str = StageEpisodeOrigin.RECORDED,
-    follow_ups_confirmed: bool = False,
+    follow_ups_confirmed: bool | str = False,
 ) -> Matter:
     """Record where the external process now stands, as a new `Hetkeseis` period.
 
@@ -2961,7 +2961,14 @@ def close_open_feedback_waits_for_closure(
     """
     waiting = (
         MatterEngagement.objects.select_for_update(no_key=True)
-        .filter(matter=matter, lifecycle_tracked=True, feedback_closed_at__isnull=True)
+        # A round removed with «Kustuta» is on no surface and waits on nobody:
+        # closure neither counts nor closes it (QA-WORKFLOW-01).
+        .filter(
+            matter=matter,
+            lifecycle_tracked=True,
+            feedback_closed_at__isnull=True,
+            removed_at__isnull=True,
+        )
         .order_by("created_at", "id")
     )
     return [
@@ -3892,7 +3899,10 @@ def cancel_planned_website_overviews_for_closure(
     """
     planned = (
         MatterWebsiteOverview.objects.select_for_update(no_key=True)
-        .filter(matter=matter, status=WebsiteOverviewStatus.PLANNED)
+        # A plan taken off the file with «Kustuta» is on no surface and owes
+        # nothing: it is neither counted at closure nor cancelled by it
+        # (QA-WORKFLOW-01, `app.matters.closure_work`).
+        .filter(matter=matter, status=WebsiteOverviewStatus.PLANNED, removed_at__isnull=True)
         .order_by("created_at", "id")
     )
     return [
@@ -5282,7 +5292,7 @@ def close_matter(
     reason: str = "",
     successor: Matter | None = None,
     stage_episode: MatterStageEpisode | None = None,
-    follow_ups_confirmed: bool = False,
+    follow_ups_confirmed: bool | str = False,
 ) -> Matter:
     """Stop active work on the Matter, for a stated reason.
 
@@ -5371,9 +5381,15 @@ def close_matter(
             raise DomainError(SUCCESSOR_DELETED_REFUSAL)
     if not locked.is_open:
         raise DomainError("Teema on juba suletud.")
+    from app.matters.closure_work import live_work_at_closure
     from app.workflow.follow_ups import refuse_unconfirmed_closure
 
+    # Bound to the work the person was shown: a digest that no longer matches
+    # what is live now is refused with the renewed warning (docs/adr/0152 §7).
     refuse_unconfirmed_closure(locked, confirmed=follow_ups_confirmed)
+    # What this closure ends, by id, for its own record below — read under the
+    # lock, before anything is ended.
+    ending = live_work_at_closure(locked)
 
     matter = locked
     matter.is_open = False
@@ -5411,6 +5427,14 @@ def close_matter(
         payload={
             "disposition": disposition,
             "successor": str(successor.pk) if successor is not None else None,
+            # **What this one closure ended**, by id (QA-WORKFLOW-02, docs/adr/0152
+            # §7): each row still writes its own cancellation event, and this is
+            # the key that reads them back as one act. Ids only, never words.
+            "ended": {
+                "actions": list(ending.action_ids),
+                "overviews": list(ending.overview_ids),
+                "waits": list(ending.wait_ids),
+            },
         },
         **episode_binding,
     )

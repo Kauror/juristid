@@ -233,8 +233,8 @@ def _named_open_action(*, locked_matter: Matter, action_id: Any) -> NextAction:
 
 
 def _refuse_an_unconfirmed_closure(
-    locked_matter: Matter, stage: Any, *, confirmed: bool, finishing: Any = None
-) -> None:
+    locked_matter: Matter, stage: Any, *, confirmed: bool | str, finishing: Any = None
+) -> bool | str:
     """A save whose `Uus hetkeseis` would close a Matter with live work, asked first.
 
     `close_matter` asks the same question under the same lock as the save ends;
@@ -242,11 +242,18 @@ def _refuse_an_unconfirmed_closure(
     file, so nothing is left behind in the evidence store (docs/adr/0146 §8,
     docs/adr/0152). ``finishing`` is the step this same save completes, which
     is done rather than outstanding by the time the Matter closes.
+
+    Returns the confirmation to hand on to `close_matter`: ``True`` once the
+    person's digest was verified here, under the lock this save keeps until it
+    closes, so the step this save finishes is not read there as changed work
+    (docs/adr/0152 §7); otherwise what was posted.
     """
     from app.workflow.follow_ups import refuse_unconfirmed_closure
 
     if locked_matter.is_open and is_terminal_stage(getattr(stage, "key", None)):
-        refuse_unconfirmed_closure(locked_matter, confirmed=confirmed, finishing=finishing)
+        if refuse_unconfirmed_closure(locked_matter, confirmed=confirmed, finishing=finishing):
+            return True
+    return confirmed
 
 
 def completion_visibility_override(action: NextAction) -> str:
@@ -274,7 +281,7 @@ def complete_current_action(
     next_text: str = "",
     next_date: Any = None,
     stage: Any = None,
-    follow_ups_confirmed: bool = False,
+    follow_ups_confirmed: bool | str = False,
 ) -> WorkspaceResult:
     """`PRAEGUNE TEGEVUS` — what I did, and therefore that the step is done.
 
@@ -351,7 +358,7 @@ def complete_current_action(
     moves_stage = stage is not None and stage.pk != locked_matter.stage_id
     if moves_stage:
         # The step being finished here is done by the time the Matter closes.
-        _refuse_an_unconfirmed_closure(
+        follow_ups_confirmed = _refuse_an_unconfirmed_closure(
             locked_matter, stage, confirmed=follow_ups_confirmed, finishing=current
         )
 
@@ -1119,7 +1126,7 @@ def add_matter_koda_opinion(
     answers_deadline: str | None = None,
     close_rounds: Sequence[tuple[Any, str]] = (),
     once_token: Any = None,
-    follow_ups_confirmed: bool = False,
+    follow_ups_confirmed: bool | str = False,
 ) -> WorkspaceResult:
     """`+ Koja arvamus` — the Chamber's opinion went out, with the file that went.
 
@@ -1274,9 +1281,13 @@ def add_matter_koda_opinion(
         # This send schedules a check that the closure would end at once, so
         # the confirmation is always asked — and names whatever else is live
         # (docs/adr/0152). The step it finishes, if it was one, is done.
-        refuse_unconfirmed_closure(
+        # Verified here, under the lock this save keeps, the person's answer
+        # is handed on as ``True``: the check this very send schedules is not
+        # work a colleague added after the warning (docs/adr/0152 §7).
+        if refuse_unconfirmed_closure(
             locked_matter, confirmed=follow_ups_confirmed, finishing=named, will_check=True
-        )
+        ):
+            follow_ups_confirmed = True
     _spend_once(locked_matter, once_token, "koja-arvamus")
     if answers_deadline is not None:
         from app.matters.response_deadlines import (
@@ -1606,7 +1617,7 @@ def add_procedural_development(
     as_next_step: bool = False,
     date_phase: bool = False,
     uploads: Sequence[Any] = (),
-    follow_ups_confirmed: bool = False,
+    follow_ups_confirmed: bool | str = False,
 ) -> WorkspaceResult:
     """`+ Menetluse areng` — the procedure moved, and what the lawyer does about it.
 
@@ -1753,7 +1764,9 @@ def add_procedural_development(
     ):
         raise DomainError(DEVELOPMENT_NEEDS_SOMETHING)
     if moves_stage:
-        _refuse_an_unconfirmed_closure(locked_matter, stage, confirmed=follow_ups_confirmed)
+        follow_ups_confirmed = _refuse_an_unconfirmed_closure(
+            locked_matter, stage, confirmed=follow_ups_confirmed
+        )
 
     # The phase this move may date, read on the locked row *before* it moves:
     # «forward» is a question about where the file stood.

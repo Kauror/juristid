@@ -483,6 +483,13 @@ urlpatterns = [
         views.reschedule_follow_up_view,
         name="reschedule_follow_up",
     ),
+    # «Planeeri järelkontroll» — a check a closure ended, planned again on a
+    # reopened Teema by a person (owner decision D9, docs/adr/0146 §8).
+    path(
+        "teemad/<uuid:pk>/jarelkontroll/uuesti/<uuid:follow_up_id>/",
+        views.restart_follow_up_view,
+        name="restart_follow_up",
+    ),
     # `Muuda` on a filed Kaasamine, under the record rather than under the
     # Teema, and spelled the way `edit_entry` is — one address for the form and
     # the save, GET opening the box in the chronology row and POST writing it.

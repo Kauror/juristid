@@ -1,0 +1,52 @@
+{% load form_labels %}
+{% comment %}
+«Planeeri järelkontroll» — on a reopened Teema, each `Arvamuse järelkontroll`
+its closure ended (owner decision D9 of 2026-10-14, docs/adr/0146 §8 amended).
+
+Reopening revives nothing: the cancelled check stays cancelled, in the history,
+with «Teema suleti». What this offers is the explicit continuation — one quiet
+row per such check, naming its opinion, and behind `Planeeri järelkontroll` the
+day to look again (required, not in the past; prefilled with the cancelled
+check's own day when that is still ahead). Saving plans a **new** check; the
+cancelled one is untouched. Nothing renders when there is nothing to offer, and
+only a writer on an open Teema is offered anything
+(`app.matters.follow_up_restart.restart_offers`).
+
+    follow_up_restarts  a list of `RestartOffer`
+{% endcomment %}
+{% if follow_up_restarts %}
+  <section class="curact__planned" aria-labelledby="jarelkontroll-uuesti-heading">
+    <h2 class="rowlabel" id="jarelkontroll-uuesti-heading">Teema sulgemisel lõpetatud järelkontroll</h2>
+    <ul class="curact__plannedlist">
+      {% for offer in follow_up_restarts %}
+        <li class="curact__plannedrow" id="jarelkontroll-uuesti-{{ offer.follow_up_id }}">
+          <span class="curact__plannedtext">Koja arvamuse järelkontroll lõpetati teema sulgemisel.</span>
+          <details class="cx-panel curact__edit" data-addpanel{% if offer.form.is_bound %} open{% endif %}>
+            <summary class="disclosure-chip disclosure-chip--quiet">Planeeri järelkontroll</summary>
+            <div class="cx-panel__body">
+              <form class="addform" data-addform
+                    hx-post="{% url 'matters:restart_follow_up' pk=matter.pk follow_up_id=offer.follow_up_id %}"
+                    hx-target="#teema-vaade" hx-swap="outerHTML">
+                {% csrf_token %}
+                {% if offer.form.non_field_errors %}
+                  <p class="formerror" role="alert">{{ offer.form.non_field_errors|first }}</p>
+                {% endif %}
+                <label class="cx-f cx-f--date cx-f--solo" for="{{ offer.form.target_date.id_for_label }}">
+                  <span class="cx-f__lab">{% field_label offer.form.target_date %}</span>
+                  {{ offer.form.target_date }}
+                </label>
+                {% if offer.form.target_date.errors %}
+                  <p class="field__error" id="{{ offer.form.target_date.auto_id }}_error">{{ offer.form.target_date.errors|first }}</p>
+                {% endif %}
+                <div class="addform__actions">
+                  <button class="button button--primary" type="submit">Planeeri järelkontroll</button>
+                </div>
+              </form>
+            </div>
+          </details>
+          {% include "matters/partials/follow_up_subject.html" with subject=offer.subject %}
+        </li>
+      {% endfor %}
+    </ul>
+  </section>
+{% endif %}

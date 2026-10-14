@@ -19,16 +19,45 @@ force — is the person's to carry onto a linked Teema first (docs/adr/0152).
 may see them, so the question is asked of the database rather than of a reader's
 scope. Asked twice, as before: early by every save that would store files ahead
 of a closure, and again by `close_matter` under the Matter's lock.
+
+**A removed record is not live work** (QA-WORKFLOW-01). A `Kaasamine` or a
+planned `Kodulehe ülevaade` taken off the file with «Kustuta» keeps its row —
+open wait, `PLANNED` plan — but it is on no surface any more, so closure neither
+counts it nor ends it (docs/adr/0152 §6).
+
+**The confirmation names the work it was given for** (QA-WORKFLOW-02,
+docs/adr/0152 §7). The warning carries a digest of exactly what it counted — the
+ids of the live steps, plans and waits — and the confirming box posts that digest
+back as its value. Under the Matter's lock the digest is computed again: work a
+colleague added, finished or removed after the warning was drawn makes it
+differ, and the closure is refused once more with the renewed warning instead of
+ending work nobody was shown. The digest is a hash of row ids, so it says nothing
+about a restricted record to the person who reads it.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import hashlib
+import re
+from dataclasses import dataclass, field
 from typing import Any
 
 #: Kept word for word for the one case ADR 0146 §8 always asked about.
 CHECKS_ONLY_LABEL = "Sulge teema ja lõpeta ka järelkontroll"
 LIVE_WORK_LABEL = "Sulge teema ja lõpeta pooleli töö"
+
+#: What a confirmation is told when the work changed after its warning was drawn.
+#: Put before the renewed warning, which names what is live now.
+LIVE_WORK_CHANGED = "Pooleli töö on pärast hoiatust muutunud — vaata see üle ja kinnita uuesti."
+
+#: A confirmation, as a closing operation receives it. ``True`` only from code
+#: that closes on nobody's interactive behalf, or after the same transaction has
+#: already verified the person's digest under the Matter's lock; a person's
+#: confirmation arrives as the digest string the warning drew; ``False`` or ``""``
+#: is none.
+ClosureConfirmation = bool | str
+
+_DIGEST = re.compile(r"^[0-9a-f]{16}$")
 
 
 @dataclass(frozen=True)
@@ -38,6 +67,27 @@ class LiveWork:
     checks: int = 0
     overviews: int = 0
     waits: int = 0
+    #: The rows counted above, as sorted id strings, for `digest` and for the
+    #: closure's own record of what it ended. Not compared by `==` on counts.
+    action_ids: tuple[str, ...] = field(default=(), compare=False)
+    overview_ids: tuple[str, ...] = field(default=(), compare=False)
+    wait_ids: tuple[str, ...] = field(default=(), compare=False)
+    #: A send in the same save schedules a check that is not a row yet.
+    check_to_come: bool = field(default=False, compare=False)
+    matter_id: str = field(default="", compare=False)
+
+    @property
+    def digest(self) -> str:
+        """16 hex characters naming exactly this set of live rows on this Matter."""
+        tokens = [
+            f"matter:{self.matter_id}",
+            *(f"action:{pk}" for pk in self.action_ids),
+            *(f"overview:{pk}" for pk in self.overview_ids),
+            *(f"wait:{pk}" for pk in self.wait_ids),
+        ]
+        if self.check_to_come:
+            tokens.append("check:to-come")
+        return hashlib.sha256("\n".join(tokens).encode()).hexdigest()[:16]
 
     @property
     def is_empty(self) -> bool:
@@ -100,23 +150,59 @@ def live_work_at_closure(
     )
     if finishing is not None:
         actions = actions.exclude(pk=getattr(finishing, "pk", finishing))
-    rows = list(actions.values_list("status", "follow_up_id"))
-    checks = sum(1 for _status, follow_up in rows if follow_up is not None)
+    rows = list(actions.values_list("pk", "status", "follow_up_id"))
+    checks = sum(1 for _pk, _status, follow_up in rows if follow_up is not None)
+    overview_ids = _ids(
+        MatterWebsiteOverview.objects.filter(
+            matter_id=matter_id, status=WebsiteOverviewStatus.PLANNED, removed_at__isnull=True
+        )
+    )
+    wait_ids = _ids(
+        MatterEngagement.objects.filter(
+            matter_id=matter_id,
+            lifecycle_tracked=True,
+            feedback_closed_at__isnull=True,
+            removed_at__isnull=True,
+        )
+    )
     return LiveWork(
         current=any(
-            status == ActionStatus.OPEN and follow_up is None for status, follow_up in rows
+            status == ActionStatus.OPEN and follow_up is None for _pk, status, follow_up in rows
         ),
         planned=sum(
-            1 for status, follow_up in rows if status == ActionStatus.PLANNED and follow_up is None
+            1
+            for _pk, status, follow_up in rows
+            if status == ActionStatus.PLANNED and follow_up is None
         ),
         checks=checks + (1 if will_check and not checks else 0),
-        overviews=MatterWebsiteOverview.objects.filter(
-            matter_id=matter_id, status=WebsiteOverviewStatus.PLANNED
-        ).count(),
-        waits=MatterEngagement.objects.filter(
-            matter_id=matter_id, lifecycle_tracked=True, feedback_closed_at__isnull=True
-        ).count(),
+        overviews=len(overview_ids),
+        waits=len(wait_ids),
+        action_ids=tuple(sorted(str(pk) for pk, _status, _follow_up in rows)),
+        overview_ids=overview_ids,
+        wait_ids=wait_ids,
+        check_to_come=will_check,
+        matter_id=str(matter_id),
     )
+
+
+def _ids(queryset: Any) -> tuple[str, ...]:
+    return tuple(sorted(str(pk) for pk in queryset.values_list("pk", flat=True)))
+
+
+def confirmation_matches(work: LiveWork, confirmed: ClosureConfirmation) -> bool:
+    """Whether ``confirmed`` covers exactly ``work``.
+
+    ``True`` covers anything: it is never a person's answer (`ClosureConfirmation`).
+    A string covers only the work whose digest it is.
+    """
+    if confirmed is True:
+        return True
+    return bool(confirmed) and str(confirmed).strip() == work.digest
+
+
+def is_stale_confirmation(confirmed: ClosureConfirmation) -> bool:
+    """A digest a warning drew, for work that has since changed — not a missing answer."""
+    return isinstance(confirmed, str) and bool(_DIGEST.match(confirmed.strip()))
 
 
 def closure_warning(work: LiveWork) -> tuple[str, str] | None:

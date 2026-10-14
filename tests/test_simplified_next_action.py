@@ -180,6 +180,7 @@ def test_closing_the_matter_still_works_with_neither_box(signed_in, normal_matte
     The old composer's closure answer is refused now; a `+ Märge` choosing
     «Jõustunud» closes the file and ends the step exactly as a closure did.
     """
+    from app.matters.closure_work import live_work_at_closure
     from app.workflow.models import StageVocabulary
 
     set_next_action(
@@ -197,7 +198,8 @@ def test_closing_the_matter_still_works_with_neither_box(signed_in, normal_matte
             "title": "Menetlus lõppes.",
             "stage": str(StageVocabulary.objects.get(key="in_force").pk),
             # The step ends with the closure; the person confirms it (ADR 0152).
-            "confirm_follow_up_closure": "on",
+            # Bound to that work: the digest its warning names (docs/adr/0152 §7).
+            "confirm_follow_up_closure": live_work_at_closure(normal_matter).digest,
         },
         HTTP_HX_REQUEST="true",
     )

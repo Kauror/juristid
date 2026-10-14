@@ -217,7 +217,8 @@ Nobody who could be told «a check is pending» is refused the check, and a test
 fails if the two role sets ever part.
 
 **Reopening recreates nothing.** A cancelled follow-up stays cancelled. An
-explicit continuation can be designed separately.
+explicit continuation can be designed separately — it was, on 2026-10-14
+(amendment below).
 
 **A withdrawn or superseded opinion** cancels its planned or current check with
 «Arvamus võeti tagasi» / «Arvamus asendati». Its completed checks stay. A check
@@ -307,3 +308,27 @@ These keep their behaviour:
 - the evidence rules and the send services' refusals;
 - the business-write boundary;
 - search (`INDEX_VERSION` unchanged).
+
+## Amendment, 2026-10-14 — «Planeeri järelkontroll» after reopening (owner decision D9)
+
+Reopening still revives nothing. On the reopened Teema, each follow-up its
+closure ended — `CANCELLED` with «Teema suleti», on an opinion still sent — is
+offered to a writer as one quiet row under `PRAEGUNE TEGEVUS`, «Teema sulgemisel
+lõpetatud järelkontroll», naming its opinion, with `Planeeri järelkontroll`
+behind it: the day to look again (required, not in the past; prefilled with
+the cancelled check's day when that is still ahead).
+
+Saving it (`app.workflow.follow_ups.restart_follow_up`, the same engine) plans a
+**new** `PLANNED` check on the same follow-up — the cancelled check's words, the
+Matter's owner, the opinion's restriction — and the follow-up is monitored again.
+The cancelled check stays `CANCELLED` with its own `NEXT_ACTION_CANCELLED`. The
+follow-up row's end (state, time, person, reason) is cleared, as the
+`workflow_follow_up_end_stamped` constraint requires of a monitored follow-up,
+and kept in the restart's `NEXT_ACTION_SET` payload: `follow_up.automatic:
+false`, `restarted: true`, `after` (the cancelled check) and `previous` (the
+former end). A withdrawn or superseded opinion, an answered or lawyer-ended
+follow-up, a closed Matter and a non-writer are refused; a repeated press finds
+the new check and writes nothing; the one-live-check index refuses a second.
+The opinion must be visible to the person, or the address is a 404.
+
+No migration and no data change.

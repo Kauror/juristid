@@ -1000,6 +1000,22 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         ),
         events=(ChangeEventType.NEXT_ACTION_RESCHEDULED,),
     ),
+    # «Planeeri järelkontroll» — a check a closure ended, planned again on the
+    # reopened Teema (owner decision D9, docs/adr/0146 §8 amended).
+    WriteRoute(
+        name="matters:restart_follow_up",
+        label="Järelkontrolli uuesti planeerimine",
+        request=lambda w: (
+            {"pk": w["restart_matter"].pk, "follow_up_id": w["restart_follow_up"].pk},
+            {"target_date": (timezone.localdate() + timedelta(days=14)).strftime("%d.%m.%Y")},
+        ),
+        probe=lambda w: (
+            w["restart_follow_up"]
+            .__class__.objects.values_list("state", flat=True)
+            .get(pk=w["restart_follow_up"].pk)
+        ),
+        events=(ChangeEventType.NEXT_ACTION_SET,),
+    ),
     WriteRoute(
         name="documents:remove",
         label="Dokumendi eemaldamine",
@@ -1281,12 +1297,28 @@ def _build_world():
     )
     follow_up_check = active_check(mark_sent(follow_up_matter, author, [organisation]))
 
+    # The same, closed with its check and reopened: the check the closure
+    # cancelled waits to be planned again by a person (owner decision D9).
+    from app.matters.services import close_matter, reopen_matter
+
+    restart_matter = factories.MatterFactory(
+        owner=author, title="Taasavatud teema", reference_year=2099, reference_number=914
+    )
+    restart_check = active_check(mark_sent(restart_matter, author, [organisation]))
+    close_matter(
+        matter=restart_matter, disposition="COMPLETED", actor=author, follow_ups_confirmed=True
+    )
+    reopen_matter(matter=restart_matter, actor=author)
+    restart_follow_up = restart_check.follow_up
+
     return {
         "matter": matter,
         "planned": planned,
         "planned_action": planned_action,
         "follow_up_matter": follow_up_matter,
         "follow_up_check": follow_up_check,
+        "restart_matter": restart_matter,
+        "restart_follow_up": restart_follow_up,
         "entry": entry,
         "waiting_engagement": waiting_engagement,
         "quiet_engagement": quiet_engagement,

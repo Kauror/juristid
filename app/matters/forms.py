@@ -189,7 +189,7 @@ FOLLOW_UP_CLOSURE_FIELD = "confirm_follow_up_closure"
 FOLLOW_UP_CLOSURE_LABEL = "Sulge teema ja lõpeta ka järelkontroll"
 
 
-def follow_up_closure_field() -> forms.BooleanField:
+def follow_up_closure_field() -> forms.CharField:
     """`Sulge teema ja lõpeta ka järelkontroll` — never ticked for the person.
 
     Drawn only after a save was refused for it (`form.follow_up_closure_refused`)
@@ -197,8 +197,13 @@ def follow_up_closure_field() -> forms.BooleanField:
     järelkontroll …» — so the ordinary save of a stage that closes nothing never
     shows it. The service asks again under the Matter's lock; this box is the
     person's answer and decides nothing on its own.
+
+    **A checkbox whose value is the digest of the work the warning counted**
+    (docs/adr/0152 §7), not ``on``: ticked, it posts exactly what it confirms,
+    and the service refuses it again if the live work has changed since. Hence a
+    `CharField` — the empty string is «not ticked».
     """
-    return forms.BooleanField(label=FOLLOW_UP_CLOSURE_LABEL, required=False)
+    return forms.CharField(label=FOLLOW_UP_CLOSURE_LABEL, required=False, max_length=64)
 
 
 SELECT_WIDGET = forms.Select(attrs={"class": "field__input"})
@@ -4313,6 +4318,20 @@ class FollowUpDateForm(forms.Form):
         if value < timezone.localdate():
             raise forms.ValidationError(FOLLOW_UP_DATE_IN_THE_PAST)
         return value
+
+
+class FollowUpRestartForm(FollowUpDateForm):
+    """«Planeeri järelkontroll» — the day a check the closure ended is planned again on.
+
+    On a reopened Teema only (owner decision D9, docs/adr/0146 §8 amended). The
+    same one question as `Muuda` on a check — a day, required, not in the past —
+    under ids of its own, one form per follow-up.
+    """
+
+    def __init__(self, *args: Any, follow_up_id: Any = None, **kwargs: Any) -> None:
+        if follow_up_id is not None:
+            kwargs.setdefault("auto_id", f"id_jarelkontroll_uuesti_{follow_up_id}_%s")
+        super().__init__(*args, **kwargs)
 
 
 class PlanRevisionForm(forms.Form):

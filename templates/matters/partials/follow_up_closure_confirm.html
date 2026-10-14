@@ -7,6 +7,12 @@ refused for it — `form.follow_up_closure_refused` — or when the box came bac
 ticked, so the ordinary save of a stage never shows it. Never ticked for the
 person. The service asks again under the Matter's lock.
 
+**The box's value is the digest of the work the warning counted**
+(`form.closure_digest`, docs/adr/0152 §7): ticked, it confirms exactly that
+work, and a closure whose live work changed after the warning is refused again
+with the renewed warning — drawn unticked, with the new digest. A box that came
+back ticked for another reason keeps the digest it was posted with.
+
     form  a form with a `confirm_follow_up_closure` field
 {% endcomment %}
 {% if form.follow_up_closure_refused or form.confirm_follow_up_closure.value %}
@@ -16,8 +22,8 @@ person. The service asks again under the Matter's lock.
     </p>
     <label class="cx-check" for="{{ form.confirm_follow_up_closure.auto_id }}">
       <input type="checkbox" name="{{ form.confirm_follow_up_closure.html_name }}"
-             id="{{ form.confirm_follow_up_closure.auto_id }}" value="on"
-             {% if form.confirm_follow_up_closure.value %}checked{% endif %}>
+             id="{{ form.confirm_follow_up_closure.auto_id }}" value="{% if form.closure_digest %}{{ form.closure_digest }}{% else %}{{ form.confirm_follow_up_closure.value }}{% endif %}"
+             {% if form.confirm_follow_up_closure.value and not form.follow_up_closure_refused %}checked{% endif %}>
       {{ form.confirm_follow_up_closure.label }}
     </label>
   </div>
