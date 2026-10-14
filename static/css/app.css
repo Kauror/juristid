@@ -5412,6 +5412,9 @@ a.barchart__row:hover {
   flex-wrap: wrap;
   gap: var(--spacing-3);
   align-items: center;
+  /* `Loobu` is focused when the page opens; its focus ring must not cover the
+     «Seda tegevust ei saa tagasi võtta.» line above it. */
+  margin-top: var(--spacing-3);
 }
 
 .chipdetails__body .chiprow {
