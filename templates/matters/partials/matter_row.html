@@ -116,6 +116,8 @@ second `tbody` of the same table. Two copies of a row are two rows that drift.
           <form method="post" action="{% url 'matters:assign_owner' pk=matter.pk %}">
             {% csrf_token %}
             <input type="hidden" name="next" value="{{ request.get_full_path }}">
+            {# The owner this row was drawn with: a colleague's assignment meanwhile refuses this one (docs/adr/0166 §1). #}
+            <input type="hidden" name="revision" value="{{ matter.owner_id|owner_revision }}">
             {% for person in assignable_people %}
               <button type="submit" name="owner" value="{{ person.pk }}">
                 <span class="uxav" aria-hidden="true">{{ person.initials }}</span>

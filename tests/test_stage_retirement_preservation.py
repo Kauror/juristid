@@ -238,7 +238,7 @@ def test_an_unrelated_inline_edit_does_not_touch_the_held_stage(signed_in, matte
     other = factories.UserFactory()
     signed_in.post(
         reverse("matters:update_field", kwargs={"pk": matter_a.pk, "field": "owner"}),
-        {"owner": str(other.pk)},
+        {"owner": str(other.pk), "revision": matter_field_revision(matter_a, "owner")},
     )
     matter_a.refresh_from_db()
     assert matter_a.stage == retired_stage

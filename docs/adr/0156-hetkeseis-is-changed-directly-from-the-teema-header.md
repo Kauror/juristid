@@ -69,3 +69,11 @@ weakening closure confirmation or closed-Matter rules.
 
 By code; no migration. The guard and the menu are independent: dropping `stage`
 from `GUARDED_MATTER_FIELDS` restores tokenless posts.
+
+## Amendment — 2026-10-14 (docs/adr/0166 §1)
+
+`owner` and `received_date` join `GUARDED_MATTER_FIELDS` on the same terms as
+`stage` in §4: the header's `Vastutaja` and `Saabus` editors, and the register's
+`Määra ▾`, post a field revision, and a stale or missing one is refused
+(QA-WORKFLOW-03). The fields left unguarded are named in
+`UNGUARDED_MATTER_FIELDS`.

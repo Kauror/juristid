@@ -184,3 +184,12 @@ the search box, rather than after the results, so what is already chosen is read
 first and stays put while the query changes (docs/adr/0130, amendment of
 2026-10-13). The selection model, the hidden `seo_teemaga_valitud` values, the
 server's re-resolution and `link_related_matters` are unchanged.
+
+## Amendment — 2026-10-14 (docs/adr/0166 §3)
+
+§1's consequence «an unowned Teema is still what a request that names nobody
+creates» is withdrawn for `Uus teema`. The page has no «Määramata» owner chip,
+so a POST naming no owner did not come from it (QA D-UUS); `MatterCreateForm`
+now applies the creator default on the bound form too, with the same
+eligibility. A chosen colleague is never replaced, and `Saabunud`, which offers
+«Määramata», is unchanged.

@@ -34,6 +34,7 @@ from app.core.authorization import ROLES_WITH_RESTRICTED_ACCESS
 from app.core.enums import Visibility
 from app.core.visibility_help import RESTRICTED_VISIBILITY_HELP
 from app.matters.forms import IncomingIntakeForm, MatterEditForm
+from app.matters.services import matter_field_revision
 from tests import factories
 
 pytestmark = pytest.mark.django_db
@@ -278,7 +279,11 @@ def test_assigning_by_the_submitted_id_reaches_the_person_the_label_named(
 
     response = signed_in.post(
         reverse("matters:assign_owner", kwargs={"pk": normal_matter.pk}),
-        {"owner": str(sandra_tamm.pk), "next": reverse("matters:matter_list")},
+        {
+            "owner": str(sandra_tamm.pk),
+            "next": reverse("matters:matter_list"),
+            "revision": matter_field_revision(normal_matter, "owner"),
+        },
     )
 
     assert response.status_code in (200, 302)
@@ -296,7 +301,11 @@ def test_the_assignment_notice_goes_to_the_person_that_was_picked(
 
     signed_in.post(
         reverse("matters:assign_owner", kwargs={"pk": normal_matter.pk}),
-        {"owner": str(sandra_kask.pk), "next": reverse("matters:matter_list")},
+        {
+            "owner": str(sandra_kask.pk),
+            "next": reverse("matters:matter_list"),
+            "revision": matter_field_revision(normal_matter, "owner"),
+        },
     )
 
     recipients = set(

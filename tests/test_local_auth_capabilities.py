@@ -40,7 +40,7 @@ from app.intelligence.services import (
     confirm_work_victory,
 )
 from app.matters.models import Matter
-from app.matters.services import ASSIGNMENT_NOT_PERMITTED, assign_matter
+from app.matters.services import ASSIGNMENT_NOT_PERMITTED, assign_matter, matter_field_revision
 from tests import factories
 from tests.refusals import refused
 
@@ -277,7 +277,7 @@ def test_without_work_assign_the_header_control_refuses_and_is_not_offered(clien
 
     response = client.post(
         reverse("matters:update_field", kwargs={"pk": matter.pk, "field": "owner"}),
-        {"owner": other.pk},
+        {"owner": other.pk, "revision": matter_field_revision(matter, "owner")},
     )
 
     assert response.status_code == 400
@@ -320,7 +320,10 @@ def test_a_specialist_still_assigns_by_default(client):
     matter = factories.MatterFactory(owner=None)
     client.force_login(specialist)
 
-    client.post(reverse("matters:assign_owner", kwargs={"pk": matter.pk}), {"owner": other.pk})
+    client.post(
+        reverse("matters:assign_owner", kwargs={"pk": matter.pk}),
+        {"owner": other.pk, "revision": matter_field_revision(matter, "owner")},
+    )
 
     matter.refresh_from_db()
     assert matter.owner == other

@@ -3490,6 +3490,48 @@
     return chosen[0].getAttribute("data-instrument-key") === key;
   }
 
+  /* `Uus teema` remembers, in its own history entry, every token it was
+     rendered with (QA-COORD-01, docs/adr/0166 §2). The page is `no-store`, so
+     browser Back fetches it again with a fresh `intake` token while Chrome
+     restores what was typed — and the second Salvesta looked like a new form.
+     `history.state` survives that re-fetch, so the earlier tokens of this
+     entry are posted back as `intake_earlier`, and the server recognises the
+     Teema one of them already created. Without scripting nothing is posted
+     and the server's time window answers instead. */
+  function bindCreateFormHistory(scope) {
+    (scope || document).querySelectorAll("[data-intake-earlier]").forEach(function (holder) {
+      if (!once(holder, "IntakeEarlier")) {
+        return;
+      }
+      var form = holder.closest("form");
+      var history = window.history;
+      if (!form || !history || typeof history.replaceState !== "function") {
+        return;
+      }
+      var field = form.querySelector('input[name="intake"]');
+      var current = field ? field.value : "";
+      var state = history.state && typeof history.state === "object" ? history.state : {};
+      var earlier = (Array.isArray(state.uusTeemaIntake) ? state.uusTeemaIntake : [])
+        .filter(function (token) {
+          return typeof token === "string" && token && token !== current;
+        })
+        .slice(-20);
+      earlier.forEach(function (token) {
+        var input = document.createElement("input");
+        input.type = "hidden";
+        input.name = "intake_earlier";
+        input.value = token;
+        holder.appendChild(input);
+      });
+      var remembered = earlier.concat(current ? [current] : []).slice(-20);
+      try {
+        history.replaceState(Object.assign({}, state, { uusTeemaIntake: remembered }), "");
+      } catch (error) {
+        /* A browser refusing to store state leaves the time window. */
+      }
+    });
+  }
+
   function bindInitiative(scope) {
     (scope || document).querySelectorAll("[data-initiative-mode]").forEach(function (row) {
       if (!once(row, "Initiative")) {
@@ -4968,6 +5010,7 @@
     bindSeisHelp(document);
     bindStageGuidance(document);
     bindRelatedPicker(document);
+    bindCreateFormHistory(document);
     bindInitiative(document);
     bindSentProposal(document);
     bindRequiredAction(document);

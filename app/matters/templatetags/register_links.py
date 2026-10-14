@@ -45,3 +45,16 @@ def register_filter_query(context: Any, name: str, value: Any) -> str:
     request = context.get("request")
     params = request.GET if request is not None else QueryDict()
     return register_query(params, **{name: str(value)})
+
+
+@register.filter(name="owner_revision")
+def owner_revision(owner_id: Any) -> str:
+    """The `owner` field revision a row's `Määra ▾` posts (QA-WORKFLOW-03).
+
+    The same digest `matter_field_revision(matter, "owner")` computes, from the
+    owner the row was read with, so assigning a file somebody else took a
+    moment ago is refused instead of silently handing it on (docs/adr/0166 §1).
+    """
+    from app.matters.services import owner_revision_for
+
+    return owner_revision_for(owner_id)

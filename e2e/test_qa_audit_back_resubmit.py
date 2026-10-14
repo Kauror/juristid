@@ -6,10 +6,11 @@ with a *fresh* token while the browser restores the typed title, so the second
 press is a new form as far as the server can tell. Reproduced in Chromium on
 81a7d6e4: two Matters with the same title, different ids.
 
-Strict xfail until fixed: whichever correction the owner chooses (keep the
-original token across history navigation, or warn about an identical title the
-same person just filed), this test must then see one Teema — or no second one
-without an explicit confirmation — and the marker comes off with the fix.
+Fixed in the QA remediation round (docs/adr/0166 §2): the restored form posts
+the tokens its history entry was rendered with, and a Teema the same person
+just filed under the same title is reported instead of filed again — «Ava see»
+or «Loo siiski uus». The second test proves a deliberate second Teema with the
+same words is still one click away.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ import re
 from urllib.parse import quote
 
 import pytest
+from playwright.sync_api import expect
 
 from e2e.conftest import SANDRA, sign_in
 from e2e.titles import unique_title
@@ -25,14 +27,17 @@ from e2e.titles import unique_title
 pytestmark = pytest.mark.e2e
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="QA-COORD-01: Back then Salvesta on Uus teema files a second identical Teema",
-)
-def test_back_after_filing_a_teema_does_not_file_it_twice(page, base_url):
-    sign_in(page, base_url, SANDRA)
-    title = unique_title("Tagasi-nupu kordus")
+def _register_links(page, base_url, title):
+    page.goto(f"{base_url}/teemad/?olek=koik&q={quote(title)}")
+    page.wait_for_load_state("networkidle")
+    return set(
+        page.get_by_role("link", name=title, exact=True).evaluate_all(
+            "els => els.map(e => e.getAttribute('href'))"
+        )
+    )
 
+
+def _file_then_go_back(page, base_url, title):
     page.goto(f"{base_url}/teemad/uus/")
     page.wait_for_load_state("networkidle")
     page.fill("#id_title", title)
@@ -44,14 +49,43 @@ def test_back_after_filing_a_teema_does_not_file_it_twice(page, base_url):
     page.wait_for_load_state("networkidle")
     # The precondition of the defect: the browser hands the typed title back.
     assert page.input_value("#id_title") == title
+    # And the page names the token this history entry was first filed with
+    # (`bindCreateFormHistory`, history.state survives the no-store re-fetch).
+    assert page.locator('input[name="intake_earlier"]').count() >= 1
+    return first
+
+
+def test_back_after_filing_a_teema_does_not_file_it_twice(page, base_url):
+    sign_in(page, base_url, SANDRA)
+    title = unique_title("Tagasi-nupu kordus")
+    first = _file_then_go_back(page, base_url, title)
+
     page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
+    # Not filed again: the form says why and offers the Teema that exists.
+    expect(page.locator("#sama-pealkiri")).to_be_visible()
+    assert page.input_value("#id_title") == title
 
-    page.goto(f"{base_url}/teemad/?olek=koik&q={quote(title)}")
-    page.wait_for_load_state("networkidle")
-    links = set(
-        page.get_by_role("link", name=title, exact=True).evaluate_all(
-            "els => els.map(e => e.getAttribute('href'))"
-        )
-    )
+    links = _register_links(page, base_url, title)
     assert len(links) == 1, f"one Teema expected, the register lists {sorted(links)} ({first})"
+
+
+def test_a_deliberate_second_teema_with_the_same_title_is_one_click_away(page, base_url):
+    sign_in(page, base_url, SANDRA)
+    title = unique_title("Teadlik kordus")
+    first = _file_then_go_back(page, base_url, title)
+
+    page.get_by_role("button", name="Salvesta", exact=True).click()
+    page.wait_for_load_state("networkidle")
+    notice = page.locator("#sama-pealkiri")
+    expect(notice).to_be_visible()
+    expect(notice).to_contain_text("Sama pealkirjaga teema loodi just")
+    expect(notice.get_by_role("link", name="Ava see")).to_have_attribute(
+        "href", re.compile(re.escape(first.split("/teemad/")[1]))
+    )
+
+    page.get_by_role("button", name="Loo siiski uus", exact=True).click()
+    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    assert page.url != first
+
+    assert len(_register_links(page, base_url, title)) == 2

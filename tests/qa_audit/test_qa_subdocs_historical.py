@@ -78,10 +78,9 @@ def test_historical_record_reads_for_specialist_and_reader_without_inventing_dat
         body = page.content.decode()
         assert "14.3.2019" in body or "14.03.2019" in body
         # Nothing on a 2019 archive row happened today. The writer's collapsed
-        # `+ Saabus` editor pre-fills today in its input (Teema QA §5.2, a design
-        # concern logged as DC-03) -- that input value is the only allowed hit.
-        shown = body.replace(f'value="{today_et}"', "")
-        assert today_et not in shown
+        # `+ Saabus` editor used to pre-fill today in its input (DC-03); since
+        # D5 (docs/adr/0166 §5) it starts empty here, so no hit is allowed at all.
+        assert today_et not in body
 
 
 def test_closed_historical_record_refuses_new_business_content(
