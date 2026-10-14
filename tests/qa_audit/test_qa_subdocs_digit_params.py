@@ -5,6 +5,9 @@ already knows this — `app.workflow.dates.year_from` checks `isascii()` for
 exactly this reason (CORR-02) — but several query-string readers still guard
 `int()` with a bare `isdigit()`, so a hand-edited URL answers 500 instead of
 the refusal or fallback each surface promises. Probes against main 81a7d6e4.
+
+Fixed by the QA remediation of 2026-10-14 (agent I): every reader goes through
+`app.core.request_params.digits_or_none`, and these are regression guards now.
 """
 
 from __future__ import annotations
@@ -30,11 +33,6 @@ def lenient(client, specialist):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="QA-SUBDOCS-01: /arvamused/?kuu=² passes isdigit() and int() raises -> 500 "
-    "(app/submissions/workspace.py sent_queryset)",
-)
 def test_opinions_workspace_month_with_superscript_digit_is_refused_not_500(lenient):
     response = lenient.get(reverse("submissions:sent"), {"kuu": SUPERSCRIPT_TWO})
     assert response.status_code != 500
@@ -45,11 +43,6 @@ def test_opinions_embedded_block_month_with_superscript_digit_is_not_500(lenient
     assert response.status_code != 500
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="QA-SUBDOCS-01: /arvamused/arhiiv/?aasta=² passes isdigit() and int() raises "
-    "-> 500 (app/legacy_import/opinion_search.py search_archive)",
-)
 def test_opinion_archive_year_with_superscript_digit_is_refused_not_500(lenient):
     response = lenient.get(reverse("submissions:archive"), {"aasta": SUPERSCRIPT_TWO})
     assert response.status_code != 500
@@ -67,21 +60,11 @@ def test_opinions_workspace_ordinary_bad_month_is_refused_with_a_sentence(lenien
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="QA-SUBDOCS-01 (outside area): /teemad/?kaupa=² -> page_size_from int() raises "
-    "-> 500 (app/matters/views.py)",
-)
 def test_register_page_size_with_superscript_digit_falls_back_not_500(lenient):
     response = lenient.get(reverse("matters:matter_list"), {"kaupa": SUPERSCRIPT_TWO})
     assert response.status_code != 500
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="QA-SUBDOCS-01 (outside area): Statistika Arvamused ?aasta=2026&kuu=² -> int() "
-    "raises -> 500 (app/reporting/views.py _submission_selection)",
-)
 def test_statistics_submission_month_with_superscript_digit_is_404_not_500(lenient):
     response = lenient.get(
         reverse("reporting:submissions"), {"aasta": "2026", "kuu": SUPERSCRIPT_TWO}
@@ -89,11 +72,6 @@ def test_statistics_submission_month_with_superscript_digit_is_404_not_500(lenie
     assert response.status_code != 500
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="QA-SUBDOCS-01: administrator archive browse ?aasta=² -> the same search_archive "
-    "int() -> 500 (app/legacy_import/archive_views.py archive_browse)",
-)
 def test_admin_archive_browse_year_with_superscript_digit_is_not_500(client, administrator):
     client.force_login(administrator)
     client.raise_request_exception = False
@@ -103,11 +81,6 @@ def test_admin_archive_browse_year_with_superscript_digit_is_not_500(client, adm
     assert response.status_code != 500
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="QA-SUBDOCS-01: archive link POST viide=²_1 -> _matter_by_reference int() -> 500 "
-    "(app/legacy_import/archive_views.py)",
-)
 def test_archive_link_reference_with_superscript_digit_is_refused_not_500(client, administrator):
     from django.utils import timezone
 

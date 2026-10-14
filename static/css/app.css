@@ -7881,6 +7881,13 @@ button.accordion__action:focus-visible {
   background: var(--surface-hover);
 }
 
+/* The ⋯ menu's slot (templates/matters/partials/header_menu.html). No box of
+   its own: a column save redraws it out of band, and empty it must open no gap
+   in the breadcrumb row (QA-BROWSER-07). */
+.matterhead__menu {
+  display: contents;
+}
+
 /* The header's secondary-action menu. Same disclosure mechanics as the top
    bar's "Veel", at the header's scale. */
 .headmenu {
@@ -13202,6 +13209,28 @@ section:has(.pw-more[open]) tbody.uxextra {
   flex-shrink: 1;
   min-width: 0;
   max-width: 100%;
+}
+
+/* On a phone the closed banner is too narrow for the sentence and the form
+   side by side, and the stage select — as wide as its longest stage name —
+   took the page 28 px sideways at 375 px (QA-BROWSER-05). The banner wraps,
+   the form takes its own line, and the select may be narrower than its
+   longest option rather than wider than the screen. */
+@media (max-width: 720px) {
+  .banner--closed {
+    flex-wrap: wrap;
+  }
+
+  .banner--closed .banner__reopen {
+    margin-left: 0;
+  }
+}
+
+.banner__reopen select {
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
+  flex: 0 1 auto;
 }
 
 /* -- The upload queue ------------------------------------------------------

@@ -39,6 +39,7 @@ from django.db import transaction
 from django.db.models import Exists, F, OuterRef, Q, QuerySet
 from django.utils import timezone
 
+from app.core.request_params import digits_or_none
 from app.legacy_import.opinion_archive import (
     OpinionArchiveItem,
     OpinionArchiveMetadata,
@@ -566,9 +567,12 @@ def search_archive(*, user: Any, filters: ArchiveFilters) -> QuerySet[OpinionArc
         rows = rows.filter(_matches(term))
 
     if filters.year:
-        if not filters.year.isdigit():
+        # ASCII digits only, and a number an integer column can hold: `²`
+        # passed `isdigit()` and raised in `int()` (QA-SUBDOCS-01).
+        year = digits_or_none(filters.year)
+        if year is None:
             raise ArchiveQueryRefused("Aasta peab olema arv.")
-        rows = rows.filter(source_year=int(filters.year))
+        rows = rows.filter(source_year=year)
     if filters.review_state:
         rows = rows.filter(review_state=filters.review_state)
     if filters.linked == "jah":

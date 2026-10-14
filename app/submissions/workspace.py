@@ -38,7 +38,7 @@ from typing import Any
 
 from django.db.models import Q, QuerySet
 
-from app.core.request_params import uuid_or_none
+from app.core.request_params import digits_or_none, uuid_or_none
 from app.organisations.models import Organisation
 from app.submissions.enums import SubmissionKind, SubmissionStatus
 from app.submissions.models import (
@@ -155,9 +155,12 @@ def sent_queryset(user: Any, filters: SentFilters) -> QuerySet[Submission]:
         rows = rows.filter(sent_at__year=year)
 
     if filters.month:
-        if not filters.month.isdigit() or not 1 <= int(filters.month) <= 12:
+        # ASCII digits only: `²` passed `isdigit()` and raised in `int()`
+        # (QA-SUBDOCS-01), so it is refused with the same sentence as `13`.
+        month = digits_or_none(filters.month, minimum=1, maximum=12)
+        if month is None:
             raise SubmissionQueryRefused("Kuu peab olema arv vahemikus 1-12.")
-        rows = rows.filter(sent_at__month=int(filters.month))
+        rows = rows.filter(sent_at__month=month)
 
     if filters.kind:
         if filters.kind not in SubmissionKind.values:

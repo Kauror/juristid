@@ -46,6 +46,7 @@ from app.audit.enums import SecurityEventType
 from app.audit.services import record_security_event
 from app.core.errors import DomainError
 from app.core.http import content_disposition
+from app.core.request_params import digits_or_none
 from app.documents import inline
 from app.documents.services import evidence_storage
 from app.legacy_import import opinion_links
@@ -393,9 +394,12 @@ def _matter_by_id(population: Any, identifier: str) -> Any:
 def _matter_by_reference(population: Any, reference: str) -> Any:
     """Resolve ``YYYY_N`` to a Matter, or nothing. Never creates."""
     parts = reference.replace("/", "_").replace("-", "_").split("_")
-    if len(parts) != 2 or not all(part.isdigit() for part in parts):
+    # ASCII digits only: `²_1` passed `isdigit()` and raised in `int()`
+    # (QA-SUBDOCS-01). A part that is not a number names no Matter.
+    numbers = [digits_or_none(part) for part in parts] if len(parts) == 2 else []
+    if len(numbers) != 2 or None in numbers:
         return None
-    return population.filter(reference_year=int(parts[0]), reference_number=int(parts[1])).first()
+    return population.filter(reference_year=numbers[0], reference_number=numbers[1]).first()
 
 
 @login_required

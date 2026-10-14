@@ -78,6 +78,7 @@ from django.db.models import Count, QuerySet
 from django.urls import reverse
 from django.utils import timezone
 
+from app.accounts.naming import disambiguated_names
 from app.accounts.selectors import department_workers
 from app.core.dates import (
     end_of_month,
@@ -417,6 +418,9 @@ class TeamRow:
     is_outside_department: bool = False
     is_unassigned: bool = False
     is_total: bool = False
+    #: The whole display name, for the `title` beside a first name. Empty on the
+    #: rows that are not a person.
+    full_name: str = ""
     url: str = ""
 
 
@@ -601,6 +605,11 @@ def team_rows(
     # and a colleague with an honest row of dashes is a fact about the week.
     people = list(department_workers())
     worker_ids = {person.pk for person in people}
+    # **First names, as the department addresses each other** — `Marko`, not
+    # `Marko Udras` beside `Ireen` and `Sandra` — lengthened only for a first
+    # name two colleagues share (`app.accounts.naming`). The full name stays
+    # reachable as the row's `title`.
+    names = disambiguated_names(people)
 
     def label_of(column_label: str, group: str) -> str:
         if group == "week":
@@ -622,7 +631,8 @@ def team_rows(
     rows = [
         TeamRow(
             key=str(person.pk),
-            name=person.display_name,
+            name=names.get(person.pk) or person.display_name,
+            full_name=person.display_name,
             initials=person.initials,
             cells=tuple(
                 cell(column, sep, label_of(label, group), person.pk)

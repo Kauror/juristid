@@ -18,7 +18,7 @@ owners as colleagues.
   {% else %}
     <span class="avatar avatar--sm" aria-hidden="true">{{ row.initials }}</span>
   {% endif %}
-  <span class="uxteam__name{% if row.is_unassigned or row.is_outside_department %} uxteam__name--none{% endif %}">
+  <span class="uxteam__name{% if row.is_unassigned or row.is_outside_department %} uxteam__name--none{% endif %}"{% if row.full_name and row.full_name != row.name %} title="{{ row.full_name }}"{% endif %}>
     {{ row.name }}{% if row.is_self %} <span class="uxteam__self">· sina</span>{% endif %}
   </span>
 </span>

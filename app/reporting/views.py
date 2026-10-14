@@ -28,6 +28,7 @@ from django.shortcuts import render
 from django.utils import timezone
 
 from app.core.decorators import gate_required, viewer_for
+from app.core.request_params import digits_or_none
 from app.reporting import charts, exports, filters, overview_strip, services
 from app.reporting import context as reporting_context
 from app.reporting import metric_catalogue as metric_keys
@@ -404,9 +405,11 @@ def _submission_selection(request: HttpRequest) -> dict[str, Any]:
     if (raw_month or raw_through) and year is None:
         raise Http404("Kuu või lõppkuupäev vajab aastat.")
     if raw_month:
-        if not raw_month.isdigit() or not 1 <= int(raw_month) <= 12:
+        # ASCII digits only: `²` passed `isdigit()` and raised in `int()`
+        # (QA-SUBDOCS-01).
+        month = digits_or_none(raw_month, minimum=1, maximum=12)
+        if month is None:
             raise Http404("Tundmatu kuu.")
-        month = int(raw_month)
     if raw_through:
         parts = raw_through.split("-")
         if year is None or len(parts) != 2:
