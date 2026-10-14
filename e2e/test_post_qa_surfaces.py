@@ -29,7 +29,7 @@ import uuid
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, create_matter, sign_in
+from e2e.conftest import HEAD, MARTIN, create_matter, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -151,9 +151,12 @@ def working_matter(page, base_url) -> str:
     return _WORKING_MATTER["url"]
 
 
-def edit_form(page, base_url) -> str:
-    """Open `Muuda teemat` on this file's Matter."""
+def edit_form(page, base_url, persona=None) -> str:
+    """Open `Muuda teemat` on this file's Matter, as `persona` if one is named."""
     detail = working_matter(page, base_url)
+    if persona is not None:
+        sign_in(page, base_url, persona)
+        page.set_viewport_size(VIEWPORTS["wide"])
     page.goto(f"{detail}muuda/")
     page.wait_for_load_state("networkidle")
     return detail
@@ -575,8 +578,12 @@ def test_the_filtered_documents_view_fits_every_width(page, base_url, size):
 #
 # What a browser adds over `tests/test_teema_live_audit_round_2.py`: that the
 # destructive control is *seen* apart from `Salvesta`, that the confirmation is
-# a page a person reads rather than a dialog they dismiss, and that both fit a
-# phone. What a POST does is the server suite's, and is not repeated.
+# a dialog a person reads rather than a `confirm()` they dismiss, and that both
+# fit a phone. What a POST does is the server suite's, and is not repeated.
+#
+# **Deleting is the department head's since docs/adr/0165** (owner decision
+# D6): MARTIN, a specialist, files the Matters here and is not offered the
+# control; HEAD is the one who deletes.
 
 
 def test_muuda_teemat_shows_no_visibility_control(page, base_url):
@@ -605,7 +612,7 @@ def test_the_delete_offer_is_separated_from_salvesta(page, base_url, size):
     The distance is the design: the control that ends a record must not be
     reachable by the muscle memory that saves one (docs/adr/0096 §4.3).
     """
-    edit_form(page, base_url)
+    edit_form(page, base_url, persona=HEAD)
     page.set_viewport_size(VIEWPORTS[size])
 
     save = page.get_by_role("button", name="Salvesta")
@@ -624,24 +631,29 @@ def test_the_delete_offer_is_separated_from_salvesta(page, base_url, size):
 
 
 @pytest.mark.parametrize("size", list(VIEWPORTS))
-def test_the_confirmation_is_a_page_that_names_the_teema(page, base_url, size):
-    """A page, not a `confirm()`: it says which record, and what goes with it.
+def test_the_confirmation_is_a_dialog_that_names_the_teema(page, base_url, size):
+    """A dialog, not a `confirm()`: it says which record, and what goes with it.
 
     Reached from the offer rather than by navigating to the address, because
-    the affordance being *followable* is half of what is being asserted.
+    the affordance being *followable* is half of what is being asserted
+    (docs/adr/0165 §3: «Kustuta teema» → dialog → «Seda tegevust ei saa tagasi
+    võtta.» → «Loobu» / «Kustuta jäädavalt»).
     """
-    detail = edit_form(page, base_url)
+    detail = edit_form(page, base_url, persona=HEAD)
     title = page.locator("#id_title").input_value()
 
     page.set_viewport_size(VIEWPORTS[size])
     page.get_by_role("link", name="Kustuta teema").click()
     page.wait_for_load_state("networkidle")
 
-    expect(page.get_by_role("heading", name="Kustuta teema")).to_be_visible()
-    expect(page.locator(".dangerzone")).to_contain_text(title)
-    expect(page.locator(".dangerzone")).to_contain_text("Seda ei saa tagasi võtta.")
-    expect(page.get_by_role("button", name="Kustuta teema")).to_be_visible()
-    expect(page.get_by_role("link", name="Loobu")).to_be_visible()
+    dialog = page.get_by_role("alertdialog", name="Kas kustutada see teema jäädavalt?")
+    expect(dialog).to_be_visible()
+    expect(dialog).to_contain_text(title)
+    expect(dialog).to_contain_text("Seda tegevust ei saa tagasi võtta.")
+    expect(dialog.get_by_role("button", name="Kustuta jäädavalt")).to_be_visible()
+    expect(dialog.get_by_role("link", name="Loobu")).to_be_visible()
+    # The safe answer has the focus, so a reflexive Enter cancels.
+    expect(dialog.get_by_role("link", name="Loobu")).to_be_focused()
     no_horizontal_overflow(page)
 
     # And `Loobu` really is the way back — to the Teema, with the record
@@ -650,6 +662,24 @@ def test_the_confirmation_is_a_page_that_names_the_teema(page, base_url, size):
     # (QA-017).
     page.get_by_role("link", name="Loobu").click()
     page.wait_for_load_state("networkidle")
+    assert page.url.rstrip("/") == detail.rstrip("/"), page.url
+    expect(page.locator("#teema-pais")).to_contain_text(title)
+
+
+def test_loobu_in_the_dialog_deletes_nothing(page, base_url):
+    """`Loobu` is a way back to the Teema, and the Teema is still there."""
+    sign_in(page, base_url, MARTIN)
+    page.set_viewport_size(VIEWPORTS["wide"])
+    title = f"Alles jääv teema {uuid.uuid4().hex[:8]}"
+    detail = create_matter(page, base_url, title)
+
+    sign_in(page, base_url, HEAD)
+    page.set_viewport_size(VIEWPORTS["wide"])
+    page.goto(f"{detail}kustuta/")
+    page.wait_for_load_state("networkidle")
+    page.get_by_role("alertdialog").get_by_role("link", name="Loobu").click()
+    page.wait_for_load_state("networkidle")
+
     assert page.url.rstrip("/") == detail.rstrip("/"), page.url
     expect(page.locator("#teema-pais")).to_contain_text(title)
 
@@ -673,11 +703,21 @@ def test_deleting_a_teema_removes_it_from_the_register(page, base_url):
     title = f"Kustutatav teema {uuid.uuid4().hex[:8]}"
     detail = create_matter(page, base_url, title)
 
+    # The specialist who filed it is not offered the deletion, and the address
+    # refuses them (docs/adr/0165).
+    page.goto(f"{detail}muuda/")
+    page.wait_for_load_state("networkidle")
+    expect(page.get_by_role("link", name="Kustuta teema")).to_have_count(0)
+    refused = page.goto(f"{detail}kustuta/")
+    assert refused is not None and refused.status == 403
+
+    sign_in(page, base_url, HEAD)
+    page.set_viewport_size(VIEWPORTS["wide"])
     page.goto(f"{detail}muuda/")
     page.wait_for_load_state("networkidle")
     page.get_by_role("link", name="Kustuta teema").click()
     page.wait_for_load_state("networkidle")
-    page.get_by_role("button", name="Kustuta teema").click()
+    page.get_by_role("button", name="Kustuta jäädavalt").click()
     page.wait_for_url(re.compile(r"/teemad/$"))
 
     expect(page.locator(".messages")).to_contain_text("Teema kustutati.")

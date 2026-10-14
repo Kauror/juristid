@@ -113,6 +113,7 @@ from playwright.sync_api import expect
 from app.core.management.commands.seed_e2e_data import ARCHIVE_TITLE, OPEN_TITLE
 from e2e.conftest import (
     DESKTOP_VIEWPORT,
+    HEAD,
     SANDRA,
     open_add_panel,
     pass_the_gate,
@@ -1204,15 +1205,15 @@ def compare(name: str, candidate: bytes) -> None:
         )
 
 
-def signed_in(page, base_url: str, path: str, width: int = 1440, height: int = 900):
-    sign_in(page, base_url, SANDRA)
+def signed_in(page, base_url: str, path: str, width: int = 1440, height: int = 900, persona=SANDRA):
+    sign_in(page, base_url, persona)
     page.set_viewport_size({"width": width, "height": height})
     page.goto(f"{base_url}{path}")
     page.wait_for_load_state("networkidle")
     return page
 
 
-def signed_in_matter(page, base_url: str, title: str, tab: str = ""):
+def signed_in_matter(page, base_url: str, title: str, tab: str = "", persona=SANDRA):
     """Open a named Matter from the register.
 
     Named rather than "the first row": the register's default ordering put the
@@ -1223,7 +1224,7 @@ def signed_in_matter(page, base_url: str, title: str, tab: str = ""):
     and can sit over the first row — right for reading, unhelpful for a capture
     whose subject is the page after it.
     """
-    signed_in(page, base_url, f"/teemad/?olek=koik&q={title.split()[0]}")
+    signed_in(page, base_url, f"/teemad/?olek=koik&q={title.split()[0]}", persona=persona)
     link = page.get_by_role("link", name=title, exact=False).first
     assert link.count(), f"the register does not hold {title!r}"
     page.goto(f"{base_url}{link.get_attribute('href')}")
@@ -1572,8 +1573,11 @@ def test_matter_delete_confirmation(page, base_url):
     Captured because «unmistakable» is a claim about how it looks, and because
     a red box that quietly stopped being red would be the one regression here
     that costs a record. A GET, so nothing is deleted by taking the picture.
+
+    As the department head: deleting is theirs since docs/adr/0165, and the
+    specialist this suite usually signs in as is refused the page.
     """
-    signed_in_matter(page, base_url, OPEN_TITLE)
+    signed_in_matter(page, base_url, OPEN_TITLE, persona=HEAD)
     page.goto(f"{page.url}kustuta/")
     page.wait_for_load_state("networkidle")
     _at_rest(page)

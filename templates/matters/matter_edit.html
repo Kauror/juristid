@@ -347,9 +347,10 @@
     `matters:matter_delete`, which asks the question on a page of its own and
     takes the answer as a POST with its own token (docs/adr/0096 §4).
 
-    Reaching this page is the permission: everybody `business_write_required`
-    and `get_visible_matter` let edit a Teema may delete it, which is what the
-    product asked for (docs/adr/0096 §4.2).
+    **Drawn only for somebody who may delete permanently** (`may_delete`,
+    docs/adr/0165): the department head, or a writer granted the capability by
+    name. Editing a Teema no longer implies deleting it (owner decision D6,
+    narrowing docs/adr/0096 §4.5).
 
     **Offered only where the deletion plan has no blocker** (docs/adr/0120,
     UQ-13). A Teema carrying records whose history is kept for good cannot be
@@ -359,6 +360,7 @@
     and re-checks every blocker, so what is drawn here is an offer and the
     refusal is the security (app/matters/views.py `matter_delete`).
   {% endcomment %}
+  {% if may_delete %}
   <div class="dangerzone">
     <h2 class="dangerzone__title">Teema kustutamine</h2>
     {% if deletion_plan.is_blocked %}
@@ -375,5 +377,6 @@
       <a class="button button--danger" href="{% url 'matters:matter_delete' pk=matter.pk %}">Kustuta teema</a>
     {% endif %}
   </div>
+  {% endif %}
 </div>
 {% endblock %}
