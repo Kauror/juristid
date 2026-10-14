@@ -121,7 +121,14 @@ Neither holds a title, summary, file name or note text.
 and any `ImportRowLedger` rows are append-only by database trigger and remain
 under the tombstone with whatever their summaries and payloads recorded at the
 time (some name a title or a changed value). Rewriting them would break the
-audit guarantee 0096 §4.1 rests on; it is not done.
+audit guarantee 0096 §4.1 rests on; it is not done. **Amended 2026-10-14 (owner
+review B):** the confirmation says so — «Turvalogisse jääb kustutamise kirje
+(kes, millal, viitenumber ja kogused); varasemad logikirjed säilivad muutmata.»
+— rather than promising absolute erasure, and
+`tests/test_permanent_deletion_residue.py` proves the residue is reachable
+from no ordinary surface (register, search, Teema URLs, files, work and
+department pages, Statistika figures, drill-throughs and exports, related
+Teemad).
 
 ### 6. Evidence bytes
 
