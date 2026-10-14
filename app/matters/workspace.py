@@ -57,6 +57,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from app.audit.operations import composer_operation
+from app.core.derived_visibility import restriction_inherited_from
 from app.core.enums import Visibility
 from app.core.errors import DomainError
 from app.documents.enums import DocumentRole
@@ -699,11 +700,15 @@ def add_matter_engagement(
             actor=author,
         )
         if record_overview and url:
-            _overview_for_engagement_link(matter=locked_matter, url=url, actor=author)
+            _overview_for_engagement_link(
+                matter=locked_matter, url=url, actor=author, engagement=result.record
+            )
         return result
 
 
-def _overview_for_engagement_link(*, matter: Matter, url: str, actor: Any) -> Any:
+def _overview_for_engagement_link(
+    *, matter: Matter, url: str, actor: Any, engagement: Any = None
+) -> Any:
     """The Ülevaade a `Kaasamine` points at, recorded once (docs/adr/0142 §C).
 
     `Ülevaate link` is the round's `Hetkel käsil` overview. If the Matter
@@ -713,6 +718,13 @@ def _overview_for_engagement_link(*, matter: Matter, url: str, actor: Any) -> An
     field asks for an overview, and filing news as one would be the wrong
     record. Inside the caller's transaction, so the round and its overview are
     written together or not at all.
+
+    **Never less restricted than the round** (docs/adr/0162 §2). A round
+    restricted below its Matter neither consumes the Matter's unrestricted plan
+    nor records an unrestricted overview: the one it records carries the
+    round's restriction. An overview already published at that address is a
+    record readers already see and is returned untouched — nothing new is
+    written about the round.
     """
     from app.matters.enums import WebsiteOverviewKind, WebsiteOverviewStatus
     from app.matters.forms import ENGAGEMENT_OVERVIEW_LINK_IS_NEWS
@@ -727,18 +739,21 @@ def _overview_for_engagement_link(*, matter: Matter, url: str, actor: Any) -> An
             WebsiteOverviewKind.NEWS
         ):
             return published
-    planned = (
-        live.filter(
-            status=WebsiteOverviewStatus.PLANNED,
-            kind__in=("", WebsiteOverviewKind.OVERVIEW),
-        )
-        .order_by("-created_at")
-        .first()
+    restriction = restriction_inherited_from(engagement)
+    plans = live.filter(
+        status=WebsiteOverviewStatus.PLANNED,
+        kind__in=("", WebsiteOverviewKind.OVERVIEW),
     )
+    if restriction:
+        plans = plans.filter(visibility_override=restriction)
+    planned = plans.order_by("-created_at").first()
     if planned is None:
         planned = plan_website_overview(
             matter=matter, actor=actor, kind=WebsiteOverviewKind.OVERVIEW
         )
+        if restriction:
+            planned.visibility_override = restriction
+            planned.save(update_fields=["visibility_override", "updated_at"])
     return publish_website_overview(
         overview=planned,
         url=url,

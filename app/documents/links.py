@@ -79,6 +79,10 @@ from django.db import models
 
 from app.core.authorization import apply as apply_scope
 from app.core.authorization import child_visibility_q, scope_for_user
+from app.core.derived_visibility import (
+    document_visibility_q,
+    external_position_visibility_q,
+)
 from app.core.models import BaseModel
 
 #: The link's target columns, in the order a reader meets them on the Teema
@@ -145,17 +149,18 @@ class DocumentLinkQuerySet(models.QuerySet):
         (AUTH-003, docs/adr/0038).
         """
         scope = scope_for_user(user)
-        condition = child_visibility_q(
-            scope,
-            parent_prefix="document__matter__",
-            override_field="document__visibility_override",
-        )
+        # The document half is `Document.visible_to`'s own rule, and the reply
+        # half reads the round it answers too (docs/adr/0162).
+        condition = document_visibility_q(scope, prefix="document__")
         for field in TARGET_FIELDS:
-            clause = child_visibility_q(
-                scope,
-                parent_prefix=f"{field}__matter__",
-                override_field=f"{field}__visibility_override",
-            )
+            if field == "external_position":
+                clause = external_position_visibility_q(scope, prefix=f"{field}__")
+            else:
+                clause = child_visibility_q(
+                    scope,
+                    parent_prefix=f"{field}__matter__",
+                    override_field=f"{field}__visibility_override",
+                )
             # **An empty `Q` is skipped rather than OR-ed in**, and this is not
             # a micro-optimisation. A reader who sees everything gets `Q()` from
             # `child_visibility_q`, and Django's `Q(x) | Q()` collapses to
