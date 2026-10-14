@@ -595,8 +595,10 @@ def child_scope_q(model: Any, scope: Scope, **paths: str) -> Q:
     """The rows of a child ``model`` that ``scope`` may read.
 
     `child_visibility_q`, unless the model states a stricter rule of its own as
-    ``visibility_rule`` — today only `NextAction`, whose follow-up checks are
-    never more visible than the opinion they are about (docs/adr/0146 §10). The
+    ``visibility_rule`` — `NextAction`, whose follow-up checks are never more
+    visible than the opinion they are about (docs/adr/0146 §10), and
+    `MatterExternalPosition`, `Document` and `DocumentVersion`, never more
+    visible than the `Kaasamine` round a reply answers (docs/adr/0162). The
     places that scope a child without its ``visible_to`` (to resolve the scope
     once per page) ask this, so they cannot drift from it.
     """

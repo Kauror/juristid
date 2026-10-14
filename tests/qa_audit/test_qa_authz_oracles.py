@@ -74,12 +74,64 @@ def add_restricted_initiative(world, capture_evidence, extract):  # noqa: F811
     return hidden
 
 
-#: The two hidden worlds of the existing oracle, plus two built on the newer
-#: features. Kept local so the original file stays untouched.
+def add_restricted_round_reply(world, capture_evidence, extract, *, legacy=False):  # noqa: F811
+    """A reply and its file under a RESTRICTED Kaasamine on a *visible* Matter.
+
+    The derived-record shape of QA-AUTHZ-01 (ADR 0162): a restricted child of a
+    visible Matter (the round) and a record derived from it (the reply, its
+    file), written through the canonical services. ``legacy`` resets the reply
+    and its file to the NORMAL columns the code before ADR 0162 wrote, so the
+    oracle proves the read-time half on old rows too.
+    """
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    from app.documents.models import Document
+    from app.matters.enums import EngagementKind, ExternalPositionProvenance
+    from app.matters.models import MatterEngagement, MatterExternalPosition
+    from app.matters.workspace import add_matter_external_position
+
+    matter = world["host"]
+    round_ = MatterEngagement.objects.create(
+        matter=matter,
+        kind=EngagementKind.EMAIL_CAMPAIGN,
+        title=f"{HIDDEN_ACTION} kaasamine",
+        created_by=world["owner"],
+        lifecycle_tracked=True,
+        visibility_override=Visibility.RESTRICTED,
+    )
+    reply = add_matter_external_position(
+        matter=matter,
+        author=world["owner"],
+        organisation=world["hidden_org"],
+        provenance=ExternalPositionProvenance.RECEIVED.value,
+        summary=f"{HIDDEN_PHRASE} {SHARED_WORD}",
+        stated_on=world["today"],
+        engagement=round_,
+        uploads=[
+            SimpleUploadedFile(
+                f"{HIDDEN_PHRASE}-vastus.pdf", b"%PDF-1.4 vastus", content_type="application/pdf"
+            )
+        ],
+    ).record
+    if legacy:
+        MatterExternalPosition.objects.filter(pk=reply.pk).update(visibility_override="")
+        Document.objects.filter(links__external_position=reply).update(visibility_override="")
+    return {"matter": matter, "round": round_, "reply": reply}
+
+
+def add_legacy_restricted_round_reply(world, capture_evidence, extract):  # noqa: F811
+    return add_restricted_round_reply(world, capture_evidence, extract, legacy=True)
+
+
+#: The two hidden worlds of the existing oracle, plus those built on the newer
+#: features and the derived records of a restricted round (ADR 0162). Kept local
+#: so the original file stays untouched.
 ALL_HIDDEN = {
     **HIDDEN_WORLDS,
     "restricted-related-link": add_restricted_related_link,
     "restricted-initiative": add_restricted_initiative,
+    "restricted-round-reply": add_restricted_round_reply,
+    "legacy-restricted-round-reply": add_legacy_restricted_round_reply,
 }
 
 #: Link prefixes worth following from the Statistika and register pages. The
@@ -288,3 +340,14 @@ def test_the_lawyers_see_the_restricted_related_link(world, capture_evidence, ex
         .content.decode()
     )
     assert hidden["matter"].title[:20] in body
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_the_lawyers_see_the_restricted_round_reply(world, capture_evidence, extract, legacy):  # noqa: F811
+    """Allowed half of the derived-record worlds (ADR 0162): the oracle is not vacuous."""
+    add_restricted_round_reply(world, capture_evidence, extract, legacy=legacy)
+    client = _signed_in(world["owner"])
+    detail = client.get(reverse("matters:matter_detail", kwargs={"pk": world["host"].pk}))
+    assert HIDDEN_PHRASE in detail.content.decode()
+    documents = client.get(reverse("matters:matter_documents", kwargs={"pk": world["host"].pk}))
+    assert f"{HIDDEN_PHRASE}-vastus.pdf" in documents.content.decode()
