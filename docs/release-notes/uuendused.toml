@@ -8,6 +8,19 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-10-14
+basis = "deployment"
+prs = [440]
+# Statistika avalehe külgriba ja riba «teemat töövõiduga» loevad ja avavad
+# ainult päris andmeid (andmed=paris), nagu #435 tegi ülejäänud statistikale.
+# Migratsioone ei ole. Tootmises testteemasid ei ole, nii et ükski arv ei muutu.
+# Kui väljalase ei jõua tootmisse 14.10 (Tallinna aja järgi), liigub see rida
+# väljalaske päeva kirjesse.
+changes = [
+  "Statistika avalehe paremas veerus olevad arvud («avatud teemat», «üle tähtaja», «teemat töövõiduga» jt) loevad nüüd ainult päris teemasid, nagu ülejäänud statistika, ja nende lingid avavad täpselt sama loendi.",
+]
+
+[[day]]
 date = 2026-10-13
 basis = "deployment"
 # Uus teema: kuupäevad ja seotud teemad, omaniku otsused 13.10 (ADR 0130, 0150,
