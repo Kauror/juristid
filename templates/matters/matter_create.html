@@ -124,7 +124,7 @@
         submit button is the one Enter presses, and Enter must never be the
         deliberate duplicate.
       {% endcomment %}
-      <div class="formerror createform__duplicate" role="alert" id="sama-pealkiri">
+      <div class="formerror" role="alert" id="sama-pealkiri">
         <p>Sama pealkirjaga teema loodi just: «{{ recent_duplicate.title }}». Ava see või loo siiski uus.</p>
         <p><a class="button button--quiet button--tiny" href="{% url 'matters:matter_detail' pk=recent_duplicate.pk %}">Ava see</a></p>
       </div>
