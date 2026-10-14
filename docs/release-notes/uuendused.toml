@@ -8,6 +8,33 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-10-15
+basis = "deployment"
+prs = [441, 442, 443, 444, 445, 446, 447, 448, 449, 450, 451, 452]
+# QA parandusvoor 14.10 (sõltumatu QA 24 leidu + omaniku otsused D1–D10), üks
+# ühendatud väljalase (#452). Üks migratsioon: audit/0037 (turvalogi sündmuste
+# valik). Pärast väljalaset üks otsinguindeksi ülesehitus (rebuild_search_index).
+# Kui väljalase ei jõua tootmisse 15.10 (Tallinna aja järgi), liigub see kirje
+# väljalaske päeva kuupäevale.
+changes = [
+  "«Praegune tegevus» ja «Järgmiseks»: «Alusta» kaasamise, Koja arvamuse ja kodulehe ülevaate sammul avab nüüd lehel juba oleva täieliku vormi; samm loetakse tehtuks alles pärast vormi salvestamist.",
+  "«Ootame tagasisidet» → «Tehtud» avab «Lisa tagasiside» vormi; ootus lõpeb alles siis, kui tagasiside on salvestatud.",
+  "Kaasamisele saab lisada ka hilisemaid vastuseid pärast esimest; varasemad vastused jäävad alles ja kogu tagasiside on otsingus leitav.",
+  "Soovitust «Koonda tagasiside ja kujunda Koja seisukoht» enam ei pakuta.",
+  "Kui Koja ettepanek saadetakse hiljem, märgitakse selle tähtaeg vastatuks, nagu kohe saadetud ettepanekul.",
+  "Arvamuse tagasivõtmisel tuleb alati kirjutada põhjus; põhjus on näha teema käigus. Tagasivõtmine ei ava suletud teemat uuesti.",
+  "Teema sulgemine küsib uuesti kinnitust, kui keegi lisas vahepeal uut tööd; kustutatud kaasamisi ja ülevaateid enam pooleliolevaks ei loeta.",
+  "Taasavatud teemal saab katkenud järelkontrolli uuesti planeerida nupuga «Planeeri järelkontroll».",
+  "Kui kolleeg muutis vahepeal vastutajat või saabumise kuupäeva, ei kirjuta vanas aknas tehtud valik seda enam üle.",
+  "Uue teema salvestamine pärast brauseri «Tagasi» nuppu ei loo enam sama teemat teist korda; sama pealkirjaga uue teema saab luua nupuga «Loo siiski uus».",
+  "Kui arvamuse tähtaeg on varasem kui saabumise kuupäev, küsitakse enne salvestamist kinnitust. Suletud ja arhiiviteemal ei pakuta «+ Saabus» väljale tänast kuupäeva.",
+  "Teemat saab jäädavalt kustutada ainult osakonnajuhataja; enne kustutamist näidatakse, mis kustub.",
+  "Statistika avalehe arvud järgivad valitud filtreid (nt vastutaja); «Aruandlus» loeb pealkirjas nimetatud aastat ning kaartide lingid avavad sama valiku, mida arv loeb.",
+  "Muudatuste lehel ei omistata süsteemi tehtud muudatusi (nt automaatset järelkontrolli) enam inimesele ja teema sulgemine on üks rida. Jõustumiste «Järgmise 30 päeva» hõlmab täpselt 30 päeva, tänane kaasa arvatud.",
+  "Teemade registris on tähtaja ületanud järgmine samm märgitud ka sõnadega «üle tähtaja». Kolleege näidatakse eesnimega (nt «Marko»).",
+]
+
+[[day]]
 date = 2026-10-14
 basis = "deployment"
 prs = [440]
