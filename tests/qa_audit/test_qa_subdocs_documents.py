@@ -95,6 +95,9 @@ def test_supported_tiny_files_are_stored_byte_exact(signed_in, specialist, name,
         ("vale.asice", _docx_bytes()),
         ("pilt.png.exe", b"\x89PNG\r\n\x1a\n"),
     ],
+    # The zip bytes carry a write timestamp, so a content-derived id changes on
+    # every collection and breaks CI's shard-completeness check.
+    ids=lambda value: value if isinstance(value, str) else "content",
 )
 def test_unsupported_or_malformed_files_are_refused_and_store_nothing(
     signed_in, specialist, name, content
