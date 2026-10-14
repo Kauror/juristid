@@ -1,8 +1,12 @@
 """Independent QA 2026-10-14 — workflow area: closing and reopening a Teema (ADR 0152, 0146 §8).
 
-Probes written against main 81a7d6e4. `xfail(strict=True)` marks a reproduced
-defect (the test flips when it is fixed); plain tests pin behaviour the suite did
-not cover before.
+Probes written against main 81a7d6e4. `xfail(strict=True)` marked a reproduced
+defect; plain tests pin behaviour the suite did not cover before.
+
+QA remediation C1 (2026-10-14) fixed QA-WORKFLOW-01 and -02: their strict xfails
+are ordinary regression guards now, and the two evidence probes that pinned the
+defects are inverted (each says why). A closure confirmation is the digest the
+warning drew (docs/adr/0152 §7), so ``header_stage`` posts what it is given.
 """
 
 from __future__ import annotations
@@ -13,7 +17,7 @@ import pytest
 from django.urls import reverse
 from django.utils import timezone
 
-from app.matters.closure_work import LIVE_WORK_LABEL, live_work_at_closure
+from app.matters.closure_work import LIVE_WORK_CHANGED, LIVE_WORK_LABEL, live_work_at_closure
 from app.matters.enums import EngagementKind, ResponseDeadlineOutcome, WebsiteOverviewStatus
 from app.matters.models import Matter, MatterEngagement, MatterResponseDeadline
 from app.matters.removal import remove_matter_record
@@ -45,13 +49,15 @@ def filed(owner, **extra) -> Matter:
     )
 
 
-def header_stage(client, matter, key, *, confirm=False, revision=None):
+def header_stage(client, matter, key, *, confirm="", revision=None):
+    """The header's stage choice; ``confirm`` is what its confirming button posts —
+    the digest a refusal named (``response["X-Closure-Digest"]``)."""
     data = {
         "stage": str(stage(key).pk),
         "revision": revision if revision is not None else matter_field_revision(matter, "stage"),
     }
     if confirm:
-        data["confirm_follow_up_closure"] = "on"
+        data["confirm_follow_up_closure"] = confirm
     return client.post(
         reverse("matters:update_field", kwargs={"pk": matter.pk, "field": "stage"}),
         data,
@@ -64,13 +70,6 @@ def header_stage(client, matter, key, *, confirm=False, revision=None):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "QA-WORKFLOW-01: live_work_at_closure counts a removed (Kustuta) Kaasamine's open "
-        "feedback wait; closure is refused and names work that is on no surface"
-    ),
-)
 def test_a_removed_consultation_is_not_live_work_at_closure(specialist):
     matter = filed(specialist)
     engagement = add_engagement(
@@ -92,13 +91,6 @@ def test_a_removed_consultation_is_not_live_work_at_closure(specialist):
     assert not matter.is_open
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "QA-WORKFLOW-01: live_work_at_closure counts a removed planned website overview; "
-        "the closure warning names «1 planeeritud kodulehe ülevaade» that is on no surface"
-    ),
-)
 def test_a_removed_planned_overview_is_not_live_work_at_closure(signed_in, specialist):
     matter = filed(specialist)
     overview = plan_website_overview(matter=matter, actor=specialist)
@@ -114,8 +106,12 @@ def test_a_removed_planned_overview_is_not_live_work_at_closure(signed_in, speci
     assert not matter.is_open
 
 
-def test_removed_rows_reach_closure_unchanged_in_the_database(specialist):
-    """Evidence for QA-WORKFLOW-01: what the warning counts, as stored rows."""
+def test_removed_rows_are_neither_counted_nor_ended_by_closure(specialist):
+    """Was the evidence probe for QA-WORKFLOW-01 (it asserted the removed rows were
+    counted, ``(1, 1)``). Inverted with the fix: removal still leaves the stored
+    shape — wait open, plan PLANNED — but closure neither counts nor ends them."""
+    from app.audit.models import ChangeEvent
+
     matter = filed(specialist)
     engagement = add_engagement(
         matter=matter,
@@ -134,7 +130,21 @@ def test_removed_rows_reach_closure_unchanged_in_the_database(specialist):
     assert engagement.removed_at is not None and engagement.feedback_closed_at is None
     assert overview.removed_at is not None and overview.status == WebsiteOverviewStatus.PLANNED
     work = live_work_at_closure(matter)
-    assert (work.overviews, work.waits) == (1, 1)
+    assert (work.overviews, work.waits) == (0, 0)
+    assert work.is_empty
+
+    change_stage(matter=matter, stage=stage("in_force"), actor=specialist)
+    matter.refresh_from_db()
+    assert not matter.is_open
+    engagement.refresh_from_db()
+    overview.refresh_from_db()
+    assert engagement.feedback_closed_at is None
+    assert overview.status == WebsiteOverviewStatus.PLANNED
+    # No event about a removed row was written by the closure.
+    assert not ChangeEvent.objects.filter(
+        object_id__in=[engagement.pk, overview.pk],
+        event_type__in=["ENGAGEMENT_FEEDBACK_CLOSED", "WEBSITE_OVERVIEW_CANCELLED"],
+    ).exists()
 
 
 # ---------------------------------------------------------------------------
@@ -142,13 +152,6 @@ def test_removed_rows_reach_closure_unchanged_in_the_database(specialist):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "QA-WORKFLOW-02: the closure confirmation is a bare boolean; work a colleague "
-        "adds between the warning and the confirming press is ended unseen"
-    ),
-)
 def test_a_confirmation_does_not_cover_work_added_after_the_warning(
     client, specialist, other_specialist
 ):
@@ -163,6 +166,8 @@ def test_a_confirmation_does_not_cover_work_added_after_the_warning(
     assert "praegune tegevus" in body
     assert "planeeritud" not in body and "järelkontroll" not in body
     revision = matter_field_revision(matter, "stage")
+    digest = warned["X-Closure-Digest"]
+    assert f'name="confirm_follow_up_closure" value="{digest}"' in body
 
     # 2. Meanwhile B plans a step and sends Koja arvamus (which schedules a check).
     planned = add_planned_action(
@@ -175,7 +180,7 @@ def test_a_confirmation_does_not_cover_work_added_after_the_warning(
     submission = send_koja_arvamus(matter, other_specialist, [ministry], day(-1))
 
     # 3. A presses the confirming button the warning drew.
-    confirmed = header_stage(client, matter, "in_force", confirm=True, revision=revision)
+    confirmed = header_stage(client, matter, "in_force", confirm=digest, revision=revision)
 
     # Expected: refused again, naming what is now live; nothing of B's ended.
     matter.refresh_from_db()
@@ -183,12 +188,29 @@ def test_a_confirmation_does_not_cover_work_added_after_the_warning(
     assert matter.is_open, f"closed over unseen work (status {confirmed.status_code})"
     assert planned.status == ActionStatus.PLANNED
     assert OpinionFollowUp.objects.get(submission=submission).is_monitoring
+    # Re-asked: the renewed warning says the work changed and names what is live now.
+    assert confirmed.status_code == 400
+    renewed = confirmed.content.decode()
+    assert LIVE_WORK_CHANGED in renewed
+    assert "1 planeeritud tegevus" in renewed and "järelkontroll" in renewed
+    assert confirmed["X-Closure-Digest"] != digest
+
+    # 4. Confirming what is live now closes, and ends B's work — seen this time.
+    closed = header_stage(
+        client, matter, "in_force", confirm=confirmed["X-Closure-Digest"], revision=revision
+    )
+    assert closed.status_code == 200
+    matter.refresh_from_db()
+    planned.refresh_from_db()
+    assert not matter.is_open
+    assert planned.status == ActionStatus.CANCELLED
 
 
-def test_confirmed_closure_ends_unseen_colleague_work_evidence(
-    client, specialist, other_specialist
-):
-    """The observed behaviour behind QA-WORKFLOW-02, pinned as evidence (passes today)."""
+def test_a_bare_confirmation_ends_no_colleague_work(client, specialist, other_specialist):
+    """Was ``test_confirmed_closure_ends_unseen_colleague_work_evidence``, which pinned
+    QA-WORKFLOW-02 (a bare ``on`` closed over a colleague's planned step). Inverted
+    with the fix: a confirmation that names no digest — the old ``on`` — covers
+    nothing, and the colleague's step survives."""
     matter = filed(specialist)
     set_next_action(matter=matter, text="Praegune samm", actor=specialist)
     client.force_login(specialist)
@@ -201,12 +223,15 @@ def test_confirmed_closure_ends_unseen_colleague_work_evidence(
         actor=other_specialist,
     )
 
-    header_stage(client, matter, "in_force", confirm=True, revision=revision)
+    refused = header_stage(client, matter, "in_force", confirm="on", revision=revision)
 
+    assert refused.status_code == 400
+    # Not «changed since the warning» — no warning's digest was posted at all.
+    assert LIVE_WORK_CHANGED not in refused.content.decode()
     matter.refresh_from_db()
     planned.refresh_from_db()
-    assert not matter.is_open
-    assert planned.status == ActionStatus.CANCELLED
+    assert matter.is_open
+    assert planned.status == ActionStatus.PLANNED
 
 
 # ---------------------------------------------------------------------------
@@ -246,7 +271,7 @@ def test_closing_with_everything_live_then_reopening_leaves_no_contradiction(sig
     matter.refresh_from_db()
     assert matter.is_open
 
-    header_stage(signed_in, matter, "in_force", confirm=True)
+    header_stage(signed_in, matter, "in_force", confirm=refused["X-Closure-Digest"])
     matter.refresh_from_db()
     assert not matter.is_open
     for row in (step, planned):

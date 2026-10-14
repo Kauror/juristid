@@ -290,7 +290,11 @@ def _closed_matter_findings() -> list[Finding]:
             subject=str(pk),
             detail=f"matter={matter}",
         )
-        for pk, matter in overview.objects.filter(status="PLANNED", matter__is_open=False)
+        # A plan or a round removed with «Kustuta» is on no surface and owes
+        # nothing; closure leaves it as it was (QA-WORKFLOW-01).
+        for pk, matter in overview.objects.filter(
+            status="PLANNED", matter__is_open=False, removed_at__isnull=True
+        )
         .order_by("pk")
         .values_list("pk", "matter_id")
     )
@@ -300,6 +304,7 @@ def _closed_matter_findings() -> list[Finding]:
             matter__is_open=False,
             lifecycle_tracked=True,
             feedback_closed_at__isnull=True,
+            removed_at__isnull=True,
         )
         .order_by("pk")
         .values_list("pk", "matter_id")

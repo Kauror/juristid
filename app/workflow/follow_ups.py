@@ -109,11 +109,16 @@ class FollowUpClosureUnconfirmed(DomainError):
     the confirming box's words for what this closure would end.
     """
 
-    def __init__(self, message: str = FOLLOW_UP_CLOSURE_WARNING, label: str = "") -> None:
+    def __init__(
+        self, message: str = FOLLOW_UP_CLOSURE_WARNING, label: str = "", digest: str = ""
+    ) -> None:
         super().__init__(message)
         from app.matters.closure_work import CHECKS_ONLY_LABEL
 
         self.label = label or CHECKS_ONLY_LABEL
+        #: What the confirming box posts back: the digest of exactly the work
+        #: this warning counted (docs/adr/0152 §7).
+        self.digest = digest
 
 
 def follow_up_text(addressee_count: int, kind: str = "") -> str:
@@ -483,9 +488,13 @@ def end_follow_up_for_cancelled_check(*, action: NextAction, actor: Any, reason:
 
 
 def refuse_unconfirmed_closure(
-    locked_matter: Any, *, confirmed: bool, finishing: Any = None, will_check: bool = False
-) -> None:
-    """Closing a Matter with live work needs the person's confirmation.
+    locked_matter: Any,
+    *,
+    confirmed: bool | str,
+    finishing: Any = None,
+    will_check: bool = False,
+) -> bool:
+    """Closing a Matter with live work needs the person's confirmation **of that work**.
 
     First asked for a planned or current check (docs/adr/0146 §8); since the
     owner's decision of 2026-10-10 for every kind of live work closure ends —
@@ -495,19 +504,188 @@ def refuse_unconfirmed_closure(
 
     Asked under the Matter's lock by `close_matter`, and earlier by every
     operation that stores a file before its stage can close the Matter, so a
-    refusal never strands bytes. The answer is the database's at that moment: a
-    tab drawn before the work existed, posting no confirmation, is refused.
-    Allowed once confirmed — closure is never forbidden.
-    """
-    from app.matters.closure_work import closure_warning, live_work_at_closure
+    refusal never strands bytes. The answer is the database's at that moment.
 
-    if confirmed:
-        return
-    warning = closure_warning(
-        live_work_at_closure(locked_matter, finishing=finishing, will_check=will_check)
+    **The confirmation is bound to the work the warning showed** (QA-WORKFLOW-02,
+    docs/adr/0152 §7). A person's ``confirmed`` is the digest the warning drew;
+    it covers the closure only while the live work still has that digest. A
+    colleague's step, plan, send or round added after the warning — or one
+    finished or removed — changes it, and the closure is refused again with the
+    renewed warning and its new digest, so nothing is ended that nobody was
+    shown. A bare ``"on"`` (a tab drawn before this rule) is no confirmation.
+    ``True`` is never a person's answer: it is code closing on nobody's
+    interactive behalf, or a save that already verified the digest earlier in
+    the same locked transaction. Allowed once confirmed — closure is never
+    forbidden.
+
+    Returns whether a confirmation was verified here, so a save that asks early
+    can tell `close_matter` — in the same transaction, under the same lock —
+    that the person's answer already holds, rather than have a check this very
+    save schedules (``will_check``) read as work added after the warning.
+    """
+    from app.matters.closure_work import (
+        LIVE_WORK_CHANGED,
+        closure_warning,
+        confirmation_matches,
+        is_stale_confirmation,
+        live_work_at_closure,
     )
-    if warning is not None:
-        raise FollowUpClosureUnconfirmed(*warning)
+
+    work = live_work_at_closure(locked_matter, finishing=finishing, will_check=will_check)
+    warning = closure_warning(work)
+    if warning is None:
+        return False
+    if confirmation_matches(work, confirmed):
+        return True
+    message, label = warning
+    if is_stale_confirmation(confirmed):
+        message = f"{LIVE_WORK_CHANGED} {message}"
+    raise FollowUpClosureUnconfirmed(message, label, digest=work.digest)
+
+
+# ---------------------------------------------------------------------------
+# After reopening: a check the closure ended, planned again by a person
+# ---------------------------------------------------------------------------
+
+#: What a restart names when the follow-up is no longer one a closure ended — it
+#: was planned again in another tab, or its opinion was withdrawn since.
+FOLLOW_UP_NOT_RESTARTABLE = (
+    "Seda järelkontrolli ei saa enam uuesti planeerida. Värskenda lehte ja vaata uuesti."
+)
+
+
+def restartable_follow_ups(matter: Any) -> QuerySet[OpinionFollowUp]:
+    """The follow-ups on this open Matter that its closure cancelled. **Reader-blind.**
+
+    Monitoring ended `CANCELLED` with «Teema suleti» — not answered, not ended
+    by a lawyer's reason, not withdrawn or superseded — on an opinion still
+    sent. Reopening never revives one (docs/adr/0146 §8, owner decision D9 of
+    2026-10-14); these are the ones a person may plan again. A page asks it
+    through the opinion's visibility (`app.matters.follow_up_restart`).
+    """
+    from app.submissions.enums import SubmissionStatus
+
+    return OpinionFollowUp.objects.filter(
+        submission__matter_id=getattr(matter, "pk", matter),
+        submission__status=SubmissionStatus.SENT,
+        state=FollowUpState.CANCELLED,
+        end_reason=CLOSED_WITH_MATTER,
+    )
+
+
+@transaction.atomic
+def restart_follow_up(
+    *, matter: Any, follow_up_id: Any, target_date: date | None, actor: Any = None
+) -> NextAction:
+    """«Planeeri järelkontroll» — a check the Matter's closure cancelled, planned again.
+
+    **Only by a person, only on a reopened Matter** (owner decision D9 of
+    2026-10-14, docs/adr/0146 §8 amended). Reopening revives nothing; this is
+    the explicit continuation the ADR left to be designed:
+
+    * the follow-up must be one closure cancelled (`restartable_follow_ups`) —
+      an answered, ended, withdrawn or superseded one is refused;
+    * **the cancelled check stays exactly as it was**, `CANCELLED` with «Teema
+      suleti» and its own `NEXT_ACTION_CANCELLED`; a **new** `PLANNED` check is
+      created on the day the person chose (required, not in the past — never
+      an automatic 30 days), with the cancelled check's words, the Matter's
+      owner and the opinion's restriction, pointing at the same follow-up;
+    * the follow-up is monitored again; how it had ended — state, time, person,
+      reason — is kept in this act's `NEXT_ACTION_SET` (``follow_up.restarted``
+      and ``follow_up.previous``), so the history still says the closure ended it.
+
+    **Once.** Under the Matter's lock and the follow-up's, a repeated press finds
+    the follow-up monitored with its new check and returns that check, writing
+    nothing; the one-live-check index refuses a second in the database.
+    """
+    from app.matters.locks import lock_open_matter_for_business_write
+
+    day = _refuse_a_past_day(target_date, FOLLOW_UP_NEEDS_DATE)
+    locked_matter = lock_open_matter_for_business_write(getattr(matter, "pk", matter))
+    follow_up = (
+        OpinionFollowUp.objects.select_for_update(no_key=True)
+        .select_related("submission")
+        .filter(pk=follow_up_id, submission__matter=locked_matter)
+        .first()
+    )
+    if follow_up is None:
+        raise DomainError(FOLLOW_UP_NOT_RESTARTABLE)
+    if follow_up.is_monitoring:
+        live = NextAction.objects.filter(follow_up=follow_up, status__in=ACTIVE).first()
+        if live is not None:
+            # The same press arriving twice: the first planned it.
+            return live
+        raise DomainError(FOLLOW_UP_NOT_RESTARTABLE)
+    if not restartable_follow_ups(locked_matter).filter(pk=follow_up.pk).exists():
+        raise DomainError(FOLLOW_UP_NOT_RESTARTABLE)
+
+    cancelled = (
+        NextAction.objects.filter(follow_up=follow_up, status=ActionStatus.CANCELLED)
+        .order_by("-ended_at", "-created_at")
+        .first()
+    )
+    submission = follow_up.submission
+    previous = {
+        "state": follow_up.state,
+        "ended_at": follow_up.ended_at.isoformat() if follow_up.ended_at else None,
+        "ended_by": str(follow_up.ended_by_id) if follow_up.ended_by_id else None,
+        "end_reason": follow_up.end_reason,
+    }
+    follow_up.state = FollowUpState.MONITORING
+    follow_up.ended_at = None
+    follow_up.ended_by = None
+    follow_up.end_reason = ""
+    follow_up.save(update_fields=["state", "ended_at", "ended_by", "end_reason", "updated_at"])
+
+    restricted = _restriction_of(submission) or (
+        Visibility.RESTRICTED
+        if cancelled is not None and cancelled.visibility_override == Visibility.RESTRICTED
+        else ""
+    )
+    text = (
+        cancelled.text
+        if cancelled is not None
+        else follow_up_text(_addressee_count(submission), submission.kind)
+    )
+    check = NextAction.objects.create(
+        matter=locked_matter,
+        text=text,
+        kind=ActionKind.DO,
+        date_semantics=DateSemantics.DEADLINE,
+        target_date=day,
+        date_precision=DatePrecision.EXACT,
+        status=ActionStatus.PLANNED,
+        responsible=locked_matter.owner,
+        created_by=actor,
+        visibility_override=restricted,
+        follow_up=follow_up,
+    )
+    record_change_event(
+        event_type=ChangeEventType.NEXT_ACTION_SET,
+        matter=locked_matter,
+        actor=actor,
+        obj=check,
+        summary=text[:200],
+        payload={
+            "kind": check.kind,
+            "date_semantics": check.date_semantics,
+            "target_date": day.isoformat(),
+            "replaced": None,
+            "planned": True,
+            # A person's deliberate act, never the system's (D1): `automatic`
+            # is false, and `restarted` with `previous` says this follow-up had
+            # been ended by the closure and how.
+            "follow_up": _block(
+                follow_up,
+                automatic=False,
+                check=_completed_checks(follow_up) + 1,
+                after=str(cancelled.pk) if cancelled is not None else None,
+                restarted=True,
+                previous=previous,
+            ),
+        },
+    )
+    return check
 
 
 @transaction.atomic

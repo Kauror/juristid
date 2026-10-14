@@ -645,6 +645,7 @@ def test_a_work_victory_is_confirmed_and_closes_nothing(signed_in, normal_matter
 
 def test_closing_writes_a_closure_and_fabricates_nothing(signed_in, normal_matter, specialist):
     """Closing is a `Hetkeseis` since docs/adr/0131 §10: «Rohkem ei tegele»."""
+    from app.matters.closure_work import live_work_at_closure
     from app.workflow.models import StageVocabulary
 
     action = _action(normal_matter, specialist)
@@ -657,7 +658,8 @@ def test_closing_writes_a_closure_and_fabricates_nothing(signed_in, normal_matte
             "title": "Menetlus lõppes.",
             "stage": str(StageVocabulary.objects.get(key="monitoring_stopped").pk),
             # The open step ends with the closure; the person confirms it (ADR 0152).
-            "confirm_follow_up_closure": "on",
+            # Bound to that work: the digest its warning names (docs/adr/0152 §7).
+            "confirm_follow_up_closure": live_work_at_closure(normal_matter).digest,
         },
     )
 

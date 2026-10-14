@@ -507,7 +507,9 @@ def test_muuda_teemat_asks_before_closing_and_closes_once_confirmed(
     matter.refresh_from_db()
     assert matter.is_open
 
-    confirmed = signed_in.post(url, {**payload, "confirm_follow_up_closure": "on"})
+    confirmed = signed_in.post(
+        url, {**payload, "confirm_follow_up_closure": refused["X-Closure-Digest"]}
+    )
 
     assert confirmed.status_code == 302
     matter.refresh_from_db()
@@ -536,7 +538,11 @@ def test_the_header_stage_asks_before_closing_and_closes_once_confirmed(
 
     confirmed = signed_in.post(
         url,
-        {"stage": stage, "revision": revision, "confirm_follow_up_closure": "on"},
+        {
+            "stage": stage,
+            "revision": revision,
+            "confirm_follow_up_closure": refused["X-Closure-Digest"],
+        },
         headers={"HX-Request": "true"},
     )
 
@@ -565,7 +571,10 @@ def test_finishing_the_current_step_into_a_closing_stage_asks_first(
     assert current.status == ActionStatus.OPEN
 
     confirmed = post(
-        signed_in, "complete_current_action", matter, {**data, "confirm_follow_up_closure": "on"}
+        signed_in,
+        "complete_current_action",
+        matter,
+        {**data, "confirm_follow_up_closure": refused["X-Closure-Digest"]},
     )
 
     assert confirmed.status_code == 200
@@ -594,7 +603,9 @@ def test_a_koja_arvamus_that_closes_the_matter_asks_first(signed_in, specialist,
     assert not Submission.objects.filter(matter=matter).exists()
 
     confirmed = signed_in.post(
-        url, payload(confirm_follow_up_closure="on"), headers={"HX-Request": "true"}
+        url,
+        payload(confirm_follow_up_closure=refused["X-Closure-Digest"]),
+        headers={"HX-Request": "true"},
     )
 
     assert confirmed.status_code == 200

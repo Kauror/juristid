@@ -112,6 +112,7 @@ from app.matters.department_dashboard import SeisFigure
 from app.matters.document_context import related_records
 from app.matters.enums import MatterDataClass, MatterOrigin, RecordMode
 from app.matters.episode_timeline import matter_episode_timeline
+from app.matters.follow_up_restart import restart_offers
 from app.matters.forms import (
     ENGAGEMENT_UNCHANGED,
     FOLLOW_UP_CLOSURE_FIELD,
@@ -135,6 +136,7 @@ from app.matters.forms import (
     ExternalPositionEvidenceForm,
     FollowUpCheckForm,
     FollowUpDateForm,
+    FollowUpRestartForm,
     IncomingIntakeForm,
     KodaOpinionForm,
     MatterCreateForm,
@@ -3187,6 +3189,12 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "consistency_alerts": current_work_alerts(matter, current_action, request.user),
         "recommendation": recommendation,
         "planned_actions": planned_actions,
+        # «Planeeri järelkontroll» — each check this reopened Teema's closure
+        # ended, offered to be planned again; never revived on its own (owner
+        # decision D9, `app.matters.follow_up_restart`).
+        "follow_up_restarts": restart_offers(
+            matter, request.user, can_write=may_write_business_content(request.user)
+        ),
         "upcoming_step": upcoming_step,
         # Work already scheduled in the file's own lifecycle — a round waiting
         # for feedback, a planned action — is the next step, and «Järgmine samm
@@ -4932,6 +4940,66 @@ def reschedule_follow_up_view(request: HttpRequest, pk: Any, action_id: Any) -> 
     return _render_overview(request, matter)
 
 
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def restart_follow_up_view(request: HttpRequest, pk: Any, follow_up_id: Any) -> HttpResponse:
+    """«Planeeri järelkontroll» on a reopened Teema (owner decision D9, docs/adr/0146 §8).
+
+    A check the closure cancelled is planned again on the day the person chose,
+    through `restart_follow_up`; the cancelled one stays in the history. The
+    follow-up is reached through an opinion this reader may see, or it is a 404
+    (AUTH-003). A refusal comes back beside the offer it was made from, or —
+    when that offer is gone — above the column.
+    """
+    from app.submissions.models import Submission
+    from app.workflow.follow_ups import restart_follow_up
+    from app.workflow.models import OpinionFollowUp
+
+    matter = get_visible_matter(request, pk)
+    follow_up = get_object_or_404(
+        OpinionFollowUp,
+        pk=follow_up_id,
+        submission__in=Submission.objects.visible_to(request.user).filter(matter=matter),
+    )
+    form = FollowUpRestartForm(request.POST, follow_up_id=follow_up.pk)
+    error = ""
+    if form.is_valid():
+        try:
+            restart_follow_up(
+                matter=matter,
+                follow_up_id=follow_up.pk,
+                target_date=form.cleaned_data["target_date"],
+                actor=request.user,
+            )
+        except DomainError as refusal:
+            error = str(refusal)
+        else:
+            return _render_overview(request, matter)
+    matter.refresh_from_db(fields=["is_open"])
+    context = _overview_context(request, matter)
+    context.update(_header_context(request, matter))
+    offer = next(
+        (
+            row
+            for row in context.get("follow_up_restarts") or []
+            if str(row.follow_up_id) == str(follow_up.pk)
+        ),
+        None,
+    )
+    if offer is not None:
+        if error:
+            form.add_error(None, error)
+        offer.form = form
+    else:
+        context["composer_error"] = error or next(
+            (str(message) for messages in form.errors.values() for message in messages),
+            FOLLOW_UP_CHANGED,
+        )
+    body = render_to_string("matters/partials/overview.html", context, request=request)
+    return HttpResponse(body, status=400)
+
+
 def _visible_planned(request: HttpRequest, matter: Matter, action_id: Any) -> NextAction:
     """A planned action of this Matter that this reader may see, or a 404 (AUTH-003)."""
     return get_object_or_404(
@@ -5375,12 +5443,14 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
         # it beside `Hetkeseis` (docs/adr/0146 §8, docs/adr/0152).
         _mark_closure_refused(form, refusal)
         matter.refresh_from_db()
-        return render(
+        response = render(
             request,
             "matters/matter_edit.html",
             _edit_context(request, matter, form, link_form),
             status=400,
         )
+        _expose_closure_digest(response, refusal)
+        return response
     except MatterEditConflict as conflict:
         # Somebody else changed this Matter between the page opening and this
         # save. Refused rather than applied, and the page comes back with every
@@ -5822,7 +5892,12 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
         context["field_error"] = str(refusal)
         context["follow_up_closure_stage"] = getattr(value, "pk", value)
         context["follow_up_closure_label"] = refusal.label
-        return render(request, surface, context, status=400)
+        # The one button posts back the digest of what this warning counted
+        # (docs/adr/0152 §7).
+        context["follow_up_closure_digest"] = refusal.digest
+        response = render(request, surface, context, status=400)
+        _expose_closure_digest(response, refusal)
+        return response
     except DomainError as error:
         matter.refresh_from_db()
         context = _header_context(request, matter)
@@ -7203,7 +7278,11 @@ def workspace_forms(
 #: A hidden identifier, the CSRF token, a choice made from a fixed list — none of
 #: those is retyped from memory, and a block that printed them would bury the
 #: paragraph that is.
-UNSAVED_CONTENT_SKIP: frozenset[str] = frozenset({"action_id", "attachments", "complete_action"})
+UNSAVED_CONTENT_SKIP: frozenset[str] = frozenset(
+    # The closure confirmation is an answer to a warning, not typed content
+    # (docs/adr/0152 §7): its value is a digest nobody wrote.
+    {"action_id", "attachments", "complete_action", FOLLOW_UP_CLOSURE_FIELD}
+)
 
 
 def unsaved_content(form: Any) -> list[tuple[str, str]]:
@@ -7249,7 +7328,20 @@ def _closure_needs_confirmation(
     written: the refusal came before the save stored anything (docs/adr/0146 §8).
     """
     _mark_closure_refused(form, refusal)
-    return _workspace_refusal(request, matter, key=key, form=form)
+    response = _workspace_refusal(request, matter, key=key, form=form)
+    _expose_closure_digest(response, refusal)
+    return response
+
+
+#: The response header a refused closure names its digest in, beside the box that
+#: carries it — for a caller whose panel is not on the page (docs/adr/0152 §7).
+CLOSURE_DIGEST_HEADER = "X-Closure-Digest"
+
+
+def _expose_closure_digest(response: HttpResponse, refusal: Any) -> None:
+    digest = getattr(refusal, "digest", "")
+    if digest:
+        response[CLOSURE_DIGEST_HEADER] = digest
 
 
 def _mark_closure_refused(form: Any, refusal: Any) -> None:
@@ -7262,6 +7354,10 @@ def _mark_closure_refused(form: Any, refusal: Any) -> None:
     form.follow_up_closure_refused = True
     if refusal is not None:
         form.closure_warning = str(refusal)
+        # What the box posts back: the digest of exactly the work this warning
+        # counted, so a confirmation never covers work added after it
+        # (QA-WORKFLOW-02, docs/adr/0152 §7).
+        form.closure_digest = getattr(refusal, "digest", "")
         field = form.fields.get(FOLLOW_UP_CLOSURE_FIELD)
         if field is not None:
             field.label = refusal.label

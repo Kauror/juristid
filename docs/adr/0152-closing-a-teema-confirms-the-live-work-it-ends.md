@@ -65,3 +65,45 @@ silently**. Asked how, the owner chose: confirm all live work.
 ## Reversibility
 
 Entirely, by code: no migration and no data change.
+
+## Amendment, 2026-10-14 — removed records are not live work, and a confirmation names its work
+
+Independent QA of 2026-10-14 found two gaps (QA-WORKFLOW-01, QA-WORKFLOW-02);
+the owner's decision D9 of the same day is recorded in docs/adr/0146 §8.
+
+6. **A record removed with «Kustuta» is not live work.** A `Kaasamine` or a
+   planned `Kodulehe ülevaade` taken off the file keeps its row — the wait
+   open, the plan `PLANNED` — but is on no surface. `live_work_at_closure`
+   no longer counts it, `close_open_feedback_waits_for_closure` and
+   `cancel_planned_website_overviews_for_closure` no longer end it (so no
+   event is written about it), and the integrity checks
+   `closed-matter-open-feedback-wait` / `closed-matter-planned-website-overview`
+   no longer report it.
+7. **The confirmation is bound to the work the warning counted.** The refusal
+   carries a digest — 16 hex characters of a SHA-256 over the Matter's id and
+   the ids of every live step, planned overview and open wait it counted (and
+   «a check this save schedules», when the save is a send). The confirming box
+   posts that digest as its value (`confirm_follow_up_closure`, now a
+   `CharField`); the header's one button posts it as a hidden field; a refused
+   response also names it in the `X-Closure-Digest` header for a caller whose
+   panel is not on the page. Under the Matter's lock the digest is computed
+   again: if a colleague added, finished, removed or replaced work in between,
+   it differs and the closure is refused once more, the renewed warning
+   prefixed «Pooleli töö on pärast hoiatust muutunud — vaata see üle ja kinnita
+   uuesti.» and drawn with an unticked box and the new digest. A bare `on` (a
+   tab drawn before this rule) confirms nothing. The digest is a hash of row
+   ids, so it says nothing about a restricted record. `True` remains for code
+   that closes on nobody's interactive behalf (seeds, tests) and for a save
+   that verified the person's digest earlier in the same locked transaction —
+   so the check a closing `Koja arvamus` schedules, or the step `✓ Tehtud`
+   finishes, is not read as changed work. Every door asks the same way: `Muuda
+   teemat`, the header stage editor, `✓ Tehtud`, `+ Märge`, `+ Koja arvamus`.
+8. **`MATTER_CLOSED` names what it ended.** Its payload gains `ended`:
+   `{"actions": [...], "overviews": [...], "waits": [...]}` — the ids of the
+   rows the closure is about to cancel or close, read under the lock. Each row
+   still writes its own `NEXT_ACTION_CANCELLED` / `WEBSITE_OVERVIEW_CANCELLED` /
+   `ENGAGEMENT_FEEDBACK_CLOSED`; the list is what lets a reader of the history
+   (Muudatused, D1) show one closure as one act. Additive; no event type and no
+   existing key changed.
+
+Reversible by code; no migration, no data change.

@@ -185,7 +185,10 @@ def test_a_closing_stage_with_live_work_asks_first_and_then_closes(signed_in, sp
     matter.refresh_from_db()
     assert matter.is_open
 
-    confirmed = choose(signed_in, matter, stage("in_force"), confirm_follow_up_closure="on")
+    # The button posts the digest of the work the warning counted (docs/adr/0152 §7).
+    digest = asked["X-Closure-Digest"]
+    assert f'name="confirm_follow_up_closure" value="{digest}"' in confirm
+    confirmed = choose(signed_in, matter, stage("in_force"), confirm_follow_up_closure=digest)
 
     assert confirmed.status_code == 200
     matter.refresh_from_db()
