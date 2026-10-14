@@ -406,3 +406,31 @@ def test_a_date_only_submission_never_renders_an_invented_time(client, specialis
     assert "10.4.2024 00:00" not in body
     assert "10.04.2024" not in body
     assert submission.sent_at_precision == SentAtPrecision.DATE
+
+
+@pytest.mark.parametrize("decision", ["link", "confirm-sent"])
+def test_an_archive_file_is_never_settled_on_a_test_matter(client, administrator, decision):
+    """QA-STATS-04: the archive is real correspondence; a TEST Matter is not its home.
+
+    Settling a letter on a development record put real evidence on it and
+    counted the test as archive coverage. The refusal names itself, and the
+    candidate stays in the queue untouched.
+    """
+    from django.contrib.messages import get_messages
+
+    from app.legacy_import.opinion_views import TEST_MATTER_REFUSED
+    from app.matters.enums import MatterDataClass
+
+    test_matter = factories.MatterFactory(data_class=MatterDataClass.TEST)
+    batch, item = catalogue()
+    row = candidate(batch, item, matter=test_matter)
+    client.force_login(administrator)
+
+    response = client.post(
+        reverse("legacy_import:opinion_decide", args=[row.pk]),
+        {"decision": decision, "sent_date": "2024-04-10"},
+    )
+    assert [str(m) for m in get_messages(response.wsgi_request)] == [TEST_MATTER_REFUSED]
+    row.refresh_from_db()
+    assert row.state == OpinionCandidateState.PENDING
+    assert row.review_approves_submission is False

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load people %}
 
 {% comment %}
 The Statistika shell: heading, period control, filter chips, tab strip.
@@ -109,7 +110,7 @@ item rather than another tab on the dashboard (Stage-2E brief 6).
               {% for owner in owners %}
                 <option value="{{ owner.pk }}"
                         {% if reporting.owner_id == owner.pk %}selected{% endif %}>
-                  {{ owner.display_name }}
+                  {{ owner|name_among:owners }}
                 </option>
               {% endfor %}
             </select>

@@ -133,7 +133,8 @@ def test_filter_state_survives_in_the_url_and_in_the_chips(client, world):
     assert response.status_code == 200
     chips = response.context["chips"]
     assert [chip.label for chip in chips] == ["Vastutaja"]
-    assert chips[0].value == "Martin Testjurist"
+    # First name, as the dropdown names him (QA naming decision; app.accounts.naming).
+    assert chips[0].value == "Martin"
     # And the chip's remove link keeps the period while dropping the owner.
     assert "periood=koik" in chips[0].remove_query
     assert "vastutaja" not in chips[0].remove_query

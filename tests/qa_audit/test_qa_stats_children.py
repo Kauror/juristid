@@ -161,10 +161,6 @@ def _reconstruct(archive_world, matter: Matter, payload_sha: str) -> None:
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="QA-STATS-04: HISTORICAL_SUBMISSION_COVERAGE counts a reconstruction on a TEST Matter",
-)
 def test_historical_submission_coverage_ignores_test_matters(
     archive_world, test_matter, reporting_context, world
 ):
@@ -186,10 +182,6 @@ def test_historical_submission_coverage_counts_a_real_reconstruction(
     assert after.coverage_count == before.coverage_count + 1
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="QA-STATS-04: OPINION_ARCHIVE_MATTER_COVERAGE counts a file settled on a TEST Matter",
-)
 def test_archive_matter_coverage_ignores_test_matters(
     archive_world, test_matter, reporting_context, world
 ):

@@ -29,6 +29,7 @@ from app.legacy_import.opinion_archive import (
     OpinionSubmissionImport,
 )
 from app.legacy_import.opinion_enums import OpinionCandidateState
+from app.matters.enums import MatterDataClass
 from app.reporting import metric_catalogue as keys
 from app.reporting.context import ReportingContext
 from app.reporting.metric_catalogue import definition
@@ -39,9 +40,20 @@ from app.submissions.models import Submission
 
 
 def visible_candidates(context: ReportingContext) -> QuerySet[OpinionMatchCandidate]:
+    """Archive match candidates a published statistic may count.
+
+    A candidate naming no Matter carries no Matter content and is counted for
+    everyone. One naming a Matter counts only when the reader may see that
+    Matter **and the Matter is real data**: a file settled on a TEST Matter is
+    a test of the archive flow, not coverage of Koda's archive, and moved the
+    published percentage (QA-STATS-04, docs/adr/0024 — reporting opts in to
+    real data, it is never the default).
+    """
     scope = scope_for_user(context.viewer)
     with_matter = apply_scope(
-        OpinionMatchCandidate.objects.filter(matter__isnull=False),
+        OpinionMatchCandidate.objects.filter(
+            matter__isnull=False, matter__data_class=MatterDataClass.REAL
+        ),
         matter_visibility_q(scope, prefix="matter__"),
     )
     return OpinionMatchCandidate.objects.filter(
@@ -168,13 +180,16 @@ def historical_submission_coverage(context: ReportingContext) -> MetricResult:
 
     Scoped like the figure above (AUD-044): a reconstruction is a submission on
     a Matter, so it counts only where the reader may see that submission
-    (`child_visibility_q`, the rule `_sent_submissions` follows). The
+    (`child_visibility_q`, the rule `_sent_submissions` follows) — and only on a
+    real-data Matter. A reconstruction onto a TEST Matter is not coverage of
+    Koda's archive; counting it moved this from 0 % to 10 % (QA-STATS-04). The
     denominator is the archive inventory, which names no Matter.
     """
     spec = definition(keys.HISTORICAL_SUBMISSION_COVERAGE)
     total = OpinionArchiveItem.objects.values("sha256").distinct().count()
     visible_submissions = apply_scope(
-        Submission.objects.all(), child_visibility_q(scope_for_user(context.viewer))
+        Submission.objects.filter(matter__data_class=MatterDataClass.REAL),
+        child_visibility_q(scope_for_user(context.viewer)),
     )
     reconstructed = (
         OpinionSubmissionImport.objects.filter(submission__in=visible_submissions.values("pk"))

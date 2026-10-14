@@ -121,6 +121,33 @@ def _bars(results: list[MetricResult]) -> list[dict[str, Any]]:
     ]
 
 
+def _tables(results: list[MetricResult]) -> list[dict[str, Any]]:
+    """Each Ülevaade table with the «kokku» its rows are read against.
+
+    A table whose rows include the unknown bucket — «Menetlusliik määramata»,
+    «Klassifitseerimata» — covers its whole population, so «kokku» is the
+    population and not the metric's value, which counts the classified rows
+    only. Printing the value made «kokku 4» sit above rows adding up to 12
+    (QA-STATS-07). Nothing is recomputed: both numbers are the selector's.
+
+    ``overlapping`` says when a Matter can sit in more than one row (a Matter
+    in two policy areas is in both), so rows adding up to more than «kokku»
+    is stated rather than left to look like an error.
+    """
+    tables = []
+    for result in results:
+        covers_population = any(segment.is_unknown for segment in result.segments)
+        total = result.population_count if covers_population else result.value
+        tables.append(
+            {
+                "result": result,
+                "total": total,
+                "overlapping": sum(segment.value for segment in result.segments) > total,
+            }
+        )
+    return tables
+
+
 def _trends(results: list[MetricResult]) -> list[dict[str, Any]]:
     return [
         {
@@ -179,16 +206,28 @@ def overview(request: HttpRequest) -> HttpResponse:
         services.compute(metric_keys.MATTERS_BY_TRACK, context),
     ]
     period_label = "kõik aastad" if context.period.is_all else context.period.label
+    # «Aruandlus <this year>» counts this year whatever the page period is
+    # (owner decision D2, QA-STATS-01): the same catalogued metric, read over
+    # the heading's year with every other filter kept. On the default period
+    # that is the strip's own result, so nothing is computed twice.
+    this_year = reporting_context.Period(str(today.year), str(today.year), today.year, today.year)
+    if (context.period.start_year, context.period.end_year) == (today.year, today.year):
+        reporting_year = cards
+    else:
+        reporting_year = compute_many_by_key(
+            [metric_keys.SUBMISSIONS_SENT], context.with_period(this_year)
+        )
 
     return render(
         request,
         "reporting/overview.html",
         {
             **_shell(request, context, "ulevaade"),
-            "seis": overview_strip.strip(cards, viewer, today, period_label),
-            "tables": tables,
-            "rail": overview_strip.rail(viewer, today, cards),
+            "seis": overview_strip.strip(cards, viewer, today, period_label, context=context),
+            "tables": _tables(tables),
+            "rail": overview_strip.rail(viewer, today, reporting_year, context=context),
             "people": services.compute(metric_keys.MATTERS_BY_OWNER, context),
+            "people_period": period_label,
             "export_url": exports.export_url(context, "teemad"),
         },
     )

@@ -32,8 +32,8 @@ definition in the catalogue (docs/design-v2-compatibility.md, DS-19).
 
   <div class="ovbody">
     <div class="ovbody__main">
-      {% for result in tables %}
-        {% include "reporting/_segment_table.html" with result=result %}
+      {% for table in tables %}
+        {% include "reporting/_segment_table.html" with result=table.result total=table.total overlapping=table.overlapping %}
       {% endfor %}
     </div>
 
@@ -42,10 +42,22 @@ definition in the catalogue (docs/design-v2-compatibility.md, DS-19).
         <section class="railblock" aria-label="{{ block.label }}">
           <h2 class="railblock__label">{{ block.label }}</h2>
           {% for row in block.rows %}
-            <a class="railrow" href="{{ row.url }}">
-              <span class="railrow__key">{{ row.caption }}</span>
-              <span class="railrow__value{% if row.tone and row.value %} railrow__value--{{ row.tone }}{% endif %}">{{ row.value }}</span>
-            </a>
+            {% comment %}
+              A row whose own narrowing contradicts a chip («vastutajata» under
+              «Vastutaja: Sandra») is 0 with no list behind it, so it is a span:
+              a link would open rows the 0 never counted (QA-STATS-08).
+            {% endcomment %}
+            {% if row.url %}
+              <a class="railrow" href="{{ row.url }}">
+                <span class="railrow__key">{{ row.caption }}</span>
+                <span class="railrow__value{% if row.tone and row.value %} railrow__value--{{ row.tone }}{% endif %}">{{ row.value }}</span>
+              </a>
+            {% else %}
+              <span class="railrow">
+                <span class="railrow__key">{{ row.caption }}</span>
+                <span class="railrow__value">{{ row.value }}</span>
+              </span>
+            {% endif %}
           {% endfor %}
         </section>
       {% endfor %}
@@ -55,9 +67,16 @@ definition in the catalogue (docs/design-v2-compatibility.md, DS-19).
         ranking, and never a workload: one open Matter can be a two-line
         monitoring note and the next a year of consultation
         (master specification 18.8).
+
+        The rows are `MATTERS_BY_OWNER` as catalogued: every visible Matter of
+        the selected period, open, closed and archive alike («Nähtavad
+        teemad»). The block used to say nothing about its period and its empty
+        state spoke of «avatud teemasid», so beside «Praegu» it read as open
+        work. The definition is kept; the words now say what it counts
+        (QA-STATS-11).
       {% endcomment %}
       <section class="railblock" aria-label="Inimesed">
-        <h2 class="railblock__label">Inimesed</h2>
+        <h2 class="railblock__label">Inimesed · {{ people_period }}</h2>
         {% for segment in people.segments %}
           {% if segment.url %}
             <a class="railrow" href="{{ segment.url }}">
@@ -71,7 +90,7 @@ definition in the catalogue (docs/design-v2-compatibility.md, DS-19).
             </span>
           {% endif %}
         {% empty %}
-          <p class="railblock__empty">Ühelgi inimesel ei ole avatud teemasid.</p>
+          <p class="railblock__empty">Valitud perioodil ei ole ühelgi inimesel teemasid.</p>
         {% endfor %}
       </section>
 
