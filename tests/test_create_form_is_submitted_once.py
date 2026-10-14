@@ -120,13 +120,19 @@ def test_a_replay_after_the_teema_was_deleted_creates_nothing(specialist):
     token = _form_token(client)
     data = _fields("Kustutatakse kohe", specialist, token)
     client.post(CREATE, data)
-    delete_matter(matter=_created("Kustutatakse kohe")[0], actor=specialist)
+    deleted = _created("Kustutatakse kohe")[0]
+    delete_matter(matter=deleted, actor=specialist)
+    rows = Matter.all_objects.count()
 
     replay = client.post(CREATE, data)
 
     assert replay.status_code == 302
     assert replay["Location"] == reverse("matters:matter_list")
-    assert Matter.all_objects.filter(title="Kustutatakse kohe").count() == 1
+    # Counted by row rather than by title: the tombstone no longer keeps the
+    # deleted title (docs/adr/0165 §5).
+    assert Matter.all_objects.count() == rows
+    assert Matter.all_objects.filter(pk=deleted.pk, deleted_at__isnull=False).exists()
+    assert not Matter.objects.filter(title="Kustutatakse kohe").exists()
 
 
 @pytest.mark.django_db
