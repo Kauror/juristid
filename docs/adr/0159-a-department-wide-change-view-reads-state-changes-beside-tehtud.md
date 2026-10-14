@@ -90,9 +90,11 @@ same window. No model, no migration, no new event type, no write.
 >   remain that person's acts.
 > * **One closure is one entry.** The `NEXT_ACTION_CANCELLED` rows a closure
 >   writes for the current and every planned step (reason «Teema suleti», or a
->   `closure` key should a writer add one) are grouped by the closing event
->   that follows them on their Matter (`MATTER_CLOSED`, or a cutover's) into
->   one «Järgmised tegevused» row: «sulges teema: lõppes N tegevust», in the
+>   `closure` key should a writer add one) are grouped by **the closure that
+>   names them** — `MATTER_CLOSED.payload.ended.actions`, the ids that closure
+>   ended (ADR 0152 §7) — and, for a closure recorded without that list, by the
+>   closing event that follows them on their Matter (`MATTER_CLOSED`, or a
+>   cutover's), into one «Järgmised tegevused» row: «sulges teema: lõppes N tegevust», in the
 >   closer's name, counted once (breakdown «sulges teema»). A cancellation with
 >   no closing event after it stands alone. The closure itself remains
 >   *Tehtud*'s output; N is what the reader may see (scoped before grouping).

@@ -424,3 +424,90 @@ def test_closure_entries_are_newest_first_among_the_steps(department_head, speci
 def test_specialists_still_get_a_404(client, specialist):
     client.force_login(specialist)
     assert client.get(PAGE).status_code == 404
+
+
+def _steps(matter, count: int, moment: datetime) -> list[NextAction]:
+    return [
+        NextAction.objects.create(
+            matter=matter, text=f"Samm {n}", status=ActionStatus.CANCELLED, ended_at=moment
+        )
+        for n in range(count)
+    ]
+
+
+def _cancel(matter, actor, step, moment: datetime) -> None:
+    ChangeEvent.objects.create(
+        event_type=ChangeEventType.NEXT_ACTION_CANCELLED,
+        matter=matter,
+        actor=actor,
+        object_type="workflow.NextAction",
+        object_id=step.pk,
+        occurred_at=moment,
+        payload={"reason": dc.CLOSURE_CANCEL_REASON},
+    )
+
+
+def _closed(matter, actor, moment: datetime, ended: list[NextAction] | None) -> None:
+    payload: dict = {"disposition": Disposition.COMPLETED}
+    if ended is not None:
+        payload["ended"] = {
+            "actions": [str(step.pk) for step in ended],
+            "overviews": [],
+            "waits": [],
+        }
+    ChangeEvent.objects.create(
+        event_type=ChangeEventType.MATTER_CLOSED,
+        matter=matter,
+        actor=actor,
+        occurred_at=moment,
+        payload=payload,
+    )
+
+
+def test_the_closure_that_names_its_steps_is_the_key(department_head, specialist):
+    """`MATTER_CLOSED.payload.ended.actions` decides, whatever the order the rows
+    were written in: here both closures were recorded *before* their steps'
+    cancellations, which the ordering rule alone would read as one closure (the
+    second) taking all five, then nothing."""
+    matter = create_matter(title="Nimetatud sammud", owner=specialist, actor=specialist)
+    start = timezone.now() - timedelta(hours=2)
+    first = _steps(matter, 2, start)
+    second = _steps(matter, 3, start)
+    _closed(matter, specialist, start, first)
+    for step in first:
+        _cancel(matter, specialist, step, start + timedelta(seconds=1))
+    _closed(matter, specialist, start + timedelta(hours=1), second)
+    for step in second:
+        _cancel(matter, specialist, step, start + timedelta(hours=1, seconds=1))
+
+    rows = _closure_rows(dc.build_changes(department_head))
+    assert [row.detail for row in rows] == ["lõppes 3 tegevust", "lõppes 2 tegevust"]
+
+
+def test_without_the_list_the_ordering_rule_still_groups(department_head, specialist):
+    """A closure recorded before `ended` existed: the first closing event at or
+    after the cancellations is theirs."""
+    matter = create_matter(title="Vana sulgemine", owner=specialist, actor=specialist)
+    start = timezone.now() - timedelta(hours=2)
+    steps = _steps(matter, 2, start)
+    for step in steps:
+        _cancel(matter, specialist, step, start)
+    _closed(matter, specialist, start + timedelta(milliseconds=5), None)
+
+    [row] = _closure_rows(dc.build_changes(department_head))
+    assert row.detail == "lõppes 2 tegevust"
+
+
+def test_a_real_closure_writes_the_ids_it_ended_or_is_grouped_by_order(department_head, specialist):
+    """Through the real service: one closure, one row — whether or not this
+    tree's `close_matter` records `ended` yet (C1, docs/adr/0152 §7)."""
+    matter = _with_steps(specialist, "Päris sulgemine", planned=2)
+    close_matter(
+        matter=matter,
+        disposition=Disposition.COMPLETED,
+        actor=specialist,
+        follow_ups_confirmed=True,
+    )
+
+    [row] = _closure_rows(dc.build_changes(department_head))
+    assert row.detail == "lõppes 3 tegevust"

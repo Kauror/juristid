@@ -66,8 +66,7 @@ from datetime import date, datetime
 from typing import Any
 from urllib.parse import urlencode
 
-from django.db.models import Count, F, Max, Min, OuterRef, Q, QuerySet, Subquery
-from django.db.models.functions import Coalesce
+from django.db.models import Count, Max, Min, Q, QuerySet
 from django.urls import reverse
 from django.utils import timezone
 
@@ -573,29 +572,60 @@ def _closure_rows(closure_acts: QuerySet[ChangeEvent]) -> list[ChangeRow]:
     """One row per closure that ended steps, however many it ended (D1).
 
     The cancellations stay in the audit history one by one; this only reads
-    them as the one act they were. Grouped by the closing event that followed
-    them on their Matter — or, should none be found, each stands alone rather
-    than being merged with a stranger. One query for the groups, newest
-    first, and one each for their Matters and people.
+    them as the one act they were. Which closure a cancellation belongs to:
+
+    1. **the closure that names it** — `MATTER_CLOSED.payload.ended.actions`
+       lists the ids of the steps that closure ended (docs/adr/0152 §7);
+    2. otherwise the first closing event on its Matter at or after it (a
+       closure writes its steps' cancellations first, then itself) — the rule
+       for closures recorded before that list existed, and for cutovers;
+    3. otherwise it stands alone rather than being merged with a stranger.
+
+    Bounded: the cancellations, the closing events on their Matters, then
+    their Matters and people — four queries, whatever the number of rows.
     """
     from django.contrib.auth import get_user_model
 
-    closing = (
+    cancels = list(
+        closure_acts.order_by().values("pk", "matter", "actor", "object_id", "occurred_at")
+    )
+    if not cancels:
+        return []
+    closings = list(
         ChangeEvent.objects.filter(
-            matter=OuterRef("matter"),
+            matter__in={cancel["matter"] for cancel in cancels},
             event_type__in=CLOSING_EVENT_TYPES,
-            occurred_at__gte=OuterRef("occurred_at"),
         )
-        .order_by("occurred_at", "created_at")
-        .values("pk")[:1]
+        .order_by("occurred_at", "created_at", "pk")
+        .values("pk", "matter", "occurred_at", "payload")
     )
-    groups = list(
-        closure_acts.annotate(closure=Coalesce(Subquery(closing), F("pk")))
-        .order_by()
-        .values("closure", "matter", "actor")
-        .annotate(n=Count("pk"), at=Max("occurred_at"))
-        .order_by("-at")
-    )
+    named: dict[str, Any] = {}
+    by_matter: dict[Any, list[Any]] = {}
+    for closing in closings:
+        by_matter.setdefault(closing["matter"], []).append(closing)
+        ended = (closing["payload"] or {}).get("ended")
+        actions = ended.get("actions") if isinstance(ended, dict) else None
+        for action_id in actions if isinstance(actions, list) else ():
+            named.setdefault(str(action_id), closing["pk"])
+
+    def closure_of(cancel: Any) -> Any:
+        if cancel["object_id"] is not None and str(cancel["object_id"]) in named:
+            return named[str(cancel["object_id"])]
+        for closing in by_matter.get(cancel["matter"], ()):
+            if closing["occurred_at"] >= cancel["occurred_at"]:
+                return closing["pk"]
+        return cancel["pk"]
+
+    grouped: dict[tuple[Any, Any, Any], dict[str, Any]] = {}
+    for cancel in cancels:
+        key = (closure_of(cancel), cancel["matter"], cancel["actor"])
+        group = grouped.setdefault(
+            key, {"matter": cancel["matter"], "actor": cancel["actor"], "n": 0, "at": None}
+        )
+        group["n"] += 1
+        if group["at"] is None or cancel["occurred_at"] > group["at"]:
+            group["at"] = cancel["occurred_at"]
+    groups = sorted(grouped.values(), key=lambda group: group["at"], reverse=True)
     if not groups:
         return []
     matters = Matter.objects.in_bulk({group["matter"] for group in groups})
