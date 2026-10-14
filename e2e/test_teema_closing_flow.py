@@ -31,6 +31,7 @@ from e2e.conftest import (
     open_done_form,
     sign_in,
     start_first_step,
+    wait_for_htmx,
 )
 
 pytestmark = pytest.mark.e2e
@@ -41,8 +42,18 @@ def finish_step_moving_stage(page, result: str, label: str) -> None:
     open_done_form(page)
     page.locator("#id_praegune_body").fill(result)
     page.select_option("#id_praegune_hetkeseis", label=label)
-    page.locator("#praegune-tegevus-vorm button[type=submit]").click()
-    page.wait_for_load_state("networkidle")
+    # Wait for this save's answer and its swap. `networkidle` returned before
+    # the HTMX request had left, and the test's next check — `#teema-hetkeseis`
+    # contains the label — also passed on the *old* header, whose stage menu
+    # lists every label: the next stage choice then posted the old revision
+    # and was refused 409 (CI run 38585768565).
+    with page.expect_response(
+        lambda r: r.request.method == "POST" and "/praegune/" in r.url
+    ) as answer:
+        page.locator("#praegune-tegevus-vorm button[type=submit]").click()
+    assert answer.value.ok, answer.value.status
+    wait_for_htmx(page)
+    expect(page.locator("#teema-hetkeseis .metaline__value")).to_have_text(label)
 
 
 def test_there_is_no_closing_panel_and_the_stage_says_what_ends_the_file(page, base_url):
