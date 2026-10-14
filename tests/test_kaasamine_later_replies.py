@@ -465,11 +465,6 @@ def test_a_restricted_round_is_offered_only_to_whom_it_is_visible(
     assert not answerable_rounds(reader, normal_matter).filter(pk=round_.pk).exists()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Depends on Agent A's restriction inheritance in record_external_position "
-    "(QA-AUTHZ-01). Remove this marker when rem/a is integrated.",
-)
 def test_every_later_answer_to_a_restricted_round_is_restricted(
     signed_in, normal_matter, specialist
 ):
