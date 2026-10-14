@@ -7,7 +7,7 @@ press is a new form as far as the server can tell. Reproduced in Chromium on
 81a7d6e4: two Matters with the same title, different ids.
 
 Fixed in the QA remediation round (docs/adr/0166 §2): the restored form posts
-the tokens its history entry was rendered with, and a Teema the same person
+the tab's earlier tokens (`intake_earlier`), and a Teema the same person
 just filed under the same title is reported instead of filed again — «Ava see»
 or «Loo siiski uus». The second test proves a deliberate second Teema with the
 same words is still one click away.
@@ -49,9 +49,6 @@ def _file_then_go_back(page, base_url, title):
     page.wait_for_load_state("networkidle")
     # The precondition of the defect: the browser hands the typed title back.
     assert page.input_value("#id_title") == title
-    # And the page names the token this history entry was first filed with
-    # (`bindCreateFormHistory`, history.state survives the no-store re-fetch).
-    assert page.locator('input[name="intake_earlier"]').count() >= 1
     return first
 
 
@@ -60,8 +57,14 @@ def test_back_after_filing_a_teema_does_not_file_it_twice(page, base_url):
     title = unique_title("Tagasi-nupu kordus")
     first = _file_then_go_back(page, base_url, title)
 
-    page.get_by_role("button", name="Salvesta", exact=True).click()
+    with page.expect_request(
+        lambda request: request.method == "POST" and request.url.endswith("/teemad/uus/")
+    ) as sent:
+        page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
+    # The restored form named the tab's earlier tokens (`bindCreateFormHistory`,
+    # added at `formdata` so Chromium's restoration is left alone).
+    assert 'name="intake_earlier"' in (sent.value.post_data or "")
     # Not filed again: the form says why and offers the Teema that exists.
     expect(page.locator("#sama-pealkiri")).to_be_visible()
     assert page.input_value("#id_title") == title

@@ -131,11 +131,12 @@
     {% endif %}
 
     {% comment %}
-      The tokens this history entry was rendered with before, written by
-      `bindCreateFormHistory` (static/js/app.js) from `history.state`, which
-      survives the `no-store` re-fetch browser Back makes. A restored form
-      posts them, and the Teema one of them created is recognised
-      (docs/adr/0166 §2). Empty without scripting; the time window covers that.
+      The hook for `bindCreateFormHistory` (static/js/app.js): on a page
+      reached by Back or Forward it adds the tab's earlier tokens to the
+      submission as `intake_earlier` — at `formdata`, never as controls in
+      this form, which would cost Chromium its restoration of what was typed
+      — and the Teema one of them created is recognised (docs/adr/0166 §2).
+      Without scripting the time window covers it.
     {% endcomment %}
     <div data-intake-earlier hidden></div>
 

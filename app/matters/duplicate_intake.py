@@ -10,9 +10,9 @@ second Salvesta was, to the server, a new form.
 Two layers, both asking only about the *person's own recent work* and never
 about anybody else's titles (no global uniqueness, docs/adr/0166 §2):
 
-1. **The restored form remembers its earlier tokens.** The page records each
-   token it was rendered with in its own history entry (`history.state`, which
-   survives a `no-store` re-fetch) and posts them back as `intake_earlier`
+1. **The restored form names its earlier tokens.** The page remembers, in the
+   tab's `sessionStorage`, every token it was rendered with; on a page reached
+   by Back or Forward it adds them to the submission as `intake_earlier`
    (`static/js/app.js`, `bindCreateFormHistory`). A Teema one of those tokens
    created, with the same title, is this form's Teema however long ago it was
    filed.

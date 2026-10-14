@@ -50,10 +50,14 @@ show member material) for one page.
 Chosen, two layers:
 
 1. **The restored form names its earlier tokens.** `bindCreateFormHistory`
-   (`static/js/app.js`) keeps every token the page was rendered with in its own
-   history entry (`history.state`, which survives the `no-store` re-fetch) and
-   posts the earlier ones as `intake_earlier`. A Teema one of them created, with
-   the same normalised title, is recognised however long ago it was filed.
+   (`static/js/app.js`) remembers every token the page was rendered with in the
+   tab's `sessionStorage`; on a page reached by Back or Forward
+   (`PerformanceNavigationTiming.type == "back_forward"`) it adds them to the
+   submission as `intake_earlier` at the `formdata` event. A Teema one of them
+   created, with the same normalised title, is recognised however long ago it
+   was filed; a different title is a new Teema. Measured in Chromium: both
+   `history.replaceState` on load and an extra hidden control in the form make
+   Chromium drop its restoration of the typed values, so neither is used.
 2. **A server-side net that needs no script.** A Teema the same person filed
    through `Uus teema` in the last 10 minutes (`RECENT_WINDOW`) with the same
    normalised title (case and spacing ignored) is recognised too. Read through
