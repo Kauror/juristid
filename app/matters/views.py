@@ -104,6 +104,7 @@ from app.matters import (
     register_dates,
     register_filters,
     selectors,
+    step_launch,
     work_items,
     workspace,
 )
@@ -111,7 +112,13 @@ from app.matters import person_work as person_workspace
 from app.matters.deletion import delete_matter, deletion_may_be_offered, plan_matter_deletion
 from app.matters.department_dashboard import SeisFigure
 from app.matters.document_context import related_records
-from app.matters.enums import MatterDataClass, MatterOrigin, RecordMode
+from app.matters.enums import (
+    MatterDataClass,
+    MatterOrigin,
+    RecordMode,
+    WebsiteOverviewKind,
+    WebsiteOverviewStatus,
+)
 from app.matters.episode_timeline import matter_episode_timeline
 from app.matters.follow_up_restart import restart_offers
 from app.matters.forms import (
@@ -317,7 +324,7 @@ from app.taxonomy.models import PolicyArea
 from app.taxonomy.vocabulary import selectable_policy_areas
 from app.workflow import plan as work_plan
 from app.workflow.consistency import current_work_alerts
-from app.workflow.enums import Track
+from app.workflow.enums import PlanStepOperation, Track
 from app.workflow.follow_ups import FOLLOW_UP_CHANGED, FollowUpClosureUnconfirmed
 from app.workflow.models import MatterPlanStep, NextAction, StageVocabulary
 from app.workflow.selectors import stages_including
@@ -3163,6 +3170,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # Built once and read twice: the rail draws its nodes and `matter_rail`
     # merges the dated points into them.
     rail = legal_process_rail(matter=matter, user=request.user, context=phases, step_rows=step_rows)
+    consistency_alerts = current_work_alerts(matter, current_action, request.user)
     return {
         **_reopen_context(matter, episodes=episodes, instrument_keys=instrument_keys),
         # `Menetluse kulg` — where the external procedure stands, which one to
@@ -3186,7 +3194,15 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # Read-only workflow-consistency alerts about that step, for this reader
         # — today one: a standard step the record shows done since it was set
         # (docs/adr/0161, `app.workflow.consistency`). Shown under the step only.
-        "consistency_alerts": current_work_alerts(matter, current_action, request.user),
+        "consistency_alerts": consistency_alerts,
+        # A current step started from a structured standard step — «Saada Koja
+        # arvamus», say — is finished through its canonical form: `✓ Tehtud`
+        # opens it (docs/adr/0168 §4). Not while the record already shows the
+        # work done: then the alert above asks for the plain `✓ Tehtud`.
+        "current_launch": _current_step_launch(current_action, consistency_alerts),
+        # Which canonical form a launched save came from — set by `?ava=` on a
+        # full page and by a refusal carrying its `samm` (docs/adr/0168 §2).
+        "launch": None,
         "recommendation": recommendation,
         "planned_actions": planned_actions,
         # «Planeeri järelkontroll» — each check this reopened Teema's closure
@@ -3353,11 +3369,31 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     }
 
 
+def _current_step_launch(current_action: Any, alerts: Sequence[Any]) -> Any:
+    """`step_launch.Launch` for a current step whose work has a canonical form.
+
+    Only a plain current `DO` step started from a structured standard step,
+    still ahead, with no alert saying the record already shows it done. One
+    query, and only when the step carries a plan step at all.
+    """
+    if current_action is None or current_action.plan_step_id is None or alerts:
+        return None
+    if current_action.follow_up_id is not None:
+        return None
+    step = current_action.plan_step
+    if step is None or not step.is_open:
+        return None
+    return step_launch.launch_for_step(step)
+
+
 @login_required
 def matter_detail(request: HttpRequest, pk: Any) -> HttpResponse:
     matter = get_visible_matter(request, pk)
     context = _overview_context(request, matter)
     context.update(_header_context(request, matter))
+    # `?ava=…` — a structured step's control without scripting: the page with
+    # its canonical form open (docs/adr/0168 §2). Reads only; writes nothing.
+    step_launch.apply_open_request(request, matter, context)
     context["tab"] = "teema"
     context["nav_active"] = "teemad"
     return render(request, "matters/matter_detail.html", context)
@@ -6775,22 +6811,46 @@ def add_website_overview(request: HttpRequest, pk: Any) -> HttpResponse:
     """
     matter = get_visible_matter(request, pk)
     key = "website_overview_form"
+    # «Koosta kodulehe ülevaade» → `Alusta` opened this form (docs/adr/0168 §3):
+    # a published Ülevaade finishes that step in the same transaction. A news
+    # item is not the overview the step asked for and finishes nothing.
+    launched_id = step_launch.posted_step_id(request, matter)
     form = CompactWebsiteOverviewForm(request.POST)
     if not form.is_valid():
         return _workspace_refusal(request, matter, key=key, form=form)
     publication = form.cleaned_data.get("publication")
     try:
-        workspace.add_matter_website_overview(
-            matter=matter,
-            author=request.user,
-            url=publication[0] if publication else "",
-            published_on=publication[1] if publication else None,
-            title=form.cleaned_data.get("overview_title") or "",
-            kind=form.cleaned_data.get("kind") or "",
-        )
+        with transaction.atomic():
+            launched = work_plan.lock_launched_step(
+                matter, launched_id, PlanStepOperation.WEBSITE_OVERVIEW
+            )
+            result = workspace.add_matter_website_overview(
+                matter=matter,
+                author=request.user,
+                url=publication[0] if publication else "",
+                published_on=publication[1] if publication else None,
+                title=form.cleaned_data.get("overview_title") or "",
+                kind=form.cleaned_data.get("kind") or "",
+            )
+            if launched is not None and _overview_does_the_step(result.record):
+                work_plan.fulfil_launched_step(
+                    launched=launched, record=result.record, actor=request.user
+                )
     except DomainError as error:
         return _workspace_refusal(request, matter, key=key, form=form, error=str(error))
     return _render_overview(request, matter)
+
+
+def _overview_does_the_step(overview: Any) -> bool:
+    """A published Ülevaade — the reading `RecordedWork` proves the step by.
+
+    A publication whose kind predates the choice reads as an overview, which is
+    what every one of them was filed as (`plan_view.RecordedWork`).
+    """
+    return overview.status == WebsiteOverviewStatus.PUBLISHED and overview.kind in (
+        WebsiteOverviewKind.OVERVIEW,
+        "",
+    )
 
 
 @login_required
@@ -7413,6 +7473,11 @@ def _workspace_refusal(
     context = _overview_context(request, matter)
     context.update(_header_context(request, matter))
     context[key] = form
+    # A canonical form opened from a step comes back still naming that step, so
+    # the corrected save still finishes it (docs/adr/0168 §3).
+    context["launch"] = step_launch.launched_context(
+        matter, key, request.POST.get(step_launch.STEP_PARAM)
+    )
     # A planned row's `Muuda` or `✓ Tehtud`: the bound form goes back into that
     # row, opened, so the field's own message prints beside what was typed
     # rather than the save failing in silence (docs/adr/0144 §1).
@@ -7758,31 +7823,48 @@ def add_engagement_compact(request: HttpRequest, pk: Any) -> HttpResponse:
     """
     matter = get_visible_matter(request, pk)
     key = "add_engagement_form"
+    # «Kaasa liikmeid / küsi tagasisidet» → `Alusta` opened this form: the step
+    # it names is finished by the round, in the same transaction, and a second
+    # press finds it finished and writes nothing (docs/adr/0168 §3).
+    launched_id = step_launch.posted_step_id(request, matter)
     form = CompactEngagementForm(request.POST, request.FILES)
     if not form.is_valid():
         return _workspace_refusal(request, matter, key=key, form=form)
     try:
-        workspace.add_matter_engagement(
-            matter=matter,
-            author=request.user,
-            audience=form.cleaned_data["audience"],
-            smaily_url=form.cleaned_data.get("smaily_url") or "",
-            alchemer_url=form.cleaned_data.get("alchemer_url") or "",
-            # `Veebileht` and `Märkus`, into the record's own `url` and `note`
-            # (docs/adr/0127 §2).
-            url=form.cleaned_data.get("website_url") or "",
-            note=form.cleaned_data.get("engagement_note") or "",
-            occurred_on=form.cleaned_data.get("occurred_on_value"),
-            occurred_on_precision=form.cleaned_data["occurred_on_precision"],
-            # Optional, and `None` when the box was left empty: no wait is opened
-            # and nothing is defaulted (docs/adr/0120).
-            feedback_deadline=form.cleaned_data.get("feedback_deadline"),
-            uploads=form.cleaned_data.get("attachments") or (),
-            record_overview=True,
-        )
+        with transaction.atomic():
+            launched = work_plan.lock_launched_step(
+                matter, launched_id, PlanStepOperation.ENGAGEMENT
+            )
+            result = _add_engagement_from_form(request, matter, form)
+            if launched is not None:
+                work_plan.fulfil_launched_step(
+                    launched=launched, record=result.record, actor=request.user
+                )
     except (DomainError, UploadRejected) as error:
         return _workspace_refusal(request, matter, key=key, form=form, error=str(error))
     return _render_overview(request, matter)
+
+
+def _add_engagement_from_form(request: HttpRequest, matter: Matter, form: Any) -> Any:
+    """`workspace.add_matter_engagement` with what `Alusta kaasamist` asked."""
+    return workspace.add_matter_engagement(
+        matter=matter,
+        author=request.user,
+        audience=form.cleaned_data["audience"],
+        smaily_url=form.cleaned_data.get("smaily_url") or "",
+        alchemer_url=form.cleaned_data.get("alchemer_url") or "",
+        # `Veebileht` and `Märkus`, into the record's own `url` and `note`
+        # (docs/adr/0127 §2).
+        url=form.cleaned_data.get("website_url") or "",
+        note=form.cleaned_data.get("engagement_note") or "",
+        occurred_on=form.cleaned_data.get("occurred_on_value"),
+        occurred_on_precision=form.cleaned_data["occurred_on_precision"],
+        # Optional, and `None` when the box was left empty: no wait is opened
+        # and nothing is defaulted (docs/adr/0120).
+        feedback_deadline=form.cleaned_data.get("feedback_deadline"),
+        uploads=form.cleaned_data.get("attachments") or (),
+        record_overview=True,
+    )
 
 
 @login_required
@@ -8506,6 +8588,10 @@ def add_koda_opinion(request: HttpRequest, pk: Any) -> HttpResponse:
     """
     matter = get_visible_matter(request, pk)
     key = "koda_opinion_form"
+    # «Saada Koja arvamus» → `Alusta` opened this form (docs/adr/0168 §3).
+    # Opening it wrote nothing; this save, once the opinion is recorded as
+    # sent, finishes that step in the same transaction.
+    launched_id = step_launch.posted_step_id(request, matter)
     form = KodaOpinionForm(
         request.POST,
         request.FILES,
@@ -8522,6 +8608,9 @@ def add_koda_opinion(request: HttpRequest, pk: Any) -> HttpResponse:
         # without this, a refusal under the lock — a closed Matter in a stale
         # tab, a rejected upload — left that institution in the catalogue.
         with transaction.atomic():
+            launched = work_plan.lock_launched_step(
+                matter, launched_id, PlanStepOperation.SUBMISSION
+            )
             result = workspace.add_matter_koda_opinion(
                 # What else this save finishes, each named by the person and
                 # each checked again under the lock (historical regression,
@@ -8559,6 +8648,10 @@ def add_koda_opinion(request: HttpRequest, pk: Any) -> HttpResponse:
                 # byte is stored (docs/adr/0146 §8).
                 follow_ups_confirmed=form.cleaned_data.get("confirm_follow_up_closure", False),
             )
+            if launched is not None:
+                work_plan.fulfil_launched_step(
+                    launched=launched, record=result.record, actor=request.user
+                )
     except FollowUpClosureUnconfirmed as refusal:
         return _closure_needs_confirmation(request, matter, key=key, form=form, refusal=refusal)
     except (DomainError, UploadRejected) as error:

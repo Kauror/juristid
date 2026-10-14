@@ -23,7 +23,9 @@ canonical records prove it — keyed on the step's stable `template_step_key` an
 * `website-overview` — a published `Ülevaade`;
 * `consult-members` — a `Kaasamine`, waiting or finished;
 * `form-position` — feedback recorded on a finished `Kaasamine`, or a sent
-  opinion that answers what is being asked;
+  opinion that answers what is being asked. Retired from the template in
+  version 2 and never suggested (docs/adr/0168 §5); the reading stays for a
+  step somebody had already started from it (docs/adr/0161);
 * `send-opinion` — a sent opinion, **unless a request for an opinion is still
   outstanding**: a repeat `Arvamuse tähtaeg` asks again, and an earlier opinion
   never answers it (docs/adr/0144 §2).
@@ -45,7 +47,7 @@ from django.utils import timezone
 from app.matters.enums import RecordMode, WebsiteOverviewKind, WebsiteOverviewStatus
 from app.workflow.enums import PlanStepOperation
 from app.workflow.models import MatterPlanStep
-from app.workflow.plan import plan_revision, plan_steps_of
+from app.workflow.plan import RETIRED_STEP_KEYS, plan_revision, plan_steps_of
 
 
 @dataclass(frozen=True)
@@ -54,6 +56,19 @@ class Recommendation:
 
     step: MatterPlanStep
     revision: str
+
+    @property
+    def launch(self) -> Any:
+        """The canonical form `Alusta` opens, or ``None`` for a generic step.
+
+        A step whose work is a record this application has a form for —
+        `Kaasamine`, `Koja arvamus`, `Ülevaade / uudis` — is started in that
+        form, and `Alusta` writes nothing by itself (docs/adr/0168 §1). A
+        generic step keeps the small `Alusta` editor.
+        """
+        from app.matters.step_launch import launch_for_step
+
+        return launch_for_step(self.step)
 
 
 @dataclass(frozen=True)
@@ -150,7 +165,12 @@ def recommendation_for(
     # restricted below this reader reads as any other step ahead, so the
     # suggestion cannot be used to learn about an action the reader may not
     # see (docs/adr/0133 §3). Starting it then refuses under the lock.
-    open_steps = [step for step in steps if step.is_open]
+    # A step a newer template version retired is history on this Matter,
+    # never suggested again (docs/adr/0168 §5) — «Koonda tagasiside ja kujunda
+    # Koja seisukoht» on a Matter seeded before it was removed.
+    open_steps = [
+        step for step in steps if step.is_open and step.template_step_key not in RETIRED_STEP_KEYS
+    ]
     if not open_steps:
         return None
     done = RecordedWork.of(matter, viewer)

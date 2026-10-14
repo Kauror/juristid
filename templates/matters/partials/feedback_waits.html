@@ -59,7 +59,9 @@ keeps.
     `Tehtud` opens the one `Lisa tagasiside` form — `+ Kaasamine` in `LISA
     TEEMALE` — with this round chosen (static/js/ux.js `data-open-feedback`);
     saving it records the feedback and finishes the round in one operation.
-    Without scripting it is a link to that form.
+    Opening it writes nothing, and leaving it leaves the round waiting.
+    Without scripting it is the Teema page with that form open and this round
+    chosen (`?ava=tagasiside&kaasamine=…`, docs/adr/0168 §2).
   {% endcomment %}
   {% for wait in feedback_waits %}
     <p class="curact__owed curact__owed--wait" data-feedback-wait="{{ wait.pk }}">
@@ -76,7 +78,8 @@ keeps.
         <a class="curact__owedlink" href="{{ wait.alchemer_url }}" target="_blank" rel="noopener noreferrer">Alchemer<span class="visually-hidden"> — avaneb uues aknas</span></a>
       {% endif %}
       {% if can_write %}
-        <a class="disclosure-chip disclosure-chip--quiet curact__waitdone" href="#lisa-kaasamine"
+        <a class="disclosure-chip disclosure-chip--quiet curact__waitdone"
+           href="{% url 'matters:matter_detail' pk=matter.pk %}?ava=tagasiside&amp;kaasamine={{ wait.pk }}#kaasamine-tagasiside"
            data-open-feedback="{{ wait.pk }}">Tehtud</a>
       {% endif %}
     </p>

@@ -128,7 +128,8 @@ def test_scenario_a_one_request_answered_over_two_weeks(signed_in, specialist, c
     matter = _new_matter(signed_in, "Jooksev töö A (sünteetiline)", START + dt.timedelta(days=14))
     assert matter.response_requested_at is not None
     assert matter.pk in _owed(specialist)
-    assert MatterPlanStep.objects.filter(matter=matter).count() == 5
+    # Four standard steps since version 2 (docs/adr/0168 §5).
+    assert MatterPlanStep.objects.filter(matter=matter).count() == 4
 
     # Day 1 — the write-up is published.
     clock.go(1)

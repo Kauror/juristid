@@ -12813,6 +12813,28 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 
+/* «Samm: Kaasa liikmeid / küsi tagasisidet · Loobu» — the step a canonical form
+ * was opened from (docs/adr/0168). One quiet line at the top of the form; the
+ * `[hidden]` attribute removes it when the form was opened from its own chip. */
+.addform__launch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--spacing-1);
+  margin: 0;
+  font-size: var(--typography-size-sm);
+  color: var(--text-secondary);
+}
+
+.addform__launch[hidden] {
+  display: none;
+}
+
+.addform__launchtext {
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
 /* The save sits at the right end of its own row. One button per panel, and it
  * is the only thing that commits that panel — there is no global save left on
  * this page to confuse it with (brief §12). */

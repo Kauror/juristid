@@ -112,7 +112,8 @@ def test_the_form_produces_the_whole_record_in_one_go(created, specialist, stage
     # No step is made from the deadline, and none is started from the plan the
     # page seeded: guidance is not work (docs/adr/0133 §4, §8).
     assert not NextAction.objects.filter(matter=created).exists()
-    assert created.plan_steps.count() == 5
+    # Four standard steps since version 2 (docs/adr/0168 §5).
+    assert created.plan_steps.count() == 4
     assert MatterPersonalNote.objects.filter(matter=created, author=specialist).exists()
 
 

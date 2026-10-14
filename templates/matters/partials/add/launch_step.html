@@ -1,0 +1,29 @@
+{% comment %}
+The step a canonical form was opened from (docs/adr/0168).
+
+Included at the top of the three `LISA TEEMALE` forms that do a structured
+step's work: `Alusta kaasamist`, `Koja arvamus`, `Ülevaade / uudis`. Empty and
+hidden when the form was opened from its own chip — the ordinary case, which
+behaves exactly as before.
+
+A step's `Alusta` (or a current structured step's `✓ Tehtud`) fills it: the
+script writes the step's id into `samm` and shows the line; without scripting
+the page arrives with `?ava=…&samm=…` and `launch` set by the view. The save
+checks the id under the Matter's lock and finishes **that** step with the
+record it writes; nothing is written by opening the form.
+
+`Loobu` forgets the step and closes the form — the step stays exactly as it
+was. Without scripting it is the Teema page without the parameters.
+
+    form_key    this form's `workspace_forms` key
+{% endcomment %}
+{% with launched=launch.step %}
+<input type="hidden" name="samm" data-launch-step
+       value="{% if launch and launch.form == form_key %}{{ launched.pk }}{% endif %}">
+<p class="addform__launch" data-launch-note{% if not launch or launch.form != form_key %} hidden{% endif %}>
+  <span>Samm:</span>
+  <span class="addform__launchtext" data-launch-title>{% if launch and launch.form == form_key %}{{ launched.title }}{% endif %}</span>
+  <a class="quietbutton" data-cancel-launch
+     href="{% url 'matters:matter_detail' pk=matter.pk %}#praegune-tegevus">Loobu</a>
+</p>
+{% endwith %}

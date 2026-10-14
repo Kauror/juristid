@@ -151,6 +151,23 @@ background sequence — which can be started (`Alusta`) or dismissed (`×`);
           too. The panel id stays `tehtud`, so a refusal, a draft carried across
           a save and Minu asjad's arrival reopen it exactly as before.
         {% endcomment %}
+        {% if current_launch %}
+          {% comment %}
+            **A current structured step is finished through its canonical
+            form** (docs/adr/0168 §4): a step started from «Saada Koja
+            arvamus» before `Alusta` opened the form, or carried over by
+            `Muuda`. `✓ Tehtud` opens that form, naming this step; its save
+            records the work and completes the step and its action in one
+            transaction. Not drawn while the record already shows the work
+            done — the alert below then asks for the plain `✓ Tehtud`, and
+            `current_launch` is empty.
+          {% endcomment %}
+          <a class="disclosure-chip curact__donechip"
+             href="{% url 'matters:matter_detail' pk=matter.pk %}{{ current_launch.query }}"
+             data-open-canonical="{{ current_launch.form.panel }}"
+             data-launch-step="{{ current_launch.step.pk }}"
+             data-launch-title="{{ current_launch.step.title }}">✓ Tehtud</a>
+        {% else %}
         <input class="addpick" type="checkbox" id="tehtud-valik"
                aria-controls="tehtud"
                {% if open_panel == "tehtud" %}checked{% endif %}>
@@ -161,6 +178,7 @@ background sequence — which can be started (`Alusta`) or dismissed (`×`);
             {% include "matters/partials/current_action_form.html" %}
           </div>
         </div>
+        {% endif %}
       {% endif %}
       {% if can_write and current_action.is_review_kind %}
         {% comment %}
@@ -314,8 +332,10 @@ background sequence — which can be started (`Alusta`) or dismissed (`×`);
       {% comment %}
         **`Järgmisena?` — one suggestion, offered, not started**
         (docs/adr/0141). The first step still ahead in the Matter's background
-        sequence; the sequence itself is never drawn. `Alusta` makes it the
-        current step, with its own words and an optional day. `×` dismisses it
+        sequence; the sequence itself is never drawn. On a generic step
+        `Alusta` makes it the current step, with its own words and an optional
+        day; on a structured one it opens the step's canonical form
+        (docs/adr/0168). `×` dismisses it
         for good on this Matter — the exact step shown, at the revision this
         page was drawn from — and the next one is suggested instead. Until
         somebody starts it, it is guidance: not a `NextAction`, not a work item
@@ -328,6 +348,25 @@ background sequence — which can be started (`Alusta`) or dismissed (`×`);
           everywhere, and a suggestion is not one.
         {% endcomment %}
         <span class="curact__suggesttext">{{ recommendation.step.title }}</span>
+        {% if recommendation.launch %}
+          {% comment %}
+            **A structured step opens its canonical form** (docs/adr/0168 §1).
+            «Kaasa liikmeid / küsi tagasisidet», «Saada Koja arvamus» and
+            «Koosta kodulehe ülevaade» are done by a record this page already
+            has a form for, so `Alusta` opens that form under `LISA TEEMALE` —
+            scrolled to, its first field focused — and writes nothing by
+            itself. The form's own `Salvesta` finishes this step; leaving it
+            leaves the step as it is. Without scripting it is the same page with
+            the form opened (`?ava=`).
+          {% endcomment %}
+          {% with launch_link=recommendation.launch %}
+            <a class="disclosure-chip"
+               href="{% url 'matters:matter_detail' pk=matter.pk %}{{ launch_link.query }}"
+               data-open-canonical="{{ launch_link.form.panel }}"
+               data-launch-step="{{ launch_link.step.pk }}"
+               data-launch-title="{{ launch_link.step.title }}">Alusta</a>
+          {% endwith %}
+        {% else %}
         <details class="cx-panel curact__edit" id="alusta-samm" data-addpanel
                  {% if open_panel == "alusta-samm" %}open{% endif %}>
           <summary class="disclosure-chip">Alusta</summary>
@@ -356,6 +395,7 @@ background sequence — which can be started (`Alusta`) or dismissed (`×`);
             </form>
           </div>
         </details>
+        {% endif %}
         <form class="curact__dismiss"
               hx-post="{% url 'matters:dismiss_plan_step' pk=matter.pk step_id=recommendation.step.pk %}"
               hx-target="#teema-vaade" hx-swap="outerHTML">

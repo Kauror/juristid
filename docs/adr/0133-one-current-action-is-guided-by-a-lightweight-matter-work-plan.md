@@ -377,3 +377,7 @@ The seeded sequence stays in the background behind one
 `Soovitatud järgmisena` line, which can be started (`Alusta`, §4 unchanged)
 or dismissed (`×`, stored as `SKIPPED`); `Muuda` still carries the step and
 completion still completes it. No row is rewritten.
+
+## Amendment of 2026-10-14 — structured steps open their canonical form
+
+Owner decision D4 (docs/adr/0168). `Alusta` on «Kaasa liikmeid / küsi tagasisidet», «Saada Koja arvamus» or «Koosta kodulehe ülevaade» opens that step's `LISA TEEMALE` form and writes nothing; the form's save finishes the step that opened it (`samm`, checked under the lock). `STANDARD_PLAN` is version 2 without «Koonda tagasiside ja kujunda Koja seisukoht» (`form-position`), which is never suggested on a version-1 plan either; existing rows are not rewritten.
