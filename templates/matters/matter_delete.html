@@ -102,6 +102,12 @@
         {% else %}
           <p class="dangerzone__help">Teemal ei ole veel sisu.</p>
         {% endif %}
+        {% comment %}
+          No promise of absolute erasure (owner review B, docs/adr/0165 §5):
+          the deletion's own trace stays in the security log, and the Teema's
+          earlier audit rows are append-only and are kept as they were.
+        {% endcomment %}
+        <p class="dangerzone__help">Turvalogisse jääb kustutamise kirje (kes, millal, viitenumber ja kogused); varasemad logikirjed säilivad muutmata.</p>
         <p class="dangerzone__help"><strong>Seda tegevust ei saa tagasi võtta.</strong></p>
       </div>
       {% comment %}

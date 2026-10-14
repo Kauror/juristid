@@ -260,6 +260,11 @@ def test_the_dialog_names_what_goes_and_the_two_answers(client, doomed, head):
     assert 'role="alertdialog"' in page
     assert "Kas kustutada see teema jäädavalt?" in page
     assert "Seda tegevust ei saa tagasi võtta." in page
+    # No promise of absolute erasure: the trace and earlier log rows stay.
+    assert (
+        "Turvalogisse jääb kustutamise kirje (kes, millal, viitenumber ja kogused); "
+        "varasemad logikirjed säilivad muutmata."
+    ) in page
     assert ">Loobu</a>" in page
     assert ">Kustuta jäädavalt</button>" in page
     assert "1 arvamust" in page
