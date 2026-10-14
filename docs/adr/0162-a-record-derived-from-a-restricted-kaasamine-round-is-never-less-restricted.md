@@ -1,6 +1,6 @@
 # 0162 — A record derived from a restricted `Kaasamine` round is never less restricted than it
 
-**Status:** accepted for review — QA remediation of 2026-10-14 (QA-AUTHZ-01 P0, QA-AUTHZ-P1); applies the rule AGENTS.md already states («Restricted child records may be more restrictive than their Matter, never less restrictive») to the records a round produces.
+**Status:** Accepted — owner's decision of 2026-10-14 (review of PR #452: the read-time restriction architecture, including the live join of §3, is accepted as written); QA remediation of 2026-10-14 (QA-AUTHZ-01 P0, QA-AUTHZ-P1); applies the rule AGENTS.md already states («Restricted child records may be more restrictive than their Matter, never less restrictive») to the records a round produces.
 **Date:** 2026-10-14
 
 **No migrations**, no data migration, **no existing row is rewritten**, no
@@ -90,3 +90,13 @@ owner decision.
 * `tests/qa_audit/test_qa_authz_oracles.py` — two hidden worlds (a reply under a
   restricted round on a visible Matter, new and legacy-shaped) through the
   existence oracles for READER, collaborating READER and the gate visitor.
+
+## Production check (2026-10-14, read-only)
+
+The legacy inventory (`BEGIN READ ONLY … ROLLBACK` on the production database,
+the queries of `C:\CC\_worklogs\qa-remediation-2026-10-14gents\impact-assessment.sql`
+and docs/adr/0137 §3) returned **no rows**: no unrestricted reply, file or
+overview under a restricted round, and no restricted round at all. The
+read-time protection therefore covers no existing exposure today; it is what
+keeps a future round restricted by an importer or administrator from exposing
+replies recorded before its restriction.
