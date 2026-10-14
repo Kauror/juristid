@@ -39,6 +39,7 @@ from app.matters import register_filters, selectors, work_items
 from app.matters.department_dashboard import register_url
 from app.matters.enums import RecordMode
 from app.matters.models import Matter
+from app.reporting.selectors.base import REGISTER_DATA_SCOPE
 
 #: How far «tähtaeg 30 p jooksul» reaches.
 DEADLINE_WINDOW_DAYS = 30
@@ -62,8 +63,22 @@ class RailBlock:
     rows: list[Figure]
 
 
+def _scoped(params: dict[str, Any]) -> dict[str, Any]:
+    """A register narrowing over real data only, counted and linked as one.
+
+    Every other population on Statistika is real data (`reporting_population`),
+    but these were counted and linked in the register's own default, which
+    includes TEST Matters — so «avatud teemat» here and the same caption in the
+    strip disagreed whenever a TEST Matter was open. The scope goes into the
+    *params* rather than only into the URL: `_count` reads the same dict the
+    link is built from, so the figure and its list cannot be scoped apart
+    (`REGISTER_DATA_SCOPE`, app/reporting/selectors/base.py).
+    """
+    return {**params, "andmed": REGISTER_DATA_SCOPE}
+
+
 def _open_full() -> dict[str, Any]:
-    return {"olek": "avatud", "liik": RecordMode.FULL.value}
+    return _scoped({"olek": "avatud", "liik": RecordMode.FULL.value})
 
 
 def _count(
@@ -87,7 +102,7 @@ def _victory_params(year: int) -> dict[str, Any]:
     is `koik` because a work victory does not stop being one when the file
     closes, and the register's default would otherwise hide most of them.
     """
-    return {register_filters.VICTORY_PARAM: str(year), "olek": "koik"}
+    return _scoped({register_filters.VICTORY_PARAM: str(year), "olek": "koik"})
 
 
 def _in_force_params(today: date) -> dict[str, Any]:
@@ -99,12 +114,14 @@ def _in_force_params(today: date) -> dict[str, Any]:
     exactly `period_end < today` — which is the definition of *möödunud* this
     figure has always used (app/matters/register_filters.py).
     """
-    return {
-        register_filters.COMMENCEMENT_PARAM: register_filters.FACT_PRESENT,
-        register_filters.COMMENCEMENT_START_PARAM: date(today.year, 1, 1).isoformat(),
-        register_filters.COMMENCEMENT_END_PARAM: (today - timedelta(days=1)).isoformat(),
-        "olek": "koik",
-    }
+    return _scoped(
+        {
+            register_filters.COMMENCEMENT_PARAM: register_filters.FACT_PRESENT,
+            register_filters.COMMENCEMENT_START_PARAM: date(today.year, 1, 1).isoformat(),
+            register_filters.COMMENCEMENT_END_PARAM: (today - timedelta(days=1)).isoformat(),
+            "olek": "koik",
+        }
+    )
 
 
 def strip(results: dict[str, Any], viewer: Any, today: date, period_label: str) -> list[Figure]:
@@ -148,7 +165,9 @@ def rail(viewer: Any, today: date, results: dict[str, Any]) -> list[RailBlock]:
 
     *Praegu* is five register populations — the same five Ülevaade counts, in
     the same order and through the same parameters, so a reader moving between
-    the two pages does not find one number saying two things.
+    the two pages does not find one number saying two things. The one
+    difference is ``andmed=paris`` (`_scoped`): Ülevaade is an operational page
+    and shows TEST Matters, Statistika publishes real data only.
     """
     population = Matter.objects.visible_to(viewer)
     window_end = today + timedelta(days=DEADLINE_WINDOW_DAYS)
