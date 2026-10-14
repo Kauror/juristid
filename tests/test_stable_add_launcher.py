@@ -189,7 +189,9 @@ def test_the_open_step_control_is_not_in_the_launcher(signed_in, specialist):
     assert "lisa-jargmine" not in zone
 
 
-def test_there_is_no_closing_chip_and_deletion_is_in_the_header(signed_in, specialist):
+def test_there_is_no_closing_chip_and_deletion_is_in_the_header(
+    signed_in, specialist, client, department_head
+):
     """`TEEMA TOIMINGUD` is retired, and so is `+ Lõpeta teema` (docs/adr/0131 §11).
 
     A file ends through its `Hetkeseis`; deletion is beside `Muuda teemat` in the
@@ -208,6 +210,12 @@ def test_there_is_no_closing_chip_and_deletion_is_in_the_header(signed_in, speci
 
     # Deletion left the launcher and did not come back to it.
     assert "Kustuta" not in zone
+    # A specialist is not offered it at all since docs/adr/0165 …
+    header = body[body.index('id="teema-pais"') : body.index('id="lisa-teemale"')]
+    assert "matterhead__delete" not in header
+    # … and the department head finds it in the header.
+    client.force_login(department_head)
+    body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
     header = body[body.index('id="teema-pais"') : body.index('id="lisa-teemale"')]
     assert "matterhead__delete" in header
     assert "Kustuta" in header
