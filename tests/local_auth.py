@@ -97,7 +97,10 @@ def code(secret: str, user: User | None = None) -> str:
     if user is not None:
         device = TotpDevice.objects.filter(user=user).first()
         spent = device.last_used_step if device is not None else 0
-    for step in (current - 1, current, current + 1):
+    # Current step first, then the next: the verifier accepts ±1 step, so a code
+    # for `current - 1` is refused if the 30 s window rolls over before it is
+    # checked (seen once in CI, run 38583114431).
+    for step in (current, current + 1, current - 1):
         if step > spent:
             return totp.generate_otp(step)
     # Three codes inside one step's tolerance window: let the test go on by
