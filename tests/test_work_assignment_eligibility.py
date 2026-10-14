@@ -1008,7 +1008,10 @@ def test_a_report_chip_names_a_departed_colleague_rather_than_calling_them_unkno
     response = client.get(reverse("reporting:matters"), {ctx.PARAM_OWNER: str(former.pk)})
     values = [chip.value for chip in response.context["chips"]]
 
-    assert former.display_name in values
+    # Named as the Statistika owner picker names every colleague: the first
+    # name, lengthened only where two share it (app.accounts.naming; QA naming
+    # decision 2026-10-14). The point here is that the colleague is named.
+    assert former.get_short_name() in values
     assert "tundmatu" not in values
 
 
