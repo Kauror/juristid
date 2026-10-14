@@ -5,7 +5,8 @@ C:/CC/_worklogs/independent-qa-2026-10-14/agents/browser/, scripts wf_tabs.py an
 wf_teema.py) and pinned here at template level, because the defect is in what
 the server sends back for the swap, not in the browser.
 
-`xfail(strict=True)` marks a reproduced defect; the test flips when it is fixed.
+Each defect pinned here as a strict xfail was fixed by the QA remediation of
+2026-10-14 (agent I); the tests are now ordinary regression guards.
 """
 
 from __future__ import annotations
@@ -49,14 +50,6 @@ def test_the_full_page_marks_the_teema_tab_current(signed_in, specialist):
     assert "is-active" in tabs
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "QA-BROWSER-01: an inline header edit (Hetkeseis menu, ADR 0156) re-renders "
-        "#teema-pais from _header_context, which has no `tab`, so the swapped-in tab bar "
-        "loses aria-current=page and the active underline on both Teema and Dokumendid"
-    ),
-)
 def test_a_header_stage_change_keeps_the_open_tab_marked(signed_in, specialist):
     matter = create_matter(title="Hetkeseis päisest", actor=specialist, owner=specialist)
 
@@ -75,14 +68,6 @@ def test_a_header_stage_change_keeps_the_open_tab_marked(signed_in, specialist):
     assert 'aria-current="page"' in tabs_fragment(response.content.decode())
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "QA-BROWSER-01: a column save that re-sends the header out of band "
-        "(_render_overview(header_out_of_band=True), e.g. + Lisa → Arvamuse tähtaeg) sets "
-        "`tab` only on the non-header branch, so the OOB tab bar loses aria-current=page"
-    ),
-)
 def test_a_column_save_with_the_header_out_of_band_keeps_the_open_tab_marked(signed_in, specialist):
     matter = create_matter(title="Arvamuse tähtaeg uuesti", actor=specialist, owner=specialist)
     due = timezone.localdate() + timedelta(days=10)
@@ -99,14 +84,6 @@ def test_a_column_save_with_the_header_out_of_band_keeps_the_open_tab_marked(sig
     assert 'aria-current="page"' in tabs_fragment(body)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "QA-BROWSER-02: the header Hetkeseis menu swaps only #teema-pais, so `Tegevused` "
-        "(grouped by Hetkeseis period) keeps showing the previous period as current until "
-        "the page is reloaded"
-    ),
-)
 def test_a_header_stage_change_redraws_the_period_grouped_chronology(signed_in, specialist):
     matter = create_matter(
         title="Perioodid päisest", actor=specialist, owner=specialist, stage=stage("idea")

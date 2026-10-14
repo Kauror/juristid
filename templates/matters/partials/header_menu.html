@@ -1,0 +1,38 @@
+{% comment %}
+The header's ⋯ menu, in a slot of its own so a column save can redraw it.
+
+The menu exists only once the Matter has a file, and the first file usually
+arrives through a column save — `Lisa tagasiside`, `Koja arvamus`, a `Märge`
+with an attachment — which redraws the column and sends the header's
+`Hetkeseis` and the `Dokumendid` count out of band, not the whole header. The
+count went to «· 1» and the menu stayed absent until a reload
+(QA-BROWSER-07). So the slot is always drawn for a writer, empty or not, and
+`_render_overview` sends it beside the count (`menu_out_of_band`).
+
+`display: contents`: an empty slot is no box and opens no gap in the
+breadcrumb row; a full one lays its menu out exactly as before.
+{% endcomment %}
+<span class="matterhead__menu" id="teema-menuu"{% if menu_out_of_band %} hx-swap-oob="true"{% endif %}>
+  {% comment %}
+    The ⋯ menu, for a Matter that has files.
+
+    It holds one link now that `Nähtavus` has gone, and it is rendered only
+    where that link has something to point at — a menu whose panel would
+    open on nothing is a control that promises there is more here.
+  {% endcomment %}
+  {% if document_count %}
+    <details class="headmenu">
+      <summary class="headmenu__trigger" aria-label="Rohkem tegevusi">⋯</summary>
+      <div class="headmenu__panel">
+        {% comment %}
+          The assisted review. In the menu rather than beside «Muuda
+          teemat»: the edit page itself offers it prominently, and this is
+          the second way in for somebody already on the Teema page
+          (app/matters/intake_suggestions).
+        {% endcomment %}
+        <a class="headmenu__link"
+           href="{% url 'matters:matter_edit_assisted' pk=matter.pk %}">Kontrolli dokumendist leitud andmeid</a>
+      </div>
+    </details>
+  {% endif %}
+</span>

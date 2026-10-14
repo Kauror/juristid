@@ -73,7 +73,7 @@ from app.core.decorators import business_write_required
 from app.core.enums import Visibility
 from app.core.errors import DomainError
 from app.core.middleware import is_htmx
-from app.core.request_params import bounded_int, safe_local_path
+from app.core.request_params import bounded_int, digits_or_none, safe_local_path
 from app.documents import pending as pending_uploads
 from app.documents.enums import DocumentRole, ExtractionState
 from app.documents.filenames import NFC
@@ -386,8 +386,11 @@ def page_size_from(raw: str | None) -> tuple[int, str]:
     value = (raw or "").strip()
     if value == PAGE_SIZE_ALL:
         return PAGE_SIZE_ALL_BOUND, PAGE_SIZE_ALL
-    if value.isdigit() and int(value) in PAGE_SIZE_CHOICES:
-        return int(value), value
+    # ASCII digits only: `²` passed `isdigit()` and raised in `int()`
+    # (QA-SUBDOCS-01).
+    number = digits_or_none(value)
+    if number is not None and number in PAGE_SIZE_CHOICES:
+        return number, str(number)
     return PAGE_SIZE, str(PAGE_SIZE)
 
 
@@ -3468,6 +3471,23 @@ def _opinion_rail_deadline(matter: Any, viewer: Any) -> Any:
     return None if sent.exists() else matter.response_deadline
 
 
+#: The Matter tab an htmx request was sent from, read off `HX-Current-URL`.
+DOCUMENTS_TAB_PATH = "/dokumendid/"
+
+
+def _on_documents_tab(request: HttpRequest) -> bool:
+    """Whether the page that sent this request is a Matter's `Dokumendid` tab.
+
+    The header is shared by both tabs, and only `Teema` has a `#teema-vaade`
+    column to answer into.
+    """
+    return DOCUMENTS_TAB_PATH in request.headers.get("HX-Current-URL", "")
+
+
+def _open_tab(request: HttpRequest) -> str:
+    return "dokumendid" if _on_documents_tab(request) else "teema"
+
+
 def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # One read for the private note: its body fills the box and its `updated_at`
     # fills `Salvestatud HH:mm`.
@@ -3475,6 +3495,12 @@ def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     can_write = may_write_business_content(request.user)
     return {
         "matter": matter,
+        # The open tab, which the header's tab bar marks (`aria-current`, the
+        # underline). The header is redrawn by every inline edit and by saves
+        # that send it out of band, and an answer drawn without this left both
+        # tabs unmarked until a reload (QA-BROWSER-01). A full page sets its own
+        # after this; a fragment answers for the page that asked.
+        "tab": _open_tab(request),
         # `Koja ettepanek või pöördumine` — said on the meta line, and the two
         # incoming dates it does not have are not offered (docs/adr/0151 §3).
         "koda_initiative": is_koda_initiative(matter),
@@ -4103,6 +4129,11 @@ def _render_overview(
     matter.refresh_from_db(fields=["stage"])
     context = _overview_context(request, matter)
     context.update(_header_context(request, matter))
+    # The column exists only on `Teema`, so an answer that carries it answers
+    # for that tab — on both branches below. Set only on the second until
+    # QA-BROWSER-01, so a save sending the whole header out of band drew a tab
+    # bar with neither tab marked.
+    context["tab"] = "teema"
     body = render_to_string("matters/partials/overview.html", context, request=request)
     if header_out_of_band:
         context["header_out_of_band"] = True
@@ -4115,9 +4146,15 @@ def _render_overview(
         # editors being rebuilt under the person (ENG-091).
         context["stage_out_of_band"] = True
         context["tabs_out_of_band"] = True
-        context["tab"] = "teema"
         body += render_to_string("matters/partials/header_stage.html", context, request=request)
         body += render_to_string("matters/partials/tabs.html", context, request=request)
+        if context.get("can_write"):
+            # The ⋯ menu appears with the first file, and the first file
+            # usually arrives through exactly this kind of save
+            # (QA-BROWSER-07). Its slot is drawn only for a writer, so only a
+            # writer is sent it.
+            context["menu_out_of_band"] = True
+            body += render_to_string("matters/partials/header_menu.html", context, request=request)
     return HttpResponse(body, status=status)
 
 
@@ -5978,6 +6015,21 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
         return render(request, surface, context, status=400)
 
     matter.refresh_from_db()
+    if field == "stage" and matter.is_open and not _on_documents_tab(request):
+        # **A stage change is not a header-only fact.** `Tegevused` groups the
+        # chronology by `Hetkeseis` period and marks the current one, and
+        # `Menetluse kulg` and the offered next stages read the same stage; a
+        # swap of `#teema-pais` alone left the old period standing as current
+        # until a reload (QA-BROWSER-02). So the answer is the one a column
+        # save gives — the column, with the header out of band — retargeted at
+        # the column, which is also what lets the page carry any draft typed
+        # there across the swap (static/js/app.js `keepDrafts`). `Dokumendid`
+        # has no column and keeps the header-only answer below; a stage that
+        # closed the Matter reloads the page instead.
+        response = _render_overview(request, matter, header_out_of_band=True)
+        response["HX-Retarget"] = "#teema-vaade"
+        response["HX-Reswap"] = "outerHTML"
+        return response
     # Each field re-renders the surface it lives on. `Muu valdkond` sits in the
     # facts rail rather than the header strip, and swapping the header for it
     # would leave the value on screen unchanged while claiming it had saved.
@@ -6041,7 +6093,7 @@ def response_deadline_view(request: HttpRequest, pk: Any) -> HttpResponse:
         context["field_error"] = str(error)
         return render(request, "matters/partials/header.html", context, status=400)
     matter.refresh_from_db()
-    if "/dokumendid/" in request.headers.get("HX-Current-URL", ""):
+    if _on_documents_tab(request):
         # The header is shared by both tabs, and `Dokumendid` has no
         # `#teema-vaade` to answer into: there the header alone is the answer.
         return render(request, "matters/partials/header.html", _header_context(request, matter))

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load register_source %}
+{% load register_source people %}
 {% block title %}{% if is_self %}Minu asjad{% else %}{{ subject.display_name }} · asjad{% endif %} · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -58,7 +58,12 @@ The rail holds only what has no honest place on a timeline.
               <a class="{% if person.pk == subject.pk %}is-active{% endif %}"
                  {% if person.pk == subject.pk %}aria-current="true"{% endif %}
                  href="{% if person.pk == user.pk %}{% url 'matters:my_work' %}{% else %}{% url 'matters:person_work' pk=person.pk %}{% endif %}">
-                {{ person.display_name }}{% if person.pk == user.pk %} <span>mina</span>{% endif %}
+                {% comment %}
+                  First names, as in the Osakond table this list walks
+                  (QA remediation 2026-10-14, «Marko»); the page heading keeps
+                  the whole name of the person whose desk this is.
+                {% endcomment %}
+                {{ person|name_among:switcher.people }}{% if person.pk == user.pk %} <span>mina</span>{% endif %}
               </a>
             {% endfor %}
           </div>
@@ -214,7 +219,7 @@ The rail holds only what has no honest place on a timeline.
           {% endcomment %}
           <div class="pw-search">
             <label class="visually-hidden" for="pw-search">
-              {% if is_self %}Otsi minu asjadest{% else %}Otsi {{ subject.first_name|default:subject.display_name }} asjadest{% endif %}
+              {% if is_self %}Otsi minu asjadest{% else %}Otsi {{ subject|name_among:colleagues }} asjadest{% endif %}
             </label>
             <input id="pw-search" type="search" autocomplete="off"
                    data-filter-rows=".pw-matters"

@@ -4,7 +4,8 @@ Found in a real browser against main 81a7d6e4 (worklog
 C:/CC/_worklogs/independent-qa-2026-10-14/agents/browser/, scripts overdue_reg.py,
 colour_only.py and dupnames.py) and pinned at template level.
 
-`xfail(strict=True)` marks a reproduced defect; the test flips when it is fixed.
+Each defect pinned here as a strict xfail was fixed by the QA remediation of
+2026-10-14 (agent I); the tests are now ordinary regression guards.
 """
 
 from __future__ import annotations
@@ -50,15 +51,6 @@ def test_the_register_marks_an_overdue_step_with_the_overdue_class(signed_in, sp
     assert "dateline--overdue" in date_cell_of(body, "Hilinenud sammuga rida")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "QA-BROWSER-04: in the Teemad register an overdue Järgmiseks date differs from an "
-        "on-time one only by colour (status-danger) and one font-weight step; nothing in "
-        "the cell says «üle tähtaja» / «N p üle» in words or visually-hidden text, unlike "
-        "Minu asjad and Osakond (WCAG 1.4.1)"
-    ),
-)
 def test_the_register_states_an_overdue_step_in_words(signed_in, specialist):
     matter = create_matter(title="Hilinenud sammuga sõnas", actor=specialist, owner=specialist)
     NextActionFactory(
@@ -75,14 +67,6 @@ def test_the_register_states_an_overdue_step_in_words(signed_in, specialist):
     assert "üle" in words or "hilinenud" in words, words
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "QA-BROWSER-06: the Teema rail draws two disclosures whose accessible name is just "
-        "«+ Lisa» (Saatja and Seotud materjalid), so a screen-reader or voice user cannot "
-        "tell them apart; «Lisa menetluse link» beside them shows the labelled pattern"
-    ),
-)
 def test_the_rail_add_controls_have_distinct_accessible_names(signed_in, specialist):
     matter = create_matter(title="Rööpa lisamisnupud", actor=specialist, owner=specialist)
 

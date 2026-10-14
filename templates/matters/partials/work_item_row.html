@@ -84,7 +84,14 @@ control on this row: the row itself is the link.
     unchanged: it is the task-edit affordance and it always was.
   {% endcomment %}
   <details class="rowmenu">
-    <summary class="rowmenu__trigger" aria-label="Rea tegevused">⋯</summary>
+    {% comment %}
+      Named for its row (QA-BROWSER-06): two hundred menus all called «Rea
+      tegevused» are two hundred identical stops in a screen reader's list of
+      buttons. The Teema title tells them apart, and the row's meaning and date
+      the two rows one Teema can have here; the words before it keep the name a
+      voice user can say.
+    {% endcomment %}
+    <summary class="rowmenu__trigger" aria-label="Rea tegevused: {{ item.matter.title }} · {{ item.meaning_line }} {{ item.short_date }}">⋯</summary>
     <div class="rowmenu__menu">
       {% if item.is_action %}
         {% if item.is_follow_up %}

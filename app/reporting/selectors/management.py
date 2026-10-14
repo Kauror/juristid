@@ -74,6 +74,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from app.core.dates import format_estonian_date
+from app.core.request_params import digits_or_none
 from app.matters.enums import ResponseDeadlineOutcome
 from app.matters.models import Matter, MatterResponseDeadline
 from app.matters.selectors import DATA_CLASS_REAL, MISSING, UNKNOWN_YEAR
@@ -1255,7 +1256,9 @@ def _year_list(
     """
     if group not in labels or not year:
         raise Http404("Tundmatu rühm.")
-    if year != UNKNOWN_YEAR and not year.isdigit():
+    # ASCII digits, and no wider than a year: `²` passed `isdigit()` and raised
+    # in `int()` below (QA-SUBDOCS-01).
+    if year != UNKNOWN_YEAR and digits_or_none(year, maximum=9999) is None:
         raise Http404("Tundmatu aasta.")
     population = annotate(_year_population(context, key))
     if year == UNKNOWN_YEAR and not context.period.is_all:

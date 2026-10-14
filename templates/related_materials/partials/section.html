@@ -99,7 +99,8 @@ lists and the suggestions cannot disagree about the click that just happened.
     {% endcomment %}
     <details class="disclosure disclosure--inline relatedmaterials__picker" id="lisa-seotud-teema"
              {% if suggestions_open or picker_query %}open{% endif %}>
-      <summary class="disclosure__summary">+ Lisa</summary>
+      {# «+ Lisa» alone was also the Saatja trigger's name (QA-BROWSER-06). #}
+      <summary class="disclosure__summary" aria-label="Lisa seotud teema">+ Lisa</summary>
       <div class="disclosure__body">
         <form class="relatedmaterials__search" method="get"
               action="{% url 'related_materials:section' pk=matter.pk %}"
