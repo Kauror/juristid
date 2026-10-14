@@ -71,6 +71,7 @@ from app.matters.models import (
     MatterWebsiteOverview,
     TagAssignment,
 )
+from app.matters.position_sources import live_source_document_count
 from app.submissions.models import Submission
 from app.workflow.dates import period_bounds
 from app.workflow.enums import ActionStatus, DatePrecision, Disposition, Track
@@ -4430,11 +4431,14 @@ def correct_external_position(
     # record holding nothing, which is the one state this record may never be
     # in. The document half is counted from the link table rather than assumed,
     # because the files were captured by a different operation than this one
-    # and this form does not render them.
+    # and this form does not render them. Only **live** files count: a link to
+    # a document somebody removed through `Eemalda dokument` stays in the table
+    # and is no longer anything a reader can open (QA-SUBDOCS-02,
+    # docs/adr/0167 §1).
     _external_position_source(
         clean_url,
         attachments=0,
-        documents=current.document_links.count(),
+        documents=live_source_document_count(current),
         summary=clean_summary,
     )
     related = _external_position_engagement(locked_matter, engagement)

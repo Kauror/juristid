@@ -424,8 +424,11 @@ def test_a_wait_discharges_no_response_obligation_and_joins_no_deadline_group(sp
     )
 
 
-def test_a_wait_is_outside_the_search_projection(specialist):
-    """§5, §9. The feedback text is not indexed, and neither is the state."""
+def test_the_feedback_text_is_indexed_and_the_wait_state_is_not(specialist):
+    """§9: the waiting state is not indexed. §5's «the feedback text is not
+    indexed» is superseded by docs/adr/0167 §3 (owner decision D8, 2026-10-14):
+    the same member feedback is findable whichever form stored it, on the
+    round's own row and under the round's own visibility."""
     from app.search.models import SearchDocument, SearchSourceKind
 
     matter = factories.MatterFactory(owner=specialist)
@@ -439,8 +442,10 @@ def test_a_wait_is_outside_the_search_projection(specialist):
     row = SearchDocument.objects.get(
         source_kind=SearchSourceKind.ENGAGEMENT, source_object_id=engagement.pk
     )
-    assert "kaubandus" not in row.body_text.lower()
+    assert "kaubandus" in row.body_text.lower()
     assert "kaubandus" not in row.title.lower()
+    # Nothing about the wait itself — its deadline or that it was closed.
+    assert "lõpetatud" not in row.body_text.lower()
 
 
 def test_a_matter_page_costs_no_query_per_waiting_round(signed_in, specialist):
