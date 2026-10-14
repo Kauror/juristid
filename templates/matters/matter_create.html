@@ -113,6 +113,33 @@
       <p class="formerror" role="alert">{{ form.non_field_errors|first }}</p>
     {% endif %}
 
+    {% if recent_duplicate %}
+      {% comment %}
+        **The same Teema, just filed by this person** (QA-COORD-01,
+        docs/adr/0166 §2) — typically browser Back after Salvesta, which
+        restores the typed form under a fresh token. Nothing was created.
+        «Ava see» opens the Teema that exists; «Loo siiski uus», in the action
+        bar, posts this same form again with the confirmation, for a second
+        Teema meant on purpose. That button sits *after* Salvesta: the first
+        submit button is the one Enter presses, and Enter must never be the
+        deliberate duplicate.
+      {% endcomment %}
+      <div class="formerror" role="alert" id="sama-pealkiri">
+        <p>Sama pealkirjaga teema loodi just: «{{ recent_duplicate.title }}». Ava see või loo siiski uus.</p>
+        <p><a class="button button--quiet button--tiny" href="{% url 'matters:matter_detail' pk=recent_duplicate.pk %}">Ava see</a></p>
+      </div>
+    {% endif %}
+
+    {% comment %}
+      The hook for `bindCreateFormHistory` (static/js/app.js): on a page
+      reached by Back or Forward it adds the tab's earlier tokens to the
+      submission as `intake_earlier` — at `formdata`, never as controls in
+      this form, which would cost Chromium its restoration of what was typed
+      — and the Teema one of them created is recognised (docs/adr/0166 §2).
+      Without scripting the time window covers it.
+    {% endcomment %}
+    <div data-intake-earlier hidden></div>
+
     {% comment %}
       **Every `field__error` below carries `id="<auto_id>_error"`.** That is not
       decoration: Django puts `aria-describedby="id_pealkiri_error"` on a control
@@ -264,6 +291,17 @@
           <span class="field__error" id="{{ form.response_deadline.auto_id }}_error">{{ form.response_deadline.errors|first }}</span>
         {% endif %}
       </label>
+      {% if form.date_order_warning %}
+        {% comment %}
+          `Arvamuse tähtaeg` before `Saabus` is a warning, not a refusal
+          (docs/adr/0166 §4): ticking this and pressing Salvesta again files
+          the Teema with the dates as typed.
+        {% endcomment %}
+        <label class="checkline" id="kinnita-kuupaevad">
+          {{ form.kinnita_kuupaevad }}
+          <span>{{ form.kinnita_kuupaevad.label }}</span>
+        </label>
+      {% endif %}
     </div>
 
     {# 4 — Õigusakt, 5 — Hetkeseis, 6 — Valdkond. #}
@@ -646,6 +684,9 @@
     <div class="createform__actions createform__actions--end">
       <a class="button button--quiet" href="{% url 'matters:matter_list' %}">Loobu</a>
       <button type="submit" class="button button--primary" data-needs="id_title">Salvesta</button>
+      {% if recent_duplicate %}
+        <button type="submit" class="button button--quiet" name="{{ recent_duplicate_confirm_field }}" value="1">Loo siiski uus</button>
+      {% endif %}
     </div>
   </form>
 </div>

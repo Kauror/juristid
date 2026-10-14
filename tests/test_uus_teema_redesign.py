@@ -66,7 +66,9 @@ def test_a_title_alone_still_creates_a_matter_and_invents_nothing(signed_in, spe
     assert not MatterPersonalNote.objects.filter(matter=matter).exists()
     assert matter.brief_summary == ""
     assert matter.policy_area_other == ""
-    assert matter.owner is None
+    # The creator, not «nobody»: the page has no «Määramata» owner, so a POST
+    # naming none gets the creator default (docs/adr/0166 §3).
+    assert matter.owner == specialist
     assert matter.stage is None
     assert matter.track == ""
     assert matter.addressee_organisation is None
@@ -545,6 +547,9 @@ def test_a_typed_estonian_date_is_stored_as_a_real_date(signed_in):
             "title": "Eesti kuupäevaga",
             "received_date": "7.9.2026",
             "response_deadline": "23.8.2026",
+            # A deadline before Saabus is warned about and saved on
+            # confirmation (docs/adr/0166 §4); this test is about parsing.
+            "kinnita_kuupaevad": "on",
         },
     )
     matter = Matter.objects.get(title="Eesti kuupäevaga")

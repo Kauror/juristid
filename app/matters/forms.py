@@ -30,6 +30,11 @@ from app.core.richtext import plain_text
 from app.core.widgets import DescribedRadioSelect, EstonianDateField, EstonianDateInput
 from app.documents.limits import WORKING_DOCUMENT_URL_MAX_LENGTH
 from app.documents.uploads import UPLOAD_ACCEPT
+from app.matters.date_order import (
+    CONFIRM_LABEL,
+    DEADLINE_BEFORE_RECEIVED,
+    deadline_precedes_received,
+)
 from app.matters.enums import (
     ExternalPositionProvenance,
     MatterDataClass,
@@ -147,6 +152,18 @@ def default_owner_to_creator(form: Any, viewer: Any) -> None:
         return
     if form.fields["owner"].queryset.filter(pk=viewer.pk).exists():
         form.initial["owner"] = viewer.pk
+
+
+def creator_if_nameable(form: Any, viewer: Any) -> Any:
+    """The person filing, when this form may name them as Vastutaja; else None.
+
+    The bound form's half of `default_owner_to_creator` (docs/adr/0166 §3): the
+    same population decides, so an administrator outside the department's work
+    is still not made an owner by a save that named nobody.
+    """
+    if viewer is None or getattr(viewer, "pk", None) is None:
+        return None
+    return form.fields["owner"].queryset.filter(pk=viewer.pk).first()
 
 
 def restrict_owner_to_self(form: Any, viewer: Any) -> None:
@@ -1646,9 +1663,24 @@ class MatterCreateForm(
     )
     sent_recipient_name = _typed_organisation_field("Uus adressaat")
     sent_recipients_split: int | None = None
+    #: «Kuupäevad on õiged, salvesta siiski» — drawn only beside the warning
+    #: that `Arvamuse tähtaeg` precedes `Saabus` (docs/adr/0166 §4).
+    kinnita_kuupaevad = forms.BooleanField(label=CONFIRM_LABEL, required=False)
+    #: Set by `clean` when the date pair needs the confirmation, for the page.
+    date_order_warning = False
 
     def clean(self) -> dict[str, Any]:
         cleaned = super().clean() or {}
+
+        # **The person filing is the Vastutaja unless they chose somebody**,
+        # on the POST as well as on the GET (docs/adr/0150 §1, amended
+        # 2026-10-14 by docs/adr/0166 §3). The page offers no «Määramata» chip,
+        # so a save naming nobody did not come from it; a crafted POST used to
+        # file an unowned Teema (QA D-UUS). Same eligibility as the GET default.
+        if cleaned.get("owner") is None and not self.errors.get("owner"):
+            creator = creator_if_nameable(self, self.viewer)
+            if creator is not None:
+                cleaned["owner"] = creator
 
         # The union of the two sender controls, by the rule all three sender
         # forms share (`OrganisationPickerChoicesMixin.clean_senders`).
@@ -1675,6 +1707,15 @@ class MatterCreateForm(
         # deadline; nothing is derived from the creation day.
         if initiative:
             cleaned["received_date"] = None
+
+        # `Arvamuse tähtaeg` before `Saabus`: warned once, saved when confirmed
+        # (docs/adr/0166 §4). After the initiative rule above, which sets the
+        # received date aside and with it the comparison.
+        if deadline_precedes_received(
+            received=cleaned.get("received_date"), deadline=cleaned.get("response_deadline")
+        ) and not cleaned.get("kinnita_kuupaevad"):
+            self.date_order_warning = True
+            self.add_error("response_deadline", DEADLINE_BEFORE_RECEIVED)
 
         clean_sent_proposal(self, cleaned, initiative=initiative)
         return cleaned

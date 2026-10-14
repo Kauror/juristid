@@ -98,7 +98,9 @@ from app.legacy_import.register_display import (
 )
 from app.matters import (
     activity,
+    date_order,
     department_dashboard,
+    duplicate_intake,
     engagement_replies,
     intake_staging,
     legal_process,
@@ -2017,7 +2019,32 @@ def assign_owner(request: HttpRequest, pk: Any) -> HttpResponse:
         return HttpResponseRedirect(_safe_next(request) or reverse("matters:matter_list"))
 
     try:
-        assign_matter(matter=matter, owner=form.cleaned_data.get("owner"), actor=request.user)
+        with transaction.atomic():
+            # **The owner the row showed, or nothing** (QA-WORKFLOW-03,
+            # docs/adr/0166 §1): the row posts the `owner` revision it was drawn
+            # with, and a colleague's assignment since is refused rather than
+            # silently handed on — the same guard, under the same lock, as the
+            # header's `Vastutaja`. A missing token is a conflict here too.
+            matter = guard_matter_field_revision(
+                matter=matter, field="owner", expected=request.POST.get("revision")
+            )
+            assign_matter(matter=matter, owner=form.cleaned_data.get("owner"), actor=request.user)
+    except MatterFieldConflict as conflict:
+        current = conflict.current
+        messages.error(
+            request,
+            f"«{current.title}» vastutajat on vahepeal mujal muudetud — "
+            + (
+                f"see on nüüd {current.owner.get_short_name()}."
+                if current.owner
+                else "teema on nüüd vastutajata."
+            )
+            + " Vaata see üle ja vali uuesti.",
+        )
+        # A plain form on a full page, so the answer is the register again with
+        # the refusal on it and the stored owner in the row — the page-level
+        # form of the header's 409.
+        return HttpResponseRedirect(_safe_next(request) or reverse("matters:matter_list"))
     except DomainError as error:
         messages.error(request, str(error))
     else:
@@ -2282,6 +2309,19 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                 )
                 if claim.replayed:
                     raise _FormAlreadySubmitted(claim.session)
+                # **And not the same Teema again by accident** (QA-COORD-01,
+                # docs/adr/0166 §2): browser Back re-fetches this page with a
+                # fresh token while restoring the typed title. A Teema this
+                # person just filed — or filed from one of this form's earlier
+                # tokens — under the same title is reported, and filed again
+                # only on «Loo siiski uus». Refused here, so the claim above
+                # rolls back with it and the token stays usable.
+                duplicate_intake.refuse_unconfirmed_duplicate(
+                    actor=request.user,
+                    title=data["title"],
+                    earlier_tokens=request.POST.getlist(duplicate_intake.EARLIER_FIELD),
+                    confirmed=bool(request.POST.get(duplicate_intake.CONFIRM_FIELD)),
+                )
 
                 # The files this press files. Staged first, because they were
                 # chosen first: each becomes one Document with one immutable
@@ -2437,24 +2477,27 @@ def matter_create(request: HttpRequest) -> HttpResponse:
             # somebody is most likely to hit twice while they work out which
             # institution the catalogue means, and it is no more a reason to
             # take their attachment away than a mistyped valdkond is.
-            form.add_error(None, str(error))
+            # The just-filed duplicate is answered by its own block, with the
+            # Teema it found and «Loo siiski uus», not as a form error.
+            recent = getattr(error, "existing", None)
+            if recent is None:
+                form.add_error(None, str(error))
             newly_held = pending_uploads.hold(
                 request.session, _not_already_staged(chosen, intake_session)
             )
-            return render(
+            context = _create_context(
                 request,
-                "matters/matter_create.html",
-                _create_context(
-                    request,
-                    form,
-                    held_keys=[*held_keys, *(item.key for item in newly_held)],
-                    # Always a token on the re-rendered form, so the corrected
-                    # save is protected like the first one (ENG-074).
-                    intake_session=intake_session
-                    or intake_staging.open_session(owner=request.user),
-                ),
-                status=400,
+                form,
+                held_keys=[*held_keys, *(item.key for item in newly_held)],
+                # Always a token on the re-rendered form, so the corrected
+                # save is protected like the first one (ENG-074). A refused
+                # duplicate rolled its claim back, so its token is still open
+                # and «Loo siiski uus» files under it exactly once.
+                intake_session=intake_session or intake_staging.open_session(owner=request.user),
             )
+            context["recent_duplicate"] = recent
+            context["recent_duplicate_confirm_field"] = duplicate_intake.CONFIRM_FIELD
+            return render(request, "matters/matter_create.html", context, status=400)
 
         # The save survived, so the hold is over. Released after the commit
         # rather than inside it: deleting the held bytes is not part of the
@@ -3488,6 +3531,21 @@ def _open_tab(request: HttpRequest) -> str:
     return "dokumendid" if _on_documents_tab(request) else "teema"
 
 
+def _date_order_confirmation(request: HttpRequest) -> dict[str, Any]:
+    """The confirming button for a header date save the warning stopped.
+
+    Posts exactly what was submitted, to where it was submitted, with
+    `kinnita_kuupaevad` — so the revision it carried still guards it
+    (docs/adr/0166 §4).
+    """
+    return {
+        "url": request.path,
+        "fields": date_order.repost_fields(request.POST),
+        "flag": date_order.CONFIRM_FIELD,
+        "label": date_order.CONFIRM_LABEL,
+    }
+
+
 def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # One read for the private note: its body fills the box and its `updated_at`
     # fills `Salvestatud HH:mm`.
@@ -3576,6 +3634,15 @@ def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # What the header's `Hetkeseis` menu showed, sent back with the choice
         # and with the closure confirmation (docs/adr/0156).
         "stage_revision": matter_field_revision(matter, "stage"),
+        # `Vastutaja` and `Saabus` carry theirs since QA-WORKFLOW-03: a stale
+        # choice must not reverse a colleague's (docs/adr/0166 §1).
+        "owner_revision": matter_field_revision(matter, "owner"),
+        "received_revision": matter_field_revision(matter, "received_date"),
+        # **`+ Saabus` starts from today only on ordinary open work** (D5,
+        # docs/adr/0166 §5). On a closed file or an archive record today is
+        # never a plausible arrival day, and one Salvesta would store an
+        # invented historical date; the box starts empty there.
+        "received_prefill_today": matter.is_open and matter.record_mode != RecordMode.ARCHIVE,
         "matter_policy_areas": list(matter.policy_areas.all()),
         "matter_legal_instruments": _legal_instrument_line(matter),
         # **The header's `Tähtaeg` is `Arvamuse tähtaeg`, and only that.** The
@@ -5981,7 +6048,23 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
                 matter = guard_matter_field_revision(
                     matter=matter, field=field, expected=request.POST.get("revision")
                 )
+            if (
+                field == "received_date"
+                and not date_order.confirmed(request.POST)
+                and date_order.deadline_precedes_received(
+                    received=value, deadline=matter.response_deadline
+                )
+            ):
+                # A `Saabus` after the stored `Arvamuse tähtaeg`: warned, and
+                # saved only from the confirming button (docs/adr/0166 §4).
+                raise date_order.DateOrderUnconfirmed()
             _apply_inline_field(request, matter, field, value, form)
+    except date_order.DateOrderUnconfirmed as warning:
+        matter.refresh_from_db()
+        context = _header_context(request, matter)
+        context["field_error"] = str(warning)
+        context["date_order_confirm"] = _date_order_confirmation(request)
+        return render(request, surface, context, status=400)
     except MatterFieldConflict as conflict:
         # Refused, with the surface re-rendered from what is stored now, so the
         # person sees the colleague's value where theirs would have gone and
@@ -6066,6 +6149,20 @@ def response_deadline_view(request: HttpRequest, pk: Any) -> HttpResponse:
         context["field_error"] = "Vigane väärtus."
         return render(request, "matters/partials/header.html", context, status=400)
     data = form.cleaned_data
+    if (
+        data["tegevus"] != "lopeta"
+        and not date_order.confirmed(request.POST)
+        and date_order.deadline_precedes_received(
+            received=matter.received_date, deadline=data.get("response_deadline")
+        )
+    ):
+        # An `Arvamuse tähtaeg` before the stored `Saabus`: warned, and saved
+        # only from the confirming button, which re-posts this same form
+        # (docs/adr/0166 §4). Nothing was written.
+        context = _header_context(request, matter)
+        context["field_error"] = date_order.DEADLINE_BEFORE_RECEIVED
+        context["date_order_confirm"] = _date_order_confirmation(request)
+        return render(request, "matters/partials/header.html", context, status=400)
     try:
         if data["tegevus"] == "lopeta":
             resolve_response_deadline(

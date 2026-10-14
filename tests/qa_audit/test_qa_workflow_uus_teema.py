@@ -71,21 +71,26 @@ def test_an_impossible_date_is_refused_and_nothing_is_written(signed_in, typed):
     assert "received_date" in response.context["form"].errors
 
 
-def test_a_deadline_before_saabus_is_accepted_evidence(signed_in, specialist):
-    """DESIGN CONCERN (QA-WORKFLOW-D1): no ordering rule — a deadline typed before
-    the arrival day is stored, and the Teema is overdue the moment it is filed.
-    Statistics put such Teemad in «Tähtaeg on enne saabumist» (ADR 0160)."""
+def test_a_deadline_before_saabus_warns_and_is_saved_only_when_confirmed(signed_in, specialist):
+    """Was `test_a_deadline_before_saabus_is_accepted_evidence` (QA-WORKFLOW-D1:
+    stored silently, overdue the moment it was filed). Inverted with the owner's
+    approved warning (docs/adr/0166 §4): the save stops once and goes through
+    when the person confirms the dates."""
     today = timezone.localdate()
-    response = signed_in.post(
-        CREATE,
-        {
-            "title": "Tähtaeg enne saabumist",
-            "received_date": et(today),
-            "response_deadline": et(today - dt.timedelta(days=30)),
-        },
-    )
+    data = {
+        "title": "Tähtaeg enne saabumist",
+        "received_date": et(today),
+        "response_deadline": et(today - dt.timedelta(days=30)),
+    }
 
-    assert response.status_code == 302
+    warned = signed_in.post(CREATE, data)
+
+    assert warned.status_code == 400
+    assert not Matter.objects.filter(title="Tähtaeg enne saabumist").exists()
+
+    confirmed = signed_in.post(CREATE, {**data, "kinnita_kuupaevad": "on"})
+
+    assert confirmed.status_code == 302
     matter = Matter.objects.get(title="Tähtaeg enne saabumist")
     assert matter.response_deadline < matter.received_date
 
@@ -107,9 +112,9 @@ def test_empty_optional_fields_store_nothing_invented(signed_in, specialist):
     matter = Matter.objects.get(title="Ainult pealkiri")
     assert (matter.received_date, matter.response_deadline, matter.stage_id) == (None, None, None)
     assert matter.response_requested_at is None
-    # ADR 0150 §1: the creator default is on the *unbound* form; a POST naming
-    # nobody creates an unowned Teema by decision («Vastutajata»).
-    assert matter.owner is None
+    # ADR 0150 §1 as amended by 0166 §3 (QA-WORKFLOW-D2): the page offers no
+    # «Määramata» owner, so a POST naming nobody makes the creator Vastutaja.
+    assert matter.owner == specialist
     assert not matter.legal_instruments.exists()
     assert matter.track == ""
 

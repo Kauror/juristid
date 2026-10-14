@@ -169,6 +169,23 @@ rather than read.
       <button class="button button--tiny" type="submit">{{ follow_up_closure_label|default:"Sulge teema ja lõpeta ka järelkontroll" }}</button>
     </form>
   {% endif %}
+  {% if date_order_confirm and can_write %}
+    {% comment %}
+      `Arvamuse tähtaeg` would fall before `Saabus` (docs/adr/0166 §4): the
+      warning above, and one button that posts the same save again with the
+      confirmation — the same date, the same revision. Nothing was saved.
+    {% endcomment %}
+    <form class="inlineform followupconfirm"
+          hx-post="{{ date_order_confirm.url }}"
+          hx-target="#teema-pais" hx-swap="outerHTML">
+      {% csrf_token %}
+      {% for name, value in date_order_confirm.fields %}
+        <input type="hidden" name="{{ name }}" value="{{ value }}">
+      {% endfor %}
+      <input type="hidden" name="{{ date_order_confirm.flag }}" value="on">
+      <button class="button button--tiny" type="submit">{{ date_order_confirm.label }}</button>
+    </form>
+  {% endif %}
 
   <div class="metaline">
     {% comment %}
@@ -195,6 +212,8 @@ rather than read.
               hx-post="{% url 'matters:update_field' pk=matter.pk field='owner' %}"
               hx-target="#teema-pais" hx-swap="outerHTML">
           {% csrf_token %}
+          {# The owner this menu was drawn with; a colleague's choice meanwhile refuses this one (docs/adr/0166 §1). #}
+          <input type="hidden" name="revision" value="{{ owner_revision }}">
           {% comment %}
             No `data-autosubmit` (ENG-035). Choosing a person here reassigns
             the Teema, notifies them and moves the open step to them, and on
@@ -361,17 +380,21 @@ rather than read.
                 hx-post="{% url 'matters:update_field' pk=matter.pk field='received_date' %}"
                 hx-target="#teema-pais" hx-swap="outerHTML">
             {% csrf_token %}
+            {# The date this editor was drawn with (docs/adr/0166 §1). #}
+            <input type="hidden" name="revision" value="{{ received_revision }}">
             <label class="field">
               <span class="field__label field__label--plain">Saabumise kuupäev</span>
               {% comment %}
-                The stored date when there is one, today when there is not — an
-                edit keeps what it is editing, and a new fact starts from the
-                answer it nearly always has (Teema QA §5.2).
+                The stored date when there is one. When there is not: today on
+                ordinary open work — a new fact starts from the answer it nearly
+                always has (Teema QA §5.2) — and **empty on a closed file or an
+                archive record**, where today is never the arrival day and one
+                Salvesta would invent history (D5, docs/adr/0166 §5).
               {% endcomment %}
               <input class="field__input field__input--compact dateinput" type="text"
                      inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa"
-                     data-datepicker="true" name="received_date"
-                     value="{% if matter.received_date %}{{ matter.received_date|date:'j.n.Y' }}{% else %}{{ today|date:'j.n.Y' }}{% endif %}">
+                     data-datepicker="true" name="received_date"{% if not matter.received_date and not received_prefill_today %} required{% endif %}
+                     value="{% if matter.received_date %}{{ matter.received_date|date:'j.n.Y' }}{% elif received_prefill_today %}{{ today|date:'j.n.Y' }}{% endif %}">
             </label>
             <button class="button button--quiet button--tiny" type="submit"
                     aria-label="Salvesta saabumise kuupäeva muudatus">Salvesta</button>

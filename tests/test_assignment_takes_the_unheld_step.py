@@ -51,7 +51,12 @@ from app.matters.deletion import delete_matter
 from app.matters.department_dashboard import TEAM_COLUMNS, team_rows
 from app.matters.models import Matter
 from app.matters.my_work import build_my_work
-from app.matters.services import ASSIGNMENT_ON_DELETED_MATTER, assign_matter, create_matter
+from app.matters.services import (
+    ASSIGNMENT_ON_DELETED_MATTER,
+    assign_matter,
+    create_matter,
+    matter_field_revision,
+)
 from app.workflow.enums import ActionStatus
 from app.workflow.models import NextAction
 from app.workflow.services import (
@@ -149,7 +154,8 @@ def test_the_uus_teema_opinion_step_follows_the_triage_route(
 
     client.force_login(department_head)
     response = client.post(
-        reverse("matters:assign_owner", kwargs={"pk": matter.pk}), {"owner": str(martin.pk)}
+        reverse("matters:assign_owner", kwargs={"pk": matter.pk}),
+        {"owner": str(martin.pk), "revision": matter_field_revision(matter, "owner")},
     )
 
     assert response.status_code == 302
@@ -168,7 +174,7 @@ def test_the_header_owner_control_moves_it_as_well(client, department_head, mart
     client.force_login(department_head)
     response = client.post(
         reverse("matters:update_field", kwargs={"pk": matter.pk, "field": "owner"}),
-        {"owner": str(martin.pk)},
+        {"owner": str(martin.pk), "revision": matter_field_revision(matter, "owner")},
     )
 
     assert response.status_code == 200

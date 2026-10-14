@@ -30,6 +30,7 @@ from app.matters.services import (
     change_stage,
     close_matter,
     create_matter,
+    matter_field_revision,
 )
 from app.workflow.enums import (
     ActionKind,
@@ -854,7 +855,11 @@ def test_assigning_from_a_row_uses_the_service_and_comes_back_to_the_list(
     client.force_login(specialist)
     response = client.post(
         reverse("matters:assign_owner", kwargs={"pk": matter.pk}),
-        {"owner": str(specialist.pk), "next": "/teemad/?olek=avatud&vastutaja=puudub"},
+        {
+            "owner": str(specialist.pk),
+            "next": "/teemad/?olek=avatud&vastutaja=puudub",
+            "revision": matter_field_revision(matter, "owner"),
+        },
     )
 
     assert response.status_code == 302

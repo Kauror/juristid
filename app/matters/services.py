@@ -1275,8 +1275,8 @@ def set_matter_dates(
     if received_date is not _UNSET and received_date and matter.received_date is None:
         # Establishing one: read the track under the row lock, so a colleague
         # marking the Teema as an initiative in a transaction that commits first
-        # is seen here rather than after (the header editor takes no lock of its
-        # own — `GUARDED_MATTER_FIELDS`).
+        # is seen here rather than after (the header editor's guard takes the
+        # same lock first since docs/adr/0166; other callers take none).
         matter.track = (
             Matter.objects.select_for_update(no_key=True)
             .values_list("track", flat=True)
@@ -1443,9 +1443,29 @@ MATTER_FIELD_CONFLICT = (
 #: The inline editors that replace a whole value and carry a revision of it.
 #: `stage` joined on 2026-10-12, when the header's `Hetkeseis` became a one-click
 #: menu (docs/adr/0156): a choice made on a stale page must not overwrite the
-#: stage a colleague set meanwhile.
+#: stage a colleague set meanwhile. `owner` and `received_date` joined on
+#: 2026-10-14 (QA-WORKFLOW-03, docs/adr/0166 §1): a stale `Vastutaja` choice
+#: reversed a colleague's reassignment — which also notifies people and moves
+#: the open and planned steps — and a stale `Saabus` overwrote their date.
 GUARDED_MATTER_FIELDS = frozenset(
-    {"policy_areas", "source_organisations", "brief_summary", "stage"}
+    {"policy_areas", "source_organisations", "brief_summary", "stage", "owner", "received_date"}
+)
+
+#: The inline `update_field` fields deliberately left without a field revision,
+#: each with its reason. `tests/test_header_field_guards.py` asserts that every
+#: field `update_field` accepts is in exactly one of the two sets, so a new
+#: header field cannot silently arrive without a token (docs/adr/0166 §1).
+UNGUARDED_MATTER_FIELDS = frozenset(
+    {
+        # Through `update_field` this only ever *gives a first* `Arvamuse
+        # tähtaeg` (no control on the page posts it there); changing or ending
+        # one goes through `response_deadline_view`, which carries
+        # `deadline_revision` (app/matters/response_deadlines.py).
+        "response_deadline",
+        # Free text qualifying the canonical areas in the `Valdkond` slot. Not
+        # part of QA-WORKFLOW-03; guarding it is a separate decision.
+        "policy_area_other",
+    }
 )
 
 
@@ -1494,10 +1514,36 @@ def matter_field_revision(matter: Matter, field: str) -> str:
                 Matter.objects.filter(pk=matter.pk).values_list("stage_id", flat=True).first() or ""
             )
         ]
+    elif field == "owner":
+        parts = [
+            str(
+                Matter.objects.filter(pk=matter.pk).values_list("owner_id", flat=True).first() or ""
+            )
+        ]
+    elif field == "received_date":
+        received = (
+            Matter.objects.filter(pk=matter.pk).values_list("received_date", flat=True).first()
+        )
+        parts = [received.isoformat() if received else ""]
     else:  # pragma: no cover - a programming error, not a request
         raise ValueError(f"no revision for {field!r}")
+    return _field_digest(field, parts)
+
+
+def _field_digest(field: str, parts: list[str]) -> str:
     material = "\x1f".join([field, *parts]).encode("utf-8")
     return hashlib.sha256(material).hexdigest()[:32]
+
+
+def owner_revision_for(owner_id: Any) -> str:
+    """`matter_field_revision(matter, "owner")` for a row whose owner is already known.
+
+    The register draws `Määra ▾` on every unassigned row of a page, and a fresh
+    query per row to learn an owner the row was just read with would be an N+1
+    for nothing. The same digest of the same value, so the route's guard
+    compares like with like (QA-WORKFLOW-03, docs/adr/0166 §1).
+    """
+    return _field_digest("owner", [str(owner_id or "")])
 
 
 def guard_matter_field_revision(*, matter: Matter, field: str, expected: str | None) -> Matter:

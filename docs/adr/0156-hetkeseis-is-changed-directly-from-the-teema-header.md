@@ -93,3 +93,11 @@ QA remediation round of 2026-10-14 (QA-BROWSER-01, QA-BROWSER-02):
 3. **The ⋯ menu has a slot of its own** (`header_menu.html`, QA-BROWSER-07),
    which a column save sends out of band beside the `Dokumendid` count, so the
    menu appears with the save that brought the Matter's first file.
+
+## Amendment — 2026-10-14 (docs/adr/0166 §1)
+
+`owner` and `received_date` join `GUARDED_MATTER_FIELDS` on the same terms as
+`stage` in §4: the header's `Vastutaja` and `Saabus` editors, and the register's
+`Määra ▾`, post a field revision, and a stale or missing one is refused
+(QA-WORKFLOW-03). The fields left unguarded are named in
+`UNGUARDED_MATTER_FIELDS`.

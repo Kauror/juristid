@@ -43,7 +43,12 @@ from app.matters.initiative import (
 )
 from app.matters.models import Matter
 from app.matters.response_deadlines import change_response_deadline, request_response_deadline
-from app.matters.services import create_imported_matter, create_matter, set_matter_dates
+from app.matters.services import (
+    create_imported_matter,
+    create_matter,
+    matter_field_revision,
+    set_matter_dates,
+)
 from app.matters.work_items import response_obligation_of
 from app.taxonomy.models import LegalInstrumentType
 from app.workflow.enums import Track
@@ -516,7 +521,10 @@ def test_the_header_inline_editor_refuses_a_new_saabus(signed_in, specialist):
 
     response = signed_in.post(
         reverse("matters:update_field", kwargs={"pk": matter.pk, "field": "received_date"}),
-        {"received_date": estonian(today())},
+        {
+            "received_date": estonian(today()),
+            "revision": matter_field_revision(matter, "received_date"),
+        },
         HTTP_HX_REQUEST="true",
     )
 

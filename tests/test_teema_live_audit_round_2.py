@@ -148,6 +148,11 @@ CREATE_ONLY = {
     "sent_on",
     "sent_recipients",
     "sent_recipient_name",
+    # Not a fact: the confirmation that an `Arvamuse tähtaeg` before `Saabus`
+    # is meant, drawn only beside that warning (docs/adr/0166 §4). The approved
+    # warning covers `Uus teema` and the header editors; `Muuda teemat` was
+    # left out of that scope, so the edit form has nothing to confirm.
+    "kinnita_kuupaevad",
 }
 #: `revision` is the version of the record the correction form was filled from.
 #:

@@ -55,60 +55,81 @@ def matter(specialist):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "QA-WORKFLOW-03: header Vastutaja editor posts no revision; a stale tab silently "
-        "reverses a colleague's reassignment (owner is not in GUARDED_MATTER_FIELDS)"
-    ),
-)
+# Fixed in the QA remediation round (docs/adr/0166 §1): `owner` and
+# `received_date` are in `GUARDED_MATTER_FIELDS`, the header forms render the
+# field revision, and the guard refuses a stale or missing one. Both pages below
+# were drawn before the colleague's save, so both carry the token that page
+# rendered — read off person A's page, which is what the browser posts.
+
+
+def _rendered_revision(client, matter, field):
+    """The `revision` the header's form for `field` carries on the drawn page."""
+    import re
+
+    body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
+    action = re.escape(field_url(matter, field))
+    form = re.search(r'hx-post="' + action + r'".*?</form>', body, re.S)
+    assert form, f"the header drew no {field} editor"
+    token = re.search(r'name="revision" value="([^"]+)"', form.group(0))
+    assert token, f"the {field} editor posts no revision"
+    return token.group(1)
+
+
 def test_a_stale_vastutaja_choice_does_not_overwrite_a_colleagues(matter, head, specialist):
     colleague_y = factories.UserFactory()
     colleague_z = factories.UserFactory()
     a, b = as_user(head), as_user(factories.DepartmentHeadFactory())
     # Both pages drawn showing the specialist as Vastutaja.
-    assert a.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).status_code == 200
+    a_token = _rendered_revision(a, matter, "owner")
+    b_token = _rendered_revision(b, matter, "owner")
+    assert a_token == b_token == matter_field_revision(matter, "owner")
 
-    assert b.post(field_url(matter, "owner"), {"owner": str(colleague_y.pk)}).status_code == 200
+    moved = b.post(field_url(matter, "owner"), {"owner": str(colleague_y.pk), "revision": b_token})
+    assert moved.status_code == 200
     matter.refresh_from_db()
     assert matter.owner == colleague_y
 
-    stale = a.post(field_url(matter, "owner"), {"owner": str(colleague_z.pk)})
+    stale = a.post(field_url(matter, "owner"), {"owner": str(colleague_z.pk), "revision": a_token})
 
     matter.refresh_from_db()
     assert stale.status_code == 409
     assert matter.owner == colleague_y
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="QA-WORKFLOW-03: header Saabus editor posts no revision; a stale tab overwrites",
-)
 def test_a_stale_saabus_does_not_overwrite_a_colleagues(matter, specialist, other_specialist):
     import datetime as dt
 
     a, b = as_user(specialist), as_user(other_specialist)
+    a_token = _rendered_revision(a, matter, "received_date")
+    b_token = _rendered_revision(b, matter, "received_date")
     first = timezone.localdate() - dt.timedelta(days=3)
     second = timezone.localdate() - dt.timedelta(days=10)
 
-    b.post(field_url(matter, "received_date"), {"received_date": f"{first:%d.%m.%Y}"})
-    stale = a.post(field_url(matter, "received_date"), {"received_date": f"{second:%d.%m.%Y}"})
+    saved = b.post(
+        field_url(matter, "received_date"),
+        {"received_date": f"{first:%d.%m.%Y}", "revision": b_token},
+    )
+    assert saved.status_code == 200
+    stale = a.post(
+        field_url(matter, "received_date"),
+        {"received_date": f"{second:%d.%m.%Y}", "revision": a_token},
+    )
 
     matter.refresh_from_db()
     assert stale.status_code == 409
     assert matter.received_date == first
 
 
-def test_stale_vastutaja_evidence_last_writer_wins(matter, head):
-    """What happens today (evidence for QA-WORKFLOW-03): 200, and the event trail shows two
-    reassignments with nothing telling A that B had moved it."""
-    y, z = factories.UserFactory(), factories.UserFactory()
-    a, b = as_user(head), as_user(factories.DepartmentHeadFactory())
-    b.post(field_url(matter, "owner"), {"owner": str(y.pk)})
-    response = a.post(field_url(matter, "owner"), {"owner": str(z.pk)})
+def test_a_vastutaja_post_without_a_revision_is_refused(matter, head):
+    """Was `test_stale_vastutaja_evidence_last_writer_wins` — the probe that pinned
+    the bug (200, last writer wins). Inverted with the fix: a POST carrying no
+    revision did not come from the page, and is refused like a stale one."""
+    y = factories.UserFactory()
+    a = as_user(head)
+    response = a.post(field_url(matter, "owner"), {"owner": str(y.pk)})
     matter.refresh_from_db()
-    assert response.status_code == 200
-    assert matter.owner == z
+    assert response.status_code == 409
+    assert matter.owner != y
 
 
 # ---------------------------------------------------------------------------

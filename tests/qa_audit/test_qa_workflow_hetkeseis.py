@@ -156,7 +156,7 @@ def test_vastutaja_change_moves_the_open_step_and_planned_ones(signed_in, specia
 
     response = signed_in.post(
         reverse("matters:update_field", kwargs={"pk": matter.pk, "field": "owner"}),
-        {"owner": str(new_owner.pk)},
+        {"owner": str(new_owner.pk), "revision": matter_field_revision(matter, "owner")},
     )
 
     assert response.status_code == 200
