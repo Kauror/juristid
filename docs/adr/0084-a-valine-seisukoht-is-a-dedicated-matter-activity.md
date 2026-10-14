@@ -567,3 +567,7 @@ never today.
   `matters/0025_external_position_seisukoht`, and it is an `AlterField` over a
   `verbose_name`. No `RunPython`, no `RunSQL`, no backfill, no reindex, no
   archive rebuild, and `INDEX_VERSION` does not move.
+
+## Amendment, 2026-10-14 — the last live file stays
+
+**Amended by [0167](0167-a-kaasamine-takes-later-answers-and-a-received-answer-keeps-its-source.md) §1** (QA-SUBDOCS-02). The rule of three is now also asked where a source can be taken away: `Eemalda dokument` refuses the last live file of a position with no written `Seisukoht` and no address, and a correction counts only files that are still on the Matter. No migration.

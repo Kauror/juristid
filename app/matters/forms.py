@@ -5852,23 +5852,25 @@ ENGAGEMENT_FEEDBACK_NEEDS_CONTENT = "Kirjuta saadud tagasiside või lisa fail."
 
 
 class EngagementReplyForm(ExternalPositionFieldsMixin, forms.Form):
-    """`+ Kaasamine · Lisa tagasiside` — what came back from an open round.
+    """`+ Kaasamine · Lisa tagasiside` — what came back from a round.
 
     **The canonical record, not a new one.** What a round produced has been a
     `Meile saadetud tagasiside` tied to it by `Seotud kaasamine` since
     docs/adr/0084 §4; the round row counts them («Seotud seisukohti N») and
     their files follow them. This panel asks for exactly that record with the
     round already named, through the same `_record_external_position` and
-    `add_matter_external_position` as `+ Arvamus / tagasiside`. It does **not**
-    close the round: `Lõpeta kaasamine` is still the one act that does
-    (docs/adr/0132, docs/adr/0142).
+    `add_matter_external_position` as `+ Arvamus / tagasiside`. The first
+    answer to an open round finishes its wait (docs/adr/0142, amended
+    2026-10-07); a later answer to a finished round is recorded against it
+    and leaves the closure as it was (docs/adr/0167 §2).
 
     Four questions:
 
-    * `Kaasamine` — required, from this Matter's **open** rounds as this reader
-      may see them (`work_items.open_feedback_waits`). Preselected only when
-      there is exactly one; with several, the person chooses and nothing is
-      guessed from a date or a title;
+    * `Kaasamine` — required, from this Matter's rounds as this reader may see
+      them, open ones first and finished ones marked «lõpetatud»
+      (`engagement_replies.answerable_rounds`). Preselected only when there is
+      exactly one open round, or none open and exactly one finished; otherwise
+      the person chooses and nothing is guessed from a date or a title;
     * `Saadud tagasiside` — what came back, in writing, and the whole of it;
     * `Kuupäev` — opening on today, clearable, as on the sibling panel;
     * the files.
@@ -5891,9 +5893,10 @@ class EngagementReplyForm(ExternalPositionFieldsMixin, forms.Form):
     allows_source_label = False
     author_is_optional = True
     offers_precision = False
-    #: Saving it finishes the chosen round (owner's decision, 2026-10-07):
-    #: `_record_external_position` closes the wait through
-    #: `complete_engagement_feedback` in the same transaction.
+    #: Saving it finishes the chosen round's wait when it is still open
+    #: (owner's decision, 2026-10-07): `_record_external_position` asks
+    #: `engagement_replies.finish_wait_on_reply` in the same transaction, and a
+    #: finished round keeps its closure (docs/adr/0167 §2).
     closes_engagement = True
     panel_slug = "kaasamise_tagasiside"
 
@@ -5927,35 +5930,54 @@ class EngagementReplyForm(ExternalPositionFieldsMixin, forms.Form):
         super().__init__(*args, **kwargs)
         self.fields["summary"].label = "Saadud tagasiside"
         field = cast(Any, self.fields["engagement"])
-        #: How many open rounds this reader may attach feedback to. With none,
-        #: the panel says so instead of drawing a form that can only refuse.
+        #: How many open rounds this reader may attach feedback to.
         self.open_round_count = 0
+        #: How many rounds in all — open, or finished and still taking later
+        #: answers (docs/adr/0167 §2). With none, the panel says so instead of
+        #: drawing a form that can only refuse.
+        self.round_count = 0
         if matter is not None:
-            from app.matters import work_items
+            from app.matters.engagement_replies import answerable_rounds
 
-            # The field's own queryset is what validates a posted id: open
-            # rounds on this Matter that this reader may see, and nothing else.
-            field.queryset = (
-                work_items.open_feedback_waits(viewer).filter(matter=matter).order_by("-created_at")
-            )
-            rounds = list(field.queryset) if open_rounds is None else list(open_rounds)
+            # The field's own queryset is what validates a posted id: this
+            # Matter's tracked rounds that this reader may see, **open or
+            # finished** — a later answer belongs to the consultation it
+            # answers even after the first one finished the wait (owner
+            # decision D8). Nothing else is accepted.
+            field.queryset = answerable_rounds(viewer, matter).order_by("-created_at")
+            if open_rounds is None:
+                rows = list(field.queryset)
+                rounds = [round_ for round_ in rows if round_.feedback_closed_at is None]
+                finished = [round_ for round_ in rows if round_.feedback_closed_at is not None]
+            else:
+                rounds = list(open_rounds)
+                finished = list(field.queryset.filter(feedback_closed_at__isnull=False))
             self.open_round_count = len(rounds)
-            # The rendered choices from the rows in hand; the queryset above is
-            # still what validates a post.
+            self.round_count = len(rounds) + len(finished)
+
+            def label(round_: Any, *, done: bool) -> str:
+                text = (
+                    f"{round_.title} · {round_.display_date}"
+                    if round_.display_date
+                    else round_.title
+                )
+                return f"{text} · lõpetatud" if done else text
+
+            # The rendered choices from the rows in hand, open rounds first;
+            # the queryset above is still what validates a post.
             field.choices = [
                 ("", "Vali kaasamine"),
-                *(
-                    (
-                        str(round_.pk),
-                        f"{round_.title} · {round_.display_date}"
-                        if round_.display_date
-                        else round_.title,
-                    )
-                    for round_ in rounds
-                ),
+                *((str(round_.pk), label(round_, done=False)) for round_ in rounds),
+                *((str(round_.pk), label(round_, done=True)) for round_ in finished),
             ]
-            if len(rounds) == 1 and not self.is_bound:
-                self.initial["engagement"] = rounds[0].pk
+            # Preselected only when the answer is not a guess: exactly one open
+            # round — the wait this reply finishes — or, with none open, exactly
+            # one finished round.
+            if not self.is_bound:
+                if len(rounds) == 1:
+                    self.initial["engagement"] = rounds[0].pk
+                elif not rounds and len(finished) == 1:
+                    self.initial["engagement"] = finished[0].pk
 
     def clean_engagement(self) -> Any:
         engagement = self.cleaned_data.get("engagement")

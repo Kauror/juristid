@@ -246,7 +246,14 @@ def test_an_engagement_is_started_then_its_replies_are_added(page, base_url, tmp
     reply.locator("button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
-    answer = chronology(page).locator(".uxtl__item", has_text="Kaks liiget vastasid").first
+    # The answer's own row — the round's row quotes the words too since
+    # docs/adr/0167 §3, so it is told apart by not being the round.
+    answer = (
+        chronology(page)
+        .locator(".uxtl__item", has_text="Kaks liiget vastasid")
+        .filter(has_not_text="Kaasamine: liikmed")
+        .first
+    )
     expect(answer).to_be_visible()
     expect(answer.locator("a.uxtl__file")).to_have_count(2)
     round_row = chronology(page).locator(".uxtl__item", has_text="Kaasamine: liikmed").first
@@ -255,12 +262,23 @@ def test_an_engagement_is_started_then_its_replies_are_added(page, base_url, tmp
     expect(round_row.get_by_text("Lõpeta kaasamine", exact=True)).to_have_count(0)
 
     # Both modes stay one click away (the save closed the family again). The
-    # only round is finished now, so `Lisa tagasiside` says so instead of a form.
+    # only round is finished now, and it still takes a later answer: it is
+    # offered, marked «lõpetatud», and preselected as the one choice
+    # (docs/adr/0167 §2).
     open_add_panel(page, "kaasamine-alusta")
     expect(page.locator("#kaasamine-alusta [name=audience]")).to_be_visible()
     page.locator("label[for=kaasamine-tagasiside-valik]").click()
-    expect(page.locator("#kaasamine-tagasiside")).to_contain_text("Avatud kaasamist ei ole")
-    expect(page.locator("#kaasamine-tagasiside [name=summary]")).to_have_count(0)
+    later = page.locator("#kaasamine-tagasiside")
+    expect(later.locator("[name=engagement] option:checked")).to_contain_text("lõpetatud")
+    later.locator("[name=summary]").fill("Kolmas liige vastas hiljem.")
+    later.locator("button[type=submit]").click()
+    page.wait_for_load_state("networkidle")
+
+    expect(
+        chronology(page).locator(".uxtl__item", has_text="Kolmas liige vastas hiljem").first
+    ).to_be_visible()
+    round_row = chronology(page).locator(".uxtl__item", has_text="Kaasamine: liikmed").first
+    expect(round_row).to_contain_text("Seotud seisukohti 2")
 
 
 # ---------------------------------------------------------------------------

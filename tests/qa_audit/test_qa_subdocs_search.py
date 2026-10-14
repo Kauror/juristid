@@ -216,13 +216,12 @@ def test_corrected_opinion_summary_is_searchable_at_once(signed_in, specialist, 
 # ---------------------------------------------------------------------------
 
 
-def test_feedback_written_on_lopeta_kaasamine_is_not_searchable_but_lisa_tagasiside_is(
-    signed_in, specialist
-):
-    """DESIGN CONCERN, pinned: ADR 0086 kept `feedback_received` out of search as
-    member correspondence; ADR 0142's `Lisa tagasiside` files the same words as a
-    `MatterExternalPosition`, which ADR 0091/F-008 indexed. The same answer from
-    the same members is findable or not depending on which button recorded it."""
+def test_feedback_is_searchable_whichever_door_recorded_it(signed_in, specialist):
+    """DC-01, resolved 2026-10-14 (owner decision D8, docs/adr/0167 §3). It pinned
+    that ADR 0086 kept `feedback_received` out of search while ADR 0142's `Lisa
+    tagasiside` filed the same words as an indexed `MatterExternalPosition`. The
+    round's own feedback is now in its `ENGAGEMENT` row's body, so the same
+    answer is findable whichever button recorded it."""
     matter = _matter(specialist)
     first = add_engagement(
         matter=matter,
@@ -258,4 +257,4 @@ def test_feedback_written_on_lopeta_kaasamine_is_not_searchable_but_lisa_tagasis
             "source_kind", flat=True
         )
     )
-    assert kinds == {"EXTERNAL_POSITION"}
+    assert kinds == {"ENGAGEMENT", "EXTERNAL_POSITION"}

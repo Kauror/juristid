@@ -106,6 +106,14 @@ WITHDRAWN_OPINION_EVIDENCE = (
     "liigitata ümber; õige arvamus registreeritakse uuena."
 )
 DOCUMENT_UNDER_LEGAL_HOLD = "Dokumendile on seatud säilitamiskohustus, seega ei saa seda eemaldada."
+#: The file is the only source a recorded feedback or position still has
+#: (docs/adr/0084 §3, docs/adr/0167 §1). Names the way out: give the record
+#: its words or its address first, then the file may go.
+DOCUMENT_IS_LAST_POSITION_SOURCE = (
+    "See fail on tagasiside või seisukoha ainus allikas: kirjel ei ole teksti ega "
+    "linki. Kirjuta kirjele enne seisukoht või lisa link (Teema käik → kirje → "
+    "Muuda); siis saab faili eemaldada."
+)
 DOCUMENT_ROLE_NOT_OFFERED = "Seda liiki ei saa dokumendile valida."
 #: The confirmation a removal answers with, for the view's message.
 DOCUMENT_REMOVED_MESSAGE = "Dokument on teema dokumentide hulgast eemaldatud."
@@ -195,6 +203,13 @@ def removal_refusal(document: Document, statuses: set[str] | None = None) -> str
     staying in the evidence store (`PROTECT`). **A legal hold** outlives a
     person's decision that a file does not belong, the rule deleting a Matter
     applies to its documents (`app.matters.deletion`).
+
+    **The last source of a recorded position stays** (QA-SUBDOCS-02,
+    docs/adr/0167 §1). A `Meile saadetud tagasiside` or `Teiste arvamus` whose
+    only source is this file — no written `Seisukoht`, no address, no other
+    live file — would be left holding none of the three docs/adr/0084 §3
+    requires. Refused rather than repaired: the person adds the words or the
+    link through `Muuda` first, and then the file may go.
     """
     if statuses is None:
         statuses = opinion_evidence_statuses(document)
@@ -203,6 +218,10 @@ def removal_refusal(document: Document, statuses: set[str] | None = None) -> str
         return refusal
     if document.legal_hold:
         return DOCUMENT_UNDER_LEGAL_HOLD
+    from app.matters.position_sources import positions_resting_only_on
+
+    if positions_resting_only_on(document):
+        return DOCUMENT_IS_LAST_POSITION_SOURCE
     return ""
 
 

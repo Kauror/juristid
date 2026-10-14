@@ -98,6 +98,7 @@ from app.legacy_import.register_display import (
 from app.matters import (
     activity,
     department_dashboard,
+    engagement_replies,
     intake_staging,
     legal_process,
     register_dates,
@@ -244,7 +245,6 @@ from app.matters.services import (
     acknowledge_assignment_notice,
     assign_matter,
     change_stage,
-    complete_engagement_feedback,
     correct_engagement,
     correct_external_position,
     correct_procedural_development,
@@ -7702,10 +7702,19 @@ def add_engagement_reply(request: HttpRequest, pk: Any) -> HttpResponse:
     `+ Arvamus / tagasiside`. The round row counts it and its files follow it
     (docs/adr/0142).
 
-    **The round is named, never guessed**: the form's own field, offering only
-    this Matter's open rounds as this reader may see them, required, and
-    preselected only when there is exactly one. Saving it **does not close the
-    round** — `Lõpeta kaasamine` on the row is still the one act that does.
+    **The round is named, never guessed**: the form's own field, offering this
+    Matter's rounds as this reader may see them — open ones, and finished ones
+    that still take later answers — required, and preselected only when the
+    choice is not a guess.
+
+    **The save contract** (docs/adr/0167 §2, relied on by `Ootame tagasisidet →
+    Tehtud`, which opens this same form): POST `engagement`, `summary`,
+    `stated_on` and `attachments` here. On success the reply is recorded and,
+    when the named round was still open, its wait is finished in the same
+    transaction through `engagement_replies.finish_wait_on_reply` →
+    `complete_engagement_feedback`; the answer is the re-rendered Teema view
+    (200). A refusal is 400 with the form still bound, and finishes nothing. A
+    round already finished keeps its closure and gains the answer.
     """
     return _record_external_position(
         request, pk, form_class=EngagementReplyForm, key="engagement_reply_form"
@@ -8016,6 +8025,8 @@ def _record_external_position(
         return _workspace_refusal(request, matter, key=key, form=form)
     chosen = form.cleaned_data.get("organisation")
     typed = (form.cleaned_data.get("organisation_name") or "").strip()
+    answered = form.cleaned_data.get("engagement")
+    finishes_wait = bool(getattr(form_class, "closes_engagement", False))
     try:
         # One transaction around the resolution and the save. A typed name the
         # picker does not know becomes a new institution *while the arguments
@@ -8023,6 +8034,17 @@ def _record_external_position(
         # without this, a refusal under the lock — a closed Matter in a stale
         # tab, a rejected upload — left that institution in the catalogue.
         with transaction.atomic():
+            if finishes_wait:
+                # A finished round takes later answers (docs/adr/0167 §2), so a
+                # second press of `Salvesta` must not file the same one twice.
+                engagement_replies.refuse_repeated_reply(
+                    matter=matter,
+                    engagement=answered,
+                    summary=form.cleaned_data.get("summary") or "",
+                    url=form.cleaned_data.get("url") or "",
+                    stated_on=form.cleaned_data.get("stated_on_value"),
+                    uploads=form.cleaned_data.get("attachments") or (),
+                )
             workspace.add_matter_external_position(
                 matter=matter,
                 author=request.user,
@@ -8066,16 +8088,17 @@ def _record_external_position(
                 engagement=form.cleaned_data.get("engagement"),
                 uploads=form.cleaned_data["attachments"],
             )
-            # **`Lisa tagasiside` finishes the round it answers** (owner's
-            # decision, 2026-10-07, docs/adr/0142 §B): the feedback, its files
-            # and the closed wait are one save — whichever door opened the form
-            # (`PRAEGUNE TEGEVUS → Tehtud` or `+ Kaasamine → Lisa tagasiside`).
-            # Through the canonical close, inside this transaction, so a round
-            # closed meanwhile by somebody else refuses the whole save. Nothing
-            # else is completed: no `NextAction` is inferred from feedback.
-            answered = form.cleaned_data.get("engagement")
-            if getattr(form_class, "closes_engagement", False) and answered is not None:
-                complete_engagement_feedback(engagement=answered, actor=request.user)
+            # **`Lisa tagasiside` finishes the wait of the round it answers**
+            # (owner's decision, 2026-10-07, docs/adr/0142 §B): the feedback,
+            # its files and the closed wait are one save — whichever door
+            # opened the form (`PRAEGUNE TEGEVUS → Tehtud` or `+ Kaasamine →
+            # Lisa tagasiside`). Through the canonical close, inside this
+            # transaction. A round already finished — by an earlier answer,
+            # `Lõpeta kaasamine` or somebody else meanwhile — keeps its closure
+            # and simply gains this answer (docs/adr/0167 §2). Nothing else is
+            # completed: no `NextAction` is inferred from feedback.
+            if finishes_wait and answered is not None:
+                engagement_replies.finish_wait_on_reply(engagement=answered, actor=request.user)
     except (DomainError, UploadRejected) as error:
         return _workspace_refusal(request, matter, key=key, form=form, error=str(error))
     return _render_overview(request, matter)

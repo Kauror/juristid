@@ -171,16 +171,25 @@ def test_reply_naming_a_round_on_another_matter_is_refused(signed_in, specialist
     assert foreign.feedback_closed_at is None
 
 
-def test_reply_to_a_round_already_finished_is_refused(signed_in, specialist):
+def test_a_second_reply_to_a_finished_round_is_recorded_and_keeps_the_first(signed_in, specialist):
+    """Inverted 2026-10-14 (owner decision D8, docs/adr/0167 §2): it pinned the
+    refusal of every answer after the first. A later answer is now recorded
+    against the same round; the first answer and the round's closure stay."""
     matter = _matter(specialist)
     round_ = _round(matter, specialist, "liikmed")
     _reply(signed_in, matter, {"engagement": str(round_.pk), "summary": "Esimene vastus"})
+    round_.refresh_from_db()
+    closed_at = round_.feedback_closed_at
 
     _reply(signed_in, matter, {"engagement": str(round_.pk), "summary": "Teine vastus"})
 
     assert list(
-        MatterExternalPosition.objects.filter(matter=matter).values_list("summary", flat=True)
-    ) == ["Esimene vastus"]
+        MatterExternalPosition.objects.filter(matter=matter)
+        .order_by("created_at")
+        .values_list("summary", flat=True)
+    ) == ["Esimene vastus", "Teine vastus"]
+    round_.refresh_from_db()
+    assert round_.feedback_closed_at == closed_at
 
 
 def test_reply_with_an_unacceptable_file_unwinds_everything(signed_in, specialist):
@@ -229,23 +238,29 @@ def test_reader_cannot_reply(client, reader, specialist):
     assert not MatterExternalPosition.objects.exists()
 
 
-def test_a_later_answer_to_a_finished_round_has_no_door_back_to_that_round(signed_in, specialist):
-    """DESIGN CONCERN, pinned (owner decision 2026-10-07, ADR 0142 §B amended): the
-    first `Lisa tagasiside` closes the round, `Lisa tagasiside` then offers only open
-    rounds and `+ Arvamus / tagasiside` declares no `engagement` field (ADR 0095 §5),
-    so a second member's answer to the same consultation cannot be tied to it."""
+def test_a_later_answer_to_a_finished_round_is_tied_to_that_round(signed_in, specialist):
+    """DC-02, resolved 2026-10-14 (owner decision D8, docs/adr/0167 §2). It pinned
+    that a second member's answer could not be tied to the consultation once the
+    first `Lisa tagasiside` had closed it. `Lisa tagasiside` now offers the
+    finished round and ties the later answer to it; `+ Arvamus / tagasiside`
+    still declares no `engagement` field (ADR 0095 §5), so that door files a
+    loose record exactly as before."""
     matter = _matter(specialist)
     round_ = _round(matter, specialist, "liikmed")
     _reply(signed_in, matter, {"engagement": str(round_.pk), "summary": "Esimene liige"})
 
     signed_in.post(
         reverse("matters:add_received_feedback", kwargs={"pk": matter.pk}),
-        {"engagement": str(round_.pk), "summary": "Teine liige", "stated_on": ""},
+        {"engagement": str(round_.pk), "summary": "Lahtine vastus", "stated_on": ""},
         headers={"HX-Request": "true"},
     )
+    _reply(signed_in, matter, {"engagement": str(round_.pk), "summary": "Teine liige"})
 
     tied = MatterExternalPosition.objects.filter(matter=matter, engagement=round_)
-    assert list(tied.values_list("summary", flat=True)) == ["Esimene liige"]
+    assert list(tied.order_by("created_at").values_list("summary", flat=True)) == [
+        "Esimene liige",
+        "Teine liige",
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -275,12 +290,6 @@ def test_a_file_only_reply_is_accepted_and_its_file_is_its_source(signed_in, spe
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="QA-SUBDOCS-02: `Eemalda dokument` takes off the only source of a recorded "
-    "`Meile saadetud tagasiside` (ADR 0084 §3 one-of-three rule); removal_refusal asks "
-    "only about opinions and legal hold, so the record is left with no text, link or file",
-)
 def test_removing_the_only_file_of_a_received_answer_leaves_it_with_a_source(signed_in, specialist):
     from app.documents.links import DocumentLink
 
@@ -298,32 +307,48 @@ def test_removing_the_only_file_of_a_received_answer_leaves_it_with_a_source(sig
     assert position.summary or position.url or visible_files >= 1
 
 
-def test_after_that_removal_a_correction_still_counts_the_removed_file_as_a_source(
-    signed_in, specialist
-):
-    """Pins the mechanism behind QA-SUBDOCS-02: `correct_external_position` counts
-    `document_links` without the removal filter, so an empty record keeps saving."""
+def test_a_correction_counts_only_live_files_as_a_source(signed_in, specialist):
+    """Inverted 2026-10-14 (QA-SUBDOCS-02 fixed, docs/adr/0167 §1). It pinned the
+    mechanism: `correct_external_position` counted `document_links` without the
+    removal filter, so an empty record kept saving. A position with words and a
+    file loses the file (allowed: the words are a source); a correction that
+    then empties the words is refused, because the removed file is no longer
+    anything a reader can open."""
     from app.documents.links import DocumentLink
-    from app.matters.services import correct_external_position, external_position_revision
+    from app.matters.services import (
+        EXTERNAL_POSITION_NEEDS_SOURCE,
+        correct_external_position,
+        external_position_revision,
+    )
+    from tests.refusals import refused
 
     matter = _matter(specialist)
-    position = _file_only_reply(signed_in, matter, _round(matter, specialist))
+    _reply(
+        signed_in,
+        matter,
+        {"engagement": str(_round(matter, specialist).pk), "summary": "Liige toetab."},
+        files=[SimpleUploadedFile("liikme-vastus.pdf", PDF, content_type="application/pdf")],
+    )
+    position = MatterExternalPosition.objects.get(matter=matter)
     document_id = DocumentLink.objects.get(external_position=position).document_id
     signed_in.post(reverse("documents:remove", kwargs={"pk": document_id}))
     position.refresh_from_db()
-
-    correct_external_position(
-        position=position,
-        organisation=None,
-        url="",
-        stated_on=None,
-        stated_on_precision="EXACT",
-        summary="",
-        engagement=position.engagement,
-        actor=specialist,
-        expected_revision=external_position_revision(position),
-    )
-
     assert (
         DocumentLink.objects.visible_to(specialist).filter(external_position=position).count() == 0
     )
+
+    with refused(EXTERNAL_POSITION_NEEDS_SOURCE):
+        correct_external_position(
+            position=position,
+            organisation=None,
+            url="",
+            stated_on=None,
+            stated_on_precision="EXACT",
+            summary="",
+            engagement=position.engagement,
+            actor=specialist,
+            expected_revision=external_position_revision(position),
+        )
+
+    position.refresh_from_db()
+    assert position.summary == "Liige toetab."

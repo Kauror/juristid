@@ -3041,6 +3041,10 @@ class RoundPosition:
     who: str
     display_date: str
     provenance: str
+    #: What the answer said, read on the round's own row exactly where the
+    #: round's `Saadud tagasiside` reads — so an answer reads in the same place
+    #: whichever form stored it (docs/adr/0167 §3).
+    summary: str = ""
 
 
 def attach_round_positions(engagements: list[Any], user: Any) -> None:
@@ -3072,6 +3076,7 @@ def attach_round_positions(engagements: list[Any], user: Any) -> None:
                     else EXTERNAL_POSITION_DATE_UNKNOWN
                 ),
                 provenance=position.get_provenance_display(),
+                summary=position.summary,
             )
         )
     for engagement in engagements:

@@ -358,12 +358,20 @@ before the closure.
       «seotud seisukohti», never «vastajaid» — how many replied is the round's
       own `Vastuseid`, and a missing count is not a zero
       (`timeline.attach_round_positions`).
+
+      Each answer's own words follow its line, in the same `uxtl__feedback`
+      the round's `Saadud tagasiside` uses above: what came back reads in one
+      place on the round whichever form stored it, the first answer and every
+      later one in the order they were stated (docs/adr/0167 §3).
     {% endcomment %}
     {% if engagement.round_positions %}
       <div class="uxtl__msnote">
         <span class="uxtl__msnotelabel">Seotud seisukohti {{ engagement.round_positions|length }}</span>
         {% for position in engagement.round_positions %}
           <span class="uxtl__mssub">{{ position.who }} · {{ position.display_date }} · {{ position.provenance }}</span>
+          {% if position.summary %}
+            <p class="uxtl__feedback">{{ position.summary|linebreaksbr }}</p>
+          {% endif %}
         {% endfor %}
       </div>
     {% endif %}
