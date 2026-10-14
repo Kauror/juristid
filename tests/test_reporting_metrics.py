@@ -139,8 +139,9 @@ def test_policy_area_coverage_is_measured_over_the_whole_population(world, repor
 
 def test_owner_inventory_keeps_the_unassigned_bucket(world, reporting_context):
     composition = segments(world.martin, keys.MATTERS_BY_OWNER, reporting_context)
-    assert composition["Sandra Testjurist"] == 3
-    assert composition["Martin Testjurist"] == 3
+    # Colleagues by first name (QA naming decision; app.accounts.naming).
+    assert composition["Sandra"] == 3
+    assert composition["Martin"] == 3
     assert composition["Vastutaja määramata"] == 6
 
 

@@ -468,3 +468,58 @@ def test_comparison_is_measured_from_the_first_send_day_exactly(days_after_first
         assert any("mõõtmist ei ole" in note for note in result.notes)
     else:
         assert result.comparison.previous_value >= 1
+
+
+# ---------------------------------------------------------------------------
+# Naming — colleagues by first name on Statistika (Agent I handoff)
+# ---------------------------------------------------------------------------
+
+
+def test_statistika_names_colleagues_by_first_name_and_keeps_filtering_by_id(
+    client, world, pinned_today
+):
+    """The «Vastutaja» picker, its chip and the «Inimesed» rows read «Sandra».
+
+    The full name is never needed to tell these colleagues apart; the value
+    submitted and every link still carry the account id.
+    """
+    client.force_login(world.head)
+    page = html.unescape(
+        client.get(
+            reverse("reporting:overview"), {"vastutaja": str(world.sandra.pk)}
+        ).content.decode()
+    )
+    option = re.search(
+        rf'<option value="{world.sandra.pk}"\s*selected>\s*([^<]+?)\s*</option>', page
+    )
+    assert option and option[1] == "Sandra", option
+    assert (
+        world.sandra.display_name
+        not in re.search(r'aria-label="Inimesed">(.*?)</section>', page, re.S)[1]
+    )
+    chips = client.get(reverse("reporting:overview"), {"vastutaja": str(world.sandra.pk)}).context[
+        "chips"
+    ]
+    assert [chip.value for chip in chips] == ["Sandra"]
+
+
+def test_two_colleagues_with_one_first_name_are_told_apart(world, reporting_context):
+    from app.accounts.models import User
+
+    other = User.objects.create(
+        upn="sandra.kask@example.invalid", display_name="Sandra Kask", is_synthetic=True
+    )
+    Matter.objects.create(
+        title="Teise Sandra teema",
+        record_mode=RecordMode.FULL,
+        origin=MatterOrigin.NATIVE,
+        reference_year=world.today.year,
+        reference_number=991,
+        reporting_year=world.today.year,
+        owner=other,
+    )
+    labels = {
+        s.label for s in compute(keys.MATTERS_BY_OWNER, reporting_context(world.head)).segments
+    }
+    assert {"Sandra Testjurist", "Sandra Kask"} <= labels
+    assert "Sandra" not in labels

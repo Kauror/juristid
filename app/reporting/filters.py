@@ -18,6 +18,7 @@ from collections.abc import Collection
 from dataclasses import dataclass
 from urllib.parse import urlencode
 
+from app.accounts.naming import name_among
 from app.accounts.selectors import named_owner_in, owner_filter_choices
 from app.matters.enums import MatterOrigin, RecordMode
 from app.reporting import context as ctx
@@ -159,8 +160,11 @@ def _display_value(context: ReportingContext, param: str, raw: str) -> str:
         # is the same boundary the owner dropdown is built from a few lines
         # below. `User.objects.filter(pk=raw)` was a directory lookup wearing a
         # filter label (AUTH-003).
-        owner = named_owner_in(reporting_population(context), raw) if raw else None
-        return owner.display_name if owner else "tundmatu"
+        population = reporting_population(context)
+        owner = named_owner_in(population, raw) if raw else None
+        # The name the dropdown below shows for the same person: a first name,
+        # lengthened only where two offered colleagues share it.
+        return name_among(owner, owner_filter_choices(population)) if owner else "tundmatu"
     if param == ctx.PARAM_POLICY_AREA:
         area = PolicyArea.objects.filter(key=raw).first()
         return area.name_et if area else raw

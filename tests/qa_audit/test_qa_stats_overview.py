@@ -196,7 +196,7 @@ def test_inimesed_rows_count_closed_matters_too(client, world, pinned_today):
         closed_by=world.sandra,
     )
     after = _rail_block(_page(client, world.head), "Inimesed")
-    name = world.sandra.display_name
+    name = world.sandra.get_short_name()  # first-name display (QA naming decision)
     assert after[name][0] == before[name][0] + 1
 
 
