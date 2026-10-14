@@ -27,6 +27,13 @@ materialised a register row is not a colleague changing the work. Those rows are
 counted separately (:attr:`Coverage.system_events`) rather than dropped in
 silence.
 
+**A person's act, not the system's in their name** (ADR 0159 §2 amendment, D1).
+Some step changes are written with the person as actor although nobody chose
+them — the follow-up check a send schedules, a planned step made current, a
+check put back on the plan. Their payload says so; they are counted aside
+(:attr:`Coverage.automatic_steps`), never as «määras». And a closure that ended
+N steps is one entry, «sulges teema», not N «tühistas»; the audit rows stay N.
+
 **Snapshot-derived comparison.** Two figures — open Teemad and Teemad without a
 Vastutaja — read off `OperationalMatterSnapshot` on the last photograph at or
 before each end of the window. They are a *comparison of two states*, never a
@@ -59,7 +66,8 @@ from datetime import date, datetime
 from typing import Any
 from urllib.parse import urlencode
 
-from django.db.models import Count, Max, Min, Q, QuerySet
+from django.db.models import Count, F, Max, Min, OuterRef, Q, QuerySet, Subquery
+from django.db.models.functions import Coalesce
 from django.urls import reverse
 from django.utils import timezone
 
@@ -246,6 +254,11 @@ class Coverage:
     #: Curated events in the window with no person behind them — imports,
     #: cutovers, backfills. Not counted above.
     system_events: int = 0
+    #: Step changes in the window the system made on a person's behalf — a
+    #: follow-up check scheduled by a send, a planned step made current, a check
+    #: put back on the plan or re-dated by a corrected send date. Their audit
+    #: rows name the person; they are not counted as anyone's act (D1).
+    automatic_steps: int = 0
     #: Teemad that arrived by import in the window. Not «new»: they existed
     #: before they were copied in.
     imported_matters: int = 0
@@ -443,10 +456,82 @@ def _in_window(events: QuerySet[ChangeEvent], period: dd.Period) -> QuerySet[Cha
     )
 
 
+#: The reason `workflow.services.end_open_action_for_closure` writes on every
+#: step a closure ends. Read, never written, here.
+CLOSURE_CANCEL_REASON = "Teema suleti"
+
+#: The events that make a Matter stop being current work. A step ended by a
+#: closure belongs to the first of these written on its Matter at or after it
+#: (the closure writes its steps' cancellations first, then itself).
+CLOSING_EVENT_TYPES: tuple[str, ...] = (
+    ChangeEventType.MATTER_CLOSED,
+    ChangeEventType.MATTER_HISTORICAL_CUTOVER_CLOSED,
+    ChangeEventType.MATTER_REGISTER_CUTOVER_RETIRED,
+)
+
+#: The pseudo event type of a closure's one row in «Järgmised tegevused».
+CLOSURE_ROW = "NEXT_ACTIONS_ENDED_BY_CLOSURE"
+CLOSURE_VERB = "sulges teema"
+
+
+def _automatic_q() -> Q:
+    """Step changes a service made on its own, which nobody chose (ADR 0159 §2, D1).
+
+    Each is recognised by the marker its writer puts in the payload, so the
+    audit row itself stays as it is:
+
+    * the first opinion follow-up check, scheduled by recording the send
+      (``follow_up.automatic``, docs/adr/0146 §10) — the send is Tehtud's;
+    * a current check put back on the plan because new work was written over
+      it (``returned_to_plan: true``; the new work's own event carries the id
+      as a string and stays a person's act);
+    * a planned step made current because the current one was finished
+      (``promoted``) — it was «määras» once, when it was planned, and the
+      finishing is its own «lõpetas»;
+    * a check's day recalculated from a corrected send date (``recalculated``).
+    """
+    # JSON containment (`@>`), never a key lookup: a missing key compares NULL,
+    # and `exclude()` over a NULL drops the row it should keep.
+    return (
+        Q(
+            event_type=ChangeEventType.NEXT_ACTION_SET,
+            payload__contains={"follow_up": {"automatic": True}},
+        )
+        | Q(
+            event_type=ChangeEventType.NEXT_ACTION_SET,
+            payload__contains={"returned_to_plan": True},
+        )
+        | Q(event_type=ChangeEventType.NEXT_ACTION_SET, payload__contains={"promoted": True})
+        | Q(
+            event_type=ChangeEventType.NEXT_ACTION_RESCHEDULED,
+            payload__contains={"recalculated": True},
+        )
+    )
+
+
+def _closure_q() -> Q:
+    """A step ended because its Matter was closed, not cancelled on its own.
+
+    The reason the closure helper writes; a ``closure`` key, should a closure
+    writer come to mark its cancellations explicitly, is read the same way.
+    """
+    return Q(event_type=ChangeEventType.NEXT_ACTION_CANCELLED) & (
+        Q(payload__contains={"reason": CLOSURE_CANCEL_REASON}) | Q(payload__has_key="closure")
+    )
+
+
 def _person_acts(events: QuerySet[ChangeEvent]) -> QuerySet[ChangeEvent]:
-    """A colleague's change, and for a new Teema one filed here, not imported."""
-    return events.filter(actor__isnull=False).exclude(
-        Q(event_type=ChangeEventType.MATTER_CREATED) & ~Q(matter__origin=MatterOrigin.NATIVE)
+    """A colleague's change, and for a new Teema one filed here, not imported.
+
+    A step change the system made on the person's behalf (`_automatic_q`) is
+    not theirs, though the row names them as its actor.
+    """
+    return (
+        events.filter(actor__isnull=False)
+        .exclude(
+            Q(event_type=ChangeEventType.MATTER_CREATED) & ~Q(matter__origin=MatterOrigin.NATIVE)
+        )
+        .exclude(_automatic_q())
     )
 
 
@@ -484,29 +569,88 @@ def _row(event: ChangeEvent) -> ChangeRow:
     )
 
 
-def _categories(acts: QuerySet[ChangeEvent]) -> list[CategoryResult]:
+def _closure_rows(closure_acts: QuerySet[ChangeEvent]) -> list[ChangeRow]:
+    """One row per closure that ended steps, however many it ended (D1).
+
+    The cancellations stay in the audit history one by one; this only reads
+    them as the one act they were. Grouped by the closing event that followed
+    them on their Matter — or, should none be found, each stands alone rather
+    than being merged with a stranger. One query for the groups, newest
+    first, and one each for their Matters and people.
+    """
+    from django.contrib.auth import get_user_model
+
+    closing = (
+        ChangeEvent.objects.filter(
+            matter=OuterRef("matter"),
+            event_type__in=CLOSING_EVENT_TYPES,
+            occurred_at__gte=OuterRef("occurred_at"),
+        )
+        .order_by("occurred_at", "created_at")
+        .values("pk")[:1]
+    )
+    groups = list(
+        closure_acts.annotate(closure=Coalesce(Subquery(closing), F("pk")))
+        .order_by()
+        .values("closure", "matter", "actor")
+        .annotate(n=Count("pk"), at=Max("occurred_at"))
+        .order_by("-at")
+    )
+    if not groups:
+        return []
+    matters = Matter.objects.in_bulk({group["matter"] for group in groups})
+    people = get_user_model().objects.in_bulk({group["actor"] for group in groups})
+    rows = []
+    for group in groups:
+        matter = matters.get(group["matter"])
+        actor = people.get(group["actor"])
+        ended = group["n"]
+        rows.append(
+            ChangeRow(
+                at=group["at"],
+                event_type=CLOSURE_ROW,
+                badge=NEXT_ACTIONS.badge,
+                verb=CLOSURE_VERB,
+                detail=f"lõppes {ended} {'tegevus' if ended == 1 else 'tegevust'}",
+                actor_name=actor.display_name if actor is not None else "",
+                initials=actor.initials if actor is not None else "··",
+                matter_title=matter.title if matter is not None else "",
+                url=(reverse("matters:matter_detail", kwargs={"pk": matter.pk}) if matter else ""),
+            )
+        )
+    return rows
+
+
+def _categories(
+    acts: QuerySet[ChangeEvent], closure_acts: QuerySet[ChangeEvent]
+) -> list[CategoryResult]:
     counts = {
         row["event_type"]: row["n"]
         for row in acts.order_by().values("event_type").annotate(n=Count("pk"))
     }
+    closures = _closure_rows(closure_acts)
     results = []
     for category in CATEGORIES:
-        rows = (
-            acts.filter(event_type__in=category.event_types)
+        rows = [
+            _row(event)
+            for event in acts.filter(event_type__in=category.event_types)
             .select_related("actor", "matter")
             .order_by("-occurred_at", "-created_at")[:ROW_LIMIT]
-        )
+        ]
+        count = sum(counts.get(event_type, 0) for event_type in category.event_types)
+        breakdown = [
+            (verb, counts.get(event_type, 0))
+            for event_type, verb in category.verbs
+            if len(category.verbs) > 1
+        ]
+        if category is NEXT_ACTIONS and closures:
+            # A closure that ended steps is one entry here, under the closer's
+            # name and in words that say it was the closure (D1).
+            count += len(closures)
+            breakdown.append((CLOSURE_VERB, len(closures)))
+            rows = sorted(rows + closures, key=lambda row: row.at, reverse=True)[:ROW_LIMIT]
         results.append(
-            CategoryResult(
-                category=category,
-                count=sum(counts.get(event_type, 0) for event_type in category.event_types),
-                breakdown=[
-                    (verb, counts.get(event_type, 0))
-                    for event_type, verb in category.verbs
-                    if len(category.verbs) > 1
-                ],
-                rows=[_row(event) for event in rows],
-            )
+            CategoryResult(category=category, count=count, breakdown=breakdown, rows=rows)
         )
     return results
 
@@ -518,6 +662,7 @@ def _coverage(
     return Coverage(
         recorded_since=_first_day(events.filter(actor__isnull=False)),
         system_events=in_window.filter(actor__isnull=True).count(),
+        automatic_steps=in_window.filter(_automatic_q(), actor__isnull=False).count(),
         imported_matters=in_window.filter(event_type=ChangeEventType.MATTER_CREATED)
         .exclude(matter__origin=MatterOrigin.NATIVE)
         .count(),
@@ -618,7 +763,7 @@ def build_changes(
     return DepartmentChanges(
         period=period,
         period_error=error,
-        categories=_categories(acts),
+        categories=_categories(acts.exclude(_closure_q()), acts.filter(_closure_q())),
         coverage=_coverage(matters, events, period),
         snapshots=_snapshot_comparison(user, period),
         outputs=dd.build_digest(user, period) if with_outputs else None,

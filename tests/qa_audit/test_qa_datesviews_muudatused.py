@@ -243,15 +243,6 @@ def ministry():
     return factories.OrganisationFactory(name="Sünteetiline ministeerium QA")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "QA-DATESVIEWS-01: recording an opinion as sent schedules the ADR 0146 "
-        "follow-up check automatically; Muudatused counts that system-scheduled "
-        "NEXT_ACTION_SET (payload follow_up.automatic=true) as the sender's own "
-        "«määras järgmise tegevuse»"
-    ),
-)
 def test_sending_an_opinion_is_not_a_person_setting_a_next_step(
     department_head, specialist, ministry
 ):
@@ -262,14 +253,6 @@ def test_sending_an_opinion_is_not_a_person_setting_a_next_step(
     assert _set_rows(dc.build_changes(department_head)) == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "QA-DATESVIEWS-01: new work written over a current follow-up check writes "
-        "two NEXT_ACTION_SET events (the new step, and the check 'returned_to_plan'); "
-        "Muudatused shows one act as two «määras järgmise tegevuse» rows"
-    ),
-)
 def test_one_new_step_over_a_current_check_is_one_row(department_head, specialist, ministry):
     matter = create_matter(title="Kontroll ees", owner=specialist, actor=specialist)
     opinion = mark_sent(matter, specialist, [ministry])
@@ -288,12 +271,13 @@ def test_one_new_step_over_a_current_check_is_one_row(department_head, specialis
     assert len(after) == 1
 
 
-def test_finishing_a_step_that_promotes_a_planned_one_counts_the_planned_step_twice(
+def test_finishing_a_step_that_promotes_a_planned_one_counts_the_planned_step_once(
     department_head, specialist
 ):
-    """Observation probe (passes on 81a7d6e4): a planned step is «määras» when
-    it is planned and again when it is promoted. Pinned as current behaviour;
-    see FINDINGS.md DESIGN CONCERNS."""
+    """Was an observation probe pinning DC-1 on 81a7d6e4 (a planned step read
+    «määras» when planned and again when promoted). Inverted by owner decision
+    D1 (QA remediation 2026-10-14): the promotion is the system's, so the
+    planned step is «määras» once."""
     matter = create_matter(title="Plaaniga teema", owner=specialist, actor=specialist)
     current = set_next_action(matter=matter, text="Praegune", actor=specialist)
     add_planned_action(
@@ -305,8 +289,8 @@ def test_finishing_a_step_that_promotes_a_planned_one_counts_the_planned_step_tw
     complete_next_action(action=current, actor=specialist)
 
     breakdown = dict(_category(dc.build_changes(department_head), "tegevused").breakdown)
-    # set(current) + set(planned) + set(promoted) = 3 for two steps.
-    assert breakdown["määras järgmise tegevuse"] == 3
+    # set(current) + set(planned) = 2 for two steps; the promotion is not a third.
+    assert breakdown["määras järgmise tegevuse"] == 2
     assert breakdown["lõpetas järgmise tegevuse"] == 1
 
 
@@ -354,13 +338,19 @@ def test_an_opinion_restricted_after_sending_hides_its_checks_events(
     department_head, reader, specialist, ministry
 ):
     """ADR 0146 §10: a check's events reach exactly the readers its opinion
-    does, read live — here through Muudatused for a reader lent the view."""
+    does, read live — here through Muudatused for a reader lent the view.
+
+    Since D1 (QA remediation 2026-10-14) the check the send scheduled is the
+    system's and is counted in `Coverage.automatic_steps`, not under
+    «Järgmised tegevused»; that figure is read from the same scoped events, so
+    it is where the restriction must show."""
     from app.core.enums import Visibility
     from app.submissions.models import Submission
 
     matter = create_matter(title="Piiratud arvamus", owner=specialist, actor=specialist)
     opinion = mark_sent(matter, specialist, [ministry])
-    reader_before = _category(dc.build_changes(reader), "tegevused").count
+    reader_before = dc.build_changes(reader).coverage.automatic_steps
+    assert reader_before >= 1
     from app.documents.models import Document
 
     opinion.refresh_from_db()
@@ -369,18 +359,17 @@ def test_an_opinion_restricted_after_sending_hides_its_checks_events(
     )
     Submission.objects.filter(pk=opinion.pk).update(visibility_override=Visibility.RESTRICTED)
 
-    assert _category(dc.build_changes(reader), "tegevused").count == reader_before - 1
-    assert _category(dc.build_changes(department_head), "tegevused").count >= 1
+    assert dc.build_changes(reader).coverage.automatic_steps == 0
+    assert _category(dc.build_changes(reader), "tegevused").count == 0
+    assert dc.build_changes(department_head).coverage.automatic_steps == reader_before
 
 
-def test_one_closure_reads_as_one_cancellation_per_open_or_planned_step(
-    department_head, specialist
-):
-    """Observation probe (passes on 81a7d6e4): «Sulge» on a Teema with a current
-    step and two planned ones writes three NEXT_ACTION_CANCELLED rows with the
-    closer as actor, so Muudatused prints three «tühistas järgmise tegevuse»
-    for one closure — which ADR 0159 §2 says is Tehtud's. See FINDINGS.md
-    DESIGN CONCERNS (DC-2)."""
+def test_one_closure_reads_as_one_entry_not_one_cancellation_per_step(department_head, specialist):
+    """Was an observation probe pinning DC-2 on 81a7d6e4: «Sulge» on a Teema with
+    a current step and two planned ones wrote three NEXT_ACTION_CANCELLED rows
+    with the closer as actor, and Muudatused printed three «tühistas järgmise
+    tegevuse». Inverted by owner decision D1 (QA remediation 2026-10-14): one
+    closure is one entry; the three audit rows stay."""
     matter = create_matter(title="Suletav", owner=specialist, actor=specialist)
     set_next_action(matter=matter, text="Praegune", actor=specialist)
     for offset in (10, 20):
@@ -399,5 +388,19 @@ def test_one_closure_reads_as_one_cancellation_per_open_or_planned_step(
         follow_ups_confirmed=True,
     )
 
-    after = dict(_category(dc.build_changes(department_head), "tegevused").breakdown)
-    assert after["tühistas järgmise tegevuse"] - before["tühistas järgmise tegevuse"] == 3
+    changes = dc.build_changes(department_head)
+    after = dict(_category(changes, "tegevused").breakdown)
+    assert after["tühistas järgmise tegevuse"] == before["tühistas järgmise tegevuse"]
+    assert after[dc.CLOSURE_VERB] == 1
+    closure_rows = [
+        row for row in _category(changes, "tegevused").rows if row.event_type == dc.CLOSURE_ROW
+    ]
+    assert [(row.verb, row.detail) for row in closure_rows] == [
+        ("sulges teema", "lõppes 3 tegevust")
+    ]
+    assert (
+        ChangeEvent.objects.filter(
+            matter=matter, event_type=ChangeEventType.NEXT_ACTION_CANCELLED
+        ).count()
+        == 3
+    )

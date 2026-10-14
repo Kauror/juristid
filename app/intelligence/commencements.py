@@ -103,8 +103,17 @@ EXPAND_PARAM = "joustumised_koik"
 #: behind it would be a word in the address that nothing reads.
 PRESENTATION_PARAMS = (VIEW_PARAM, MONTH_PARAM, SORT_PARAM, EXPAND_PARAM)
 
-#: How far ahead the first bucket reaches, both ends inclusive.
+#: How many calendar dates the first bucket holds, today included: «Järgmise 30
+#: päeva jooksul» is today … today + 29 on the Tallinn calendar — exactly 30
+#: dates, the rule «N päeva» follows everywhere (owner's decision 2026-10-14,
+#: docs/adr/0158 §4 amendment; ADR 0159 §5).
 SOON_DAYS = 30
+
+
+def soon_last_day(day: date) -> date:
+    """The last date inside «Järgmise 30 päeva jooksul» on ``day``."""
+    return day + timedelta(days=SOON_DAYS - 1)
+
 
 BUCKET_SOON = "jargmised"
 BUCKET_LATER = "hiljem"
@@ -319,7 +328,7 @@ def bucket_of(record: MatterEffectiveDate, day: date) -> str:
     *Möödunud* by the period's **end** — II poolaasta 2027 has not passed on
     2 July 2027 (`MatterEffectiveDate.has_passed`, the rule ADR 0071 calls
     `_direction_q`). *Järgmised* by containment — the whole period inside
-    ``day`` … ``day + SOON_DAYS``, so a quarter is never there and a day is
+    ``day`` … ``soon_last_day(day)``, so a quarter is never there and a day is
     when it falls inside. Everything else that is dated and not over is
     *Hiljem*, which is the honest place for a period that has begun.
     """
@@ -327,7 +336,7 @@ def bucket_of(record: MatterEffectiveDate, day: date) -> str:
         return BUCKET_UNDATED
     if record.period_end < day:
         return BUCKET_PAST
-    if record.date_value >= day and record.period_end <= day + timedelta(days=SOON_DAYS):
+    if record.date_value >= day and record.period_end <= soon_last_day(day):
         return BUCKET_SOON
     return BUCKET_LATER
 

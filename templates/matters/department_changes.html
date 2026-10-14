@@ -191,6 +191,14 @@ know (both in the rail). Everything is computed by
         <p class="ovnote">
           Impordi- ja süsteemikirjeid, mida ei loeta: <b>{{ page.coverage.system_events }}</b>.
         </p>
+        {% comment %}
+          Step changes the system made on a person's behalf — a follow-up check
+          scheduled by a send, a planned step made current — are its, not that
+          person's, and are counted here instead of above (ADR 0159 §2, D1).
+        {% endcomment %}
+        <p class="ovnote" data-automatic-steps>
+          Süsteemi automaatseid tegevuse muudatusi (nt arvamuse järelkontrolli ajastamine), mida ei loeta kellegi tegevuseks: <b>{{ page.coverage.automatic_steps }}</b>.
+        </p>
         <p class="ovnote">
           Avatud teemasid, mille hetkeseisu algus ei ole teada: <b>{{ page.coverage.stage_start_unknown }}</b>.
         </p>
