@@ -12,8 +12,8 @@ way a department head uses it: with a period and a chip from the filter bar.
   strip figures obey them, so the page prints «avatud teemat» twice with two
   different values under one chip.
 * QA-STATS-11 — the «Inimesed» rows are `MATTERS_BY_OWNER`: every Matter of the
-  period (closed and archive rows included); the empty state says «avatud
-  teemasid».
+  period (closed and archive rows included); the empty state said «avatud
+  teemasid». Fixed in wording; the approved definition is unchanged.
 """
 
 from __future__ import annotations
@@ -102,10 +102,6 @@ def test_rail_reporting_block_counts_this_year_by_default(client, sends_in_two_y
     assert block["arvamusi välja"][0] == this_year["arvamusi välja"][0]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="QA-STATS-01: «Aruandlus <year>» rail row «arvamusi välja» follows ?periood, not the heading's year",  # noqa: E501
-)
 @pytest.mark.parametrize("period", ["koik", "eelmine", "viimased5"])
 def test_rail_reporting_block_sends_are_the_headings_year_whatever_the_period(
     period, client, sends_in_two_years
@@ -124,10 +120,6 @@ def test_rail_reporting_block_sends_are_the_headings_year_whatever_the_period(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="QA-STATS-02: rail «avatud teemat» ignores the owner chip; strip obeys it",
-)
 def test_both_avatud_teemat_figures_agree_under_an_owner_chip(client, world, pinned_today):
     body = _page(client, world.head, vastutaja=str(world.sandra.pk))
     strip = _shown(_STRIP_FIGURE, body)
@@ -149,10 +141,6 @@ def test_strip_avatud_teemat_obeys_the_owner_chip(client, world, pinned_today):
     assert register_total(client, href) == value
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="QA-STATS-02: strip «teemat töövõiduga <aasta>» ignores the owner chip",
-)
 def test_strip_victory_figure_obeys_the_owner_chip(client, world, pinned_today):
     from app.intelligence.services import add_work_victory_candidate, confirm_work_victory
     from app.workflow.enums import DatePrecision
@@ -183,12 +171,15 @@ def test_strip_victory_figure_obeys_the_owner_chip(client, world, pinned_today):
 
 
 def test_inimesed_rows_count_closed_matters_too(client, world, pinned_today):
-    """Probe (passes, documents behaviour): a closed Matter moves the «Inimesed» row.
+    """A closed Matter moves the «Inimesed» row — by the approved definition.
 
-    The rail block's empty state reads «Ühelgi inimesel ei ole avatud
-    teemasid», i.e. the rows are read as open Matters; the metric behind them
-    (`MATTERS_BY_OWNER`) counts every Matter of the period, closed and archive
-    rows included. Logged as QA-STATS-11 (P3, wording).
+    `MATTERS_BY_OWNER` is catalogued over «Nähtavad teemad»: every Matter of
+    the period, closed and archive rows included. QA-STATS-11 was the wording
+    around it — an empty state reading «Ühelgi inimesel ei ole avatud
+    teemasid» and no period beside «Praegu». QA remediation G kept the
+    definition and fixed the words (the heading names the period, the empty
+    state no longer says «avatud»; tests/test_statistika_filter_scope.py), so
+    this stays as the guard that the definition was not silently changed.
     """
     before = _rail_block(_page(client, world.head), "Inimesed")
     Matter.objects.create(

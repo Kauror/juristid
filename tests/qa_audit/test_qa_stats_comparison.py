@@ -176,10 +176,6 @@ def test_leap_day_comparison_cuts_both_sides_on_the_right_day(client, world):
     assert comparison.previous_value == len(previous_ids)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="QA-STATS-05: YoY compares against a previous window that lies wholly before the first recorded Submission",  # noqa: E501
-)
 def test_comparison_declines_when_the_previous_window_predates_the_first_record(world):
     """The shared world's first send is on 9 September of last year.
 

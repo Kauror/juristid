@@ -107,6 +107,13 @@ A previous year before the first recorded Submission is *not measured*, and the
 card declines rather than reporting a rise from zero. Each side opens the
 Statistika submission list cut at the same day (`?aasta=&kuni=MM-DD`).
 
+**Amended 2026-10-14 (QA-STATS-05, ADR 0169):** "before the first recorded
+Submission" is compared as a Tallinn **date**, not a year. The card declines
+when the first recorded send falls after last year's cutoff day: a first send on
+9.9.2025 leaves 1.1–1.8.2025 unmeasured, and comparing years let the card report
+«3 vs 0» against a window no record could speak for. A first send on or before
+the cutoff day is measured, as before.
+
 ### 6. EU share: two bases, `Õigusakt` first
 
 Owner decision of 2026-10-13: a Matter whose `Õigusakt` is unclassified but whose

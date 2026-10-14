@@ -310,8 +310,34 @@ def register_url(context: ReportingContext, **overrides: str) -> str:
     the management metrics do — overrides it with the same value rather than
     adding a second ``andmed``.
     """
-    params: dict[str, str] = {"olek": "koik", "andmed": REGISTER_DATA_SCOPE}
+    if context.owner_unreadable:
+        # The population is empty (`visible_matters`) and the register has no
+        # parameter that says so; any link would open more than the 0 it sits on.
+        return ""
 
+    params: dict[str, str] = {"olek": "koik", "andmed": REGISTER_DATA_SCOPE}
+    params.update(chip_params(context))
+
+    if not context.period.is_all:
+        start, end = context.period.start_year, context.period.end_year
+        params["aasta"] = str(start) if start == end else f"{start}-{end}"
+
+    merged = merge_chip_params(params, overrides)
+    if merged is None:
+        return ""
+    return f"{reverse('matters:matter_list')}?{urlencode(merged)}"
+
+
+def chip_params(context: ReportingContext) -> dict[str, str]:
+    """The filter-bar chips that narrow the Matter population, in register words.
+
+    Exactly the dimensions `visible_matters` applies — and nothing of the
+    period, whose meaning depends on the metric (brief 14). A surface that
+    counts a register population of its own (the Ülevaade strip and rail)
+    starts from this so the chips narrow its figures as they narrow every
+    catalogued one (QA-STATS-02, owner decision D2).
+    """
+    params: dict[str, str] = {}
     if context.record_mode:
         params["liik"] = context.record_mode
     if context.origin:
@@ -326,18 +352,45 @@ def register_url(context: ReportingContext, **overrides: str) -> str:
         params["menetlusliik"] = context.track
     if context.tag_key:
         params["silt"] = context.tag_key
+    return params
 
-    if not context.period.is_all:
-        start, end = context.period.start_year, context.period.end_year
-        params["aasta"] = str(start) if start == end else f"{start}-{end}"
 
+#: The register parameters a chip can set. A link may *narrow* one of these to
+#: a value the chip allows; it may never *replace* the chip's value, because
+#: the number beside the link was counted under the chip (QA-STATS-08).
+CHIP_KEYS = frozenset(
+    {"liik", "paritolu", "vastutaja", "valdkond", "hetkeseis", "menetlusliik", "silt"}
+)
+
+
+def merge_chip_params(params: dict[str, str], overrides: dict[str, str]) -> dict[str, str] | None:
+    """Apply a metric's own narrowing on top of the chips, or ``None``.
+
+    For a non-chip key (``olek``, ``aasta``, ``tegevus`` …) the override wins
+    or, when empty, removes the key, as it always has. For a chip key the
+    result is the *intersection*: a chip ``liik=ARCHIVE`` under a metric that
+    counts FULL Matters only is an empty population, and the honest link for an
+    empty intersection is none at all. Replacing the chip with the metric's
+    value — the old behaviour — opened a list of six beside a 0 (QA-STATS-08).
+    ``paritolu`` may name several origins comma-separated; the chip's single
+    origin survives if it is one of them.
+    """
+    merged = dict(params)
     for key, value in overrides.items():
-        if value:
-            params[key] = value
-        else:
-            params.pop(key, None)
-
-    return f"{reverse('matters:matter_list')}?{urlencode(params)}"
+        chip = params.get(key, "") if key in CHIP_KEYS else ""
+        if not chip:
+            if value:
+                merged[key] = value
+            else:
+                merged.pop(key, None)
+            continue
+        if not value:
+            # Dropping a chip from a link would widen the list past the count.
+            continue
+        if chip not in value.split(","):
+            return None
+        merged[key] = chip
+    return merged
 
 
 def unknown_year_url(context: ReportingContext) -> str:

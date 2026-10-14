@@ -8,8 +8,8 @@
   excludes its own «Menetlusliik määramata» row, so the rows do not add up to
   the total printed above them.
 * QA-STATS-08 — under a «Kirje liik: Arhiiv» chip the «Aktiivsed täielikud
-  teemad» card is 0 (FULL ∧ ARCHIVE), and its link overrides the chip with
-  `liik=FULL` and opens a non-empty list.
+  teemad» card is 0 (FULL ∧ ARCHIVE), and its link overrode the chip with
+  `liik=FULL` and opened a non-empty list. Fixed: such a link is not drawn.
 """
 
 from __future__ import annotations
@@ -48,10 +48,6 @@ def _queues(context) -> dict[str, quality.QualityQueue]:
     return {queue.key: queue for queue in quality.queues(context)}
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="QA-STATS-06: quality queue counts open FULL Matters, its link opens every open Matter",
-)
 @pytest.mark.parametrize("queue_key", ["active_without_policy_area", "unresolved_organisation"])
 def test_quality_queue_opens_the_matters_it_counted(
     queue_key, client, world, reporting_context, open_archive_row
@@ -94,22 +90,35 @@ def _overview_tables(client, viewer) -> dict[str, tuple[int, list[int]]]:
     return tables
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="QA-STATS-07: «Menetlusliigid · kokku N» excludes its own «Menetlusliik määramata» row",
-)
 def test_menetlusliigid_rows_add_up_to_the_printed_total(client, world):
     kokku, rows = _overview_tables(client, world.head)["matters_by_track"]
     assert sum(rows) == kokku, (kokku, rows)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="QA-STATS-08: a fixed liik=FULL on the link overrides the ARCHIVE chip the 0 was computed under",  # noqa: E501
-)
 def test_a_card_link_never_overrides_the_chip_its_count_used(client, world, reporting_context):
-    context = reporting_context(world.head, record_mode=RecordMode.ARCHIVE.value)
-    result = compute(keys.ACTIVE_FULL_MATTERS, context)
-    assert result.value == 0
+    """QA-STATS-08, fixed: the link never replaces the chip the count was taken under.
+
+    Changed from the audit's first draft (QA remediation G, 2026-10-14). That
+    draft opened the link and expected 0 rows. FULL ∧ ARCHIVE is an empty
+    intersection that the register has no parameter for: `liik` names one record
+    mode. So the only link that cannot contradict the 0 is no link at all. That
+    was the first of the two fixes QA-STATS-08 itself proposed, and it is what
+    every Statistika template already renders for an empty `drillthrough_url`.
+    The assertion stays as strict as before. With a contradicting chip there
+    must be no link. With an agreeing chip the link must keep the chip and open
+    exactly the counted rows.
+    """
+    archive = compute(
+        keys.ACTIVE_FULL_MATTERS,
+        reporting_context(world.head, record_mode=RecordMode.ARCHIVE.value),
+    )
+    assert archive.value == 0
+    assert archive.drillthrough_url == "", archive.drillthrough_url
+
+    full = compute(
+        keys.ACTIVE_FULL_MATTERS, reporting_context(world.head, record_mode=RecordMode.FULL.value)
+    )
+    assert full.value > 0
+    assert "liik=FULL" in full.drillthrough_url
     client.force_login(world.head)
-    assert register_total(client, result.drillthrough_url) == result.value, result.drillthrough_url
+    assert register_total(client, full.drillthrough_url) == full.value, full.drillthrough_url

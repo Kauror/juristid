@@ -512,6 +512,7 @@ def _write_one_submission(
     reader: ArchiveReader,
     by_key: dict[tuple[str, str, Any], Any],
 ) -> None:
+    from app.matters.enums import MatterDataClass
     from app.matters.locks import lock_matter_for_evidence_integrity
     from app.submissions.models import Submission
 
@@ -544,6 +545,14 @@ def _write_one_submission(
         # An apply runs against a live database and has no claim to be the only
         # writer in it.
         matter = lock_matter_for_evidence_integrity(submission_plan.matter_id)
+        if matter.data_class == MatterDataClass.TEST:
+            # Real archive evidence never becomes a canonical opinion on a
+            # development record; a reviewed decision naming one predates the
+            # guard in `opinion_views._chosen_matter` (QA-STATS-04).
+            report.skipped.append(
+                f"{item.original_filename[:60]}: testandmete teemale arhiivist arvamust ei looda"
+            )
+            return
         version, _reused = _final_version_for(matter, submission_plan, item, actor, reader, report)
         if version is None:
             report.skipped.append(

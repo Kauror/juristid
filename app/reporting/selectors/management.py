@@ -628,6 +628,17 @@ def _ended_in_period(context: ReportingContext) -> Q:
 # ---------------------------------------------------------------------------
 
 
+def _first_send_day(context: ReportingContext) -> date | None:
+    """The Tallinn day of the first sent opinion this context can count.
+
+    The same population and the same clock as ``measured_window``, read to the
+    day: the year alone cannot tell whether last year's window up to the cutoff
+    was measured at all (QA-STATS-05).
+    """
+    first = all_sent(context).order_by("sent_at").values_list("sent_at", flat=True).first()
+    return None if first is None else timezone.localdate(first)
+
+
 def submissions_sent_yoy_change(context: ReportingContext) -> MetricResult:
     """1 January to today, against 1 January to the same date last year.
 
@@ -674,13 +685,18 @@ def submissions_sent_yoy_change(context: ReportingContext) -> MetricResult:
     status: MetricStatus | None = None
     if window is not None:
         notes.insert(0, f"Katvus: struktuursed arvamuse kirjed alates aastast {window[0]}.")
-    if window is None:
+    first_day = _first_send_day(context) if window is not None else None
+    if window is None or first_day is None:
         status = MetricStatus.INSUFFICIENT_DATA
-    elif window[0] > previous_cutoff.year:
+    elif first_day > previous_cutoff:
+        # Compared as a *date*, not a year (QA-STATS-05, ADR 0160 §5): a first
+        # send on 9.9.2025 leaves 1.1–1.8.2025 unmeasured, and comparing years
+        # (2025 > 2025 is false) reported «3 vs 0» against a window no record
+        # could speak for.
         status = MetricStatus.INSUFFICIENT_DATA
         notes.append(
-            f"Eelmise aasta kohta mõõtmist ei ole: esimene salvestatud arvamus on "
-            f"aastast {window[0]}."
+            f"Eelmise aasta võrreldava perioodi kohta mõõtmist ei ole: esimene "
+            f"salvestatud arvamus on {format_estonian_date(first_day)}."
         )
 
     return simple_result(

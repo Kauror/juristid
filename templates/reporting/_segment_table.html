@@ -13,6 +13,11 @@ first row group and line up somewhere else entirely (01-EHITUSJUHIS §5).
 The unknown bucket — «Teadmata aasta», «Klassifitseerimata», «Vastutaja
 määramata» — is marked and never dropped: it is part of the denominator and
 hiding it would make every other row look larger than it is (Stage-2E brief 42).
+
+«kokku» is `total`, the number the rows are read against (views._tables): the
+population when the unknown bucket is a row, so the rows add up to it
+(QA-STATS-07). The one includer, overview.html, always passes it.
+`overlapping` says that one Matter can sit in several rows.
 {% endcomment %}
 <section class="ovsection" aria-labelledby="stat-{{ result.key|lower }}-heading">
   <div class="ovsection__head">
@@ -21,7 +26,7 @@ hiding it would make every other row look larger than it is (Stage-2E brief 42).
     </h2>
     <span class="ovsection__meta">
       {% if result.definition.respects_period %}{{ reporting.period.label }}{% else %}Kogu korpus{% endif %}
-      · kokku {{ result.value }}
+      · kokku {{ total }}
     </span>
   </div>
 
@@ -81,6 +86,9 @@ hiding it would make every other row look larger than it is (Stage-2E brief 42).
           Näita veel {{ result.segments|length|add:"-5" }} ▾<span class="visually-hidden"> — {{ result.definition.label_et }}</span>
         </summary>
       </details>
+    {% endif %}
+    {% if overlapping %}
+      <p class="cardnote">Teema võib olla mitmes reas, seega read kokku võivad ületada teemade arvu.</p>
     {% endif %}
   {% else %}
     <p class="empty">Valitud vaates ei ole midagi loendada.</p>

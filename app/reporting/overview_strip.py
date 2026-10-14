@@ -39,7 +39,8 @@ from app.matters import register_filters, selectors, work_items
 from app.matters.department_dashboard import register_url
 from app.matters.enums import RecordMode
 from app.matters.models import Matter
-from app.reporting.selectors.base import REGISTER_DATA_SCOPE
+from app.reporting.context import ReportingContext
+from app.reporting.selectors.base import REGISTER_DATA_SCOPE, chip_params, merge_chip_params
 
 #: How far «tähtaeg 30 p jooksul» reaches.
 DEADLINE_WINDOW_DAYS = 30
@@ -75,6 +76,44 @@ def _scoped(params: dict[str, Any]) -> dict[str, Any]:
     (`REGISTER_DATA_SCOPE`, app/reporting/selectors/base.py).
     """
     return {**params, "andmed": REGISTER_DATA_SCOPE}
+
+
+def _chipped(context: ReportingContext | None, params: dict[str, Any]) -> dict[str, Any] | None:
+    """``params`` narrowed by the page's filter chips, or ``None`` if they cannot meet.
+
+    The strip and the rail count register populations of their own, and used to
+    count them department-wide whatever the filter bar said: under «Vastutaja:
+    Sandra» the strip printed «avatud teemat 3» and the rail «avatud teemat 6»
+    (QA-STATS-02). Owner decision D2: a visible filter affects every figure it
+    applies to. Every Matter chip applies to these populations; the *period*
+    does not, because each row states its own window («Praegu», «Aruandlus
+    <aasta>»), so it is deliberately not part of `chip_params`.
+
+    The chips go into the params rather than only into the URL, for the reason
+    `_scoped` gives: `_count` reads the dict the link is built from. ``None``
+    means a chip contradicts the row's own narrowing — «Kirje liik: Arhiiv»
+    against «avatud teemat», which is FULL only — and the honest figure is 0
+    with no list behind it (QA-STATS-08).
+    """
+    if context is None:
+        return params
+    if context.owner_unreadable:
+        return None
+    return merge_chip_params(chip_params(context), params)
+
+
+def _figure(
+    context: ReportingContext | None,
+    params: dict[str, Any],
+    caption: str,
+    count: Any,
+    tone: str = "",
+) -> Figure:
+    """One register-population figure: counted and linked from the same params."""
+    chipped = _chipped(context, params)
+    if chipped is None:
+        return Figure(0, caption, "", tone)
+    return Figure(count(chipped), caption, register_url(**chipped), tone)
 
 
 def _open_full() -> dict[str, Any]:
@@ -124,7 +163,14 @@ def _in_force_params(today: date) -> dict[str, Any]:
     )
 
 
-def strip(results: dict[str, Any], viewer: Any, today: date, period_label: str) -> list[Figure]:
+def strip(
+    results: dict[str, Any],
+    viewer: Any,
+    today: date,
+    period_label: str,
+    *,
+    context: ReportingContext | None = None,
+) -> list[Figure]:
     """The five-figure strip, as far as this product can honestly fill it.
 
     The first three are catalogued metrics read for their value and their own
@@ -150,18 +196,36 @@ def strip(results: dict[str, Any], viewer: Any, today: date, period_label: str) 
     # pages Matters, so a figure counting rows would have been a number with no
     # list behind it the first time one file won twice, and this module's whole
     # first rule is that a number opens the list it counted (docs/adr/0071).
+    #
+    # Narrowed by the page's chips like the three catalogued figures beside it
+    # (`_chipped`, QA-STATS-02); its window is the year its caption names.
+    population = Matter.objects.visible_to(viewer)
     figures.append(
-        Figure(
-            _count(viewer, _victory_params(today.year), today, Matter.objects.visible_to(viewer)),
+        _figure(
+            context,
+            _victory_params(today.year),
             f"teemat töövõiduga {today.year}",
-            register_url(**_victory_params(today.year)),
+            lambda params: _count(viewer, params, today, population),
         )
     )
     return figures
 
 
-def rail(viewer: Any, today: date, results: dict[str, Any]) -> list[RailBlock]:
+def rail(
+    viewer: Any,
+    today: date,
+    results: dict[str, Any],
+    *,
+    context: ReportingContext | None = None,
+) -> list[RailBlock]:
     """Praegu, and this year's reporting totals.
+
+    ``results["SUBMISSIONS_SENT"]`` must be computed over **this calendar
+    year**, whatever period the page shows: it sits under the heading
+    «Aruandlus <this year>» beside two rows that count this year, and printing
+    the page period's figure there made «kõik aastad» read as this year's sends
+    (QA-STATS-01). ``context`` is the page's filter state; its chips narrow
+    every row (`_chipped`, QA-STATS-02).
 
     *Praegu* is five register populations — the same five Ülevaade counts, in
     the same order and through the same parameters, so a reader moving between
@@ -196,10 +260,11 @@ def rail(viewer: Any, today: date, results: dict[str, Any]) -> list[RailBlock]:
         ({**_open_full(), "tegevus": selectors.MISSING}, "järgmise tegevuseta", "warning"),
     ):
         now_rows.append(
-            Figure(
-                _count(viewer, params, today, population, shared_items=items),
+            _figure(
+                context,
+                params,
                 caption,
-                register_url(**params),
+                lambda chipped: _count(viewer, chipped, today, population, shared_items=items),
                 tone,
             )
         )
@@ -213,20 +278,18 @@ def rail(viewer: Any, today: date, results: dict[str, Any]) -> list[RailBlock]:
     # only list either number can open is a list of Matters — and a caption
     # saying "töövõite" over a count of Matters would be the disagreement this
     # module exists to prevent (docs/adr/0071).
-    reporting_rows.append(
-        Figure(
-            _count(viewer, _victory_params(today.year), today, population),
-            "teemat töövõiduga",
-            register_url(**_victory_params(today.year)),
+    for params, caption in (
+        (_victory_params(today.year), "teemat töövõiduga"),
+        (_in_force_params(today), "teemat jõustunud aktiga"),
+    ):
+        reporting_rows.append(
+            _figure(
+                context,
+                params,
+                caption,
+                lambda chipped: _count(viewer, chipped, today, population),
+            )
         )
-    )
-    reporting_rows.append(
-        Figure(
-            _count(viewer, _in_force_params(today), today, population),
-            "teemat jõustunud aktiga",
-            register_url(**_in_force_params(today)),
-        )
-    )
 
     return [
         RailBlock("Praegu", now_rows),
