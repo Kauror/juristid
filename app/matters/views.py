@@ -26,6 +26,7 @@ from django import forms
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Count, F, Q
@@ -109,7 +110,15 @@ from app.matters import (
     workspace,
 )
 from app.matters import person_work as person_workspace
-from app.matters.deletion import delete_matter, deletion_may_be_offered, plan_matter_deletion
+from app.matters.deletion import (
+    DELETION_CONFIRMATION_STALE,
+    DeletionConfirmationStale,
+    deletion_may_be_offered,
+    may_delete_permanently,
+    permanently_delete_matter,
+    plan_matter_deletion,
+    record_refused_deletion,
+)
 from app.matters.department_dashboard import SeisFigure
 from app.matters.document_context import related_records
 from app.matters.enums import (
@@ -3487,7 +3496,17 @@ def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # `delete_matter` under the lock — and refuses whatever the offer did
         # not ask about (docs/adr/0120 §7, amended 2026-10-10). Still a callable,
         # so the check runs only where `header.html` is drawn.
-        "can_delete": functools.cache(lambda: can_write and deletion_may_be_offered(matter)),
+        #
+        # **And only to somebody who may delete permanently** (docs/adr/0165,
+        # owner decision D6): the department head, or a writer granted the
+        # capability by name. A specialist is not offered the link at all.
+        "can_delete": functools.cache(
+            lambda: (
+                can_write
+                and may_delete_permanently(request.user)
+                and deletion_may_be_offered(matter)
+            )
+        ),
         # No `submission_count`. The tab that displayed it is gone, and a count
         # nothing renders is a query nothing needs.
         "document_count": Document.objects.filter(matter=matter).visible_to(request.user).count(),
@@ -5615,56 +5634,65 @@ def matter_edit_assisted(request: HttpRequest, pk: Any) -> HttpResponse:
 @business_write_required
 @require_http_methods(["GET", "POST"])
 def matter_delete(request: HttpRequest, pk: Any) -> HttpResponse:
-    """`Kustuta teema` — a page that asks, and a POST that does it.
+    """`Kustuta teema` — a confirmation that asks, and a POST that does it.
 
     **A route of its own, not a second button on the edit form.** The question
     "should this record exist" is a different question from "are these facts
     right", and a destructive control inside the form that saves is one stray
-    Enter away from the wrong submit. The GET renders what would be removed;
-    the POST removes it. There is no third way in — `matters:matter_edit`
+    Enter away from the wrong submit. The GET renders the confirmation dialog;
+    the POST removes the Teema. There is no third way in — `matters:matter_edit`
     cannot delete, whatever it is sent (docs/adr/0096 §4.3).
 
-    **GET writes nothing.** `plan_matter_deletion` is a read: it walks the
-    ownership graph, counts the rows and evidence objects, and collects every
-    reason the deletion would refuse. A blocked Matter shows the reasons and no
-    final button, and the POST refuses independently — the page is presentation
-    and `delete_matter` is the boundary.
+    **Who** (docs/adr/0165 §2, owner decision D6): only somebody holding the
+    `matter.delete_permanently` capability — the department head by default, or
+    a writer granted it by name. `business_write_required` turns away a READER,
+    a technical ADMINISTRATOR and the shared-gate visitor first (404, as every
+    business write does); a SPECIALIST without the grant is then a 403 on the GET
+    and on a crafted POST alike, and the POST leaves an `ACCESS_REFUSED` trace.
+    `get_visible_matter` stays the record-level gate, so a restricted Matter is a
+    404 to somebody who may not see it.
 
-    **The same authorization as editing, and no more.** This is what the owner
-    asked for: deleting a Teema is a thing the application's users do, not an
-    administrator's privilege. `business_write_required` is the cohort —
-    SPECIALIST and DEPARTMENT_HEAD, the same two `Muuda teemat` requires — and
-    `get_visible_matter` is the record-level gate, so a restricted Matter is a
-    404 to somebody who may not see it rather than a refusal that confirms it
-    exists. A crafted POST from a READER or an ADMINISTRATOR is refused by the
-    decorator before this body runs (app/core/decorators.py, docs/adr/0096
-    §4.2).
-
-    **Nothing stronger was invented.** There is no existing canonical
-    permission over destructive Matter operations to reuse: closing a Matter,
-    which is the nearest thing the product had, is the same business-write
-    cohort. `ROLES_WITH_WORK_VICTORY_REVIEW` is the only narrower set in the
-    codebase and it is about claiming influence, not about data
-    (app/core/authorization.py).
+    **GET writes nothing.** `plan_matter_deletion` is a read; its `digest` goes
+    into the form, and the POST is refused unless the plan rebuilt under the row
+    lock still has that digest — a confirmation drawn before a new file or
+    opinion arrived is shown again, with the new counts, rather than honoured.
+    A second POST of the same confirmation finds no live Matter and is a 404;
+    nothing is deleted or audited twice.
     """
+    if not may_delete_permanently(request.user):
+        if request.method == "POST":
+            record_refused_deletion(
+                actor=request.user,
+                matter_id=pk,
+                ip_address=request.META.get("REMOTE_ADDR"),
+                user_agent=request.META.get("HTTP_USER_AGENT", ""),
+            )
+        raise PermissionDenied
     matter = get_visible_matter(request, pk)
 
     if request.method == "POST":
-        # **No plan is built before the POST.** `delete_matter` builds its own
-        # under the row lock, which is the only one that decides anything — one
-        # taken out here would be a second walk of the same graph whose answer
-        # nothing may act on.
         try:
-            delete_matter(matter=matter, actor=request.user)
+            permanently_delete_matter(
+                matter=matter,
+                actor=request.user,
+                confirmation=request.POST.get("confirm_digest", ""),
+                ip_address=request.META.get("REMOTE_ADDR"),
+                user_agent=request.META.get("HTTP_USER_AGENT", ""),
+            )
         except DomainError as error:
-            # The refusal, on the page that offered the button, with a fresh
-            # plan behind it — a blocker that appeared while somebody read the
-            # confirmation is exactly the case this branch exists for.
+            # The refusal, on the dialog that offered the button, with a fresh
+            # plan behind it — a blocker that appeared, or new content that
+            # makes the old confirmation stale, is exactly what this is for.
+            stale = isinstance(error, DeletionConfirmationStale)
             return render(
                 request,
                 "matters/matter_delete.html",
-                _delete_context(matter, plan_matter_deletion(matter), error=str(error)),
-                status=400,
+                _delete_context(
+                    matter,
+                    plan_matter_deletion(matter),
+                    error=DELETION_CONFIRMATION_STALE if stale else str(error),
+                ),
+                status=409 if stale else 400,
             )
         messages.success(request, "Teema kustutati.")
         # The register, never the Matter's own address: that URL answers 404
@@ -5678,12 +5706,14 @@ def matter_delete(request: HttpRequest, pk: Any) -> HttpResponse:
 
 
 def _delete_context(matter: Matter, plan: Any, error: str = "") -> dict[str, Any]:
-    """What the confirmation page reads.
+    """What the confirmation dialog reads.
 
     The counts are named per business record rather than per table. A person
     deciding whether to destroy a file needs to know it holds four entries and
-    two opinions; `matters.MatterSourceOrganisation` is a join row and telling
-    them about it would bury the sentence that matters.
+    two opinions — and how many of those went out, because a sent opinion's
+    final evidence is otherwise immutable (docs/adr/0165 §3);
+    `matters.MatterSourceOrganisation` is a join row and telling them about it
+    would bury the sentence that matters.
     """
     labelled = [
         (label, plan.count_of(model))
@@ -5694,6 +5724,7 @@ def _delete_context(matter: Matter, plan: Any, error: str = "") -> dict[str, Any
         "matter": matter,
         "plan": plan,
         "summary": labelled,
+        "sent_opinions": plan.sent_opinions,
         "evidence_objects": len(plan.evidence_keys),
         "delete_error": error,
     }
@@ -5842,7 +5873,13 @@ def _edit_context(
         # refusal page. The plan is the one `matter_delete` renders and
         # `delete_matter` rebuilds under the lock, so the page says what the route
         # will say; the route still re-checks every blocker (docs/adr/0120).
-        "deletion_plan": plan_matter_deletion(matter),
+        #
+        # **Only for somebody who may delete permanently** (docs/adr/0165): the
+        # section is not drawn for anybody else, and the walk is not paid for.
+        "may_delete": may_delete_permanently(request.user),
+        "deletion_plan": (
+            plan_matter_deletion(matter) if may_delete_permanently(request.user) else None
+        ),
     }
 
 

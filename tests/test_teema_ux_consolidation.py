@@ -407,7 +407,9 @@ def test_the_sub_choices_are_their_own_radio_groups(signed_in, specialist, stage
     assert zone.count('name="arvamuse-liik"') == 3
 
 
-def test_teema_toimingud_is_gone_and_both_controls_moved(signed_in, specialist, stage):
+def test_teema_toimingud_is_gone_and_both_controls_moved(
+    signed_in, specialist, stage, client, department_head
+):
     """§9's section held one control under a heading of its own, and is retired.
 
     Close and delete are still not content added to the file — that reading
@@ -429,11 +431,17 @@ def test_teema_toimingud_is_gone_and_both_controls_moved(signed_in, specialist, 
     assert "+ Lõpeta teema" not in zone
     assert "disclosure-chip--last" not in zone
 
-    # `Kustuta` is in the header, beside `Muuda teemat`, and not in the launcher.
+    # `Kustuta` is in the header, beside `Muuda teemat`, and not in the launcher
+    # — for the department head, who alone may delete (docs/adr/0165).
     head = page[: page.index('id="lisa-teemale"')]
     assert "Muuda teemat" in head
-    assert "matterhead__delete" in head
+    assert "matterhead__delete" not in head
     assert "Kustuta" not in zone
+    client.force_login(department_head)
+    as_head = page_of(client, teema_url(matter))
+    head = as_head[: as_head.index('id="lisa-teemale"')]
+    assert "Muuda teemat" in head
+    assert "matterhead__delete" in head
 
 
 # ---------------------------------------------------------------------------

@@ -509,3 +509,17 @@ class SecurityEventType(models.TextChoices):
     # a final-administrator removal, a delegation beyond the actor's own
     # authority. Recorded so that somebody probing the boundary leaves a trace.
     ACCESS_REFUSED = "ACCESS_REFUSED", "Turvatundlik toiming keelati"
+    # -- permanent deletion of a Teema (docs/adr/0165) ---------------------
+    #
+    # The one trace a deleted Teema leaves in the access trail: who, when,
+    # which Matter id and reference, and how much went. **Never the title, a
+    # summary, a file name or any other business content** — the record exists
+    # to prove a deletion happened, not to keep what was deleted.
+    MATTER_DELETED = "MATTER_DELETED", "Teema kustutati jäädavalt"
+    # The rows were deleted and committed, but one or more stored objects could
+    # not be removed afterwards. The DB is consistent (nothing points at them);
+    # the keys are recorded so the orphan pruners or an operator retry them.
+    MATTER_DELETION_STORAGE_PENDING = (
+        "MATTER_DELETION_STORAGE_PENDING",
+        "Kustutatud teema failide eemaldamine ootab kordamist",
+    )

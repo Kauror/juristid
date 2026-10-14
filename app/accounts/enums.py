@@ -43,6 +43,11 @@ class Capability(models.TextChoices):
     )
     ASSIGN_WORK = "work.assign", "Töö määramine ja ümbermääramine"
     REVIEW_WORK_VICTORIES = "work_victory.review", "Töövõitude kinnitamine"
+    #: Permanent deletion of a Teema, sent opinions and their final evidence
+    #: included (docs/adr/0165). The department head's by default; a writing
+    #: colleague may be granted it individually; nobody inherits it from a
+    #: technical or an account-administration role.
+    DELETE_MATTERS = "matter.delete_permanently", "Teema jäädav kustutamine"
     # -- administrative ----------------------------------------------------
     MANAGE_ACCOUNTS = "accounts.manage", "Kasutajakontode haldus"
     DELEGATE_ADMINISTRATION = "accounts.delegate", "Haldusõiguste andmine"

@@ -69,11 +69,14 @@ def test_a_background_citation_from_another_matter_refuses_the_deletion(cited, s
     assert Matter.objects.filter(pk=source.pk).exists()
 
 
-def test_the_refusal_names_neither_the_other_matter_nor_its_title(signed_in, cited):
+def test_the_refusal_names_neither_the_other_matter_nor_its_title(client, department_head, cited):
     source, citing, _opinion = cited
+    client.force_login(department_head)
 
-    response = signed_in.post(
-        reverse("matters:matter_delete", kwargs={"pk": source.pk}), follow=True
+    response = client.post(
+        reverse("matters:matter_delete", kwargs={"pk": source.pk}),
+        {"confirm_digest": plan_matter_deletion(source).digest},
+        follow=True,
     )
     body = response.content.decode()
 

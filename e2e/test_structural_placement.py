@@ -36,6 +36,7 @@ import pytest
 from playwright.sync_api import expect
 
 from e2e.conftest import (
+    HEAD,
     MARTIN,
     open_add_panel,
     open_hetkeseis,
@@ -153,8 +154,17 @@ def test_muuda_and_kustuta_are_in_the_same_header_action_region(page, base_url: 
     nearby, and fail for a gap somebody widened on purpose.
     """
     sign_in(page, base_url, MARTIN)
-    _matter(page, base_url)
+    detail = _matter(page, base_url)
 
+    # A specialist is not offered the deletion (docs/adr/0165); the department
+    # head is, beside `Muuda teemat`.
+    crumbs = page.locator("#teema-pais .matterhead__crumbs")
+    expect(crumbs.locator(".matterhead__edit")).to_have_count(1)
+    expect(crumbs.locator(".matterhead__delete")).to_have_count(0)
+
+    sign_in(page, base_url, HEAD)
+    page.goto(detail)
+    page.wait_for_load_state("networkidle")
     crumbs = page.locator("#teema-pais .matterhead__crumbs")
     expect(crumbs.locator(".matterhead__edit")).to_have_count(1)
     expect(crumbs.locator(".matterhead__delete")).to_have_count(1)
