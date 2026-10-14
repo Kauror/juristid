@@ -85,7 +85,9 @@ same window. No model, no migration, no new event type, no write.
 >   was «määras» once, when planned); a check re-dated from a corrected send
 >   date (`recalculated`). A check cancelled because its opinion was withdrawn
 >   (reason «Arvamus võeti tagasi» with the `follow_up` block) is the
->   withdrawal's consequence, not a separate «tühistas» (owner, 2026-10-14).
+>   withdrawal's consequence, not a separate «tühistas» (owner, 2026-10-14);
+>   so is one cancelled because its opinion was replaced (reason «Arvamus
+>   asendati», same shape) — the replacement's consequence.
 >   These are **counted aside and marked as the system's**
 >   (`Coverage.automatic_steps`, «Süsteemi automaatseid tegevuse muudatusi …
 >   mida ei loeta kellegi tegevuseks»), never as a person's «määras» or

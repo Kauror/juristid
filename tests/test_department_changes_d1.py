@@ -559,3 +559,28 @@ def test_a_persons_own_cancellation_still_counts_beside_a_withdrawal(
     # Even in the same words: a step that watched no opinion is the person's.
     assert breakdown["tühistas järgmise tegevuse"] == 1
     assert breakdown["määras järgmise tegevuse"] == 1
+
+
+def test_replacing_an_opinion_is_not_a_person_cancelling_its_check(
+    department_head, specialist, ministry
+):
+    """The check that ends because its opinion was replaced («Arvamus
+    asendati») is the replacement's consequence, counted aside; the audit row
+    stays and names the person."""
+    from app.submissions.services import supersede_submission
+
+    matter = create_matter(title="Asendatud", owner=specialist, actor=specialist)
+    opinion = mark_sent(matter, specialist, [ministry])
+    check = active_check(opinion)
+    before = dc.build_changes(department_head).coverage.automatic_steps
+
+    supersede_submission(submission=opinion, actor=specialist)
+
+    changes = dc.build_changes(department_head)
+    assert _breakdown(changes)["tühistas järgmise tegevuse"] == 0
+    assert changes.coverage.automatic_steps == before + 1
+    event = ChangeEvent.objects.get(
+        event_type=ChangeEventType.NEXT_ACTION_CANCELLED, object_id=check.pk
+    )
+    assert event.actor == specialist
+    assert event.payload["reason"] == "Arvamus asendati"
