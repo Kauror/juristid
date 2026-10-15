@@ -28,7 +28,7 @@ changes = [
   "Kui kolleeg muutis vahepeal vastutajat või saabumise kuupäeva, ei kirjuta vanas aknas tehtud valik seda enam üle.",
   "Uue teema salvestamine pärast brauseri «Tagasi» nuppu ei loo enam sama teemat teist korda; sama pealkirjaga uue teema saab luua nupuga «Loo siiski uus».",
   "Kui arvamuse tähtaeg on varasem kui saabumise kuupäev, küsitakse enne salvestamist kinnitust. Suletud ja arhiiviteemal ei pakuta «+ Saabus» väljale tänast kuupäeva.",
-  "Teemat saab jäädavalt kustutada ainult osakonnajuhataja; enne kustutamist näidatakse, mis kustub.",
+  "Teemat saab jäädavalt kustutada osakonnajuhataja või selleks eraldi õiguse saanud jurist; enne kustutamist näidatakse, mis kustub.",
   "Statistika avalehe arvud järgivad valitud filtreid (nt vastutaja); «Aruandlus» loeb pealkirjas nimetatud aastat ning kaartide lingid avavad sama valiku, mida arv loeb.",
   "Muudatuste lehel ei omistata süsteemi tehtud muudatusi (nt automaatset järelkontrolli) enam inimesele ja teema sulgemine on üks rida. Jõustumiste «Järgmise 30 päeva» hõlmab täpselt 30 päeva, tänane kaasa arvatud.",
   "Teemade registris on tähtaja ületanud järgmine samm märgitud ka sõnadega «üle tähtaja». Kolleege näidatakse eesnimega (nt «Marko»).",
