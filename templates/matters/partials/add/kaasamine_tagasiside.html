@@ -1,25 +1,29 @@
 {% load form_labels %}
 {% comment %}
-`+ Kaasamine · Lisa tagasiside` — what came back from a round that is open
-(docs/adr/0142).
+`+ Kaasamine · Lisa tagasiside` — what came back from a round (docs/adr/0142,
+docs/adr/0167 §2).
 
 **The canonical record, with the round named.** A `Meile saadetud tagasiside`
 tied to the round — the same record `+ Arvamus / tagasiside` writes, through
-the same service — so the round row counts it and its files follow it. Saving
-it also closes the round, in the same transaction, through the canonical
-`complete_engagement_feedback` (owner's round, 2026-10-07; docs/adr/0142
-amendment). `Tehtud` on the PRAEGUNE wait row opens this same form.
+the same service — so the round row counts it and its files follow it. The
+first answer to an open round also finishes its wait, in the same transaction,
+through the canonical `complete_engagement_feedback` (owner's round,
+2026-10-07; docs/adr/0142 amendment). A later answer to a finished round is
+recorded against it and leaves the closure as it was (docs/adr/0167 §2).
+`Tehtud` on the PRAEGUNE wait row opens this same form.
 
-**The round is chosen, never guessed.** The select offers this Matter's open
-rounds as this reader may see them, and is filled in only when there is exactly
-one. With none, the panel says so and draws no form that could only refuse.
+**The round is chosen, never guessed.** The select offers this Matter's rounds
+as this reader may see them — open ones first, finished ones marked
+«lõpetatud» — and is filled in only when there is exactly one open round, or
+none open and exactly one finished. With no round at all, the panel says so and
+draws no form that could only refuse.
 
 **No `Märkus`** (owner's review, 2026-10-12): everything relevant goes into
 `Saadud tagasiside`; the form does not declare a note field at all.
 
     form    `EngagementReplyForm`, bound or unbound
 {% endcomment %}
-{% if form.open_round_count %}
+{% if form.round_count %}
   <form class="addform" data-addform
         hx-post="{% url 'matters:add_engagement_reply' pk=matter.pk %}"
         hx-target="#teema-vaade" hx-swap="outerHTML"
@@ -55,5 +59,5 @@ one. With none, the panel says so and draws no form that could only refuse.
     </div>
   </form>
 {% else %}
-  <p class="cardnote">Avatud kaasamist ei ole. Alusta kõigepealt kaasamist.</p>
+  <p class="cardnote">Kaasamist ei ole. Alusta kõigepealt kaasamist.</p>
 {% endif %}

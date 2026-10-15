@@ -967,3 +967,43 @@ def test_an_apply_converges_the_metadata_it_wrote_under_suspension(
     # Bounded, and already converged: no rebuild of the corpus is required.
     assert rebuild_archive_index().written == 0
     assert refresh_archive_binaries([row.binary_id]) == 0
+
+
+def test_a_reviewed_decision_naming_a_test_matter_writes_no_opinion(archive_path, administrator):
+    """QA-STATS-04: the apply path refuses a TEST Matter even when a decision names one.
+
+    The queue now refuses that decision (`opinion_views._chosen_matter`); a row
+    decided before the guard existed must still never become a canonical SENT
+    opinion on a development record.
+    """
+    from app.matters.enums import MatterDataClass
+
+    _matter, letter = strict_pair(number=209)
+    annex = syn.opinion(
+        date="2024-04-10",
+        recipient="Näidisministeerium",
+        title="Arvamus näidisregistri seaduse muutmise kohta Lisa 1",
+        marker="bundle-209b",
+    )
+    archive = archive_path([letter, annex])
+    first = plan_for(archive)
+    apply_plan(first, batch=open_batch(first))
+
+    test_matter = factories.MatterFactory(data_class=MatterDataClass.TEST)
+    OpinionMatchCandidate.objects.filter(item__sha256=letter.sha256).update(
+        matter=test_matter,
+        state=OpinionCandidateState.LINKED,
+        review_approves_submission=True,
+        reviewed_sent_date=datetime.date(2024, 4, 10),
+        decided_by=administrator,
+        decided_at=timezone.now(),
+    )
+    before = counts()
+
+    second = plan_for(archive)
+    report = apply_plan(second, batch=open_batch(second))
+
+    assert not Submission.objects.filter(matter=test_matter).exists()
+    assert counts() == before
+    assert any("testandmete teemale" in reason for reason in report.skipped), report.skipped
+    assert OpinionCandidateState.APPLIED not in states()

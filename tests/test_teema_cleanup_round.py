@@ -96,7 +96,7 @@ def _section(page: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def test_kustuta_sits_beside_muuda_in_the_header(signed_in, specialist):
+def test_kustuta_sits_beside_muuda_in_the_header(client, department_head, specialist):
     """Both answer «this record is wrong», so they are one errand.
 
     `Kustuta` sat at the foot of the page in a section of its own, which put the
@@ -104,7 +104,9 @@ def test_kustuta_sits_beside_muuda_in_the_header(signed_in, specialist):
     they realise a Matter is filed wrongly.
     """
     matter = _matter(specialist)
-    page = _page(signed_in, matter)
+    # Offered to the department head only since docs/adr/0165.
+    client.force_login(department_head)
+    page = _page(client, matter)
     head = page[: page.index('id="lisa-teemale"')]
 
     assert "Muuda teemat" in head

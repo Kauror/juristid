@@ -257,6 +257,15 @@ the one rendered on the confirmation page was true when it was drawn.
 
 ### 4.5 Authorization
 
+> **Amended by ADR 0165 (2026-10-14, owner decision D6).** Deleting is no
+> longer the editing cohort's. It needs the `matter.delete_permanently`
+> capability — the department head's by default, grantable to a specialist by
+> name, never held by a READER or a technical ADMINISTRATOR. The confirmation
+> becomes a dialog ending «Seda tegevust ei saa tagasi võtta.» / «Loobu» /
+> «Kustuta jäädavalt», bound to the plan's digest; the audit row no longer keeps
+> the title, and the tombstone's title and summaries are scrubbed. The
+> paragraph below is the original reasoning, kept as history.
+
 The same cohort that may open `Muuda teemat`: `business_write_required` —
 SPECIALIST and DEPARTMENT_HEAD — plus `get_visible_matter`, so a restricted
 Matter is a 404 to somebody who may not see it rather than a refusal confirming

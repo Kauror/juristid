@@ -627,7 +627,7 @@ def test_an_inline_handover_to_a_colleague_succeeds(client, specialist, normal_m
 
     response = client.post(
         reverse("matters:update_field", kwargs={"pk": normal_matter.pk, "field": "owner"}),
-        {"owner": str(head.pk)},
+        {"owner": str(head.pk), "revision": matter_field_revision(normal_matter, "owner")},
     )
 
     assert response.status_code == 200
@@ -647,7 +647,7 @@ def test_the_inline_control_accepts_the_departed_owner_it_is_displaying(client, 
 
     response = client.post(
         reverse("matters:update_field", kwargs={"pk": matter.pk, "field": "owner"}),
-        {"owner": str(former.pk)},
+        {"owner": str(former.pk), "revision": matter_field_revision(matter, "owner")},
     )
 
     assert response.status_code == 200
@@ -1008,7 +1008,10 @@ def test_a_report_chip_names_a_departed_colleague_rather_than_calling_them_unkno
     response = client.get(reverse("reporting:matters"), {ctx.PARAM_OWNER: str(former.pk)})
     values = [chip.value for chip in response.context["chips"]]
 
-    assert former.display_name in values
+    # Named as the Statistika owner picker names every colleague: the first
+    # name, lengthened only where two share it (app.accounts.naming; QA naming
+    # decision 2026-10-14). The point here is that the colleague is named.
+    assert former.get_short_name() in values
     assert "tundmatu" not in values
 
 

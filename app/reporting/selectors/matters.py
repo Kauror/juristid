@@ -22,6 +22,8 @@ from __future__ import annotations
 
 from django.db.models import Count, Exists, OuterRef
 
+from app.accounts.models import User
+from app.accounts.naming import disambiguated_names
 from app.legacy_import.source_pages import MatterSourcePage
 from app.matters.enums import MatterOrigin, RecordMode
 from app.matters.selectors import MISSING
@@ -264,15 +266,20 @@ def matters_by_owner(context: ReportingContext) -> MetricResult:
     population = population_for(context, spec)
     population_count = count(population)
 
-    rows = (
+    rows = list(
         population.filter(owner__isnull=False)
         .values("owner_id", "owner__display_name")
         .annotate(total=grouped_count())
         .order_by("owner__display_name")
     )
+    # Colleagues by first name, as the register's Vastutaja picker calls them,
+    # lengthened only where two rows would read the same (`app.accounts.naming`,
+    # QA naming decision: «Marko Udras» is «Marko»). Display only — the row
+    # still filters by the owner's id.
+    labels = disambiguated_names(User.objects.filter(pk__in=[row["owner_id"] for row in rows]))
     segments = [
         Segment(
-            label=row["owner__display_name"],
+            label=labels.get(row["owner_id"], row["owner__display_name"]),
             value=row["total"],
             url=register_url(context, vastutaja=str(row["owner_id"])),
         )

@@ -226,7 +226,18 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
         return self.display_name
 
     def get_short_name(self) -> str:
-        return self.display_name.split(" ")[0] if self.display_name else self.upn
+        """What colleagues call this person: the first word of the display name.
+
+        Split on any whitespace rather than on one ASCII space. A name typed
+        or synced as `Marko Udras`, or with a leading or doubled space,
+        came back whole or empty from `split(" ")`, so the first-name surfaces
+        named one colleague in full (or by account) beside everybody else's
+        first name (QA remediation 2026-10-14). Never the identity: `upn`
+        and `display_name` are untouched, and `app.accounts.naming` decides
+        when a shared first name needs more.
+        """
+        words = (self.display_name or "").split()
+        return words[0] if words else self.upn
 
     @property
     def account_status(self) -> str:

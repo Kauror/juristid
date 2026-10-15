@@ -3490,6 +3490,90 @@
     return chosen[0].getAttribute("data-instrument-key") === key;
   }
 
+  /* `Uus teema` remembers, in this tab, the tokens of the forms it rendered
+     (QA-COORD-01, docs/adr/0166 §2). The page is `no-store`, so browser Back
+     fetches it again with a fresh `intake` token while Chrome restores what
+     was typed — and the second Salvesta looked like a new form. On a page
+     reached by Back or Forward, those earlier tokens are posted as
+     `intake_earlier`, and the server recognises the Teema one of them created
+     *under the same title*; a different title is a new Teema.
+
+     `sessionStorage`, not `history.state`: calling `history.replaceState` on
+     load makes Chromium drop the restored form state, which is the very
+     restoration this answers. Without scripting or storage nothing is posted
+     and the server's ten-minute window answers instead. */
+  var SUBMITTED_INTAKE_KEY = "juristid.uusTeema.submittedIntake";
+
+  function readSubmittedIntake() {
+    try {
+      var stored = JSON.parse(window.sessionStorage.getItem(SUBMITTED_INTAKE_KEY) || "[]");
+      return Array.isArray(stored)
+        ? stored.filter(function (token) {
+            return typeof token === "string" && token;
+          })
+        : [];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  function reachedByHistory() {
+    try {
+      var entries = window.performance.getEntriesByType("navigation");
+      return Boolean(entries && entries[0] && entries[0].type === "back_forward");
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function bindCreateFormHistory(scope) {
+    (scope || document).querySelectorAll("[data-intake-earlier]").forEach(function (holder) {
+      if (!once(holder, "IntakeEarlier")) {
+        return;
+      }
+      var form = holder.closest("form");
+      if (!form) {
+        return;
+      }
+      var token = function () {
+        var field = form.querySelector('input[name="intake"]');
+        return field ? field.value : "";
+      };
+      /* Added to what the form *sends*, never to the form itself: Chromium
+         puts the typed values back after the document is rebuilt, and an
+         extra control in the form makes it drop that restoration altogether
+         (measured in e2e/test_qa_audit_back_resubmit.py). `formdata` fires
+         as the submission is built, after every `submit` handler. */
+      if (reachedByHistory()) {
+        var current = token();
+        var earlierTokens = readSubmittedIntake()
+          .filter(function (earlier) {
+            return earlier !== current;
+          })
+          .slice(-20);
+        form.addEventListener("formdata", function (event) {
+          earlierTokens.forEach(function (earlier) {
+            event.formData.append("intake_earlier", earlier);
+          });
+        });
+      }
+      /* Every token this tab rendered, remembered on load. One that was never
+         submitted names no Teema, so posting it later is harmless. */
+      var rendered = token();
+      if (rendered) {
+        try {
+          var list = readSubmittedIntake().filter(function (earlier) {
+            return earlier !== rendered;
+          });
+          list.push(rendered);
+          window.sessionStorage.setItem(SUBMITTED_INTAKE_KEY, JSON.stringify(list.slice(-20)));
+        } catch (error) {
+          /* No storage: the server's time window answers instead. */
+        }
+      }
+    });
+  }
+
   function bindInitiative(scope) {
     (scope || document).querySelectorAll("[data-initiative-mode]").forEach(function (row) {
       if (!once(row, "Initiative")) {
@@ -4968,6 +5052,7 @@
     bindSeisHelp(document);
     bindStageGuidance(document);
     bindRelatedPicker(document);
+    bindCreateFormHistory(document);
     bindInitiative(document);
     bindSentProposal(document);
     bindRequiredAction(document);

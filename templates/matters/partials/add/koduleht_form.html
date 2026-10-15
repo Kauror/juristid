@@ -11,6 +11,7 @@ panel. Under `PRAEGUNE TEGEVUS` it was drawn a second time for the current
               hx-post="{% url 'matters:add_website_overview' pk=matter.pk %}"
               hx-target="#teema-vaade" hx-swap="outerHTML">
           {% csrf_token %}
+          {% include "matters/partials/add/launch_step.html" with form_key="website_overview_form" %}
           {% comment %}
             **Link first, then what the link says** (owner's round, 2026-10-07):
             `Link`, `Kuupäev`, `Pealkiri`, `Liik`. The lawyer pastes the address;

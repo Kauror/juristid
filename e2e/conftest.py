@@ -700,9 +700,12 @@ def record_marge(
     stage that ends the Matter closes it, as the panel's did. Returns the
     response status.
 
-    ``confirm_follow_up_closure`` posts the answer to «this file still has a
-    Koja arvamuse järelkontroll — close anyway?» (docs/adr/0146 §8); a file with
-    no pending check closes the same with it or without it.
+    ``confirm_follow_up_closure`` answers «this file still has live work —
+    close anyway?» (docs/adr/0146 §8, docs/adr/0152) the way a person does: the
+    save is posted, and when it is refused for the work it would end, posted
+    again with the digest that refusal named — the confirmation is bound to the
+    work the warning counted (docs/adr/0152 §7). A file with nothing live closes
+    on the first post.
     """
     stage_id = ""
     if stage:
@@ -721,21 +724,28 @@ def record_marge(
         assert stage_id, f"no Hetkeseis {stage!r} in the header"
     status = page.evaluate(
         """async ({url, title, occurredOn, stage, asNext, files, confirm}) => {
-            const data = new FormData();
-            data.append('csrfmiddlewaretoken',
-                document.querySelector('input[name=csrfmiddlewaretoken]').value);
-            data.append('title', title);
-            data.append('occurred_on', occurredOn);
-            if (stage) data.append('stage', stage);
-            if (asNext) data.append('as_next_step', 'on');
-            if (confirm) data.append('confirm_follow_up_closure', 'on');
-            for (const [name, bytes] of files) {
-                data.append('attachments', new File([new Uint8Array(bytes)], name));
+            const send = async (digest) => {
+                const data = new FormData();
+                data.append('csrfmiddlewaretoken',
+                    document.querySelector('input[name=csrfmiddlewaretoken]').value);
+                data.append('title', title);
+                data.append('occurred_on', occurredOn);
+                if (stage) data.append('stage', stage);
+                if (asNext) data.append('as_next_step', 'on');
+                if (digest) data.append('confirm_follow_up_closure', digest);
+                for (const [name, bytes] of files) {
+                    data.append('attachments', new File([new Uint8Array(bytes)], name));
+                }
+                return fetch(url, {
+                    method: 'POST', body: data, credentials: 'same-origin',
+                    headers: {'HX-Request': 'true'},
+                });
+            };
+            let response = await send('');
+            const digest = response.headers.get('X-Closure-Digest');
+            if (confirm && response.status === 400 && digest) {
+                response = await send(digest);
             }
-            const response = await fetch(url, {
-                method: 'POST', body: data, credentials: 'same-origin',
-                headers: {'HX-Request': 'true'},
-            });
             return response.status;
         }""",
         {

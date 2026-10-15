@@ -26,6 +26,7 @@ from django import forms
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Count, F, Q
@@ -72,7 +73,7 @@ from app.core.decorators import business_write_required
 from app.core.enums import Visibility
 from app.core.errors import DomainError
 from app.core.middleware import is_htmx
-from app.core.request_params import bounded_int, safe_local_path
+from app.core.request_params import bounded_int, digits_or_none, safe_local_path
 from app.documents import pending as pending_uploads
 from app.documents.enums import DocumentRole, ExtractionState
 from app.documents.filenames import NFC
@@ -97,21 +98,40 @@ from app.legacy_import.register_display import (
 )
 from app.matters import (
     activity,
+    date_order,
     department_dashboard,
+    duplicate_intake,
+    engagement_replies,
     intake_staging,
     legal_process,
     register_dates,
     register_filters,
     selectors,
+    step_launch,
     work_items,
     workspace,
 )
 from app.matters import person_work as person_workspace
-from app.matters.deletion import delete_matter, deletion_may_be_offered, plan_matter_deletion
+from app.matters.deletion import (
+    DELETION_CONFIRMATION_STALE,
+    DeletionConfirmationStale,
+    deletion_may_be_offered,
+    may_delete_permanently,
+    permanently_delete_matter,
+    plan_matter_deletion,
+    record_refused_deletion,
+)
 from app.matters.department_dashboard import SeisFigure
 from app.matters.document_context import related_records
-from app.matters.enums import MatterDataClass, MatterOrigin, RecordMode
+from app.matters.enums import (
+    MatterDataClass,
+    MatterOrigin,
+    RecordMode,
+    WebsiteOverviewKind,
+    WebsiteOverviewStatus,
+)
 from app.matters.episode_timeline import matter_episode_timeline
+from app.matters.follow_up_restart import restart_offers
 from app.matters.forms import (
     ENGAGEMENT_UNCHANGED,
     FOLLOW_UP_CLOSURE_FIELD,
@@ -135,6 +155,7 @@ from app.matters.forms import (
     ExternalPositionEvidenceForm,
     FollowUpCheckForm,
     FollowUpDateForm,
+    FollowUpRestartForm,
     IncomingIntakeForm,
     KodaOpinionForm,
     MatterCreateForm,
@@ -244,7 +265,6 @@ from app.matters.services import (
     acknowledge_assignment_notice,
     assign_matter,
     change_stage,
-    complete_engagement_feedback,
     correct_engagement,
     correct_external_position,
     correct_procedural_development,
@@ -315,7 +335,7 @@ from app.taxonomy.models import PolicyArea
 from app.taxonomy.vocabulary import selectable_policy_areas
 from app.workflow import plan as work_plan
 from app.workflow.consistency import current_work_alerts
-from app.workflow.enums import Track
+from app.workflow.enums import PlanStepOperation, Track
 from app.workflow.follow_ups import FOLLOW_UP_CHANGED, FollowUpClosureUnconfirmed
 from app.workflow.models import MatterPlanStep, NextAction, StageVocabulary
 from app.workflow.selectors import stages_including
@@ -368,8 +388,11 @@ def page_size_from(raw: str | None) -> tuple[int, str]:
     value = (raw or "").strip()
     if value == PAGE_SIZE_ALL:
         return PAGE_SIZE_ALL_BOUND, PAGE_SIZE_ALL
-    if value.isdigit() and int(value) in PAGE_SIZE_CHOICES:
-        return int(value), value
+    # ASCII digits only: `²` passed `isdigit()` and raised in `int()`
+    # (QA-SUBDOCS-01).
+    number = digits_or_none(value)
+    if number is not None and number in PAGE_SIZE_CHOICES:
+        return number, str(number)
     return PAGE_SIZE, str(PAGE_SIZE)
 
 
@@ -1996,7 +2019,32 @@ def assign_owner(request: HttpRequest, pk: Any) -> HttpResponse:
         return HttpResponseRedirect(_safe_next(request) or reverse("matters:matter_list"))
 
     try:
-        assign_matter(matter=matter, owner=form.cleaned_data.get("owner"), actor=request.user)
+        with transaction.atomic():
+            # **The owner the row showed, or nothing** (QA-WORKFLOW-03,
+            # docs/adr/0166 §1): the row posts the `owner` revision it was drawn
+            # with, and a colleague's assignment since is refused rather than
+            # silently handed on — the same guard, under the same lock, as the
+            # header's `Vastutaja`. A missing token is a conflict here too.
+            matter = guard_matter_field_revision(
+                matter=matter, field="owner", expected=request.POST.get("revision")
+            )
+            assign_matter(matter=matter, owner=form.cleaned_data.get("owner"), actor=request.user)
+    except MatterFieldConflict as conflict:
+        current = conflict.current
+        messages.error(
+            request,
+            f"«{current.title}» vastutajat on vahepeal mujal muudetud — "
+            + (
+                f"see on nüüd {current.owner.get_short_name()}."
+                if current.owner
+                else "teema on nüüd vastutajata."
+            )
+            + " Vaata see üle ja vali uuesti.",
+        )
+        # A plain form on a full page, so the answer is the register again with
+        # the refusal on it and the stored owner in the row — the page-level
+        # form of the header's 409.
+        return HttpResponseRedirect(_safe_next(request) or reverse("matters:matter_list"))
     except DomainError as error:
         messages.error(request, str(error))
     else:
@@ -2261,6 +2309,19 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                 )
                 if claim.replayed:
                     raise _FormAlreadySubmitted(claim.session)
+                # **And not the same Teema again by accident** (QA-COORD-01,
+                # docs/adr/0166 §2): browser Back re-fetches this page with a
+                # fresh token while restoring the typed title. A Teema this
+                # person just filed — or filed from one of this form's earlier
+                # tokens — under the same title is reported, and filed again
+                # only on «Loo siiski uus». Refused here, so the claim above
+                # rolls back with it and the token stays usable.
+                duplicate_intake.refuse_unconfirmed_duplicate(
+                    actor=request.user,
+                    title=data["title"],
+                    earlier_tokens=request.POST.getlist(duplicate_intake.EARLIER_FIELD),
+                    confirmed=bool(request.POST.get(duplicate_intake.CONFIRM_FIELD)),
+                )
 
                 # The files this press files. Staged first, because they were
                 # chosen first: each becomes one Document with one immutable
@@ -2416,24 +2477,27 @@ def matter_create(request: HttpRequest) -> HttpResponse:
             # somebody is most likely to hit twice while they work out which
             # institution the catalogue means, and it is no more a reason to
             # take their attachment away than a mistyped valdkond is.
-            form.add_error(None, str(error))
+            # The just-filed duplicate is answered by its own block, with the
+            # Teema it found and «Loo siiski uus», not as a form error.
+            recent = getattr(error, "existing", None)
+            if recent is None:
+                form.add_error(None, str(error))
             newly_held = pending_uploads.hold(
                 request.session, _not_already_staged(chosen, intake_session)
             )
-            return render(
+            context = _create_context(
                 request,
-                "matters/matter_create.html",
-                _create_context(
-                    request,
-                    form,
-                    held_keys=[*held_keys, *(item.key for item in newly_held)],
-                    # Always a token on the re-rendered form, so the corrected
-                    # save is protected like the first one (ENG-074).
-                    intake_session=intake_session
-                    or intake_staging.open_session(owner=request.user),
-                ),
-                status=400,
+                form,
+                held_keys=[*held_keys, *(item.key for item in newly_held)],
+                # Always a token on the re-rendered form, so the corrected
+                # save is protected like the first one (ENG-074). A refused
+                # duplicate rolled its claim back, so its token is still open
+                # and «Loo siiski uus» files under it exactly once.
+                intake_session=intake_session or intake_staging.open_session(owner=request.user),
             )
+            context["recent_duplicate"] = recent
+            context["recent_duplicate_confirm_field"] = duplicate_intake.CONFIRM_FIELD
+            return render(request, "matters/matter_create.html", context, status=400)
 
         # The save survived, so the hold is over. Released after the commit
         # rather than inside it: deleting the held bytes is not part of the
@@ -3161,6 +3225,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # Built once and read twice: the rail draws its nodes and `matter_rail`
     # merges the dated points into them.
     rail = legal_process_rail(matter=matter, user=request.user, context=phases, step_rows=step_rows)
+    consistency_alerts = current_work_alerts(matter, current_action, request.user)
     return {
         **_reopen_context(matter, episodes=episodes, instrument_keys=instrument_keys),
         # `Menetluse kulg` — where the external procedure stands, which one to
@@ -3184,9 +3249,23 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # Read-only workflow-consistency alerts about that step, for this reader
         # — today one: a standard step the record shows done since it was set
         # (docs/adr/0161, `app.workflow.consistency`). Shown under the step only.
-        "consistency_alerts": current_work_alerts(matter, current_action, request.user),
+        "consistency_alerts": consistency_alerts,
+        # A current step started from a structured standard step — «Saada Koja
+        # arvamus», say — is finished through its canonical form: `✓ Tehtud`
+        # opens it (docs/adr/0168 §4). Not while the record already shows the
+        # work done: then the alert above asks for the plain `✓ Tehtud`.
+        "current_launch": _current_step_launch(current_action, consistency_alerts),
+        # Which canonical form a launched save came from — set by `?ava=` on a
+        # full page and by a refusal carrying its `samm` (docs/adr/0168 §2).
+        "launch": None,
         "recommendation": recommendation,
         "planned_actions": planned_actions,
+        # «Planeeri järelkontroll» — each check this reopened Teema's closure
+        # ended, offered to be planned again; never revived on its own (owner
+        # decision D9, `app.matters.follow_up_restart`).
+        "follow_up_restarts": restart_offers(
+            matter, request.user, can_write=may_write_business_content(request.user)
+        ),
         "upcoming_step": upcoming_step,
         # Work already scheduled in the file's own lifecycle — a round waiting
         # for feedback, a planned action — is the next step, and «Järgmine samm
@@ -3345,11 +3424,31 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     }
 
 
+def _current_step_launch(current_action: Any, alerts: Sequence[Any]) -> Any:
+    """`step_launch.Launch` for a current step whose work has a canonical form.
+
+    Only a plain current `DO` step started from a structured standard step,
+    still ahead, with no alert saying the record already shows it done. One
+    query, and only when the step carries a plan step at all.
+    """
+    if current_action is None or current_action.plan_step_id is None or alerts:
+        return None
+    if current_action.follow_up_id is not None:
+        return None
+    step = current_action.plan_step
+    if step is None or not step.is_open:
+        return None
+    return step_launch.launch_for_step(step)
+
+
 @login_required
 def matter_detail(request: HttpRequest, pk: Any) -> HttpResponse:
     matter = get_visible_matter(request, pk)
     context = _overview_context(request, matter)
     context.update(_header_context(request, matter))
+    # `?ava=…` — a structured step's control without scripting: the page with
+    # its canonical form open (docs/adr/0168 §2). Reads only; writes nothing.
+    step_launch.apply_open_request(request, matter, context)
     context["tab"] = "teema"
     context["nav_active"] = "teemad"
     return render(request, "matters/matter_detail.html", context)
@@ -3415,6 +3514,38 @@ def _opinion_rail_deadline(matter: Any, viewer: Any) -> Any:
     return None if sent.exists() else matter.response_deadline
 
 
+#: The Matter tab an htmx request was sent from, read off `HX-Current-URL`.
+DOCUMENTS_TAB_PATH = "/dokumendid/"
+
+
+def _on_documents_tab(request: HttpRequest) -> bool:
+    """Whether the page that sent this request is a Matter's `Dokumendid` tab.
+
+    The header is shared by both tabs, and only `Teema` has a `#teema-vaade`
+    column to answer into.
+    """
+    return DOCUMENTS_TAB_PATH in request.headers.get("HX-Current-URL", "")
+
+
+def _open_tab(request: HttpRequest) -> str:
+    return "dokumendid" if _on_documents_tab(request) else "teema"
+
+
+def _date_order_confirmation(request: HttpRequest) -> dict[str, Any]:
+    """The confirming button for a header date save the warning stopped.
+
+    Posts exactly what was submitted, to where it was submitted, with
+    `kinnita_kuupaevad` — so the revision it carried still guards it
+    (docs/adr/0166 §4).
+    """
+    return {
+        "url": request.path,
+        "fields": date_order.repost_fields(request.POST),
+        "flag": date_order.CONFIRM_FIELD,
+        "label": date_order.CONFIRM_LABEL,
+    }
+
+
 def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # One read for the private note: its body fills the box and its `updated_at`
     # fills `Salvestatud HH:mm`.
@@ -3422,6 +3553,12 @@ def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     can_write = may_write_business_content(request.user)
     return {
         "matter": matter,
+        # The open tab, which the header's tab bar marks (`aria-current`, the
+        # underline). The header is redrawn by every inline edit and by saves
+        # that send it out of band, and an answer drawn without this left both
+        # tabs unmarked until a reload (QA-BROWSER-01). A full page sets its own
+        # after this; a fragment answers for the page that asked.
+        "tab": _open_tab(request),
         # `Koja ettepanek või pöördumine` — said on the meta line, and the two
         # incoming dates it does not have are not offered (docs/adr/0151 §3).
         "koda_initiative": is_koda_initiative(matter),
@@ -3443,7 +3580,17 @@ def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # `delete_matter` under the lock — and refuses whatever the offer did
         # not ask about (docs/adr/0120 §7, amended 2026-10-10). Still a callable,
         # so the check runs only where `header.html` is drawn.
-        "can_delete": functools.cache(lambda: can_write and deletion_may_be_offered(matter)),
+        #
+        # **And only to somebody who may delete permanently** (docs/adr/0165,
+        # owner decision D6): the department head, or a writer granted the
+        # capability by name. A specialist is not offered the link at all.
+        "can_delete": functools.cache(
+            lambda: (
+                can_write
+                and may_delete_permanently(request.user)
+                and deletion_may_be_offered(matter)
+            )
+        ),
         # No `submission_count`. The tab that displayed it is gone, and a count
         # nothing renders is a query nothing needs.
         "document_count": Document.objects.filter(matter=matter).visible_to(request.user).count(),
@@ -3487,6 +3634,15 @@ def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # What the header's `Hetkeseis` menu showed, sent back with the choice
         # and with the closure confirmation (docs/adr/0156).
         "stage_revision": matter_field_revision(matter, "stage"),
+        # `Vastutaja` and `Saabus` carry theirs since QA-WORKFLOW-03: a stale
+        # choice must not reverse a colleague's (docs/adr/0166 §1).
+        "owner_revision": matter_field_revision(matter, "owner"),
+        "received_revision": matter_field_revision(matter, "received_date"),
+        # **`+ Saabus` starts from today only on ordinary open work** (D5,
+        # docs/adr/0166 §5). On a closed file or an archive record today is
+        # never a plausible arrival day, and one Salvesta would store an
+        # invented historical date; the box starts empty there.
+        "received_prefill_today": matter.is_open and matter.record_mode != RecordMode.ARCHIVE,
         "matter_policy_areas": list(matter.policy_areas.all()),
         "matter_legal_instruments": _legal_instrument_line(matter),
         # **The header's `Tähtaeg` is `Arvamuse tähtaeg`, and only that.** The
@@ -4040,6 +4196,11 @@ def _render_overview(
     matter.refresh_from_db(fields=["stage"])
     context = _overview_context(request, matter)
     context.update(_header_context(request, matter))
+    # The column exists only on `Teema`, so an answer that carries it answers
+    # for that tab — on both branches below. Set only on the second until
+    # QA-BROWSER-01, so a save sending the whole header out of band drew a tab
+    # bar with neither tab marked.
+    context["tab"] = "teema"
     body = render_to_string("matters/partials/overview.html", context, request=request)
     if header_out_of_band:
         context["header_out_of_band"] = True
@@ -4052,9 +4213,15 @@ def _render_overview(
         # editors being rebuilt under the person (ENG-091).
         context["stage_out_of_band"] = True
         context["tabs_out_of_band"] = True
-        context["tab"] = "teema"
         body += render_to_string("matters/partials/header_stage.html", context, request=request)
         body += render_to_string("matters/partials/tabs.html", context, request=request)
+        if context.get("can_write"):
+            # The ⋯ menu appears with the first file, and the first file
+            # usually arrives through exactly this kind of save
+            # (QA-BROWSER-07). Its slot is drawn only for a writer, so only a
+            # writer is sent it.
+            context["menu_out_of_band"] = True
+            body += render_to_string("matters/partials/header_menu.html", context, request=request)
     return HttpResponse(body, status=status)
 
 
@@ -4932,6 +5099,66 @@ def reschedule_follow_up_view(request: HttpRequest, pk: Any, action_id: Any) -> 
     return _render_overview(request, matter)
 
 
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def restart_follow_up_view(request: HttpRequest, pk: Any, follow_up_id: Any) -> HttpResponse:
+    """«Planeeri järelkontroll» on a reopened Teema (owner decision D9, docs/adr/0146 §8).
+
+    A check the closure cancelled is planned again on the day the person chose,
+    through `restart_follow_up`; the cancelled one stays in the history. The
+    follow-up is reached through an opinion this reader may see, or it is a 404
+    (AUTH-003). A refusal comes back beside the offer it was made from, or —
+    when that offer is gone — above the column.
+    """
+    from app.submissions.models import Submission
+    from app.workflow.follow_ups import restart_follow_up
+    from app.workflow.models import OpinionFollowUp
+
+    matter = get_visible_matter(request, pk)
+    follow_up = get_object_or_404(
+        OpinionFollowUp,
+        pk=follow_up_id,
+        submission__in=Submission.objects.visible_to(request.user).filter(matter=matter),
+    )
+    form = FollowUpRestartForm(request.POST, follow_up_id=follow_up.pk)
+    error = ""
+    if form.is_valid():
+        try:
+            restart_follow_up(
+                matter=matter,
+                follow_up_id=follow_up.pk,
+                target_date=form.cleaned_data["target_date"],
+                actor=request.user,
+            )
+        except DomainError as refusal:
+            error = str(refusal)
+        else:
+            return _render_overview(request, matter)
+    matter.refresh_from_db(fields=["is_open"])
+    context = _overview_context(request, matter)
+    context.update(_header_context(request, matter))
+    offer = next(
+        (
+            row
+            for row in context.get("follow_up_restarts") or []
+            if str(row.follow_up_id) == str(follow_up.pk)
+        ),
+        None,
+    )
+    if offer is not None:
+        if error:
+            form.add_error(None, error)
+        offer.form = form
+    else:
+        context["composer_error"] = error or next(
+            (str(message) for messages in form.errors.values() for message in messages),
+            FOLLOW_UP_CHANGED,
+        )
+    body = render_to_string("matters/partials/overview.html", context, request=request)
+    return HttpResponse(body, status=400)
+
+
 def _visible_planned(request: HttpRequest, matter: Matter, action_id: Any) -> NextAction:
     """A planned action of this Matter that this reader may see, or a 404 (AUTH-003)."""
     return get_object_or_404(
@@ -5375,12 +5602,14 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
         # it beside `Hetkeseis` (docs/adr/0146 §8, docs/adr/0152).
         _mark_closure_refused(form, refusal)
         matter.refresh_from_db()
-        return render(
+        response = render(
             request,
             "matters/matter_edit.html",
             _edit_context(request, matter, form, link_form),
             status=400,
         )
+        _expose_closure_digest(response, refusal)
+        return response
     except MatterEditConflict as conflict:
         # Somebody else changed this Matter between the page opening and this
         # save. Refused rather than applied, and the page comes back with every
@@ -5509,56 +5738,65 @@ def matter_edit_assisted(request: HttpRequest, pk: Any) -> HttpResponse:
 @business_write_required
 @require_http_methods(["GET", "POST"])
 def matter_delete(request: HttpRequest, pk: Any) -> HttpResponse:
-    """`Kustuta teema` — a page that asks, and a POST that does it.
+    """`Kustuta teema` — a confirmation that asks, and a POST that does it.
 
     **A route of its own, not a second button on the edit form.** The question
     "should this record exist" is a different question from "are these facts
     right", and a destructive control inside the form that saves is one stray
-    Enter away from the wrong submit. The GET renders what would be removed;
-    the POST removes it. There is no third way in — `matters:matter_edit`
+    Enter away from the wrong submit. The GET renders the confirmation dialog;
+    the POST removes the Teema. There is no third way in — `matters:matter_edit`
     cannot delete, whatever it is sent (docs/adr/0096 §4.3).
 
-    **GET writes nothing.** `plan_matter_deletion` is a read: it walks the
-    ownership graph, counts the rows and evidence objects, and collects every
-    reason the deletion would refuse. A blocked Matter shows the reasons and no
-    final button, and the POST refuses independently — the page is presentation
-    and `delete_matter` is the boundary.
+    **Who** (docs/adr/0165 §2, owner decision D6): only somebody holding the
+    `matter.delete_permanently` capability — the department head by default, or
+    a writer granted it by name. `business_write_required` turns away a READER,
+    a technical ADMINISTRATOR and the shared-gate visitor first (404, as every
+    business write does); a SPECIALIST without the grant is then a 403 on the GET
+    and on a crafted POST alike, and the POST leaves an `ACCESS_REFUSED` trace.
+    `get_visible_matter` stays the record-level gate, so a restricted Matter is a
+    404 to somebody who may not see it.
 
-    **The same authorization as editing, and no more.** This is what the owner
-    asked for: deleting a Teema is a thing the application's users do, not an
-    administrator's privilege. `business_write_required` is the cohort —
-    SPECIALIST and DEPARTMENT_HEAD, the same two `Muuda teemat` requires — and
-    `get_visible_matter` is the record-level gate, so a restricted Matter is a
-    404 to somebody who may not see it rather than a refusal that confirms it
-    exists. A crafted POST from a READER or an ADMINISTRATOR is refused by the
-    decorator before this body runs (app/core/decorators.py, docs/adr/0096
-    §4.2).
-
-    **Nothing stronger was invented.** There is no existing canonical
-    permission over destructive Matter operations to reuse: closing a Matter,
-    which is the nearest thing the product had, is the same business-write
-    cohort. `ROLES_WITH_WORK_VICTORY_REVIEW` is the only narrower set in the
-    codebase and it is about claiming influence, not about data
-    (app/core/authorization.py).
+    **GET writes nothing.** `plan_matter_deletion` is a read; its `digest` goes
+    into the form, and the POST is refused unless the plan rebuilt under the row
+    lock still has that digest — a confirmation drawn before a new file or
+    opinion arrived is shown again, with the new counts, rather than honoured.
+    A second POST of the same confirmation finds no live Matter and is a 404;
+    nothing is deleted or audited twice.
     """
+    if not may_delete_permanently(request.user):
+        if request.method == "POST":
+            record_refused_deletion(
+                actor=request.user,
+                matter_id=pk,
+                ip_address=request.META.get("REMOTE_ADDR"),
+                user_agent=request.META.get("HTTP_USER_AGENT", ""),
+            )
+        raise PermissionDenied
     matter = get_visible_matter(request, pk)
 
     if request.method == "POST":
-        # **No plan is built before the POST.** `delete_matter` builds its own
-        # under the row lock, which is the only one that decides anything — one
-        # taken out here would be a second walk of the same graph whose answer
-        # nothing may act on.
         try:
-            delete_matter(matter=matter, actor=request.user)
+            permanently_delete_matter(
+                matter=matter,
+                actor=request.user,
+                confirmation=request.POST.get("confirm_digest", ""),
+                ip_address=request.META.get("REMOTE_ADDR"),
+                user_agent=request.META.get("HTTP_USER_AGENT", ""),
+            )
         except DomainError as error:
-            # The refusal, on the page that offered the button, with a fresh
-            # plan behind it — a blocker that appeared while somebody read the
-            # confirmation is exactly the case this branch exists for.
+            # The refusal, on the dialog that offered the button, with a fresh
+            # plan behind it — a blocker that appeared, or new content that
+            # makes the old confirmation stale, is exactly what this is for.
+            stale = isinstance(error, DeletionConfirmationStale)
             return render(
                 request,
                 "matters/matter_delete.html",
-                _delete_context(matter, plan_matter_deletion(matter), error=str(error)),
-                status=400,
+                _delete_context(
+                    matter,
+                    plan_matter_deletion(matter),
+                    error=DELETION_CONFIRMATION_STALE if stale else str(error),
+                ),
+                status=409 if stale else 400,
             )
         messages.success(request, "Teema kustutati.")
         # The register, never the Matter's own address: that URL answers 404
@@ -5572,12 +5810,14 @@ def matter_delete(request: HttpRequest, pk: Any) -> HttpResponse:
 
 
 def _delete_context(matter: Matter, plan: Any, error: str = "") -> dict[str, Any]:
-    """What the confirmation page reads.
+    """What the confirmation dialog reads.
 
     The counts are named per business record rather than per table. A person
     deciding whether to destroy a file needs to know it holds four entries and
-    two opinions; `matters.MatterSourceOrganisation` is a join row and telling
-    them about it would bury the sentence that matters.
+    two opinions — and how many of those went out, because a sent opinion's
+    final evidence is otherwise immutable (docs/adr/0165 §3);
+    `matters.MatterSourceOrganisation` is a join row and telling them about it
+    would bury the sentence that matters.
     """
     labelled = [
         (label, plan.count_of(model))
@@ -5588,6 +5828,7 @@ def _delete_context(matter: Matter, plan: Any, error: str = "") -> dict[str, Any
         "matter": matter,
         "plan": plan,
         "summary": labelled,
+        "sent_opinions": plan.sent_opinions,
         "evidence_objects": len(plan.evidence_keys),
         "delete_error": error,
     }
@@ -5736,7 +5977,13 @@ def _edit_context(
         # refusal page. The plan is the one `matter_delete` renders and
         # `delete_matter` rebuilds under the lock, so the page says what the route
         # will say; the route still re-checks every blocker (docs/adr/0120).
-        "deletion_plan": plan_matter_deletion(matter),
+        #
+        # **Only for somebody who may delete permanently** (docs/adr/0165): the
+        # section is not drawn for anybody else, and the walk is not paid for.
+        "may_delete": may_delete_permanently(request.user),
+        "deletion_plan": (
+            plan_matter_deletion(matter) if may_delete_permanently(request.user) else None
+        ),
     }
 
 
@@ -5801,7 +6048,23 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
                 matter = guard_matter_field_revision(
                     matter=matter, field=field, expected=request.POST.get("revision")
                 )
+            if (
+                field == "received_date"
+                and not date_order.confirmed(request.POST)
+                and date_order.deadline_precedes_received(
+                    received=value, deadline=matter.response_deadline
+                )
+            ):
+                # A `Saabus` after the stored `Arvamuse tähtaeg`: warned, and
+                # saved only from the confirming button (docs/adr/0166 §4).
+                raise date_order.DateOrderUnconfirmed()
             _apply_inline_field(request, matter, field, value, form)
+    except date_order.DateOrderUnconfirmed as warning:
+        matter.refresh_from_db()
+        context = _header_context(request, matter)
+        context["field_error"] = str(warning)
+        context["date_order_confirm"] = _date_order_confirmation(request)
+        return render(request, surface, context, status=400)
     except MatterFieldConflict as conflict:
         # Refused, with the surface re-rendered from what is stored now, so the
         # person sees the colleague's value where theirs would have gone and
@@ -5822,7 +6085,12 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
         context["field_error"] = str(refusal)
         context["follow_up_closure_stage"] = getattr(value, "pk", value)
         context["follow_up_closure_label"] = refusal.label
-        return render(request, surface, context, status=400)
+        # The one button posts back the digest of what this warning counted
+        # (docs/adr/0152 §7).
+        context["follow_up_closure_digest"] = refusal.digest
+        response = render(request, surface, context, status=400)
+        _expose_closure_digest(response, refusal)
+        return response
     except DomainError as error:
         matter.refresh_from_db()
         context = _header_context(request, matter)
@@ -5830,6 +6098,21 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
         return render(request, surface, context, status=400)
 
     matter.refresh_from_db()
+    if field == "stage" and matter.is_open and not _on_documents_tab(request):
+        # **A stage change is not a header-only fact.** `Tegevused` groups the
+        # chronology by `Hetkeseis` period and marks the current one, and
+        # `Menetluse kulg` and the offered next stages read the same stage; a
+        # swap of `#teema-pais` alone left the old period standing as current
+        # until a reload (QA-BROWSER-02). So the answer is the one a column
+        # save gives — the column, with the header out of band — retargeted at
+        # the column, which is also what lets the page carry any draft typed
+        # there across the swap (static/js/app.js `keepDrafts`). `Dokumendid`
+        # has no column and keeps the header-only answer below; a stage that
+        # closed the Matter reloads the page instead.
+        response = _render_overview(request, matter, header_out_of_band=True)
+        response["HX-Retarget"] = "#teema-vaade"
+        response["HX-Reswap"] = "outerHTML"
+        return response
     # Each field re-renders the surface it lives on. `Muu valdkond` sits in the
     # facts rail rather than the header strip, and swapping the header for it
     # would leave the value on screen unchanged while claiming it had saved.
@@ -5866,6 +6149,20 @@ def response_deadline_view(request: HttpRequest, pk: Any) -> HttpResponse:
         context["field_error"] = "Vigane väärtus."
         return render(request, "matters/partials/header.html", context, status=400)
     data = form.cleaned_data
+    if (
+        data["tegevus"] != "lopeta"
+        and not date_order.confirmed(request.POST)
+        and date_order.deadline_precedes_received(
+            received=matter.received_date, deadline=data.get("response_deadline")
+        )
+    ):
+        # An `Arvamuse tähtaeg` before the stored `Saabus`: warned, and saved
+        # only from the confirming button, which re-posts this same form
+        # (docs/adr/0166 §4). Nothing was written.
+        context = _header_context(request, matter)
+        context["field_error"] = date_order.DEADLINE_BEFORE_RECEIVED
+        context["date_order_confirm"] = _date_order_confirmation(request)
+        return render(request, "matters/partials/header.html", context, status=400)
     try:
         if data["tegevus"] == "lopeta":
             resolve_response_deadline(
@@ -5893,7 +6190,7 @@ def response_deadline_view(request: HttpRequest, pk: Any) -> HttpResponse:
         context["field_error"] = str(error)
         return render(request, "matters/partials/header.html", context, status=400)
     matter.refresh_from_db()
-    if "/dokumendid/" in request.headers.get("HX-Current-URL", ""):
+    if _on_documents_tab(request):
         # The header is shared by both tabs, and `Dokumendid` has no
         # `#teema-vaade` to answer into: there the header alone is the answer.
         return render(request, "matters/partials/header.html", _header_context(request, matter))
@@ -6700,22 +6997,46 @@ def add_website_overview(request: HttpRequest, pk: Any) -> HttpResponse:
     """
     matter = get_visible_matter(request, pk)
     key = "website_overview_form"
+    # «Koosta kodulehe ülevaade» → `Alusta` opened this form (docs/adr/0168 §3):
+    # a published Ülevaade finishes that step in the same transaction. A news
+    # item is not the overview the step asked for and finishes nothing.
+    launched_id = step_launch.posted_step_id(request, matter)
     form = CompactWebsiteOverviewForm(request.POST)
     if not form.is_valid():
         return _workspace_refusal(request, matter, key=key, form=form)
     publication = form.cleaned_data.get("publication")
     try:
-        workspace.add_matter_website_overview(
-            matter=matter,
-            author=request.user,
-            url=publication[0] if publication else "",
-            published_on=publication[1] if publication else None,
-            title=form.cleaned_data.get("overview_title") or "",
-            kind=form.cleaned_data.get("kind") or "",
-        )
+        with transaction.atomic():
+            launched = work_plan.lock_launched_step(
+                matter, launched_id, PlanStepOperation.WEBSITE_OVERVIEW
+            )
+            result = workspace.add_matter_website_overview(
+                matter=matter,
+                author=request.user,
+                url=publication[0] if publication else "",
+                published_on=publication[1] if publication else None,
+                title=form.cleaned_data.get("overview_title") or "",
+                kind=form.cleaned_data.get("kind") or "",
+            )
+            if launched is not None and _overview_does_the_step(result.record):
+                work_plan.fulfil_launched_step(
+                    launched=launched, record=result.record, actor=request.user
+                )
     except DomainError as error:
         return _workspace_refusal(request, matter, key=key, form=form, error=str(error))
     return _render_overview(request, matter)
+
+
+def _overview_does_the_step(overview: Any) -> bool:
+    """A published Ülevaade — the reading `RecordedWork` proves the step by.
+
+    A publication whose kind predates the choice reads as an overview, which is
+    what every one of them was filed as (`plan_view.RecordedWork`).
+    """
+    return overview.status == WebsiteOverviewStatus.PUBLISHED and overview.kind in (
+        WebsiteOverviewKind.OVERVIEW,
+        "",
+    )
 
 
 @login_required
@@ -7203,7 +7524,11 @@ def workspace_forms(
 #: A hidden identifier, the CSRF token, a choice made from a fixed list — none of
 #: those is retyped from memory, and a block that printed them would bury the
 #: paragraph that is.
-UNSAVED_CONTENT_SKIP: frozenset[str] = frozenset({"action_id", "attachments", "complete_action"})
+UNSAVED_CONTENT_SKIP: frozenset[str] = frozenset(
+    # The closure confirmation is an answer to a warning, not typed content
+    # (docs/adr/0152 §7): its value is a digest nobody wrote.
+    {"action_id", "attachments", "complete_action", FOLLOW_UP_CLOSURE_FIELD}
+)
 
 
 def unsaved_content(form: Any) -> list[tuple[str, str]]:
@@ -7249,7 +7574,20 @@ def _closure_needs_confirmation(
     written: the refusal came before the save stored anything (docs/adr/0146 §8).
     """
     _mark_closure_refused(form, refusal)
-    return _workspace_refusal(request, matter, key=key, form=form)
+    response = _workspace_refusal(request, matter, key=key, form=form)
+    _expose_closure_digest(response, refusal)
+    return response
+
+
+#: The response header a refused closure names its digest in, beside the box that
+#: carries it — for a caller whose panel is not on the page (docs/adr/0152 §7).
+CLOSURE_DIGEST_HEADER = "X-Closure-Digest"
+
+
+def _expose_closure_digest(response: HttpResponse, refusal: Any) -> None:
+    digest = getattr(refusal, "digest", "")
+    if digest:
+        response[CLOSURE_DIGEST_HEADER] = digest
 
 
 def _mark_closure_refused(form: Any, refusal: Any) -> None:
@@ -7262,6 +7600,10 @@ def _mark_closure_refused(form: Any, refusal: Any) -> None:
     form.follow_up_closure_refused = True
     if refusal is not None:
         form.closure_warning = str(refusal)
+        # What the box posts back: the digest of exactly the work this warning
+        # counted, so a confirmation never covers work added after it
+        # (QA-WORKFLOW-02, docs/adr/0152 §7).
+        form.closure_digest = getattr(refusal, "digest", "")
         field = form.fields.get(FOLLOW_UP_CLOSURE_FIELD)
         if field is not None:
             field.label = refusal.label
@@ -7317,6 +7659,11 @@ def _workspace_refusal(
     context = _overview_context(request, matter)
     context.update(_header_context(request, matter))
     context[key] = form
+    # A canonical form opened from a step comes back still naming that step, so
+    # the corrected save still finishes it (docs/adr/0168 §3).
+    context["launch"] = step_launch.launched_context(
+        matter, key, request.POST.get(step_launch.STEP_PARAM)
+    )
     # A planned row's `Muuda` or `✓ Tehtud`: the bound form goes back into that
     # row, opened, so the field's own message prints beside what was typed
     # rather than the save failing in silence (docs/adr/0144 §1).
@@ -7662,31 +8009,48 @@ def add_engagement_compact(request: HttpRequest, pk: Any) -> HttpResponse:
     """
     matter = get_visible_matter(request, pk)
     key = "add_engagement_form"
+    # «Kaasa liikmeid / küsi tagasisidet» → `Alusta` opened this form: the step
+    # it names is finished by the round, in the same transaction, and a second
+    # press finds it finished and writes nothing (docs/adr/0168 §3).
+    launched_id = step_launch.posted_step_id(request, matter)
     form = CompactEngagementForm(request.POST, request.FILES)
     if not form.is_valid():
         return _workspace_refusal(request, matter, key=key, form=form)
     try:
-        workspace.add_matter_engagement(
-            matter=matter,
-            author=request.user,
-            audience=form.cleaned_data["audience"],
-            smaily_url=form.cleaned_data.get("smaily_url") or "",
-            alchemer_url=form.cleaned_data.get("alchemer_url") or "",
-            # `Veebileht` and `Märkus`, into the record's own `url` and `note`
-            # (docs/adr/0127 §2).
-            url=form.cleaned_data.get("website_url") or "",
-            note=form.cleaned_data.get("engagement_note") or "",
-            occurred_on=form.cleaned_data.get("occurred_on_value"),
-            occurred_on_precision=form.cleaned_data["occurred_on_precision"],
-            # Optional, and `None` when the box was left empty: no wait is opened
-            # and nothing is defaulted (docs/adr/0120).
-            feedback_deadline=form.cleaned_data.get("feedback_deadline"),
-            uploads=form.cleaned_data.get("attachments") or (),
-            record_overview=True,
-        )
+        with transaction.atomic():
+            launched = work_plan.lock_launched_step(
+                matter, launched_id, PlanStepOperation.ENGAGEMENT
+            )
+            result = _add_engagement_from_form(request, matter, form)
+            if launched is not None:
+                work_plan.fulfil_launched_step(
+                    launched=launched, record=result.record, actor=request.user
+                )
     except (DomainError, UploadRejected) as error:
         return _workspace_refusal(request, matter, key=key, form=form, error=str(error))
     return _render_overview(request, matter)
+
+
+def _add_engagement_from_form(request: HttpRequest, matter: Matter, form: Any) -> Any:
+    """`workspace.add_matter_engagement` with what `Alusta kaasamist` asked."""
+    return workspace.add_matter_engagement(
+        matter=matter,
+        author=request.user,
+        audience=form.cleaned_data["audience"],
+        smaily_url=form.cleaned_data.get("smaily_url") or "",
+        alchemer_url=form.cleaned_data.get("alchemer_url") or "",
+        # `Veebileht` and `Märkus`, into the record's own `url` and `note`
+        # (docs/adr/0127 §2).
+        url=form.cleaned_data.get("website_url") or "",
+        note=form.cleaned_data.get("engagement_note") or "",
+        occurred_on=form.cleaned_data.get("occurred_on_value"),
+        occurred_on_precision=form.cleaned_data["occurred_on_precision"],
+        # Optional, and `None` when the box was left empty: no wait is opened
+        # and nothing is defaulted (docs/adr/0120).
+        feedback_deadline=form.cleaned_data.get("feedback_deadline"),
+        uploads=form.cleaned_data.get("attachments") or (),
+        record_overview=True,
+    )
 
 
 @login_required
@@ -7702,10 +8066,19 @@ def add_engagement_reply(request: HttpRequest, pk: Any) -> HttpResponse:
     `+ Arvamus / tagasiside`. The round row counts it and its files follow it
     (docs/adr/0142).
 
-    **The round is named, never guessed**: the form's own field, offering only
-    this Matter's open rounds as this reader may see them, required, and
-    preselected only when there is exactly one. Saving it **does not close the
-    round** — `Lõpeta kaasamine` on the row is still the one act that does.
+    **The round is named, never guessed**: the form's own field, offering this
+    Matter's rounds as this reader may see them — open ones, and finished ones
+    that still take later answers — required, and preselected only when the
+    choice is not a guess.
+
+    **The save contract** (docs/adr/0167 §2, relied on by `Ootame tagasisidet →
+    Tehtud`, which opens this same form): POST `engagement`, `summary`,
+    `stated_on` and `attachments` here. On success the reply is recorded and,
+    when the named round was still open, its wait is finished in the same
+    transaction through `engagement_replies.finish_wait_on_reply` →
+    `complete_engagement_feedback`; the answer is the re-rendered Teema view
+    (200). A refusal is 400 with the form still bound, and finishes nothing. A
+    round already finished keeps its closure and gains the answer.
     """
     return _record_external_position(
         request, pk, form_class=EngagementReplyForm, key="engagement_reply_form"
@@ -8016,6 +8389,8 @@ def _record_external_position(
         return _workspace_refusal(request, matter, key=key, form=form)
     chosen = form.cleaned_data.get("organisation")
     typed = (form.cleaned_data.get("organisation_name") or "").strip()
+    answered = form.cleaned_data.get("engagement")
+    finishes_wait = bool(getattr(form_class, "closes_engagement", False))
     try:
         # One transaction around the resolution and the save. A typed name the
         # picker does not know becomes a new institution *while the arguments
@@ -8023,6 +8398,17 @@ def _record_external_position(
         # without this, a refusal under the lock — a closed Matter in a stale
         # tab, a rejected upload — left that institution in the catalogue.
         with transaction.atomic():
+            if finishes_wait:
+                # A finished round takes later answers (docs/adr/0167 §2), so a
+                # second press of `Salvesta` must not file the same one twice.
+                engagement_replies.refuse_repeated_reply(
+                    matter=matter,
+                    engagement=answered,
+                    summary=form.cleaned_data.get("summary") or "",
+                    url=form.cleaned_data.get("url") or "",
+                    stated_on=form.cleaned_data.get("stated_on_value"),
+                    uploads=form.cleaned_data.get("attachments") or (),
+                )
             workspace.add_matter_external_position(
                 matter=matter,
                 author=request.user,
@@ -8066,16 +8452,17 @@ def _record_external_position(
                 engagement=form.cleaned_data.get("engagement"),
                 uploads=form.cleaned_data["attachments"],
             )
-            # **`Lisa tagasiside` finishes the round it answers** (owner's
-            # decision, 2026-10-07, docs/adr/0142 §B): the feedback, its files
-            # and the closed wait are one save — whichever door opened the form
-            # (`PRAEGUNE TEGEVUS → Tehtud` or `+ Kaasamine → Lisa tagasiside`).
-            # Through the canonical close, inside this transaction, so a round
-            # closed meanwhile by somebody else refuses the whole save. Nothing
-            # else is completed: no `NextAction` is inferred from feedback.
-            answered = form.cleaned_data.get("engagement")
-            if getattr(form_class, "closes_engagement", False) and answered is not None:
-                complete_engagement_feedback(engagement=answered, actor=request.user)
+            # **`Lisa tagasiside` finishes the wait of the round it answers**
+            # (owner's decision, 2026-10-07, docs/adr/0142 §B): the feedback,
+            # its files and the closed wait are one save — whichever door
+            # opened the form (`PRAEGUNE TEGEVUS → Tehtud` or `+ Kaasamine →
+            # Lisa tagasiside`). Through the canonical close, inside this
+            # transaction. A round already finished — by an earlier answer,
+            # `Lõpeta kaasamine` or somebody else meanwhile — keeps its closure
+            # and simply gains this answer (docs/adr/0167 §2). Nothing else is
+            # completed: no `NextAction` is inferred from feedback.
+            if finishes_wait and answered is not None:
+                engagement_replies.finish_wait_on_reply(engagement=answered, actor=request.user)
     except (DomainError, UploadRejected) as error:
         return _workspace_refusal(request, matter, key=key, form=form, error=str(error))
     return _render_overview(request, matter)
@@ -8387,6 +8774,10 @@ def add_koda_opinion(request: HttpRequest, pk: Any) -> HttpResponse:
     """
     matter = get_visible_matter(request, pk)
     key = "koda_opinion_form"
+    # «Saada Koja arvamus» → `Alusta` opened this form (docs/adr/0168 §3).
+    # Opening it wrote nothing; this save, once the opinion is recorded as
+    # sent, finishes that step in the same transaction.
+    launched_id = step_launch.posted_step_id(request, matter)
     form = KodaOpinionForm(
         request.POST,
         request.FILES,
@@ -8403,6 +8794,9 @@ def add_koda_opinion(request: HttpRequest, pk: Any) -> HttpResponse:
         # without this, a refusal under the lock — a closed Matter in a stale
         # tab, a rejected upload — left that institution in the catalogue.
         with transaction.atomic():
+            launched = work_plan.lock_launched_step(
+                matter, launched_id, PlanStepOperation.SUBMISSION
+            )
             result = workspace.add_matter_koda_opinion(
                 # What else this save finishes, each named by the person and
                 # each checked again under the lock (historical regression,
@@ -8440,6 +8834,10 @@ def add_koda_opinion(request: HttpRequest, pk: Any) -> HttpResponse:
                 # byte is stored (docs/adr/0146 §8).
                 follow_ups_confirmed=form.cleaned_data.get("confirm_follow_up_closure", False),
             )
+            if launched is not None:
+                work_plan.fulfil_launched_step(
+                    launched=launched, record=result.record, actor=request.user
+                )
     except FollowUpClosureUnconfirmed as refusal:
         return _closure_needs_confirmation(request, matter, key=key, form=form, refusal=refusal)
     except (DomainError, UploadRejected) as error:

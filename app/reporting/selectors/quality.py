@@ -39,6 +39,7 @@ from app.core.authorization import (
     scope_for_user,
 )
 from app.legacy_import.source_pages import CandidateClass, CandidateState, HistoricalMatchCandidate
+from app.matters.enums import RecordMode
 from app.matters.selectors import MISSING
 from app.reporting import metric_catalogue as keys
 from app.reporting.context import ReportingContext
@@ -197,6 +198,13 @@ class QualityQueue:
     is_coverage_note: bool = False
 
 
+#: The record mode both «Aktiivne teema …» queues count (`ACTIVE_WITHOUT_STAGE`
+#: is FULL only), carried into their links. Without it the link opened every
+#: open Matter, and an open ARCHIVE row — one the historical cutover held open
+#: for its live work — was in the list and not in the number (QA-STATS-06).
+_ACTIVE_MODE = RecordMode.FULL.value
+
+
 def _matters_missing_policy_area(context: ReportingContext) -> int:
     """Only *active* Matters. An unclassified 2013 archive row is not a task."""
     active = eligible_matters(context, definition(keys.ACTIVE_WITHOUT_STAGE)).filter(
@@ -334,14 +342,16 @@ def queues(context: ReportingContext) -> list[QualityQueue]:
             key="active_without_policy_area",
             label="Aktiivne teema ilma valdkonnata",
             count=_matters_missing_policy_area(context),
-            url=corpus_url(context, olek="avatud", valdkond=MISSING),
+            url=corpus_url(context, olek="avatud", liik=_ACTIVE_MODE, valdkond=MISSING),
             explanation="Ainult avatud teemad. Vana klassifitseerimata arhiivirida ei ole viga.",
         ),
         QualityQueue(
             key="unresolved_organisation",
             label="Aktiivne teema ilma asutuseta",
             count=_unresolved_legacy_organisations(context),
-            url=corpus_url(context, olek="avatud", saatja=MISSING, adressaat=MISSING),
+            url=corpus_url(
+                context, olek="avatud", liik=_ACTIVE_MODE, saatja=MISSING, adressaat=MISSING
+            ),
             explanation="Ei saatjat ega adressaati. Sageli lahendamata nimevaste registrist.",
         ),
         QualityQueue(

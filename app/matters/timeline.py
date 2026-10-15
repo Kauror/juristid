@@ -993,11 +993,23 @@ def _milestone_for_event(event: ChangeEvent) -> ChronologyMilestone:
         # forty pixels up the page. Every other milestone's summary says
         # something the headline does not.
         sub = "" if event.event_type == ChangeEventType.MATTER_CREATED else (event.summary or "")
+    # A withdrawal says why, in the withdrawer's own words, under its own label
+    # (owner decision D7, 2026-10-14: the reason is required). Older withdrawals
+    # recorded none and draw no line.
+    reason = ""
+    if event.event_type == ChangeEventType.SUBMISSION_WITHDRAWN:
+        reason = str((event.payload or {}).get("reason") or "").strip()
     return ChronologyMilestone(
         what=what,
         display_date=format_estonian_date(_local_day(event.occurred_at)),
         sub=sub,
+        own_note=reason,
+        own_note_label=WITHDRAWAL_REASON_LABEL if reason else "",
     )
+
+
+#: The label of a withdrawal's reason on its `Teema käik` row.
+WITHDRAWAL_REASON_LABEL = "Põhjus"
 
 
 def _end_of_day(day: date) -> datetime:
@@ -3041,6 +3053,10 @@ class RoundPosition:
     who: str
     display_date: str
     provenance: str
+    #: What the answer said, read on the round's own row exactly where the
+    #: round's `Saadud tagasiside` reads — so an answer reads in the same place
+    #: whichever form stored it (docs/adr/0167 §3).
+    summary: str = ""
 
 
 def attach_round_positions(engagements: list[Any], user: Any) -> None:
@@ -3072,6 +3088,7 @@ def attach_round_positions(engagements: list[Any], user: Any) -> None:
                     else EXTERNAL_POSITION_DATE_UNKNOWN
                 ),
                 provenance=position.get_provenance_display(),
+                summary=position.summary,
             )
         )
     for engagement in engagements:

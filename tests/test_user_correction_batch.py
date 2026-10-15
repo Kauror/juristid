@@ -726,7 +726,9 @@ def test_a_sent_opinions_letter_cannot_be_removed_until_it_is_withdrawn(
     assert document.versions.count() == 1
     assert SENT_OPINION_EVIDENCE.startswith("See fail on saadetud")
 
-    withdraw_submission(submission=submission, actor=specialist)
+    withdraw_submission(
+        submission=submission, actor=specialist, reason="Sünteetiline tagasivõtmine"
+    )
     remove_document(document=document, actor=specialist)
 
     submission.refresh_from_db()
@@ -741,7 +743,9 @@ def test_a_withdrawn_letter_is_not_revised_or_reclassified(
     submission = _sent_opinion(
         factories.MatterFactory(owner=specialist), specialist, organisation, capture_evidence
     )
-    withdraw_submission(submission=submission, actor=specialist)
+    withdraw_submission(
+        submission=submission, actor=specialist, reason="Sünteetiline tagasivõtmine"
+    )
     document = submission.final_version.document
 
     with pytest.raises(DomainError, match="tagasi võetud Koja arvamuse tõend"):
@@ -882,7 +886,8 @@ def test_withdrawing_from_the_teema_page_uses_the_withdrawal_service(
     monkeypatch.setattr(submission_views, "withdraw_submission", spy)
 
     response = signed_in.post(
-        reverse("submissions:withdraw", kwargs={"pk": submission.pk}), {"tagasi": "teema"}
+        reverse("submissions:withdraw", kwargs={"pk": submission.pk}),
+        {"tagasi": "teema", "reason": "Saadeti ekslikult"},
     )
 
     assert response.status_code == 302
@@ -913,37 +918,51 @@ def test_withdrawing_from_the_teema_page_uses_the_withdrawal_service(
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture
+def head_signed_in(client, department_head):
+    """Deleting is the department head's (docs/adr/0165), so the offer is theirs."""
+    client.force_login(department_head)
+    return client
+
+
 def _header_offers_delete(client, matter) -> bool:
     return "matterhead__delete" in _matter_page(client, matter)
 
 
-def test_a_deletable_matter_offers_kustuta(signed_in, specialist):
+def test_a_deletable_matter_offers_kustuta(head_signed_in, specialist):
     matter = factories.MatterFactory(owner=specialist)
     assert not plan_matter_deletion(matter).is_blocked
-    assert _header_offers_delete(signed_in, matter)
+    assert _header_offers_delete(head_signed_in, matter)
 
-    edit = signed_in.get(reverse("matters:matter_edit", kwargs={"pk": matter.pk})).content.decode()
+    edit = head_signed_in.get(
+        reverse("matters:matter_edit", kwargs={"pk": matter.pk})
+    ).content.decode()
     assert "Kustuta teema" in edit
 
 
-def test_a_matter_whose_history_is_kept_offers_no_kustuta(signed_in, specialist):
+def test_a_matter_whose_history_is_kept_offers_no_kustuta(head_signed_in, specialist):
     matter = factories.MatterFactory(owner=specialist)
     add_entry(matter=matter, author=specialist, body="<p>Märge</p>")
     entry = matter.entries.first()
     edit_entry(entry=entry, body="Parandatud märge", actor=specialist)
     assert plan_matter_deletion(matter).is_blocked
 
-    assert not _header_offers_delete(signed_in, matter)
-    edit = signed_in.get(reverse("matters:matter_edit", kwargs={"pk": matter.pk})).content.decode()
+    assert not _header_offers_delete(head_signed_in, matter)
+    edit = head_signed_in.get(
+        reverse("matters:matter_edit", kwargs={"pk": matter.pk})
+    ).content.decode()
     assert "mille muudatuslugu on jäädavalt salvestatud" in edit
     assert reverse("matters:matter_delete", kwargs={"pk": matter.pk}) not in edit
 
 
-def test_the_route_still_refuses_a_blocked_deletion(signed_in, specialist, plain_document):
+def test_the_route_still_refuses_a_blocked_deletion(head_signed_in, specialist, plain_document):
     matter = plain_document.matter
     set_legal_hold(document=plain_document, on=True, reason="Kohtuasi", actor=specialist)
 
-    response = signed_in.post(reverse("matters:matter_delete", kwargs={"pk": matter.pk}))
+    response = head_signed_in.post(
+        reverse("matters:matter_delete", kwargs={"pk": matter.pk}),
+        {"confirm_digest": plan_matter_deletion(matter).digest},
+    )
 
     assert response.status_code == 400
     assert Matter.objects.filter(pk=matter.pk).exists()

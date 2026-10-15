@@ -44,6 +44,13 @@ record, not professional chronology (master specification 16.5).
   swaps itself in place *inside* that grid — a wrapper of its own would break one
   spine into two (app/matters/views.py, `timeline_page`).
 {% endcomment %}
+{% comment %}
+  The author is named the way the department addresses each other — `Marko
+  lisas märkuse`, as `timeline.py` has always described the line — with the
+  whole name as the `title`; a first name two colleagues share is lengthened
+  (`colleagues`, app/core/context_processors.py).
+{% endcomment %}
+{% load people %}
 {% for item in timeline_items %}
   {% comment %}
     The id is what a search result for an entry scrolls to. Server-rendered
@@ -403,7 +410,7 @@ record, not professional chronology (master specification 16.5).
             <span class="uxtl__did">{{ item.besides_the_completion }}</span>
           {% endif %}
           {% if item.actor %}
-            <span class="uxtl__author uxtl__author--quiet">{{ item.actor.display_name }}</span>
+            <span class="uxtl__author uxtl__author--quiet" title="{{ item.actor.display_name }}">{{ item.actor|name_among:colleagues }}</span>
           {% endif %}
           {% include "matters/partials/entry_edited_marker.html" with entry=item.entry oob=False %}
           <time class="uxtl__time" datetime="{{ item.occurred_at|date:'c' }}">{{ item.occurred_at|date:"j.n.Y" }}</time>
@@ -415,7 +422,7 @@ record, not professional chronology (master specification 16.5).
             <span class="uxtl__nextdate">{{ item.next_step.date_line }}</span>
           {% endif %}
           {% if item.actor %}
-            <span class="uxtl__author uxtl__author--quiet">{{ item.actor.display_name }}</span>
+            <span class="uxtl__author uxtl__author--quiet" title="{{ item.actor.display_name }}">{{ item.actor|name_among:colleagues }}</span>
           {% endif %}
           <time class="uxtl__time" datetime="{{ item.occurred_at|date:'c' }}">{{ item.occurred_at|date:"j.n.Y" }}</time>
         </p>
@@ -428,7 +435,7 @@ record, not professional chronology (master specification 16.5).
             (docs/adr/0148 §6).
           {% endcomment %}
           {% if item.actor %}
-            <span class="uxtl__author">{{ item.actor.display_name }}</span>
+            <span class="uxtl__author" title="{{ item.actor.display_name }}">{{ item.actor|name_among:colleagues }}</span>
           {% elif item.is_entry %}
             <span class="uxtl__author">{{ item.entry.get_kind_display }}</span>
           {% endif %}

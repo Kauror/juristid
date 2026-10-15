@@ -211,6 +211,9 @@ def _reviewer(request: HttpRequest) -> Any:
 #: them, so the queue is not a way to learn which (ENG-067).
 MATTER_NOT_FOUND = "Valitud teemat ei leitud."
 
+#: Why an archive file cannot be settled on a TEST Matter (QA-STATS-04).
+TEST_MATTER_REFUSED = "Arhiivifaili ei saa siduda testandmete teemaga."
+
 
 def _chosen_matter(candidate: OpinionMatchCandidate, request: HttpRequest) -> Any:
     """The Matter a decision names, resolved only among those this reviewer may read.
@@ -219,6 +222,7 @@ def _chosen_matter(candidate: OpinionMatchCandidate, request: HttpRequest) -> An
     RESTRICTED Matter used to link the letter to it and answer with its
     reference (ENG-067), and a malformed id reached the ORM as a 500.
     """
+    from app.matters.enums import MatterDataClass
     from app.matters.models import Matter
 
     raw = request.POST.get("matter") or candidate.matter_id
@@ -231,6 +235,11 @@ def _chosen_matter(candidate: OpinionMatchCandidate, request: HttpRequest) -> An
     matter = Matter.objects.visible_to(request.user).filter(pk=matter_id).first()
     if matter is None:
         raise ValueError(MATTER_NOT_FOUND)
+    if matter.data_class == MatterDataClass.TEST:
+        # The archive is Koda's real correspondence. Settling a letter on a
+        # TEST Matter would put real evidence on a development record and count
+        # a test as archive coverage (QA-STATS-04, docs/adr/0024).
+        raise ValueError(TEST_MATTER_REFUSED)
     return matter
 
 

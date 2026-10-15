@@ -22,6 +22,7 @@ from django.utils import timezone
 from app.audit.enums import ChangeEventType
 from app.audit.operations import pin_stage_episode
 from app.audit.services import record_change_event
+from app.core.derived_visibility import restriction_inherited_from
 from app.core.enums import Visibility, most_restrictive, validate_visibility_override
 from app.core.errors import DomainError
 from app.core.richtext import excerpt, is_empty, sanitize_entry_html
@@ -71,6 +72,7 @@ from app.matters.models import (
     MatterWebsiteOverview,
     TagAssignment,
 )
+from app.matters.position_sources import live_source_document_count
 from app.submissions.models import Submission
 from app.workflow.dates import period_bounds
 from app.workflow.enums import ActionStatus, DatePrecision, Disposition, Track
@@ -931,7 +933,7 @@ def _move_locked_stage(
 
 
 def close_matter_for_terminal_stage(
-    *, matter: Matter, actor: Any = None, follow_ups_confirmed: bool = False
+    *, matter: Matter, actor: Any = None, follow_ups_confirmed: bool | str = False
 ) -> bool:
     """Close an open Matter whose `Hetkeseis` ends it. Returns whether it closed.
 
@@ -964,7 +966,7 @@ def stage_transition(
     stage: Any,
     actor: Any = None,
     origin: str = StageEpisodeOrigin.RECORDED,
-    follow_ups_confirmed: bool = False,
+    follow_ups_confirmed: bool | str = False,
 ) -> Iterator[StageMove]:
     """Move `Hetkeseis`, let the caller record the act, then close if the stage ends the Matter.
 
@@ -1001,7 +1003,7 @@ def change_stage(
     stage: Any,
     actor: Any = None,
     origin: str = StageEpisodeOrigin.RECORDED,
-    follow_ups_confirmed: bool = False,
+    follow_ups_confirmed: bool | str = False,
 ) -> Matter:
     """Record where the external process now stands, as a new `Hetkeseis` period.
 
@@ -1273,8 +1275,8 @@ def set_matter_dates(
     if received_date is not _UNSET and received_date and matter.received_date is None:
         # Establishing one: read the track under the row lock, so a colleague
         # marking the Teema as an initiative in a transaction that commits first
-        # is seen here rather than after (the header editor takes no lock of its
-        # own — `GUARDED_MATTER_FIELDS`).
+        # is seen here rather than after (the header editor's guard takes the
+        # same lock first since docs/adr/0166; other callers take none).
         matter.track = (
             Matter.objects.select_for_update(no_key=True)
             .values_list("track", flat=True)
@@ -1441,9 +1443,29 @@ MATTER_FIELD_CONFLICT = (
 #: The inline editors that replace a whole value and carry a revision of it.
 #: `stage` joined on 2026-10-12, when the header's `Hetkeseis` became a one-click
 #: menu (docs/adr/0156): a choice made on a stale page must not overwrite the
-#: stage a colleague set meanwhile.
+#: stage a colleague set meanwhile. `owner` and `received_date` joined on
+#: 2026-10-14 (QA-WORKFLOW-03, docs/adr/0166 §1): a stale `Vastutaja` choice
+#: reversed a colleague's reassignment — which also notifies people and moves
+#: the open and planned steps — and a stale `Saabus` overwrote their date.
 GUARDED_MATTER_FIELDS = frozenset(
-    {"policy_areas", "source_organisations", "brief_summary", "stage"}
+    {"policy_areas", "source_organisations", "brief_summary", "stage", "owner", "received_date"}
+)
+
+#: The inline `update_field` fields deliberately left without a field revision,
+#: each with its reason. `tests/test_header_field_guards.py` asserts that every
+#: field `update_field` accepts is in exactly one of the two sets, so a new
+#: header field cannot silently arrive without a token (docs/adr/0166 §1).
+UNGUARDED_MATTER_FIELDS = frozenset(
+    {
+        # Through `update_field` this only ever *gives a first* `Arvamuse
+        # tähtaeg` (no control on the page posts it there); changing or ending
+        # one goes through `response_deadline_view`, which carries
+        # `deadline_revision` (app/matters/response_deadlines.py).
+        "response_deadline",
+        # Free text qualifying the canonical areas in the `Valdkond` slot. Not
+        # part of QA-WORKFLOW-03; guarding it is a separate decision.
+        "policy_area_other",
+    }
 )
 
 
@@ -1492,10 +1514,36 @@ def matter_field_revision(matter: Matter, field: str) -> str:
                 Matter.objects.filter(pk=matter.pk).values_list("stage_id", flat=True).first() or ""
             )
         ]
+    elif field == "owner":
+        parts = [
+            str(
+                Matter.objects.filter(pk=matter.pk).values_list("owner_id", flat=True).first() or ""
+            )
+        ]
+    elif field == "received_date":
+        received = (
+            Matter.objects.filter(pk=matter.pk).values_list("received_date", flat=True).first()
+        )
+        parts = [received.isoformat() if received else ""]
     else:  # pragma: no cover - a programming error, not a request
         raise ValueError(f"no revision for {field!r}")
+    return _field_digest(field, parts)
+
+
+def _field_digest(field: str, parts: list[str]) -> str:
     material = "\x1f".join([field, *parts]).encode("utf-8")
     return hashlib.sha256(material).hexdigest()[:32]
+
+
+def owner_revision_for(owner_id: Any) -> str:
+    """`matter_field_revision(matter, "owner")` for a row whose owner is already known.
+
+    The register draws `Määra ▾` on every unassigned row of a page, and a fresh
+    query per row to learn an owner the row was just read with would be an N+1
+    for nothing. The same digest of the same value, so the route's guard
+    compares like with like (QA-WORKFLOW-03, docs/adr/0166 §1).
+    """
+    return _field_digest("owner", [str(owner_id or "")])
 
 
 def guard_matter_field_revision(*, matter: Matter, field: str, expected: str | None) -> Matter:
@@ -2959,7 +3007,14 @@ def close_open_feedback_waits_for_closure(
     """
     waiting = (
         MatterEngagement.objects.select_for_update(no_key=True)
-        .filter(matter=matter, lifecycle_tracked=True, feedback_closed_at__isnull=True)
+        # A round removed with «Kustuta» is on no surface and waits on nobody:
+        # closure neither counts nor closes it (QA-WORKFLOW-01).
+        .filter(
+            matter=matter,
+            lifecycle_tracked=True,
+            feedback_closed_at__isnull=True,
+            removed_at__isnull=True,
+        )
         .order_by("created_at", "id")
     )
     return [
@@ -3890,7 +3945,10 @@ def cancel_planned_website_overviews_for_closure(
     """
     planned = (
         MatterWebsiteOverview.objects.select_for_update(no_key=True)
-        .filter(matter=matter, status=WebsiteOverviewStatus.PLANNED)
+        # A plan taken off the file with «Kustuta» is on no surface and owes
+        # nothing: it is neither counted at closure nor cancelled by it
+        # (QA-WORKFLOW-01, `app.matters.closure_work`).
+        .filter(matter=matter, status=WebsiteOverviewStatus.PLANNED, removed_at__isnull=True)
         .order_by("created_at", "id")
     )
     return [
@@ -4225,6 +4283,9 @@ def record_external_position(
         lawyer_note=clean_note,
         source_is_member=bool(source_is_member),
         engagement=related,
+        # A reply is never less restricted than the round it answers; its files
+        # then inherit it through the capture (docs/adr/0162 §1, 0137).
+        visibility_override=restriction_inherited_from(related),
         created_by=actor,
     )
     record_change_event(
@@ -4430,11 +4491,14 @@ def correct_external_position(
     # record holding nothing, which is the one state this record may never be
     # in. The document half is counted from the link table rather than assumed,
     # because the files were captured by a different operation than this one
-    # and this form does not render them.
+    # and this form does not render them. Only **live** files count: a link to
+    # a document somebody removed through `Eemalda dokument` stays in the table
+    # and is no longer anything a reader can open (QA-SUBDOCS-02,
+    # docs/adr/0167 §1).
     _external_position_source(
         clean_url,
         attachments=0,
-        documents=current.document_links.count(),
+        documents=live_source_document_count(current),
         summary=clean_summary,
     )
     related = _external_position_engagement(locked_matter, engagement)
@@ -4463,6 +4527,15 @@ def correct_external_position(
         # changed no value would be a history of somebody pressing a button
         # (`update_engagement`).
         return current
+    if (
+        "engagement_id" in changed
+        and restriction_inherited_from(related) == Visibility.RESTRICTED
+        and current.visibility_override != Visibility.RESTRICTED
+    ):
+        # Re-pointed at a restricted round, the reply takes the round's
+        # restriction; never relaxed here (docs/adr/0162 §1).
+        proposed["visibility_override"] = Visibility.RESTRICTED.value
+        changed.append("visibility_override")
     payload: dict[str, Any] = {"fields": sorted(changed)}
     if "organisation_id" in changed:
         payload["organisation_from"] = (
@@ -5265,7 +5338,7 @@ def close_matter(
     reason: str = "",
     successor: Matter | None = None,
     stage_episode: MatterStageEpisode | None = None,
-    follow_ups_confirmed: bool = False,
+    follow_ups_confirmed: bool | str = False,
 ) -> Matter:
     """Stop active work on the Matter, for a stated reason.
 
@@ -5354,9 +5427,15 @@ def close_matter(
             raise DomainError(SUCCESSOR_DELETED_REFUSAL)
     if not locked.is_open:
         raise DomainError("Teema on juba suletud.")
+    from app.matters.closure_work import live_work_at_closure
     from app.workflow.follow_ups import refuse_unconfirmed_closure
 
+    # Bound to the work the person was shown: a digest that no longer matches
+    # what is live now is refused with the renewed warning (docs/adr/0152 §7).
     refuse_unconfirmed_closure(locked, confirmed=follow_ups_confirmed)
+    # What this closure ends, by id, for its own record below — read under the
+    # lock, before anything is ended.
+    ending = live_work_at_closure(locked)
 
     matter = locked
     matter.is_open = False
@@ -5394,6 +5473,14 @@ def close_matter(
         payload={
             "disposition": disposition,
             "successor": str(successor.pk) if successor is not None else None,
+            # **What this one closure ended**, by id (QA-WORKFLOW-02, docs/adr/0152
+            # §7): each row still writes its own cancellation event, and this is
+            # the key that reads them back as one act. Ids only, never words.
+            "ended": {
+                "actions": list(ending.action_ids),
+                "overviews": list(ending.overview_ids),
+                "waits": list(ending.wait_ids),
+            },
         },
         **episode_binding,
     )

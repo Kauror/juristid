@@ -307,8 +307,18 @@ def test_f_only_completed_rounds_opens_on_alusta(signed_in, normal_matter, speci
     body = _detail(signed_in, normal_matter)
 
     assert _checked(body, "kaasamine-alusta-valik")
+    # Since docs/adr/0167 §2 a finished round still takes later answers: the
+    # feedback mode offers it, marked, and preselects it as the one choice.
     reply = body[body.index('id="kaasamine-tagasiside"') :]
-    assert "Avatud kaasamist ei ole" in reply[: reply.index("</div>")]
+    reply = reply[: reply.index("</form>")]
+    assert re.search(rf'<option value="{round_.pk}"[^>]*selected[^>]*>[^<]*lõpetatud', reply)
+
+
+def test_f_no_round_at_all_says_so(signed_in, normal_matter):
+    body = _detail(signed_in, normal_matter)
+
+    reply = body[body.index('id="kaasamine-tagasiside"') :]
+    assert "Kaasamist ei ole" in reply[: reply.index("</div>")]
 
 
 def test_g_several_open_rounds_require_a_choice(signed_in, normal_matter, specialist):
@@ -334,20 +344,39 @@ def test_g_several_open_rounds_require_a_choice(signed_in, normal_matter, specia
     assert _checked(refusal.content.decode(), "kaasamine-tagasiside-valik")
 
 
-def test_g_a_completed_or_foreign_round_is_not_accepted(signed_in, normal_matter, specialist):
+def test_g_a_foreign_round_is_not_accepted(signed_in, normal_matter, specialist):
     _round(normal_matter, specialist, "Avatud küsitlus")
-    closed = _round(normal_matter, specialist, "Lõpetatud küsitlus")
-    complete_engagement_feedback(engagement=closed, actor=specialist)
     foreign = _round(factories.MatterFactory(owner=specialist), specialist, "Teise teema küsitlus")
 
-    for engagement in (closed, foreign):
-        response = signed_in.post(
-            reverse("matters:add_engagement_reply", kwargs={"pk": normal_matter.pk}),
-            {"engagement": str(engagement.pk), "summary": "Vale voor"},
-            headers={"HX-Request": "true"},
-        )
-        assert response.status_code == 400
+    response = signed_in.post(
+        reverse("matters:add_engagement_reply", kwargs={"pk": normal_matter.pk}),
+        {"engagement": str(foreign.pk), "summary": "Vale voor"},
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == 400
     assert not MatterExternalPosition.objects.exists()
+
+
+def test_g_a_completed_round_takes_a_later_answer(signed_in, normal_matter, specialist):
+    """Was refused until docs/adr/0167 §2 (owner decision D8): a later answer
+    belongs to the consultation it answers, and the closure stays as it was."""
+    closed = _round(normal_matter, specialist, "Lõpetatud küsitlus")
+    complete_engagement_feedback(engagement=closed, actor=specialist)
+    closed.refresh_from_db()
+    closed_at = closed.feedback_closed_at
+
+    response = signed_in.post(
+        reverse("matters:add_engagement_reply", kwargs={"pk": normal_matter.pk}),
+        {"engagement": str(closed.pk), "summary": "Hiline vastus"},
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == 200
+    (position,) = MatterExternalPosition.objects.filter(matter=normal_matter)
+    assert position.engagement_id == closed.pk
+    closed.refresh_from_db()
+    assert closed.feedback_closed_at == closed_at
 
 
 def test_h_lopeta_kaasamine_is_unchanged(signed_in, normal_matter, specialist):

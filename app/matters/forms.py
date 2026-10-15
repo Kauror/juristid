@@ -30,6 +30,11 @@ from app.core.richtext import plain_text
 from app.core.widgets import DescribedRadioSelect, EstonianDateField, EstonianDateInput
 from app.documents.limits import WORKING_DOCUMENT_URL_MAX_LENGTH
 from app.documents.uploads import UPLOAD_ACCEPT
+from app.matters.date_order import (
+    CONFIRM_LABEL,
+    DEADLINE_BEFORE_RECEIVED,
+    deadline_precedes_received,
+)
 from app.matters.enums import (
     ExternalPositionProvenance,
     MatterDataClass,
@@ -149,6 +154,18 @@ def default_owner_to_creator(form: Any, viewer: Any) -> None:
         form.initial["owner"] = viewer.pk
 
 
+def creator_if_nameable(form: Any, viewer: Any) -> Any:
+    """The person filing, when this form may name them as Vastutaja; else None.
+
+    The bound form's half of `default_owner_to_creator` (docs/adr/0166 §3): the
+    same population decides, so an administrator outside the department's work
+    is still not made an owner by a save that named nobody.
+    """
+    if viewer is None or getattr(viewer, "pk", None) is None:
+        return None
+    return form.fields["owner"].queryset.filter(pk=viewer.pk).first()
+
+
 def restrict_owner_to_self(form: Any, viewer: Any) -> None:
     """Without `work.assign`, the only Vastutaja new work may name is oneself.
 
@@ -189,7 +206,7 @@ FOLLOW_UP_CLOSURE_FIELD = "confirm_follow_up_closure"
 FOLLOW_UP_CLOSURE_LABEL = "Sulge teema ja lõpeta ka järelkontroll"
 
 
-def follow_up_closure_field() -> forms.BooleanField:
+def follow_up_closure_field() -> forms.CharField:
     """`Sulge teema ja lõpeta ka järelkontroll` — never ticked for the person.
 
     Drawn only after a save was refused for it (`form.follow_up_closure_refused`)
@@ -197,8 +214,13 @@ def follow_up_closure_field() -> forms.BooleanField:
     järelkontroll …» — so the ordinary save of a stage that closes nothing never
     shows it. The service asks again under the Matter's lock; this box is the
     person's answer and decides nothing on its own.
+
+    **A checkbox whose value is the digest of the work the warning counted**
+    (docs/adr/0152 §7), not ``on``: ticked, it posts exactly what it confirms,
+    and the service refuses it again if the live work has changed since. Hence a
+    `CharField` — the empty string is «not ticked».
     """
-    return forms.BooleanField(label=FOLLOW_UP_CLOSURE_LABEL, required=False)
+    return forms.CharField(label=FOLLOW_UP_CLOSURE_LABEL, required=False, max_length=64)
 
 
 SELECT_WIDGET = forms.Select(attrs={"class": "field__input"})
@@ -1641,9 +1663,24 @@ class MatterCreateForm(
     )
     sent_recipient_name = _typed_organisation_field("Uus adressaat")
     sent_recipients_split: int | None = None
+    #: «Kuupäevad on õiged, salvesta siiski» — drawn only beside the warning
+    #: that `Arvamuse tähtaeg` precedes `Saabus` (docs/adr/0166 §4).
+    kinnita_kuupaevad = forms.BooleanField(label=CONFIRM_LABEL, required=False)
+    #: Set by `clean` when the date pair needs the confirmation, for the page.
+    date_order_warning = False
 
     def clean(self) -> dict[str, Any]:
         cleaned = super().clean() or {}
+
+        # **The person filing is the Vastutaja unless they chose somebody**,
+        # on the POST as well as on the GET (docs/adr/0150 §1, amended
+        # 2026-10-14 by docs/adr/0166 §3). The page offers no «Määramata» chip,
+        # so a save naming nobody did not come from it; a crafted POST used to
+        # file an unowned Teema (QA D-UUS). Same eligibility as the GET default.
+        if cleaned.get("owner") is None and not self.errors.get("owner"):
+            creator = creator_if_nameable(self, self.viewer)
+            if creator is not None:
+                cleaned["owner"] = creator
 
         # The union of the two sender controls, by the rule all three sender
         # forms share (`OrganisationPickerChoicesMixin.clean_senders`).
@@ -1670,6 +1707,15 @@ class MatterCreateForm(
         # deadline; nothing is derived from the creation day.
         if initiative:
             cleaned["received_date"] = None
+
+        # `Arvamuse tähtaeg` before `Saabus`: warned once, saved when confirmed
+        # (docs/adr/0166 §4). After the initiative rule above, which sets the
+        # received date aside and with it the comparison.
+        if deadline_precedes_received(
+            received=cleaned.get("received_date"), deadline=cleaned.get("response_deadline")
+        ) and not cleaned.get("kinnita_kuupaevad"):
+            self.date_order_warning = True
+            self.add_error("response_deadline", DEADLINE_BEFORE_RECEIVED)
 
         clean_sent_proposal(self, cleaned, initiative=initiative)
         return cleaned
@@ -4315,6 +4361,20 @@ class FollowUpDateForm(forms.Form):
         return value
 
 
+class FollowUpRestartForm(FollowUpDateForm):
+    """«Planeeri järelkontroll» — the day a check the closure ended is planned again on.
+
+    On a reopened Teema only (owner decision D9, docs/adr/0146 §8 amended). The
+    same one question as `Muuda` on a check — a day, required, not in the past —
+    under ids of its own, one form per follow-up.
+    """
+
+    def __init__(self, *args: Any, follow_up_id: Any = None, **kwargs: Any) -> None:
+        if follow_up_id is not None:
+            kwargs.setdefault("auto_id", f"id_jarelkontroll_uuesti_{follow_up_id}_%s")
+        super().__init__(*args, **kwargs)
+
+
 class PlanRevisionForm(forms.Form):
     """The question `×` beside `Soovitatud järgmisena` asks: which sequence was this drawn from.
 
@@ -5852,23 +5912,25 @@ ENGAGEMENT_FEEDBACK_NEEDS_CONTENT = "Kirjuta saadud tagasiside või lisa fail."
 
 
 class EngagementReplyForm(ExternalPositionFieldsMixin, forms.Form):
-    """`+ Kaasamine · Lisa tagasiside` — what came back from an open round.
+    """`+ Kaasamine · Lisa tagasiside` — what came back from a round.
 
     **The canonical record, not a new one.** What a round produced has been a
     `Meile saadetud tagasiside` tied to it by `Seotud kaasamine` since
     docs/adr/0084 §4; the round row counts them («Seotud seisukohti N») and
     their files follow them. This panel asks for exactly that record with the
     round already named, through the same `_record_external_position` and
-    `add_matter_external_position` as `+ Arvamus / tagasiside`. It does **not**
-    close the round: `Lõpeta kaasamine` is still the one act that does
-    (docs/adr/0132, docs/adr/0142).
+    `add_matter_external_position` as `+ Arvamus / tagasiside`. The first
+    answer to an open round finishes its wait (docs/adr/0142, amended
+    2026-10-07); a later answer to a finished round is recorded against it
+    and leaves the closure as it was (docs/adr/0167 §2).
 
     Four questions:
 
-    * `Kaasamine` — required, from this Matter's **open** rounds as this reader
-      may see them (`work_items.open_feedback_waits`). Preselected only when
-      there is exactly one; with several, the person chooses and nothing is
-      guessed from a date or a title;
+    * `Kaasamine` — required, from this Matter's rounds as this reader may see
+      them, open ones first and finished ones marked «lõpetatud»
+      (`engagement_replies.answerable_rounds`). Preselected only when there is
+      exactly one open round, or none open and exactly one finished; otherwise
+      the person chooses and nothing is guessed from a date or a title;
     * `Saadud tagasiside` — what came back, in writing, and the whole of it;
     * `Kuupäev` — opening on today, clearable, as on the sibling panel;
     * the files.
@@ -5891,9 +5953,10 @@ class EngagementReplyForm(ExternalPositionFieldsMixin, forms.Form):
     allows_source_label = False
     author_is_optional = True
     offers_precision = False
-    #: Saving it finishes the chosen round (owner's decision, 2026-10-07):
-    #: `_record_external_position` closes the wait through
-    #: `complete_engagement_feedback` in the same transaction.
+    #: Saving it finishes the chosen round's wait when it is still open
+    #: (owner's decision, 2026-10-07): `_record_external_position` asks
+    #: `engagement_replies.finish_wait_on_reply` in the same transaction, and a
+    #: finished round keeps its closure (docs/adr/0167 §2).
     closes_engagement = True
     panel_slug = "kaasamise_tagasiside"
 
@@ -5927,35 +5990,54 @@ class EngagementReplyForm(ExternalPositionFieldsMixin, forms.Form):
         super().__init__(*args, **kwargs)
         self.fields["summary"].label = "Saadud tagasiside"
         field = cast(Any, self.fields["engagement"])
-        #: How many open rounds this reader may attach feedback to. With none,
-        #: the panel says so instead of drawing a form that can only refuse.
+        #: How many open rounds this reader may attach feedback to.
         self.open_round_count = 0
+        #: How many rounds in all — open, or finished and still taking later
+        #: answers (docs/adr/0167 §2). With none, the panel says so instead of
+        #: drawing a form that can only refuse.
+        self.round_count = 0
         if matter is not None:
-            from app.matters import work_items
+            from app.matters.engagement_replies import answerable_rounds
 
-            # The field's own queryset is what validates a posted id: open
-            # rounds on this Matter that this reader may see, and nothing else.
-            field.queryset = (
-                work_items.open_feedback_waits(viewer).filter(matter=matter).order_by("-created_at")
-            )
-            rounds = list(field.queryset) if open_rounds is None else list(open_rounds)
+            # The field's own queryset is what validates a posted id: this
+            # Matter's tracked rounds that this reader may see, **open or
+            # finished** — a later answer belongs to the consultation it
+            # answers even after the first one finished the wait (owner
+            # decision D8). Nothing else is accepted.
+            field.queryset = answerable_rounds(viewer, matter).order_by("-created_at")
+            if open_rounds is None:
+                rows = list(field.queryset)
+                rounds = [round_ for round_ in rows if round_.feedback_closed_at is None]
+                finished = [round_ for round_ in rows if round_.feedback_closed_at is not None]
+            else:
+                rounds = list(open_rounds)
+                finished = list(field.queryset.filter(feedback_closed_at__isnull=False))
             self.open_round_count = len(rounds)
-            # The rendered choices from the rows in hand; the queryset above is
-            # still what validates a post.
+            self.round_count = len(rounds) + len(finished)
+
+            def label(round_: Any, *, done: bool) -> str:
+                text = (
+                    f"{round_.title} · {round_.display_date}"
+                    if round_.display_date
+                    else round_.title
+                )
+                return f"{text} · lõpetatud" if done else text
+
+            # The rendered choices from the rows in hand, open rounds first;
+            # the queryset above is still what validates a post.
             field.choices = [
                 ("", "Vali kaasamine"),
-                *(
-                    (
-                        str(round_.pk),
-                        f"{round_.title} · {round_.display_date}"
-                        if round_.display_date
-                        else round_.title,
-                    )
-                    for round_ in rounds
-                ),
+                *((str(round_.pk), label(round_, done=False)) for round_ in rounds),
+                *((str(round_.pk), label(round_, done=True)) for round_ in finished),
             ]
-            if len(rounds) == 1 and not self.is_bound:
-                self.initial["engagement"] = rounds[0].pk
+            # Preselected only when the answer is not a guess: exactly one open
+            # round — the wait this reply finishes — or, with none open, exactly
+            # one finished round.
+            if not self.is_bound:
+                if len(rounds) == 1:
+                    self.initial["engagement"] = rounds[0].pk
+                elif not rounds and len(finished) == 1:
+                    self.initial["engagement"] = finished[0].pk
 
     def clean_engagement(self) -> Any:
         engagement = self.cleaned_data.get("engagement")

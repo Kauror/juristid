@@ -57,6 +57,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from app.audit.operations import composer_operation
+from app.core.derived_visibility import restriction_inherited_from
 from app.core.enums import Visibility
 from app.core.errors import DomainError
 from app.documents.enums import DocumentRole
@@ -232,8 +233,8 @@ def _named_open_action(*, locked_matter: Matter, action_id: Any) -> NextAction:
 
 
 def _refuse_an_unconfirmed_closure(
-    locked_matter: Matter, stage: Any, *, confirmed: bool, finishing: Any = None
-) -> None:
+    locked_matter: Matter, stage: Any, *, confirmed: bool | str, finishing: Any = None
+) -> bool | str:
     """A save whose `Uus hetkeseis` would close a Matter with live work, asked first.
 
     `close_matter` asks the same question under the same lock as the save ends;
@@ -241,11 +242,18 @@ def _refuse_an_unconfirmed_closure(
     file, so nothing is left behind in the evidence store (docs/adr/0146 §8,
     docs/adr/0152). ``finishing`` is the step this same save completes, which
     is done rather than outstanding by the time the Matter closes.
+
+    Returns the confirmation to hand on to `close_matter`: ``True`` once the
+    person's digest was verified here, under the lock this save keeps until it
+    closes, so the step this save finishes is not read there as changed work
+    (docs/adr/0152 §7); otherwise what was posted.
     """
     from app.workflow.follow_ups import refuse_unconfirmed_closure
 
     if locked_matter.is_open and is_terminal_stage(getattr(stage, "key", None)):
-        refuse_unconfirmed_closure(locked_matter, confirmed=confirmed, finishing=finishing)
+        if refuse_unconfirmed_closure(locked_matter, confirmed=confirmed, finishing=finishing):
+            return True
+    return confirmed
 
 
 def completion_visibility_override(action: NextAction) -> str:
@@ -273,7 +281,7 @@ def complete_current_action(
     next_text: str = "",
     next_date: Any = None,
     stage: Any = None,
-    follow_ups_confirmed: bool = False,
+    follow_ups_confirmed: bool | str = False,
 ) -> WorkspaceResult:
     """`PRAEGUNE TEGEVUS` — what I did, and therefore that the step is done.
 
@@ -350,7 +358,7 @@ def complete_current_action(
     moves_stage = stage is not None and stage.pk != locked_matter.stage_id
     if moves_stage:
         # The step being finished here is done by the time the Matter closes.
-        _refuse_an_unconfirmed_closure(
+        follow_ups_confirmed = _refuse_an_unconfirmed_closure(
             locked_matter, stage, confirmed=follow_ups_confirmed, finishing=current
         )
 
@@ -699,11 +707,15 @@ def add_matter_engagement(
             actor=author,
         )
         if record_overview and url:
-            _overview_for_engagement_link(matter=locked_matter, url=url, actor=author)
+            _overview_for_engagement_link(
+                matter=locked_matter, url=url, actor=author, engagement=result.record
+            )
         return result
 
 
-def _overview_for_engagement_link(*, matter: Matter, url: str, actor: Any) -> Any:
+def _overview_for_engagement_link(
+    *, matter: Matter, url: str, actor: Any, engagement: Any = None
+) -> Any:
     """The Ülevaade a `Kaasamine` points at, recorded once (docs/adr/0142 §C).
 
     `Ülevaate link` is the round's `Hetkel käsil` overview. If the Matter
@@ -713,6 +725,13 @@ def _overview_for_engagement_link(*, matter: Matter, url: str, actor: Any) -> An
     field asks for an overview, and filing news as one would be the wrong
     record. Inside the caller's transaction, so the round and its overview are
     written together or not at all.
+
+    **Never less restricted than the round** (docs/adr/0162 §2). A round
+    restricted below its Matter neither consumes the Matter's unrestricted plan
+    nor records an unrestricted overview: the one it records carries the
+    round's restriction. An overview already published at that address is a
+    record readers already see and is returned untouched — nothing new is
+    written about the round.
     """
     from app.matters.enums import WebsiteOverviewKind, WebsiteOverviewStatus
     from app.matters.forms import ENGAGEMENT_OVERVIEW_LINK_IS_NEWS
@@ -727,18 +746,21 @@ def _overview_for_engagement_link(*, matter: Matter, url: str, actor: Any) -> An
             WebsiteOverviewKind.NEWS
         ):
             return published
-    planned = (
-        live.filter(
-            status=WebsiteOverviewStatus.PLANNED,
-            kind__in=("", WebsiteOverviewKind.OVERVIEW),
-        )
-        .order_by("-created_at")
-        .first()
+    restriction = restriction_inherited_from(engagement)
+    plans = live.filter(
+        status=WebsiteOverviewStatus.PLANNED,
+        kind__in=("", WebsiteOverviewKind.OVERVIEW),
     )
+    if restriction:
+        plans = plans.filter(visibility_override=restriction)
+    planned = plans.order_by("-created_at").first()
     if planned is None:
         planned = plan_website_overview(
             matter=matter, actor=actor, kind=WebsiteOverviewKind.OVERVIEW
         )
+        if restriction:
+            planned.visibility_override = restriction
+            planned.save(update_fields=["visibility_override", "updated_at"])
     return publish_website_overview(
         overview=planned,
         url=url,
@@ -1104,7 +1126,7 @@ def add_matter_koda_opinion(
     answers_deadline: str | None = None,
     close_rounds: Sequence[tuple[Any, str]] = (),
     once_token: Any = None,
-    follow_ups_confirmed: bool = False,
+    follow_ups_confirmed: bool | str = False,
 ) -> WorkspaceResult:
     """`+ Koja arvamus` — the Chamber's opinion went out, with the file that went.
 
@@ -1259,9 +1281,13 @@ def add_matter_koda_opinion(
         # This send schedules a check that the closure would end at once, so
         # the confirmation is always asked — and names whatever else is live
         # (docs/adr/0152). The step it finishes, if it was one, is done.
-        refuse_unconfirmed_closure(
+        # Verified here, under the lock this save keeps, the person's answer
+        # is handed on as ``True``: the check this very send schedules is not
+        # work a colleague added after the warning (docs/adr/0152 §7).
+        if refuse_unconfirmed_closure(
             locked_matter, confirmed=follow_ups_confirmed, finishing=named, will_check=True
-        )
+        ):
+            follow_ups_confirmed = True
     _spend_once(locked_matter, once_token, "koja-arvamus")
     if answers_deadline is not None:
         from app.matters.response_deadlines import (
@@ -1369,7 +1395,13 @@ def add_matter_koda_opinion(
             actor=author,
             role=OPINION_WORKING_DOCUMENT_ROLE,
         )
-        if answers_deadline is not None:
+        # On a Chamber initiative the send itself has just answered the
+        # initiative's own deadline (`answer_initiative_deadline_of`, called by
+        # the send wrapper on its own lock of this row — QA-WORKFLOW-04). Read
+        # the field back so this save neither answers it a second time nor
+        # leaves the caller's instance saying it is still due.
+        _read_back_deadline(locked_matter, matter)
+        if answers_deadline is not None and locked_matter.response_deadline is not None:
             from app.matters.response_deadlines import answer_current_deadline_with
 
             answer_current_deadline_with(
@@ -1386,6 +1418,13 @@ def add_matter_koda_opinion(
         if named is not None:
             result.action = complete_next_action(action=named, actor=author)
         return result
+
+
+def _read_back_deadline(locked_matter: Matter, matter: Matter) -> None:
+    """The deadline fields as the row now holds them, on both instances."""
+    locked_matter.refresh_from_db(fields=["response_deadline", "response_requested_at"])
+    matter.response_deadline = locked_matter.response_deadline
+    matter.response_requested_at = locked_matter.response_requested_at
 
 
 #: The fast path names a Teema that is not a Chamber proposal (a forged POST).
@@ -1481,20 +1520,12 @@ def record_sent_proposal_on_new_matter(
     # **A deadline given in the same save is answered by this send** (owner's
     # decision of 2026-10-13, docs/adr/0151 amendment). The optional
     # `Arvamuse tähtaeg` is the day the proposal was due; it went out, so the
-    # deadline ends as answered by exactly this `Submission` — the canonical
-    # `answer_current_deadline_with`, as `+ Koja arvamus` does when it names
-    # one — and no outstanding opinion work is left behind. A tracked deadline
-    # is never discharged implicitly (`work_items._discharge_exists`).
-    if locked_matter.response_deadline is not None:
-        from app.matters.response_deadlines import answer_current_deadline_with
-
-        answer_current_deadline_with(
-            locked=locked_matter,
-            matter=matter,
-            submission=sent,
-            actor=author,
-            expected_revision=None,
-        )
+    # deadline ends as answered by exactly this `Submission`. The send wrapper
+    # above did that (`answer_initiative_deadline_of`) — the one rule every
+    # interactive send on an initiative follows, so a later `+ Koja arvamus`
+    # converges on the same state (QA-WORKFLOW-04). A tracked deadline is never
+    # discharged implicitly (`work_items._discharge_exists`).
+    _read_back_deadline(locked_matter, matter)
     promote_next_planned_action(matter=locked_matter, actor=author)
     return sent
 
@@ -1591,7 +1622,7 @@ def add_procedural_development(
     as_next_step: bool = False,
     date_phase: bool = False,
     uploads: Sequence[Any] = (),
-    follow_ups_confirmed: bool = False,
+    follow_ups_confirmed: bool | str = False,
 ) -> WorkspaceResult:
     """`+ Menetluse areng` — the procedure moved, and what the lawyer does about it.
 
@@ -1738,7 +1769,9 @@ def add_procedural_development(
     ):
         raise DomainError(DEVELOPMENT_NEEDS_SOMETHING)
     if moves_stage:
-        _refuse_an_unconfirmed_closure(locked_matter, stage, confirmed=follow_ups_confirmed)
+        follow_ups_confirmed = _refuse_an_unconfirmed_closure(
+            locked_matter, stage, confirmed=follow_ups_confirmed
+        )
 
     # The phase this move may date, read on the locked row *before* it moves:
     # «forward» is a question about where the file stood.

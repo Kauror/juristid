@@ -42,16 +42,20 @@ run time. Where the database refuses, this module refuses.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, cast
 
+from django.core.exceptions import PermissionDenied
 from django.db import models, transaction
 from django.utils import timezone
 
-from app.audit.enums import ChangeEventType
-from app.audit.services import record_change_event
+from app.accounts.enums import Capability
+from app.audit.enums import ChangeEventType, SecurityEventType
+from app.audit.services import record_change_event, record_security_event
+from app.core.authorization import has_capability
 from app.core.errors import DomainError
 from app.core.models import AppendOnlyModel
 from app.documents.references import EVIDENCE_REFERENCES
@@ -127,6 +131,38 @@ def _retained(model: type[models.Model], label: str, owned: _Owned) -> bool:
 #: Named because the view prints it and the tests assert on it.
 DELETION_REFUSED = "Teemat ei saa kustutada."
 
+#: The refusal when the confirmation the person answered no longer describes
+#: the Teema (docs/adr/0165 §4). Something arrived or went while the dialog was
+#: open, so what they agreed to delete is not what would be deleted.
+DELETION_CONFIRMATION_STALE = (
+    "Teema sisu muutus pärast kinnituse avamist. Vaata üle, mis kustutataks, ja kinnita uuesti."
+)
+
+#: The refusal when a POST carries no confirmation at all — a crafted request,
+#: or a form that never showed the person what would go.
+DELETION_CONFIRMATION_MISSING = "Kustutamine vajab kinnitust."
+
+#: What the tombstone's title becomes. `matters_title_required` forbids an
+#: empty one, and the deleted title is business content the tombstone may not
+#: keep (docs/adr/0165 §5).
+TOMBSTONE_TITLE = "Kustutatud teema"
+
+#: Free-text columns of the `Matter` row that are emptied on the tombstone. The
+#: row stays because the audit trail points at it (docs/adr/0096 §4.1); what it
+#: said does not.
+TOMBSTONE_BLANKED_FIELDS: tuple[str, ...] = (
+    "brief_summary",
+    "position_summary",
+    "rationale_summary",
+    "disposition_reason",
+    "policy_area_other",
+    "legal_instrument_other",
+)
+
+
+class DeletionConfirmationStale(DomainError):
+    """The confirmation was drawn from a plan that is no longer true."""
+
 
 @dataclass(frozen=True, order=True)
 class DeletionBlocker:
@@ -166,6 +202,15 @@ class DeletionPlan:
     evidence_keys: tuple[str, ...] = ()
     derivative_keys: tuple[str, ...] = ()
     blockers: tuple[DeletionBlocker, ...] = ()
+    #: Sent opinions among the `submissions.Submission` rows above — said out
+    #: loud on the confirmation, because they are the records whose final
+    #: evidence is otherwise immutable (docs/adr/0165 §3).
+    sent_opinions: int = 0
+    #: A digest of exactly which rows and stored objects this plan would
+    #: remove. The confirmation carries it and `delete_matter` compares it
+    #: under the row lock, so a confirmation drawn before a new file, opinion
+    #: or note arrived is refused rather than silently widened (docs/adr/0165 §4).
+    digest: str = ""
 
     @property
     def is_blocked(self) -> bool:
@@ -638,17 +683,109 @@ def plan_matter_deletion(matter: Matter) -> DeletionPlan:
             retained.append(group)
         else:
             removed.append(group)
+    evidence_keys = _evidence_keys(owned)
+    derivative_keys = _derivative_keys(owned)
     return DeletionPlan(
         matter_id=matter.pk,
         owned=tuple(removed),
         retained=tuple(retained),
-        evidence_keys=_evidence_keys(owned),
-        derivative_keys=_derivative_keys(owned),
+        evidence_keys=evidence_keys,
+        derivative_keys=derivative_keys,
         blockers=tuple(sorted(blockers)),
+        sent_opinions=_sent_opinions(owned),
+        digest=_plan_digest(matter, owned, evidence_keys),
     )
 
 
-def _forget_storage(evidence_keys: Sequence[str], derivative_keys: Sequence[str] = ()) -> None:
+def _sent_opinions(owned: _Owned) -> int:
+    """How many of the owned opinions went out — the ones with final evidence.
+
+    Withdrawn and superseded opinions were sent too, and their evidence goes
+    with the Teema just the same, so they count; a draft does not.
+    """
+    from app.submissions.enums import SubmissionStatus
+    from app.submissions.models import Submission
+
+    ids = sorted(owned.ids.get(Submission._meta.label, set()), key=str)
+    sent = 0
+    for chunk in _chunked(ids):
+        sent += (
+            Submission._base_manager.filter(pk__in=chunk, sent_at__isnull=False)
+            .exclude(status=SubmissionStatus.DRAFT)
+            .count()
+        )
+    return sent
+
+
+#: Rows that are rebuilt from the evidence rather than written by a person, and
+#: so are not part of what a confirmation describes (`_plan_digest`). They are
+#: still deleted with the Teema.
+DERIVED_DATA: frozenset[str] = frozenset(
+    {"documents.DocumentDerivative", "documents.DocumentTextFragment"}
+)
+
+
+def _plan_digest(
+    matter: Matter,
+    owned: _Owned,
+    evidence_keys: Sequence[str],
+) -> str:
+    """What the person is agreeing to, reduced to one comparable value.
+
+    The primary keys of every *removed* row, per model, and every stored object
+    key. Counts alone would not do: a note deleted and another added leaves
+    every count where it was and still changes what goes. The retained audit
+    rows are left out on purpose — writing one is not new content, and the
+    deletion itself writes one — and so is derived data (`DERIVED_DATA`, the
+    search projection): a search refresh or an extraction run finishing while
+    the dialog is open re-creates rows nobody wrote, and refusing the person's
+    confirmation over it would be a refusal they cannot understand.
+    """
+    hasher = hashlib.sha256()
+    hasher.update(f"matter:{matter.pk}|".encode())
+    for label in sorted(owned.ids):
+        model = owned.models[label]
+        if model is Matter or _retained(model, label, owned):
+            continue
+        if label in DERIVED_DATA or model._meta.app_label == "search":
+            continue
+        ids = ",".join(sorted(str(pk) for pk in owned.ids[label]))
+        hasher.update(f"{label}:{ids}|".encode())
+    hasher.update(("evidence:" + ",".join(evidence_keys) + "|").encode())
+    return hasher.hexdigest()
+
+
+def _still_referenced_evidence(key: str) -> bool:
+    """Whether any canonical row anywhere still names this evidence object.
+
+    Asked after the commit, of the database the deletion left behind. Every
+    `DocumentVersion` key is minted per version today, so a key this Matter
+    owned is normally referenced by nothing once its rows are gone — but the
+    opinion archive deduplicates by hash, a restore or an import may copy a
+    key, and a future holder may share one. The bytes are the one thing this
+    operation cannot take back, so a key that *anything* still names is left
+    exactly where it is (docs/adr/0165 §6).
+    """
+    for reference in EVIDENCE_REFERENCES:
+        if reference.model()._base_manager.filter(**{reference.field: key}).exists():
+            return True
+    return False
+
+
+def _still_referenced_derivative(key: str) -> bool:
+    """The same question for a derived file, through the one model that names them."""
+    from app.documents.models import DocumentDerivative
+
+    return DocumentDerivative._base_manager.filter(storage_key=key).exists()
+
+
+def _forget_storage(
+    evidence_keys: Sequence[str],
+    derivative_keys: Sequence[str] = (),
+    *,
+    matter_id: Any = None,
+    actor_id: Any = None,
+) -> tuple[str, ...]:
     """Best effort, after the commit, with the pruners as the guarantee.
 
     Storage cleanup is deliberately *not* part of the transaction. The bytes are
@@ -665,27 +802,48 @@ def _forget_storage(evidence_keys: Sequence[str], derivative_keys: Sequence[str]
     (`DeletionPlan.evidence_keys` / `.derivative_keys`), never guessed from its
     shape.
 
-    Afterwards, an object whose row is gone is by definition unreferenced, which
-    is precisely what ``prune_orphaned_evidence`` and
-    ``prune_orphaned_derivatives`` find and remove — so a failure here costs
-    disk and nothing else, and it is tracked rather than lost. The attempt is
-    made anyway, because reclaiming at once is better than reclaiming at the
-    next run (app/documents/management/commands).
+    **A key something still names is never deleted** (docs/adr/0165 §6). The
+    rows this deletion removed are gone by now, so a remaining reference is a
+    row outside this Teema — shared bytes — and those stay.
+
+    **A failure is recorded, not lost** (docs/adr/0165 §7). The database is
+    already consistent — nothing points at the object — so the only thing a
+    failed delete leaves is disk. The keys that failed go into one
+    `MATTER_DELETION_STORAGE_PENDING` security event (keys only: they are
+    `<matter id>/<document id>/<version>` paths, not names), and
+    ``prune_orphaned_evidence`` / ``prune_orphaned_derivatives`` reclaim them on
+    their next run. Returns the keys that failed, for the tests.
     """
     from app.documents.extraction.orchestrator import derivative_storage
     from app.documents.services import evidence_storage
 
-    for label, storage_for, keys, pruner in (
-        ("evidence", evidence_storage, evidence_keys, "prune_orphaned_evidence"),
-        ("derivative", derivative_storage, derivative_keys, "prune_orphaned_derivatives"),
+    failed: dict[str, list[str]] = {"evidence": [], "derivative": []}
+    for label, storage_for, keys, pruner, referenced in (
+        (
+            "evidence",
+            evidence_storage,
+            evidence_keys,
+            "prune_orphaned_evidence",
+            _still_referenced_evidence,
+        ),
+        (
+            "derivative",
+            derivative_storage,
+            derivative_keys,
+            "prune_orphaned_derivatives",
+            _still_referenced_derivative,
+        ),
     ):
         if not keys:
             continue
         storage = storage_for()
         for key in keys:
             try:
+                if referenced(key):
+                    continue
                 storage.delete(key)
-            except Exception:  # pragma: no cover - reported, never fatal
+            except Exception:
+                failed[label].append(key)
                 logger.warning(
                     "matter deletion could not remove %s object %s; "
                     "it is unreferenced and %s will reclaim it",
@@ -694,10 +852,91 @@ def _forget_storage(evidence_keys: Sequence[str], derivative_keys: Sequence[str]
                     pruner,
                     extra={"storage_key": key},
                 )
+    if failed["evidence"] or failed["derivative"]:
+        try:
+            record_security_event(
+                event_type=SecurityEventType.MATTER_DELETION_STORAGE_PENDING,
+                actor=_user_or_none(actor_id),
+                subject=Matter.all_objects.filter(pk=matter_id).first() if matter_id else None,
+                succeeded=False,
+                detail={
+                    "evidence_keys": failed["evidence"],
+                    "derivative_keys": failed["derivative"],
+                    "retry": "prune_orphaned_evidence / prune_orphaned_derivatives",
+                },
+            )
+        except Exception:  # pragma: no cover - the log line above is the fallback
+            logger.exception("matter deletion could not record its pending storage cleanup")
+    return tuple(failed["evidence"] + failed["derivative"])
 
 
-def delete_matter(*, matter: Matter, actor: Any = None) -> DeletionPlan:
+def _user_or_none(user_id: Any) -> Any:
+    if user_id is None:
+        return None
+    from django.contrib.auth import get_user_model
+
+    return get_user_model()._base_manager.filter(pk=user_id).first()
+
+
+def may_delete_permanently(user: Any) -> bool:
+    """Whether this person may permanently delete a Teema (docs/adr/0165 §2).
+
+    An explicit capability, not a role check and not "administrator implies":
+    the department head holds it by default, a business writer may be granted
+    it individually, and a SPECIALIST or a technical ADMINISTRATOR without that
+    grant does not. The shared-gate visitor and anybody not acting hold nothing
+    (`app.core.authorization.has_capability`).
+    """
+    return has_capability(user, Capability.DELETE_MATTERS)
+
+
+def record_refused_deletion(
+    *, actor: Any, matter_id: Any, ip_address: str | None = None, user_agent: str = ""
+) -> None:
+    """A trace for a deletion POST from somebody without the capability.
+
+    `ACCESS_REFUSED`, as for every other security-sensitive request refused at
+    the boundary: somebody probing it leaves a row. The Matter id as given in
+    the address and nothing about the Matter itself — not even whether it
+    exists.
+    """
+    record_security_event(
+        event_type=SecurityEventType.ACCESS_REFUSED,
+        actor=actor if getattr(actor, "is_authenticated", False) else None,
+        ip_address=ip_address,
+        user_agent=user_agent,
+        succeeded=False,
+        detail={"operation": Capability.DELETE_MATTERS.value, "matter_id": str(matter_id)},
+    )
+
+
+def _deletion_counts(plan: DeletionPlan) -> dict[str, int]:
+    """The counts the audit keeps — numbers per kind of record, nothing else."""
+    return {
+        "documents": plan.count_of("documents.Document"),
+        "opinions": plan.count_of("submissions.Submission"),
+        "sent_opinions": plan.sent_opinions,
+        "engagements": plan.count_of("matters.MatterEngagement"),
+        "entries": plan.count_of("matters.Entry"),
+        "evidence_objects": len(plan.evidence_keys),
+        "derivative_objects": len(plan.derivative_keys),
+    }
+
+
+def delete_matter(
+    *,
+    matter: Matter,
+    actor: Any = None,
+    expected_digest: str | None = None,
+    ip_address: str | None = None,
+    user_agent: str = "",
+) -> DeletionPlan:
     """Delete one Teema. All of it, or none of it.
+
+    **This is the operation, not the permission.** It does not ask who the
+    actor is; `permanently_delete_matter` does, and it is the only door the
+    product opens onto this function (tests/test_permanent_deletion.py guards
+    that no other module calls it).
 
     The locking is the canonical order and nothing more: the Matter is taken
     ``FOR NO KEY UPDATE`` — the strength every write in this codebase takes on a
@@ -710,11 +949,15 @@ def delete_matter(*, matter: Matter, actor: Any = None) -> DeletionPlan:
     page was true when it was drawn; a legal hold, a joint submission or a
     second Matter naming this one may have appeared while somebody was reading
     it, and the refusal has to be decided against the database the deletion is
-    about to act on.
+    about to act on. With ``expected_digest`` the rebuilt plan must also be the
+    *same* plan the person confirmed, row for row, or the deletion is refused
+    with `DeletionConfirmationStale` (docs/adr/0165 §4).
 
     Raises `DomainError` when the deletion refuses. Nothing is written in that
     case — the refusal happens before the first delete, inside the transaction,
-    so there is no partial state to undo.
+    so there is no partial state to undo. Any failure *during* the deletion
+    rolls the whole transaction back, and no stored object has been touched
+    yet: bytes are removed only after the commit.
     """
     with transaction.atomic():
         try:
@@ -723,14 +966,18 @@ def delete_matter(*, matter: Matter, actor: Any = None) -> DeletionPlan:
             raise DomainError(DELETION_REFUSED) from error
         if locked.deleted_at is not None:
             # Somebody else won the race. Saying so is honest and is not an
-            # error the reader can act on differently, so it reads as done.
+            # error the reader can act on differently, so it reads as done —
+            # and nothing is written twice.
             return DeletionPlan(matter_id=locked.pk)
 
         plan = plan_matter_deletion(locked)
         if plan.is_blocked:
             raise DomainError(" ".join((DELETION_REFUSED, *plan.refusals)))
+        if expected_digest is not None and expected_digest != plan.digest:
+            raise DeletionConfirmationStale(DELETION_CONFIRMATION_STALE)
 
         owned = _collect_owned(locked)
+        reference = locked.display_reference
 
         # **The tombstone is marked first, and that ordering is load-bearing.**
         #
@@ -746,11 +993,17 @@ def delete_matter(*, matter: Matter, actor: Any = None) -> DeletionPlan:
         # indexer is never asked about a row mid-deletion. Indexing is suspended
         # over the loop as well: the refreshes would all be no-ops now, and
         # doing nothing is cheaper than proving it several dozen times.
+        #
+        # **And the row stops saying what it was about** (docs/adr/0165 §5).
+        # The tombstone exists because the audit trail points at it; its title
+        # and summaries are the deleted business content and do not stay.
         deleted_at = timezone.now()
         Matter.all_objects.filter(pk=locked.pk).update(
             deleted_at=deleted_at,
             deleted_by=getattr(actor, "pk", None),
             updated_at=deleted_at,
+            title=TOMBSTONE_TITLE,
+            **dict.fromkeys(TOMBSTONE_BLANKED_FIELDS, ""),
         )
 
         with suspend_indexing():
@@ -777,20 +1030,75 @@ def delete_matter(*, matter: Matter, actor: Any = None) -> DeletionPlan:
         # (tests/test_search_reliability.py).
         forget_matter(locked.pk)
 
-        # The audit row points at the tombstone and is the thing that keeps it
+        # The audit rows point at the tombstone and are the thing that keeps it
         # from ever being removed — which is the architecture stating its own
-        # reason. Written last, so it describes a deletion that happened.
+        # reason. Written last, so they describe a deletion that happened.
+        #
+        # **Minimal by design** (docs/adr/0165 §5): who, when, which Matter id
+        # and reference, and how much went. No title, no summary, no file name.
+        counts = _deletion_counts(plan)
         record_change_event(
             event_type=ChangeEventType.MATTER_DELETED,
             matter=locked,
             actor=actor,
-            summary=f"Teema kustutatud: {locked.title}",
+            summary="Teema kustutati jäädavalt",
             payload={
-                "title": locked.title,
-                "reference": locked.display_reference,
+                "reference": reference,
+                "counts": counts,
                 "rows": {group.label: group.count for group in plan.owned},
-                "evidence_objects": len(plan.evidence_keys),
             },
         )
-        transaction.on_commit(lambda: _forget_storage(plan.evidence_keys, plan.derivative_keys))
+        record_security_event(
+            event_type=SecurityEventType.MATTER_DELETED,
+            actor=actor,
+            subject=locked,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            detail={"reference": reference, "counts": counts},
+        )
+        matter_id = locked.pk
+        actor_id = getattr(actor, "pk", None)
+        transaction.on_commit(
+            lambda: _forget_storage(
+                plan.evidence_keys,
+                plan.derivative_keys,
+                matter_id=matter_id,
+                actor_id=actor_id,
+            )
+        )
     return plan
+
+
+def permanently_delete_matter(
+    *,
+    matter: Matter,
+    actor: Any,
+    confirmation: str,
+    ip_address: str | None = None,
+    user_agent: str = "",
+) -> DeletionPlan:
+    """`Kustuta jäädavalt` — the authorised, confirmed deletion (docs/adr/0165).
+
+    The one entry point the product uses. In order, each refusal before any
+    write:
+
+    1. **The capability.** `may_delete_permanently`, or `PermissionDenied` — a
+       SPECIALIST or a technical ADMINISTRATOR without an explicit grant is
+       refused here whatever route they reached it by.
+    2. **A confirmation.** The digest the confirmation dialog was drawn with;
+       none at all is refused, because a POST that never showed the person what
+       would go is not a confirmation.
+    3. **The same confirmation.** `delete_matter` rebuilds the plan under the
+       row lock and refuses a digest that no longer matches it.
+    """
+    if not may_delete_permanently(actor):
+        raise PermissionDenied
+    if not (confirmation or "").strip():
+        raise DomainError(DELETION_CONFIRMATION_MISSING)
+    return delete_matter(
+        matter=matter,
+        actor=actor,
+        expected_digest=confirmation.strip(),
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )

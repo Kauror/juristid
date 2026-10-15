@@ -240,7 +240,9 @@ def test_withdrawing_keeps_the_evidence(normal_matter, specialist):
 def test_a_draft_cannot_be_withdrawn(normal_matter, specialist):
     submission = _draft(normal_matter, specialist)
     with refused("Tagasi võtta saab ainult saadetud arvamust."):
-        withdraw_submission(submission=submission, actor=specialist)
+        withdraw_submission(
+            submission=submission, actor=specialist, reason="Sünteetiline tagasivõtmine"
+        )
 
 
 def test_superseding_is_recorded(normal_matter, specialist):

@@ -69,3 +69,35 @@ weakening closure confirmation or closed-Matter rules.
 
 By code; no migration. The guard and the menu are independent: dropping `stage`
 from `GUARDED_MATTER_FIELDS` restores tokenless posts.
+
+## Amendment 2026-10-14 — the header stage change answers with the column
+
+QA remediation round of 2026-10-14 (QA-BROWSER-01, QA-BROWSER-02):
+
+1. **A stage chosen in the header redraws the column as well.** `Tegevused`
+   groups the chronology by `Hetkeseis` period and marks the current one, and
+   `Menetluse kulg` and the offered next stages read the same stage, so a swap
+   of `#teema-pais` alone left the previous period standing as current until a
+   reload. On `Teema`, a successful header stage save now answers the way a
+   column save that changes the header does: `_render_overview` with the header
+   out of band, retargeted at `#teema-vaade` (`HX-Retarget`, `HX-Reswap:
+   outerHTML`), which also lets the page carry a draft typed in the column
+   across the swap (`static/js/app.js` `keepDrafts`). From `Dokumendid` — which
+   has no column — the answer stays the header alone; a stage that closes the
+   Matter still reloads the page (§10 of docs/adr/0131).
+2. **Every header answer marks the open tab.** `_header_context` carries `tab`,
+   read off `HX-Current-URL` (`Dokumendid` when the request came from that tab,
+   `Teema` otherwise), and `_render_overview` sets `Teema` on both of its
+   branches. The swapped-in tab bar used to have neither tab marked
+   (`aria-current="page"`, the underline).
+3. **The ⋯ menu has a slot of its own** (`header_menu.html`, QA-BROWSER-07),
+   which a column save sends out of band beside the `Dokumendid` count, so the
+   menu appears with the save that brought the Matter's first file.
+
+## Amendment — 2026-10-14 (docs/adr/0166 §1)
+
+`owner` and `received_date` join `GUARDED_MATTER_FIELDS` on the same terms as
+`stage` in §4: the header's `Vastutaja` and `Saabus` editors, and the register's
+`Määra ▾`, post a field revision, and a stale or missing one is refused
+(QA-WORKFLOW-03). The fields left unguarded are named in
+`UNGUARDED_MATTER_FIELDS`.

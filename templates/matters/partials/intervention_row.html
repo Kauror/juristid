@@ -40,7 +40,8 @@ rest behind «Näita veel N ▾» — and two copies of a row are two rows that 
     </span>
   </a>
   <details class="rowmenu">
-    <summary class="rowmenu__trigger" aria-label="Rea tegevused">⋯</summary>
+    {# Named for its row, like Minu asjad's (QA-BROWSER-06). #}
+    <summary class="rowmenu__trigger" aria-label="Rea tegevused: {{ row.matter.title }}">⋯</summary>
     <div class="rowmenu__menu">
       <a class="rowmenu__item" href="{{ row.url }}">Ava teema</a>
       {% if row.is_ownerless %}

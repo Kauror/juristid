@@ -11,7 +11,7 @@ from django.utils.dateparse import parse_datetime
 from django.utils.functional import SimpleLazyObject
 
 from app.accounts import local_auth, shared_gate
-from app.accounts.selectors import persona_candidates
+from app.accounts.selectors import department_workers, persona_candidates
 from app.core.authorization import (
     is_department_head,
     may_assign_work,
@@ -125,6 +125,15 @@ def application(request: HttpRequest) -> dict[str, Any]:
         # which both lawyer roles hold by default; `assign_matter` refuses the
         # change for anybody it is withdrawn from (docs/adr/0145 §3).
         "can_assign_work": may_assign_work(getattr(request, "user", None)),
+        # **The colleagues a first name is told apart among.** The department
+        # calls each other by first name, so a surface naming a colleague in
+        # passing — who wrote a `Tegevused` line, whose desk this is — says
+        # `Marko`, not `Marko Udras` beside `Ireen` and `Sandra`; a first name
+        # two colleagues share is lengthened by `name_among`, which also counts
+        # the person being named, so a departed namesake is disambiguated too
+        # (`app/accounts/naming.py`). Lazy and materialised once: one query on
+        # a page that names somebody this way, none on any other.
+        "colleagues": SimpleLazyObject(lambda: list(department_workers())),
     }
 
 

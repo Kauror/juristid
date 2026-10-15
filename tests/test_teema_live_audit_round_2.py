@@ -37,6 +37,7 @@ from app.matters.deletion import (
     BLOCKED_BY_RELATED_MATTER,
     DELETION_REFUSED,
     delete_matter,
+    permanently_delete_matter,
     plan_matter_deletion,
 )
 from app.matters.enums import EngagementKind
@@ -147,6 +148,11 @@ CREATE_ONLY = {
     "sent_on",
     "sent_recipients",
     "sent_recipient_name",
+    # Not a fact: the confirmation that an `Arvamuse tähtaeg` before `Saabus`
+    # is meant, drawn only beside that warning (docs/adr/0166 §4). The approved
+    # warning covers `Uus teema` and the header editors; `Muuda teemat` was
+    # left out of that scope, so the edit form has nothing to confirm.
+    "kinnita_kuupaevad",
 }
 #: `revision` is the version of the record the correction form was filled from.
 #:
@@ -617,7 +623,9 @@ def test_the_deletion_is_audited_on_the_row_it_keeps(rich_matter, specialist):
 
     event = ChangeEvent.objects.get(matter_id=matter_id, event_type=ChangeEventType.MATTER_DELETED)
     assert event.actor == specialist
-    assert event.payload["title"] == "Kustutatav teema"
+    # The title is the deleted business content and is not kept (docs/adr/0165 §5).
+    assert "title" not in event.payload
+    assert "Kustutatav teema" not in event.summary
     assert event.payload["rows"]["matters.Entry"] == 2
 
 
@@ -701,12 +709,27 @@ def test_a_successor_matter_refuses_the_deletion(rich_matter, specialist):
 
 
 # -- the surface ------------------------------------------------------------
+#
+# Deleting is the department head's since docs/adr/0165 (owner decision D6), so
+# the route is exercised as one. What a SPECIALIST meets now — no offer, a 403
+# on the GET and on a crafted POST — is tests/test_permanent_deletion.py.
 
 
-def test_the_edit_page_offers_deletion_apart_from_salvesta(signed_in, specialist):
+@pytest.fixture
+def head_client(client, department_head):
+    client.force_login(department_head)
+    return client
+
+
+def confirmed(matter: Matter) -> dict:
+    """The POST the confirmation dialog sends: its plan's digest."""
+    return {"confirm_digest": plan_matter_deletion(matter).digest}
+
+
+def test_the_edit_page_offers_deletion_apart_from_salvesta(head_client, specialist):
     """Visible, destructive, and outside the form that saves."""
     matter = factories.MatterFactory(owner=specialist)
-    page = signed_in.get(edit_url(matter)).content.decode()
+    page = head_client.get(edit_url(matter)).content.decode()
 
     assert "Kustuta teema" in page
     assert delete_url(matter) in page
@@ -715,9 +738,9 @@ def test_the_edit_page_offers_deletion_apart_from_salvesta(signed_in, specialist
     assert page.index("dangerzone") > page.rindex("</form>")
 
 
-def test_a_get_cannot_delete(signed_in, specialist, rich_matter):
+def test_a_get_cannot_delete(head_client, specialist, rich_matter):
     """A link that deleted would be deleted by a prefetch."""
-    response = signed_in.get(delete_url(rich_matter))
+    response = head_client.get(delete_url(rich_matter))
 
     assert response.status_code == 200
     assert "Kustuta teema" in response.content.decode()
@@ -725,48 +748,55 @@ def test_a_get_cannot_delete(signed_in, specialist, rich_matter):
     assert Entry.objects.filter(matter=rich_matter).count() == 2
 
 
-def test_the_confirmation_names_the_teema_and_what_is_inside_it(signed_in, rich_matter):
+def test_the_confirmation_names_the_teema_and_what_is_inside_it(head_client, rich_matter):
     """Pressing the button is an answer about *this* record."""
-    page = signed_in.get(delete_url(rich_matter)).content.decode()
+    page = head_client.get(delete_url(rich_matter)).content.decode()
 
     assert "Kustutatav teema" in page
     assert "2 sissekannet" in page
-    assert "Seda ei saa tagasi võtta." in page
+    assert "Seda tegevust ei saa tagasi võtta." in page
     assert "Loobu" in page
+    assert "Kustuta jäädavalt" in page
 
 
-def test_cancelling_writes_nothing(signed_in, rich_matter):
+def test_cancelling_writes_nothing(head_client, rich_matter):
     """`Loobu` is a link back, so the GET is the whole of it."""
     before = ChangeEvent.objects.count()
-    signed_in.get(delete_url(rich_matter))
+    head_client.get(delete_url(rich_matter))
 
     assert ChangeEvent.objects.count() == before
     assert Matter.objects.filter(pk=rich_matter.pk).exists()
 
 
-def test_the_post_deletes_and_lands_on_the_register(signed_in, rich_matter):
+def test_the_post_deletes_and_lands_on_the_register(head_client, rich_matter):
     """And never on the address that now answers 404."""
     matter_id = rich_matter.pk
 
-    response = signed_in.post(delete_url(rich_matter), follow=True)
+    response = head_client.post(delete_url(rich_matter), confirmed(rich_matter), follow=True)
 
     assert response.redirect_chain[-1][0] == reverse("matters:matter_list")
     assert "Teema kustutati." in response.content.decode()
     assert not Matter.objects.filter(pk=matter_id).exists()
 
 
-def test_the_old_address_no_longer_opens(signed_in, rich_matter):
+def test_the_old_address_no_longer_opens(head_client, rich_matter):
     """404, not a tombstone rendered as a Matter."""
     detail = reverse("matters:matter_detail", kwargs={"pk": rich_matter.pk})
-    signed_in.post(delete_url(rich_matter))
+    assert head_client.post(delete_url(rich_matter), confirmed(rich_matter)).status_code == 302
 
-    assert signed_in.get(detail).status_code == 404
-    assert signed_in.get(edit_url(rich_matter)).status_code == 404
+    assert head_client.get(detail).status_code == 404
+    assert head_client.get(edit_url(rich_matter)).status_code == 404
 
 
-def test_a_deleted_matter_is_absent_from_the_work_surfaces(signed_in, rich_matter, specialist):
+def test_a_deleted_matter_is_absent_from_the_work_surfaces(
+    signed_in, rich_matter, specialist, department_head
+):
     """Minu asjad, the register and the department page all read one manager."""
-    signed_in.post(delete_url(rich_matter))
+    permanently_delete_matter(
+        matter=rich_matter,
+        actor=department_head,
+        confirmation=plan_matter_deletion(rich_matter).digest,
+    )
 
     for url in (
         reverse("matters:my_work"),
@@ -776,44 +806,45 @@ def test_a_deleted_matter_is_absent_from_the_work_surfaces(signed_in, rich_matte
         assert "Kustutatav teema" not in signed_in.get(url).content.decode(), url
 
 
-def test_a_deleted_matter_is_absent_from_search(signed_in, rich_matter):
+def test_a_deleted_matter_is_absent_from_search(head_client, rich_matter):
     """Immediately, and not at the next full rebuild."""
-    signed_in.post(delete_url(rich_matter))
+    assert head_client.post(delete_url(rich_matter), confirmed(rich_matter)).status_code == 302
 
-    page = signed_in.get(reverse("matters:matter_list"), {"otsing": "Kustutatav"})
+    page = head_client.get(reverse("matters:matter_list"), {"otsing": "Kustutatav"})
     assert "Kustutatav teema" not in page.content.decode()
 
 
-def test_a_blocked_matter_is_offered_no_final_button(signed_in, rich_matter, specialist):
+def test_a_blocked_matter_is_offered_no_final_button(head_client, rich_matter, specialist):
     """The page says why, and the button that cannot work is not drawn."""
     Document.objects.filter(matter=rich_matter).update(legal_hold=True)
 
-    page = signed_in.get(delete_url(rich_matter)).content.decode()
+    page = head_client.get(delete_url(rich_matter)).content.decode()
 
     assert "Seda teemat ei saa kustutada" in page
     assert "säilitamiskohustus" in page
     assert "button--danger" not in page
 
 
-def test_a_blocked_matter_refuses_the_post_too(signed_in, rich_matter):
+def test_a_blocked_matter_refuses_the_post_too(head_client, rich_matter):
     """The page is presentation; `delete_matter` is the boundary."""
+    digest = confirmed(rich_matter)
     Document.objects.filter(matter=rich_matter).update(legal_hold=True)
 
-    response = signed_in.post(delete_url(rich_matter))
+    response = head_client.post(delete_url(rich_matter), digest)
 
     assert response.status_code == 400
     assert Matter.objects.filter(pk=rich_matter.pk).exists()
     assert Entry.objects.filter(matter=rich_matter).count() == 2
 
 
-def test_the_post_needs_a_token(specialist, rich_matter):
+def test_the_post_needs_a_token(department_head, rich_matter):
     """CSRF, like every other write in the product."""
     from django.test import Client
 
     enforcing = Client(enforce_csrf_checks=True)
-    enforcing.force_login(specialist)
+    enforcing.force_login(department_head)
 
-    response = enforcing.post(delete_url(rich_matter))
+    response = enforcing.post(delete_url(rich_matter), confirmed(rich_matter))
 
     assert response.status_code == 403
     assert Matter.objects.filter(pk=rich_matter.pk).exists()
@@ -838,7 +869,7 @@ def test_a_role_without_business_write_is_refused(client, request, rich_matter, 
     assert Entry.objects.filter(matter=rich_matter).count() == 2
 
 
-def test_the_title_is_escaped_on_the_confirmation_page(signed_in, specialist):
+def test_the_title_is_escaped_on_the_confirmation_page(head_client, specialist):
     """The record's own name, rendered as text.
 
     Worth its own line because this page prints a value somebody typed beside a
@@ -847,7 +878,7 @@ def test_the_title_is_escaped_on_the_confirmation_page(signed_in, specialist):
     """
     matter = factories.MatterFactory(owner=specialist, title="<script>x</script> eelnõu")
 
-    page = signed_in.get(delete_url(matter)).content.decode()
+    page = head_client.get(delete_url(matter)).content.decode()
 
     assert "<script>x</script>" not in page
     assert "&lt;script&gt;" in page

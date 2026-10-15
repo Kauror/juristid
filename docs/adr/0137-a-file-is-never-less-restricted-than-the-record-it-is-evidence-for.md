@@ -141,3 +141,11 @@ anybody who may not see the Matter; the exposure is the rows on a `NORMAL` one.
   completing a restricted `NextAction` is created unrestricted. That is the
   record's own visibility, not its file's.
 * A restriction control on any Teema panel.
+
+## Amendment, 2026-10-14 — the file of a reply to a restricted round (docs/adr/0162)
+
+§2's «copied, not joined» is unchanged for every record kind but one: a file
+linked to a `MatterExternalPosition` whose `Kaasamine` round is restricted is
+also hidden **live** through that round (`Document.visible_to`), so a file
+captured before replies inherited the round's restriction reaches no reader the
+round excludes. No row is rewritten; §3 is unchanged for every other kind.

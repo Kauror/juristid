@@ -74,6 +74,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from app.core.dates import format_estonian_date
+from app.core.request_params import digits_or_none
 from app.matters.enums import ResponseDeadlineOutcome
 from app.matters.models import Matter, MatterResponseDeadline
 from app.matters.selectors import DATA_CLASS_REAL, MISSING, UNKNOWN_YEAR
@@ -389,6 +390,10 @@ ON_TIME = "ajal"
 LATE = "hiljem"
 VERIFIABLE = "kontrollitav"
 CHANGED_AFTER_SENDING = "muutus"
+#: A date-only send and the request recorded on that same Tallinn day: which
+#: came first is not known, so the answer is not judged (owner decision D10,
+#: 2026-10-14; DC-STATS-02).
+SAME_DAY_REQUEST = "samapaev"
 BEFORE_HISTORY = "ajaloota"
 WITHDRAWN = "tagasi"
 ANSWER_GROUP_LABELS: dict[str, str] = {
@@ -399,11 +404,17 @@ ANSWER_GROUP_LABELS: dict[str, str] = {
     # apart however narrowly they are cut; «ei saa kontrollida» is their note
     # and the list heading (visual QA 2026-10-13, ISSUE-4).
     CHANGED_AFTER_SENDING: "Tähtaeg muutus või lisati pärast saatmist",
+    SAME_DAY_REQUEST: "Küsiti saatmise päeval, järjekord teadmata",
     BEFORE_HISTORY: "Tähtaeg on enne tähtaegade ajalugu",
     WITHDRAWN: "Vastus on tagasi võetud",
 }
 UNVERIFIABLE_NOTE = "Ei saa kontrollida · ei ole protsendis"
-UNVERIFIABLE_GROUPS: tuple[str, ...] = (CHANGED_AFTER_SENDING, BEFORE_HISTORY, WITHDRAWN)
+UNVERIFIABLE_GROUPS: tuple[str, ...] = (
+    CHANGED_AFTER_SENDING,
+    SAME_DAY_REQUEST,
+    BEFORE_HISTORY,
+    WITHDRAWN,
+)
 
 
 @dataclass(frozen=True)
@@ -434,14 +445,29 @@ def _later_than_sending(
     With a real timestamp the two instants are compared. With a date-only send
     — the anchor time in the column is nobody's statement — the comparison is
     by Tallinn calendar day, and ``same_day`` says how a change on the sending
-    day itself is read: as *after* for a deadline revision (the order within
-    that day is unknown, so it cannot be ruled out), and as *not after* for the
-    moment a request was recorded.
+    day itself is read: as *after* (the order within that day is unknown, so it
+    cannot be ruled out). The moment a request was recorded is asked with
+    ``same_day=False`` and its sending-day case separately
+    (:func:`_on_the_sending_day`), so it reads «järjekord teadmata» rather than
+    either order (owner decision D10, 2026-10-14).
     """
     if precision != SentAtPrecision.DATE:
         return moment > sent_at
     moment_day, sent_day = timezone.localdate(moment), timezone.localdate(sent_at)
     return moment_day >= sent_day if same_day else moment_day > sent_day
+
+
+def _on_the_sending_day(moment: datetime, sent_at: datetime, precision: str) -> bool:
+    """A date-only send and ``moment`` on the same Tallinn day: their order is unknown.
+
+    With a real timestamp the instants are ordered and this is never true. With
+    a date-only send the anchor time is nobody's statement, so a request
+    recorded that day may have come before the letter or after it — neither is
+    invented (D10: «ei saa kontrollida», not on time or late).
+    """
+    if precision != SentAtPrecision.DATE:
+        return False
+    return timezone.localdate(moment) == timezone.localdate(sent_at)
 
 
 def _answered_population(context: ReportingContext) -> QuerySet[MatterResponseDeadline]:
@@ -506,6 +532,8 @@ def _answer_rows(context: ReportingContext) -> list[AnswerRow]:
             for other in others[row.matter_id]
         ):
             group = CHANGED_AFTER_SENDING
+        elif _on_the_sending_day(row.requested_at, sent_at, precision):
+            group = SAME_DAY_REQUEST
         else:
             group = ON_TIME if sent_on <= row.deadline else LATE
         rows.append(
@@ -628,6 +656,17 @@ def _ended_in_period(context: ReportingContext) -> Q:
 # ---------------------------------------------------------------------------
 
 
+def _first_send_day(context: ReportingContext) -> date | None:
+    """The Tallinn day of the first sent opinion this context can count.
+
+    The same population and the same clock as ``measured_window``, read to the
+    day: the year alone cannot tell whether last year's window up to the cutoff
+    was measured at all (QA-STATS-05).
+    """
+    first = all_sent(context).order_by("sent_at").values_list("sent_at", flat=True).first()
+    return None if first is None else timezone.localdate(first)
+
+
 def submissions_sent_yoy_change(context: ReportingContext) -> MetricResult:
     """1 January to today, against 1 January to the same date last year.
 
@@ -674,13 +713,18 @@ def submissions_sent_yoy_change(context: ReportingContext) -> MetricResult:
     status: MetricStatus | None = None
     if window is not None:
         notes.insert(0, f"Katvus: struktuursed arvamuse kirjed alates aastast {window[0]}.")
-    if window is None:
+    first_day = _first_send_day(context) if window is not None else None
+    if window is None or first_day is None:
         status = MetricStatus.INSUFFICIENT_DATA
-    elif window[0] > previous_cutoff.year:
+    elif first_day > previous_cutoff:
+        # Compared as a *date*, not a year (QA-STATS-05, ADR 0160 §5): a first
+        # send on 9.9.2025 leaves 1.1–1.8.2025 unmeasured, and comparing years
+        # (2025 > 2025 is false) reported «3 vs 0» against a window no record
+        # could speak for.
         status = MetricStatus.INSUFFICIENT_DATA
         notes.append(
             f"Eelmise aasta kohta mõõtmist ei ole: esimene salvestatud arvamus on "
-            f"aastast {window[0]}."
+            f"{format_estonian_date(first_day)}."
         )
 
     return simple_result(
@@ -1212,7 +1256,9 @@ def _year_list(
     """
     if group not in labels or not year:
         raise Http404("Tundmatu rühm.")
-    if year != UNKNOWN_YEAR and not year.isdigit():
+    # ASCII digits, and no wider than a year: `²` passed `isdigit()` and raised
+    # in `int()` below (QA-SUBDOCS-01).
+    if year != UNKNOWN_YEAR and digits_or_none(year, maximum=9999) is None:
         raise Http404("Tundmatu aasta.")
     population = annotate(_year_population(context, key))
     if year == UNKNOWN_YEAR and not context.period.is_all:

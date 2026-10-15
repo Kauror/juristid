@@ -45,6 +45,7 @@ BUSINESS_CAPABILITIES: tuple[str, ...] = (
     Capability.VIEW_DEPARTMENT_MANAGEMENT.value,
     Capability.ASSIGN_WORK.value,
     Capability.REVIEW_WORK_VICTORIES.value,
+    Capability.DELETE_MATTERS.value,
 )
 
 ADMINISTRATIVE_CAPABILITIES: tuple[str, ...] = (
@@ -65,6 +66,10 @@ ALL_CAPABILITIES: tuple[str, ...] = BUSINESS_CAPABILITIES + ADMINISTRATIVE_CAPAB
 #:   writer, `ROLES_WITH_BUSINESS_WRITE` (docs/adr/0037, 0042). Not narrowed.
 #: * `work_victory.review` — `ROLES_WITH_WORK_VICTORY_REVIEW`, the department
 #:   head (Stage-2G brief 25).
+#: * `matter.delete_permanently` — **narrowed on purpose** (docs/adr/0165,
+#:   owner decision D6). Deleting a Teema was any business writer under
+#:   docs/adr/0096 §4.5; it is now the department head's, and anybody else
+#:   holds it only through an individual grant.
 #: * the two administrative capabilities — nobody, by default, ever.
 DEFAULT_HOLDERS: dict[str, frozenset[str]] = {
     Capability.VIEW_DEPARTMENT_MANAGEMENT.value: frozenset({UserRole.DEPARTMENT_HEAD.value}),
@@ -72,6 +77,7 @@ DEFAULT_HOLDERS: dict[str, frozenset[str]] = {
         {UserRole.SPECIALIST.value, UserRole.DEPARTMENT_HEAD.value}
     ),
     Capability.REVIEW_WORK_VICTORIES.value: frozenset({UserRole.DEPARTMENT_HEAD.value}),
+    Capability.DELETE_MATTERS.value: frozenset({UserRole.DEPARTMENT_HEAD.value}),
     Capability.MANAGE_ACCOUNTS.value: frozenset(),
     Capability.DELEGATE_ADMINISTRATION.value: frozenset(),
 }
@@ -82,7 +88,13 @@ DEFAULT_HOLDERS: dict[str, frozenset[str]] = {
 #: READER or a technical administrator granted one of these still holds nothing
 #: (docs/adr/0037).
 REQUIRES_BUSINESS_WRITE: frozenset[str] = frozenset(
-    {Capability.ASSIGN_WORK.value, Capability.REVIEW_WORK_VICTORIES.value}
+    {
+        Capability.ASSIGN_WORK.value,
+        Capability.REVIEW_WORK_VICTORIES.value,
+        # Deleting is the strongest write there is; a READER or a technical
+        # administrator granted it still holds nothing (docs/adr/0165).
+        Capability.DELETE_MATTERS.value,
+    }
 )
 
 #: Capabilities that require another one to mean anything. Granting somebody
@@ -108,6 +120,11 @@ GRANTABLE_TO_ROLES: dict[str, frozenset[str]] = {
         {UserRole.SPECIALIST.value, UserRole.DEPARTMENT_HEAD.value}
     ),
     Capability.REVIEW_WORK_VICTORIES.value: frozenset(
+        {UserRole.SPECIALIST.value, UserRole.DEPARTMENT_HEAD.value}
+    ),
+    # A specialist may be given the department head's deletion right by name;
+    # the technical administrator and the reader may not (docs/adr/0165).
+    Capability.DELETE_MATTERS.value: frozenset(
         {UserRole.SPECIALIST.value, UserRole.DEPARTMENT_HEAD.value}
     ),
     # Any role may administer accounts — the point of the separation is that
@@ -139,6 +156,10 @@ TEXT: dict[str, CapabilityText] = {
     Capability.REVIEW_WORK_VICTORIES.value: CapabilityText(
         "Töövõitude kinnitamine",
         "Töövõidu kinnitamine või mitterealiseerunuks märkimine.",
+    ),
+    Capability.DELETE_MATTERS.value: CapabilityText(
+        "Teema jäädav kustutamine",
+        "Teema kustutamine koos kogu sisuga, ka välja saadetud arvamuste ja nende failidega.",
     ),
     Capability.MANAGE_ACCOUNTS.value: CapabilityText(
         "Kasutajate haldus",

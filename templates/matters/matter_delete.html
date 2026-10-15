@@ -9,7 +9,8 @@
   is not there at all for anybody driving the page without scripting. This page
   names the Teema, counts what is inside it, states that the act cannot be
   undone, and offers `Loobu` as the equal alternative to the one red button
-  (docs/adr/0096 §4.3).
+  (docs/adr/0096 §4.3). Reached only by somebody who may delete permanently
+  (docs/adr/0165).
 
   **Reached by GET and acted on by POST**, with a CSRF token. Nothing here
   writes: the counts come from `plan_matter_deletion`, which walks the ownership
@@ -37,15 +38,33 @@
     <p class="formerror" role="alert">{{ delete_error }}</p>
   {% endif %}
 
-  <div class="dangerzone">
+  {% comment %}
+    **The confirmation dialog** (docs/adr/0165 §3, owner decision D6):
+    «Kustuta teema» → this dialog → «Seda tegevust ei saa tagasi võtta.» →
+    «Loobu» / «Kustuta jäädavalt».
+
+    Server-rendered and `role="alertdialog"`, not a script-opened modal and not
+    a `confirm()`: the server binds the answer to `plan.digest`, the plan this
+    dialog was drawn from, and refuses it if the Teema changed before the
+    button was pressed — which a browser-side dialog could not promise — and
+    the question still exists for somebody without scripting (docs/adr/0096
+    §4.3). `Loobu` takes the initial focus, so the reflexive Enter is the safe
+    answer.
+
+    It says what goes and says nothing about backups: a backup copy follows its
+    own retention, and a dialog that implied otherwise would be untrue.
+  {% endcomment %}
+  <div class="dangerzone" role="alertdialog" aria-modal="false"
+       aria-labelledby="kustuta-pealkiri"
+       aria-describedby="{% if plan.is_blocked %}kustuta-pohjused{% else %}kustuta-hoiatus{% endif %}">
     {% comment %}
       A question where there is a decision to take, and a statement where there
       is not. The blocked page used to ask «Kas kustutada see teema?» and then
       answer it in the next line, which reads as a control that failed rather
       than as an answer the reader has been given.
     {% endcomment %}
-    <h2 class="dangerzone__title">
-      {% if plan.is_blocked %}Seda teemat ei saa kustutada{% else %}Kas kustutada see teema?{% endif %}
+    <h2 class="dangerzone__title" id="kustuta-pealkiri">
+      {% if plan.is_blocked %}Seda teemat ei saa kustutada{% else %}Kas kustutada see teema jäädavalt?{% endif %}
     </h2>
     {% comment %}
       The title, said back. A person may have several Teemad open, and the only
@@ -55,7 +74,7 @@
     <p class="dangerzone__subject">{{ matter.title }}</p>
 
     {% if plan.is_blocked %}
-      <ul class="dangerzone__list">
+      <ul class="dangerzone__list" id="kustuta-pohjused">
         {% for refusal in plan.refusals %}
           <li>{{ refusal }}</li>
         {% endfor %}
@@ -64,50 +83,48 @@
         <a class="button button--quiet" href="{% url 'matters:matter_edit' pk=matter.pk %}">Tagasi</a>
       </div>
     {% else %}
-      <p class="dangerzone__help">
-        Kustutamine eemaldab teema ja kogu selle sisu jäädavalt. Seda ei saa tagasi võtta.
-      </p>
-      {% if summary or evidence_objects %}
-        <ul class="dangerzone__list">
-          {% for label, count in summary %}
-            <li>{{ count }} {{ label }}</li>
-          {% endfor %}
-          {% if evidence_objects %}
-            <li>{{ evidence_objects }} salvestatud faili</li>
-          {% endif %}
-        </ul>
-      {% else %}
-        <p class="dangerzone__help">Teemal ei ole veel sisu.</p>
-      {% endif %}
+      <div id="kustuta-hoiatus">
+        <p class="dangerzone__help">
+          Teema kustutatakse koos kogu sisuga{% if sent_opinions %}, ka välja saadetud arvamuste ja nende lõplike failidega{% endif %}.
+        </p>
+        {% if summary or evidence_objects %}
+          <ul class="dangerzone__list" aria-label="Kustutatakse">
+            {% for label, count in summary %}
+              <li>{{ count }} {{ label }}</li>
+            {% endfor %}
+            {% if sent_opinions %}
+              <li>neist {{ sent_opinions }} välja saadetud arvamust</li>
+            {% endif %}
+            {% if evidence_objects %}
+              <li>{{ evidence_objects }} salvestatud faili</li>
+            {% endif %}
+          </ul>
+        {% else %}
+          <p class="dangerzone__help">Teemal ei ole veel sisu.</p>
+        {% endif %}
+        {% comment %}
+          No promise of absolute erasure (owner review B, docs/adr/0165 §5):
+          the deletion's own trace stays in the security log, and the Teema's
+          earlier audit rows are append-only and are kept as they were.
+        {% endcomment %}
+        <p class="dangerzone__help">Turvalogisse jääb kustutamise kirje (kes, millal, viitenumber ja kogused); varasemad logikirjed säilivad muutmata.</p>
+        <p class="dangerzone__help"><strong>Seda tegevust ei saa tagasi võtta.</strong></p>
+      </div>
       {% comment %}
-        `button--danger-strong`, and the offer on `Muuda teemat` is the ordinary
-        outline `button--danger`.
+        `Loobu` returns to the Teema, which is where somebody deciding not to
+        delete it wants to be, and writes nothing (QA-017).
 
-        The two look alike otherwise, and they must not: pressing the first is
-        a navigation and pressing this one is permanent. A filled button is the
-        page saying which of the two it is (docs/adr/0096 §4.3).
+        `button--danger-strong` on the final button, and the offer on `Muuda
+        teemat` is the ordinary outline `button--danger`: pressing the first is
+        a navigation and pressing this one is permanent (docs/adr/0096 §4.3).
       {% endcomment %}
       <form class="dangerzone__actions" method="post"
             action="{% url 'matters:matter_delete' pk=matter.pk %}">
         {% csrf_token %}
-        <button class="button button--danger button--danger-strong" type="submit">Kustuta teema</button>
-        {% comment %}
-          `Loobu` returns to the Teema, which is where somebody deciding not to
-          delete it wants to be.
-
-          It used to return to `Muuda teemat`, the page this one is reached
-          from. That is where the reader was, but it is not where they were
-          going: they opened the edit form, followed a destructive offer out of
-          it, and answered «no» — and landing back in a half-filled form makes
-          the answer look like a step in an edit rather than the end of the
-          question. A destructive question answered «no» should leave nothing
-          behind, the form included (QA-017).
-
-          The back-link at the top of this page still reads «← Muuda teemat»,
-          for the reader who did mean to go on editing.
-        {% endcomment %}
-        <a class="button button--quiet"
+        <input type="hidden" name="confirm_digest" value="{{ plan.digest }}">
+        <a class="button button--quiet" autofocus
            href="{% url 'matters:matter_detail' pk=matter.pk %}">Loobu</a>
+        <button class="button button--danger button--danger-strong" type="submit">Kustuta jäädavalt</button>
       </form>
     {% endif %}
   </div>

@@ -321,7 +321,8 @@ def test_the_deadline_is_one_obligation_and_no_step(signed_in, specialist):
     assert matter.response_deadline == date(2026, 9, 18)
 
     assert not NextAction.objects.filter(matter=matter).exists()
-    assert matter.plan_steps.count() == 5
+    # Four standard steps since version 2 (docs/adr/0168 §5).
+    assert matter.plan_steps.count() == 4
 
 
 def test_a_blank_deadline_invents_nothing(signed_in):

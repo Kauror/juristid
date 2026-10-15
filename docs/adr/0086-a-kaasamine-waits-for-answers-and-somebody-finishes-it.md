@@ -383,3 +383,7 @@ selectors is re-attaching controls to columns that never went away. Dropping the
 three new columns would lose what people had written down, which is the usual
 cost of any additive column and the reason these are the smallest set that
 answers the question.
+
+## Amendment, 2026-10-14 — `Saadud tagasiside` is searchable
+
+**§5's «It is not indexed» is superseded by [0167](0167-a-kaasamine-takes-later-answers-and-a-received-answer-keeps-its-source.md) §3** (owner decision D8). The round's own `feedback_received` is in its `ENGAGEMENT` search row beside the note, authorized against the round's own visibility, so the same member feedback is findable whichever form stored it. No `INDEX_VERSION` bump; rows written before it gain the text on their next save or a rebuild.

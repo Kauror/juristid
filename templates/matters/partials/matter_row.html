@@ -83,7 +83,10 @@ second `tbody` of the same table. Two copies of a row are two rows that drift.
   {% comment %}
     The short name in the cell, the full one in the tooltip. The model
     owns what a person is called informally (`User.get_short_name`);
-    this is not a first-token split written into a template.
+    this is not a first-token split written into a template — and
+    `name_among` lengthens it only where two colleagues share it, so two
+    Sandras never read as one owner (`colleagues`,
+    app/core/context_processors.py).
   {% endcomment %}
   <td class="table__owner">
     {% if matter.owner %}
@@ -91,9 +94,9 @@ second `tbody` of the same table. Two copies of a row are two rows that drift.
         <a class="table__quietlink table__clip"
            href="?{% register_filter_query 'vastutaja' matter.owner.pk %}#tulemused"
            title="{{ matter.owner.display_name }}"
-           aria-label="Filtreeri vastutaja: {{ matter.owner.display_name }}">{{ matter.owner.get_short_name }}</a>
+           aria-label="Filtreeri vastutaja: {{ matter.owner.display_name }}">{{ matter.owner|name_among:colleagues }}</a>
       {% else %}
-        <span class="table__clip" title="{{ matter.owner.display_name }}">{{ matter.owner.get_short_name }}</span>
+        <span class="table__clip" title="{{ matter.owner.display_name }}">{{ matter.owner|name_among:colleagues }}</span>
       {% endif %}
     {% elif can_assign_owner %}
       {% comment %}
@@ -116,6 +119,8 @@ second `tbody` of the same table. Two copies of a row are two rows that drift.
           <form method="post" action="{% url 'matters:assign_owner' pk=matter.pk %}">
             {% csrf_token %}
             <input type="hidden" name="next" value="{{ request.get_full_path }}">
+            {# The owner this row was drawn with: a colleague's assignment meanwhile refuses this one (docs/adr/0166 §1). #}
+            <input type="hidden" name="revision" value="{{ matter.owner_id|owner_revision }}">
             {% for person in assignable_people %}
               <button type="submit" name="owner" value="{{ person.pk }}">
                 <span class="uxav" aria-hidden="true">{{ person.initials }}</span>
@@ -184,11 +189,18 @@ second `tbody` of the same table. Two copies of a row are two rows that drift.
       {% if shown %}
         <span class="datemeaning">{{ shown.meaning }}</span>
         {% comment %}
+          **Late in words, not only in red** (QA-BROWSER-04, WCAG 1.4.1). The
+          overdue colour and weight stay; «üle tähtaja» says the same thing to
+          a reader who cannot tell the tints apart and to a screen reader, the
+          way Minu asjad and Osakond already say «N p üle». Beside the date
+          rather than inside it, so the date is still the date.
+        {% endcomment %}
+        {% comment %}
           One line, and deliberately: the class list used to be written across
           four, which left the rendered attribute carrying the indentation
           between its names. Harmless to CSS and not harmless to read.
         {% endcomment %}
-        <span class="dateline{% if shown.is_overdue %} dateline--overdue{% elif shown.is_deadline %} dateline--deadline{% endif %}{% if shown.is_approximate %} dateline--approximate{% endif %}">{{ shown.display }}{% if shown.settled %} · {{ shown.settled }}{% endif %}</span>
+        <span class="dateline{% if shown.is_overdue %} dateline--overdue{% elif shown.is_deadline %} dateline--deadline{% endif %}{% if shown.is_approximate %} dateline--approximate{% endif %}">{{ shown.display }}{% if shown.settled %} · {{ shown.settled }}{% endif %}</span>{% if shown.is_overdue %}<span class="dateline__late"> · üle tähtaja</span>{% endif %}
       {% else %}
         <span class="muted">—</span>
       {% endif %}

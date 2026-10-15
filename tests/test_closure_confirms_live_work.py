@@ -203,7 +203,8 @@ def test_muuda_teemat_shows_the_sentence_and_the_box(signed_in, specialist):
     matter.refresh_from_db()
     assert matter.is_open
 
-    payload["confirm_follow_up_closure"] = "on"
+    # The box posts the digest of the work this warning counted (docs/adr/0152 §7).
+    payload["confirm_follow_up_closure"] = response["X-Closure-Digest"]
     response = signed_in.post(reverse("matters:matter_edit", kwargs={"pk": matter.pk}), payload)
     assert response.status_code == 302
     matter.refresh_from_db()

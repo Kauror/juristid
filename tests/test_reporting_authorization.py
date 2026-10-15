@@ -133,7 +133,7 @@ def test_a_restricted_matter_does_not_appear_in_a_year_bar(world, reporting_cont
 def test_a_restricted_matter_does_not_appear_in_an_owner_tally(world, reporting_context):
     def sandra_total(viewer) -> int:
         result = compute(keys.MATTERS_BY_OWNER, reporting_context(viewer))
-        return next((s.value for s in result.segments if s.label == "Sandra Testjurist"), 0)
+        return next((s.value for s in result.segments if s.label == "Sandra"), 0)
 
     assert sandra_total(world.reader) == 2
     assert sandra_total(world.sandra) == 3

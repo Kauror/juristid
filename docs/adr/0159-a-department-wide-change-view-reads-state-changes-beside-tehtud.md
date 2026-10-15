@@ -69,6 +69,41 @@ same window. No model, no migration, no new event type, no write.
 * **Current work only.** Events on `RecordMode.ARCHIVE` Teemad are not read —
   the line *Tehtud* draws for closures.
 
+> **Amended 2026-10-14 — owner's decision D1 (QA remediation 2026-10-14,
+> QA-DATESVIEWS-01).** Muudatused reflects a person's deliberate acts; one
+> operation is never several user decisions. Presentation only — every audit
+> row stays exactly as written.
+>
+> * **A step change the system made on a person's behalf is not their act**,
+>   though its row names them as actor. Recognised by the marker its writer
+>   puts in the payload (`department_changes._automatic_q`, JSON containment):
+>   the first follow-up check a send schedules (`follow_up.automatic: true`,
+>   ADR 0146 §10 — the send itself is *Tehtud*'s); a current check put back on
+>   the plan by new work (`returned_to_plan: true`; the new work's own event,
+>   which carries the check's id as a string, stays the person's); a planned
+>   step made current because the current one was finished (`promoted` — it
+>   was «määras» once, when planned); a check re-dated from a corrected send
+>   date (`recalculated`). A check cancelled because its opinion was withdrawn
+>   (reason «Arvamus võeti tagasi» with the `follow_up` block) is the
+>   withdrawal's consequence, not a separate «tühistas» (owner, 2026-10-14);
+>   so is one cancelled because its opinion was replaced (reason «Arvamus
+>   asendati», same shape) — the replacement's consequence.
+>   These are **counted aside and marked as the system's**
+>   (`Coverage.automatic_steps`, «Süsteemi automaatseid tegevuse muudatusi …
+>   mida ei loeta kellegi tegevuseks»), never as a person's «määras» or
+>   «tühistas». A next check the lawyer dated (`automatic: false`) and a check
+>   moved by a person remain that person's acts.
+> * **One closure is one entry.** The `NEXT_ACTION_CANCELLED` rows a closure
+>   writes for the current and every planned step (reason «Teema suleti», or a
+>   `closure` key should a writer add one) are grouped by **the closure that
+>   names them** — `MATTER_CLOSED.payload.ended.actions`, the ids that closure
+>   ended (ADR 0152 §7) — and, for a closure recorded without that list, by the
+>   closing event that follows them on their Matter (`MATTER_CLOSED`, or a
+>   cutover's), into one «Järgmised tegevused» row: «sulges teema: lõppes N tegevust», in the
+>   closer's name, counted once (breakdown «sulges teema»). A cancellation with
+>   no closing event after it stands alone. The closure itself remains
+>   *Tehtud*'s output; N is what the reader may see (scoped before grouping).
+
 ### 3. Three kinds of knowledge, kept apart
 
 * **Authoritative event history** — the categories above.
@@ -180,7 +215,8 @@ exactly as Tehtud is. No top-bar item (the bar is coordinator-owned).
   category; nor are important dates, effective dates or work-victory proposals.
 - `overview.activity_feed` and its tests stay; retiring them is separate.
 - `NEXT_ACTION_SET` is written for a new step and for a `Muuda` that replaces
-  one; both read «määras järgmise tegevuse». One act that moved the stage and
+  one; both read «määras järgmise tegevuse» (system-made ones excepted, §2
+  amendment 2026-10-14). One act that moved the stage and
   set a step counts once in each category; `operation_id` grouping is not used.
 - Like *Tehtud*, populations are not narrowed to `real_data()`.
 

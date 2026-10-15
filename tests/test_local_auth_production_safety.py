@@ -332,7 +332,15 @@ def test_the_audit_change_only_widens_the_vocabulary():
     operation = loader.disk_migrations[("audit", "0035_local_authentication_events")].operations[0]
     assert operation.name == "event_type"
     values = {value for value, _ in operation.field.choices}
-    assert {member.value for member in SecurityEventType} == values
+    # Every type that existed when local authentication arrived, and — through
+    # the migrated state — every type there is now: later migrations only add
+    # (audit/0037, docs/adr/0165).
+    assert values <= {member.value for member in SecurityEventType}
+    state = loader.project_state(
+        ("audit", max(n for a, n in loader.disk_migrations if a == "audit"))
+    )
+    field = state.models["audit", "securityauditevent"].fields["event_type"]
+    assert {member.value for member in SecurityEventType} == {value for value, _ in field.choices}
 
 
 @pytest.mark.django_db

@@ -75,6 +75,7 @@ from django.db.models.expressions import Combinable
 from django.db.models.functions import Greatest
 
 from app.core.authorization import projected_visibility_q, scope_for_user
+from app.core.derived_visibility import projected_derivation_q
 from app.core.text import normalize_for_matching
 from app.matters.models import Matter
 from app.search.generations import active_generation_expression
@@ -540,6 +541,11 @@ def visible_documents(user: Any) -> QuerySet[SearchDocument]:
     # twice, and the `DISTINCT` over every selected column — the READER's and
     # the administrator's four-second planning cost — has nothing to do
     # (`restricted_participation_subquery_q`, ENG-010).
+    #
+    # And the derived-record half (docs/adr/0162): a reply to a restricted
+    # `Kaasamine`, and the file captured for it, never reach a reader the round
+    # excludes — read live through the reply's round, so rows indexed before
+    # replies inherited the restriction need no reindex.
     return documents.filter(
         projected_visibility_q(
             scope,
@@ -547,6 +553,15 @@ def visible_documents(user: Any) -> QuerySet[SearchDocument]:
             kind_overrides=SOURCE_OVERRIDE_FIELDS,
             parent_prefix="matter__",
             participation_by_subquery=True,
+        )
+        & projected_derivation_q(
+            scope,
+            kind_field="source_kind",
+            document_kinds=(
+                SearchSourceKind.DOCUMENT.value,
+                SearchSourceKind.DOCUMENT_FRAGMENT.value,
+            ),
+            external_position_kind=SearchSourceKind.EXTERNAL_POSITION.value,
         )
     )
 

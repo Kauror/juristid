@@ -107,6 +107,13 @@ A previous year before the first recorded Submission is *not measured*, and the
 card declines rather than reporting a rise from zero. Each side opens the
 Statistika submission list cut at the same day (`?aasta=&kuni=MM-DD`).
 
+**Amended 2026-10-14 (QA-STATS-05, ADR 0169):** "before the first recorded
+Submission" is compared as a Tallinn **date**, not a year. The card declines
+when the first recorded send falls after last year's cutoff day: a first send on
+9.9.2025 leaves 1.1–1.8.2025 unmeasured, and comparing years let the card report
+«3 vs 0» against a window no record could speak for. A first send on or before
+the cutoff day is measured, as before.
+
 ### 6. EU share: two bases, `Õigusakt` first
 
 Owner decision of 2026-10-13: a Matter whose `Õigusakt` is unclassified but whose
@@ -241,3 +248,12 @@ None of the decisions above is open any more.
 
 Entirely by code: no migration, no stored value. Removing the six entries and the
 module restores the previous catalogue.
+
+---
+
+## Note, 2026-10-14 — a same-day request on a date-only send (owner decision D10)
+
+§4's date-only rule now covers the moment a request was recorded too: a
+request recorded on the sending day of a date-only send is not verifiable, in its
+own group «Küsiti saatmise päeval, järjekord teadmata» (ADR 0163 §3;
+`OPINIONS_ON_TIME` version 2). Everything else in §4 stands.

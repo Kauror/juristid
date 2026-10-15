@@ -34,6 +34,7 @@ label.
 Empty optional rows are omitted rather than printed with an em dash. A Matter
 whose addressee nobody recorded should look short, not incomplete.
 {% endcomment %}
+{% load people %}
 <aside class="rail" id="teema-andmed" aria-label="Teema andmed">
   <div class="railcard">
     <span class="railcard__label">Teema andmed</span>
@@ -107,11 +108,18 @@ whose addressee nobody recorded should look short, not incomplete.
       <span class="railcard__editable">
         {% if can_write %}
           <details class="inlineedit" id="teema-saatja-muuda" data-draft-host>
-            <summary class="inlineedit__trigger" title="{{ matter.sender_names }}">
-              {% if matter.source_organisations.all %}
+            {% comment %}
+              Empty, the trigger reads «+ Lisa» — and so does `Seotud
+              materjalid`' one below, so the empty one is named for what it
+              adds (QA-BROWSER-06). With senders, their names are its name.
+            {% endcomment %}
+            {% with senders=matter.source_organisations.all %}
+            <summary class="inlineedit__trigger" title="{{ matter.sender_names }}"{% if not senders %} aria-label="Lisa saatja"{% endif %}>
+              {% if senders %}
                 <span class="railcard__value">{% include "matters/partials/senders_stacked.html" with matter=matter %}</span>
               {% else %}<span class="railcard__add">+ Lisa</span>{% endif %}
             </summary>
+            {% endwith %}
             {% comment %}
               Checkboxes, and no `data-autosubmit`. The sender set is edited as
               a whole and submitted once: a control that posted on every tick
@@ -277,7 +285,7 @@ whose addressee nobody recorded should look short, not incomplete.
       {% if matter.closed_by %}
         <div class="railcard__row">
           <span class="railcard__key">Sulges</span>
-          <span>{{ matter.closed_by.display_name }}</span>
+          <span title="{{ matter.closed_by.display_name }}">{{ matter.closed_by|name_among:colleagues }}</span>
         </div>
       {% endif %}
     {% endif %}
@@ -356,7 +364,7 @@ whose addressee nobody recorded should look short, not incomplete.
       {% for person in matter.collaborators.all %}
         <div class="railcard__row">
           <span class="railcard__key">Kaastöötaja</span>
-          <span>{{ person.display_name }}</span>
+          <span title="{{ person.display_name }}">{{ person|name_among:colleagues }}</span>
         </div>
       {% endfor %}
     </div>

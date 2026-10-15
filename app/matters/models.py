@@ -20,6 +20,7 @@ from django.utils import timezone
 from app.core.authorization import apply as apply_scope
 from app.core.authorization import child_visibility_q, matter_visibility_q, scope_for_user
 from app.core.dates import format_estonian_date
+from app.core.derived_visibility import external_position_visibility_q
 from app.core.enums import Visibility
 from app.core.models import (
     AppendOnlyModel,
@@ -1918,8 +1919,12 @@ class MatterExternalPositionQuerySet(models.QuerySet):
         authorization is: a row a lawyer took off the file must be absent from
         every list, count, projection and export, and a filter written at a call
         site is a filter the next call site forgets (docs/adr/0102).
+
+        **And never more visible than the round it answers** (docs/adr/0162):
+        the round's restriction is read live, so a reply filed before replies
+        inherited it is hidden from the readers the round excludes.
         """
-        scoped = apply_scope(self, child_visibility_q(scope_for_user(user)))
+        scoped = apply_scope(self, external_position_visibility_q(scope_for_user(user)))
         return scoped.filter(removed_at__isnull=True)
 
 
@@ -2208,6 +2213,11 @@ class MatterExternalPosition(VisibilityInheritingModel, RemovableRecord):
 
     objects = MatterExternalPositionQuerySet.as_manager()
 
+    #: The scoping rule `app.core.authorization.child_scope_q` reads, so the
+    #: places that scope a position without ``visible_to`` (Teema käik's events,
+    #: activity, the overview) apply the round half too (docs/adr/0162).
+    visibility_rule = staticmethod(external_position_visibility_q)
+
     class Meta:
         verbose_name = "väline seisukoht"
         verbose_name_plural = "välised seisukohad"
@@ -2304,6 +2314,17 @@ class MatterExternalPosition(VisibilityInheritingModel, RemovableRecord):
 
     def parent_visibility(self) -> str:
         return self.matter.visibility
+
+    @property
+    def effective_visibility(self) -> str:
+        """The Matter's and the position's own, and the round's it answers (docs/adr/0162)."""
+        own = super().effective_visibility
+        if own != Visibility.RESTRICTED and self.engagement_id is not None:
+            from app.core.derived_visibility import restriction_inherited_from
+
+            if restriction_inherited_from(self.engagement) == Visibility.RESTRICTED:
+                return Visibility.RESTRICTED.value
+        return own
 
     @property
     def is_received(self) -> bool:

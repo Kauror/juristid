@@ -138,6 +138,17 @@ Every date is written by `display_when` / `format_at_precision`: «III kvartal
 Past rows appear whenever the population has them; a window starting today or
 later has none.
 
+> **Amended 2026-10-14 — owner's decision (QA remediation 2026-10-14).**
+> «Järgmise 30 päeva jooksul» is **exactly 30 calendar dates including today**:
+> `today … today + 29` on the Europe/Tallinn calendar
+> (`commencements.soon_last_day`), the rule «N päeva» already follows on
+> *Tehtud* and *Muudatused* (ADR 0159 §5). The containment row of the table
+> above reads `period_end ≤ today + 29`; it read `today + 30`, 31 dates under a
+> label that says 30 (QA DC-3). Nothing else in this section changes: a day is
+> in the bucket when it falls inside; a month, quarter, half-year or year only
+> when the whole period does — so a 30-day month from its first day is inside
+> and a 31-day one is not; a running period stays in *Hiljem*.
+
 **Wording and bound accepted** (owner's decision of 2026-10-13, release
 preparation): the current Estonian captions, the 100-row-per-bucket bound and
 its explicit «näita kõiki N» expansion are accepted as they stand.

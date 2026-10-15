@@ -131,6 +131,15 @@ def _engagement_values(engagement, now: object) -> dict[str, object]:
     The link terms are `alias_text` rather than `body_text` because that is what
     they are — alternate names for the same thing — and the title tier should
     not rank a Matter highly because a hostname happened to match.
+
+    **`Saadud tagasiside` is in the body beside the note** (docs/adr/0167 §3,
+    narrowing docs/adr/0086 §5). What members answered is findable whichever
+    form stored it: `Lisa tagasiside` files it as a `MatterExternalPosition`,
+    indexed since docs/adr/0091, and `Lõpeta kaasamine` or `Muuda` on the round
+    writes it here. The visibility question 0086 §5 asked first is answered by
+    this row's own: the `ENGAGEMENT` kind is authorized at query time against
+    the round's own `visibility_override`, so a restricted round's feedback
+    reaches nobody who may not open the round.
     """
     return {
         "matter": engagement.matter,
@@ -141,7 +150,11 @@ def _engagement_values(engagement, now: object) -> dict[str, object]:
         "identifiers": "",
         "alias_text": " ".join(dict.fromkeys(engagement.link_search_terms)),
         "people_text": "",
-        "body_text": bounded_body(engagement.note or ""),
+        "body_text": bounded_body(
+            "\n\n".join(
+                text for text in (engagement.note or "", engagement.feedback_received or "") if text
+            )
+        ),
         # No locator. `source_locator` says *where a result opens from when
         # the source is not the Teema itself* — a page number, an archive
         # section. A Kaasamine has no such place, and what used to be written

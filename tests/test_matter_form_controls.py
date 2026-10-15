@@ -227,6 +227,8 @@ def test_the_same_choices_store_what_they_always_stored(signed_in, specialist):
             "policy_areas": [area.pk],
             "received_date": "7.9.2026",
             "response_deadline": "23.8.2026",
+            # Deadline before Saabus: confirmed (docs/adr/0166 §4).
+            "kinnita_kuupaevad": "on",
         },
     )
 

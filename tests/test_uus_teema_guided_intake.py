@@ -480,7 +480,8 @@ def test_a_full_creation_writes_one_matter_with_every_answer(signed_in, speciali
     # The deadline is the obligation only, and the faint plan is the path
     # (docs/adr/0133 §8): no step is made from it.
     assert NextAction.objects.filter(matter=matter).count() == 0
-    assert matter.plan_steps.count() == 5
+    # Four standard steps since version 2 (docs/adr/0168 §5).
+    assert matter.plan_steps.count() == 4
 
 
 # ---------------------------------------------------------------------------

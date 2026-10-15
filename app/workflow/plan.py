@@ -80,16 +80,21 @@ class PlanTemplate:
     steps: tuple[TemplateStep, ...]
 
 
-#: `Tavapärane õigusloome`, version 1 — the Chamber's ordinary course of policy
-#: work on an incoming law, proposal or draft, as the owner described it:
-#: read it, write it up for the website, ask the members, form the position,
-#: send the opinion (docs/adr/0133 §5).
+#: `Tavapärane õigusloome` — the Chamber's ordinary course of policy work on an
+#: incoming law, proposal or draft, as the owner described it: read it, write it
+#: up for the website, ask the members, send the opinion (docs/adr/0133 §5).
+#:
+#: **Version 2** (docs/adr/0168 §5): version 1 also suggested «Koonda tagasiside
+#: ja kujunda Koja seisukoht» (`form-position`) between the consultation and the
+#: opinion. The owner removed that automatic suggestion; a Matter seeded with
+#: version 1 keeps its copy of the step, and `RETIRED_STEP_KEYS` keeps it from
+#: being suggested there too. Nothing is rewritten.
 #:
 #: **Behaviour is bound to the operation, never to these words.** Rewording a
 #: title in a later version changes nothing about how its step is finished.
 STANDARD_PLAN = PlanTemplate(
     key="standard-legislative",
-    version=1,
+    version=2,
     label="Tavapärane tööplaan",
     steps=(
         TemplateStep("read-material", "Tutvu materjaliga", PlanStepOperation.GENERIC),
@@ -99,14 +104,16 @@ STANDARD_PLAN = PlanTemplate(
         TemplateStep(
             "consult-members", "Kaasa liikmeid / küsi tagasisidet", PlanStepOperation.ENGAGEMENT
         ),
-        TemplateStep(
-            "form-position",
-            "Koonda tagasiside ja kujunda Koja seisukoht",
-            PlanStepOperation.GENERIC,
-        ),
         TemplateStep("send-opinion", "Saada Koja arvamus", PlanStepOperation.SUBMISSION),
     ),
 )
+
+#: Template steps an earlier version seeded and the current one no longer
+#: suggests. Their rows stay on the Matters that hold them — history, never
+#: rewritten — but `Järgmisena?` passes over them while they are still ahead
+#: (docs/adr/0168 §5). A step already started from one is current work and is
+#: finished like any other.
+RETIRED_STEP_KEYS: frozenset[str] = frozenset({"form-position"})
 
 #: Every template the code knows, by key. One today; the schema keeps the key
 #: on every seeded step so that a second (`Kiire arvamus`, `ELi teema`) is an
@@ -457,3 +464,119 @@ def _start(
         payload={"action": str(action.pk)},
     )
     return action
+
+
+# -- a step done through its canonical form (docs/adr/0168) -------------------
+
+#: The posted step is of another kind than the record this form writes.
+STEP_WRONG_OPERATION = "See vorm ei tee selle sammu tööd."
+
+
+@dataclass(frozen=True)
+class LaunchedStep:
+    """The step a canonical form was opened from, checked under the lock.
+
+    ``action`` is the step's open `NextAction` when the step is the current
+    one (a step started before docs/adr/0168, or carried by `Muuda`), and
+    ``None`` when it is still only suggested.
+    """
+
+    step: MatterPlanStep
+    action: NextAction | None
+
+
+def launched_step(locked_matter: Any, step_id: Any, operation: str) -> LaunchedStep:
+    """The step ``step_id`` names, if a save of ``operation`` may finish it — or a refusal.
+
+    Asked under the Matter's lock **before** the canonical record is written,
+    so a refusal writes nothing: the step is on this Matter, it is of the
+    operation this form performs, and it is still ahead (suggested, planned or
+    current). A step already completed or dismissed refuses — which is also
+    what makes a second press of a form opened from a step write nothing twice:
+    the first save finished the step under this same lock.
+    """
+    step = (
+        MatterPlanStep.objects.select_for_update(no_key=True)
+        .filter(matter=locked_matter, pk=step_id)
+        .first()
+    )
+    if step is None:
+        raise DomainError(STEP_NOT_ON_MATTER)
+    if step.operation != operation:
+        raise DomainError(STEP_WRONG_OPERATION)
+    if not step.is_open:
+        raise DomainError(STEP_NOT_OPEN)
+    action = (
+        NextAction.objects.select_for_update(no_key=True)
+        .filter(matter=locked_matter, plan_step=step, status=ActionStatus.OPEN)
+        .first()
+    )
+    return LaunchedStep(step=step, action=action)
+
+
+def lock_launched_step(matter: Any, step_id: Any, operation: str) -> LaunchedStep | None:
+    """`launched_step` for a canonical form's view: the Matter locked, then the step.
+
+    ``None`` when the save names no step — the form was opened from its own
+    chip, and nothing about any step changes. Called inside the view's
+    transaction before the canonical service, which takes the same lock again.
+    """
+    if step_id is None:
+        return None
+    return launched_step(_lock(matter), step_id, operation)
+
+
+def fulfil_launched_step(
+    *, launched: LaunchedStep, record: Any, actor: Any = None
+) -> MatterPlanStep:
+    """The step is done, by ``record`` — the canonical work its form just saved.
+
+    Called inside the save's transaction, after the record is written. The step
+    is stamped `COMPLETED` with the record that did it
+    (`fulfilled_by_operation` / `fulfilled_by_record`) and one
+    `PLAN_STEP_COMPLETED`. When the step was the current one its open action is
+    completed through the one completion service, `complete_next_action`, so
+    the earliest planned row is promoted exactly as after `✓ Tehtud`.
+
+    **Never twice in one save.** A `Koja arvamus` whose `Märgi praegune tegevus
+    tehtuks` was ticked has completed that same action — and so this step —
+    already; the step is then only told which record did it, and the action is
+    not touched again.
+    """
+    from app.workflow.services import complete_next_action
+
+    step = MatterPlanStep.objects.select_for_update(no_key=True).get(pk=launched.step.pk)
+    finished_here = not step.is_completed
+    if finished_here:
+        step.state = PlanStepState.COMPLETED
+        step.completed_at = timezone.now()
+        step.completed_by = actor
+        step.skipped_at = None
+        step.skipped_by = None
+    step.fulfilled_by_operation = step.operation
+    step.fulfilled_by_record = record.pk
+    step.save(
+        update_fields=[
+            "state",
+            "completed_at",
+            "completed_by",
+            "skipped_at",
+            "skipped_by",
+            "fulfilled_by_operation",
+            "fulfilled_by_record",
+            "updated_at",
+        ]
+    )
+    if finished_here:
+        _record(
+            ChangeEventType.PLAN_STEP_COMPLETED,
+            matter=step.matter,
+            actor=actor,
+            step=step,
+            payload={"record": str(record.pk), "operation": step.operation},
+        )
+    if launched.action is not None:
+        action = NextAction.objects.filter(pk=launched.action.pk).first()
+        if action is not None and action.status == ActionStatus.OPEN:
+            complete_next_action(action=action, actor=actor)
+    return step

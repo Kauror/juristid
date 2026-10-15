@@ -102,12 +102,20 @@ def test_the_same_form_posted_twice_creates_one_teema(specialist):
 
 @pytest.mark.django_db
 def test_a_new_form_with_the_same_words_is_a_second_teema(specialist):
-    """Idempotency per form, never deduplication by content."""
+    """Idempotency per form, never deduplication by content.
+
+    Since docs/adr/0166 §2 the second form asks once — «Sama pealkirjaga teema
+    loodi just» — when the same person filed the same title a moment ago, which
+    is what browser Back looks like; «Loo siiski uus» files it.
+    """
     client = _signed_in(specialist)
     title = "Sama pealkiri kaks korda"
 
     client.post(CREATE, _fields(title, specialist, _form_token(client)))
-    client.post(CREATE, _fields(title, specialist, _form_token(client)))
+    second = _fields(title, specialist, _form_token(client))
+    assert client.post(CREATE, second).status_code == 400
+    assert len(_created(title)) == 1
+    client.post(CREATE, {**second, "loo_siiski_uus": "1"})
 
     created = _created(title)
     assert len(created) == 2
@@ -120,13 +128,19 @@ def test_a_replay_after_the_teema_was_deleted_creates_nothing(specialist):
     token = _form_token(client)
     data = _fields("Kustutatakse kohe", specialist, token)
     client.post(CREATE, data)
-    delete_matter(matter=_created("Kustutatakse kohe")[0], actor=specialist)
+    deleted = _created("Kustutatakse kohe")[0]
+    delete_matter(matter=deleted, actor=specialist)
+    rows = Matter.all_objects.count()
 
     replay = client.post(CREATE, data)
 
     assert replay.status_code == 302
     assert replay["Location"] == reverse("matters:matter_list")
-    assert Matter.all_objects.filter(title="Kustutatakse kohe").count() == 1
+    # Counted by row rather than by title: the tombstone no longer keeps the
+    # deleted title (docs/adr/0165 §5).
+    assert Matter.all_objects.count() == rows
+    assert Matter.all_objects.filter(pk=deleted.pk, deleted_at__isnull=False).exists()
+    assert not Matter.objects.filter(title="Kustutatakse kohe").exists()
 
 
 @pytest.mark.django_db

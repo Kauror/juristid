@@ -57,6 +57,33 @@ def text_or_empty(value: str | None) -> str:
     return value.strip()
 
 
+def digits_or_none(
+    value: str | None, *, minimum: int = 0, maximum: int = INT_CEILING
+) -> int | None:
+    """A whole number written in ASCII digits, in ``[minimum, maximum]``, or ``None``.
+
+    **The one reader for a number a person can type into an address.** The
+    check that looks like it covers this — ``value.isdigit()`` before
+    ``int(value)`` — does not: ``"²".isdigit()`` is ``True`` and ``int("²")``
+    raises, so six query-string readers answered a hand-edited ``?kuu=²`` with a
+    500 (QA-SUBDOCS-01). The opposite leak is quieter: ``int()`` also reads
+    ``"٣"`` (Arabic-Indic three), ``"1_0"`` and ``" +5"``, none of which any
+    link this application writes contains. Only ``0``–``9`` are digits here,
+    with no sign, no separator and no surrounding text beyond whitespace.
+
+    ``None`` rather than a default or a raise, for the reason the module
+    docstring gives: what "not a usable number" means — ignore the filter,
+    refuse it with a sentence, answer 404 — is the caller's decision.
+    """
+    text = text_or_empty(value)
+    if not text or not (text.isascii() and text.isdigit()):
+        return None
+    if len(text) > len(str(maximum)) + 1:
+        return None
+    number = int(text)
+    return number if minimum <= number <= maximum else None
+
+
 def bounded_int(
     value: str | None, *, default: int, minimum: int = 0, maximum: int = INT_CEILING
 ) -> int:
@@ -65,14 +92,17 @@ def bounded_int(
     Out of range is ``default`` rather than clamped. A clamped offset is a page
     nobody asked for; the default is the page the address would have shown
     without the broken parameter.
+
+    A leading minus is still read, for a caller whose ``minimum`` is negative;
+    every other character must be an ASCII digit (:func:`digits_or_none`).
     """
     text = text_or_empty(value)
-    if not text or len(text) > len(str(maximum)) + 1:
+    negative = text.startswith("-")
+    number = digits_or_none(text[1:] if negative else text, maximum=max(abs(minimum), maximum))
+    if number is None:
         return default
-    try:
-        number = int(text)
-    except ValueError:
-        return default
+    if negative:
+        number = -number
     if number < minimum or number > maximum:
         return default
     return number
