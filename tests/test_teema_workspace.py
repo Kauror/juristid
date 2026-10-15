@@ -485,7 +485,8 @@ def test_the_launcher_offers_its_choices_and_opens_none_of_them(signed_in, norma
     # `type="submit"`: its `+` is an explicit `type="button"`, precisely so that
     # naming a body the catalogue does not hold cannot submit the panel
     # (docs/adr/0073, `organisation_picker.html`).
-    assert zone.count('type="submit"') == 9
+    # Ten since `+ Lisa · Muu` (docs/adr/0097, amendment of 2026-10-15).
+    assert zone.count('type="submit"') == 10
     assert "composer__actions" not in zone
 
 
