@@ -4575,6 +4575,26 @@ class CompactEngagementForm(forms.Form):
     #: one wrote (docs/adr/0120).
     feedback_deadline = engagement_feedback_deadline_field()
 
+    #: The words the calendar puts beside the marked day.
+    OPINION_DEADLINE_MARK_LABEL = "Arvamuse tähtaeg"
+
+    def __init__(self, *args: Any, opinion_deadline: date | None = None, **kwargs: Any) -> None:
+        """``opinion_deadline``: the Matter's `Arvamuse tähtaeg`, if it has one.
+
+        Shown in `Tagasisidet ootame kuni`'s calendar as one marked day, so the
+        person choosing when feedback is due can see the date the Chamber's own
+        opinion is due. **Information only**: it is not an initial value and not
+        a limit — a feedback date after the opinion deadline is still valid.
+        """
+        super().__init__(*args, **kwargs)
+        if opinion_deadline is not None:
+            self.fields["feedback_deadline"].widget.attrs.update(
+                {
+                    "data-datepicker-mark": format_estonian_date(opinion_deadline),
+                    "data-datepicker-mark-label": self.OPINION_DEADLINE_MARK_LABEL,
+                }
+            )
+
     def clean_audience(self) -> str:
         audience = (self.cleaned_data.get("audience") or "").strip()
         if not audience:

@@ -6394,6 +6394,37 @@ fieldset,
   font-weight: var(--typography-weight-semibold);
 }
 
+/* An informational day — the Matter's `Arvamuse tähtaeg` in `Tagasisidet
+   ootame kuni` — in the header's deadline orange. An underline rather than a
+   fill or a border, so it stays readable beside today's outline and under the
+   chosen day's fill. */
+.datepicker__day.is-marked {
+  color: var(--status-warning);
+  font-weight: var(--typography-weight-semibold);
+  box-shadow: inset 0 -2px 0 var(--status-warning);
+}
+
+.datepicker__day.is-marked.is-selected {
+  color: var(--text-inverse);
+}
+
+.datepicker__legend {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin: var(--spacing-2) 0 0;
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.datepicker__legend-mark {
+  display: inline-block;
+  width: 0.9em;
+  height: 2px;
+  background: var(--status-warning);
+}
+
 /* A choice card that carries a line of explanation.
  *
  * Used where the option name alone does not settle the choice and a line of

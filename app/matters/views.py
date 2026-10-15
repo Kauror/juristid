@@ -7453,7 +7453,9 @@ def workspace_forms(
         "add_engagement_form": CompactEngagementForm(
             initial=(
                 {"website_url": selectors.latest_overview_url(matter, viewer)} if matter else None
-            )
+            ),
+            # `Arvamuse tähtaeg`, marked in `Tagasisidet ootame kuni`'s calendar.
+            opinion_deadline=matter.response_deadline if matter else None,
         ),
         # `+ Kaasamine · Lisa tagasiside`: the open rounds the page has already
         # read are its choices, and the field's queryset still validates.
@@ -8013,7 +8015,9 @@ def add_engagement_compact(request: HttpRequest, pk: Any) -> HttpResponse:
     # it names is finished by the round, in the same transaction, and a second
     # press finds it finished and writes nothing (docs/adr/0168 §3).
     launched_id = step_launch.posted_step_id(request, matter)
-    form = CompactEngagementForm(request.POST, request.FILES)
+    form = CompactEngagementForm(
+        request.POST, request.FILES, opinion_deadline=matter.response_deadline
+    )
     if not form.is_valid():
         return _workspace_refusal(request, matter, key=key, form=form)
     try:
