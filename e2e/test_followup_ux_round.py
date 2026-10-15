@@ -276,10 +276,12 @@ def test_f_l_opens_lisa_tegevus_without_a_task_and_tehtud_with_one(page, base_ur
 
     page.locator("body").press("l")
     expect(page.locator("#lisa-jargmine")).to_have_attribute("open", "")
-    assert page.evaluate("() => !!document.activeElement.closest('#lisa-jargmine')")
+    # Waiting assertions: the shortcut focuses after the panel opens, so a
+    # one-shot read of `activeElement` raced it (CI run 38599779275).
+    expect(page.locator("#lisa-jargmine :focus")).to_have_count(1)
     expect(page.locator("#lisa-marge")).to_be_hidden()
 
     set_next_step(page, "Loe eelnõu läbi", _et(3))
     page.locator("body").press("l")
-    assert page.evaluate("() => document.activeElement.id") == "id_praegune_body"
+    expect(page.locator("#id_praegune_body")).to_be_focused()
     expect(page.locator("#lisa-marge")).to_be_hidden()
