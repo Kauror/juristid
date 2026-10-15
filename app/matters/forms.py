@@ -4874,17 +4874,20 @@ class CompactEffectiveDateForm(forms.Form):
 class CompactOtherForm(forms.Form):
     """`+ Lisa · Muu` — supporting material that fits no structured kind.
 
-    Three fields and nothing else (docs/adr/0097, amendment of 2026-10-15):
+    Four fields and nothing else (docs/adr/0097, amendment of 2026-10-15):
 
     * `Kirjeldus` — **required**. What is being added, why it matters and how it
       relates to the Teema. It is the record's body: an `Entry` cannot be stored
       without one, and a link or a file with no word on why it is on the file is
       the unexplained attachment this form exists to avoid.
+    * `Millal?` — **required**, one day, **no default**. When the material or
+      event occurred: `Entry.occurred_at` means when the work happened, not when
+      it was typed, so the chronology places the row on this day. Nothing is
+      pre-filled and nothing is invented: an empty box is refused.
     * `Link` — optional, the shared web-address rule (`normalize_entry_url`).
     * `Failid` — optional, the canonical evidence pipeline.
 
-    No date, title, organisation, status or follow-up: the entry is dated by the
-    moment it is saved, which is what it records (`workspace.add_matter_other`).
+    No title, organisation, status or follow-up.
     """
 
     description = forms.CharField(
@@ -4898,6 +4901,12 @@ class CompactOtherForm(forms.Form):
             }
         ),
         error_messages={"required": "Kirjelda, mida lisad."},
+    )
+    occurred_on = EstonianDateField(
+        label="Millal?",
+        required=True,
+        widget=EstonianDateInput(),
+        error_messages={"required": "Sisesta, millal see toimus."},
     )
     url = provider_link_field("Link", "https://…")
     attachments = workspace_attachments("id_muu_failid")

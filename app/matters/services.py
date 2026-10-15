@@ -2087,6 +2087,12 @@ def normalize_external_position_url(value: str | None) -> str:
 #: `Entry.url`'s column width; a longer address is refused, never truncated.
 ENTRY_URL_MAX_LENGTH = 1000
 
+#: A link belongs to a `+ Lisa · Muu` entry only. Every other kind keeps an
+#: empty `url` — refused here, in `edit_entry`, and by the
+#: `matters_entry_url_only_other` constraint (docs/adr/0097, amendment of
+#: 2026-10-15).
+ENTRY_URL_ONLY_FOR_OTHER = "Linki saab lisada ainult «Muu» sissekandele."
+
 
 def normalize_entry_url(value: str | None) -> str:
     """The rule for the link a `+ Lisa · Muu` entry carries (docs/adr/0097).
@@ -6080,6 +6086,8 @@ def add_entry(
         raise DomainError("Sissekanne vajab sisu.")
 
     clean_url = normalize_entry_url(url)
+    if clean_url and kind != EntryKind.OTHER:
+        raise DomainError(ENTRY_URL_ONLY_FOR_OTHER)
 
     entry = Entry.objects.create(
         matter=matter,
@@ -6199,6 +6207,9 @@ def edit_entry(
         # is committed rather than the one that was on screen.
         raise EntryEditConflict(locked)
     new_url = locked.url if clean_url is None else clean_url
+    if new_url and locked.kind != EntryKind.OTHER:
+        # Read off the locked row, so the kind compared is the stored one.
+        raise DomainError(ENTRY_URL_ONLY_FOR_OTHER)
     if clean_body == locked.body and new_url == locked.url:
         return locked
 

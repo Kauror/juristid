@@ -3,11 +3,10 @@
     `+ Lisa · Muu` — supporting material that fits no structured kind
     (docs/adr/0097, amendment of 2026-10-15).
 
-    One `Entry(kind=OTHER)`: `Kirjeldus` is required and says what is added and
-    why; `Link` and `Failid` are optional. **No date box**: the entry is dated by
-    the moment it is saved, because what it records is that the material was put
-    on the file — the date of the underlying document or event is not asked for
-    and is not invented. No task, stage, plan or wait follows from it.
+    One `Entry(kind=OTHER)`: `Kirjeldus` and `Millal?` are required, `Link` and
+    `Failid` optional. `Millal?` is the day the material or event occurred — the
+    chronology places the row on that day — and it starts **empty**: a day is
+    stated, never pre-filled or invented. No task, stage, plan or wait follows.
   {% endcomment %}
       {% if open_choice == "marge-muu" and workspace_error %}
         <p class="formerror" role="alert">{{ workspace_error }}</p>
@@ -23,6 +22,15 @@
         </label>
         {% if other_form.description.errors %}
           <p class="field__error" id="{{ other_form.description.auto_id }}_error">{{ other_form.description.errors|first }}</p>
+        {% endif %}
+        <div class="cx-grid cx-grid--links">
+          <label class="cx-f cx-f--date">
+            <span class="cx-f__lab">Millal?{% required_mark %}</span>
+            {{ other_form.occurred_on }}
+          </label>
+        </div>
+        {% if other_form.occurred_on.errors %}
+          <p class="field__error" id="{{ other_form.occurred_on.auto_id }}_error">{{ other_form.occurred_on.errors|first }}</p>
         {% endif %}
         <label class="cx-f">
           <span class="cx-f__lab">Link</span>

@@ -8204,10 +8204,10 @@ def add_work_victory(request: HttpRequest, pk: Any) -> HttpResponse:
 def add_other(request: HttpRequest, pk: Any) -> HttpResponse:
     """`+ Lisa · Muu` — supporting material that fits no structured kind.
 
-    One `Entry(kind=OTHER)` with its optional link and files, saved together or
-    not at all. Creates no task, changes no stage or plan, and is refused on a
-    closed Teema like every other new record (docs/adr/0097, amendment of
-    2026-10-15).
+    One `Entry(kind=OTHER)` dated by the day the person gives, with its optional
+    link and files, saved together or not at all. Creates no task, changes no
+    stage or plan, and is refused on a closed Teema like every other new record
+    (docs/adr/0097, amendment of 2026-10-15).
     """
     matter = get_visible_matter(request, pk)
     form = CompactOtherForm(request.POST, request.FILES)
@@ -8218,6 +8218,7 @@ def add_other(request: HttpRequest, pk: Any) -> HttpResponse:
             matter=matter,
             author=request.user,
             description=form.cleaned_data["description"],
+            occurred_on=form.cleaned_data["occurred_on"],
             url=form.cleaned_data["url"],
             uploads=form.cleaned_data["attachments"],
         )

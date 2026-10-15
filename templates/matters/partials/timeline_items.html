@@ -442,11 +442,11 @@ record, not professional chronology (master specification 16.5).
           {% comment %}
             `+ Lisa · Muu` says what it is: a note needs no badge because a note
             is what an authored row is, but supporting material is not a note.
-            Its date is the day it was added to the file, and the badge's title
-            says so (docs/adr/0097, amendment of 2026-10-15).
+            Its date is the day the person gave as when the material or event
+            occurred (docs/adr/0097, amendment of 2026-10-15).
           {% endcomment %}
           {% if item.entry.kind == "OTHER" and item.actor %}
-            <span class="uxtl__kind uxtl__kind--entry" title="Muu — lisatud teemale">Muu</span>
+            <span class="uxtl__kind uxtl__kind--entry">Muu</span>
           {% endif %}
           {% comment %}
             The verb phrase, and no default badge. «Märkus» was written out

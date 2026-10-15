@@ -477,8 +477,8 @@ task composer returns.
 
 1. **Fields.** `Kirjeldus` is required and is the entry's body (`Entry` cannot be
    stored without one, and a link or file with no word on why it is on the file is
-   what this form exists to avoid). `Link` and `Failid` are optional. No title,
-   organisation, status, date or follow-up.
+   what this form exists to avoid). `Millal?` is required (see 3). `Link` and
+   `Failid` are optional. No title, organisation, status or follow-up.
 2. **`Entry.url`, one additive column** (`matters/0049_entry_url`, blank,
    default empty; `EntryRevision.url` likewise). A link inside `body` would be
    opaque, uncorrectable as a link and invisible to the revision chain. It is
@@ -487,12 +487,19 @@ task composer returns.
    new-window link other chronology rows use, and corrected through `edit_entry`,
    whose revision keeps the earlier address as it keeps the earlier wording. Only
    a `Muu` entry's `Muuda` offers the link box; every other kind keeps the
-   body-only correction. Search indexing is unchanged (the description is
-   indexed as every entry body is); no rebuild.
-3. **The date is the moment of the save.** `occurred_at` is stamped by
-   `add_entry`: the entry records that the material was put on the file, and the
-   date of the underlying document or event is neither asked for nor invented.
-   The chronology row carries a «Muu» badge whose title says «lisatud teemale».
+   body-only correction. **A link is an `OTHER` entry's only**: `add_entry` and
+   `edit_entry` refuse a non-empty `url` on any other kind
+   (`ENTRY_URL_ONLY_FOR_OTHER`), and the `matters_entry_url_only_other`
+   constraint (same migration) refuses it in the database; every existing row has
+   an empty `url`, so it holds from the start. Search indexing is unchanged (the
+   description is indexed as every entry body is); no rebuild.
+3. **The date is the day the material or event occurred.** `Millal?` is a
+   required single day with the existing date picker, **empty until the person
+   fills it** — nothing is pre-filled and no day is invented. It is stored as the
+   start of that local day (`start_of_local_day`) in `Entry.occurred_at`, which
+   means when the work happened, not when it was typed; the chronology shows the
+   row on that day and orders it by that day like every other entry. (Owner's
+   review of #454: recording the save timestamp instead was rejected.)
 4. **Nothing follows from it.** No `NextAction`, no `Hetkeseis` or plan change, no
    wait, no `Submission`, no reporting definition touched. A closed Teema refuses
    it under the same lock as every other new record; readers and the gate visitor

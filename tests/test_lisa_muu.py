@@ -1,17 +1,20 @@
 """`+ Lisa · Muu` — supporting material on a Teema (docs/adr/0097, amendment of 2026-10-15).
 
-One `Entry(kind=OTHER)`: a required `Kirjeldus`, an optional `Link` in the entry's
-own `url` column, and files through the canonical evidence pipeline — saved
-together or not at all. It is dated by the moment it is saved, creates no task,
-moves no stage or plan, opens no wait and is never a Koja arvamus. Its link and
-description are corrected through `edit_entry`, whose revision keeps both earlier
-values. The browser half is `e2e/test_lisa_muu.py`.
+One `Entry(kind=OTHER)`: a required `Kirjeldus` and `Millal?`, an optional `Link`
+in the entry's own `url` column, and files through the canonical evidence
+pipeline — saved together or not at all. `Millal?` is the day the material or
+event occurred: `occurred_at` is the start of that local day, so the chronology
+shows and orders the row there; no day is pre-filled or invented. It creates no
+task, moves no stage or plan, opens no wait and is never a Koja arvamus. Its link
+and description are corrected through `edit_entry`, whose revision keeps both
+earlier values. A link is an `OTHER` entry's only — service and constraint. The
+browser half is `e2e/test_lisa_muu.py`.
 """
 
 from __future__ import annotations
 
 import re
-from datetime import timedelta
+from datetime import date, timedelta
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -20,16 +23,23 @@ from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
+from app.core.dates import start_of_local_day
 from app.documents.models import Document
 from app.matters.entry_enums import EntryKind
 from app.matters.locks import CLOSED_MATTER_REFUSAL
 from app.matters.models import Entry, EntryRevision, MatterEngagement
-from app.matters.services import add_entry, edit_entry, entry_revision_token
+from app.matters.services import (
+    ENTRY_URL_ONLY_FOR_OTHER,
+    add_entry,
+    edit_entry,
+    entry_revision_token,
+)
 from app.search.services import search_documents
 from app.submissions.models import Submission
 from app.workflow.models import NextAction
 from tests import factories
 from tests.follow_ups import PDF
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -38,8 +48,12 @@ def _pdf(name: str = "taust.pdf", body: bytes = b"") -> SimpleUploadedFile:
     return SimpleUploadedFile(name, PDF + body, content_type="application/pdf")
 
 
+#: A stated past day — what an ordinary `Muu` save carries.
+DAY = date(2026, 10, 1)
+
+
 def _post(client, matter, **data):
-    payload = {"description": "", "url": ""}
+    payload = {"description": "", "url": "", "occurred_on": "1.10.2026"}
     payload.update({k: v for k, v in data.items() if k != "files"})
     if data.get("files"):
         payload["attachments"] = data["files"]
@@ -87,9 +101,8 @@ def test_muu_is_the_fifth_choice_of_plus_lisa(signed_in, specialist):
 # -- saving ----------------------------------------------------------------------
 
 
-def test_a_description_alone_saves_one_other_entry_by_its_author(signed_in, specialist):
+def test_a_description_and_a_day_save_one_other_entry_on_that_day(signed_in, specialist):
     matter = factories.MatterFactory(owner=specialist)
-    before = timezone.now()
 
     response = _post(signed_in, matter, description="Ministeeriumi taustamaterjal analüüsiks.")
 
@@ -98,11 +111,56 @@ def test_a_description_alone_saves_one_other_entry_by_its_author(signed_in, spec
     assert entry.author == specialist
     assert "Ministeeriumi taustamaterjal" in entry.body
     assert entry.url == ""
-    # Dated by the save itself: the record is of adding the material.
-    assert before - timedelta(seconds=1) <= entry.occurred_at <= timezone.now()
+    # The stated day, as the start of that local day — not the moment of saving.
+    assert entry.occurred_at == start_of_local_day(DAY)
+    assert timezone.localtime(entry.occurred_at).date() == DAY
     assert ChangeEvent.objects.filter(
         event_type=ChangeEventType.ENTRY_ADDED, object_id=entry.pk
     ).exists()
+
+
+def test_millal_is_required_and_no_day_is_invented(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+
+    response = _post(signed_in, matter, description="Päev puudub.", occurred_on="")
+
+    assert response.status_code == 400
+    body = response.content.decode()
+    assert "Sisesta, millal see toimus." in body
+    assert "Päev puudub." in body
+    assert not _others(matter).exists()
+
+
+def test_the_millal_box_starts_empty(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+
+    page = _page(signed_in, matter)
+
+    box = re.search(r'<input[^>]*id="id_muu_occurred_on"[^>]*>', page).group(0)
+    assert 'value=""' in box or "value=" not in box
+    assert "data-datepicker" in box
+
+
+def test_a_past_day_places_the_row_in_the_chronology_on_that_day(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    add_entry(matter=matter, body="Tänane märkus kalmaar.", author=specialist)
+    past = timezone.localdate() - timedelta(days=12)
+
+    _post(
+        signed_in,
+        matter,
+        description="Varasem taustamaterjal tuunikala.",
+        occurred_on=f"{past.day}.{past.month}.{past.year}",
+    )
+
+    entry = _others(matter).get()
+    assert timezone.localtime(entry.occurred_at).date() == past
+    page = _page(signed_in, matter)
+    # Newest first: today's note above the Muu dated twelve days ago.
+    assert page.index("Tänane märkus kalmaar.") < page.index("Varasem taustamaterjal tuunikala.")
+    row = page[page.index(f'id="sissekanne-{entry.pk}"') :]
+    row = row[: row.index("</article>")]
+    assert f">{past.day}.{past.month}.{past.year}</time>" in row
 
 
 def test_a_link_is_normalised_stored_and_shown_by_its_host(signed_in, specialist):
@@ -365,3 +423,54 @@ def test_other_entry_kinds_keep_the_body_only_correction_and_an_empty_url(signed
     assert note.url == ""
     assert "Parandatud märkus." in note.body
     assert EntryRevision.objects.get(entry=note).url == ""
+
+
+# -- a link is a Muu entry's only ---------------------------------------------------
+
+
+def test_add_entry_refuses_a_link_on_any_other_kind(specialist):
+    matter = factories.MatterFactory(owner=specialist)
+
+    for kind in (EntryKind.NOTE, EntryKind.MEETING):
+        with refused(ENTRY_URL_ONLY_FOR_OTHER):
+            add_entry(
+                matter=matter, body="Märkus.", author=specialist, kind=kind, url="https://a.ee/x"
+            )
+    assert not Entry.objects.filter(matter=matter).exists()
+
+
+def test_edit_entry_refuses_a_link_on_any_other_kind(specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    note = add_entry(matter=matter, body="Märkus.", author=specialist)
+
+    with refused(ENTRY_URL_ONLY_FOR_OTHER):
+        edit_entry(entry=note, body="Märkus.", actor=specialist, url="https://a.ee/x")
+
+    note.refresh_from_db()
+    assert note.url == ""
+    assert not EntryRevision.objects.filter(entry=note).exists()
+
+
+def test_the_database_refuses_a_link_on_any_other_kind(specialist):
+    from django.db import IntegrityError, transaction
+
+    matter = factories.MatterFactory(owner=specialist)
+    note = add_entry(matter=matter, body="Märkus.", author=specialist)
+
+    with pytest.raises(IntegrityError, match="matters_entry_url_only_other"):
+        with transaction.atomic():
+            Entry.objects.filter(pk=note.pk).update(url="https://a.ee/x")
+
+
+def test_an_other_entry_may_carry_a_link_through_the_service(specialist):
+    matter = factories.MatterFactory(owner=specialist)
+
+    entry = add_entry(
+        matter=matter,
+        body="Muu.",
+        author=specialist,
+        kind=EntryKind.OTHER,
+        url="https://a.ee/x",
+    )
+
+    assert entry.url == "https://a.ee/x"

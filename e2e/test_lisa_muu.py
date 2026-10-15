@@ -1,8 +1,9 @@
 """`+ Lisa · Muu` in a browser (docs/adr/0097, amendment of 2026-10-15).
 
 The fifth `+ Lisa` choice opens from the keyboard, refuses a save without a
-description while keeping what was typed, and saves a description with a link
-and two files as one «Muu» row in `Teema käik` — the link named by its host, the
+description while keeping what was typed, and saves a description, a stated past
+day (`Millal?`, empty until filled), a link and two files as one «Muu» row in
+`Teema käik` — dated and ordered by that day, the link named by its host, the
 files linked — with the files under `Dokumendid`. Nothing about the Matter's work
 changes: `PRAEGUNE TEGEVUS` reads as it did. Its `Muuda` corrects the link.
 
@@ -10,6 +11,8 @@ State is read off the page only (e2e/conftest.py).
 """
 
 from __future__ import annotations
+
+from datetime import date, timedelta
 
 import pytest
 from playwright.sync_api import expect
@@ -27,6 +30,10 @@ from e2e.titles import unique_title
 pytestmark = pytest.mark.e2e
 
 PDF = b"%PDF-1.4 synthetic supporting material"
+
+
+def _et(on: date) -> str:
+    return f"{on.day}.{on.month}.{on.year}"
 
 
 def _save(page, form) -> int:
@@ -67,7 +74,11 @@ def test_muu_opens_from_the_keyboard_and_saves_a_supporting_entry(page, base_url
     assert not [u for u in posts if u.endswith("/lisa/muu/")]
     expect(form.locator('[name="url"]')).to_have_value("https://www.example.ee/taust")
 
-    # The real save: description, link, two files.
+    # The real save: description, a past day, link, two files. `Millal?` starts empty.
+    millal = form.locator('[name="occurred_on"]')
+    expect(millal).to_have_value("")
+    past = date.today() - timedelta(days=20)
+    millal.fill(_et(past))
     form.locator('[name="description"]').fill("Ministeeriumi taustaanalüüs eelnõu kohta.")
     form.locator('input[type="file"]').set_input_files(
         [
@@ -82,6 +93,8 @@ def test_muu_opens_from_the_keyboard_and_saves_a_supporting_entry(page, base_url
     row = page.locator("article.uxtl__item", has_text="Ministeeriumi taustaanalüüs")
     expect(row).to_have_count(1)
     expect(row.locator(".uxtl__kind", has_text="Muu")).to_have_count(1)
+    # Dated by the stated day.
+    expect(row.locator("time.uxtl__time").first).to_have_text(_et(past))
     link = row.locator("a.uxtl__link")
     expect(link).to_have_attribute("href", "https://www.example.ee/taust")
     expect(link).to_contain_text("example.ee")
@@ -90,6 +103,29 @@ def test_muu_opens_from_the_keyboard_and_saves_a_supporting_entry(page, base_url
     expect(row.locator("a.uxtl__file", has_text="taust-2.pdf")).to_have_count(1)
     # No task, no stage: the current-work zone reads as it did.
     assert page.locator("#praegune-tegevus").inner_text() == work_before
+
+    # Ordered by the stated day: a second `Muu` dated today goes above it, because
+    # the chronology runs newest first — whichever was saved last.
+    open_add_panel(page, "marge-muu")
+    form = page.locator("#marge-muu form")
+    form.locator('[name="description"]').fill("Tänane lisamaterjal.")
+    form.locator('[name="occurred_on"]').fill(_et(date.today()))
+    assert _save(page, form) == 200
+    page.reload()
+    page.wait_for_load_state("networkidle")
+    # `textContent`: rows render as closed accordions, so `inner_text` would
+    # leave out the description the row is matched by.
+    texts = page.locator("#ajalugu-loend article.uxtl__item").evaluate_all(
+        "els => els.map(e => e.textContent)"
+    )
+    today_at = next(i for i, t in enumerate(texts) if "Tänane lisamaterjal." in t)
+    past_at = next(i for i, t in enumerate(texts) if "Ministeeriumi taustaanalüüs" in t)
+    assert today_at < past_at, texts
+    days = page.locator("#ajalugu-loend article.uxtl__item time.uxtl__time").evaluate_all(
+        "els => els.map(e => e.getAttribute('datetime').slice(0, 10))"
+    )
+    assert days == sorted(days, reverse=True), days
+    assert past.isoformat() in days and date.today().isoformat() in days, days
 
     # The files are documents of the Teema.
     page.goto(page.url.rstrip("/") + "/dokumendid/")
@@ -104,6 +140,7 @@ def test_muuda_corrects_the_link_of_a_muu_entry(page, base_url):
     open_add_panel(page, "marge-muu")
     form = page.locator("#marge-muu form")
     form.locator('[name="description"]').fill("Viide liidu kommentaarile.")
+    form.locator('[name="occurred_on"]').fill(_et(date.today() - timedelta(days=3)))
     form.locator('[name="url"]').fill("https://vana.example.ee/kommentaar")
     assert _save(page, form) == 200
     page.reload()

@@ -819,6 +819,12 @@ class Entry(VisibilityInheritingModel, RemovableRecord):
                 ),
                 name="matters_entry_visibility_vocabulary",
             ),
+            # A link is a `+ Lisa · Muu` entry's only (docs/adr/0097, amendment
+            # of 2026-10-15); the service refuses it first with a sentence.
+            models.CheckConstraint(
+                condition=models.Q(url="") | models.Q(kind=EntryKind.OTHER),
+                name="matters_entry_url_only_other",
+            ),
         ]
         indexes = [
             models.Index(fields=["matter", "-occurred_at"], name="matters_entry_timeline"),

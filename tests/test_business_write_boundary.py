@@ -437,7 +437,11 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         label="Muu materjali lisamine",
         request=lambda w: (
             {"pk": w["matter"].pk},
-            {"description": "Loata lisatud taustamaterjal", "url": "https://example.ee/taust"},
+            {
+                "description": "Loata lisatud taustamaterjal",
+                "occurred_on": "1.10.2026",
+                "url": "https://example.ee/taust",
+            },
         ),
         probe=lambda w: w["matter"].entries.count(),
     ),
