@@ -45,7 +45,7 @@ from app.documents.enums import DocumentRole
 from app.documents.links import TARGET_FIELDS, DocumentLink
 from app.documents.models import Document
 from app.matters import work_items
-from app.matters.enums import EngagementKind
+from app.matters.enums import EngagementKind, ExternalPositionProvenance
 from app.matters.locks import CLOSED_MATTER_REFUSAL
 from app.matters.models import Entry, MatterExternalPosition
 from app.matters.my_work import build_my_work
@@ -77,6 +77,11 @@ from tests.refusals import refused
 pytestmark = pytest.mark.django_db
 
 POSITION_URL = "https://rahandusministeerium.ee/uudised/pakendiseadus"
+#: `+ Kaasamine · Lisa tagasiside` is the one door for every position since
+#: docs/adr/0170. The panel this file was written for, `Teiste arvamus`, is that
+#: form answered «Avaldatud mujal» — so every page-level save here states it.
+ADD = "add_engagement_reply"
+DISCOVERED = ExternalPositionProvenance.DISCOVERED.value
 STATED_ON = dt.date(2026, 3, 14)
 
 
@@ -1072,19 +1077,18 @@ def _post(client, name, matter, data=None, **kwargs):
 
 
 def _panel_markup(body: str) -> str:
-    """The `+ Teiste arvamus` panel alone, sliced out of the page.
+    """The `+ Kaasamine · Lisa tagasiside` panel alone, sliced out of the page.
 
-    **The page now renders this panel twice.** docs/adr/0091 §3 split the chip in
-    two over one record and one partial, so `+ Meile saadetud tagasiside` comes
-    first and carries the same field names — and `_tag_with` finds the *first*
-    match. Every assertion in this file is about the second one, which is the panel
-    these routes post to, so the slice has to happen before the search.
+    Since docs/adr/0170 that panel is the one door for every position (the former
+    `+ Teiste arvamus` is it answered «Avaldatud mujal»). Other panels on the page
+    carry date boxes of their own — `+ Kaasamine`'s opens on today as well — and
+    `_tag_with` finds the *first* match, so the slice happens before the search.
 
-    Sliced by the two panel ids rather than by a form boundary: the ids are the
+    Sliced by the panel id rather than by a form boundary: the id is the
     launcher's own contract (`WORKSPACE_PANELS`), and a test that guessed where one
     `<form>` ends would break on markup that is not this file's subject.
     """
-    start = body.index('id="arvamus-teiste"')
+    start = body.index('id="kaasamine-tagasiside"')
     return body[start:]
 
 
@@ -1111,11 +1115,9 @@ def _stated_on_box(body: str) -> str:
     Two elements can carry that name, in two different kinds of response, and the
     helper answers for both:
 
-    * a **whole Teema page** — a fresh render or a refused save — renders the
-      shared panel twice since docs/adr/0091 §3, so the page is sliced to
-      `+ Teiste arvamus` first and the box found inside it. Searching the page
-      would find `+ Meile saadetud tagasiside`'s box, which no assertion here is
-      about;
+    * a **whole Teema page** — a fresh render or a refused save — carries other
+      panels' date boxes too, so the page is sliced to `Lisa tagasiside` first
+      and the box found inside it (docs/adr/0170);
     * a **chronology-row fragment** — what `Muuda` and a correction swap in —
       holds one box, on `ExternalPositionEditForm`, which keeps Django's default
       `id_stated_on` because there is one of it per row and the row is the swap
@@ -1125,7 +1127,7 @@ def _stated_on_box(body: str) -> str:
     already knows which it has and the distinction is not what any of them is
     testing.
     """
-    scoped = _panel_markup(body) if 'id="arvamus-teiste"' in body else body
+    scoped = _panel_markup(body) if 'id="kaasamine-tagasiside"' in body else body
     return _tag_with(scoped, 'name="stated_on"')
 
 
@@ -1143,29 +1145,33 @@ def _as_typed(day: dt.date) -> str:
 def test_the_launcher_offers_the_panel_on_an_open_matter(signed_in, normal_matter, ministry):
     body = _detail(signed_in, normal_matter)
 
-    assert 'id="arvamus-teiste"' in body
-    # The chip is named by how the record reached the file. It was
-    # `+ Väline seisukoht`; docs/adr/0091 §3 split it in two, and this panel is
-    # the half that records what Koda found somewhere.
-    #
-    # `Teiste arvamus` without the `+`: it is a choice *inside*
-    # `+ Arvamus / tagasiside` rather than a peer of it, and the `+` is what the
-    # launcher's four top-level chips carry (docs/adr/0097 §8).
-    assert ">Teiste arvamus<" in body
-    assert "+ Arvamus / tagasiside" in body
-    assert "Rahandusministeerium" in body
+    # It was `+ Väline seisukoht`; docs/adr/0091 §3 split it into two chips
+    # under `+ Arvamus / tagasiside`, and docs/adr/0170 merged every position
+    # into `+ Kaasamine · Lisa tagasiside`, where what Koda found somewhere is
+    # answered «Avaldatud mujal» — the provenance asked in the form, not fixed
+    # by a chip.
+    panel = _panel_markup(body)
+    assert 'name="provenance"' in panel
+    assert "Avaldatud mujal" in panel
+    assert "+ Kaasamine" in body
+    assert "Rahandusministeerium" in panel
 
 
 def test_a_closed_matter_offers_no_panel(signed_in, closed_matter):
-    assert 'id="arvamus-teiste"' not in _detail(signed_in, closed_matter)
+    assert 'id="kaasamine-tagasiside"' not in _detail(signed_in, closed_matter)
 
 
 def test_the_panel_records_a_url_only_position(signed_in, normal_matter, ministry):
     response = _post(
         signed_in,
-        "add_external_position",
+        ADD,
         normal_matter,
-        {"organisation": str(ministry.pk), "url": POSITION_URL, "position_precision": "EXACT"},
+        {
+            "provenance": DISCOVERED,
+            "organisation": str(ministry.pk),
+            "url": POSITION_URL,
+            "position_precision": "EXACT",
+        },
     )
 
     assert response.status_code == 200
@@ -1177,9 +1183,10 @@ def test_the_panel_records_a_url_only_position(signed_in, normal_matter, ministr
 def test_the_panel_records_a_file_only_position(signed_in, normal_matter, ministry, evidence_root):
     response = _post(
         signed_in,
-        "add_external_position",
+        ADD,
         normal_matter,
         {
+            "provenance": DISCOVERED,
             "organisation": str(ministry.pk),
             "position_precision": "EXACT",
             "attachments": _pdf(),
@@ -1195,9 +1202,10 @@ def test_the_panel_records_a_file_only_position(signed_in, normal_matter, minist
 def test_the_panel_records_a_text_only_position(signed_in, normal_matter, ministry):
     response = _post(
         signed_in,
-        "add_external_position",
+        ADD,
         normal_matter,
         {
+            "provenance": DISCOVERED,
             "organisation": str(ministry.pk),
             "position_precision": "EXACT",
             "summary": "Ministeerium toetab eelnõu.",
@@ -1220,15 +1228,15 @@ def test_a_save_recording_nothing_is_refused_and_keeps_what_was_typed(
     their controls: losing them would cost somebody the record they opened the
     panel to make (docs/adr/0084 §3, amended 2026-09-16).
 
-    `Seotud kaasamine` is no longer one of them, because the panel no longer asks
-    it — see the crafted-POST test below, which proves the endpoint does not read
-    one either (docs/adr/0095 §3).
+    `Seotud kaasamine` is not one of them: it is optional and links a round, it is
+    not a source (docs/adr/0170 §3).
     """
     response = _post(
         signed_in,
-        "add_external_position",
+        ADD,
         normal_matter,
         {
+            "provenance": DISCOVERED,
             "organisation": str(ministry.pk),
             "stated_on": "14.03.2026",
             "summary": "",
@@ -1241,10 +1249,8 @@ def test_a_save_recording_nothing_is_refused_and_keeps_what_was_typed(
     assert not MatterExternalPosition.objects.filter(matter=normal_matter).exists()
     assert EXTERNAL_POSITION_NEEDS_SOURCE in body
     # Everything the person had already answered is still in its control —
-    # in **this** panel's controls. `+ Meile saadetud tagasiside` renders the same
-    # field names above it and is unbound, so a search over the whole page would
-    # find its empty twin and pass or fail for the wrong reason
-    # (docs/adr/0091 §3.5, `_panel_markup`).
+    # in **this** panel's controls, so the search is scoped to it
+    # (`_panel_markup`).
     panel = _panel_markup(body)
     assert 'value="14.03.2026"' in _stated_on_box(body)
     assert "checked" in _tag_with(panel, f'value="{ministry.pk}"')
@@ -1257,9 +1263,14 @@ def test_a_hostile_address_is_refused_on_the_page_with_the_value_returned(
 
     response = _post(
         signed_in,
-        "add_external_position",
+        ADD,
         normal_matter,
-        {"organisation": str(ministry.pk), "url": typed, "position_precision": "EXACT"},
+        {
+            "provenance": DISCOVERED,
+            "organisation": str(ministry.pk),
+            "url": typed,
+            "position_precision": "EXACT",
+        },
     )
     body = response.content.decode()
 
@@ -1272,63 +1283,70 @@ def test_a_hostile_address_is_refused_on_the_page_with_the_value_returned(
 def test_a_position_with_no_organisation_is_refused_on_the_page(signed_in, normal_matter):
     response = _post(
         signed_in,
-        "add_external_position",
+        ADD,
         normal_matter,
-        {"url": POSITION_URL, "position_precision": "EXACT"},
+        {"provenance": DISCOVERED, "url": POSITION_URL, "position_precision": "EXACT"},
     )
 
     assert response.status_code == 400
     assert EXTERNAL_POSITION_NEEDS_ORGANISATION in response.content.decode()
 
 
-def test_a_crafted_post_naming_another_matters_engagement_reaches_nothing(
+def test_a_crafted_post_naming_another_matters_engagement_is_refused(
     signed_in, normal_matter, specialist, ministry
 ):
-    """The panel stopped asking, so the endpoint stopped reading — and the save stands.
+    """Another Matter's round is refused, and nothing is written.
 
-    Until docs/adr/0095 §3 this POST was *refused*, by a form that declared an
-    `engagement` field and checked the round belonged to this Matter. The field
-    is gone from both creation panels, so there is nothing to clean, nothing to
-    check and nothing to attach: the position is recorded, and it is recorded
-    with `engagement = NULL`.
-
-    That is the stronger outcome rather than a weaker one. A refusal proves the
-    guard ran; a `NULL` proves there is no path to guard. `Muuda` still asks, and
-    `correct_external_position` still refuses another Matter's round there —
-    which is the test directly below this one.
+    Between docs/adr/0095 §3 and docs/adr/0170 the creation panels declared no
+    `engagement` field, so this POST saved with `engagement = NULL`. `Lisa
+    tagasiside` asks `Seotud kaasamine` again (optional), and its field accepts
+    only this Matter's rounds this reader may see — so the round from elsewhere
+    is refused by the field before the service is reached (docs/adr/0170 §6).
+    `Muuda` refuses it too, through `correct_external_position` — the test
+    directly below this one.
     """
     elsewhere = factories.MatterFactory(owner=specialist)
     stray = add_engagement(
         matter=elsewhere, kind=EngagementKind.EMAIL_CAMPAIGN, title="mujal", actor=specialist
     )
+    payload = {
+        # A linked round is answered «Saadeti Kojale»; «Avaldatud mujal» with a
+        # round would be refused for its provenance before the round was read.
+        "provenance": ExternalPositionProvenance.RECEIVED.value,
+        "organisation": str(ministry.pk),
+        "url": POSITION_URL,
+        "position_precision": "EXACT",
+    }
 
-    response = _post(
-        signed_in,
-        "add_external_position",
-        normal_matter,
-        {
-            "organisation": str(ministry.pk),
-            "url": POSITION_URL,
-            "engagement": str(stray.pk),
-            "position_precision": "EXACT",
-        },
-    )
+    response = _post(signed_in, ADD, normal_matter, {**payload, "engagement": str(stray.pk)})
+
+    assert response.status_code == 400
+    assert not MatterExternalPosition.objects.filter(matter=normal_matter).exists()
+    stray.refresh_from_db()
+    assert stray.has_open_feedback_wait
+
+    # The same POST without the stray round saves — and the precision it carried
+    # reached nothing: the four period fields are not on this form, so the day
+    # box is the answer and `EXACT` is what the record stores.
+    response = _post(signed_in, ADD, normal_matter, payload)
 
     assert response.status_code == 200
     position = MatterExternalPosition.objects.get(matter=normal_matter)
     assert position.engagement_id is None
-    # And the precision the same POST carried reached nothing either: the four
-    # period fields are not on this form, so the day box is the answer and
-    # `EXACT` is what the record stores.
     assert position.stated_on_precision == DatePrecision.EXACT.value
 
 
 def test_a_closed_matter_refuses_a_crafted_post(signed_in, closed_matter, ministry):
     response = _post(
         signed_in,
-        "add_external_position",
+        ADD,
         closed_matter,
-        {"organisation": str(ministry.pk), "url": POSITION_URL, "position_precision": "EXACT"},
+        {
+            "provenance": DISCOVERED,
+            "organisation": str(ministry.pk),
+            "url": POSITION_URL,
+            "position_precision": "EXACT",
+        },
     )
 
     assert response.status_code == 400
@@ -1450,8 +1468,8 @@ def test_a_reader_may_not_write_a_position(client, reader, normal_matter, minist
     client.force_login(reader)
 
     response = client.post(
-        reverse("matters:add_external_position", kwargs={"pk": normal_matter.pk}),
-        {"organisation": str(ministry.pk), "url": POSITION_URL},
+        reverse("matters:" + ADD, kwargs={"pk": normal_matter.pk}),
+        {"provenance": DISCOVERED, "organisation": str(ministry.pk), "url": POSITION_URL},
     )
 
     assert response.status_code == 404
@@ -1535,9 +1553,9 @@ def test_the_panel_validates_against_the_whole_shared_catalogue(catalogue, speci
     Adressaat (docs/adr/0090 §5) and `Muuda teemat` is where the two questions
     meet now. The claim is about the pool, not about which field reads it.
     """
-    from app.matters.forms import CompactExternalPositionForm, MatterCreateForm, MatterEditForm
+    from app.matters.forms import FeedbackForm, MatterCreateForm, MatterEditForm
 
-    panel = CompactExternalPositionForm(viewer=specialist)
+    panel = FeedbackForm(viewer=specialist)
     uus_teema = MatterCreateForm(viewer=specialist)
     muuda = MatterEditForm(matter=factories.MatterFactory(owner=specialist), viewer=specialist)
 
@@ -1558,9 +1576,9 @@ def test_every_institution_is_offered_even_when_it_is_not_a_chip(catalogue, spec
     of the two is the whole catalogue — which is what lets the search reveal a
     body rather than describe one.
     """
-    from app.matters.forms import CompactExternalPositionForm
+    from app.matters.forms import FeedbackForm
 
-    panel = CompactExternalPositionForm(viewer=specialist)
+    panel = FeedbackForm(viewer=specialist)
 
     offered = {organisation.pk for organisation in panel.organisation_offered}
     assert offered == {organisation.pk for organisation in Organisation.objects.all()}
@@ -1576,13 +1594,13 @@ def test_the_recorded_spellings_reach_the_control(catalogue, specialist):
     search that fell back to substring matching would find nothing for an
     abbreviation nobody typed into the name.
     """
-    from app.matters.forms import CompactExternalPositionForm
+    from app.matters.forms import FeedbackForm
     from app.organisations.models import OrganisationAlias
 
     mkm = Organisation.objects.get(name="Majandus- ja Kommunikatsiooniministeerium")
     OrganisationAlias.objects.create(organisation=mkm, alias="MKM")
 
-    panel = CompactExternalPositionForm(viewer=specialist)
+    panel = FeedbackForm(viewer=specialist)
 
     assert (
         "mkm" in str(panel.fields["organisation"].widget.alias_terms.get(str(mkm.pk), "")).lower()
@@ -1591,16 +1609,17 @@ def test_the_recorded_spellings_reach_the_control(catalogue, specialist):
 
 def test_a_body_outside_the_shortlist_saves_from_the_panel(signed_in, normal_matter, catalogue):
     """The answer the search exists for, posted the way the browser posts it."""
-    from app.matters.forms import CompactExternalPositionForm
+    from app.matters.forms import FeedbackForm
 
-    panel = CompactExternalPositionForm(viewer=None)
+    panel = FeedbackForm(viewer=None)
     tail_body = Organisation.objects.order_by("name").last()
 
     response = _post(
         signed_in,
-        "add_external_position",
+        ADD,
         normal_matter,
         {
+            "provenance": DISCOVERED,
             "organisation": str(tail_body.pk),
             "position_precision": "EXACT",
             "summary": "Toetab eelnõu.",
@@ -1625,9 +1644,10 @@ def test_a_new_organisation_is_created_through_the_picker_and_then_selected(
 
     response = _post(
         signed_in,
-        "add_external_position",
+        ADD,
         normal_matter,
         {
+            "provenance": DISCOVERED,
             "organisation_name": "Eesti Uus Selts MTÜ",
             "position_precision": "EXACT",
             "summary": "Ei toeta eelnõu praegusel kujul.",
@@ -1647,9 +1667,10 @@ def test_a_typed_name_that_already_names_a_body_reuses_it(signed_in, normal_matt
 
     response = _post(
         signed_in,
-        "add_external_position",
+        ADD,
         normal_matter,
         {
+            "provenance": DISCOVERED,
             "organisation_name": "   Rahandusministeerium  ",
             "position_precision": "EXACT",
             "summary": "Toetab eelnõu.",
@@ -1669,9 +1690,10 @@ def test_a_typed_alias_reuses_the_body_it_names(signed_in, normal_matter, minist
 
     response = _post(
         signed_in,
-        "add_external_position",
+        ADD,
         normal_matter,
         {
+            "provenance": DISCOVERED,
             "organisation_name": "RaM",
             "position_precision": "EXACT",
             "summary": "Toetab eelnõu.",
@@ -1689,9 +1711,10 @@ def test_a_typed_name_wins_over_a_chip_that_was_merely_left_selected(
     """`resolve_addressee`'s precedence, shared rather than restated here."""
     response = _post(
         signed_in,
-        "add_external_position",
+        ADD,
         normal_matter,
         {
+            "provenance": DISCOVERED,
             "organisation": str(ministry.pk),
             "organisation_name": "Eesti Uus Selts MTÜ",
             "position_precision": "EXACT",
@@ -1720,9 +1743,10 @@ def test_an_ambiguous_typed_name_is_refused_rather_than_guessed(signed_in, norma
 
     response = _post(
         signed_in,
-        "add_external_position",
+        ADD,
         normal_matter,
         {
+            "provenance": DISCOVERED,
             "organisation_name": "Koda",
             "position_precision": "EXACT",
             "summary": "Toetab eelnõu.",
@@ -1738,9 +1762,9 @@ def test_an_ambiguous_typed_name_is_refused_rather_than_guessed(signed_in, norma
 def test_no_position_exists_without_an_organisation_even_by_crafted_post(signed_in, normal_matter):
     response = _post(
         signed_in,
-        "add_external_position",
+        ADD,
         normal_matter,
-        {"position_precision": "EXACT", "summary": "Toetab eelnõu."},
+        {"provenance": DISCOVERED, "position_precision": "EXACT", "summary": "Toetab eelnõu."},
     )
 
     assert response.status_code == 400
@@ -1766,9 +1790,9 @@ def test_the_panel_opens_on_today_and_carries_no_precision_control(
     crafted `position_precision` unreadable rather than merely unrendered
     (docs/adr/0095 §3).
     """
-    from app.matters.forms import CompactExternalPositionForm
+    from app.matters.forms import FeedbackForm
 
-    panel = CompactExternalPositionForm(matter=normal_matter, viewer=None)
+    panel = FeedbackForm(matter=normal_matter, viewer=None)
     today = timezone.localdate()
 
     assert panel["stated_on"].value() == today
@@ -1788,9 +1812,10 @@ def test_today_is_a_visible_suggestion_and_the_posted_value_is_what_is_stored(
     """
     response = _post(
         signed_in,
-        "add_external_position",
+        ADD,
         normal_matter,
         {
+            "provenance": DISCOVERED,
             "organisation": str(ministry.pk),
             "position_precision": "EXACT",
             "stated_on": "14.03.2026",
@@ -1808,9 +1833,10 @@ def test_a_cleared_box_stores_nothing_and_stays_cleared(signed_in, normal_matter
     """«Kuupäev teadmata» is a real answer, and the default does not override it."""
     response = _post(
         signed_in,
-        "add_external_position",
+        ADD,
         normal_matter,
         {
+            "provenance": DISCOVERED,
             "organisation": str(ministry.pk),
             "position_precision": "EXACT",
             "stated_on": "",
@@ -1833,9 +1859,10 @@ def test_a_cleared_box_survives_a_refused_save_still_cleared(signed_in, normal_m
     """
     response = _post(
         signed_in,
-        "add_external_position",
+        ADD,
         normal_matter,
         {
+            "provenance": DISCOVERED,
             "organisation": str(ministry.pk),
             "position_precision": "EXACT",
             "stated_on": "",
@@ -1998,9 +2025,10 @@ def test_a_text_only_position_is_refused_on_a_closed_matter(closed_matter, signe
     """The panel is not rendered, and that decides nothing: the POST still lands."""
     response = _post(
         signed_in,
-        "add_external_position",
+        ADD,
         closed_matter,
         {
+            "provenance": DISCOVERED,
             "organisation": str(ministry.pk),
             "position_precision": "EXACT",
             "summary": "Toetab eelnõu.",
@@ -2015,8 +2043,8 @@ def test_a_reader_may_not_record_a_text_only_position(client, reader, normal_mat
     client.force_login(reader)
 
     response = client.post(
-        reverse("matters:add_external_position", kwargs={"pk": normal_matter.pk}),
-        {"organisation": str(ministry.pk), "summary": "Toetab eelnõu."},
+        reverse("matters:" + ADD, kwargs={"pk": normal_matter.pk}),
+        {"provenance": DISCOVERED, "organisation": str(ministry.pk), "summary": "Toetab eelnõu."},
     )
 
     assert response.status_code == 404

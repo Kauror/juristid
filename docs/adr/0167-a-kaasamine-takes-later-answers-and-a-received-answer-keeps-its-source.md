@@ -153,3 +153,7 @@ are never discarded or overwritten.
 Code-only. Reverting §2 makes finished rounds unofferable again without
 touching any stored reply; reverting §3.1 removes the text from the projection
 on the next refresh.
+
+## Amendment of 2026-10-15 — see docs/adr/0170
+
+§2's rules apply when a round is linked; a standalone position touches no wait (docs/adr/0170-lisa-tagasiside-is-the-one-door-for-every-position.md).

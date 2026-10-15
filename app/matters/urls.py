@@ -232,11 +232,11 @@ urlpatterns = [
     # recorded and who recorded it is part of the file (docs/adr/0084 §8) —
     # which is right about a position somebody really held and wrong about one
     # attributed to a body that never stated it (OWNER-04, docs/adr/0102).
-    path(
-        "teemad/<uuid:pk>/lisa/valine-seisukoht/",
-        views.add_external_position,
-        name="add_external_position",
-    ),
+    # `teemad/<pk>/lisa/valine-seisukoht/` (`add_external_position`) and
+    # `teemad/<pk>/lisa/tagasiside/` (`add_received_feedback`) are retired: every
+    # position is recorded through `+ Kaasamine · Lisa tagasiside`
+    # (`add_engagement_reply`), which states its provenance explicitly
+    # (docs/adr/0091 amendment of 2026-10-15). A stale tab's POST is a 404.
     # `+ Lisa fail` on a recorded `Väline seisukoht` — another paper supporting
     # a position the file already holds. The pair `Menetluse areng` has had
     # since docs/adr/0091 §5.4; a position had only the capture, so a position
@@ -250,15 +250,6 @@ urlpatterns = [
         "teemad/<uuid:pk>/valine-seisukoht/<uuid:position_id>/muuda/",
         views.update_external_position_view,
         name="update_external_position",
-    ),
-    # `+ Meile saadetud tagasiside` — the other half of the same record, under
-    # its own address because it is its own panel with its own questions. One
-    # correction route serves both, because a recorded position is corrected the
-    # same way whichever chip filed it (docs/adr/0091 §3.5).
-    path(
-        "teemad/<uuid:pk>/lisa/tagasiside/",
-        views.add_received_feedback,
-        name="add_received_feedback",
     ),
     # `+ Koja arvamus` — the Chamber's own opinion, recorded where the work is.
     # It writes a `Submission` through the service `Dokumendid` already posts to;

@@ -23,7 +23,7 @@ lock before the record is written (`app.workflow.plan.launched_step`: on this
 Matter, of this form's operation, still ahead) and, in the same transaction,
 marks that step done by the record (`fulfil_launched_step`). A second press
 finds the step done and is refused with nothing written. A `Lisa tagasiside`
-names its round by the form's own `Kaasamine` field, which already is the link.
+names its round by the form's own `Seotud kaasamine` field, which already is the link.
 
 This module only maps steps to forms and reads the two request shapes; it
 decides nothing about the records themselves.

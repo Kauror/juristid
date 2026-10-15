@@ -165,14 +165,12 @@ from app.matters.forms import (
     MatterProgressForm,
     NextActionForm,
     OpinionWorkingDocumentsForm,
-    OtherOpinionForm,
     PersonalNoteForm,
     PlannedActionForm,
     PlanRevisionForm,
     PositionForm,
     ProceduralDevelopmentEditForm,
     ProceduralLinkEditForm,
-    ReceivedFeedbackForm,
     ReopenForm,
     ResponseDeadlineForm,
     ReviewActionForm,
@@ -186,7 +184,6 @@ from app.matters.forms import (
     matter_edit_conflict_changes,
     period_initial,
     read_organisation_choices,
-    visible_engagements_of,
 )
 from app.matters.initiative import (
     KODA_INITIATIVE_LABEL,
@@ -7276,12 +7273,13 @@ WORKSPACE_PANELS: dict[str, tuple[str, str]] = {
     "important_date_form": ("lisa-marge", "marge-tahtaeg"),
     "effective_date_form": ("lisa-marge", "marge-joustumine"),
     "work_victory_form": ("lisa-marge", "marge-toovoit"),
-    # `+ Kaasamine` — start a round, or add what came back (docs/adr/0142).
+    # `+ Kaasamine` — start a round, or record a position: a member's
+    # feedback sent to Koda or a view published elsewhere, with or without a
+    # round (docs/adr/0142, docs/adr/0091 amendment of 2026-10-15).
     "add_engagement_form": ("lisa-kaasamine", "kaasamine-alusta"),
     "engagement_reply_form": ("lisa-kaasamine", "kaasamine-tagasiside"),
-    # `+ Arvamus / tagasiside` — grouped on screen, three distinct records.
-    "received_feedback_form": ("lisa-arvamus", "arvamus-tagasiside"),
-    "external_position_form": ("lisa-arvamus", "arvamus-teiste"),
+    # `+ Arvamus / tagasiside` — Koda's own opinion only, since the feedback
+    # doors moved under `+ Kaasamine` (owner's UX round, stage 3).
     "koda_opinion_form": ("lisa-arvamus", "arvamus-koja"),
     # `+ Ülevaade / uudis` — one question, no sub-choice.
     "website_overview_form": ("lisa-koduleht", ""),
@@ -7314,7 +7312,7 @@ PLANNED_ROW_FORMS = {"planned_edit_form": "edit", "planned_done_form": "done"}
 WORKSPACE_DEFAULT_CHOICES: dict[str, str] = {
     # The first of `+ Lisa`'s four since `Tavaline` left (2026-10-07).
     "marge_choice": "marge-arvamuse-tahtaeg",
-    "arvamus_choice": "arvamus-tagasiside",
+    "arvamus_choice": "arvamus-koja",
 }
 
 #: Which family each sub-choice belongs to, so a refusal can be routed to the
@@ -7324,8 +7322,6 @@ WORKSPACE_CHOICE_FAMILY: dict[str, str] = {
     "marge-tahtaeg": "marge_choice",
     "marge-joustumine": "marge_choice",
     "marge-toovoit": "marge_choice",
-    "arvamus-tagasiside": "arvamus_choice",
-    "arvamus-teiste": "arvamus_choice",
     "arvamus-koja": "arvamus_choice",
     "kaasamine-alusta": "kaasamine_choice",
     "kaasamine-tagasiside": "kaasamine_choice",
@@ -7394,11 +7390,6 @@ def workspace_forms(
     Python exactly as before (docs/adr/0091 §3.5).
     """
     organisations = read_organisation_choices(viewer)
-    # And this Matter's consultations, for the two `Seotud kaasamine` controls.
-    # Same reasoning as the catalogue above: one read for two identical selects.
-    # The *queryset* each field validates against is still set per form, so
-    # nothing about the authorization boundary is shared or weakened (AUTH-003).
-    engagements = visible_engagements_of(matter, viewer)
     # `Uus hetkeseis`, in the file's likely order, read once for the two panels
     # that offer it (docs/adr/0131 §7) — handed in by a caller that has already
     # read the Matter's periods.
@@ -7455,10 +7446,13 @@ def workspace_forms(
                 {"website_url": selectors.latest_overview_url(matter, viewer)} if matter else None
             )
         ),
-        # `+ Kaasamine · Lisa tagasiside`: the open rounds the page has already
-        # read are its choices, and the field's queryset still validates.
+        # `+ Kaasamine · Lisa tagasiside` — every position recorded on the
+        # Teema. The open rounds the page has already read are its round
+        # choices (the field's queryset still validates), and `Organisatsioon`
+        # is ranked by the institutions this reader's visible Matters involve,
+        # read once for the page (docs/adr/0091 §3.5).
         "engagement_reply_form": EngagementReplyForm(
-            matter=matter, viewer=viewer, open_rounds=open_rounds
+            matter=matter, viewer=viewer, open_rounds=open_rounds, choices=organisations
         ),
         "important_date_form": CompactImportantDateForm(),
         "effective_date_form": CompactEffectiveDateForm(),
@@ -7476,31 +7470,6 @@ def workspace_forms(
         # way its `Saatja` and its `Õigusakt` are — and it is asked on
         # `Uus teema`, corrected on `Muuda teemat` and read on the rail
         # (`MatterLinkForm`, docs/adr/0097 §5).
-        # `+ Väline seisukoht`. The one form here that has to be told which
-        # Matter it is on and who is looking: `Organisatsioon` is ranked by the
-        # institutions *this reader's* visible Matters involve, and
-        # `Seotud kaasamine` offers this Matter's consultations as this reader
-        # may see them. Both are queryset-level, so a crafted POST naming a
-        # round on another file is refused by the field rather than by the
-        # template not having drawn it (docs/adr/0084 §4).
-        # `+ Meile saadetud tagasiside` and `+ Teiste arvamus`. Two instances of
-        # one form class with the provenance fixed on each, because they are two
-        # professional facts with one shape — an author, a source, an optional
-        # date, an optional note from the lawyer — and four models would have been
-        # four sets of validation for one set of rules (docs/adr/0091 §3).
-        #
-        # Both have to be told which Matter they are on and who is looking:
-        # `Organisatsioon` is ranked by the institutions *this reader's* visible
-        # Matters involve, and `Seotud kaasamine` offers this Matter's
-        # consultations as this reader may see them. Both are queryset-level, so a
-        # crafted POST naming a round on another file is refused by the field
-        # rather than by the template not having drawn it (docs/adr/0084 §4).
-        "received_feedback_form": ReceivedFeedbackForm(
-            matter=matter, viewer=viewer, choices=organisations, engagements=engagements
-        ),
-        "external_position_form": OtherOpinionForm(
-            matter=matter, viewer=viewer, choices=organisations, engagements=engagements
-        ),
         # `+ Koja arvamus`. The one panel here that writes a `Submission` rather
         # than a Matter child: Koda's own opinion is what the product has always
         # called a submission, and this is a second door onto it rather than a
@@ -7669,11 +7638,13 @@ def _workspace_refusal(
     # rather than the save failing in silence (docs/adr/0144 §1).
     row_kind = PLANNED_ROW_FORMS.get(key)
     refused_id = str(getattr(form, "planned_action_id", "") or "")
+    row_is_drawn = False
     if row_kind and refused_id:
         for planned in context.get("planned_actions") or []:
             if str(planned.pk) == refused_id:
                 setattr(planned, f"{row_kind}_form", form)
                 setattr(planned, f"open_{row_kind}", True)
+                row_is_drawn = True
     # What else the refused save named — the deadline, the rounds — comes back
     # ticked, so correcting the file and saving again does not quietly drop it
     # (`opinion_completion_links.html`).
@@ -7695,6 +7666,16 @@ def _workspace_refusal(
         panel_is_rendered = (
             context["current_action"] is None and context["recommendation"] is not None
         )
+    # Two refusals that have no panel of their own on the column, and that
+    # until docs/adr/0170 printed — by accident — inside `Meile saadetud
+    # tagasiside`, whose error slot followed the family default: `add_note`
+    # (`progress_form`, whose `Tavaline` panel left on 2026-10-07) and a
+    # planned row's `Muuda` / `✓ Tehtud` after the row stopped being planned.
+    # Both go to the workspace-level slot instead.
+    if key == "progress_form":
+        panel_is_rendered = False
+    if row_kind and not row_is_drawn:
+        panel_is_rendered = False
     if key == "review_form" and panel_is_rendered:
         # `Vaatasin üle` is drawn only beside a step that waits: a replacement
         # that is a plan has no such panel to print the refusal in (ENG-021).
@@ -8057,28 +8038,26 @@ def _add_engagement_from_form(request: HttpRequest, matter: Matter, form: Any) -
 @business_write_required
 @require_http_methods(["POST"])
 def add_engagement_reply(request: HttpRequest, pk: Any) -> HttpResponse:
-    """`+ Kaasamine · Lisa tagasiside` — what came back from a round that is open.
+    """`+ Kaasamine · Lisa tagasiside` — every position recorded on a Teema.
 
-    The canonical record for it already exists and is reused, not copied: a
-    `Meile saadetud tagasiside` (`MatterExternalPosition`, provenance RECEIVED)
-    tied to the round by its `engagement`, through the same
-    `_record_external_position` and `add_matter_external_position` as
-    `+ Arvamus / tagasiside`. The round row counts it and its files follow it
-    (docs/adr/0142).
-
-    **The round is named, never guessed**: the form's own field, offering this
-    Matter's rounds as this reader may see them — open ones, and finished ones
-    that still take later answers — required, and preselected only when the
-    choice is not a guess.
+    One `MatterExternalPosition` through `_record_external_position`: a member's
+    feedback sent to Koda («Saadeti Kojale», RECEIVED) or a view published
+    elsewhere («Avaldatud mujal», DISCOVERED), stated explicitly, with an
+    optional `Seotud kaasamine` (`FeedbackForm`, docs/adr/0091 and 0167,
+    amendments of 2026-10-15). It replaced `add_received_feedback` and
+    `add_external_position`.
 
     **The save contract** (docs/adr/0167 §2, relied on by `Ootame tagasisidet →
-    Tehtud`, which opens this same form): POST `engagement`, `summary`,
-    `stated_on` and `attachments` here. On success the reply is recorded and,
-    when the named round was still open, its wait is finished in the same
-    transaction through `engagement_replies.finish_wait_on_reply` →
-    `complete_engagement_feedback`; the answer is the re-rendered Teema view
-    (200). A refusal is 400 with the form still bound, and finishes nothing. A
-    round already finished keeps its closure and gains the answer.
+    Tehtud`, which opens this form with the round named): POST `provenance`
+    and at least one of `summary`, `url` or `attachments` (docs/adr/0084 §3);
+    `organisation`/`organisation_name` — required for «Avaldatud mujal»,
+    optional for «Saadeti Kojale» (docs/adr/0101) — and optionally
+    `source_is_member`, `engagement` and `stated_on`. With
+    a round, the provenance is RECEIVED, a repeat is refused, and the first
+    answer to an open round finishes its wait in the same transaction; a round
+    already finished keeps its closure and gains the answer. Without one, no
+    wait is touched. Success re-renders the Teema view (200); a refusal is 400
+    with the form still bound and writes nothing.
     """
     return _record_external_position(
         request, pk, form_class=EngagementReplyForm, key="engagement_reply_form"
@@ -8348,20 +8327,23 @@ def _external_position_row(
 def _record_external_position(
     request: HttpRequest, pk: Any, *, form_class: Any, key: str
 ) -> HttpResponse:
-    """`+ Meile saadetud tagasiside` and `+ Teiste arvamus`, through one function.
+    """Record one `MatterExternalPosition` from a creation form.
 
-    Two chips, two forms and one operation, which is docs/adr/0091 §3's claim
-    stated in code: the panels differ in which questions they ask and in which
-    provenance they write, and nothing else about the act differs. A second view
-    would have been a second place for the organisation resolution, the refusal
-    handling and the closed-Matter boundary to drift.
+    Since the owner's UX round (stage 3, 2026-10-15) the one creation form is
+    `+ Kaasamine · Lisa tagasiside` (`FeedbackForm`); the function stays the one
+    place for the organisation resolution, the refusal handling, the
+    closed-Matter boundary and the engagement-reply rules.
 
-    **The provenance comes off the form class, never off the request.** Neither
-    form declares a `provenance` field, so there is nothing for a browser to post
-    and nothing a crafted POST can move: `+ Teiste arvamus` cannot be made to file
-    received feedback by adding a parameter. It is the same reasoning
-    `NextActionForm` gives for having no `kind` — a classification the page
-    decides is not a value the endpoint accepts (ADR 0052 §1).
+    **The provenance is stated, never inferred** (docs/adr/0091 §3.2). A form
+    that `states_provenance` carries it as a required radio with no default,
+    validated against the two creation provenances and fixed at RECEIVED when a
+    round is linked; any other form class still fixes it itself. Nothing is
+    guessed from the organisation, the round, the link or the text.
+
+    **Only a linked round is answered.** With a round, a repeat is refused and
+    the first answer to an open round finishes its wait in this transaction; a
+    standalone position — received or published elsewhere — touches no wait
+    (docs/adr/0167 §2).
 
     The institution is answered either by the picker's radio group or by the
     name somebody typed into it, and which of the two wins is
@@ -8390,7 +8372,17 @@ def _record_external_position(
     chosen = form.cleaned_data.get("organisation")
     typed = (form.cleaned_data.get("organisation_name") or "").strip()
     answered = form.cleaned_data.get("engagement")
-    finishes_wait = bool(getattr(form_class, "closes_engagement", False))
+    # A position linked to a round is an answer to it; one with no round is a
+    # standalone position and touches no wait (owner's UX round, stage 3).
+    finishes_wait = bool(getattr(form_class, "closes_engagement", False)) and answered is not None
+    # Stated by the person on `Lisa tagasiside` — the validated radio, which the
+    # form has already fixed at RECEIVED for a linked round — and otherwise the
+    # form class's own, as before (docs/adr/0091 §3.2, amended 2026-10-15).
+    provenance = (
+        form.cleaned_data["provenance"]
+        if getattr(form_class, "states_provenance", False)
+        else form_class.provenance
+    )
     try:
         # One transaction around the resolution and the save. A typed name the
         # picker does not know becomes a new institution *while the arguments
@@ -8424,7 +8416,7 @@ def _record_external_position(
                     if (chosen is not None or typed)
                     else None
                 ),
-                provenance=form_class.provenance,
+                provenance=provenance,
                 # **The three answers neither panel asks any more**, and each of
                 # them is a `.get` on a field the form does not declare — so this is
                 # not a view choosing to ignore a value, it is a value that has
@@ -8461,7 +8453,7 @@ def _record_external_position(
             # `Lõpeta kaasamine` or somebody else meanwhile — keeps its closure
             # and simply gains this answer (docs/adr/0167 §2). Nothing else is
             # completed: no `NextAction` is inferred from feedback.
-            if finishes_wait and answered is not None:
+            if finishes_wait:
                 engagement_replies.finish_wait_on_reply(engagement=answered, actor=request.user)
     except (DomainError, UploadRejected) as error:
         return _workspace_refusal(request, matter, key=key, form=form, error=str(error))
@@ -8583,32 +8575,6 @@ def correct_procedural_link_view(request: HttpRequest, pk: Any, link_id: Any) ->
     except DomainError as error:
         return _procedural_link_refusal(request, matter, link=link, form=form, error=str(error))
     return _render_overview(request, matter)
-
-
-@login_required
-@business_write_required
-@require_http_methods(["POST"])
-def add_received_feedback(request: HttpRequest, pk: Any) -> HttpResponse:
-    """`+ Meile saadetud tagasiside` — somebody gave this to Koda."""
-    return _record_external_position(
-        request, pk, form_class=ReceivedFeedbackForm, key="received_feedback_form"
-    )
-
-
-@login_required
-@business_write_required
-@require_http_methods(["POST"])
-def add_external_position(request: HttpRequest, pk: Any) -> HttpResponse:
-    """`+ Teiste arvamus` — Koda recorded somebody else's position from elsewhere.
-
-    The route keeps its name. It is what docs/adr/0084's panel posted to, the
-    browser lane and the visual baselines reach it by that name, and renaming a
-    working endpoint because a chip's label changed would be churn with a
-    migration attached (docs/adr/0091 §3.5).
-    """
-    return _record_external_position(
-        request, pk, form_class=OtherOpinionForm, key="external_position_form"
-    )
 
 
 @login_required

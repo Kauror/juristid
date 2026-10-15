@@ -18,11 +18,15 @@ import pytest
 from playwright.sync_api import expect
 
 from e2e.conftest import (
+    AVALDATUD_MUJAL,
+    FEEDBACK_PICKER,
     SANDRA,
     choose_organisation,
     chronology,
     create_matter,
+    feedback_form,
     open_add_panel,
+    open_feedback_form,
     sign_in,
     start_first_step,
     wait_for_htmx,
@@ -49,14 +53,14 @@ def _add_new(picker, name: str) -> None:
     expect(picker.locator(".orgfind__chips")).to_contain_text(name)
 
 
-def test_a_new_organisation_in_teiste_arvamus_survives_the_save(page, base_url):
+def test_a_new_organisation_in_lisa_tagasiside_survives_the_save(page, base_url):
+    """«Teiste arvamus» is `Lisa tagasiside` · «Avaldatud mujal» since docs/adr/0170."""
     url = _swapped_teema(page, base_url)
     name = unique_title("QA Uus Liit")
 
-    open_add_panel(page, "arvamus-teiste")
-    panel = page.locator("#arvamus-teiste")
+    panel = open_feedback_form(page, AVALDATUD_MUJAL)
     _add_new(panel.locator("[data-orgfind]").first, name)
-    page.fill("#id_valine_seisukoht_summary", "Liidu seisukoht eelnõule.")
+    panel.locator("[name=summary]").fill("Liidu seisukoht eelnõule.")
     with page.expect_response(lambda r: r.request.method == "POST") as caught:
         panel.get_by_role("button", name="Salvesta", exact=True).click()
     assert caught.value.status == 200, caught.value.status
@@ -94,16 +98,17 @@ def test_a_second_save_after_a_refusal_still_keeps_the_new_organisation(page, ba
     url = _swapped_teema(page, base_url)
     name = unique_title("QA Teine Liit")
 
-    open_add_panel(page, "arvamus-teiste")
-    panel = page.locator("#arvamus-teiste")
+    panel = open_feedback_form(page, AVALDATUD_MUJAL)
     _add_new(panel.locator("[data-orgfind]").first, name)
     # Refused: no summary yet.
-    panel.get_by_role("button", name="Salvesta", exact=True).click()
+    with page.expect_response(lambda r: r.request.method == "POST") as caught:
+        panel.get_by_role("button", name="Salvesta", exact=True).click()
+    assert caught.value.status == 400, caught.value.status
     wait_for_htmx(page)
-    panel = page.locator("#arvamus-teiste")
+    panel = feedback_form(page)
     expect(panel.locator(".orgfind__chips")).to_contain_text(name)
 
-    page.fill("#id_valine_seisukoht_summary", "Teine katse.")
+    panel.locator("[name=summary]").fill("Teine katse.")
     panel.get_by_role("button", name="Salvesta", exact=True).click()
     wait_for_htmx(page)
 
@@ -115,10 +120,10 @@ def test_a_second_save_after_a_refusal_still_keeps_the_new_organisation(page, ba
 def test_an_existing_organisation_is_still_chosen_from_the_list(page, base_url):
     url = _swapped_teema(page, base_url)
 
-    open_add_panel(page, "arvamus-teiste")
-    choose_organisation(page, "valine-seisukoht")
-    page.fill("#id_valine_seisukoht_summary", "Ministeeriumi seisukoht.")
-    page.locator("#arvamus-teiste").get_by_role("button", name="Salvesta", exact=True).click()
+    panel = open_feedback_form(page, AVALDATUD_MUJAL)
+    choose_organisation(page, FEEDBACK_PICKER)
+    panel.locator("[name=summary]").fill("Ministeeriumi seisukoht.")
+    panel.get_by_role("button", name="Salvesta", exact=True).click()
     wait_for_htmx(page)
 
     page.goto(url)

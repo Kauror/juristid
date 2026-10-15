@@ -388,13 +388,16 @@ def test_marge_offers_its_four_kinds_and_defaults_to_arvamuse_tahtaeg(signed_in,
     assert checked == ["marge-arvamuse-tahtaeg"]
 
 
-def test_arvamus_offers_its_three_children(signed_in, specialist, stage):
+def test_arvamus_offers_only_koja_arvamus(signed_in, specialist, stage):
+    """The two feedback children moved to `+ Kaasamine · Lisa tagasiside` (docs/adr/0170)."""
     matter = factories.MatterFactory(owner=specialist)
 
     zone = launcher(page_of(signed_in, teema_url(matter)))
 
-    for label in ("Meile saadetud tagasiside", "Teiste arvamus", "Koja arvamus"):
-        assert f">{label}</label>" in zone
+    assert ">Koja arvamus</label>" in zone
+    assert ">Lisa tagasiside</label>" in zone
+    for label in ("Meile saadetud tagasiside", "Teiste arvamus"):
+        assert f">{label}</label>" not in zone
 
 
 def test_the_sub_choices_are_their_own_radio_groups(signed_in, specialist, stage):
@@ -404,7 +407,7 @@ def test_the_sub_choices_are_their_own_radio_groups(signed_in, specialist, stage
     zone = launcher(page_of(signed_in, teema_url(matter)))
 
     assert zone.count('name="marke-liik"') == 4
-    assert zone.count('name="arvamuse-liik"') == 3
+    assert zone.count('name="arvamuse-liik"') == 1  # `Koja arvamus` (docs/adr/0170)
 
 
 def test_teema_toimingud_is_gone_and_both_controls_moved(

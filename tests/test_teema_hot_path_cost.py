@@ -60,8 +60,8 @@ def test_a_save_response_never_walks_the_deletion_plan(signed_in, busy_matter, m
     monkeypatch.setattr("app.matters.views.plan_matter_deletion", counting)
 
     response = signed_in.post(
-        reverse("matters:add_received_feedback", kwargs={"pk": busy_matter.pk}),
-        {"summary": "Toetab eelnõu.", "stated_on": "14.03.2026"},
+        reverse("matters:add_engagement_reply", kwargs={"pk": busy_matter.pk}),
+        {"provenance": "RECEIVED", "summary": "Toetab eelnõu.", "stated_on": "14.03.2026"},
         HTTP_HX_REQUEST="true",
     )
     assert response.status_code == 200

@@ -2194,16 +2194,17 @@ def test_a_restricted_child_does_not_leak_through_the_chronology(
     assert ministry.name not in rendered
 
 
-def test_both_feedback_routes_refuse_a_reader_who_may_not_write(
-    client, normal_matter, reader, association
+@pytest.mark.parametrize("provenance", ["RECEIVED", "DISCOVERED"])
+def test_both_feedback_provenances_refuse_a_reader_who_may_not_write(
+    client, normal_matter, reader, association, provenance
 ):
+    """Both kinds of position, now through the one door (docs/adr/0170)."""
     client.force_login(reader)
-    for route in ("matters:add_received_feedback", "matters:add_external_position"):
-        response = client.post(
-            reverse(route, kwargs={"pk": normal_matter.pk}),
-            {"organisation": str(association.pk), "summary": "Midagi."},
-        )
-        assert response.status_code == 404, route
+    response = client.post(
+        reverse("matters:add_engagement_reply", kwargs={"pk": normal_matter.pk}),
+        {"provenance": provenance, "organisation": str(association.pk), "summary": "Midagi."},
+    )
+    assert response.status_code == 404, provenance
     assert not MatterExternalPosition.objects.exists()
 
 

@@ -1,12 +1,11 @@
 """`Teiste arvamus` in a real browser: record one, read it, correct it.
 
-**This is the `+ Väline seisukoht` panel under the name docs/adr/0091 §3 gave
-it.** The record, the route, the panel id and every rule below are unchanged; what
-moved is the chip's label and the heading a filed row reads under, because the
-first lawyer test needed «a member company answered our consultation» told apart
-from «the ministry published its position». The other half of the same record —
-`+ Meile saadetud tagasiside`, with its optional author and its `Allikas` — is
-`e2e/test_lawyer_workflow.py`, beside the rest of that round.
+**A published position is recorded through `+ Kaasamine · Lisa tagasiside`
+with «Avaldatud mujal»** since docs/adr/0170 — the `+ Arvamus / tagasiside ·
+Teiste arvamus` chip (once `+ Väline seisukoht`) and its route are retired. The
+record is unchanged and a filed row still reads under «Teiste arvamus»
+(docs/adr/0091 §3). The other provenance of the same record, «Saadeti Kojale»,
+is `e2e/test_lisa_tagasiside.py` and `e2e/test_lawyer_workflow_package.py`.
 
 The rules this file is here for are the ones only a running page can settle:
 
@@ -16,9 +15,9 @@ The rules this file is here for are the ones only a running page can settle:
   narrows the catalogue, and choosing a body is choosing a real control that was
   already in the document (docs/adr/0073);
 * that a written `Seisukoht` alone saves — the commonest real case, with no
-  file and no published page behind it — and that a save recording none of the
-  three comes back with everything typed still in the boxes, saying in Estonian
-  what all three of them are;
+  file and no published page behind it — that a link alone saves too, and that
+  a save recording none of the three comes back with everything typed still in
+  the boxes, saying in Estonian what all three of them are (docs/adr/0084 §3);
 * that the date box opens on today, that emptying it is a real answer, and that
   an emptied box does not refill itself on a refused save;
 * that the link renders as its host in a new tab and never as a printed
@@ -41,14 +40,19 @@ import pytest
 from playwright.sync_api import expect
 
 from e2e.conftest import (
+    AVALDATUD_MUJAL,
+    FEEDBACK_PICKER,
     SANDRA,
     chronology,
     create_matter,
+    feedback_form,
     open_add_panel,
+    open_feedback_form,
     open_kaik_row,
     sign_in,
     unique_title,
 )
+from e2e.conftest import choose_organisation as choose_in_picker
 
 pytestmark = pytest.mark.e2e
 
@@ -61,7 +65,13 @@ def a_new_matter(page, base_url: str) -> str:
 
 
 def panel(page):
-    return page.locator("#arvamus-teiste")
+    """`+ Kaasamine · Lisa tagasiside`, the one door for every position."""
+    return feedback_form(page)
+
+
+def open_panel(page):
+    """The form, with «Avaldatud mujal» stated — what `Teiste arvamus` was."""
+    return open_feedback_form(page, AVALDATUD_MUJAL)
 
 
 def position_row(page):
@@ -74,36 +84,19 @@ def position_row(page):
     return chronology(page).locator("article.uxtl__item").filter(has_text="Teiste arvamus:").first
 
 
-#: The picker's own id inside the panel. Every control the shared organisation
-#: component writes — the search box, the results list, the status region — is
-#: derived from it (`matters/partials/organisation_picker.html`).
-PICKER = "valine-seisukoht"
-
-
 def choose_organisation(page, name: str = MINISTRY) -> None:
     """Answer `Organisatsioon` the way a person does: type, then pick a result.
 
-    The same two steps `e2e/test_unified_organisation_picker.py` uses, and
-    deliberately not a `check()` on the radio: the chips are labels whose input
-    is clipped, and an institution outside the visible shortlist is `hidden`
-    until the search reveals it — so ticking the control directly asserts
-    something the person never does and fails on exactly the bodies the search
-    exists for.
-
-    Typed one key at a time, because that is what the control listens to and
-    what proves there is no button between the keystroke and the list
-    (docs/adr/0073).
+    The shared helper on the form's own picker (`tagasiside`), typed one key at
+    a time, because that is what the control listens to and what proves there
+    is no button between the keystroke and the list (docs/adr/0073).
     """
-    box = page.locator(f"#{PICKER}-otsi")
-    box.click()
-    box.fill("")
-    box.type(name[:8], delay=20)
-    page.locator(f"#{PICKER}-tulemused").get_by_role("option", name=name, exact=True).click()
+    choose_in_picker(page, FEEDBACK_PICKER, name)
 
 
 def record_one(page, base_url: str, *, url: str = POSITION_URL, summary: str = "") -> None:
     a_new_matter(page, base_url)
-    open_add_panel(page, "arvamus-teiste")
+    open_panel(page)
     choose_organisation(page)
     if url:
         panel(page).locator("[name=url]").fill(url)
@@ -142,23 +135,25 @@ def test_the_choice_records_a_position_without_a_reload(page, base_url):
 
 
 def test_the_panel_asks_for_four_things_and_nothing_else(page, base_url):
-    """docs/adr/0095 §3's panel, in a real browser.
+    """docs/adr/0095 §3's panel, in a real browser, as docs/adr/0170 §1 kept it.
 
-    Four controls where there were seven: the institution, the written position,
-    a link, a file — and one date box. Three questions moved to `Muuda`, and
-    what this asserts is that they are *absent from the document*, not merely
-    styled away: a hidden control is still a control a browser posts.
+    The institution, the written position, a link, a file — and one date box,
+    beside the provenance question the retired chip used to answer. Questions
+    that moved to `Muuda` are *absent from the document*, not merely styled
+    away: a hidden control is still a control a browser posts.
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "arvamus-teiste")
+    open_panel(page)
 
     expect(panel(page).locator("[data-orgfind]")).to_be_visible()
     expect(panel(page).locator("[name=summary]")).to_be_visible()
     expect(panel(page).locator("[name=url]")).to_be_visible()
     expect(panel(page).locator("input[type=file]")).to_have_count(1)
-    # The three the creation panel stopped asking. Counted at zero rather than
+    # What the creation panel does not ask. Counted at zero rather than
     # asserted invisible, because the claim is that the form does not carry them.
+    # `Seotud kaasamine` is drawn only on a Matter with a round, and this one has
+    # none (docs/adr/0170 §1).
     expect(panel(page).locator("[name=engagement]")).to_have_count(0)
     expect(panel(page).locator("[name=lawyer_note]")).to_have_count(0)
     expect(panel(page).locator("[name=source_label]")).to_have_count(0)
@@ -181,7 +176,7 @@ def test_the_institution_is_found_through_the_search_rather_than_scrolled_to(pag
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "arvamus-teiste")
+    open_panel(page)
     picker = panel(page).locator("[data-orgfind]")
 
     # At rest: the search box, and no institution drawn under it.
@@ -212,7 +207,7 @@ def test_the_written_position_leads_the_three_sources(page, base_url):
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "arvamus-teiste")
+    open_panel(page)
 
     order = panel(page).evaluate(
         """node => {
@@ -247,7 +242,7 @@ def test_a_written_position_alone_is_a_complete_record(page, base_url):
 def test_the_date_box_opens_on_today_and_the_saved_row_reads_it_back(page, base_url):
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "arvamus-teiste")
+    open_panel(page)
     choose_organisation(page)
     today = today_in_estonian(page)
     panel(page).locator("[name=summary]").fill("Toetab eelnõu.")
@@ -264,7 +259,7 @@ def test_the_date_box_opens_on_today_and_the_saved_row_reads_it_back(page, base_
 def test_emptying_the_date_box_is_a_real_answer(page, base_url):
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "arvamus-teiste")
+    open_panel(page)
     choose_organisation(page)
     panel(page).locator("[name=stated_on]").fill("")
     panel(page).locator("[name=summary]").fill("Toetab eelnõu.")
@@ -278,7 +273,7 @@ def test_a_recorded_position_reopens_on_its_own_date_and_never_on_today(page, ba
     """`Muuda` carries no default. An undated row opens undated."""
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "arvamus-teiste")
+    open_panel(page)
     choose_organisation(page)
     panel(page).locator("[name=stated_on]").fill("")
     panel(page).locator("[name=summary]").fill("Toetab eelnõu.")
@@ -327,13 +322,19 @@ def test_a_save_recording_nothing_comes_back_with_what_was_typed(page, base_url)
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "arvamus-teiste")
+    open_panel(page)
     choose_organisation(page)
     panel(page).locator("[name=stated_on]").fill("14.03.2026")
     panel(page).get_by_role("button", name="Salvesta").click()
     page.wait_for_timeout(400)
 
-    expect(panel(page)).to_contain_text("vähemalt üks neist on vajalik")
+    # Read off the error itself: the field's help text states the rule too.
+    expect(
+        panel(page).locator(
+            ".field__error",
+            has_text="Kirjuta seisukoht või lisa link või fail — vähemalt üks neist on vajalik.",
+        )
+    ).to_be_visible()
     expect(panel(page).locator("[name=stated_on]")).to_have_value("14.03.2026")
     expect(chronology(page)).not_to_contain_text("Teiste arvamus:")
 
@@ -342,20 +343,22 @@ def test_an_emptied_date_box_does_not_refill_itself_on_a_refusal(page, base_url)
     """An `initial` that reasserted itself would hand back a date somebody removed."""
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "arvamus-teiste")
+    open_panel(page)
     choose_organisation(page)
     panel(page).locator("[name=stated_on]").fill("")
     panel(page).get_by_role("button", name="Salvesta").click()
     page.wait_for_timeout(400)
 
-    expect(panel(page)).to_contain_text("vähemalt üks neist on vajalik")
+    expect(
+        panel(page).locator(".field__error", has_text="vähemalt üks neist on vajalik")
+    ).to_be_visible()
     expect(panel(page).locator("[name=stated_on]")).to_have_value("")
 
 
 def test_a_hostile_address_is_refused_with_the_value_returned(page, base_url):
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "arvamus-teiste")
+    open_panel(page)
     choose_organisation(page)
     panel(page).locator("[name=url]").fill("javascript:alert(1)")
     panel(page).get_by_role("button", name="Salvesta").click()
@@ -409,28 +412,34 @@ def test_the_chip_is_reachable_and_operable_from_the_keyboard(page, base_url):
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
 
-    # The family first: `Teiste arvamus` is a choice *inside*
-    # `+ Arvamus / tagasiside`, and a radio in a panel that is not shown is not
-    # focusable at all (docs/adr/0097 §8).
-    open_add_panel(page, "lisa-arvamus")
+    # The family first: `Lisa tagasiside` is a choice *inside* `+ Kaasamine`,
+    # and a radio in a panel that is not shown is not focusable at all
+    # (docs/adr/0097 §8, docs/adr/0170).
+    open_add_panel(page, "lisa-kaasamine")
 
-    radio = page.locator("#arvamus-teiste-valik")
+    radio = page.locator("#kaasamine-tagasiside-valik")
     radio.focus()
     page.keyboard.press("Space")
 
     expect(panel(page)).to_be_visible()
     expect(radio).to_be_focused()
 
+    # And the provenance it asks is a chip radio operated the same way.
+    published = panel(page).locator(f'input[name="provenance"][value="{AVALDATUD_MUJAL}"]')
+    published.focus()
+    page.keyboard.press("Space")
+    expect(published).to_be_checked()
+    expect(published).to_be_focused()
+
 
 def test_every_control_in_the_panel_is_reachable_by_tabbing(page, base_url):
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "arvamus-teiste")
+    open_panel(page)
 
-    # `engagement` is not among them any more: the panel stopped asking for a
-    # `Kaasamine` and the field is absent from the document, so a tab order
-    # including it would be asserting a control that is not there
-    # (docs/adr/0095 §3).
+    # `engagement` is not among them: `Seotud kaasamine` is drawn only on a
+    # Matter with a round, and a tab order including it here would be
+    # asserting a control that is not there (docs/adr/0170 §1).
     for name in ("summary", "url", "stated_on"):
         control = panel(page).locator(f"[name={name}]")
         control.focus()
@@ -441,13 +450,13 @@ def test_the_panel_does_not_scroll_the_page_sideways_at_phone_width(page, base_u
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
     page.set_viewport_size({"width": 375, "height": 812})
-    open_add_panel(page, "arvamus-teiste")
+    open_panel(page)
 
     overflows = page.evaluate(
         "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
     )
 
-    assert not overflows, "the Teiste arvamus panel makes the Teema page scroll sideways"
+    assert not overflows, "the Lisa tagasiside panel makes the Teema page scroll sideways"
 
 
 def test_the_recorded_row_reads_at_phone_width(page, base_url):

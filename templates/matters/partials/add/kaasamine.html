@@ -33,8 +33,10 @@
     <label class="disclosure-chip" for="lisa-kaasamine-valik">+ Kaasamine</label>
     {% comment %}
       **Two acts, two forms** (docs/adr/0142): `Alusta kaasamist` records that
-      the request went out; `Lisa tagasiside` records what came back from a
-      round that is open. The same nested chip row `+ Lisa` and
+      the request went out; `Lisa tagasiside` records a position — a member's
+      feedback sent to Koda or a view published elsewhere, answering a round
+      or standing alone (owner's UX round, stage 3; docs/adr/0091 amendment of
+      2026-10-15). The same nested chip row `+ Lisa` and
       `+ Arvamus / tagasiside` use, so either can be chosen by hand.
 
       `kaasamine_choice` opens the one this Matter needs — `Lisa tagasiside`

@@ -23,7 +23,10 @@ import pytest
 from playwright.sync_api import expect
 
 from e2e.conftest import (
+    FEEDBACK_PICKER,
+    SAADETI_KOJALE,
     SANDRA,
+    choose_organisation,
     chronology,
     create_matter,
     set_next_step,
@@ -190,7 +193,9 @@ def test_flow_2_ootame_tagasisidet_tehtud_opens_lisa_tagasiside(page, base_url):
     expect(form).to_be_visible()
     expect(page.locator("#kaasamine-tagasiside-valik")).to_be_checked()
     expect(form.locator("select[name=engagement]")).to_have_value(round_id)
-    expect(form).to_contain_text("Saadud tagasiside")
+    # The named round fixes the provenance at «Saadeti Kojale» (docs/adr/0170).
+    expect(form.locator(f'input[name=provenance][value="{SAADETI_KOJALE}"]')).to_be_checked()
+    expect(form).to_contain_text("Seisukoht")
     expect(form.locator("input[type=file]")).to_have_count(1)
     assert _focused_name(page) == "summary"
 
@@ -212,6 +217,8 @@ def test_flow_2_ootame_tagasisidet_tehtud_opens_lisa_tagasiside(page, base_url):
     # The save ends the wait — and only the save.
     _waits(page).first.get_by_role("link", name="Tehtud").click()
     form = page.locator("#kaasamine-tagasiside")
+    # The organisation is required on every position since docs/adr/0170.
+    choose_organisation(page, FEEDBACK_PICKER)
     form.locator("[name=summary]").fill("Kolm liiget vastasid (sünteetiline).")
     assert _save(page, form, "/lisa/kaasamise-tagasiside/") == 200
     expect(_waits(page)).to_have_count(0)

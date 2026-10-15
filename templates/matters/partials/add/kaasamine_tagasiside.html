@@ -1,34 +1,84 @@
 {% load form_labels %}
 {% comment %}
-`+ Kaasamine · Lisa tagasiside` — what came back from a round (docs/adr/0142,
-docs/adr/0167 §2).
+`+ Kaasamine · Lisa tagasiside` — every position recorded on a Teema
+(owner's UX round, stage 3; docs/adr/0091 and docs/adr/0167, amendments of
+2026-10-15).
 
-**The canonical record, with the round named.** A `Meile saadetud tagasiside`
-tied to the round — the same record `+ Arvamus / tagasiside` writes, through
-the same service — so the round row counts it and its files follow it. The
-first answer to an open round also finishes its wait, in the same transaction,
-through the canonical `complete_engagement_feedback` (owner's round,
-2026-10-07; docs/adr/0142 amendment). A later answer to a finished round is
-recorded against it and leaves the closure as it was (docs/adr/0167 §2).
-`Tehtud` on the PRAEGUNE wait row opens this same form.
+**One form, the existing record.** A member's feedback sent to Koda and an
+organisation's view published elsewhere are two provenances of one
+`MatterExternalPosition`, written through `_record_external_position` and
+`record_external_position` exactly as the two former chips under
+`+ Arvamus / tagasiside` wrote them. Files, correction history (`Muuda`),
+visibility inheritance and search are the record's own and did not move.
 
-**The round is chosen, never guessed.** The select offers this Matter's rounds
-as this reader may see them — open ones first, finished ones marked
-«lõpetatud» — and is filled in only when there is exactly one open round, or
-none open and exactly one finished. With no round at all, the panel says so and
-draws no form that could only refuse.
+* `Organisatsioon` — the shared «otsi või lisa asutus» picker (docs/adr/0073),
+  quiet until searched. Optional for «Saadeti Kojale» — received feedback may
+  name nobody (docs/adr/0101) — and required for «Avaldatud mujal»;
+* `Kuidas seisukoht meieni jõudis?` — required, **no default**: «Saadeti
+  Kojale» or «Avaldatud mujal». The provenance is stated, never inferred
+  (docs/adr/0091 §3.2);
+* `Liige` — at the end of the organisation's row, shown only while «Saadeti
+  Kojale» is chosen. The form, the service and a `CHECK` each refuse it on the
+  other provenance (docs/adr/0095 §4);
+* `Seotud kaasamine` — drawn when the Matter has a round this reader may see,
+  and empty unless `Tehtud` on a wait named one. A linked round fixes the
+  provenance at «Saadeti Kojale» («Avaldatud mujal» is disabled here and
+  refused by the form). The first answer to an open round finishes its wait;
+  later answers are recorded against it; an identical repeat is refused
+  (docs/adr/0167 §2). A position with no round touches no wait;
+* `Seisukoht`, `Link`, `Failid` — at least one of the three, any combination
+  (docs/adr/0084 §3); `Kuupäev` opens on today and clears.
 
-**No `Märkus`** (owner's review, 2026-10-12): everything relevant goes into
-`Saadud tagasiside`; the form does not declare a note field at all.
+**No `Märkus`** (owner's review, 2026-10-12): the form declares no note field.
 
-    form    `EngagementReplyForm`, bound or unbound
+    form    `FeedbackForm`, bound or unbound
 {% endcomment %}
-{% if form.round_count %}
-  <form class="addform" data-addform
-        hx-post="{% url 'matters:add_engagement_reply' pk=matter.pk %}"
-        hx-target="#teema-vaade" hx-swap="outerHTML"
-        hx-encoding="multipart/form-data">
-    {% csrf_token %}
+<form class="addform feedbackform" data-addform data-feedback-form
+      hx-post="{% url 'matters:add_engagement_reply' pk=matter.pk %}"
+      hx-target="#teema-vaade" hx-swap="outerHTML"
+      hx-encoding="multipart/form-data">
+  {% csrf_token %}
+  <div class="orgpick__row">
+    {% include "matters/partials/organisation_picker.html" with picker_id="tagasiside" legend=form.organisation.label chips=form.organisation_chip_choices tail=form.organisation_tail_choices typed_field=form.organisation_name add_label="Lisa uus organisatsioon" single=True clearable=True clears_group="organisation" quiet=True only %}
+    {# `Liige` — only beside «Saadeti Kojale» (static/css/app.css `.feedbackform`). #}
+    <div class="orgpick__mark" data-feedback-member>
+      <label class="chip">
+        {{ form.member_mark }}
+        <span class="chip__name">{{ form.member_mark.label }}</span>
+      </label>
+    </div>
+  </div>
+  {% if form.organisation.errors %}
+    <p class="field__error" id="{{ form.organisation.auto_id }}_error">
+      {{ form.organisation.errors|first }}</p>
+  {% endif %}
+  {# The typed name's refusal is printed by the picker itself (organisation_picker.html). #}
+  {% if form.member_mark.errors %}
+    <p class="field__error" id="{{ form.member_mark.auto_id }}_error">
+      {{ form.member_mark.errors|first }}</p>
+  {% endif %}
+
+  <fieldset class="cx-fieldset" data-feedback-provenance
+            {% if form.provenance.errors %}aria-describedby="{{ form.provenance.auto_id }}_error"{% endif %}>
+    <legend class="cx-f__lab">{% field_label form.provenance %}</legend>
+    <div class="chiprow">
+      {% for radio in form.provenance %}
+        <label class="chip">
+          <input type="radio" class="chip__input" name="{{ form.provenance.html_name }}"
+                 id="{{ radio.id_for_label }}" value="{{ radio.data.value }}"
+                 {% if radio.data.selected %}checked{% endif %}
+                 {% if form.round_is_linked and radio.data.value != "RECEIVED" %}disabled{% endif %}>
+          <span class="chip__name">{{ radio.choice_label }}</span>
+        </label>
+      {% endfor %}
+    </div>
+  </fieldset>
+  {% if form.provenance.errors %}
+    <p class="field__error" id="{{ form.provenance.auto_id }}_error">
+      {{ form.provenance.errors|first }}</p>
+  {% endif %}
+
+  {% if form.round_count %}
     <label class="cx-f" for="{{ form.engagement.id_for_label }}">
       <span class="cx-f__lab">{% field_label form.engagement %}</span>
       {{ form.engagement }}
@@ -37,27 +87,37 @@ draws no form that could only refuse.
       <p class="field__error" id="{{ form.engagement.auto_id }}_error">
         {{ form.engagement.errors|first }}</p>
     {% endif %}
-    <label class="cx-f" for="{{ form.summary.id_for_label }}">
-      <span class="cx-f__lab">{% field_label form.summary %}</span>
-      {{ form.summary }}
-    </label>
-    {% if form.summary.errors %}
-      <p class="field__error" id="{{ form.summary.auto_id }}_error">
-        {{ form.summary.errors|first }}</p>
-    {% endif %}
-    <label class="cx-f cx-f--date" for="{{ form.stated_on.id_for_label }}">
-      <span class="cx-f__lab">{% field_label form.stated_on %}</span>
-      {{ form.stated_on }}
-    </label>
-    {% if form.stated_on.errors %}
-      <p class="field__error" id="{{ form.stated_on.auto_id }}_error">
-        {{ form.stated_on.errors|first }}</p>
-    {% endif %}
-    {% include "matters/partials/add_files.html" with field=form.attachments %}
-    <div class="addform__actions">
-      <button class="button button--primary" type="submit">Salvesta</button>
-    </div>
-  </form>
-{% else %}
-  <p class="cardnote">Kaasamist ei ole. Alusta kõigepealt kaasamist.</p>
-{% endif %}
+  {% endif %}
+
+  <label class="cx-f" for="{{ form.summary.id_for_label }}">
+    <span class="cx-f__lab">{% field_label form.summary %}</span>
+    {{ form.summary }}
+  </label>
+  <p class="field__help" id="{{ form.summary.auto_id }}_helptext">{{ form.summary.help_text }}</p>
+  {% if form.summary.errors %}
+    <p class="field__error" id="{{ form.summary.auto_id }}_error">
+      {{ form.summary.errors|first }}</p>
+  {% endif %}
+
+  <label class="cx-f cx-f--date cx-f--solo" for="{{ form.stated_on.id_for_label }}">
+    <span class="cx-f__lab">{% field_label form.stated_on %}</span>
+    {{ form.stated_on }}
+  </label>
+  {% if form.stated_on.errors %}
+    <p class="field__error" id="{{ form.stated_on.auto_id }}_error">
+      {{ form.stated_on.errors|first }}</p>
+  {% endif %}
+
+  <label class="cx-f" for="{{ form.url.id_for_label }}">
+    <span class="cx-f__lab">{% field_label form.url %}</span>
+    {{ form.url }}
+  </label>
+  {% if form.url.errors %}
+    <p class="field__error" id="{{ form.url.auto_id }}_error">
+      {{ form.url.errors|first }}</p>
+  {% endif %}
+  {% include "matters/partials/add_files.html" with field=form.attachments %}
+  <div class="addform__actions">
+    <button class="button button--primary" type="submit">Salvesta</button>
+  </div>
+</form>

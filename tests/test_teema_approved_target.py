@@ -430,11 +430,9 @@ def test_lisa_teemale_offers_thirteen_choices_and_opens_none_of_them(signed_in, 
         "Töövõit",
         "+ Kaasamine",
         "+ Arvamus / tagasiside",
-        # `+ Väline seisukoht` became two chips in docs/adr/0091 §3: one record
-        # and one panel partial, named by how what it holds reached the file.
-        # Both are choices inside `+ Arvamus / tagasiside` now.
-        "Meile saadetud tagasiside",
-        "Teiste arvamus",
+        # `Meile saadetud tagasiside` and `Teiste arvamus` (docs/adr/0091 §3)
+        # left with docs/adr/0170: every position is `+ Kaasamine · Lisa
+        # tagasiside`, and this family holds `Koja arvamus` alone.
         "Koja arvamus",
         "+ Ülevaade / uudis",
     ]
@@ -444,7 +442,11 @@ def test_lisa_teemale_offers_thirteen_choices_and_opens_none_of_them(signed_in, 
     # `+ Kaasamine` became `Alusta kaasamist` and `Lisa tagasiside`
     # (docs/adr/0142).
     assert ">+ Lõpeta teema<" not in panels
-    assert panels.count('class="cx-panel"') + panels.count("cx-panel cx-panel--last") == 13
+    assert ">Meile saadetud tagasiside<" not in panels
+    assert ">Teiste arvamus<" not in panels
+    # Eleven since docs/adr/0170 took the two feedback panels out of
+    # `+ Arvamus / tagasiside`.
+    assert panels.count('class="cx-panel"') + panels.count("cx-panel cx-panel--last") == 11
     # All closed on arrival: nothing in this zone is a form until it is chosen.
     assert "data-addpanel\n             open" not in panels
     assert 'cx-panel" open' not in panels
@@ -524,7 +526,10 @@ def test_each_operation_carries_its_own_save_and_there_is_no_global_one(
     # before anything else with a save, which is what the count is about.
     # `Lõpeta teema`'s own save went with it (docs/adr/0131 §11): nine.
     panels = body[body.index('id="lisa-teemale"') : _after_the_launcher(body)]
-    assert panels.count('type="submit"') == 9
+    # Eight since docs/adr/0170: the two feedback panels' saves went, and
+    # `Lisa tagasiside` — which drew a «no round» sentence and no save on a
+    # Matter with no round — is now always the form.
+    assert panels.count('type="submit"') == 8
     # And the composer's single global save is gone from the page entirely.
     assert "composer__actions" not in workspace
 

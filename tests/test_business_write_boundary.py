@@ -47,6 +47,7 @@ from app.core.dates import format_estonian_date
 from app.core.enums import Visibility
 from app.documents.enums import DocumentRole
 from app.documents.links import DocumentLink
+from app.matters.enums import ExternalPositionProvenance
 from app.matters.models import Matter, MatterTimelineStep
 from app.matters.staging import MatterIntakeFile
 from app.related_materials.models import (
@@ -469,31 +470,19 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
             .get(pk=w["planned_overview"].pk)
         ),
     ),
-    # `Meile saadetud tagasiside` — the other half of the one record
-    # docs/adr/0091 §3 split in two. Its own route because its own panel asks its
-    # own questions, and **its own entry here** because the completeness guard
-    # matches on route names: a second door onto one service is still a second
-    # door a forbidden actor can knock on.
+    # `+ Kaasamine · Lisa tagasiside` — the one door for every position since
+    # docs/adr/0170, which retired `Meile saadetud tagasiside`
+    # (`matters:add_received_feedback`) and `Teiste arvamus`
+    # (`matters:add_external_position`). Those two had their own rows here
+    # because each accepted a shape the others did not; the shapes survived the
+    # merge, so **each keeps its own row** on the one route — a forbidden actor
+    # must be refused whichever kind of position they try to file. Every
+    # payload is one an authorised writer would save (proved by
+    # `test_every_feedback_row_is_a_real_write_for_a_writer`), so a refusal
+    # here is the gate, not the form.
     #
-    # Deliberately posting with **no organisation at all**, which is the shape
-    # only this half accepts — an aggregate answer named by its `Allikas`. A
-    # payload a forbidden actor could not have sent even with permission would
-    # make this row prove nothing (docs/adr/0091 §3.3).
-    WriteRoute(
-        name="matters:add_received_feedback",
-        label="Meile saadetud tagasiside lisamine",
-        request=lambda w: (
-            {"pk": w["matter"].pk},
-            {
-                "source_label": "Loata küsitlus",
-                "summary": "Loata salvestatud tagasiside.",
-                "position_precision": "EXACT",
-            },
-        ),
-        probe=lambda w: w["matter"].external_positions.count(),
-    ),
-    # `+ Kaasamine · Lisa tagasiside` — the same record, tied to an open round
-    # (docs/adr/0142). A second door onto one service is still a door.
+    # 1. A reply to a waiting round — the no-script shape: no provenance
+    #    stated, the round makes it RECEIVED (docs/adr/0170 §3).
     WriteRoute(
         name="matters:add_engagement_reply",
         label="Kaasamise tagasiside lisamine",
@@ -502,6 +491,37 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
             {
                 "engagement": str(w["waiting_engagement"].pk),
                 "summary": "Loata salvestatud tagasiside.",
+            },
+        ),
+        probe=lambda w: w["matter"].external_positions.count(),
+    ),
+    # 2. Received feedback naming **no organisation at all** — the shape only
+    #    «Saadeti Kojale» accepts (docs/adr/0101). A payload a forbidden actor
+    #    could not have sent even with permission would make this row prove
+    #    nothing.
+    WriteRoute(
+        name="matters:add_engagement_reply",
+        label="Meile saadetud tagasiside lisamine",
+        request=lambda w: (
+            {"pk": w["matter"].pk},
+            {
+                "provenance": ExternalPositionProvenance.RECEIVED.value,
+                "summary": "Loata salvestatud tagasiside.",
+            },
+        ),
+        probe=lambda w: w["matter"].external_positions.count(),
+    ),
+    # 3. A position published elsewhere, its link alone as the source
+    #    (docs/adr/0084 §3) and its author named (docs/adr/0091 §3.3).
+    WriteRoute(
+        name="matters:add_engagement_reply",
+        label="Välise seisukoha lisamine",
+        request=lambda w: (
+            {"pk": w["matter"].pk},
+            {
+                "provenance": ExternalPositionProvenance.DISCOVERED.value,
+                "organisation": str(w["organisation"].pk),
+                "url": "https://example.org/loata-seisukoht",
             },
         ),
         probe=lambda w: w["matter"].external_positions.count(),
@@ -528,19 +548,6 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         ),
         files=lambda: {"upload": _pdf("loata-arvamus.pdf")},
         probe=lambda w: w["matter"].submissions.count(),
-    ),
-    WriteRoute(
-        name="matters:add_external_position",
-        label="Välise seisukoha lisamine",
-        request=lambda w: (
-            {"pk": w["matter"].pk},
-            {
-                "organisation": str(w["organisation"].pk),
-                "url": "https://example.org/loata-seisukoht",
-                "position_precision": "EXACT",
-            },
-        ),
-        probe=lambda w: w["matter"].external_positions.count(),
     ),
     WriteRoute(
         name="matters:update_external_position",
@@ -1464,6 +1471,26 @@ def test_an_authorized_actor_is_not_refused_by_the_write_gate(client, world, rou
     assert response.status_code != 404, f"{actor_name} was refused by {route.name} ({route.label})"
 
 
+FEEDBACK_ROWS = tuple(r for r in WRITE_ROUTES if r.name == "matters:add_engagement_reply")
+
+
+@pytest.mark.parametrize("route", FEEDBACK_ROWS, ids=lambda r: r.label)
+def test_every_feedback_row_is_a_real_write_for_a_writer(client, world, route):
+    """The one-door rows carry payloads the form accepts (docs/adr/0170).
+
+    The matrix above may only claim a refusal of a *write* if the same post,
+    sent by somebody allowed to make it, writes. Otherwise a 404 for the
+    forbidden actor and a 400 for everybody would look alike from here.
+    """
+    client.force_login(ALLOWED["SPECIALIST"]())
+    before = route.probe(world)
+
+    response = _post(client, route, world)
+
+    assert response.status_code == 200, route.label
+    assert route.probe(world) == before + 1, route.label
+
+
 def test_an_anonymous_write_is_sent_to_sign_in_rather_than_hidden(client, world):
     """`login_required` stays outermost.
 
@@ -1695,6 +1722,10 @@ def test_the_classification_list_does_not_rot():
     stale = sorted(name for name in CLASSIFIED_ELSEWHERE if name not in live)
 
     assert not stale, f"classified routes that no longer exist: {stale}"
+    # The same for the matrix: a retired door left in `WRITE_ROUTES` would be
+    # "refused" by a 404 that has nothing to do with the write gate.
+    gone = sorted({route.name for route in WRITE_ROUTES} - live)
+    assert not gone, f"matrix routes that no longer exist: {gone}"
 
 
 # ---------------------------------------------------------------------------

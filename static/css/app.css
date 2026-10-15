@@ -11362,7 +11362,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 
 /* `Liige`, at the end of the organisation search's own row rather than a row
  * of its own (owner's UX round, 2026-10-06). Wraps under the box on a narrow
- * panel (matters/partials/external_position_panel.html). */
+ * panel (matters/partials/add/kaasamine_tagasiside.html). */
 #teema-vaade-wrap .orgpick__row {
   display: flex;
   flex-wrap: wrap;
@@ -11382,6 +11382,16 @@ section:has(.pw-more[open]) tbody.uxextra {
   flex: none;
   margin-top: 4px;
   margin-left: var(--spacing-1);
+}
+
+/* `+ Kaasamine · Lisa tagasiside`: `Liige` only beside «Saadeti Kojale»
+ * (owner's UX round, stage 3). Hidden — not disabled — until that answer is
+ * chosen; the form, the service and a `CHECK` refuse it on the other
+ * provenance, and `static/js/ux.js` clears it when the answer changes
+ * (docs/adr/0095 §4). */
+#teema-vaade-wrap .feedbackform:not(:has(input[name="provenance"][value="RECEIVED"]:checked))
+  [data-feedback-member] {
+  display: none;
 }
 
 #teema-vaade-wrap .lprail__aside--koda {
