@@ -962,6 +962,50 @@ def add_matter_effective_date(
 
 
 @transaction.atomic
+def add_matter_other(
+    *,
+    matter: Matter,
+    author: Any,
+    description: str,
+    url: str = "",
+    uploads: Sequence[Any] = (),
+) -> WorkspaceResult:
+    """`+ Lisa · Muu` — supporting material that fits no structured kind.
+
+    One `Entry(kind=OTHER)`: the description is its body, the optional link its
+    own `url` column, and the files are captured against it through the
+    canonical evidence pipeline, all in one transaction — a refused file leaves
+    no entry behind (docs/adr/0097, amendment of 2026-10-15).
+
+    **The date is when it was added.** `occurred_at` is left to `add_entry`,
+    which stamps the moment of the save: this form records the act of putting
+    the material on the file, and asks for no date of the underlying document or
+    event, so none is invented.
+
+    Creates no `NextAction`, touches neither `Hetkeseis` nor the plan, opens no
+    wait and is no `Submission`. A closed Matter refuses it through the same
+    lock every other new business record takes.
+    """
+    locked_matter = lock_open_matter_for_business_write(matter.pk)
+    with composer_operation() as operation_id:
+        result = WorkspaceResult(operation_id=operation_id)
+        result.entry = add_entry(
+            matter=locked_matter,
+            body=description,
+            author=author,
+            kind=EntryKind.OTHER,
+            url=url,
+        )
+        result.documents = capture_supporting_evidence(
+            matter=locked_matter,
+            record=result.entry,
+            uploads=_uploads(uploads),
+            actor=author,
+        )
+        return result
+
+
+@transaction.atomic
 def add_matter_work_victory(
     *,
     matter: Matter,

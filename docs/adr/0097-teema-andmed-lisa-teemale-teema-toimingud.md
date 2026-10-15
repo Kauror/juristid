@@ -463,3 +463,41 @@ is drawn.
 button in it. There is **no `confirm()` and no `hx-confirm`**: a browser dialog
 is one keystroke from dismissed, says nothing about what is being deleted, and is
 not something a server can require. The CSRF token on the confirmation form is.
+
+## Amendment 2026-10-15 — `+ Lisa · Muu` creates one `Entry(kind=OTHER)`
+
+Owner's incremental UX round, stage 2. §6.3 said no launcher path creates a bare
+`Entry`. **One does again, narrowly:** `+ Lisa · Muu`, the fifth choice after
+`Arvamuse tähtaeg`, `Oluline tähtaeg`, `Jõustumine` and `Töövõit`, records
+supporting material that fits no structured kind — a document met during the
+process, background for the analysis, somebody else's paper, a page published
+elsewhere — as `Entry(kind=EntryKind.OTHER)` (`workspace.add_matter_other`).
+Only `OTHER`, and only from this form; `Tavaline` stays retired and no generic
+task composer returns.
+
+1. **Fields.** `Kirjeldus` is required and is the entry's body (`Entry` cannot be
+   stored without one, and a link or file with no word on why it is on the file is
+   what this form exists to avoid). `Link` and `Failid` are optional. No title,
+   organisation, status, date or follow-up.
+2. **`Entry.url`, one additive column** (`matters/0049_entry_url`, blank,
+   default empty; `EntryRevision.url` likewise). A link inside `body` would be
+   opaque, uncorrectable as a link and invisible to the revision chain. It is
+   validated by the shared web-address rule (`normalize_entry_url`: http(s), a
+   real host, refused rather than truncated), shown by its host as the labelled
+   new-window link other chronology rows use, and corrected through `edit_entry`,
+   whose revision keeps the earlier address as it keeps the earlier wording. Only
+   a `Muu` entry's `Muuda` offers the link box; every other kind keeps the
+   body-only correction. Search indexing is unchanged (the description is
+   indexed as every entry body is); no rebuild.
+3. **The date is the moment of the save.** `occurred_at` is stamped by
+   `add_entry`: the entry records that the material was put on the file, and the
+   date of the underlying document or event is neither asked for nor invented.
+   The chronology row carries a «Muu» badge whose title says «lisatud teemale».
+4. **Nothing follows from it.** No `NextAction`, no `Hetkeseis` or plan change, no
+   wait, no `Submission`, no reporting definition touched. A closed Teema refuses
+   it under the same lock as every other new record; readers and the gate visitor
+   cannot reach the route. Files go through `capture_supporting_evidence` in the
+   same transaction, so a refused file leaves no entry.
+5. **Not in this stage:** adding files to an existing `Muu` entry later. `Entry`
+   has no `+ Lisa fail` route today (the `Märge`, `Väline seisukoht` and
+   `Kaasamine` have their own), and adding one is a separate decision.

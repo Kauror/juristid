@@ -306,6 +306,8 @@ PANEL_FAMILY = {
     "marge-tahtaeg": "lisa-marge",
     "marge-joustumine": "lisa-marge",
     "marge-toovoit": "lisa-marge",
+    # `Muu` — supporting material (docs/adr/0097, amendment of 2026-10-15).
+    "marge-muu": "lisa-marge",
     "arvamus-tagasiside": "lisa-arvamus",
     "arvamus-teiste": "lisa-arvamus",
     "arvamus-koja": "lisa-arvamus",

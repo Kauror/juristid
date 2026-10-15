@@ -4871,6 +4871,57 @@ class CompactEffectiveDateForm(forms.Form):
         return cleaned
 
 
+class CompactOtherForm(forms.Form):
+    """`+ Lisa · Muu` — supporting material that fits no structured kind.
+
+    Three fields and nothing else (docs/adr/0097, amendment of 2026-10-15):
+
+    * `Kirjeldus` — **required**. What is being added, why it matters and how it
+      relates to the Teema. It is the record's body: an `Entry` cannot be stored
+      without one, and a link or a file with no word on why it is on the file is
+      the unexplained attachment this form exists to avoid.
+    * `Link` — optional, the shared web-address rule (`normalize_entry_url`).
+    * `Failid` — optional, the canonical evidence pipeline.
+
+    No date, title, organisation, status or follow-up: the entry is dated by the
+    moment it is saved, which is what it records (`workspace.add_matter_other`).
+    """
+
+    description = forms.CharField(
+        label="Kirjeldus",
+        required=True,
+        widget=forms.Textarea(
+            attrs={
+                "class": "field__input",
+                "rows": "3",
+                "placeholder": "Kirjelda, mida lisad ja miks see on teema jaoks oluline.",
+            }
+        ),
+        error_messages={"required": "Kirjelda, mida lisad."},
+    )
+    url = provider_link_field("Link", "https://…")
+    attachments = workspace_attachments("id_muu_failid")
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        # Its own ids: `+ Ülevaade / uudis` already draws `id_url` on this page.
+        kwargs.setdefault("auto_id", "id_muu_%s")
+        super().__init__(*args, **kwargs)
+
+    def clean_description(self) -> str:
+        description = (self.cleaned_data.get("description") or "").strip()
+        if not description:
+            raise forms.ValidationError("Kirjelda, mida lisad.")
+        return description
+
+    def clean_url(self) -> str:
+        from app.matters.services import normalize_entry_url
+
+        try:
+            return normalize_entry_url(self.cleaned_data.get("url"))
+        except DomainError as error:
+            raise forms.ValidationError(str(error)) from error
+
+
 class CompactWorkVictoryForm(forms.Form):
     """`+ Töövõit` — what changed, and the evidence that it did.
 
@@ -7443,6 +7494,30 @@ class EntryEditForm(forms.Form):
 
     def clean_body(self) -> str:
         return require_written_body(self.cleaned_data.get("body"), "Sissekanne vajab sisu.")
+
+
+class OtherEntryEditForm(EntryEditForm):
+    """`Muuda` on a `+ Lisa · Muu` entry: its description **and its link**.
+
+    The link is part of what such an entry says — it is the material the entry
+    is about — so correcting a wrong address is a correction like correcting a
+    typo, and `edit_entry` keeps the earlier address in `EntryRevision.url` as it
+    keeps the earlier wording. Every other entry kind keeps the body-only form
+    (docs/adr/0097, amendment of 2026-10-15).
+
+    An emptied box removes the link (stored as empty); the earlier value is still
+    the revision's.
+    """
+
+    url = provider_link_field("Link", "https://…")
+
+    def clean_url(self) -> str:
+        from app.matters.services import normalize_entry_url
+
+        try:
+            return normalize_entry_url(self.cleaned_data.get("url"))
+        except DomainError as error:
+            raise forms.ValidationError(str(error)) from error
 
 
 def _procedural_link_kind_field(*, initial: Any = None) -> forms.ChoiceField:

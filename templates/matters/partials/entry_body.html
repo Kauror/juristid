@@ -32,6 +32,20 @@ control that would add something new (app/matters/views.py, docs/adr/0075 §12).
         {% field_label entry_edit_form.body %}
       </label>
       {{ entry_edit_form.body }}
+      {% if entry_edit_form.url %}
+        {% comment %}
+          A `Muu` entry's link is corrected with its description; the earlier
+          address is kept in the revision (docs/adr/0097, amendment of
+          2026-10-15). Every other kind's form has no such field.
+        {% endcomment %}
+        <label class="cx-f">
+          <span class="cx-f__lab">Link</span>
+          {{ entry_edit_form.url }}
+        </label>
+        {% if entry_edit_form.url.errors %}
+          <p class="formerror" role="alert" id="{{ entry_edit_form.url.auto_id }}_error">{{ entry_edit_form.url.errors|first }}</p>
+        {% endif %}
+      {% endif %}
       {{ entry_edit_form.revision }}
       {% if entry_edit_form.body.errors %}
         <p class="formerror" role="alert" id="{{ entry_edit_form.body.auto_id }}_error">{{ entry_edit_form.body.errors|first }}</p>
@@ -81,6 +95,19 @@ control that would add something new (app/matters/views.py, docs/adr/0075 §12).
       the allowlist.
     {% endcomment %}
     <div class="richtext">{{ entry.body|safe }}</div>
+    {% comment %}
+      A `Muu` entry's link, named by its host and never printed as a raw address,
+      the same labelled new-window control the other chronology links are
+      (docs/adr/0081 §4). Inside this element so a corrected link swaps with the
+      corrected text.
+    {% endcomment %}
+    {% if entry.url %}
+      <span class="uxtl__links">
+        <a class="uxtl__link" href="{{ entry.url }}"
+           target="_blank" rel="noopener noreferrer">{{ entry.link_label }}<span
+           class="visually-hidden"> — avaneb uues aknas</span></a>
+      </span>
+    {% endif %}
     {% if can_write_business_content %}
       <div class="uxtl__editactions">
         <button class="uxtl__edit" type="button"

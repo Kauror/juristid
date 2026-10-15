@@ -440,6 +440,15 @@ record, not professional chronology (master specification 16.5).
             <span class="uxtl__author">{{ item.entry.get_kind_display }}</span>
           {% endif %}
           {% comment %}
+            `+ Lisa · Muu` says what it is: a note needs no badge because a note
+            is what an authored row is, but supporting material is not a note.
+            Its date is the day it was added to the file, and the badge's title
+            says so (docs/adr/0097, amendment of 2026-10-15).
+          {% endcomment %}
+          {% if item.entry.kind == "OTHER" and item.actor %}
+            <span class="uxtl__kind uxtl__kind--entry" title="Muu — lisatud teemale">Muu</span>
+          {% endif %}
+          {% comment %}
             The verb phrase, and no default badge. «Märkus» was written out
             beside every note on a page where a note is what a row *is* unless it
             says otherwise; the target hides it and states the exception instead
