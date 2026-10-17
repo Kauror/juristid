@@ -25,6 +25,7 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
 from app.matters import timeline
+from app.matters.enums import ExternalPositionProvenance
 from app.matters.services import add_entry
 from app.matters.timeline import matter_timeline
 from app.matters.views import TIMELINE_PAGE_SIZE
@@ -71,6 +72,7 @@ def _every_family(matter, author, *, rounds: int, start: date) -> None:
             organisation=organisation,
             stated_on=on + timedelta(days=40),
             summary=f"Seisukoht {index:02d}",
+            provenance=ExternalPositionProvenance.RECEIVED.value,
             engagement=engagement,
         )
         add_procedural_development(

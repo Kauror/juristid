@@ -27,9 +27,13 @@ import pytest
 from playwright.sync_api import expect
 
 from e2e.conftest import (
+    AVALDATUD_MUJAL,
+    FEEDBACK_PICKER,
     MARTIN,
+    choose_organisation,
     create_matter,
     open_add_panel,
+    open_feedback_form,
     open_kaik_row,
     record_marge,
     set_next_step,
@@ -94,16 +98,11 @@ def _file_marge(page, title: str) -> None:
 
 
 def _file_position(page, summary: str) -> None:
-    open_add_panel(page, "arvamus-teiste")
-    box = page.locator("#valine-seisukoht-otsi")
-    box.click()
-    box.fill("")
-    box.type(MINISTRY[:8], delay=20)
-    page.locator("#valine-seisukoht-tulemused").get_by_role(
-        "option", name=MINISTRY, exact=True
-    ).click()
-    page.locator("#arvamus-teiste [name=summary]").fill(summary)
-    page.locator("#arvamus-teiste").get_by_role("button", name="Salvesta").click()
+    """A published position, recorded through `+ Kaasamine · Lisa tagasiside`."""
+    form = open_feedback_form(page, AVALDATUD_MUJAL)
+    choose_organisation(page, FEEDBACK_PICKER, MINISTRY)
+    form.locator("[name=summary]").fill(summary)
+    form.get_by_role("button", name="Salvesta").click()
     wait_for_htmx(page)
     _row(page, summary).first.wait_for()
 

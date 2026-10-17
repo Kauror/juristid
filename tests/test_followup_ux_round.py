@@ -427,14 +427,16 @@ def _lisa(body: str) -> str:
     )
 
 
-def test_d_lisa_offers_exactly_four_choices_and_no_tavaline(signed_in, normal_matter):
+def test_d_lisa_offers_five_choices_and_no_tavaline(signed_in, normal_matter):
     body = _detail(signed_in, normal_matter)
 
     chips = re.findall(
         r'<label class="disclosure-chip" for="marge-[a-z-]+-valik">([^<]+)</label>', body
     )
 
-    assert chips == ["Arvamuse tähtaeg", "Oluline tähtaeg", "Jõustumine", "Töövõit"]
+    # Four structured kinds and, since 2026-10-15, `Muu` — supporting material,
+    # not the retired `Tavaline` (docs/adr/0097, amendment of that date).
+    assert chips == ["Arvamuse tähtaeg", "Oluline tähtaeg", "Jõustumine", "Töövõit", "Muu"]
     assert "Tavaline" not in _text(body[body.index('id="lisa-marge"') :])
     assert "marge-tavaline" not in body
 

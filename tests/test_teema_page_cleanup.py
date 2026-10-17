@@ -270,16 +270,18 @@ def test_correcting_a_marge_with_no_phase_offers_none_and_places_none(signed_in,
 def test_the_feedback_date_keeps_its_control_and_is_marked_compact(signed_in, normal_matter):
     """B11, B12. The field and its calendar hook, on the compact primitive.
 
-    Both `+ Arvamus / tagasiside` children that ask for `Kuupäev` alone on a row
-    carry `.cx-f--solo`; the width it resolves to is the browser lane's.
+    `+ Kaasamine · Lisa tagasiside` — since docs/adr/0170 the one form that asks
+    `Kuupäev` for a position — carries `.cx-f--solo`; the width it resolves to
+    is the browser lane's.
     """
     body = signed_in.get(_teema(normal_matter)).content.decode()
-    panel = body[body.index('id="lisa-arvamus"') : body.index('id="arvamus-koja"')]
+    start = body.index('id="kaasamine-tagasiside"')
+    panel = body[start : body.index("</form>", start)]
 
     labels = re.findall(r'<label class="([^"]*)" for="id_[a-z_]*stated_on"', panel)
-    assert len(labels) == 2, labels
+    assert len(labels) == 1, labels
     assert all("cx-f--solo" in classes.split() for classes in labels)
-    assert panel.count("data-datepicker") >= 2
+    assert panel.count("data-datepicker") >= 1
 
 
 def test_the_compact_date_rule_is_a_cap_not_a_width():

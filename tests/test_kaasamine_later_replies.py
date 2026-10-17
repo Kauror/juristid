@@ -407,8 +407,11 @@ def test_the_reply_panel_offers_open_rounds_first_and_marks_finished_ones(
     assert reply.index(f'value="{open_.pk}"') < reply.index(f'value="{finished.pk}"')
     finished_option = reply[reply.index(f'value="{finished.pk}"') :]
     assert "lõpetatud" in finished_option[: finished_option.index("</option>")]
-    # The one open round is the wait this answer finishes: preselected.
-    assert f'value="{open_.pk}" selected' in reply
+    # Never preselected, not even the one open round: the form also records
+    # positions that answer no round, and a guessed round would end its wait
+    # (docs/adr/0170 §3). Only `Tehtud` on a wait names one.
+    assert f'value="{open_.pk}" selected' not in reply
+    assert f'value="{finished.pk}" selected' not in reply
 
 
 def test_a_round_on_a_closed_matter_takes_no_answer(signed_in, normal_matter, specialist):

@@ -48,7 +48,8 @@ pytestmark = pytest.mark.e2e
 CANONICAL = [  # the owner's order of 2026-10-07
     "+ Ülevaade / uudis",
     "+ Kaasamine",
-    "+ Arvamus / tagasiside",
+    # `+ Arvamus / tagasiside` until 2026-10-17 (docs/adr/0097, amendment).
+    "+ Koja arvamus / kohtumine",
     "+ Lisa",
 ]
 
@@ -68,9 +69,13 @@ SUBCHOICES = [
     ("lisa-marge", "marge-tahtaeg"),
     ("lisa-marge", "marge-joustumine"),
     ("lisa-marge", "marge-toovoit"),
-    ("lisa-arvamus", "arvamus-tagasiside"),
-    ("lisa-arvamus", "arvamus-teiste"),
+    # Only `Koja arvamus` since docs/adr/0170: every other position is
+    # `+ Kaasamine · Lisa tagasiside`, which is a sub-choice like these.
     ("lisa-arvamus", "arvamus-koja"),
+    # `Kohtumine / arutelu` since 2026-10-17 (docs/adr/0097, amendment).
+    ("lisa-arvamus", "arvamus-kohtumine"),
+    ("lisa-kaasamine", "kaasamine-alusta"),
+    ("lisa-kaasamine", "kaasamine-tagasiside"),
 ]
 
 #: Sub-pixel layout noise from a font metric or a scrollbar is not a jump. The
@@ -128,7 +133,8 @@ def open_panel(page, panel_id: str):
     never mattered while every chip arrived unchecked; two of them arrive
     chosen now, because a family panel that opened on more chips and no form
     would be an extra click on every visit — `Arvamuse tähtaeg` (`Tavaline`
-    until 2026-10-07) and `Meile saadetud tagasiside` (docs/adr/0097 §8).
+    until 2026-10-07) and `Koja arvamus`, the only choice `+ Arvamus /
+    tagasiside` keeps since docs/adr/0170 (docs/adr/0097 §8).
 
     So this looks before it clicks, which is what `e2e/conftest.py`'s own
     `open_add_panel` has always done.

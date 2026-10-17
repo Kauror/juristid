@@ -258,19 +258,21 @@ SURFACES: tuple[Surface, ...] = (
         editor=False,
         files=_empty_upload(),
     ),
+    # `+ Kaasamine · Lisa tagasiside` is the one door for every position
+    # (docs/adr/0170): once per provenance, the two former panels' refusals.
     Surface(
-        "väline seisukoht",
-        "matters:add_external_position",
+        "lisa tagasiside · avaldatud mujal",
+        "matters:add_engagement_reply",
         _on_matter,
-        lambda w: {"position_precision": "EXACT", "url": NOT_A_URL},
+        lambda w: {"provenance": "DISCOVERED", "position_precision": "EXACT", "url": NOT_A_URL},
         editor=False,
         files=_empty_upload(),
     ),
     Surface(
-        "meile saadetud tagasiside",
-        "matters:add_received_feedback",
+        "lisa tagasiside · saadeti kojale",
+        "matters:add_engagement_reply",
         _on_matter,
-        lambda w: {"position_precision": "EXACT", "url": NOT_A_URL},
+        lambda w: {"provenance": "RECEIVED", "position_precision": "EXACT", "url": NOT_A_URL},
         editor=False,
     ),
     Surface(
