@@ -62,6 +62,7 @@ from app.core.authorization import (
     may_assign_work,
     may_write_business_content,
 )
+from app.core.client_ip import client_ip
 from app.core.dates import (
     add_months,
     format_estonian_date,
@@ -5796,7 +5797,7 @@ def matter_delete(request: HttpRequest, pk: Any) -> HttpResponse:
             record_refused_deletion(
                 actor=request.user,
                 matter_id=pk,
-                ip_address=request.META.get("REMOTE_ADDR"),
+                ip_address=client_ip(request),
                 user_agent=request.META.get("HTTP_USER_AGENT", ""),
             )
         raise PermissionDenied
@@ -5808,7 +5809,7 @@ def matter_delete(request: HttpRequest, pk: Any) -> HttpResponse:
                 matter=matter,
                 actor=request.user,
                 confirmation=request.POST.get("confirm_digest", ""),
-                ip_address=request.META.get("REMOTE_ADDR"),
+                ip_address=client_ip(request),
                 user_agent=request.META.get("HTTP_USER_AGENT", ""),
             )
         except DomainError as error:

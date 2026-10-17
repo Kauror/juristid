@@ -53,6 +53,7 @@ from app.accounts.models import User
 from app.accounts.selectors import is_persona_candidate
 from app.audit.enums import SecurityEventType
 from app.audit.services import record_security_event
+from app.core.client_ip import client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -162,11 +163,13 @@ class AuthenticationModeMiddleware:
         gate_url = reverse("accounts:shared_gate")
 
         if shared_gate.has_passed(request):
+            shared_gate.note_activity(request)
             self._drop_an_ineligible_persona(request)
             return self.get_response(request)
 
         # A session that carries a persona but not a valid gate is a session
-        # whose gate expired, or one restored from before the gate existed.
+        # whose gate expired — absolutely or through being idle — or one
+        # restored from before the gate existed.
         # Either way the persona goes with it: keeping it would let an aged-out
         # session go on acting as somebody.
         if getattr(request, "user", None) is not None and request.user.is_authenticated:
@@ -195,11 +198,12 @@ class AuthenticationModeMiddleware:
         user = getattr(request, "user", None)
         if user is None or not user.is_authenticated or is_persona_candidate(user):
             return
+        passed_at = shared_gate.gate_passed_at(request)
 
         record_security_event(
             event_type=SecurityEventType.PERSONA_SELECTED,
             actor=None,
-            ip_address=request.META.get("REMOTE_ADDR"),
+            ip_address=client_ip(request),
             user_agent=request.META.get("HTTP_USER_AGENT", ""),
             detail=shared_gate.audit_detail(
                 request,
@@ -211,8 +215,9 @@ class AuthenticationModeMiddleware:
         logout(request)
         # `logout` flushes the session, which would take the gate with it and
         # send somebody back to the password form for a change they did not
-        # make. Re-opening it is what `act_as` does for the same reason.
-        shared_gate.open_gate(request)
+        # make. Re-opening it is what `act_as` does for the same reason, with
+        # the original pass time, so the 12-hour clock keeps counting.
+        shared_gate.open_gate(request, passed_at=passed_at)
 
     # -- cloudflare access -------------------------------------------------
 
@@ -248,7 +253,7 @@ class AuthenticationModeMiddleware:
         record_security_event(
             event_type=SecurityEventType.AUTHENTICATION_FAILED,
             succeeded=False,
-            ip_address=request.META.get("REMOTE_ADDR"),
+            ip_address=client_ip(request),
             user_agent=request.META.get("HTTP_USER_AGENT", ""),
             detail={"path": "cloudflare_access", "reason": reason, "email": email},
         )

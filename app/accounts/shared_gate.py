@@ -44,13 +44,20 @@ from django.http import HttpRequest
 from django.utils import timezone
 
 from app.accounts.enums import AUTHENTICATED_VIA, AuthMode
+from app.core.client_ip import client_ip
 
 logger = logging.getLogger(__name__)
 
 #: Session keys. Namespaced so nothing else can collide with them, and so a
 #: `grep` for the gate finds every place its state is touched.
 GATE_PASSED_AT = "shared_gate:passed_at"
+GATE_LAST_SEEN = "shared_gate:last_seen"
 GATE_PERSONA_CHOSEN_AT = "shared_gate:persona_chosen_at"
+
+#: How stale the last-activity stamp may get before a request rewrites it. The
+#: idle clock is therefore up to this much early, never late, and an ordinary
+#: page view does not save the session every time.
+LAST_SEEN_RESOLUTION = timedelta(minutes=5)
 
 #: Paths that answer before the gate. Kept to exactly what the platform needs:
 #: a health check the container runtime calls, and the static files Whitenoise
@@ -134,22 +141,22 @@ def verify_password(supplied: str) -> bool:
 def client_key(request: HttpRequest) -> str:
     """A stable, non-identifying key for the throttle.
 
-    Behind the tunnel every request arrives from the connector, so the
-    forwarded address is the only thing that distinguishes callers. It is
-    attacker-controlled, which would matter if this were *identity* — it is a
-    rate limit, and an attacker who rotates the header to dodge it still has to
-    guess a long password one request at a time.
+    The address is `app.core.client_ip.client_ip`'s, the same one the audit row
+    for this attempt records (JOPS-008). Behind the tunnel that is
+    `CF-Connecting-IP`, the only thing that distinguishes callers. The throttle
+    is a rate limit, not identity: an attacker who could vary the address still
+    has to guess a long password one request at a time.
+    """
+    return key_for_address(client_ip(request) or "unknown")
+
+
+def key_for_address(address: str) -> str:
+    """The throttle key for one address.
 
     Hashed with the deployment's secret so the throttle table holds no address
     in the clear: it is operational state, not an access log, and the access log
     already exists next to it.
     """
-    forwarded = request.META.get("HTTP_CF_CONNECTING_IP") or request.META.get(
-        "HTTP_X_FORWARDED_FOR", ""
-    )
-    address = (
-        forwarded.split(",")[0].strip() if forwarded else request.META.get("REMOTE_ADDR", "")
-    ) or "unknown"
     digest = hmac.new(settings.SECRET_KEY.encode("utf-8"), address.encode("utf-8"), hashlib.sha256)
     return digest.hexdigest()[:64]
 
@@ -303,40 +310,96 @@ def record_success(request: HttpRequest) -> None:
 # -- session state ---------------------------------------------------------
 
 
+def _stamp(request: HttpRequest, key: str) -> datetime | None:
+    """A session timestamp, or None when it is absent or not an aware timestamp.
+
+    A session value that is not a timestamp is not a pass. Sessions are signed,
+    so this means a code change rather than tampering — and either way the
+    answer is "ask for the password again".
+    """
+    raw = request.session.get(key)
+    if not raw:
+        return None
+    try:
+        stamp = datetime.fromisoformat(raw)
+    except (TypeError, ValueError):
+        return None
+    if timezone.is_naive(stamp):
+        return None
+    return stamp
+
+
 def has_passed(request: HttpRequest) -> bool:
-    """Whether this session is behind the gate and has not aged out."""
+    """Whether this session is behind the gate, inside both of its limits.
+
+    **Absolute:** `SHARED_GATE_SESSION_SECONDS` (12 hours) since the password
+    was typed, however busy the session has been.
+
+    **Idle:** `SHARED_GATE_IDLE_SECONDS` (8 hours, owner decision D11 of
+    2026-10-17) since the last request. A session opened before the idle clock
+    existed has no stamp and is measured from the password instead. A stamp
+    that is present and unreadable is no pass.
+    """
     if not is_shared_gate():
         return False
-    raw = request.session.get(GATE_PASSED_AT)
-    if not raw:
+    passed_at = _stamp(request, GATE_PASSED_AT)
+    if passed_at is None:
         return False
-    try:
-        passed_at = datetime.fromisoformat(raw)
-    except ValueError:
-        # A session value that is not a timestamp is not a pass. Sessions are
-        # signed, so this means a code change rather than tampering — and
-        # either way the answer is "ask for the password again".
+    now = timezone.now()
+    if now - passed_at >= timedelta(seconds=settings.SHARED_GATE_SESSION_SECONDS):
         return False
-    if timezone.is_naive(passed_at):
-        return False
-    age = timezone.now() - passed_at
-    return age < timedelta(seconds=settings.SHARED_GATE_SESSION_SECONDS)
+    if request.session.get(GATE_LAST_SEEN) is None:
+        last_seen = passed_at
+    else:
+        stamp = _stamp(request, GATE_LAST_SEEN)
+        if stamp is None:
+            return False
+        last_seen = stamp
+    return now - last_seen < timedelta(seconds=settings.SHARED_GATE_IDLE_SECONDS)
 
 
-def open_gate(request: HttpRequest) -> None:
+def note_activity(request: HttpRequest) -> None:
+    """Restart the idle clock, at most once every `LAST_SEEN_RESOLUTION`.
+
+    Called by the middleware for a request that is behind the gate. Writing on
+    every request would save the session on every page view; the coarser stamp
+    costs at most a few minutes of the eight hours.
+    """
+    seen = _stamp(request, GATE_LAST_SEEN)
+    now = timezone.now()
+    if seen is None or now - seen >= LAST_SEEN_RESOLUTION:
+        request.session[GATE_LAST_SEEN] = now.isoformat()
+
+
+def open_gate(request: HttpRequest, *, passed_at: str | None = None) -> None:
     """Record that this session passed, and give it a new session identifier.
 
     `cycle_key` rotates the identifier while keeping the session's contents,
     which is what stops a fixated identifier handed to somebody beforehand from
     becoming an authenticated one afterwards.
+
+    ``passed_at`` carries the original pass across a persona change: `login` and
+    `logout` replace the session, and re-opening the gate with *now* would have
+    restarted the 12-hour absolute clock every time somebody picked a name.
+    Picking a name is not typing the password. Only the gate view, which has
+    just checked the password, opens it with a fresh time. The idle clock does
+    restart: a persona change is a request like any other.
     """
     request.session.cycle_key()
-    request.session[GATE_PASSED_AT] = timezone.now().isoformat()
+    now = timezone.now().isoformat()
+    request.session[GATE_PASSED_AT] = passed_at or now
+    request.session[GATE_LAST_SEEN] = now
     request.session.set_expiry(settings.SHARED_GATE_SESSION_SECONDS)
 
 
+def gate_passed_at(request: HttpRequest) -> str | None:
+    """The stored time of this session's pass, to hand back to `open_gate`."""
+    raw = request.session.get(GATE_PASSED_AT)
+    return raw if isinstance(raw, str) and raw else None
+
+
 def close_gate(request: HttpRequest) -> None:
-    for key in (GATE_PASSED_AT, GATE_PERSONA_CHOSEN_AT):
+    for key in (GATE_PASSED_AT, GATE_LAST_SEEN, GATE_PERSONA_CHOSEN_AT):
         request.session.pop(key, None)
 
 

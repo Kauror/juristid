@@ -44,6 +44,7 @@ from django.views.decorators.http import require_http_methods
 from app.accounts import shared_gate
 from app.audit.enums import SecurityEventType
 from app.audit.services import record_security_event
+from app.core.client_ip import client_ip
 from app.core.errors import DomainError
 from app.core.http import content_disposition
 from app.core.request_params import digits_or_none
@@ -435,7 +436,7 @@ def archive_file(request: HttpRequest, pk: Any) -> HttpResponseBase:
         event_type=SecurityEventType.DOCUMENT_DOWNLOADED,
         actor=request.user,
         subject=binary,
-        ip_address=request.META.get("REMOTE_ADDR"),
+        ip_address=client_ip(request),
         user_agent=request.META.get("HTTP_USER_AGENT", ""),
         # Through the shared-gate helper, like every other served file. In that
         # mode `actor` is the *persona* somebody selected, and a row naming it
