@@ -44,6 +44,7 @@ from app.accounts.enums import AuthMode, Capability, ProvisioningState, Throttle
 from app.accounts.models import User
 from app.audit.enums import SecurityEventType
 from app.audit.services import record_security_event
+from app.core.client_ip import client_ip
 
 MODEL_BACKEND = "django.contrib.auth.backends.ModelBackend"
 
@@ -149,7 +150,7 @@ def _refusal_detail(email: str, reason: str, **extra: Any) -> dict[str, Any]:
 
 def _client(request: HttpRequest) -> dict[str, Any]:
     return {
-        "ip_address": request.META.get("REMOTE_ADDR"),
+        "ip_address": client_ip(request),
         "user_agent": request.META.get("HTTP_USER_AGENT", ""),
     }
 

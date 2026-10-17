@@ -30,6 +30,7 @@ from app.accounts.models import User
 from app.accounts.selectors import persona_candidates, persona_from_id
 from app.audit.enums import SecurityEventType
 from app.audit.services import record_security_event
+from app.core.client_ip import client_ip
 from app.core.request_params import safe_local_path
 
 MODEL_BACKEND = "django.contrib.auth.backends.ModelBackend"
@@ -39,7 +40,7 @@ def _record_denied(request: HttpRequest, *, reason: str) -> None:
     record_security_event(
         event_type=SecurityEventType.AUTHENTICATION_FAILED,
         succeeded=False,
-        ip_address=request.META.get("REMOTE_ADDR"),
+        ip_address=client_ip(request),
         user_agent=request.META.get("HTTP_USER_AGENT", ""),
         detail={"path": "dev_login", "reason": reason},
     )
@@ -61,18 +62,10 @@ def _require_dev_login() -> None:
 def _client_address(request: HttpRequest) -> str:
     """Who is knocking, for throttling purposes.
 
-    Behind the Cloudflare tunnel every request arrives from the connector, so
-    the forwarded address is the only thing that distinguishes callers. It is
-    attacker-controlled and therefore useless as *identity* — but this is a rate
-    limit, not an authorization decision, and an attacker who rotates the header
-    to dodge it has still slowed themselves down.
+    The same address the audit rows record (`app.core.client_ip`). It is a rate
+    limit key, not an authorization decision.
     """
-    forwarded = request.META.get("HTTP_CF_CONNECTING_IP") or request.META.get(
-        "HTTP_X_FORWARDED_FOR", ""
-    )
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.META.get("REMOTE_ADDR", "unknown")
+    return client_ip(request) or "unknown"
 
 
 def _attempt_key(request: HttpRequest) -> str:
@@ -197,7 +190,7 @@ def dev_login(request: HttpRequest) -> HttpResponse:
             record_security_event(
                 event_type=SecurityEventType.AUTHENTICATION_FAILED,
                 succeeded=False,
-                ip_address=request.META.get("REMOTE_ADDR"),
+                ip_address=client_ip(request),
                 user_agent=request.META.get("HTTP_USER_AGENT", ""),
                 detail={"path": "dev_login"},
             )
@@ -224,7 +217,7 @@ def dev_login(request: HttpRequest) -> HttpResponse:
         record_security_event(
             event_type=SecurityEventType.AUTHENTICATION_SUCCEEDED,
             actor=user,
-            ip_address=request.META.get("REMOTE_ADDR"),
+            ip_address=client_ip(request),
             user_agent=request.META.get("HTTP_USER_AGENT", ""),
             detail={"method": "dev_login"},
         )
@@ -250,7 +243,7 @@ def sign_out(request: HttpRequest) -> HttpResponse:
         record_security_event(
             event_type=SecurityEventType.SHARED_GATE_CLOSED,
             actor=actor,
-            ip_address=request.META.get("REMOTE_ADDR"),
+            ip_address=client_ip(request),
             user_agent=request.META.get("HTTP_USER_AGENT", ""),
             detail=shared_gate.audit_detail(request),
         )
@@ -261,7 +254,7 @@ def sign_out(request: HttpRequest) -> HttpResponse:
         record_security_event(
             event_type=SecurityEventType.SIGNED_OUT,
             actor=actor,
-            ip_address=request.META.get("REMOTE_ADDR"),
+            ip_address=client_ip(request),
             user_agent=request.META.get("HTTP_USER_AGENT", ""),
             detail={"path": "local_password"},
         )
@@ -312,7 +305,7 @@ def gate(request: HttpRequest) -> HttpResponse:
         shared_gate.open_gate(request)
         record_security_event(
             event_type=SecurityEventType.SHARED_GATE_PASSED,
-            ip_address=request.META.get("REMOTE_ADDR"),
+            ip_address=client_ip(request),
             user_agent=request.META.get("HTTP_USER_AGENT", ""),
             detail=shared_gate.audit_detail(request),
         )
@@ -327,7 +320,7 @@ def _gate_refused(
     record_security_event(
         event_type=SecurityEventType.AUTHENTICATION_FAILED,
         succeeded=False,
-        ip_address=request.META.get("REMOTE_ADDR"),
+        ip_address=client_ip(request),
         user_agent=request.META.get("HTTP_USER_AGENT", ""),
         # The reason is recorded for an operator reading the log, and not shown.
         detail=shared_gate.audit_detail(request, path="shared_gate", reason=reason),
@@ -387,11 +380,15 @@ def act_as(request: HttpRequest) -> HttpResponse:
     previous = request.user if request.user.is_authenticated else None
     raw = request.POST.get("user_id", "")
 
+    # The time the password was typed, carried across `login` / `logout` so a
+    # persona change does not restart the 12-hour absolute limit.
+    passed_at = shared_gate.gate_passed_at(request)
+
     if raw == "":
         # Stepping back to the department view. Worth having: it is the only way
         # to see what a page looks like to somebody with no persona selected.
         logout(request)
-        shared_gate.open_gate(request)
+        shared_gate.open_gate(request, passed_at=passed_at)
         _record_persona_change(request, previous=previous, chosen=None)
         # The same safe target a named choice gets. Switching from the top bar
         # has to leave somebody where they were reading, and "somewhere else
@@ -415,7 +412,7 @@ def act_as(request: HttpRequest) -> HttpResponse:
     login(request, person, backend=MODEL_BACKEND)
     # `login` cycles the session key and would otherwise drop the gate state
     # with it, sending somebody back to the password form for changing persona.
-    shared_gate.open_gate(request)
+    shared_gate.open_gate(request, passed_at=passed_at)
     shared_gate.note_persona_chosen(request)
     _record_persona_change(request, previous=previous, chosen=person)
     messages.success(request, f"Vaatad rakendust nüüd kasutajana {person.display_name}.")
@@ -427,7 +424,7 @@ def _record_persona_change(request: HttpRequest, *, previous: Any, chosen: Any) 
     record_security_event(
         event_type=SecurityEventType.PERSONA_SELECTED,
         actor=chosen,
-        ip_address=request.META.get("REMOTE_ADDR"),
+        ip_address=client_ip(request),
         user_agent=request.META.get("HTTP_USER_AGENT", ""),
         detail=shared_gate.audit_detail(
             request,

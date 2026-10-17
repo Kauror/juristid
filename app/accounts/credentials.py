@@ -28,6 +28,7 @@ from app.accounts.enums import CredentialTokenPurpose, ProvisioningState, Thrott
 from app.accounts.models import AccountCredentialToken, RecoveryCode, TotpDevice, User
 from app.audit.enums import SecurityEventType
 from app.audit.services import record_security_event
+from app.core.client_ip import client_ip
 from app.core.errors import DomainError
 
 logger = logging.getLogger(__name__)
@@ -157,7 +158,7 @@ def change_password(request: HttpRequest, *, user: User, current: str, new: str)
         event_type=SecurityEventType.PASSWORD_CHANGED,
         actor=user,
         subject=user,
-        ip_address=request.META.get("REMOTE_ADDR"),
+        ip_address=client_ip(request),
     )
     return ChangeOutcome("changed")
 
@@ -189,7 +190,7 @@ def request_password_reset(request: HttpRequest, *, email: str) -> None:
         record_security_event(
             event_type=SecurityEventType.PASSWORD_RESET_REQUESTED,
             succeeded=False,
-            ip_address=request.META.get("REMOTE_ADDR"),
+            ip_address=client_ip(request),
             detail=detail,
         )
         return
@@ -208,7 +209,7 @@ def request_password_reset(request: HttpRequest, *, email: str) -> None:
             event_type=SecurityEventType.PASSWORD_RESET_REQUESTED,
             succeeded=False,
             subject=user,
-            ip_address=request.META.get("REMOTE_ADDR"),
+            ip_address=client_ip(request),
             detail=detail,
         )
         return
@@ -221,7 +222,7 @@ def request_password_reset(request: HttpRequest, *, email: str) -> None:
     record_security_event(
         event_type=SecurityEventType.PASSWORD_RESET_REQUESTED,
         subject=user,
-        ip_address=request.META.get("REMOTE_ADDR"),
+        ip_address=client_ip(request),
         detail=detail,
     )
     user_id = user.pk
