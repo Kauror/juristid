@@ -5992,6 +5992,41 @@ class FeedbackForm(ExternalPositionFieldsMixin, forms.Form):
         return bool(self["engagement"].value())
 
     @property
+    def provenance_is_implied(self) -> bool:
+        """Whether a drawn «Saadeti Kojale» came from the round, not from the person.
+
+        The page clears an implied answer again when the round is cleared, and
+        keeps one the person chose (docs/adr/0170 §3). Unbound, a linked round
+        was named by `Tehtud`, so the answer is implied. Bound, it is implied
+        unless the person posted «Saadeti Kojale» themselves: the page posts
+        `provenance_implied=1` while the radio holds an answer only the round
+        gave (static/js/ux.js), and a round saved with no answer or with the
+        refused «Avaldatud mujal» is drawn as «Saadeti Kojale» by this form,
+        not by the person (2026-10-17 audit, JQA-004).
+        """
+        if not self.round_is_linked:
+            return False
+        if not self.is_bound:
+            return True
+        received = ExternalPositionProvenance.RECEIVED.value
+        posted = self.data.get(self.add_prefix("provenance"))
+        return posted != received or self.data.get("provenance_implied") == "1"
+
+    @property
+    def round_choices_state(self) -> str:
+        """The rounds this form offers, as the panel's `data-draft-state`.
+
+        An unsaved draft is carried across another panel's save only into a
+        form that offers the same rounds (static/js/app.js `keepDrafts`). A
+        draft typed before the first round existed has no `Seotud kaasamine`,
+        so carried onto a Teema that now has one it could not link the answer
+        `Tehtud` asks it to; it is shown as «Salvestamata sisu» instead
+        (2026-10-17 audit, JQA-002).
+        """
+        field = cast(Any, self.fields["engagement"])
+        return " ".join(sorted(str(value) for value, _label in field.choices if value))
+
+    @property
     def shown_provenance(self) -> str:
         """The provenance the radio is drawn with — never a checked, disabled radio.
 
