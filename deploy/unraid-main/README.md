@@ -209,7 +209,9 @@ and `AUTH_MODE=cloudflare_access`, and restart. Nothing else changes.
 ### 4. Load the release image
 
 This host does not build the image — not on the first deployment and not on any
-later one. Build it off-host for the reviewed commit, transfer the artifact,
+later one. (The image is Debian 13 with both base images pinned by digest in the
+`Dockerfile`; its code under `/app` is root-owned, and uid 10001 owns only the
+storage roots and the upload staging directory.) Build it off-host for the reviewed commit, transfer the artifact,
 verify its digest and load it, exactly as **Deploying a release** parts A and B
 describe below; the exports, the digest check and `docker load` are the same
 commands. Come back here with the image loaded and the two variables exported
@@ -494,8 +496,11 @@ commands hash the file and never write to it.
 `/refresh` is a working directory for review files and catalogue reports, and it
 exists because **none of the container's writable mounts is a safe place for
 them**. `--rows`, `--candidates` and `--report-dir` all write real files;
-`--report-dir` defaults to `import-output/import`, which is relative to `/app`
-and disappears with the `--rm` container. Writing them into `/app/evidence`
+`--report-dir` defaults to `import-output/import`, which is relative to `/app`;
+since 2026-10-17 the application user cannot write there (the code is
+root-owned, JOPS-006), so a forgotten flag stops the command with a permission
+error before it touches the database instead of leaving the reports in a `--rm`
+container. Writing them into `/app/evidence`
 instead is the accident of 2026-08-24 repeated by hand — see *Never run the
 application test suite through this stack* — and `check_evidence_integrity` has
 been reporting the last one ever since.
@@ -579,8 +584,8 @@ does not**. That last one is why the backup is above and not below.
 Flags, in full: positional `workbook`; exactly one of `--dry-run` / `--apply`
 (the group is required — omitting both is an error rather than a safe guess,
 because the safe guess is the one people stop reading); `--report-dir`
-(default `import-output/import`, which is inside the container and lost with it —
-always pass a path under `/refresh`); `--mapping-file` (reviewed owner /
+(default `import-output/import`, inside the container's root-owned `/app`, so
+the command refuses to write it — always pass a path under `/refresh`); `--mapping-file` (reviewed owner /
 organisation / record-mode mappings, TOML or JSON); `--accept-review-rows`;
 `--notes`.
 
