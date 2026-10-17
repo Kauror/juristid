@@ -101,15 +101,13 @@ def the_operating_system() -> None:
     )
     codename = fields.get("VERSION_CODENAME", "").strip('"')
     print(f"      {fields.get('PRETTY_NAME', '?').strip(chr(34))}")
-    check(codename == "trixie", f"the base is Debian 13 (trixie), not {codename!r}")
+    check(codename == "trixie", f"the base is Debian 13 (codename {codename!r})")
 
 
 def the_user() -> None:
     uid = os.getuid()
     name = pwd.getpwuid(uid).pw_name
-    check(
-        uid == APPLICATION_UID and name == "juristid", f"runs as juristid/10001, not {name}/{uid}"
-    )
+    check(uid == APPLICATION_UID and name == "juristid", f"runs as juristid/10001 ({name}/{uid})")
 
 
 def the_code_is_read_only() -> None:

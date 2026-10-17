@@ -33,7 +33,10 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 COPY . .
-RUN uv sync --frozen --no-dev
+# uv leaves an empty, world-writable `.lock` in the environment it manages.
+# Nothing in the runtime image runs uv, and a world-writable file in a tree the
+# application user must not write is the one exception it would otherwise have.
+RUN uv sync --frozen --no-dev && rm -f /opt/venv/.lock
 
 # Static assets are baked into the image. DJANGO_STATIC_MANIFEST is forced on
 # so the hashed manifest exists for the runtime process, which runs with
