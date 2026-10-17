@@ -312,6 +312,9 @@ PANEL_FAMILY = {
     # Only `Koja arvamus` since docs/adr/0170: every other position is
     # `+ Kaasamine · Lisa tagasiside` (`open_feedback_form`).
     "arvamus-koja": "lisa-arvamus",
+    # `Kohtumine / arutelu` — the family is `+ Koja arvamus / kohtumine` since
+    # 2026-10-17 (docs/adr/0097, amendment of that date).
+    "arvamus-kohtumine": "lisa-arvamus",
     # `+ Kaasamine` is start, then feedback since docs/adr/0142.
     "kaasamine-alusta": "lisa-kaasamine",
     "kaasamine-tagasiside": "lisa-kaasamine",

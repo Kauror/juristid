@@ -4931,6 +4931,67 @@ class CompactOtherForm(forms.Form):
             raise forms.ValidationError(str(error)) from error
 
 
+#: What `Kohtumine / arutelu` says under an empty (or empty-after-sanitising)
+#: `Lühikokkuvõte`.
+MEETING_SUMMARY_REQUIRED = "Kirjuta kohtumise lühikokkuvõte."
+
+
+class CompactMeetingForm(forms.Form):
+    """`+ Koja arvamus / kohtumine · Kohtumine / arutelu` — a meeting held.
+
+    Three fields and nothing else (docs/adr/0097, amendment of 2026-10-17):
+
+    * `Kuupäev` — **required**, one day, **no default**: the day the meeting
+      took place, stored as the start of that local day in `Entry.occurred_at`
+      exactly as `+ Lisa · Muu` does. Nothing is pre-filled or inferred.
+    * `Lühikokkuvõte` — **required**: what was discussed and agreed, and who
+      took part. It is the entry's body and goes through the same sanitising
+      every entry body does; a summary that is empty once sanitised (markup
+      only, a `<script>`) is refused here, under the field, rather than by
+      `add_entry` with a sentence pinned to nothing.
+    * `Failid` — optional, the canonical evidence pipeline.
+
+    No organisation and no participants field: `Entry.organisation` is shown
+    and searched but cannot be corrected through `Muuda`, so a wrong one could
+    not be fixed — participants are named in the summary instead.
+    """
+
+    occurred_on = EstonianDateField(
+        label="Kuupäev",
+        required=True,
+        widget=EstonianDateInput(),
+        error_messages={"required": "Sisesta kohtumise kuupäev."},
+    )
+    summary = forms.CharField(
+        label="Lühikokkuvõte",
+        required=True,
+        widget=forms.Textarea(
+            attrs={
+                "class": "field__input",
+                "rows": "3",
+                "placeholder": "Kellega kohtusite, mida arutasite ja milles leppisite kokku.",
+            }
+        ),
+        error_messages={"required": MEETING_SUMMARY_REQUIRED},
+    )
+    attachments = workspace_attachments("id_kohtumine_failid")
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        # Its own ids: `Muu` and `Koja arvamus` draw theirs on the same page.
+        kwargs.setdefault("auto_id", "id_kohtumine_%s")
+        super().__init__(*args, **kwargs)
+
+    def clean_summary(self) -> str:
+        from app.core.richtext import sanitize_entry_html
+
+        summary = (self.cleaned_data.get("summary") or "").strip()
+        # Measured after the same sanitising `add_entry` applies, so what is
+        # refused here is exactly what the service would have refused.
+        if not plain_text(sanitize_entry_html(summary)).strip():
+            raise forms.ValidationError(MEETING_SUMMARY_REQUIRED)
+        return summary
+
+
 class CompactWorkVictoryForm(forms.Form):
     """`+ Töövõit` — what changed, and the evidence that it did.
 

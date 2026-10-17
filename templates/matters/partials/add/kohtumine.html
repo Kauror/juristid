@@ -1,0 +1,41 @@
+{% load form_labels %}
+  {% comment %}
+    `+ Koja arvamus / kohtumine · Kohtumine / arutelu` — a meeting or discussion
+    held about this Teema (docs/adr/0097, amendment of 2026-10-17).
+
+    One `Entry(kind=MEETING)`: `Kuupäev` and `Lühikokkuvõte` are required,
+    `Failid` optional. `Kuupäev` is the day the meeting took place — the
+    chronology places the row on that day — and it starts **empty**: a day is
+    stated, never pre-filled or inferred. Who took part is named in the summary;
+    there is no organisation or participants field. No task, stage, plan,
+    deadline or wait follows, and it is not a Koja arvamus.
+  {% endcomment %}
+      {% if open_choice == "arvamus-kohtumine" and workspace_error %}
+        <p class="formerror" role="alert">{{ workspace_error }}</p>
+      {% endif %}
+      <form class="addform" data-addform
+            hx-post="{% url 'matters:add_meeting' pk=matter.pk %}"
+            hx-target="#teema-vaade" hx-swap="outerHTML"
+            hx-encoding="multipart/form-data">
+        {% csrf_token %}
+        <div class="cx-grid cx-grid--links">
+          <label class="cx-f cx-f--date">
+            <span class="cx-f__lab">Kuupäev{% required_mark %}</span>
+            {{ meeting_form.occurred_on }}
+          </label>
+        </div>
+        {% if meeting_form.occurred_on.errors %}
+          <p class="field__error" id="{{ meeting_form.occurred_on.auto_id }}_error">{{ meeting_form.occurred_on.errors|first }}</p>
+        {% endif %}
+        <label class="cx-f">
+          <span class="cx-f__lab">Lühikokkuvõte{% required_mark %}</span>
+          {{ meeting_form.summary }}
+        </label>
+        {% if meeting_form.summary.errors %}
+          <p class="field__error" id="{{ meeting_form.summary.auto_id }}_error">{{ meeting_form.summary.errors|first }}</p>
+        {% endif %}
+        {% include "matters/partials/add_files.html" with field=meeting_form.attachments %}
+        <div class="addform__actions">
+          <button class="button button--primary" type="submit">Salvesta</button>
+        </div>
+      </form>

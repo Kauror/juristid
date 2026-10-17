@@ -6,7 +6,7 @@ application already has a form for, the step's own control opens **that form**
 under `LISA TEEMALE` rather than a simplified one of its own:
 
 * «Kaasa liikmeid / küsi tagasisidet» → `+ Kaasamine · Alusta kaasamist`;
-* «Saada Koja arvamus» → `+ Arvamus / tagasiside · Koja arvamus`;
+* «Saada Koja arvamus» → `+ Koja arvamus / kohtumine · Koja arvamus`;
 * «Koosta kodulehe ülevaade» → `+ Ülevaade / uudis`;
 * «Ootame tagasisidet» → `+ Kaasamine · Lisa tagasiside`, with the round chosen.
 

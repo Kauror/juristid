@@ -449,6 +449,15 @@ record, not professional chronology (master specification 16.5).
             <span class="uxtl__kind uxtl__kind--entry">Muu</span>
           {% endif %}
           {% comment %}
+            A meeting says so too: `Kohtumine / arutelu` writes an
+            `Entry(kind=MEETING)` dated on the day it took place
+            (docs/adr/0097, amendment of 2026-10-17). An authorless one
+            already names its kind in the author slot above.
+          {% endcomment %}
+          {% if item.entry.kind == "MEETING" and item.actor %}
+            <span class="uxtl__kind uxtl__kind--entry">Kohtumine</span>
+          {% endif %}
+          {% comment %}
             The verb phrase, and no default badge. «Märkus» was written out
             beside every note on a page where a note is what a row *is* unless it
             says otherwise; the target hides it and states the exception instead

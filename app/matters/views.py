@@ -140,6 +140,7 @@ from app.matters.forms import (
     CompactEffectiveDateForm,
     CompactEngagementForm,
     CompactImportantDateForm,
+    CompactMeetingForm,
     CompactOtherForm,
     CompactResponseDeadlineForm,
     CompactWebsiteOverviewForm,
@@ -7288,9 +7289,11 @@ WORKSPACE_PANELS: dict[str, tuple[str, str]] = {
     # round (docs/adr/0142, docs/adr/0091 amendment of 2026-10-15).
     "add_engagement_form": ("lisa-kaasamine", "kaasamine-alusta"),
     "engagement_reply_form": ("lisa-kaasamine", "kaasamine-tagasiside"),
-    # `+ Arvamus / tagasiside` — Koda's own opinion only, since the feedback
-    # doors moved under `+ Kaasamine` (owner's UX round, stage 3).
+    # `+ Koja arvamus / kohtumine` — Koda's own opinion, since the feedback
+    # doors moved under `+ Kaasamine` (owner's UX round, stage 3), and a
+    # meeting held (stage 4, docs/adr/0097 amendment of 2026-10-17).
     "koda_opinion_form": ("lisa-arvamus", "arvamus-koja"),
+    "meeting_form": ("lisa-arvamus", "arvamus-kohtumine"),
     # `+ Ülevaade / uudis` — one question, no sub-choice.
     "website_overview_form": ("lisa-koduleht", ""),
     # `PRAEGUNE TEGEVUS` → `Muuda`, which is not in the launcher.
@@ -7334,6 +7337,7 @@ WORKSPACE_CHOICE_FAMILY: dict[str, str] = {
     "marge-toovoit": "marge_choice",
     "marge-muu": "marge_choice",
     "arvamus-koja": "arvamus_choice",
+    "arvamus-kohtumine": "arvamus_choice",
     "kaasamine-alusta": "kaasamine_choice",
     "kaasamine-tagasiside": "kaasamine_choice",
 }
@@ -7469,6 +7473,8 @@ def workspace_forms(
         "effective_date_form": CompactEffectiveDateForm(),
         "work_victory_form": CompactWorkVictoryForm(),
         "other_form": CompactOtherForm(),
+        # `Kohtumine / arutelu` (docs/adr/0097, amendment of 2026-10-17).
+        "meeting_form": CompactMeetingForm(),
         # `+ Ülevaade / uudis`. Two optional boxes and no kind selector: an
         # empty submit is the plan, both boxes filled record a page that is
         # already up, and which of the two kinds of publication it is, is what
@@ -8203,6 +8209,34 @@ def add_other(request: HttpRequest, pk: Any) -> HttpResponse:
         )
     except (DomainError, UploadRejected) as error:
         return _workspace_refusal(request, matter, key="other_form", form=form, error=str(error))
+    return _render_overview(request, matter)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def add_meeting(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`+ Koja arvamus / kohtumine · Kohtumine / arutelu` — a meeting held.
+
+    One `Entry(kind=MEETING)` dated by the day the person gives, with its
+    optional files, saved together or not at all. Creates no task, changes no
+    stage, plan or deadline, opens no wait, and is refused on a closed Teema
+    like every other new record (docs/adr/0097, amendment of 2026-10-17).
+    """
+    matter = get_visible_matter(request, pk)
+    form = CompactMeetingForm(request.POST, request.FILES)
+    if not form.is_valid():
+        return _workspace_refusal(request, matter, key="meeting_form", form=form)
+    try:
+        workspace.add_matter_meeting(
+            matter=matter,
+            author=request.user,
+            summary=form.cleaned_data["summary"],
+            occurred_on=form.cleaned_data["occurred_on"],
+            uploads=form.cleaned_data["attachments"],
+        )
+    except (DomainError, UploadRejected) as error:
+        return _workspace_refusal(request, matter, key="meeting_form", form=form, error=str(error))
     return _render_overview(request, matter)
 
 
