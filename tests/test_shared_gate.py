@@ -561,13 +561,16 @@ def test_signing_out_clears_what_the_browser_kept(behind_the_gate):
 
     htmx 2.0.4 kept copies of the register in localStorage, restricted titles
     included, and they outlived the session (ENG-009). Signing out clears the
-    origin's storage — and only that: cookies are the session's own business
-    and a `no-store` page is not in the HTTP cache to clear.
+    origin's storage and its HTTP cache: every response is `no-store` now, but
+    one that was not — a thumbnail sent `private, max-age=300` (JSEC-003) —
+    could have entered it, and a browser that kept a copy from before a
+    deployment must not keep it past the session. Not cookies: they are the
+    session's own business and `logout` has dealt with them.
     """
     response = behind_the_gate.post(reverse("accounts:sign_out"))
 
     assert response.status_code == 302
-    assert response["Clear-Site-Data"] == '"storage"'
+    assert response["Clear-Site-Data"] == '"cache", "storage"'
 
 
 def test_the_client_keeps_no_history_snapshots():

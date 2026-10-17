@@ -991,16 +991,35 @@ def _refuse_a_day_ahead(day: Any, refusal: str) -> None:
     `Oluline tähtaeg`.
 
     **The Tallinn business day**, `timezone.localdate()`: today is accepted at
-    any hour of it, half past midnight included. A datetime is read by its own
-    date, as `start_of_local_day` stores it. ``None`` is the missing-day
-    refusal's question, not this one's.
+    any hour of it, half past midnight included. A datetime is read as its
+    Tallinn day (`_local_day`), the day the row is then stored on. ``None`` is
+    the missing-day refusal's question, not this one's.
     """
     if day is None:
         return
-    if isinstance(day, datetime):
-        day = day.date()
-    if day > timezone.localdate():
+    if _local_day(day) > timezone.localdate():
         raise DomainError(refusal)
+
+
+def _local_day(value: Any) -> Any:
+    """The Tallinn day a stated `occurred_on` names: a date as it is, a datetime by its day.
+
+    An aware instant is read in the local zone — 00:30 in Tallinn is the
+    previous day in UTC — and a naive one by its own date. Done once, ahead of
+    the range check and the day-ahead check, so a datetime caller meets the
+    same two sentences a date caller does rather than a `TypeError` from
+    comparing a date with a datetime (JRE-01). An instant whose local day does
+    not exist in Python's calendar (the last hours of year 9999 seen from
+    Tallinn) is out of range like any other.
+    """
+    if not isinstance(value, datetime):
+        return value
+    if timezone.is_naive(value):
+        return value.date()
+    try:
+        return timezone.localdate(value)
+    except OverflowError:
+        raise DomainError(DAY_OUT_OF_RANGE) from None
 
 
 def _add_dated_entry_with_files(
@@ -1029,6 +1048,9 @@ def _add_dated_entry_with_files(
     """
     if occurred_on is None:
         raise DomainError(missing_day)
+    # One day for both checks and for the stored row: a datetime caller is read
+    # as its Tallinn day here, before the range check compares it (JRE-01).
+    occurred_on = _local_day(occurred_on)
     # Asked here as well as by the day box: year 1 becomes Tallinn midnight in
     # year 0 UTC, which the database refuses as a 500 (JQA-008, CORR-02).
     if not is_supported_day(occurred_on):

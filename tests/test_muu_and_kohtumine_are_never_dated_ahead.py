@@ -219,6 +219,69 @@ def test_the_tallinn_day_is_today_in_the_service(
     assert entry.occurred_at == start_of_local_day(tallinn_day)
 
 
+# -- a caller that passes a datetime (JRE-01) --------------------------------------
+#
+# No view passes one today, but `_refuse_a_day_ahead` has always said it reads a
+# datetime by its day, while the range check ahead of it compared a date with a
+# datetime and raised `TypeError`. The service reads an aware instant as its
+# Tallinn day, once, before both checks: a stored row or a sentence, never a
+# `TypeError`.
+
+
+@pytest.mark.parametrize("which", WHICH)
+def test_an_aware_instant_today_is_stored_as_its_tallinn_day(which, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+
+    KINDS[which][7](matter, specialist, timezone.now())
+
+    assert _entries(matter, which).get().occurred_at == start_of_local_day(_today())
+
+
+@pytest.mark.parametrize("which", WHICH)
+@pytest.mark.parametrize(("instant", "tallinn_day"), BOUNDARY)
+def test_an_aware_instant_is_read_as_the_tallinn_day_not_the_utc_one(
+    monkeypatch, which, specialist, instant, tallinn_day
+):
+    """00:30 in Tallinn is the previous day in UTC; the row is on the Tallinn day."""
+    matter = factories.MatterFactory(owner=specialist)
+    _frozen_at(monkeypatch, instant)
+
+    KINDS[which][7](matter, specialist, instant)
+
+    assert _entries(matter, which).get().occurred_at == start_of_local_day(tallinn_day)
+
+
+@pytest.mark.parametrize("which", WHICH)
+def test_an_aware_instant_tomorrow_is_refused_with_the_sentence(which, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+
+    with refused(KINDS[which][6]):
+        KINDS[which][7](matter, specialist, timezone.now() + dt.timedelta(days=1))
+
+    assert not _entries(matter, which).exists()
+
+
+@pytest.mark.parametrize("which", WHICH)
+@pytest.mark.parametrize(
+    "instant",
+    [
+        dt.datetime(1, 1, 1, 0, 0, tzinfo=UTC),
+        dt.datetime(1989, 12, 31, 12, 0, tzinfo=UTC),
+        dt.datetime(9999, 12, 31, 23, 0, tzinfo=UTC),
+    ],
+    ids=["year-1", "before-range", "year-9999-end"],
+)
+def test_an_aware_instant_out_of_range_is_refused_with_the_sentence(which, specialist, instant):
+    from app.workflow.dates import DAY_OUT_OF_RANGE
+
+    matter = factories.MatterFactory(owner=specialist)
+
+    with refused(DAY_OUT_OF_RANGE):
+        KINDS[which][7](matter, specialist, instant)
+
+    assert not _entries(matter, which).exists()
+
+
 # -- over HTTP --------------------------------------------------------------------
 
 
