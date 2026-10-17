@@ -204,3 +204,7 @@ The panels reverse or narrow parts of ADR 0078 §2 (in its favour), ADR 0081 §2
 ADR 0083, ADR 0084 §2, ADR 0089 §8, and ADR 0091 §3.3, §4, §6.3. None of those
 records is rewritten: each was right about the case it described, and this one
 records which surface now asks the question.
+
+## Amendment of 2026-10-15 — see docs/adr/0170
+
+`Liige` and `Seotud kaasamine` are asked on `+ Kaasamine · Lisa tagasiside`; the member flag's three layers (form, service, `CHECK`) stand (docs/adr/0170-lisa-tagasiside-is-the-one-door-for-every-position.md).

@@ -18,7 +18,8 @@ That journey was «sender and addressee on one save», which is not a journey an
 more: the Matter-level `Kellele` left the ordinary Teema UI on 2026-09-20 and
 `Saatja` is the one counterparty a Teema form asks about (docs/adr/0097 §4). So
 the rule is pinned across the two surfaces that still type an institution —
-`Saatja` on `Muuda teemat` and `Asutus` on `Meile saadetud tagasiside` — which
+`Saatja` on `Muuda teemat` and `Organisatsioon` on `Lisa tagasiside` («Saadeti
+Kojale», the former `Meile saadetud tagasiside`, docs/adr/0170) — which
 is the harder case and the one that was always the real risk: two resolvers, two
 transactions, one name.
 
@@ -250,7 +251,7 @@ def both_fields(signed_in, specialist, *, sender_name="", addressee_name=""):
 
     The parameters keep their old names so the cases below read as the identity
     rules they are. `addressee_name` is the institution typed on
-    `Meile saadetud tagasiside`, which is where a person now names a body they
+    `Lisa tagasiside` («Saadeti Kojale»), which is where a person now names a body they
     are recording an answer from.
     """
     matter = factories.MatterFactory(owner=specialist, title="Vastus komisjonile")
@@ -264,8 +265,9 @@ def both_fields(signed_in, specialist, *, sender_name="", addressee_name=""):
     )
     if addressee_name:
         signed_in.post(
-            reverse("matters:add_received_feedback", kwargs={"pk": matter.pk}),
+            reverse("matters:add_engagement_reply", kwargs={"pk": matter.pk}),
             {
+                "provenance": "RECEIVED",
                 "summary": "Toetab eelnõu.",
                 "stated_on": "14.03.2026",
                 "organisation_name": addressee_name,

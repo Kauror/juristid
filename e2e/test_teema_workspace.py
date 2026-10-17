@@ -16,8 +16,11 @@ import pytest
 from playwright.sync_api import expect
 
 from e2e.conftest import (
+    FEEDBACK_PICKER,
     MARTIN,
+    SAADETI_KOJALE,
     add_panel_is_open,
+    choose_organisation,
     chronology,
     create_matter,
     finish_current_action,
@@ -137,8 +140,9 @@ PANELS = (
     "marge-joustumine",
     "marge-toovoit",
     "lisa-kaasamine",
-    "arvamus-tagasiside",
-    "arvamus-teiste",
+    "kaasamine-alusta",
+    "kaasamine-tagasiside",
+    "arvamus-koja",
     "lisa-koduleht",
 )
 
@@ -147,13 +151,14 @@ def test_opening_one_panel_closes_whichever_was_open(page, base_url):
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Töölaua brauserikatse: üks korraga")
 
-    # Within one group. `+ Lisa`'s four are one group and
-    # `+ Arvamus / tagasiside`'s two are another, and opening one of a family's
+    # Within one group. `+ Lisa`'s four are one group and `+ Kaasamine`'s
+    # two are another (`+ Arvamus / tagasiside` keeps one choice since
+    # docs/adr/0170), and opening one of a family's
     # choices must not close the family it lives in — which is what the nesting
     # is for (docs/adr/0097 §8).
     for group in (
         ("marge-arvamuse-tahtaeg", "marge-tahtaeg", "marge-joustumine", "marge-toovoit"),
-        ("arvamus-tagasiside", "arvamus-teiste"),
+        ("kaasamine-alusta", "kaasamine-tagasiside"),
         ("lisa-kaasamine", "lisa-koduleht"),
     ):
         previous = ""
@@ -216,8 +221,8 @@ def test_an_engagement_is_started_then_its_replies_are_added(page, base_url, tmp
 
     The second visit opens on `Lisa tagasiside` by itself, because the round is
     open, and the replies land on the received-feedback record tied to that
-    round — its own files, counted on the round's row — while the round stays
-    open.
+    round — its own files, counted on the round's row. The round is chosen by
+    hand: one open round is never preselected by guess (docs/adr/0170 §1).
     """
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Töölaua brauserikatse: kaasamine")
@@ -230,15 +235,21 @@ def test_an_engagement_is_started_then_its_replies_are_added(page, base_url, tmp
     open_add_panel(page, "lisa-kaasamine")
     expect(page.locator("#kaasamine-tagasiside-valik")).to_be_checked()
     reply = page.locator("#kaasamine-tagasiside")
-    expect(reply.locator("[name=engagement] option:checked")).to_contain_text("liikmed")
-    # Four questions and the save — no `Märkus` (owner's review, 2026-10-12):
-    # everything relevant goes into `Saadud tagasiside`.
-    expect(reply.get_by_label("Saadud tagasiside")).to_be_visible()
+    engagement = reply.locator("[name=engagement]")
+    expect(engagement).to_have_value("")
+    engagement.select_option(index=1)
+    expect(engagement.locator("option:checked")).to_contain_text("liikmed")
+    # A linked round fixes the provenance at «Saadeti Kojale» (docs/adr/0170).
+    expect(reply.locator(f'input[name=provenance][value="{SAADETI_KOJALE}"]')).to_be_checked()
+    # No `Märkus` (owner's review, 2026-10-12): everything relevant goes into
+    # `Seisukoht`.
+    expect(reply.get_by_label("Seisukoht")).to_be_visible()
     expect(reply.locator("[name=stated_on]")).to_be_visible()
     expect(reply.locator("input[type=file]")).to_have_count(1)
     expect(reply.locator("[name=lawyer_note]")).to_have_count(0)
     expect(reply.locator(".cx-f__lab", has_text="Märkus")).to_have_count(0)
     expect(reply.locator("textarea")).to_have_count(1)
+    choose_organisation(page, FEEDBACK_PICKER)
     reply.locator("[name=summary]").fill("Kaks liiget vastasid, mõlemad toetavad.")
     reply.locator("input[type=file]").set_input_files(
         [_pdf(tmp_path, "vastus1.pdf"), _pdf(tmp_path, "vastus2.pdf", b"kaks")]
@@ -263,13 +274,17 @@ def test_an_engagement_is_started_then_its_replies_are_added(page, base_url, tmp
 
     # Both modes stay one click away (the save closed the family again). The
     # only round is finished now, and it still takes a later answer: it is
-    # offered, marked «lõpetatud», and preselected as the one choice
-    # (docs/adr/0167 §2).
+    # offered, marked «lõpetatud» (docs/adr/0167 §2), and chosen by hand —
+    # never preselected (docs/adr/0170 §1).
     open_add_panel(page, "kaasamine-alusta")
     expect(page.locator("#kaasamine-alusta [name=audience]")).to_be_visible()
     page.locator("label[for=kaasamine-tagasiside-valik]").click()
     later = page.locator("#kaasamine-tagasiside")
-    expect(later.locator("[name=engagement] option:checked")).to_contain_text("lõpetatud")
+    engagement = later.locator("[name=engagement]")
+    expect(engagement).to_have_value("")
+    engagement.select_option(index=1)
+    expect(engagement.locator("option:checked")).to_contain_text("lõpetatud")
+    choose_organisation(page, FEEDBACK_PICKER)
     later.locator("[name=summary]").fill("Kolmas liige vastas hiljem.")
     later.locator("button[type=submit]").click()
     page.wait_for_load_state("networkidle")

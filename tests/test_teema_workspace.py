@@ -452,7 +452,8 @@ def test_the_launcher_offers_its_choices_and_opens_none_of_them(signed_in, norma
         body.index('id="lisa-teemale"') : body.index("</section>", body.index('id="lisa-teemale"'))
     ]
 
-    for chip in ("+ Lisa", "+ Kaasamine", "+ Arvamus / tagasiside", "+ Ülevaade / uudis"):
+    # `+ Koja arvamus / kohtumine` was `+ Arvamus / tagasiside` until 2026-10-17.
+    for chip in ("+ Lisa", "+ Kaasamine", "+ Koja arvamus / kohtumine", "+ Ülevaade / uudis"):
         assert chip in zone, chip
     for choice in (
         # `Tavaline` left `+ Lisa` on 2026-10-07 (docs/adr/0143).
@@ -460,14 +461,17 @@ def test_the_launcher_offers_its_choices_and_opens_none_of_them(signed_in, norma
         "Oluline tähtaeg",
         "Jõustumine",
         "Töövõit",
-        # `+ Väline seisukoht` became two chips in docs/adr/0091 §3: one record
-        # and one panel partial, named by how what it holds reached the file.
-        # Both are choices inside `+ Arvamus / tagasiside` now.
-        "Meile saadetud tagasiside",
-        "Teiste arvamus",
+        # `+ Väline seisukoht` became two chips in docs/adr/0091 §3, and the
+        # two became one form again under `+ Kaasamine` in docs/adr/0170,
+        # which asks the provenance the chips used to fix.
+        "Alusta kaasamist",
+        "Lisa tagasiside",
         "Koja arvamus",
+        "Kohtumine / arutelu",
     ):
         assert f">{choice}<" in zone, choice
+    for retired in ("Meile saadetud tagasiside", "Teiste arvamus"):
+        assert f">{retired}<" not in zone, retired
 
     # Not peers of the four, and not in this zone at all.
     for gone in ("+ Järgmine tegevus", "+ Menetluse areng", "+ Menetluse link"):
@@ -478,14 +482,21 @@ def test_the_launcher_offers_its_choices_and_opens_none_of_them(signed_in, norma
     assert "disclosure-chip--last" not in zone
 
     assert 'cx-panel" open' not in zone
-    # Nine capture operations, nine saves. There is no shared save left, and
+    # Eight capture operations, eight saves. Nine until docs/adr/0170: the two
+    # feedback chips under `+ Arvamus / tagasiside` left (§5), and `Lisa
+    # tagasiside` — drawn on a Matter with no round as an empty state with no
+    # save — is now always the form, because it records positions that answer
+    # no round too (§2). There is no shared save left, and
     # closure's own went with `+ Lõpeta teema` (docs/adr/0131 §11).
     #
     # The organisation picker inside each feedback panel contributes no
     # `type="submit"`: its `+` is an explicit `type="button"`, precisely so that
     # naming a body the catalogue does not hold cannot submit the panel
     # (docs/adr/0073, `organisation_picker.html`).
-    assert zone.count('type="submit"') == 9
+    # Nine: `+ Lisa · Muu` joined (docs/adr/0097) and docs/adr/0170 removed two
+    # feedback saves and made `Lisa tagasiside` always a form. Ten since
+    # `Kohtumine / arutelu` (docs/adr/0097, amendment of 2026-10-17).
+    assert zone.count('type="submit"') == 10
     assert "composer__actions" not in zone
 
 

@@ -69,10 +69,14 @@ permissions:
   # Reading main's CI result for the commit (ENG-015). Nothing else.
   actions: read
 
+# Runner image pinned to ubuntu-24.04, not ubuntu-latest: GitHub moves
+# ubuntu-latest to Ubuntu 26 on 19 Oct 2026, and the visual baselines and the
+# OCR package cache are tied to the runner image. Move it deliberately, with
+# the baselines regenerated in the same change (JTEST-010).
 jobs:
   build:
     name: Build and save the image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
 
     steps:

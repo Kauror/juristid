@@ -32,6 +32,7 @@ from app.core.enums import Visibility
 from app.documents.models import Document
 from app.documents.services import add_evidence_version, create_document
 from app.matters import work_items as wi
+from app.matters import workspace
 from app.matters.activity import ActivityBasis, activity_for_matter
 from app.matters.department_dashboard import _matters_changed_by_owner
 from app.matters.enums import EngagementKind
@@ -59,6 +60,7 @@ from app.workflow.enums import DatePrecision, Disposition
 from app.workflow.models import NextAction
 from app.workflow.services import complete_next_action, set_next_action
 from tests import factories
+from tests.refusals import refused
 from tests.test_dokumendid_opinion_block_retired import _sent_opinion
 
 pytestmark = pytest.mark.django_db
@@ -228,6 +230,34 @@ def _position_unknown(matter, actor, organisation, **_) -> None:
     record_external_position(matter=matter, organisation=organisation, url=URL, actor=actor)
 
 
+def _muu_today(matter, actor, **_) -> None:
+    workspace.add_matter_other(
+        matter=matter, author=actor, description="Taustamaterjal.", occurred_on=_today()
+    )
+
+
+def _muu_ahead(matter, actor, **_) -> None:
+    """Refused (JQA-001): a `Muu` says what happened, so nothing is stored."""
+    with refused(workspace.OTHER_ENTRY_DAY_AHEAD):
+        workspace.add_matter_other(
+            matter=matter, author=actor, description="Taustamaterjal.", occurred_on=_day(5)
+        )
+
+
+def _kohtumine_today(matter, actor, **_) -> None:
+    workspace.add_matter_meeting(
+        matter=matter, author=actor, summary="Arutelu ministeeriumiga.", occurred_on=_today()
+    )
+
+
+def _kohtumine_ahead(matter, actor, **_) -> None:
+    """Refused (JQA-001): a `Kohtumine` is a meeting held, so nothing is stored."""
+    with refused(workspace.MEETING_ENTRY_DAY_AHEAD):
+        workspace.add_matter_meeting(
+            matter=matter, author=actor, summary="Kokkulepitud kohtumine.", occurred_on=_day(5)
+        )
+
+
 def _closure(matter, actor, **_) -> None:
     close_matter(matter=matter, disposition=Disposition.COMPLETED, actor=actor)
 
@@ -276,6 +306,10 @@ CASES: list[tuple[str, Callable[..., Any], int, str, bool, bool]] = [
     ("16b overview only planned", _overview_planned, OLD, ActivityBasis.ENTRY, True, False),
     ("18 position, day known", _position_known, -1, "EXTERNAL_POSITION", False, False),
     ("19 position, day unknown", _position_unknown, OLD, ActivityBasis.ENTRY, True, False),
+    ("21 muu dated today", _muu_today, 0, ActivityBasis.ENTRY, False, True),
+    ("22 muu ahead", _muu_ahead, OLD, ActivityBasis.ENTRY, True, False),
+    ("23 kohtumine dated today", _kohtumine_today, 0, ActivityBasis.ENTRY, False, True),
+    ("24 kohtumine ahead", _kohtumine_ahead, OLD, ActivityBasis.ENTRY, True, False),
 ]
 
 

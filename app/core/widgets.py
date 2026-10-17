@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from django import forms
+from django.core.validators import MaxValueValidator, MinValueValidator
 
 from app.core.dates import (
     ESTONIAN_DATE_ERROR,
@@ -18,6 +19,7 @@ from app.core.dates import (
     ESTONIAN_DATE_PLACEHOLDER,
     format_estonian_date,
 )
+from app.workflow.dates import DAY_OUT_OF_RANGE, EARLIEST_DAY, LATEST_DAY
 
 
 class EstonianDateInput(forms.DateInput):
@@ -75,6 +77,14 @@ class EstonianDateField(forms.DateField):
     ISO stays in the accepted set. Every link, bookmark and test written before
     this field existed carries ``2026-09-07``, and refusing them would turn a
     presentation change into a data-entry outage.
+
+    **A day outside 1.1.1990–31.12.2100 is refused** (CORR-02, JQA-008), on
+    every form that uses this field, with ``DAY_OUT_OF_RANGE``. The range is the
+    one `app.workflow.dates` already owned for a typed year; without it here
+    ``01.01.0001`` became Tallinn midnight in year 0 UTC and a 500 on six
+    doors. No day box in the application records anything older: the register
+    starts in 2011, and an imported row dated earlier is read by the importer,
+    which does not use this field.
     """
 
     widget = EstonianDateInput
@@ -85,6 +95,12 @@ class EstonianDateField(forms.DateField):
         errors.update(kwargs.pop("error_messages", None) or {})
         kwargs["error_messages"] = errors
         super().__init__(**kwargs)
+        self.validators.extend(
+            (
+                MinValueValidator(EARLIEST_DAY, message=DAY_OUT_OF_RANGE),
+                MaxValueValidator(LATEST_DAY, message=DAY_OUT_OF_RANGE),
+            )
+        )
 
 
 class DescribedRadioSelect(forms.RadioSelect):

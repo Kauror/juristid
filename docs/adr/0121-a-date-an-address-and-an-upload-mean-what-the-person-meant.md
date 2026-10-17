@@ -67,6 +67,23 @@ kuni`, `Jõustumine`, a `Töövõit` and the timeline's steps already accepted a
 day. Relational rules are not date-policy and stay: a reply-by date may not
 precede its round (ENG-043), and years stay within 1990–2100.
 
+**Made true for a typed day on 2026-10-17 (JQA-008, audit of #457).** The range
+had been enforced only where a *year* was typed; a day box read any day, and
+`01.01.0001` on `Muu`, `Kohtumine`, `+ Koja arvamus`, Dokumendid «Registreeri
+saatmine», `Muuda` on a recorded send and `Uus teema` «Märgi saadetud Koja
+arvamuseks» became Tallinn midnight in year 0 UTC — a 500 from PostgreSQL — while
+`02.01.0001` was stored. `EstonianDateField` now refuses a day outside
+1.1.1990–31.12.2100 on every form with «Kuupäev peab olema vahemikus
+1.1.1990–31.12.2100.» (`app.workflow.dates.DAY_OUT_OF_RANGE`), and the services
+that turn a day into a stored timestamp — the dated `Entry` writer behind `Muu`
+and `Kohtumine`, and every send writer and send correction through
+`_refuse_a_future_send` — refuse it as well. One range for every day box: none
+records anything older (the register starts in 2011), and the importers, which
+may read an older register row as evidence, do not use the field. The send
+service asks a correction only when it moves the day, as it already did for a
+future day; an edit form that redisplays a stored day outside the range asks
+the person to correct it, since no form could have written one.
+
 What a date *means* is decided where it is read:
 
 * **Teema käik draws the row at once and marks it `Eesolev`** beside its date

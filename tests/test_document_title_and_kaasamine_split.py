@@ -10,11 +10,14 @@ KAASAMINE
 * B — an open round: it opens on `Lisa tagasiside`;
 * C — both modes are always drawn and chosen by hand;
 * D — the start form asks only start questions and writes the round;
-* E — the feedback form asks only feedback questions, attaches a received-
-  feedback record and its files to the named round;
-* F — only completed rounds: back to `Alusta kaasamist`;
-* G — several open rounds: nothing preselected, a choice is required;
-* H — the lifecycle is unchanged: feedback closes nothing.
+* E — the feedback form asks no start questions, attaches a received-
+  feedback record and its files to the round it names;
+* F — only completed rounds: back to `Alusta kaasamist`; no round at all: the
+  feedback form is still drawn (docs/adr/0170 §2);
+* G — a round is never preselected and never required (docs/adr/0170 §3,
+  superseding «one open round preselected» and «a round is required»): a
+  standalone save is recorded loose and touches no wait;
+* H — `Lõpeta kaasamine` is unchanged.
 """
 
 from __future__ import annotations
@@ -39,7 +42,7 @@ from app.documents.services import (
     rename_document,
 )
 from app.matters.enums import EngagementKind, ExternalPositionProvenance
-from app.matters.forms import ENGAGEMENT_FEEDBACK_NEEDS_ROUND
+from app.matters.forms import FEEDBACK_NEEDS_PROVENANCE
 from app.matters.locks import CLOSED_MATTER_REFUSAL
 from app.matters.models import MatterEngagement, MatterExternalPosition
 from app.matters.services import add_engagement, close_matter, complete_engagement_feedback
@@ -85,6 +88,16 @@ def _round(matter, actor, title: str) -> MatterEngagement:
         occurred_on=timezone.localdate(),
         actor=actor,
     )
+
+
+def _reply_form(body: str) -> str:
+    reply = body[body.index('id="kaasamine-tagasiside"') :]
+    return reply[: reply.index("</form>")]
+
+
+def _selected_rounds(reply: str) -> list[str]:
+    """The round ids the `Seotud kaasamine` box opens on — never any (§3)."""
+    return re.findall(r'<option value="([0-9a-f-]{36})"[^>]*selected', reply)
 
 
 def _checked(body: str, radio_id: str) -> bool:
@@ -259,14 +272,18 @@ def test_e_feedback_attaches_to_the_named_round_with_its_files(
     reply = body[body.index('id="kaasamine-tagasiside"') :]
     reply = reply[: reply.index("</form>")]
 
-    for name in ("engagement", "summary", "stated_on", "attachments"):
+    # Since docs/adr/0170 the one form for every position: the organisation
+    # and how the position reached Koda are asked beside the round.
+    for name in ("organisation_name", "provenance", "engagement", "summary", "stated_on"):
         assert f'name="{name}"' in reply, name
-    # No `Märkus` since the owner's review of 2026-10-12: everything relevant
-    # goes into `Saadud tagasiside`.
-    for name in ("audience", "feedback_deadline", "smaily_url", "organisation", "lawyer_note"):
+    assert 'name="attachments"' in reply
+    # No start question, and no `Märkus` since the owner's review of 2026-10-12.
+    for name in ("audience", "feedback_deadline", "smaily_url", "lawyer_note"):
         assert f'name="{name}"' not in reply, name
-    # One open round: preselected.
-    assert re.search(rf'<option value="{round_.pk}"[^>]*selected', reply)
+    # One open round, and still not preselected (docs/adr/0170 §3): the person
+    # names the round this answers.
+    assert f'value="{round_.pk}"' in reply
+    assert _selected_rounds(reply) == []
 
     response = signed_in.post(
         reverse("matters:add_engagement_reply", kwargs={"pk": normal_matter.pk}),
@@ -308,28 +325,79 @@ def test_f_only_completed_rounds_opens_on_alusta(signed_in, normal_matter, speci
 
     assert _checked(body, "kaasamine-alusta-valik")
     # Since docs/adr/0167 §2 a finished round still takes later answers: the
-    # feedback mode offers it, marked, and preselects it as the one choice.
-    reply = body[body.index('id="kaasamine-tagasiside"') :]
-    reply = reply[: reply.index("</form>")]
-    assert re.search(rf'<option value="{round_.pk}"[^>]*selected[^>]*>[^<]*lõpetatud', reply)
+    # feedback mode offers it, marked — and, since docs/adr/0170 §3, does not
+    # preselect it even as the one choice.
+    reply = _reply_form(body)
+    assert re.search(rf'<option value="{round_.pk}"[^>]*>[^<]*lõpetatud', reply)
+    assert _selected_rounds(reply) == []
 
 
-def test_f_no_round_at_all_says_so(signed_in, normal_matter):
+def test_f_no_round_at_all_still_draws_the_feedback_form(signed_in, normal_matter):
+    """Was «Kaasamist ei ole. Alusta kõigepealt kaasamist.» until docs/adr/0170 §2.
+
+    `Lisa tagasiside` records positions that answer no round too, so with no
+    round the form is drawn — without a `Seotud kaasamine` box, since there is
+    nothing to link — and it saves.
+    """
     body = _detail(signed_in, normal_matter)
+    reply = _reply_form(body)
 
-    reply = body[body.index('id="kaasamine-tagasiside"') :]
-    assert "Kaasamist ei ole" in reply[: reply.index("</div>")]
+    assert "Kaasamist ei ole" not in body
+    assert 'name="engagement"' not in reply
+    assert 'name="provenance"' in reply and 'name="summary"' in reply
+
+    response = signed_in.post(
+        reverse("matters:add_engagement_reply", kwargs={"pk": normal_matter.pk}),
+        {"provenance": ExternalPositionProvenance.RECEIVED.value, "summary": "Liige helistas."},
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == 200
+    (position,) = MatterExternalPosition.objects.filter(matter=normal_matter)
+    assert position.engagement_id is None
+    assert not MatterEngagement.objects.filter(matter=normal_matter).exists()
 
 
-def test_g_several_open_rounds_require_a_choice(signed_in, normal_matter, specialist):
+def test_g_one_open_round_is_not_chosen_for_a_standalone_save(signed_in, normal_matter, specialist):
+    """The single open round is neither preselected nor guessed (docs/adr/0170 §3).
+
+    Superseded rule: «exactly one open round is preselected». A preselected
+    round would turn unsolicited feedback or a published opinion into an answer
+    to Koda's consultation and end its wait.
+    """
+    round_ = _round(normal_matter, specialist, "Liikmete küsitlus")
+    assert _selected_rounds(_reply_form(_detail(signed_in, normal_matter))) == []
+
+    response = signed_in.post(
+        reverse("matters:add_engagement_reply", kwargs={"pk": normal_matter.pk}),
+        {"provenance": ExternalPositionProvenance.RECEIVED.value, "summary": "Omal algatusel."},
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == 200
+    (position,) = MatterExternalPosition.objects.filter(matter=normal_matter)
+    assert position.engagement_id is None
+    round_.refresh_from_db()
+    assert round_.has_open_feedback_wait
+    assert round_.feedback_closed_at is None
+
+
+def test_g_several_open_rounds_need_no_choice_and_keep_waiting(
+    signed_in, normal_matter, specialist
+):
+    """Superseded rule: «several open rounds — a round is required».
+
+    The round is optional now (docs/adr/0170 §3). What is still required is the
+    provenance, which is stated and never inferred (docs/adr/0091 §3.2): a save
+    that states neither round nor provenance is refused, writes nothing and
+    reopens `Lisa tagasiside`. Stated, it saves loose, and both waits stay open.
+    """
     first = _round(normal_matter, specialist, "Esimene küsitlus")
     second = _round(normal_matter, specialist, "Teine küsitlus")
 
-    body = _detail(signed_in, normal_matter)
-    reply = body[body.index('id="kaasamine-tagasiside"') :]
-    reply = reply[: reply.index("</form>")]
+    reply = _reply_form(_detail(signed_in, normal_matter))
     assert f'value="{first.pk}"' in reply and f'value="{second.pk}"' in reply
-    assert not re.search(r"<option value=\"[0-9a-f-]{36}\"[^>]*selected", reply)
+    assert _selected_rounds(reply) == []
 
     refusal = signed_in.post(
         reverse("matters:add_engagement_reply", kwargs={"pk": normal_matter.pk}),
@@ -338,10 +406,24 @@ def test_g_several_open_rounds_require_a_choice(signed_in, normal_matter, specia
     )
 
     assert refusal.status_code == 400
-    assert ENGAGEMENT_FEEDBACK_NEEDS_ROUND in refusal.content.decode()
+    assert FEEDBACK_NEEDS_PROVENANCE in refusal.content.decode()
     assert not MatterExternalPosition.objects.filter(matter=normal_matter).exists()
-    # The refusal reopens `Lisa tagasiside`, not the start form.
+    # The refusal reopens `Lisa tagasiside`, not the start form, with the text.
     assert _checked(refusal.content.decode(), "kaasamine-tagasiside-valik")
+    assert "Kelle kohta?" in _reply_form(refusal.content.decode())
+
+    saved = signed_in.post(
+        reverse("matters:add_engagement_reply", kwargs={"pk": normal_matter.pk}),
+        {"provenance": ExternalPositionProvenance.RECEIVED.value, "summary": "Kelle kohta?"},
+        headers={"HX-Request": "true"},
+    )
+
+    assert saved.status_code == 200
+    (position,) = MatterExternalPosition.objects.filter(matter=normal_matter)
+    assert position.engagement_id is None
+    for round_ in (first, second):
+        round_.refresh_from_db()
+        assert round_.has_open_feedback_wait, round_.title
 
 
 def test_g_a_foreign_round_is_not_accepted(signed_in, normal_matter, specialist):

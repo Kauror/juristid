@@ -313,7 +313,9 @@ def test_a_restricted_matter_keeps_its_visibility_and_its_filter(signed_in, read
 FAMILIES = [
     "+ Ülevaade / uudis",
     "+ Kaasamine",
-    "+ Arvamus / tagasiside",
+    # `+ Arvamus / tagasiside` until 2026-10-17 (docs/adr/0097, amendment of
+    # that date): Koda's opinion and, since then, a meeting.
+    "+ Koja arvamus / kohtumine",
     "+ Lisa",
 ]  # 2026-10-07 order
 
@@ -370,7 +372,11 @@ def test_no_retired_chip_is_a_top_level_choice(signed_in, specialist, stage, chi
     """
     matter = factories.MatterFactory(owner=specialist)
 
-    assert chip not in launcher(page_of(signed_in, teema_url(matter)))
+    # `+ Koja arvamus` is retired as a chip of its own, and its words open the
+    # family heading `+ Koja arvamus / kohtumine` since 2026-10-17
+    # (docs/adr/0097): that heading is not the retired chip.
+    zone = launcher(page_of(signed_in, teema_url(matter)))
+    assert re.search(re.escape(chip) + r"(?! / kohtumine)", zone) is None
 
 
 def test_marge_offers_its_four_kinds_and_defaults_to_arvamuse_tahtaeg(signed_in, specialist, stage):
@@ -388,13 +394,16 @@ def test_marge_offers_its_four_kinds_and_defaults_to_arvamuse_tahtaeg(signed_in,
     assert checked == ["marge-arvamuse-tahtaeg"]
 
 
-def test_arvamus_offers_its_three_children(signed_in, specialist, stage):
+def test_arvamus_offers_only_koja_arvamus(signed_in, specialist, stage):
+    """The two feedback children moved to `+ Kaasamine · Lisa tagasiside` (docs/adr/0170)."""
     matter = factories.MatterFactory(owner=specialist)
 
     zone = launcher(page_of(signed_in, teema_url(matter)))
 
-    for label in ("Meile saadetud tagasiside", "Teiste arvamus", "Koja arvamus"):
-        assert f">{label}</label>" in zone
+    assert ">Koja arvamus</label>" in zone
+    assert ">Lisa tagasiside</label>" in zone
+    for label in ("Meile saadetud tagasiside", "Teiste arvamus"):
+        assert f">{label}</label>" not in zone
 
 
 def test_the_sub_choices_are_their_own_radio_groups(signed_in, specialist, stage):
@@ -403,8 +412,11 @@ def test_the_sub_choices_are_their_own_radio_groups(signed_in, specialist, stage
 
     zone = launcher(page_of(signed_in, teema_url(matter)))
 
-    assert zone.count('name="marke-liik"') == 4
-    assert zone.count('name="arvamuse-liik"') == 3
+    # Five since `Muu` joined on 2026-10-15 (docs/adr/0097).
+    assert zone.count('name="marke-liik"') == 5
+    # `Koja arvamus` (docs/adr/0170) and, since 2026-10-17, `Kohtumine /
+    # arutelu` (docs/adr/0097, amendment of that date).
+    assert zone.count('name="arvamuse-liik"') == 2
 
 
 def test_teema_toimingud_is_gone_and_both_controls_moved(

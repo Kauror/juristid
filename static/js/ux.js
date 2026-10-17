@@ -700,6 +700,71 @@
     }
   });
 
+  /* `+ Kaasamine · Lisa tagasiside` (owner's UX round, stage 3). A linked
+     round fixes the provenance at «Saadeti Kojale»: choosing one checks it and
+     disables «Avaldatud mujal», clearing the round gives the choice back — and
+     nothing is chosen for a form with no round (docs/adr/0091 §3.2). Leaving
+     «Saadeti Kojale» clears `Liige`, which the stylesheet then hides, so a
+     hidden box never posts a refused answer. The form refuses both on the
+     server whatever this does (docs/adr/0095 §4).
+
+     Whether «Saadeti Kojale» is the round's answer or the person's goes with
+     the post (`provenance_implied`), so a refused form is redrawn knowing it
+     and clearing the round there still keeps an answer the person chose, and
+     their `Liige` with it (docs/adr/0170 §3; 2026-10-17 audit, JQA-004). */
+  function markImplied(form, radio, implied) {
+    if (implied) {
+      radio.setAttribute("data-feedback-implied", "");
+    } else {
+      radio.removeAttribute("data-feedback-implied");
+    }
+    var flag = form.querySelector("[data-feedback-implied-flag]");
+    if (flag) {
+      flag.value = implied ? "1" : "";
+    }
+  }
+
+  document.addEventListener("change", function (event) {
+    var control = event.target;
+    var form = control && control.closest ? control.closest("[data-feedback-form]") : null;
+    if (!form) {
+      return;
+    }
+    var radios = form.querySelectorAll('input[name="provenance"]');
+    if (control.name === "provenance") {
+      /* The person stated it: no longer an answer implied by a round. */
+      Array.prototype.forEach.call(radios, function (radio) {
+        markImplied(form, radio, false);
+      });
+    }
+    if (control.name === "engagement") {
+      var linked = Boolean(control.value);
+      Array.prototype.forEach.call(radios, function (radio) {
+        if (radio.value === "RECEIVED") {
+          if (linked && !radio.checked) {
+            radio.checked = true;
+            markImplied(form, radio, true);
+          } else if (!linked && radio.hasAttribute("data-feedback-implied")) {
+            /* Implied by the round (or by `Tehtud`), never stated: clearing
+               the round leaves the question unanswered again. */
+            radio.checked = false;
+            markImplied(form, radio, false);
+          }
+        } else {
+          radio.disabled = linked;
+          if (linked) {
+            radio.checked = false;
+          }
+        }
+      });
+    }
+    var received = form.querySelector('input[name="provenance"][value="RECEIVED"]');
+    var member = form.querySelector('input[name="source_is_member"]');
+    if (member && received && !received.checked) {
+      member.checked = false;
+    }
+  });
+
   /* The same markup as the server renders, for a row built here. */
   function titleEditFor(name, title, original) {
     var box = document.createElement("span");
@@ -896,7 +961,23 @@
    * Opens the one `Lisa tagasiside` form — `+ Kaasamine`, then its second
    * choice — with this round chosen, and puts the caret in it. The same form
    * `LISA TEEMALE` offers, not a second one (owner's round, 2026-10-07).
+   *
+   * **Only a form that can name the round.** `Tehtud` promises that the save
+   * answers this round and ends its wait. A form on the page that has no
+   * `Seotud kaasamine`, or does not offer this round, would save the answer
+   * standalone and leave the wait open, with nothing on the page saying so
+   * (2026-10-17 audit, JQA-002). Then the click is left to the link itself:
+   * the server's `?ava=tagasiside&kaasamine=…` opens the form with the round
+   * chosen (docs/adr/0168 §2). A draft is not normally on such a form — the
+   * panel's `data-draft-state` keeps one written against other rounds from
+   * being carried — so this is the guard behind that, not the usual path.
    */
+  function offersRound(select, id) {
+    return Array.prototype.some.call(select.options, function (option) {
+      return option.value === id;
+    });
+  }
+
   document.addEventListener("click", function (event) {
     var opener = event.target.closest ? event.target.closest("[data-open-feedback]") : null;
     if (!opener) {
@@ -904,7 +985,10 @@
     }
     var launcher = document.getElementById("lisa-kaasamine-valik");
     var mode = document.getElementById("kaasamine-tagasiside-valik");
-    if (!launcher || !mode) {
+    var panel = document.getElementById("kaasamine-tagasiside");
+    var round = panel && panel.querySelector("select[name=engagement]");
+    var id = opener.getAttribute("data-open-feedback") || "";
+    if (!launcher || !mode || !round || !id || !offersRound(round, id)) {
       return;
     }
     event.preventDefault();
@@ -914,18 +998,12 @@
         radio.dispatchEvent(new Event("change", { bubbles: true }));
       }
     });
-    var panel = document.getElementById("kaasamine-tagasiside");
-    var round = panel && panel.querySelector("select[name=engagement]");
-    if (round) {
-      round.value = opener.getAttribute("data-open-feedback");
-      round.dispatchEvent(new Event("change", { bubbles: true }));
-    }
-    if (panel) {
-      panel.scrollIntoView({ block: "center" });
-      var first = panel.querySelector("textarea, input[type=text]");
-      if (first) {
-        first.focus({ preventScroll: true });
-      }
+    round.value = id;
+    round.dispatchEvent(new Event("change", { bubbles: true }));
+    panel.scrollIntoView({ block: "center" });
+    var first = panel.querySelector("textarea, input[type=text]");
+    if (first) {
+      first.focus({ preventScroll: true });
     }
   });
 

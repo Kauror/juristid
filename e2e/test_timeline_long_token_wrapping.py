@@ -53,11 +53,14 @@ from datetime import date, timedelta
 import pytest
 
 from e2e.conftest import (
+    AVALDATUD_MUJAL,
+    FEEDBACK_PICKER,
     KAIK_ROW,
     MARTIN,
+    choose_organisation,
     create_matter,
     finish_current_action,
-    open_add_panel,
+    open_feedback_form,
     open_kaik_row,
     record_marge,
     set_next_step,
@@ -283,18 +286,12 @@ def test_a_valine_seisukoht_summary_does_not_widen_the_page(page, base_url: str)
     sign_in(page, base_url, MARTIN)
     url = create_matter(page, base_url, unique_title("Pikk viide seisukohas"))
 
-    open_add_panel(page, "arvamus-teiste")
-    box = page.locator("#valine-seisukoht-otsi")
-    box.click()
-    # Typed a key at a time, the way the picker is driven everywhere else: the
-    # chips are labels whose input is clipped, so ticking the control directly
-    # asserts something a person never does (e2e/test_external_position.py).
-    box.type("Näidismi", delay=20)
-    page.locator("#valine-seisukoht-tulemused").get_by_role(
-        "option", name="Näidisministeerium", exact=True
-    ).click()
-    page.locator("#arvamus-teiste [name=summary]").fill(f"Nende põhjendus on siin {PASTED_LINK}")
-    page.locator("#arvamus-teiste").get_by_role("button", name="Salvesta").click()
+    # «Teiste arvamus» is `Lisa tagasiside` · «Avaldatud mujal» since
+    # docs/adr/0170; the picker is typed a key at a time, as a person does.
+    form = open_feedback_form(page, AVALDATUD_MUJAL)
+    choose_organisation(page, FEEDBACK_PICKER)
+    form.locator("[name=summary]").fill(f"Nende põhjendus on siin {PASTED_LINK}")
+    form.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
     page.wait_for_function(
         """needle => [...document.querySelectorAll('.uxtl__mssub')]
