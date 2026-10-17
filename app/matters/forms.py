@@ -5805,8 +5805,37 @@ class FeedbackForm(ExternalPositionFieldsMixin, forms.Form):
 
     @property
     def round_is_linked(self) -> bool:
-        """Whether the form names a round now — the provenance is then fixed."""
+        """Whether the form names a valid round now — the provenance is then fixed.
+
+        Bound, it is the *cleaned* round, so a foreign or removed id that the
+        field refused does not lock the provenance on the re-rendered form.
+        """
+        if self.is_bound:
+            return getattr(self, "cleaned_data", {}).get("engagement") is not None
         return bool(self["engagement"].value())
+
+    @property
+    def shown_provenance(self) -> str:
+        """The provenance the radio is drawn with — never a checked, disabled radio.
+
+        With a round linked it is «Saadeti Kojale», whatever was posted: the
+        other answer is drawn disabled and must not also be drawn checked,
+        because a disabled input posts nothing and the next `Salvesta` would
+        save an answer nobody could see (independent review of #455, P2-2).
+        """
+        if self.round_is_linked:
+            return ExternalPositionProvenance.RECEIVED.value
+        return str(self["provenance"].value() or "")
+
+    @property
+    def member_is_checked(self) -> bool:
+        """`Liige` drawn ticked only beside a shown «Saadeti Kojale».
+
+        The stylesheet hides the box otherwise, so a ticked-but-hidden box on a
+        refused form would post a mark the person cannot see.
+        """
+        received = ExternalPositionProvenance.RECEIVED.value
+        return bool(self["source_is_member"].value()) and self.shown_provenance == received
 
     def clean(self) -> dict[str, Any]:
         from app.matters.services import EXTERNAL_POSITION_MEMBER_IS_RECEIVED_ONLY

@@ -152,6 +152,15 @@ def test_a_linked_round_fixes_the_provenance_and_its_answer_ends_the_wait(page, 
 
     select.select_option(value="")
     expect(_provenance(form, AVALDATUD_MUJAL)).to_be_enabled()
+    # «Saadeti Kojale» was implied by the round, never stated: clearing the
+    # round leaves the question unanswered again (independent review of #455).
+    expect(_provenance(form, SAADETI_KOJALE)).not_to_be_checked()
+
+    # Stated by the person, it stays when the round is cleared.
+    form.locator(f'label.chip:has(input[value="{SAADETI_KOJALE}"])').click()
+    select.select_option(index=1)
+    select.select_option(value="")
+    expect(_provenance(form, SAADETI_KOJALE)).to_be_checked()
 
     select.select_option(index=1)
     choose_organisation(page, FEEDBACK_PICKER)

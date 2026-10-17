@@ -494,11 +494,31 @@ def test_a_position_may_answer_an_engagement(normal_matter, specialist, ministry
         matter=normal_matter, kind=EngagementKind.EMAIL_CAMPAIGN, title="liikmed", actor=specialist
     )
 
+    # An answer to Koda's round was sent to Koda: RECEIVED (docs/adr/0170 §3).
     position = _recorded(
-        normal_matter, ministry, specialist, url=POSITION_URL, engagement=engagement
+        normal_matter,
+        ministry,
+        specialist,
+        url=POSITION_URL,
+        engagement=engagement,
+        provenance=ExternalPositionProvenance.RECEIVED.value,
     )
 
     assert position.engagement_id == engagement.pk
+
+
+def test_a_published_position_may_not_answer_an_engagement(normal_matter, specialist, ministry):
+    """docs/adr/0170 §3: `DISCOVERED` with a round is refused by the service."""
+    from app.matters.services import EXTERNAL_POSITION_ROUND_ANSWER_IS_RECEIVED
+
+    engagement = add_engagement(
+        matter=normal_matter, kind=EngagementKind.EMAIL_CAMPAIGN, title="liikmed", actor=specialist
+    )
+
+    with refused(EXTERNAL_POSITION_ROUND_ANSWER_IS_RECEIVED):
+        _recorded(normal_matter, ministry, specialist, url=POSITION_URL, engagement=engagement)
+
+    assert not MatterExternalPosition.objects.filter(matter=normal_matter).exists()
 
 
 def test_an_unsolicited_position_needs_no_engagement(normal_matter, specialist, ministry):
@@ -566,7 +586,14 @@ def test_the_linked_engagement_reads_on_the_row(normal_matter, specialist, minis
     engagement = add_engagement(
         matter=normal_matter, kind=EngagementKind.EMAIL_CAMPAIGN, title="liikmed", actor=specialist
     )
-    _recorded(normal_matter, ministry, specialist, url=POSITION_URL, engagement=engagement)
+    _recorded(
+        normal_matter,
+        ministry,
+        specialist,
+        url=POSITION_URL,
+        engagement=engagement,
+        provenance=ExternalPositionProvenance.RECEIVED.value,
+    )
 
     row = next(item for item in _timeline(normal_matter, specialist) if item.external_position)
 
