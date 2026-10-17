@@ -8431,12 +8431,27 @@ def _record_external_position(
         # without this, a refusal under the lock — a closed Matter in a stale
         # tab, a rejected upload — left that institution in the catalogue.
         with transaction.atomic():
+            # `None` where neither half of the picker was answered: received
+            # feedback that names nobody, which since docs/adr/0101 is a record
+            # rather than a gap. A published opinion with no author is refused by
+            # the form before this (docs/adr/0091 §3.3). Resolved first, inside
+            # this transaction, so the repeat check below can compare authors and
+            # a refusal leaves no new institution behind.
+            organisation = (
+                resolve_addressee(chosen=chosen, typed_name=typed)
+                if (chosen is not None or typed)
+                else None
+            )
+            source_is_member = bool(form.cleaned_data.get("source_is_member"))
             if finishes_wait:
                 # A finished round takes later answers (docs/adr/0167 §2), so a
-                # second press of `Salvesta` must not file the same one twice.
+                # second press of `Salvesta` must not file the same one twice —
+                # while a second organisation's identical answer is its own.
                 engagement_replies.refuse_repeated_reply(
                     matter=matter,
                     engagement=answered,
+                    organisation=organisation,
+                    source_is_member=source_is_member,
                     summary=form.cleaned_data.get("summary") or "",
                     url=form.cleaned_data.get("url") or "",
                     stated_on=form.cleaned_data.get("stated_on_value"),
@@ -8445,44 +8460,24 @@ def _record_external_position(
             workspace.add_matter_external_position(
                 matter=matter,
                 author=request.user,
-                # `None` where neither half of the picker was answered. The form has
-                # already refused that on `+ Teiste arvamus` — a published opinion
-                # with no author is an anonymous claim — so reaching here with
-                # nothing is received feedback that names nobody, which since
-                # docs/adr/0101 is a record rather than a gap: a lawyer writing down
-                # what a member said on the telephone has neither a catalogue row
-                # nor a collection to name (OWNER-01).
-                organisation=(
-                    resolve_addressee(chosen=chosen, typed_name=typed)
-                    if (chosen is not None or typed)
-                    else None
-                ),
+                organisation=organisation,
                 provenance=provenance,
-                # **The three answers neither panel asks any more**, and each of
-                # them is a `.get` on a field the form does not declare — so this is
-                # not a view choosing to ignore a value, it is a value that has
-                # nowhere to arrive. A POST carrying `source_label`, `lawyer_note`
-                # or `engagement` to either endpoint reaches a form that never
-                # cleaned it, and what reaches the service is the empty answer
-                # below. `Muuda` still asks all three, and every stored row keeps
-                # what it has (docs/adr/0095 §5).
+                # `Allikas` and `Märkus` are not declared by `FeedbackForm`, so
+                # these are the empty answer whatever a POST carries; `Muuda`
+                # still asks both on rows that have them (docs/adr/0095 §5).
                 source_label=form.cleaned_data.get("source_label") or "",
                 url=form.cleaned_data.get("url") or "",
-                # The resolved anchor and its precision. On these two panels that is
-                # the day box itself at `EXACT`: the period fields are not on the
+                # The day box itself at `EXACT`: the period fields are not on the
                 # form, so a crafted `..._precision=QUARTER` is read by nothing
                 # (`ExternalPositionFieldsMixin.offers_precision`).
                 stated_on=form.cleaned_data.get("stated_on_value"),
                 stated_on_precision=form.cleaned_data["stated_on_precision"],
                 summary=form.cleaned_data.get("summary") or "",
                 lawyer_note=form.cleaned_data.get("lawyer_note") or "",
-                # `Liige`, and only from the panel that asks it. `+ Teiste arvamus`
-                # declares no such field, so this is `None` there — and the service
-                # refuses a `True` on that provenance in any case, because the box
-                # being absent and the value being refused are two separate defences
-                # (docs/adr/0095 §4).
-                source_is_member=bool(form.cleaned_data.get("source_is_member")),
-                engagement=form.cleaned_data.get("engagement"),
+                # `Liige` — refused off RECEIVED by the form, the service and a
+                # `CHECK` (docs/adr/0095 §4).
+                source_is_member=source_is_member,
+                engagement=answered,
                 uploads=form.cleaned_data["attachments"],
             )
             # **`Lisa tagasiside` finishes the wait of the round it answers**

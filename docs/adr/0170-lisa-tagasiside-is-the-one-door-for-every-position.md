@@ -99,11 +99,26 @@ disabled on the page and refused by the form
 (`FEEDBACK_LINKED_ROUND_IS_RECEIVED`) rather than rewritten. A save with a
 round and no stated provenance (no-script) is that same `RECEIVED`.
 
+The rule is the **service's**, not only the form's: `record_external_position`
+refuses `DISCOVERED` with a round, and `correct_external_position` refuses a
+`DISCOVERED` row a round it did not already hold
+(`EXTERNAL_POSITION_ROUND_ANSWER_IS_RECEIVED`). A link a historical row already
+carries is kept, so the row stays correctable without being rewritten; `LEGACY`
+rows are not judged. The page never draws a radio both checked and disabled, and
+draws `Liige` ticked only beside a shown «Saadeti Kojale», so a refused form
+re-rendered and saved again cannot post an answer the person could not see. A
+«Saadeti Kojale» checked because a round was chosen (or by `Tehtud`) is cleared
+again when the round is cleared, unless the person chose it.
+
 ### 4. Recording a reply versus recording a published opinion
 
 Only a position **linked to a round** is a reply to it:
 
-* an identical repeat to the round is refused (`refuse_repeated_reply`);
+* an identical repeat to the round is refused (`refuse_repeated_reply`) —
+  identical now including the **author**: the same organisation (or none) and the
+  same `Liige` mark. The round-only form named no author, so equal words were the
+  same answer; now two organisations' «Toetame.» are two answers (0167 D3: an
+  accidental duplicate is prevented, a deliberate one is not);
 * the first answer to an open round finishes its wait in the same transaction
   (`finish_wait_on_reply` → `complete_engagement_feedback`);
 * a later answer to a finished round is recorded against it and the closure
