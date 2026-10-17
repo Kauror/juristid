@@ -75,7 +75,7 @@ def matter(page, base_url):
     create_matter(page, base_url, unique_title("Lisa tagasiside"))
 
 
-def test_the_opinion_family_keeps_only_koja_arvamus(page, matter):
+def test_the_opinion_family_holds_no_feedback_choices(page, matter):
     open_add_panel(page, "arvamus-koja")
 
     family = page.locator("#lisa-arvamus")

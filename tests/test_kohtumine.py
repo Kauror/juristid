@@ -472,3 +472,15 @@ def test_lisa_tagasiside_still_renders_under_kaasamine(signed_in, specialist):
 
     assert 'id="kaasamine-tagasiside"' in page
     assert "Lisa tagasiside" in page
+
+
+def test_the_form_leaves_required_to_the_server(signed_in, specialist):
+    """No `required` attribute: an empty save gets the Estonian refusal under the
+    box, as on every other `LISA TEEMALE` panel (combined review P2-3)."""
+    matter = factories.MatterFactory(owner=specialist)
+
+    panel = _panel(_page(signed_in, matter))
+
+    assert not re.search(
+        r"<(textarea|input)[^>]*name=\"(summary|occurred_on)\"[^>]*required", panel
+    )

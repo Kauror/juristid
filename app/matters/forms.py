@@ -4956,6 +4956,10 @@ class CompactMeetingForm(forms.Form):
     not be fixed — participants are named in the summary instead.
     """
 
+    # The server's Estonian refusals, not the browser's own bubble, as on every
+    # other `LISA TEEMALE` panel; the marks still say what is required.
+    use_required_attribute = False
+
     occurred_on = EstonianDateField(
         label="Kuupäev",
         required=True,
