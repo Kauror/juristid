@@ -153,3 +153,38 @@ reads the same whatever caused it.
   `e2e/test_workspace_failures_and_drafts.py` cover the marked hosts. They
   include a test that a clean column carries nothing, so a host that counts
   itself dirty without being typed into is caught.
+
+## Amendment, 2026-10-17 — the note is judged against the answer, not the last save (JQA-003)
+
+§2 counted the note as holding unsaved input when its box differed from the
+last save **this page had heard back about**. That is the wrong comparison when
+two answers cross. A panel's answer can be rendered on the server before the
+note's autosave commits and still reach the page after that autosave's 2xx. The
+box then counted as saved and was not carried, and the old render replaced it:
+the earlier text (often empty) and the earlier revision. The next keystroke
+autosaved against that revision and got a 409 «Märget on muudetud teises
+aknas…» although there was no other window, and a reload brought back the
+earlier text and lost the new.
+
+The note is now judged against **the render that is about to replace it**
+(`static/js/app.js` `autosaveOutdatedBy`). It is carried across the swap when:
+- its text differs from the text in the render; or
+- the render's revision is older than the one the box holds. A stale render
+  never moves the token back.
+
+A render with the same text and a newer revision replaces it as before. A
+render with **different** text is never adopted over the box, even when the box
+holds nothing unsaved. If another tab saved that text, the next autosave gets
+the existing 409, with the newer text beside the box (ADR 0077), as §2 already
+says. Where the new column has no note at all, a note with unsaved text is
+still shown as `Salvestamata sisu`.
+
+The revision is the row's `updated_at` in UTC ISO form, so string order is time
+order. This holds even when Python leaves out a zero microsecond, because `+`
+sorts before `.`. Nothing changed on the server: `save_note` already moves the
+token on with every 2xx, and `rail.html` already renders it inside the form.
+
+The race is pinned in `e2e/test_workspace_failures_and_drafts.py`
+`test_a_panel_answer_rendered_before_the_note_saved_does_not_set_it_back`. The
+test holds both requests in the browser and lets them go in that order, so it
+no longer depends on the timing that made its sibling flaky.

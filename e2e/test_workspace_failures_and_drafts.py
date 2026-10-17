@@ -75,6 +75,15 @@ def _teema(page, base_url: str, *, step: bool = True) -> str:
     return url
 
 
+def _until(page, held, timeout_ms: int = 10_000) -> None:
+    """Let the page run until a route handler has held its request."""
+    for _ in range(timeout_ms // 50):
+        if held():
+            return
+        page.wait_for_timeout(50)
+    raise AssertionError("the request was never sent")
+
+
 def _gate_teema(page, gate_base_url: str) -> str:
     """The same, behind the shared gate with Martin chosen as the persona."""
     pass_the_gate(page, gate_base_url)
@@ -378,6 +387,76 @@ def test_the_note_survives_a_save_inside_its_debounce(page, base_url):
     expect(page.locator("#teema-markme-seis")).to_contain_text("Salvestatud", timeout=5000)
     page.reload()
     expect(page.locator(NOTE)).to_have_value("Kiire märkus")
+
+
+def test_a_panel_answer_rendered_before_the_note_saved_does_not_set_it_back(page, base_url):
+    """The race the test above only sometimes hits, made to happen every time (JQA-003).
+
+    The panel's answer is built on the server *before* the note's autosave
+    commits, so it holds the earlier note — empty, and no revision — but it
+    reaches the page *after* that autosave's 2xx. The box then counted as saved
+    and was not carried, the old render emptied it, and the next keystroke
+    autosaved against the earlier revision into a false 409 «Märget on muudetud
+    teises aknas…»; a reload brought back the earlier text and lost the new.
+
+    Both requests are held in the browser and let go in that order: the note's
+    autosave is held, the panel's request is sent on to the server and its
+    answer kept (`route.fetch`), then the note goes through and its answer is
+    applied, and only then is the panel's answer delivered.
+    """
+    _teema(page, base_url, step=False)
+    open_add_panel(page, PANEL)
+    page.fill(FIELD, "Samal ajal")
+
+    held_note: list = []
+    held_panel: list = []
+
+    def hold_first_note_save(route):
+        if held_note:
+            route.continue_()
+        else:
+            held_note.append(route)
+
+    page.route("**/markmed/", hold_first_note_save)
+    page.route(ROUTE, lambda route: held_panel.append(route))
+
+    box = page.locator(NOTE)
+    box.click()
+    box.type("Kiire märkus", delay=5)
+    _until(page, lambda: held_note)
+
+    page.locator(PANEL_SAVE).click()
+    _until(page, lambda: held_panel)
+    # The server renders the column now, while the note row still holds nothing.
+    panel_answer = held_panel[0].fetch()
+    assert panel_answer.ok
+
+    with page.expect_response(lambda r: r.url.endswith("/markmed/")) as note_saved:
+        held_note[0].continue_()
+    assert note_saved.value.status == 200
+    page.wait_for_function("() => !document.querySelector('.railnote.htmx-request')")
+    expect(page.locator("#teema-markme-seis")).to_contain_text("Salvestatud")
+    saved_revision = page.locator(".railnote input[name$='-revision']").input_value()
+    assert saved_revision
+
+    held_panel[0].fulfill(response=panel_answer)
+    wait_for_htmx(page)
+
+    # The note is what was typed, at the revision its own save moved it to
+    # rather than the render's older one.
+    expect(page.locator(NOTE)).to_have_value("Kiire märkus")
+    assert page.locator(".railnote input[name$='-revision']").input_value() == saved_revision
+
+    box = page.locator(NOTE)
+    box.focus()
+    page.keyboard.press("Control+End")
+    with page.expect_response(lambda r: r.url.endswith("/markmed/")) as next_save:
+        page.keyboard.type(" jätkan", delay=5)
+    assert next_save.value.status == 200
+    expect(page.locator(".railnote__conflict")).to_be_empty()
+
+    page.reload()
+    expect(page.locator(NOTE)).to_have_value("Kiire märkus jätkan")
 
 
 def test_a_draft_about_a_task_that_moved_on_is_shown_not_reposted(browser, base_url):

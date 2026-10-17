@@ -4570,10 +4570,48 @@
     return control.value !== control.defaultValue;
   }
 
+  /* Which stored version an autosaving form's box was filled from: the hidden
+   * `…-revision` the server renders and moves on with every 2xx
+   * (templates/matters/partials/note_saved.html). Empty means never saved. */
+  function autosaveRevision(form) {
+    var field = form.querySelector('input[name$="-revision"]');
+    return field ? field.value : "";
+  }
+
+  /* Whether the note has to be carried across a swap, judged against the
+   * render that is about to replace it rather than against the last save this
+   * page heard back about (JQA-003). A panel's answer can be rendered before
+   * the note's autosave commits and still arrive after that autosave's 2xx:
+   * the box then counts as saved, and the old render — the earlier text, the
+   * earlier revision — used to replace it. The text vanished, and the next
+   * keystroke autosaved against the earlier revision into a false 409.
+   *
+   * So the box is kept whenever it holds anything other than what the render
+   * holds, and also when the render's revision is older than the box's: a
+   * stale render never moves the token back. The revision is the row's
+   * `updated_at` in UTC ISO form (app/matters/services.py
+   * `personal_note_revision`), so string order is time order — even when
+   * Python leaves out a zero microsecond, as `+` sorts before `.`. A render
+   * that is newer and holds the same text is let through. A render with other
+   * text is never adopted over the box: if another tab saved it, the next
+   * autosave is the existing 409 with the newer text beside the box
+   * (docs/adr/0077, docs/adr/0107 §2). */
+  function autosaveOutdatedBy(host, place) {
+    var box = autosaveBox(host);
+    var incoming = place ? autosaveBox(place) : null;
+    if (!box) {
+      return false;
+    }
+    if (!incoming) {
+      return autosaved.has(box) && box.value !== autosaved.get(box);
+    }
+    return box.value !== incoming.value || autosaveRevision(place) < autosaveRevision(host);
+  }
+
   function holdsUnsavedInput(host) {
     if (host.hasAttribute("data-autosave")) {
-      var box = autosaveBox(host);
-      return !!box && autosaved.has(box) && box.value !== autosaved.get(box);
+      /* Whether it is kept is decided against the answer, in `keepDrafts`. */
+      return !!autosaveBox(host);
     }
     var controls = host.querySelectorAll("input, textarea, select");
     for (var i = 0; i < controls.length; i += 1) {
@@ -4743,6 +4781,9 @@
     var lost = [];
     hosts.forEach(function (host) {
       var place = fresh.getElementById(host.id);
+      if (host.hasAttribute("data-autosave") && !autosaveOutdatedBy(host, place)) {
+        return;
+      }
       var same =
         place &&
         place.hasAttribute("data-draft-host") &&
