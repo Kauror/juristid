@@ -17,7 +17,15 @@ from __future__ import annotations
 
 import pytest
 
-from e2e.conftest import MARTIN, create_matter, open_add_panel, sign_in
+from e2e.conftest import (
+    AVALDATUD_MUJAL,
+    FEEDBACK_PICKER,
+    MARTIN,
+    choose_organisation,
+    create_matter,
+    open_feedback_form,
+    sign_in,
+)
 from e2e.titles import unique_title
 
 pytestmark = pytest.mark.e2e
@@ -70,18 +78,14 @@ def _holds(readings: list[dict], whole: str) -> None:
 
 
 def _file_a_position_with(page, filename: str) -> None:
-    open_add_panel(page, "arvamus-teiste")
-    box = page.locator("#valine-seisukoht-otsi")
-    box.click()
-    box.type("Näidismi", delay=20)
-    page.locator("#valine-seisukoht-tulemused").get_by_role(
-        "option", name="Näidisministeerium", exact=True
-    ).click()
-    page.locator("#arvamus-teiste [name=summary]").fill("Seletuskiri on lisatud.")
-    page.locator("#arvamus-teiste input[type=file]").set_input_files(
+    # «Teiste arvamus» is `Lisa tagasiside` · «Avaldatud mujal» since docs/adr/0170.
+    form = open_feedback_form(page, AVALDATUD_MUJAL)
+    choose_organisation(page, FEEDBACK_PICKER)
+    form.locator("[name=summary]").fill("Seletuskiri on lisatud.")
+    form.locator("input[type=file]").first.set_input_files(
         {"name": filename, "mimeType": "application/pdf", "buffer": b"%PDF-1.4 synthetic"}
     )
-    page.locator("#arvamus-teiste").get_by_role("button", name="Salvesta").click()
+    form.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
     page.wait_for_function(
         """needle => [...document.querySelectorAll('.uxtl__file')]

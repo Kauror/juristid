@@ -242,20 +242,19 @@ def test_a_later_answer_to_a_finished_round_is_tied_to_that_round(signed_in, spe
     """DC-02, resolved 2026-10-14 (owner decision D8, docs/adr/0167 §2). It pinned
     that a second member's answer could not be tied to the consultation once the
     first `Lisa tagasiside` had closed it. `Lisa tagasiside` now offers the
-    finished round and ties the later answer to it; `+ Arvamus / tagasiside`
-    still declares no `engagement` field (ADR 0095 §5), so that door files a
-    loose record exactly as before."""
+    finished round and ties the later answer to it. A position that names no
+    round — what `+ Arvamus / tagasiside` filed until docs/adr/0170 merged it
+    into this one form — is still a loose record beside it, never tied by
+    guess (docs/adr/0170 §3)."""
     matter = _matter(specialist)
     round_ = _round(matter, specialist, "liikmed")
     _reply(signed_in, matter, {"engagement": str(round_.pk), "summary": "Esimene liige"})
 
-    signed_in.post(
-        reverse("matters:add_received_feedback", kwargs={"pk": matter.pk}),
-        {"engagement": str(round_.pk), "summary": "Lahtine vastus", "stated_on": ""},
-        headers={"HX-Request": "true"},
-    )
+    loose = _reply(signed_in, matter, {"provenance": "RECEIVED", "summary": "Lahtine vastus"})
     _reply(signed_in, matter, {"engagement": str(round_.pk), "summary": "Teine liige"})
 
+    assert loose.status_code == 200
+    assert MatterExternalPosition.objects.get(summary="Lahtine vastus").engagement_id is None
     tied = MatterExternalPosition.objects.filter(matter=matter, engagement=round_)
     assert list(tied.order_by("created_at").values_list("summary", flat=True)) == [
         "Esimene liige",

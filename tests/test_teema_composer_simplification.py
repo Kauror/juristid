@@ -1,5 +1,8 @@
 """The four `Lisa teemale` panels docs/adr/0095 simplified, and what they kept.
 
+The two feedback panels became one form in docs/adr/0170 (`+ Kaasamine · Lisa
+tagasiside`); their assertions now run against it, once per provenance.
+
 One file per round, as `test_teema_redesign.py` and `test_uus_teema_*` are, because
 the subject is a *decision* rather than a model: four panels changed together, each
 of them narrowing an earlier ADR, and the thing worth proving is that none of the
@@ -31,6 +34,7 @@ from app.matters.enums import (
 from app.matters.models import MatterExternalPosition, MatterWebsiteOverview
 from app.matters.services import (
     EXTERNAL_POSITION_MEMBER_IS_RECEIVED_ONLY,
+    EXTERNAL_POSITION_NEEDS_SOURCE,
     WEBSITE_OVERVIEW_NEEDS_LINK,
     add_engagement,
     record_external_position,
@@ -543,59 +547,86 @@ def test_the_sending_date_is_still_required_and_still_never_in_the_future(
 
 
 # ===========================================================================
-# Packages B and C — the two feedback panels
+# Packages B and C — the two feedback panels, now one form
 # ===========================================================================
+#
+# `Meile saadetud tagasiside` and `Teiste arvamus` were merged into
+# `+ Kaasamine · Lisa tagasiside` (`#kaasamine-tagasiside`,
+# `matters:add_engagement_reply`) by docs/adr/0170, which asks the provenance
+# the two chips used to fix. Every simplification docs/adr/0095 made to them is
+# asserted below against that one form, once per provenance where the old file
+# asserted it once per panel.
+
+FEEDBACK_PANEL = "kaasamine-tagasiside"
+FEEDBACK_ROUTE = "add_engagement_reply"
+RECEIVED = ExternalPositionProvenance.RECEIVED.value
+DISCOVERED = ExternalPositionProvenance.DISCOVERED.value
+BOTH_PROVENANCES = pytest.mark.parametrize("provenance", [DISCOVERED, RECEIVED])
 
 
-@pytest.mark.parametrize(
-    "panel_id",
-    ["arvamus-teiste", "arvamus-tagasiside"],
-)
-def test_neither_feedback_panel_draws_the_catalogue(signed_in, normal_matter, committee, panel_id):
-    body = _panel(_detail(signed_in, normal_matter), panel_id)
+def test_the_feedback_form_does_not_draw_the_catalogue(signed_in, normal_matter, committee):
+    body = _panel(_detail(signed_in, normal_matter), FEEDBACK_PANEL)
 
     assert "Otsi või lisa asutus…" in body
     assert "Lisa uus organisatsioon" in body
     assert "hidden" in _chip_for(body, str(committee.pk))
 
 
-@pytest.mark.parametrize("panel_id", ["arvamus-teiste", "arvamus-tagasiside"])
-def test_neither_feedback_panel_asks_a_precision_or_a_note_or_a_round(
-    signed_in, normal_matter, panel_id
-):
-    body = _panel(_detail(signed_in, normal_matter), panel_id)
+def test_the_feedback_form_asks_no_precision_and_no_note(signed_in, normal_matter):
+    body = _panel(_detail(signed_in, normal_matter), FEEDBACK_PANEL)
 
     assert "Täpne päev" not in body
     assert "Kvartal" not in body
     assert 'name="position_precision"' not in body
     assert 'name="lawyer_note"' not in body
-    assert 'name="engagement"' not in body
     assert "Juristi märkus" not in body
+    # With no round on the Matter there is nothing to link, so no box.
+    assert 'name="engagement"' not in body
     assert "Seotud kaasamine" not in body
 
 
-@pytest.mark.parametrize("panel_id", ["arvamus-teiste", "arvamus-tagasiside"])
-def test_both_feedback_panels_open_on_today(signed_in, normal_matter, panel_id):
-    body = _panel(_detail(signed_in, normal_matter), panel_id)
+def test_the_feedback_form_offers_a_round_but_never_chooses_one(signed_in, normal_matter):
+    """**Amended by docs/adr/0170 §3.**
+
+    docs/adr/0095 §5 kept `Seotud kaasamine` off the creation panels; the one
+    form asks it again — optionally — because a round reply is recorded here
+    too. What survives of the old rule is that nobody is linked to a round they
+    did not choose: not preselected, not even with exactly one round.
+    """
+    add_engagement(
+        matter=normal_matter,
+        kind=EngagementKind.EMAIL_CAMPAIGN,
+        title="liikmed",
+        occurred_on=dt.date(2026, 2, 1),
+        actor=None,
+    )
+
+    body = _panel(_detail(signed_in, normal_matter), FEEDBACK_PANEL)
+
+    assert "Seotud kaasamine" in body
+    start = body.index('name="engagement"')
+    options = body[body.index(">", start) : body.index("</select>", start)]
+    assert "liikmed" in options
+    chosen = [tag for tag in options.split("<option")[1:] if "selected" in tag.split(">")[0]]
+    assert all('value=""' in tag for tag in chosen)
+
+
+def test_the_feedback_form_opens_on_today(signed_in, normal_matter):
+    body = _panel(_detail(signed_in, normal_matter), FEEDBACK_PANEL)
 
     assert f'value="{_as_typed(timezone.localdate())}"' in _tag_with(body, 'name="stated_on"')
 
 
-@pytest.mark.parametrize(
-    ("route", "panel_id"),
-    [
-        ("add_external_position", "arvamus-teiste"),
-        ("add_received_feedback", "arvamus-tagasiside"),
-    ],
-)
+@BOTH_PROVENANCES
 def test_a_record_made_here_stores_exact_and_nothing_else(
-    signed_in, normal_matter, ministry, route, panel_id
+    signed_in, normal_matter, ministry, provenance
 ):
     response = _post(
         signed_in,
-        route,
+        FEEDBACK_ROUTE,
         normal_matter,
         {
+            "provenance": provenance,
             "organisation": str(ministry.pk),
             "stated_on": "14.03.2026",
             "summary": "Toetab eelnõu.",
@@ -604,6 +635,7 @@ def test_a_record_made_here_stores_exact_and_nothing_else(
 
     assert response.status_code == 200
     position = MatterExternalPosition.objects.get(matter=normal_matter)
+    assert position.provenance == provenance
     assert position.stated_on == dt.date(2026, 3, 14)
     assert position.stated_on_precision == DatePrecision.EXACT.value
     assert position.lawyer_note == ""
@@ -611,18 +643,23 @@ def test_a_record_made_here_stores_exact_and_nothing_else(
     assert position.source_label == ""
 
 
-@pytest.mark.parametrize("route", ["add_external_position", "add_received_feedback"])
+@BOTH_PROVENANCES
 def test_a_crafted_post_cannot_smuggle_the_retired_answers_in(
-    signed_in, normal_matter, ministry, route
+    signed_in, normal_matter, ministry, provenance
 ):
     """Every removed control is a field the form does not declare.
 
-    So this is not a view choosing to ignore four parameters: they arrive at a
+    So this is not a view choosing to ignore the parameters: they arrive at a
     form that never cleans them, and what reaches the service is the empty
     answer. A POST is what a boundary meets, which is why the assertion is on
     the stored row rather than on the rendered page (docs/adr/0095 §5).
+
+    `engagement` is no longer among them: docs/adr/0170 §3 made `Seotud
+    kaasamine` a real, optional question on this form. The round on the Matter
+    stays here to prove the other half of that rule — a save that names no
+    round is linked to none, even when exactly one is open.
     """
-    engagement = add_engagement(
+    add_engagement(
         matter=normal_matter,
         kind=EngagementKind.EMAIL_CAMPAIGN,
         title="liikmed",
@@ -632,14 +669,14 @@ def test_a_crafted_post_cannot_smuggle_the_retired_answers_in(
 
     response = _post(
         signed_in,
-        route,
+        FEEDBACK_ROUTE,
         normal_matter,
         {
+            "provenance": provenance,
             "organisation": str(ministry.pk),
             "summary": "Toetab eelnõu.",
             "stated_on": "14.03.2026",
             "lawyer_note": "Meie hinnangul on see nõrk argument.",
-            "engagement": str(engagement.pk),
             "source_label": "234 ettevõtet",
             "position_precision": DatePrecision.QUARTER.value,
             "position_quarter": "2026-1",
@@ -655,13 +692,14 @@ def test_a_crafted_post_cannot_smuggle_the_retired_answers_in(
     assert position.stated_on == dt.date(2026, 3, 14)
 
 
-@pytest.mark.parametrize("route", ["add_external_position", "add_received_feedback"])
-def test_a_link_and_a_file_are_still_captured(signed_in, normal_matter, ministry, route):
+@BOTH_PROVENANCES
+def test_a_link_and_a_file_are_still_captured(signed_in, normal_matter, ministry, provenance):
     response = _post(
         signed_in,
-        route,
+        FEEDBACK_ROUTE,
         normal_matter,
         {
+            "provenance": provenance,
             "organisation": str(ministry.pk),
             "url": "https://kliimaministeerium.ee/arvamus",
             "stated_on": "14.03.2026",
@@ -675,18 +713,19 @@ def test_a_link_and_a_file_are_still_captured(signed_in, normal_matter, ministry
     assert position.document_links.count() == 1
 
 
-@pytest.mark.parametrize("route", ["add_external_position", "add_received_feedback"])
+@BOTH_PROVENANCES
 def test_the_source_minimum_still_refuses_an_empty_record(
-    signed_in, normal_matter, ministry, route
+    signed_in, normal_matter, ministry, provenance
 ):
     response = _post(
         signed_in,
-        route,
+        FEEDBACK_ROUTE,
         normal_matter,
-        {"organisation": str(ministry.pk), "stated_on": "14.03.2026"},
+        {"provenance": provenance, "organisation": str(ministry.pk), "stated_on": "14.03.2026"},
     )
 
     assert response.status_code == 400
+    assert EXTERNAL_POSITION_NEEDS_SOURCE in response.content.decode()
     assert not MatterExternalPosition.objects.filter(matter=normal_matter).exists()
 
 
@@ -700,7 +739,7 @@ def test_the_helper_sentence_about_the_three_sources_is_gone(signed_in, normal_m
 
 
 def test_received_feedback_no_longer_offers_allikas(signed_in, normal_matter):
-    body = _panel(_detail(signed_in, normal_matter), "arvamus-tagasiside")
+    body = _panel(_detail(signed_in, normal_matter), FEEDBACK_PANEL)
 
     assert 'name="source_label"' not in body
     assert "Allikas" not in body
@@ -726,9 +765,9 @@ def test_received_feedback_may_name_nobody(signed_in, normal_matter):
     """
     response = _post(
         signed_in,
-        "add_received_feedback",
+        FEEDBACK_ROUTE,
         normal_matter,
-        {"summary": "Toetame eelnõu.", "stated_on": "14.03.2026"},
+        {"provenance": RECEIVED, "summary": "Toetame eelnõu.", "stated_on": "14.03.2026"},
     )
 
     assert response.status_code == 200
@@ -818,19 +857,27 @@ def test_a_historical_engagement_link_survives(signed_in, normal_matter, special
 
 
 def test_the_member_mark_is_offered_on_received_feedback_alone(signed_in, normal_matter):
-    body = _detail(signed_in, normal_matter)
+    """One form now, so «alone» is said by the page and enforced by the form.
 
-    assert 'name="source_is_member"' in _panel(body, "arvamus-tagasiside")
-    assert 'name="source_is_member"' not in _panel(body, "arvamus-teiste")
-    assert "Liige" in _panel(body, "arvamus-tagasiside")
+    The box sits in its own `data-feedback-member` slot, which the page shows
+    only beside «Saadeti Kojale» (docs/adr/0170 §2); a crafted mark on the other
+    provenance is refused below, by the form, the service and the database.
+    """
+    body = _panel(_detail(signed_in, normal_matter), FEEDBACK_PANEL)
+
+    slot = body[body.index("data-feedback-member") :]
+    assert 'name="source_is_member"' in slot[: slot.index("</div>")]
+    assert body.count('name="source_is_member"') == 1
+    assert "Liige" in body
 
 
 def test_an_unticked_box_stores_false(signed_in, normal_matter, member_company):
     response = _post(
         signed_in,
-        "add_received_feedback",
+        FEEDBACK_ROUTE,
         normal_matter,
         {
+            "provenance": RECEIVED,
             "organisation": str(member_company.pk),
             "summary": "Toetame eelnõu.",
             "stated_on": "14.03.2026",
@@ -844,9 +891,10 @@ def test_an_unticked_box_stores_false(signed_in, normal_matter, member_company):
 def test_a_ticked_box_stores_true(signed_in, normal_matter, member_company):
     response = _post(
         signed_in,
-        "add_received_feedback",
+        FEEDBACK_ROUTE,
         normal_matter,
         {
+            "provenance": RECEIVED,
             "organisation": str(member_company.pk),
             "summary": "Toetame eelnõu.",
             "stated_on": "14.03.2026",
@@ -867,9 +915,10 @@ def test_membership_is_never_inferred_from_anything(signed_in, normal_matter, me
     """
     _post(
         signed_in,
-        "add_received_feedback",
+        FEEDBACK_ROUTE,
         normal_matter,
         {
+            "provenance": RECEIVED,
             "organisation": str(member_company.pk),
             "summary": "Esimene vastus.",
             "stated_on": "14.03.2026",
@@ -878,9 +927,10 @@ def test_membership_is_never_inferred_from_anything(signed_in, normal_matter, me
     )
     _post(
         signed_in,
-        "add_received_feedback",
+        FEEDBACK_ROUTE,
         normal_matter,
         {
+            "provenance": RECEIVED,
             "organisation": str(member_company.pk),
             "summary": "Teine vastus.",
             "stated_on": "15.03.2026",
@@ -897,12 +947,19 @@ def test_membership_is_never_inferred_from_anything(signed_in, normal_matter, me
 def test_a_crafted_member_mark_on_a_discovered_position_is_refused(
     signed_in, normal_matter, ministry
 ):
-    """The panel does not draw it; the service refuses it; the database refuses it."""
+    """The page hides it; the form refuses it; the service and the database too.
+
+    Before docs/adr/0170 the discovered panel did not declare the field, so the
+    value reached nothing and the save stood with the mark off. The one form
+    declares `Liige`, so a mark on «Avaldatud mujal» is now refused outright —
+    and nothing is written.
+    """
     response = _post(
         signed_in,
-        "add_external_position",
+        FEEDBACK_ROUTE,
         normal_matter,
         {
+            "provenance": DISCOVERED,
             "organisation": str(ministry.pk),
             "summary": "Toetab eelnõu.",
             "stated_on": "14.03.2026",
@@ -910,10 +967,9 @@ def test_a_crafted_member_mark_on_a_discovered_position_is_refused(
         },
     )
 
-    # The field is not on that form at all, so the value reaches nothing and the
-    # ordinary save stands — with the mark off.
-    assert response.status_code == 200
-    assert MatterExternalPosition.objects.get(matter=normal_matter).source_is_member is False
+    assert response.status_code == 400
+    assert EXTERNAL_POSITION_MEMBER_IS_RECEIVED_ONLY in response.content.decode()
+    assert not MatterExternalPosition.objects.filter(matter=normal_matter).exists()
 
 
 def test_the_service_refuses_a_member_mark_on_a_discovered_position(
@@ -1229,7 +1285,7 @@ def test_a_stored_publication_with_an_unknown_day_keeps_it_unknown(normal_matter
 # ===========================================================================
 
 
-def test_a_closed_matter_refuses_every_one_of_the_four_panels(signed_in, closed_matter, ministry):
+def test_a_closed_matter_refuses_every_one_of_the_panels(signed_in, closed_matter, ministry):
     refusals = [
         _post(
             signed_in,
@@ -1239,15 +1295,15 @@ def test_a_closed_matter_refuses_every_one_of_the_four_panels(signed_in, closed_
         ),
         _post(
             signed_in,
-            "add_external_position",
+            FEEDBACK_ROUTE,
             closed_matter,
-            {"organisation": str(ministry.pk), "summary": "Toetab."},
+            {"provenance": DISCOVERED, "organisation": str(ministry.pk), "summary": "Toetab."},
         ),
         _post(
             signed_in,
-            "add_received_feedback",
+            FEEDBACK_ROUTE,
             closed_matter,
-            {"organisation": str(ministry.pk), "summary": "Toetame."},
+            {"provenance": RECEIVED, "organisation": str(ministry.pk), "summary": "Toetame."},
         ),
         _post(
             signed_in,

@@ -26,9 +26,11 @@ from playwright.sync_api import expect
 from e2e.conftest import (
     ADMIN,
     DESKTOP_VIEWPORT,
+    FEEDBACK_PICKER,
     MARTIN,
     READER,
     SANDRA,
+    choose_organisation,
     chronology,
     close_through_stage,
     create_matter,
@@ -159,7 +161,12 @@ def test_journey_consultation_to_repeat_opinion_and_closure(page, base_url, tmp_
     # The feedback arrives and ends the round.
     open_add_panel(page, "lisa-kaasamine")
     feedback = page.locator("#kaasamine-tagasiside")
-    expect(feedback.locator("[name=engagement] option:checked")).to_contain_text("Liikmed")
+    # The round is chosen by hand — never preselected by guess (docs/adr/0170).
+    engagement = feedback.locator("[name=engagement]")
+    expect(engagement).to_have_value("")
+    engagement.select_option(index=1)
+    expect(engagement.locator("option:checked")).to_contain_text("Liikmed")
+    choose_organisation(page, FEEDBACK_PICKER)
     feedback.locator("[name=summary]").fill("Üksteist liiget vastas; mure halduskoormus.")
     feedback.locator("input[type=file]").first.set_input_files(_upload("tagasiside.pdf"))
     feedback.get_by_role("button", name="Salvesta", exact=True).click()

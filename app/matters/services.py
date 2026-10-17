@@ -2084,6 +2084,34 @@ def normalize_external_position_url(value: str | None) -> str:
     return normalize_web_address(value, max_length=EXTERNAL_POSITION_URL_MAX_LENGTH)
 
 
+#: `Entry.url`'s column width; a longer address is refused, never truncated.
+ENTRY_URL_MAX_LENGTH = 1000
+
+#: A link belongs to a `+ Lisa · Muu` entry only. Every other kind keeps an
+#: empty `url` — refused here, in `edit_entry`, and by the
+#: `matters_entry_url_only_other` constraint (docs/adr/0097, amendment of
+#: 2026-10-15).
+ENTRY_URL_ONLY_FOR_OTHER = "Linki saab lisada ainult «Muu» sissekandele."
+
+
+def normalize_entry_url(value: str | None) -> str:
+    """The rule for the link a `+ Lisa · Muu` entry carries (docs/adr/0097).
+
+    Empty is allowed; otherwise `http`/`https` with a real host, refused rather
+    than truncated — the safety half every stored address in this module shares
+    through `normalize_web_address`, with no host allow-list for the same reason
+    `normalize_external_position_url` gives: supporting material lives anywhere.
+
+    **Userinfo is refused** (`reject_credentials=True`), for the reason
+    `normalize_overview_news_url` and `normalize_procedural_link_url` give: this
+    address is pasted *now*, from a page somebody has open, so there is no
+    historical value to accommodate, and a credential on the file would be a
+    credential in an audit payload, a revision row and a rendered `href`. The
+    same rule on creation (`add_entry`) and on correction (`edit_entry`).
+    """
+    return normalize_web_address(value, max_length=ENTRY_URL_MAX_LENGTH, reject_credentials=True)
+
+
 def _engagement_kind(value: str) -> str:
     if value not in EngagementKind.values:
         raise DomainError(f"Tundmatu kaasamise liik {value!r}.")
@@ -4061,6 +4089,29 @@ def external_position_revision(position: MatterExternalPosition) -> str:
     return position.updated_at.isoformat()
 
 
+#: Refused when a published position («Teiste arvamus») would be tied to one of
+#: Koda's own consultation rounds (docs/adr/0170 §3).
+EXTERNAL_POSITION_ROUND_ANSWER_IS_RECEIVED = (
+    "Avaldatud seisukohta ei seota kaasamisega: kaasamisele vastati Kojale."
+)
+
+
+def _external_position_round_answer(kind: str, related: Any, *, kept_id: Any = None) -> None:
+    """A position tied to a round answers Koda's consultation, so it was sent to Koda.
+
+    ``DISCOVERED`` with a round is refused — on creation always, and on a
+    correction whenever the round is newly set or changed. A link a row already
+    holds (``kept_id``) is left as it is, so a historical row stays correctable
+    without being rewritten (docs/adr/0170 §3, §6). ``LEGACY`` rows predate the
+    question and are not judged here (docs/adr/0091 §3.4).
+    """
+    if related is None or kind != ExternalPositionProvenance.DISCOVERED.value:
+        return
+    if kept_id is not None and related.pk == kept_id:
+        return
+    raise DomainError(EXTERNAL_POSITION_ROUND_ANSWER_IS_RECEIVED)
+
+
 def _external_position_engagement(matter: Matter, engagement: Any) -> MatterEngagement | None:
     """The `Kaasamine` this position answers, proved to be on the same Matter.
 
@@ -4269,6 +4320,7 @@ def record_external_position(
     clean_note = (lawyer_note or "").strip()[:EXTERNAL_POSITION_LAWYER_NOTE_MAX_LENGTH]
     _external_position_source(clean_url, attachments=attachment_count, summary=clean_summary)
     related = _external_position_engagement(matter, engagement)
+    _external_position_round_answer(kind, related)
     precision = _normalised_precision(stated_on, stated_on_precision)
 
     position = MatterExternalPosition.objects.create(
@@ -4502,6 +4554,7 @@ def correct_external_position(
         summary=clean_summary,
     )
     related = _external_position_engagement(locked_matter, engagement)
+    _external_position_round_answer(kind, related, kept_id=current.engagement_id)
     precision = _normalised_precision(stated_on, stated_on_precision)
 
     proposed: dict[str, Any] = {
@@ -6043,11 +6096,15 @@ def add_entry(
     occurred_at: Any = None,
     organisation: Any = None,
     visibility_override: str = "",
+    url: str = "",
 ) -> Entry:
     """Record one piece of professional chronology.
 
     The body is sanitised here rather than in the view, so there is no caller
     that can store authored markup which has not been through the allowlist.
+    ``url`` is the optional link a `+ Lisa · Muu` entry points at, normalised
+    by the shared web-address rule (`normalize_entry_url`); every other caller
+    leaves it empty.
     """
     if kind not in EntryKind.values:
         raise DomainError(f"Tundmatu sissekande liik {kind!r}.")
@@ -6060,6 +6117,10 @@ def add_entry(
     if is_empty(clean_body):
         raise DomainError("Sissekanne vajab sisu.")
 
+    clean_url = normalize_entry_url(url)
+    if clean_url and kind != EntryKind.OTHER:
+        raise DomainError(ENTRY_URL_ONLY_FOR_OTHER)
+
     entry = Entry.objects.create(
         matter=matter,
         author=author,
@@ -6068,6 +6129,7 @@ def add_entry(
         body=clean_body,
         organisation=organisation,
         visibility_override=visibility_override,
+        url=clean_url,
     )
 
     record_change_event(
@@ -6116,7 +6178,12 @@ def entry_revision_token(entry: Entry) -> str:
 
 @transaction.atomic
 def edit_entry(
-    *, entry: Entry, body: str, actor: Any = None, expected_revision: str | None = None
+    *,
+    entry: Entry,
+    body: str,
+    actor: Any = None,
+    expected_revision: str | None = None,
+    url: str | None = None,
 ) -> Entry:
     """Change an entry's text, keeping what it said before.
 
@@ -6147,6 +6214,10 @@ def edit_entry(
     clean_body = sanitize_entry_html(body)
     if is_empty(clean_body):
         raise DomainError("Sissekanne vajab sisu.")
+    # ``None`` leaves the link as it is — every correction form but `Muu`'s,
+    # which has no link box, says nothing about it. A value is normalised by the
+    # same rule the entry was created with.
+    clean_url = None if url is None else normalize_entry_url(url)
 
     # Lock the row and re-read it before deciding anything. Two people editing
     # the same entry at once would otherwise both compute the same revision
@@ -6167,20 +6238,28 @@ def edit_entry(
         # Read *after* the lock, so the version compared against is the one that
         # is committed rather than the one that was on screen.
         raise EntryEditConflict(locked)
-    if clean_body == locked.body:
+    new_url = locked.url if clean_url is None else clean_url
+    if new_url and locked.kind != EntryKind.OTHER:
+        # Read off the locked row, so the kind compared is the stored one.
+        raise DomainError(ENTRY_URL_ONLY_FOR_OTHER)
+    if clean_body == locked.body and new_url == locked.url:
         return locked
 
+    # The revision keeps both halves as they were, so a corrected link is
+    # preserved exactly as a corrected wording is.
     EntryRevision.objects.create(
         entry=locked,
         revision_number=locked.edit_count + 1,
         body=locked.body,
+        url=locked.url,
         edited_by=actor,
     )
 
     locked.body = clean_body
+    locked.url = new_url
     locked.edit_count += 1
     locked.edited_at = timezone.now()
-    locked.save(update_fields=["body", "edit_count", "edited_at", "updated_at"])
+    locked.save(update_fields=["body", "url", "edit_count", "edited_at", "updated_at"])
 
     record_change_event(
         event_type=ChangeEventType.ENTRY_EDITED,
@@ -6192,6 +6271,7 @@ def edit_entry(
 
     # Keep the caller's instance consistent with what was written.
     entry.body = locked.body
+    entry.url = locked.url
     entry.edit_count = locked.edit_count
     entry.edited_at = locked.edited_at
     return locked

@@ -1,0 +1,46 @@
+{% load form_labels %}
+  {% comment %}
+    `+ Lisa · Muu` — supporting material that fits no structured kind
+    (docs/adr/0097, amendment of 2026-10-15).
+
+    One `Entry(kind=OTHER)`: `Kirjeldus` and `Millal?` are required, `Link` and
+    `Failid` optional. `Millal?` is the day the material or event occurred — the
+    chronology places the row on that day — and it starts **empty**: a day is
+    stated, never pre-filled or invented. No task, stage, plan or wait follows.
+  {% endcomment %}
+      {% if open_choice == "marge-muu" and workspace_error %}
+        <p class="formerror" role="alert">{{ workspace_error }}</p>
+      {% endif %}
+      <form class="addform" data-addform
+            hx-post="{% url 'matters:add_other' pk=matter.pk %}"
+            hx-target="#teema-vaade" hx-swap="outerHTML"
+            hx-encoding="multipart/form-data">
+        {% csrf_token %}
+        <label class="cx-f">
+          <span class="cx-f__lab">Kirjeldus{% required_mark %}</span>
+          {{ other_form.description }}
+        </label>
+        {% if other_form.description.errors %}
+          <p class="field__error" id="{{ other_form.description.auto_id }}_error">{{ other_form.description.errors|first }}</p>
+        {% endif %}
+        <div class="cx-grid cx-grid--links">
+          <label class="cx-f cx-f--date">
+            <span class="cx-f__lab">Millal?{% required_mark %}</span>
+            {{ other_form.occurred_on }}
+          </label>
+        </div>
+        {% if other_form.occurred_on.errors %}
+          <p class="field__error" id="{{ other_form.occurred_on.auto_id }}_error">{{ other_form.occurred_on.errors|first }}</p>
+        {% endif %}
+        <label class="cx-f">
+          <span class="cx-f__lab">Link</span>
+          {{ other_form.url }}
+        </label>
+        {% if other_form.url.errors %}
+          <p class="field__error" id="{{ other_form.url.auto_id }}_error">{{ other_form.url.errors|first }}</p>
+        {% endif %}
+        {% include "matters/partials/add_files.html" with field=other_form.attachments %}
+        <div class="addform__actions">
+          <button class="button button--primary" type="submit">Salvesta</button>
+        </div>
+      </form>

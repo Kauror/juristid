@@ -43,6 +43,7 @@ from app.submissions.models import (
     SubmissionTagAssignment,
     SubmissionWebsiteOverviewLink,
 )
+from app.workflow.dates import DAY_OUT_OF_RANGE, is_supported_day
 
 
 @transaction.atomic
@@ -329,9 +330,18 @@ def _refuse_a_future_send(sent_at: date | None) -> None:
     sent_on: date = sent_at
     if isinstance(sent_at, datetime):
         aware = sent_at if timezone.is_aware(sent_at) else timezone.make_aware(sent_at)
-        sent_on = timezone.localdate(aware)
+        try:
+            sent_on = timezone.localdate(aware)
+        except OverflowError:
+            # A moment at the edge of `datetime`'s range, which no supported
+            # day is (JQA-008).
+            raise DomainError(DAY_OUT_OF_RANGE) from None
     if sent_on > timezone.localdate():
         raise DomainError(SENT_DATE_IN_THE_FUTURE)
+    # **Nor before 1.1.1990** (CORR-02, JQA-008). Year 1 as Tallinn midnight is
+    # year 0 in UTC, which PostgreSQL refuses — a 500 rather than a sentence.
+    if not is_supported_day(sent_on):
+        raise DomainError(DAY_OUT_OF_RANGE)
 
 
 @transaction.atomic

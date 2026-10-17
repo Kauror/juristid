@@ -30,7 +30,7 @@ from django.utils import timezone
 from app.core.enums import Visibility
 from app.legacy_import.opinion_archive import OpinionMatchCandidate
 from app.legacy_import.opinion_enums import OpinionCandidateState, OpinionMatchClass
-from app.matters.enums import EngagementKind
+from app.matters.enums import EngagementKind, ExternalPositionProvenance
 from app.matters.models import MatterEngagement, MatterExternalPosition
 from app.matters.removal import remove_matter_record
 from app.matters.services import add_engagement, record_external_position
@@ -104,6 +104,7 @@ def _position(matter, specialist, organisation, engagement, summary="Toetab muud
         matter=matter,
         organisation=organisation,
         summary=summary,
+        provenance=ExternalPositionProvenance.RECEIVED.value,
         engagement=engagement,
         stated_on=timezone.localdate(),
         actor=specialist,

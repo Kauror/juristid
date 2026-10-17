@@ -6,9 +6,10 @@ This file holds the ones only a running page can settle:
 
 * that `Koostan arvamuse` is a box on `Uus teema` whose date becomes the file's
   open step, without anybody typing the sentence (docs/adr/0091 §1);
-* that `+ Meile saadetud tagasiside` records a survey summary with **no
-  organisation at all** — the case a form can only be proved to accept by filling
-  it in and pressing the button (§3.3);
+* that `+ Kaasamine · Lisa tagasiside` («Saadeti Kojale») records a survey
+  summary with **no organisation at all** — the case a form can only be proved
+  to accept by filling it in and pressing the button (§3.3, docs/adr/0101) —
+  while «Avaldatud mujal» still refuses one (docs/adr/0170);
 * that the lawyer's own note renders as its own labelled line under what the
   other organisation said, rather than as more of it (§4);
 * that `+ Koja arvamus` takes a file, a day and an addressee and puts a sent
@@ -32,11 +33,17 @@ import pytest
 from playwright.sync_api import expect
 
 from e2e.conftest import (
+    AVALDATUD_MUJAL,
+    FEEDBACK_PICKER,
+    SAADETI_KOJALE,
     SANDRA,
+    add_panel_chip,
     choose_organisation,
     chronology,
     create_matter,
+    feedback_form,
     open_add_panel,
+    open_feedback_form,
     open_kaik_row,
     record_marge,
     set_next_step,
@@ -191,24 +198,37 @@ def test_a_reply_by_date_on_the_panel_is_the_open_rounds_due_date(page, base_url
 
 
 # ---------------------------------------------------------------------------
-# §3 — the two feedback chips
+# §3 — one door for every position (docs/adr/0170)
 # ---------------------------------------------------------------------------
 
 
-def test_the_launcher_offers_both_feedback_chips(page, base_url):
+def test_the_launcher_offers_one_door_for_every_position(page, base_url):
+    """`+ Kaasamine · Lisa tagasiside` records both provenances; `+ Arvamus` keeps Koda's.
+
+    The two chips `Meile saadetud tagasiside` and `Teiste arvamus` left
+    `+ Arvamus / tagasiside` (docs/adr/0170 §3). Their distinction did not: it
+    is the form's own question, «Saadeti Kojale» or «Avaldatud mujal» — still
+    two provenances of one record — and `Koja arvamus` is still a `Submission`
+    (docs/adr/0097 §8, §8.1).
+    """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
 
     bar = page.locator("#lisa-teemale")
-    # One family chip, and the three records behind it asked second. They were
-    # three peers of `+ Märge`; grouping them is a presentation change and
-    # deliberately not a data change — `Meile saadetud tagasiside` and
-    # `Teiste arvamus` are still two provenances of one record and
-    # `Koja arvamus` is still a `Submission` (docs/adr/0097 §8, §8.1).
-    expect(bar.get_by_text("+ Arvamus / tagasiside", exact=True)).to_be_visible()
+    # `+ Arvamus / tagasiside` until 2026-10-17 (docs/adr/0097, amendment).
+    expect(bar.get_by_text("+ Koja arvamus / kohtumine", exact=True)).to_be_visible()
     open_add_panel(page, "lisa-arvamus")
-    for choice in ("Meile saadetud tagasiside", "Teiste arvamus", "Koja arvamus"):
-        expect(bar.get_by_text(choice, exact=True)).to_be_visible()
+    expect(add_panel_chip(page, "arvamus-koja")).to_be_visible()
+    for retired in ("Meile saadetud tagasiside", "Teiste arvamus"):
+        expect(bar.get_by_text(retired, exact=True)).to_have_count(0)
+
+    form = open_feedback_form(page)
+    for provenance in (SAADETI_KOJALE, AVALDATUD_MUJAL):
+        answer = form.locator(f'input[name="provenance"][value="{provenance}"]')
+        expect(answer).to_have_count(1)
+        expect(answer).not_to_be_checked()
+    expect(form).to_contain_text("Saadeti Kojale")
+    expect(form).to_contain_text("Avaldatud mujal")
     # And `+ Menetluse areng` is gone as a word: its ordinary function is
     # `+ Märge`, which writes the same record (docs/adr/0097 §6).
     expect(bar.get_by_text("+ Menetluse areng", exact=True)).to_have_count(0)
@@ -226,16 +246,16 @@ def test_feedback_with_no_organisation_is_accepted_on_the_page(page, base_url):
     was nothing truthful to type, so the panel's question had to be answered by
     inventing a name, and the rule meant to keep invented authorship off a
     professional file was manufacturing it. For `RECEIVED` the absence is now
-    the record.
+    the record — on `+ Kaasamine · Lisa tagasiside` with «Saadeti Kojale» since
+    docs/adr/0170.
 
     Read in a browser because the refusal was one: the service accepting the
     save proves nothing about a panel that never posts it.
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "arvamus-tagasiside")
+    form = open_feedback_form(page, SAADETI_KOJALE)
 
-    form = panel(page, "arvamus-tagasiside")
     form.locator("[name=summary]").fill("58 vastust 234 küsitletust; enamik toetab.")
     form.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
@@ -246,7 +266,7 @@ def test_feedback_with_no_organisation_is_accepted_on_the_page(page, base_url):
     expect(chronology(page)).to_contain_text("Meile saadetud tagasiside")
     expect(chronology(page)).not_to_contain_text("Meile saadetud tagasiside:")
     # The panel closed, which is what a save does and a refusal does not.
-    expect(panel(page, "arvamus-tagasiside").locator(".field__error")).to_have_count(0)
+    expect(feedback_form(page).locator(".field__error")).to_have_count(0)
 
 
 def test_a_discovered_opinion_with_no_organisation_is_still_refused_on_the_page(page, base_url):
@@ -254,56 +274,55 @@ def test_a_discovered_opinion_with_no_organisation_is_still_refused_on_the_page(
 
     A published opinion always has a body that published it, so a `Teiste
     arvamus` row naming nobody is an anonymous claim on a professional file.
-    The refusal above moved; this one did not.
+    The refusal above moved; this one did not — «Avaldatud mujal» on
+    `+ Kaasamine · Lisa tagasiside` since docs/adr/0170.
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "arvamus-teiste")
+    form = open_feedback_form(page, AVALDATUD_MUJAL)
 
-    form = panel(page, "arvamus-teiste")
     form.locator("[name=summary]").fill("Keegi kuskil arvas midagi.")
     form.get_by_role("button", name="Salvesta", exact=True).click()
 
-    reopened = panel(page, "arvamus-teiste")
+    reopened = feedback_form(page)
+    expect(reopened).to_contain_text("Vali organisatsioon, kelle seisukoht see on.")
     expect(reopened.locator(".field__error").first).to_be_visible()
     # And what they wrote is still in the box.
     expect(reopened.locator("[name=summary]")).to_have_value("Keegi kuskil arvas midagi.")
     expect(chronology(page)).not_to_contain_text("Teiste arvamus")
 
 
-def test_neither_feedback_panel_offers_the_source_box_any_more(page, base_url):
-    """`Allikas` is a `Muuda` control now, on both panels (docs/adr/0095 §4)."""
+def test_the_feedback_form_offers_no_source_box_on_either_answer(page, base_url):
+    """`Allikas` is a `Muuda` control (docs/adr/0095 §4), whatever the provenance."""
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
 
-    open_add_panel(page, "arvamus-tagasiside")
-    expect(panel(page, "arvamus-tagasiside").locator("[name=source_label]")).to_have_count(0)
-
-    open_add_panel(page, "arvamus-teiste")
-    expect(panel(page, "arvamus-teiste").locator("[name=source_label]")).to_have_count(0)
+    for provenance in (SAADETI_KOJALE, AVALDATUD_MUJAL):
+        form = open_feedback_form(page, provenance)
+        expect(form.locator("[name=source_label]")).to_have_count(0)
 
 
-def test_the_member_mark_is_on_the_received_panel_alone_and_is_recorded(page, base_url):
+def test_the_member_mark_is_beside_saadeti_kojale_alone_and_is_recorded(page, base_url):
     """`Liige` — ticked by the person filing the answer, and nowhere else.
 
-    The asymmetry is a rule rather than a rendering decision: `+ Teiste arvamus`
+    The asymmetry is a rule rather than a rendering decision: «Avaldatud mujal»
     records a position Koda found published somewhere, which was not written to
     Koda at all, so there is no question for the box to answer
-    (docs/adr/0095 §4).
+    (docs/adr/0095 §4, docs/adr/0170 §1).
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
 
-    open_add_panel(page, "arvamus-teiste")
-    expect(panel(page, "arvamus-teiste").locator("[name=source_is_member]")).to_have_count(0)
+    form = open_feedback_form(page, AVALDATUD_MUJAL)
+    expect(form.locator("[data-feedback-member]")).to_be_hidden()
 
-    open_add_panel(page, "arvamus-tagasiside")
-    form = panel(page, "arvamus-tagasiside")
+    form = open_feedback_form(page, SAADETI_KOJALE)
+    expect(form.locator("[data-feedback-member]")).to_be_visible()
     mark = form.locator("[name=source_is_member]")
     expect(mark).to_have_count(1)
     expect(mark).not_to_be_checked()
 
-    choose_organisation(page, "tagasiside")
+    choose_organisation(page, FEEDBACK_PICKER)
     # `.chip__input` is a transparent overlay filling the chip (`inset: 0`,
     # `opacity: 0`, `z-index: 1`), so it *is* the click target — clicking the
     # label's text is intercepted by it, by design.
@@ -319,15 +338,16 @@ def test_the_member_mark_is_on_the_received_panel_alone_and_is_recorded(page, ba
 def test_a_named_organisation_reads_under_the_received_heading(page, base_url):
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "arvamus-tagasiside")
+    form = open_feedback_form(page, SAADETI_KOJALE)
 
-    choose_organisation(page, "tagasiside")
-    panel(page, "arvamus-tagasiside").locator("[name=summary]").fill("Vastasid kirjaga.")
-    panel(page, "arvamus-tagasiside").get_by_role("button", name="Salvesta", exact=True).click()
+    choose_organisation(page, FEEDBACK_PICKER)
+    form.locator("[name=summary]").fill("Vastasid kirjaga.")
+    form.get_by_role("button", name="Salvesta", exact=True).click()
 
     chronology(page).get_by_text("Meile saadetud tagasiside:").first.wait_for()
     expect(chronology(page)).to_contain_text(f"Meile saadetud tagasiside: {MINISTRY}")
-    # And **not** under the other heading: the two chips are the distinction.
+    # And **not** under the other heading: the stated provenance is the
+    # distinction.
     expect(chronology(page)).not_to_contain_text("Teiste arvamus:")
 
 
@@ -352,10 +372,9 @@ def test_the_lawyer_note_renders_as_its_own_labelled_line(page, base_url):
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
-    open_add_panel(page, "arvamus-teiste")
+    form = open_feedback_form(page, AVALDATUD_MUJAL)
 
-    form = panel(page, "arvamus-teiste")
-    choose_organisation(page, "valine-seisukoht")
+    choose_organisation(page, FEEDBACK_PICKER)
     form.locator("[name=summary]").fill("Toetab varianti B.")
     form.get_by_role("button", name="Salvesta", exact=True).click()
     chronology(page).get_by_text("Teiste arvamus:").first.wait_for()
@@ -608,11 +627,10 @@ def test_one_consultation_runs_from_teema_to_the_next_round(page, base_url):
     chronology(page).get_by_text("234 tööstusettevõtet").first.wait_for()
 
     # What came back — named, and marked as a member's. `Allikas` is a `Muuda`
-    # control since docs/adr/0095 §4, so the creation panel names an
-    # institution.
-    open_add_panel(page, "arvamus-tagasiside")
-    tagasiside = panel(page, "arvamus-tagasiside")
-    choose_organisation(page, "tagasiside")
+    # control since docs/adr/0095 §4, so the form names an institution; every
+    # position goes through `+ Kaasamine · Lisa tagasiside` (docs/adr/0170).
+    tagasiside = open_feedback_form(page, SAADETI_KOJALE)
+    choose_organisation(page, FEEDBACK_PICKER)
     tagasiside.locator("[name=source_is_member]").check()
     tagasiside.locator("[name=summary]").fill("58 vastust; enamik toetab.")
     tagasiside.get_by_role("button", name="Salvesta", exact=True).click()
@@ -620,9 +638,8 @@ def test_one_consultation_runs_from_teema_to_the_next_round(page, base_url):
 
     # What somebody else said. `Juristi märkus` is a `Muuda` control too, so the
     # one substantive box is `Seisukoht` (docs/adr/0095 §3).
-    open_add_panel(page, "arvamus-teiste")
-    valine = panel(page, "arvamus-teiste")
-    choose_organisation(page, "valine-seisukoht")
+    valine = open_feedback_form(page, AVALDATUD_MUJAL)
+    choose_organisation(page, FEEDBACK_PICKER)
     valine.locator("[name=summary]").fill("Toetab varianti B.")
     valine.get_by_role("button", name="Salvesta", exact=True).click()
     chronology(page).get_by_text("Teiste arvamus:").first.wait_for()

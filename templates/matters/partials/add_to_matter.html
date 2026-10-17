@@ -3,7 +3,7 @@
 
 **Four choices.** A note, a consultation, an opinion, a publication:
 
-    + Lisa   + Kaasamine   + Arvamus / tagasiside   + Ülevaade / uudis
+    + Lisa   + Kaasamine   + Koja arvamus / kohtumine   + Ülevaade / uudis
 
 and nothing else is a peer of those four (docs/adr/0097 §8). `+ Lõpeta teema`
 stood after them until docs/adr/0131 §11; closing is a `Hetkeseis` now.
@@ -23,12 +23,13 @@ that remain are asked second, inside the one they chose:
 
     + Ülevaade / uudis        (no further question)
     + Kaasamine               Alusta kaasamist · Lisa tagasiside
-    + Arvamus / tagasiside    Meile saadetud · Teiste arvamus · Koja arvamus
+    + Koja arvamus / kohtumine   Koja arvamus · Kohtumine / arutelu
     + Lisa                    Arvamuse tähtaeg · Oluline tähtaeg · Jõustumine · Töövõit
 
 **Grouped on the screen, distinct in the database.** This is a presentation
-change and deliberately not a data change: `+ Arvamus / tagasiside` still writes
-three different records through three different endpoints, and
+change and deliberately not a data change: `+ Koja arvamus / kohtumine` writes
+two different records (a `Submission`, an `Entry(kind=MEETING)`) through two
+different endpoints, and
 `Oluline tähtaeg`, `Jõustumine` and `Töövõit` keep their own models, their own
 services and their own reporting. One visible family, truthful backend types
 underneath — a structured model is never replaced to shorten a row of chips
@@ -110,57 +111,26 @@ row of controls that refuse (brief §30, §31).
     {% include "matters/partials/add/kaasamine.html" %}
 
     {% comment %}
-      3 — `+ Arvamus / tagasiside`. Somebody's position on this file.
+      3 — `+ Koja arvamus / kohtumine` (`+ Arvamus / tagasiside` until
+      2026-10-17). Koda's own opinion, and a meeting held.
 
-      Three records that are genuinely different — who said it, to whom, and
-      whether Koda is the author — behind one chip, because a lawyer holding a
-      letter knows it is an opinion before they know which of the three the
-      application calls it.
-
-      **Grouped, never merged.** `Meile saadetud tagasiside` and
-      `Teiste arvamus` are two provenances of one `MatterExternalPosition`;
-      `Koja arvamus` is a `Submission` and is not that record at all. Nothing
-      here writes across those lines and no field was made to serve two of them
-      (docs/adr/0091 §3, §6, docs/adr/0097 §8.1).
+      Since the owner's UX round (stage 3, 2026-10-15) the family holds no
+      feedback: every other position — a member's feedback sent to Koda or a
+      view published elsewhere — is recorded under `+ Kaasamine · Lisa
+      tagasiside`, which states its provenance explicitly (docs/adr/0091
+      amendment of 2026-10-15). Stage 4 (2026-10-17) renamed the family and
+      added `Kohtumine / arutelu`, one `Entry(kind=MEETING)` (docs/adr/0097,
+      amendment of that date). `Koja arvamus`, a `Submission`, stays first and
+      the default: «Saada Koja arvamus» opens it (docs/adr/0168).
     {% endcomment %}
     <input class="addpick" type="radio" name="lisa-valik" id="lisa-arvamus-valik"
            data-addpick aria-controls="lisa-arvamus"
            {% if open_panel == "lisa-arvamus" %}checked{% endif %}>
-    <label class="disclosure-chip" for="lisa-arvamus-valik">+ Arvamus / tagasiside</label>
+    <label class="disclosure-chip" for="lisa-arvamus-valik">+ Koja arvamus / kohtumine</label>
     <div class="cx-panel" id="lisa-arvamus" data-addpanel>
       <div class="cx-panel__body">
-        <span class="cx-f__lab cx-sublab">Kelle arvamus</span>
+        <span class="cx-f__lab cx-sublab">Mida lisad</span>
         <div class="cx-panels cx-panels--sub">
-          {% comment %}
-            `Meile saadetud tagasiside` arrives chosen, on the same reasoning
-            that gives `+ Lisa` a default: a family panel that opens on three
-            more chips and no form is an extra click on every visit. It is the
-            commonest of the three — most of what reaches a department is
-            somebody answering it — and `arvamus_choice` is computed the same
-            way `marge_choice` is, so a refusal from either sibling still wins.
-          {% endcomment %}
-          {% comment %}
-            **The two `{% templatetag openblock %} url … as … {% templatetag closeblock %}` lines are load-bearing.**
-
-            `external_position_panel.html` takes its endpoint as `post_url`,
-            because the one partial serves two panels that post to two routes.
-            An include naming a variable nothing has set passes the *empty
-            string*, and Django says nothing about it: the form then carries
-            `hx-post=""`, HTMX posts to the page's own address, and the save
-            silently does not happen. The panel opens, the fields fill,
-            `Salvesta` responds — and the chronology never gains a row.
-
-            These two lines were lost when this file was rewritten for the four
-            families, and every `Teiste arvamus` and
-            `Meile saadetud tagasiside` save went nowhere until a browser shard
-            spent thirty seconds per test waiting for a row that was never
-            coming. `tests/test_templates.py` now fails on it in a second.
-          {% endcomment %}
-          {% url 'matters:add_received_feedback' pk=matter.pk as received_feedback_post_url %}
-          {% include "matters/partials/external_position_panel.html" with panel_id="arvamus-tagasiside" chip_label="Meile saadetud tagasiside" post_url=received_feedback_post_url form=received_feedback_form picker_id="tagasiside" submit_label="Salvesta" group_name="arvamuse-liik" open_value=arvamus_choice workspace_error=workspace_error %}
-          {% url 'matters:add_external_position' pk=matter.pk as external_position_post_url %}
-          {% include "matters/partials/external_position_panel.html" with panel_id="arvamus-teiste" chip_label="Teiste arvamus" post_url=external_position_post_url form=external_position_form picker_id="valine-seisukoht" submit_label="Salvesta" group_name="arvamuse-liik" open_value=arvamus_choice workspace_error=workspace_error %}
-
           <input class="addpick" type="radio" name="arvamuse-liik" id="arvamus-koja-valik"
                  data-addpick aria-controls="arvamus-koja"
                  {% if arvamus_choice == "arvamus-koja" %}checked{% endif %}>
@@ -168,6 +138,23 @@ row of controls that refuse (brief §30, §31).
           <div class="cx-panel" id="arvamus-koja" data-addpanel data-draft-host>
             <div class="cx-panel__body">
               {% include "matters/partials/add/koja-arvamus.html" %}
+            </div>
+          </div>
+
+          {% comment %}
+            `Kohtumine / arutelu` — a meeting or discussion held about this
+            Teema: a required `Kuupäev` and `Lühikokkuvõte`, optional files.
+            One `Entry(kind=MEETING)`; not a consultation round, not an
+            opinion, and nothing follows from it (docs/adr/0097, amendment of
+            2026-10-17).
+          {% endcomment %}
+          <input class="addpick" type="radio" name="arvamuse-liik" id="arvamus-kohtumine-valik"
+                 data-addpick aria-controls="arvamus-kohtumine"
+                 {% if arvamus_choice == "arvamus-kohtumine" %}checked{% endif %}>
+          <label class="disclosure-chip" for="arvamus-kohtumine-valik">Kohtumine / arutelu</label>
+          <div class="cx-panel" id="arvamus-kohtumine" data-addpanel data-draft-host>
+            <div class="cx-panel__body">
+              {% include "matters/partials/add/kohtumine.html" %}
             </div>
           </div>
         </div>
@@ -190,8 +177,8 @@ row of controls that refuse (brief §30, §31).
         {% comment %}
           `Lisa liik` (`Märke liik` until docs/adr/0140 §5), and it is **not** a second toolbar.
 
-          These four appear only after somebody has chosen `+ Lisa`:
-          `Arvamuse tähtaeg`, `Oluline tähtaeg`, `Jõustumine`, `Töövõit`.
+          These five appear only after somebody has chosen `+ Lisa`:
+          `Arvamuse tähtaeg`, `Oluline tähtaeg`, `Jõustumine`, `Töövõit`, `Muu`.
           `Tavaline` left on 2026-10-07 — ordinary work is `PRAEGUNE TEGEVUS →
           + Lisa tegevus`, and what was done is `✓ Tehtud`. Every `Märge`
           already recorded still reads in `Teema käik`.
@@ -214,7 +201,7 @@ row of controls that refuse (brief §30, §31).
 
             The template could compare against `open_choice` directly and it
             must not. `open_choice` is global to the page, so when a refusal
-            came from `+ Arvamus / tagasiside` it names one of *that* family's
+            came from `+ Koja arvamus / kohtumine` it names one of *that* family's
             children — and every test in this group would be false, leaving it
             with no chip selected at all. Somebody opening `+ Märge` afterwards
             would find four chips and no form. One variable per family, each
@@ -267,6 +254,24 @@ row of controls that refuse (brief §30, §31).
           <div class="cx-panel" id="marge-toovoit" data-addpanel data-draft-host>
             <div class="cx-panel__body">
               {% include "matters/partials/add/toovoit.html" %}
+            </div>
+          </div>
+
+          {% comment %}
+            `Muu` — supporting material that fits none of the four above: a
+            document met during the process, background for the analysis,
+            somebody else's paper, a page published elsewhere. One
+            `Entry(kind=OTHER)` with a required `Kirjeldus` and `Millal?`, an
+            optional `Link` and files. It is not `Tavaline` back: it creates no task and moves
+            nothing (docs/adr/0097, amendment of 2026-10-15).
+          {% endcomment %}
+          <input class="addpick" type="radio" name="marke-liik" id="marge-muu-valik"
+                 data-addpick aria-controls="marge-muu"
+                 {% if marge_choice == "marge-muu" %}checked{% endif %}>
+          <label class="disclosure-chip" for="marge-muu-valik">Muu</label>
+          <div class="cx-panel" id="marge-muu" data-addpanel data-draft-host>
+            <div class="cx-panel__body">
+              {% include "matters/partials/add/muu.html" %}
             </div>
           </div>
         </div>

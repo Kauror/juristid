@@ -162,9 +162,13 @@ def test_liige_sits_in_the_organisation_pickers_footer(signed_in, specialist):
     # not a rebuild. (`member_mark` is the form's property; `source_is_member`
     # is what the control posts.)
     assert 'name="source_is_member"' in page
-    # It belongs to the feedback panel and to no other.
-    panel = page[page.index('id="arvamus-tagasiside"') :][:6000]
+    # It belongs to the feedback form and to no other — since docs/adr/0170
+    # the one `+ Kaasamine · Lisa tagasiside` that replaced the received-feedback
+    # panel it used to sit in.
+    assert page.count('name="source_is_member"') == 1
+    panel = page[page.index('id="kaasamine-tagasiside"') :][:6000]
     assert "orgpick__mark" in panel
+    assert 'name="source_is_member"' in panel
 
 
 # ---------------------------------------------------------------------------

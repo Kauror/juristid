@@ -15,7 +15,11 @@ ended, and the current workflow is the only write path:
 * `matters:compose`, the superseded composer (ENG-050A2) → one explicit act per
   save: `PRAEGUNE TEGEVUS`, a `LISA TEEMALE` panel, or a terminal `Hetkeseis`.
   One composer payload could carry several of those at once, so there is no
-  honest single operation to send it to.
+  honest single operation to send it to;
+* `matters:add_received_feedback` (`Meile saadetud tagasiside`) and
+  `matters:add_external_position` (`Teiste arvamus`) → `+ Kaasamine · Lisa
+  tagasiside` (`matters:add_engagement_reply`), which asks the provenance the
+  old chips used to fix (docs/adr/0170 §5).
 
 A stale tab's POST is a 404 and writes nothing. Not a redirect: a POST sent on
 to another operation would carry a payload that operation never asked for.
@@ -32,7 +36,8 @@ from django.utils import timezone
 from app.audit.models import ChangeEvent
 from app.documents.models import Document
 from app.intelligence.models import MatterImportantDate
-from app.matters.models import Entry, Matter, MatterEngagement
+from app.matters.models import Entry, Matter, MatterEngagement, MatterExternalPosition
+from app.organisations.models import Organisation
 from app.submissions.models import Submission
 from app.workflow.enums import ActionKind, ActionStatus, DateSemantics
 from app.workflow.models import NextAction
@@ -48,6 +53,8 @@ RETIRED_NAMES = [
     "matters:add_engagement",
     "submissions:create",
     "matters:compose",
+    "matters:add_received_feedback",
+    "matters:add_external_position",
 ]
 
 
@@ -89,6 +96,26 @@ def _stale_posts(matter, action):
                 "closure_outcome": "COMPLETED",
             },
         ),
+        # The two retired position doors (docs/adr/0170 §5): each payload is one
+        # the old panel saved, so a redirect would have written a record under a
+        # provenance its new form never asked.
+        (
+            f"/teemad/{matter.pk}/lisa/tagasiside/",
+            {
+                "organisation_name": "Hiline Liit",
+                "summary": "Hiline tagasiside.",
+                "url": "https://example.org/hiline-tagasiside",
+                "source_is_member": "on",
+            },
+        ),
+        (
+            f"/teemad/{matter.pk}/lisa/valine-seisukoht/",
+            {
+                "organisation_name": "Hiline Ühing",
+                "summary": "Hiline avaldatud seisukoht.",
+                "url": "https://example.org/hiline-seisukoht",
+            },
+        ),
     ]
 
 
@@ -102,6 +129,8 @@ def _state(matter, action):
         "submissions": Submission.objects.filter(matter=matter).count(),
         "documents": Document.objects.filter(matter=matter).count(),
         "important_dates": MatterImportantDate.objects.filter(matter=matter).count(),
+        "positions": MatterExternalPosition.objects.filter(matter=matter).count(),
+        "organisations": Organisation.objects.count(),
         "open": Matter.objects.values_list("is_open", flat=True).get(pk=matter.pk),
         "events": ChangeEvent.objects.filter(matter=matter).count(),
     }
@@ -125,7 +154,11 @@ def _route_names() -> set[str]:
 def test_no_retired_route_name_resolves():
     names = _route_names()
     # The walk sees the live neighbours, so an empty answer cannot pass this.
-    assert {"matters:complete_current_action", "matters:add_engagement_compact"} <= names
+    assert {
+        "matters:complete_current_action",
+        "matters:add_engagement_compact",
+        "matters:add_engagement_reply",
+    } <= names
     assert names.isdisjoint(RETIRED_NAMES)
     with pytest.raises(NoReverseMatch):
         reverse("submissions:create", kwargs={"matter_id": "00000000-0000-0000-0000-000000000000"})
@@ -160,11 +193,20 @@ def test_the_current_doors_still_answer(signed_in, step):
         {"audience": "Liikmed"},
         headers={"HX-Request": "true"},
     )
+    position = signed_in.post(
+        reverse("matters:add_engagement_reply", kwargs={"pk": matter.pk}),
+        {"provenance": "DISCOVERED", "organisation_name": "Praegune Liit", "summary": "Toetab."},
+        headers={"HX-Request": "true"},
+    )
 
     assert completed.status_code == 200 and added.status_code == 200
+    assert position.status_code == 200
     action.refresh_from_db()
     assert action.status == ActionStatus.COMPLETED
     assert MatterEngagement.objects.filter(matter=matter).count() == 1
+    assert (
+        MatterExternalPosition.objects.filter(matter=matter, provenance="DISCOVERED").count() == 1
+    )
 
 
 def test_a_reader_meets_the_same_404_and_nothing_else(client, reader, step):

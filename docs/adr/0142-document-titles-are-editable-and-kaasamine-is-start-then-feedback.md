@@ -119,3 +119,7 @@ The owner's UX review of 2026-10-12. **No migration.**
 ## Amendment of 2026-10-14 — later answers belong to the round
 
 **Amended by [0167](0167-a-kaasamine-takes-later-answers-and-a-received-answer-keeps-its-source.md) §2** (owner decision D8). `Lisa tagasiside` offers this Matter's finished rounds as well as its open ones (open first, finished marked «lõpetatud»). The first answer to an open round still finishes its wait in the same save; a later answer to a finished round is recorded against it and leaves the closure, its actor and its audit row as they were. A reply identical to one already on the round is refused as a repeated submit. §6's default mode is unchanged. No migration.
+
+## Amendment of 2026-10-15 — see docs/adr/0170
+
+`Lisa tagasiside` records every position — member feedback sent to Koda or a view published elsewhere — with the round optional (docs/adr/0170-lisa-tagasiside-is-the-one-door-for-every-position.md).
