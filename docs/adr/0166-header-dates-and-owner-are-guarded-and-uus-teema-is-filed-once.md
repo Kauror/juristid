@@ -118,3 +118,26 @@ date is entered explicitly. Ordinary open `FULL` Matters keep today.
 By code. Dropping `owner`/`received_date` from `GUARDED_MATTER_FIELDS` restores
 tokenless posts; `RECENT_WINDOW = timedelta(0)` and removing
 `bindCreateFormHistory` restore the old create behaviour.
+
+## Amendment of 2026-10-17 — two tabs pressed together take turns (JQA-006)
+
+The §2 server-side net read committed rows without a lock, and the token claim
+locks only each form's own row. Two `Uus teema` forms with different tokens and
+the same title, saved at the same moment, could therefore each look, each find
+nothing the other had committed, and each file a Teema with its own reference
+number (audit 2026-10-17, JQA-006).
+
+`duplicate_intake.refuse_unconfirmed_duplicate` now first takes a
+transaction-scoped advisory lock (`pg_advisory_xact_lock(24603, key)`, `key` a
+stable 32-bit digest of the person's id and the same normalised title the check
+compares) inside the transaction that files the Teema. The second save waits
+for the first to commit, then looks, and is answered with the same «Sama
+pealkirjaga teema loodi just…» block; if the first rolled back, the second files
+normally. The lock is taken on «Loo siiski uus» too, so a plain save racing a
+deliberate one still sees it, and the deliberate second Teema is still filed.
+Other people and other titles never wait: there is still no global title
+uniqueness. A digest collision only makes two saves take turns briefly.
+
+No migration, no schema or data change. Reversible by removing the
+`hold_title` call. Tests: `tests/test_uus_teema_two_tabs_concurrency.py`
+(interleaving forced via `pg_blocking_pids`, no sleeps).
