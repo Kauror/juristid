@@ -480,7 +480,9 @@ task composer returns.
    what this form exists to avoid). `Millal?` is required (see 3). `Link` and
    `Failid` are optional. No title, organisation, status or follow-up.
 2. **`Entry.url`, one additive column** (`matters/0049_entry_url`, blank,
-   default empty; `EntryRevision.url` likewise). A link inside `body` would be
+   default empty in the database too — `db_default=""`, so the release still
+   serving during `migrate` and a code-only rollback keep inserting entries;
+   `EntryRevision.url` likewise). A link inside `body` would be
    opaque, uncorrectable as a link and invisible to the revision chain. It is
    validated by the shared web-address rule (`normalize_entry_url`: http(s), a
    real host, **no userinfo** — `https://user:pw@…`, `https://user@…` and
