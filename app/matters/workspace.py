@@ -81,6 +81,7 @@ from app.matters.services import (
     plan_website_overview,
     publish_website_overview,
 )
+from app.workflow.dates import DAY_OUT_OF_RANGE, is_supported_day
 from app.workflow.enums import ActionStatus, DatePrecision
 from app.workflow.models import NextAction
 from app.workflow.services import (
@@ -993,6 +994,10 @@ def _add_dated_entry_with_files(
     """
     if occurred_on is None:
         raise DomainError(missing_day)
+    # Asked here as well as by the day box: year 1 becomes Tallinn midnight in
+    # year 0 UTC, which the database refuses as a 500 (JQA-008, CORR-02).
+    if not is_supported_day(occurred_on):
+        raise DomainError(DAY_OUT_OF_RANGE)
     locked_matter = lock_open_matter_for_business_write(matter.pk)
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
