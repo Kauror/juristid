@@ -700,6 +700,54 @@
     }
   });
 
+  /* `+ Kaasamine · Lisa tagasiside` (owner's UX round, stage 3). A linked
+     round fixes the provenance at «Saadeti Kojale»: choosing one checks it and
+     disables «Avaldatud mujal», clearing the round gives the choice back — and
+     nothing is chosen for a form with no round (docs/adr/0091 §3.2). Leaving
+     «Saadeti Kojale» clears `Liige`, which the stylesheet then hides, so a
+     hidden box never posts a refused answer. The form refuses both on the
+     server whatever this does (docs/adr/0095 §4). */
+  document.addEventListener("change", function (event) {
+    var control = event.target;
+    var form = control && control.closest ? control.closest("[data-feedback-form]") : null;
+    if (!form) {
+      return;
+    }
+    var radios = form.querySelectorAll('input[name="provenance"]');
+    if (control.name === "provenance") {
+      /* The person stated it: no longer an answer implied by a round. */
+      Array.prototype.forEach.call(radios, function (radio) {
+        radio.removeAttribute("data-feedback-implied");
+      });
+    }
+    if (control.name === "engagement") {
+      var linked = Boolean(control.value);
+      Array.prototype.forEach.call(radios, function (radio) {
+        if (radio.value === "RECEIVED") {
+          if (linked && !radio.checked) {
+            radio.checked = true;
+            radio.setAttribute("data-feedback-implied", "");
+          } else if (!linked && radio.hasAttribute("data-feedback-implied")) {
+            /* Implied by the round (or by `Tehtud`), never stated: clearing
+               the round leaves the question unanswered again. */
+            radio.checked = false;
+            radio.removeAttribute("data-feedback-implied");
+          }
+        } else {
+          radio.disabled = linked;
+          if (linked) {
+            radio.checked = false;
+          }
+        }
+      });
+    }
+    var received = form.querySelector('input[name="provenance"][value="RECEIVED"]');
+    var member = form.querySelector('input[name="source_is_member"]');
+    if (member && received && !received.checked) {
+      member.checked = false;
+    }
+  });
+
   /* The same markup as the server renders, for a row built here. */
   function titleEditFor(name, title, original) {
     var box = document.createElement("span");

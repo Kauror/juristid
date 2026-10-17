@@ -22,7 +22,7 @@ from django.utils import timezone
 
 from app.core.enums import Visibility
 from app.documents.links import DocumentLink
-from app.matters.enums import EngagementKind
+from app.matters.enums import EngagementKind, ExternalPositionProvenance
 from app.matters.services import add_engagement, record_external_position
 from app.matters.timeline import matter_timeline
 from app.workflow.enums import ActionStatus
@@ -67,6 +67,7 @@ def test_a_round_lists_the_answers_linked_to_it(signed_in, specialist):
         organisation=member,
         stated_on=_day(-1),
         summary="Toetame.",
+        provenance=ExternalPositionProvenance.RECEIVED.value,
         engagement=engagement,
         actor=specialist,
     )
@@ -88,6 +89,7 @@ def test_a_restricted_answer_is_neither_listed_nor_counted(client, specialist, r
         organisation=factories.OrganisationFactory(name="Avalik Liit"),
         stated_on=_day(-2),
         summary="Avalik seisukoht.",
+        provenance=ExternalPositionProvenance.RECEIVED.value,
         engagement=engagement,
         actor=specialist,
     )
@@ -96,6 +98,7 @@ def test_a_restricted_answer_is_neither_listed_nor_counted(client, specialist, r
         organisation=factories.OrganisationFactory(name="Salajane Liit"),
         stated_on=_day(-1),
         summary="Salajane seisukoht.",
+        provenance=ExternalPositionProvenance.RECEIVED.value,
         engagement=engagement,
         actor=specialist,
     )

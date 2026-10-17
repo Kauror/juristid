@@ -4891,6 +4891,127 @@ class CompactEffectiveDateForm(forms.Form):
         return cleaned
 
 
+class CompactOtherForm(forms.Form):
+    """`+ Lisa · Muu` — supporting material that fits no structured kind.
+
+    Four fields and nothing else (docs/adr/0097, amendment of 2026-10-15):
+
+    * `Kirjeldus` — **required**. What is being added, why it matters and how it
+      relates to the Teema. It is the record's body: an `Entry` cannot be stored
+      without one, and a link or a file with no word on why it is on the file is
+      the unexplained attachment this form exists to avoid.
+    * `Millal?` — **required**, one day, **no default**. When the material or
+      event occurred: `Entry.occurred_at` means when the work happened, not when
+      it was typed, so the chronology places the row on this day. Nothing is
+      pre-filled and nothing is invented: an empty box is refused.
+    * `Link` — optional, the shared web-address rule (`normalize_entry_url`).
+    * `Failid` — optional, the canonical evidence pipeline.
+
+    No title, organisation, status or follow-up.
+    """
+
+    description = forms.CharField(
+        label="Kirjeldus",
+        required=True,
+        widget=forms.Textarea(
+            attrs={
+                "class": "field__input",
+                "rows": "3",
+                "placeholder": "Kirjelda, mida lisad ja miks see on teema jaoks oluline.",
+            }
+        ),
+        error_messages={"required": "Kirjelda, mida lisad."},
+    )
+    occurred_on = EstonianDateField(
+        label="Millal?",
+        required=True,
+        widget=EstonianDateInput(),
+        error_messages={"required": "Sisesta, millal see toimus."},
+    )
+    url = provider_link_field("Link", "https://…")
+    attachments = workspace_attachments("id_muu_failid")
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        # Its own ids: `+ Ülevaade / uudis` already draws `id_url` on this page.
+        kwargs.setdefault("auto_id", "id_muu_%s")
+        super().__init__(*args, **kwargs)
+
+    def clean_description(self) -> str:
+        description = (self.cleaned_data.get("description") or "").strip()
+        if not description:
+            raise forms.ValidationError("Kirjelda, mida lisad.")
+        return description
+
+    def clean_url(self) -> str:
+        from app.matters.services import normalize_entry_url
+
+        try:
+            return normalize_entry_url(self.cleaned_data.get("url"))
+        except DomainError as error:
+            raise forms.ValidationError(str(error)) from error
+
+
+#: What `Kohtumine / arutelu` says under an empty (or empty-after-sanitising)
+#: `Lühikokkuvõte`.
+MEETING_SUMMARY_REQUIRED = "Kirjuta kohtumise lühikokkuvõte."
+
+
+class CompactMeetingForm(forms.Form):
+    """`+ Koja arvamus / kohtumine · Kohtumine / arutelu` — a meeting held.
+
+    Three fields and nothing else (docs/adr/0097, amendment of 2026-10-17):
+
+    * `Kuupäev` — **required**, one day, **no default**: the day the meeting
+      took place, stored as the start of that local day in `Entry.occurred_at`
+      exactly as `+ Lisa · Muu` does. Nothing is pre-filled or inferred.
+    * `Lühikokkuvõte` — **required**: what was discussed and agreed, and who
+      took part. It is the entry's body and goes through the same sanitising
+      every entry body does; a summary that is empty once sanitised (markup
+      only, a `<script>`) is refused here, under the field, rather than by
+      `add_entry` with a sentence pinned to nothing.
+    * `Failid` — optional, the canonical evidence pipeline.
+
+    No organisation and no participants field: `Entry.organisation` is shown
+    and searched but cannot be corrected through `Muuda`, so a wrong one could
+    not be fixed — participants are named in the summary instead.
+    """
+
+    occurred_on = EstonianDateField(
+        label="Kuupäev",
+        required=True,
+        widget=EstonianDateInput(),
+        error_messages={"required": "Sisesta kohtumise kuupäev."},
+    )
+    summary = forms.CharField(
+        label="Lühikokkuvõte",
+        required=True,
+        widget=forms.Textarea(
+            attrs={
+                "class": "field__input",
+                "rows": "3",
+                "placeholder": "Kellega kohtusite, mida arutasite ja milles leppisite kokku.",
+            }
+        ),
+        error_messages={"required": MEETING_SUMMARY_REQUIRED},
+    )
+    attachments = workspace_attachments("id_kohtumine_failid")
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        # Its own ids: `Muu` and `Koja arvamus` draw theirs on the same page.
+        kwargs.setdefault("auto_id", "id_kohtumine_%s")
+        super().__init__(*args, **kwargs)
+
+    def clean_summary(self) -> str:
+        from app.core.richtext import sanitize_entry_html
+
+        summary = (self.cleaned_data.get("summary") or "").strip()
+        # Measured after the same sanitising `add_entry` applies, so what is
+        # refused here is exactly what the service would have refused.
+        if not plain_text(sanitize_entry_html(summary)).strip():
+            raise forms.ValidationError(MEETING_SUMMARY_REQUIRED)
+        return summary
+
+
 class CompactWorkVictoryForm(forms.Form):
     """`+ Töövõit` — what changed, and the evidence that it did.
 
@@ -5659,335 +5780,106 @@ class ExternalPositionFieldsMixin:
         return cleaned
 
 
-class CompactExternalPositionForm(ExternalPositionFieldsMixin, forms.Form):
-    """One panel behind two chips — `+ Meile saadetud tagasiside` and `+ Teiste arvamus`.
+#: The two answers to *how did this reach us*, as `+ Kaasamine · Lisa tagasiside`
+#: asks them (docs/adr/0091 amendment of 2026-10-15). The stored values are the
+#: existing provenances; only the question's wording is new.
+FEEDBACK_PROVENANCE_CHOICES = [
+    (ExternalPositionProvenance.RECEIVED.value, "Saadeti Kojale"),
+    (ExternalPositionProvenance.DISCOVERED.value, "Avaldatud mujal"),
+]
+#: Refused when `Lisa tagasiside` does not say how the position reached Koda.
+FEEDBACK_NEEDS_PROVENANCE = "Vali, kas seisukoht saadeti Kojale või avaldati mujal."
+#: Refused when a position linked to Koda's own round claims «Avaldatud mujal».
+FEEDBACK_LINKED_ROUND_IS_RECEIVED = (
+    "Kaasamisele saadud tagasiside on Kojale saadetud. Vali «Saadeti Kojale» "
+    "või eemalda seotud kaasamine."
+)
+FEEDBACK_POSITION_HELP = (
+    "Siia saad lisada nii koja liikmete tagasisidet kui ka teiste liitude, "
+    "organisatsioonide ja asutuste seisukohti, ettepanekuid ja tähelepanekuid."
+)
+# Deliberately no sentence about the three-source rule here: docs/adr/0095 §3
+# took it off the panel, and the refusal names all three when it applies.
 
-    Two professional facts with one shape, which is docs/adr/0091 §3's whole
-    claim: an author, a source a colleague can open, an optional date at the
-    precision it is known to, and — new in this round — an optional `Juristi
-    märkus` that is never part of the source. Four models would have been four
-    sets of validation for one set of rules, so the distinction is `provenance`
-    and this class is instantiated twice with it fixed.
 
-    **The provenance is a class attribute, not a field.** It is decided by which
-    chip a person opened, so there is nothing for the browser to post and nothing
-    a crafted POST can move: `+ Teiste arvamus` cannot be made to file received
-    feedback by adding a parameter, because neither instance reads one. It is the
-    reasoning `NextActionForm` gives for having no `kind` field, applied to a
-    distinction the page genuinely does decide (ADR 0052 §1, docs/adr/0091 §3.5).
+class FeedbackForm(ExternalPositionFieldsMixin, forms.Form):
+    """`+ Kaasamine · Lisa tagasiside` — every position recorded on a Teema.
 
-    **`Organisatsioon` is required on both panels.** docs/adr/0091 §3.3 made it
-    optional on received feedback so that an aggregate answer — a survey of 234
-    companies producing 58 replies — could be filed under an `Allikas` naming the
-    collection instead of under an invented organisation. The case is real and
-    every row filed that way keeps its label, renders it and is corrected through
-    `Muuda`. What a round of use showed is that it is rare, and that «an
-    organisation *or* a source» put a question with two right answers at the top
-    of the panel a department fills in several times a week. So the creation
-    panels name an institution, and the authorship rule is satisfied the way it
-    has always been satisfied rather than relaxed to let an anonymous row through
-    (docs/adr/0095 §4).
+    **One door, the same record.** It replaces three doors — `Meile saadetud
+    tagasiside` and `Teiste arvamus` under `+ Arvamus / tagasiside`, and the
+    round-only `Lisa tagasiside` — and writes the same `MatterExternalPosition`
+    through the same `_record_external_position` and `record_external_position`
+    (docs/adr/0091 and 0167, amendments of 2026-10-15). Files, correction
+    history, visibility and search are the record's own and did not move.
 
-    **Four controls, of which two are required together.** The institution, a
-    source — the written `Seisukoht`, a link, a file, or any combination — and
-    the date. `+ Meile saadetud tagasiside` adds a fifth: `Liige`, saying the
-    feedback came from a Chamber member, which is ticked by the person filing it
-    and derived from nothing.
+    * `Organisatsioon` — the shared «otsi või lisa asutus» picker. **Optional
+      for «Saadeti Kojale»**: received feedback may name nobody — a caller who
+      gave no name is not an invented organisation (docs/adr/0101). **Required
+      for «Avaldatud mujal»**: an unattributed published opinion is an
+      anonymous claim (docs/adr/0091 §3.3);
+    * `Kuidas seisukoht meieni jõudis?` — **required, no default**: «Saadeti Kojale»
+      (`RECEIVED`) or «Avaldatud mujal» (`DISCOVERED`). The person states the
+      provenance; it is never inferred (docs/adr/0091 §3.2). The radio replaces
+      the chip that used to state it;
+    * `Liige` — only with «Saadeti Kojale» (the page hides it otherwise). This
+      form refuses it on the other provenance, and so do the service and the
+      `CHECK` — the three defences of docs/adr/0095 §4;
+    * `Seotud kaasamine` — optional, this Matter's rounds as this reader may see
+      them, open ones first and finished ones marked «lõpetatud». **Never
+      preselected by guess**: only an explicit `Tehtud` on a wait names one
+      (`step_launch`). A linked round fixes the provenance at «Saadeti Kojale»
+      — an answer to Koda's own consultation was sent to Koda — and the first
+      answer to an open round finishes its wait; later answers are recorded
+      against it and an identical repeat is refused (docs/adr/0167 §2). A
+      position with no round touches no wait;
+    * `Seisukoht`, `Link`, files — **at least one of the three**, any
+      combination (docs/adr/0084 §3, amended 2026-09-16): a published position
+      may be only its address, a position paper only its PDF. `Seisukoht`
+      carries help text saying it may hold a member's feedback or another
+      organisation's published view;
+    * `Kuupäev` — opening on today, clearable.
 
-    **Three questions this panel stopped asking**, all of them still asked on
-    `Muuda` and all of them still stored on every row that has them: the four
-    precision chips, `Juristi märkus`, and `Seotud kaasamine`. A form that does
-    not declare a field does not clean one either, so a POST carrying any of them
-    here has nowhere to arrive (docs/adr/0095 §3, §5).
-
-    **The date opens on today, and clearing it is a real answer.** This panel
-    argued itself out of a default once, on the ground that a position is filed
-    some time after it was stated. What that produced in use was the opposite of
-    an honest record: the commonest case is feedback that arrived this week and
-    is being written up now, and a box that started empty made «kuupäev
-    teadmata» the path of least resistance for exactly those. So the box carries
-    `initial=timezone.localdate`, as `+ Kaasamine`'s does and for the reason
-    docs/adr/0078 §2 allows one — the default is **visible** in the box before
-    anything is saved, readable, changeable and clearable, which is a suggestion
-    a person accepts rather than a stamp applied behind their back. An emptied
-    box still stores `NULL` and still reads «Kuupäev teadmata», and
-    `ExternalPositionEditForm` deliberately declares no such default: a
-    correction that opened a recorded position showing today would be one
-    `Salvesta` from a change nobody made (docs/adr/0084 §2, amended 2026-09-16).
+    **No `Märkus`** (owner's review, 2026-10-12): the field is not declared, so
+    a crafted `lawyer_note=` has nowhere to go. Rows that already carry one keep
+    it and are corrected through `Muuda`, which still asks.
     """
 
     use_required_attribute = False
 
-    organisation = _external_position_organisation_field()
-    organisation_name = _typed_organisation_field("Uus organisatsioon")
-    url = _external_position_link_field()
-    summary = _external_position_summary_field()
-    lawyer_note = _external_position_lawyer_note_field()
-    source_label = _external_position_source_label_field()
-    engagement = _external_position_engagement_field()
-    #: `Kuupäev` — one box, opening on today, and the only date control on the
-    #: panel.
-    #:
-    #: The four precision chips are gone from here and kept on `Muuda`
-    #: (`offers_precision`). What they cost was a classification question in
-    #: front of the commonest answer there is: feedback that arrived on a day the
-    #: person knows. What they bought is still bought, on the surface that needs
-    #: it — a ministry's paper remembered as «kevadel 2019» is corrected into a
-    #: quarter, and every row already stored as one keeps it (docs/adr/0095 §3).
-    #:
-    #: Still `required=False`, and clearing it is still a real answer: `NULL`,
-    #: `EXACT`, and «Kuupäev teadmata» on every surface. A default in the box is a
-    #: suggestion somebody accepts; a box that cannot be emptied would be this
-    #: form deciding that every position has a known day (docs/adr/0078 §2).
-    stated_on = EstonianDateField(
-        label="Kuupäev",
-        required=False,
-        widget=EstonianDateInput(),
-        initial=timezone.localdate,
-    )
-    attachments = workspace_attachments("id_valine_seisukoht_failid")
-
-    #: One day, no precision chips. See `ExternalPositionFieldsMixin.offers_precision`.
-    offers_precision = False
-
-    #: Which record this instance writes, decided by the chip rather than posted.
-    provenance: str = ExternalPositionProvenance.DISCOVERED.value
-    #: What every rendered id on this panel is prefixed with.
-    #:
-    #: Both panels are on one page, so one slug would put
-    #: `id_valine_seisukoht_summary` in the document twice — and a `<label for>`
-    #: pointing at whichever came first is a label that types into the wrong
-    #: record. The file control's own id is reassigned from this in `__init__`
-    #: for the same reason (`workspace_attachments`).
-    panel_slug: str = "valine_seisukoht"
-
-    def __init__(
-        self,
-        *args: Any,
-        matter: Any = None,
-        viewer: Any = None,
-        choices: OrganisationChoices | None = None,
-        engagements: list[Any] | None = None,
-        **kwargs: Any,
-    ) -> None:
-        # **Its own `auto_id` per panel, and the field names are untouched.**
-        # Eleven forms render on one Teema page; `+ Ülevaade / uudis` also calls
-        # a field `url`, and since docs/adr/0091 §3.5 split this panel in two
-        # both of its instances carry every field name twice. Django's default
-        # `id_%s` would put `id_url` and `id_summary` in the document more than
-        # once — invalid HTML, a `<label for>` reaching the wrong box, and
-        # `getElementById` answering whichever came first. Prefixing the *ids*
-        # fixes exactly that while leaving the POST keys alone, which is the
-        # reasoning docs/adr/0065 gives for preferring `auto_id` over a form
-        # `prefix` (`tests/test_teema_workspace.py`).
-        kwargs.setdefault("auto_id", f"id_{self.panel_slug}_%s")
-        super().__init__(*args, **kwargs)
-        # `workspace_attachments` puts its id on the *widget*, which `auto_id`
-        # does not touch — so the two panels would share `id_valine_seisukoht_failid`
-        # however their other controls were named. Reassigned per instance rather
-        # than by declaring the field twice, so there is still one factory and one
-        # accessible name for the drop zone (docs/adr/0075 §2).
-        cast(Any, self.fields["attachments"].widget).attrs["id"] = f"id_{self.panel_slug}_failid"
-        if not self.allows_source_label:
-            # A panel that may not ask does not render the box, and does not keep
-            # a field a POST could fill either. `+ Teiste arvamus` has an author
-            # by definition, and a free text box answering *whose position is
-            # this* would be a ninth way of naming an institution beside the one
-            # shared catalogue (docs/adr/0073, docs/adr/0091 §3.3).
-            #
-            # **Since docs/adr/0095 §4 that is both of them.** `Allikas` is off
-            # the received-feedback panel too, so the question neither panel asks
-            # is a field neither panel carries — and a crafted `source_label=`
-            # reaches a form with nowhere to put it. `Muuda` still renders the box
-            # for a record that has one, which is what keeps the aggregate rows
-            # docs/adr/0091 §3.3 was written for correctable.
-            del self.fields["source_label"]
-        # **The three questions this panel stopped asking**, deleted rather than
-        # hidden.
-        #
-        # `Juristi märkus` — one substantive box is what a lawyer writing up an
-        # answer needs, and two invited a decision about which half of a thought
-        # goes where. `Seisukoht` is now the whole of what a new record says, and
-        # `lawyer_note` stays blank on everything this panel writes. Every row
-        # that already carries one keeps it, renders it under its own label and
-        # is corrected through `Muuda`, which still asks (docs/adr/0095 §3).
-        #
-        # `Seotud kaasamine` — the same, and for the same reason: never inferred,
-        # still stored, still corrected, and no longer a select in front of
-        # somebody recording two sentences from a member association.
-        #
-        # Deleting the fields is what makes the removal a boundary rather than a
-        # stylesheet. `_clean_external_position` reads both through `.get()` and
-        # gets `None`; a POST carrying either reaches a form that does not
-        # declare it, so there is no cleaned value and nothing for the view to
-        # pass on (docs/adr/0095 §5).
-        del self.fields["lawyer_note"]
-        del self.fields["engagement"]
-        # No `record`, and — since docs/adr/0095 §3 — no precision group either:
-        # this panel asks one day. `Muuda` still calls the helper, so a record
-        # stated as a month or a quarter is still correctable into one.
-        # The page's one reading where a caller has it — two of these panels
-        # render together, and reading the catalogue twice for them is half of
-        # what blew the Teema page's query budget (docs/adr/0091 §3.5).
-        attach_organisation_picker(self, viewer=viewer, choices=choices)
-
-    def clean(self) -> dict[str, Any]:
-        super().clean()
-        return self._clean_external_position(
-            has_file=bool(self.cleaned_data.get("attachments")),
-        )
-
-
-class ReceivedFeedbackForm(CompactExternalPositionForm):
-    """`+ Meile saadetud tagasiside` — somebody gave this to Koda.
-
-    A member company's e-mail, an association's written answer, a consultation
-    response, the summary of a survey. The same four controls as its sibling plus
-    `Liige`, and no rule that differs any more: since docs/adr/0095 §4 both
-    panels require an institution, and `Allikas` — which is what used to make
-    this one's organisation optional — is asked on `Muuda` alone, where a record
-    that has a label can be corrected without every ordinary save being offered
-    the box.
-
-    A subclass rather than a flag on the caller, so that *which questions this
-    panel asks* and *what it writes* are one decision in one place. The
-    alternative — one form told at construction time which it is — puts the
-    distinction in the hands of whoever writes the next call site, which is the
-    reasoning `set_next_action_for_new_work` gives for being its own function
-    rather than a `bypass=` parameter.
-    """
-
-    provenance = ExternalPositionProvenance.RECEIVED.value
-    #: **No `Allikas` on this panel any more**, which reverses docs/adr/0091 §3.3
-    #: for *new* records and for nothing else.
-    #:
-    #: What that ADR built the box for is real and is not being denied: a survey
-    #: of 234 companies producing 58 answers has no single author. What a round of
-    #: use showed is that it is rare, that the box was on the screen for every
-    #: ordinary save, and that «organisatsioon *või* allikas» made the commonest
-    #: panel on the page ask a question with two right answers before it asked
-    #: anything else. So this panel names an institution, and every row already
-    #: carrying a label keeps it, renders it and is corrected through `Muuda` —
-    #: which still asks, because `ExternalPositionEditForm` decides per record
-    #: rather than per class (docs/adr/0095 §4).
-    #:
-    #: Setting the flag is what requires the organisation: `_clean_external_position`
-    #: reads it, and with no label to fall back on «vali organisatsioon» is the
-    #: refusal — the database constraint is met the way it has always been met and
-    #: is not weakened to let an anonymous new row through.
     allows_source_label = False
-    #: Feedback somebody sent to this office may name nobody.
-    #:
-    #: A lawyer writing down what a member said on the telephone has neither a
-    #: catalogue row nor a name for a collection of answers, and a panel that
-    #: refuses to save until one of them exists is what puts invented names on
-    #: files. The record is still never empty: a position, a link or a file is
-    #: always there — what may be absent is whose it was
-    #: (OWNER-01, docs/adr/0101).
-    author_is_optional = True
-    panel_slug = "tagasiside"
-
-    #: `Liige` — this feedback came from a Chamber member.
-    #:
-    #: A checkbox on this panel alone, because it is an answer to *who wrote to
-    #: us*: `+ Teiste arvamus` records a position Koda found somewhere, which was
-    #: not written to Koda at all. The service refuses a `True` anywhere else and
-    #: so does the database, so the asymmetry is a rule rather than a rendering
-    #: decision (docs/adr/0095 §4).
-    #:
-    #: **Explicitly ticked and never derived.** Nothing reads the membership
-    #: registry, the CRM, the organisation's name or an address domain to answer
-    #: it, and nothing revisits it when membership changes: it is a fact about
-    #: this feedback that the person filing it knows.
-    source_is_member = forms.BooleanField(
-        label="Liige",
-        required=False,
-        #: A chip toggle, which is the composer's own control for a single
-        #: on/off answer — `Muu` on `Uus teema` is the same shape — and is
-        #: already styled, already keyboard-reachable and already reads as
-        #: «chosen» when it is filled. A bare checkbox here would need a class
-        #: nothing in the stylesheet defines.
-        widget=forms.CheckboxInput(attrs={"class": "chip__input"}),
-    )
-
-
-class OtherOpinionForm(CompactExternalPositionForm):
-    """`+ Teiste arvamus` — Koda recorded somebody else's position from elsewhere.
-
-    A ministry's opinion, another business organisation's position paper, a
-    submission found in EIS, a public statement. Exactly the record docs/adr/0084
-    built, under a name that says which of the two kinds it is: the organisation
-    is required, there is no `Allikas`, and nothing else about it moved.
-    """
-
-    provenance = ExternalPositionProvenance.DISCOVERED.value
-    allows_source_label = False
-    panel_slug = "valine_seisukoht"
-
-
-#: Refused when `Lisa tagasiside` names no round, or one that is not open.
-ENGAGEMENT_FEEDBACK_NEEDS_ROUND = "Vali kaasamine, mille kohta tagasiside tuli."
-#: Refused when `Lisa tagasiside` carries neither words nor a file.
-ENGAGEMENT_FEEDBACK_NEEDS_CONTENT = "Kirjuta saadud tagasiside või lisa fail."
-
-
-class EngagementReplyForm(ExternalPositionFieldsMixin, forms.Form):
-    """`+ Kaasamine · Lisa tagasiside` — what came back from a round.
-
-    **The canonical record, not a new one.** What a round produced has been a
-    `Meile saadetud tagasiside` tied to it by `Seotud kaasamine` since
-    docs/adr/0084 §4; the round row counts them («Seotud seisukohti N») and
-    their files follow them. This panel asks for exactly that record with the
-    round already named, through the same `_record_external_position` and
-    `add_matter_external_position` as `+ Arvamus / tagasiside`. The first
-    answer to an open round finishes its wait (docs/adr/0142, amended
-    2026-10-07); a later answer to a finished round is recorded against it
-    and leaves the closure as it was (docs/adr/0167 §2).
-
-    Four questions:
-
-    * `Kaasamine` — required, from this Matter's rounds as this reader may see
-      them, open ones first and finished ones marked «lõpetatud»
-      (`engagement_replies.answerable_rounds`). Preselected only when there is
-      exactly one open round, or none open and exactly one finished; otherwise
-      the person chooses and nothing is guessed from a date or a title;
-    * `Saadud tagasiside` — what came back, in writing, and the whole of it;
-    * `Kuupäev` — opening on today, clearable, as on the sibling panel;
-    * the files.
-
-    **No `Märkus`** (owner's review, 2026-10-12). The lawyer writes everything
-    relevant into `Saadud tagasiside`, so the field is not declared at all
-    rather than hidden: `_clean_external_position` reads `lawyer_note` through
-    `.get()` and gets `None`, and a crafted `lawyer_note=` reaches a form with
-    nowhere to put it — the record this panel writes has a blank note. Rows
-    that already carry one keep it, render it under its own label and are
-    corrected through `Muuda`, which still asks (docs/adr/0142 amendment).
-
-    No organisation: received feedback may name nobody (docs/adr/0101), and a
-    round's answers are the round's. `Muuda` on the record still asks for one.
-    """
-
-    use_required_attribute = False
-
-    provenance = ExternalPositionProvenance.RECEIVED.value
-    allows_source_label = False
+    #: Decided per save in `clean`, from the stated provenance: received
+    #: feedback may name nobody (docs/adr/0101), a published opinion may not.
     author_is_optional = True
     offers_precision = False
-    #: Saving it finishes the chosen round's wait when it is still open
-    #: (owner's decision, 2026-10-07): `_record_external_position` asks
-    #: `engagement_replies.finish_wait_on_reply` in the same transaction, and a
-    #: finished round keeps its closure (docs/adr/0167 §2).
+    #: `_record_external_position` reads the provenance off the validated radio
+    #: rather than off the class (docs/adr/0091 amendment of 2026-10-15).
+    states_provenance = True
+    #: Saving it against an open round finishes that round's wait in the same
+    #: transaction; a finished round keeps its closure (docs/adr/0167 §2).
     closes_engagement = True
     panel_slug = "kaasamise_tagasiside"
 
-    engagement = marks_required(
-        _EngagementChoiceField(
-            label="Kaasamine",
-            queryset=MatterEngagement.objects.none(),
+    organisation = _external_position_organisation_field()
+    organisation_name = _typed_organisation_field("Uus organisatsioon")
+    provenance = marks_required(
+        forms.ChoiceField(
+            label="Kuidas seisukoht meieni jõudis?",
+            choices=FEEDBACK_PROVENANCE_CHOICES,
             required=False,
-            empty_label="Vali kaasamine",
-            widget=SELECT_WIDGET,
+            widget=forms.RadioSelect(attrs={"class": "chip__input"}),
         )
+    )
+    source_is_member = forms.BooleanField(
+        label="Liige",
+        required=False,
+        widget=forms.CheckboxInput(attrs={"class": "chip__input"}),
+    )
+    engagement = _EngagementChoiceField(
+        label="Seotud kaasamine",
+        queryset=MatterEngagement.objects.none(),
+        required=False,
+        empty_label="Ei ole seotud kaasamisega",
+        widget=SELECT_WIDGET,
     )
     summary = _external_position_summary_field()
     stated_on = EstonianDateField(
@@ -5996,6 +5888,7 @@ class EngagementReplyForm(ExternalPositionFieldsMixin, forms.Form):
         widget=EstonianDateInput(),
         initial=timezone.localdate,
     )
+    url = _external_position_link_field()
     attachments = workspace_attachments("id_kaasamise_tagasiside_failid")
 
     def __init__(
@@ -6004,26 +5897,25 @@ class EngagementReplyForm(ExternalPositionFieldsMixin, forms.Form):
         matter: Any = None,
         viewer: Any = None,
         open_rounds: list[Any] | None = None,
+        choices: OrganisationChoices | None = None,
         **kwargs: Any,
     ) -> None:
         kwargs.setdefault("auto_id", f"id_{self.panel_slug}_%s")
         super().__init__(*args, **kwargs)
-        self.fields["summary"].label = "Saadud tagasiside"
+        self.fields["summary"].help_text = FEEDBACK_POSITION_HELP
+        attach_organisation_picker(self, viewer=viewer, choices=choices)
         field = cast(Any, self.fields["engagement"])
         #: How many open rounds this reader may attach feedback to.
         self.open_round_count = 0
         #: How many rounds in all — open, or finished and still taking later
-        #: answers (docs/adr/0167 §2). With none, the panel says so instead of
-        #: drawing a form that can only refuse.
+        #: answers (docs/adr/0167 §2). With none the round field is not drawn.
         self.round_count = 0
         if matter is not None:
             from app.matters.engagement_replies import answerable_rounds
 
             # The field's own queryset is what validates a posted id: this
-            # Matter's tracked rounds that this reader may see, **open or
-            # finished** — a later answer belongs to the consultation it
-            # answers even after the first one finished the wait (owner
-            # decision D8). Nothing else is accepted.
+            # Matter's tracked rounds that this reader may see, open or
+            # finished. Nothing else is accepted.
             field.queryset = answerable_rounds(viewer, matter).order_by("-created_at")
             if open_rounds is None:
                 rows = list(field.queryset)
@@ -6043,37 +5935,83 @@ class EngagementReplyForm(ExternalPositionFieldsMixin, forms.Form):
                 )
                 return f"{text} · lõpetatud" if done else text
 
-            # The rendered choices from the rows in hand, open rounds first;
-            # the queryset above is still what validates a post.
             field.choices = [
-                ("", "Vali kaasamine"),
+                ("", "Ei ole seotud kaasamisega"),
                 *((str(round_.pk), label(round_, done=False)) for round_ in rounds),
                 *((str(round_.pk), label(round_, done=True)) for round_ in finished),
             ]
-            # Preselected only when the answer is not a guess: exactly one open
-            # round — the wait this reply finishes — or, with none open, exactly
-            # one finished round.
-            if not self.is_bound:
-                if len(rounds) == 1:
-                    self.initial["engagement"] = rounds[0].pk
-                elif not rounds and len(finished) == 1:
-                    self.initial["engagement"] = finished[0].pk
+        # A round named on arrival (`Tehtud` on a wait) fixes the provenance.
+        if not self.is_bound and self.initial.get("engagement"):
+            self.initial["provenance"] = ExternalPositionProvenance.RECEIVED.value
 
-    def clean_engagement(self) -> Any:
-        engagement = self.cleaned_data.get("engagement")
-        if not engagement:
-            raise forms.ValidationError(ENGAGEMENT_FEEDBACK_NEEDS_ROUND)
-        return engagement
+    @property
+    def round_is_linked(self) -> bool:
+        """Whether the form names a valid round now — the provenance is then fixed.
+
+        Bound, it is the *cleaned* round, so a foreign or removed id that the
+        field refused does not lock the provenance on the re-rendered form.
+        """
+        if self.is_bound:
+            return getattr(self, "cleaned_data", {}).get("engagement") is not None
+        return bool(self["engagement"].value())
+
+    @property
+    def shown_provenance(self) -> str:
+        """The provenance the radio is drawn with — never a checked, disabled radio.
+
+        With a round linked it is «Saadeti Kojale», whatever was posted: the
+        other answer is drawn disabled and must not also be drawn checked,
+        because a disabled input posts nothing and the next `Salvesta` would
+        save an answer nobody could see (independent review of #455, P2-2).
+        """
+        if self.round_is_linked:
+            return ExternalPositionProvenance.RECEIVED.value
+        return str(self["provenance"].value() or "")
+
+    @property
+    def member_is_checked(self) -> bool:
+        """`Liige` drawn ticked only beside a shown «Saadeti Kojale».
+
+        The stylesheet hides the box otherwise, so a ticked-but-hidden box on a
+        refused form would post a mark the person cannot see.
+        """
+        received = ExternalPositionProvenance.RECEIVED.value
+        return bool(self["source_is_member"].value()) and self.shown_provenance == received
 
     def clean(self) -> dict[str, Any]:
+        from app.matters.services import EXTERNAL_POSITION_MEMBER_IS_RECEIVED_ONLY
+
         super().clean()
+        cleaned = self.cleaned_data
+        received = ExternalPositionProvenance.RECEIVED.value
+        discovered = ExternalPositionProvenance.DISCOVERED.value
+        # 1. How it reached Koda — stated, never inferred (docs/adr/0091 §3.2).
+        #    A linked round is Koda's own consultation, so its answer was sent
+        #    to Koda; «Avaldatud mujal» with a round is refused, not rewritten.
+        if cleaned.get("engagement") is not None:
+            if cleaned.get("provenance") not in ("", None, received):
+                self.add_error("provenance", FEEDBACK_LINKED_ROUND_IS_RECEIVED)
+            else:
+                cleaned["provenance"] = received
+        elif not cleaned.get("provenance"):
+            self.add_error("provenance", FEEDBACK_NEEDS_PROVENANCE)
+        # 2. Whose position, by provenance: only a published opinion must name
+        #    its author (docs/adr/0091 §3.3, docs/adr/0101). With no answer yet
+        #    the provenance refusal above is the one sentence shown.
+        self.author_is_optional = cleaned.get("provenance") != discovered
+        # 3. The organisation, the address and the three-source rule — the
+        #    sibling panels' own checks, unchanged (docs/adr/0084 §3).
         cleaned = self._clean_external_position(
-            has_file=bool(self.cleaned_data.get("attachments")),
+            has_file=bool(cleaned.get("attachments")),
         )
-        # The sibling sentence names a link this panel does not ask for.
-        if "summary" in self.errors:
-            self.errors["summary"] = self.error_class([ENGAGEMENT_FEEDBACK_NEEDS_CONTENT])
+        # 4. `Liige` belongs to received feedback alone (docs/adr/0095 §4).
+        if cleaned.get("source_is_member") and cleaned.get("provenance") != received:
+            self.add_error("source_is_member", EXTERNAL_POSITION_MEMBER_IS_RECEIVED_ONLY)
         return cleaned
+
+
+#: The round-only reply form this one replaced (owner's UX round, stage 3).
+EngagementReplyForm = FeedbackForm
 
 
 class ExternalPositionEditForm(ExternalPositionFieldsMixin, forms.Form):
@@ -6225,27 +6163,6 @@ class ExternalPositionEditForm(ExternalPositionFieldsMixin, forms.Form):
         return self._clean_external_position(has_file=has_file)
 
 
-def visible_engagements_of(matter: Any, viewer: Any) -> list[Any]:
-    """This Matter's consultations, as this reader may see them, read once.
-
-    Evaluated deliberately. Two `Seotud kaasamine` controls render on the Teema
-    page since docs/adr/0091 §3 split the panel in two, and a lazy queryset handed
-    to both is two identical reads at render time — which is half of what the
-    query budget caught (`tests/test_matter_workflow.py`).
-
-    Scoped by `visible_to`, which is the authorization half and is not weakened by
-    being read early: what a crafted POST is validated against is the field's own
-    queryset, set from this same filter (`set_external_position_engagements`).
-    """
-    from app.matters.models import MatterEngagement
-
-    if matter is None:
-        return []
-    return list(
-        MatterEngagement.objects.filter(matter=matter).visible_to(viewer).order_by("-created_at")
-    )
-
-
 def set_external_position_engagements(
     form: forms.Form, *, matter: Any, viewer: Any, engagements: list[Any] | None = None
 ) -> None:
@@ -6261,7 +6178,7 @@ def set_external_position_engagements(
     it. It fills the *rendered choices* only; the queryset above is untouched and
     is still what validates, so sharing the list costs nothing in authorization
     and saves one identical read per extra control. A caller passing nothing gets
-    the lazy queryset it always got (`visible_engagements_of`, docs/adr/0091 §3.5).
+    the lazy queryset it always got (docs/adr/0091 §3.5).
 
     A form built without a Matter keeps the empty queryset the field declares,
     which is «no round to relate this to» and is the correct answer for a form
@@ -7463,6 +7380,30 @@ class EntryEditForm(forms.Form):
 
     def clean_body(self) -> str:
         return require_written_body(self.cleaned_data.get("body"), "Sissekanne vajab sisu.")
+
+
+class OtherEntryEditForm(EntryEditForm):
+    """`Muuda` on a `+ Lisa · Muu` entry: its description **and its link**.
+
+    The link is part of what such an entry says — it is the material the entry
+    is about — so correcting a wrong address is a correction like correcting a
+    typo, and `edit_entry` keeps the earlier address in `EntryRevision.url` as it
+    keeps the earlier wording. Every other entry kind keeps the body-only form
+    (docs/adr/0097, amendment of 2026-10-15).
+
+    An emptied box removes the link (stored as empty); the earlier value is still
+    the revision's.
+    """
+
+    url = provider_link_field("Link", "https://…")
+
+    def clean_url(self) -> str:
+        from app.matters.services import normalize_entry_url
+
+        try:
+            return normalize_entry_url(self.cleaned_data.get("url"))
+        except DomainError as error:
+            raise forms.ValidationError(str(error)) from error
 
 
 def _procedural_link_kind_field(*, initial: Any = None) -> forms.ChoiceField:

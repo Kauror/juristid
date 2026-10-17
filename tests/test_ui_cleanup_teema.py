@@ -350,12 +350,17 @@ def test_required_labels_carry_the_mark_and_optional_ones_do_not(
 
     for required in ("Mida tegid?", "Keda kaasad", "Mis tähtaeg", "Mis jõustub", "Mis muutus"):
         assert re.search(re.escape(required) + r"\s*" + re.escape(MARK), body), required
-    # A planned action's day is required (docs/adr/0143), so its panel is read
-    # on its own and the rest of the page keeps the optional «Millal?».
+    # A planned action's day is required (docs/adr/0143), and so is `+ Lisa ·
+    # Muu`'s (docs/adr/0097, amendment of 2026-10-15), so those two panels are
+    # read on their own and the rest of the page keeps the optional «Millal?».
     start = body.index('id="lisa-planeeritud"')
     planned = body[start : body.index("</details>", start)]
     rest = body[:start] + body[start + len(planned) :]
     assert re.search(re.escape("Millal?") + r"\s*" + re.escape(MARK), planned)
+    muu_start = rest.index('id="marge-muu"')
+    muu = rest[muu_start : rest.index("</form>", muu_start)]
+    rest = rest[:muu_start] + rest[muu_start + len(muu) :]
+    assert re.search(re.escape("Millal?") + r"\s*" + re.escape(MARK), muu)
     for optional in ("Vastuseid", "Järgmine tegevus", "Uus hetkeseis", "Millal?"):
         assert not re.search(re.escape(optional) + r"\s*" + re.escape(MARK), rest), optional
 

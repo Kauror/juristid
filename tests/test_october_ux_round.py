@@ -448,7 +448,8 @@ def test_g_the_launchers_read_in_the_owners_order(client, specialist, normal_mat
     assert launchers == [
         "+ Ülevaade / uudis",
         "+ Kaasamine",
-        "+ Arvamus / tagasiside",
+        # `+ Arvamus / tagasiside` until 2026-10-17 (docs/adr/0097, amendment).
+        "+ Koja arvamus / kohtumine",
         "+ Lisa",
     ]
 

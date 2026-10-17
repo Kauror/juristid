@@ -16,15 +16,21 @@ from __future__ import annotations
 import re
 
 import pytest
+from playwright.sync_api import expect
 
 from e2e.conftest import (
+    AVALDATUD_MUJAL,
+    SAADETI_KOJALE,
     SANDRA,
     create_matter,
+    feedback_form,
     open_add_panel,
+    open_feedback_form,
     open_kaik_row,
     record_marge,
     sign_in,
     unique_title,
+    wait_for_htmx,
 )
 from e2e.test_teema_page_cleanup import record_koja_arvamus
 
@@ -68,9 +74,25 @@ def _record_commencement(page, description: str, day: str) -> None:
     page.wait_for_timeout(1200)
 
 
-def _open_feedback(page):
-    page.get_by_text("+ Arvamus / tagasiside", exact=True).click()
-    page.wait_for_selector("#id_tagasiside_summary")
+def _save_feedback(page) -> None:
+    """`Salvesta` on `+ Kaasamine · Lisa tagasiside`, and the swap it causes."""
+    with page.expect_response(lambda r: "/lisa/kaasamise-tagasiside/" in r.url):
+        feedback_form(page).get_by_role("button", name="Salvesta", exact=True).click()
+    wait_for_htmx(page)
+
+
+def _record_member_feedback(page, summary: str) -> None:
+    """A member's feedback sent to Koda, marked `Liige`, naming nobody.
+
+    Received feedback may name nobody (docs/adr/0101), and `Liige` does not
+    depend on naming the member, so no organisation is chosen — as the
+    original tests recorded it.
+    """
+    form = open_feedback_form(page, SAADETI_KOJALE)
+    form.locator("[data-feedback-member] label.chip").click()
+    expect(form.locator('input[name="source_is_member"]')).to_be_checked()
+    form.locator("[name=summary]").fill(summary)
+    _save_feedback(page)
 
 
 # ---------------------------------------------------------------------------
@@ -82,15 +104,15 @@ def test_feedback_saves_with_no_organisation_at_all(page, base_url):
     """The panel refused until a name was invented; now it does not.
 
     A lawyer writing down what a member said on the telephone has neither a
-    catalogue row nor a collection to name.
+    catalogue row nor a collection to name (docs/adr/0101).
     """
     sign_in(page, base_url, SANDRA)
     url = create_matter(page, base_url, unique_title("QA nimetu tagasiside"), owner=SANDRA)
 
     page.goto(url)
-    _open_feedback(page)
-    page.fill("#id_tagasiside_summary", "Helistas liige: üleminekuaeg on liiga lühike.")
-    page.locator("#arvamus-tagasiside").get_by_role("button", name="Salvesta", exact=True).click()
+    form = open_feedback_form(page, SAADETI_KOJALE)
+    form.locator("[name=summary]").fill("Helistas liige: üleminekuaeg on liiga lühike.")
+    _save_feedback(page)
     page.wait_for_selector("text=Helistas liige", state="attached")
 
     assert "Meile saadetud tagasiside" in page.locator("#ajalugu-loend").inner_text()
@@ -102,10 +124,7 @@ def test_feedback_saves_with_no_organisation_and_the_member_mark(page, base_url)
     url = create_matter(page, base_url, unique_title("QA liige nimetult"), owner=SANDRA)
 
     page.goto(url)
-    _open_feedback(page)
-    page.locator("#id_tagasiside_source_is_member").check()
-    page.fill("#id_tagasiside_summary", "Liikme vastuseis, allikas jääb nimetamata.")
-    page.locator("#arvamus-tagasiside").get_by_role("button", name="Salvesta", exact=True).click()
+    _record_member_feedback(page, "Liikme vastuseis, allikas jääb nimetamata.")
     page.wait_for_selector("text=Liikme vastuseis", state="attached")
 
     row = page.locator("#ajalugu-loend").inner_text()
@@ -123,10 +142,9 @@ def test_a_discovered_opinion_still_needs_an_author(page, base_url):
     url = create_matter(page, base_url, unique_title("QA autorita arvamus"), owner=SANDRA)
 
     page.goto(url)
-    page.get_by_text("+ Arvamus / tagasiside", exact=True).click()
-    page.get_by_text("Teiste arvamus", exact=True).click()
-    page.fill("#id_valine_seisukoht_summary", "Keegi kuskil arvas midagi.")
-    page.locator("#arvamus-teiste").get_by_role("button", name="Salvesta", exact=True).click()
+    form = open_feedback_form(page, AVALDATUD_MUJAL)
+    form.locator("[name=summary]").fill("Keegi kuskil arvas midagi.")
+    _save_feedback(page)
 
     page.wait_for_selector("text=Vali organisatsioon, kelle seisukoht see on.")
 
@@ -142,10 +160,7 @@ def test_the_member_mark_can_be_taken_off_again(page, base_url):
     url = create_matter(page, base_url, unique_title("QA liikme parandus"), owner=SANDRA)
 
     page.goto(url)
-    _open_feedback(page)
-    page.locator("#id_tagasiside_source_is_member").check()
-    page.fill("#id_tagasiside_summary", "Märgitud liikmeks ekslikult.")
-    page.locator("#arvamus-tagasiside").get_by_role("button", name="Salvesta", exact=True).click()
+    _record_member_feedback(page, "Märgitud liikmeks ekslikult.")
     page.wait_for_selector("text=Märgitud liikmeks ekslikult", state="attached")
     assert "· Liige" in page.locator("#ajalugu-loend").inner_text()
 
@@ -496,12 +511,12 @@ def test_a_new_organisation_typed_into_the_picker_becomes_a_real_one(page, base_
     url = create_matter(page, base_url, unique_title("QA uus organisatsioon"), owner=SANDRA)
 
     page.goto(url)
-    _open_feedback(page)
-    picker = page.locator("[data-orgfind]").first
+    form = open_feedback_form(page, SAADETI_KOJALE)
+    picker = form.locator("[data-orgfind]").first
     picker.locator("[data-orgfind-input]").fill(name)
     picker.locator("[data-orgfind-add]").click()
-    page.fill("#id_tagasiside_summary", "Uue liidu seisukoht.")
-    page.locator("#arvamus-tagasiside").get_by_role("button", name="Salvesta", exact=True).click()
+    form.locator("[name=summary]").fill("Uue liidu seisukoht.")
+    _save_feedback(page)
     page.wait_for_selector("text=Uue liidu seisukoht", state="attached")
 
     page.goto(url)
@@ -511,8 +526,7 @@ def test_a_new_organisation_typed_into_the_picker_becomes_a_real_one(page, base_
     # And the catalogue holds it: a second Matter's picker finds it by name.
     second = create_matter(page, base_url, unique_title("QA teine teema"), owner=SANDRA)
     page.goto(second)
-    _open_feedback(page)
-    picker = page.locator("[data-orgfind]").first
+    picker = open_feedback_form(page).locator("[data-orgfind]").first
     picker.locator("[data-orgfind-input]").fill(name)
     page.wait_for_timeout(400)
     assert name in picker.inner_text()
@@ -624,10 +638,7 @@ def test_a_correction_opened_and_saved_keeps_the_member_mark(page, base_url):
     url = create_matter(page, base_url, unique_title("QA liikme parandus"), owner=SANDRA)
 
     page.goto(url)
-    _open_feedback(page)
-    page.locator("#id_tagasiside_source_is_member").check()
-    page.fill("#id_tagasiside_summary", "Liikme tagasiside, mis vajab pisiparandust.")
-    page.locator("#arvamus-tagasiside").get_by_role("button", name="Salvesta", exact=True).click()
+    _record_member_feedback(page, "Liikme tagasiside, mis vajab pisiparandust.")
     page.wait_for_selector("text=Liikme tagasiside, mis vajab", state="attached")
 
     row = page.locator("#ajalugu-loend .uxtl__item", has_text="Liikme tagasiside, mis vajab").first

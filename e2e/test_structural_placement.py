@@ -38,7 +38,8 @@ from playwright.sync_api import expect
 from e2e.conftest import (
     HEAD,
     MARTIN,
-    open_add_panel,
+    SAADETI_KOJALE,
+    open_feedback_form,
     open_hetkeseis,
     open_kaik_row,
     record_marge,
@@ -207,7 +208,8 @@ def test_the_launcher_is_four_capture_chips_in_one_group(page, base_url: str):
     _matter(page, base_url)
 
     row = page.locator("#lisa-teemale .cx-panels").first
-    for chip in ("+ Lisa", "+ Kaasamine", "+ Arvamus / tagasiside", "+ Ülevaade / uudis"):
+    # `+ Koja arvamus / kohtumine` was `+ Arvamus / tagasiside` until 2026-10-17.
+    for chip in ("+ Lisa", "+ Kaasamine", "+ Koja arvamus / kohtumine", "+ Ülevaade / uudis"):
         expect(
             row.locator("label.disclosure-chip", has_text=re.compile(rf"^{re.escape(chip)}$"))
         ).to_have_count(1)
@@ -239,9 +241,10 @@ def test_liige_sits_with_the_organisation_picker_and_not_in_a_row_of_its_own(pag
     """
     sign_in(page, base_url, MARTIN)
     _matter(page, base_url)
-    open_add_panel(page, "arvamus-tagasiside")
+    # `Liige` is drawn beside «Saadeti Kojale» only (docs/adr/0170 §1).
+    open_feedback_form(page, SAADETI_KOJALE)
 
-    panel = page.locator("#arvamus-tagasiside")
+    panel = page.locator("#kaasamine-tagasiside")
     mark = panel.locator(".orgpick__mark")
     expect(mark).to_have_count(1)
     expect(mark.locator("[name=source_is_member]")).to_have_count(1)
@@ -280,9 +283,9 @@ def test_the_member_mark_is_inside_the_form_that_posts_and_still_saves(page, bas
     """
     sign_in(page, base_url, MARTIN)
     _matter(page, base_url)
-    open_add_panel(page, "arvamus-tagasiside")
+    open_feedback_form(page, SAADETI_KOJALE)
 
-    panel = page.locator("#arvamus-tagasiside")
+    panel = page.locator("#kaasamine-tagasiside")
     posting_form = panel.locator("form")
     expect(posting_form.locator(".orgpick__mark [name=source_is_member]")).to_have_count(1)
 

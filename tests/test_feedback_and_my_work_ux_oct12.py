@@ -2,7 +2,8 @@
 
 KAASAMINE · LISA TAGASISIDE (docs/adr/0142 amendment of 2026-10-12)
 * A — the form asks `Kaasamine`, `Saadud tagasiside`, `Kuupäev`, the files and
-  `Salvesta`, in that order, and no `Märkus`;
+  `Salvesta`, in that order, and no `Märkus` (docs/adr/0170 since added the
+  organisation and the provenance before them, and named the box `Seisukoht`);
 * the field is gone from `EngagementReplyForm` only — the sibling correction
   form still asks it, and the column is still stored;
 * a crafted `lawyer_note=` reaches nothing, and the reply text is not merged
@@ -30,11 +31,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from app.matters.enums import EngagementKind, ExternalPositionProvenance
-from app.matters.forms import (
-    CompactExternalPositionForm,
-    EngagementReplyForm,
-    ExternalPositionEditForm,
-)
+from app.matters.forms import EngagementReplyForm, ExternalPositionEditForm
 from app.matters.models import MatterEngagement, MatterExternalPosition
 from app.matters.my_work import IN_PROGRESS_HELP, build_my_work, opinion_work
 from app.matters.register_filters import register_population
@@ -83,20 +80,33 @@ def _reply(client, matter, data):
 # ---------------------------------------------------------------------------
 
 
-def test_the_reply_form_asks_four_questions_and_no_markus(signed_in, normal_matter, specialist):
+def test_the_reply_form_asks_its_questions_in_order_and_no_markus(
+    signed_in, normal_matter, specialist
+):
+    """No `Märkus`, one writing box, and the reviewed order kept.
+
+    docs/adr/0170 made this the one form for every position, so it asks more
+    than the four questions the owner reviewed on 2026-10-12 — the
+    organisation, how the position reached Koda, and its link — and the box
+    `Saadud tagasiside` is `Seisukoht` again, because it now holds published
+    views too. The 2026-10-12 decisions stand: no note, one textarea, and the
+    round, the text, the day, the files and the save in that order.
+    """
     _round(normal_matter, specialist, "Liikmete küsitlus")
 
     reply = _reply_form(_detail(signed_in, normal_matter))
 
     assert 'name="lawyer_note"' not in reply
     assert "Märkus" not in reply
-    # One writing box, and it is `Saadud tagasiside`.
+    # One writing box, and it is `Seisukoht`.
     assert reply.count("<textarea") == 1
     assert re.search(r'<textarea[^>]*name="summary"', reply)
-    # The four questions, then the save, in the order the owner reviewed.
+    assert "Seisukoht" in reply
     order = [
+        reply.index('name="organisation'),
+        reply.index('name="provenance"'),
         reply.index('name="engagement"'),
-        reply.index("Saadud tagasiside"),
+        reply.index('name="summary"'),
         reply.index('name="stated_on"'),
         reply.index('name="attachments"'),
         reply.index(">Salvesta</button>"),
@@ -111,9 +121,9 @@ def test_only_the_reply_form_lost_the_field():
         EngagementReplyForm.base_fields
     )
     assert "lawyer_note" in ExternalPositionEditForm.base_fields
-    # The sibling capture panel still declares it (and drops it per instance,
-    # docs/adr/0095 §3) — this round did not touch it.
-    assert "lawyer_note" in CompactExternalPositionForm.base_fields
+    # The sibling capture panels (`CompactExternalPositionForm` and its two
+    # subclasses) were deleted by docs/adr/0170: `Lisa tagasiside` is now the
+    # only creation form, and it declares no note. `Muuda` above still asks it.
     assert {field.name for field in MatterExternalPosition._meta.get_fields()} >= {"lawyer_note"}
 
 

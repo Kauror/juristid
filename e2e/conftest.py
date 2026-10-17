@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import expect
 
 import ci_skip_policy
 
@@ -306,9 +307,14 @@ PANEL_FAMILY = {
     "marge-tahtaeg": "lisa-marge",
     "marge-joustumine": "lisa-marge",
     "marge-toovoit": "lisa-marge",
-    "arvamus-tagasiside": "lisa-arvamus",
-    "arvamus-teiste": "lisa-arvamus",
+    # `Muu` — supporting material (docs/adr/0097, amendment of 2026-10-15).
+    "marge-muu": "lisa-marge",
+    # Only `Koja arvamus` since docs/adr/0170: every other position is
+    # `+ Kaasamine · Lisa tagasiside` (`open_feedback_form`).
     "arvamus-koja": "lisa-arvamus",
+    # `Kohtumine / arutelu` — the family is `+ Koja arvamus / kohtumine` since
+    # 2026-10-17 (docs/adr/0097, amendment of that date).
+    "arvamus-kohtumine": "lisa-arvamus",
     # `+ Kaasamine` is start, then feedback since docs/adr/0142.
     "kaasamine-alusta": "lisa-kaasamine",
     "kaasamine-tagasiside": "lisa-kaasamine",
@@ -994,6 +1000,34 @@ def document_overflows(page) -> bool:
 def chronology(page):
     """`Teema käik`, the Matter's chronology."""
     return page.locator("#ajalugu-loend")
+
+
+#: The two answers `Lisa tagasiside` asks to *how did this reach us*
+#: (docs/adr/0170): the stored provenance values, keyed for readability.
+SAADETI_KOJALE = "RECEIVED"
+AVALDATUD_MUJAL = "DISCOVERED"
+#: The organisation picker's id prefix on `Lisa tagasiside`.
+FEEDBACK_PICKER = "tagasiside"
+
+
+def feedback_form(page):
+    """`+ Kaasamine · Lisa tagasiside`'s form — every position on a Teema."""
+    return page.locator("#kaasamine-tagasiside form")
+
+
+def open_feedback_form(page, provenance: str | None = None):
+    """Open `+ Kaasamine · Lisa tagasiside` and, when given, state the provenance.
+
+    The provenance is a required radio with no default (docs/adr/0170 §1); a
+    test that records a position says which one it is, as a person must. The
+    radios are chip inputs, so the visible label is what is clicked.
+    """
+    open_add_panel(page, "kaasamine-tagasiside")
+    form = feedback_form(page)
+    if provenance:
+        form.locator(f'label.chip:has(input[name="provenance"][value="{provenance}"])').click()
+        expect(form.locator(f'input[name="provenance"][value="{provenance}"]')).to_be_checked()
+    return form
 
 
 def choose_organisation(page, picker: str, name: str = "Näidisministeerium") -> None:

@@ -3,7 +3,7 @@
 `tests/test_teema_page_cleanup.py` proves what the server sends. This proves
 what only a layout engine can say about it:
 
-* the date under `+ Lisa` and under `+ Arvamus / tagasiside` is the width of a
+* the date under `+ Lisa` and under `+ Kaasamine · Lisa tagasiside` is the width of a
   date, its calendar button stays on the same row, and nothing pushes the page
   sideways at 1440, 768 or 375;
 * `+ Lõpeta teema` opens straight onto its chips, with no heading row above them;
@@ -30,9 +30,13 @@ import pytest
 from playwright.sync_api import expect
 
 from e2e.conftest import (
+    AVALDATUD_MUJAL,
+    FEEDBACK_PICKER,
+    SAADETI_KOJALE,
     SANDRA,
     choose_organisation,
     open_add_panel,
+    open_feedback_form,
     open_hetkeseis,
     open_kaik_row,
     plant_historical_instruments,
@@ -152,9 +156,8 @@ def test_the_panels_are_compact_and_fit(page, base_url, width):
     assert geometry["sameRow"] and geometry["inside"], geometry
     assert_no_sideways_scroll(page)
 
-    # `+ Arvamus / tagasiside` opens on `Meile saadetud tagasiside`.
-    open_add_panel(page, "arvamus-tagasiside")
-    feedback = page.locator("#arvamus-tagasiside")
+    # `+ Kaasamine · Lisa tagasiside` — every position since docs/adr/0170.
+    feedback = open_feedback_form(page)
     geometry = date_geometry(feedback.locator("label.cx-f--solo"))
     assert geometry["width"] <= 161, geometry
     if width > 375:
@@ -286,20 +289,21 @@ def record_marge(page, title: str) -> None:
 
 
 def record_feedback(page, summary: str) -> None:
-    """`Meile saadetud tagasiside`, as `e2e/test_correction_round_surfaces.py` does."""
-    open_add_panel(page, "arvamus-tagasiside")
-    page.fill("#id_tagasiside_summary", summary)
-    page.locator("#arvamus-tagasiside").get_by_role("button", name="Salvesta", exact=True).click()
+    """«Meile saadetud tagasiside»: `Lisa tagasiside` · «Saadeti Kojale» (docs/adr/0170)."""
+    form = open_feedback_form(page, SAADETI_KOJALE)
+    choose_organisation(page, FEEDBACK_PICKER)
+    form.locator("[name=summary]").fill(summary)
+    form.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
     expect(page.locator("#ajalugu-loend")).to_contain_text(summary)
 
 
 def record_other_position(page, summary: str) -> None:
-    """`Teiste arvamus`, as `e2e/test_external_position.py` does."""
-    open_add_panel(page, "arvamus-teiste")
-    choose_organisation(page, "valine-seisukoht")
-    page.locator("#arvamus-teiste [name=summary]").fill(summary)
-    page.locator("#arvamus-teiste").get_by_role("button", name="Salvesta").click()
+    """«Teiste arvamus»: `Lisa tagasiside` · «Avaldatud mujal» (docs/adr/0170)."""
+    form = open_feedback_form(page, AVALDATUD_MUJAL)
+    choose_organisation(page, FEEDBACK_PICKER)
+    form.locator("[name=summary]").fill(summary)
+    form.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")
     expect(page.locator("#ajalugu-loend")).to_contain_text(summary)
 
