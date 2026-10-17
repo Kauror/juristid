@@ -89,7 +89,11 @@ keyboard; a browser preference cannot.
 ### 4. Signing out clears it, with everything else
 
 `Clear-Site-Data: "storage"` on sign-out (ENG-009) is the promise that no trace
-of a session stays in the profile. The preference is not carved out of it: a
+of a session stays in the profile. (Amended 2026-10-17, JSEC-003: the header is
+now `"cache", "storage"`, so the HTTP cache goes with the storage — document
+thumbnails had been sent `private, max-age=300` and are `no-store` now like
+every other authenticated response. Cookies are still left to `logout`, so the
+reasoning below is unchanged.) The preference is not carved out of it: a
 cosmetic choice is not worth the first exception to a privacy rule, and a cookie
 — the one store that header leaves alone — is exactly what this preference must
 not be. So the page signing out lands on is dark, with the switch on it, and a

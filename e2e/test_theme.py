@@ -326,9 +326,9 @@ def test_signing_out_clears_the_choice_with_everything_else_and_signing_in_keeps
 ):
     """The preference is the browser's, and signing out empties the browser.
 
-    `Clear-Site-Data: "storage"` on sign-out (ENG-009) is a promise that no
-    trace of the session is left in this profile; the preference is not an
-    exception to it. So the page signing out lands on is the dark default —
+    `Clear-Site-Data: "cache", "storage"` on sign-out (ENG-009) is a promise
+    that no trace of the session is left in this profile; the preference is not
+    an exception to it. So the page signing out lands on is the dark default —
     with the switch on it, and a choice made there carries into the session.
     """
     sign_in(page, base_url, SANDRA)
