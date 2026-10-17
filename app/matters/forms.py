@@ -4903,7 +4903,8 @@ class CompactOtherForm(forms.Form):
     * `Millal?` — **required**, one day, **no default**. When the material or
       event occurred: `Entry.occurred_at` means when the work happened, not when
       it was typed, so the chronology places the row on this day. Nothing is
-      pre-filled and nothing is invented: an empty box is refused.
+      pre-filled and nothing is invented: an empty box is refused, and so is a
+      day after today — what is planned is not yet material on the file.
     * `Link` — optional, the shared web-address rule (`normalize_entry_url`).
     * `Failid` — optional, the canonical evidence pipeline.
 
@@ -4950,6 +4951,19 @@ class CompactOtherForm(forms.Form):
             raise forms.ValidationError("Kirjelda, mida lisad.")
         return description
 
+    def clean_occurred_on(self) -> Any:
+        """Material met or an event that happened: never after today (JQA-001).
+
+        The Tallinn business day, as `clean_sent_on` reads a send's. The
+        service refuses the same day in the same words for every other caller.
+        """
+        from app.matters.workspace import OTHER_ENTRY_DAY_AHEAD
+
+        value = self.cleaned_data.get("occurred_on")
+        if value is not None and value > timezone.localdate():
+            raise forms.ValidationError(OTHER_ENTRY_DAY_AHEAD)
+        return value
+
     def clean_url(self) -> str:
         from app.matters.services import normalize_entry_url
 
@@ -4971,7 +4985,8 @@ class CompactMeetingForm(forms.Form):
 
     * `Kuupäev` — **required**, one day, **no default**: the day the meeting
       took place, stored as the start of that local day in `Entry.occurred_at`
-      exactly as `+ Lisa · Muu` does. Nothing is pre-filled or inferred.
+      exactly as `+ Lisa · Muu` does. Nothing is pre-filled or inferred, and a
+      day after today is refused: a meeting not yet held is a plan.
     * `Lühikokkuvõte` — **required**: what was discussed and agreed, and who
       took part. It is the entry's body and goes through the same sanitising
       every entry body does; a summary that is empty once sanitised (markup
@@ -5012,6 +5027,15 @@ class CompactMeetingForm(forms.Form):
         # Its own ids: `Muu` and `Koja arvamus` draw theirs on the same page.
         kwargs.setdefault("auto_id", "id_kohtumine_%s")
         super().__init__(*args, **kwargs)
+
+    def clean_occurred_on(self) -> Any:
+        """A meeting held: never after today (JQA-001), as `CompactOtherForm`."""
+        from app.matters.workspace import MEETING_ENTRY_DAY_AHEAD
+
+        value = self.cleaned_data.get("occurred_on")
+        if value is not None and value > timezone.localdate():
+            raise forms.ValidationError(MEETING_ENTRY_DAY_AHEAD)
+        return value
 
     def clean_summary(self) -> str:
         from app.core.richtext import sanitize_entry_html

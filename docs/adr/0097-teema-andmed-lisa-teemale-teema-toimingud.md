@@ -507,7 +507,14 @@ task composer returns.
    start of that local day (`start_of_local_day`) in `Entry.occurred_at`, which
    means when the work happened, not when it was typed; the chronology shows the
    row on that day and orders it by that day like every other entry. (Owner's
-   review of #454: recording the save timestamp instead was rejected.)
+   review of #454: recording the save timestamp instead was rejected.) **The day
+   may not be after today** (Tallinn time; «Toimumise kuupäev ei saa olla
+   tulevikus.», on the form and in `add_matter_other` alike), because every entry
+   is counted as work done on its day by `app.matters.activity`, so a day ahead
+   moved «Viimane tegevus», «Muutusteta 30 p» and Osakond's weeks while the day
+   cannot be corrected afterwards — a plan is `Järgmine tegevus` or `Oluline
+   tähtaeg`, and like a sent `Koja arvamus` this is an exception to
+   docs/adr/0121 §3 (JQA-001, owner decision 2026-10-17).
 4. **Nothing follows from it.** No `NextAction`, no `Hetkeseis` or plan change, no
    wait, no `Submission`, no reporting definition touched. A closed Teema refuses
    it under the same lock as every other new record; readers and the gate visitor
@@ -540,7 +547,10 @@ generic composer returns.
 2. **Fields.** `Kuupäev` — required, one day, the existing date picker, **empty
    until the person fills it** (nothing pre-filled, nothing inferred), stored as
    `start_of_local_day(day)` in `Entry.occurred_at` exactly as `Muu` does, so the
-   chronology shows and orders the row on the day the meeting took place.
+   chronology shows and orders the row on the day the meeting took place. **The
+   day may not be after today** («Kohtumise kuupäev ei saa olla tulevikus.», on
+   the form and in `add_matter_meeting` alike), for the reason `Muu`'s may not
+   (amendment of 2026-10-15, 3): a meeting not yet held is a plan, not work done.
    `Lühikokkuvõte` — required, the entry's body, through the same sanitising
    every entry body has (`sanitize_entry_html` in `add_entry`); a summary that is
    empty once sanitised is refused under the field («Kirjuta kohtumise
