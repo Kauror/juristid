@@ -8,6 +8,25 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-10-17
+basis = "deployment"
+prs = [453, 454, 455, 456]
+# Teema UX-voor, neli etappi, üks ühendatud väljalase: kaasamise kalender (#453),
+# «+ Lisa · Muu» (#454, ADR 0097), üks «Lisa tagasiside» vorm (#455, ADR 0170)
+# ja «Kohtumine / arutelu» (#456, ADR 0097). Üks migratsioon:
+# matters/0049_entry_url (lisaveerg vaikeväärtusega ja CHECK). Otsinguindeksit
+# uuesti ehitada ei ole vaja. Kui väljalase ei jõua tootmisse 17.10 (Tallinna
+# aja järgi), liigub see kirje väljalaske päeva kuupäevale.
+changes = [
+  "«Alusta kaasamist» kalendris «Tagasisidet ootame kuni» on märgitud teema arvamuse tähtaeg.",
+  "«+ Lisa» all on uus valik «Muu» taustamaterjali lisamiseks koos kirjelduse, toimumise kuupäeva ning soovi korral lingi ja failidega.",
+  "Kogu tagasiside lisatakse nüüd ühest kohast, «+ Kaasamine» → «Lisa tagasiside», kus valid, kas seisukoht saadeti Kojale või avaldati mujal.",
+  "Mujal avaldatud seisukohal on organisatsioon kohustuslik, Kojale saadetud tagasisidel mitte, ja kummalegi piisab tekstist, lingist või failist.",
+  "Tagasisidet ei seota enam kaasamisega automaatselt; esimene sellega seotud vastus lõpetab ootuse, mujal avaldatud seisukoht kaasamist ei muuda.",
+  "«+ Arvamus / tagasiside» on nüüd «+ Koja arvamus / kohtumine», kus saab salvestada ka kohtumise või arutelu kuupäeva, lühikokkuvõtte ja failidega.",
+]
+
+[[day]]
 date = 2026-10-15
 basis = "deployment"
 prs = [441, 442, 443, 444, 445, 446, 447, 448, 449, 450, 451, 452]

@@ -282,9 +282,10 @@ def test_a_correction_may_move_a_position_forward(normal_matter, specialist, min
 
 def test_the_panel_records_a_position_ahead(signed_in, normal_matter, ministry):
     response = signed_in.post(
-        reverse("matters:add_external_position", kwargs={"pk": normal_matter.pk}),
+        reverse("matters:add_engagement_reply", kwargs={"pk": normal_matter.pk}),
         {
             "organisation": str(ministry.pk),
+            "provenance": "DISCOVERED",
             "stated_on": _day(TOMORROW),
             "summary": "Ministeerium toetab muudatust.",
         },

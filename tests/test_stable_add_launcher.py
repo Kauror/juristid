@@ -50,7 +50,9 @@ pytestmark = pytest.mark.django_db
 CANONICAL = [
     "+ Ülevaade / uudis",
     "+ Kaasamine",
-    "+ Arvamus / tagasiside",
+    # `+ Arvamus / tagasiside` until 2026-10-17 (docs/adr/0097, amendment of
+    # that date).
+    "+ Koja arvamus / kohtumine",
     "+ Lisa",
 ]
 
@@ -59,8 +61,13 @@ CANONICAL = [
 SUBCHOICES = {
     # `Tavaline` left `+ Lisa` on 2026-10-07 (docs/adr/0143); `Arvamuse
     # tähtaeg`, a new request for Koda's opinion, is first and the default.
-    "lisa-marge": ["Arvamuse tähtaeg", "Oluline tähtaeg", "Jõustumine", "Töövõit"],
-    "lisa-arvamus": ["Meile saadetud tagasiside", "Teiste arvamus", "Koja arvamus"],
+    # `Muu` joined on 2026-10-15 (docs/adr/0097, amendment of that date).
+    "lisa-marge": ["Arvamuse tähtaeg", "Oluline tähtaeg", "Jõustumine", "Töövõit", "Muu"],
+    # `Meile saadetud tagasiside` and `Teiste arvamus` left on 2026-10-15: every
+    # position is recorded through `+ Kaasamine · Lisa tagasiside`
+    # (docs/adr/0170 §5). `Koja arvamus` is the first sub-choice and the
+    # default; `Kohtumine / arutelu` joined on 2026-10-17 (docs/adr/0097).
+    "lisa-arvamus": ["Koja arvamus", "Kohtumine / arutelu"],
     "lisa-kaasamine": ["Alusta kaasamist", "Lisa tagasiside"],
 }
 
@@ -80,13 +87,13 @@ PANEL_IDS = [
     "marge-tahtaeg",
     "marge-joustumine",
     "marge-toovoit",
+    "marge-muu",
     "lisa-kaasamine",
     "kaasamine-alusta",
     "kaasamine-tagasiside",
     "lisa-arvamus",
-    "arvamus-tagasiside",
-    "arvamus-teiste",
     "arvamus-koja",
+    "arvamus-kohtumine",
     "lisa-koduleht",
 ]
 
@@ -276,7 +283,7 @@ def _chosen(zone: str) -> list[str]:
     """Which launcher radios render `checked`.
 
     Families only. The two sub-choice groups always have one of their own
-    checked — `Arvamuse tähtaeg` and `Meile saadetud tagasiside` arrive chosen, so a
+    checked — `Arvamuse tähtaeg` and `Koja arvamus` arrive chosen, so a
     family panel never opens on more chips and no form — and counting those
     here would make «nothing is chosen until somebody chooses» false about a
     page where nothing is open (docs/adr/0097 §8.3).
@@ -344,7 +351,12 @@ def test_no_family_is_chosen_until_somebody_chooses(signed_in, specialist):
 
 
 def test_each_family_arrives_with_its_ordinary_sub_choice_chosen(signed_in, specialist):
-    """`Arvamuse tähtaeg` and `Meile saadetud tagasiside`, so a family opens on a form.
+    """`Arvamuse tähtaeg` and `Koja arvamus`, so a family opens on a form.
+
+    `+ Arvamus / tagasiside` opened on `Meile saadetud tagasiside` until that
+    chip left with `Teiste arvamus` (docs/adr/0170 §5); its one remaining
+    sub-choice, `Koja arvamus`, is now its default.
+
 
     Most of what reaches a department is somebody answering it; `+ Lisa`
     opened on `Tavaline` — «a `Märge` is usually just a note» — until that left
@@ -363,7 +375,7 @@ def test_each_family_arrives_with_its_ordinary_sub_choice_chosen(signed_in, spec
     # `+ Kaasamine` opens on `Alusta kaasamist` on a file with no open round
     # (docs/adr/0142); `tests/test_document_title_and_kaasamine_split.py` has
     # the other half.
-    assert checked == {"marge-arvamuse-tahtaeg", "kaasamine-alusta", "arvamus-tagasiside"}
+    assert checked == {"marge-arvamuse-tahtaeg", "kaasamine-alusta", "arvamus-koja"}
 
 
 def test_each_chip_points_at_the_form_it_opens(signed_in, specialist):

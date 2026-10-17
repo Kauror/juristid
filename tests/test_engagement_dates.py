@@ -57,6 +57,12 @@ def _panel(body: str) -> str:
     return body[start : body.index('id="lisa-arvamus"', start)]
 
 
+def _start_panel(body: str) -> str:
+    """`Alusta kaasamist` alone — `Lisa tagasiside` beside it opens on today too."""
+    start = body.index('id="kaasamine-alusta"')
+    return body[start : body.index('id="kaasamine-tagasiside-valik"', start)]
+
+
 def _workspace(client, matter) -> str:
     return client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
 
@@ -231,7 +237,7 @@ def test_a_refused_save_hands_the_typed_date_back_rather_than_todays(signed_in, 
     radio = body[body.index('id="lisa-kaasamine-valik"') :]
     assert "checked" in radio[: radio.index(">")]
     assert f'value="{typed}"' in body
-    assert f'value="{format_estonian_date(timezone.localdate())}"' not in _panel(body)
+    assert f'value="{format_estonian_date(timezone.localdate())}"' not in _start_panel(body)
 
 
 def test_a_refused_save_hands_both_cleared_boxes_back_empty(signed_in, specialist):

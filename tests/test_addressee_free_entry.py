@@ -5,7 +5,8 @@ half-filled record, add the institution under Asutused, come back, find it
 again, save. Nobody used it. What is here instead is one field beside the chips
 — type the name, save — and the whole risk of that convenience is identity.
 
-**The form that asks is `Meile saadetud tagasiside`.** It asked `Muuda teemat`
+**The form that asks is `+ Kaasamine · Lisa tagasiside`** (with «Saadeti
+Kojale», the former `Meile saadetud tagasiside` door — docs/adr/0170). It asked `Muuda teemat`
 until 2026-09-20: the Matter-level `Kellele` was the last Teema-form control
 that typed an institution, and it left the ordinary Teema UI with `Sildid` and
 `Menetlusliik` (docs/adr/0097 §4). `resolve_addressee` did not move with it —
@@ -56,17 +57,20 @@ def _edit(matter) -> str:
 
 
 def _feedback(matter) -> str:
-    return reverse("matters:add_received_feedback", kwargs={"pk": matter.pk})
+    return reverse("matters:add_engagement_reply", kwargs={"pk": matter.pk})
 
 
 def _feedback_payload(**overrides) -> dict:
-    """The smallest `Meile saadetud tagasiside` save that would otherwise succeed.
+    """The smallest «Saadeti Kojale» save that would otherwise succeed.
 
-    A summary, a date, and whichever half of the picker the test is answering.
+    Received feedback (the former `Meile saadetud tagasiside` door, now
+    `Lisa tagasiside` with its provenance stated — docs/adr/0170), where the
+    organisation is optional (docs/adr/0101). A summary, a date, and whichever
+    half of the picker the test is answering.
     The panel's own rules are `tests/test_teema_composer_simplification.py`'s;
     what is under test here is only what a typed name *means*.
     """
-    payload = {"summary": "Toetab eelnõu.", "stated_on": "14.03.2026"}
+    payload = {"provenance": "RECEIVED", "summary": "Toetab eelnõu.", "stated_on": "14.03.2026"}
     payload.update(overrides)
     return payload
 
@@ -178,7 +182,7 @@ def test_nothing_chosen_and_nothing_typed_is_no_addressee():
 
 
 def answer_addressee(signed_in, title: str, **fields):
-    """File a Teema, then name an institution on `Meile saadetud tagasiside`.
+    """File a Teema, then name an institution on `Lisa tagasiside` («Saadeti Kojale»).
 
     Returns the `Organisation` the save resolved to, or `None` where it named
     none — which is what every test below is actually about. `addressee_name`

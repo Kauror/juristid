@@ -438,6 +438,8 @@ def test_liige_sits_in_the_organisation_search_row(client, specialist, normal_ma
 
     body = _detail(client, normal_matter)
 
-    rows = re.findall(r'<div class="orgpick__row">(.*?)<div class="orgpick__mark">', body, re.S)
+    rows = re.findall(
+        r'<div class="orgpick__row">(.*?)<div class="orgpick__mark"[^>]*>', body, re.S
+    )
     assert rows, "Liige is not in the organisation picker's row"
     assert all('class="orgfind"' in row for row in rows)

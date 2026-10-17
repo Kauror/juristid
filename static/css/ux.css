@@ -622,6 +622,16 @@
   color: var(--text-muted);
 }
 
+/* The link a `Muu` entry now carries, printed whole so it can be compared with
+   the one in the box. An address has no spaces to wrap at, so it may break
+   anywhere rather than push the row wider than a phone. */
+.uxtl__conflicturl {
+  margin: 0 0 4px;
+  font: 400 12px/1.4 var(--typography-font-sans);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
 /* A sentence under a control in an inline editor, saying something the control
    itself cannot.
 

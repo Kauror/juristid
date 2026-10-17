@@ -1,8 +1,8 @@
-"""The four simplified `Lisa teemale` panels, at the widths a lawyer uses them at.
+"""The simplified `Lisa teemale` panels, at the widths a lawyer uses them at.
 
 `tests/test_teema_composer_simplification.py` settles what each panel asks and
 what it writes. This settles the half of docs/adr/0095 that only a running
-browser can: that the four panels are usable on a phone, that the organisation
+browser can: that the panels are usable on a phone, that the organisation
 control really searches, and that the controls the panels kept are the ones a
 person can actually reach.
 
@@ -23,11 +23,12 @@ pytestmark = pytest.mark.e2e
 
 MINISTRY = "Näidisministeerium"
 
-#: The four panels this round simplified, by the id their launcher radio names.
+#: The panels this round simplified, by the id their launcher radio names.
+#: `Teiste arvamus` and `Meile saadetud tagasiside` are one form since
+#: docs/adr/0170: `+ Kaasamine · Lisa tagasiside`.
 PANELS = [
     "arvamus-koja",
-    "arvamus-teiste",
-    "arvamus-tagasiside",
+    "kaasamine-tagasiside",
     "lisa-koduleht",
 ]
 
@@ -108,7 +109,7 @@ def test_every_panel_keeps_its_action_button_reachable(page, base_url, width):
 
 @pytest.mark.parametrize("width", [375, 1440])
 def test_the_organisation_search_is_usable_on_every_panel_that_has_one(page, base_url, width):
-    """Type a fragment, get one match, choose it — on all three pickers.
+    """Type a fragment, get one match, choose it — on both pickers.
 
     The control is `quiet` on each of them since docs/adr/0095, so at rest there
     is a box and no catalogue; a test that only checked the box existed would
@@ -119,8 +120,7 @@ def test_the_organisation_search_is_usable_on_every_panel_that_has_one(page, bas
     page.set_viewport_size({"width": width, "height": 900})
 
     for panel_id, picker in (
-        ("arvamus-teiste", "valine-seisukoht"),
-        ("arvamus-tagasiside", "tagasiside"),
+        ("kaasamine-tagasiside", "tagasiside"),
         ("arvamus-koja", "koja-adressaat"),
     ):
         open_add_panel(page, panel_id)

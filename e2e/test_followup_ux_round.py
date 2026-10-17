@@ -236,7 +236,7 @@ def test_c_long_rows_keep_their_columns_and_their_controls(page, base_url, width
 # ---------------------------------------------------------------------------
 
 
-def test_d_lisa_has_four_choices_and_saves_a_new_deadline(page, base_url):
+def test_d_lisa_has_five_choices_and_saves_a_new_deadline(page, base_url):
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, unique_title("Uus arvamuse tähtaeg"), owner=MARTIN)
 
@@ -247,6 +247,9 @@ def test_d_lisa_has_four_choices_and_saves_a_new_deadline(page, base_url):
         "Oluline tähtaeg",
         "Jõustumine",
         "Töövõit",
+        # Supporting material since 2026-10-15 — not the retired `Tavaline`
+        # (docs/adr/0097, amendment of that date).
+        "Muu",
     ]
     expect(page.locator("#marge-tavaline")).to_have_count(0)
 

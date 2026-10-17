@@ -1123,3 +1123,7 @@ it is ordinary even when it falls before the value a caller happened to store.
 That a deadline opens a wait; that either date alone relates to nothing; that a
 deadline in the past is accepted; the wait's work item, its completion and its
 closure with the Matter. No schema change.
+
+## Amendment of 2026-10-15 — see docs/adr/0170
+
+§3.5 (two chips, provenance fixed by the chip) is superseded: one `+ Kaasamine · Lisa tagasiside` form asks the provenance with an explicit, default-free radio; §3.2 — stated, never inferred — stands (docs/adr/0170-lisa-tagasiside-is-the-one-door-for-every-position.md).

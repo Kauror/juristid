@@ -34,7 +34,7 @@ from django.utils import timezone
 
 from app.documents.links import DocumentLink
 from app.matters import work_items as wi
-from app.matters.enums import ResponseDeadlineOutcome
+from app.matters.enums import ExternalPositionProvenance, ResponseDeadlineOutcome
 from app.matters.models import Matter, MatterEngagement, MatterResponseDeadline
 from app.matters.response_deadlines import deadline_revision
 from app.matters.selectors import response_deadline_of
@@ -168,6 +168,7 @@ def test_scenario_a_one_request_answered_over_two_weeks(signed_in, specialist, c
         organisation=member,
         stated_on=timezone.localdate(),
         summary="Toetame, kui üleminekuaeg pikeneb.",
+        provenance=ExternalPositionProvenance.RECEIVED.value,
         engagement=members,
         actor=specialist,
     )

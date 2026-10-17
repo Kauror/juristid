@@ -2067,6 +2067,13 @@
     var days = new Date(visible.getFullYear(), visible.getMonth() + 1, 0).getDate();
     var selected = parseEstonian(input.value);
     var today = new Date();
+    /* One informational day the calendar points at — `Tagasisidet ootame kuni`
+       shows the Matter's `Arvamuse tähtaeg` this way. It is never chosen for
+       the person and never limits what they may choose: the marked day is an
+       ordinary button that only also says what it is, on hover (`title`) and
+       to a screen reader (its name). */
+    var mark = parseEstonian(input.getAttribute("data-datepicker-mark") || "");
+    var markLabel = input.getAttribute("data-datepicker-mark-label") || "";
 
     for (var blank = 0; blank < lead; blank += 1) {
       var filler = document.createElement("span");
@@ -2102,11 +2109,30 @@
         button.classList.add("is-selected");
         button.setAttribute("aria-current", "date");
       }
+      if (mark && markLabel && sameDay(date, mark)) {
+        button.classList.add("is-marked");
+        button.title = markLabel;
+        button.setAttribute("aria-label", formatEstonian(date) + ", " + markLabel);
+      }
       button.addEventListener("click", choose(date));
       grid.appendChild(button);
     }
 
     panel.appendChild(grid);
+
+    /* The marked day may be in another month than the one shown, so the panel
+       also says it in words under the grid: the person sees where the deadline
+       is before navigating to it. */
+    if (mark && markLabel) {
+      var legend = document.createElement("p");
+      legend.className = "datepicker__legend";
+      var swatch = document.createElement("span");
+      swatch.className = "datepicker__legend-mark";
+      swatch.setAttribute("aria-hidden", "true");
+      legend.appendChild(swatch);
+      legend.appendChild(document.createTextNode(markLabel + " " + formatEstonian(mark)));
+      panel.appendChild(legend);
+    }
   }
 
   /* ---- An implausibly old date says so, and saves anyway ----------------

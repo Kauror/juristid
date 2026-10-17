@@ -30,7 +30,7 @@ from app.core.invariants import EXPLANATIONS, SERVICE_RULES, check_domain_invari
 from app.documents.links import DocumentLink
 from app.documents.services import link_document_to_record
 from app.matters import services as matter_services
-from app.matters.enums import EngagementKind
+from app.matters.enums import EngagementKind, ExternalPositionProvenance
 from app.matters.models import Matter, MatterEngagement, MatterExternalPosition
 from tests import factories
 
@@ -99,6 +99,7 @@ def _position(matter, engagement, actor) -> MatterExternalPosition:
         matter=matter,
         organisation=factories.OrganisationFactory(),
         url="https://example.org/seisukoht",
+        provenance=ExternalPositionProvenance.RECEIVED.value,
         engagement=engagement,
         actor=actor,
     )

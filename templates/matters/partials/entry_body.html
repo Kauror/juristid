@@ -32,6 +32,20 @@ control that would add something new (app/matters/views.py, docs/adr/0075 §12).
         {% field_label entry_edit_form.body %}
       </label>
       {{ entry_edit_form.body }}
+      {% if entry_edit_form.url %}
+        {% comment %}
+          A `Muu` entry's link is corrected with its description; the earlier
+          address is kept in the revision (docs/adr/0097, amendment of
+          2026-10-15). Every other kind's form has no such field.
+        {% endcomment %}
+        <label class="cx-f">
+          <span class="cx-f__lab">Link</span>
+          {{ entry_edit_form.url }}
+        </label>
+        {% if entry_edit_form.url.errors %}
+          <p class="formerror" role="alert" id="{{ entry_edit_form.url.auto_id }}_error">{{ entry_edit_form.url.errors|first }}</p>
+        {% endif %}
+      {% endif %}
       {{ entry_edit_form.revision }}
       {% if entry_edit_form.body.errors %}
         <p class="formerror" role="alert" id="{{ entry_edit_form.body.auto_id }}_error">{{ entry_edit_form.body.errors|first }}</p>
@@ -52,9 +66,22 @@ control that would add something new (app/matters/views.py, docs/adr/0075 §12).
         <div class="uxtl__conflict">
           <p class="uxtl__conflictnote">Praegune sõnastus:</p>
           <div class="richtext">{{ entry_conflict.body|safe }}</div>
+          {% if entry_edit_form.url %}
+            {% comment %}
+              A `Muu` entry's link is half of what it says, so the version that
+              won shows its link too — the whole stored address as escaped
+              text, not a control: what differs between two links is often
+              the path a host-named link would hide, and this is there to be
+              compared and copied, not followed. Stored addresses carry no
+              userinfo (`normalize_entry_url`), so printing one in full leaks
+              nothing (docs/adr/0097, amendment of 2026-10-15).
+            {% endcomment %}
+            <p class="uxtl__conflictnote">Praegune link:</p>
+            <p class="uxtl__conflicturl" data-conflict-url>{% if entry_conflict.url %}{{ entry_conflict.url }}{% else %}link puudub{% endif %}</p>
+          {% endif %}
           <p class="uxtl__conflictnote">
             Kopeeri vajalik osa oma teksti või laadi leht uuesti, et praeguse
-            versiooniga jätkata. Sinu tekst on ülal alles.
+            versiooniga jätkata. Sinu {% if entry_edit_form.url %}tekst ja link on{% else %}tekst on{% endif %} ülal alles.
           </p>
         </div>
       {% endif %}
@@ -81,6 +108,19 @@ control that would add something new (app/matters/views.py, docs/adr/0075 §12).
       the allowlist.
     {% endcomment %}
     <div class="richtext">{{ entry.body|safe }}</div>
+    {% comment %}
+      A `Muu` entry's link, named by its host and never printed as a raw address,
+      the same labelled new-window control the other chronology links are
+      (docs/adr/0081 §4). Inside this element so a corrected link swaps with the
+      corrected text.
+    {% endcomment %}
+    {% if entry.url %}
+      <span class="uxtl__links">
+        <a class="uxtl__link" href="{{ entry.url }}"
+           target="_blank" rel="noopener noreferrer">{{ entry.link_label }}<span
+           class="visually-hidden"> — avaneb uues aknas</span></a>
+      </span>
+    {% endif %}
     {% if can_write_business_content %}
       <div class="uxtl__editactions">
         <button class="uxtl__edit" type="button"

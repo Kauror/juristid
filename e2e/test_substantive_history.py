@@ -44,11 +44,15 @@ import pytest
 from playwright.sync_api import expect
 
 from e2e.conftest import (
+    AVALDATUD_MUJAL,
+    FEEDBACK_PICKER,
+    SAADETI_KOJALE,
     SANDRA,
     choose_organisation,
     close_through_stage,
     create_matter,
     open_add_panel,
+    open_feedback_form,
     open_hetkeseis,
     open_kaik_row,
     record_marge,
@@ -392,20 +396,18 @@ def test_received_and_discovered_feedback_are_visibly_different_things(page, bas
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)
 
-    open_add_panel(page, "arvamus-tagasiside")
-    received = panel(page, "arvamus-tagasiside")
-    # Both panels name an institution since docs/adr/0095 §4 — `Allikas` is a
-    # `Muuda` control, and the aggregate rows it was built for keep their labels.
-    # What tells these two records apart is the chip that was opened, which is
-    # the whole point of this test.
-    choose_organisation(page, "tagasiside")
+    # One form, `+ Kaasamine · Lisa tagasiside`, since docs/adr/0170; both
+    # positions name an institution (docs/adr/0095 §4 — `Allikas` is a `Muuda`
+    # control). What tells these two records apart is the provenance answer
+    # that was stated, which is the whole point of this test.
+    received = open_feedback_form(page, SAADETI_KOJALE)
+    choose_organisation(page, FEEDBACK_PICKER)
     received.locator("[name=summary]").fill("58 vastust; enamik vastu.")
     received.get_by_role("button", name="Salvesta", exact=True).click()
     history(page).get_by_text("Meile saadetud tagasiside:").first.wait_for()
 
-    open_add_panel(page, "arvamus-teiste")
-    discovered = panel(page, "arvamus-teiste")
-    choose_organisation(page, "valine-seisukoht")
+    discovered = open_feedback_form(page, AVALDATUD_MUJAL)
+    choose_organisation(page, FEEDBACK_PICKER)
     discovered.locator("[name=summary]").fill("Toetab varianti B.")
     discovered.get_by_role("button", name="Salvesta", exact=True).click()
     history(page).get_by_text("Teiste arvamus:").first.wait_for()

@@ -53,6 +53,26 @@ ROMAN_HALVES: tuple[str, ...] = ("I", "II")
 MIN_YEAR = 1990
 MAX_YEAR = 2100
 
+#: The same range for a typed *day*: the first and last day any day box or any
+#: service that stores a day accepts (CORR-02, JQA-008). `EstonianDateField`
+#: refuses outside it with :data:`DAY_OUT_OF_RANGE`, and the services that turn
+#: a day into a stored timestamp ask again. Before this, `01.01.0001` reached
+#: Tallinn midnight in year 0 UTC and PostgreSQL refused the INSERT — a 500 on
+#: six doors — while `02.01.0001` was stored as an implausible day.
+EARLIEST_DAY = date(MIN_YEAR, 1, 1)
+LATEST_DAY = date(MAX_YEAR, 12, 31)
+
+#: What a day outside the range is told, worded like the year refusal below.
+DAY_OUT_OF_RANGE = (
+    f"Kuupäev peab olema vahemikus "
+    f"{format_estonian_date(EARLIEST_DAY)}–{format_estonian_date(LATEST_DAY)}."
+)
+
+
+def is_supported_day(value: date) -> bool:
+    """Whether ``value`` falls inside :data:`EARLIEST_DAY`–:data:`LATEST_DAY`."""
+    return EARLIEST_DAY <= value <= LATEST_DAY
+
 
 class InvalidPeriod(ValueError):
     """A period that cannot exist: quarter V, half-year III, year 20226."""

@@ -59,6 +59,7 @@ from app.matters.services import (
     EXTERNAL_POSITION_NEEDS_ORGANISATION,
     EXTERNAL_POSITION_NEEDS_SOURCE,
     EXTERNAL_POSITION_PROVENANCE_NOT_SELECTABLE,
+    EXTERNAL_POSITION_ROUND_ANSWER_IS_RECEIVED,
     ProceduralDevelopmentConflict,
     add_engagement,
     close_matter,
@@ -933,8 +934,11 @@ def test_a_legacy_row_keeps_its_provenance_through_a_correction(
 
 
 def test_provenance_is_not_inferred_from_a_linked_round(normal_matter, specialist, ministry):
-    """§3.2. A ministry answering a round Koda ran is still a discovered opinion
-    when that is what the person filed it as."""
+    """§3.2, as narrowed by docs/adr/0170 §3. A round is still never a reason to
+    rewrite what the person stated: a position filed as discovered that names a
+    round is refused, not quietly turned into received feedback. Feedback filed
+    as received may answer the round, and a `LEGACY` row that already holds a
+    round still reads and corrects under its own provenance."""
     engagement = add_engagement(
         matter=normal_matter,
         kind=EngagementKind.OTHER,
@@ -942,12 +946,50 @@ def test_provenance_is_not_inferred_from_a_linked_round(normal_matter, specialis
         occurred_on=ENGAGED_ON,
         actor=specialist,
     )
-    position = _discovered(
-        normal_matter, specialist, ministry, summary="Toetab.", engagement=engagement
+
+    with pytest.raises(DomainError) as refusal:
+        _discovered(normal_matter, specialist, ministry, summary="Toetab.", engagement=engagement)
+
+    assert str(refusal.value) == EXTERNAL_POSITION_ROUND_ANSWER_IS_RECEIVED
+    # Refused, not rewritten: nothing was stored under either provenance.
+    assert not MatterExternalPosition.objects.filter(matter=normal_matter).exists()
+
+    received = _received(
+        normal_matter, specialist, organisation=ministry, summary="Toetab.", engagement=engagement
     )
 
-    assert position.engagement_id == engagement.pk
-    assert position.provenance == ExternalPositionProvenance.DISCOVERED
+    assert received.engagement_id == engagement.pk
+    assert received.provenance == ExternalPositionProvenance.RECEIVED
+
+    # A historical row: stored before the question existed, round and all.
+    legacy = MatterExternalPosition.objects.create(
+        matter=normal_matter, organisation=ministry, summary="Toetas varem."
+    )
+    MatterExternalPosition.objects.filter(pk=legacy.pk).update(engagement=engagement)
+    legacy.refresh_from_db()
+
+    assert legacy.provenance == ExternalPositionProvenance.LEGACY
+    assert legacy.engagement_id == engagement.pk
+    assert legacy.kind_label == EXTERNAL_POSITION_LEGACY_HEADLINE
+
+    corrected = correct_external_position(
+        position=legacy,
+        organisation=ministry,
+        url="",
+        stated_on=None,
+        stated_on_precision=DatePrecision.EXACT.value,
+        summary="Toetas varem, täpsustatud.",
+        lawyer_note="",
+        source_label="",
+        provenance=None,
+        engagement=engagement,
+        actor=specialist,
+        expected_revision=external_position_revision(legacy),
+    )
+
+    assert corrected.provenance == ExternalPositionProvenance.LEGACY
+    assert corrected.engagement_id == engagement.pk
+    assert corrected.summary == "Toetas varem, täpsustatud."
 
 
 def test_received_feedback_needs_no_engagement(normal_matter, specialist, association):
@@ -2194,16 +2236,17 @@ def test_a_restricted_child_does_not_leak_through_the_chronology(
     assert ministry.name not in rendered
 
 
-def test_both_feedback_routes_refuse_a_reader_who_may_not_write(
-    client, normal_matter, reader, association
+@pytest.mark.parametrize("provenance", ["RECEIVED", "DISCOVERED"])
+def test_both_feedback_provenances_refuse_a_reader_who_may_not_write(
+    client, normal_matter, reader, association, provenance
 ):
+    """Both kinds of position, now through the one door (docs/adr/0170)."""
     client.force_login(reader)
-    for route in ("matters:add_received_feedback", "matters:add_external_position"):
-        response = client.post(
-            reverse(route, kwargs={"pk": normal_matter.pk}),
-            {"organisation": str(association.pk), "summary": "Midagi."},
-        )
-        assert response.status_code == 404, route
+    response = client.post(
+        reverse("matters:add_engagement_reply", kwargs={"pk": normal_matter.pk}),
+        {"provenance": provenance, "organisation": str(association.pk), "summary": "Midagi."},
+    )
+    assert response.status_code == 404, provenance
     assert not MatterExternalPosition.objects.exists()
 
 
