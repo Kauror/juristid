@@ -15,6 +15,7 @@ beside it, and the count is still corrected through `Muuda` on the round.
               hx-target="#teema-vaade" hx-swap="outerHTML"
               hx-encoding="multipart/form-data">
           {% csrf_token %}
+          {% include "matters/partials/add/save_once.html" with token=save_once_tokens.add_engagement_form %}
           {% include "matters/partials/add/launch_step.html" with form_key="add_engagement_form" %}
           <label class="cx-f">
             <span class="cx-f__lab">Keda kaasad{% required_mark %}</span>

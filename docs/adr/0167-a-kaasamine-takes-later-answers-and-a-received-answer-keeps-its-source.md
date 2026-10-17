@@ -157,3 +157,63 @@ on the next refresh.
 ## Amendment of 2026-10-15 — see docs/adr/0170
 
 §2's rules apply when a round is linked; a standalone position touches no wait (docs/adr/0170-lisa-tagasiside-is-the-one-door-for-every-position.md).
+
+## Amendment of 2026-10-17 — every compact door saves a drawn form once (owner decision D3)
+
+**Owner decision D3 of 2026-10-17** (fix programme after the audit of
+2026-10-17, finding JQA-005): *every compact «Lisa teemale» form gets a
+save-once token, so an accidental double-click, a network retry, two tabs of the
+same rendered form or a resubmit never files twice.* It widens §2.6, which
+guarded only a repeated answer to a round, and closes JQA-005: before it, two
+identical POSTs to `Alusta kaasamist` stored two rounds and two open waits, and
+every other compact door two rows.
+
+**No migration.** The mechanism is the one `Koja arvamus` has used since
+docs/adr/0135 (`MatterSaveOnce`, `matters/0046`), not a second one:
+
+1. **The doors.** `add_engagement_compact` (`Alusta kaasamist`),
+   `add_engagement_reply` (`Lisa tagasiside`, linked to a round or standalone),
+   `add_important_date`, `add_effective_date`, `add_work_victory`, `add_other`
+   (`Muu`) and `add_meeting` (`Kohtumine / arutelu`), beside `add_koda_opinion`.
+   `views.SAVE_ONCE_FORMS` names them by their `workspace_forms` key.
+2. **The token.** Each form draws its own fresh random token as the hidden
+   field `salvestus` (`templates/matters/partials/add/save_once.html`, from the
+   page's `save_once_tokens`). One per form, not one per page: a draft kept in
+   one panel across another panel's save keeps the token it was drawn with
+   (`keepDrafts`), and that token is still unspent.
+3. **The spend.** The workspace use case (`add_matter_engagement`,
+   `add_matter_external_position`, `add_matter_important_date`,
+   `add_matter_effective_date`, `add_matter_work_victory`, `add_matter_other`,
+   `add_matter_meeting`) spends the token through `_spend_once` right after it
+   takes the Matter's lock and before anything is written, inside the save's
+   transaction. Two presses are serialised by the lock; the second finds the
+   token and is refused with `ALREADY_SAVED` — «See vorm on juba salvestatud.
+   Laadi leht uuesti, et näha salvestatut.», the `Koja arvamus` sentence — as a
+   400 re-rendered like every other workspace refusal, with nothing written.
+4. **A refused save spends nothing.** A form error never reaches the spend; a
+   service refusal or a rejected file after it rolls the spend back with the
+   rest of the save. The refused form comes back carrying **the same token**
+   (`_workspace_refusal`), so the corrected save still saves once. An
+   `ALREADY_SAVED` refusal keeps the spent token too, so pressing again is
+   refused again rather than handed a fresh token.
+5. **A deliberate repeat is a fresh form.** A successful save re-renders the
+   column, and every form on it is drawn with a fresh token. Recording the same
+   thing twice on purpose is opening the form again, never a second POST of the
+   form already sent.
+6. **Step launch (docs/adr/0168).** A form opened from a step (`Alusta`,
+   `✓ Tehtud`, `?ava=…`) is the same drawn form and carries its token; the step
+   check under the lock runs first, so a second press is refused by whichever
+   rule it meets first, and writes nothing.
+7. **Not guarded.** A POST that carries no `salvestus` at all — no drawn form
+   sends one — is saved as before, exactly as `Koja arvamus` has always treated
+   it; a garbled one is refused («Vigane valik.»). The §2.6 content check on a
+   round's answers stays: it also catches the same answer typed into a fresh
+   form.
+
+Tests: `tests/test_compact_doors_save_once.py` (each door: the same token twice
+→ one row and a 400 with the sentence; a refused save keeps the token unspent;
+two tokens → two rows; a saved form is re-drawn with a fresh token; the
+step-launched `Alusta kaasamist`). `test_lisa_muu.py`'s
+`test_a_repeated_identical_post_writes_its_own_row` and
+`test_lisa_tagasiside_unified.py`'s `test_standalone_positions_may_repeat`
+encoded the earlier rule and were changed to this one.

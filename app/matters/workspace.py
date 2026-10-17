@@ -109,6 +109,12 @@ def _spend_once(locked_matter: Matter, token: Any, purpose: str) -> None:
     Inside the save's transaction and under the Matter's lock, so two presses
     are serialised and the second finds the first's token; a refusal later in
     the same save rolls the token back with everything else.
+
+    `Koja arvamus` and, since owner decision D3 of 2026-10-17, every compact
+    `LISA TEEMALE` door: `Alusta kaasamist`, `Lisa tagasiside`, `Oluline
+    tähtaeg`, `Jõustumine`, `Töövõit`, `Muu` and `Kohtumine` (docs/adr/0167,
+    amendment of 2026-10-17). ``None`` — a POST that carries no token, which
+    no drawn form sends — is not guarded, as before.
     """
     if token is None:
         return
@@ -636,6 +642,7 @@ def add_matter_engagement(
     feedback_received: str = "",
     uploads: Sequence[Any] = (),
     record_overview: bool = False,
+    once_token: Any = None,
 ) -> WorkspaceResult:
     """`+ Kaasamine` — one consultation, with the replies it produced attached.
 
@@ -684,8 +691,13 @@ def add_matter_engagement(
     service unchanged (docs/adr/0082, narrowed by docs/adr/0086 §1).
 
     It finishes no step and touches no plan (docs/adr/0141).
+
+    ``once_token`` is the drawn form's `salvestus`: a second save of the same
+    form is refused rather than opening a second round and a second wait
+    (docs/adr/0167, amendment of 2026-10-17).
     """
     locked_matter = lock_open_matter_for_business_write(matter.pk)
+    _spend_once(locked_matter, once_token, "kaasamine")
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
         result.record = add_engagement(
@@ -891,16 +903,19 @@ def add_matter_important_date(
     period_end: Any,
     date_precision: str,
     uploads: Sequence[Any] = (),
+    once_token: Any = None,
 ) -> WorkspaceResult:
     """`+ Oluline tähtaeg` — a milestone somebody announced, and its letter.
 
     Creates no `NextAction`. A date the file has to live with is not an
     instruction to anybody, and the two were separated deliberately long before
-    this round (brief §17).
+    this round (brief §17). ``once_token``: one drawn form, one row
+    (docs/adr/0167, amendment of 2026-10-17).
     """
     from app.intelligence.services import add_important_date
 
     locked_matter = lock_open_matter_for_business_write(matter.pk)
+    _spend_once(locked_matter, once_token, "oluline-tahtaeg")
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
         result.record = add_important_date(
@@ -930,6 +945,7 @@ def add_matter_effective_date(
     period_end: Any,
     date_precision: str,
     uploads: Sequence[Any] = (),
+    once_token: Any = None,
 ) -> WorkspaceResult:
     """`+ Jõustumine` — what commences, when it does, and the act itself.
 
@@ -941,10 +957,14 @@ def add_matter_effective_date(
     (docs/adr/0079 §13). The form computes both ends through `bounds_for`, and
     `intelligence.services._check_bounds` refuses a pair that disagrees with its
     own precision.
+
+    ``once_token``: one drawn form, one row (docs/adr/0167, amendment of
+    2026-10-17).
     """
     from app.intelligence.services import add_effective_date
 
     locked_matter = lock_open_matter_for_business_write(matter.pk)
+    _spend_once(locked_matter, once_token, "joustumine")
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
         result.record = add_effective_date(
@@ -1014,6 +1034,8 @@ def _add_dated_entry_with_files(
     day_ahead: str,
     url: str = "",
     uploads: Sequence[Any] = (),
+    once_token: Any = None,
+    once_purpose: str = "",
 ) -> WorkspaceResult:
     """One dated `Entry` and its files, together or not at all.
 
@@ -1025,7 +1047,9 @@ def _add_dated_entry_with_files(
     write lock. The caller's own `@transaction.atomic` makes a refused file
     leave no entry behind. Nothing else is touched.
 
-    The day may not be after today (`_refuse_a_day_ahead`), whoever calls.
+    The day may not be after today (`_refuse_a_day_ahead`), whoever calls,
+    and one drawn form saves once (``once_token``, docs/adr/0167, amendment of
+    2026-10-17).
     """
     if occurred_on is None:
         raise DomainError(missing_day)
@@ -1035,6 +1059,7 @@ def _add_dated_entry_with_files(
         raise DomainError(DAY_OUT_OF_RANGE)
     _refuse_a_day_ahead(occurred_on, day_ahead)
     locked_matter = lock_open_matter_for_business_write(matter.pk)
+    _spend_once(locked_matter, once_token, once_purpose)
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
         result.entry = add_entry(
@@ -1063,6 +1088,7 @@ def add_matter_other(
     occurred_on: Any,
     url: str = "",
     uploads: Sequence[Any] = (),
+    once_token: Any = None,
 ) -> WorkspaceResult:
     """`+ Lisa · Muu` — supporting material that fits no structured kind.
 
@@ -1093,6 +1119,8 @@ def add_matter_other(
         day_ahead=OTHER_ENTRY_DAY_AHEAD,
         url=url,
         uploads=uploads,
+        once_token=once_token,
+        once_purpose="muu",
     )
 
 
@@ -1104,6 +1132,7 @@ def add_matter_meeting(
     summary: str,
     occurred_on: Any,
     uploads: Sequence[Any] = (),
+    once_token: Any = None,
 ) -> WorkspaceResult:
     """`+ Koja arvamus / kohtumine · Kohtumine / arutelu` — a meeting held.
 
@@ -1130,6 +1159,8 @@ def add_matter_meeting(
         missing_day=MEETING_ENTRY_NEEDS_A_DAY,
         day_ahead=MEETING_ENTRY_DAY_AHEAD,
         uploads=uploads,
+        once_token=once_token,
+        once_purpose="kohtumine",
     )
 
 
@@ -1143,6 +1174,7 @@ def add_matter_work_victory(
     period_end: Any,
     date_precision: str,
     uploads: Sequence[Any] = (),
+    once_token: Any = None,
 ) -> WorkspaceResult:
     """`+ Töövõit` — what changed, when it belongs, and the evidence for it.
 
@@ -1157,10 +1189,14 @@ def add_matter_work_victory(
     and never appeared in `?toovoit=<aasta>` or the reporting rail. The three
     columns are now the caller's to supply, and the caller is a form that asks
     (docs/adr/0079 §10).
+
+    ``once_token``: one drawn form, one win (docs/adr/0167, amendment of
+    2026-10-17).
     """
     from app.intelligence.services import add_confirmed_work_victory
 
     locked_matter = lock_open_matter_for_business_write(matter.pk)
+    _spend_once(locked_matter, once_token, "toovoit")
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
         result.record = add_confirmed_work_victory(
@@ -1197,6 +1233,7 @@ def add_matter_external_position(
     source_is_member: bool = False,
     engagement: Any = None,
     uploads: Sequence[Any] = (),
+    once_token: Any = None,
 ) -> WorkspaceResult:
     """`+ Meile saadetud tagasiside` / `+ Teiste arvamus` — what somebody else said.
 
@@ -1242,11 +1279,17 @@ def add_matter_external_position(
     every other operation in this module. A closed Teema renders no launcher,
     and that decides nothing about a POST arriving from a tab that was open
     before somebody else shut the file (R2-02).
+
+    ``once_token`` is `Lisa tagasiside`'s drawn form: a second save of it is
+    refused whether or not it names a round — a standalone position too is
+    repeated deliberately by opening the form again (docs/adr/0170 §4,
+    amendment of 2026-10-17).
     """
     from app.matters.services import record_external_position, record_external_position_document
 
     files = _uploads(uploads)
     locked_matter = lock_open_matter_for_business_write(matter.pk)
+    _spend_once(locked_matter, once_token, "tagasiside")
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
         position = record_external_position(

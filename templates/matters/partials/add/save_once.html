@@ -1,0 +1,12 @@
+{% comment %}
+A drawn form's one-time token (`salvestus`), spent by its save in the same
+transaction (`workspace._spend_once`): a double click, a retried request, a
+second tab or a resubmit of the same drawn form is refused with «See vorm on
+juba salvestatud» and writes nothing. A refused save spends nothing and comes
+back carrying the same token; a successful one re-draws the form with a fresh
+token, so a deliberate repeat is opening the form again (docs/adr/0167,
+amendment of 2026-10-17, owner decision D3).
+
+    token    this form's entry in `save_once_tokens`
+{% endcomment %}
+<input type="hidden" name="salvestus" value="{{ token }}">

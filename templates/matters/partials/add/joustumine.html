@@ -7,6 +7,7 @@
             hx-target="#teema-vaade" hx-swap="outerHTML"
             hx-encoding="multipart/form-data">
         {% csrf_token %}
+        {% include "matters/partials/add/save_once.html" with token=save_once_tokens.effective_date_form %}
         <label class="cx-f">
           <span class="cx-f__lab">Mis jõustub{% required_mark %}</span>
           {{ effective_date_form.effective_title }}

@@ -3421,7 +3421,13 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "opinion_open_rounds": [
             (engagement, engagement_revision_token(engagement)) for engagement in feedback_waits
         ],
-        "save_once_token": uuid.uuid4(),
+        # One fresh `salvestus` per save-once form: a second save of the same
+        # drawn form is refused (`workspace._spend_once`). One per form, not one
+        # per page, because a draft kept in one panel across another panel's
+        # save keeps the token it was drawn with (static/js/app.js
+        # `keepDrafts`), and that token must still be unspent (docs/adr/0167,
+        # amendment of 2026-10-17).
+        "save_once_tokens": {key: uuid.uuid4() for key in SAVE_ONCE_FORMS},
     }
 
 
@@ -4513,6 +4519,27 @@ def _engagement_row(
             request=request,
         ).encode(response.charset or "utf-8")
     return response
+
+
+#: The `LISA TEEMALE` forms that carry a save-once token (`salvestus`), by
+#: their `workspace_forms` key: `Koja arvamus` since docs/adr/0135, every
+#: compact door since owner decision D3 of 2026-10-17 (docs/adr/0167,
+#: amendment of 2026-10-17; JQA-005).
+SAVE_ONCE_FORMS = (
+    "koda_opinion_form",
+    "add_engagement_form",
+    "engagement_reply_form",
+    "important_date_form",
+    "effective_date_form",
+    "work_victory_form",
+    "other_form",
+    "meeting_form",
+)
+
+
+def _posted_once_token(request: HttpRequest) -> Any:
+    """The drawn form's `salvestus` token, ``None`` when absent, a refusal when garbled."""
+    return _posted_uuid(request, "salvestus")
 
 
 def _posted_uuid(request: HttpRequest, name: str) -> Any:
@@ -7648,6 +7675,18 @@ def _workspace_refusal(
     context = _overview_context(request, matter)
     context.update(_header_context(request, matter))
     context[key] = form
+    # **The refused form is the same drawn form**, so it keeps the token it was
+    # posted with. A refusal before the save spent nothing, so the corrected
+    # save still saves once; an `ALREADY_SAVED` refusal keeps the spent token,
+    # so pressing again is refused again rather than handed a fresh token that
+    # would file the record a second time (docs/adr/0167, amendment of
+    # 2026-10-17). A garbled token is not put back.
+    if key in SAVE_ONCE_FORMS:
+        posted = (request.POST.get("salvestus") or "").strip()
+        try:
+            context["save_once_tokens"][key] = uuid.UUID(posted)
+        except ValueError:
+            pass
     # A canonical form opened from a step comes back still naming that step, so
     # the corrected save still finishes it (docs/adr/0168 §3).
     context["launch"] = step_launch.launched_context(
@@ -8024,7 +8063,9 @@ def add_engagement_compact(request: HttpRequest, pk: Any) -> HttpResponse:
             launched = work_plan.lock_launched_step(
                 matter, launched_id, PlanStepOperation.ENGAGEMENT
             )
-            result = _add_engagement_from_form(request, matter, form)
+            result = _add_engagement_from_form(
+                request, matter, form, once_token=_posted_once_token(request)
+            )
             if launched is not None:
                 work_plan.fulfil_launched_step(
                     launched=launched, record=result.record, actor=request.user
@@ -8034,7 +8075,9 @@ def add_engagement_compact(request: HttpRequest, pk: Any) -> HttpResponse:
     return _render_overview(request, matter)
 
 
-def _add_engagement_from_form(request: HttpRequest, matter: Matter, form: Any) -> Any:
+def _add_engagement_from_form(
+    request: HttpRequest, matter: Matter, form: Any, *, once_token: Any = None
+) -> Any:
     """`workspace.add_matter_engagement` with what `Alusta kaasamist` asked."""
     return workspace.add_matter_engagement(
         matter=matter,
@@ -8053,6 +8096,9 @@ def _add_engagement_from_form(request: HttpRequest, matter: Matter, form: Any) -
         feedback_deadline=form.cleaned_data.get("feedback_deadline"),
         uploads=form.cleaned_data.get("attachments") or (),
         record_overview=True,
+        # The drawn form's token: one form, one round (docs/adr/0167,
+        # amendment of 2026-10-17).
+        once_token=once_token,
     )
 
 
@@ -8129,6 +8175,7 @@ def add_important_date(request: HttpRequest, pk: Any) -> HttpResponse:
             matter=matter,
             author=request.user,
             uploads=form.cleaned_data["attachments"],
+            once_token=_posted_once_token(request),
             **form.cleaned_data["important_date_kwargs"],
         )
     except (DomainError, UploadRejected) as error:
@@ -8152,6 +8199,7 @@ def add_effective_date(request: HttpRequest, pk: Any) -> HttpResponse:
             matter=matter,
             author=request.user,
             uploads=form.cleaned_data["attachments"],
+            once_token=_posted_once_token(request),
             **form.cleaned_data["effective_date_kwargs"],
         )
     except (DomainError, UploadRejected) as error:
@@ -8178,6 +8226,7 @@ def add_work_victory(request: HttpRequest, pk: Any) -> HttpResponse:
             matter=matter,
             author=request.user,
             uploads=form.cleaned_data["attachments"],
+            once_token=_posted_once_token(request),
             **form.cleaned_data["work_victory_kwargs"],
         )
     except (DomainError, UploadRejected) as error:
@@ -8210,6 +8259,7 @@ def add_other(request: HttpRequest, pk: Any) -> HttpResponse:
             occurred_on=form.cleaned_data["occurred_on"],
             url=form.cleaned_data["url"],
             uploads=form.cleaned_data["attachments"],
+            once_token=_posted_once_token(request),
         )
     except (DomainError, UploadRejected) as error:
         return _workspace_refusal(request, matter, key="other_form", form=form, error=str(error))
@@ -8238,6 +8288,7 @@ def add_meeting(request: HttpRequest, pk: Any) -> HttpResponse:
             summary=form.cleaned_data["summary"],
             occurred_on=form.cleaned_data["occurred_on"],
             uploads=form.cleaned_data["attachments"],
+            once_token=_posted_once_token(request),
         )
     except (DomainError, UploadRejected) as error:
         return _workspace_refusal(request, matter, key="meeting_form", form=form, error=str(error))
@@ -8517,6 +8568,9 @@ def _record_external_position(
                 source_is_member=source_is_member,
                 engagement=answered,
                 uploads=form.cleaned_data["attachments"],
+                # One drawn form, one position — with a round or without
+                # (docs/adr/0170 §4, amendment of 2026-10-17).
+                once_token=_posted_once_token(request),
             )
             # **`Lisa tagasiside` finishes the wait of the round it answers**
             # (owner's decision, 2026-10-07, docs/adr/0142 §B): the feedback,
@@ -8843,7 +8897,7 @@ def add_koda_opinion(request: HttpRequest, pk: Any) -> HttpResponse:
                 # stage II). Nothing is chosen for them.
                 answers_deadline=request.POST.get("vastab_tahtajale") or None,
                 close_rounds=_named_rounds_to_finish(request, matter),
-                once_token=_posted_uuid(request, "salvestus"),
+                once_token=_posted_once_token(request),
                 # The step `Märgi praegune tegevus tehtuks` named, when it was
                 # ticked: fetched through `visible_to` first, so an identifier for a
                 # step this reader may not see answers 404 rather than confirming it
