@@ -516,3 +516,68 @@ task composer returns.
 5. **Not in this stage:** adding files to an existing `Muu` entry later. `Entry`
    has no `+ Lisa fail` route today (the `Märge`, `Väline seisukoht` and
    `Kaasamine` have their own), and adding one is a separate decision.
+
+## Amendment 2026-10-17 — `Kohtumine / arutelu` creates one `Entry(kind=MEETING)`
+
+Owner's incremental UX round, stage 4. This is the **second narrow exception** to
+§6.3's «no launcher path creates a bare `Entry`», after `+ Lisa · Muu` (amendment
+of 2026-10-15): a meeting or discussion held about the Teema — with a ministry,
+members, another organisation, internally — is recorded from the launcher as
+`Entry(kind=EntryKind.MEETING)` («Kohtumine»), through
+`workspace.add_matter_meeting`. Only `MEETING`, and only from this form; no
+generic composer returns.
+
+1. **The family is renamed.** `+ Arvamus / tagasiside` held only `Koja arvamus`
+   once stage 3 moved every other position under `+ Kaasamine · Lisa tagasiside`
+   (docs/adr/0170). It becomes **`+ Koja arvamus / kohtumine`**, with two
+   sub-choices: `Koja arvamus` (unchanged; still the first and the default,
+   because «Saada Koja arvamus» opens `arvamus-koja`, docs/adr/0168) and
+   **`Kohtumine / arutelu`** (`arvamus-kohtumine`). The sub-choice label above
+   the chips is `Mida lisad` rather than `Kelle arvamus`, which a meeting is not.
+   Feedback does not come back into this family. Panel and family ids are
+   unchanged (`lisa-arvamus`, `arvamuse-liik`), so nothing that opens
+   `Koja arvamus` moves.
+2. **Fields.** `Kuupäev` — required, one day, the existing date picker, **empty
+   until the person fills it** (nothing pre-filled, nothing inferred), stored as
+   `start_of_local_day(day)` in `Entry.occurred_at` exactly as `Muu` does, so the
+   chronology shows and orders the row on the day the meeting took place.
+   `Lühikokkuvõte` — required, the entry's body, through the same sanitising
+   every entry body has (`sanitize_entry_html` in `add_entry`); a summary that is
+   empty once sanitised is refused under the field («Kirjuta kohtumise
+   lühikokkuvõte.»). `Failid` — optional, several, `capture_supporting_evidence`
+   in the same transaction, so a refused file leaves no entry, document or
+   evidence behind. No link, no title, no status, no follow-up.
+3. **Participants are named in the summary — no organisation field.**
+   `Entry.organisation` exists, `add_entry` accepts it, the chronology row shows
+   its name and search indexes it, but **`Muuda` cannot correct it**:
+   `edit_entry` and `EntryEditForm` change the body (and `Muu`'s link) only. A
+   picker that writes a value nobody can fix afterwards is the uncorrectable
+   field this ADR removed elsewhere (§2–§4), so the form has none. No
+   participants model, no M2M, no migration. Offering one organisation would need
+   an organisation correction on `edit_entry` (with its revision) first — a
+   separate, owner-level decision.
+4. **The meeting's date cannot be corrected — a limitation, owner decision
+   open.** `edit_entry` is deliberately «a correction, not a new fact»:
+   `occurred_at` is untouched and `EntryRevision` keeps no date. A meeting saved
+   on the wrong day is today fixed by deleting the row (the ordinary `Kustuta` on
+   a user-created chronology block, docs/adr/0102 §5) and saving it again. Making
+   `occurred_at` correctable, with the earlier value kept in the revision chain,
+   is an owner decision for `Muu` and `Kohtumine` together; nothing was invented
+   for it here.
+5. **Nothing follows from it.** It is **not** a `MatterEngagement` —
+   `EngagementKind.MEETING` is a consultation round's kind and stays that — so it
+   opens no round and no feedback wait and closes none. It creates and completes
+   no `NextAction`, changes neither `Hetkeseis`, the plan, `Järgmiseks` nor the
+   opinion deadline, is not a `Submission` and is not counted as a formal opinion
+   in any report. Corrections go through the existing `Muuda` (body), with
+   `EntryRevision` and the `ENTRY_EDITED` change event. A closed Teema refuses it
+   under the same lock as every other new record (`business_write_required` on
+   the route, `lock_open_matter_for_business_write` in the service); readers, the
+   gate visitor and accounts without a business role cannot reach it. Its
+   summary is searchable as every entry body is, under the Matter's visibility;
+   its files sit in `Dokumendid` under the same rule.
+6. **One shared helper.** `add_matter_other` and `add_matter_meeting` are thin
+   wrappers over a private `_add_dated_entry_with_files` (lock, `add_entry` with
+   the stated day, `capture_supporting_evidence`), so the two exceptions cannot
+   drift apart; `Muu`'s public behaviour is unchanged. Search indexing is
+   unchanged; no rebuild, no migration.

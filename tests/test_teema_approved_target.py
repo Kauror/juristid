@@ -429,11 +429,13 @@ def test_lisa_teemale_offers_thirteen_choices_and_opens_none_of_them(signed_in, 
         "Jõustumine",
         "Töövõit",
         "+ Kaasamine",
-        "+ Arvamus / tagasiside",
+        # `+ Arvamus / tagasiside` until 2026-10-17 (docs/adr/0097, amendment).
+        "+ Koja arvamus / kohtumine",
         # `Meile saadetud tagasiside` and `Teiste arvamus` (docs/adr/0091 §3)
         # left with docs/adr/0170: every position is `+ Kaasamine · Lisa
         # tagasiside`, and this family holds `Koja arvamus` alone.
         "Koja arvamus",
+        "Kohtumine / arutelu",
         "+ Ülevaade / uudis",
     ]
     assert [chip for chip in expected if f">{chip}<" in panels] == expected
@@ -447,7 +449,8 @@ def test_lisa_teemale_offers_thirteen_choices_and_opens_none_of_them(signed_in, 
     assert ">Teiste arvamus<" not in panels
     # Twelve: docs/adr/0170 took the two feedback panels out of
     # `+ Arvamus / tagasiside`, and `+ Lisa · Muu` joined (docs/adr/0097).
-    assert panels.count('class="cx-panel"') + panels.count("cx-panel cx-panel--last") == 12
+    # Thirteen since `Kohtumine / arutelu` (docs/adr/0097, amendment of 2026-10-17).
+    assert panels.count('class="cx-panel"') + panels.count("cx-panel cx-panel--last") == 13
     # All closed on arrival: nothing in this zone is a form until it is chosen.
     assert "data-addpanel\n             open" not in panels
     assert 'cx-panel" open' not in panels
@@ -530,8 +533,9 @@ def test_each_operation_carries_its_own_save_and_there_is_no_global_one(
     panels = body[body.index('id="lisa-teemale"') : _after_the_launcher(body)]
     # Nine since docs/adr/0170: its two feedback panels' saves went, and
     # `Lisa tagasiside` — which drew a «no round» sentence and no save on a
-    # Matter with no round — is now always the form.
-    assert panels.count('type="submit"') == 9
+    # Matter with no round — is now always the form. Ten since `Kohtumine /
+    # arutelu` brought its own (docs/adr/0097, amendment of 2026-10-17).
+    assert panels.count('type="submit"') == 10
     # And the composer's single global save is gone from the page entirely.
     assert "composer__actions" not in workspace
 

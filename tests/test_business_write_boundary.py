@@ -446,6 +446,19 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         ),
         probe=lambda w: w["matter"].entries.count(),
     ),
+    # `Kohtumine / arutelu` (docs/adr/0097, amendment of 2026-10-17).
+    WriteRoute(
+        name="matters:add_meeting",
+        label="Kohtumise lisamine",
+        request=lambda w: (
+            {"pk": w["matter"].pk},
+            {
+                "occurred_on": "1.10.2026",
+                "summary": "Loata kohtumine ministeeriumiga",
+            },
+        ),
+        probe=lambda w: w["matter"].entries.count(),
+    ),
     # `Ülevaade / uudis`, in all four of its write routes. Three of them are
     # ordinary new business content; the fourth corrects an address the file
     # already holds, which a *closed* Matter permits — a question about the

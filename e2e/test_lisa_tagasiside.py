@@ -75,12 +75,15 @@ def matter(page, base_url):
     create_matter(page, base_url, unique_title("Lisa tagasiside"))
 
 
-def test_the_opinion_family_keeps_only_koja_arvamus(page, matter):
+def test_the_opinion_family_holds_no_feedback_choices(page, matter):
     open_add_panel(page, "arvamus-koja")
 
     family = page.locator("#lisa-arvamus")
-    expect(family.locator("label.disclosure-chip")).to_have_count(1)
+    # Two since stage 4: `Koja arvamus` and `Kohtumine / arutelu` (docs/adr/0097,
+    # amendment of 2026-10-17). Neither is feedback.
+    expect(family.locator("label.disclosure-chip")).to_have_count(2)
     expect(add_panel_chip(page, "arvamus-koja")).to_be_visible()
+    expect(add_panel_chip(page, "arvamus-kohtumine")).to_be_visible()
     expect(page.locator("#arvamus-tagasiside, #arvamus-teiste")).to_have_count(0)
     expect(page.get_by_text("Meile saadetud tagasiside", exact=True)).to_have_count(0)
     expect(page.get_by_text("Teiste arvamus", exact=True)).to_have_count(0)

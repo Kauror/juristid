@@ -965,6 +965,53 @@ def add_matter_effective_date(
 #: What `+ Lisa · Muu` answers when it is given no day (the form refuses first).
 OTHER_ENTRY_NEEDS_A_DAY = "Sisesta, millal see toimus."
 
+#: What `Kohtumine / arutelu` answers when it is given no day (the form refuses
+#: first).
+MEETING_ENTRY_NEEDS_A_DAY = "Sisesta kohtumise kuupäev."
+
+
+def _add_dated_entry_with_files(
+    *,
+    matter: Matter,
+    author: Any,
+    kind: str,
+    body: str,
+    occurred_on: Any,
+    missing_day: str,
+    url: str = "",
+    uploads: Sequence[Any] = (),
+) -> WorkspaceResult:
+    """One dated `Entry` and its files, together or not at all.
+
+    The shared half of `+ Lisa · Muu` and `Kohtumine / arutelu`
+    (docs/adr/0097, amendments of 2026-10-15 and 2026-10-17): the day is the
+    one the person stated, stored as the start of that local day; the entry
+    goes through the canonical `add_entry` (body sanitising, change event) and
+    the files through `capture_supporting_evidence`, inside the open-Matter
+    write lock. The caller's own `@transaction.atomic` makes a refused file
+    leave no entry behind. Nothing else is touched.
+    """
+    if occurred_on is None:
+        raise DomainError(missing_day)
+    locked_matter = lock_open_matter_for_business_write(matter.pk)
+    with composer_operation() as operation_id:
+        result = WorkspaceResult(operation_id=operation_id)
+        result.entry = add_entry(
+            matter=locked_matter,
+            body=body,
+            author=author,
+            kind=kind,
+            occurred_at=start_of_local_day(occurred_on),
+            url=url,
+        )
+        result.documents = capture_supporting_evidence(
+            matter=locked_matter,
+            record=result.entry,
+            uploads=_uploads(uploads),
+            actor=author,
+        )
+        return result
+
 
 @transaction.atomic
 def add_matter_other(
@@ -993,26 +1040,51 @@ def add_matter_other(
     wait and is no `Submission`. A closed Matter refuses it through the same
     lock every other new business record takes.
     """
-    if occurred_on is None:
-        raise DomainError(OTHER_ENTRY_NEEDS_A_DAY)
-    locked_matter = lock_open_matter_for_business_write(matter.pk)
-    with composer_operation() as operation_id:
-        result = WorkspaceResult(operation_id=operation_id)
-        result.entry = add_entry(
-            matter=locked_matter,
-            body=description,
-            author=author,
-            kind=EntryKind.OTHER,
-            occurred_at=start_of_local_day(occurred_on),
-            url=url,
-        )
-        result.documents = capture_supporting_evidence(
-            matter=locked_matter,
-            record=result.entry,
-            uploads=_uploads(uploads),
-            actor=author,
-        )
-        return result
+    return _add_dated_entry_with_files(
+        matter=matter,
+        author=author,
+        kind=EntryKind.OTHER,
+        body=description,
+        occurred_on=occurred_on,
+        missing_day=OTHER_ENTRY_NEEDS_A_DAY,
+        url=url,
+        uploads=uploads,
+    )
+
+
+@transaction.atomic
+def add_matter_meeting(
+    *,
+    matter: Matter,
+    author: Any,
+    summary: str,
+    occurred_on: Any,
+    uploads: Sequence[Any] = (),
+) -> WorkspaceResult:
+    """`+ Koja arvamus / kohtumine · Kohtumine / arutelu` — a meeting held.
+
+    One `Entry(kind=MEETING)` (`Kohtumine`): the short summary is its body —
+    sanitised by `add_entry` like every entry body, so who took part is named
+    there — dated by the required `Kuupäev` as the start of that local day,
+    with optional files through the canonical evidence pipeline, all in one
+    transaction (docs/adr/0097, amendment of 2026-10-17).
+
+    No organisation, no participants model, no link. It is not a
+    `MatterEngagement` (`EngagementKind.MEETING` is a consultation round's
+    kind, not this), opens no feedback wait, creates or completes no
+    `NextAction`, changes neither `Hetkeseis`, the plan nor the opinion
+    deadline, and is no `Submission`. A closed Matter refuses it through the
+    same lock every other new business record takes.
+    """
+    return _add_dated_entry_with_files(
+        matter=matter,
+        author=author,
+        kind=EntryKind.MEETING,
+        body=summary,
+        occurred_on=occurred_on,
+        missing_day=MEETING_ENTRY_NEEDS_A_DAY,
+        uploads=uploads,
+    )
 
 
 @transaction.atomic

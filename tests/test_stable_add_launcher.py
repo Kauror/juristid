@@ -50,7 +50,9 @@ pytestmark = pytest.mark.django_db
 CANONICAL = [
     "+ Ülevaade / uudis",
     "+ Kaasamine",
-    "+ Arvamus / tagasiside",
+    # `+ Arvamus / tagasiside` until 2026-10-17 (docs/adr/0097, amendment of
+    # that date).
+    "+ Koja arvamus / kohtumine",
     "+ Lisa",
 ]
 
@@ -63,8 +65,9 @@ SUBCHOICES = {
     "lisa-marge": ["Arvamuse tähtaeg", "Oluline tähtaeg", "Jõustumine", "Töövõit", "Muu"],
     # `Meile saadetud tagasiside` and `Teiste arvamus` left on 2026-10-15: every
     # position is recorded through `+ Kaasamine · Lisa tagasiside`
-    # (docs/adr/0170 §5). `Koja arvamus` is the family's one sub-choice.
-    "lisa-arvamus": ["Koja arvamus"],
+    # (docs/adr/0170 §5). `Koja arvamus` is the first sub-choice and the
+    # default; `Kohtumine / arutelu` joined on 2026-10-17 (docs/adr/0097).
+    "lisa-arvamus": ["Koja arvamus", "Kohtumine / arutelu"],
     "lisa-kaasamine": ["Alusta kaasamist", "Lisa tagasiside"],
 }
 
@@ -90,6 +93,7 @@ PANEL_IDS = [
     "kaasamine-tagasiside",
     "lisa-arvamus",
     "arvamus-koja",
+    "arvamus-kohtumine",
     "lisa-koduleht",
 ]
 

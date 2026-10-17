@@ -452,7 +452,8 @@ def test_the_launcher_offers_its_choices_and_opens_none_of_them(signed_in, norma
         body.index('id="lisa-teemale"') : body.index("</section>", body.index('id="lisa-teemale"'))
     ]
 
-    for chip in ("+ Lisa", "+ Kaasamine", "+ Arvamus / tagasiside", "+ Ülevaade / uudis"):
+    # `+ Koja arvamus / kohtumine` was `+ Arvamus / tagasiside` until 2026-10-17.
+    for chip in ("+ Lisa", "+ Kaasamine", "+ Koja arvamus / kohtumine", "+ Ülevaade / uudis"):
         assert chip in zone, chip
     for choice in (
         # `Tavaline` left `+ Lisa` on 2026-10-07 (docs/adr/0143).
@@ -466,6 +467,7 @@ def test_the_launcher_offers_its_choices_and_opens_none_of_them(signed_in, norma
         "Alusta kaasamist",
         "Lisa tagasiside",
         "Koja arvamus",
+        "Kohtumine / arutelu",
     ):
         assert f">{choice}<" in zone, choice
     for retired in ("Meile saadetud tagasiside", "Teiste arvamus"):
@@ -492,8 +494,9 @@ def test_the_launcher_offers_its_choices_and_opens_none_of_them(signed_in, norma
     # naming a body the catalogue does not hold cannot submit the panel
     # (docs/adr/0073, `organisation_picker.html`).
     # Nine: `+ Lisa · Muu` joined (docs/adr/0097) and docs/adr/0170 removed two
-    # feedback saves and made `Lisa tagasiside` always a form.
-    assert zone.count('type="submit"') == 9
+    # feedback saves and made `Lisa tagasiside` always a form. Ten since
+    # `Kohtumine / arutelu` (docs/adr/0097, amendment of 2026-10-17).
+    assert zone.count('type="submit"') == 10
     assert "composer__actions" not in zone
 
 

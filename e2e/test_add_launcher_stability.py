@@ -48,7 +48,8 @@ pytestmark = pytest.mark.e2e
 CANONICAL = [  # the owner's order of 2026-10-07
     "+ Ülevaade / uudis",
     "+ Kaasamine",
-    "+ Arvamus / tagasiside",
+    # `+ Arvamus / tagasiside` until 2026-10-17 (docs/adr/0097, amendment).
+    "+ Koja arvamus / kohtumine",
     "+ Lisa",
 ]
 
@@ -71,6 +72,8 @@ SUBCHOICES = [
     # Only `Koja arvamus` since docs/adr/0170: every other position is
     # `+ Kaasamine · Lisa tagasiside`, which is a sub-choice like these.
     ("lisa-arvamus", "arvamus-koja"),
+    # `Kohtumine / arutelu` since 2026-10-17 (docs/adr/0097, amendment).
+    ("lisa-arvamus", "arvamus-kohtumine"),
     ("lisa-kaasamine", "kaasamine-alusta"),
     ("lisa-kaasamine", "kaasamine-tagasiside"),
 ]

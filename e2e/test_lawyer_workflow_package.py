@@ -215,7 +215,8 @@ def test_the_launcher_offers_one_door_for_every_position(page, base_url):
     a_new_matter(page, base_url)
 
     bar = page.locator("#lisa-teemale")
-    expect(bar.get_by_text("+ Arvamus / tagasiside", exact=True)).to_be_visible()
+    # `+ Arvamus / tagasiside` until 2026-10-17 (docs/adr/0097, amendment).
+    expect(bar.get_by_text("+ Koja arvamus / kohtumine", exact=True)).to_be_visible()
     open_add_panel(page, "lisa-arvamus")
     expect(add_panel_chip(page, "arvamus-koja")).to_be_visible()
     for retired in ("Meile saadetud tagasiside", "Teiste arvamus"):
