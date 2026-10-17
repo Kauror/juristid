@@ -208,8 +208,15 @@ SHARED_GATE_MAX_ATTEMPTS = env_int("SHARED_GATE_MAX_ATTEMPTS", 5)
 SHARED_GATE_LOCKOUT_SECONDS = env_int("SHARED_GATE_LOCKOUT_SECONDS", 300)
 SHARED_GATE_MAX_LOCKOUT_SECONDS = env_int("SHARED_GATE_MAX_LOCKOUT_SECONDS", 3600)
 
-# How long a gate session lasts before the password is asked for again.
+# How long a gate session lasts before the password is asked for again,
+# however busy it has been: the absolute limit.
 SHARED_GATE_SESSION_SECONDS = env_int("SHARED_GATE_SESSION_SECONDS", 12 * 60 * 60)
+
+# How long a gate session may go without a request before the password is asked
+# for again: the idle limit. Eight hours, the owner's decision of 2026-10-17
+# (JSEC-005, D11; docs/adr/0016 amendment). The absolute limit above still
+# applies to a session that never goes quiet.
+SHARED_GATE_IDLE_SECONDS = env_int("SHARED_GATE_IDLE_SECONDS", 8 * 60 * 60)
 
 # Where `login_required` sends somebody who has no identity yet, which is a
 # different place in each mode:
@@ -704,8 +711,16 @@ X_FRAME_OPTIONS = "DENY"
 # Only ever set where something really does terminate TLS. Trusting
 # `X-Forwarded-Proto` from a client that can reach the application directly
 # would let that client claim its own connection was secure.
-if env_bool("DJANGO_BEHIND_TLS_PROXY", default=False):
+BEHIND_TLS_PROXY = env_bool("DJANGO_BEHIND_TLS_PROXY", default=False)
+if BEHIND_TLS_PROXY:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# Whether `CF-Connecting-IP` names the client on audit rows and in the throttles
+# (app/core/client_ip.py, JOPS-008). The same trust as the forwarded scheme
+# above, and for the same reason: behind the tunnel, which is the only way in,
+# Cloudflare sets the header; anywhere a client reaches the application
+# directly, the client does. Not a second switch, so the two cannot disagree.
+TRUST_CF_CONNECTING_IP = BEHIND_TLS_PROXY
 
 # --------------------------------------------------------------------------
 # Application metadata and logging

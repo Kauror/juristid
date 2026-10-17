@@ -44,6 +44,7 @@ from app.accounts.models import User
 from app.audit.enums import SecurityEventType
 from app.audit.models import SecurityAuditEvent
 from app.core.authorization import account_capabilities, capability_overrides, has_capability
+from app.core.client_ip import client_ip
 
 #: The answer every refused administration request gets.
 NOT_HERE = "Lehte ei leitud."
@@ -83,7 +84,7 @@ def fresh_proof_required[R: HttpResponseBase](
 def _refused(request: HttpRequest, error: administration.AdministrationRefused) -> None:
     if isinstance(error, administration.PrivilegeRefused):
         administration.record_refusal(
-            actor=request.user, error=error, ip_address=request.META.get("REMOTE_ADDR")
+            actor=request.user, error=error, ip_address=client_ip(request)
         )
     messages.error(request, str(error))
 

@@ -36,6 +36,7 @@ from app.accounts import shared_gate
 from app.audit.enums import SecurityEventType
 from app.audit.services import record_security_event
 from app.core.authorization import may_write_business_content
+from app.core.client_ip import client_ip
 from app.core.decorators import business_write_required, gate_required, viewer_for
 from app.core.errors import DomainError
 from app.core.http import content_disposition
@@ -92,7 +93,7 @@ def _open_evidence(request: HttpRequest, version: DocumentVersion, *, dispositio
             event_type=SecurityEventType.DOCUMENT_DOWNLOADED,
             actor=request.user if request.user.is_authenticated else None,
             subject=version,
-            ip_address=request.META.get("REMOTE_ADDR"),
+            ip_address=client_ip(request),
             user_agent=request.META.get("HTTP_USER_AGENT", ""),
             succeeded=False,
             detail=shared_gate.audit_detail(
@@ -304,7 +305,7 @@ def download(request: HttpRequest, pk: Any) -> FileResponse:
         # session never reads as an individual having signed for the file.
         actor=request.user if request.user.is_authenticated else None,
         subject=version,
-        ip_address=request.META.get("REMOTE_ADDR"),
+        ip_address=client_ip(request),
         user_agent=request.META.get("HTTP_USER_AGENT", ""),
         detail=shared_gate.audit_detail(
             request,
@@ -363,7 +364,7 @@ def open_inline(request: HttpRequest, pk: Any) -> HttpResponseBase:
         event_type=SecurityEventType.DOCUMENT_DOWNLOADED,
         actor=request.user if request.user.is_authenticated else None,
         subject=version,
-        ip_address=request.META.get("REMOTE_ADDR"),
+        ip_address=client_ip(request),
         user_agent=request.META.get("HTTP_USER_AGENT", ""),
         detail=shared_gate.audit_detail(
             request,

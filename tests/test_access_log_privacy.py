@@ -45,10 +45,14 @@ STACKS = {
     "test": ROOT / "deploy" / "unraid-test" / "compose.yml",
 }
 
-#: The decision, stated once: remote address, time, method, *path*, protocol,
-#: status, size, duration. No ``%(r)s`` (the raw URI), no ``%(q)s``, no
-#: Referer, no user agent.
-ACCESS_LOG_FORMAT = '%(h)s %(t)s "%(m)s %(U)s %(H)s" %(s)s %(b)s %(M)sms'
+#: The decision, stated once: remote address, the client address Cloudflare
+#: forwarded, time, method, *path*, protocol, status, size, duration. No
+#: ``%(r)s`` (the raw URI), no ``%(q)s``, no Referer, no user agent.
+#:
+#: Behind the tunnel ``%(h)s`` is the connector for every request, so the
+#: ``CF-Connecting-IP`` header is what names the client — the same address the
+#: audit rows record (app/core/client_ip.py, JOPS-008).
+ACCESS_LOG_FORMAT = '%(h)s %({cf-connecting-ip}i)s %(t)s "%(m)s %(U)s %(H)s" %(s)s %(b)s %(M)sms'
 
 #: Every gunicorn atom that would put a query string or a Referer back. The
 #: ``{...}i`` and ``{...}e`` forms are request headers and WSGI environ keys,
@@ -157,7 +161,13 @@ def test_a_search_is_logged_by_its_path_alone(stack, tmp_path):
         "HTTP_REFERER": referer,
         "HTTP_USER_AGENT": "Mozilla/5.0",
     }
-    request = SimpleNamespace(headers=[("REFERER", referer), ("USER-AGENT", "Mozilla/5.0")])
+    request = SimpleNamespace(
+        headers=[
+            ("REFERER", referer),
+            ("USER-AGENT", "Mozilla/5.0"),
+            ("CF-CONNECTING-IP", "203.0.113.7"),
+        ]
+    )
     response = SimpleNamespace(status="200 OK", sent=5120, headers=[("Content-Type", "text/html")])
     access.access(response, request, environ, timedelta(milliseconds=42))
     for handler in access.access_log.handlers:
@@ -165,6 +175,7 @@ def test_a_search_is_logged_by_its_path_alone(stack, tmp_path):
 
     [line] = (tmp_path / "access.log").read_text(encoding="utf-8").splitlines()
     assert '"GET /otsing/ HTTP/1.1" 200 5120 42ms' in line
+    assert line.startswith("172.18.0.9 203.0.113.7 "), line
     for leaked in (QUERY_SENTINEL, REFERER_SENTINEL, "q=", "foo=bar", "?"):
         assert leaked not in line, f"{leaked!r} reached the access log: {line}"
 

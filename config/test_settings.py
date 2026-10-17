@@ -42,6 +42,13 @@ SECURE_HSTS_SECONDS = 0
 SESSION_COOKIE_SECURE = False
 CSRF_COOKIE_SECURE = False
 
+# The suite models the deployed arrangement, behind the tunnel: `CF-Connecting-IP`
+# names the client (app/core/client_ip.py). Stated rather than inherited from
+# whether this shell exports DJANGO_BEHIND_TLS_PROXY, and switched off through
+# the `settings` fixture by the tests about what happens without a proxy
+# (tests/test_client_ip.py).
+TRUST_CF_CONNECTING_IP = True
+
 # The environment gates are exercised through the `settings` fixture, so the
 # suite starts from the safe position.
 DEV_LOGIN_ENABLED = False
