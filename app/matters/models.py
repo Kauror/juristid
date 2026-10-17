@@ -800,7 +800,9 @@ class Entry(VisibilityInheritingModel, RemovableRecord):
     #: earlier value kept in `EntryRevision.url`, and validated by the same rule
     #: as every other stored address (`services.normalize_entry_url`: http(s),
     #: a real host, refused rather than truncated). Empty on every other entry.
-    url = models.URLField(max_length=1000, blank=True, default="", verbose_name="link")
+    url = models.URLField(
+        max_length=1000, blank=True, default="", db_default="", verbose_name="link"
+    )
 
     objects = EntryQuerySet.as_manager()
 
@@ -871,7 +873,9 @@ class EntryRevision(AppendOnlyModel):
     #: The link the entry carried before this correction — empty when it had
     #: none — so correcting a `Muu` link keeps the earlier address exactly as a
     #: corrected text keeps the earlier wording.
-    url = models.URLField(max_length=1000, blank=True, default="", verbose_name="varasem link")
+    url = models.URLField(
+        max_length=1000, blank=True, default="", db_default="", verbose_name="varasem link"
+    )
     edited_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,

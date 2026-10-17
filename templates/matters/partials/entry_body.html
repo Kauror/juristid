@@ -66,9 +66,22 @@ control that would add something new (app/matters/views.py, docs/adr/0075 §12).
         <div class="uxtl__conflict">
           <p class="uxtl__conflictnote">Praegune sõnastus:</p>
           <div class="richtext">{{ entry_conflict.body|safe }}</div>
+          {% if entry_edit_form.url %}
+            {% comment %}
+              A `Muu` entry's link is half of what it says, so the version that
+              won shows its link too — the whole stored address as escaped
+              text, not a control: what differs between two links is often
+              the path a host-named link would hide, and this is there to be
+              compared and copied, not followed. Stored addresses carry no
+              userinfo (`normalize_entry_url`), so printing one in full leaks
+              nothing (docs/adr/0097, amendment of 2026-10-15).
+            {% endcomment %}
+            <p class="uxtl__conflictnote">Praegune link:</p>
+            <p class="uxtl__conflicturl" data-conflict-url>{% if entry_conflict.url %}{{ entry_conflict.url }}{% else %}link puudub{% endif %}</p>
+          {% endif %}
           <p class="uxtl__conflictnote">
             Kopeeri vajalik osa oma teksti või laadi leht uuesti, et praeguse
-            versiooniga jätkata. Sinu tekst on ülal alles.
+            versiooniga jätkata. Sinu {% if entry_edit_form.url %}tekst ja link on{% else %}tekst on{% endif %} ülal alles.
           </p>
         </div>
       {% endif %}
