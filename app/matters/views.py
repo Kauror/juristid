@@ -2315,7 +2315,9 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                 # person just filed — or filed from one of this form's earlier
                 # tokens — under the same title is reported, and filed again
                 # only on «Loo siiski uus». Refused here, so the claim above
-                # rolls back with it and the token stays usable.
+                # rolls back with it and the token stays usable. The check
+                # holds a per-person, per-title lock until this transaction
+                # ends, so two tabs pressed together take turns (JQA-006).
                 duplicate_intake.refuse_unconfirmed_duplicate(
                     actor=request.user,
                     title=data["title"],

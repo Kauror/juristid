@@ -24,13 +24,23 @@ Either way nothing is created and nothing is guessed: the form comes back with
 «Sama pealkirjaga teema loodi just — ava see / loo siiski uus». «Ava see» is a
 link; «loo siiski uus» posts the same form with `CONFIRM_FIELD`, and a person
 who means a second Teema with the same words gets one.
+
+**Two tabs pressed together** (JQA-006). The check reads committed rows, and
+each form's token claim locks only that form's own row, so two forms with the
+same title saved at the same moment could each look, each find nothing the
+other had committed, and each file a Teema. The decision is therefore taken
+under a transaction-scoped advisory lock keyed by the person and the
+normalised title (`hold_title`): the second save waits for the first to commit
+or roll back, then looks, and finds the first one's Teema.
 """
 
 from __future__ import annotations
 
+import hashlib
 from datetime import timedelta
 from typing import Any
 
+from django.db import connection
 from django.utils import timezone
 
 from app.core.errors import DomainError
@@ -49,6 +59,11 @@ MAX_EARLIER = 20
 
 #: What the person is told.
 RECENT_DUPLICATE = "Sama pealkirjaga teema loodi just."
+
+#: The advisory-lock namespace for «filed once». The two-integer form
+#: `app.search.indexing` (24601) and `app.organisations.services` (24602) use,
+#: under a first key of its own, so no subsystem can take another's lock.
+TITLE_LOCK_NAMESPACE = 24603
 
 
 class RecentDuplicateUnconfirmed(DomainError):
@@ -97,10 +112,54 @@ def recent_duplicate(*, actor: Any, title: str, earlier_tokens: list[str]) -> Ma
     return None
 
 
+def title_lock_key(*, actor_id: Any, title: str) -> int:
+    """A stable signed 32-bit advisory-lock key for one person's one title.
+
+    A digest rather than :func:`hash`, which is salted per process — two
+    workers would compute different keys for one title and the lock would
+    serialise nothing. A collision only makes two saves wait for each other
+    for a moment; it cannot make either one wrong.
+    """
+    digest = hashlib.blake2b(
+        f"{actor_id}:{normalised_title(title)}".encode(), digest_size=4
+    ).digest()
+    return int.from_bytes(digest, "big", signed=True)
+
+
+def hold_title(*, actor: Any, title: str) -> None:
+    """Hold this person's «filed once» decision on this title until the transaction ends.
+
+    Taken before the check, so a second save of the same title by the same
+    person waits for the first to commit (and then sees its Teema) or to roll
+    back. Other people and other titles never wait. PostgreSQL releases it at
+    commit or rollback.
+
+    Outside a transaction a transaction-scoped lock is released as soon as it
+    is taken, which would serialise nothing — so that is a programming error.
+    """
+    actor_id = getattr(actor, "pk", None)
+    if actor_id is None or not normalised_title(title):
+        return
+    if not connection.in_atomic_block:  # pragma: no cover - programming error
+        raise RuntimeError("hold_title needs a transaction to hold the lock in.")
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT pg_advisory_xact_lock(%s, %s)",
+            [TITLE_LOCK_NAMESPACE, title_lock_key(actor_id=actor_id, title=title)],
+        )
+
+
 def refuse_unconfirmed_duplicate(
     *, actor: Any, title: str, earlier_tokens: list[str], confirmed: bool
 ) -> None:
-    """Refuse a save that would file this person's just-filed Teema again."""
+    """Refuse a save that would file this person's just-filed Teema again.
+
+    Must run inside the transaction that files the Teema: the title lock it
+    takes is what makes two tabs pressed together take turns (JQA-006). Taken
+    on «Loo siiski uus» too, so a plain save racing a deliberate one still
+    sees it.
+    """
+    hold_title(actor=actor, title=title)
     if confirmed:
         return
     existing = recent_duplicate(actor=actor, title=title, earlier_tokens=earlier_tokens)
