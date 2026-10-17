@@ -13,7 +13,10 @@ MEMBER FLAG — three layers (docs/adr/0095 §4)
 ENGAGEMENT REPLIES (docs/adr/0167 §2)
 * the first answer to an open round finishes its wait; a later one is kept and
   the closure stays; an identical repeat is refused;
-* a standalone position — either provenance — touches no wait.
+* a standalone position — either provenance — touches no wait;
+* one drawn form saves once, with a round or without; a deliberate repeat
+  opens the form again (owner decision D3, docs/adr/0170 §4, amendment of
+  2026-10-17).
 
 BOUNDARIES
 * received feedback may name nobody (docs/adr/0101); a published position names
@@ -50,7 +53,7 @@ from app.matters.services import (
     add_engagement,
     complete_engagement_feedback,
 )
-from app.matters.workspace import add_matter_external_position
+from app.matters.workspace import ALREADY_SAVED, add_matter_external_position
 from app.search.services import result_count
 from tests import factories
 from tests.gate import PASSWORD, apply_shared_gate
@@ -87,6 +90,13 @@ def _detail(client, matter) -> str:
 def _form(body: str) -> str:
     start = body.index('id="kaasamine-tagasiside"')
     return body[start : body.index("</form>", start)]
+
+
+def _save_once_token(body: str) -> str:
+    """The `salvestus` token `Lisa tagasiside` was drawn with."""
+    match = re.search(r'name="salvestus" value="([^"]+)"', _form(body))
+    assert match, "Lisa tagasiside carries no save-once token"
+    return match.group(1)
 
 
 def _pdf(name: str = "liidu-vastus.pdf") -> SimpleUploadedFile:
@@ -521,16 +531,39 @@ def test_a_standalone_position_touches_no_wait(
     assert MatterExternalPosition.objects.get(matter=normal_matter).engagement_id is None
 
 
-def test_standalone_positions_may_repeat(signed_in, normal_matter, organisation):
-    """Duplicate protection belongs to round answers (docs/adr/0167 §2); two
-    standalone records of the same view are the person's to make."""
+def test_a_standalone_position_repeats_only_from_a_fresh_form(
+    signed_in, normal_matter, organisation
+):
+    """One drawn form, one position — with a round or without (owner decision D3,
+    2026-10-17; docs/adr/0170 §4, amendment of 2026-10-17). Until then this test
+    was `test_standalone_positions_may_repeat`: a double POST of a standalone
+    position filed two. It was changed with the decision, not weakened: the same
+    drawn form is refused the second time with `ALREADY_SAVED`, and two records
+    of the same view are still the person's to make by opening the form again."""
+    page = signed_in.get(
+        reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk})
+    ).content.decode()
     data = {
         "organisation": str(organisation.pk),
         "provenance": DISCOVERED,
         "summary": "Sama avaldatud seisukoht.",
+        "salvestus": _save_once_token(page),
     }
-    assert _post(signed_in, normal_matter, data).status_code == 200
-    assert _post(signed_in, normal_matter, data).status_code == 200
+
+    first = _post(signed_in, normal_matter, data)
+    second = _post(signed_in, normal_matter, data)
+
+    assert (first.status_code, second.status_code) == (200, 400)
+    assert ALREADY_SAVED in second.content.decode()
+    assert MatterExternalPosition.objects.filter(matter=normal_matter).count() == 1
+
+    again = _post(
+        signed_in,
+        normal_matter,
+        {**data, "salvestus": _save_once_token(first.content.decode())},
+    )
+
+    assert again.status_code == 200
     assert MatterExternalPosition.objects.filter(matter=normal_matter).count() == 2
 
 

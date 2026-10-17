@@ -171,3 +171,15 @@ stay retired unless the owner decides otherwise.
 
 Code-only. Restoring the two routes and panels restores the previous doors; no
 stored row depends on which form wrote it.
+
+## Amendment of 2026-10-17 — §4: a standalone position repeats only from a fresh form
+
+Owner decision D3 of 2026-10-17 (docs/adr/0167, amendment of 2026-10-17).
+§4 said duplicate protection belonged to round answers, so two identical POSTs
+of a standalone position — received or published elsewhere — filed two
+records. **They no longer do.** `Lisa tagasiside` carries a save-once token
+like every compact door: a second save of the same drawn form is refused with
+«See vorm on juba salvestatud.» (400, nothing written), with a round or
+without. Two records of the same view remain the person's to make, deliberately,
+by saving the form as it is re-drawn after the first save (a fresh token). The
+round-answer content check (`refuse_repeated_reply`, 0167 §2.6) is unchanged.

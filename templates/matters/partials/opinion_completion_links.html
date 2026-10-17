@@ -17,7 +17,7 @@
 The form's own one-time token rides here too, so a second press of the same
 drawn form is refused rather than recorded as a second opinion.
 {% endcomment %}
-<input type="hidden" name="salvestus" value="{{ save_once_token }}">
+{% include "matters/partials/add/save_once.html" with token=save_once_tokens.koda_opinion_form %}
 {% if matter.is_open %}
   {% if matter.response_deadline and koda_initiative %}
     <p class="cx-check cx-check--action" id="id_koja_arvamus_tahtaeg_taidetud">

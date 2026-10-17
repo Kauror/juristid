@@ -19,6 +19,7 @@
             hx-target="#teema-vaade" hx-swap="outerHTML"
             hx-encoding="multipart/form-data">
         {% csrf_token %}
+        {% include "matters/partials/add/save_once.html" with token=save_once_tokens.work_victory_form %}
         <label class="cx-f">
           <span class="cx-f__lab">Mis muutus{% required_mark %}</span>
           {{ work_victory_form.victory_change }}

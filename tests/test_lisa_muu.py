@@ -34,6 +34,7 @@ from app.matters.services import (
     edit_entry,
     entry_revision_token,
 )
+from app.matters.workspace import ALREADY_SAVED
 from app.search.services import search_documents
 from app.submissions.models import Submission
 from app.workflow.models import NextAction
@@ -70,6 +71,15 @@ def _page(client, matter) -> str:
 
 def _others(matter):
     return Entry.objects.filter(matter=matter, kind=EntryKind.OTHER)
+
+
+def _save_once_token(html: str) -> str:
+    """The `salvestus` token of the `Muu` form on a drawn page."""
+    form = html[html.index("/lisa/muu/") :]
+    form = form[: form.index("</form>")]
+    match = re.search(r'name="salvestus" value="([^"]+)"', form)
+    assert match, "the Muu form carries no save-once token"
+    return match.group(1)
 
 
 # -- the launcher ---------------------------------------------------------------
@@ -267,14 +277,30 @@ def test_a_mixed_selection_with_one_refused_file_leaves_no_bytes_behind(
     assert not [p for p in (evidence_root / "evidence").rglob("*") if p.is_file()]
 
 
-def test_a_repeated_identical_post_writes_its_own_row(signed_in, specialist):
-    """Two saves are two records, as for every other `+ Lisa` choice; nothing merges
-    them silently. (The browser's double-submit guard keeps a double click to one.)"""
+def test_the_same_drawn_form_files_once_and_a_fresh_form_files_again(signed_in, specialist):
+    """One drawn form, one record (owner decision D3, 2026-10-17; docs/adr/0167,
+    amendment of 2026-10-17). This test said the opposite until then — «two saves
+    are two records» — and was changed with the decision, not weakened: a repeat
+    of the same drawn form is refused with `ALREADY_SAVED`, and the same words
+    are still a second record when the form is opened again."""
     matter = factories.MatterFactory(owner=specialist)
+    token = _save_once_token(_page(signed_in, matter))
 
-    _post(signed_in, matter, description="Sama tekst.")
-    _post(signed_in, matter, description="Sama tekst.")
+    first = _post(signed_in, matter, description="Sama tekst.", salvestus=token)
+    second = _post(signed_in, matter, description="Sama tekst.", salvestus=token)
 
+    assert (first.status_code, second.status_code) == (200, 400)
+    assert ALREADY_SAVED in second.content.decode()
+    assert _others(matter).count() == 1
+
+    again = _post(
+        signed_in,
+        matter,
+        description="Sama tekst.",
+        salvestus=_save_once_token(first.content.decode()),
+    )
+
+    assert again.status_code == 200
     assert _others(matter).count() == 2
 
 
