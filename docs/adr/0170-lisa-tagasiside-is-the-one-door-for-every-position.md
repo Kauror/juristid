@@ -104,7 +104,11 @@ refuses `DISCOVERED` with a round, and `correct_external_position` refuses a
 `DISCOVERED` row a round it did not already hold
 (`EXTERNAL_POSITION_ROUND_ANSWER_IS_RECEIVED`). A link a historical row already
 carries is kept, so the row stays correctable without being rewritten; `LEGACY`
-rows are not judged. The page never draws a radio both checked and disabled, and
+rows are not judged. (Amended 2026-10-17, JDATA-002: the kept link is exempt
+only while the stored provenance is unchanged — a correction that keeps the
+round and moves a `RECEIVED` answer to `DISCOVERED` is refused with the same
+sentence, so the exemption keeps a historical link and never moves a
+provenance.) The page never draws a radio both checked and disabled, and
 draws `Liige` ticked only beside a shown «Saadeti Kojale», so a refused form
 re-rendered and saved again cannot post an answer the person could not see. A
 «Saadeti Kojale» checked because a round was chosen (or by `Tehtud`) is cleared
