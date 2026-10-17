@@ -1819,6 +1819,27 @@ jobs:
       - name: Build the production image
         run: docker build -t juristid:ci .
 
+      # What the build made, asked from inside it rather than read off the
+      # Dockerfile (tests/test_deployment_image.py does that half): Debian 13,
+      # code the runtime user cannot write, no pip/setuptools/wheel, a build
+      # context without tests, prose or environment files, and OCR that reads a
+      # scanned page in est+eng on this base (JSEC-007, JOPS-006, JSEC-004).
+      # The OCR steps in `postgres-safety` and the shards prove the *runner's*
+      # Tesseract; this is the only place the image's own is exercised.
+      #
+      # The sizes are printed for comparison across base changes. The gzip
+      # figure is measured the way release-image.yml's `archive_bytes` is.
+      - name: The image is what its Dockerfile says it is
+        env:
+          DJANGO_SECRET_KEY: ci-only-secret-not-used-anywhere-else
+          DJANGO_ALLOWED_HOSTS: localhost
+        run: |
+          set -euo pipefail
+          docker run --rm -e DJANGO_SECRET_KEY -e DJANGO_ALLOWED_HOSTS -e DJANGO_DEBUG=0 \
+            --entrypoint python juristid:ci scripts/ci/assert_image_runtime.py
+          echo "image size:          $(docker image inspect juristid:ci --format '{{.Size}}') bytes"
+          echo "docker save | gzip -1: $(docker save juristid:ci | gzip -1 | wc -c) bytes"
+
       - name: Start the local stack
         run: docker compose up -d --wait --build
 

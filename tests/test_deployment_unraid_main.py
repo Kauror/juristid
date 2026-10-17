@@ -385,7 +385,13 @@ def test_the_image_owns_the_upload_directory_the_volume_shadows() -> None:
     dockerfile = (Path(settings.BASE_DIR) / "Dockerfile").read_text(encoding="utf-8")
     creation = next(line for line in dockerfile.splitlines() if "mkdir -p /app/evidence" in line)
     assert "/app/pending-uploads" in creation, "the image does not create the mount point"
-    assert "chown -R juristid:juristid /app" in dockerfile
+    handover = next(
+        line
+        for line in dockerfile.splitlines()
+        if "chown" in line and not line.lstrip().startswith("#")
+    )
+    assert "juristid:juristid" in handover
+    assert "/app/pending-uploads" in handover.split(), "the mount point is not handed over"
 
 
 def test_the_volume_is_mounted_where_the_application_actually_writes(

@@ -21,6 +21,42 @@ media/
 evidence/
 derivatives/
 legacy-source/
+# The upload staging area is the fourth storage root (PENDING_UPLOAD_ROOT), and
+# the importer's working directories hold real register rows; `.gitignore`
+# keeps all of them out of Git for the same reason.
+pending-uploads/
+private-data/
+import-input/
+import-output/
+opinion-archive/
+.local/
+
+# Environment files, at any depth (JSEC-004). The root-only patterns this list
+# used to have missed `deploy/unraid-main/juristid.env`, the one file a server
+# checkout is most likely to have beside the code, and `COPY . .` would bake it
+# into the image. `**/` also matches the root. The committed example stays: it
+# is documentation.
 .env
 .env.*
-!.env.example
+**/.env
+**/.env.*
+**/*.env
+**/juristid.env
+!**/.env.example
+
+# Nothing in the image runs the test suites, and a production image that
+# carries them invites running them there — which is how a pytest run once
+# wrote synthetic files into the real evidence store (deploy/unraid-main/
+# README.md, 2026-08-24). CI runs every suite on the runner, never in the
+# image.
+tests/
+e2e/
+
+# Prose, except the two trees the application reads while it runs: the
+# release notes behind /uuendused/ (app/core/release_notes.py) and the era
+# contracts the register importer refuses a sheet without
+# (app/legacy_import/contracts.py). tests/test_deployment_image.py holds both
+# halves of that rule.
+docs/
+!docs/release-notes/
+!docs/data-contracts/
