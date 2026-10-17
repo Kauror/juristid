@@ -51,6 +51,7 @@ from __future__ import annotations
 import uuid as uuid_module
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 from django.db import transaction
@@ -970,6 +971,37 @@ OTHER_ENTRY_NEEDS_A_DAY = "Sisesta, millal see toimus."
 #: first).
 MEETING_ENTRY_NEEDS_A_DAY = "Sisesta kohtumise kuupäev."
 
+#: What `+ Lisa · Muu` answers when its day is after today — the form under
+#: `Millal?` and the service alike. Worded as a send dated ahead is refused
+#: (`SENT_DATE_IN_THE_FUTURE`): one shape for one rule (JQA-001).
+OTHER_ENTRY_DAY_AHEAD = "Toimumise kuupäev ei saa olla tulevikus."
+
+#: What `Kohtumine / arutelu` answers when its day is after today.
+MEETING_ENTRY_DAY_AHEAD = "Kohtumise kuupäev ei saa olla tulevikus."
+
+
+def _refuse_a_day_ahead(day: Any, refusal: str) -> None:
+    """A `Muu` or a `Kohtumine` happened, so its day is not after today.
+
+    Both store the stated day in `Entry.occurred_at`, and every readable entry
+    is work done on that day to `app.matters.activity` — «Viimane tegevus»,
+    «Muutusteta 30 p» and Osakond's weeks. A day ahead would be counted as work
+    already done, and the day cannot be corrected afterwards (docs/adr/0097,
+    amendments of 2026-10-15 and 2026-10-17). A plan is `Järgmine tegevus` or
+    `Oluline tähtaeg`.
+
+    **The Tallinn business day**, `timezone.localdate()`: today is accepted at
+    any hour of it, half past midnight included. A datetime is read by its own
+    date, as `start_of_local_day` stores it. ``None`` is the missing-day
+    refusal's question, not this one's.
+    """
+    if day is None:
+        return
+    if isinstance(day, datetime):
+        day = day.date()
+    if day > timezone.localdate():
+        raise DomainError(refusal)
+
 
 def _add_dated_entry_with_files(
     *,
@@ -979,6 +1011,7 @@ def _add_dated_entry_with_files(
     body: str,
     occurred_on: Any,
     missing_day: str,
+    day_ahead: str,
     url: str = "",
     uploads: Sequence[Any] = (),
 ) -> WorkspaceResult:
@@ -991,6 +1024,8 @@ def _add_dated_entry_with_files(
     the files through `capture_supporting_evidence`, inside the open-Matter
     write lock. The caller's own `@transaction.atomic` makes a refused file
     leave no entry behind. Nothing else is touched.
+
+    The day may not be after today (`_refuse_a_day_ahead`), whoever calls.
     """
     if occurred_on is None:
         raise DomainError(missing_day)
@@ -998,6 +1033,7 @@ def _add_dated_entry_with_files(
     # year 0 UTC, which the database refuses as a 500 (JQA-008, CORR-02).
     if not is_supported_day(occurred_on):
         raise DomainError(DAY_OUT_OF_RANGE)
+    _refuse_a_day_ahead(occurred_on, day_ahead)
     locked_matter = lock_open_matter_for_business_write(matter.pk)
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
@@ -1039,7 +1075,9 @@ def add_matter_other(
     states (`Millal?`, required). It is stored as the start of that local day
     (`start_of_local_day`), so the chronology shows and orders the row on that
     day — `Entry.occurred_at` is when the work happened, not when it was typed.
-    No day is invented: without one the save is refused.
+    No day is invented: without one the save is refused. **Nor is it after
+    today** (`OTHER_ENTRY_DAY_AHEAD`): it is material met or an event that
+    happened, and activity counts it as work done on that day (JQA-001).
 
     Creates no `NextAction`, touches neither `Hetkeseis` nor the plan, opens no
     wait and is no `Submission`. A closed Matter refuses it through the same
@@ -1052,6 +1090,7 @@ def add_matter_other(
         body=description,
         occurred_on=occurred_on,
         missing_day=OTHER_ENTRY_NEEDS_A_DAY,
+        day_ahead=OTHER_ENTRY_DAY_AHEAD,
         url=url,
         uploads=uploads,
     )
@@ -1072,7 +1111,8 @@ def add_matter_meeting(
     sanitised by `add_entry` like every entry body, so who took part is named
     there — dated by the required `Kuupäev` as the start of that local day,
     with optional files through the canonical evidence pipeline, all in one
-    transaction (docs/adr/0097, amendment of 2026-10-17).
+    transaction (docs/adr/0097, amendment of 2026-10-17). A meeting is one
+    held, so a day after today is refused (`MEETING_ENTRY_DAY_AHEAD`, JQA-001).
 
     No organisation, no participants model, no link. It is not a
     `MatterEngagement` (`EngagementKind.MEETING` is a consultation round's
@@ -1088,6 +1128,7 @@ def add_matter_meeting(
         body=summary,
         occurred_on=occurred_on,
         missing_day=MEETING_ENTRY_NEEDS_A_DAY,
+        day_ahead=MEETING_ENTRY_DAY_AHEAD,
         uploads=uploads,
     )
 

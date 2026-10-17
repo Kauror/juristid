@@ -66,7 +66,14 @@
                  data-addpick aria-controls="kaasamine-tagasiside"
                  {% if kaasamine_choice == "kaasamine-tagasiside" %}checked{% endif %}>
           <label class="disclosure-chip" for="kaasamine-tagasiside-valik">Lisa tagasiside</label>
-          <div class="cx-panel" id="kaasamine-tagasiside" data-addpanel data-draft-host>
+          {% comment %}
+            `data-draft-state`: a draft is carried across another save only into
+            a form offering the same rounds (static/js/app.js `keepDrafts`);
+            otherwise it is shown as «Salvestamata sisu» (2026-10-17 audit,
+            JQA-002).
+          {% endcomment %}
+          <div class="cx-panel" id="kaasamine-tagasiside" data-addpanel data-draft-host
+               data-draft-state="{{ engagement_reply_form.round_choices_state }}">
             <div class="cx-panel__body">
               {% if open_choice == "kaasamine-tagasiside" and workspace_error %}
                 <p class="formerror" role="alert">{{ workspace_error }}</p>

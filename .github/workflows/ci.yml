@@ -18,10 +18,14 @@ permissions:
 env:
   UV_FROZEN: "1"
 
+# Runner image pinned to ubuntu-24.04, not ubuntu-latest: GitHub moves
+# ubuntu-latest to Ubuntu 26 on 19 Oct 2026, and the visual baselines and the
+# OCR package cache are tied to the runner image. Move it deliberately, with
+# the baselines regenerated in the same change (JTEST-010).
 jobs:
   quality:
     name: Format, lint, types and system checks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -160,7 +164,7 @@ jobs:
 
   postgres-safety:
     name: PostgreSQL migration and runtime safety
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     # Everything the PostgreSQL suite proved *before* running a test, kept
@@ -354,7 +358,7 @@ jobs:
 
   tests:
     name: "PostgreSQL tests, runner ${{ matrix.runner }} of 7"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Was 25 for the whole serial suite. A runner now carries a few of its
     # shards at the same time, and the same reasoning applies at the smaller
     # size: generous slack so that a slow runner is never mistaken for a broken
@@ -515,7 +519,7 @@ jobs:
     # status check and anything referring to this suite keeps meaning what it
     # meant. The shards are what changed; the promise is not.
     name: PostgreSQL 18 test suite
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     needs: [postgres-safety, tests]
     # `always()`, because a gate that only runs when its dependencies succeeded
@@ -603,7 +607,7 @@ jobs:
 
   dependency-scan:
     name: Dependency vulnerability baseline
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -622,7 +626,7 @@ jobs:
 
   browser:
     name: "Browser, runner ${{ matrix.runner }} of 9"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     strategy:
@@ -784,7 +788,7 @@ jobs:
 
   visual:
     name: Visual regression
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     # Its own world, which is a determinism fix before it is a speed one.
@@ -944,7 +948,7 @@ jobs:
   browser-gate:
     # The logical gate, under the name it has always had.
     name: Browser workflow (Playwright on PostgreSQL 18)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     needs: [browser, visual]
     if: always()
@@ -1008,7 +1012,7 @@ jobs:
     # one). Each runner's job and test-step times come from the API, so setup
     # and tests are reported apart, per runner, on the run's summary page.
     name: Shard balance, predicted against actual (informational)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     needs: [tests, browser]
     if: always()
@@ -1064,7 +1068,7 @@ jobs:
 
   recovery:
     name: Backup and restore rehearsal
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     # After the migration safety job, for a slot rather than for a result. The account runs
     # twenty jobs at once and every one of them is in use from the first
@@ -1797,7 +1801,7 @@ jobs:
 
   container:
     name: Container and compose smoke test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     # After the dependency scan, for a slot rather than for a result. The account runs
     # twenty jobs at once and every one of them is in use from the first

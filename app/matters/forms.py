@@ -4903,7 +4903,8 @@ class CompactOtherForm(forms.Form):
     * `Millal?` — **required**, one day, **no default**. When the material or
       event occurred: `Entry.occurred_at` means when the work happened, not when
       it was typed, so the chronology places the row on this day. Nothing is
-      pre-filled and nothing is invented: an empty box is refused.
+      pre-filled and nothing is invented: an empty box is refused, and so is a
+      day after today — what is planned is not yet material on the file.
     * `Link` — optional, the shared web-address rule (`normalize_entry_url`).
     * `Failid` — optional, the canonical evidence pipeline.
 
@@ -4950,6 +4951,19 @@ class CompactOtherForm(forms.Form):
             raise forms.ValidationError("Kirjelda, mida lisad.")
         return description
 
+    def clean_occurred_on(self) -> Any:
+        """Material met or an event that happened: never after today (JQA-001).
+
+        The Tallinn business day, as `clean_sent_on` reads a send's. The
+        service refuses the same day in the same words for every other caller.
+        """
+        from app.matters.workspace import OTHER_ENTRY_DAY_AHEAD
+
+        value = self.cleaned_data.get("occurred_on")
+        if value is not None and value > timezone.localdate():
+            raise forms.ValidationError(OTHER_ENTRY_DAY_AHEAD)
+        return value
+
     def clean_url(self) -> str:
         from app.matters.services import normalize_entry_url
 
@@ -4971,7 +4985,8 @@ class CompactMeetingForm(forms.Form):
 
     * `Kuupäev` — **required**, one day, **no default**: the day the meeting
       took place, stored as the start of that local day in `Entry.occurred_at`
-      exactly as `+ Lisa · Muu` does. Nothing is pre-filled or inferred.
+      exactly as `+ Lisa · Muu` does. Nothing is pre-filled or inferred, and a
+      day after today is refused: a meeting not yet held is a plan.
     * `Lühikokkuvõte` — **required**: what was discussed and agreed, and who
       took part. It is the entry's body and goes through the same sanitising
       every entry body does; a summary that is empty once sanitised (markup
@@ -5012,6 +5027,15 @@ class CompactMeetingForm(forms.Form):
         # Its own ids: `Muu` and `Koja arvamus` draw theirs on the same page.
         kwargs.setdefault("auto_id", "id_kohtumine_%s")
         super().__init__(*args, **kwargs)
+
+    def clean_occurred_on(self) -> Any:
+        """A meeting held: never after today (JQA-001), as `CompactOtherForm`."""
+        from app.matters.workspace import MEETING_ENTRY_DAY_AHEAD
+
+        value = self.cleaned_data.get("occurred_on")
+        if value is not None and value > timezone.localdate():
+            raise forms.ValidationError(MEETING_ENTRY_DAY_AHEAD)
+        return value
 
     def clean_summary(self) -> str:
         from app.core.richtext import sanitize_entry_html
@@ -5966,6 +5990,41 @@ class FeedbackForm(ExternalPositionFieldsMixin, forms.Form):
         if self.is_bound:
             return getattr(self, "cleaned_data", {}).get("engagement") is not None
         return bool(self["engagement"].value())
+
+    @property
+    def provenance_is_implied(self) -> bool:
+        """Whether a drawn «Saadeti Kojale» came from the round, not from the person.
+
+        The page clears an implied answer again when the round is cleared, and
+        keeps one the person chose (docs/adr/0170 §3). Unbound, a linked round
+        was named by `Tehtud`, so the answer is implied. Bound, it is implied
+        unless the person posted «Saadeti Kojale» themselves: the page posts
+        `provenance_implied=1` while the radio holds an answer only the round
+        gave (static/js/ux.js), and a round saved with no answer or with the
+        refused «Avaldatud mujal» is drawn as «Saadeti Kojale» by this form,
+        not by the person (2026-10-17 audit, JQA-004).
+        """
+        if not self.round_is_linked:
+            return False
+        if not self.is_bound:
+            return True
+        received = ExternalPositionProvenance.RECEIVED.value
+        posted = self.data.get(self.add_prefix("provenance"))
+        return posted != received or self.data.get("provenance_implied") == "1"
+
+    @property
+    def round_choices_state(self) -> str:
+        """The rounds this form offers, as the panel's `data-draft-state`.
+
+        An unsaved draft is carried across another panel's save only into a
+        form that offers the same rounds (static/js/app.js `keepDrafts`). A
+        draft typed before the first round existed has no `Seotud kaasamine`,
+        so carried onto a Teema that now has one it could not link the answer
+        `Tehtud` asks it to; it is shown as «Salvestamata sisu» instead
+        (2026-10-17 audit, JQA-002).
+        """
+        field = cast(Any, self.fields["engagement"])
+        return " ".join(sorted(str(value) for value, _label in field.choices if value))
 
     @property
     def shown_provenance(self) -> str:

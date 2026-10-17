@@ -23,9 +23,11 @@ visibility inheritance and search are the record's own and did not move.
 * `Seotud kaasamine` — drawn when the Matter has a round this reader may see,
   and empty unless `Tehtud` on a wait named one. A linked round fixes the
   provenance at «Saadeti Kojale» («Avaldatud mujal» is disabled here and
-  refused by the form). The first answer to an open round finishes its wait;
-  later answers are recorded against it; an identical repeat is refused
-  (docs/adr/0167 §2). A position with no round touches no wait;
+  refused by the form); `provenance_implied` records whether that answer was
+  the round's or the person's, so clearing the round undoes only the first.
+  The first answer to an open round finishes its wait; later answers are
+  recorded against it; an identical repeat is refused (docs/adr/0167 §2). A
+  position with no round touches no wait;
 * `Seisukoht`, `Link`, `Failid` — at least one of the three, any combination
   (docs/adr/0084 §3); `Kuupäev` opens on today and clears.
 
@@ -60,6 +62,14 @@ visibility inheritance and search are the record's own and did not move.
       {{ form.member_mark.errors|first }}</p>
   {% endif %}
 
+  {% comment %}
+    Whether «Saadeti Kojale» is the round's answer rather than the person's:
+    kept by static/js/ux.js, read back by `FeedbackForm.provenance_is_implied`
+    so a refused form still clears only an implied answer with its round
+    (docs/adr/0170 §3).
+  {% endcomment %}
+  <input type="hidden" name="provenance_implied" data-feedback-implied-flag
+         value="{% if form.provenance_is_implied %}1{% endif %}">
   <fieldset class="cx-fieldset" data-feedback-provenance
             {% if form.provenance.errors %}aria-describedby="{{ form.provenance.auto_id }}_error"{% endif %}>
     <legend class="cx-f__lab">{% field_label form.provenance %}</legend>
@@ -69,7 +79,7 @@ visibility inheritance and search are the record's own and did not move.
           <input type="radio" class="chip__input" name="{{ form.provenance.html_name }}"
                  id="{{ radio.id_for_label }}" value="{{ radio.data.value }}"
                  {% if radio.data.value == form.shown_provenance %}checked{% endif %}
-                 {% if form.round_is_linked %}{% if radio.data.value == "RECEIVED" %}data-feedback-implied{% else %}disabled{% endif %}{% endif %}>
+                 {% if form.round_is_linked %}{% if radio.data.value == "RECEIVED" %}{% if form.provenance_is_implied %}data-feedback-implied{% endif %}{% else %}disabled{% endif %}{% endif %}>
           <span class="chip__name">{{ radio.choice_label }}</span>
         </label>
       {% endfor %}
