@@ -26,10 +26,14 @@ permissions:
   # does not prove this commit. Nothing else.
   actions: write
 
+# Runner image pinned to ubuntu-24.04, not ubuntu-latest: GitHub moves
+# ubuntu-latest to Ubuntu 26 on 19 Oct 2026, and the visual baselines and the
+# OCR package cache are tied to the runner image. Move it deliberately, with
+# the baselines regenerated in the same change (JTEST-010).
 jobs:
   proof:
     name: Main's tree was tested green before it merged
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       # Two commits deep: the merge and its parents are all the proof reads.
