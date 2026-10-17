@@ -62,16 +62,14 @@ def test_muu_opens_from_the_keyboard_and_saves_a_supporting_entry(page, base_url
         "placeholder", "Kirjelda, mida lisad ja miks see on teema jaoks oluline."
     )
 
-    # A link without a description: the browser's own `required` check stops the
-    # submit before any request (the server refusal is tests/test_lisa_muu.py),
-    # and what was typed stays in the form.
+    # A link without a description: the server refuses it in Estonian under
+    # the box (no browser bubble, as on every other panel), and what was typed
+    # stays in the form.
     form.locator('[name="url"]').fill("https://www.example.ee/taust")
-    posts: list[str] = []
-    page.on("request", lambda r: posts.append(r.url) if r.method == "POST" else None)
-    form.get_by_role("button", name="Salvesta", exact=True).click()
-    description = form.locator('[name="description"]')
-    assert description.evaluate("el => el.validity.valueMissing") is True
-    assert not [u for u in posts if u.endswith("/lisa/muu/")]
+    assert _save(page, form) == 400
+    form = page.locator("#marge-muu form")
+    expect(form).to_contain_text("Kirjelda, mida lisad.")
+    expect(form).to_contain_text("Sisesta, millal see toimus.")
     expect(form.locator('[name="url"]')).to_have_value("https://www.example.ee/taust")
 
     # The real save: description, a past day, link, two files. `Millal?` starts empty.

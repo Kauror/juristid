@@ -4890,6 +4890,10 @@ class CompactOtherForm(forms.Form):
     No title, organisation, status or follow-up.
     """
 
+    # The server's Estonian refusals, not the browser's own bubble, as on every
+    # other `LISA TEEMALE` panel; the marks still say what is required.
+    use_required_attribute = False
+
     description = forms.CharField(
         label="Kirjeldus",
         required=True,
@@ -4917,8 +4921,12 @@ class CompactOtherForm(forms.Form):
         super().__init__(*args, **kwargs)
 
     def clean_description(self) -> str:
+        from app.core.richtext import sanitize_entry_html
+
         description = (self.cleaned_data.get("description") or "").strip()
-        if not description:
+        # Measured after the sanitising `add_entry` applies, so markup with no
+        # words is refused under this box rather than as a panel-level error.
+        if not plain_text(sanitize_entry_html(description)).strip():
             raise forms.ValidationError("Kirjelda, mida lisad.")
         return description
 
