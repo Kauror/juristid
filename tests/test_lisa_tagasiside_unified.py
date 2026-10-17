@@ -886,3 +886,115 @@ def test_a_foreign_round_id_does_not_lock_the_redrawn_provenance(
     )
     assert discovered and "disabled" not in discovered.group(0)
     assert "checked" in discovered.group(0)
+
+
+# ---------------------------------------------------------------------------
+# 2026-10-17 audit — JQA-002 (draft state) and JQA-004 (stated provenance)
+# ---------------------------------------------------------------------------
+
+
+def _panel(body: str) -> str:
+    """The `Lisa tagasiside` panel's own opening tag."""
+    start = body.index('id="kaasamine-tagasiside"')
+    return body[body.rindex("<div", 0, start) : body.index(">", start) + 1]
+
+
+def _received_radio(form: str) -> str:
+    match = re.search(r'<input[^>]*name="provenance"[^>]*value="RECEIVED"[^>]*>', form)
+    assert match
+    return match.group(0)
+
+
+def _implied_flag(form: str) -> str:
+    match = re.search(r'<input[^>]*name="provenance_implied"[^>]*>', form)
+    assert match
+    return re.search(r'value="([^"]*)"', match.group(0)).group(1)
+
+
+def test_the_panel_draft_state_is_the_set_of_rounds_it_offers(signed_in, normal_matter, specialist):
+    """JQA-002: a draft is carried only into a form offering the same rounds."""
+    assert 'data-draft-state=""' in _panel(_detail(signed_in, normal_matter))
+
+    first = _round(normal_matter, specialist, "Esimene ring")
+    second = _round(normal_matter, specialist, "Teine ring")
+    complete_engagement_feedback(engagement=second, actor=specialist)
+
+    state = " ".join(sorted([str(first.pk), str(second.pk)]))
+    assert f'data-draft-state="{state}"' in _panel(_detail(signed_in, normal_matter))
+
+
+def test_a_stated_saadeti_kojale_is_redrawn_as_the_persons_after_a_refusal(
+    signed_in, normal_matter, specialist
+):
+    """JQA-004: chosen by the person, it is not marked as implied by the round."""
+    round_ = _round(normal_matter, specialist)
+
+    response = _post(
+        signed_in,
+        normal_matter,
+        {
+            "engagement": str(round_.pk),
+            "provenance": RECEIVED,
+            "provenance_implied": "",
+            "source_is_member": "on",
+            "summary": "Liikme vastus.",
+            "url": "pole link",
+        },
+    )
+
+    assert response.status_code == 400
+    form = _form(response.content.decode())
+    received = _received_radio(form)
+    assert "checked" in received
+    assert "data-feedback-implied" not in received
+    assert _implied_flag(form) == ""
+    member = re.search(r'<input[^>]*name="source_is_member"[^>]*>', form)
+    assert member and "checked" in member.group(0)
+
+
+@pytest.mark.parametrize(
+    "posted",
+    [
+        {"provenance": RECEIVED, "provenance_implied": "1"},
+        {},
+    ],
+    ids=["implied-by-the-round", "no-answer-posted"],
+)
+def test_a_saadeti_kojale_the_round_gave_stays_implied_after_a_refusal(
+    signed_in, normal_matter, specialist, posted
+):
+    """An answer only the round gave is still cleared with it (docs/adr/0170 §3)."""
+    round_ = _round(normal_matter, specialist)
+
+    response = _post(
+        signed_in,
+        normal_matter,
+        {"engagement": str(round_.pk), "summary": "Vastus ringile.", "url": "pole link", **posted},
+    )
+
+    assert response.status_code == 400
+    form = _form(response.content.decode())
+    received = _received_radio(form)
+    assert "checked" in received
+    assert "data-feedback-implied" in received
+    assert _implied_flag(form) == "1"
+
+
+def test_tehtud_on_a_wait_marks_its_saadeti_kojale_implied(signed_in, normal_matter, specialist):
+    round_ = _round(normal_matter, specialist)
+
+    body = signed_in.get(
+        reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk}),
+        {"ava": "tagasiside", "kaasamine": str(round_.pk)},
+    ).content.decode()
+
+    form = _form(body)
+    assert "data-feedback-implied" in _received_radio(form)
+    assert _implied_flag(form) == "1"
+
+
+def test_a_form_with_no_round_marks_nothing_implied(signed_in, normal_matter):
+    form = _form(_detail(signed_in, normal_matter))
+
+    assert "data-feedback-implied" not in _received_radio(form)
+    assert _implied_flag(form) == ""
