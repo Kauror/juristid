@@ -61,6 +61,10 @@ front of real data only when all of them hold:
   (`E012`)
 - the session cookie is `Secure` (`E013`), `HttpOnly`, `SameSite=Lax`, and the
   session identifier is rotated on success
+- the session ends 12 hours after the password was typed
+  (`SHARED_GATE_SESSION_SECONDS`) — **amended 2026-10-17:** and after 8 hours
+  without a request (`SHARED_GATE_IDLE_SECONDS`), whichever comes first; see the
+  amendment at the end of this document
 - `DJANGO_DEBUG=0` and `DEV_LOGIN_ENABLED=0` (`E004`, `E008`)
 
 `REAL_DATA_ALLOWED=1` with `AUTH_MODE=none` still fails (`E006`). The check was
@@ -73,7 +77,9 @@ survive a restart — but it is *evictable*: it culls a third of its rows when i
 grows past `MAX_ENTRIES`. A lockout an attacker can flush by making noise is not
 a lockout. So `SharedGateThrottle` is a table.
 
-It is keyed on an HMAC of the forwarded address, never global. A global counter
+It is keyed on an HMAC of the forwarded address, never global. (**Amended
+2026-10-17:** the address is the one every audit row records, from
+`app/core/client_ip.py`; see the amendment at the end of this document.) A global counter
 would let one attacker lock the department out of its own system: a
 denial-of-service primitive wearing a control's clothes. Escalation doubles each
 cycle and stops at a ceiling for the same reason — long enough that guessing
@@ -246,3 +252,67 @@ for account administration inside the application (ADR 0145, amending ADR 0004).
 - **`REAL_DATA_ALLOWED` with `AUTH_MODE=none` still refuses to start** (`E006`);
   `local_password` joins the modes that satisfy it, under its own checks
   (`E030`–`E038`).
+
+---
+
+## Amendment, 2026-10-17 — an idle limit, and the client's real address
+
+- Status: accepted, amending «The shared gate is a distinct authenticator» (the
+  session limits) and «The throttle is a table, and it is per client» (which
+  address)
+- Findings: JSEC-005 and JOPS-008 of the 2026-10-17 audit
+- Owner decision: **D11, 2026-10-17** — «8 h idle; the 12 h absolute limit
+  stays» (`C:\CCudit-results\juristid-2026-10-17\OWNER-DECISIONS.md`)
+
+### What was decided before
+
+A gate session lasted 12 hours from the password (`SHARED_GATE_SESSION_SECONDS`),
+however long it then sat unused. Audit rows recorded `REMOTE_ADDR`; the gate
+throttle (and the personal sign-in and development PIN throttles) read
+`CF-Connecting-IP`, falling back to `X-Forwarded-For`, unconditionally.
+
+### Why it is amended
+
+- A browser left open on a shared desk stayed behind the gate for the rest of
+  the 12 hours (JSEC-005). The owner chose an 8-hour idle limit on 2026-10-17.
+- Behind `cloudflared` every request reaches gunicorn from the connector, so
+  every audit row carried the same internal address, while the throttle named
+  the client. The trail and the lockout disagreed about who was knocking
+  (JOPS-008).
+- Persona changes re-opened the gate with a fresh pass time, so switching
+  persona restarted the 12-hour clock. Picking a name is not typing the
+  password.
+
+### What is decided now
+
+- **Two limits.** A gate session passes while it is within 12 hours of the
+  password (`SHARED_GATE_SESSION_SECONDS`, unchanged) **and** within 8 hours of
+  its last request (`SHARED_GATE_IDLE_SECONDS`, env override, default 28800).
+  Either one failing asks for the password again, and drops the persona with it.
+- The last-request time is the session key `shared_gate:last_seen`, written by
+  the middleware for a request that is behind the gate, **at most once every
+  five minutes** (`shared_gate.LAST_SEEN_RESOLUTION`) so a page view does not
+  save the session every time. The idle limit can therefore fire up to five
+  minutes early, never late. A session opened before this release has no stamp
+  and is measured from its pass; an unreadable stamp is no pass.
+- A persona change (`act_as`, and the middleware dropping an ineligible
+  persona) re-opens the gate with the **original** pass time. The idle clock
+  restarts; the absolute clock does not.
+- **One address rule** (`app/core/client_ip.py`): `CF-Connecting-IP` when the
+  deployment trusts its proxy — `TRUST_CF_CONNECTING_IP`, which is
+  `DJANGO_BEHIND_TLS_PROXY`, the same trust the forwarded scheme already rests
+  on — otherwise `REMOTE_ADDR`; either only when it parses as one IP address.
+  `X-Forwarded-For` is no longer read. Every audit row's `ip_address` and every
+  throttle key use it, so the row and the lockout name the same client.
+- The deployed gunicorn access-log format adds `%({cf-connecting-ip}i)s` after
+  `%(h)s`, so the access log names the client as well as the connector.
+
+### What this amendment does not change
+
+- The 12-hour absolute limit, the password, the throttle's per-client table and
+  escalation, the persona rule, and the audit event types.
+- A forwarded address is still a rate-limit key and an audit fact, never an
+  identity or an authorization input. Trusting it rests on the tunnel being the
+  only way in («No public origin bypass»).
+- The session cookie is still not a browser-session cookie: a browser restart
+  within both limits keeps the session. That part of JSEC-005 was not decided.

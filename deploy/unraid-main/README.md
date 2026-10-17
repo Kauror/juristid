@@ -116,7 +116,11 @@ RESTRICTED appears merely because the password was typed. Everything except
 Osakond needs a persona, because authoring anything needs somebody to attribute
 it to.
 
-Changing persona does not ask for the password again. Signing out closes both.
+Changing persona does not ask for the password again, and does not restart the
+12-hour clock. Signing out closes both. A session ends 12 hours after the
+password (`SHARED_GATE_SESSION_SECONDS`) or after 8 hours without a request
+(`SHARED_GATE_IDLE_SECONDS`), whichever comes first (docs/adr/0016, amendment of
+2026-10-17).
 
 ### Rotating the password
 

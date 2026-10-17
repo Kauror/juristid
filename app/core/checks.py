@@ -415,8 +415,9 @@ def _shared_gate_problems() -> list[Error | Warning]:
                 "The shared gate is on but nothing tells Django the connection is secure.",
                 hint=(
                     "Set DJANGO_BEHIND_TLS_PROXY=1 where a proxy terminates TLS. Without "
-                    "it no HSTS header is sent, request.is_secure() is False, and CSRF "
-                    "skips its referer check."
+                    "it no HSTS header is sent, request.is_secure() is False, CSRF "
+                    "skips its referer check, and audit rows and the gate throttle see "
+                    "the tunnel's address instead of the client's (app/core/client_ip.py)."
                 ),
                 id="juristid.E014",
             )
