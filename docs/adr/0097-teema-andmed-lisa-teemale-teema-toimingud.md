@@ -480,12 +480,20 @@ task composer returns.
    what this form exists to avoid). `Millal?` is required (see 3). `Link` and
    `Failid` are optional. No title, organisation, status or follow-up.
 2. **`Entry.url`, one additive column** (`matters/0049_entry_url`, blank,
-   default empty; `EntryRevision.url` likewise). A link inside `body` would be
+   default empty in the database too — `db_default=""`, so the release still
+   serving during `migrate` and a code-only rollback keep inserting entries;
+   `EntryRevision.url` likewise). A link inside `body` would be
    opaque, uncorrectable as a link and invisible to the revision chain. It is
    validated by the shared web-address rule (`normalize_entry_url`: http(s), a
-   real host, refused rather than truncated), shown by its host as the labelled
-   new-window link other chronology rows use, and corrected through `edit_entry`,
-   whose revision keeps the earlier address as it keeps the earlier wording. Only
+   real host, **no userinfo** — `https://user:pw@…`, `https://user@…` and
+   `https://:pw@…` are refused, as `Ülevaade / uudis` and `Menetluse link`
+   refuse them — and refused rather than truncated), on creation and on
+   correction alike; shown by its host as the labelled new-window link other
+   chronology rows use, and corrected through `edit_entry`, whose revision keeps
+   the earlier address as it keeps the earlier wording. A correction overtaken
+   by another writer's (409) shows that writer's description **and** link
+   («Praegune link», the whole address as plain text) beside the person's own
+   unsaved values, and merges nothing. Only
    a `Muu` entry's `Muuda` offers the link box; every other kind keeps the
    body-only correction. **A link is an `OTHER` entry's only**: `add_entry` and
    `edit_entry` refuse a non-empty `url` on any other kind

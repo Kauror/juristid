@@ -129,6 +129,8 @@ def refuse_repeated_reply(
     url: str,
     stated_on: Any,
     uploads: Iterable[Any] = (),
+    organisation: Any = None,
+    source_is_member: bool = False,
 ) -> None:
     """Refuse a reply identical to one already recorded against the same round.
 
@@ -137,9 +139,11 @@ def refuse_repeated_reply(
     the same answer twice (owner decision D3: an accidental duplicate is
     prevented, a deliberate one is not). «Identical» is every source the reply
     carries: the same words, the same address, the same day **and** the same
-    set of files by checksum. A second member's answer with the same text on
-    another day, or the same text with another file, is a different answer and
-    is recorded.
+    set of files by checksum, **from the same author** — the same organisation
+    (or none) and the same `Liige` mark. A second member's answer with the same
+    text on another day, the same text with another file, or the same words from
+    another organisation is a different answer and is recorded (docs/adr/0170 §4:
+    `Lisa tagasiside` names the author, which the round-only form did not).
 
     Asked under the Matter's lock, so two concurrent presses are serialised
     and the second one sees the first.
@@ -158,6 +162,8 @@ def refuse_repeated_reply(
         summary=clean_summary,
         url=clean_url,
         stated_on=stated_on,
+        organisation=organisation,
+        source_is_member=bool(source_is_member),
     )
     if not candidates.exists():
         return

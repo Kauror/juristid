@@ -43,7 +43,9 @@ visibility inheritance and search are the record's own and did not move.
     {# `Liige` — only beside «Saadeti Kojale» (static/css/app.css `.feedbackform`). #}
     <div class="orgpick__mark" data-feedback-member>
       <label class="chip">
-        {{ form.member_mark }}
+        <input type="checkbox" class="chip__input" name="{{ form.member_mark.html_name }}"
+               id="{{ form.member_mark.auto_id }}"
+               {% if form.member_is_checked %}checked{% endif %}>
         <span class="chip__name">{{ form.member_mark.label }}</span>
       </label>
     </div>
@@ -66,8 +68,8 @@ visibility inheritance and search are the record's own and did not move.
         <label class="chip">
           <input type="radio" class="chip__input" name="{{ form.provenance.html_name }}"
                  id="{{ radio.id_for_label }}" value="{{ radio.data.value }}"
-                 {% if radio.data.selected %}checked{% endif %}
-                 {% if form.round_is_linked and radio.data.value != "RECEIVED" %}disabled{% endif %}>
+                 {% if radio.data.value == form.shown_provenance %}checked{% endif %}
+                 {% if form.round_is_linked %}{% if radio.data.value == "RECEIVED" %}data-feedback-implied{% else %}disabled{% endif %}{% endif %}>
           <span class="chip__name">{{ radio.choice_label }}</span>
         </label>
       {% endfor %}

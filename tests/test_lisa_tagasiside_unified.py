@@ -701,3 +701,188 @@ def test_the_feedback_form_is_drawn_without_a_round(signed_in, normal_matter):
     assert "Kaasamist ei ole" not in form
     assert 'name="engagement"' not in form
     assert 'name="provenance"' in form
+
+
+# ---------------------------------------------------------------------------
+# Independent review of #455 — regressions
+# ---------------------------------------------------------------------------
+
+
+def test_the_same_words_from_another_organisation_are_another_answer(
+    signed_in, normal_matter, specialist, organisation
+):
+    """P1-1: the repeat check compares the author, which this form now names."""
+    other = factories.OrganisationFactory(name="Teine Sünteetiline Liit")
+    round_ = _round(normal_matter, specialist)
+    base = {"engagement": str(round_.pk), "provenance": RECEIVED, "summary": "Toetame."}
+
+    first = _post(signed_in, normal_matter, {**base, "organisation": str(organisation.pk)})
+    second = _post(signed_in, normal_matter, {**base, "organisation": str(other.pk)})
+    anonymous = _post(signed_in, normal_matter, base)
+    repeat = _post(signed_in, normal_matter, {**base, "organisation": str(other.pk)})
+
+    assert (first.status_code, second.status_code, anonymous.status_code) == (200, 200, 200)
+    assert repeat.status_code == 400
+    assert MatterExternalPosition.objects.filter(engagement=round_).count() == 3
+
+
+def test_the_liige_mark_makes_another_answer(signed_in, normal_matter, specialist):
+    round_ = _round(normal_matter, specialist)
+    base = {"engagement": str(round_.pk), "provenance": RECEIVED, "summary": "Ettepanekuid ei ole."}
+
+    assert _post(signed_in, normal_matter, base).status_code == 200
+    assert _post(signed_in, normal_matter, {**base, "source_is_member": "on"}).status_code == 200
+    assert _post(signed_in, normal_matter, {**base, "source_is_member": "on"}).status_code == 400
+
+
+def test_the_service_refuses_a_published_position_tied_to_a_round(
+    normal_matter, specialist, organisation
+):
+    """P2-1: the rule lives in the service, not only in the creation form."""
+    from app.matters.services import EXTERNAL_POSITION_ROUND_ANSWER_IS_RECEIVED
+
+    round_ = _round(normal_matter, specialist)
+    with refused(EXTERNAL_POSITION_ROUND_ANSWER_IS_RECEIVED):
+        add_matter_external_position(
+            matter=normal_matter,
+            author=specialist,
+            organisation=organisation,
+            provenance=DISCOVERED,
+            summary="Avaldatud seisukoht.",
+            engagement=round_,
+        )
+    assert not MatterExternalPosition.objects.exists()
+
+
+def test_a_correction_cannot_tie_a_published_position_to_a_round(
+    signed_in, normal_matter, specialist, organisation
+):
+    from app.matters.services import (
+        EXTERNAL_POSITION_ROUND_ANSWER_IS_RECEIVED,
+        correct_external_position,
+    )
+
+    round_ = _round(normal_matter, specialist)
+    position = add_matter_external_position(
+        matter=normal_matter,
+        author=specialist,
+        organisation=organisation,
+        provenance=DISCOVERED,
+        summary="Avaldatud seisukoht.",
+    ).record
+
+    with refused(EXTERNAL_POSITION_ROUND_ANSWER_IS_RECEIVED):
+        correct_external_position(
+            position=position,
+            organisation=organisation,
+            url="",
+            stated_on=None,
+            stated_on_precision="EXACT",
+            summary="Avaldatud seisukoht.",
+            engagement=round_,
+            actor=specialist,
+        )
+
+    position.refresh_from_db()
+    round_.refresh_from_db()
+    assert position.engagement_id is None
+    assert round_.has_open_feedback_wait
+
+
+def test_a_historical_link_on_a_published_position_stays_correctable(
+    normal_matter, specialist, organisation
+):
+    """A row that already holds a round keeps it; only a new link is refused."""
+    from app.matters.services import correct_external_position
+
+    round_ = _round(normal_matter, specialist)
+    position = add_matter_external_position(
+        matter=normal_matter,
+        author=specialist,
+        organisation=organisation,
+        provenance=DISCOVERED,
+        summary="Vana kirje.",
+    ).record
+    MatterExternalPosition.objects.filter(pk=position.pk).update(engagement=round_)
+    position.refresh_from_db()
+
+    corrected = correct_external_position(
+        position=position,
+        organisation=organisation,
+        url="",
+        stated_on=None,
+        stated_on_precision="EXACT",
+        summary="Vana kirje, parandatud.",
+        engagement=round_,
+        actor=specialist,
+    )
+
+    assert corrected.engagement_id == round_.pk
+    assert corrected.summary == "Vana kirje, parandatud."
+
+
+def test_a_refused_round_answer_is_drawn_received_and_never_checked_and_disabled(
+    signed_in, normal_matter, specialist, organisation
+):
+    """P2-2: a bound refusal draws no checked-and-disabled radio and no hidden Liige."""
+    round_ = _round(normal_matter, specialist)
+
+    response = _post(
+        signed_in,
+        normal_matter,
+        {
+            "organisation": str(organisation.pk),
+            "engagement": str(round_.pk),
+            "provenance": DISCOVERED,
+            "source_is_member": "on",
+            "summary": "Vale kombinatsioon.",
+        },
+    )
+
+    assert response.status_code == 400
+    form = _form(response.content.decode())
+    received = re.search(r'<input[^>]*name="provenance"[^>]*value="RECEIVED"[^>]*>', form)
+    discovered = re.search(r'<input[^>]*name="provenance"[^>]*value="DISCOVERED"[^>]*>', form)
+    assert received and "checked" in received.group(0) and "disabled" not in received.group(0)
+    assert discovered and "disabled" in discovered.group(0)
+    assert "checked" not in discovered.group(0)
+
+
+def test_a_hidden_liige_is_not_redrawn_ticked(signed_in, normal_matter):
+    response = _post(
+        signed_in,
+        normal_matter,
+        {"provenance": DISCOVERED, "source_is_member": "on", "summary": "Ilma organisatsioonita."},
+    )
+
+    assert response.status_code == 400
+    member = re.search(
+        r'<input[^>]*name="source_is_member"[^>]*>', _form(response.content.decode())
+    )
+    assert member and "checked" not in member.group(0)
+
+
+def test_a_foreign_round_id_does_not_lock_the_redrawn_provenance(
+    signed_in, normal_matter, specialist, organisation
+):
+    _round(normal_matter, specialist)
+    foreign = _round(factories.MatterFactory(owner=specialist), specialist, "Võõras ring")
+
+    response = _post(
+        signed_in,
+        normal_matter,
+        {
+            "organisation": str(organisation.pk),
+            "engagement": str(foreign.pk),
+            "provenance": DISCOVERED,
+            "summary": "Vale ring.",
+        },
+    )
+
+    assert response.status_code == 400
+    discovered = re.search(
+        r'<input[^>]*name="provenance"[^>]*value="DISCOVERED"[^>]*>',
+        _form(response.content.decode()),
+    )
+    assert discovered and "disabled" not in discovered.group(0)
+    assert "checked" in discovered.group(0)

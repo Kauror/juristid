@@ -714,12 +714,24 @@
       return;
     }
     var radios = form.querySelectorAll('input[name="provenance"]');
+    if (control.name === "provenance") {
+      /* The person stated it: no longer an answer implied by a round. */
+      Array.prototype.forEach.call(radios, function (radio) {
+        radio.removeAttribute("data-feedback-implied");
+      });
+    }
     if (control.name === "engagement") {
       var linked = Boolean(control.value);
       Array.prototype.forEach.call(radios, function (radio) {
         if (radio.value === "RECEIVED") {
-          if (linked) {
+          if (linked && !radio.checked) {
             radio.checked = true;
+            radio.setAttribute("data-feedback-implied", "");
+          } else if (!linked && radio.hasAttribute("data-feedback-implied")) {
+            /* Implied by the round (or by `Tehtud`), never stated: clearing
+               the round leaves the question unanswered again. */
+            radio.checked = false;
+            radio.removeAttribute("data-feedback-implied");
           }
         } else {
           radio.disabled = linked;

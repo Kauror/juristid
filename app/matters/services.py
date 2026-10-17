@@ -2101,8 +2101,15 @@ def normalize_entry_url(value: str | None) -> str:
     than truncated — the safety half every stored address in this module shares
     through `normalize_web_address`, with no host allow-list for the same reason
     `normalize_external_position_url` gives: supporting material lives anywhere.
+
+    **Userinfo is refused** (`reject_credentials=True`), for the reason
+    `normalize_overview_news_url` and `normalize_procedural_link_url` give: this
+    address is pasted *now*, from a page somebody has open, so there is no
+    historical value to accommodate, and a credential on the file would be a
+    credential in an audit payload, a revision row and a rendered `href`. The
+    same rule on creation (`add_entry`) and on correction (`edit_entry`).
     """
-    return normalize_web_address(value, max_length=ENTRY_URL_MAX_LENGTH)
+    return normalize_web_address(value, max_length=ENTRY_URL_MAX_LENGTH, reject_credentials=True)
 
 
 def _engagement_kind(value: str) -> str:
@@ -4082,6 +4089,29 @@ def external_position_revision(position: MatterExternalPosition) -> str:
     return position.updated_at.isoformat()
 
 
+#: Refused when a published position («Teiste arvamus») would be tied to one of
+#: Koda's own consultation rounds (docs/adr/0170 §3).
+EXTERNAL_POSITION_ROUND_ANSWER_IS_RECEIVED = (
+    "Avaldatud seisukohta ei seota kaasamisega: kaasamisele vastati Kojale."
+)
+
+
+def _external_position_round_answer(kind: str, related: Any, *, kept_id: Any = None) -> None:
+    """A position tied to a round answers Koda's consultation, so it was sent to Koda.
+
+    ``DISCOVERED`` with a round is refused — on creation always, and on a
+    correction whenever the round is newly set or changed. A link a row already
+    holds (``kept_id``) is left as it is, so a historical row stays correctable
+    without being rewritten (docs/adr/0170 §3, §6). ``LEGACY`` rows predate the
+    question and are not judged here (docs/adr/0091 §3.4).
+    """
+    if related is None or kind != ExternalPositionProvenance.DISCOVERED.value:
+        return
+    if kept_id is not None and related.pk == kept_id:
+        return
+    raise DomainError(EXTERNAL_POSITION_ROUND_ANSWER_IS_RECEIVED)
+
+
 def _external_position_engagement(matter: Matter, engagement: Any) -> MatterEngagement | None:
     """The `Kaasamine` this position answers, proved to be on the same Matter.
 
@@ -4290,6 +4320,7 @@ def record_external_position(
     clean_note = (lawyer_note or "").strip()[:EXTERNAL_POSITION_LAWYER_NOTE_MAX_LENGTH]
     _external_position_source(clean_url, attachments=attachment_count, summary=clean_summary)
     related = _external_position_engagement(matter, engagement)
+    _external_position_round_answer(kind, related)
     precision = _normalised_precision(stated_on, stated_on_precision)
 
     position = MatterExternalPosition.objects.create(
@@ -4523,6 +4554,7 @@ def correct_external_position(
         summary=clean_summary,
     )
     related = _external_position_engagement(locked_matter, engagement)
+    _external_position_round_answer(kind, related, kept_id=current.engagement_id)
     precision = _normalised_precision(stated_on, stated_on_precision)
 
     proposed: dict[str, Any] = {
