@@ -131,8 +131,9 @@ or a stage change.
 ### 5. The old doors are retired
 
 `Meile saadetud tagasiside` and `Teiste arvamus` leave `+ Arvamus /
-tagasiside`, which keeps only `Koja arvamus` (its heading is reviewed in a later
-stage). Their routes, `matters:add_received_feedback` and
+tagasiside`, which kept only `Koja arvamus` — since docs/adr/0097 (amendment of
+2026-10-17) the family is «+ Koja arvamus / kohtumine» with `Koja arvamus` and
+`Kohtumine / arutelu`, and still no feedback choice. Their routes, `matters:add_received_feedback` and
 `matters:add_external_position`, are **removed, not redirected**: a stale tab's
 POST is a 404 and writes nothing, so an old page can never save a record under
 a provenance its new form did not ask (the ENG-050A precedent,
@@ -163,8 +164,8 @@ stay retired unless the owner decides otherwise.
 * One door, one record, the provenance asked in plain words.
 * Every capability of the three doors survives: anonymous received feedback,
   link-only and file-only positions, members, round replies and later replies.
-* The `+ Arvamus / tagasiside` family holds a single sub-choice until the later
-  stage reviews it.
+* The opinion family holds no feedback choice; stage 4 renamed it
+  «+ Koja arvamus / kohtumine» (docs/adr/0097, amendment of 2026-10-17).
 
 ## Reversibility
 

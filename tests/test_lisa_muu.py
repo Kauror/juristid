@@ -776,3 +776,30 @@ def test_both_url_columns_default_to_empty_in_the_database():
     assert set(columns) == {"matters_entry", "matters_entryrevision"}
     for default, nullable in columns.values():
         assert default.startswith("''") and nullable == "NO"
+
+
+# -- combined-tree review: server refusals, not browser bubbles ------------------
+
+
+def test_the_form_leaves_required_to_the_server(signed_in, specialist):
+    """No `required` attribute: an empty save gets the Estonian refusal under the
+    box, as on every other `LISA TEEMALE` panel (combined review P2-3)."""
+    matter = factories.MatterFactory(owner=specialist)
+
+    body = _page(signed_in, matter)
+    panel = body[body.index('id="marge-muu"') :]
+    panel = panel[: panel.index("</form>")]
+
+    assert not re.search(
+        r"<(textarea|input)[^>]*name=\"(description|occurred_on)\"[^>]*required", panel
+    )
+
+
+def test_markup_without_words_is_refused_under_the_description(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+
+    response = _post(signed_in, matter, description="<b></b><p> </p>")
+
+    assert response.status_code == 400
+    assert _field_error(response.content.decode(), "id_muu_description") == "Kirjelda, mida lisad."
+    assert not _others(matter).exists()

@@ -88,21 +88,20 @@ def test_a_meeting_opens_from_the_keyboard_and_saves_on_its_day(page, base_url):
     day.focus()
     expect(day).to_be_focused()
 
-    # A day without a summary: the browser's own `required` check stops the
-    # submit before any request (the server refusal is tests/test_kohtumine.py),
-    # and what was typed stays in the form.
+    # A day without a summary: the server refuses it in Estonian under the box
+    # (no browser bubble, as on every other panel), and the day stays typed.
     past = date.today() - timedelta(days=9)
     day.fill(_et(past))
-    posts: list[str] = []
-    page.on("request", lambda r: posts.append(r.url) if r.method == "POST" else None)
-    form.get_by_role("button", name="Salvesta", exact=True).click()
+    assert _save(page, form) == 400
+    form = page.locator("#arvamus-kohtumine form")
+    expect(form.locator("#id_kohtumine_summary_error")).to_have_text(
+        "Kirjuta kohtumise lühikokkuvõte."
+    )
+    day = form.locator('[name="occurred_on"]')
     summary = form.locator('[name="summary"]')
-    assert summary.evaluate("el => el.validity.valueMissing") is True
-    assert not [u for u in posts if u.endswith("/lisa/kohtumine/")]
     expect(day).to_have_value(_et(past))
 
-    # A summary that is empty once sanitised passes the browser and is refused
-    # by the server under the field; the day is still there.
+    # A summary that is empty once sanitised is refused the same way.
     summary.fill("<script>alert(1)</script>")
     assert _save(page, form) == 400
     form = page.locator("#arvamus-kohtumine form")
