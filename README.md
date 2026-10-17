@@ -373,8 +373,8 @@ derived and rebuildable from the original bytes:
 uv run python manage.py rebuild_document_derivatives --matter 2026_184
 ```
 
-OCR needs Tesseract with Estonian and English language data. The image ships
-both; this says whether the runtime you are on actually has them, because an
+OCR needs Tesseract with Estonian and English language data. The image (Debian
+13, `python:3.13-slim-trixie` pinned by digest in the `Dockerfile`) ships both; this says whether the runtime you are on actually has them, because an
 engine missing a language falls back to English and returns confident nonsense:
 
 ```bash
