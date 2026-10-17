@@ -794,6 +794,13 @@ class Entry(VisibilityInheritingModel, RemovableRecord):
 
     edited_at = models.DateTimeField(null=True, blank=True, verbose_name="muudetud")
     edit_count = models.PositiveIntegerField(default=0, verbose_name="muudatuste arv")
+    #: An optional pointer to the material a `+ Lisa · Muu` entry is about
+    #: (docs/adr/0097, amendment of 2026-10-15). Its own column rather than a link
+    #: inside `body`, so it can be shown as a labelled link, corrected with its
+    #: earlier value kept in `EntryRevision.url`, and validated by the same rule
+    #: as every other stored address (`services.normalize_entry_url`: http(s),
+    #: a real host, refused rather than truncated). Empty on every other entry.
+    url = models.URLField(max_length=1000, blank=True, default="", verbose_name="link")
 
     objects = EntryQuerySet.as_manager()
 
@@ -812,6 +819,12 @@ class Entry(VisibilityInheritingModel, RemovableRecord):
                 ),
                 name="matters_entry_visibility_vocabulary",
             ),
+            # A link is a `+ Lisa · Muu` entry's only (docs/adr/0097, amendment
+            # of 2026-10-15); the service refuses it first with a sentence.
+            models.CheckConstraint(
+                condition=models.Q(url="") | models.Q(kind=EntryKind.OTHER),
+                name="matters_entry_url_only_other",
+            ),
         ]
         indexes = [
             models.Index(fields=["matter", "-occurred_at"], name="matters_entry_timeline"),
@@ -826,6 +839,19 @@ class Entry(VisibilityInheritingModel, RemovableRecord):
     @property
     def was_edited(self) -> bool:
         return self.edit_count > 0
+
+    @property
+    def link_label(self) -> str:
+        """What the chronology calls the link: its host, never the raw address.
+
+        `MatterEngagement._hostname`, shared rather than copied, so userinfo and
+        the port are dropped and a link carrying credentials cannot print them
+        (red-team finding F-2). An address with no readable host says
+        «Ava link» instead of claiming where it points.
+        """
+        if not self.url:
+            return ""
+        return MatterEngagement._hostname(self.url) or "Ava link"
 
 
 class EntryRevision(AppendOnlyModel):
@@ -842,6 +868,10 @@ class EntryRevision(AppendOnlyModel):
     )
     revision_number = models.PositiveIntegerField(verbose_name="versioon")
     body = models.TextField(verbose_name="varasem sisu")
+    #: The link the entry carried before this correction — empty when it had
+    #: none — so correcting a `Muu` link keeps the earlier address exactly as a
+    #: corrected text keeps the earlier wording.
+    url = models.URLField(max_length=1000, blank=True, default="", verbose_name="varasem link")
     edited_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,

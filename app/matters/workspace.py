@@ -57,6 +57,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from app.audit.operations import composer_operation
+from app.core.dates import start_of_local_day
 from app.core.derived_visibility import restriction_inherited_from
 from app.core.enums import Visibility
 from app.core.errors import DomainError
@@ -955,6 +956,59 @@ def add_matter_effective_date(
         result.documents = capture_supporting_evidence(
             matter=locked_matter,
             record=result.record,
+            uploads=_uploads(uploads),
+            actor=author,
+        )
+        return result
+
+
+#: What `+ Lisa · Muu` answers when it is given no day (the form refuses first).
+OTHER_ENTRY_NEEDS_A_DAY = "Sisesta, millal see toimus."
+
+
+@transaction.atomic
+def add_matter_other(
+    *,
+    matter: Matter,
+    author: Any,
+    description: str,
+    occurred_on: Any,
+    url: str = "",
+    uploads: Sequence[Any] = (),
+) -> WorkspaceResult:
+    """`+ Lisa · Muu` — supporting material that fits no structured kind.
+
+    One `Entry(kind=OTHER)`: the description is its body, the optional link its
+    own `url` column, and the files are captured against it through the
+    canonical evidence pipeline, all in one transaction — a refused file leaves
+    no entry behind (docs/adr/0097, amendment of 2026-10-15).
+
+    **The date is the day the material or event occurred**, which the person
+    states (`Millal?`, required). It is stored as the start of that local day
+    (`start_of_local_day`), so the chronology shows and orders the row on that
+    day — `Entry.occurred_at` is when the work happened, not when it was typed.
+    No day is invented: without one the save is refused.
+
+    Creates no `NextAction`, touches neither `Hetkeseis` nor the plan, opens no
+    wait and is no `Submission`. A closed Matter refuses it through the same
+    lock every other new business record takes.
+    """
+    if occurred_on is None:
+        raise DomainError(OTHER_ENTRY_NEEDS_A_DAY)
+    locked_matter = lock_open_matter_for_business_write(matter.pk)
+    with composer_operation() as operation_id:
+        result = WorkspaceResult(operation_id=operation_id)
+        result.entry = add_entry(
+            matter=locked_matter,
+            body=description,
+            author=author,
+            kind=EntryKind.OTHER,
+            occurred_at=start_of_local_day(occurred_on),
+            url=url,
+        )
+        result.documents = capture_supporting_evidence(
+            matter=locked_matter,
+            record=result.entry,
             uploads=_uploads(uploads),
             actor=author,
         )

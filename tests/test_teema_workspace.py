@@ -491,7 +491,9 @@ def test_the_launcher_offers_its_choices_and_opens_none_of_them(signed_in, norma
     # `type="submit"`: its `+` is an explicit `type="button"`, precisely so that
     # naming a body the catalogue does not hold cannot submit the panel
     # (docs/adr/0073, `organisation_picker.html`).
-    assert zone.count('type="submit"') == 8
+    # Nine: `+ Lisa · Muu` joined (docs/adr/0097) and docs/adr/0170 removed two
+    # feedback saves and made `Lisa tagasiside` always a form.
+    assert zone.count('type="submit"') == 9
     assert "composer__actions" not in zone
 
 

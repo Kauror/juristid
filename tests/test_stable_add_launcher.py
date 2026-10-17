@@ -59,7 +59,8 @@ CANONICAL = [
 SUBCHOICES = {
     # `Tavaline` left `+ Lisa` on 2026-10-07 (docs/adr/0143); `Arvamuse
     # tähtaeg`, a new request for Koda's opinion, is first and the default.
-    "lisa-marge": ["Arvamuse tähtaeg", "Oluline tähtaeg", "Jõustumine", "Töövõit"],
+    # `Muu` joined on 2026-10-15 (docs/adr/0097, amendment of that date).
+    "lisa-marge": ["Arvamuse tähtaeg", "Oluline tähtaeg", "Jõustumine", "Töövõit", "Muu"],
     # `Meile saadetud tagasiside` and `Teiste arvamus` left on 2026-10-15: every
     # position is recorded through `+ Kaasamine · Lisa tagasiside`
     # (docs/adr/0170 §5). `Koja arvamus` is the family's one sub-choice.
@@ -83,6 +84,7 @@ PANEL_IDS = [
     "marge-tahtaeg",
     "marge-joustumine",
     "marge-toovoit",
+    "marge-muu",
     "lisa-kaasamine",
     "kaasamine-alusta",
     "kaasamine-tagasiside",

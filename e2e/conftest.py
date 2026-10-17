@@ -307,6 +307,8 @@ PANEL_FAMILY = {
     "marge-tahtaeg": "lisa-marge",
     "marge-joustumine": "lisa-marge",
     "marge-toovoit": "lisa-marge",
+    # `Muu` — supporting material (docs/adr/0097, amendment of 2026-10-15).
+    "marge-muu": "lisa-marge",
     # Only `Koja arvamus` since docs/adr/0170: every other position is
     # `+ Kaasamine · Lisa tagasiside` (`open_feedback_form`).
     "arvamus-koja": "lisa-arvamus",

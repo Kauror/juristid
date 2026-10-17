@@ -406,7 +406,8 @@ def test_the_sub_choices_are_their_own_radio_groups(signed_in, specialist, stage
 
     zone = launcher(page_of(signed_in, teema_url(matter)))
 
-    assert zone.count('name="marke-liik"') == 4
+    # Five since `Muu` joined on 2026-10-15 (docs/adr/0097).
+    assert zone.count('name="marke-liik"') == 5
     assert zone.count('name="arvamuse-liik"') == 1  # `Koja arvamus` (docs/adr/0170)
 
 

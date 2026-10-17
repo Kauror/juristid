@@ -123,6 +123,7 @@ from app.matters.deletion import (
 )
 from app.matters.department_dashboard import SeisFigure
 from app.matters.document_context import related_records
+from app.matters.entry_enums import EntryKind
 from app.matters.enums import (
     MatterDataClass,
     MatterOrigin,
@@ -139,6 +140,7 @@ from app.matters.forms import (
     CompactEffectiveDateForm,
     CompactEngagementForm,
     CompactImportantDateForm,
+    CompactOtherForm,
     CompactResponseDeadlineForm,
     CompactWebsiteOverviewForm,
     CompactWorkVictoryForm,
@@ -165,6 +167,7 @@ from app.matters.forms import (
     MatterProgressForm,
     NextActionForm,
     OpinionWorkingDocumentsForm,
+    OtherEntryEditForm,
     PersonalNoteForm,
     PlannedActionForm,
     PlanRevisionForm,
@@ -6660,12 +6663,15 @@ def _entry_edit_form(entry: Entry, data: Any = None) -> EntryEditForm:
     `app/matters/forms.py` names the same defect, on the same page).
     """
     auto_id = f"id_sissekanne_{entry.pk}_%s"
+    # A `Muu` entry corrects its link with its description; every other kind
+    # keeps the body-only form (docs/adr/0097, amendment of 2026-10-15).
+    form_class = OtherEntryEditForm if entry.kind == EntryKind.OTHER else EntryEditForm
     if data is not None:
-        return EntryEditForm(data, auto_id=auto_id)
-    return EntryEditForm(
-        initial={"body": entry.body, "revision": entry_revision_token(entry)},
-        auto_id=auto_id,
-    )
+        return form_class(data, auto_id=auto_id)
+    initial = {"body": entry.body, "revision": entry_revision_token(entry)}
+    if form_class is OtherEntryEditForm:
+        initial["url"] = entry.url
+    return form_class(initial=initial, auto_id=auto_id)
 
 
 def _entry_for_correction(request: HttpRequest, matter: Matter, entry_id: Any) -> Entry:
@@ -6776,6 +6782,9 @@ def edit_entry_view(request: HttpRequest, pk: Any, entry_id: Any) -> HttpRespons
             body=form.cleaned_data["body"],
             actor=request.user,
             expected_revision=form.cleaned_data.get("revision") or "",
+            # Only the `Muu` form has a link box; for every other kind `None`
+            # leaves the column exactly as it is.
+            url=form.cleaned_data["url"] if isinstance(form, OtherEntryEditForm) else None,
         )
     except EntryEditConflict as conflict:
         # 409, and nothing was written. The form stays open holding this
@@ -7273,6 +7282,7 @@ WORKSPACE_PANELS: dict[str, tuple[str, str]] = {
     "important_date_form": ("lisa-marge", "marge-tahtaeg"),
     "effective_date_form": ("lisa-marge", "marge-joustumine"),
     "work_victory_form": ("lisa-marge", "marge-toovoit"),
+    "other_form": ("lisa-marge", "marge-muu"),
     # `+ Kaasamine` — start a round, or record a position: a member's
     # feedback sent to Koda or a view published elsewhere, with or without a
     # round (docs/adr/0142, docs/adr/0091 amendment of 2026-10-15).
@@ -7322,6 +7332,7 @@ WORKSPACE_CHOICE_FAMILY: dict[str, str] = {
     "marge-tahtaeg": "marge_choice",
     "marge-joustumine": "marge_choice",
     "marge-toovoit": "marge_choice",
+    "marge-muu": "marge_choice",
     "arvamus-koja": "arvamus_choice",
     "kaasamine-alusta": "kaasamine_choice",
     "kaasamine-tagasiside": "kaasamine_choice",
@@ -7457,6 +7468,7 @@ def workspace_forms(
         "important_date_form": CompactImportantDateForm(),
         "effective_date_form": CompactEffectiveDateForm(),
         "work_victory_form": CompactWorkVictoryForm(),
+        "other_form": CompactOtherForm(),
         # `+ Ülevaade / uudis`. Two optional boxes and no kind selector: an
         # empty submit is the plan, both boxes filled record a page that is
         # already up, and which of the two kinds of publication it is, is what
@@ -8162,6 +8174,35 @@ def add_work_victory(request: HttpRequest, pk: Any) -> HttpResponse:
         return _workspace_refusal(
             request, matter, key="work_victory_form", form=form, error=str(error)
         )
+    return _render_overview(request, matter)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def add_other(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`+ Lisa · Muu` — supporting material that fits no structured kind.
+
+    One `Entry(kind=OTHER)` dated by the day the person gives, with its optional
+    link and files, saved together or not at all. Creates no task, changes no
+    stage or plan, and is refused on a closed Teema like every other new record
+    (docs/adr/0097, amendment of 2026-10-15).
+    """
+    matter = get_visible_matter(request, pk)
+    form = CompactOtherForm(request.POST, request.FILES)
+    if not form.is_valid():
+        return _workspace_refusal(request, matter, key="other_form", form=form)
+    try:
+        workspace.add_matter_other(
+            matter=matter,
+            author=request.user,
+            description=form.cleaned_data["description"],
+            occurred_on=form.cleaned_data["occurred_on"],
+            url=form.cleaned_data["url"],
+            uploads=form.cleaned_data["attachments"],
+        )
+    except (DomainError, UploadRejected) as error:
+        return _workspace_refusal(request, matter, key="other_form", form=form, error=str(error))
     return _render_overview(request, matter)
 
 

@@ -166,6 +166,8 @@ urlpatterns = [
         name="add_effective_date",
     ),
     path("teemad/<uuid:pk>/lisa/toovoit/", views.add_work_victory, name="add_work_victory"),
+    # `+ Lisa · Muu` (docs/adr/0097, amendment of 2026-10-15).
+    path("teemad/<uuid:pk>/lisa/muu/", views.add_other, name="add_other"),
     # `+ Ülevaade / uudis`, and the three things that happen to one afterwards.
     #
     # **The paths keep their `koduleht` spelling**, and deliberately. docs/adr/
