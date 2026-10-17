@@ -115,7 +115,9 @@ def test_the_panel_asks_for_a_day_a_summary_and_files_and_nothing_else(signed_in
     assert 'id="id_kohtumine_summary"' in panel
     assert 'id="id_kohtumine_failid"' in panel
     names = set(re.findall(r'name="([a-z_]+)"', panel))
-    assert names == {"csrfmiddlewaretoken", "occurred_on", "summary", "attachments"}
+    # `salvestus` is the drawn form's save-once token, not a question
+    # (owner decision D3, docs/adr/0167, amendment of 2026-10-17).
+    assert names == {"csrfmiddlewaretoken", "salvestus", "occurred_on", "summary", "attachments"}
     # No organisation picker, no participants, no link.
     assert "organisation" not in names and "url" not in names
 
