@@ -9,6 +9,13 @@ class Migration(migrations.Migration):
     Both columns default to empty, so every existing row reads `''` and
     satisfies `matters_entry_url_only_other` (a link only on an `OTHER` entry).
     No row is rewritten (docs/adr/0097, amendment of 2026-10-15).
+
+    **A database default (`db_default=""`)**, not only Django's, as 0047 does:
+    the release still serving between `migrate` and the swap — and the image a
+    code-only rollback returns to — inserts entries without naming `url`, and a
+    NOT NULL column whose default Django dropped again would refuse every one of
+    them (ENG-014, `app.core.deployment.consequential_operations`). With it, old
+    code's rows read `''`, which the constraint accepts.
     """
 
     dependencies = [
@@ -19,13 +26,19 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="entry",
             name="url",
-            field=models.URLField(blank=True, default="", max_length=1000, verbose_name="link"),
+            field=models.URLField(
+                blank=True, db_default="", default="", max_length=1000, verbose_name="link"
+            ),
         ),
         migrations.AddField(
             model_name="entryrevision",
             name="url",
             field=models.URLField(
-                blank=True, default="", max_length=1000, verbose_name="varasem link"
+                blank=True,
+                db_default="",
+                default="",
+                max_length=1000,
+                verbose_name="varasem link",
             ),
         ),
         migrations.AddConstraint(

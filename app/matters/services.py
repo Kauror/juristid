@@ -2101,8 +2101,15 @@ def normalize_entry_url(value: str | None) -> str:
     than truncated — the safety half every stored address in this module shares
     through `normalize_web_address`, with no host allow-list for the same reason
     `normalize_external_position_url` gives: supporting material lives anywhere.
+
+    **Userinfo is refused** (`reject_credentials=True`), for the reason
+    `normalize_overview_news_url` and `normalize_procedural_link_url` give: this
+    address is pasted *now*, from a page somebody has open, so there is no
+    historical value to accommodate, and a credential on the file would be a
+    credential in an audit payload, a revision row and a rendered `href`. The
+    same rule on creation (`add_entry`) and on correction (`edit_entry`).
     """
-    return normalize_web_address(value, max_length=ENTRY_URL_MAX_LENGTH)
+    return normalize_web_address(value, max_length=ENTRY_URL_MAX_LENGTH, reject_credentials=True)
 
 
 def _engagement_kind(value: str) -> str:
