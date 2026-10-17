@@ -689,7 +689,8 @@ install -d -o 10001 -g 10001 /mnt/user/appdata/juristid-main/evidence /mnt/user/
 ```
 
 uid 10001 is the application user, fixed in the image so that a rebuild cannot
-change it. Do not answer a permissions problem with a blanket `chmod`: the point
+change it. It owns these mounts and nothing else: the code under `/app` in the
+image is root's and not writable by it. Do not answer a permissions problem with a blanket `chmod`: the point
 of the ownership is that a process which should only read cannot write.
 
 ```bash
