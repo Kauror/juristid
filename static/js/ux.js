@@ -1089,10 +1089,18 @@
     return Array.prototype.slice.call(document.querySelectorAll("[data-workrow]"));
   }
 
-  function selectRow(rows, index) {
+  /* Marks a row as the selected one. Visual state only: focus is moved by
+     `selectRow`, and only J/K call it. A focusin handler that moved focus
+     sent every Tab from a row's link to its ⋯ straight back to the link, so a
+     keyboard user never got past the first row (audit 2026-10-17 JUX-002). */
+  function markRow(rows, index) {
     rows.forEach(function (row, position) {
       row.classList.toggle("is-selected", position === index);
     });
+  }
+
+  function selectRow(rows, index) {
+    markRow(rows, index);
     var row = rows[index];
     if (!row) {
       return;
@@ -1159,14 +1167,17 @@
   });
 
   /* Clicking or focusing a row makes it the selected one, so the keys carry on
-     from wherever the reader actually is. */
+     from wherever the reader actually is. It only marks the row: focus stays
+     where Tab or the click put it, so the row's ⋯ and everything after the
+     list stay reachable. */
   function bindWorkRows(scope) {
     scope.querySelectorAll("[data-workrow]").forEach(function (row) {
       if (!once(row, "WorkRow")) {
         return;
       }
       row.addEventListener("focusin", function () {
-        selectRow(workRows(), workRows().indexOf(row));
+        var rows = workRows();
+        markRow(rows, rows.indexOf(row));
       });
     });
   }
