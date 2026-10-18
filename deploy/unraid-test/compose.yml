@@ -74,10 +74,16 @@ services:
     container_name: juristid-test-web
     restart: unless-stopped
     logging: *bounded-logs
-    # The image's default CMD is gunicorn. It is repeated here so that reading
-    # this file answers "what actually serves requests" without a second lookup,
-    # and so nobody reintroduces `runserver` by editing one place.
+    # The image's default CMD is gunicorn behind the system checks. It is
+    # repeated here so that reading this file answers "what actually serves
+    # requests" without a second lookup, and so nobody reintroduces `runserver`
+    # by editing one place.
     command:
+      # The system checks first, and gunicorn only if they pass (JOPS-004,
+      # scripts/serve-after-checks.sh): a configuration `juristid.E0xx`
+      # refuses exits here instead of serving and reporting healthy.
+      - sh
+      - /app/scripts/serve-after-checks.sh
       - gunicorn
       - config.wsgi:application
       - --bind

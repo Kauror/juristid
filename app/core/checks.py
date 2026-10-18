@@ -56,6 +56,7 @@ def check_runtime_safety(app_configs: Any, **kwargs: Any) -> list[Error | Warnin
         )
 
     problems.extend(_authentication_problems())
+    problems.extend(_real_data_secret_problems())
     problems.extend(_environment_hygiene_problems())
 
     engine = settings.DATABASES["default"]["ENGINE"]
@@ -64,6 +65,118 @@ def check_runtime_safety(app_configs: Any, **kwargs: Any) -> list[Error | Warnin
             Error(
                 f"Unsupported database engine {engine!r}; PostgreSQL 18+ is required.",
                 id="juristid.E005",
+            )
+        )
+
+    return problems
+
+
+#: Every secret in the deployment templates (`deploy/*/.env.example`) is a
+#: placeholder starting with this. The repository is public, so a placeholder
+#: left in a real environment file is a secret the whole internet knows.
+TEMPLATE_PLACEHOLDER_PREFIX = "replace-me"
+
+#: Django's own `--deploy` floor for SECRET_KEY (security.W009), as an error
+#: where real data is. The template generates 88 characters.
+MINIMUM_REAL_DATA_SECRET_KEY_LENGTH = 50
+
+#: The gate password on real data. `juristid.E011`'s 12 stays the floor for the
+#: mode everywhere; real data asks for more, and the template generates 32.
+MINIMUM_REAL_DATA_SHARED_GATE_LENGTH = 16
+
+#: The database password on real data. The template generates 48.
+MINIMUM_REAL_DATA_DATABASE_PASSWORD_LENGTH = 16
+
+
+def _real_data_secrets() -> dict[str, str]:
+    """The host-side secrets a real-data process holds, by environment variable.
+
+    Every message built from these names the variable, never its value.
+    """
+    from app.accounts import shared_gate
+
+    return {
+        "DJANGO_SECRET_KEY": settings.SECRET_KEY or "",
+        "JURISTID_SHARED_GATE_PASSWORD": shared_gate.configured_password(),
+        "POSTGRES_PASSWORD": str(settings.DATABASES["default"].get("PASSWORD") or ""),
+        "LOCAL_AUTH_MFA_ENCRYPTION_KEY": getattr(settings, "LOCAL_AUTH_MFA_ENCRYPTION_KEY", "")
+        or "",
+        "DJANGO_EMAIL_HOST_PASSWORD": getattr(settings, "EMAIL_HOST_PASSWORD", "") or "",
+    }
+
+
+def _real_data_secret_problems() -> list[Error | Warning]:
+    """Real data behind secrets that are real (JOPS-003).
+
+    The template's placeholders are long enough to pass `juristid.E011` and are
+    not the development key `juristid.E001` knows, so a copied `.env.example`
+    with one value left unfilled passed every check and served real data behind
+    a password published in the repository. Only with REAL_DATA_ALLOWED: the
+    development and rehearsal stacks keep their short synthetic values.
+    """
+    if not settings.REAL_DATA_ALLOWED:
+        return []
+
+    from app.accounts import shared_gate
+    from app.accounts.enums import AuthMode
+
+    problems: list[Error | Warning] = []
+    secrets = _real_data_secrets()
+
+    placeholders = sorted(
+        name
+        for name, value in secrets.items()
+        if value.strip().lower().startswith(TEMPLATE_PLACEHOLDER_PREFIX)
+    )
+    if placeholders:
+        problems.append(
+            Error(
+                f"Template placeholders are in use on a real-data deployment: "
+                f"{', '.join(placeholders)}.",
+                hint=(
+                    "Every `replace-me…` value in .env.example is public. Generate each "
+                    "secret as the template's header says and put it in the host-side "
+                    "environment file."
+                ),
+                id="juristid.E016",
+            )
+        )
+
+    if len(secrets["DJANGO_SECRET_KEY"]) < MINIMUM_REAL_DATA_SECRET_KEY_LENGTH:
+        problems.append(
+            Error(
+                f"DJANGO_SECRET_KEY is shorter than {MINIMUM_REAL_DATA_SECRET_KEY_LENGTH} "
+                "characters on a real-data deployment.",
+                hint="Generate it with `openssl rand -base64 64`.",
+                id="juristid.E017",
+            )
+        )
+
+    gate = secrets["JURISTID_SHARED_GATE_PASSWORD"]
+    if (
+        shared_gate.current_mode() == AuthMode.SHARED_GATE
+        and gate
+        and len(gate) < MINIMUM_REAL_DATA_SHARED_GATE_LENGTH
+    ):
+        problems.append(
+            Error(
+                f"The shared gate password is shorter than {MINIMUM_REAL_DATA_SHARED_GATE_LENGTH} "
+                "characters on a real-data deployment.",
+                hint=(
+                    "One password stands in front of the whole register. Generate it with "
+                    "`openssl rand -base64 24`."
+                ),
+                id="juristid.E018",
+            )
+        )
+
+    if len(secrets["POSTGRES_PASSWORD"]) < MINIMUM_REAL_DATA_DATABASE_PASSWORD_LENGTH:
+        problems.append(
+            Error(
+                f"POSTGRES_PASSWORD is shorter than {MINIMUM_REAL_DATA_DATABASE_PASSWORD_LENGTH} "
+                "characters on a real-data deployment.",
+                hint="Generate it with `openssl rand -base64 36`.",
+                id="juristid.E019",
             )
         )
 
