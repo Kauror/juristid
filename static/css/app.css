@@ -13171,6 +13171,45 @@ section:has(.pw-more[open]) tbody.uxextra {
   flex: none;
 }
 
+/* «Fail tuleb uuesti valida: …» — the files a refused save could not keep
+ * (static/js/app.js, «Files a refusal could not keep», JUX-001).
+ *
+ * Under the drop box it is about, in the warning inset rather than the danger
+ * one: the refusal above already says what was wrong, and this says what the
+ * browser could not carry back. A text lead, not only a colour. Long names
+ * break anywhere, so a filename cannot widen a phone-width form. */
+.filesagain {
+  flex-basis: 100%;
+  grid-column: 1 / -1;
+  margin: var(--spacing-2) 0 0;
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--status-warning-border);
+  background: var(--status-warning-soft);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--typography-size-meta);
+  overflow-wrap: anywhere;
+}
+
+.filesagain__text {
+  margin: 0;
+}
+
+.filesagain__text + .filesagain__text {
+  margin-top: var(--spacing-1);
+}
+
+.filesagain__lead {
+  font-weight: var(--typography-weight-semibold);
+}
+
+.filesagain__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  margin-top: var(--spacing-2);
+}
+
 /* The note's own status line after a save that did not land: it must stop
  * saying «Salvestatud», and it says so in words as well as in colour. */
 .railcard__hint.is-unsaved {

@@ -4825,6 +4825,225 @@
     showUnsaved(document.getElementById(done.targetId), done.lost);
   }
 
+  /* -- Files a refusal could not keep (JUX-001) ----------------------------
+   * A refused save answers 400 with the surface re-rendered, and the text that
+   * was typed comes back from the server. The chosen files cannot: no browser
+   * lets a page put a file into a file input, so the drop box used to reset
+   * without a word, and the corrected save stored the record with no files
+   * (docs/adr/0107, amendment of 2026-10-18).
+   *
+   * So the names are taken from the form as its request leaves, and when the
+   * answer is a refusal the re-rendered form says, beside its drop box, which
+   * files have to be chosen again. Until they are, a save pressed in that form
+   * is stopped in the page, the same notice takes focus, and the person either
+   * chooses the files again or says `Salvesta ilma failita`. Nothing is kept
+   * in the browser beyond the names, and a page with no script is unchanged:
+   * the files are optional and the server takes a record without them. */
+  var filesInFlight = new WeakMap();
+  var filesAgainCount = 0;
+
+  function chosenFileNames(form) {
+    var names = [];
+    form.querySelectorAll("input[type=file]").forEach(function (field) {
+      if (field.disabled || !field.files) {
+        return;
+      }
+      Array.prototype.forEach.call(field.files, function (file) {
+        names.push(file.name);
+      });
+    });
+    return names;
+  }
+
+  /* Where the refused form is found again once the answer has replaced it:
+   * the panel or draft host around it, by id, and inside that the form that
+   * posts to the same address. A form outside any host is found by its
+   * address alone, and only when exactly one form on the page has it. */
+  function formPlace(form) {
+    var host = form.closest("[data-draft-host][id], [data-addpanel][id]");
+    return {
+      hostId: host ? host.id : "",
+      formId: form.id || "",
+      post: form.getAttribute("hx-post") || "",
+    };
+  }
+
+  function formAt(place) {
+    if (place.formId) {
+      var byId = document.getElementById(place.formId);
+      if (byId && byId.tagName === "FORM") {
+        return byId;
+      }
+    }
+    var scope = place.hostId ? document.getElementById(place.hostId) : document;
+    if (!scope || !place.post) {
+      return null;
+    }
+    var forms = Array.prototype.filter.call(scope.querySelectorAll("form"), function (form) {
+      return form.getAttribute("hx-post") === place.post && !!form.querySelector("input[type=file]");
+    });
+    return forms.length === 1 ? forms[0] : null;
+  }
+
+  function filesAgainNotice(form) {
+    return form ? form.querySelector("[data-files-again]") : null;
+  }
+
+  function filesAgainText(names) {
+    var lead = names.length === 1 ? "Fail tuleb uuesti valida: " : "Failid tuleb uuesti valida: ";
+    return lead + names.join(", ");
+  }
+
+  function showFilesAgain(form, names) {
+    if (!form || !names.length) {
+      return;
+    }
+    var old = filesAgainNotice(form);
+    if (old) {
+      old.remove();
+    }
+    filesAgainCount += 1;
+    var notice = document.createElement("div");
+    notice.className = "filesagain";
+    notice.id = "fail-uuesti-" + filesAgainCount;
+    notice.setAttribute("role", "status");
+    notice.setAttribute("aria-live", "polite");
+    notice.setAttribute("tabindex", "-1");
+    notice.setAttribute("data-files-again", "");
+    notice.filesAgainNames = names.slice();
+    var drop = form.querySelector("[data-filedrop], [data-upload-zone]");
+    if (drop && drop.parentNode) {
+      drop.parentNode.insertBefore(notice, drop.nextSibling);
+    } else {
+      var actions = form.querySelector(".addform__actions");
+      form.insertBefore(notice, actions && actions.parentNode === form ? actions : null);
+    }
+    /* Filled after it is in the page: a live region that arrives already
+     * holding its words is not reliably read out. */
+    window.setTimeout(function () {
+      if (!notice.firstChild) {
+        fillFilesAgain(notice, false);
+      }
+    }, 50);
+  }
+
+  function fillFilesAgain(notice, asking) {
+    var names = notice.filesAgainNames || [];
+    notice.textContent = "";
+    var text = document.createElement("p");
+    text.className = "filesagain__text";
+    var lead = document.createElement("strong");
+    lead.className = "filesagain__lead";
+    lead.textContent = filesAgainText(names) + ".";
+    text.appendChild(lead);
+    text.appendChild(
+      document.createTextNode(
+        " Salvestamine ei õnnestunud ja brauser ei hoia " +
+          (names.length === 1 ? "valitud faili" : "valitud faile") +
+          " alles.",
+      ),
+    );
+    notice.appendChild(text);
+    if (!asking) {
+      return;
+    }
+    var ask = document.createElement("p");
+    ask.className = "filesagain__text";
+    ask.textContent =
+      names.length === 1
+        ? "Fail on valimata. Vali see uuesti või salvesta ilma failita."
+        : "Failid on valimata. Vali need uuesti või salvesta ilma failideta.";
+    notice.appendChild(ask);
+    var actions = document.createElement("div");
+    actions.className = "filesagain__actions";
+    var pick = document.createElement("button");
+    pick.type = "button";
+    pick.className = "button button--quiet button--tiny";
+    pick.setAttribute("data-files-again-pick", "");
+    pick.textContent = names.length === 1 ? "Vali fail uuesti" : "Vali failid uuesti";
+    var skip = document.createElement("button");
+    skip.type = "button";
+    skip.className = "button button--quiet button--tiny";
+    skip.setAttribute("data-files-again-skip", "");
+    skip.textContent = "Salvesta ilma failita";
+    actions.appendChild(pick);
+    actions.appendChild(skip);
+    notice.appendChild(actions);
+  }
+
+  /* A save pressed while the notice stands and nothing has been chosen. */
+  function stopsForFiles(form) {
+    var notice = filesAgainNotice(form);
+    if (!notice || chosenFileNames(form).length) {
+      return false;
+    }
+    fillFilesAgain(notice, true);
+    notice.focus();
+    return true;
+  }
+
+  document.addEventListener("click", function (event) {
+    var target = event.target;
+    var button =
+      target && target.closest ? target.closest("[data-files-again-pick], [data-files-again-skip]") : null;
+    var form = button ? button.closest("form") : null;
+    if (!form) {
+      return;
+    }
+    var notice = filesAgainNotice(form);
+    if (button.hasAttribute("data-files-again-pick")) {
+      var field = form.querySelector("input[type=file]:not([disabled])");
+      if (field) {
+        field.click();
+      }
+      return;
+    }
+    if (notice) {
+      notice.remove();
+    }
+    if (typeof form.requestSubmit === "function") {
+      form.requestSubmit();
+    } else if (window.htmx) {
+      window.htmx.trigger(form, "submit");
+    }
+  });
+
+  /* Choosing files again — picked or dropped, both end in `change` — is the
+   * answer the notice asked for. */
+  document.addEventListener("change", function (event) {
+    var field = event.target;
+    if (!field || field.type !== "file" || !field.files || !field.files.length || !field.form) {
+      return;
+    }
+    var notice = filesAgainNotice(field.form);
+    if (notice) {
+      notice.remove();
+    }
+  });
+
+  function noteFilesLeaving(detail) {
+    var form = detail.elt;
+    if (!form || form.tagName !== "FORM" || !detail.xhr) {
+      return;
+    }
+    var names = chosenFileNames(form);
+    if (names.length) {
+      filesInFlight.set(detail.xhr, { place: formPlace(form), names: names });
+    }
+  }
+
+  function tellFilesAgain(detail) {
+    var xhr = detail.xhr;
+    var sent = xhr ? filesInFlight.get(xhr) : null;
+    if (!sent) {
+      return;
+    }
+    filesInFlight.delete(xhr);
+    if (xhr.status === 400 || xhr.status === 409 || xhr.status === 422) {
+      showFilesAgain(formAt(sent.place), sent.names);
+    }
+  }
+
   /* -- The listeners, each registered once for the life of the page ------- */
 
   /* A rejected save returns 400 with the surface re-rendered and the errors in
@@ -4856,10 +5075,18 @@
 
   document.body.addEventListener("htmx:afterSwap", function (event) {
     settleDrafts(event.detail || {});
+    tellFilesAgain(event.detail || {});
   });
 
   document.body.addEventListener("htmx:beforeRequest", function (event) {
     var elt = event.detail && event.detail.elt;
+    if (elt && elt.tagName === "FORM" && stopsForFiles(elt)) {
+      /* Cancelled before htmx marks anything in flight: nothing is posted,
+       * and the save-once token stays unspent for the real save. */
+      event.preventDefault();
+      return;
+    }
+    noteFilesLeaving(event.detail || {});
     clearFailure(elt);
     if (elt && elt.matches && elt.matches("form[data-autosave]")) {
       var box = autosaveBox(elt);
