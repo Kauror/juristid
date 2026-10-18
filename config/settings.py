@@ -86,6 +86,10 @@ MIDDLEWARE = [
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.locale.LocaleMiddleware",
     "django.middleware.common.CommonMiddleware",
+    # A 405 a view returned with no body gets the Estonian error page; inside
+    # BrowserPolicyMiddleware, so the page carries the same policy headers as
+    # every other (app/core/middleware.py, 2026-10-17 audit JUX-013).
+    "app.core.middleware.MethodNotAllowedPageMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     # After the CSRF check, so a forged request is still refused as one; before
     # anything that reads a parameter. A NUL byte is a 400 here rather than a

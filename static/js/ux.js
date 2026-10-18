@@ -755,6 +755,16 @@
           if (linked) {
             radio.checked = false;
           }
+          /* The reason, in words, for the choice that cannot be made
+             (`[data-feedback-round-note]`, 2026-10-17 audit JUX-004). */
+          var note = form.querySelector("[data-feedback-round-note]");
+          if (note && note.id) {
+            if (linked) {
+              radio.setAttribute("aria-describedby", note.id);
+            } else if (radio.getAttribute("aria-describedby") === note.id) {
+              radio.removeAttribute("aria-describedby");
+            }
+          }
         }
       });
     }

@@ -1283,7 +1283,12 @@
       form.requestSubmit();
       return;
     }
-    if (event.key !== "Escape") {
+    /* Escape that something inside the form has already handled — the
+       organisation suggestions, a calendar — was meant for that popup, not
+       for the panel around it. It used to close both, so one key hid the
+       form and everything typed in it (2026-10-17 audit, JUX-007). A second
+       Escape, with nothing else open, still closes the panel. */
+    if (event.key !== "Escape" || event.defaultPrevented) {
       return;
     }
     var holder = form.closest("details");

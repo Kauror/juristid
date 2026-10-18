@@ -187,3 +187,31 @@ like every compact door: a second save of the same drawn form is refused with
 without. Two records of the same view remain the person's to make, deliberately,
 by saving the form as it is re-drawn after the first save (a fresh token). The
 round-answer content check (`refuse_repeated_reply`, 0167 §2.6) is unchanged.
+
+## Amendment of 2026-10-18 — the provenance is asked first; a disabled answer says why (JUX-004, JUX-005)
+
+**The order of §2 changes: `Kuidas seisukoht meieni jõudis?` comes first, then
+the `Organisatsioon` row with `Liige` at its end.** The 2026-10-17 audit
+(JUX-005, WCAG 2.4.3) found `Liige` before the question that reveals it. After
+«Saadeti Kojale», the next Tab went on to `Seotud kaasamine` and `Seisukoht`,
+and `Liige` could be reached only with Shift+Tab. The audit offered two fixes:
+move `Liige` after the fieldset in the document, or ask the provenance first.
+The second is taken, because it keeps the owner's placement of 2026-10-06
+exactly: `Liige` is still at the end of the organisation's own row, after a gap
+from the box. Moving it in the DOM only would have needed absolute
+positioning to keep it there visually, and that breaks the row's wrap on a
+narrow panel. Asking the provenance first is also the logical order: the
+answer decides whether `Liige` exists and whether the organisation is required.
+Tab now runs «Saadeti Kojale» → organisation search → `Liige`.
+
+**A disabled «Avaldatud mujal» looks disabled and says why (JUX-004).** While a
+round is linked (§3) the chip used to keep the enabled colours and the pointer.
+Now:
+- a disabled `.chip__input` has muted words and edge, no hover response and the
+  `not-allowed` cursor, everywhere in the application;
+- the fieldset shows «Kaasamise vastus saadeti Kojale.» whenever a provenance
+  radio is disabled. The stylesheet reads the radio itself, so the server's
+  render and `static/js/ux.js` changing the round always agree;
+- the disabled radio's `aria-describedby` names that sentence.
+
+Pinned in `e2e/test_feedback_provenance_keyboard_and_disabled.py`.

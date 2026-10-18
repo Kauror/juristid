@@ -524,6 +524,21 @@
   max-width: 720px;
 }
 
+/* A page with no application shell around it — `error_page.html`, which
+ * Django renders for 400, 403, 404, 405 and 500. Nothing else spaces it, so it
+ * keeps its own gutter: 16px at the sides on a phone, and air above the
+ * heading at every width (2026-10-17 audit, JUX-014). */
+.page--standalone {
+  box-sizing: border-box;
+  padding: var(--spacing-8) var(--spacing-4);
+}
+
+@media (min-width: 48rem) {
+  .page--standalone {
+    padding: 3rem var(--spacing-6);
+  }
+}
+
 .pagehead {
   display: flex;
   align-items: baseline;
@@ -5200,6 +5215,25 @@ a.barchart__row:hover {
 .chip__input:focus-visible + .chip__name {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-offset-width);
+}
+
+/* A choice that cannot be made right now — «Avaldatud mujal» while a round is
+ * linked. It used to look exactly like one that can: the same words, the same
+ * edge and a pointer (2026-10-17 audit, JUX-004). Muted words and edge, no
+ * hover response, and the `not-allowed` cursor; the reason is said in words
+ * beside it (`[data-feedback-round-note]`), so the state is never colour
+ * alone. */
+.chip__input:disabled {
+  cursor: not-allowed;
+}
+
+.chip__input:disabled + .chip__name,
+.chip:hover .chip__input:disabled + .chip__name {
+  color: var(--text-muted);
+  border-color: var(--border-subtle);
+  background: transparent;
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 
 /* A `Hetkeseis` that does not normally fit any chosen `Õigusakt` — guidance on
@@ -10642,6 +10676,12 @@ section:has(.pw-more[open]) tbody.uxextra {
 
 #teema-vaade-wrap .cx-panel {
   flex: none;
+  /* An open panel is a flex item at `flex-basis: 100%`, and a flex item's
+   * `min-width: auto` is its content's min-content width — which outgrew the
+   * row at 320px and pushed `+ Kaasamine` and `Koja arvamus` 11px past the
+   * window (2026-10-17 audit, JUX-010; WCAG 1.4.10). The panel takes the
+   * row's width, and its fields wrap inside it as they already could. */
+  min-width: 0;
 }
 
 #teema-vaade-wrap .cx-panel[open] {
@@ -10985,6 +11025,12 @@ section:has(.pw-more[open]) tbody.uxextra {
   font-size: 13px;
   line-height: 1.4;
   color: var(--text-muted);
+  /* A chosen file's name is often one token —
+   * `Eelnou_seletuskiri_lisa_…_2026.pdf` — and with nowhere to break it widened
+   * the drop box, the form and the page to ~950px on a phone (2026-10-17
+   * audit, JUX-009; WCAG 1.4.10). It breaks anywhere instead, whole. */
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 #teema-vaade-wrap .cx-drop__pick {
@@ -11427,6 +11473,18 @@ section:has(.pw-more[open]) tbody.uxextra {
 
 #teema-vaade-wrap .lprail__aside--koda {
   color: var(--text-muted);
+}
+
+/* «Kaasamise vastus saadeti Kojale.» — only while a linked round has disabled
+ * the other answer (JUX-004). Read off the radio, so the server's render and
+ * the script's change of round never disagree about it. */
+#teema-vaade-wrap .feedbackform:not(:has(input[name="provenance"]:disabled))
+  [data-feedback-round-note] {
+  display: none;
+}
+
+#teema-vaade-wrap .feedbackform__roundnote {
+  margin: var(--spacing-1) 0 0;
 }
 
 /* The heading row: the section's name, and `Muuda` pushed to the far end.
@@ -12910,6 +12968,8 @@ section:has(.pw-more[open]) tbody.uxextra {
 .curact__form .cx-drop {
   position: static;
   box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
 }
 
 /* **`flex-basis` is the main axis, and the two hosts have different ones.**
