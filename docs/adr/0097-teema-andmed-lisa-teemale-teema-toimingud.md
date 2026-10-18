@@ -591,3 +591,11 @@ generic composer returns.
    the stated day, `capture_supporting_evidence`), so the two exceptions cannot
    drift apart; `Muu`'s public behaviour is unchanged. Search indexing is
    unchanged; no rebuild, no migration.
+
+## Amendment 2026-10-17 — each `LISA TEEMALE` form saves once
+
+Every compact `LISA TEEMALE` form — `Alusta kaasamist`, `Lisa tagasiside`,
+`Oluline tähtaeg`, `Jõustumine`, `Töövõit`, `Muu`, `Kohtumine / arutelu` and,
+as before, `Koja arvamus` — carries a save-once token: the same drawn form
+records once, a refused save spends nothing, and a deliberate repeat is the form
+opened again (owner decision D3; docs/adr/0167, amendment of 2026-10-17).
