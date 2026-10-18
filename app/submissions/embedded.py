@@ -192,7 +192,17 @@ def embedded_context(request: HttpRequest) -> dict[str, Any]:
     # ``archive_counts`` four; six of those seven would be computed for a strip
     # with two numbers on it. The standalone workspace still uses both, where
     # the rest of the figures are actually shown.
-    sent_count = Submission.objects.visible_to(viewer).filter(status=SubmissionStatus.SENT).count()
+    #
+    # On the Saadetud tab with no search, the list above *is* that population —
+    # `sent_queryset` with no narrowing is `visible_to(viewer)` at SENT — so its
+    # count is the tab's figure and is not asked twice (2026-10-17 audit,
+    # JPERF-007: the register page's query budget).
+    if view == SENT_VIEW and not query and not refusal:
+        sent_count = total
+    else:
+        sent_count = (
+            Submission.objects.visible_to(viewer).filter(status=SubmissionStatus.SENT).count()
+        )
     # Asked only of a reader who may read it, and through ``visible_archive``
     # rather than the manager: a refused reader must not learn the size of the
     # corpus from a tab they are not offered.

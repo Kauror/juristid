@@ -20,14 +20,14 @@ import unicodedata
 import uuid
 from collections.abc import Sequence
 from datetime import UTC, date, timedelta
-from typing import Any
+from typing import Any, cast
 
 from django import forms
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from django.core.paginator import Paginator
+from django.core.paginator import Page, Paginator
 from django.db import transaction
 from django.db.models import Count, F, Q
 from django.db.models.functions import ExtractYear
@@ -1496,11 +1496,35 @@ def _count_matters(queryset: Any) -> int:
 
 
 class _RegisterPaginator(Paginator):
-    """`Paginator`, counting the way `_count_matters` does and slicing as before."""
+    """`Paginator`, counting the way `_count_matters` does, and paging before annotating.
+
+    **The page is chosen on the primary key, then its rows are read** (2026-10-17
+    audit, JPERF-007). The register's row query carries the correlated
+    subqueries `matter_list_queryset` annotates for its cells, and PostgreSQL
+    evaluated the ones it believes cheap for *every* visible Matter under the
+    top-N sort, before the limit — ten thousand loops each to show twelve rows.
+    So the page is first drawn as ids — the same filters, the same order, the
+    same boundary, and an annotation stays in that query only where the filter
+    or the sort refers to it — and the full row query then runs for those ids
+    alone, its rows put back in the order the ids came in. Same rows, same
+    order, same visibility; one more query, a few cheap ones instead of every
+    subquery for every row.
+    """
 
     @cached_property
     def count(self) -> int:
         return _count_matters(self.object_list)
+
+    def page(self, number: Any) -> Any:
+        number = self.validate_number(number)
+        bottom = (number - 1) * self.per_page
+        top = bottom + self.per_page
+        if top + self.orphans >= self.count:
+            top = self.count
+        queryset = cast(Any, self.object_list)
+        ids = list(queryset.values_list("pk", flat=True)[bottom:top])
+        rows = {row.pk: row for row in queryset.filter(pk__in=ids)} if ids else {}
+        return Page([rows[pk] for pk in ids if pk in rows], number, self)
 
 
 #: Under the commencement presentation, always. A record that nobody entered is
