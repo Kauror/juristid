@@ -380,7 +380,8 @@ def test_the_historical_matter_keeps_every_value_when_an_unrelated_field_is_edit
 ):
     url = reverse("matters:matter_edit", kwargs={"pk": historical.pk})
     response = signed_in.post(url, edit_payload(historical, title="Vana teema, parandatud"))
-    assert response.status_code in (302, 200), response.status_code
+    assert response.status_code == 302, response.status_code
+    assert response["Location"] == reverse("matters:matter_detail", kwargs={"pk": historical.pk})
 
     historical.refresh_from_db()
     assert historical.title == "Vana teema, parandatud"

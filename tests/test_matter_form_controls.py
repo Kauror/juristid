@@ -342,8 +342,9 @@ def test_stale_next_action_keys_create_nothing(signed_in):
         },
     )
 
-    assert response.status_code in (302, 303)
+    assert response.status_code == 302
     matter = Matter.objects.get(title="Aegunud väljad")
+    assert response["Location"] == reverse("matters:matter_detail", kwargs={"pk": matter.pk})
     assert not NextAction.objects.filter(matter=matter).exists()
 
 

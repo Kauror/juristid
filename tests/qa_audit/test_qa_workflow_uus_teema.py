@@ -301,7 +301,7 @@ def test_a_reader_cannot_create_with_links(client, reader, others):
     response = client.post(
         CREATE, {"title": "Lugeja loob", LINK_ON_CREATE_CHOSEN_FIELD: [str(others[0].pk)]}
     )
-    assert response.status_code in (302, 403, 404)
+    assert response.status_code == 404
     assert not Matter.objects.filter(title="Lugeja loob").exists()
     assert not MatterRelation.objects.exists()
 
