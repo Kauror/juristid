@@ -490,7 +490,10 @@ task composer returns.
    refuse them — and refused rather than truncated), on creation and on
    correction alike; shown by its host as the labelled new-window link other
    chronology rows use, and corrected through `edit_entry`, whose revision keeps
-   the earlier address as it keeps the earlier wording. A correction overtaken
+   the earlier address as it keeps the earlier wording. **Correcting a `Muu`
+   link creates an `EntryRevision`, and a Teema holding a corrected entry cannot
+   be permanently deleted (docs/adr/0165), so the link-correction form says so
+   in one line** (owner decision D13, 2026-10-17). A correction overtaken
    by another writer's (409) shows that writer's description **and** link
    («Praegune link», the whole address as plain text) beside the person's own
    unsaved values, and merges nothing. Only

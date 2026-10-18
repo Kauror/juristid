@@ -6237,6 +6237,21 @@ class ExternalPositionEditForm(ExternalPositionFieldsMixin, forms.Form):
             # Offered only where a stored round is hidden from this reader; a
             # crafted post of the word anywhere else is not a choice the form made.
             raise forms.ValidationError("Valige korrektne väärtus.")
+        # **A published position does not answer a round** (docs/adr/0170 §3).
+        # `correct_external_position` refuses a `DISCOVERED` row a round it did
+        # not already hold; asked here too, so the person reads the refusal under
+        # `Seotud kaasamine` rather than above the form (JUX-012). The round the
+        # row already carries stays choosable, as the service keeps it.
+        if (
+            value is not None
+            and value != ENGAGEMENT_UNCHANGED
+            and self.record is not None
+            and self.record.provenance == ExternalPositionProvenance.DISCOVERED
+            and value.pk != self.record.engagement_id
+        ):
+            from app.matters.services import EXTERNAL_POSITION_ROUND_ANSWER_IS_RECEIVED
+
+            raise forms.ValidationError(EXTERNAL_POSITION_ROUND_ANSWER_IS_RECEIVED)
         return value
 
     @property

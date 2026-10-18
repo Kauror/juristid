@@ -53,18 +53,24 @@ REPLY_ALREADY_RECORDED = (
 def answerable_rounds(viewer: Any, matter: Matter) -> QuerySet[MatterEngagement]:
     """The rounds a reply on this Matter may name, as this reader may see them.
 
-    Tracked rounds (`lifecycle_tracked`) on an open `FULL` Matter — the same
+    Tracked rounds (`lifecycle_tracked`) on a `FULL` Matter — the same
     population `work_items.open_feedback_waits` draws its waits from, with the
-    finished ones kept. A round the register importer filed as history has no
-    lifecycle and is not offered: it is started through `Ootan tagasisidet`
-    first. Scoped through the round's **own** `visible_to`, so a restricted
-    round is neither offered nor accepted for a reader who may not open it
-    (AUTH-003); removed rounds are dropped by the same chokepoint.
+    finished ones kept. **Not filtered on `is_open`**: whether the Matter takes
+    a reply at all is the service's question, asked under the Matter's lock, and
+    a stale tab posting a round on a file somebody has since closed must read the
+    closed-Teema sentence (`CLOSED_MATTER_REFUSAL`) rather than a generic
+    «Valige korrektne väärtus» against a round that vanished from the list
+    (JQA-009). A closed Matter renders no form to offer the rounds in.
+
+    A round the register importer filed as history has no lifecycle and is not
+    offered: it is started through `Ootan tagasisidet` first. Scoped through the
+    round's **own** `visible_to`, so a restricted round is neither offered nor
+    accepted for a reader who may not open it (AUTH-003); removed rounds are
+    dropped by the same chokepoint.
     """
     return MatterEngagement.objects.visible_to(viewer).filter(
         matter=matter,
         lifecycle_tracked=True,
-        matter__is_open=True,
         matter__record_mode=RecordMode.FULL,
     )
 
