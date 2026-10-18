@@ -385,3 +385,46 @@ which serves the web process, runs none.
   runbook (`run --rm web python manage.py migration_plan`) runs the new checks
   against the live environment file first, before the backup and before
   anything is replaced, so that is where it shows.
+
+---
+
+## Amendment, 2026-10-18 — the throttle must see the client, and the idle limit has bounds
+
+- Status: accepted, amending «The throttle is a table, and it is per client»
+  and the amendment of 2026-10-17 (the idle limit)
+- Finding: JRF-02 of the 2026-10-18 re-audit
+
+### What was decided before
+
+Since the amendment of 2026-10-17 `CF-Connecting-IP` names the client only
+where `TRUST_CF_CONNECTING_IP` (that is, `DJANGO_BEHIND_TLS_PROXY`) is set. A
+missing flag behind the shared gate was the warning `juristid.E014`.
+`SHARED_GATE_IDLE_SECONDS` took any integer.
+
+### Why it is amended
+
+Without the flag every request behind the tunnel arrives from the connector's
+address, so the per-client throttle is one bucket for the whole department:
+five wrong passwords from anybody lock everybody out. A warning is printed and
+the process serves anyway — the department would find out by being locked out.
+
+### What is decided now
+
+- `juristid.E020` (Error): `REAL_DATA_ALLOWED` on, `AUTH_MODE` `shared_gate`
+  or `local_password` (both throttle wrong passwords by client address), and
+  `TRUST_CF_CONNECTING_IP` off. Release step 6 (`run --rm web python manage.py
+  migration_plan`) runs it against the host's environment file before the
+  backup and the swap. Where E020 applies, E014 is not repeated beside it; on a
+  synthetic stack E014 stays a warning. `cloudflare_access` has no password
+  throttle and is unaffected.
+- `juristid.E021` (Error), under `shared_gate`: `SHARED_GATE_IDLE_SECONDS` below
+  300 (the last-request stamp is written at most every five minutes,
+  `shared_gate.LAST_SEEN_RESOLUTION`) or above `SHARED_GATE_SESSION_SECONDS`
+  (it could never fire).
+- `deploy/unraid-main/.env.example` documents `DJANGO_BEHIND_TLS_PROXY=1` as
+  required; both real-data templates set it, and a test holds them to that.
+
+### What this amendment does not change
+
+The address rule itself, the throttle's per-client table and escalation, the 8 h
+idle and 12 h absolute limits, and the development and test configurations.

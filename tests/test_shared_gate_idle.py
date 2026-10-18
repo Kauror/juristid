@@ -161,3 +161,49 @@ def test_the_idle_limit_is_a_setting(behind_the_gate, settings, gate_url):
     settings.SHARED_GATE_IDLE_SECONDS = 60 * 60
     _set_clock(behind_the_gate, passed_ago=2 * HOUR, seen_ago=HOUR + MINUTE)
     assert behind_the_gate.get("/osakond/").status_code == 302
+
+
+# -- the setting's own bounds ------------------------------------------------
+#
+# The idle clock is written at most every `LAST_SEEN_RESOLUTION` (five minutes),
+# so a shorter limit would ask an active reader for the password between two
+# stamps; and a limit longer than the absolute one can never fire, which reads
+# as a decision while deciding nothing. `juristid.E021` refuses both.
+
+IDLE_BOUNDS = "juristid.E021"
+
+
+def _check_ids() -> set[str]:
+    from app.core.checks import check_runtime_safety
+
+    return {problem.id for problem in check_runtime_safety(None)}
+
+
+@pytest.mark.parametrize("seconds", [0, 60, 299])
+def test_an_idle_limit_under_five_minutes_refuses(settings, seconds):
+    settings.SHARED_GATE_IDLE_SECONDS = seconds
+    assert IDLE_BOUNDS in _check_ids()
+
+
+def test_an_idle_limit_beyond_the_absolute_limit_refuses(settings):
+    settings.SHARED_GATE_IDLE_SECONDS = settings.SHARED_GATE_SESSION_SECONDS + 1
+    assert IDLE_BOUNDS in _check_ids()
+
+
+@pytest.mark.parametrize("seconds", [300, 8 * 60 * 60, 12 * 60 * 60])
+def test_an_idle_limit_within_the_bounds_passes(settings, seconds):
+    settings.SHARED_GATE_IDLE_SECONDS = seconds
+    assert IDLE_BOUNDS not in _check_ids()
+
+
+def test_the_floor_is_the_stamp_resolution():
+    from app.core.checks import MINIMUM_SHARED_GATE_IDLE_SECONDS
+
+    assert MINIMUM_SHARED_GATE_IDLE_SECONDS == 300
+    assert shared_gate.LAST_SEEN_RESOLUTION.total_seconds() == MINIMUM_SHARED_GATE_IDLE_SECONDS
+
+
+def test_the_idle_bounds_belong_to_the_gate_alone(settings):
+    settings.AUTH_MODE = "none"
+    settings.SHARED_GATE_IDLE_SECONDS = 10
+    assert IDLE_BOUNDS not in _check_ids()
