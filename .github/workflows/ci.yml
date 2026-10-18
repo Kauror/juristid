@@ -81,6 +81,30 @@ jobs:
       - name: Lint
         run: uv run ruff check .
 
+      # The browser scripts are served exactly as written — there is no build
+      # step — so until this, nothing before a browser noticed a syntax error
+      # or a misspelt name in them. Either one, at start-up, stops every
+      # behaviour registered after it in a one-function script (JARCH-004,
+      # docs/adr/0171). Node is set up for this check only: the application
+      # and its image have none. Both versions are exact so the check cannot
+      # change under a run nobody edited; the rules are `eslint.config.mjs`.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.18.1"
+
+      - name: JavaScript parses
+        run: |
+          for script in static/js/*.js; do
+            node --check "$script"
+          done
+
+      - name: JavaScript lint
+        run: |
+          npm install --no-save --no-package-lock --no-audit --no-fund --ignore-scripts \
+            --prefix "$RUNNER_TEMP/eslint" eslint@9.39.4
+          "$RUNNER_TEMP/eslint/node_modules/.bin/eslint" --config eslint.config.mjs \
+            --max-warnings 0 static/js
+
       - name: Static types
         run: uv run mypy
 
