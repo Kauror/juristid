@@ -1,6 +1,6 @@
 # ADR 0051 — «Uus asi»: a personal receipt for a Matter somebody just put on your desk
 
-- Status: proposed (feature branch `ux/new-assignment-notices`)
+- Status: Accepted (written as proposed on its feature branch; accepted when it merged to main, as the index has said since 2026-09-02 — file status corrected 2026-10-18, JARCH-007)
 - Date: 2026-08-31
 - Stage: pre-QA (shared-gate development phase)
 - Related: ADR 0036 (`/inimesed/<id>/asjad/` and the manager's view of a desk),

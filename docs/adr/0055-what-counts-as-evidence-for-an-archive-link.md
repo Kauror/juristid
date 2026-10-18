@@ -1,6 +1,6 @@
 # ADR 0055 — What counts as evidence that a letter belongs to a Matter
 
-- Status: proposed
+- Status: Accepted (written as proposed on its feature branch; accepted when it merged to main, as the index has said since 2026-09-02 — file status corrected 2026-10-18, JARCH-007)
 - Date: 2026-09-01
 - Stage: opinion corpus reconciliation (production phase remains plan-only)
 - Related: ADR 0019 (the reconciliation and its refusal to invent a recipient),

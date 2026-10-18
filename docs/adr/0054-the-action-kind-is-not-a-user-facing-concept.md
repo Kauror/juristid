@@ -1,6 +1,6 @@
 # ADR 0054 — The action kind is not a user-facing concept
 
-**Status:** proposed, on a feature branch
+**Status:** Accepted (written as proposed on its feature branch; accepted when it merged to main, as the index has said since 2026-09-02 — file status corrected 2026-10-18, JARCH-007)
 **Date:** 2026-09-01
 **Completes:** ADR 0052 (*The simplified Teema next-action workflow*)
 

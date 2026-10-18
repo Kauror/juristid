@@ -179,6 +179,16 @@ consequences and reversibility.
 | [0169](0169-statistika-filter-chips-narrow-every-figure-they-apply-to.md) | Statistika filter chips narrow every figure they apply to | Accepted (owner decision D2, QA remediation 2026-10-14); Ülevaade strip and rail take the page's chips (`chip_params`), a link narrows a chip and never replaces it (`merge_chip_params`, no link for an empty intersection), «Aruandlus <aasta>» sends counted for that year, table «kokku» = population when the unknown bucket is a row, «Inimesed» names its period, archive coverage real data only with TEST guards on review and apply; amends 0160 §5 (decline by date); no migration |
 | [0170](0170-lisa-tagasiside-is-the-one-door-for-every-position.md) | `Lisa tagasiside` is the one door for every position | Accepted (owner's UX round, stage 3, 2026-10-15); `+ Kaasamine · Lisa tagasiside` records member feedback sent to Koda and positions published elsewhere through one form with a required, default-free provenance radio; organisation optional for received feedback (0101) and required for published positions; text, link or file — any one (0084 §3); `Liige` only with «Saadeti Kojale»; optional, never-preselected `Seotud kaasamine` that fixes the provenance (except `Tehtud` on a wait); retires `Meile saadetud tagasiside` / `Teiste arvamus` and their routes; amends 0091 §3.5, 0095 §4–§5, 0142 §B, 0167 §2; no migrations; §4 amended 2026-10-17 by 0167's amendment (D3): a standalone position no longer repeats by a double POST — the same drawn form saves once, a deliberate repeat needs a fresh form |
 
+**Numbers with no record on this branch.** `tests/test_architecture_decisions.py`
+requires every gap in the numbering to be named here:
+
+- 0157 — reserved for «Lovable data is mirrored for comparison, never canonical».
+  It is on `feature/lovable-mirror` (PR #429, still open), and the owner accepted
+  the architecture only on 2026-10-13, with activation not approved. The record
+  lands with that PR.
+- 0164 — not used. The number was skipped during the QA remediation of
+  2026-10-14 (between 0163 and 0165), and no record was ever written under it.
+
 Naming: `NNNN-short-decision-title.md`.
 
 ## Stage coverage

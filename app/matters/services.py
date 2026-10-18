@@ -4517,7 +4517,9 @@ def correct_external_position(
     Every field is named on every save, unlike `update_engagement`'s `_UNSET`
     sentinel: this function has exactly one caller, a correction form that
     renders every box, so «not mentioned» is not a state it can be in — and an
-    emptied box has to be able to clear a column.
+    emptied box has to be able to clear a column. That claim is a test
+    (`tests/test_invariant_claims_are_tested.py`): a second caller fails it and
+    has to revisit this contract first (JARCH-008).
 
     ``provenance`` is the one exception, and it is a sentinel rather than a value:
     `None` means «this form did not ask». It exists for the historical corpus —

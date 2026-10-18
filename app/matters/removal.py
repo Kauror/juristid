@@ -32,7 +32,11 @@ removed row must be absent from exactly the same places for exactly the same
 reason, and a filter written at a call site is a filter the next call site
 forgets. So this module *writes* the columns and the readers need no changes at
 all — the chronology, the rail, `Minu asjad`, the register, the statistics and
-the search projection all pass through `visible_to` already.
+the search projection all pass through `visible_to` already, and
+`tests/test_invariant_claims_are_tested.py` holds every family's `visible_to`
+to it. Reads with **no reader** — locks, closure, the integrity checker, the
+operator's cutover tooling — cannot pass through `visible_to` and must leave
+removed rows out themselves (docs/adr/0102, amendment of 2026-10-18).
 """
 
 from __future__ import annotations

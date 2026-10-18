@@ -10791,8 +10791,8 @@ section:has(.pw-more[open]) tbody.uxextra {
   min-width: 0;
 }
 
-/* A date standing alone on its row — `Kuupäev` under `+ Märge` and under
- * `+ Arvamus / tagasiside`. The form is a flex column, so a bare field is
+/* A date standing alone on its row — `Kuupäev` under `+ Lisa` and under
+ * `+ Koja arvamus / kohtumine`. The form is a flex column, so a bare field is
  * stretched to the panel and a `7.9.2026` box ran almost the whole width.
  * Capped at the width `Muuda kulgu` already gives its date column, the
  * calendar button included; `max-width` rather than `width`, so a panel
@@ -13182,7 +13182,8 @@ section:has(.pw-more[open]) tbody.uxextra {
 
 /* -- LISA TEEMALE: a family's own choices ---------------------------------
  *
- * The sub-choice row inside `+ Märge` and `+ Arvamus / tagasiside`. It is the
+ * The sub-choice row inside `+ Lisa`, `+ Kaasamine` and
+ * `+ Koja arvamus / kohtumine`. It is the
  * launcher's own construction one level in — radio, chip, panel — so it needs
  * no rules of its own beyond these two: every `.cx-panels` rule above is
  * written `.cx-panels > …` rather than against a depth, and therefore reaches a
@@ -13215,7 +13216,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 
 /* And the sub-choice chips may shrink rather than push the row wide. The
  * launcher's own chips are `flex: none` because the top row is four short
- * labels; `Meile saadetud tagasiside` is not short, and it sits inside a panel
+ * labels; `Kohtumine / arutelu` is not short, and it sits inside a panel
  * that has already spent some of the width. */
 #teema-vaade-wrap .cx-panels--sub > .disclosure-chip {
   flex: 0 1 auto;

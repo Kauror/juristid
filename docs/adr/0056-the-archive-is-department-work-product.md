@@ -1,6 +1,6 @@
 # ADR 0056 — The opinion archive is department work product, not a migration tool
 
-- Status: proposed
+- Status: Accepted (written as proposed on its feature branch; accepted when it merged to main, as the index has said since 2026-09-02 — file status corrected 2026-10-18, JARCH-007)
 - Date: 2026-09-01
 - Stage: opinion corpus reconciliation
 - Related: ADR 0028 (the development archive workspace, whose access matrix

@@ -41,7 +41,7 @@ step's operation has a canonical form (`app.matters.step_launch`):
 | step (`operation`) | form under `LISA TEEMALE` |
 |---|---|
 | «Kaasa liikmeid / küsi tagasisidet» (`ENGAGEMENT`) | `+ Kaasamine · Alusta kaasamist` |
-| «Saada Koja arvamus» (`SUBMISSION`) | `+ Arvamus / tagasiside · Koja arvamus` |
+| «Saada Koja arvamus» (`SUBMISSION`) | `+ Koja arvamus / kohtumine · Koja arvamus` (the family was `+ Arvamus / tagasiside` until 2026-10-17) |
 | «Koosta kodulehe ülevaade» (`WEBSITE_OVERVIEW`) | `+ Ülevaade / uudis` |
 
 `Alusta` is a link. With scripting it opens every level of the launcher, names

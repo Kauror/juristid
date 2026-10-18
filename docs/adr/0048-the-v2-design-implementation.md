@@ -1,6 +1,6 @@
 # ADR 0048 — Implementing the v2 design over the application that exists
 
-- Status: proposed
+- Status: Accepted (written as proposed on its feature branch; accepted when it merged to main, as the index has said since 2026-09-02 — file status corrected 2026-10-18, JARCH-007)
 - Date: 2026-08-29
 - Stage: pre-QA (shared-gate development phase)
 - Related: ADR 0039 (retiring *Minu tiim*, which this keeps retired), ADR 0046

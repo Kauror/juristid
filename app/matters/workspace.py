@@ -1257,16 +1257,17 @@ def add_matter_external_position(
     uploads: Sequence[Any] = (),
     once_token: Any = None,
 ) -> WorkspaceResult:
-    """`+ Meile saadetud tagasiside` / `+ Teiste arvamus` — what somebody else said.
+    """`+ Kaasamine · Lisa tagasiside` — what somebody else said.
 
-    **One operation behind two chips**, which is docs/adr/0091 §3's whole
-    architectural claim. `Meile saadetud tagasiside` and `Teiste arvamus` are two
-    professional facts with one shape: an author, a source a colleague can open,
-    an optional date at the precision it is known to, and an optional note from
-    the lawyer. Four models — `EngagementFeedback`, `ExternalPosition`,
-    `AnotherOpinion`, `SurveyFeedback` — would have been four sets of validation
-    and four chronology renderings for one set of rules, so the distinction is a
-    column and the panels are two doors onto this function.
+    **One operation behind one form**, which is docs/adr/0091 §3's whole
+    architectural claim. «Saadeti Kojale» (`RECEIVED`) and «Avaldatud mujal»
+    (`DISCOVERED`) are two professional facts with one shape: an author, a
+    source a colleague can open, an optional date at the precision it is known
+    to, and an optional note from the lawyer. Four models — `EngagementFeedback`,
+    `ExternalPosition`, `AnotherOpinion`, `SurveyFeedback` — would have been four
+    sets of validation and four chronology renderings for one set of rules, so
+    the distinction is a column, stated on the one form (docs/adr/0170; until
+    then two chips, `Meile saadetud tagasiside` and `Teiste arvamus`).
 
     ``provenance`` is the distinction, ``source_label`` is what an aggregate
     answer with no single author is called, and ``lawyer_note`` is this office's
