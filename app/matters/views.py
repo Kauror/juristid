@@ -101,7 +101,6 @@ from app.matters import (
     date_order,
     department_dashboard,
     duplicate_intake,
-    engagement_replies,
     intake_staging,
     legal_process,
     register_dates,
@@ -8426,9 +8425,11 @@ def _record_external_position(request: HttpRequest, pk: Any) -> HttpResponse:
     """Record one `MatterExternalPosition` from a creation form.
 
     Since the owner's UX round (stage 3, 2026-10-15) the one creation form is
-    `+ Kaasamine · Lisa tagasiside` (`FeedbackForm`); the function stays the one
-    place for the organisation resolution, the refusal handling, the
-    closed-Matter boundary and the engagement-reply rules.
+    `+ Kaasamine · Lisa tagasiside` (`FeedbackForm`). This view is the form's
+    handling and nothing else: the save — the institution, the repeat refusal,
+    the record and finishing the round's wait — is the use case
+    `workspace.record_position_reply`, one transaction under the Matter's lock,
+    so a second caller gets the same guarantees (JARCH-001).
 
     **The provenance is stated, never inferred** (docs/adr/0091 §3.2). The form
     carries it as a required radio with no default, validated against the two
@@ -8436,24 +8437,16 @@ def _record_external_position(request: HttpRequest, pk: Any) -> HttpResponse:
     is guessed from the organisation, the round, the link or the text.
 
     **Only a linked round is answered.** With a round, a repeat is refused and
-    the first answer to an open round finishes its wait in this transaction; a
-    standalone position — received or published elsewhere — touches no wait
-    (docs/adr/0167 §2).
+    the first answer to an open round finishes its wait; a standalone position
+    — received or published elsewhere — touches no wait (docs/adr/0167 §2).
 
     The institution is answered either by the picker's radio group or by the
-    name somebody typed into it, and which of the two wins is
-    `resolve_addressee`'s rule, shared rather than restated: a typed name is a
-    deliberate act and beats a chip that was merely left selected. Resolution
-    happens inside the save's own transaction, so a refusal further down leaves
-    no institution behind (docs/adr/0073, docs/adr/0084 §4).
-
-    **Received feedback may name no institution at all**, and that is the one
-    place the two provenances diverge here: `resolve_addressee` is asked only
-    when something was chosen or typed, because calling it with two empty
-    answers would refuse a «Saadeti Kojale» answer that names nobody — which
-    since docs/adr/0101 is a record rather than a gap. A published opinion
-    («Avaldatud mujal») must name its author, and the form refuses it before
-    this (docs/adr/0091 §3.3).
+    name somebody typed into it; both halves are handed to the use case, which
+    applies `resolve_addressee`'s rule inside its own transaction, so a refusal
+    further down leaves no institution behind (docs/adr/0073, docs/adr/0084
+    §4). **Received feedback may name no institution at all** (docs/adr/0101);
+    a published opinion («Avaldatud mujal») must name its author, and the form
+    refuses it before this (docs/adr/0091 §3.3).
 
     A refusal comes back through `_workspace_refusal` with the form still bound,
     so the link somebody pasted and the explanation they wrote are still in
@@ -8467,87 +8460,42 @@ def _record_external_position(request: HttpRequest, pk: Any) -> HttpResponse:
     form = FeedbackForm(request.POST, request.FILES, matter=matter, viewer=request.user)
     if not form.is_valid():
         return _workspace_refusal(request, matter, key=key, form=form)
-    chosen = form.cleaned_data.get("organisation")
-    typed = (form.cleaned_data.get("organisation_name") or "").strip()
-    # A position linked to a round is an answer to it, and finishes the round's
-    # wait in this transaction; a finished round keeps its closure
-    # (docs/adr/0167 §2). One with no round is a standalone position and
-    # touches no wait (owner's UX round, stage 3).
-    answered = form.cleaned_data.get("engagement")
-    # Stated by the person — the validated radio, which the form has already
-    # fixed at RECEIVED for a linked round (docs/adr/0091 §3.2, amended
-    # 2026-10-15).
-    provenance = form.cleaned_data["provenance"]
     try:
-        # One transaction around the resolution and the save. A typed name the
-        # picker does not know becomes a new institution *while the arguments
-        # are evaluated*, which is before the use case's own transaction opens;
-        # without this, a refusal under the lock — a closed Matter in a stale
-        # tab, a rejected upload — left that institution in the catalogue.
-        with transaction.atomic():
-            # `None` where neither half of the picker was answered: received
-            # feedback that names nobody, which since docs/adr/0101 is a record
-            # rather than a gap. A published opinion with no author is refused by
-            # the form before this (docs/adr/0091 §3.3). Resolved first, inside
-            # this transaction, so the repeat check below can compare authors and
-            # a refusal leaves no new institution behind.
-            organisation = (
-                resolve_addressee(chosen=chosen, typed_name=typed)
-                if (chosen is not None or typed)
-                else None
-            )
-            source_is_member = bool(form.cleaned_data.get("source_is_member"))
-            if answered is not None:
-                # A finished round takes later answers (docs/adr/0167 §2), so a
-                # second press of `Salvesta` must not file the same one twice —
-                # while a second organisation's identical answer is its own.
-                engagement_replies.refuse_repeated_reply(
-                    matter=matter,
-                    engagement=answered,
-                    organisation=organisation,
-                    source_is_member=source_is_member,
-                    summary=form.cleaned_data.get("summary") or "",
-                    url=form.cleaned_data.get("url") or "",
-                    stated_on=form.cleaned_data.get("stated_on_value"),
-                    uploads=form.cleaned_data.get("attachments") or (),
-                )
-            workspace.add_matter_external_position(
-                matter=matter,
-                author=request.user,
-                organisation=organisation,
-                provenance=provenance,
-                # `Allikas` and `Märkus` are not declared by `FeedbackForm`, so
-                # these are the empty answer whatever a POST carries; `Muuda`
-                # still asks both on rows that have them (docs/adr/0095 §5).
-                source_label=form.cleaned_data.get("source_label") or "",
-                url=form.cleaned_data.get("url") or "",
-                # The day box itself at `EXACT`: the period fields are not on the
-                # form, so a crafted `..._precision=QUARTER` is read by nothing
-                # (`ExternalPositionFieldsMixin.offers_precision`).
-                stated_on=form.cleaned_data.get("stated_on_value"),
-                stated_on_precision=form.cleaned_data["stated_on_precision"],
-                summary=form.cleaned_data.get("summary") or "",
-                lawyer_note=form.cleaned_data.get("lawyer_note") or "",
-                # `Liige` — refused off RECEIVED by the form, the service and a
-                # `CHECK` (docs/adr/0095 §4).
-                source_is_member=source_is_member,
-                engagement=answered,
-                uploads=form.cleaned_data["attachments"],
-                # One drawn form, one position — with a round or without
-                # (docs/adr/0170 §4, amendment of 2026-10-17).
-                once_token=_posted_once_token(request),
-            )
-            # **`Lisa tagasiside` finishes the wait of the round it answers**
-            # (owner's decision, 2026-10-07, docs/adr/0142 §B): the feedback,
-            # its files and the closed wait are one save — whichever door
-            # opened the form (`PRAEGUNE TEGEVUS → Tehtud` or `+ Kaasamine →
-            # Lisa tagasiside`). Through the canonical close, inside this
-            # transaction. A round already finished — by an earlier answer,
-            # `Lõpeta kaasamine` or somebody else meanwhile — keeps its closure
-            # and simply gains this answer (docs/adr/0167 §2). Nothing else is
-            # completed: no `NextAction` is inferred from feedback.
-            if answered is not None:
-                engagement_replies.finish_wait_on_reply(engagement=answered, actor=request.user)
+        # The institution, the repeat refusal, the record and the wait are one
+        # use case and one transaction (JARCH-001, docs/adr/0167 §2).
+        workspace.record_position_reply(
+            matter=matter,
+            author=request.user,
+            organisation=form.cleaned_data.get("organisation"),
+            organisation_name=form.cleaned_data.get("organisation_name") or "",
+            # Stated by the person — the validated radio, which the form has
+            # already fixed at RECEIVED for a linked round (docs/adr/0091 §3.2,
+            # amended 2026-10-15).
+            provenance=form.cleaned_data["provenance"],
+            # `Allikas` and `Märkus` are not declared by `FeedbackForm`, so
+            # these are the empty answer whatever a POST carries; `Muuda`
+            # still asks both on rows that have them (docs/adr/0095 §5).
+            source_label=form.cleaned_data.get("source_label") or "",
+            url=form.cleaned_data.get("url") or "",
+            # The day box itself at `EXACT`: the period fields are not on the
+            # form, so a crafted `..._precision=QUARTER` is read by nothing
+            # (`ExternalPositionFieldsMixin.offers_precision`).
+            stated_on=form.cleaned_data.get("stated_on_value"),
+            stated_on_precision=form.cleaned_data["stated_on_precision"],
+            summary=form.cleaned_data.get("summary") or "",
+            lawyer_note=form.cleaned_data.get("lawyer_note") or "",
+            # `Liige` — refused off RECEIVED by the form, the service and a
+            # `CHECK` (docs/adr/0095 §4).
+            source_is_member=bool(form.cleaned_data.get("source_is_member")),
+            # A position linked to a round is an answer to it; one with no
+            # round is a standalone position and touches no wait (owner's UX
+            # round, stage 3).
+            engagement=form.cleaned_data.get("engagement"),
+            uploads=form.cleaned_data.get("attachments") or (),
+            # One drawn form, one position — with a round or without
+            # (docs/adr/0170 §4, amendment of 2026-10-17).
+            once_token=_posted_once_token(request),
+        )
     except DomainError as error:
         return _workspace_refusal(request, matter, key=key, form=form, error=str(error))
     return _render_overview(request, matter)

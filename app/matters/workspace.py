@@ -65,6 +65,7 @@ from app.core.errors import DomainError
 from app.documents.enums import DocumentRole
 from app.documents.models import Document
 from app.documents.services import capture_supporting_evidence
+from app.matters import engagement_replies
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import EngagementKind, ExternalPositionProvenance
 from app.matters.initiative import is_koda_initiative
@@ -181,6 +182,9 @@ class WorkspaceResult:
     #: Whether a confirmed stage move also dated its phase on `Menetluse kulg`
     #: (`add_procedural_development(date_phase=True)`, docs/adr/0128 §1).
     phase_dated: bool = False
+    #: Whether a reply was the first answer to its round and finished the
+    #: round's wait (`record_position_reply`, docs/adr/0167 §2).
+    wait_finished: bool = False
 
 
 def _uploads(raw: Any) -> list[Any]:
@@ -1339,6 +1343,100 @@ def add_matter_external_position(
         for document in result.documents:
             record_external_position_document(position=position, document=document, actor=author)
         return result
+
+
+@transaction.atomic
+def record_position_reply(
+    *,
+    matter: Matter,
+    author: Any,
+    provenance: Any,
+    organisation: Any = None,
+    organisation_name: str = "",
+    source_label: str = "",
+    url: str = "",
+    stated_on: Any = None,
+    stated_on_precision: str = DatePrecision.EXACT.value,
+    summary: str = "",
+    lawyer_note: str = "",
+    source_is_member: bool = False,
+    engagement: Any = None,
+    uploads: Sequence[Any] = (),
+    once_token: Any = None,
+) -> WorkspaceResult:
+    """`+ Kaasamine · Lisa tagasiside` — one position, and the round it answers.
+
+    The whole save behind the form, as one use case rather than as a sequence
+    a view composes (JARCH-001): whoever records a reply gets the same
+    guarantees as the form does, in the same order, in one transaction.
+
+    1. **The institution.** ``organisation`` is the picker's chosen answer and
+       ``organisation_name`` the name somebody typed; which of the two wins is
+       `resolve_addressee`'s rule. Neither given is received feedback that
+       names nobody — a record since docs/adr/0101, so `resolve_addressee` is
+       not asked at all (it would refuse two empty answers). Resolved inside
+       this transaction, so any refusal below leaves no new institution
+       behind (docs/adr/0073, docs/adr/0084 §4).
+    2. **A repeat is refused** when a round is named
+       (`engagement_replies.refuse_repeated_reply`, under the Matter's lock):
+       a finished round takes later answers, so a second press of `Salvesta`
+       must not file the same one twice, while a second organisation's
+       identical answer is its own (docs/adr/0167 §2, docs/adr/0170 §4).
+    3. **The record** — `add_matter_external_position`, which refuses a
+       closed Matter under the same lock and spends the drawn form's
+       ``once_token``.
+    4. **The wait.** The first answer to an open round finishes its wait
+       through the canonical close; a round already finished — by an earlier
+       answer, `Lõpeta kaasamine` or somebody else meanwhile — keeps its
+       closure and simply gains this answer
+       (`engagement_replies.finish_wait_on_reply`, docs/adr/0142 §B,
+       docs/adr/0167 §2). A standalone position (no ``engagement``) touches no
+       wait. Nothing else is completed: no `NextAction` is inferred from
+       feedback.
+
+    The provenance is the caller's stated answer, never inferred here
+    (docs/adr/0091 §3.2); the form fixes it at RECEIVED for a linked round.
+    """
+    from app.matters.services import resolve_addressee
+
+    organisation_name = (organisation_name or "").strip()
+    resolved = (
+        resolve_addressee(chosen=organisation, typed_name=organisation_name)
+        if (organisation is not None or organisation_name)
+        else None
+    )
+    if engagement is not None:
+        engagement_replies.refuse_repeated_reply(
+            matter=matter,
+            engagement=engagement,
+            organisation=resolved,
+            source_is_member=source_is_member,
+            summary=summary,
+            url=url,
+            stated_on=stated_on,
+            uploads=uploads or (),
+        )
+    result = add_matter_external_position(
+        matter=matter,
+        author=author,
+        organisation=resolved,
+        provenance=provenance,
+        source_label=source_label,
+        url=url,
+        stated_on=stated_on,
+        stated_on_precision=stated_on_precision,
+        summary=summary,
+        lawyer_note=lawyer_note,
+        source_is_member=source_is_member,
+        engagement=engagement,
+        uploads=uploads,
+        once_token=once_token,
+    )
+    if engagement is not None:
+        result.wait_finished = engagement_replies.finish_wait_on_reply(
+            engagement=engagement, actor=author
+        )
+    return result
 
 
 #: A `Koja arvamus` is recorded with the bytes that went out, or not at all.
