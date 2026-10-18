@@ -296,6 +296,196 @@ def test_changes_need_a_recent_proof_of_identity(client, settings):
     assert has_capability(specialist, Capability.VIEW_DEPARTMENT_MANAGEMENT)
 
 
+def _stale(client, settings):
+    """Age this session's last proof of identity past the re-authentication window."""
+    session = client.session
+    session[local_auth.SESSION_STRONG_AT] = (
+        timezone.now() - timedelta(seconds=settings.LOCAL_AUTH_REAUTH_SECONDS + 60)
+    ).isoformat()
+    session.save()
+
+
+def _everything_an_action_could_change():
+    """A route-agnostic picture of what any of the seven changes would touch."""
+    from django.core import mail
+
+    from app.accounts.admin_views import HISTORY_EVENTS
+    from app.accounts.models import AccountCredentialToken, TotpDevice
+
+    return {
+        "accounts": sorted(
+            User.objects.values_list(
+                "pk", "upn", "email", "display_name", "provisioning_state", "is_active", "role"
+            )
+        ),
+        "second_factors": sorted(TotpDevice.objects.values_list("user_id", flat=True)),
+        "links": sorted(
+            AccountCredentialToken.objects.values_list("pk", "used_at", "invalidated_at")
+        ),
+        "mail": len(mail.outbox),
+        "history": SecurityAuditEvent.objects.filter(event_type__in=HISTORY_EVENTS).count(),
+    }
+
+
+def _pending():
+    return factories.UserFactory(
+        upn="ootel.kolleeg@koda.ee",
+        email="ootel.kolleeg@koda.ee",
+        is_active=False,
+        provisioning_state=ProvisioningState.PENDING,
+    ), {}
+
+
+def _invited():
+    from app.accounts import tokens
+    from app.accounts.enums import CredentialTokenPurpose
+
+    invited = factories.UserFactory(
+        upn="kutsutud.kolleeg@koda.ee",
+        email="kutsutud.kolleeg@koda.ee",
+        is_active=False,
+        provisioning_state=ProvisioningState.INVITED,
+    )
+    tokens.issue(user=invited, purpose=CredentialTokenPurpose.ACTIVATION)
+    return invited, {}
+
+
+def _active():
+    return person()[0], {"reason": "Lahkus"}
+
+
+def _switched_off():
+    return person(is_active=False)[0], {}
+
+
+def _with_second_factor():
+    return person(totp=True)[0], {}
+
+
+def _nobody_yet():
+    return None, {
+        "display_name": "Uus Kolleeg",
+        "email": "uus.kolleeg@koda.ee",
+        "role": "SPECIALIST",
+    }
+
+
+def _placeholder():
+    return factories.UserFactory(upn="ireen", email=""), {"email": "ireen.x@koda.ee"}
+
+
+def _invitation_sent(target):
+    target.refresh_from_db()
+    return target.provisioning_state == ProvisioningState.INVITED
+
+
+def _invitation_cancelled(target):
+    from app.accounts import tokens
+    from app.accounts.enums import CredentialTokenPurpose
+
+    target.refresh_from_db()
+    return target.provisioning_state == ProvisioningState.PENDING and not tokens.has_outstanding(
+        user=target, purpose=CredentialTokenPurpose.ACTIVATION
+    )
+
+
+def _switched_off_now(target):
+    target.refresh_from_db()
+    return not target.is_active
+
+
+def _switched_on_now(target):
+    target.refresh_from_db()
+    return target.is_active
+
+
+def _second_factor_gone(target):
+    from app.accounts.models import TotpDevice
+
+    return not TotpDevice.objects.filter(user=target).exists()
+
+
+def _account_created(_target):
+    return User.objects.filter(upn="uus.kolleeg@koda.ee").exists()
+
+
+def _address_changed(target):
+    target.refresh_from_db()
+    return target.upn == "ireen.x@koda.ee"
+
+
+#: Every POST on Haldus → Kasutajad that changes something, besides the account
+#: form itself (above): the route, the world it needs, the page the person is
+#: sent back to after proving themselves again, and what the change does once
+#: the proof is fresh. `admin_views.fresh_proof_required` guards the first five;
+#: `user_create` and `change_email` carry their own check.
+STEP_UP_ROUTES = [
+    ("account_admin:send_link", _pending, "account_admin:detail", _invitation_sent),
+    ("account_admin:cancel_invitation", _invited, "account_admin:detail", _invitation_cancelled),
+    ("account_admin:deactivate", _active, "account_admin:detail", _switched_off_now),
+    ("account_admin:reactivate", _switched_off, "account_admin:detail", _switched_on_now),
+    (
+        "account_admin:reset_second_factor",
+        _with_second_factor,
+        "account_admin:detail",
+        _second_factor_gone,
+    ),
+    ("account_admin:create", _nobody_yet, "account_admin:create", _account_created),
+    ("account_admin:change_email", _placeholder, "account_admin:change_email", _address_changed),
+]
+
+
+def test_the_step_up_table_names_every_changing_route():
+    """A new POST route on the administration pages is added to the table above."""
+    from app.accounts import admin_urls
+
+    changing = {
+        f"account_admin:{pattern.name}"
+        for pattern in admin_urls.urlpatterns
+        if pattern.name not in ("list", "detail")
+    }
+    assert changing == {route for route, *_ in STEP_UP_ROUTES}
+
+
+@pytest.mark.parametrize(
+    ("route", "world", "back_to", "changed"),
+    STEP_UP_ROUTES,
+    ids=[route.split(":")[1] for route, *_ in STEP_UP_ROUTES],
+)
+def test_every_change_needs_a_recent_proof_of_identity(
+    client, settings, route, world, back_to, changed
+):
+    from app.accounts.local_views import _reauthenticate_then
+
+    admin, secret = administrator(client)
+    target, data = world()
+    kwargs = {"pk": target.pk} if target is not None else {}
+    url = reverse(route, kwargs=kwargs)
+    back = reverse(back_to, kwargs=kwargs)
+    _stale(client, settings)
+    before = _everything_an_action_could_change()
+
+    asked = client.post(url, data)
+
+    assert asked.status_code == 302
+    assert asked["Location"] == _reauthenticate_then(back)
+    assert _everything_an_action_could_change() == before
+    assert not changed(target)
+
+    # The same request is a valid one: once the proof is fresh it goes through.
+    # Without this half a refusal for any other reason would pass the test.
+    proved = client.post(
+        reverse("accounts:reauthenticate"),
+        {"password": PASSWORD, "code": code(secret, admin), "next": back},
+    )
+    assert proved["Location"] == back
+    done = client.post(url, data)
+
+    assert done.status_code == 302
+    assert not done["Location"].startswith(reverse("accounts:reauthenticate"))
+    assert changed(target)
+
+
 def test_a_wrong_reauthentication_changes_nothing(client, settings):
     _admin, _ = administrator(client)
     session = client.session

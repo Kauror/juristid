@@ -250,7 +250,7 @@ not permission to skip the target-image preflight at 0.3.
 | | Situation | Answer |
 | --- | --- | --- |
 | 5.1 | The release is wrong | Redeploy the previous commit — `deploy/unraid-main/README.md` §"Rolling back" |
-| 5.2 | A migration is wrong | Restore; a schema change is not undone by redeploying code |
+| 5.2 | A migration is wrong | Restore; a schema change is not undone by redeploying code. **A backward migrate across `matters.0049` drops Muu links** — every `Entry.url` and `EntryRevision.url` goes with the columns and does not come back when migrating forward (`deploy/unraid-main/RECOVERY.md` §"A backward migrate across `matters.0049`") |
 | 5.3 | A data operation is wrong | Restore from the set taken at gate 2, then re-plan |
 | 5.4 | Evidence is missing | `check_evidence_integrity` names the rows; restore the evidence tree |
 | 5.5 | Search is wrong | Rebuild. It is derived, and rebuilding it is not a recovery event |

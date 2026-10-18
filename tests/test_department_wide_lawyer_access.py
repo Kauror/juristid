@@ -179,7 +179,8 @@ def test_a_lawyer_writes_a_colleagues_restricted_matter_as_they_would_a_normal_o
         saved = client.post(
             reverse("matters:matter_edit", kwargs={"pk": matter.pk}), {"title": new_title}
         )
-        assert saved.status_code in (200, 302), saved.status_code
+        assert saved.status_code == 302, saved.status_code
+        assert saved["Location"] == reverse("matters:matter_detail", kwargs={"pk": matter.pk})
         matter.refresh_from_db()
         assert matter.title == new_title
 

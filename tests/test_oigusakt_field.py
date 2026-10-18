@@ -292,7 +292,7 @@ def test_a_matter_holds_a_track_and_an_instrument_at_once(signed_in, specialist)
     matter.legal_instruments.set([instrument("seadus")])
 
     response = signed_in.post(edit_url(matter), edit_payload(matter))
-    assert response.status_code in (302, 200), response.status_code
+    assert response.status_code == 302, response.status_code
 
     matter.refresh_from_db()
     assert matter.track == Track.NATIONAL_TRANSPOSITION

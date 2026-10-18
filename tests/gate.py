@@ -54,3 +54,37 @@ def apply_shared_gate(settings: Any, password: str = PASSWORD) -> Any:
     settings.DEV_LOGIN_ENABLED = False
     settings.LOGIN_URL = "accounts:choose_persona"
     return settings
+
+
+def business_rows() -> dict[str, int]:
+    """How many business records exist — what a refused write must leave as it was."""
+    from app.audit.models import ChangeEvent
+    from app.documents.models import Document
+    from app.matters.models import Entry, MatterEngagement, MatterExternalPosition
+    from app.workflow.models import NextAction
+
+    return {
+        "entries": Entry.objects.count(),
+        "positions": MatterExternalPosition.objects.count(),
+        "engagements": MatterEngagement.objects.count(),
+        "documents": Document.objects.count(),
+        "actions": NextAction.objects.count(),
+        "events": ChangeEvent.objects.count(),
+    }
+
+
+def assert_asked_to_choose_a_persona(response: Any) -> None:
+    """The exact refusal a gate visitor with no persona gets from an htmx write.
+
+    `login_required` redirects to the persona choice and
+    `HtmxSignInMiddleware` turns that redirect into a 401 naming where to go
+    (ENG-012). A 500, a 403 or a 404 is a different defect, so `!= 200` is not
+    enough.
+    """
+    from django.urls import reverse
+
+    from app.core.middleware import FAILURE_HEADER, SIGN_IN_HEADER
+
+    assert response.status_code == 401, response.status_code
+    assert response[FAILURE_HEADER] == "sign-in"
+    assert response[SIGN_IN_HEADER].startswith(reverse("accounts:choose_persona"))

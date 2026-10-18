@@ -56,7 +56,7 @@ from app.matters.services import (
 from app.matters.workspace import ALREADY_SAVED, add_matter_external_position
 from app.search.services import result_count
 from tests import factories
-from tests.gate import PASSWORD, apply_shared_gate
+from tests.gate import PASSWORD, apply_shared_gate, assert_asked_to_choose_a_persona, business_rows
 from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
@@ -647,11 +647,13 @@ def test_the_gate_visitor_writes_nothing(normal_matter, organisation, settings):
     apply_shared_gate(settings)
     gate = Client()
     assert gate.post(reverse("accounts:shared_gate"), {"password": PASSWORD}).status_code == 302
+    before = business_rows()
 
     response = _post(gate, normal_matter, _payload(organisation))
 
-    assert response.status_code != 200
+    assert_asked_to_choose_a_persona(response)
     assert not MatterExternalPosition.objects.exists()
+    assert business_rows() == before
 
 
 def test_a_reply_to_a_restricted_round_is_restricted_and_unsearchable_for_a_reader(
@@ -703,6 +705,8 @@ def test_the_old_routes_are_gone(name, normal_matter):
 def test_a_stale_tab_post_to_an_old_route_writes_nothing(
     signed_in, normal_matter, organisation, path
 ):
+    before = business_rows()
+
     response = signed_in.post(
         f"/teemad/{normal_matter.pk}/{path}",
         {"organisation": str(organisation.pk), "summary": "Vana vahekaart."},
@@ -710,6 +714,16 @@ def test_a_stale_tab_post_to_an_old_route_writes_nothing(
 
     assert response.status_code == 404
     assert not MatterExternalPosition.objects.exists()
+    assert business_rows() == before
+
+
+@pytest.mark.parametrize("path", ["lisa/tagasiside/", "lisa/valine-seisukoht/"])
+def test_an_old_bookmark_to_a_retired_route_is_not_found(signed_in, normal_matter, path):
+    """A GET as well as a POST: no old panel is drawn, and nothing redirects to a new door."""
+    response = signed_in.get(f"/teemad/{normal_matter.pk}/{path}")
+
+    assert response.status_code == 404
+    assert "Location" not in response
 
 
 def test_the_opinion_family_keeps_only_koja_arvamus(signed_in, normal_matter):

@@ -367,8 +367,8 @@ def test_an_administrator_who_is_named_individually_may_file_a_letter(
         link_url(binary), {"action": "link", "viide": normal_matter.display_reference}
     )
 
-    assert response.status_code in (200, 302)
-    assert OpinionArchiveMatterLink.objects.count() == 1
+    assert response.status_code == 302
+    assert OpinionArchiveMatterLink.objects.get().matter == normal_matter
 
 
 @pytest.mark.parametrize("role", [UserRole.ADMINISTRATOR, UserRole.READER])

@@ -442,19 +442,27 @@ def test_a_crafted_post_to_the_edit_route_cannot_restrict_a_matter(signed_in, sp
 
 
 def test_a_crafted_post_to_intake_cannot_restrict_what_it_files(signed_in, specialist):
-    """The same rule on the other creation path."""
+    """The same rule on the other creation path.
+
+    The post carries a file, so the intake saves it: without one the page
+    refused the post with a 400 and the loop below checked no Matter at all.
+    """
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
     response = signed_in.post(
         INTAKE,
         {
             "title": "Saabunud kiri",
             "visibility": Visibility.RESTRICTED,
             "received_date": "1.9.2026",
+            "uploads": SimpleUploadedFile("kiri.pdf", b"%PDF-1.4 saabunud kiri"),
         },
     )
 
-    assert response.status_code in (200, 302, 400)
-    for matter in Matter.objects.filter(title="Saabunud kiri"):
-        assert matter.visibility == Visibility.NORMAL
+    assert response.status_code == 302
+    matter = Matter.objects.get(title="Saabunud kiri")
+    assert response["Location"] == reverse("matters:matter_detail", kwargs={"pk": matter.pk})
+    assert matter.visibility == Visibility.NORMAL
 
 
 def test_the_inline_endpoint_answers_404_for_visibility(signed_in, specialist):
