@@ -306,3 +306,42 @@ one service.
 - `refresh_matter_from_register`, the final cutover's field refresh, still
   writes the owner column directly and moves no step; it is an operator
   command over imported Matters and is not changed here.
+
+## Amendment, 2026-10-18 — the calendar is a dialog with a day grid, and its trigger leaves the label (JUX-008)
+
+§6 kept the calendar open across a month change. The 2026-10-17 audit (JUX-008,
+and the datepicker half of JUX-007) found it still poor for keyboard and
+screen-reader use, everywhere in the application:
+- every day was its own Tab stop, 31 between the month arrows and the next
+  field, and no arrow key did anything;
+- the panel had no role or name, and the days were not a grid;
+- after a month arrow, focus fell to `<body>`, because the rebuild detached the
+  button that was pressed;
+- the trigger sat inside the field's `<label>`, so a date box was announced as
+  «Millal? (kohustuslik) Ava kalender»;
+- Escape closed the calendar without marking the key as handled, so a
+  surrounding panel that closes on Escape closed as well.
+
+`static/js/app.js` now follows the date-picker dialog pattern:
+- **The panel** is `role="dialog"`, named «Vali kuupäev». **The month** is a
+  `role="grid"` named by its title, with week rows (`display: contents`, so the
+  seven-column layout and target sizes are unchanged), weekday column headers
+  and a `role="gridcell"` around each day button.
+- **The days are one Tab stop.** Only the active day has `tabindex="0"`.
+  Left/Right move a day, Up/Down a week, Home/End go to the week's Monday and
+  Sunday, and PageUp/PageDown move a month (a year with Shift). A move past the
+  month's edge redraws that month. Enter or Space chooses the day, through the
+  button's own click.
+- **Opening** puts focus on the chosen day, else today, else the 1st.
+- **A month arrow keeps focus**: the redrawn arrow of the same direction takes it.
+- **Escape** closes only the calendar, returns focus to the box and calls
+  `preventDefault()`. The surrounding `LISA TEEMALE` panel's own Escape handler
+  is changed to respect that in a separate PR (JUX-007).
+- **The trigger leaves the label.** A `<label>` that wraps a date box becomes a
+  `<span>` with the same classes and attributes, and the label's text becomes a
+  `<label for>` naming the box. When that text is one element, that element
+  turns into the label, so the box model does not change. The accessible name
+  is now the label alone. With scripting off nothing changes, and the server's
+  label stands.
+
+Pinned in `e2e/test_datepicker_keyboard.py`.

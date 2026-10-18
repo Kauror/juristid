@@ -6374,6 +6374,24 @@ fieldset,
   display: block;
 }
 
+/* A week is a `role="row"` for the grid's semantics and nothing at all for its
+ * layout: the seven-column grid above still places every cell (JUX-008). */
+.datepicker__row {
+  display: contents;
+}
+
+/* The day's `role="gridcell"`, which the button fills exactly as it filled its
+ * grid column when it was the column's item itself. */
+.datepicker__cell {
+  display: flex;
+  min-width: 0;
+}
+
+.datepicker__cell > .datepicker__day {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .datepicker__day {
   padding: var(--spacing-1) 0;
   border: 1px solid transparent;

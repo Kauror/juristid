@@ -1997,8 +1997,42 @@
     }
   }
 
-  function buildCalendar(panel, input, visible) {
+  function daysInMonth(year, month) {
+    return new Date(year, month + 1, 0).getDate();
+  }
+
+  /* The same day `months` away, or the last day of that month when it is
+     shorter: PageDown from 31 January is 28 February, not 3 March. */
+  function addMonths(date, months) {
+    var first = new Date(date.getFullYear(), date.getMonth() + months, 1);
+    var last = daysInMonth(first.getFullYear(), first.getMonth());
+    return new Date(first.getFullYear(), first.getMonth(), Math.min(date.getDate(), last));
+  }
+
+  function addDays(date, days) {
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+  }
+
+  var calendarCount = 0;
+
+  /* ---- The calendar as a dialog with a day grid (2026-10-17 audit, JUX-008)
+   * The panel is a labelled `role="dialog"`; the month is a `role="grid"`
+   * named by its title, in week rows with the weekday names as column headers.
+   * The days are **one Tab stop**: only the active day has `tabindex="0"`, and
+   * the arrow keys move it — Left/Right a day, Up/Down a week, Home/End to the
+   * week's Monday and Sunday, PageUp/PageDown a month (with Shift, a year).
+   * Moving past the month's edge redraws that month and keeps going. Enter or
+   * Space on a day is the button's own click, so choosing is unchanged.
+   *
+   * The rows are `display: contents`, so the seven-column CSS grid and every
+   * measurement in e2e/test_datepicker_target_size.py stay as they were. */
+  function buildCalendar(panel, input, visible, active) {
     panel.textContent = "";
+    if (!panel.dataset.calendarId) {
+      calendarCount += 1;
+      panel.dataset.calendarId = "kalender-" + calendarCount;
+    }
+    var titleId = panel.dataset.calendarId + "-kuu";
 
     var head = document.createElement("div");
     head.className = "datepicker__head";
@@ -2008,9 +2042,11 @@
     previous.className = "datepicker__nav";
     previous.textContent = "‹";
     previous.setAttribute("aria-label", "Eelmine kuu");
+    previous.setAttribute("data-datepicker-nav", "previous");
 
     var title = document.createElement("span");
     title.className = "datepicker__title";
+    title.id = titleId;
     title.setAttribute("aria-live", "polite");
     title.textContent = MONTHS[visible.getMonth()] + " " + visible.getFullYear();
 
@@ -2019,6 +2055,7 @@
     next.className = "datepicker__nav";
     next.textContent = "›";
     next.setAttribute("aria-label", "Järgmine kuu");
+    next.setAttribute("data-datepicker-nav", "next");
 
     /* `stopPropagation`, and it is load-bearing rather than defensive.
      *
@@ -2032,15 +2069,28 @@
      * Keeping the event inside the calendar is the honest fix: navigating a
      * month is not a click outside the calendar and should never have been
      * offered to a listener whose job is to notice one. The document listener
-     * is hardened separately, so neither depends on the other. */
-    previous.addEventListener("click", function (event) {
-      event.stopPropagation();
-      buildCalendar(panel, input, new Date(visible.getFullYear(), visible.getMonth() - 1, 1));
-    });
-    next.addEventListener("click", function (event) {
-      event.stopPropagation();
-      buildCalendar(panel, input, new Date(visible.getFullYear(), visible.getMonth() + 1, 1));
-    });
+     * is hardened separately, so neither depends on the other.
+     *
+     * **Focus goes back to the arrow that was pressed.** The rebuild detaches
+     * it, and focus on a detached node falls to `<body>` — a keyboard user who
+     * pressed «Järgmine kuu» was thrown out of the calendar (JUX-008). The new
+     * arrow of the same direction takes it. */
+    var navigate = function (direction, months) {
+      return function (event) {
+        event.stopPropagation();
+        buildCalendar(
+          panel,
+          input,
+          new Date(visible.getFullYear(), visible.getMonth() + months, 1)
+        );
+        var again = panel.querySelector('[data-datepicker-nav="' + direction + '"]');
+        if (again) {
+          again.focus();
+        }
+      };
+    };
+    previous.addEventListener("click", navigate("previous", -1));
+    next.addEventListener("click", navigate("next", 1));
 
     head.appendChild(previous);
     head.appendChild(title);
@@ -2049,24 +2099,53 @@
 
     var grid = document.createElement("div");
     grid.className = "datepicker__grid";
+    grid.setAttribute("role", "grid");
+    grid.setAttribute("aria-labelledby", titleId);
 
+    var newRow = function () {
+      var row = document.createElement("div");
+      row.className = "datepicker__row";
+      row.setAttribute("role", "row");
+      grid.appendChild(row);
+      return row;
+    };
+
+    var headings = newRow();
     WEEKDAYS.forEach(function (short, index) {
-      var cell = document.createElement("span");
-      cell.className = "datepicker__weekday";
+      var heading = document.createElement("span");
+      heading.className = "datepicker__weekday";
+      heading.setAttribute("role", "columnheader");
       /* The single letter is what fits a seven-column grid; the full weekday is
          what a screen reader should say. Both, rather than one chosen for
          everybody. */
-      cell.setAttribute("aria-label", WEEKDAY_NAMES[index]);
-      cell.title = WEEKDAY_NAMES[index];
-      cell.textContent = short;
-      grid.appendChild(cell);
+      heading.setAttribute("aria-label", WEEKDAY_NAMES[index]);
+      heading.title = WEEKDAY_NAMES[index];
+      heading.textContent = short;
+      headings.appendChild(heading);
     });
 
     var first = new Date(visible.getFullYear(), visible.getMonth(), 1);
     var lead = mondayIndex(first);
-    var days = new Date(visible.getFullYear(), visible.getMonth() + 1, 0).getDate();
+    var days = daysInMonth(visible.getFullYear(), visible.getMonth());
     var selected = parseEstonian(input.value);
     var today = new Date();
+    var inMonth = function (date) {
+      return Boolean(
+        date &&
+          date.getFullYear() === visible.getFullYear() &&
+          date.getMonth() === visible.getMonth()
+      );
+    };
+    /* The one day in the Tab order: the one being moved to, else the chosen
+       one, else today, else the 1st. */
+    var current = first;
+    if (inMonth(active)) {
+      current = active;
+    } else if (inMonth(selected)) {
+      current = selected;
+    } else if (inMonth(today)) {
+      current = today;
+    }
     /* One informational day the calendar points at — `Tagasisidet ootame kuni`
        shows the Matter's `Arvamuse tähtaeg` this way. It is never chosen for
        the person and never limits what they may choose: the marked day is an
@@ -2075,10 +2154,12 @@
     var mark = parseEstonian(input.getAttribute("data-datepicker-mark") || "");
     var markLabel = input.getAttribute("data-datepicker-mark-label") || "";
 
+    var week = newRow();
     for (var blank = 0; blank < lead; blank += 1) {
       var filler = document.createElement("span");
       filler.className = "datepicker__blank";
-      grid.appendChild(filler);
+      filler.setAttribute("role", "gridcell");
+      week.appendChild(filler);
     }
 
     var choose = function (chosen) {
@@ -2097,17 +2178,26 @@
 
     for (var day = 1; day <= days; day += 1) {
       var date = new Date(visible.getFullYear(), visible.getMonth(), day);
+      if (day > 1 && mondayIndex(date) === 0) {
+        week = newRow();
+      }
+      var cell = document.createElement("span");
+      cell.className = "datepicker__cell";
+      cell.setAttribute("role", "gridcell");
       var button = document.createElement("button");
       button.type = "button";
       button.className = "datepicker__day";
       button.textContent = String(day);
+      button.setAttribute("data-datepicker-day", String(day));
       button.setAttribute("aria-label", formatEstonian(date));
+      button.tabIndex = sameDay(date, current) ? 0 : -1;
       if (sameDay(date, today)) {
         button.classList.add("is-today");
       }
       if (selected && sameDay(date, selected)) {
         button.classList.add("is-selected");
         button.setAttribute("aria-current", "date");
+        cell.setAttribute("aria-selected", "true");
       }
       if (mark && markLabel && sameDay(date, mark)) {
         button.classList.add("is-marked");
@@ -2115,8 +2205,50 @@
         button.setAttribute("aria-label", formatEstonian(date) + ", " + markLabel);
       }
       button.addEventListener("click", choose(date));
-      grid.appendChild(button);
+      cell.appendChild(button);
+      week.appendChild(cell);
     }
+
+    grid.addEventListener("keydown", function (event) {
+      var from = event.target && event.target.getAttribute
+        ? event.target.getAttribute("data-datepicker-day")
+        : null;
+      if (!from) {
+        return;
+      }
+      var on = new Date(visible.getFullYear(), visible.getMonth(), parseInt(from, 10));
+      var to = null;
+      switch (event.key) {
+        case "ArrowLeft":
+          to = addDays(on, -1);
+          break;
+        case "ArrowRight":
+          to = addDays(on, 1);
+          break;
+        case "ArrowUp":
+          to = addDays(on, -7);
+          break;
+        case "ArrowDown":
+          to = addDays(on, 7);
+          break;
+        case "Home":
+          to = addDays(on, -mondayIndex(on));
+          break;
+        case "End":
+          to = addDays(on, 6 - mondayIndex(on));
+          break;
+        case "PageUp":
+          to = addMonths(on, event.shiftKey ? -12 : -1);
+          break;
+        case "PageDown":
+          to = addMonths(on, event.shiftKey ? 12 : 1);
+          break;
+        default:
+          return;
+      }
+      event.preventDefault();
+      focusDay(panel, input, visible, to);
+    });
 
     panel.appendChild(grid);
 
@@ -2133,6 +2265,100 @@
       legend.appendChild(document.createTextNode(markLabel + " " + formatEstonian(mark)));
       panel.appendChild(legend);
     }
+  }
+
+  /* Move the grid's one Tab stop to `date` and focus it, redrawing the month
+     first when the date is in another one. */
+  function focusDay(panel, input, visible, date) {
+    if (
+      date.getFullYear() !== visible.getFullYear() ||
+      date.getMonth() !== visible.getMonth()
+    ) {
+      buildCalendar(panel, input, new Date(date.getFullYear(), date.getMonth(), 1), date);
+    } else {
+      panel.querySelectorAll(".datepicker__day").forEach(function (day) {
+        day.tabIndex = -1;
+      });
+    }
+    var target = panel.querySelector(
+      '.datepicker__day[data-datepicker-day="' + date.getDate() + '"]'
+    );
+    if (target) {
+      target.tabIndex = 0;
+      target.focus();
+    }
+  }
+
+  /* The day that holds the Tab stop, focused — on opening the calendar. */
+  function focusActiveDay(panel) {
+    var active = panel.querySelector('.datepicker__day[tabindex="0"]');
+    if (active) {
+      active.focus();
+    }
+  }
+
+  /* ---- The trigger outside the label (JUX-008) ---------------------------
+   * The date box is wrapped where it stands, and where it stands is usually
+   * inside its `<label>` — so the 📅 button ended up in the label too. A
+   * label's content is the box's accessible name, which made every date field
+   * «Millal? (kohustuslik) Ava kalender», and a label holding a second
+   * labelable element is not valid HTML.
+   *
+   * So a label that wraps a date box becomes a `<span>` with the same classes
+   * and attributes — the layout is the classes', not the tag's — and the
+   * label's text becomes a `<label for>` naming the box. When that text is one
+   * element (the usual `<span class="cx-f__lab">`), that element itself turns
+   * into the label, so the box model is unchanged. Without scripting nothing
+   * happens and the server's label stands. */
+  function liftOutOfLabel(input) {
+    var label = input.parentNode ? input.parentNode.closest("label") : null;
+    if (!label || !input.id || label.querySelectorAll("input:not([type=hidden]), select, textarea").length > 1) {
+      return;
+    }
+    var holderChild = input;
+    while (holderChild.parentNode !== label) {
+      holderChild = holderChild.parentNode;
+    }
+    var head = [];
+    for (var node = label.firstChild; node && node !== holderChild; node = node.nextSibling) {
+      if (node.nodeType !== Node.TEXT_NODE || node.textContent.trim()) {
+        head.push(node);
+      }
+    }
+    if (!head.length) {
+      return;
+    }
+
+    var holder = document.createElement("span");
+    Array.prototype.forEach.call(label.attributes, function (attribute) {
+      if (attribute.name !== "for") {
+        holder.setAttribute(attribute.name, attribute.value);
+      }
+    });
+
+    var name;
+    if (head.length === 1 && head[0].nodeType === Node.ELEMENT_NODE) {
+      name = document.createElement("label");
+      Array.prototype.forEach.call(head[0].attributes, function (attribute) {
+        name.setAttribute(attribute.name, attribute.value);
+      });
+      while (head[0].firstChild) {
+        name.appendChild(head[0].firstChild);
+      }
+      label.replaceChild(name, head[0]);
+    } else {
+      name = document.createElement("label");
+      label.insertBefore(name, head[0]);
+      head.forEach(function (part) {
+        name.appendChild(part);
+      });
+    }
+    name.htmlFor = input.id;
+
+    while (label.firstChild) {
+      holder.appendChild(label.firstChild);
+    }
+    label.parentNode.replaceChild(holder, label);
   }
 
   /* ---- An implausibly old date says so, and saves anyway ----------------
@@ -2230,14 +2456,21 @@
 
       var panel = document.createElement("div");
       panel.className = "datepicker__panel";
+      panel.setAttribute("role", "dialog");
+      panel.setAttribute("aria-label", "Vali kuupäev");
       panel.hidden = true;
       wrap.appendChild(panel);
 
+      liftOutOfLabel(input);
+
+      /* Opening puts the cursor on the day the arrow keys start from — the
+         chosen one, else today — as the dialog pattern does (JUX-008). */
       trigger.addEventListener("click", function () {
         if (panel.hidden) {
           buildCalendar(panel, input, parseEstonian(input.value) || new Date());
           panel.hidden = false;
           trigger.setAttribute("aria-expanded", "true");
+          focusActiveDay(panel);
         } else {
           closePicker(panel);
         }
@@ -2245,9 +2478,14 @@
 
       /* Escape closes it and returns focus to the box, and a click anywhere
          else closes it too — a floating panel that stays open until its own
-         button is clicked again is the disclosure people report as stuck. */
+         button is clicked again is the disclosure people report as stuck.
+
+         `preventDefault()` says the key has been handled: Escape here closes
+         the calendar and nothing else, so a surrounding panel that also closes
+         on Escape can leave itself open (2026-10-17 audit, JUX-007). */
       wrap.addEventListener("keydown", function (event) {
         if (event.key === "Escape" && !panel.hidden) {
+          event.preventDefault();
           closePicker(panel);
           input.focus();
         }
