@@ -38,10 +38,10 @@ from typing import Any
 from django.urls import reverse
 from django.utils import timezone
 
-from app.core.dates import format_estonian_date
+from app.core.dates import format_estonian_date, start_of_local_day
 from app.intelligence.enums import FactStatus
 from app.matters import work_items as wi
-from app.matters.activity import BASIS_LABELS, activity_of, annotate_last_activity
+from app.matters.activity import BASIS_LABELS, activity_of, annotate_last_activity, annotated_slice
 from app.matters.dashboard import drafting_matters
 from app.matters.models import Entry, Matter
 from app.matters.next_step import milestone_is_upcoming, milestone_order
@@ -70,6 +70,16 @@ ENTRY_LIMIT = 6
 #: How many portfolio rows are on screen before the rest go behind
 #: «Näita veel N ▾». The rest are the same list, sliced.
 PORTFOLIO_VISIBLE = 6
+
+#: How many portfolio rows the page renders at all, preview and disclosure
+#: together (2026-10-17 audit, JPERF-005). A desk with four thousand open files
+#: rendered four thousand rows — 2.2 MB of HTML behind one «Näita veel». Past
+#: this, the page says how many it shows and opens the whole list in the
+#: register, the same population `register_url` names. Every count on the page —
+#: the heading, the chips, the strip — is still the whole desk, never the rows
+#: rendered. Two hundred is far beyond a working desk, so on an ordinary desk
+#: nothing changes; `DIGEST_LIMIT` caps Osakond's *Tehtud* at the same figure.
+PORTFOLIO_LIMIT = 200
 
 #: How many changed Matters the rail names.
 CHANGE_LIMIT = 5
@@ -196,12 +206,12 @@ def quiet_matters(
     rail block showing "viimane tegevus 44 p tagasi" for eight rows must not
     fetch eight two-hundred-entry chronologies to do it (§27).
     """
-    queryset = annotate_last_activity(
-        wi.matters_without_action(user, owner=subject).select_related("stage", "owner"), user
-    )
+    queryset = wi.matters_without_action(user, owner=subject).select_related("stage", "owner")
     total = queryset.count()
     rows: list[QuietMatter] = []
-    for matter in queryset.order_by("updated_at")[:limit]:
+    # The rail's eight rows first, then their annotations (`annotated_slice`,
+    # 2026-10-17 audit, JPERF-005): the same rows in the same order.
+    for matter in annotated_slice(queryset, user, "updated_at", limit=limit):
         # `activity_of` reads the annotations and never queries, which is what
         # makes eight rows eight reads of memory rather than eight timelines.
         activity = activity_of(matter)
@@ -366,10 +376,23 @@ class Portfolio:
     register_url: str
     #: How many rows are on screen; the rest are the same list, sliced.
     visible: int = PORTFOLIO_VISIBLE
+    #: How many rows the chosen view holds before `PORTFOLIO_LIMIT` capped
+    #: ``rows``. ``None`` where nothing was capped.
+    selected_total: int | None = None
 
     @property
     def count(self) -> int:
+        return len(self.rows) if self.selected_total is None else self.selected_total
+
+    @property
+    def shown(self) -> int:
+        """How many rows the page renders, preview and disclosure together."""
         return len(self.rows)
+
+    @property
+    def beyond_cap(self) -> int:
+        """How many rows of the chosen view the page does not render at all."""
+        return self.count - len(self.rows)
 
     @property
     def preview(self) -> list[PortfolioRow]:
@@ -505,11 +528,14 @@ def build_portfolio(
     return Portfolio(
         view=view,
         chips=chips,
-        rows=selected,
+        # Sorted first, capped after: the rows rendered are the head of the
+        # same order, and the count beside them is the whole view.
+        rows=selected[:PORTFOLIO_LIMIT],
         all_rows=rows,
         total=len(rows),
         register_url=register,
         visible=PORTFOLIO_VISIBLE,
+        selected_total=len(selected),
     )
 
 
@@ -535,7 +561,9 @@ class ChangeRow:
     label: str
 
 
-def recent_changes(user: Any, subject: Any, limit: int = CHANGE_LIMIT) -> list[ChangeRow]:
+def recent_changes(
+    user: Any, subject: Any, limit: int = CHANGE_LIMIT, *, matters: list[Matter] | None = None
+) -> list[ChangeRow]:
     """The subject's Matters that moved most recently, newest first.
 
     Built from the existing activity precedence rather than from an audit log:
@@ -543,12 +571,21 @@ def recent_changes(user: Any, subject: Any, limit: int = CHANGE_LIMIT) -> list[C
     says which kind of fact it was, and `BASIS_LABELS` already names those kinds
     in Estonian. A second chronology would be a second thing to keep true
     (app/matters/activity.py, design handoff 03 §3).
+
+    ``matters`` is that same annotated population when the caller already holds
+    it — `build_portfolio` reads exactly this queryset for the rows above — so
+    the page does not annotate every open file on the desk twice (2026-10-17
+    audit, JPERF-005). Omitted, it is read here.
     """
-    queryset = annotate_last_activity(
-        wi.open_matters(user).filter(owner=subject).select_related("stage", "owner"), user
-    )
+    if matters is None:
+        matters = list(
+            annotate_last_activity(
+                wi.open_matters(user).filter(owner=subject).select_related("stage", "owner"),
+                user,
+            )
+        )
     rows: list[ChangeRow] = []
-    for matter in queryset:
+    for matter in matters:
         activity = activity_of(matter)
         if activity is None:
             continue
@@ -676,12 +713,17 @@ def person_stats(user: Any, subject: Any, today: date) -> PersonStats:
     def sent(since: date) -> int:
         return sent_submissions(user, since=since).filter(matter__owner=subject).count()
 
+    # **A plain range on the timestamp, not `__date`** (2026-10-17 audit,
+    # JPERF-005). `occurred_at__date__gte` cast every one of the person's entries
+    # to a Tallinn date before comparing, which no index can answer; «on or after
+    # the local day» is exactly «at or after that day's first local moment»
+    # (`start_of_local_day`), and that the `occurred_at` index can.
     def closed(since: date) -> int:
-        return owned.filter(is_open=False, closed_at__date__gte=since).count()
+        return owned.filter(is_open=False, closed_at__gte=start_of_local_day(since)).count()
 
     entries = (
         Entry.objects.visible_to(user)
-        .filter(author=subject, occurred_at__date__gte=month_start)
+        .filter(author=subject, occurred_at__gte=start_of_local_day(month_start))
         .count()
     )
     return PersonStats(
@@ -1021,7 +1063,7 @@ def build_my_work(
         undated=undated,
         undated_total=undated_total,
         undated_url=_work_url(subject, wi.WORK_UNDATED),
-        changes=recent_changes(user, subject),
+        changes=recent_changes(user, subject, matters=[row.matter for row in portfolio.all_rows]),
         entries=recent_entries(user, subject),
         quick=quick,
         stats=person_stats(user, subject, today),

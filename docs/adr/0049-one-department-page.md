@@ -314,3 +314,18 @@ rather than giving its owner a row of their own. The decision, and what it
 deliberately leaves alone, is the amendment at the end of
 [ADR 0036](0036-assignable-department-workers.md). Nothing about the merge, the
 routes, the strip or the boundary above changes with it.
+
+## Amendment of 2026-10-18: an *Eesolev* window draws at most 100 rows
+
+*2026-10-17 audit, JPERF-005; for the owner's review.* Each *Eesolev* window is a
+disclosure that drew every deadline it held. At 10,000 open Matters that was
+3,500 rows and 1.7 MB of HTML on one page. `department_dashboard.UPCOMING_LIMIT`
+(100) now caps the rows one window draws when it is opened:
+
+- «kõik N» still counts every deadline in the window;
+- the rows drawn are the head of the window, in the read model's order;
+- past the cap the window says «Siin on 100 esimest N-st.» and links to
+  `UpcomingGroup.url`, the register narrowed to exactly that window. That list
+  counts files, not deadlines, and its link text says «N teemat».
+
+A window with 100 deadlines or fewer renders exactly as before.
