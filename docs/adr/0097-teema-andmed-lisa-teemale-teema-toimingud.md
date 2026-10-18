@@ -504,6 +504,14 @@ task composer returns.
    constraint (same migration) refuses it in the database; every existing row has
    an empty `url`, so it holds from the start. Search indexing is unchanged (the
    description is indexed as every entry body is); no rebuild.
+   **Reversing `0049` is a data loss** (recorded 2026-10-18, JTEST-012): a
+   backward migrate to `0048` drops both columns *with their values* — every
+   `Muu` link and every earlier link a revision kept — while the entries
+   themselves survive, and migrating forward again restores the columns empty.
+   A rollback of this release is therefore code-only; the schema step back is
+   not a rollback (`tests/test_entry_url_migration_reversal.py`;
+   `deploy/unraid-main/RECOVERY.md` §"A backward migrate across `matters.0049`
+   drops Muu links"; `docs/production-readiness.md` 5.2).
 3. **The date is the day the material or event occurred.** `Millal?` is a
    required single day with the existing date picker, **empty until the person
    fills it** — nothing is pre-filled and no day is invented. It is stored as the
