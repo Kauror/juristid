@@ -4,7 +4,7 @@ KAASAMINE · LISA TAGASISIDE (docs/adr/0142 amendment of 2026-10-12)
 * A — the form asks `Kaasamine`, `Saadud tagasiside`, `Kuupäev`, the files and
   `Salvesta`, in that order, and no `Märkus` (docs/adr/0170 since added the
   organisation and the provenance before them, and named the box `Seisukoht`);
-* the field is gone from `EngagementReplyForm` only — the sibling correction
+* the field is gone from `FeedbackForm` (`Lisa tagasiside`) only — the sibling correction
   form still asks it, and the column is still stored;
 * a crafted `lawyer_note=` reaches nothing, and the reply text is not merged
   with it;
@@ -31,7 +31,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from app.matters.enums import EngagementKind, ExternalPositionProvenance
-from app.matters.forms import EngagementReplyForm, ExternalPositionEditForm
+from app.matters.forms import ExternalPositionEditForm, FeedbackForm
 from app.matters.models import MatterEngagement, MatterExternalPosition
 from app.matters.my_work import IN_PROGRESS_HELP, build_my_work, opinion_work
 from app.matters.register_filters import register_population
@@ -121,10 +121,8 @@ def test_the_reply_form_asks_its_questions_in_order_and_no_markus(
 
 def test_only_the_reply_form_lost_the_field():
     """Removed from `Lisa tagasiside`; still asked where a note is corrected."""
-    assert "lawyer_note" not in EngagementReplyForm.base_fields
-    assert {"engagement", "summary", "stated_on", "attachments"} <= set(
-        EngagementReplyForm.base_fields
-    )
+    assert "lawyer_note" not in FeedbackForm.base_fields
+    assert {"engagement", "summary", "stated_on", "attachments"} <= set(FeedbackForm.base_fields)
     assert "lawyer_note" in ExternalPositionEditForm.base_fields
     # The sibling capture panels (`CompactExternalPositionForm` and its two
     # subclasses) were deleted by docs/adr/0170: `Lisa tagasiside` is now the

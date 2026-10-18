@@ -4492,7 +4492,7 @@ class CompactEngagementForm(forms.Form):
       `Märkus` — optional.
 
     `Vastuseid`, `Saadud tagasiside / arvamused` and the reply files left this
-    panel: what came back is `Lisa tagasiside` (`EngagementReplyForm`), and
+    panel: what came back is `Lisa tagasiside` (`FeedbackForm`), and
     a round's count is still corrected through `Muuda` on its row
     (`EngagementForm`). A POST still carrying them reaches a form that does not
     declare them, so nothing of theirs is written here.
@@ -5913,12 +5913,6 @@ class FeedbackForm(ExternalPositionFieldsMixin, forms.Form):
     #: feedback may name nobody (docs/adr/0101), a published opinion may not.
     author_is_optional = True
     offers_precision = False
-    #: `_record_external_position` reads the provenance off the validated radio
-    #: rather than off the class (docs/adr/0091 amendment of 2026-10-15).
-    states_provenance = True
-    #: Saving it against an open round finishes that round's wait in the same
-    #: transaction; a finished round keeps its closure (docs/adr/0167 §2).
-    closes_engagement = True
     panel_slug = "kaasamise_tagasiside"
 
     organisation = _external_position_organisation_field()
@@ -6105,10 +6099,6 @@ class FeedbackForm(ExternalPositionFieldsMixin, forms.Form):
         if cleaned.get("source_is_member") and cleaned.get("provenance") != received:
             self.add_error("source_is_member", EXTERNAL_POSITION_MEMBER_IS_RECEIVED_ONLY)
         return cleaned
-
-
-#: The round-only reply form this one replaced (owner's UX round, stage 3).
-EngagementReplyForm = FeedbackForm
 
 
 class ExternalPositionEditForm(ExternalPositionFieldsMixin, forms.Form):

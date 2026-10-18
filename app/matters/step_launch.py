@@ -191,9 +191,9 @@ def apply_open_request(request: HttpRequest, matter: Any, context: dict[str, Any
         wanted = _uuid_or_none(request.GET.get(ROUND_PARAM))
         rounds = context.get("feedback_waits") or []
         if wanted is not None and any(round_.pk == wanted for round_ in rounds):
-            from app.matters.forms import EngagementReplyForm
+            from app.matters.forms import FeedbackForm
 
-            context["engagement_reply_form"] = EngagementReplyForm(
+            context["engagement_reply_form"] = FeedbackForm(
                 matter=matter,
                 viewer=request.user,
                 open_rounds=rounds,
