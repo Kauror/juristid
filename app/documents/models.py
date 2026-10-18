@@ -19,7 +19,12 @@ from app.core.authorization import (
 )
 from app.core.derived_visibility import document_visibility_q
 from app.core.enums import Visibility
-from app.core.models import BaseModel, RemovableRecord, VisibilityInheritingModel
+from app.core.models import (
+    BaseModel,
+    RemovableQuerySet,
+    RemovableRecord,
+    VisibilityInheritingModel,
+)
 from app.documents.enums import (
     DocumentRole,
     ExtractionState,
@@ -29,7 +34,7 @@ from app.documents.enums import (
 from app.documents.limits import WORKING_DOCUMENT_URL_MAX_LENGTH
 
 
-class DocumentQuerySet(models.QuerySet):
+class DocumentQuerySet(RemovableQuerySet):
     def visible_to(self, user: object | None) -> DocumentQuerySet:
         """The documents this reader may be shown — and none taken off the file.
 
@@ -48,7 +53,7 @@ class DocumentQuerySet(models.QuerySet):
         the round's restriction is covered without rewriting it.
         """
         scoped = apply_scope(self, document_visibility_q(scope_for_user(user)))
-        return scoped.filter(removed_at__isnull=True)
+        return scoped.live()
 
     def with_effective_visibility(self) -> DocumentQuerySet:
         """Annotate the derived visibility so lists do not query per row."""

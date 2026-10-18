@@ -75,8 +75,9 @@ def visible_to(self, user):
     return scoped.filter(removed_at__isnull=True)
 ```
 
-Nothing is filtered at call sites, because a filter at a call site is a filter
-the next call site forgets. The chronology, the rail, `Minu asjad`, the
+No *reader's* read is filtered at a call site, because a filter at a call site
+is a filter the next call site forgets. (Reads with no reader are the exception;
+see the amendment of 2026-10-18 below.) The chronology, the rail, `Minu asjad`, the
 register, the statistics, the exports and the search projection all pass
 through this already and needed no change.
 
@@ -217,3 +218,28 @@ now, `tests/test_ui_contract.py::test_no_paragraph_encloses_a_disclosure` refuse
 the shape on the source, and
 `e2e/test_correction_round_surfaces.py::test_kustuta_sits_beside_muuda_in_the_chronology`
 measures the laid-out line.
+
+## Amendment of 2026-10-18 — reads with no reader say `live()`
+
+The claim in §3 that «nothing is filtered at call sites» was not true, and
+the 2026-10-17 audit found where that mattered (JARCH-G11, JDATA-005). Some
+reads have no reader, so they cannot go through `visible_to`: the row locks,
+closure (`close_open_feedback_waits_for_closure`, `live_work_at_closure`),
+`check_domain_invariants` and the operator's two cutover planners. The first
+three each wrote `removed_at__isnull=True` at the call site (the audit counted 32
+such call-site filters). The planners (`final_cutover.native_activity` and
+`historical_cutover.live_work`) had none. As a result, a removed open round
+became an `OPEN_FEEDBACK_WAIT` review reason, and a removed `Märge` made a
+Matter look natively authored.
+
+- Every removable family's queryset now inherits
+  `app.core.models.RemovableQuerySet`. Its `live()` method is the one way to
+  write «still on the file». `visible_to` uses it too.
+- A read with no reader calls `.live()` and does not spell out the filter.
+  Both cutover planners now do this, so a removed record no longer holds a
+  Matter back for review. `tests/test_one_rule_one_place.py` pins this.
+- The round's open wait now has one SQL spelling,
+  `MatterEngagementQuerySet.open_waits()`, which is the SQL twin of
+  `has_open_feedback_wait`. The rounds a reply may name are spelled
+  `answerable()`. These methods do not remove anything themselves: «removed»
+  stays the caller's own `visible_to` or `.live()`, written next to the call.

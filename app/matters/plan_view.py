@@ -44,7 +44,8 @@ from typing import Any
 from django.db.models import Q
 from django.utils import timezone
 
-from app.matters.enums import RecordMode, WebsiteOverviewKind, WebsiteOverviewStatus
+from app.matters.enums import RecordMode, WebsiteOverviewStatus
+from app.matters.publication_kind import overview_fulfils_step
 from app.workflow.enums import PlanStepOperation
 from app.workflow.models import MatterPlanStep
 from app.workflow.plan import RETIRED_STEP_KEYS, plan_revision, plan_steps_of
@@ -117,11 +118,11 @@ class RecordedWork:
             filed = engagements.filter(created_at__gt=since)
             feedback = engagements.filter(feedback_closed_at__gt=since)
             sent = sent.filter(Q(created_at__gt=since) | Q(sent_at__gt=since))
-        published = set(overviews.values_list("kind", flat=True))
+        published = list(overviews.only("status", "kind", "url"))
         return cls(
-            # A published write-up whose kind predates the choice reads as an
-            # overview, which is what every one of them was filed as.
-            published_overview=bool(published & {WebsiteOverviewKind.OVERVIEW, ""}),
+            # The step's own save and this proof ask one question
+            # (`overview_fulfils_step`), on the kind the page shows.
+            published_overview=any(overview_fulfils_step(overview) for overview in published),
             published_any=bool(published),
             engagement=filed.exists(),
             feedback_recorded=feedback.exists(),

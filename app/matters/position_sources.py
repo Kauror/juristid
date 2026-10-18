@@ -73,9 +73,9 @@ def positions_resting_only_on(document: Any) -> list[MatterExternalPosition]:
         & ~Q(document_links__document=document),
     )
     return list(
-        MatterExternalPosition.objects.filter(
+        MatterExternalPosition.objects.live()
+        .filter(
             pk__in=supported,
-            removed_at__isnull=True,
             summary="",
             url="",
         )

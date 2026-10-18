@@ -144,14 +144,11 @@ def _named_open_rounds(
     for engagement_id, revision in rounds:
         engagement = (
             MatterEngagement.objects.select_for_update(no_key=True)
-            .filter(matter=locked_matter, pk=engagement_id, removed_at__isnull=True)
+            .live()
+            .filter(matter=locked_matter, pk=engagement_id)
             .first()
         )
-        if (
-            engagement is None
-            or not engagement.lifecycle_tracked
-            or engagement.feedback_closed_at is not None
-        ):
+        if engagement is None or not engagement.has_open_feedback_wait:
             raise DomainError(ROUND_NOT_OPEN)
         if revision and engagement_revision_token(engagement) != revision:
             raise DomainError(ROUND_CHANGED)
@@ -755,7 +752,7 @@ def _overview_for_engagement_link(
 
     if classify_publication_url(url) == WebsiteOverviewKind.NEWS:
         raise DomainError(ENGAGEMENT_OVERVIEW_LINK_IS_NEWS)
-    live = MatterWebsiteOverview.objects.filter(matter=matter, removed_at__isnull=True)
+    live = MatterWebsiteOverview.objects.live().filter(matter=matter)
     for published in live.filter(status=WebsiteOverviewStatus.PUBLISHED).order_by("-created_at"):
         if same_publication_url(published.url, url) and published.effective_kind != (
             WebsiteOverviewKind.NEWS
@@ -805,7 +802,8 @@ def add_engagement_evidence(
     locked_matter = lock_open_matter_for_business_write(engagement.matter_id)
     current = (
         MatterEngagement.objects.select_for_update(no_key=True)
-        .filter(pk=engagement.pk, matter=locked_matter, removed_at__isnull=True)
+        .live()
+        .filter(pk=engagement.pk, matter=locked_matter)
         .first()
     )
     if current is None or not current.has_open_feedback_wait:

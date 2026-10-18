@@ -164,9 +164,7 @@ def without_next_step(
         matter=OuterRef("pk"), status__in=(ActionStatus.OPEN, ActionStatus.PLANNED)
     )
     milestone = upcoming_milestones(user, day).filter(matter=OuterRef("pk"))
-    waiting = MatterEngagement.objects.visible_to(user).filter(
-        matter=OuterRef("pk"), lifecycle_tracked=True, feedback_closed_at__isnull=True
-    )
+    waiting = MatterEngagement.objects.visible_to(user).open_waits().filter(matter=OuterRef("pk"))
     return queryset.annotate(
         next_step_action=Exists(open_action),
         next_step_milestone=Exists(milestone),

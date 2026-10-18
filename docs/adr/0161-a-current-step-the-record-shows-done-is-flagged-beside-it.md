@@ -99,3 +99,22 @@ By code. Remove the view's `consistency_alerts` entry and the template loop;
 ## Amendment of 2026-10-14 — structured steps open their canonical form
 
 Owner decision D4 (docs/adr/0168). `Alusta` on «Kaasa liikmeid / küsi tagasisidet», «Saada Koja arvamus» or «Koosta kodulehe ülevaade» opens that step's `LISA TEEMALE` form and writes nothing; the form's save finishes the step that opened it (`samm`, checked under the lock). `STANDARD_PLAN` is version 2 without «Koonda tagasiside ja kujunda Koja seisukoht» (`form-position`), which is never suggested on a version-1 plan either; existing rows are not rewritten.
+
+## Amendment of 2026-10-18 — the overview step reads the kind the page shows
+
+Before this amendment, `RecordedWork.published_overview` and the `Ülevaade /
+uudis` save's own step check (`views._overview_does_the_step`) read the
+*stored* `kind`. They counted a row with an empty kind as an overview. The page
+reads `effective_kind`: the stored kind, or, for a row from before the column
+existed, the kind its koda.ee address states. So a legacy row on a
+`koda.ee/…/uudised/…` address was shown as «Uudis» and was still counted as the
+published overview. The alert said a «Koosta kodulehe ülevaade» step was done
+because of a news item (JARCH-002, 2026-10-17 audit).
+
+Both callers now ask one question,
+`app.matters.publication_kind.overview_fulfils_step`. It is true for a
+published row whose `effective_kind` is `OVERVIEW` or still unknown. A legacy
+row whose address does not say which kind it is still counts as an overview,
+because that is what every one of them was filed as. The only change is that
+a legacy row on a koda.ee *news* address no longer proves the step. Stored
+kinds are unaffected. Pinned by `tests/test_one_rule_one_place.py`.
