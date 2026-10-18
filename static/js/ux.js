@@ -311,14 +311,72 @@
 
   /* The container conventions this application renders an error inside. The
      error is written *after* the control it belongs to everywhere, so the
-     container is the reliable way back to it. */
+     container is the reliable way back to it — once the id relation below has
+     had its say. */
   var FIELD_CONTAINERS = "label, .field, fieldset, .cx-f, .createform__row, .addform";
 
+  function focusableIn(node) {
+    if (!node || !node.matches) {
+      return null;
+    }
+    if (node.matches(FOCUSABLE)) {
+      return node.disabled ? null : node;
+    }
+    /* A fieldset (or any group) named by the message: its first control that
+       can take the cursor — for the provenance radios, the first radio. */
+    return node.querySelector(
+      "input:not([type=hidden]):not([hidden]):not([disabled]), " +
+      "textarea:not([hidden]):not([disabled]), select:not([hidden]):not([disabled])"
+    );
+  }
+
+  /* The control the message is *about*, by the relation the markup already
+     states (2026-10-17 audit, JUX-003). The Teema page's forms print their
+     refusals as direct children of `form.addform`, so the container lookup
+     climbed to the form and returned its first control — the organisation
+     search for an empty Lisa tagasiside, a perfectly good `Kirjeldus` for a Muu
+     with no day. The id relation is exact: Django points a refused widget's
+     `aria-describedby` at `<id>_error`, the provenance fieldset and the
+     organisation search name their messages the same way, and failing that the
+     message's own id spells the control's. */
+  function controlByRelation(problem, form) {
+    var id = problem.id;
+    if (!id) {
+      return null;
+    }
+    var found = null;
+    Array.prototype.some.call(form.querySelectorAll("[aria-describedby]"), function (node) {
+      var ids = (node.getAttribute("aria-describedby") || "").split(/\s+/);
+      if (ids.indexOf(id) === -1) {
+        return false;
+      }
+      found = focusableIn(node);
+      return Boolean(found);
+    });
+    if (found) {
+      return found;
+    }
+    var suffix = "_error";
+    if (id.slice(-suffix.length) === suffix) {
+      var named = document.getElementById(id.slice(0, -suffix.length));
+      if (named && form.contains(named)) {
+        return focusableIn(named);
+      }
+    }
+    return null;
+  }
+
   function controlForError(problem, form) {
+    var related = controlByRelation(problem, form);
+    if (related) {
+      return related;
+    }
     /* Inside the same field wrapper, which is the common case and the exact
-       answer: one label, one control, one message under it. */
+       answer: one label, one control, one message under it. The form itself
+       is not a field wrapper: "its first control" is the wrong answer this
+       lookup exists to avoid. */
     var container = problem.closest(FIELD_CONTAINERS);
-    if (container) {
+    if (container && container !== form) {
       var owned = container.querySelector(FOCUSABLE);
       if (owned) {
         return owned;
@@ -365,11 +423,40 @@
     }
   }
 
+  /* ---- …and says so out loud --------------------------------------------
+   * Focus alone is not an announcement: a field message has no live role, and
+   * the cursor landing on a radio reads the radio (2026-10-17 audit, JUX-003;
+   * WCAG 4.1.3).
+   *
+   * Each message of the refused form is put back into the page as an alert:
+   * the same element, cloned with `role="alert"` and swapped in for itself. An
+   * alert is announced when it is *inserted*; setting the role on a message the
+   * swap has already inserted would say nothing, and a separate region holding a
+   * copy of the sentence would put every refusal on the page twice. The id is
+   * the clone's too, so every `aria-describedby` still names it. */
+  function announceAsAlert(message) {
+    if (!message || message.getAttribute("role") === "alert" || !message.parentNode) {
+      return message;
+    }
+    var alert = message.cloneNode(true);
+    alert.setAttribute("role", "alert");
+    message.parentNode.replaceChild(alert, message);
+    return alert;
+  }
+
   function focusFirstRefusal(scope) {
     var root = scope && scope.querySelector ? scope : document;
     /* Nothing at all when the save succeeded — this must never take the cursor
        off an ordinary page load. */
     var problem = root.querySelector(".field__error");
+    if (problem) {
+      var refusedForm = problem.closest("form") || root;
+      Array.prototype.forEach.call(
+        refusedForm.querySelectorAll(".field__error"),
+        announceAsAlert
+      );
+      problem = root.querySelector(".field__error");
+    }
     if (!problem) {
       /* A form-level refusal with no field of its own: «Kirjelda tegevust või
          vali, mida veel salvestada» names no box, so guessing one would put the
@@ -383,6 +470,7 @@
          is actually on the page. */
       var summary = root.querySelector(".formerror");
       if (summary) {
+        summary = announceAsAlert(summary);
         summary.setAttribute("tabindex", "-1");
         revealAndFocus(summary, summary);
       }

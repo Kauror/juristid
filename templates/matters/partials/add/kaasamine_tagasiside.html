@@ -42,7 +42,7 @@ visibility inheritance and search are the record's own and did not move.
   {% csrf_token %}
   {% include "matters/partials/add/save_once.html" with token=save_once_tokens.engagement_reply_form %}
   <div class="orgpick__row">
-    {% include "matters/partials/organisation_picker.html" with picker_id="tagasiside" legend=form.organisation.label chips=form.organisation_chip_choices tail=form.organisation_tail_choices typed_field=form.organisation_name add_label="Lisa uus organisatsioon" single=True clearable=True clears_group="organisation" quiet=True only %}
+    {% include "matters/partials/organisation_picker.html" with picker_id="tagasiside" legend=form.organisation.label chips=form.organisation_chip_choices tail=form.organisation_tail_choices typed_field=form.organisation_name add_label="Lisa uus organisatsioon" single=True clearable=True clears_group="organisation" quiet=True visible_label=True required_when=True owner_field=form.organisation only %}
     {# `Liige` — only beside «Saadeti Kojale» (static/css/app.css `.feedbackform`). #}
     <div class="orgpick__mark" data-feedback-member>
       <label class="chip">

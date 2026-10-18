@@ -67,7 +67,7 @@ closure (docs/adr/0076 §2, docs/adr/0084 §8).
         they typed into it. One partial each, so the two cannot drift
         (docs/adr/0073, docs/adr/0079 §1).
       {% endcomment %}
-      {% include "matters/partials/organisation_picker.html" with picker_id=external_position_picker_id legend=external_position_edit_form.organisation.label chips=external_position_edit_form.organisation_chip_choices tail=external_position_edit_form.organisation_tail_choices typed_field=external_position_edit_form.organisation_name add_label="Lisa uus organisatsioon" single=True clears_group="organisation" only %}
+      {% include "matters/partials/organisation_picker.html" with picker_id=external_position_picker_id legend=external_position_edit_form.organisation.label chips=external_position_edit_form.organisation_chip_choices tail=external_position_edit_form.organisation_tail_choices typed_field=external_position_edit_form.organisation_name add_label="Lisa uus organisatsioon" single=True clears_group="organisation" visible_label=True owner_field=external_position_edit_form.organisation only %}
       {% if external_position_edit_form.organisation.errors %}
         <p class="field__error" id="{{ external_position_edit_form.organisation.auto_id }}_error">{{ external_position_edit_form.organisation.errors|first }}</p>
       {% endif %}
