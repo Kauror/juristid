@@ -137,6 +137,26 @@ CURRENT_ACTION_EXISTS = (
 )
 #: Only a step still ahead can be started or dismissed.
 STEP_NOT_OPEN = "See soovitus on juba tehtud või kõrvale jäetud."
+
+#: `Alusta` on a structured step opens that step's own form and writes nothing
+#: (docs/adr/0168 §1); a POST that would start it as a generic action instead —
+#: a stale tab, or a crafted request — is refused (owner decision D9).
+STEP_OPENS_ITS_OWN_FORM = (
+    "Seda sammu alustatakse tema enda vormist: vajuta soovituse juures «Alusta» "
+    "ja salvesta avanenud vorm."
+)
+
+#: The operations whose step is done through a canonical form rather than as a
+#: generic action. Restated here because `app.workflow` may not import the Teema
+#: page's launcher; `tests/test_hidden_write_routes.py` holds it equal to
+#: `app.matters.step_launch.FORMS_BY_OPERATION`.
+STRUCTURED_OPERATIONS = frozenset(
+    {
+        PlanStepOperation.WEBSITE_OVERVIEW,
+        PlanStepOperation.ENGAGEMENT,
+        PlanStepOperation.SUBMISSION,
+    }
+)
 #: The current step changes through its action, not through the plan.
 STEP_IS_CURRENT = (
     "See samm on praegu pooleli. Muuda seda praeguse tegevuse juures või märgi see tehtuks."
@@ -411,9 +431,17 @@ def activate_plan_step(
     A `SUGGESTED` step started is a step a person accepted: it becomes
     `PLANNED`. Current-ness is not stored — the open action pointing here says
     it (docs/adr/0133 §3).
+
+    **Generic steps only** (docs/adr/0168 §1, owner decision D9 of
+    2026-10-17). A structured step is started by opening its own form, which
+    writes nothing until that form is saved; turning it into a generic action
+    here is refused, so the canonical-form rule does not depend on which link
+    the template happens to draw.
     """
     locked_matter = _lock(matter)
     target = startable_step(locked_matter, getattr(step, "pk", step))
+    if target.operation in STRUCTURED_OPERATIONS:
+        raise DomainError(STEP_OPENS_ITS_OWN_FORM)
     if NextAction.objects.filter(matter=locked_matter, status=ActionStatus.OPEN).exists():
         raise DomainError(CURRENT_ACTION_EXISTS)
     return _start(

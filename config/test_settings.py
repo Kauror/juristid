@@ -53,6 +53,9 @@ TRUST_CF_CONNECTING_IP = True
 # suite starts from the safe position.
 DEV_LOGIN_ENABLED = False
 REAL_DATA_ALLOWED = False
+# `matters:add_note` is a fixture door for this suite (owner decision D9);
+# tests/test_hidden_write_routes.py turns it off to prove the guard.
+ADD_NOTE_TEST_DOOR_ENABLED = True
 APPLICATION_ENVIRONMENT = "test"
 # The suite never contacts koda.ee; a test that needs a title patches the fetch.
 PUBLICATION_TITLE_FETCH = False

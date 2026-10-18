@@ -36,10 +36,10 @@ from app.workflow.consistency import (
 )
 from app.workflow.enums import ActionKind, ActionStatus, DateSemantics
 from app.workflow.models import MatterPlanStep, NextAction
-from app.workflow.plan import activate_plan_step, seed_standard_plan
+from app.workflow.plan import STRUCTURED_OPERATIONS, activate_plan_step, seed_standard_plan
 from app.workflow.services import set_next_action_for_new_work
 from tests import factories
-from tests.legacy_plans import seed_version_one_plan
+from tests.legacy_plans import seed_version_one_plan, start_as_before_adr_0168
 
 pytestmark = pytest.mark.django_db
 
@@ -62,7 +62,12 @@ def planned(specialist):
 def _start(matter, actor, key) -> NextAction:
     """`Alusta` on one standard step, set an hour ago so later records are later."""
     step = MatterPlanStep.objects.get(matter=matter, template_step_key=key)
-    action = activate_plan_step(matter=matter, step=step, actor=actor)
+    # A structured step is current only as it was before docs/adr/0168: the
+    # service refuses to start one as a generic action (owner decision D9).
+    if step.operation in STRUCTURED_OPERATIONS:
+        action = start_as_before_adr_0168(matter=matter, step=step, actor=actor)
+    else:
+        action = activate_plan_step(matter=matter, step=step, actor=actor)
     NextAction.objects.filter(pk=action.pk).update(created_at=timezone.now() - timedelta(hours=1))
     action.refresh_from_db()
     return action

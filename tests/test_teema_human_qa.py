@@ -104,7 +104,7 @@ def test_the_rail_names_the_opinion_and_holds_no_workflow(signed_in, specialist)
     assert 'id="koja-arvamus"' in body
     assert reverse("matters:matter_position", kwargs={"pk": matter.pk}) not in body
     # No editor in the rail either: there is no free-text position in this
-    # product, and `update_position` has no native UI anywhere.
+    # product, and `update_position` is gone (owner decision D9).
     assert "id_position_summary" not in body
 
 

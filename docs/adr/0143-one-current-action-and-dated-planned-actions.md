@@ -121,3 +121,29 @@ borrows the kind or date meaning of the step that is open. The owner the step
 defaults to is read from the locked row (AUD-052 WF-4). The other new-work
 doors are unchanged: `+ Märge` with a day ahead, `Järgmisena` after a
 completion, `Alusta`, and `+ Menetluse areng` with a next step.
+
+## Amendment of 2026-10-17 — `add_note` is a guarded test door (owner decision D9)
+
+The 2026-10-07 amendment kept `add_note` reachable after `+ Lisa · Tavaline`
+left. The route still writes a `Märge`, its files, a `Hetkeseis` and a next
+step through `MatterProgressForm`, but no page posts to it any more. The
+2026-10-17 audit (DC-G1) named it a hidden write route. The owner decided (D9)
+that it goes once its test uses move to real doors. More than a hundred test
+references post to it as a fixture door, in unit tests and in browser
+tests. Moving them is not mechanical, because several are about a stage move or
+a next step written from a `Märge`. So the route is **guarded** until then:
+
+- It answers only where `ADD_NOTE_TEST_DOOR_ENABLED` is on. That setting
+  defaults to `DEV_LOGIN_ENABLED`, so it is on in development and in the browser
+  suite's servers. `config/test_settings.py` turns it on for the unit suite.
+- Everywhere else it answers 404 and writes nothing, as a retired route does.
+- With `REAL_DATA_ALLOWED` it answers 404 whatever the flag says, so a
+  mistyped flag on a real-data deployment cannot reopen it.
+
+`Märge` records already on a file are unchanged and are still corrected through
+`Muuda`. The remaining test uses are listed in the PR that added this guard,
+for the follow-up that removes the route. Pinned by
+`tests/test_hidden_write_routes.py`.
+
+`matters:update_position` (docs/adr/0061) is removed by the same decision. A
+stale POST to it is a 404 (`tests/test_retired_write_doors.py`).

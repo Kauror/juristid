@@ -151,7 +151,8 @@ of showing «Roll — kõik» over an active filter.
 
 `matters:update_position` still has no native UI, exactly as ADR 0030 left it,
 and stays inside the business-write boundary. Its redirect target moved with the
-page it used to return to.
+page it used to return to. (Removed 2026-10-17 by owner decision D9: see
+docs/adr/0143, amendment of that date. The two columns stay stored and indexed.)
 
 ## Alternatives considered
 

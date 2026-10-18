@@ -19,8 +19,9 @@ Teema page:
 * There is no separate free-text `Koja seisukoht` in this product. What the
   Chamber produced on a Matter is the opinion it sent, and that is a file.
 
-`Matter.position_summary` is deliberately still stored, still written by
-`matters:update_position` and still indexed for search. Retiring a rail block is
+`Matter.position_summary` is deliberately still stored and still indexed for
+search (its writer `matters:update_position` was retired by owner decision D9,
+2026-10-17). Retiring a rail block is
 not a reason to drop a column, and nothing here asserts that it is gone.
 
 Since docs/adr/0061 the rail is **read-only**: filenames and nothing else. The

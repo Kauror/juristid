@@ -19,7 +19,10 @@ ended, and the current workflow is the only write path:
 * `matters:add_received_feedback` (`Meile saadetud tagasiside`) and
   `matters:add_external_position` (`Teiste arvamus`) → `+ Kaasamine · Lisa
   tagasiside` (`matters:add_engagement_reply`), which asks the provenance the
-  old chips used to fix (docs/adr/0170 §5).
+  old chips used to fix (docs/adr/0170 §5);
+* `matters:update_position` (`Koja seisukoht` / `Põhjendus`, no page since
+  docs/adr/0061) → nothing: owner decision D9 of 2026-10-17 retired it, and
+  what the Chamber said is the opinion it sent.
 
 A stale tab's POST is a 404 and writes nothing. Not a redirect: a POST sent on
 to another operation would carry a payload that operation never asked for.
@@ -55,6 +58,7 @@ RETIRED_NAMES = [
     "matters:compose",
     "matters:add_received_feedback",
     "matters:add_external_position",
+    "matters:update_position",
 ]
 
 
@@ -116,6 +120,12 @@ def _stale_posts(matter, action):
                 "url": "https://example.org/hiline-seisukoht",
             },
         ),
+        # `Koja seisukoht` / `Põhjendus` with no page behind them since
+        # docs/adr/0061; removed by owner decision D9 (2026-10-17).
+        (
+            f"/teemad/{matter.pk}/seisukoht/salvesta/",
+            {"position_summary": "Hiline seisukoht", "rationale_summary": "Hiline põhjendus"},
+        ),
     ]
 
 
@@ -132,6 +142,9 @@ def _state(matter, action):
         "positions": MatterExternalPosition.objects.filter(matter=matter).count(),
         "organisations": Organisation.objects.count(),
         "open": Matter.objects.values_list("is_open", flat=True).get(pk=matter.pk),
+        "position": Matter.objects.values_list("position_summary", "rationale_summary").get(
+            pk=matter.pk
+        ),
         "events": ChangeEvent.objects.filter(matter=matter).count(),
     }
 
