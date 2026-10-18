@@ -40,6 +40,7 @@ from app.core.client_ip import client_ip
 from app.core.decorators import business_write_required, gate_required, viewer_for
 from app.core.errors import DomainError
 from app.core.http import content_disposition
+from app.core.middleware import NO_STORE
 from app.documents import inline
 from app.documents.email_intake import attachments_of, parent_email_of
 from app.documents.enums import DerivativeKind, DerivativeStatus, DocumentRole
@@ -416,7 +417,12 @@ def thumbnail(request: HttpRequest, pk: Any) -> FileResponse:
     # Belt and braces: even a generated PNG is served under a policy that
     # forbids scripts, so a hypothetical polyglot has nothing to execute.
     response["Content-Security-Policy"] = "default-src 'none'; sandbox"
-    response["Cache-Control"] = "private, max-age=300"
+    # `no-store`, like every response for a signed-in reader: a restricted
+    # document's preview must not be redisplayed from the browser's cache after
+    # sign-out (JSEC-003). It is cheap to fetch again, and it carries no
+    # validator, so nothing is lost by not keeping it.
+    response["Cache-Control"] = NO_STORE
+    response["Pragma"] = "no-cache"
     return response
 
 

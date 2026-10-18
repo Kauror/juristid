@@ -854,6 +854,50 @@ def test_a_historical_link_on_a_published_position_stays_correctable(
     assert corrected.summary == "Vana kirje, parandatud."
 
 
+def test_a_correction_cannot_move_a_round_answer_to_published(
+    normal_matter, specialist, organisation
+):
+    """ADR 0170 §3: a linked round's answer is RECEIVED and cannot be changed.
+
+    The kept-link exemption above is for a historical row whose provenance is
+    not being moved. It let a caller turn a RECEIVED answer to a round into
+    «Avaldatud mujal» while keeping the round, because the round was one the row
+    already held (JDATA-002). Refused now, and nothing is written.
+    """
+    from app.matters.services import (
+        EXTERNAL_POSITION_ROUND_ANSWER_IS_RECEIVED,
+        correct_external_position,
+    )
+
+    round_ = _round(normal_matter, specialist)
+    position = add_matter_external_position(
+        matter=normal_matter,
+        author=specialist,
+        organisation=organisation,
+        provenance=RECEIVED,
+        summary="Vastus kaasamisele.",
+        engagement=round_,
+    ).record
+    assert position.engagement_id == round_.pk and position.provenance == RECEIVED
+
+    with refused(EXTERNAL_POSITION_ROUND_ANSWER_IS_RECEIVED):
+        correct_external_position(
+            position=position,
+            organisation=organisation,
+            url="",
+            stated_on=None,
+            stated_on_precision="EXACT",
+            summary="Vastus kaasamisele.",
+            provenance=DISCOVERED,
+            engagement=round_,
+            actor=specialist,
+        )
+
+    stored = MatterExternalPosition.objects.get(pk=position.pk)
+    assert stored.provenance == RECEIVED
+    assert stored.engagement_id == round_.pk
+
+
 def test_a_refused_round_answer_is_drawn_received_and_never_checked_and_disabled(
     signed_in, normal_matter, specialist, organisation
 ):

@@ -263,12 +263,13 @@ def sign_out(request: HttpRequest) -> HttpResponse:
     response = redirect(
         f"{reverse('accounts:sign_in')}?olek=valjunud" if local else reverse("core:home")
     )
-    # What the browser itself kept of the session goes with it: the pages are
-    # `no-store` already, and this clears the origin's storage as well, where
-    # an older htmx kept copies of the register (ENG-009). "storage" only —
-    # not cookies, which `logout` has dealt with, and not the HTTP cache, which
-    # a `no-store` page never entered.
-    response["Clear-Site-Data"] = '"storage"'
+    # What the browser itself kept of the session goes with it: the origin's
+    # storage, where an older htmx kept copies of the register (ENG-009), and
+    # its HTTP cache. Every authenticated response is `no-store` today, but one
+    # was not — document thumbnails went out `private, max-age=300` (JSEC-003)
+    # — and a browser may still hold what an earlier release let it keep.
+    # Not cookies: `logout` has dealt with the session's own.
+    response["Clear-Site-Data"] = '"cache", "storage"'
     return response
 
 

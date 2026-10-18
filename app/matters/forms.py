@@ -5596,15 +5596,27 @@ ENGAGEMENT_UNCHANGED = "jaab-samaks"
 
 
 class _EngagementChoiceField(forms.ModelChoiceField):
-    """A `Kaasamine` from the reader's own list, or «leave the stored one alone»."""
+    """A `Kaasamine` from the reader's own list, or «leave the stored one alone».
+
+    The second answer exists only where a form says so: `accepts_unchanged` is
+    off by default and switched on per instance by the correction form, and only
+    when the record's stored round is hidden from this reader. Anywhere else —
+    `Lisa tagasiside` above all, which records a new position and has no stored
+    round to keep — `jaab-samaks` is an id the list does not hold and is refused
+    as an invalid choice: a 400 with a field error, not a value that reached a
+    query (JSEC-001, ENG-046).
+    """
+
+    accepts_unchanged = False
 
     def to_python(self, value: Any) -> Any:
-        if value == ENGAGEMENT_UNCHANGED:
+        if value == ENGAGEMENT_UNCHANGED and self.accepts_unchanged:
             return ENGAGEMENT_UNCHANGED
+        # Otherwise the queryset lookup refuses it like any unknown id.
         return super().to_python(value)
 
     def validate(self, value: Any) -> None:
-        if value == ENGAGEMENT_UNCHANGED:
+        if value == ENGAGEMENT_UNCHANGED and self.accepts_unchanged:
             return
         super().validate(value)
 
@@ -6197,6 +6209,7 @@ class ExternalPositionEditForm(ExternalPositionFieldsMixin, forms.Form):
         )
         if not self.keeps_unseen_engagement:
             return
+        field.accepts_unchanged = True
         field.choices = [
             (ENGAGEMENT_UNCHANGED, "Seotud kaasamine jääb samaks (seda siin ei kuvata)"),
             *list(field.choices),

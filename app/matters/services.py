@@ -4096,18 +4096,24 @@ EXTERNAL_POSITION_ROUND_ANSWER_IS_RECEIVED = (
 )
 
 
-def _external_position_round_answer(kind: str, related: Any, *, kept_id: Any = None) -> None:
+def _external_position_round_answer(
+    kind: str, related: Any, *, kept_id: Any = None, kept_kind: str | None = None
+) -> None:
     """A position tied to a round answers Koda's consultation, so it was sent to Koda.
 
     ``DISCOVERED`` with a round is refused — on creation always, and on a
-    correction whenever the round is newly set or changed. A link a row already
-    holds (``kept_id``) is left as it is, so a historical row stays correctable
-    without being rewritten (docs/adr/0170 §3, §6). ``LEGACY`` rows predate the
-    question and are not judged here (docs/adr/0091 §3.4).
+    correction whenever the round is newly set or changed, or the provenance is
+    moved. A historical ``DISCOVERED`` row that already holds the round
+    (``kept_id``) and stays ``DISCOVERED`` (``kept_kind``) is left as it is, so
+    it stays correctable without being rewritten (docs/adr/0170 §3, §6). The
+    exemption keeps a link; it never moves a provenance: a ``RECEIVED`` answer
+    to a round cannot be corrected into «Avaldatud mujal» by keeping the round
+    it answers (JDATA-002). ``LEGACY`` rows predate the question and are not
+    judged here (docs/adr/0091 §3.4).
     """
     if related is None or kind != ExternalPositionProvenance.DISCOVERED.value:
         return
-    if kept_id is not None and related.pk == kept_id:
+    if kept_id is not None and related.pk == kept_id and kept_kind == kind:
         return
     raise DomainError(EXTERNAL_POSITION_ROUND_ANSWER_IS_RECEIVED)
 
@@ -4554,7 +4560,9 @@ def correct_external_position(
         summary=clean_summary,
     )
     related = _external_position_engagement(locked_matter, engagement)
-    _external_position_round_answer(kind, related, kept_id=current.engagement_id)
+    _external_position_round_answer(
+        kind, related, kept_id=current.engagement_id, kept_kind=current.provenance
+    )
     precision = _normalised_precision(stated_on, stated_on_precision)
 
     proposed: dict[str, Any] = {
