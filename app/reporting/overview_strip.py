@@ -240,7 +240,14 @@ def rail(
     # of every open Matter's dated work per Statistika load, for one list. The
     # department page has handed its read down since PERF-02; this is the same
     # list for the same reader on the same day, so no number changes.
-    items = work_items.work_items(viewer, today=today)
+    #
+    # **Bounded at the window's end** (2026-10-17 audit, JPERF-005). The two rows
+    # that read it are «üle tähtaja» and «tähtaeg 30 p jooksul»: an overdue item
+    # is dated on or before today, and the window holds days up to
+    # `window_end`, so nothing dated after `window_end` can enter either count.
+    # Reading the decade of later milestones only to discard them was most of
+    # this page's time at 10,000 open Matters.
+    items = work_items.work_items(viewer, today=today, latest=window_end)
 
     now_rows: list[Figure] = []
     for params, caption, tone in (

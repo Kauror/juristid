@@ -104,7 +104,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, timedelta
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 
 from django.db.models import BooleanField, Exists, ExpressionWrapper, OuterRef, Q, QuerySet
 from django.urls import reverse
@@ -1328,7 +1329,35 @@ def work_items(
         responses = responses.filter(response_deadline__lte=latest)
         waits = waits.filter(feedback_deadline__lte=latest)
 
-    action_rows = list(actions)
+    # **People and stages are read once for the whole model, not once per row**
+    # (2026-10-17 audit, JPERF-005). Each source used to join its Matter's owner
+    # and stage (and an action's responsible person), so a department of ten
+    # lawyers and eleven stages came back as one `User` and one
+    # `StageVocabulary` object per *row* — at 10,000 open Matters, some 35,000
+    # model instances built for twenty-one distinct records, which was most of
+    # the time this function took. The rows now join only their Matter, and
+    # `_attach_people_and_stages` hands every row the same instances from one
+    # read of each table. Same objects, same attributes, same values.
+    action_rows = list(actions.select_related(None).select_related("matter"))
+    deadline_rows = list(deadlines.select_related(None).select_related("matter"))
+    response_rows = list(responses.select_related(None))
+    # A wait's item reads four things of its round — the key, the title, the
+    # reply-by day and the Matter — and keeps none of the round itself, so only
+    # those are read (`feedback_wait_item`). The Matter comes whole.
+    wait_rows = list(
+        waits.select_related(None)
+        .select_related("matter")
+        .only("id", "title", "feedback_deadline", "matter")
+    )
+    _attach_people_and_stages(
+        [
+            *(action.matter for action in action_rows),
+            *(record.matter for record in deadline_rows),
+            *response_rows,
+            *(engagement.matter for engagement in wait_rows),
+        ],
+        action_rows,
+    )
     # Which opinion each `Arvamuse järelkontroll` is about, read once for the
     # page and through the opinion's own visibility (docs/adr/0146 §7).
     subjects = follow_up_subjects(action_rows, user)
@@ -1336,10 +1365,49 @@ def work_items(
         action_item(action, today, subject=subjects.get(action.follow_up_id))
         for action in action_rows
     ]
-    items += [_deadline_item(record, today) for record in deadlines]
-    items += [_response_deadline_item(matter, today) for matter in responses]
-    items += [feedback_wait_item(engagement, today) for engagement in waits]
+    items += [_deadline_item(record, today) for record in deadline_rows]
+    items += [_response_deadline_item(matter, today) for matter in response_rows]
+    items += [feedback_wait_item(engagement, today) for engagement in wait_rows]
     return sort_items(items)
+
+
+def _attach_people_and_stages(matters: list[Matter], actions: list[NextAction]) -> None:
+    """Give every row its owner, stage and responsible person from one read of each.
+
+    What ``select_related("matter__owner", "matter__stage", "responsible")``
+    attached, attached from two small queries instead: every Matter gets its
+    `owner` and `stage`, every action its `responsible`, each the one instance
+    for that primary key. A row whose key is empty gets ``None``, as the join
+    gave it. Two queries whatever the population; none when it is empty.
+    """
+    from app.accounts.models import User
+    from app.workflow.models import StageVocabulary
+
+    people = {matter.owner_id for matter in matters if matter.owner_id is not None}
+    people |= {action.responsible_id for action in actions if action.responsible_id is not None}
+    stages = {matter.stage_id for matter in matters if matter.stage_id is not None}
+    users = {user.pk: user for user in User.objects.filter(pk__in=people)} if people else {}
+    vocabulary = (
+        {stage.pk: stage for stage in StageVocabulary.objects.filter(pk__in=stages)}
+        if stages
+        else {}
+    )
+    # Indexed, never `.get()`: a foreign key always names a row that exists, and
+    # assigning `None` for a missing one would also blank the `_id` it came from.
+    #
+    # Into the relation cache, the way `select_related` itself fills it, rather
+    # than through the descriptor: assigning would re-check routing and rewrite
+    # the `_id` for every one of thousands of rows to say what it already says.
+    owner = Matter._meta.get_field("owner")
+    stage = Matter._meta.get_field("stage")
+    responsible = NextAction._meta.get_field("responsible")
+    for matter in matters:
+        owner.set_cached_value(matter, users[matter.owner_id] if matter.owner_id else None)
+        stage.set_cached_value(matter, vocabulary[matter.stage_id] if matter.stage_id else None)
+    for action in actions:
+        responsible.set_cached_value(
+            action, users[action.responsible_id] if action.responsible_id else None
+        )
 
 
 def sort_items(items: list[WorkItem]) -> list[WorkItem]:
@@ -1832,21 +1900,41 @@ def quiet_matters(user: Any, today: date | None = None, *, days: int = QUIET_DAY
     silence would be reporting the absence of a record as the absence of work
     (app/matters/activity.py, ADR 0026).
     """
-    from app.matters.activity import activity_of, annotate_last_activity
+    from app.matters.activity import (
+        ACTIVITY_COLUMNS,
+        ANNOTATIONS,
+        activity_of,
+        annotate_last_activity,
+        known_active_since,
+    )
 
     today = today or timezone.localdate()
     cutoff = today - timedelta(days=days)
-    # No `.only()`. `activity_of` reads every annotation *and* four stored
-    # columns — the closure date, the received date, the origin and
-    # `updated_at` — so deferring anything here turns one query into one per
-    # row, silently, and looks fine on a development database with twelve
-    # Matters in it (app/matters/activity.py).
-    population = annotate_last_activity(open_matters(user), user)
+    # `activity_of` reads every annotation *and* four stored columns — the
+    # closure date, the received date, the origin and `updated_at`
+    # (`activity.ACTIVITY_COLUMNS`) — so all of them are read below, and nothing
+    # is deferred that would turn one query into one per row (app/matters/activity.py).
+    #
+    # **The files that plainly moved are left out before the annotation runs**
+    # (2026-10-17 audit, JPERF-005). A Matter with an entry, a sent opinion or
+    # a step set or ended on or after the cutoff cannot be quiet, so it is
+    # excluded by an index probe in the same query, and the correlated maximum
+    # is computed only for the rest. Same answer: the probe is a sufficient
+    # condition for «not quiet», never a second definition of activity.
+    population = annotate_last_activity(
+        open_matters(user).exclude(known_active_since(user, cutoff)), user
+    )
+    # **Read as values, not as Matters.** `activity_of` reads the annotations
+    # and exactly four stored columns, and nothing else here needs a model: the
+    # answer is a list of ids. Building a full `Matter` per open file only to
+    # read five of its attributes was most of the Python time of every
+    # «Muutusteta 30 p» (2026-10-17 audit, JPERF-005). Same values, through the
+    # same converters.
     quiet = []
-    for matter in population:
-        fact = activity_of(matter)
+    for row in population.values("pk", *ACTIVITY_COLUMNS, *ANNOTATIONS):
+        fact = activity_of(cast(Matter, SimpleNamespace(**row)))
         if fact is not None and fact.occurred_on < cutoff:
-            quiet.append(matter.pk)
+            quiet.append(row["pk"])
     return quiet
 
 

@@ -20,7 +20,7 @@ still says it today.
 
 | Gate | Job that reports it | What stands behind it |
 | --- | --- | --- |
-| Quality | `Format, lint, types and system checks` | ruff, mypy, Django checks, shellcheck, era contracts, shard completeness, shard health |
+| Quality | `Format, lint, types and system checks` | ruff, mypy, JavaScript parse and lint (`node --check`, ESLint pinned, `eslint.config.mjs`), Django checks, shellcheck, era contracts, shard completeness, shard health |
 | PostgreSQL tests | `PostgreSQL 18 test suite` | `PostgreSQL migration and runtime safety` + the test shards, two per runner |
 | Browser | `Browser workflow (Playwright on PostgreSQL 18)` | the browser shards, two per runner, + `Visual regression` |
 | Container/compose | `Container and compose smoke test` | unchanged |

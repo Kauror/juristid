@@ -71,7 +71,7 @@ from app.intelligence.models import (
     MatterWorkVictory,
 )
 from app.matters import work_items as wi
-from app.matters.activity import activity_of, annotate_last_activity
+from app.matters.activity import activity_of, annotated_slice
 from app.matters.models import Entry, Matter, MatterEngagement
 from app.matters.register_filters import RESULTS_ANCHOR
 from app.matters.selectors import MISSING
@@ -354,10 +354,15 @@ def intervention_rows(
                 )
             )
 
-    quiet = annotate_last_activity(
+    # The capped slice first, then its annotations (`annotated_slice`): the
+    # same sixty rows in the same order, without the correlated maxima for
+    # every quiet file under the sort.
+    quiet = annotated_slice(
         people.quiet.filter(owner__isnull=False).select_related("owner", "stage"),
         people.user,
-    ).order_by("updated_at")[:INTERVENTION_LIMIT]
+        "updated_at",
+        limit=INTERVENTION_LIMIT,
+    )
     for matter in quiet:
         # `activity_of` reads the annotations and never queries, so a capped
         # list costs one query rather than one per row. It returns None where

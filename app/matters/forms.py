@@ -3375,6 +3375,11 @@ def attach_organisation_picker(
         for organisation in cast(Any, form).organisation_offered
     ]
     cast(Any, field.widget).alias_terms = reading.alias_terms
+    # Kept on the form, so a caller that rebuilds this control for the same page
+    # — `step_launch.apply_open_request` opening `Lisa tagasiside` on a named
+    # round — hands the page's one reading on rather than reading it again
+    # (2026-10-17 audit, JPERF-001).
+    form.organisation_choices = reading  # type: ignore[attr-defined]
 
 
 #: `InitialOpinionActionForm` stood here, and `Arvamuse tähtaeg` is what became

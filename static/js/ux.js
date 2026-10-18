@@ -1749,17 +1749,36 @@
     });
   }
 
+  /* Each binder on its own, as in app.js (`safeInit`, docs/adr/0171): one that
+     throws is logged under its name and the rest still bind — and the refusal
+     focus that follows `bindAll` after a swap still runs. */
+  function safeInit(name, init) {
+    try {
+      init();
+    } catch (error) {
+      if (window.console && window.console.error) {
+        window.console.error("juristid: " + name + " failed", error);
+      }
+    }
+  }
+
   function bindAll(scope) {
     var root = scope && scope.querySelectorAll ? scope : document;
-    bindPublicationPreview(root);
-    bindQuickDates(root);
-    bindAddPanels(root);
-    bindFileDrop(root);
-    bindWorkRows(root);
-    bindExclusivePopovers(root);
-    bindDocumentRename(root);
-    bindCopyLink(root);
-    bindRowFilter(root);
+    [
+      bindPublicationPreview,
+      bindQuickDates,
+      bindAddPanels,
+      bindFileDrop,
+      bindWorkRows,
+      bindExclusivePopovers,
+      bindDocumentRename,
+      bindCopyLink,
+      bindRowFilter,
+    ].forEach(function (binder) {
+      safeInit(binder.name, function () {
+        binder(root);
+      });
+    });
   }
 
   document.addEventListener("DOMContentLoaded", function () {
