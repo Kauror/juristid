@@ -201,9 +201,20 @@ control that promised one of them would be lying about what it does
           halves back together would be one more place a row could be dropped
           from or shown twice. «Kõik N» means all N.
         {% endcomment %}
-        {% for item in group.items %}
+        {% for item in group.rendered %}
           {% include "matters/partials/deadline_row.html" with item=item %}
         {% endfor %}
+        {% if group.beyond_cap %}
+          {% comment %}
+            Past the render cap (`UPCOMING_LIMIT`, 2026-10-17 audit JPERF-005):
+            the rest of the window is listed in full in the register, narrowed
+            to exactly this window — files rather than deadlines, so it says so.
+          {% endcomment %}
+          <p class="uxdl__more">
+            Siin on {{ group.rendered|length }} esimest {{ group.count }}-st.
+            <a href="{{ group.url }}">Ava selle vahemiku {{ group.matter_count }} teemat registris →</a>
+          </p>
+        {% endif %}
       </details>
     {% endif %}
   {% endfor %}
