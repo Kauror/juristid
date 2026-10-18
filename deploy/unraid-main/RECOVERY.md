@@ -952,6 +952,27 @@ so the decision is: how much work has happened since the deployment, and is
 losing it better than staying on the broken release. That is a judgement, not a
 command.
 
+### A backward migrate across `matters.0049` drops Muu links
+
+`matters.0049_entry_url` is additive, so the ordinary answer to a bad release
+that applied it is a **code-only** rollback: the previous release inserts
+entries without naming `url`, the database default fills in `''`, and the links
+stay where they are (docs/adr/0097, amendment of 2026-10-15).
+
+Running `migrate matters 0048` instead is a data loss. The reverse of `0049` is
+two `RemoveField`s and a dropped constraint, so **every `Muu` link
+(`Entry.url`) and every earlier link a correction kept (`EntryRevision.url`)
+is dropped with its column.** The entries themselves, their wording, their
+dates and their files survive. Migrating forward again brings the columns back
+*empty*; the links do not return. `tests/test_entry_url_migration_reversal.py`
+proves both halves over populated columns.
+
+If the schema really has to go back across `0049`, first export `id, url`
+from `matters_entry` and from `matters_entryrevision` where `url <> ''`, and
+keep the export with the release's backup set — or restore the set taken
+before the release, which is the answer this document gives for every
+non-additive step back.
+
 ### The migration failed partway
 
 PostgreSQL runs each migration in a transaction where it can, so a failure often
