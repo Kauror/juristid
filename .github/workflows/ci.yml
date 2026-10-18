@@ -149,9 +149,12 @@ jobs:
       # `CI SHARD TIMINGS NEED REFRESH` when they cross thresholds taken from
       # the 2026-08-30 table's own decay.
       #
-      # `continue-on-error` as well as an exit code of 0, because a report is
-      # not a gate: hosted runners have slow days, and a build that went red
-      # over a three-week-old table would teach people to ignore the words.
+      # `--strict`: a collected file the table does not hold is named, as a
+      # warning annotation, and fails this *step* (JTEST-006). The step carries
+      # `continue-on-error`, so the job and the release gate stay green: a
+      # report is not a gate, and hosted runners have slow days. Age, the
+      # unmeasured share and imbalance are still printed and annotated, but
+      # only the named-file warnings fail the step.
       - name: Shard timings are still current
         continue-on-error: true
         env:
@@ -160,7 +163,7 @@ jobs:
           DJANGO_ALLOWED_HOSTS: localhost
           E2E_BASE_URL: http://127.0.0.1:8000
           E2E_GATE_BASE_URL: http://127.0.0.1:8001
-        run: uv run python scripts/ci/report_shard_health.py
+        run: uv run python scripts/ci/report_shard_health.py --strict
 
   postgres-safety:
     name: PostgreSQL migration and runtime safety
@@ -909,10 +912,17 @@ jobs:
           uv run python manage.py migrate --noinput
           uv run python manage.py seed_e2e_data
 
+      # The servers run on the synced environment's own interpreter, not
+      # through `uv run`: a `uv run` process holds uv's cache lock for as long
+      # as it lives, these live until the job ends, and setup-uv's post step
+      # then waits five minutes to prune the cache and fails the job whenever
+      # the cache key was new (runs 39098968112 and 39110131105, every test
+      # green). The browser shards already start theirs this way
+      # (scripts/ci/run_slices.py).
       - name: Start the application
         run: |
           mkdir -p artifacts
-          nohup uv run python manage.py runserver 127.0.0.1:8000 --noreload > artifacts/server.log 2>&1 &
+          nohup .venv/bin/python manage.py runserver 127.0.0.1:8000 --noreload > artifacts/server.log 2>&1 &
           for attempt in $(seq 1 40); do
             if curl --fail --silent http://127.0.0.1:8000/healthz > /dev/null; then
               echo "server is up"; exit 0
@@ -932,7 +942,7 @@ jobs:
           # synthetic sign-in all live in the settings module, not here.
           DJANGO_SETTINGS_MODULE: config.e2e_gate_settings
         run: |
-          nohup uv run python manage.py runserver 127.0.0.1:8001 --noreload > artifacts/server-gate.log 2>&1 &
+          nohup .venv/bin/python manage.py runserver 127.0.0.1:8001 --noreload > artifacts/server-gate.log 2>&1 &
           for attempt in $(seq 1 40); do
             if curl --fail --silent http://127.0.0.1:8001/healthz > /dev/null; then
               echo "shared-gate server is up"; exit 0
@@ -1075,7 +1085,7 @@ jobs:
           uv run python scripts/ci/report_shard_health.py
           --durations junit --no-collect
           --run-id ${{ github.run_id }} --repository ${{ github.repository }}
-          --summary-json shard-health.json
+          --summary-json shard-health.json --strict
 
       - name: Upload the numbers
         if: always()
