@@ -16,9 +16,10 @@ caller asks the person rather than guessing (docs/adr/0142 §C).
 
 from __future__ import annotations
 
+from typing import Any
 from urllib.parse import urlsplit
 
-from app.matters.enums import WebsiteOverviewKind
+from app.matters.enums import WebsiteOverviewKind, WebsiteOverviewStatus
 
 KODA_HOSTS = frozenset({"koda.ee", "www.koda.ee"})
 
@@ -66,3 +67,20 @@ def same_publication_url(first: str | None, second: str | None) -> bool:
     if not first or not second:
         return False
     return key(first) == key(second)
+
+
+def overview_fulfils_step(overview: Any) -> bool:
+    """Whether this write-up is the published `Ülevaade` a «Koosta kodulehe
+    ülevaade» step asks for — the one answer for the step's own save
+    (docs/adr/0168 §3) and for the record that proves it done (docs/adr/0161).
+
+    Read on ``effective_kind``, the kind the page shows: a row from before the
+    kind was stored is what its koda.ee address says, so a legacy news item
+    printed as «Uudis» does not count as the overview. Where the address says
+    nothing either, the row reads as an overview — which is what every one of
+    them was filed as.
+    """
+    return overview.status == WebsiteOverviewStatus.PUBLISHED and overview.effective_kind in (
+        WebsiteOverviewKind.OVERVIEW,
+        "",
+    )

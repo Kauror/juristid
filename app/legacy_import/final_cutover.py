@@ -537,15 +537,22 @@ def native_activity(matter_ids: list[Any]) -> NativeActivity:
     def matters_of(queryset: Any) -> frozenset[Any]:
         return frozenset(queryset.values_list("matter_id", flat=True).distinct())
 
+    # A record a lawyer removed with «Kustuta» never belonged to the file
+    # (docs/adr/0102): it is neither authored work nor an obligation, so it
+    # steers no plan (JDATA-005). Every removable family reads `live()`.
     authored: set[Any] = set()
-    authored |= matters_of(MatterProceduralDevelopment.objects.filter(matter_id__in=matter_ids))
-    authored |= matters_of(MatterExternalPosition.objects.filter(matter_id__in=matter_ids))
-    authored |= matters_of(MatterWebsiteOverview.objects.filter(matter_id__in=matter_ids))
     authored |= matters_of(
-        MatterEngagement.objects.filter(matter_id__in=matter_ids, register_imports__isnull=True)
+        MatterProceduralDevelopment.objects.live().filter(matter_id__in=matter_ids)
+    )
+    authored |= matters_of(MatterExternalPosition.objects.live().filter(matter_id__in=matter_ids))
+    authored |= matters_of(MatterWebsiteOverview.objects.live().filter(matter_id__in=matter_ids))
+    authored |= matters_of(
+        MatterEngagement.objects.live().filter(
+            matter_id__in=matter_ids, register_imports__isnull=True
+        )
     )
     return NativeActivity(
-        entries=matters_of(Entry.objects.filter(matter_id__in=matter_ids)),
+        entries=matters_of(Entry.objects.live().filter(matter_id__in=matter_ids)),
         open_actions=matters_of(
             NextAction.objects.filter(matter_id__in=matter_ids, status=ActionStatus.OPEN)
         ),
@@ -556,14 +563,10 @@ def native_activity(matter_ids: list[Any]) -> NativeActivity:
         # because a person recorded or opened it, and the outreach files its
         # rounds as history, never open (docs/adr/0132).
         open_feedback_waits=matters_of(
-            MatterEngagement.objects.filter(
-                matter_id__in=matter_ids,
-                lifecycle_tracked=True,
-                feedback_closed_at__isnull=True,
-            )
+            MatterEngagement.objects.live().open_waits().filter(matter_id__in=matter_ids)
         ),
         planned_overviews=matters_of(
-            MatterWebsiteOverview.objects.filter(
+            MatterWebsiteOverview.objects.live().filter(
                 matter_id__in=matter_ids, status=WebsiteOverviewStatus.PLANNED
             )
         ),

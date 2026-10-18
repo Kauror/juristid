@@ -3079,12 +3079,9 @@ def close_open_feedback_waits_for_closure(
         MatterEngagement.objects.select_for_update(no_key=True)
         # A round removed with «Kustuta» is on no surface and waits on nobody:
         # closure neither counts nor closes it (QA-WORKFLOW-01).
-        .filter(
-            matter=matter,
-            lifecycle_tracked=True,
-            feedback_closed_at__isnull=True,
-            removed_at__isnull=True,
-        )
+        .live()
+        .open_waits()
+        .filter(matter=matter)
         .order_by("created_at", "id")
     )
     return [
@@ -3168,10 +3165,10 @@ def _save_published_address(locked: MatterWebsiteOverview, *, update_fields: lis
     here and by the constraint, so recording a removed page again works.
     """
     taken = (
-        MatterWebsiteOverview.objects.filter(
+        MatterWebsiteOverview.objects.live()
+        .filter(
             matter_id=locked.matter_id,
             status=WebsiteOverviewStatus.PUBLISHED,
-            removed_at__isnull=True,
             url=locked.url,
         )
         .exclude(pk=locked.pk)
@@ -4018,7 +4015,8 @@ def cancel_planned_website_overviews_for_closure(
         # A plan taken off the file with «Kustuta» is on no surface and owes
         # nothing: it is neither counted at closure nor cancelled by it
         # (QA-WORKFLOW-01, `app.matters.closure_work`).
-        .filter(matter=matter, status=WebsiteOverviewStatus.PLANNED, removed_at__isnull=True)
+        .live()
+        .filter(matter=matter, status=WebsiteOverviewStatus.PLANNED)
         .order_by("created_at", "id")
     )
     return [

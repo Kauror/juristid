@@ -35,7 +35,6 @@ from typing import Any
 from django.db.models import QuerySet
 
 from app.core.errors import DomainError
-from app.matters.enums import RecordMode
 from app.matters.locks import lock_open_matter_for_business_write
 from app.matters.models import (
     EXTERNAL_POSITION_SUMMARY_MAX_LENGTH,
@@ -68,11 +67,7 @@ def answerable_rounds(viewer: Any, matter: Matter) -> QuerySet[MatterEngagement]
     accepted for a reader who may not open it (AUTH-003); removed rounds are
     dropped by the same chokepoint.
     """
-    return MatterEngagement.objects.visible_to(viewer).filter(
-        matter=matter,
-        lifecycle_tracked=True,
-        matter__record_mode=RecordMode.FULL,
-    )
+    return MatterEngagement.objects.visible_to(viewer).answerable().filter(matter=matter)
 
 
 def finish_wait_on_reply(*, engagement: MatterEngagement, actor: Any = None) -> bool:
@@ -102,7 +97,7 @@ def finish_wait_on_reply(*, engagement: MatterEngagement, actor: Any = None) -> 
     current = MatterEngagement.objects.select_for_update(no_key=True).get(
         pk=engagement.pk, matter=locked_matter
     )
-    if not current.lifecycle_tracked or current.feedback_closed_at is not None:
+    if not current.has_open_feedback_wait:
         return False
     complete_engagement_feedback(engagement=current, actor=actor)
     engagement.feedback_closed_at = current.feedback_closed_at
@@ -161,10 +156,9 @@ def refuse_repeated_reply(
     lock_open_matter_for_business_write(matter.pk)
     clean_summary = (summary or "").strip()[:EXTERNAL_POSITION_SUMMARY_MAX_LENGTH]
     clean_url = normalize_external_position_url(url)
-    candidates = MatterExternalPosition.objects.filter(
+    candidates = MatterExternalPosition.objects.live().filter(
         matter=matter,
         engagement=engagement,
-        removed_at__isnull=True,
         summary=clean_summary,
         url=clean_url,
         stated_on=stated_on,

@@ -44,7 +44,7 @@ from django.utils import timezone
 from app.core.authorization import apply as apply_scope
 from app.core.authorization import child_visibility_q, scope_for_user
 from app.core.enums import Visibility
-from app.core.models import RemovableRecord, VisibilityInheritingModel
+from app.core.models import RemovableQuerySet, RemovableRecord, VisibilityInheritingModel
 from app.intelligence.enums import (
     EffectiveDateKind,
     FactStatus,
@@ -63,7 +63,7 @@ DISTANCE_WINDOW_DAYS = 60
 VISIBILITY_OVERRIDE_VALUES = ["", Visibility.NORMAL, Visibility.RESTRICTED]
 
 
-class MatterFactQuerySet(models.QuerySet):
+class MatterFactQuerySet(RemovableQuerySet):
     """Shared reads. Every one of the three tables is a Matter child."""
 
     def visible_to(self, user: object | None) -> MatterFactQuerySet:
@@ -83,7 +83,7 @@ class MatterFactQuerySet(models.QuerySet):
         saying so. A removed one never belonged to this file.
         """
         scoped = apply_scope(self, child_visibility_q(scope_for_user(user)))
-        return scoped.filter(removed_at__isnull=True)
+        return scoped.live()
 
     def active(self) -> MatterFactQuerySet:
         return self.filter(status=FactStatus.ACTIVE)

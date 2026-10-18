@@ -25,6 +25,7 @@ from app.core.enums import Visibility
 from app.core.models import (
     AppendOnlyModel,
     BaseModel,
+    RemovableQuerySet,
     RemovableRecord,
     VisibilityInheritingModel,
 )
@@ -721,7 +722,7 @@ class TagAssignment(BaseModel):
         return f"{self.matter_id} · {self.tag_id}"
 
 
-class EntryQuerySet(models.QuerySet):
+class EntryQuerySet(RemovableQuerySet):
     def visible_to(self, user: object | None) -> EntryQuerySet:
         """The only supported entry point for reading entries.
 
@@ -737,7 +738,7 @@ class EntryQuerySet(models.QuerySet):
         constraint as a blocker for whole-Matter deletion).
         """
         scoped = apply_scope(self, child_visibility_q(scope_for_user(user)))
-        return scoped.filter(removed_at__isnull=True)
+        return scoped.live()
 
     def chronological(self) -> EntryQuerySet:
         """Newest first, with a deterministic tie break.
@@ -994,7 +995,7 @@ EXTERNAL_POSITION_SOURCE_LABEL_MAX_LENGTH = 200
 DEVELOPMENT_TITLE_MAX_LENGTH = 500
 
 
-class MatterEngagementQuerySet(models.QuerySet):
+class MatterEngagementQuerySet(RemovableQuerySet):
     def visible_to(self, user: object | None) -> MatterEngagementQuerySet:
         """The only supported entry point for reading engagements.
 
@@ -1005,7 +1006,28 @@ class MatterEngagementQuerySet(models.QuerySet):
         site is a filter the next call site forgets (docs/adr/0102).
         """
         scoped = apply_scope(self, child_visibility_q(scope_for_user(user)))
-        return scoped.filter(removed_at__isnull=True)
+        return scoped.live()
+
+    def open_waits(self) -> MatterEngagementQuerySet:
+        """Rounds whose wait is OPEN — the SQL twin of `has_open_feedback_wait`.
+
+        A tracked round nobody has finished, deadline or not (docs/adr/0132).
+        Nothing else: whether the reader may see it, whether it was removed,
+        and whether its Matter is open or `FULL` are each caller's own clause,
+        written beside this call where the reader of that caller can see it.
+        """
+        return self.filter(lifecycle_tracked=True, feedback_closed_at__isnull=True)
+
+    def answerable(self) -> MatterEngagementQuerySet:
+        """Rounds a reply may name: tracked, on a `FULL` Matter, open or finished.
+
+        Not narrowed to open waits — a later answer to a finished round is still
+        an answer (docs/adr/0167 §2) — and not to open Matters, for the reason
+        `engagement_replies.answerable_rounds` gives (JQA-009). A round filed as
+        history has no lifecycle and is not offered until `Ootan tagasisidet`
+        starts one.
+        """
+        return self.filter(lifecycle_tracked=True, matter__record_mode=RecordMode.FULL)
 
 
 class MatterEngagement(VisibilityInheritingModel, RemovableRecord):
@@ -1372,6 +1394,9 @@ class MatterEngagement(VisibilityInheritingModel, RemovableRecord):
         result, and nothing closes a round except somebody pressing
         `Lõpeta kaasamine` or the Matter shutting underneath it
         (docs/adr/0086 §4, §6; docs/adr/0132).
+
+        `MatterEngagementQuerySet.open_waits` is the same rule in SQL; the two
+        are held equal by `tests/test_one_rule_one_place.py`.
         """
         return self.lifecycle_tracked and self.feedback_closed_at is None
 
@@ -1487,7 +1512,7 @@ class MatterEngagement(VisibilityInheritingModel, RemovableRecord):
         return list(dict.fromkeys(terms))
 
 
-class MatterWebsiteOverviewQuerySet(models.QuerySet):
+class MatterWebsiteOverviewQuerySet(RemovableQuerySet):
     def visible_to(self, user: object | None) -> MatterWebsiteOverviewQuerySet:
         """The only supported entry point for reading website overviews.
 
@@ -1498,7 +1523,7 @@ class MatterWebsiteOverviewQuerySet(models.QuerySet):
         site is a filter the next call site forgets (docs/adr/0102).
         """
         scoped = apply_scope(self, child_visibility_q(scope_for_user(user)))
-        return scoped.filter(removed_at__isnull=True)
+        return scoped.live()
 
     def planned(self) -> MatterWebsiteOverviewQuerySet:
         return self.filter(status=WebsiteOverviewStatus.PLANNED)
@@ -1944,7 +1969,7 @@ class MatterWebsiteOverview(VisibilityInheritingModel, RemovableRecord):
         return shown
 
 
-class MatterExternalPositionQuerySet(models.QuerySet):
+class MatterExternalPositionQuerySet(RemovableQuerySet):
     def visible_to(self, user: object | None) -> MatterExternalPositionQuerySet:
         """The only supported entry point for reading external positions.
 
@@ -1959,7 +1984,7 @@ class MatterExternalPositionQuerySet(models.QuerySet):
         inherited it is hidden from the readers the round excludes.
         """
         scoped = apply_scope(self, external_position_visibility_q(scope_for_user(user)))
-        return scoped.filter(removed_at__isnull=True)
+        return scoped.live()
 
 
 class MatterExternalPosition(VisibilityInheritingModel, RemovableRecord):
@@ -2475,7 +2500,7 @@ EXTERNAL_POSITION_LEGACY_HEADLINE = "Väline seisukoht"
 EXTERNAL_POSITION_LINK_FALLBACK = "Ava seisukoht"
 
 
-class MatterProceduralDevelopmentQuerySet(models.QuerySet):
+class MatterProceduralDevelopmentQuerySet(RemovableQuerySet):
     def visible_to(self, user: object | None) -> MatterProceduralDevelopmentQuerySet:
         """The only supported entry point for reading procedural developments.
 
@@ -2486,7 +2511,7 @@ class MatterProceduralDevelopmentQuerySet(models.QuerySet):
         site is a filter the next call site forgets (docs/adr/0102).
         """
         scoped = apply_scope(self, child_visibility_q(scope_for_user(user)))
-        return scoped.filter(removed_at__isnull=True)
+        return scoped.live()
 
 
 class MatterProceduralDevelopment(VisibilityInheritingModel, RemovableRecord):

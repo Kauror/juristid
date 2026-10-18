@@ -129,8 +129,6 @@ from app.matters.enums import (
     MatterDataClass,
     MatterOrigin,
     RecordMode,
-    WebsiteOverviewKind,
-    WebsiteOverviewStatus,
 )
 from app.matters.episode_timeline import matter_episode_timeline
 from app.matters.follow_up_restart import restart_offers
@@ -237,7 +235,7 @@ from app.matters.my_work import (
 from app.matters.next_step import upcoming_milestone
 from app.matters.plan_view import Recommendation, recommendation_for
 from app.matters.process_timeline import process_steps
-from app.matters.publication_kind import classify_publication_url
+from app.matters.publication_kind import classify_publication_url, overview_fulfils_step
 from app.matters.removal import (
     RecordRemovalConflict,
     kind_for,
@@ -7077,25 +7075,13 @@ def add_website_overview(request: HttpRequest, pk: Any) -> HttpResponse:
                 title=form.cleaned_data.get("overview_title") or "",
                 kind=form.cleaned_data.get("kind") or "",
             )
-            if launched is not None and _overview_does_the_step(result.record):
+            if launched is not None and overview_fulfils_step(result.record):
                 work_plan.fulfil_launched_step(
                     launched=launched, record=result.record, actor=request.user
                 )
     except DomainError as error:
         return _workspace_refusal(request, matter, key=key, form=form, error=str(error))
     return _render_overview(request, matter)
-
-
-def _overview_does_the_step(overview: Any) -> bool:
-    """A published Ülevaade — the reading `RecordedWork` proves the step by.
-
-    A publication whose kind predates the choice reads as an overview, which is
-    what every one of them was filed as (`plan_view.RecordedWork`).
-    """
-    return overview.status == WebsiteOverviewStatus.PUBLISHED and overview.kind in (
-        WebsiteOverviewKind.OVERVIEW,
-        "",
-    )
 
 
 @login_required

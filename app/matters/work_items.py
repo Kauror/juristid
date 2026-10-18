@@ -855,12 +855,8 @@ def open_feedback_waits(user: Any, *, owner: Any = None) -> QuerySet[MatterEngag
     """
     queryset = (
         MatterEngagement.objects.visible_to(user)
-        .filter(
-            lifecycle_tracked=True,
-            feedback_closed_at__isnull=True,
-            matter__is_open=True,
-            matter__record_mode=RecordMode.FULL,
-        )
+        .open_waits()
+        .filter(matter__is_open=True, matter__record_mode=RecordMode.FULL)
         .select_related("matter", "matter__stage", "matter__owner")
     )
     if owner is not None:
