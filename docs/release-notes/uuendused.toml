@@ -8,7 +8,7 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
-date = 2026-10-18
+date = 2026-10-19
 basis = "deployment"
 prs = [453, 454, 455, 456, 457, 459, 461, 463, 464, 465, 468, 470, 474, 480, 482, 483, 484]
 # Teema UX-voor, neli etappi, üks ühendatud väljalase: kaasamise kalender (#453),
@@ -17,9 +17,9 @@ prs = [453, 454, 455, 456, 457, 459, 461, 463, 464, 465, 468, 470, 474, 480, 482
 # matters/0049_entry_url (lisaveerg vaikeväärtusega ja CHECK). Otsinguindeksit
 # uuesti ehitada ei ole vaja. Samas väljalaskes on 17.10 auditi parandusvoorud 0–3
 # (#457–#497; integration/hardening-r1 ja main). Väljalase ei jõudnud tootmisse
-# 17.10, nii et kirje on planeeritud väljalaske päeval 18.10. Kui väljalase ei
-# jõua tootmisse 18.10 (Tallinna aja järgi), liigub see kirje väljalaske päeva
-# kuupäevale.
+# 17.10 ega 18.10, nii et kõik on üks kirje planeeritud väljalaske päeval 19.10.
+# Kui väljalase ei jõua tootmisse 19.10 (Tallinna aja järgi), liigub see kirje
+# väljalaske päeva kuupäevale.
 changes = [
   "«Alusta kaasamist» kalendris «Tagasisidet ootame kuni» on märgitud teema arvamuse tähtaeg.",
   "«+ Lisa» all on uus valik «Muu» taustamaterjali lisamiseks koos kirjelduse, toimumise kuupäeva ning soovi korral lingi ja failidega.",
