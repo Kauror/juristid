@@ -151,14 +151,14 @@ def test_the_panels_are_compact_and_fit(page, base_url, width):
     expect(family.locator("[name=process_phase]")).to_have_count(0)
     expect(family).not_to_contain_text("Etapp")
     marge = page.locator("#marge-arvamuse-tahtaeg")
-    geometry = date_geometry(marge.locator("label.cx-f--solo"))
+    geometry = date_geometry(marge.locator(".cx-f--solo"))
     assert geometry["width"] <= 161, geometry
     assert geometry["sameRow"] and geometry["inside"], geometry
     assert_no_sideways_scroll(page)
 
     # `+ Kaasamine · Lisa tagasiside` — every position since docs/adr/0170.
     feedback = open_feedback_form(page)
-    geometry = date_geometry(feedback.locator("label.cx-f--solo"))
+    geometry = date_geometry(feedback.locator(".cx-f--solo"))
     assert geometry["width"] <= 161, geometry
     if width > 375:
         # It used to run nearly the whole panel.
