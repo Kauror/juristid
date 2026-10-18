@@ -29,6 +29,7 @@ from app.core.models import (
     RemovableRecord,
     VisibilityInheritingModel,
 )
+from app.core.web_addresses import display_host
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import (
     DataQualityTier,
@@ -847,14 +848,14 @@ class Entry(VisibilityInheritingModel, RemovableRecord):
     def link_label(self) -> str:
         """What the chronology calls the link: its host, never the raw address.
 
-        `MatterEngagement._hostname`, shared rather than copied, so userinfo and
-        the port are dropped and a link carrying credentials cannot print them
-        (red-team finding F-2). An address with no readable host says
+        `app.core.web_addresses.display_host`, shared rather than copied, so
+        userinfo and the port are dropped and a link carrying credentials cannot
+        print them (red-team finding F-2). An address with no readable host says
         «Ava link» instead of claiming where it points.
         """
         if not self.url:
             return ""
-        return MatterEngagement._hostname(self.url) or "Ava link"
+        return display_host(self.url) or "Ava link"
 
 
 class EntryRevision(AppendOnlyModel):
@@ -1422,47 +1423,6 @@ class MatterEngagement(VisibilityInheritingModel, RemovableRecord):
             return False
         return self.feedback_deadline <= (today or timezone.localdate())
 
-    @staticmethod
-    def _hostname(url: str) -> str:
-        """The host an address points at, and nothing else about the address.
-
-        `urlsplit(url).netloc` is the URL's **authority**, which is
-        ``userinfo@host:port`` — so a link pasted out of a provider dashboard
-        that carries basic-auth credentials yields a "host" with a username and
-        a password in it, and this model copies its hosts into a rendered label
-        and into the search projection's `alias_text`. `parsed.hostname` is the
-        host: it drops the userinfo and the port, and lowercases what is left
-        (red-team finding F-2, 2026-09-12).
-
-        The port goes with the userinfo deliberately. "Host" in this model
-        means the name that tells a reader which provider a link runs to, and
-        `:8443` is transport machinery of exactly the kind the label exists to
-        leave out; no product contract here asks for host and port.
-
-        The fallback is for the historical row that is not a parseable address
-        at all, and it drops anything before an ``@`` before bounding what is
-        left: ``https://user:pw@/path`` has a non-empty authority and *no*
-        hostname, so a fallback that printed the stored string would put the
-        credentials back exactly where this method exists to keep them out of.
-        `normalize_engagement_url` now refuses that shape on the way in as well.
-        """
-        if not url:
-            return ""
-        from urllib.parse import urlsplit
-
-        try:
-            host = urlsplit(url).hostname or ""
-        except ValueError:
-            # A malformed authority — an unbracketed IPv6 literal, a port that
-            # is not a number. Unparseable is not a crash on a read path.
-            host = ""
-        if host:
-            return host
-        remainder = url.split("://", 1)[-1]
-        if "@" in remainder:
-            remainder = remainder.rsplit("@", 1)[-1]
-        return remainder[:60]
-
     @property
     def link_label(self) -> str:
         """A link's host, for a control that must not print a tracking URL.
@@ -1470,14 +1430,15 @@ class MatterEngagement(VisibilityInheritingModel, RemovableRecord):
         Campaign and survey links routinely run to hundreds of characters of
         query string. The host is what tells a reader where the link goes; the
         rest is machinery (brief 35) — including any credentials the address
-        carries, which is why this is the parsed hostname and not the authority.
+        carries, which is why this is the parsed hostname and not the authority
+        (`app.core.web_addresses.display_host`).
         """
-        return self._hostname(self.url)
+        return display_host(self.url)
 
     @classmethod
     def _host_terms(cls, url: str) -> list[str]:
         """A single address, reduced to the words somebody would search for."""
-        host = cls._hostname(url)
+        host = display_host(url)
         if not host:
             return []
         labels = [part for part in host.split(".") if part and part != "www"]
@@ -1502,7 +1463,7 @@ class MatterEngagement(VisibilityInheritingModel, RemovableRecord):
         by nothing else (docs/adr/0027, amended 2026-09-12).
 
         **Nor the userinfo, nor the port.** Both live in the URL's authority
-        beside the host, and `_hostname` is what separates them; before it, this
+        beside the host, and `display_host` is what separates them; before it, this
         list was built from `netloc` and a link carrying basic-auth credentials
         indexed the password as a matchable token (red-team finding F-2).
         """
@@ -1933,7 +1894,7 @@ class MatterWebsiteOverview(VisibilityInheritingModel, RemovableRecord):
           `user:pw@host` on the way in since docs/adr/0081 §3, so this is for a
           historical row alone — and a credential printed on a page and copied
           into everybody's browser history is exactly what red-team finding F-2
-          closed on `MatterEngagement._hostname`;
+          closed on `app.core.web_addresses.display_host`;
         * **a trailing slash**, which is punctuation rather than address.
 
         Everything else is printed as stored, host and path and query: a
@@ -2476,14 +2437,14 @@ class MatterExternalPosition(VisibilityInheritingModel, RemovableRecord):
         control is for without claiming anything about where it points
         (docs/adr/0081 §4, docs/adr/0084 §3).
 
-        `MatterEngagement._hostname` is the implementation, shared rather than
-        copied: it is what drops the userinfo and the port, so a link carrying
-        basic-auth credentials cannot put a password into a rendered label
-        (red-team finding F-2).
+        `app.core.web_addresses.display_host` is the implementation, shared
+        rather than copied: it is what drops the userinfo and the port, so a
+        link carrying basic-auth credentials cannot put a password into a
+        rendered label (red-team finding F-2).
         """
         if not self.url:
             return ""
-        return MatterEngagement._hostname(self.url) or EXTERNAL_POSITION_LINK_FALLBACK
+        return display_host(self.url) or EXTERNAL_POSITION_LINK_FALLBACK
 
 
 #: What the chronology calls a position recorded before `provenance` existed.
@@ -3220,14 +3181,14 @@ class MatterProceduralLink(VisibilityInheritingModel):
         to the kind's own name rather than to a sentence repeating it
         (docs/adr/0081 §4, docs/adr/0084 §3).
 
-        `MatterEngagement._hostname` is the implementation, shared rather than
-        copied: it is what drops the userinfo and the port, so a link carrying
-        basic-auth credentials cannot put a password into a rendered label
-        (red-team finding F-2).
+        `app.core.web_addresses.display_host` is the implementation, shared
+        rather than copied: it is what drops the userinfo and the port, so a
+        link carrying basic-auth credentials cannot put a password into a
+        rendered label (red-team finding F-2).
         """
         if self.label:
             return self.label
-        return MatterEngagement._hostname(self.url) or str(self.get_kind_display())
+        return display_host(self.url) or str(self.get_kind_display())
 
 
 class MatterPersonalNote(BaseModel):

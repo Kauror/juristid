@@ -47,6 +47,7 @@ from datetime import date
 from typing import Any
 
 from django.db.models import Q
+from django.urls import reverse
 
 from app.documents.enums import DocumentRole
 from app.documents.models import Document
@@ -66,6 +67,36 @@ from app.submissions.models import (
 #: on a lawyer's screen. Lower-case Estonian, like every other filter value in
 #: this product, so a filtered view stays a link somebody can send.
 OPINION_ROLE_FILTER = "arvamus"
+
+
+def opinions_url(matter: Any, *, anchor: str = "") -> str:
+    """Dokumendid, showing this Matter's opinions — the one place they live now.
+
+    Every route that used to end on the retired surface ends here: the
+    compatibility redirect, the four Submission write actions, a Submission
+    search result and a related-materials opinion. Built in one function, next
+    to :data:`OPINION_ROLE_FILTER`, so `?roll=` and the anchor cannot drift
+    apart across the places that link to a Matter's opinions (docs/adr/0061).
+
+    Here rather than in `app.matters.views`, where it was until the 2026-10-17
+    audit (JARCH-005): `app.related_materials` could only reach it there by a
+    late import, because `app.matters.views` imports that package. A URL
+    builder is not a view, and this module imports neither.
+
+    ``anchor`` is the id of the thing the caller changed, and the caller decides
+    which one: `dokument-<uuid>` for a sent opinion, whose file row this filter
+    renders, and `arvamus-<uuid>` for a draft, whose row is in the `Arvamused`
+    block and is *not* in the filtered table. Passing the wrong one is how a
+    redirect lands on an anchor that is not on the page
+    (`app/submissions/views.py`).
+
+    Anchors are only ever built from identities the caller resolved under the
+    reader's own scope, so one can never name something the page will not
+    render.
+    """
+    page = reverse("matters:matter_documents", kwargs={"pk": matter.pk})
+    url = f"{page}?roll={OPINION_ROLE_FILTER}"
+    return f"{url}#{anchor}" if anchor else url
 
 
 def sent_opinion_submissions(matter: Any, *, viewer: Any) -> Any:

@@ -317,6 +317,7 @@ from app.submissions.opinions import (
     open_drafts,
     opinion_document_ids,
     opinion_rail,
+    opinions_url,
     sent_submission_by_document,
     unregistered_opinion_documents,
 )
@@ -3757,30 +3758,6 @@ def matter_position(request: HttpRequest, pk: Any) -> HttpResponse:
     """
     matter = get_visible_matter(request, pk)
     return redirect(opinions_url(matter))
-
-
-def opinions_url(matter: Any, *, anchor: str = "") -> str:
-    """Dokumendid, showing this Matter's opinions — the one place they live now.
-
-    Every route that used to end on the retired surface ends here: the
-    compatibility redirect, the four Submission write actions, and a Submission
-    search result. Built in one function so `?roll=` and the anchor cannot drift
-    apart across six call sites.
-
-    ``anchor`` is the id of the thing the caller changed, and the caller decides
-    which one: `dokument-<uuid>` for a sent opinion, whose file row this filter
-    renders, and `arvamus-<uuid>` for a draft, whose row is in the `Arvamused`
-    block and is *not* in the filtered table. Passing the wrong one is how a
-    redirect lands on an anchor that is not on the page
-    (`app/submissions/views.py`).
-
-    Anchors are only ever built from identities the caller resolved under the
-    reader's own scope, so one can never name something the page will not
-    render.
-    """
-    page = reverse("matters:matter_documents", kwargs={"pk": matter.pk})
-    url = f"{page}?roll={OPINION_ROLE_FILTER}"
-    return f"{url}#{anchor}" if anchor else url
 
 
 def _historical_context(matter: Any, user: Any) -> dict:

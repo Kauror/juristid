@@ -168,7 +168,7 @@ that the difference between a boundary and a decoration:
 Userinfo is refused outright rather than merely ignored: there is no legitimate
 koda.ee page behind `user:pw@`, and a credential on the file is a credential in an
 audit payload, on a rendered page, and in everybody's browser history. That is
-the other half of red-team finding F-2, which `MatterEngagement._hostname` records
+the other half of red-team finding F-2, which `app.core.web_addresses.display_host` records
 for the same reason.
 
 An over-long address is **refused, never truncated** (finding F-1): a link cut off

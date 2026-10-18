@@ -26,6 +26,7 @@ from app.legacy_import.opinion_access import may_read_archive
 from app.matters.models import Matter
 from app.related_materials.models import MatterBackgroundMaterial, MatterRelation
 from app.submissions.models import Submission
+from app.submissions.opinions import opinions_url
 
 
 @dataclass(frozen=True)
@@ -136,7 +137,7 @@ def _background_item(row: MatterBackgroundMaterial) -> BackgroundItem:
             ),
             # Dokumendid filtered to opinions, not the retired per-Matter
             # Arvamused page, which is only a redirect now (docs/adr/0061).
-            open_url=_opinions_url(source),
+            open_url=opinions_url(source),
         )
     binary = row.archive_binary
     if binary is None:  # pragma: no cover - the database constraint forbids it
@@ -173,18 +174,6 @@ class RelatedMaterials:
     def count(self) -> int:
         """Everything a person linked: the count beside `Seotud materjalid`."""
         return len(self.relations) + len(self.background)
-
-
-def _opinions_url(matter: Any) -> str:
-    """`matters.views.opinions_url`, imported late.
-
-    `app.matters.views` imports this module, so the name cannot be bound at
-    import time. The URL is not rebuilt here: one function owns `?roll=`
-    (docs/adr/0061).
-    """
-    from app.matters.views import opinions_url
-
-    return opinions_url(matter)
 
 
 def related_materials_for(matter: Matter, viewer: Any) -> RelatedMaterials:

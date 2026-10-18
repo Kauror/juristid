@@ -60,7 +60,10 @@ from app.matters.models import (
     Matter,
     MatterEngagement,
 )
-from app.matters.publication_kind import classify_publication_url
+from app.matters.publication_kind import (
+    ENGAGEMENT_OVERVIEW_LINK_IS_NEWS,
+    classify_publication_url,
+)
 from app.matters.stage_episodes import stage_choice_label
 from app.organisations.models import Organisation, OrganisationAlias
 from app.taxonomy.legal_instruments import OTHER_LEGAL_INSTRUMENT_KEYS
@@ -4465,12 +4468,6 @@ class ReviewActionForm(forms.Form):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         kwargs.setdefault("auto_id", "id_ulevaatus_%s")
         super().__init__(*args, **kwargs)
-
-
-#: Refused in `Ülevaate link`: a news item is not the round's overview.
-ENGAGEMENT_OVERVIEW_LINK_IS_NEWS = (
-    "See on uudise aadress. Ülevaate link on koda.ee «Hetkel käsil» lehe aadress."
-)
 
 
 class CompactEngagementForm(forms.Form):

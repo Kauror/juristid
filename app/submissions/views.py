@@ -31,7 +31,7 @@ from app.core.decorators import business_write_required
 from app.core.errors import DomainError
 from app.documents.models import Document, DocumentVersion
 from app.documents.uploads import read_upload
-from app.matters.views import get_visible_matter, opinions_url
+from app.matters.views import get_visible_matter
 from app.submissions.enums import SentAtPrecision, SubmissionStatus
 from app.submissions.forms import (
     REGISTER_PREFIX,
@@ -42,7 +42,7 @@ from app.submissions.forms import (
 )
 from app.submissions.links import linked_website_overviews
 from app.submissions.models import Submission
-from app.submissions.opinions import unregistered_opinion_documents
+from app.submissions.opinions import opinions_url, unregistered_opinion_documents
 from app.submissions.services import (
     attach_final_evidence_on_open_matter,
     mark_submission_sent_on_open_matter,

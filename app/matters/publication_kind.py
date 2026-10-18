@@ -31,6 +31,14 @@ OVERVIEW_PATHS = (
 )
 NEWS_PATHS = ("/et/uudised", "/en/news", "/ru/novosti", "/uudised")
 
+#: Refused in a round's `Ülevaate link`: a news item is not the round's
+#: overview. Stated here, beside the rule that tells the two apart, so the form
+#: and the use case (`workspace._overview_for_engagement_link`) refuse in the
+#: same words without the service reaching into `matters.forms`.
+ENGAGEMENT_OVERVIEW_LINK_IS_NEWS = (
+    "See on uudise aadress. Ülevaate link on koda.ee «Hetkel käsil» lehe aadress."
+)
+
 
 def _under(path: str, prefix: str) -> bool:
     return path == prefix or path.startswith(prefix + "/")

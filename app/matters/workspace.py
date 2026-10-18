@@ -67,13 +67,23 @@ from app.documents.models import Document
 from app.documents.services import capture_supporting_evidence
 from app.matters import engagement_replies
 from app.matters.entry_enums import EntryKind
-from app.matters.enums import EngagementKind, ExternalPositionProvenance
+from app.matters.enums import (
+    EngagementKind,
+    ExternalPositionProvenance,
+    WebsiteOverviewKind,
+    WebsiteOverviewStatus,
+)
 from app.matters.initiative import is_koda_initiative
 from app.matters.locks import (
     lock_open_matter_for_business_write,
     lock_submission_for_evidence_integrity,
 )
-from app.matters.models import Entry, Matter, MatterEngagement
+from app.matters.models import Entry, Matter, MatterEngagement, MatterWebsiteOverview
+from app.matters.publication_kind import (
+    ENGAGEMENT_OVERVIEW_LINK_IS_NEWS,
+    classify_publication_url,
+    same_publication_url,
+)
 from app.matters.services import (
     add_engagement,
     add_entry,
@@ -749,11 +759,6 @@ def _overview_for_engagement_link(
     record readers already see and is returned untouched — nothing new is
     written about the round.
     """
-    from app.matters.enums import WebsiteOverviewKind, WebsiteOverviewStatus
-    from app.matters.forms import ENGAGEMENT_OVERVIEW_LINK_IS_NEWS
-    from app.matters.models import MatterWebsiteOverview
-    from app.matters.publication_kind import classify_publication_url, same_publication_url
-
     if classify_publication_url(url) == WebsiteOverviewKind.NEWS:
         raise DomainError(ENGAGEMENT_OVERVIEW_LINK_IS_NEWS)
     live = MatterWebsiteOverview.objects.live().filter(matter=matter)
