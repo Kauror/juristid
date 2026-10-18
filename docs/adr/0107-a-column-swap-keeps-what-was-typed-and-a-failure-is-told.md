@@ -234,3 +234,39 @@ Pinned in `e2e/test_files_after_refusal.py`: `Muu`, and the same sequence over
 reads the notice naming it, has the next save stopped with nothing posted, then
 chooses the file again and finds the stored row with that one file.
 `Salvesta ilma failita` stores the row with none.
+
+## Amendment, 2026-10-18 — a refusal focuses the control it refused, and is heard (JUX-003)
+
+After a refused save `static/js/ux.js` `focusFirstRefusal` puts the cursor on
+the control the first message is about. On the Teema page that rule found the
+wrong control. The `LISA TEEMALE` forms print their messages as direct
+children of `form.addform`, and `.addform` was one of the field containers the
+lookup climbed to, so it returned the form's *first* control. An empty `Lisa
+tagasiside` focused the organisation search; a `Muu` with no day focused a
+filled `Kirjeldus`; a `Kohtumine` with no summary focused the valid date.
+Nothing announced the refusal, so a screen-reader user heard a field that had
+nothing wrong with it.
+
+The control is now found in this order (`controlForError`):
+1. **The id relation the markup already states.** The control, or group, whose
+   `aria-describedby` names the message's id. Django points a refused widget at
+   `<id>_error`, and the provenance fieldset and the organisation search
+   (docs/adr/0073, amendment of the same day) name theirs the same way. A
+   group gives its first enabled control, so a refused radio group focuses its
+   first radio.
+2. **The id the message spells:** `<id>_error` names the control `<id>`.
+3. The field wrapper around the message, as before — but never the form
+   itself.
+4. The nearest control above the message, as before.
+
+The refusal is also **announced**. Each message of the refused form is put
+back into the page as `role="alert"`: the same element, cloned with the role
+and swapped in for itself, keeping its id. An alert is read when it is
+inserted. Setting the role on a message the swap has already inserted would say
+nothing, and a separate live region holding a copy would put every sentence on
+the page twice. A form-level summary gets the same treatment unless it is
+already an alert.
+
+Pinned in `e2e/test_refusal_focus_on_teema_forms.py`. After each refusal on
+`Lisa tagasiside`, `Muu` and `Kohtumine`, `document.activeElement` is the
+refused control, and its message is an alert.

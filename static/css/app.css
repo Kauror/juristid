@@ -5480,6 +5480,15 @@ a.barchart__row:hover {
  * 1300px search box across the page at 1440 and make the smallest question on
  * the form look like the largest; capped much tighter, a stacked row at 420
  * would leave it an island with the whole width empty beside it. */
+/* The field's name, drawn above the box where no visible legend says it —
+ * Lisa tagasiside's `Organisatsioon`, Koja arvamus's `Adressaadid`, `Muuda` on
+ * a recorded position. A placeholder is not a label (2026-10-17 audit,
+ * JUX-006). The picker's own gap is the chip row's; a label sits as close to
+ * its box as every other label on the Teema page (`.cx-f`'s 3px). */
+.orgfind__label {
+  margin-bottom: calc(3px - var(--spacing-2));
+}
+
 .orgfind__search {
   display: flex;
   align-items: stretch;
@@ -11415,6 +11424,12 @@ section:has(.pw-more[open]) tbody.uxextra {
   margin-left: var(--spacing-1);
 }
 
+/* With the label drawn above the box, `Liige` still lines up with the box
+ * rather than with the label: the label's line (10px at 1.2) and its 3px. */
+#teema-vaade-wrap .orgpick__row:has(.orgfind__label) > .orgpick__mark {
+  margin-top: calc(4px + 12px + 3px);
+}
+
 /* `+ Kaasamine · Lisa tagasiside`: `Liige` only beside «Saadeti Kojale»
  * (owner's UX round, stage 3). Hidden — not disabled — until that answer is
  * chosen; the form, the service and a `CHECK` refuse it on the other
@@ -11422,6 +11437,14 @@ section:has(.pw-more[open]) tbody.uxextra {
  * (docs/adr/0095 §4). */
 #teema-vaade-wrap .feedbackform:not(:has(input[name="provenance"][value="RECEIVED"]:checked))
   [data-feedback-member] {
+  display: none;
+}
+
+/* The organisation is required for «Avaldatud mujal» alone (docs/adr/0091
+ * §3.3), so its marker — the `*` and the hidden «(kohustuslik)» together — is
+ * shown only while that answer is chosen (2026-10-17 audit, JUX-006). */
+#teema-vaade-wrap .feedbackform:not(:has(input[name="provenance"][value="DISCOVERED"]:checked))
+  [data-orgfind-required] {
   display: none;
 }
 
