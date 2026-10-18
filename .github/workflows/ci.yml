@@ -2092,10 +2092,10 @@ jobs:
               "$TRIVY_IMAGE" "$@"
           }
           echo "--- the full report, every severity, fixed or not"
-          trivy image --scanners vuln --format json --output /out/trivy-image.json juristid:ci
+          trivy image --skip-version-check --scanners vuln --format json --output /out/trivy-image.json juristid:ci
           trivy convert --format table --output /out/trivy-image.txt /out/trivy-image.json
           echo "--- the gate: HIGH and CRITICAL with a fix available"
-          trivy image --scanners vuln --skip-db-update --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1 --format table juristid:ci
+          trivy image --skip-version-check --scanners vuln --skip-db-update --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1 --format table juristid:ci
 
       - name: Upload the image scan
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
