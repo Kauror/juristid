@@ -25,6 +25,7 @@ from django.conf import settings
 from django.core.exceptions import BadRequest
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import resolve_url
+from django.template.loader import render_to_string
 from django.urls import NoReverseMatch, reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 
@@ -241,3 +242,32 @@ def _current_page(request: HttpRequest) -> str:
         return ""
     parts = urlsplit(current)
     return parts.path + (f"?{parts.query}" if parts.query else "")
+
+
+class MethodNotAllowedPageMiddleware:
+    """Give a bodiless 405 the Estonian error page (2026-10-17 audit, JUX-013).
+
+    `require_http_methods` answers a GET on a POST-only address with an empty
+    `HttpResponseNotAllowed`, and a browser shows that as a blank page — which
+    is what somebody saw after re-opening a tab whose last request was a save.
+    ENG-012 gave 400, 403 (CSRF), 404 and 500 the standalone `error_page.html`;
+    this is the 405's turn.
+
+    Only the body changes. The status and the `Allow` header are the view's,
+    and a 405 that already says something of its own is left as it is. The page
+    needs no context, like every other `error_page.html` page.
+    """
+
+    def __init__(self, get_response: Any) -> None:
+        self.get_response = get_response
+
+    def __call__(self, request: HttpRequest) -> HttpResponse:
+        response = self.get_response(request)
+        if (
+            response.status_code == 405
+            and not getattr(response, "streaming", False)
+            and not response.content
+        ):
+            response.content = render_to_string("405.html").encode("utf-8")
+            response["Content-Type"] = "text/html; charset=utf-8"
+        return response

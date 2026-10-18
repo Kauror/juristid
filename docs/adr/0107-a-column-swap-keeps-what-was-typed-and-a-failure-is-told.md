@@ -189,6 +189,30 @@ The race is pinned in `e2e/test_workspace_failures_and_drafts.py`
 test holds both requests in the browser and lets them go in that order, so it
 no longer depends on the timing that made its sibling flaky.
 
+## Amendment, 2026-10-18 — 403 and 405 join the Estonian error pages; the page keeps a gutter (JUX-013, JUX-014)
+
+ENG-012 replaced Django's English fallbacks for 400, 404, 500 and a refused
+CSRF check. The 2026-10-17 audit (V4, `DEBUG=0`) found two answers it left out:
+- **403 from `PermissionDenied`** was Django's English «403 Forbidden», with
+  `lang="en"` and no link home. `templates/403.html` now extends
+  `error_page.html` («Ligipääs puudub»). As on Django's page, the guard's own
+  sentence is not shown, so one 403 never reads differently from another.
+- **405 from `require_http_methods`** had an empty body: a blank page after a
+  re-opened tab or a bookmark of a save. `MethodNotAllowedPageMiddleware`
+  (`app/core/middleware.py`) puts `templates/405.html` into a bodiless 405.
+  The status and the `Allow` header stay the view's. A 405 that already has a
+  body is left alone. The middleware sits inside `BrowserPolicyMiddleware`, so
+  the page carries the same policy headers as every other page.
+
+`error_page.html` has no application shell, so nothing gave it spacing:
+`body` has no margin and `.page` no padding, and on a phone the text touched
+the edge (JUX-014). `.page--standalone` gives it a 16px side gutter and space
+above the heading, more from 48rem.
+
+Pinned in `tests/test_error_pages_403_405.py` (`lang="et"`, one `h1`, the home
+link, status and `Allow`) and `e2e/test_error_page_gutter.py` (the offsets at
+320, 375 and 1440 px).
+
 ## Amendment, 2026-10-18 — a refused save says which files to choose again (JUX-001)
 
 §2 carries a host across a swap by moving the element, so chosen files survive

@@ -1,0 +1,17 @@
+{% extends "error_page.html" %}
+{% comment %}
+  Every `PermissionDenied` — a guard such as `require_opinion_queue_operator`
+  refusing somebody who may not use the page. Django's own fallback was an
+  English `403 Forbidden` with no way home (2026-10-17 audit, JUX-013; ENG-012).
+
+  The guard's own sentence is not shown: Django's page never showed it, and a
+  403 for one reason must not read differently from a 403 for another. A
+  refused CSRF check has its own page (`403_csrf.html`).
+{% endcomment %}
+{% block title %}Ligipääs puudub{% endblock %}
+{% block heading %}Ligipääs puudub{% endblock %}
+{% block body %}
+  <p class="lead">
+    Sul pole sellele lehele ligipääsu. Kui arvad, et peaks olema, küsi oma juhilt või süsteemi haldajalt.
+  </p>
+{% endblock %}

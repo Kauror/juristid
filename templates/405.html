@@ -1,0 +1,15 @@
+{% extends "error_page.html" %}
+{% comment %}
+  A request this address does not take — most often a GET on a save that only
+  takes a POST, from a bookmark or a re-opened tab. It used to be an empty page
+  (2026-10-17 audit, JUX-013). Rendered by
+  `app.core.middleware.MethodNotAllowedPageMiddleware` into the 405 the view
+  already returned, so the status and the `Allow` header are the view's own.
+{% endcomment %}
+{% block title %}Seda aadressi ei saa nii avada{% endblock %}
+{% block heading %}Seda aadressi ei saa nii avada{% endblock %}
+{% block body %}
+  <p class="lead">
+    See aadress salvestab vormi ega ole avatav lehena. Mine tagasi lehele, kus vorm oli, või alusta avalehelt.
+  </p>
+{% endblock %}
