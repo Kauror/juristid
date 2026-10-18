@@ -53,7 +53,9 @@ It is its own mode, with its own safeguards, and it earns the right to sit in
 front of real data only when all of them hold:
 
 - the password comes from `JURISTID_SHARED_GATE_PASSWORD`, host-side, and is
-  at least 12 characters (`juristid.E010`, `E011`)
+  at least 12 characters (`juristid.E010`, `E011`) — **amended 2026-10-18:** at
+  least 16 with `REAL_DATA_ALLOWED`, and never a template placeholder
+  (`E018`, `E016`); see the amendment at the end of this document
 - it is hashed once at process start with Django's hasher and compared with the
   framework's constant-time check — the plaintext is never written to the
   database, a log, a template or the client
@@ -316,3 +318,70 @@ throttle (and the personal sign-in and development PIN throttles) read
   only way in («No public origin bypass»).
 - The session cookie is still not a browser-session cookie: a browser restart
   within both limits keeps the session. That part of JSEC-005 was not decided.
+
+---
+
+## Amendment, 2026-10-18 — real secrets, and serving only after the checks
+
+- Status: accepted, amending «The shared gate is a distinct authenticator» (the
+  password floor on real data) and the safeguards' claim that a mixed-up
+  configuration «refuses to start»
+- Findings: JOPS-003 and JOPS-004 of the 2026-10-17 audit
+
+### What was decided before
+
+The checks refused the development `SECRET_KEY` (`E001`) and a gate password
+under 12 characters (`E011`), and nothing else about a secret's value. They ran
+before every `manage.py` command, which is what the workers are; gunicorn,
+which serves the web process, runs none.
+
+### Why it is amended
+
+- `manage.py check` with `REAL_DATA_ALLOWED=1` and the template's own
+  `replace-me-…` values said "no issues": the gate placeholder is 42
+  characters, and the `SECRET_KEY` placeholder is not the development key. The
+  repository is public, so one value left unfilled is a secret anybody can read
+  (JOPS-003).
+- With `REAL_DATA_ALLOWED=1` and `AUTH_MODE=none`, `check` failed on `E006`
+  while the web container answered `/healthz` with 200 and served pages. The
+  deployment README and the Compose header said such a process refuses to
+  start; for the web process that was not true (JOPS-004).
+
+### What is decided now
+
+- With `REAL_DATA_ALLOWED`, Error-level checks (`app/core/checks.py`):
+  - `juristid.E016` — any of `DJANGO_SECRET_KEY`,
+    `JURISTID_SHARED_GATE_PASSWORD`, `POSTGRES_PASSWORD`,
+    `LOCAL_AUTH_MFA_ENCRYPTION_KEY`, `DJANGO_EMAIL_HOST_PASSWORD` starts with
+    `replace-me`. The message names the variables, never the values.
+  - `juristid.E017` — `SECRET_KEY` shorter than 50 (Django's own `--deploy`
+    floor, `security.W009`, made an error where real data is).
+  - `juristid.E018` — under `AUTH_MODE=shared_gate`, a gate password shorter
+    than 16. `E011`'s 12 stays the mode's floor everywhere.
+  - `juristid.E019` — the database password shorter than 16.
+  The templates generate 88, 32 and 48 characters. Synthetic stacks
+  (`REAL_DATA_ALLOWED=0`) are unchanged. `E015` stays retired (ADR 0072).
+- **The web process serves only after the checks.** The image's `CMD` and both
+  Unraid stacks' `web` command start gunicorn through
+  `scripts/serve-after-checks.sh`: `manage.py check --deploy --fail-level
+  ERROR`, then `exec` gunicorn. A refused configuration exits non-zero before
+  anything listens, so Compose restarts it and it never reports healthy.
+  Warnings, the `--deploy` ones included, are printed and do not stop it. The
+  intake reader, the search worker and their healthchecks are `manage.py`
+  commands, which already ran the checks; a test now holds them to that.
+- The container job in CI starts the built image both ways: a refused
+  configuration must exit before gunicorn starts, and the CI configuration
+  must reach gunicorn.
+
+### What this amendment does not change
+
+- No migration, and nothing on container start touches the database: the check
+  reads settings only. Migrations stay a deliberate deployment step.
+- `docker compose run --rm web python manage.py …` is unchanged: a command
+  given on the command line replaces the start script, and `manage.py` checks
+  on its own.
+- An existing real-data deployment whose secrets are below the new floors
+  stops serving on the release that carries this. Step 6 of the release
+  runbook (`run --rm web python manage.py migration_plan`) runs the new checks
+  against the live environment file first, before the backup and before
+  anything is replaced, so that is where it shows.

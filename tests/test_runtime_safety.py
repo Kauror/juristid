@@ -40,7 +40,7 @@ def test_a_clean_development_configuration_passes(settings):
     assert _ids(settings) == set()
 
 
-def test_a_clean_production_configuration_passes(settings):
+def test_a_clean_production_configuration_passes(settings, monkeypatch):
     """What "clean" means now includes an authenticator *and* a scanner.
 
     Stage 2D added juristid.E006: real data with nothing authenticating the
@@ -49,9 +49,13 @@ def test_a_clean_production_configuration_passes(settings):
     real data with no malware scanner is a deployment that can never read a
     document, because nothing can move a file from PENDING to CLEAN and
     `is_scan_state_extractable` refuses everything else.
+
+    And, since JOPS-003, secrets of real length: a SECRET_KEY of at least 50
+    characters and a database password of at least 16 (juristid.E017, E019).
     """
     settings.DEBUG = False
-    settings.SECRET_KEY = "a-real-secret"  # noqa: S105
+    settings.SECRET_KEY = "a-real-secret-" + "s" * 50
+    monkeypatch.setitem(settings.DATABASES["default"], "PASSWORD", "d" * 48)
     settings.DEV_LOGIN_ENABLED = False
     settings.REAL_DATA_ALLOWED = True
     settings.AUTH_MODE = "cloudflare_access"

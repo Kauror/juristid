@@ -21,6 +21,8 @@ import pytest
 import yaml
 from django.conf import settings
 
+from tests.deployment_commands import SERVE_AFTER_CHECKS, served
+
 DOCKERFILE = Path(settings.BASE_DIR) / "Dockerfile"
 PRODUCTION_COMPOSE = Path(settings.BASE_DIR) / "deploy" / "unraid-main" / "compose.yml"
 
@@ -239,7 +241,7 @@ def test_the_runtime_python_carries_no_installer(instructions: list[tuple[str, s
 def test_the_image_starts_gunicorn_and_nothing_else(
     instructions: list[tuple[str, str]],
 ) -> None:
-    command = json.loads(_last(instructions, "CMD"))
+    command = served(json.loads(_last(instructions, "CMD")))
     assert command[0] == "gunicorn"
     assert "runserver" not in " ".join(command)
 
@@ -263,6 +265,105 @@ def test_the_image_has_no_entrypoint_that_could_wrap_the_command(
 ) -> None:
     """An ENTRYPOINT is where migrate-on-boot comes back without anyone noticing."""
     assert not [argument for verb, argument in instructions if verb == "ENTRYPOINT"]
+
+
+# -- a configuration the checks refuse is never served (JOPS-004) -----------
+
+SERVE_AFTER_CHECKS_SCRIPT = Path(settings.BASE_DIR) / "scripts" / "serve-after-checks.sh"
+
+#: Every Compose file in the repository that starts a service.
+COMPOSE_FILES = sorted(
+    [
+        *(Path(settings.BASE_DIR) / "deploy").glob("**/compose*.yml"),
+        Path(settings.BASE_DIR) / "docker-compose.yml",
+    ]
+)
+
+
+def _script_commands(path: Path) -> list[str]:
+    """The script's commands, with comments and blank lines gone."""
+    return [
+        line.strip()
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+
+
+def test_the_start_script_runs_the_checks_and_only_then_the_command() -> None:
+    """The whole script, line by line, so nothing can slip in between.
+
+    `set -eu` is what makes a refused check stop the script; `--fail-level
+    ERROR` is what makes `check` exit non-zero on an Error and not on a Warning;
+    `exec` keeps the served process as PID 1. No `migrate`, no `|| true`.
+    """
+    assert _script_commands(SERVE_AFTER_CHECKS_SCRIPT) == [
+        "set -eu",
+        "python manage.py check --deploy --fail-level ERROR",
+        'exec "$@"',
+    ]
+
+
+def test_the_image_serves_only_after_the_system_checks(
+    instructions: list[tuple[str, str]],
+) -> None:
+    """WSGI start-up runs no checks; gunicorn alone served a refused configuration."""
+    command = json.loads(_last(instructions, "CMD"))
+    assert command[: len(SERVE_AFTER_CHECKS)] == SERVE_AFTER_CHECKS
+    assert served(command)[0] == "gunicorn"
+    # The script is in the image: `scripts/` is not excluded from the build.
+    ignored = (Path(settings.BASE_DIR) / ".dockerignore").read_text(encoding="utf-8")
+    assert not [
+        line
+        for line in ignored.splitlines()
+        if line.strip().rstrip("/") in {"scripts", "scripts/*", "*.sh", "**/*.sh"}
+    ]
+
+
+@pytest.mark.parametrize("path", COMPOSE_FILES, ids=lambda path: path.parent.name)
+def test_every_gunicorn_in_every_stack_starts_behind_the_checks(path: Path) -> None:
+    """Not only the two stacks there are today: any service that runs gunicorn."""
+    services = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("services") or {}
+    for name, service in services.items():
+        command = [str(part) for part in service.get("command") or []]
+        if "gunicorn" in command:
+            assert served(command)[0] == "gunicorn", f"{path.name}:{name}"
+
+
+def _management_command(name: str) -> Any:
+    from django.core.management import get_commands, load_command_class
+
+    return load_command_class(get_commands()[name], name)
+
+
+@pytest.mark.parametrize("stack", ["unraid-main", "unraid-test"])
+def test_the_workers_and_their_healthchecks_already_refuse(stack: str) -> None:
+    """The other services on the image are `manage.py` commands, which check first.
+
+    Django runs the system checks before any command whose
+    `requires_system_checks` is not empty, and exits on an Error. So the intake
+    reader, the search worker and both their healthchecks refuse a refused
+    configuration without a wrapper — which stays true only while each of them
+    is a `manage.py` command that keeps the checks on.
+    """
+    compose = yaml.safe_load(
+        (Path(settings.BASE_DIR) / "deploy" / stack / "compose.yml").read_text(encoding="utf-8")
+    )
+    application = compose["services"]["web"]["image"]
+    workers = {
+        name: service
+        for name, service in compose["services"].items()
+        if name != "web" and service.get("image") == application
+    }
+    assert set(workers) == {"intake-reader", "searchindex"}, workers
+    for name, service in workers.items():
+        command = [str(part) for part in service["command"]]
+        probe = [str(part) for part in service["healthcheck"]["test"]]
+        assert probe[0] == "CMD"
+        for words in (command, probe[1:]):
+            assert words[:2] == ["python", "manage.py"], f"{name}: {words}"
+            assert _management_command(words[2]).requires_system_checks, (
+                f"{name}: `{words[2]}` skips the system checks"
+            )
 
 
 # -- the healthcheck -------------------------------------------------------
@@ -353,8 +454,8 @@ def test_the_production_command_matches_the_image_default(
     was the decision and which was the leftover.
     """
     compose: dict[str, Any] = yaml.safe_load(PRODUCTION_COMPOSE.read_text(encoding="utf-8"))
-    production = [str(part) for part in compose["services"]["web"]["command"]]
-    image = json.loads(_last(instructions, "CMD"))
+    production = served(compose["services"]["web"]["command"])
+    image = served(json.loads(_last(instructions, "CMD")))
 
     assert production[0] == image[0] == "gunicorn"
     for flag in ("--workers", "--timeout", "--bind"):

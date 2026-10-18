@@ -1862,6 +1862,51 @@ jobs:
           echo "image size:          $(docker image inspect juristid:ci --format '{{.Size}}') bytes"
           echo "docker save | gzip -1: $(docker save juristid:ci | gzip -1 | wc -c) bytes"
 
+      # The image's own start command, run twice (JOPS-004). Refused: real data
+      # with no authenticator (juristid.E006) and the template's placeholder
+      # secrets (E016), which must exit non-zero before gunicorn starts — the
+      # failure that used to answer /healthz with 200. Accepted: the CI
+      # configuration the quality job checks, which must reach gunicorn. No
+      # database is needed for either: the checks read settings only.
+      - name: The image refuses to serve a configuration its checks refuse
+        run: |
+          set -euo pipefail
+          start() {
+            docker run -d --name "$1" -e DJANGO_DEBUG=0 -e DJANGO_ALLOWED_HOSTS=localhost \
+              -e DJANGO_SECRET_KEY="$2" "${@:3}" juristid:ci
+          }
+          start refused replace-me-with-openssl-rand-base64-64 \
+            -e REAL_DATA_ALLOWED=1 -e AUTH_MODE=none \
+            -e POSTGRES_PASSWORD=replace-me-with-openssl-rand-base64-36
+          code="$(timeout 120 docker wait refused || echo still-running)"
+          docker logs refused > refused.log 2>&1
+          docker rm -f refused > /dev/null
+          cat refused.log
+          if [ "$code" = still-running ] || [ "$code" = 0 ]; then
+            echo "::error::a refused configuration was served (exit: $code)"
+            exit 1
+          fi
+          grep -q 'juristid.E006' refused.log
+          grep -q 'juristid.E016' refused.log
+          if grep -q 'Starting gunicorn' refused.log; then
+            echo "::error::gunicorn started before the checks refused"
+            exit 1
+          fi
+          echo "refused configuration -> exit $code, gunicorn never started"
+
+          start served ci-only-secret-not-used-anywhere-else
+          for _ in $(seq 60); do
+            if docker logs served 2>&1 | grep -q 'Booting worker'; then break; fi
+            sleep 1
+          done
+          docker logs served > served.log 2>&1
+          running="$(docker inspect -f '{{.State.Running}}' served)"
+          docker rm -f served > /dev/null
+          cat served.log
+          test "$running" = true
+          grep -q 'Booting worker' served.log
+          echo "accepted configuration -> gunicorn serving"
+
       - name: Start the local stack
         run: docker compose up -d --wait --build
 

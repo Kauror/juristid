@@ -36,6 +36,7 @@ from app.documents.enums import ExtractionState
 from app.documents.extraction import orchestrator
 from app.documents.extraction.base import registry
 from app.documents.uploads import AcceptedUpload
+from tests.deployment_commands import SERVE_AFTER_CHECKS
 
 ROOT = Path(settings.BASE_DIR)
 
@@ -89,6 +90,9 @@ def _gunicorn_commands() -> dict[str, list[str]]:
     for path in sorted([*ROOT.glob("deploy/**/*.yml"), ROOT / "docker-compose.yml"]):
         for name, service in (_compose(path).get("services") or {}).items():
             command = [str(part) for part in service.get("command") or []]
+            # Behind the system checks (JOPS-004), the command is what follows them.
+            if command[: len(SERVE_AFTER_CHECKS)] == SERVE_AFTER_CHECKS:
+                command = command[len(SERVE_AFTER_CHECKS) :]
             if command and command[0] == "gunicorn":
                 found[f"{path.relative_to(ROOT).as_posix()}:{name}"] = command
     return found

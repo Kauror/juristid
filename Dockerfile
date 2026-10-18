@@ -159,6 +159,13 @@ HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=5 \
 # Migrations are applied as a controlled deployment step, not on container
 # start (master specification 24.2).
 #
+# gunicorn starts behind `scripts/serve-after-checks.sh`, which runs
+# `manage.py check --deploy --fail-level ERROR` first and execs gunicorn only if
+# it passes. WSGI start-up runs no system checks of its own, so without it a
+# configuration every `juristid.E0xx` refuses served pages and answered its
+# healthcheck (JOPS-004). The check reads settings only; it neither migrates nor
+# touches the database.
+#
 # Three workers and a 120-second timeout for six users. Not tuned for
 # throughput: the longest request this application serves is an evidence upload
 # of up to MAX_EVIDENCE_UPLOAD_BYTES over a tunnel, and a worker killed
@@ -167,4 +174,4 @@ HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=5 \
 # because it also turns access logging on, and a command that overrides one
 # thing overrides all of them — a test keeps the two from drifting apart
 # (tests/test_deployment_image.py).
-CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3", "--timeout", "120"]
+CMD ["sh", "/app/scripts/serve-after-checks.sh", "gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3", "--timeout", "120"]
