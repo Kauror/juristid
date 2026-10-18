@@ -347,11 +347,24 @@ to succeed, so every step of it continues on error. The thresholds are the numbe
 days old, or a predicted slowest shard 1.25x the median — so each is set where
 it would have fired while the drift was still cheap.
 
-**It is informational and exits 0 whatever it finds**, and the step carries
-`continue-on-error: true` as well. A performance report is not a correctness
-proof; hosted runners have slow days; and a build that went red over a
-three-week-old table would teach people to ignore the words. The correctness
-proofs are below, and they are the ones allowed to be red.
+**Two warnings are loud** (JTEST-006, 2026-10-18): a collected file the table
+does not hold is *named*, with its test count, and so is a shard whose actual
+test time is more than twice the table's weight of the files it ran plus its
+setup, with the three files that ran furthest past their own weight. The
+2026-10-11 table had lost 66 files and 30 % of the suite's time while the
+report said "current" — only the unmeasured *share* was checked — and the
+slowest file, `qa_audit/test_qa_authz_oracles.py`, ran about 450 s against an
+estimate of 3 s. Both run with `--strict`, which exits 1 on a loud warning, and
+in CI every warning is also a `::warning` annotation on the run.
+
+**It still cannot fail the build.** Every step that runs it carries
+`continue-on-error: true`, so a loud warning turns the step red and leaves the
+job, and the release gate, green. Without `--strict`, and whenever it cannot
+report at all, it exits 0. Age, the unmeasured share and imbalance are printed
+and annotated but never fail the step: an imbalance one heavy file causes is
+mended by splitting that file, not by refreshing the table, and the warning now
+names the file. A performance report is not a correctness proof; the
+correctness proofs are below, and they are the ones allowed to be red.
 
 Note which threshold does the work. The predicted slowest/median ratio is close
 to 1.00 almost always, *including when the table is badly stale* — the greedy
