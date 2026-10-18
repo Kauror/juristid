@@ -605,10 +605,21 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  # The auditor is pinned to one version: an unpinned `uvx pip-audit` audited
+  # with whatever was newest on the day, so what it reported could change with
+  # nobody's edit (JSEC-006). Raise it deliberately, in its own change.
+  #
+  # Both sets are audited and both are gates. The runtime set is what the image
+  # ships; the development set is what CI and every laptop run, and it is where
+  # the advisories actually were — `urllib3` reached only the dev group, through
+  # pytest-playwright → pytest-base-url → requests, so a runtime-only audit
+  # could not see it. tests/test_ci_supply_chain.py holds these properties.
   dependency-scan:
     name: Dependency vulnerability baseline
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    env:
+      PIP_AUDIT: pip-audit==2.9.0
     steps:
       - uses: actions/checkout@v4
 
@@ -622,7 +633,17 @@ jobs:
           --format requirements-txt -o requirements.txt
 
       - name: Audit
-        run: uvx pip-audit --strict --no-deps --requirement requirements.txt
+        run: uvx --from "$PIP_AUDIT" pip-audit --strict --no-deps --requirement requirements.txt
+
+      - name: Export the locked development dependency set
+        run: >-
+          uv export --frozen --all-groups --no-emit-project --no-hashes
+          --format requirements-txt -o requirements-all-groups.txt
+
+      - name: Audit the development tools as well
+        run: >-
+          uvx --from "$PIP_AUDIT" pip-audit --strict --no-deps
+          --requirement requirements-all-groups.txt
 
   browser:
     name: "Browser, runner ${{ matrix.runner }} of 9"
@@ -1817,6 +1838,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build the production image
+        id: build
         run: docker build -t juristid:ci .
 
       # What the build made, asked from inside it rather than read off the
@@ -2036,6 +2058,53 @@ jobs:
             -f deploy/recovery-rehearsal/compose.real-data.source.yml \
             config --format json > rehearsal.json
           python3 scripts/ci/assert_rehearsal_isolation.py rehearsal.json
+
+      # The image this job built, scanned for known vulnerabilities in its
+      # operating-system packages and its virtualenv (JSEC-006, JSEC-007).
+      #
+      # It fails on a HIGH or CRITICAL that has a fixed version available —
+      # something a rebuild or an upgrade would remove — and only reports the
+      # rest. A gate on every HIGH would be red from the first day over CVEs
+      # Debian has not patched, and a gate that is always red gets switched off.
+      # The full report, every severity and fixed or not, is uploaded below.
+      #
+      # Trivy runs from its own image pinned by digest (0.75.0, the version the
+      # 2026-10-17 audit scanned production with), reading the image from the
+      # runner's Docker daemon. Not the trivy-action: a tag can be moved (that
+      # action's were, in March 2026) and a digest cannot. Here rather than in a
+      # job of its own because this job already has the image and the scan adds
+      # well under a minute; a separate job would rebuild it in a slot a shard
+      # runner needs.
+      # It runs whatever the smoke steps above reported, so a smoke failure does
+      # not hide the scan's answer.
+      - name: The image has no fixable HIGH or CRITICAL vulnerability
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        env:
+          TRIVY_IMAGE: aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa
+        run: |
+          set -euo pipefail
+          mkdir -p image-scan
+          trivy() {
+            docker run --rm \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              -v trivy-cache:/root/.cache/trivy \
+              -v "$PWD/image-scan:/out" \
+              "$TRIVY_IMAGE" "$@"
+          }
+          echo "--- the full report, every severity, fixed or not"
+          trivy image --scanners vuln --format json --output /out/trivy-image.json juristid:ci
+          trivy convert --format table --output /out/trivy-image.txt /out/trivy-image.json
+          echo "--- the gate: HIGH and CRITICAL with a fix available"
+          trivy image --scanners vuln --skip-db-update --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1 --format table juristid:ci
+
+      - name: Upload the image scan
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-scan
+          path: image-scan/
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Container logs on failure
         if: failure()

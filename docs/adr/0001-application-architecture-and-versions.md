@@ -72,6 +72,14 @@ All business state changes go through named service functions in
 - `pytest` + `pytest-django` + `factory_boy` for tests.
 - `pip-audit` (via `uvx`, over an exported requirements file) as the dependency
   vulnerability baseline.
+  *Amended 2026-10-18 (JSEC-006):* the auditor is pinned to one exact version
+  (`pip-audit==2.9.0`, raised deliberately in its own change), and it audits the
+  whole lock (`uv export --all-groups`) as well as the runtime set, both as
+  gates — the advisories the 2026-10-17 audit found were in `urllib3`, which
+  reached only the development group. The CI container job also scans the
+  image it builds with Trivy (pinned by digest) and fails on a HIGH or CRITICAL
+  that has a fixed version; the full report is kept as the `image-scan`
+  artifact. `tests/test_ci_supply_chain.py` holds these properties.
 
 ## Alternatives considered
 
