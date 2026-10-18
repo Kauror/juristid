@@ -2031,7 +2031,9 @@ def add_source_derived_policy_areas(
     return missing
 
 
-def normalize_engagement_url(value: str | None) -> str:
+def normalize_engagement_url(
+    value: str | None, *, stored: str | None = None, historical: bool = False
+) -> str:
     """Trim it, allow it to be empty, refuse anything not http(s), bound it.
 
     The one door every writer of the three engagement link columns passes
@@ -2052,11 +2054,27 @@ def normalize_engagement_url(value: str | None) -> str:
     non-empty `netloc` and no host at all, which is not an address anybody can
     follow and is the one shape whose «host» is nothing but credentials
     (red-team finding F-2, and `MatterEngagement._hostname` is its other half).
+
+    **Userinfo is refused** (owner decision D10, 2026-10-17): `Ülevaate link`,
+    `Smaily link` and `Alchemer link` are pasted *now*, from a page somebody has
+    open, so a credential there is one more credential in an audit payload, a
+    rendered `href` and a browser history, with no history to accommodate.
+    ``historical`` is the importer's door and nobody else's —
+    `app.legacy_import.register_outreach` records addresses out of a register
+    this department did not choose and cannot re-issue, and keeps accepting
+    them as they stand. ``stored`` is the value a correction found on the row:
+    an unchanged historical address is kept, a newly typed one is refused
+    (docs/adr/0085 §2, amendment of 2026-10-17).
     """
-    return normalize_web_address(value, max_length=ENGAGEMENT_URL_MAX_LENGTH)
+    return normalize_web_address(
+        value,
+        max_length=ENGAGEMENT_URL_MAX_LENGTH,
+        reject_credentials=not historical,
+        stored=stored,
+    )
 
 
-def normalize_external_position_url(value: str | None) -> str:
+def normalize_external_position_url(value: str | None, *, stored: str | None = None) -> str:
     """The same rule, for the address a `Väline seisukoht` points at.
 
     Its own function rather than a call to `normalize_engagement_url` at every
@@ -2072,16 +2090,22 @@ def normalize_external_position_url(value: str | None) -> str:
     organisation published its position, and the set of those is every
     institution in Estonia and the EU. A list would be a list somebody has to
     maintain, and the day a ministry moves domain the file would refuse to
-    record what actually happened. The one rule the two do *not* share is
-    userinfo, which this one tolerates and that one refuses — an `Ülevaade /
-    uudis` address is pasted from a page somebody has open, where a position's
-    may come out of a historical register nobody can re-issue.
+    record what actually happened.
+
+    **Userinfo is refused**, as it is on every box a person pastes into (owner
+    decision D10, 2026-10-17). This one used to tolerate it for the historical
+    register; no importer writes positions, and the `LEGACY` rows that came
+    out of that register are protected by ``stored`` instead: a correction that
+    leaves the address it found untouched still saves, and only a newly typed
+    or changed address is refused (docs/adr/0085 §2, amendment of 2026-10-17).
 
     Empty is not a refusal here either. A position may carry a document and no
     address at all, and which of the two it has is decided by
     :func:`record_external_position`, where both halves are visible.
     """
-    return normalize_web_address(value, max_length=EXTERNAL_POSITION_URL_MAX_LENGTH)
+    return normalize_web_address(
+        value, max_length=EXTERNAL_POSITION_URL_MAX_LENGTH, reject_credentials=True, stored=stored
+    )
 
 
 #: `Entry.url`'s column width; a longer address is refused, never truncated.
@@ -2295,6 +2319,7 @@ def add_engagement(
     feedback_received: str = "",
     response_count: Any = None,
     lifecycle_tracked: bool = True,
+    from_historical_register: bool = False,
     actor: Any = None,
 ) -> MatterEngagement:
     """Record one act of asking members or stakeholders for input.
@@ -2339,6 +2364,11 @@ def add_engagement(
     A deadline given alongside it still starts the lifecycle, because a reply-by
     date on a round nobody is waiting for is not a statement anybody can make.
 
+    ``from_historical_register`` is `True` for that same caller and no other: it
+    is what lets an address carrying a user name or a password through, because
+    the register recorded it and nobody here can re-issue it. Every person's
+    door refuses one (`normalize_engagement_url`, owner decision D10).
+
     ``feedback_received`` is `Saadud tagasiside / arvamused`, and it is
     independent of the deadline: a round recorded after the fact may arrive
     with the answers already written down and no wait ever opened. Nothing is
@@ -2374,9 +2404,9 @@ def add_engagement(
         matter=matter,
         kind=_engagement_kind(kind),
         title=clean_title[:500],
-        url=normalize_engagement_url(url),
-        smaily_url=normalize_engagement_url(smaily_url),
-        alchemer_url=normalize_engagement_url(alchemer_url),
+        url=normalize_engagement_url(url, historical=from_historical_register),
+        smaily_url=normalize_engagement_url(smaily_url, historical=from_historical_register),
+        alchemer_url=normalize_engagement_url(alchemer_url, historical=from_historical_register),
         note=note.strip(),
         occurred_on=occurred_on,
         occurred_on_precision=precision,
@@ -2476,6 +2506,7 @@ def update_engagement(
     response_count: Any = _UNSET,
     actor: Any = None,
     expected_revision: str | None = None,
+    from_historical_register: bool = False,
 ) -> MatterEngagement:
     """Correct an engagement, and say nothing when nothing changed.
 
@@ -2521,6 +2552,12 @@ def update_engagement(
     ``engagement`` is kept consistent with what was written, so a caller that
     goes on reading the instance it passed — `app.legacy_import.register_outreach`
     compares its own fields before and after — sees the stored values.
+
+    **A link carrying a user name or a password is refused unless it is the one
+    the row already holds** (owner decision D10, 2026-10-17). The comparison is
+    against the *locked* row, so a correction of the title of a historical round
+    whose link nobody touched still saves, and a newly typed credential does not.
+    ``from_historical_register`` is the importer's, as on :func:`add_engagement`.
     """
     locked = MatterEngagement.objects.select_for_update(no_key=True).get(pk=engagement.pk)
     if expected_revision is not None and engagement_revision_token(locked) != expected_revision:
@@ -2536,15 +2573,20 @@ def update_engagement(
         if not clean_title:
             raise DomainError("Kaasamisel peab olema pealkiri.")
         proposed["title"] = clean_title[:500]
+    historical = from_historical_register
     if url is not _UNSET:
-        proposed["url"] = normalize_engagement_url(url)
+        proposed["url"] = normalize_engagement_url(url, stored=locked.url, historical=historical)
     # `_UNSET`, not `""`. A caller that does not mention a provider link leaves
     # it exactly as it was: the importer names only `url`, so a mapping refresh
     # cannot silently erase a Smaily address somebody typed on the Teema page.
     if smaily_url is not _UNSET:
-        proposed["smaily_url"] = normalize_engagement_url(smaily_url)
+        proposed["smaily_url"] = normalize_engagement_url(
+            smaily_url, stored=locked.smaily_url, historical=historical
+        )
     if alchemer_url is not _UNSET:
-        proposed["alchemer_url"] = normalize_engagement_url(alchemer_url)
+        proposed["alchemer_url"] = normalize_engagement_url(
+            alchemer_url, stored=locked.alchemer_url, historical=historical
+        )
     if note is not _UNSET:
         proposed["note"] = (note or "").strip()
     if feedback_received is not _UNSET:
@@ -4539,7 +4581,10 @@ def correct_external_position(
                 current.source_is_member if source_is_member is None else bool(source_is_member)
             ),
         )
-    clean_url = normalize_external_position_url(url)
+    # The address as this row holds it is kept even when it carries userinfo —
+    # a `LEGACY` row out of the historical register is not rewritten — and only
+    # a newly typed or changed one is refused (owner decision D10).
+    clean_url = normalize_external_position_url(url, stored=current.url)
     clean_summary = (summary or "").strip()[:EXTERNAL_POSITION_SUMMARY_MAX_LENGTH]
     clean_note = (lawyer_note or "").strip()[:EXTERNAL_POSITION_LAWYER_NOTE_MAX_LENGTH]
     # The source rule, asked again and against what this save would *result*

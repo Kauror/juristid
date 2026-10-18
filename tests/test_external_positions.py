@@ -365,12 +365,15 @@ def test_an_unknown_precision_is_refused_by_the_service(normal_matter, specialis
 )
 def test_a_hostile_or_malformed_address_is_refused(url):
     # A web scheme with nothing after it is a missing host; everything else
-    # here is refused for its scheme.
-    expected = (
-        "Link peab sisaldama veebiaadressi."
-        if url.startswith("https://")
-        else "Link peab algama http:// või https:// aadressiga."
-    )
+    # here is refused for its scheme. An authority made of credentials alone is
+    # refused for the credentials since owner decision D10 (docs/adr/0085 §2,
+    # amendment of 2026-10-17), as `Ülevaade / uudis` always refused it.
+    if "@" in url:
+        expected = "Link ei tohi sisaldada kasutajanime ega parooli."
+    elif url.startswith("https://"):
+        expected = "Link peab sisaldama veebiaadressi."
+    else:
+        expected = "Link peab algama http:// või https:// aadressiga."
     with refused(expected):
         normalize_external_position_url(url)
 

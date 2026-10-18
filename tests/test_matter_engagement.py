@@ -1432,8 +1432,22 @@ def test_a_link_with_no_host_at_all_is_refused(normal_matter, specialist, field)
 
     Nobody can follow it, and its "host" would be nothing but the credentials —
     the one shape where a fallback label leaks what the label exists to hide.
+
+    Refused on the historical-register door too, which tolerates credentials
+    and not the absence of a host; a person's door refuses it for the
+    credentials first (owner decision D10, docs/adr/0085 §2 amendment of
+    2026-10-17).
     """
     with refused("Link peab sisaldama veebiaadressi."):
+        add_engagement(
+            matter=normal_matter,
+            kind=EngagementKind.OTHER,
+            title="Muu",
+            actor=specialist,
+            from_historical_register=True,
+            **{field: f"https://kampaania:{CREDENTIAL}@/loend"},
+        )
+    with refused("Link ei tohi sisaldada kasutajanime ega parooli."):
         add_engagement(
             matter=normal_matter,
             kind=EngagementKind.OTHER,
@@ -1447,11 +1461,15 @@ def test_a_link_with_no_host_at_all_is_refused(normal_matter, specialist, field)
 
 @pytest.fixture
 def credentialed_engagement(db, specialist):
+    """A round whose links carry credentials — since owner decision D10 only the
+    historical register can still write one, so it is written through that door;
+    what these tests protect is that a stored one never leaks."""
     matter = factories.MatterFactory(owner=specialist, title="Avalik teema")
     return add_engagement(
         matter=matter,
         kind=EngagementKind.EMAIL_CAMPAIGN,
         title="Uudiskirja saatmine liikmetele",
+        from_historical_register=True,
         url=CREDENTIALED_URL,
         smaily_url=f"https://saatja:{CREDENTIAL}@sendsmaily.net:8443/c/9182?token=SECRET-ONE",
         alchemer_url=f"https://vastaja:{CREDENTIAL}@survey.alchemer.eu:9443/s3/77?k=SECRET-TWO",

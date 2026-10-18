@@ -305,21 +305,26 @@ def test_an_over_long_address_is_refused_rather_than_truncated():
     assert "liiga pikk" in str(refusal.value)
 
 
-def test_the_widening_took_nothing_away_from_the_engagement_or_position_rules():
-    """§2. The safety half is *shared*, and the userinfo rule is this one's alone.
+def test_the_userinfo_rule_is_shared_and_only_the_importer_keeps_the_tolerance():
+    """§2, as amended on 2026-10-17 (owner decision D10).
 
-    `Kaasamine` and `Väline seisukoht` record addresses out of a historical
-    register that this department did not choose and cannot re-issue, so a
-    credential-bearing one there is a fact to preserve rather than a refusal to
-    make. Sharing the implementation must not have quietly changed either.
+    The safety half was always shared; the userinfo rule was this one's alone
+    while `Kaasamine` and `Väline seisukoht` tolerated credentials for the sake
+    of the historical register. Every door a person pastes into now refuses
+    them, and the register importer — the one writer recording what it did not
+    choose — keeps the tolerant path.
     """
+    from app.core.web_addresses import LINK_HAS_CREDENTIALS
     from app.matters.services import normalize_engagement_url, normalize_external_position_url
 
     credentialed = "https://kasutaja:parool@kampaania.example/x"
-    assert normalize_engagement_url(credentialed) == credentialed
-    assert normalize_external_position_url(credentialed) == credentialed
+    with refused(LINK_HAS_CREDENTIALS):
+        normalize_engagement_url(credentialed)
+    with refused(LINK_HAS_CREDENTIALS):
+        normalize_external_position_url(credentialed)
     with refused(WEBSITE_OVERVIEW_URL_HAS_CREDENTIALS):
         normalize_overview_news_url(credentialed)
+    assert normalize_engagement_url(credentialed, historical=True) == credentialed
 
 
 @pytest.mark.parametrize("url", [NEWS_HTTPS_URL, NEWS_HTTP_URL])
