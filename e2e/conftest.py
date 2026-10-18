@@ -205,6 +205,81 @@ def the_browser_policy_refuses_nothing(request):
     )
 
 
+#: What `safeInit` in `static/js/app.js` and `static/js/ux.js` writes to the
+#: console when a feature's start-up throws (docs/adr/0171): `juristid: <name>
+#: failed`. The page goes on working without that feature, which is the point
+#: of `safeInit` — and also why nothing else would notice.
+START_UP_FAILURE_PREFIX = "juristid: "
+
+#: The marker a test carries when it makes a feature's start-up throw on
+#: purpose (`e2e/test_startup_failure_isolation.py`). Nothing else may carry it
+#: (`tests/test_e2e_start_up_failure_watch.py`).
+START_UP_FAILURE_MARKER = "start_up_failure_injected"
+
+
+@pytest.fixture(autouse=True)
+def no_feature_fails_to_start(request):
+    """Fail any browser test on whose pages a feature failed to start (JRF-03).
+
+    `safeInit` keeps one broken feature from stopping the others, and logs the
+    exception under the feature's name with `console.error`. Without this watch
+    a start-up error on a real page would be logged and passed over by every
+    test that does not happen to use that feature.
+
+    Every page of the `page` fixture's context is watched, and every context or
+    page the test opens itself from `browser`. A test that injects a failure on
+    purpose opts out with `@pytest.mark.start_up_failure_injected`. Yields the
+    list it collects, so a test can ask for it by name.
+    """
+    failures: list[str] = []
+    if request.node.get_closest_marker(START_UP_FAILURE_MARKER) or not (
+        {"page", "browser"} & set(request.fixturenames)
+    ):
+        yield failures
+        return
+
+    def watch(target) -> None:
+        target.on(
+            "console",
+            lambda message: (
+                failures.append(f"{target.url}: {message.text}")
+                if message.type == "error" and message.text.startswith(START_UP_FAILURE_PREFIX)
+                else None
+            ),
+        )
+
+    def watch_context(context) -> None:
+        for open_page in context.pages:
+            watch(open_page)
+        context.on("page", watch)
+
+    if "page" in request.fixturenames:
+        watch_context(request.getfixturevalue("page").context)
+    if "browser" in request.fixturenames:
+        browser = request.getfixturevalue("browser")
+        monkeypatch = request.getfixturevalue("monkeypatch")
+        new_context, new_page = browser.new_context, browser.new_page
+
+        def watched_context(*args, **kwargs):
+            context = new_context(*args, **kwargs)
+            watch_context(context)
+            return context
+
+        def watched_page(*args, **kwargs):
+            opened = new_page(*args, **kwargs)
+            watch_context(opened.context)
+            return opened
+
+        monkeypatch.setattr(browser, "new_context", watched_context)
+        monkeypatch.setattr(browser, "new_page", watched_page)
+
+    yield failures
+    assert not failures, (
+        "a feature failed to start on this test's pages (safeInit logged it and the "
+        "page went on without it):\n  " + "\n  ".join(failures)
+    )
+
+
 def sign_in(page, base_url: str, persona: Persona) -> None:
     """Sign in through the development login page.
 
