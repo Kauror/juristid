@@ -959,6 +959,16 @@ that applied it is a **code-only** rollback: the previous release inserts
 entries without naming `url`, the database default fills in `''`, and the links
 stay where they are (docs/adr/0097, amendment of 2026-10-15).
 
+**One known imprecision while the code is rolled back to `9ecbfd21`** (JDATA-001).
+That release does not know `url`, so correcting a `Muu` entry that has a link
+writes an `EntryRevision` whose `url` is the database default `''` — the
+revision says the earlier link was empty — while the entry itself keeps its
+link. Revisions are append-only, so the row stays as written after the next
+release returns. Nothing is lost from the entry; the history of that one
+correction is wrong. If it matters, note which corrections happened during the
+rollback window (`matters_entryrevision` rows with `url = ''` on entries whose
+`url <> ''`, created after the rollback) in the release record.
+
 Running `migrate matters 0048` instead is a data loss. The reverse of `0049` is
 two `RemoveField`s and a dropped constraint, so **every `Muu` link
 (`Entry.url`) and every earlier link a correction kept (`EntryRevision.url`)
