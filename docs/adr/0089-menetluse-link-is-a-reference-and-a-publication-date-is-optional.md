@@ -72,7 +72,8 @@ refusing to record the truth about the file.
 
 ## 3 — The address rule is the shared one
 
-`normalize_procedural_link_url` is the fourth caller of `_normalize_public_link`,
+`normalize_procedural_link_url` is the fourth caller of `_normalize_public_link`
+(now `app.core.web_addresses.normalize_web_address`, ADR 0121),
 beside the `Kaasamine`, `Väline seisukoht` and `Ülevaade / uudis` doors. It
 keeps exactly what those keep:
 

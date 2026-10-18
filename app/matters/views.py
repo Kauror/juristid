@@ -7385,10 +7385,10 @@ def _workspace_choices(open_choice: str, *, has_open_round: bool = False) -> dic
 
     The template cannot do this with `open_choice` alone, and the failure is
     quiet rather than loud. `open_choice` is global to the page: when a refusal
-    comes from `+ Arvamus / tagasiside` it names one of *that* family's
-    children, so every `if open_choice == "marge-…"` test in the `+ Märge` group
+    comes from `+ Koja arvamus / kohtumine` it names one of *that* family's
+    children, so every `if open_choice == "marge-…"` test in the `+ Lisa` group
     is false at once and that group renders with **no radio checked**. Opening
-    `+ Märge` afterwards then shows four chips and no form — nothing errors,
+    `+ Lisa` afterwards then shows its chips and no form — nothing errors,
     nothing logs, and the page is simply missing a control.
 
     So each group is told which of *its* ids is chosen, and the answer is always
@@ -8488,10 +8488,12 @@ def _record_external_position(request: HttpRequest, pk: Any) -> HttpResponse:
     no institution behind (docs/adr/0073, docs/adr/0084 §4).
 
     **Received feedback may name no institution at all**, and that is the one
-    place the two panels diverge here: `resolve_addressee` is asked only when
-    something was chosen or typed, because calling it with two empty answers
-    would refuse an aggregate survey result for having no author when `Allikas`
-    is exactly the author it has (docs/adr/0091 §3.3).
+    place the two provenances diverge here: `resolve_addressee` is asked only
+    when something was chosen or typed, because calling it with two empty
+    answers would refuse a «Saadeti Kojale» answer that names nobody — which
+    since docs/adr/0101 is a record rather than a gap. A published opinion
+    («Avaldatud mujal») must name its author, and the form refuses it before
+    this (docs/adr/0091 §3.3).
 
     A refusal comes back through `_workspace_refusal` with the form still bound,
     so the link somebody pasted and the explanation they wrote are still in

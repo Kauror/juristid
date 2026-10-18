@@ -1,6 +1,6 @@
 # ADR 0057 — A baseline holds the product, not the clock and not the seed
 
-- Status: proposed
+- Status: Accepted (written as proposed on its feature branch; accepted when it merged to main, as the index has said since 2026-09-02 — file status corrected 2026-10-18, JARCH-007)
 - Date: 2026-09-01
 - Related: ADR 0049 (the department page, whose nav change made five baselines
   stale), the #113 clock-stabilisation work this layers on

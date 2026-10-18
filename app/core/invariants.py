@@ -26,7 +26,9 @@ things:
   The three `closed-matter-*` kinds are the same shape for ENG-006: live work a
   closure path left owed on a Matter that is no longer current. The last four
   are ENG-144's: a record joined to or described under another Matter's file,
-  and a person's closure with no event behind it.
+  and a person's closure with no event behind it. The two `external-position-*`
+  rules of docs/adr/0170 §3 and 0162 §1 are asked only of rows written since
+  the release that shipped their refusal (`RULE_SINCE_MIGRATION`, JDATA-003).
 
 **Nothing is repaired.** A finding is a question about what a record was meant
 to say, and only somebody with the register in front of them can answer it. The
@@ -87,8 +89,32 @@ SERVICE_RULES = frozenset(
         "follow-up-live-check-after-monitoring-ended",
         "follow-up-monitoring-without-live-check",
         "follow-up-live-check-on-unsent-opinion",
+        "external-position-discovered-answers-round",
+        "external-position-reply-less-restricted-than-round",
     }
 )
+
+#: The migration that shipped each rule's service refusal, read from this
+#: database's own `django_migrations`. A rule that only the services keep can
+#: only be asked of rows written *after* those services were running here, and
+#: the moment a release's migrations were applied is the one creation-time
+#: boundary every database records for itself (JDATA-003).
+#:
+#: * ADR 0170 §3 (`DISCOVERED` never answers a round) shipped with #457, whose
+#:   migration is `matters.0049_entry_url`.
+#: * ADR 0162 §1 (a reply copies its round's restriction) shipped with #452,
+#:   whose migration is `audit.0037_matter_permanent_deletion_events`.
+#:
+#: Before its migration is applied — the pre-migration run of the deploy
+#: runbook — a rule has no boundary and reports nothing: no row was written
+#: under it yet.
+RULE_SINCE_MIGRATION: dict[str, tuple[str, str]] = {
+    "external-position-discovered-answers-round": ("matters", "0049_entry_url"),
+    "external-position-reply-less-restricted-than-round": (
+        "audit",
+        "0037_matter_permanent_deletion_events",
+    ),
+}
 
 #: What each kind means, printed once above its rows.
 EXPLANATIONS: dict[str, str] = {
@@ -158,6 +184,16 @@ EXPLANATIONS: dict[str, str] = {
     ),
     "follow-up-live-check-on-unsent-opinion": (
         "A planned or current check is about an opinion that is no longer SENT"
+    ),
+    # docs/adr/0170 §3 and docs/adr/0162 §1, asked only of rows written since
+    # the release that made the services refuse them (`RULE_SINCE_MIGRATION`).
+    "external-position-discovered-answers-round": (
+        "A live MatterExternalPosition filed since ADR 0170 is DISCOVERED but answers a "
+        "Kaasamine round: an answer to Koda's consultation is RECEIVED"
+    ),
+    "external-position-reply-less-restricted-than-round": (
+        "A live reply filed since ADR 0162 is not RESTRICTED though its Kaasamine round is "
+        "(reads still hide it live; unless the round was restricted after the reply was filed)"
     ),
 }
 
@@ -569,6 +605,71 @@ def _follow_up_findings() -> list[Finding]:
     return findings
 
 
+def _rule_boundary(kind: str) -> datetime.datetime | None:
+    """When the release that shipped ``kind``'s refusal was migrated here, if it was."""
+    from django.db.migrations.recorder import MigrationRecorder
+
+    app_label, name = RULE_SINCE_MIGRATION[kind]
+    applied: datetime.datetime | None = (
+        MigrationRecorder.Migration.objects.filter(app=app_label, name=name)
+        .values_list("applied", flat=True)
+        .first()
+    )
+    return applied
+
+
+def _reply_rule_findings() -> list[Finding]:
+    """A position whose relation to its round breaks a rule only services keep.
+
+    `DISCOVERED` with a round (docs/adr/0170 §3) and a reply less restricted
+    than its `RESTRICTED` round (docs/adr/0162 §1). Neither has a `CHECK`: the
+    first was legal before ADR 0170 and historical rows keep it, and the second
+    is a cross-row rule that the live read covers for the rows written before
+    ADR 0162. So each is asked only of rows created after its release's
+    migration was applied here (`RULE_SINCE_MIGRATION`). A removed row owes
+    nothing; `LEGACY` rows are not judged (docs/adr/0091 §3.4).
+    """
+    position = apps.get_model("matters", "MatterExternalPosition")
+    findings: list[Finding] = []
+
+    since = _rule_boundary("external-position-discovered-answers-round")
+    if since is not None:
+        findings.extend(
+            Finding(
+                kind="external-position-discovered-answers-round",
+                subject=str(pk),
+                detail=f"engagement={engagement}",
+            )
+            for pk, engagement in position._base_manager.filter(
+                removed_at__isnull=True,
+                engagement__isnull=False,
+                provenance="DISCOVERED",
+                created_at__gt=since,
+            )
+            .order_by("pk")
+            .values_list("pk", "engagement_id")
+        )
+
+    since = _rule_boundary("external-position-reply-less-restricted-than-round")
+    if since is not None:
+        findings.extend(
+            Finding(
+                kind="external-position-reply-less-restricted-than-round",
+                subject=str(pk),
+                detail=f"engagement={engagement}, visibility_override={override!r}",
+            )
+            for pk, engagement, override in position._base_manager.filter(
+                removed_at__isnull=True,
+                engagement__visibility_override="RESTRICTED",
+                created_at__gt=since,
+            )
+            .exclude(visibility_override="RESTRICTED")
+            .order_by("pk")
+            .values_list("pk", "engagement_id", "visibility_override")
+        )
+    return findings
+
+
 def check_domain_invariants(*, today: datetime.date | None = None) -> InvariantReport:
     """Every row breaking one of the rules above. Reads; never writes."""
     day = today or timezone.localdate()
@@ -581,4 +682,5 @@ def check_domain_invariants(*, today: datetime.date | None = None) -> InvariantR
     report.findings.extend(_unrecorded_closure_findings())
     report.findings.extend(_stage_episode_findings())
     report.findings.extend(_follow_up_findings())
+    report.findings.extend(_reply_rule_findings())
     return report

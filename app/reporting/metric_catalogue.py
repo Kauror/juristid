@@ -196,6 +196,12 @@ def _matter(
     )
 
 
+#: Why a page-count figure opens no list: the materials list counts file
+#: occurrences, not pages, so it would show a different number (JDATA-004).
+_PAGES_HAVE_NO_LIST = (
+    "Loendit ei avata: lähtelehtedel ei ole oma loendit, materjalide loend loeb failide esinemisi."
+)
+
 _DEFINITIONS: tuple[MetricDefinition, ...] = (
     # -- Teemad ------------------------------------------------------------
     _matter(
@@ -771,6 +777,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         unit=Unit.PAGES,
         respects_period=False,
         notes_et="Ajaloolist sektsiooni ei kaardistata vaikimisi valdkonnale.",
+        drillthrough_et=_PAGES_HAVE_NO_LIST,
     ),
     MetricDefinition(
         key=LEGACY_SOURCE_PAGES_BY_YEAR,
@@ -787,6 +794,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         minimum_coverage=0.0,
         respects_period=False,
         notes_et="Ärge segage seda teemade aastajaotusega.",
+        drillthrough_et=_PAGES_HAVE_NO_LIST,
     ),
     MetricDefinition(
         key=LEGACY_SOURCE_PAGES_BY_ROLE,
@@ -797,6 +805,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         time_basis=TimeBasis.WHOLE_CORPUS,
         unit=Unit.PAGES,
         respects_period=False,
+        drillthrough_et=_PAGES_HAVE_NO_LIST,
     ),
     MetricDefinition(
         key=HISTORICAL_RESOURCE_OCCURRENCES,
@@ -897,6 +906,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         time_basis=TimeBasis.WHOLE_CORPUS,
         unit=Unit.COUNT,
         respects_period=False,
+        drillthrough_et=_PAGES_HAVE_NO_LIST,
     ),
     MetricDefinition(
         key=MATERIALISATION_STATUS,
@@ -1299,6 +1309,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         time_basis=TimeBasis.WHOLE_CORPUS,
         unit=Unit.PAGES,
         respects_period=False,
+        drillthrough_et=_PAGES_HAVE_NO_LIST,
     ),
     MetricDefinition(
         key=MATERIALISATION_FAILED,

@@ -194,6 +194,13 @@ def test_a_metric_that_cannot_link_honestly_carries_no_link(world, reporting_con
         keys.SEARCHABLE_DOCUMENT_COVERAGE,
         keys.HISTORICAL_UNIQUE_BINARY_CONTENTS,
         keys.LEGACY_SOURCE_PAGES,
+        # The page-count family: the materials list counts file occurrences,
+        # so a headline link would open 9 rows for a figure of 5 (JDATA-004).
+        keys.LEGACY_SOURCE_PAGES_BY_SECTION,
+        keys.LEGACY_SOURCE_PAGES_BY_YEAR,
+        keys.LEGACY_SOURCE_PAGES_BY_ROLE,
+        keys.SOURCE_PAGE_TEXT_LENGTH,
+        keys.READING_ORDER_AMBIGUOUS,
         keys.ENTRY_COUNT,
         keys.NEW_NATIVE_FULL_MATTERS,
         keys.NEW_NATIVE_FULL_MATTERS_BY_MONTH,

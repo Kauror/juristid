@@ -180,6 +180,16 @@ consequences and reversibility.
 | [0170](0170-lisa-tagasiside-is-the-one-door-for-every-position.md) | `Lisa tagasiside` is the one door for every position | Accepted (owner's UX round, stage 3, 2026-10-15); `+ Kaasamine · Lisa tagasiside` records member feedback sent to Koda and positions published elsewhere through one form with a required, default-free provenance radio; organisation optional for received feedback (0101) and required for published positions; text, link or file — any one (0084 §3); `Liige` only with «Saadeti Kojale»; optional, never-preselected `Seotud kaasamine` that fixes the provenance (except `Tehtud` on a wait); retires `Meile saadetud tagasiside` / `Teiste arvamus` and their routes; amends 0091 §3.5, 0095 §4–§5, 0142 §B, 0167 §2; no migrations; §4 amended 2026-10-17 by 0167's amendment (D3): a standalone position no longer repeats by a double POST — the same drawn form saves once, a deliberate repeat needs a fresh form |
 | [0171](0171-the-browser-layer-is-one-delegated-script-and-a-feature-that-fails-to-start-stops-only-itself.md) | The browser layer is one delegated script, and a feature that fails to start stops only itself | Proposed (JARCH-004, 2026-10-18); no migrations, nothing visible changes; describes app.js/ux.js as one global delegated progressive-enhancement layer (document listeners, the htmx swap layer, draft keeping, refusal display) and proposes AGENTS.md wording in place of «isolated islands»; implemented: `safeInit` per feature start-up and per binder, the request-lifecycle handlers registered before any feature |
 
+**Numbers with no record on this branch.** `tests/test_architecture_decisions.py`
+requires every gap in the numbering to be named here:
+
+- 0157 — reserved for «Lovable data is mirrored for comparison, never canonical».
+  It is on `feature/lovable-mirror` (PR #429, still open), and the owner accepted
+  the architecture only on 2026-10-13, with activation not approved. The record
+  lands with that PR.
+- 0164 — not used. The number was skipped during the QA remediation of
+  2026-10-14 (between 0163 and 0165), and no record was ever written under it.
+
 Naming: `NNNN-short-decision-title.md`.
 
 ## Stage coverage

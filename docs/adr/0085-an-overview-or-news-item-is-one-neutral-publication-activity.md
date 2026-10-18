@@ -100,8 +100,9 @@ published. Refusing it would mean refusing to record what happened, which is the
 mistake ADR 0081 §3 made in the other direction.
 
 The safety half is shared with `normalize_engagement_url` and
-`normalize_external_position_url` through `_normalize_public_link` rather than
-copied, because it is not the kind of rule that may exist three times: it is the
+`normalize_external_position_url` through `_normalize_public_link` (since
+renamed and moved: `app.core.web_addresses.normalize_web_address`, ADR 0121)
+rather than copied, because it is not the kind of rule that may exist three times: it is the
 difference between a clickable control on a page a lawyer trusts and a
 script-delivery vector, and a second copy is a second place for `javascript:` to
 be forgotten. Userinfo is the one rule this caller adds and the other two do not

@@ -5684,32 +5684,33 @@ class ExternalPositionFieldsMixin:
     errors: Any
     is_bound: bool
 
-    #: Whether this surface may ask for an `Allikas` — true on received feedback
-    #: and false everywhere else.
+    #: Whether this surface may ask for an `Allikas` — true only on `Muuda` of
+    #: a received row (`ExternalPositionEditForm`), false everywhere else.
     #:
-    #: A class attribute rather than a check on a posted value, because the
-    #: distinction is a property of the *panel*: `+ Teiste arvamus` has no such
-    #: box, so a POST carrying `source_label` to it is a value that did not come
-    #: off a page and the shared `clean` refuses the record as unauthored. The
-    #: service refuses it again under the row lock, because a form is not a
-    #: boundary (docs/adr/0091 §3.3).
+    #: A property of the *form*, not of a posted value: `Lisa tagasiside`
+    #: (`FeedbackForm`) has no such box (docs/adr/0095 §4), so a POST carrying
+    #: `source_label` to it is a value that did not come off a page. The
+    #: service refuses an `Allikas` off `RECEIVED` again under the row lock,
+    #: because a form is not a boundary (docs/adr/0091 §3.3).
     allows_source_label: bool = False
     #: Whether this surface records feedback somebody sent **to this office**,
     #: and may therefore name nobody.
     #:
     #: Deliberately not `allows_source_label`. That flag answers «does this
-    #: panel offer an `Allikas` box», which docs/adr/0095 §4 turned off for both
-    #: capture panels — and reading it as «may the author be absent» is what
-    #: made the received-feedback panel go on demanding an organisation after
-    #: the rule changed. Two questions, two flags (OWNER-01, docs/adr/0101).
+    #: form offer an `Allikas` box», which docs/adr/0095 §4 turned off on
+    #: creation — and reading it as «may the author be absent» is what made the
+    #: received-feedback panel go on demanding an organisation after the rule
+    #: changed. Two questions, two flags (OWNER-01, docs/adr/0101). On
+    #: `Lisa tagasiside` it is decided per save, from the stated provenance.
     author_is_optional: bool = False
 
     #: Whether this surface asks the date at a precision, or asks for one day.
     #:
     #: `Muuda` keeps the four chips, because a record stated as «kevadel 2019» has
-    #: to be correctable back into exactly what it is; the two creation panels
-    #: dropped them, because a lawyer writing up feedback that arrived this week
-    #: is answering a day and was being asked to classify it first
+    #: to be correctable back into exactly what it is; the creation form
+    #: (`Lisa tagasiside`, two panels before docs/adr/0170) dropped them,
+    #: because a lawyer writing up feedback that arrived this week is answering
+    #: a day and was being asked to classify it first
     #: (docs/adr/0095 §3).
     #:
     #: It is read where the period is *resolved*, not only where it is drawn: a
