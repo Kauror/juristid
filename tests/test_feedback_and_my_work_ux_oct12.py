@@ -91,6 +91,11 @@ def test_the_reply_form_asks_its_questions_in_order_and_no_markus(
     `Saadud tagasiside` is `Seisukoht` again, because it now holds published
     views too. The 2026-10-12 decisions stand: no note, one textarea, and the
     round, the text, the day, the files and the save in that order.
+
+    How the position reached Koda is asked *before* the organisation since the
+    2026-10-17 audit (JUX-005; docs/adr/0170, amendment of 2026-10-18): the
+    answer reveals `Liige` at the end of the organisation row, so Tab after
+    «Saadeti Kojale» has to reach it.
     """
     _round(normal_matter, specialist, "Liikmete küsitlus")
 
@@ -103,8 +108,8 @@ def test_the_reply_form_asks_its_questions_in_order_and_no_markus(
     assert re.search(r'<textarea[^>]*name="summary"', reply)
     assert "Seisukoht" in reply
     order = [
-        reply.index('name="organisation'),
         reply.index('name="provenance"'),
+        reply.index('name="organisation'),
         reply.index('name="engagement"'),
         reply.index('name="summary"'),
         reply.index('name="stated_on"'),
