@@ -51,27 +51,32 @@ that hides the neglected ones.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from typing import Any
 
 from django.contrib.postgres.search import SearchQuery, SearchRank
+from django.core.exceptions import EmptyResultSet
 from django.core.paginator import Page, Paginator
 from django.db import connection
 from django.db.models import (
     Case,
+    Count,
     F,
     Field,
     FloatField,
     Func,
+    IntegerField,
     Lookup,
     Q,
     QuerySet,
     TextField,
     Value,
     When,
+    Window,
 )
-from django.db.models.expressions import Combinable
+from django.db.models.expressions import Combinable, RawSQL
 from django.db.models.functions import Greatest
 
 from app.core.authorization import projected_visibility_q, scope_for_user
@@ -926,15 +931,125 @@ def search_page(
     register's too: anything that is not a page number reads as the first page,
     and a number past the end reads as the last one.
 
-    Three statements, each bounded by what it answers: a ``COUNT(*)``, the
-    page's ids in rank order, and the page's rows with what they need to render
-    (plus excerpts, for the rows that have a body).
+    Two statements, each bounded by what it answers: the page's ids in rank
+    order **with the total beside them**, and the page's rows with what they
+    need to render (plus excerpts, for the rows that have a body).
+
+    **One statement, not two** (2026-10-17 audit, JPERF-006). The total used to
+    be its own ``COUNT(*)`` before the ranking statement. It is now carried by
+    the ranking statement itself (`_total`): ``COUNT(*) OVER ()`` where an index
+    answers the term, so one pass over the matches yields both; and, for a term
+    the planner would answer by reading the whole projection, the same
+    ``COUNT(*)`` as a scalar subquery, which keeps its parallel scan. Either way
+    it is computed over the same filtered, authorized rows before the page's
+    ``LIMIT``, so it is the number the ``COUNT(*)`` gave. A page past the end,
+    which returns no rows to carry the total, falls back to counting and then
+    reads the last page, exactly as `Paginator.get_page` did.
     """
     term = clean_query(query)
-    page = Paginator(_ranked(term, user), per_page).get_page(page_number)
+    page = _counted_page(term, user, page_number, per_page)
     results = _present(list(page.object_list), term=term, user=user)
     page.object_list = results
     return SearchPage(results=results, page=page)
+
+
+#: Page numbers answered in one statement. Anything above is past the end of any
+#: projection this application holds (a million rows is 20,000 pages of 50), and
+#: is answered the old way: counted, then the last page.
+_DIRECT_PAGE_LIMIT = 1_000_000
+
+
+def _total(ranked: Any) -> Any:
+    """The page's total, as an expression the ranking statement carries.
+
+    Where an index answers the term, ``COUNT(*) OVER ()``: one pass over the
+    matches yields the page and the total. Where the planner would read the
+    whole projection instead (`_broad`), the old ``COUNT(*)`` of the same
+    queryset as an uncorrelated scalar subquery — evaluated once, as its own
+    scan that may run in parallel, because a window over a sequential scan of
+    every row runs in one process and measured slower than two parallel scans
+    (EVIDENCE/fix-perf/e2). Either way it is one statement and the same number.
+    """
+    if not _broad(ranked):
+        return Window(Count("pk"))
+    # The SQL is Django's own compilation of the authorized queryset, with every
+    # value still a bound parameter; nothing typed reaches the string.
+    sql, params = ranked.order_by().values("pk").query.sql_with_params()
+    statement = f"SELECT COUNT(*) FROM ({sql}) AS matched"  # noqa: S608
+    return RawSQL(statement, params, output_field=IntegerField())  # noqa: S611
+
+
+def _broad(ranked: Any) -> bool:
+    """Whether the planner would read the whole projection for this term — a plan, not a scan.
+
+    Both forms of `_total` give the same number; what differs is the plan.
+    Where an index answers the term, one pass over its matches beats two.
+    Where the term is common enough that PostgreSQL reads the whole projection
+    instead, a window over that scan runs in one process — measured slower on
+    the synthetic corpus, where one word is in 15 % of all rows, than the two
+    parallel scans it replaced (EVIDENCE/fix-perf/e2). So the question asked is
+    the planner's own: does its plan for this predicate scan
+    `search_searchdocument` sequentially?
+
+    ``EXPLAIN`` without ``ANALYZE`` reads nothing but the statistics, so the
+    answer costs a planning round and never a row.
+    """
+    try:
+        sql, params = ranked.order_by().values("pk").query.sql_with_params()
+    except EmptyResultSet:
+        # A term Django already knows can match nothing — a reference whose
+        # number no column can hold — has no statement to plan.
+        return False
+    with connection.cursor() as cursor:
+        cursor.execute("EXPLAIN (FORMAT JSON) " + sql, params)
+        plan = cursor.fetchone()[0]
+    if isinstance(plan, str):
+        plan = json.loads(plan)
+    return _scans_sequentially(plan[0]["Plan"], SearchDocument._meta.db_table)
+
+
+def _scans_sequentially(node: dict[str, Any], table: str) -> bool:
+    if node.get("Node Type") == "Seq Scan" and node.get("Relation Name") == table:
+        return True
+    return any(_scans_sequentially(child, table) for child in node.get("Plans", ()))
+
+
+class _CountedPaginator(Paginator):
+    """A `Paginator` whose total was read beside the page rather than counted apart."""
+
+    def __init__(self, total: int, per_page: int) -> None:
+        super().__init__([], per_page)
+        self.__dict__["count"] = total  # the `cached_property`, already answered
+
+
+def _counted_page(term: str, user: Any, page_number: Any, per_page: int) -> Page:
+    """`Paginator(_ranked(...), per_page).get_page(page_number)`, in one statement.
+
+    The same page for every input `get_page` accepts: anything that is not a
+    whole number is page 1, and a number below 1 or past the end is the last
+    page — which is the one case that needs the total before the rows, so it is
+    answered the old way.
+    """
+    if not term:
+        return Paginator([], per_page).get_page(page_number)
+    try:
+        if isinstance(page_number, float) and not page_number.is_integer():
+            raise ValueError
+        number = int(page_number)
+    except (TypeError, ValueError):
+        number = 1
+    ranked = _ranked(term, user)
+    # A page number no corpus reaches — `?leht=99999999999999999999999` — is past
+    # the end by definition, and its offset would not fit the database's integer.
+    if 1 <= number <= _DIRECT_PAGE_LIMIT:
+        bottom = (number - 1) * per_page
+        rows = list(ranked.annotate(total=_total(ranked))[bottom : bottom + per_page])
+        if rows:
+            paginator = _CountedPaginator(rows[0][3], per_page)
+            return Page([row[:3] for row in rows], number, paginator)
+        if number == 1:
+            return Page([], 1, _CountedPaginator(0, per_page))
+    return Paginator(ranked, per_page).get_page(number)
 
 
 def search(*, query: str, user: Any, limit: int = RESULTS_PER_PAGE) -> list[SearchResult]:
