@@ -137,7 +137,6 @@ MOVED = [
     "matters:matter_create",
     "matters:update_engagement",
     "matters:matter_edit",
-    "matters:update_position",
     "matters:update_summary",
     "matters:add_working_document",
     "intelligence:add_important_date",

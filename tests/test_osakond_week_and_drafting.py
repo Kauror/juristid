@@ -43,7 +43,7 @@ from app.workflow.enums import (
     PlanStepOperation,
 )
 from app.workflow.models import NextAction
-from app.workflow.plan import activate_plan_step, plan_steps_of, seed_standard_plan
+from app.workflow.plan import plan_steps_of, seed_standard_plan
 from app.workflow.services import (
     OPINION_PREPARATION_TEXT,
     establish_opinion_preparation_action,
@@ -51,6 +51,7 @@ from app.workflow.services import (
 )
 from tests import factories
 from tests.follow_ups import send_koja_arvamus
+from tests.legacy_plans import start_as_before_adr_0168
 
 TALLINN = ZoneInfo("Europe/Tallinn")
 
@@ -219,7 +220,10 @@ def test_the_work_plans_opinion_step_counts_by_its_operation(department_head, fi
     opinion_step = next(
         step for step in plan_steps_of(filed) if step.operation == PlanStepOperation.SUBMISSION
     )
-    activate_plan_step(matter=filed, step=opinion_step, actor=specialist, text="Kirjutan arvamuse")
+    # A structured step current as before docs/adr/0168 (owner decision D9).
+    start_as_before_adr_0168(
+        matter=filed, step=opinion_step, actor=specialist, text="Kirjutan arvamuse"
+    )
     assert drafting(department_head) == {filed.pk}
 
 

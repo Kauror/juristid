@@ -3722,19 +3722,6 @@ class EngagementForm(forms.Form):
         return title
 
 
-class PositionForm(forms.Form):
-    position_summary = forms.CharField(
-        label="Koja seisukoht",
-        required=False,
-        widget=forms.Textarea(attrs={"class": "field__input", "rows": "5"}),
-    )
-    rationale_summary = forms.CharField(
-        label="Põhjendus",
-        required=False,
-        widget=forms.Textarea(attrs={"class": "field__input", "rows": "5"}),
-    )
-
-
 class BriefSummaryForm(forms.Form):
     """`Lühikokkuvõte`, edited where it is read.
 

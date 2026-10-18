@@ -346,6 +346,14 @@ ACCOUNT_LINK_BASE_URL = env("ACCOUNT_LINK_BASE_URL", "")
 # activation — never through this. See docs/adr/0004 as amended by 0145.
 DEV_LOGIN_ENABLED = env_bool("DEV_LOGIN_ENABLED", default=False)
 
+# `matters:add_note` has had no page since `+ Lisa · Tavaline` left on
+# 2026-10-07; it stays only as a fixture door for the test suites until their
+# uses move to the real doors (owner decision D9, 2026-10-17). It answers only
+# where this is on, which by default is exactly where the synthetic sign-in is,
+# and never beside real data: with REAL_DATA_ALLOWED the route is a 404 whatever
+# this says.
+ADD_NOTE_TEST_DOOR_ENABLED = env_bool("ADD_NOTE_TEST_DOOR_ENABLED", default=DEV_LOGIN_ENABLED)
+
 # A shared PIN in front of the synthetic sign-in. Empty means no PIN, which is
 # the right default for a laptop and for CI.
 #

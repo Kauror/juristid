@@ -173,7 +173,6 @@ from app.matters.forms import (
     PersonalNoteForm,
     PlannedActionForm,
     PlanRevisionForm,
-    PositionForm,
     ProceduralDevelopmentEditForm,
     ProceduralLinkEditForm,
     ReopenForm,
@@ -293,7 +292,6 @@ from app.matters.services import (
     set_organisations,
     set_policy_area_other,
     set_policy_areas,
-    set_position,
     set_timeline_steps,
     timeline_steps_revision_token,
 )
@@ -6328,50 +6326,6 @@ _FIELD_SURFACES = {
 @login_required
 @business_write_required
 @require_http_methods(["POST"])
-def update_position(request: HttpRequest, pk: Any) -> HttpResponse:
-    """`position_summary` and `rationale_summary`, with **no native UI.**
-
-    Nothing in this application links here any more. There is no separate
-    free-text `Koja seisukoht` concept: what the Chamber produced on a Matter is
-    the opinion it sent, and that is a file, in `Koja arvamus` on the facts
-    rail. The rail block went first, and the reader/editor panel on the
-    Arvamused surface went with this change.
-
-    The route is kept rather than deleted, deliberately and on a narrow basis.
-    The two columns behind it are not retired — the register cutover and the
-    opinion archive both wrote into them, they are still read by
-    `app/search/indexing.py`, and dropping the only writer for live, indexed
-    data is a data decision rather than a UI one. It also stays inside the
-    business-write boundary, where `tests/test_business_write_boundary.py`
-    keeps firing every forbidden actor at it: an unreachable route is not an
-    unguarded one, and the day something needs to write a position again it
-    will find a door that is still locked.
-
-    If that day does not come, retiring the columns, this route, `PositionForm`
-    and `set_position` together is one coherent change. Doing it inside a rail
-    correction would not have been.
-    """
-    matter = get_visible_matter(request, pk)
-    form = PositionForm(request.POST)
-    if form.is_valid():
-        set_position(
-            matter=matter,
-            position_summary=form.cleaned_data["position_summary"],
-            rationale_summary=form.cleaned_data["rationale_summary"],
-            actor=request.user,
-        )
-        messages.success(request, "Seisukoht on salvestatud.")
-    # The surface this used to return to is retired. Nothing links here any more
-    # — the route stays inside the business-write boundary rather than being
-    # deleted, because dropping the only writer for live indexed columns is a
-    # data decision and this was a UI one — so it lands where the Matter's
-    # opinion material now is (docs/adr/0061).
-    return redirect(opinions_url(matter))
-
-
-@login_required
-@business_write_required
-@require_http_methods(["POST"])
 def update_summary(request: HttpRequest, pk: Any) -> HttpResponse:
     """`Lühikokkuvõte`, edited in place under the meta line.
 
@@ -7975,6 +7929,12 @@ def add_note(request: HttpRequest, pk: Any) -> HttpResponse:
     neither changes neither; nothing is read from or written to a
     `Menetluse link`.
     """
+    # No page posts here since `Tavaline` left (2026-10-07): a fixture door for
+    # the test suites, answering only where `ADD_NOTE_TEST_DOOR_ENABLED` is on
+    # and never beside real data, until its uses move to real doors (owner
+    # decision D9, 2026-10-17).
+    if not settings.ADD_NOTE_TEST_DOOR_ENABLED or settings.REAL_DATA_ALLOWED:
+        raise Http404
     matter = get_visible_matter(request, pk)
     # The stage the panel was drawn with, so the form can tell whether a chosen
     # `Uus hetkeseis` moves the file. The form has no `Etapp`: a crafted

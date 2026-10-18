@@ -547,7 +547,8 @@ urlpatterns = [
     # audit log is looked up rather than navigated between (docs/adr/0092 §11,
     # matters/partials/tabs.html).
     path("teemad/<uuid:pk>/muudatused/", views.matter_changes, name="matter_changes"),
-    # Full-page posts
-    path("teemad/<uuid:pk>/seisukoht/salvesta/", views.update_position, name="update_position"),
+    # Full-page posts. `seisukoht/salvesta/` (`update_position`) is gone: no
+    # page had posted to it since docs/adr/0061, and owner decision D9
+    # (2026-10-17) retired it (tests/test_retired_write_doors.py).
     path("teemad/<uuid:pk>/taasava/", views.reopen, name="reopen"),
 ]

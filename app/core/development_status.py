@@ -418,8 +418,9 @@ ITEMS: tuple[StatusItem, ...] = (
             "Teema väljund on saadetud arvamus ja see on fail."
         ),
         why=(
-            "Mõlemad väljad on alles, neid salvestab endiselt `matters:update_position` "
-            "ja mõlemad lähevad otsinguindeksisse. Kadus ainult nende kuvamine."
+            "Mõlemad väljad on alles ja lähevad otsinguindeksisse. Ükski vorm neid "
+            "enam ei salvesta: `matters:update_position` eemaldati omaniku otsusega "
+            "D9 (2026-10-17)."
         ),
         state=DEVIATION,
         next_step=(

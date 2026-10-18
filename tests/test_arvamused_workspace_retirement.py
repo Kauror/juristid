@@ -18,12 +18,11 @@ archive put in them, and `app/search/indexing.py` still reads both. A Matter
 carrying a position renders a page that never mentions it and stores exactly
 the same two strings afterwards.
 
-**`matters:update_position` still routes.** Nothing links to it, which is the
-point; it stays inside the business-write boundary rather than being deleted,
-because dropping the only writer for live indexed columns is a data decision
-and this was a UI one. `tests/test_business_write_boundary.py` keeps firing
-every forbidden actor at it, and the test at the bottom of this file is what
-would notice a link to it reappearing.
+**`matters:update_position` is gone** (owner decision D9, 2026-10-17). It
+was kept here as «a data decision rather than a UI one»; D9 is that decision.
+The columns stay and stay indexed; nothing writes them from a page, a stale
+POST is a 404 (`tests/test_retired_write_doors.py`), and the test at the
+bottom of this file is what would notice a link to it reappearing.
 
 **Everything the retired page was for still works.** Drafting an opinion,
 sending it, and reaching the historical letters filed onto a Matter — all of it
@@ -126,12 +125,12 @@ def test_the_opinion_surface_says_nothing_about_a_seisukoht(signed_in, specialis
 
 
 def test_the_page_does_not_post_to_update_position(signed_in, specialist):
-    """The endpoint survives; the native link to it does not."""
+    """Neither the endpoint nor a native link to it survives (D9)."""
     matter = factories.MatterFactory(owner=specialist)
 
     body = _page(signed_in, matter)
 
-    assert reverse("matters:update_position", kwargs={"pk": matter.pk}) not in body
+    assert f"/teemad/{matter.pk}/seisukoht/salvesta/" not in body
 
 
 def test_a_matter_that_has_a_position_still_renders_none_of_it(signed_in, specialist):
@@ -375,39 +374,21 @@ def test_a_reader_reads_the_page_and_is_offered_no_writes(client, reader, specia
     assert f"/arvamused/teema/{matter.pk}/uus/" not in body  # retired, ENG-050A
 
 
-def test_the_endpoint_still_refuses_a_reader(client, reader, specialist):
-    """Unreachable is not the same as unguarded.
-
-    The route has no native caller any more, so this is the assertion that it
-    is still a door with a lock rather than one nobody happens to be walking
-    towards. The full matrix is in tests/test_business_write_boundary.py.
-    """
+def test_the_retired_endpoint_writes_for_nobody(client, reader, specialist):
+    """Removed on purpose (owner decision D9, 2026-10-17), not rotted into a
+    404: neither a reader nor the owner can write a position any more."""
     matter = factories.MatterFactory(owner=specialist)
-    client.force_login(reader)
 
-    response = client.post(
-        reverse("matters:update_position", kwargs={"pk": matter.pk}),
-        {"position_summary": "Loata seisukoht", "rationale_summary": ""},
-    )
+    for actor in (reader, specialist):
+        client.force_login(actor)
+        response = client.post(
+            f"/teemad/{matter.pk}/seisukoht/salvesta/",
+            {"position_summary": "Koda toetab.", "rationale_summary": ""},
+        )
+        assert response.status_code == 404
 
-    assert response.status_code == 404
     matter.refresh_from_db()
     assert matter.position_summary == ""
-
-
-def test_the_endpoint_still_works_for_an_authorized_actor(signed_in, specialist):
-    """Kept deliberately, so its removal is a decision somebody takes on
-    purpose rather than something that rots into a 404."""
-    matter = factories.MatterFactory(owner=specialist)
-
-    response = signed_in.post(
-        reverse("matters:update_position", kwargs={"pk": matter.pk}),
-        {"position_summary": "Koda toetab.", "rationale_summary": ""},
-    )
-
-    assert response.status_code == 302
-    matter.refresh_from_db()
-    assert matter.position_summary == "Koda toetab."
 
 
 # ---------------------------------------------------------------------------
