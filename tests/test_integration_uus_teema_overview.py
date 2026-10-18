@@ -91,8 +91,10 @@ def created(signed_in, specialist, stage):
             "response_deadline": tomorrow.strftime("%d.%m.%Y"),
         },
     )
-    assert response.status_code in (302, 303), response.status_code
-    return Matter.objects.get(title=TITLE)
+    assert response.status_code == 302, response.status_code
+    matter = Matter.objects.get(title=TITLE)
+    assert response["Location"] == reverse("matters:matter_detail", kwargs={"pk": matter.pk})
+    return matter
 
 
 # ---------------------------------------------------------------------------

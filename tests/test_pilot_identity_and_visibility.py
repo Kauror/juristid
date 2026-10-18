@@ -286,7 +286,8 @@ def test_assigning_by_the_submitted_id_reaches_the_person_the_label_named(
         },
     )
 
-    assert response.status_code in (200, 302)
+    assert response.status_code == 302
+    assert response["Location"] == reverse("matters:matter_list")
     normal_matter.refresh_from_db()
     assert normal_matter.owner_id == sandra_tamm.pk
 

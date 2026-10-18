@@ -146,8 +146,9 @@ def test_uus_teema_records_its_deadline_as_a_request(signed_in, specialist):
         {"title": "Uus päring (sünteetiline)", "response_deadline": _days(20).strftime("%d.%m.%Y")},
     )
 
-    assert response.status_code in (200, 302)
+    assert response.status_code == 302
     matter = Matter.objects.get(title="Uus päring (sünteetiline)")
+    assert response["Location"] == reverse("matters:matter_detail", kwargs={"pk": matter.pk})
     assert matter.response_deadline == _days(20)
     assert matter.response_requested_at is not None
 

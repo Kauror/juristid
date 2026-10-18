@@ -215,7 +215,7 @@ def test_a_writer_still_writes(client, specialist):
         },
     )
 
-    assert response.status_code in (200, 302)
+    assert response.status_code == 200
     matter.refresh_from_db()
     assert matter.brief_summary == "Sünteetiline kokkuvõte"
 

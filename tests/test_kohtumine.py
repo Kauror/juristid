@@ -38,7 +38,7 @@ from app.submissions.models import Submission
 from app.workflow.models import NextAction
 from tests import factories
 from tests.follow_ups import PDF
-from tests.gate import PASSWORD, apply_shared_gate
+from tests.gate import PASSWORD, apply_shared_gate, assert_asked_to_choose_a_persona, business_rows
 
 pytestmark = pytest.mark.django_db
 
@@ -375,11 +375,34 @@ def test_the_gate_visitor_writes_nothing(normal_matter, settings):
     apply_shared_gate(settings)
     gate = Client()
     assert gate.post(reverse("accounts:shared_gate"), {"password": PASSWORD}).status_code == 302
+    before = business_rows()
 
     response = _post(gate, normal_matter, summary="Värav ei kirjuta.")
 
-    assert response.status_code != 200
+    assert_asked_to_choose_a_persona(response)
     assert not _meetings(normal_matter).exists()
+    assert business_rows() == before
+
+
+def test_the_service_refuses_a_missing_day_and_writes_nothing(specialist):
+    """The form asks for `Kuupäev`; the service refuses every other caller without one."""
+    from app.matters.workspace import MEETING_ENTRY_NEEDS_A_DAY, add_matter_meeting
+    from tests.refusals import refused
+
+    matter = factories.MatterFactory(owner=specialist)
+    before = business_rows()
+
+    with refused(MEETING_ENTRY_NEEDS_A_DAY):
+        add_matter_meeting(
+            matter=matter,
+            author=specialist,
+            summary="Päevata kohtumine.",
+            occurred_on=None,
+            uploads=[_pdf("paevata.pdf")],
+        )
+
+    assert not _meetings(matter).exists()
+    assert business_rows() == before
 
 
 # -- visibility ----------------------------------------------------------------------

@@ -323,8 +323,10 @@ def main() -> int:
     }
 
     arguments.out.parent.mkdir(parents=True, exist_ok=True)
+    # `newline` stated: on Windows the default writes CRLF into a file Git
+    # stores as LF, and every refresh would read as a whole-file change.
     arguments.out.write_text(
-        json.dumps(document, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        json.dumps(document, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n"
     )
 
     total = sum(seconds[path] for path in known)

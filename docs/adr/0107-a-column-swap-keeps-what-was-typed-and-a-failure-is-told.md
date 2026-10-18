@@ -188,3 +188,49 @@ The race is pinned in `e2e/test_workspace_failures_and_drafts.py`
 `test_a_panel_answer_rendered_before_the_note_saved_does_not_set_it_back`. The
 test holds both requests in the browser and lets them go in that order, so it
 no longer depends on the timing that made its sibling flaky.
+
+## Amendment, 2026-10-18 — a refused save says which files to choose again (JUX-001)
+
+§2 carries a host across a swap by moving the element, so chosen files survive
+when *another* form saves. The form that sent the request is excluded on
+purpose: its answer is the server's to give. When that answer is a refusal, the
+server re-renders the form with the typed text and the errors, but it cannot
+send the files back, and no browser lets a page put a file into a file input.
+The drop box used to reset with no notice. The corrected save then stored the
+record with **no files**, while the person believed they were attached.
+
+This affected every form that takes files and answers a refusal with a
+re-render: every `LISA TEEMALE` door (`Muu`, `Kohtumine / arutelu`, `Lisa
+tagasiside`, `Alusta kaasamist`, `Oluline tähtaeg`, `Jõustumine`, `Töövõit`,
+`Koja arvamus`), `✓ Tehtud`, the follow-up check, and the rows' `+ Lisa fail`.
+
+The client now does three things (`static/js/app.js`, «Files a refusal could
+not keep»):
+- **As the request leaves**, it takes the names of the chosen files from the
+  form, with where to find the form again: the panel or draft host around it,
+  by id, and the form's own address inside it.
+- **When the answer is a refusal** (400, 409 or 422), the re-rendered form gets
+  a notice right after its drop box: «Fail tuleb uuesti valida: <names>»
+  («Failid …» for several). It is a `role="status"` live region, in words and
+  not only in colour, and it does not take focus. The refusal's own focus rule
+  (`focusFirstRefusal`) is unchanged.
+- **A save pressed while that notice stands and nothing has been chosen** is
+  cancelled in the page, before htmx marks a request in flight. Nothing is
+  posted, so the save-once token (docs/adr/0167) stays unspent. The notice
+  takes focus and offers `Vali fail uuesti` and `Salvesta ilma failita`.
+  Choosing files again, by picking or dropping, removes the notice.
+  `Salvesta ilma failita` removes it and submits the form.
+
+Only the names are kept, and only in the page. Nothing is stored in the browser
+(§2). This is option (a) of the remediation plan. Staging uploads on selection,
+as `Uus teema` does (`#hoitud-failid`), would keep the files themselves and
+remains the larger follow-up.
+
+Nothing changed on the server. Files stay optional, and a page with no script
+has no notice and no guard. A save without files is accepted as before.
+
+Pinned in `e2e/test_files_after_refusal.py`: `Muu`, and the same sequence over
+`Kohtumine` and `Lisa tagasiside`. Each test refuses a save with a PDF chosen,
+reads the notice naming it, has the next save stopped with nothing posted, then
+chooses the file again and finds the stored row with that one file.
+`Salvesta ilma failita` stores the row with none.
