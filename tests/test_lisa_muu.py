@@ -40,6 +40,7 @@ from app.submissions.models import Submission
 from app.workflow.models import NextAction
 from tests import factories
 from tests.follow_ups import PDF
+from tests.gate import PASSWORD, apply_shared_gate, assert_asked_to_choose_a_persona, business_rows
 from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
@@ -346,6 +347,49 @@ def test_a_reader_cannot_add_one(client, reader, specialist):
 
     assert response.status_code == 404
     assert not _others(matter).exists()
+
+
+def test_the_gate_visitor_writes_nothing(normal_matter, settings):
+    """Through the shared gate with no persona chosen: asked to choose one, nothing saved."""
+    from django.test import Client
+
+    apply_shared_gate(settings)
+    gate = Client()
+    assert gate.post(reverse("accounts:shared_gate"), {"password": PASSWORD}).status_code == 302
+    before = business_rows()
+
+    response = _post(
+        gate,
+        normal_matter,
+        description="Värav ei kirjuta.",
+        url="https://example.org/varav",
+        files=[_pdf("varav.pdf")],
+    )
+
+    assert_asked_to_choose_a_persona(response)
+    assert not _others(normal_matter).exists()
+    assert business_rows() == before
+
+
+def test_the_service_refuses_a_missing_day_and_writes_nothing(specialist):
+    """The form asks for `Millal?`; the service refuses every other caller without one."""
+    from app.matters.workspace import OTHER_ENTRY_NEEDS_A_DAY, add_matter_other
+
+    matter = factories.MatterFactory(owner=specialist)
+    before = business_rows()
+
+    with refused(OTHER_ENTRY_NEEDS_A_DAY):
+        add_matter_other(
+            matter=matter,
+            author=specialist,
+            description="Päevata taustamaterjal.",
+            occurred_on=None,
+            url="https://example.org/paevata",
+            uploads=[_pdf("paevata.pdf")],
+        )
+
+    assert not _others(matter).exists()
+    assert business_rows() == before
 
 
 # -- visibility ----------------------------------------------------------------------

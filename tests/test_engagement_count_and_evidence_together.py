@@ -90,7 +90,7 @@ def test_a_count_correction_and_a_file_bearing_completion_on_one_round(signed_in
         kwargs={"pk": matter.pk, "engagement_id": engagement.pk},
     )
     response = signed_in.post(correct_url, _fields(engagement, response_count="8"))
-    assert response.status_code in (200, 204), response.content.decode()[:800]
+    assert response.status_code == 200, response.content.decode()[:800]
     engagement.refresh_from_db()
     assert engagement.response_count == 8
 

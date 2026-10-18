@@ -180,7 +180,9 @@ def test_a_restricted_matter_is_writable_by_any_lawyer(client, world, other_spec
         _add_url(world["restricted"]),
         {"title": "Kolleegi lisatud", "precision": "YEAR", "year": "2030"},
     )
-    assert response.status_code in (200, 302), response.status_code
+    assert response.status_code == 302, response.status_code
+    record = world["restricted"].important_dates.get(title="Kolleegi lisatud")
+    assert record.created_by == other_specialist
 
 
 def test_a_restricted_matter_is_not_writable_by_a_reader(client, world, reader):

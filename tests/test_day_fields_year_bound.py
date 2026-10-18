@@ -189,8 +189,20 @@ def test_a_day_inside_the_range_is_still_saved_on_every_door(
     response, stored = DOORS[door](
         f"{day.day}.{day.month}.{day.year}", specialist, ministry, capture_evidence
     )
-    assert response.status_code in (200, 302), (door, response.status_code)
+    assert response.status_code == SAVED_STATUS[door], (door, response.status_code)
     assert stored
+
+
+#: How each door answers a save: the htmx panels redraw in place (200), the two
+#: full-page forms redirect to what they saved (302).
+SAVED_STATUS = {
+    "muu": 200,
+    "kohtumine": 200,
+    "koja_arvamus": 200,
+    "muuda_saatmist": 200,
+    "registreeri_saatmine": 302,
+    "uus_teema_saadetud": 302,
+}
 
 
 def test_the_first_supported_day_is_saved_and_the_day_before_is_refused(specialist, ministry):
