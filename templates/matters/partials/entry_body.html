@@ -42,6 +42,12 @@ control that would add something new (app/matters/views.py, docs/adr/0075 §12).
           <span class="cx-f__lab">Link</span>
           {{ entry_edit_form.url }}
         </label>
+        {% comment %}
+          One line on what a correction does: it keeps a revision, and a Teema
+          holding a corrected entry cannot be permanently deleted
+          (docs/adr/0165; docs/adr/0097, owner decision D13 of 2026-10-17).
+        {% endcomment %}
+        <p class="field__help" data-muu-link-correction-note>Parandus jääb muudatuste ajalukku; parandatud sissekandega teemat ei saa jäädavalt kustutada.</p>
         {% if entry_edit_form.url.errors %}
           <p class="formerror" role="alert" id="{{ entry_edit_form.url.auto_id }}_error">{{ entry_edit_form.url.errors|first }}</p>
         {% endif %}
