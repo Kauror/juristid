@@ -74,7 +74,7 @@ from datetime import date, timedelta
 from typing import Any
 from urllib.parse import urlencode
 
-from django.db.models import Count, QuerySet
+from django.db.models import Count, Q, QuerySet
 from django.urls import reverse
 from django.utils import timezone
 
@@ -86,6 +86,7 @@ from app.core.dates import (
     parse_flexible_date,
     short_day_month,
     short_range,
+    start_of_local_day,
     weekday_name,
 )
 from app.intelligence.enums import WorkVictoryStatus
@@ -259,6 +260,22 @@ def _drafting_params() -> dict[str, Any]:
     return {**_open_full(), "arvamus": OPINION_DRAFTING}
 
 
+def local_day_range(field: str, first: date, last: date | None = None) -> Q:
+    """``field`` falls on a Europe/Tallinn day from ``first`` to ``last``, both included.
+
+    The same rows as ``{field}__date__gte=first`` and ``{field}__date__lte=last``,
+    written as a half-open range on the timestamp itself: at or after the first
+    local moment of ``first``, and before the first local moment of the day after
+    ``last`` (`app.core.dates.start_of_local_day`). The ``__date`` spelling casts
+    every row to a local date before comparing, so no index on the column can
+    answer it (2026-10-17 audit, JPERF-005).
+    """
+    condition = Q(**{f"{field}__gte": start_of_local_day(first)})
+    if last is not None:
+        condition &= Q(**{f"{field}__lt": start_of_local_day(last + timedelta(days=1))})
+    return condition
+
+
 def sent_submissions(user: Any, *, since: date, until: date | None = None) -> QuerySet[Submission]:
     """Opinions Koda actually sent inside a window, for this reader.
 
@@ -273,10 +290,9 @@ def sent_submissions(user: Any, *, since: date, until: date | None = None) -> Qu
     queryset = Submission.objects.visible_to(user).filter(
         status=SubmissionStatus.SENT, sent_at__isnull=False
     )
-    queryset = queryset.filter(sent_at__date__gte=since)
-    if until is not None:
-        queryset = queryset.filter(sent_at__date__lte=until)
-    return queryset
+    # As a range on the timestamp (`local_day_range`), which is the same local
+    # dates and which the `sent_at` index can answer (2026-10-17 audit, JPERF-005).
+    return queryset.filter(local_day_range("sent_at", since, until))
 
 
 def seis_figures(
@@ -828,6 +844,23 @@ class UpcomingGroup:
         return max(0, self.count - self.shown)
 
     @property
+    def rendered(self) -> list[wi.WorkItem]:
+        """The rows the window's disclosure draws: all of them, up to `UPCOMING_LIMIT`.
+
+        «kõik N» still counts every deadline in the window. Past the cap the
+        window says how many it shows and opens the rest where they are all
+        listed — the register narrowed to exactly this window (`url`) — rather
+        than drawing thousands of rows behind one click (2026-10-17 audit,
+        JPERF-005: 3,500 rows and 1.7 MB at 10,000 open Matters).
+        """
+        return self.items[:UPCOMING_LIMIT]
+
+    @property
+    def beyond_cap(self) -> int:
+        """How many of the window's deadlines the disclosure does not draw."""
+        return max(0, self.count - UPCOMING_LIMIT)
+
+    @property
     def range_label(self) -> str:
         """``30.08–06.09``, or ``alates 01.10`` where the window has no end.
 
@@ -889,6 +922,12 @@ class UpcomingGroup:
 #: alone. Five is what the three-window panel of docs/adr/0046 also showed; that
 #: panel and its own constant are gone, and this is the only one left.
 UPCOMING_PREVIEW = 5
+
+#: How many rows one *Eesolev* window draws when opened (`UpcomingGroup.rendered`).
+#: A hundred deadlines in one window is beyond any working department's week;
+#: the cap exists for the scale where every open file has a date ahead, and the
+#: window's heading still counts them all (2026-10-17 audit, JPERF-005).
+UPCOMING_LIMIT = 100
 
 #: The windows are cut here rather than where they are rendered, because two of
 #: the five boundaries are the kind that look obvious and are not: *järgmine
@@ -1305,10 +1344,9 @@ def build_digest(user: Any, period: Period, kind: str = KIND_ALL) -> Digest:
     closed = list(
         Matter.objects.visible_to(user)
         .filter(
+            local_day_range("closed_at", period.start, period.end),
             is_open=False,
             record_mode=RecordMode.FULL,
-            closed_at__date__gte=period.start,
-            closed_at__date__lte=period.end,
         )
         .select_related("owner")
         .order_by("-closed_at")[:DIGEST_LIMIT]
@@ -1321,16 +1359,15 @@ def build_digest(user: Any, period: Period, kind: str = KIND_ALL) -> Digest:
         # (app/intelligence/enums.py, brief §23).
         MatterWorkVictory.objects.visible_to(user)
         .filter(
+            local_day_range("confirmed_at", period.start, period.end),
             status=WorkVictoryStatus.CONFIRMED,
-            confirmed_at__date__gte=period.start,
-            confirmed_at__date__lte=period.end,
         )
         .select_related("matter", "confirmed_by")
         .order_by("-confirmed_at")[:DIGEST_LIMIT]
     )
     entries = list(
         Entry.objects.visible_to(user)
-        .filter(occurred_at__date__gte=period.start, occurred_at__date__lte=period.end)
+        .filter(local_day_range("occurred_at", period.start, period.end))
         .select_related("matter", "author")
         .order_by("-occurred_at")[:DIGEST_LIMIT]
     )

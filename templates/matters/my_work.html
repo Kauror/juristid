@@ -253,6 +253,18 @@ The rail holds only what has no honest place on a timeline.
             </div>
           </details>
         {% endif %}
+        {% if work.portfolio.beyond_cap %}
+          {% comment %}
+            Past the render cap (`PORTFOLIO_LIMIT`, 2026-10-17 audit JPERF-005):
+            the page says how many of the view it shows, and the register holds
+            every open file on this desk. The search box above filters the rows
+            rendered here; the register's own search covers the rest.
+          {% endcomment %}
+          <p class="workband__more">
+            Siin on {{ work.portfolio.shown }} esimest {{ work.portfolio.count }}-st.
+            <a href="{{ work.portfolio.register_url }}">Ava kõik {{ work.portfolio.total }} teemat registris →</a>
+          </p>
+        {% endif %}
 
         {% comment %}
           The way out to the register, and only where it widens the question.
