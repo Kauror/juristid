@@ -193,10 +193,16 @@ def apply_open_request(request: HttpRequest, matter: Any, context: dict[str, Any
         if wanted is not None and any(round_.pk == wanted for round_ in rounds):
             from app.matters.forms import EngagementReplyForm
 
+            # The page's own institution reading, handed on: the form drawn for
+            # the ordinary page has already read the catalogue, the ranking and
+            # the spellings, and reading them again for the same control was
+            # the «Tehtud» path's extra cost (2026-10-17 audit, JPERF-001).
+            drawn = context.get("engagement_reply_form")
             context["engagement_reply_form"] = EngagementReplyForm(
                 matter=matter,
                 viewer=request.user,
                 open_rounds=rounds,
+                choices=getattr(drawn, "organisation_choices", None),
                 initial={"engagement": str(wanted)},
             )
         return
