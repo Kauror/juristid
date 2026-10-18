@@ -15,8 +15,9 @@ Held here:
   tiers, relevance, the total, the page number and the page links must agree,
   including for malformed and out-of-range page numbers.
 * **One statement fewer.** The page issues no separate `COUNT(*)` over the
-  projection when it has rows to carry the total, and stays within the audit's
-  budget of 10 queries for the whole search view.
+  projection when it has rows to carry the total — a window where an index
+  answers the term, a scalar subquery where the planner reads everything — and
+  stays within the audit's budget of 10 queries for the whole search view.
 """
 
 from __future__ import annotations
@@ -61,10 +62,10 @@ def _shape(page):
     )
 
 
-@pytest.mark.parametrize("broad_above", [services.BROAD_ESTIMATE, 0])
-def test_every_page_is_the_page_the_old_paging_drew(corpus, monkeypatch, broad_above):
+@pytest.mark.parametrize("broad", [False, True])
+def test_every_page_is_the_page_the_old_paging_drew(corpus, monkeypatch, broad):
     """Both branches: the single pass, and the two scans a broad term keeps."""
-    monkeypatch.setattr(services, "BROAD_ESTIMATE", broad_above)
+    monkeypatch.setattr(services, "_broad", lambda ranked: broad)
     compared = non_empty = 0
     for persona, user in search_corpus.personas(corpus).items():
         for query in QUERIES:
@@ -92,7 +93,10 @@ def test_the_rendered_results_are_the_same_for_a_reader_and_a_specialist(corpus)
             assert new.total == old.paginator.count
 
 
-def test_a_page_with_rows_issues_no_separate_count(corpus):
+def test_a_page_with_rows_issues_no_separate_count(corpus, monkeypatch):
+    # The corpus is small enough that the planner may scan it whole; the branch
+    # under test is the index-answered one.
+    monkeypatch.setattr(services, "_scans_sequentially", lambda node, table: False)
     with CaptureQueriesContext(connection) as captured:
         page = services.search_page(query="seadus", user=corpus.specialist, page_number=1)
     assert page.total > 0
@@ -105,16 +109,29 @@ def test_a_page_with_rows_issues_no_separate_count(corpus):
     assert any("COUNT(" in q["sql"] and "OVER ()" in q["sql"] for q in captured.captured_queries)
 
 
-def test_a_term_the_planner_expects_everywhere_keeps_the_two_scans(corpus, monkeypatch):
-    """Past `BROAD_ESTIMATE` the page is counted apart, as before, and nothing else changes."""
-    monkeypatch.setattr(services, "BROAD_ESTIMATE", 0)
+def test_a_term_the_planner_reads_the_whole_projection_for_keeps_its_count(corpus, monkeypatch):
+    """A plan that scans everything keeps the `COUNT(*)`, inside the one ranking statement."""
+    monkeypatch.setattr(services, "_scans_sequentially", lambda node, table: True)
     with CaptureQueriesContext(connection) as captured:
         page = services.search_page(query="seadus", user=corpus.specialist, page_number=1)
     assert page.total > 0
     sql = [q["sql"] for q in captured.captured_queries]
     assert any(q.startswith("EXPLAIN (FORMAT JSON)") for q in sql)
-    assert any(q.startswith("SELECT COUNT(*)") for q in sql)
+    assert any("(SELECT COUNT(*) FROM (" in q for q in sql)
+    assert not any(q.startswith("SELECT COUNT(*)") for q in sql)
     assert not any("OVER ()" in q for q in sql)
+
+
+@pytest.mark.parametrize("broad", [False, True])
+def test_the_query_count_does_not_depend_on_the_plan(client, corpus, monkeypatch, broad):
+    """Both branches issue the same statements, so a budget holds whichever the planner picks."""
+    monkeypatch.setattr(services, "_scans_sequentially", lambda node, table: broad)
+    client.force_login(corpus.specialist)
+    with CaptureQueriesContext(connection) as captured:
+        assert client.get(reverse("search:search"), {"q": "seadus"}).status_code == 200
+    assert len(captured.captured_queries) <= SEARCH_QUERY_BUDGET
+    counts = [q for q in captured.captured_queries if q["sql"].startswith("SELECT COUNT(*)")]
+    assert not counts
 
 
 def test_the_search_view_stays_within_its_query_budget(client, corpus):
@@ -123,3 +140,21 @@ def test_the_search_view_stays_within_its_query_budget(client, corpus):
         response = client.get(reverse("search:search"), {"q": "seadus"})
     assert response.status_code == 200
     assert len(captured.captured_queries) <= SEARCH_QUERY_BUDGET
+
+
+def test_the_broad_test_reads_the_planners_scan_of_the_projection():
+    """A sequential scan of the projection anywhere in the plan is broad; an index plan is not."""
+    table = "search_searchdocument"
+    parallel = {
+        "Node Type": "Gather",
+        "Plans": [{"Node Type": "Seq Scan", "Relation Name": table, "Parallel Aware": True}],
+    }
+    indexed = {
+        "Node Type": "Hash Join",
+        "Plans": [
+            {"Node Type": "Bitmap Heap Scan", "Relation Name": table, "Plans": []},
+            {"Node Type": "Seq Scan", "Relation Name": "matters_matter"},
+        ],
+    }
+    assert services._scans_sequentially(parallel, table)
+    assert not services._scans_sequentially(indexed, table)
