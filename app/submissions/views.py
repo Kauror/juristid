@@ -30,7 +30,7 @@ from django.views.decorators.http import require_http_methods
 from app.core.decorators import business_write_required
 from app.core.errors import DomainError
 from app.documents.models import Document, DocumentVersion
-from app.documents.uploads import UploadRejected, read_upload
+from app.documents.uploads import read_upload
 from app.matters.views import get_visible_matter, opinions_url
 from app.submissions.enums import SentAtPrecision, SubmissionStatus
 from app.submissions.forms import (
@@ -128,7 +128,7 @@ def attach_evidence(request: HttpRequest, pk: Any) -> HttpResponse:
                 actor=request.user,
             )
         messages.success(request, "Lõplik tõend on lisatud.")
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         messages.error(request, str(error))
 
     submission.refresh_from_db()

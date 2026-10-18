@@ -84,7 +84,6 @@ from app.documents.services import (
     link_working_document,
     offered_document_roles,
 )
-from app.documents.uploads import UploadRejected
 from app.intelligence import commencements
 from app.intelligence.selectors import (
     VISIBLE_VICTORY_STATUS,
@@ -150,11 +149,11 @@ from app.matters.forms import (
     EngagementEvidenceForm,
     EngagementFeedbackForm,
     EngagementForm,
-    EngagementReplyForm,
     EngagementWaitForm,
     EntryEditForm,
     ExternalPositionEditForm,
     ExternalPositionEvidenceForm,
+    FeedbackForm,
     FollowUpCheckForm,
     FollowUpDateForm,
     FollowUpRestartForm,
@@ -760,7 +759,7 @@ def intake(request: HttpRequest) -> HttpResponse:
                     # seeded, as on `Uus teema` (docs/adr/0133 §5, 0141).
                     seed_plan=True,
                 )
-            except (DomainError, UploadRejected) as error:
+            except DomainError as error:
                 messages.error(request, str(error))
             else:
                 messages.success(
@@ -3085,7 +3084,7 @@ def _read_new_matter_files(request: HttpRequest) -> tuple[list[Any], tuple[str, 
             continue
         try:
             accepted.append(read_upload(handle))
-        except (DomainError, UploadRejected) as error:
+        except DomainError as error:
             # The filename first, because a refusal that does not name its file
             # is unactionable the moment there is more than one. An em dash
             # rather than a colon: the reason is already a sentence of its own.
@@ -4626,7 +4625,7 @@ def add_engagement_evidence_view(request: HttpRequest, pk: Any, engagement_id: A
         workspace.add_engagement_evidence(
             engagement=engagement, author=request.user, uploads=form.cleaned_data["attachments"]
         )
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         return _evidence_refusal(
             request, matter, key="engagement_evidence_form", form=form, error=str(error)
         )
@@ -4872,7 +4871,7 @@ def complete_engagement_feedback_view(
             conflict=conflict.current,
             status=409,
         )
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         # A closed Matter lands here, and so does a wait that is already
         # finished or was never opened. The sentence goes into the panel that is
         # still open rather than into a page-level banner this row does not have.
@@ -5116,7 +5115,7 @@ def check_follow_up_view(request: HttpRequest, pk: Any, action_id: Any) -> HttpR
             next_check_on=form.cleaned_data.get("next_check_on"),
             uploads=form.cleaned_data["attachments"],
         )
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         return _follow_up_refusal(
             request, matter, key=key, form=form, action_id=check.pk, error=str(error)
         )
@@ -5270,7 +5269,7 @@ def complete_planned_action_view(request: HttpRequest, pk: Any, action_id: Any) 
             body=form.cleaned_data["body"],
             uploads=form.cleaned_data["attachments"],
         )
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         return _workspace_refusal(
             request, matter, key="planned_done_form", form=form, error=str(error)
         )
@@ -7506,7 +7505,7 @@ def workspace_forms(
         # choices (the field's queryset still validates), and `Organisatsioon`
         # is ranked by the institutions this reader's visible Matters involve,
         # read once for the page (docs/adr/0091 §3.5).
-        "engagement_reply_form": EngagementReplyForm(
+        "engagement_reply_form": FeedbackForm(
             matter=matter, viewer=viewer, open_rounds=open_rounds, choices=organisations
         ),
         "important_date_form": CompactImportantDateForm(),
@@ -7852,7 +7851,7 @@ def complete_current_action(request: HttpRequest, pk: Any) -> HttpResponse:
         return _closure_needs_confirmation(
             request, matter, key="current_action_form", form=form, refusal=refusal
         )
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         return _workspace_refusal(
             request, matter, key="current_action_form", form=form, error=str(error)
         )
@@ -8018,7 +8017,7 @@ def add_note(request: HttpRequest, pk: Any) -> HttpResponse:
         return _closure_needs_confirmation(
             request, matter, key="progress_form", form=form, refusal=refusal
         )
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         return _workspace_refusal(request, matter, key="progress_form", form=form, error=str(error))
     if result.closed:
         # «Jõustunud» or «Rohkem ei tegele» ended the Matter (docs/adr/0131 §10):
@@ -8081,7 +8080,7 @@ def add_engagement_compact(request: HttpRequest, pk: Any) -> HttpResponse:
                 work_plan.fulfil_launched_step(
                     launched=launched, record=result.record, actor=request.user
                 )
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         return _workspace_refusal(request, matter, key=key, form=form, error=str(error))
     return _render_overview(request, matter)
 
@@ -8138,9 +8137,7 @@ def add_engagement_reply(request: HttpRequest, pk: Any) -> HttpResponse:
     wait is touched. Success re-renders the Teema view (200); a refusal is 400
     with the form still bound and writes nothing.
     """
-    return _record_external_position(
-        request, pk, form_class=EngagementReplyForm, key="engagement_reply_form"
-    )
+    return _record_external_position(request, pk)
 
 
 @login_required
@@ -8189,7 +8186,7 @@ def add_important_date(request: HttpRequest, pk: Any) -> HttpResponse:
             once_token=_posted_once_token(request),
             **form.cleaned_data["important_date_kwargs"],
         )
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         return _workspace_refusal(
             request, matter, key="important_date_form", form=form, error=str(error)
         )
@@ -8213,7 +8210,7 @@ def add_effective_date(request: HttpRequest, pk: Any) -> HttpResponse:
             once_token=_posted_once_token(request),
             **form.cleaned_data["effective_date_kwargs"],
         )
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         return _workspace_refusal(
             request, matter, key="effective_date_form", form=form, error=str(error)
         )
@@ -8240,7 +8237,7 @@ def add_work_victory(request: HttpRequest, pk: Any) -> HttpResponse:
             once_token=_posted_once_token(request),
             **form.cleaned_data["work_victory_kwargs"],
         )
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         return _workspace_refusal(
             request, matter, key="work_victory_form", form=form, error=str(error)
         )
@@ -8272,7 +8269,7 @@ def add_other(request: HttpRequest, pk: Any) -> HttpResponse:
             uploads=form.cleaned_data["attachments"],
             once_token=_posted_once_token(request),
         )
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         return _workspace_refusal(request, matter, key="other_form", form=form, error=str(error))
     return _render_overview(request, matter)
 
@@ -8301,7 +8298,7 @@ def add_meeting(request: HttpRequest, pk: Any) -> HttpResponse:
             uploads=form.cleaned_data["attachments"],
             once_token=_posted_once_token(request),
         )
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         return _workspace_refusal(request, matter, key="meeting_form", form=form, error=str(error))
     return _render_overview(request, matter)
 
@@ -8465,9 +8462,7 @@ def _external_position_row(
     )
 
 
-def _record_external_position(
-    request: HttpRequest, pk: Any, *, form_class: Any, key: str
-) -> HttpResponse:
+def _record_external_position(request: HttpRequest, pk: Any) -> HttpResponse:
     """Record one `MatterExternalPosition` from a creation form.
 
     Since the owner's UX round (stage 3, 2026-10-15) the one creation form is
@@ -8475,11 +8470,10 @@ def _record_external_position(
     place for the organisation resolution, the refusal handling, the
     closed-Matter boundary and the engagement-reply rules.
 
-    **The provenance is stated, never inferred** (docs/adr/0091 §3.2). A form
-    that `states_provenance` carries it as a required radio with no default,
-    validated against the two creation provenances and fixed at RECEIVED when a
-    round is linked; any other form class still fixes it itself. Nothing is
-    guessed from the organisation, the round, the link or the text.
+    **The provenance is stated, never inferred** (docs/adr/0091 §3.2). The form
+    carries it as a required radio with no default, validated against the two
+    creation provenances and fixed at RECEIVED when a round is linked. Nothing
+    is guessed from the organisation, the round, the link or the text.
 
     **Only a linked round is answered.** With a round, a repeat is refused and
     the first answer to an open round finishes its wait in this transaction; a
@@ -8507,23 +8501,21 @@ def _record_external_position(
     before somebody else shut the file (R2-02).
     """
     matter = get_visible_matter(request, pk)
-    form = form_class(request.POST, request.FILES, matter=matter, viewer=request.user)
+    key = "engagement_reply_form"
+    form = FeedbackForm(request.POST, request.FILES, matter=matter, viewer=request.user)
     if not form.is_valid():
         return _workspace_refusal(request, matter, key=key, form=form)
     chosen = form.cleaned_data.get("organisation")
     typed = (form.cleaned_data.get("organisation_name") or "").strip()
+    # A position linked to a round is an answer to it, and finishes the round's
+    # wait in this transaction; a finished round keeps its closure
+    # (docs/adr/0167 §2). One with no round is a standalone position and
+    # touches no wait (owner's UX round, stage 3).
     answered = form.cleaned_data.get("engagement")
-    # A position linked to a round is an answer to it; one with no round is a
-    # standalone position and touches no wait (owner's UX round, stage 3).
-    finishes_wait = bool(getattr(form_class, "closes_engagement", False)) and answered is not None
-    # Stated by the person on `Lisa tagasiside` — the validated radio, which the
-    # form has already fixed at RECEIVED for a linked round — and otherwise the
-    # form class's own, as before (docs/adr/0091 §3.2, amended 2026-10-15).
-    provenance = (
-        form.cleaned_data["provenance"]
-        if getattr(form_class, "states_provenance", False)
-        else form_class.provenance
-    )
+    # Stated by the person — the validated radio, which the form has already
+    # fixed at RECEIVED for a linked round (docs/adr/0091 §3.2, amended
+    # 2026-10-15).
+    provenance = form.cleaned_data["provenance"]
     try:
         # One transaction around the resolution and the save. A typed name the
         # picker does not know becomes a new institution *while the arguments
@@ -8543,7 +8535,7 @@ def _record_external_position(
                 else None
             )
             source_is_member = bool(form.cleaned_data.get("source_is_member"))
-            if finishes_wait:
+            if answered is not None:
                 # A finished round takes later answers (docs/adr/0167 §2), so a
                 # second press of `Salvesta` must not file the same one twice —
                 # while a second organisation's identical answer is its own.
@@ -8592,9 +8584,9 @@ def _record_external_position(
             # `Lõpeta kaasamine` or somebody else meanwhile — keeps its closure
             # and simply gains this answer (docs/adr/0167 §2). Nothing else is
             # completed: no `NextAction` is inferred from feedback.
-            if finishes_wait:
+            if answered is not None:
                 engagement_replies.finish_wait_on_reply(engagement=answered, actor=request.user)
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         return _workspace_refusal(request, matter, key=key, form=form, error=str(error))
     return _render_overview(request, matter)
 
@@ -8945,7 +8937,7 @@ def add_koda_opinion(request: HttpRequest, pk: Any) -> HttpResponse:
                 )
     except FollowUpClosureUnconfirmed as refusal:
         return _closure_needs_confirmation(request, matter, key=key, form=form, refusal=refusal)
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         return _workspace_refusal(request, matter, key=key, form=form, error=str(error))
     if result.closed or request.POST.get("vastab_tahtajale"):
         # A closure, or an answered `Arvamuse tähtaeg`, changes the header too.
@@ -9476,7 +9468,7 @@ def add_development_evidence_view(
             author=request.user,
             uploads=form.cleaned_data["attachments"],
         )
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         return _evidence_refusal(
             request, matter, key="development_evidence_form", form=form, error=str(error)
         )
@@ -9582,7 +9574,7 @@ def add_external_position_evidence_view(
             author=request.user,
             uploads=form.cleaned_data["attachments"],
         )
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         return _evidence_refusal(
             request, matter, key="external_position_evidence_form", form=form, error=str(error)
         )
@@ -9843,7 +9835,7 @@ def add_opinion_working_documents_view(
             author=request.user,
             uploads=form.cleaned_data["attachments"],
         )
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         return _evidence_refusal(
             request, matter, key="opinion_working_documents_form", form=form, error=str(error)
         )

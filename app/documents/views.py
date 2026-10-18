@@ -61,7 +61,7 @@ from app.documents.services import (
     rename_document,
     role_change_refusal,
 )
-from app.documents.uploads import UPLOAD_ACCEPT, UploadRejected, read_upload
+from app.documents.uploads import UPLOAD_ACCEPT, read_upload
 from app.matters.views import get_visible_matter
 
 logger = logging.getLogger(__name__)
@@ -166,7 +166,7 @@ def upload_evidence(request: HttpRequest, matter_id: Any) -> HttpResponse:
             actor=request.user,
         )
         messages.success(request, "Tõend on salvestatud.")
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         messages.error(request, str(error))
 
     return back
@@ -209,7 +209,7 @@ def add_version(request: HttpRequest, pk: Any) -> HttpResponse:
             uploaded_by=request.user,
         )
         messages.success(request, "Uus versioon on salvestatud.")
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         messages.error(request, str(error))
 
     return redirect("documents:document_detail", pk=document.pk)
