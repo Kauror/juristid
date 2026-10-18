@@ -49,7 +49,7 @@ stay wrong, which is the rule `edit_entry` has kept since docs/adr/0075 §12.
 from __future__ import annotations
 
 import uuid as uuid_module
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -2468,3 +2468,140 @@ def correct_matter_procedural_link(
 # `+ Koja arvamus` move the stage through `stage_transition`, which closes the
 # Matter through `close_matter_for_terminal_stage` after the act it was saved
 # with — the order this use case kept (the win first, the closure last).
+
+
+def _no_procedural_link() -> None:
+    """`edit_matter`'s default: the save answers no `Menetluse link` block."""
+
+
+def edit_matter(
+    *,
+    matter: Matter,
+    actor: Any,
+    expected_revision: str | None,
+    title: str,
+    brief_summary: str,
+    owner: Any,
+    source_organisations: Any,
+    sender_name: str,
+    legal_instruments: Sequence[Any],
+    legal_instrument_other: str,
+    received_date: Any,
+    response_deadline: Any,
+    policy_areas: Sequence[Any],
+    policy_area_other: str,
+    stage: Any,
+    follow_ups_confirmed: bool = False,
+    deadline_change: str = "",
+    previous_outcome: str = "",
+    previous_submission: Any = None,
+    previous_note: str = "",
+    save_procedural_link: Callable[[], None] = _no_procedural_link,
+) -> None:
+    """`Muuda teemat` — the whole record, corrected in one save (JARCH-001).
+
+    **One transaction.** Either every value is applied or none is: a
+    half-saved correction leaves a record stating a combination of facts nobody
+    chose, and a timeline claiming somebody chose it. **One `Hetkeseis`
+    period**: every correction is written in the period current when the page
+    was saved, and the stage change — made last — begins the next one after
+    them (`stage_episode_scope`, docs/adr/0131 §5).
+
+    **One service per fact**, each returning early when handed the value
+    already there, so each change is audited exactly as it is inline and an
+    unchanged field writes nothing. Called in this order, and the order is part
+    of the contract:
+
+    1. `guard_matter_revision` — first: the page posts every field it holds, so
+       a copy filled before somebody else's save is refused rather than
+       written over fresh values (QA-002, `MatterEditConflict`);
+    2. the instruments as they stood **before** this save are read, because
+       only a change of `Õigusakt` may move `Koja algatus` — so this read must
+       come before `set_legal_instruments` (`initiative_after_edit`);
+    3. title, `brief_summary`, owner;
+    4. the senders — a typed name resolved inside this transaction, so any
+       refusal below takes a newly created institution with it. The addressee
+       is **not** passed: `_UNSET` keeps a register addressee through every
+       save (docs/adr/0097 §4);
+    5. `Koja algatus` before the dates, so the date writers judge them against
+       the answer this save gives (docs/adr/0151 §2);
+    6. `Saabunud`, then `Arvamuse tähtaeg` with what a changed deadline means
+       (``deadline_change``, ``previous_outcome``, ``previous_submission``,
+       ``previous_note``);
+    7. Valdkonnad, then the instruments — through their service, so the
+       classification never moves without a change event (task §19);
+    8. ``save_procedural_link`` — the caller's `Menetluse link` block, inside
+       this transaction, so an address refused there takes the whole
+       correction back (`ProceduralLinkConflict`, docs/adr/0089 §7);
+    9. **`Hetkeseis` last**, through the one transition every surface uses —
+       for a terminal stage on an open Matter, the closure, after every other
+       fact has been written to the open file (docs/adr/0131 §6, §10). Ending
+       live follow-up work is refused unless ``follow_ups_confirmed``
+       (`FollowUpClosureUnconfirmed`, docs/adr/0146 §8).
+
+    **Every fact on the page is a required argument**, because this is a
+    whole-record save: a value a caller forgot must not be written as a
+    default — a forgotten `received_date` would clear the date. No track, tags
+    or visibility: those are off the page, and a value the form does not ask
+    for is never written at all (docs/adr/0096 §3, docs/adr/0097 §2, §3).
+    Set-valued answers arrive as sequences, so an empty one is «none of them»
+    — a decision — and never «leave them alone».
+    """
+    from app.audit.operations import stage_episode_scope
+    from app.matters.initiative import apply_initiative_after_edit
+    from app.matters.response_deadlines import change_response_deadline
+    from app.matters.services import (
+        assign_matter,
+        change_stage,
+        guard_matter_revision,
+        resolve_source_organisations,
+        set_brief_summary,
+        set_legal_instrument_other,
+        set_legal_instruments,
+        set_matter_dates,
+        set_matter_title,
+        set_organisations,
+        set_policy_area_other,
+        set_policy_areas,
+    )
+
+    with transaction.atomic(), stage_episode_scope():
+        guard_matter_revision(matter=matter, expected_revision=expected_revision)
+        held_instruments = list(matter.legal_instruments.all())
+        set_matter_title(matter=matter, value=title, actor=actor)
+        set_brief_summary(matter=matter, value=brief_summary, actor=actor)
+        assign_matter(matter=matter, owner=owner, actor=actor)
+        set_organisations(
+            matter=matter,
+            source_organisations=resolve_source_organisations(
+                chosen=source_organisations, typed_name=sender_name
+            ),
+            actor=actor,
+        )
+        apply_initiative_after_edit(
+            matter=matter,
+            held=held_instruments,
+            chosen=list(legal_instruments),
+            actor=actor,
+        )
+        set_matter_dates(matter=matter, received_date=received_date, actor=actor)
+        change_response_deadline(
+            matter=matter,
+            deadline=response_deadline,
+            actor=actor,
+            change=deadline_change,
+            previous_outcome=previous_outcome,
+            previous_submission=previous_submission,
+            previous_note=previous_note,
+        )
+        set_policy_areas(matter=matter, policy_areas=list(policy_areas), actor=actor)
+        set_policy_area_other(matter=matter, value=policy_area_other, actor=actor)
+        set_legal_instruments(matter=matter, legal_instruments=list(legal_instruments), actor=actor)
+        set_legal_instrument_other(matter=matter, value=legal_instrument_other, actor=actor)
+        save_procedural_link()
+        change_stage(
+            matter=matter,
+            stage=stage,
+            actor=actor,
+            follow_ups_confirmed=follow_ups_confirmed,
+        )

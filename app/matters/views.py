@@ -55,7 +55,6 @@ from app.accounts.selectors import (
     owner_filter_choices,
 )
 from app.audit.models import ChangeEvent
-from app.audit.operations import stage_episode_scope
 from app.audit.visibility import change_log_event_types, scope_change_events
 from app.core.authorization import (
     distinct_if_fans_out,
@@ -188,7 +187,6 @@ from app.matters.forms import (
 )
 from app.matters.initiative import (
     KODA_INITIATIVE_LABEL,
-    apply_initiative_after_edit,
     is_koda_initiative,
     names_koda_proposal,
 )
@@ -271,7 +269,6 @@ from app.matters.services import (
     engagement_revision_token,
     entry_revision_token,
     guard_matter_field_revision,
-    guard_matter_revision,
     matter_field_revision,
     matter_revision_token,
     open_engagement_feedback_wait,
@@ -282,10 +279,7 @@ from app.matters.services import (
     resolve_source_organisations,
     save_personal_note,
     set_brief_summary,
-    set_legal_instrument_other,
-    set_legal_instruments,
     set_matter_dates,
-    set_matter_title,
     set_organisations,
     set_policy_area_other,
     set_policy_areas,
@@ -5499,6 +5493,10 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
     change is audited exactly as it is when made inline, and a title change on
     an unchanged owner writes one event rather than thirteen — every service
     returns early when the value it was given is the value already there.
+
+    The save itself — the transaction, the period and the order of those
+    services — is the use case `workspace.edit_matter`; this view handles the
+    two forms and the four ways the save can be refused (JARCH-001).
     """
     matter = get_visible_matter(request, pk)
     # `Menetluse link` is a Matter fact and is answered on this page, so it
@@ -5533,117 +5531,53 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
 
     data = form.cleaned_data
     try:
-        # One save, one `Hetkeseis` period: every correction below is written in
-        # the period current when the page was saved, and a stage change — made
-        # last — begins the next one after them (docs/adr/0131 §5).
-        with transaction.atomic(), stage_episode_scope():
-            # First, and inside the transaction: this page posts every field it
-            # holds, so a copy filled before somebody else's save would
-            # otherwise write thirteen stale values over thirteen fresh ones
-            # and call it an edit. The guard takes the Matter row and compares
-            # the committed version, never the instance this request arrived
-            # with (QA-002, `guard_matter_revision`).
-            guard_matter_revision(matter=matter, expected_revision=data.get("revision") or None)
-            # The instrument as it stood before this save: only a change of it
-            # can move `Koja algatus` (`initiative_after_edit`).
-            held_instruments = list(matter.legal_instruments.all())
-            set_matter_title(matter=matter, value=data["title"], actor=request.user)
-            set_brief_summary(
-                matter=matter, value=data.get("brief_summary") or "", actor=request.user
-            )
-            assign_matter(matter=matter, owner=data.get("owner"), actor=request.user)
-            # No `change_track`. `Menetlusliik` is off this page, so there is no
-            # cleaned value to pass and the service is not called with a default
-            # either — a Matter's track survives every save of this form
-            # untouched (docs/adr/0097 §3).
+        # One use case, one transaction, one `Hetkeseis` period; the order of
+        # the services it calls is its contract (`workspace.edit_matter`).
+        workspace.edit_matter(
+            matter=matter,
+            actor=request.user,
+            # Compared against the committed row first, so a copy of this page
+            # filled before somebody else's save is refused (QA-002).
+            expected_revision=data.get("revision") or None,
+            title=data["title"],
+            brief_summary=data.get("brief_summary") or "",
+            owner=data.get("owner"),
+            # No `track`, tags or visibility: `Menetlusliik`, `Sildid` and
+            # `Nähtavus` are off this page and `MatterEditForm`, so a crafted
+            # value in this POST changes nothing (docs/adr/0096 §3,
+            # docs/adr/0097 §2, §3). Nor `addressee_organisation`: the use case
+            # leaves it alone, so a register addressee survives (docs/adr/0097
+            # §4).
+            source_organisations=data.get("source_organisations"),
+            sender_name=data.get("sender_name") or "",
             # `list(...)` rather than the queryset on both set-valued fields,
             # so an empty POST arrives as "none of them" — a decision somebody
             # made — and never as the sentinel that means "leave them alone"
             # (app/matters/services.py, `_UNSET`).
-            # Resolved inside this transaction, and before the Matter is
-            # touched. A typed name that names a body nobody has filed against
-            # yet becomes an Organisation here; if any service below refuses,
-            # the rollback takes that Organisation with it.
-            #
-            # **`addressee_organisation` is not passed, and that is the whole of
-            # what its removal means here.** The parameter defaults to `_UNSET`,
-            # which is the sentinel for «leave this alone» — so a Matter that
-            # carries an addressee from the register keeps it through every save
-            # of this form. Passing `None` would have been the defect: it is a
-            # decision, and it would clear a fact nobody was offered the chance
-            # to state (docs/adr/0097 §4).
-            set_organisations(
-                matter=matter,
-                source_organisations=resolve_source_organisations(
-                    chosen=data.get("source_organisations"),
-                    typed_name=data.get("sender_name") or "",
-                ),
-                actor=request.user,
-            )
-            # `Koja algatus` before the dates, so the date writers below judge
-            # them against the answer this save gives (docs/adr/0151 §2).
-            # Moved only by a change of `Õigusakt` to or from «Koja ettepanek
-            # või pöördumine» in this save — never by an unrelated correction —
-            # and through the audited track writer (docs/adr/0151, amendment of
-            # 2026-10-12, `apply_initiative_after_edit`).
-            apply_initiative_after_edit(
-                matter=matter,
-                held=held_instruments,
-                chosen=list(data.get("legal_instruments") or []),
-                actor=request.user,
-            )
-            set_matter_dates(
-                matter=matter, received_date=data.get("received_date"), actor=request.user
-            )
-            # The deadline asks what a changed date means, here as in the header
-            # (`matters/partials/response_deadline_fields.html`): the same
-            # request moved, or a new one replacing it with an outcome chosen.
-            change_response_deadline(
-                matter=matter,
-                deadline=data.get("response_deadline"),
-                actor=request.user,
-                change=request.POST.get("change", ""),
-                previous_outcome=request.POST.get("previous_outcome", ""),
-                previous_submission=_named_answer(request, matter),
-                previous_note=request.POST.get("previous_note", ""),
-            )
-            set_policy_areas(
-                matter=matter, policy_areas=list(data.get("policy_areas") or []), actor=request.user
-            )
-            set_policy_area_other(
-                matter=matter, value=data.get("policy_area_other") or "", actor=request.user
-            )
-            # Through the service, never `matter.legal_instruments.set(...)`
-            # here: a canonical classification that moved without a change
-            # event is a correction the audit trail cannot answer for, and the
-            # service is what writes one (app/matters/services.py, task §19).
-            set_legal_instruments(
-                matter=matter,
-                legal_instruments=list(data.get("legal_instruments") or []),
-                actor=request.user,
-            )
-            set_legal_instrument_other(
-                matter=matter, value=data.get("legal_instrument_other") or "", actor=request.user
-            )
-            # No `set_tags` call and no `set_matter_visibility` call.
-            # `Sildid` and `Nähtavus` are gone from this page and from
-            # `MatterEditForm`, so there is no cleaned value to pass on and
-            # neither service is called with a default either: a crafted
-            # `tags=` or `visibility=RESTRICTED` in this POST changes nothing,
-            # and a Matter's tags and its visibility survive every save of this
-            # form untouched (docs/adr/0096 §3, docs/adr/0097 §2).
-            _save_procedural_link(matter=matter, form=link_form, actor=request.user)
-            # **`Hetkeseis` last.** The general correction surface offers the
-            # whole vocabulary and goes through the one transition every surface
-            # uses: a new period, and — for «Jõustunud» or «Rohkem ei tegele» on
-            # an open Matter — the closure, after every other field on this page
-            # has been written to the open file (docs/adr/0131 §6, §10).
-            change_stage(
-                matter=matter,
-                stage=data.get("stage"),
-                actor=request.user,
-                follow_ups_confirmed=data.get("confirm_follow_up_closure", False),
-            )
+            legal_instruments=list(data.get("legal_instruments") or []),
+            legal_instrument_other=data.get("legal_instrument_other") or "",
+            received_date=data.get("received_date"),
+            # The deadline asks what a changed date means, here as in the
+            # header (`matters/partials/response_deadline_fields.html`): the
+            # same request moved, or a new one replacing it with an outcome
+            # chosen.
+            response_deadline=data.get("response_deadline"),
+            deadline_change=request.POST.get("change", ""),
+            previous_outcome=request.POST.get("previous_outcome", ""),
+            previous_submission=_named_answer(request, matter),
+            previous_note=request.POST.get("previous_note", ""),
+            policy_areas=list(data.get("policy_areas") or []),
+            policy_area_other=data.get("policy_area_other") or "",
+            stage=data.get("stage"),
+            follow_ups_confirmed=data.get("confirm_follow_up_closure", False),
+            # `Menetluse link` rides in the same `<form>` under its own prefix
+            # and is saved inside the same transaction, just before the stage.
+            # Looked up from this module at call time: it is the seam the
+            # late-failure test replaces (tests/test_addressee_free_entry.py).
+            save_procedural_link=lambda: _save_procedural_link(
+                matter=matter, form=link_form, actor=request.user
+            ),
+        )
     except FollowUpClosureUnconfirmed as refusal:
         # Closing this file would end live work: the page comes back with
         # everything typed, the warning naming what, and the box that confirms
@@ -5929,8 +5863,9 @@ def _save_procedural_link(*, matter: Matter, form: Any, actor: Any) -> None:
     * nobody answered the block — nothing at all. No row, no event, no empty
       record (docs/adr/0089 §7).
 
-    Called inside `matter_edit`'s transaction, so an address the service refuses
-    takes the whole correction back with it. A page that saved twelve fields and
+    Called inside `workspace.edit_matter`'s transaction (as its
+    ``save_procedural_link`` step), so an address the service refuses takes the
+    whole correction back with it. A page that saved twelve fields and
     then reported that the thirteenth was wrong would have left the record in a
     state nobody chose.
     """
