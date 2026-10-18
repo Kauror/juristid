@@ -7016,22 +7016,21 @@ def add_website_overview(request: HttpRequest, pk: Any) -> HttpResponse:
         return _workspace_refusal(request, matter, key=key, form=form)
     publication = form.cleaned_data.get("publication")
     try:
-        with transaction.atomic():
-            launched = work_plan.lock_launched_step(
-                matter, launched_id, PlanStepOperation.WEBSITE_OVERVIEW
-            )
-            result = workspace.add_matter_website_overview(
+        step_launch.launch(
+            matter=matter,
+            step_id=launched_id,
+            operation=PlanStepOperation.WEBSITE_OVERVIEW,
+            actor=request.user,
+            save=lambda: workspace.add_matter_website_overview(
                 matter=matter,
                 author=request.user,
                 url=publication[0] if publication else "",
                 published_on=publication[1] if publication else None,
                 title=form.cleaned_data.get("overview_title") or "",
                 kind=form.cleaned_data.get("kind") or "",
-            )
-            if launched is not None and overview_fulfils_step(result.record):
-                work_plan.fulfil_launched_step(
-                    launched=launched, record=result.record, actor=request.user
-                )
+            ),
+            fulfils=overview_fulfils_step,
+        )
     except DomainError as error:
         return _workspace_refusal(request, matter, key=key, form=form, error=str(error))
     return _render_overview(request, matter)
@@ -8029,17 +8028,15 @@ def add_engagement_compact(request: HttpRequest, pk: Any) -> HttpResponse:
     if not form.is_valid():
         return _workspace_refusal(request, matter, key=key, form=form)
     try:
-        with transaction.atomic():
-            launched = work_plan.lock_launched_step(
-                matter, launched_id, PlanStepOperation.ENGAGEMENT
-            )
-            result = _add_engagement_from_form(
+        step_launch.launch(
+            matter=matter,
+            step_id=launched_id,
+            operation=PlanStepOperation.ENGAGEMENT,
+            actor=request.user,
+            save=lambda: _add_engagement_from_form(
                 request, matter, form, once_token=_posted_once_token(request)
-            )
-            if launched is not None:
-                work_plan.fulfil_launched_step(
-                    launched=launched, record=result.record, actor=request.user
-                )
+            ),
+        )
     except DomainError as error:
         return _workspace_refusal(request, matter, key=key, form=form, error=str(error))
     return _render_overview(request, matter)
@@ -8847,16 +8844,18 @@ def add_koda_opinion(request: HttpRequest, pk: Any) -> HttpResponse:
     if not form.is_valid():
         return _workspace_refusal(request, matter, key=key, form=form)
     try:
-        # One transaction around the resolution and the save. A typed name the
-        # picker does not know becomes a new institution *while the arguments
-        # are evaluated*, which is before the use case's own transaction opens;
-        # without this, a refusal under the lock — a closed Matter in a stale
-        # tab, a rejected upload — left that institution in the catalogue.
-        with transaction.atomic():
-            launched = work_plan.lock_launched_step(
-                matter, launched_id, PlanStepOperation.SUBMISSION
-            )
-            result = workspace.add_matter_koda_opinion(
+        # One transaction around the resolution and the save: `launch` calls
+        # `save` inside its own. A typed name the picker does not know becomes a
+        # new institution *while the arguments are evaluated*, which is before
+        # the use case's own transaction opens; without this, a refusal under the
+        # lock — a closed Matter in a stale tab, a rejected upload — left that
+        # institution in the catalogue.
+        result = step_launch.launch(
+            matter=matter,
+            step_id=launched_id,
+            operation=PlanStepOperation.SUBMISSION,
+            actor=request.user,
+            save=lambda: workspace.add_matter_koda_opinion(
                 # What else this save finishes, each named by the person and
                 # each checked again under the lock (historical regression,
                 # stage II). Nothing is chosen for them.
@@ -8892,11 +8891,8 @@ def add_koda_opinion(request: HttpRequest, pk: Any) -> HttpResponse:
                 # schedules, and any earlier one: confirmed, or refused before a
                 # byte is stored (docs/adr/0146 §8).
                 follow_ups_confirmed=form.cleaned_data.get("confirm_follow_up_closure", False),
-            )
-            if launched is not None:
-                work_plan.fulfil_launched_step(
-                    launched=launched, record=result.record, actor=request.user
-                )
+            ),
+        )
     except FollowUpClosureUnconfirmed as refusal:
         return _closure_needs_confirmation(request, matter, key=key, form=form, refusal=refusal)
     except DomainError as error:
