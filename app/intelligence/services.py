@@ -30,6 +30,7 @@ from django.utils import timezone
 from app.audit.enums import ChangeEventType
 from app.audit.services import record_change_event
 from app.core.errors import DomainError
+from app.core.web_addresses import LINK_HAS_CREDENTIALS, web_address_has_credentials
 from app.intelligence.enums import (
     EffectiveDateKind,
     FactStatus,
@@ -51,6 +52,25 @@ SUMMARY_LIMIT = 200
 
 def _iso(value: date | None) -> str | None:
     return value.isoformat() if value is not None else None
+
+
+def _refuse_new_credentialed_link(source_url: str, *, stored: str = "") -> None:
+    """Refuse an `Ametlik allikas` / `Viide` carrying a user name or a password.
+
+    Owner decision D10 (2026-10-17): every address a person pastes now is
+    refused with userinfo in it, because a credential on the file is a
+    credential in a rendered `href`, an audit row and a browser history. Said
+    here as well as on the form's `WebAddressField`, because a form is what one
+    browser was shown and this is what every person's door writes through.
+
+    ``stored`` is what the record already holds. A correction that leaves a
+    historical address exactly as it found it still saves — rows written before
+    D10 are not rewritten — and only a newly typed or changed one is refused.
+    The importer's door, :func:`add_work_victory_candidate`, does not call this.
+    """
+    clean = (source_url or "").strip()
+    if clean and clean != (stored or "").strip() and web_address_has_credentials(clean):
+        raise DomainError(LINK_HAS_CREDENTIALS)
 
 
 def _require_text(value: str, message: str) -> str:
@@ -350,6 +370,10 @@ def add_effective_date(
 
     matter = lock_open_matter_for_business_write(matter.pk)
     _validate_effective_date(kind, date_value, period_end, date_precision)
+    # A row carried over from the historical register names its source page and
+    # keeps its address as the register had it; a person's save does not.
+    if legacy_source_page is None:
+        _refuse_new_credentialed_link(source_url)
 
     record = MatterEffectiveDate.objects.create(
         matter=matter,
@@ -398,6 +422,7 @@ def update_effective_date(
     if record.status != FactStatus.ACTIVE:
         raise DomainError("Ainult kehtivat jõustumist saab muuta.")
     _validate_effective_date(kind, date_value, period_end, date_precision)
+    _refuse_new_credentialed_link(source_url, stored=record.source_url)
 
     before = {
         "kind": record.kind,
@@ -628,6 +653,7 @@ def add_confirmed_work_victory(
     from app.matters.locks import lock_open_matter_for_business_write
 
     matter = lock_open_matter_for_business_write(matter.pk)
+    _refuse_new_credentialed_link(source_url)
     record = _create_work_victory(
         matter=matter,
         status=WorkVictoryStatus.CONFIRMED,
@@ -686,6 +712,7 @@ def update_work_victory(
     record = _lock_for_edit(record, expected_revision)
     title = _require_text(title, "Töövõidul peab olema kirjeldus.")
     _validate_period(period_date, period_end, date_precision)
+    _refuse_new_credentialed_link(source_url, stored=record.source_url)
 
     before = {
         "title": record.title,

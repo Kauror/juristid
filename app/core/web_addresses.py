@@ -65,6 +65,10 @@ _TOP_LABEL = r"(?:[^\W\d_]{2,63}|xn--[a-z0-9-]{1,59})"
 _BARE_HOST = re.compile(rf"^(?:{_LABEL}\.)+{_TOP_LABEL}\.?(?::\d{{1,5}})?$", re.IGNORECASE)
 _WHITESPACE = re.compile(r"\s")
 
+#: The one sentence a credential-bearing address is refused with, wherever a
+#: caller does not word its own (owner decision D10, 2026-10-17).
+LINK_HAS_CREDENTIALS = "Link ei tohi sisaldada kasutajanime ega parooli."
+
 
 def with_web_scheme(value: str | None) -> str:
     """``value`` stripped, with ``https://`` in front when it is a bare host.
@@ -89,8 +93,9 @@ def normalize_web_address(
     reject_credentials: bool = False,
     not_a_url: str = "Link peab sisaldama veebiaadressi.",
     not_web_scheme: str = "Link peab algama http:// või https:// aadressiga.",
-    has_credentials: str = "Link ei tohi sisaldada kasutajanime ega parooli.",
+    has_credentials: str = LINK_HAS_CREDENTIALS,
     too_long: str | None = None,
+    stored: str | None = None,
 ) -> str:
     """The stored form of a web address, or a `DomainError` in the caller's words.
 
@@ -110,7 +115,18 @@ def normalize_web_address(
     department did not choose and cannot re-issue — refusing it would mean
     refusing to record what actually happened. An address somebody is pasting
     *now*, from a page they have open, has no such history to accommodate
-    (docs/adr/0081 §3, kept by docs/adr/0085 §2).
+    (docs/adr/0081 §3, kept by docs/adr/0085 §2). **Since owner decision D10
+    (2026-10-17) every box a person types an address into passes
+    ``reject_credentials=True``**; the default is left for the historical-register
+    importer, which is the one writer still recording what it did not choose
+    (docs/adr/0085 §2, amendment of 2026-10-17).
+
+    ``stored`` is the value the record already holds, passed by a correction. A
+    credential-bearing address *equal to it* is not refused: rows written before
+    D10 are not rewritten, and a person correcting the title of such a record
+    without touching its link must still be able to save. Only an address that
+    is newly typed or changed is held to the rule. Every other check still
+    applies to it.
 
     The refusal sentences are parameters because several records share a Teema
     page, and a refusal that does not say *which* link it means has to be
@@ -134,7 +150,7 @@ def normalize_web_address(
         # not a number. A refusal, not an unhandled exception from a parser.
         hostname = None
         username = password = None
-    if reject_credentials and (username or password):
+    if reject_credentials and (username or password) and not _is_stored(url, stored):
         raise DomainError(has_credentials)
     if not hostname or _WHITESPACE.search(hostname):
         raise DomainError(not_a_url)
@@ -147,3 +163,25 @@ def normalize_web_address(
             )
         )
     return url
+
+
+def web_address_has_credentials(value: str | None) -> bool:
+    """Whether ``value``, read as an address, carries a user name or a password.
+
+    For a writer that stores an address without passing it through
+    :func:`normalize_web_address` and still has to keep D10's rule. A value that
+    cannot be parsed has no userinfo to find, so it answers `False`; whether it
+    is an address at all is somebody else's question.
+    """
+    try:
+        parts = urlsplit(with_web_scheme(value))
+        return bool(parts.username or parts.password)
+    except ValueError:
+        return False
+
+
+def _is_stored(url: str, stored: str | None) -> bool:
+    """Whether ``url`` is the address the record already holds, unchanged."""
+    if not stored:
+        return False
+    return url == with_web_scheme(stored)

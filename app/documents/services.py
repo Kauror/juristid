@@ -383,10 +383,14 @@ def link_working_document(
     # added to an address pasted without one, a scheme somebody typed is kept,
     # and anything that is not an http(s) host is refused in this box's words.
     # The length is this column's own check below, worded with the measured
-    # length, so the shared rule is asked for none.
+    # length, so the shared rule is asked for none. Userinfo is refused: the
+    # address is pasted now, from a SharePoint page somebody has open, and there
+    # is no correction path that could need to keep an older one (owner decision
+    # D10, docs/adr/0085 §2 amendment of 2026-10-17).
     url = normalize_web_address(
         web_url,
         max_length=None,
+        reject_credentials=True,
         not_a_url="Viide peab sisaldama veebiaadressi.",
         not_web_scheme="Viide peab algama http:// või https:// aadressiga.",
     )

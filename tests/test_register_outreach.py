@@ -413,6 +413,26 @@ def test_a_reviewed_mapping_creates_the_engagement(world):
     assert engagement.note == "Sendsmaily adressaate: 789"
 
 
+def test_a_register_link_carrying_credentials_is_imported_as_it_stands(world):
+    """Owner decision D10 (2026-10-17): every door a person pastes into refuses
+    userinfo, and the historical-register import keeps accepting it — on the
+    first application and on a refresh that changes the address."""
+    matter = add_matter(world)
+    links = approved(matter, url="https://u:p@example.org/x")
+
+    apply_mapping(links=links, expect_mapping_sha256=mapping_digest(links))
+
+    engagement = MatterEngagement.objects.get(matter=matter)
+    assert engagement.url == "https://u:p@example.org/x"
+
+    refreshed = approved(matter, url="https://kasutaja:parool@example.org/teine")
+    result = apply_mapping(links=refreshed, expect_mapping_sha256=mapping_digest(refreshed))
+
+    assert result.updated == 1
+    engagement.refresh_from_db()
+    assert engagement.url == "https://kasutaja:parool@example.org/teine"
+
+
 def test_re_applying_the_same_mapping_creates_no_duplicate(world):
     matter = add_matter(world)
     links = approved(matter)

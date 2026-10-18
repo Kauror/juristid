@@ -261,7 +261,12 @@ def _retry_form(form: Any, request: HttpRequest, conflict: Any) -> Any:
     """The refused form again: the person's values, the stored revision, the reason."""
     retry = request.POST.copy()
     retry["revision"] = services.fact_revision(conflict.current)
-    again = type(form)(retry)
+    # The stored address the form was checked against travels with it, so an
+    # untouched historical link is not refused on the way back (owner decision D10).
+    extra = (
+        {"stored_source_url": form.stored_source_url} if hasattr(form, "stored_source_url") else {}
+    )
+    again = type(form)(retry, **extra)
     again.is_valid()
     again.add_error(None, str(conflict))
     return again
@@ -469,7 +474,7 @@ def edit_effective_date(request: HttpRequest, matter_id: Any, pk: Any) -> HttpRe
     )
 
     if request.method == "POST":
-        form = EffectiveDateForm(request.POST)
+        form = EffectiveDateForm(request.POST, stored_source_url=record.source_url)
         if form.is_valid():
             try:
                 services.update_effective_date(
@@ -658,7 +663,7 @@ def edit_work_victory(request: HttpRequest, matter_id: Any, pk: Any) -> HttpResp
     )
 
     if request.method == "POST":
-        form = WorkVictoryForm(request.POST)
+        form = WorkVictoryForm(request.POST, stored_source_url=record.source_url)
         if form.is_valid():
             try:
                 services.update_work_victory(

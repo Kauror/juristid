@@ -109,6 +109,11 @@ take — an `Ülevaade / uudis` address is pasted *now*, from a page somebody ha
 open, where an engagement link may come out of a historical register nobody can
 re-issue.
 
+> **Amended on 2026-10-17 by owner decision D10** — see the amendment at the
+> end of this document. Userinfo is no longer this caller's alone: every link a
+> person pastes now refuses it, and only the historical-register importer keeps
+> accepting it.
+
 ### What is given up, and why it was not protecting anything
 
 Nothing about access. **This application never contacts the address.** It is not
@@ -381,3 +386,48 @@ them is a product decision, not a patch.
 **The date default: very high.** One function in `ux.js` and two widget
 attributes. Removing it restores ADR 0083 §2's behaviour exactly, because the
 server side never learned about it.
+
+## Amendment 2026-10-17 — no credentials in any paste-now link (owner decision D10)
+
+The owner decided on 2026-10-17 (audit design concern DC-G2) that **every link
+field a person pastes into refuses userinfo** — `user:pw@`, `user@`, `:pw@` —
+on creation and on correction, with the one sentence
+«Link ei tohi sisaldada kasutajanime ega parooli.»
+(`app.core.web_addresses.LINK_HAS_CREDENTIALS`). §2's reason for refusing it
+here — a credential on the file is a credential in an audit payload, on a
+rendered `href` and in everybody's browser history — was never particular to
+this record, and the tolerance it left on the other doors had reached the
+append-only audit rows a correction writes (`url_to`).
+
+**What now refuses it, beside the three that already did** (`Muu`,
+`Ülevaade / uudis`, `Menetluse link`):
+
+| door | rule | correction |
+| --- | --- | --- |
+| `+ Kaasamine` / `Muuda`: `Ülevaate link`, `Smaily link`, `Alchemer link` | `normalize_engagement_url` | `update_engagement` (via `correct_engagement`) |
+| `Lisa tagasiside` / `Muuda` on a position: `Link` | `normalize_external_position_url` | `correct_external_position` |
+| Dokumendid: working document `SharePointi aadress` | `link_working_document` | none exists |
+| `Jõustumine` / `Töövõit`: `Ametlik allikas` / `Viide` | `WebAddressField` and the intelligence services | `update_effective_date`, `update_work_victory` |
+
+Each rule is stated in the service as well as in the form, so a crafted POST or a
+new caller meets it.
+
+**What keeps accepting it.** The historical-register importer,
+`app.legacy_import.register_outreach`, passes `from_historical_register=True` to
+`add_engagement` and `update_engagement`: it records addresses out of a register
+this department did not choose and cannot re-issue, which is the case the old
+tolerance existed for. `add_work_victory_candidate` — the machine's and the
+importer's door — and `add_effective_date` called with a `legacy_source_page`
+keep it for the same reason. No other writer does.
+
+**Stored rows are not rewritten.** Nothing migrates or clears an address already
+on file. A correction compares the posted address with the one the row holds
+(`normalize_web_address(..., stored=...)`): **unchanged, it is kept and the
+correction saves** — somebody fixing the title of a historical round must not be
+told to delete a link they did not touch — and **newly typed or changed, it is
+refused** under its box. The comparison is made against the row as locked, so a
+crafted «stored» value cannot buy an exemption.
+
+Tests: `tests/test_no_credentials_in_links.py` (every door, create and change;
+the untouched historical link; the service boundary), and
+`tests/test_register_outreach.py` for the importer.

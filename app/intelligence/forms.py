@@ -77,7 +77,15 @@ class WebAddressField(forms.CharField):
     by the product's one rule (`app.core.web_addresses.normalize_web_address`):
     a bare host is stored with `https://`, a scheme somebody typed is kept, and
     anything that is not an http(s) host is refused under the box.
+
+    **Userinfo is refused** (owner decision D10, 2026-10-17), except for the
+    address the record already holds: ``stored`` is set by a correction form
+    (`StoredSourceUrlMixin`), so an untouched historical address saves and a
+    newly typed or changed one is refused.
     """
+
+    #: The value the record being corrected holds; empty on an add form.
+    stored: str = ""
 
     def __init__(self, *, label: str, max_length: int = SOURCE_URL_MAX_LENGTH) -> None:
         super().__init__(
@@ -93,9 +101,28 @@ class WebAddressField(forms.CharField):
     def clean(self, value: Any) -> str:
         text = super().clean(value)
         try:
-            return normalize_web_address(text, max_length=self.web_max_length)
+            return normalize_web_address(
+                text,
+                max_length=self.web_max_length,
+                reject_credentials=True,
+                stored=self.stored,
+            )
         except DomainError as error:
             raise forms.ValidationError(str(error)) from error
+
+
+class StoredSourceUrlMixin:
+    """Hands `source_url`'s stored value to its field, on a correction form.
+
+    ``stored_source_url`` is what the record holds, passed by the edit view. The
+    field is the form's own deep copy, so setting it here touches no other
+    instance.
+    """
+
+    def __init__(self, *args: Any, stored_source_url: str = "", **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.stored_source_url = stored_source_url or ""
+        cast(Any, self).fields["source_url"].stored = self.stored_source_url
 
 
 class PeriodForm(forms.Form):
@@ -268,7 +295,7 @@ class ImportantDateForm(PeriodForm):
         )
 
 
-class EffectiveDateForm(PeriodForm):
+class EffectiveDateForm(StoredSourceUrlMixin, PeriodForm):
     """`Jõustumine` — what comes into force, and what is known about when."""
 
     #: The version of the record an edit form was opened against, posted back
@@ -362,7 +389,7 @@ class EffectiveDateForm(PeriodForm):
         )
 
 
-class WorkVictoryForm(PeriodForm):
+class WorkVictoryForm(StoredSourceUrlMixin, PeriodForm):
     """A `Töövõit` as somebody describes it: the words, the period, the source.
 
     The form carries no status. Which state the row is created in belongs to

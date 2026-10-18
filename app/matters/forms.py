@@ -293,11 +293,21 @@ def engagement_feedback_deadline_field() -> EstonianDateField:
 
 
 def clean_provider_link(form: forms.Form, field: str) -> str:
-    """The service's own rule, reported under the box somebody typed it in."""
+    """The service's own rule, reported under the box somebody typed it in.
+
+    A correction form carries the engagement it opened on as ``record``, and the
+    column's stored value is handed on as ``stored``: an address with a user
+    name or a password that the row already holds — a historical one, written
+    before owner decision D10 — comes back unchanged and is not refused, while
+    the same shape newly typed is. A creating form has no record and so no
+    exemption. The box is named after its column on both correction forms.
+    """
     from app.matters.services import normalize_engagement_url
 
+    record = getattr(form, "record", None)
+    stored = getattr(record, field, None) if record is not None else None
     try:
-        return normalize_engagement_url(form.cleaned_data.get(field))
+        return normalize_engagement_url(form.cleaned_data.get(field), stored=stored)
     except DomainError as error:
         raise forms.ValidationError(str(error)) from error
 
@@ -5774,8 +5784,12 @@ class ExternalPositionFieldsMixin:
         raw_url = (cleaned.get("url") or "").strip()
         url = ""
         if raw_url:
+            # On `Muuda`, the address the record holds is not refused for
+            # carrying userinfo — a historical row is not rewritten — while a
+            # newly typed or changed one is (owner decision D10).
+            record = getattr(self, "record", None)
             try:
-                url = normalize_external_position_url(raw_url)
+                url = normalize_external_position_url(raw_url, stored=getattr(record, "url", None))
             except DomainError as error:
                 self.add_error("url", str(error))
             else:

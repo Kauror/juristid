@@ -614,9 +614,11 @@ def test_a_refused_corrected_link_is_shown_under_the_link_box_with_what_was_type
     assert not EntryRevision.objects.filter(entry=entry).exists()
 
 
-def test_other_web_address_rules_are_unchanged():
-    """The engagement and external-position rules still tolerate userinfo (a
-    historical register value nobody can re-issue); only `Muu` was tightened."""
+def test_every_paste_now_link_rule_refuses_userinfo_like_muu():
+    """`Muu` refused userinfo first; owner decision D10 (2026-10-17) brought the
+    engagement and external-position rules into line, and left the tolerance to
+    the historical-register importer alone (docs/adr/0085 §2, amendment of
+    2026-10-17; `tests/test_no_credentials_in_links.py` has the doors)."""
     from app.matters.services import (
         normalize_engagement_url,
         normalize_entry_url,
@@ -624,10 +626,13 @@ def test_other_web_address_rules_are_unchanged():
     )
 
     link = "https://user:pw@example.ee/x"
-    assert normalize_engagement_url(link) == link
-    assert normalize_external_position_url(link) == link
+    with refused(CREDENTIALS_REFUSAL):
+        normalize_engagement_url(link)
+    with refused(CREDENTIALS_REFUSAL):
+        normalize_external_position_url(link)
     with refused(CREDENTIALS_REFUSAL):
         normalize_entry_url(link)
+    assert normalize_engagement_url(link, historical=True) == link
 
 
 # -- a correction overtaken by another writer shows their link ---------------------
