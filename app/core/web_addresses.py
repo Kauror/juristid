@@ -185,3 +185,50 @@ def _is_stored(url: str, stored: str | None) -> bool:
     if not stored:
         return False
     return url == with_web_scheme(stored)
+
+
+def display_host(url: str | None) -> str:
+    """The host an address points at, and nothing else about the address.
+
+    **The credential-safe host label** (red-team finding F-2, 2026-09-12). Every
+    control that names a link by where it goes — a round's `link_label`, a
+    position's, a procedural link's `display_label`, an entry's, and a round's
+    search terms — reads it here, so a new link renderer has one place to call
+    instead of repeating `urlsplit(url).netloc`.
+
+    `urlsplit(url).netloc` is the URL's **authority**, which is
+    ``userinfo@host:port`` — so a link pasted out of a provider dashboard that
+    carries basic-auth credentials yields a "host" with a username and a
+    password in it, and a label copied from it would print them and a search
+    projection would index them. `parsed.hostname` is the host: it drops the
+    userinfo and the port, and lowercases what is left.
+
+    The port goes with the userinfo deliberately. "Host" here means the name
+    that tells a reader which provider a link runs to, and `:8443` is transport
+    machinery of exactly the kind the label exists to leave out; no product
+    contract asks for host and port.
+
+    The fallback is for the historical row that is not a parseable address at
+    all, and it drops anything before an ``@`` before bounding what is left:
+    ``https://user:pw@/path`` has a non-empty authority and *no* hostname, so a
+    fallback that printed the stored string would put the credentials back
+    exactly where this function exists to keep them out of.
+    `normalize_web_address` refuses that shape on the way in as well.
+
+    Moved here from the private `MatterEngagement._hostname`, which three other
+    models called across the class (2026-10-17 audit, JARCH-005).
+    """
+    if not url:
+        return ""
+    try:
+        host = urlsplit(url).hostname or ""
+    except ValueError:
+        # A malformed authority — an unbracketed IPv6 literal, a port that is
+        # not a number. Unparseable is not a crash on a read path.
+        host = ""
+    if host:
+        return host
+    remainder = url.split("://", 1)[-1]
+    if "@" in remainder:
+        remainder = remainder.rsplit("@", 1)[-1]
+    return remainder[:60]

@@ -2053,7 +2053,7 @@ def normalize_engagement_url(
     **A host, not merely an authority.** `https://user:pw@/path` has a
     non-empty `netloc` and no host at all, which is not an address anybody can
     follow and is the one shape whose «host» is nothing but credentials
-    (red-team finding F-2, and `MatterEngagement._hostname` is its other half).
+    (red-team finding F-2, and `app.core.web_addresses.display_host` is its other half).
 
     **Userinfo is refused** (owner decision D10, 2026-10-17): `Ülevaate link`,
     `Smaily link` and `Alchemer link` are pasted *now*, from a page somebody has

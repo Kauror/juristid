@@ -84,6 +84,7 @@ from app.search.models import SearchSourceKind
 from app.search.services import WordSimilarity, visible_documents
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
+from app.submissions.opinions import opinions_url
 from app.taxonomy.legal_instruments import OTHER_LEGAL_INSTRUMENT_KEYS
 from app.taxonomy.models import LegalInstrumentType, PolicyArea
 
@@ -854,24 +855,10 @@ def _submission_suggestion(
         # Dokumendid, filtered to this Matter's opinions. The per-Matter
         # Arvamused page it used to open is a compatibility redirect now
         # (docs/adr/0061), and linking it would cost a redirect to arrive
-        # in the same place. Imported here rather than at module scope:
-        # `app.matters.views` imports this package's selectors.
-        open_url=_opinions_url(matter),
+        # in the same place. One function owns `?roll=`.
+        open_url=opinions_url(matter),
         is_dismissed=dismissed,
     )
-
-
-def _opinions_url(matter: Any) -> str:
-    """`matters.views.opinions_url`, imported late to keep the cycle open.
-
-    `app.matters.views` imports `app.related_materials.selectors`, so this
-    package cannot name that module at import time. The URL is not rebuilt
-    here: one function owns `?roll=` so the filter cannot drift between the
-    six places that link to a Matter's opinions (docs/adr/0061).
-    """
-    from app.matters.views import opinions_url
-
-    return opinions_url(matter)
 
 
 def opinion_candidates(
