@@ -897,13 +897,16 @@ def test_the_history_does_not_cost_a_query_per_row(
 # ---------------------------------------------------------------------------
 
 
-def test_the_matter_page_calls_the_history_teema_kaik(signed_in, specialist):
+def test_the_matter_page_calls_the_history_tegevused(signed_in, specialist):
+    """`Tegevused` is the one name (docs/adr/0140 §7; owner, 2026-10-19)."""
     matter = factories.MatterFactory(owner=specialist)
     body = signed_in.get(
         reverse("matters:matter_detail", kwargs={"pk": matter.pk})
     ).content.decode()
 
-    assert "Teema käik" in body
+    assert "Tegevused" in body
+    assert "Teema käik" not in body
+    assert "teema käigu" not in body.lower()
     assert 'id="ajajoon"' in body, "the anchor a shared link uses does not move"
 
 
@@ -1458,7 +1461,7 @@ def test_the_empty_history_is_named_after_the_section_it_is_in(signed_in, specia
         reverse("matters:matter_detail", kwargs={"pk": matter.pk})
     ).content.decode()
 
-    assert "Teema käik on tühi. Esimene sissekanne ilmub siia." in body
+    assert "Tegevusi veel ei ole. Esimene sissekanne ilmub siia." in body
     assert "Ajajoon on tühi" not in body
     # The compatibility surface is untouched.
     assert 'id="ajajoon"' in body

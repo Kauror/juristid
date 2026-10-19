@@ -30,6 +30,16 @@ canonical records prove it — keyed on the step's stable `template_step_key` an
   outstanding**: a repeat `Arvamuse tähtaeg` asks again, and an earlier opinion
   never answers it (docs/adr/0144 §2).
 
+**A filed `Kaasamine` puts the overview behind the file** (owner, 2026-10-19).
+Once a consultation is filed — waiting for feedback or finished — the
+`website-overview` step is no longer suggested: by then the overview has been
+written or will not be, and «Koosta kodulehe ülevaade · Alusta» beside
+«Ootame tagasisidet» offered work the file had moved past. The wait's closing
+does not bring it back, because the `Kaasamine` stays on the file. This is a
+rule about the *suggestion* only (`RecordedWork.supersedes`), not a proof that
+an overview was written: `proves` — which the docs/adr/0161 alert also reads —
+is unchanged.
+
 Nothing is written. A step that reads as done is skipped for this page only;
 the plan's own rows are untouched, so a dismissal (`×`) still persists exactly
 as it did, and a step the record no longer proves comes back.
@@ -146,6 +156,16 @@ class RecordedWork:
             return opinion_stands
         return False
 
+    def supersedes(self, step: MatterPlanStep) -> bool:
+        """Whether the record has moved past ``step``, so it is not suggested.
+
+        Only the overview: a filed `Kaasamine` — waiting or finished — means the
+        overview has been written or will not be (owner, 2026-10-19). Kept apart
+        from `proves`, which says the work *was done* and which the
+        docs/adr/0161 alert reads too.
+        """
+        return self.engagement and step.operation == PlanStepOperation.WEBSITE_OVERVIEW
+
 
 def recommendation_for(
     matter: Any, current_action: Any, viewer: Any = None
@@ -155,7 +175,8 @@ def recommendation_for(
     ``None`` while a current step is visible — work already in hand is never
     shadowed by a suggestion — on a closed Matter, on an archive register row
     and when nothing is left ahead. Otherwise the first open step in order that
-    the record does not already prove done (`RecordedWork`).
+    the record does not already prove done, nor has moved past
+    (`RecordedWork`).
     """
     if current_action is not None or not matter.is_open:
         return None
@@ -175,7 +196,10 @@ def recommendation_for(
     if not open_steps:
         return None
     done = RecordedWork.of(matter, viewer)
-    ahead = next((step for step in open_steps if not done.proves(step)), None)
+    ahead = next(
+        (step for step in open_steps if not done.proves(step) and not done.supersedes(step)),
+        None,
+    )
     if ahead is None:
         return None
     return Recommendation(step=ahead, revision=plan_revision(steps))

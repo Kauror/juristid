@@ -447,7 +447,7 @@ class SentOpinionEditForm(forms.Form):
         required=False,
         max_length=EXTERNAL_POSITION_SUMMARY_MAX_LENGTH,
         widget=forms.Textarea(attrs={"class": "field__input", "rows": "3"}),
-        help_text="Mida kiri ütles. Seda loeb teema käik.",
+        help_text="Mida kiri ütles. See on näha jaotises «Tegevused».",
     )
     recipients = forms.ModelMultipleChoiceField(
         label="Adressaadid",

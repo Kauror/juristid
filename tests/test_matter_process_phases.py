@@ -1202,8 +1202,13 @@ def test_a_future_transposition_deadline_is_visible_and_drawn_as_future(speciali
     assert column.display == format_estonian_date(ahead)
 
 
-def test_an_ordinary_future_deadline_draws_no_column(specialist):
-    """**Superseded by docs/adr/0131 §13**: a watched deadline draws no column again.
+def test_an_ordinary_future_deadline_draws_an_event_marker(specialist):
+    """**Superseded by docs/adr/0172 §6**: a watched deadline is on the rail as an event.
+
+    docs/adr/0131 §13 had taken it off; the owner put it back on 2026-10-19 as
+    an event marker beside the stages, never as one. Kept as it was written:
+
+    **Superseded by docs/adr/0131 §13**: a watched deadline draws no column again.
 
     The QA-001 reasoning below held while a future deadline read nowhere else.
     It reads in `Teema käik` now, marked «Eesolev tähtaeg», and the owner
@@ -1234,13 +1239,15 @@ def test_an_ordinary_future_deadline_draws_no_column(specialist):
         actor=specialist,
     )
 
-    labels = [step.label for step in process_steps(matter=matter, user=specialist)]
-    assert TRANSPOSITION_DEADLINE_LABEL not in labels
-    assert "Komisjoni istung" not in labels
+    steps = process_steps(matter=matter, user=specialist)
+    assert TRANSPOSITION_DEADLINE_LABEL not in [step.label for step in steps]
+    marker = next(step for step in steps if step.label == "Komisjoni istung")
+    assert marker.is_event
+    assert marker.event_label == "Eesolev tähtaeg"
 
 
-def test_a_passed_ordinary_deadline_still_draws_no_column(specialist):
-    """The half of §12.1 that was always right, kept."""
+def test_a_passed_ordinary_deadline_is_a_passed_event(specialist):
+    """A passed watched deadline stays an event on the rail, «Tähtaeg» (docs/adr/0172 §6)."""
     matter = _matter(specialist, instruments=("seadus",))
     gone = timezone.localdate() - timedelta(days=90)
     add_important_date(
@@ -1251,8 +1258,13 @@ def test_a_passed_ordinary_deadline_still_draws_no_column(specialist):
         actor=specialist,
     )
 
-    labels = [step.label for step in process_steps(matter=matter, user=specialist)]
-    assert "Möödunud istung" not in labels
+    marker = next(
+        step
+        for step in process_steps(matter=matter, user=specialist)
+        if step.label == "Möödunud istung"
+    )
+    assert marker.is_event
+    assert marker.event_label == "Tähtaeg"
 
 
 def test_a_passed_transposition_deadline_reads_in_the_chronology_and_not_on_the_strip(

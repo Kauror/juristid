@@ -449,6 +449,15 @@ record, not professional chronology (master specification 16.5).
             <span class="uxtl__kind uxtl__kind--entry">Muu</span>
           {% endif %}
           {% comment %}
+            And what it is about: the first words of its `Kirjeldus`, because a
+            closed `Muu` line that said only who and when was not recognised as
+            the entry just saved (owner, 2026-10-19). Always drawn for a `Muu`,
+            so a correction can replace it out of band (`entry_body.html`).
+          {% endcomment %}
+          {% if item.entry.kind == "OTHER" %}
+            <span class="uxtl__gist" id="sissekanne-{{ item.entry.pk }}-sisu-algus">{{ item.entry_gist }}</span>
+          {% endif %}
+          {% comment %}
             A meeting says so too: `Kohtumine / arutelu` writes an
             `Entry(kind=MEETING)` dated on the day it took place
             (docs/adr/0097, amendment of 2026-10-17). An authorless one
@@ -602,7 +611,7 @@ record, not professional chronology (master specification 16.5).
   {% if stage_group %}
     <p class="uxtl__none">Selle hetkeseisu ajal pole tegevust salvestatud.</p>
   {% else %}
-    <p class="uxtl__none">Teema käik on tühi. Esimene sissekanne ilmub siia.</p>
+    <p class="uxtl__none">Tegevusi veel ei ole. Esimene sissekanne ilmub siia.</p>
   {% endif %}
 {% endfor %}
 {% comment %}

@@ -29,7 +29,7 @@ import html
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Any
 
 from django.db import models
@@ -534,6 +534,11 @@ class TimelineItem:
         return self.entry is not None
 
     @property
+    def entry_gist(self) -> str:
+        """What a `Muu` row's closed line says it is about (`entry_gist`)."""
+        return entry_gist(self.entry)
+
+    @property
     def external_position(self) -> Any:
         """The `Väline seisukoht` this row stands for, when it stands for one.
 
@@ -849,6 +854,28 @@ def entry_plain_text(entry: Any) -> str:
     return " ".join(html.unescape(strip_tags(entry.body or "")).split())
 
 
+#: How much of a `Muu` description its closed line carries.
+ENTRY_GIST_LENGTH = 90
+
+
+def entry_gist(entry: Any) -> str:
+    """The first words of a `Muu`'s description, for the row's closed line.
+
+    A closed row is its one line (docs/adr/0074 §14), and an authored note's
+    line is its author and day because a note is what an authored row *is*.
+    A `Muu` is not a note: «Kaur · MUU · 19.10.2026» said nothing about what was
+    added, and the owner did not recognise the row as the entry just saved
+    (2026-10-19). Its own words are what tell two of them apart. Plain text,
+    autoescaped where it is printed; empty for every other kind.
+    """
+    if entry is None or entry.kind != EntryKind.OTHER.value:
+        return ""
+    text = entry_plain_text(entry)
+    if len(text) <= ENTRY_GIST_LENGTH:
+        return text
+    return text[: ENTRY_GIST_LENGTH - 1].rstrip() + "…"
+
+
 def entry_completes_a_step(entry: Any) -> bool:
     """Whether the save that wrote `entry` also completed the current action.
 
@@ -1041,6 +1068,32 @@ def _end_of_day(day: date) -> datetime:
     around it (TEEMA_TARGET_SPEC §E).
     """
     return timezone.make_aware(datetime.combine(day, datetime.max.time()))
+
+
+#: The entries whose `occurred_at` is a *day*: `+ Lisa · Muu` and `Kohtumine /
+#: arutelu` store the start of the Tallinn day the person named
+#: (`workspace._add_dated_entry_with_files`), because the form asks for a day
+#: and no hour.
+DAY_DATED_ENTRY_KINDS = frozenset({EntryKind.OTHER.value, EntryKind.MEETING.value})
+
+
+def entry_chronology_moment(entry: Any) -> datetime:
+    """Where an entry sorts in `Tegevused`.
+
+    A day-dated entry — one of ``DAY_DATED_ENTRY_KINDS`` stored at local
+    midnight — knows its day and not its hour, so it sorts where every other
+    row dated by day does: at the end of that day (`_end_of_day`), with the
+    moment it was saved breaking the tie. Keyed on its midnight it read below
+    everything else done that day, even below «Teema loodud» on the Teema it was
+    added to a minute later, and on its one closed line the owner did not find
+    it (owner's acceptance walk, 2026-10-19). Nothing stored changes: the day it
+    shows is the same day, and an entry with a real time keeps it.
+    """
+    if entry.kind in DAY_DATED_ENTRY_KINDS:
+        local = timezone.localtime(entry.occurred_at)
+        if local.time() == time.min:
+            return _end_of_day(local.date())
+    return entry.occurred_at
 
 
 #: What the chronology prints where a `Kaasamine` has no date of its own.
@@ -2408,6 +2461,12 @@ class _ChronologySources:
             )
 
         start = bound
+        # A day-dated entry's row is keyed at the end of its day
+        # (`entry_chronology_moment`), so — like a record's — it is at or after
+        # the bound exactly when its day is on or after the bound's day.
+        in_window = models.Q(occurred_at__gte=start) | models.Q(
+            kind__in=DAY_DATED_ENTRY_KINDS, occurred_at__gte=start_of_local_day(since)
+        )
         # What the rows at or after the bound are anchored on or assembled from.
         seed = (self.anchor_q & models.Q(occurred_at__gte=start)) | models.Q(
             event_type__in=RECORD_OPERATION_EVENT_TYPES, object_id__in=record_pks
@@ -2415,7 +2474,7 @@ class _ChronologySources:
         if self.entry_scope is not None:
             seed |= models.Q(
                 event_type=ChangeEventType.ENTRY_ADDED,
-                object_id__in=self.entry_scope.filter(occurred_at__gte=start).values("pk"),
+                object_id__in=self.entry_scope.filter(in_window).values("pk"),
             )
         operations = self.event_scope.filter(seed).exclude(operation_id=None).values("operation_id")
         wanted = self.event_scope.filter(
@@ -2436,7 +2495,7 @@ class _ChronologySources:
         if self.entry_scope is not None:
             entries = list(
                 self.entry_scope.filter(
-                    models.Q(occurred_at__gte=start)
+                    in_window
                     | models.Q(
                         pk__in=self.event_scope.filter(
                             event_type=ChangeEventType.ENTRY_ADDED, operation_id__in=operations
@@ -2575,7 +2634,7 @@ def _assemble_timeline(
         if operation is None:
             items.append(
                 TimelineItem(
-                    occurred_at=entry.occurred_at,
+                    occurred_at=entry_chronology_moment(entry),
                     created_at=entry.created_at,
                     sort_key=str(entry.id),
                     item_type=entry.kind,
@@ -2620,7 +2679,9 @@ def _assemble_timeline(
         items.append(
             TimelineItem(
                 occurred_at=(
-                    group.entry.occurred_at if group.entry is not None else ordered[0].occurred_at
+                    entry_chronology_moment(group.entry)
+                    if group.entry is not None
+                    else ordered[0].occurred_at
                 ),
                 created_at=anchor.created_at,
                 sort_key=str(anchor.id),

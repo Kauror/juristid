@@ -905,7 +905,10 @@ def test_operational_records_draw_no_point(specialist):
         period_end=ahead,
     )
 
-    assert _labels(matter, specialist) == []
+    # A note and a round draw nothing; the watched deadline is an event
+    # marker, never a stage (docs/adr/0172 §6).
+    assert _labels(matter, specialist) == ["Riigikogu arutelu"]
+    assert all(step.is_event for step in process_steps(matter=matter, user=specialist))
 
 
 def test_the_procedures_own_points_stay(specialist):

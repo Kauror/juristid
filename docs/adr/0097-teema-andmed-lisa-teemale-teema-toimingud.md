@@ -615,3 +615,7 @@ Every compact `LISA TEEMALE` form — `Alusta kaasamist`, `Lisa tagasiside`,
 as before, `Koja arvamus` — carries a save-once token: the same drawn form
 records once, a refused save spends nothing, and a deliberate repeat is the form
 opened again (owner decision D3; docs/adr/0167, amendment of 2026-10-17).
+
+## Amendment, 2026-10-19 — see docs/adr/0172
+
+The owner's acceptance fixes of 2026-10-19 amend this record: the amendment of 2026-10-15 — `Millal?` of `+ Lisa · Muu` starts at today's Tallinn day; a `Muu` sorts at the end of its day and its closed line carries its first words (0172 §4–§5).

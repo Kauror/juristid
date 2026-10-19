@@ -222,8 +222,22 @@ PHASE_CLOSED = 6
 #: makes it read beside the current phase rather than after every speculative
 #: one — the same unanchored rule `Arvamuse tähtaeg` follows, and for the same
 #: reason: a date this office is watching is not a step somebody else's
-#: procedure takes.
+#: procedure takes. Drawn again since the owner's decision of 2026-10-19, as an
+#: *event marker* (`EVENT_PHASES`), never as a stage.
 PHASE_WATCHED = 7
+#: A recorded `Töövõit` (owner, 2026-10-19). An event marker like the above.
+PHASE_VICTORY = 8
+
+#: The kinds that are **events, not legislative stages** (owner, 2026-10-19):
+#: drawn on the rail at their own dates, in their own shape and with their kind
+#: written out, and never folded onto a phase, made current or given a
+#: workflow state. `legal_process.matter_rail` draws them as `KIND_EVENT`.
+EVENT_PHASES = frozenset({PHASE_WATCHED, PHASE_VICTORY})
+
+#: The kind an event marker writes above its title.
+UPCOMING_DEADLINE_EVENT = "Eesolev tähtaeg"
+PASSED_DEADLINE_EVENT = "Tähtaeg"
+WORK_VICTORY_EVENT = "Töövõit"
 
 
 #: The three presentation states a column can be in, and the CSS modifier each
@@ -272,6 +286,15 @@ class ProcessStep:
     #: them against the application's own today before returning.
     state: str = STATE_REACHED
     reach: float = 1.0
+    #: An event marker's kind, written above its title (`EVENT_PHASES`):
+    #: «Eesolev tähtaeg», «Tähtaeg», «Töövõit». Empty for every other column.
+    event_label: str = ""
+    #: The record an event marker stands for, so two on one day stay two.
+    ref: str = ""
+
+    @property
+    def is_event(self) -> bool:
+        return self.phase in EVENT_PHASES
 
     @property
     def date_line(self) -> str:
@@ -533,6 +556,61 @@ def process_steps(
                 phase=PHASE_TRANSPOSITION,
                 # So its last day is never drawn as today (docs/adr/0123).
                 precision=record.date_precision,
+            )
+        )
+
+    # **Events, not stages** (owner, 2026-10-19; docs/adr/0131 §13 amendment).
+    #
+    # A watched `Oluline tähtaeg` and a `Töövõit` read in `Tegevused` and were on
+    # no timeline at all, so a file whose next real point was «isiklik põhjus
+    # 21.10» drew a rail with nothing on it between today and `Riigikogus`. They
+    # are drawn again, as event markers: their own title, their kind written out,
+    # their own date — the deadline's last day, the victory's — and placed by
+    # that date the way every unanchored dated point is (`matter_rail`). They
+    # change no phase, and no phase's state or order changes because of them.
+    #
+    # The same population `Tegevused` draws: an `ACTIVE` deadline (a cancelled or
+    # replaced one is history, in the chronology), passed or still ahead, and a
+    # victory with a period whose status is the visible one. Scoped by the page's
+    # one read (`facts`), so a restricted record draws no marker.
+    from app.intelligence.enums import WorkVictoryStatus
+
+    today_ = today or timezone.localdate()
+    for record in (*facts.upcoming_dates, *facts.past_dates):
+        if record.status != FactStatus.ACTIVE:
+            continue
+        if record.kind == ImportantDateKind.TRANSPOSITION_DEADLINE:
+            continue
+        steps.append(
+            ProcessStep(
+                label=record.title,
+                display=record.display_date,
+                detail="",
+                sort_on=record.period_end,
+                phase=PHASE_WATCHED,
+                precision=record.date_precision,
+                event_label=(
+                    PASSED_DEADLINE_EVENT if record.has_passed(today_) else UPCOMING_DEADLINE_EVENT
+                ),
+                ref=str(record.pk),
+            )
+        )
+    for victory in facts.work_victories:
+        if victory.status != WorkVictoryStatus.CONFIRMED or victory.period_date is None:
+            continue
+        steps.append(
+            ProcessStep(
+                label=victory.title,
+                display=victory.display_period,
+                detail="",
+                # A victory is what happened, so it sits where its period
+                # begins and reads as reached once that has begun: «2026»
+                # recorded in October is not a point still ahead.
+                sort_on=victory.period_date,
+                phase=PHASE_VICTORY,
+                precision=DatePrecision.EXACT,
+                event_label=WORK_VICTORY_EVENT,
+                ref=str(victory.pk),
             )
         )
 

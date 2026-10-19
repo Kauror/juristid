@@ -663,6 +663,11 @@ KIND_MILESTONE = "milestone"
 #: date, and a place they chose. Stored as an added `MatterTimelineStep`
 #: (docs/adr/0119).
 KIND_STEP = "step"
+#: An event on the file that is **not** a step of the procedure — a watched
+#: `Oluline tähtaeg`, a `Töövõit` (owner, 2026-10-19). Placed by its date like a
+#: milestone, drawn in its own shape with its kind written out, and never a
+#: phase: nothing about the stages reads it (`process_timeline.EVENT_PHASES`).
+KIND_EVENT = "event"
 
 #: The states that say a node has been reached — a phase that is current or
 #: recorded, a dated point behind us or today. One set for every kind, because
@@ -718,10 +723,16 @@ class RailStep:
     #: us. Decided for the whole rail at once by `_one_backbone`, never per item:
     #: an item does not know which neighbour the merge will give it.
     reach: float = 1.0
+    #: An event marker's kind, written above its title (`KIND_EVENT`).
+    event_label: str = ""
 
     @property
     def is_phase(self) -> bool:
         return self.kind == KIND_PHASE
+
+    @property
+    def is_event(self) -> bool:
+        return self.kind == KIND_EVENT
 
     @property
     def reach_percent(self) -> str:
@@ -999,15 +1010,26 @@ def matter_rail(
         folded = _fold_into_phase(steps, milestone)
         if folded:
             continue
-        step = RailStep(
-            key=f"milestone:{milestone.label}:{milestone.sort_on.isoformat()}",
-            label=milestone.label,
-            kind=KIND_MILESTONE,
-            state=milestone.state,
-            display_date=milestone.display,
-            sort_on=milestone.sort_on,
-            detail=milestone.detail,
-        )
+        if milestone.is_event:
+            step = RailStep(
+                key=f"event:{milestone.ref}",
+                label=milestone.label,
+                kind=KIND_EVENT,
+                state=milestone.state,
+                display_date=milestone.display,
+                sort_on=milestone.sort_on,
+                event_label=milestone.event_label,
+            )
+        else:
+            step = RailStep(
+                key=f"milestone:{milestone.label}:{milestone.sort_on.isoformat()}",
+                label=milestone.label,
+                kind=KIND_MILESTONE,
+                state=milestone.state,
+                display_date=milestone.display,
+                sort_on=milestone.sort_on,
+                detail=milestone.detail,
+            )
         # Recomputed rather than carried, because placing a dated point that has
         # already happened moves the current node one to the right.
         current = next(
@@ -1512,6 +1534,7 @@ def _slot_for(steps: list[RailStep], when: date, window: tuple[int, int], defaul
 #: Kept out of the query above on purpose: this module reads and never filters a
 #: population, so it has no `Q` of its own to export.
 __all__ = [
+    "KIND_EVENT",
     "KIND_MILESTONE",
     "KIND_PHASE",
     "KIND_STEP",

@@ -1218,6 +1218,75 @@
     });
   });
 
+  /* ---- «Muu»: `Millal?` says today when the form is opened ---------------
+   * A fresh `+ Lisa · Muu` form is drawn with today's day (owner, 2026-10-19),
+   * but the Teema page can stay open overnight: the day the server drew is
+   * then yesterday. So when a panel is opened — and when its day box takes
+   * focus — every box marked `data-today-default` that still holds what it was
+   * drawn with is set to today **in Tallinn**, whatever the computer's own
+   * zone. Its default moves with it, so the box does not read as unsaved input
+   * to the drafts carried across a swap. A day somebody typed or picked is
+   * never touched, and a refusal redisplays without the marker. Without
+   * scripting the server's day stands. */
+  function tallinnToday() {
+    try {
+      var parts = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Europe/Tallinn",
+        year: "numeric",
+        month: "numeric",
+        day: "numeric",
+      }).formatToParts(new Date());
+      var part = function (type) {
+        for (var i = 0; i < parts.length; i += 1) {
+          if (parts[i].type === type) {
+            return String(Number(parts[i].value));
+          }
+        }
+        return "";
+      };
+      var day = part("day");
+      var month = part("month");
+      var year = part("year");
+      return day && month && year ? day + "." + month + "." + year : "";
+    } catch (error) {
+      return "";
+    }
+  }
+
+  function renewTodayDefaults(scope) {
+    if (!scope || !scope.querySelectorAll) {
+      return;
+    }
+    var boxes = scope.matches && scope.matches("[data-today-default]")
+      ? [scope]
+      : scope.querySelectorAll("[data-today-default]");
+    var today = null;
+    Array.prototype.forEach.call(boxes, function (box) {
+      if (box.value !== box.defaultValue) {
+        return;
+      }
+      today = today === null ? tallinnToday() : today;
+      if (today && box.value !== today) {
+        box.defaultValue = today;
+        box.value = today;
+      }
+    });
+  }
+
+  document.addEventListener("change", function (event) {
+    var pick = event.target;
+    if (pick && pick.matches && pick.matches("input[data-addpick]") && pick.checked) {
+      renewTodayDefaults(document.getElementById(pick.getAttribute("aria-controls") || ""));
+    }
+  });
+
+  document.addEventListener("focusin", function (event) {
+    var box = event.target;
+    if (box && box.matches && box.matches("[data-today-default]")) {
+      renewTodayDefaults(box);
+    }
+  });
+
   /* ---- Uus teema: say which files are about to be uploaded --------------
    * A file input shows "3 files" and nothing about which three. This lists
    * them before saving, with the size and a way to take one back off, so a

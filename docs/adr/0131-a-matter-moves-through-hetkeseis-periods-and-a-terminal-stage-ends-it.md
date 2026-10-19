@@ -416,3 +416,7 @@ Measured on a synthetic Matter in one period pair, on a disposable PostgreSQL 18
 The pager's fixed cost makes the bounded read slower below about 250 rows. Its
 HTML stays about the same size at any length, which is what every save
 re-renders.
+
+## Amendment, 2026-10-19 — see docs/adr/0172
+
+The owner's acceptance fixes of 2026-10-19 amend this record: §13 — a watched `Oluline tähtaeg` and a `Töövõit` are drawn on `Menetluse kulg` again, as event markers (`KIND_EVENT`), never as stages (0172 §6).
