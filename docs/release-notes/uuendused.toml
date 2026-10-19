@@ -19,7 +19,8 @@ prs = [453, 454, 455, 456, 457, 459, 461, 463, 464, 465, 468, 470, 474, 480, 482
 # (#457–#497; integration/hardening-r1 ja main). Väljalase ei jõudnud tootmisse
 # 17.10 ega 18.10, nii et kõik on üks kirje planeeritud väljalaske päeval 19.10.
 # Kui väljalase ei jõua tootmisse 19.10 (Tallinna aja järgi), liigub see kirje
-# väljalaske päeva kuupäevale.
+# väljalaske päeva kuupäevale. Samal päeval omaniku vastuvõtutesti kuus parandust
+# (ADR 0172, migratsioonideta).
 changes = [
   "«Alusta kaasamist» kalendris «Tagasisidet ootame kuni» on märgitud teema arvamuse tähtaeg.",
   "«+ Lisa» all on uus valik «Muu» taustamaterjali lisamiseks koos kirjelduse, toimumise kuupäeva ning soovi korral lingi ja failidega.",
@@ -27,7 +28,7 @@ changes = [
   "Mujal avaldatud seisukohal on organisatsioon kohustuslik, Kojale saadetud tagasisidel mitte, ja kummalegi piisab tekstist, lingist või failist.",
   "Tagasisidet ei seota enam kaasamisega automaatselt; esimene sellega seotud vastus lõpetab ootuse, mujal avaldatud seisukoht kaasamist ei muuda.",
   "«+ Arvamus / tagasiside» on nüüd «+ Koja arvamus / kohtumine», kus saab salvestada ka kohtumise või arutelu kuupäeva, lühikokkuvõtte ja failidega.",
-  "«Muu» ja «Kohtumine / arutelu» kuupäev ei saa olla tulevikus; plaanitu jaoks on «Järgmine tegevus» või «Oluline tähtaeg».",
+  "«Muu» ja «Kohtumine / arutelu» kuupäev ei saa olla tulevikus; plaanitu jaoks on «+ Lisa tegevus» või «Oluline tähtaeg».",
   "Kuupäev peab jääma aastatesse 1990–2100. Kui varem salvestatud kuupäev on sellest väljas, tuleb see muutmisel parandada.",
   "Kui salvestamine keeldus, nimetab vorm failid, mis tuleb uuesti valida.",
   "Iga vorm salvestatakse üks kord: topeltklõps ega korduv vajutus ei lisa sama kirjet teist korda.",
@@ -37,6 +38,11 @@ changes = [
   "Klaviatuuriga: kuupäevavalijas liiguvad nooleklahvid päevade vahel, «Minu asjades» ei jää Tab enam ridade vahele kinni ja keeldumise järel liigub kursor väljale, mida tuleb parandada.",
   "«Lisa tagasiside» küsib nüüd kõigepealt, kas seisukoht saadeti Kojale või avaldati mujal, ja alles siis organisatsiooni.",
   "«Minu asjad» näitab kuni 200 ja «Osakond» ühes vahemikus kuni 100 rida. Kui teemasid on rohkem, avab link kõik need teemad registris.",
+  "Kui teemal on kaasamine (ka «Ootame tagasisidet» ajal ja pärast seda), ei paku «Järgmisena» enam «Koosta kodulehe ülevaade», vaid järgmist sobivat sammu.",
+  "Teema ajaloo jaotise nimi on kõikjal «Tegevused», ka «Kõik muudatused» lehel ning eemaldamise ja tagasivõtmise kinnitustes.",
+  "«+ Lisa» → «Muu» väljal «Millal?» on vaikimisi tänane kuupäev; varasema päeva saab valida nagu enne.",
+  "Salvestatud «Muu» kirje on «Tegevustes» oma päeva eesotsas ja suletud real on näha kirjelduse algus.",
+  "«Menetluse kulul» on nüüd ka olulised tähtajad ja töövõidud — eraldi sündmustena, mitte menetluse etappidena.",
 ]
 
 [[day]]
@@ -54,7 +60,7 @@ changes = [
   "Kaasamisele saab lisada ka hilisemaid vastuseid pärast esimest; varasemad vastused jäävad alles ja kogu tagasiside on otsingus leitav.",
   "Soovitust «Koonda tagasiside ja kujunda Koja seisukoht» enam ei pakuta.",
   "Kui Koja ettepanek saadetakse hiljem, märgitakse selle tähtaeg vastatuks, nagu kohe saadetud ettepanekul.",
-  "Arvamuse tagasivõtmisel tuleb alati kirjutada põhjus; põhjus on näha teema käigus. Tagasivõtmine ei ava suletud teemat uuesti.",
+  "Arvamuse tagasivõtmisel tuleb alati kirjutada põhjus; põhjus on näha jaotises «Tegevused». Tagasivõtmine ei ava suletud teemat uuesti.",
   "Teema sulgemine küsib uuesti kinnitust, kui keegi lisas vahepeal uut tööd; kustutatud kaasamisi ja ülevaateid enam pooleliolevaks ei loeta.",
   "Taasavatud teemal saab katkenud järelkontrolli uuesti planeerida nupuga «Planeeri järelkontroll».",
   "Kui kolleeg muutis vahepeal vastutajat või saabumise kuupäeva, ei kirjuta vanas aknas tehtud valik seda enam üle.",

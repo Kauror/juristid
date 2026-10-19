@@ -12,7 +12,7 @@ chooses the files again or says to save without them (docs/adr/0107, amendment
 of 2026-10-18).
 
 Every door that takes files is covered by one script. These three are the ones
-a refusal is most likely on: `Muu` and `Kohtumine` start with an empty day, and
+a refusal is most likely on: `Kohtumine` starts with an empty day (`Muu` a cleared one), and
 `Lisa tagasiside` has a required provenance with no default.
 
 State is read off the page only (e2e/conftest.py).
@@ -69,6 +69,8 @@ class Door:
 
 def _muu_fill(form) -> None:
     form.locator('[name="description"]').fill("Muu materjal, mille fail pidi kaasa tulema.")
+    # `Millal?` opens at today since docs/adr/0172 §4; the refused answer is a cleared day.
+    form.locator('[name="occurred_on"]').fill("")
 
 
 def _muu_fix(form) -> None:

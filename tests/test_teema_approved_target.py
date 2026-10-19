@@ -867,7 +867,13 @@ def test_an_important_date_draws_a_milestone_only_while_it_is_ahead(
             created_by=specialist,
         )
 
-    assert [step.label for step in process_steps(matter=normal_matter, user=specialist)] == []
+    # **Since docs/adr/0172 §6** both are on the rail again, as event markers
+    # beside the stages: «Eesolev tähtaeg» ahead, «Tähtaeg» once passed.
+    steps = process_steps(matter=normal_matter, user=specialist)
+    assert {step.label: step.event_label for step in steps if step.is_event} == {
+        "Tulevane tähtaeg": "Eesolev tähtaeg",
+        "Möödunud tähtaeg": "Tähtaeg",
+    }
 
     body = _detail(signed_in, normal_matter)
     # Not deleted, and both read in the chronology: the one that has happened
@@ -2033,7 +2039,9 @@ def test_the_ajajoon_head_carries_only_the_label_and_the_count(signed_in, normal
     # head used to carry — and that is unchanged; only the label is the lawyers'
     # own word for the section now. The id is deliberately still `ajajoon`,
     # because it is what a shared link addresses.
-    assert "Teema käik" in head
+    # `Tegevused` since docs/adr/0140 §7, and nowhere «Teema käik» (0172 §2).
+    assert "Tegevused" in head
+    assert "Teema käik" not in head
     assert "kirjet" in head
     assert "uxtl__preview" not in head
     assert "timelinefilter" not in body
@@ -2158,12 +2166,15 @@ def test_a_dated_fact_reaches_the_chronology_only_once_it_has_happened(
     chronology = body[body.index('id="ajalugu-loend"') :]
     strip = _strip(body)
 
-    assert "Riigikogu I lugemine" not in strip
+    # On the rail as events since docs/adr/0172 §6 — named, and marked as
+    # what they are — never as stages.
+    assert "Riigikogu I lugemine" in strip
+    assert '<span class="tl-step__type">Eesolev tähtaeg</span>' in strip
+    assert '<span class="tl-step__type">Tähtaeg</span>' in strip
     assert "Riigikogu I lugemine" in chronology
     # And it is marked as still ahead rather than read as something that
     # happened, which is the distinction this test was written to protect.
     assert "Eesolev tähtaeg" in chronology
-    assert "Kooskõlastusring" not in strip
     assert "Kooskõlastusring" in chronology
 
 

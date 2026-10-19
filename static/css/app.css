@@ -11764,6 +11764,35 @@ section:has(.pw-more[open]) tbody.uxextra {
   font-style: italic;
 }
 
+/* An event on the file — a watched deadline, a `Töövõit` — is not a step of the
+ * procedure (owner, 2026-10-19). Three things say so, none of them colour: the
+ * dot is a diamond, the kind is written above the title, and the title is the
+ * record's own words at the body weight. The column is capped so a long title
+ * wraps between its words instead of widening the rail, and it never clips:
+ * what a marker says is read without a mouse. */
+#teema-vaade-wrap .tl-step--event {
+  max-width: 11rem;
+}
+
+#teema-vaade-wrap .tl-step--event .tl-step__dot {
+  border-radius: 1px;
+  transform: rotate(45deg) scale(0.85);
+}
+
+#teema-vaade-wrap .tl-step__type {
+  font-size: 10.5px;
+  font-weight: var(--typography-weight-semibold);
+  line-height: 1.2;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+#teema-vaade-wrap .tl-step--event .tl-step__what {
+  font-weight: var(--typography-weight-regular);
+  overflow-wrap: break-word;
+}
+
 /* **No column is narrower than its own longest word, and the strip scrolls
  * itself when that does not fit.**
  *

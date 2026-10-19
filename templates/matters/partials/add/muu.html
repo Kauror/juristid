@@ -5,8 +5,10 @@
 
     One `Entry(kind=OTHER)`: `Kirjeldus` and `Millal?` are required, `Link` and
     `Failid` optional. `Millal?` is the day the material or event occurred — the
-    chronology places the row on that day — and it starts **empty**: a day is
-    stated, never pre-filled or invented. No task, stage, plan or wait follows.
+    chronology places the row on that day — and a fresh form says **today**
+    (owner, 2026-10-19; `CompactOtherForm`), renewed by `app.js` when the panel
+    is opened on a later day than the page was drawn. No task, stage, plan or
+    wait follows.
   {% endcomment %}
       {% if open_choice == "marge-muu" and workspace_error %}
         <p class="formerror" role="alert">{{ workspace_error }}</p>

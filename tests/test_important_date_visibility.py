@@ -61,11 +61,19 @@ def _chronology(matter, specialist):
     return items
 
 
-def test_a_future_deadline_draws_no_column(normal_matter, specialist):
-    """A watched deadline reads in the chronology, not on the rail (docs/adr/0131 §13)."""
+def test_a_future_deadline_draws_an_event_marker(normal_matter, specialist):
+    """On the rail as an event, not a stage (owner, 2026-10-19; docs/adr/0172 §6).
+
+    docs/adr/0131 §13 had taken it off; the owner wants a file's dated events on
+    its timeline, named by their own title and marked as what they are.
+    """
     _record(normal_matter, when=datetime.date.today() + datetime.timedelta(days=60))
 
-    assert TITLE not in _labels(normal_matter, specialist)
+    marker = next(
+        step for step in process_steps(matter=normal_matter, user=specialist) if step.label == TITLE
+    )
+    assert marker.is_event
+    assert marker.event_label == "Eesolev tähtaeg"
 
 
 def test_a_future_deadline_reads_in_the_chronology_as_still_ahead(normal_matter, specialist):
@@ -96,15 +104,19 @@ def test_a_deadline_beyond_every_horizon_is_still_on_its_own_matter(normal_matte
     )
 
 
-def test_a_passed_deadline_still_reads_as_history_and_draws_no_column(normal_matter, specialist):
-    """docs/adr/0074 §12.1 left standing where it was right.
+def test_a_passed_deadline_reads_as_history_and_stays_an_event(normal_matter, specialist):
+    """A passed deadline is still a dated event on the file (docs/adr/0172 §6).
 
-    A deadline that has arrived is a chronology row already; drawing a roadmap
-    column for it too is the duplication that decision removed.
+    It reads in the chronology as history, and on the rail as «Tähtaeg» rather
+    than «Eesolev tähtaeg» — at its own day, behind today.
     """
     _record(normal_matter, when=datetime.date.today() - datetime.timedelta(days=10))
 
-    assert TITLE not in _labels(normal_matter, specialist)
+    marker = next(
+        step for step in process_steps(matter=normal_matter, user=specialist) if step.label == TITLE
+    )
+    assert marker.is_event
+    assert marker.event_label == "Tähtaeg"
     rows = [
         item
         for item in _chronology(normal_matter, specialist)

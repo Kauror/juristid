@@ -166,6 +166,8 @@ def test_muu_without_a_day_focuses_the_day_not_the_description(page, matter):
     open_add_panel(page, "marge-muu")
     form = _muu(page)
     form.locator("[name=description]").fill("Materjal, mille päev on puudu.")
+    # The box opens at today (docs/adr/0172 §4); a person who clears it is refused.
+    form.locator("[name=occurred_on]").fill("")
     _save(page, form, MUU)
 
     form = _muu(page)

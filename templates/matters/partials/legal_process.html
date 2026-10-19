@@ -103,6 +103,15 @@ nothing at all.
               {% if step.state == "current" %}aria-current="step"{% endif %}
               {% if step.detail %} title="{{ step.detail }}"{% endif %}>
           <span class="tl-step__dot" aria-hidden="true"></span>
+          {% comment %}
+            **An event, not a stage** (owner, 2026-10-19): a watched deadline or a
+            `Töövõit` says what kind of thing it is in words, above its own
+            title — and its dot is a diamond — so it reads apart from the
+            procedure's steps without colour (`KIND_EVENT`).
+          {% endcomment %}
+          {% if step.is_event %}
+            <span class="tl-step__type">{{ step.event_label }}</span>
+          {% endif %}
           <span class="tl-step__what">{{ step.label }}</span>
           {% comment %}
             Never colour alone. A column still ahead says so to a screen reader

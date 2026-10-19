@@ -297,6 +297,7 @@ from app.matters.timeline import (
     development_milestone,
     engagement_milestone,
     entry_completes_a_step,
+    entry_gist,
     entry_plain_text,
     external_position_milestone,
     matter_timeline,
@@ -6640,6 +6641,11 @@ def _entry_row(
             # one that meant to clear it.
             "entry_edit_swap_marker": True,
             "entry_read_query": ENTRY_READ_QUERY,
+            # A `Muu` row's closed line carries its first words
+            # (timeline_items.html), so a correction renews them too.
+            "entry_gist": (
+                entry_gist(entry) if form is None and entry.kind == EntryKind.OTHER else None
+            ),
             # A completion row's headline is this note (timeline_items.html).
             "entry_done_text": (
                 entry_plain_text(entry) if form is None and entry_completes_a_step(entry) else None
@@ -8934,6 +8940,9 @@ def _timeline_steps_form(
         milestones=process_steps(matter=matter, user=request.user),
         step_rows=step_rows,
     )
+    # An event marker is placed by its own date and may be removed or moved
+    # with its record, so it is never offered as the place an added step goes.
+    drawn = [step for step in drawn if not step.is_event]
     placed_after = {
         step.key: (drawn[index - 1].key if index else "")
         for index, step in enumerate(drawn)

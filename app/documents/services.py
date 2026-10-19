@@ -91,7 +91,7 @@ UPLOAD_ROLES_NOT_OFFERED: frozenset[str] = frozenset({DocumentRole.OUTCOME_EVIDE
 SENT_OPINION_EVIDENCE = (
     "See fail on saadetud Koja arvamuse tõend: just see fail läks välja ja jääb "
     "arvamuse juurde. Kui arvamus saadeti ekslikult või vale failiga, võta arvamus "
-    "kõigepealt tagasi (Teema käik → arvamuse rida → Võta tagasi); õige arvamus "
+    "kõigepealt tagasi (Tegevused → arvamuse rida → Võta tagasi); õige arvamus "
     "registreeritakse uuena."
 )
 #: A superseded opinion's letter, or the chosen text of one still being prepared.
@@ -111,7 +111,7 @@ DOCUMENT_UNDER_LEGAL_HOLD = "Dokumendile on seatud säilitamiskohustus, seega ei
 #: its words or its address first, then the file may go.
 DOCUMENT_IS_LAST_POSITION_SOURCE = (
     "See fail on tagasiside või seisukoha ainus allikas: kirjel ei ole teksti ega "
-    "linki. Kirjuta kirjele enne seisukoht või lisa link (Teema käik → kirje → "
+    "linki. Kirjuta kirjele enne seisukoht või lisa link (Tegevused → kirje → "
     "Muuda); siis saab faili eemaldada."
 )
 DOCUMENT_ROLE_NOT_OFFERED = "Seda liiki ei saa dokumendile valida."

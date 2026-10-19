@@ -371,7 +371,7 @@ def test_a_mistaken_marge_can_be_taken_off_the_file(page, base_url):
     open_kaik_row(row)
     row.get_by_text("Kustuta", exact=True).click()
     # The confirmation names what is going and offers a way out.
-    page.wait_for_selector("text=Eemaldan selle märke teema käigust")
+    page.wait_for_selector("text=Eemaldan selle märke jaotisest «Tegevused»")
     row.get_by_role("button", name="Eemalda", exact=True).click()
     page.wait_for_timeout(800)
 
@@ -392,7 +392,7 @@ def test_the_confirmation_can_be_left_without_removing_anything(page, base_url):
     row = page.locator("#ajalugu-loend .uxtl__item", has_text="See märge jääb alles").first
     open_kaik_row(row)
     row.get_by_text("Kustuta", exact=True).click()
-    page.wait_for_selector("text=Eemaldan selle märke teema käigust")
+    page.wait_for_selector("text=Eemaldan selle märke jaotisest «Tegevused»")
     row.get_by_role("button", name="Loobu", exact=True).click()
     page.wait_for_timeout(300)
 

@@ -375,5 +375,6 @@ def test_i_a_kaasamine_save_fulfils_no_step(signed_in, planned):
     assert _step(planned, THIRD).state == PlanStepState.SUGGESTED
     # Nothing is written, but the suggestion reads the record since docs/adr/0144
     # §2: a consultation proves the material was read and the members invited,
-    # so the first step still unproven is the overview.
-    assert _suggested(_detail(signed_in, planned)) == SECOND
+    # and it puts the overview behind the file (owner, 2026-10-19), so the
+    # next suggestion is the opinion.
+    assert _suggested(_detail(signed_in, planned)) == FIFTH

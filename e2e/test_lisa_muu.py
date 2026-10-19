@@ -2,8 +2,8 @@
 
 The fifth `+ Lisa` choice opens from the keyboard, refuses a save without a
 description while keeping what was typed, and saves a description, a stated past
-day (`Millal?`, empty until filled), a link and two files as one «Muu» row in
-`Teema käik` — dated and ordered by that day, the link named by its host, the
+day (`Millal?`, today until changed — owner, 2026-10-19), a link and two files
+as one «Muu» row in `Tegevused` — dated and ordered by that day, the link named by its host, the
 files linked — with the files under `Dokumendid`. Nothing about the Matter's work
 changes: `PRAEGUNE TEGEVUS` reads as it did. Its `Muuda` corrects the link.
 
@@ -62,19 +62,21 @@ def test_muu_opens_from_the_keyboard_and_saves_a_supporting_entry(page, base_url
         "placeholder", "Kirjelda, mida lisad ja miks see on teema jaoks oluline."
     )
 
+    # `Millal?` opens at today (owner, 2026-10-19).
+    expect(form.locator('[name="occurred_on"]')).to_have_value(_et(date.today()))
+
     # A link without a description: the server refuses it in Estonian under
     # the box (no browser bubble, as on every other panel), and what was typed
-    # stays in the form.
+    # stays in the form — the day included.
     form.locator('[name="url"]').fill("https://www.example.ee/taust")
     assert _save(page, form) == 400
     form = page.locator("#marge-muu form")
     expect(form).to_contain_text("Kirjelda, mida lisad.")
-    expect(form).to_contain_text("Sisesta, millal see toimus.")
     expect(form.locator('[name="url"]')).to_have_value("https://www.example.ee/taust")
-
-    # The real save: description, a past day, link, two files. `Millal?` starts empty.
     millal = form.locator('[name="occurred_on"]')
-    expect(millal).to_have_value("")
+    expect(millal).to_have_value(_et(date.today()))
+
+    # The real save: description, a past day, link, two files.
     past = date.today() - timedelta(days=20)
     millal.fill(_et(past))
     form.locator('[name="description"]').fill("Ministeeriumi taustaanalüüs eelnõu kohta.")

@@ -111,7 +111,7 @@ here and everything older comes from `timeline_page` when somebody asks for it.
             <div class="uxtl kaikstage__body">
               {% include "matters/partials/timeline_items.html" with timeline_items=group.items timeline_has_more=False matter=matter timeline_only=timeline_only stage_group=group %}
               {% if group.partial %}
-                <p class="uxtl__audit"><a class="quietlink" href="?{{ timeline_history_param }}=koik#ajajoon">Selle perioodi varasemad kirjed: näita kogu käik</a></p>
+                <p class="uxtl__audit"><a class="quietlink" href="?{{ timeline_history_param }}=koik#ajajoon">Selle perioodi varasemad kirjed: näita kõik tegevused</a></p>
               {% endif %}
             </div>
           </details>
@@ -124,7 +124,7 @@ here and everything older comes from `timeline_page` when somebody asks for it.
           grouping is the same, only nothing is left out.
         {% endcomment %}
         {% if timeline_groups_more %}
-          <p class="uxtl__audit"><a class="button button--quiet button--tiny" href="?{{ timeline_history_param }}=koik#ajajoon">Näita kogu käik</a></p>
+          <p class="uxtl__audit"><a class="button button--quiet button--tiny" href="?{{ timeline_history_param }}=koik#ajajoon">Näita kõik tegevused</a></p>
         {% endif %}
     {% else %}
         {% include "matters/partials/timeline_items.html" with timeline_items=timeline_items timeline_has_more=timeline_has_more next_offset=30 matter=matter timeline_only=timeline_only %}

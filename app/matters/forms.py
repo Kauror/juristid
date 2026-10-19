@@ -4899,11 +4899,16 @@ class CompactOtherForm(forms.Form):
       relates to the Teema. It is the record's body: an `Entry` cannot be stored
       without one, and a link or a file with no word on why it is on the file is
       the unexplained attachment this form exists to avoid.
-    * `Millal?` — **required**, one day, **no default**. When the material or
-      event occurred: `Entry.occurred_at` means when the work happened, not when
-      it was typed, so the chronology places the row on this day. Nothing is
-      pre-filled and nothing is invented: an empty box is refused, and so is a
-      day after today — what is planned is not yet material on the file.
+    * `Millal?` — **required**, one day, **today by default** (owner,
+      2026-10-19). When the material or event occurred: `Entry.occurred_at`
+      means when the work happened, not when it was typed, so the chronology
+      places the row on this day. `Muu` almost always records something that
+      happened or is happening now, so a fresh form says today's Tallinn day
+      and the person changes it for an earlier one; the page renews it when
+      the panel is opened on a later day than it was drawn
+      (`data-today-default`, `static/js/app.js`). A redisplayed refusal keeps
+      what was typed. An empty box is still refused, and so is a day after
+      today — what is planned is not yet material on the file.
     * `Link` — optional, the shared web-address rule (`normalize_entry_url`).
     * `Failid` — optional, the canonical evidence pipeline.
 
@@ -4939,6 +4944,11 @@ class CompactOtherForm(forms.Form):
         # Its own ids: `+ Ülevaade / uudis` already draws `id_url` on this page.
         kwargs.setdefault("auto_id", "id_muu_%s")
         super().__init__(*args, **kwargs)
+        if not self.is_bound:
+            # A fresh form only: a bound one is a refusal redisplayed, and what
+            # the person typed — an earlier day — is theirs to correct.
+            self.initial.setdefault("occurred_on", timezone.localdate())
+            self.fields["occurred_on"].widget.attrs["data-today-default"] = "true"
 
     def clean_description(self) -> str:
         from app.core.richtext import sanitize_entry_html

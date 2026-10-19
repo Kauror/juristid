@@ -4,7 +4,8 @@ One `Entry(kind=OTHER)`: a required `Kirjeldus` and `Millal?`, an optional `Link
 in the entry's own `url` column, and files through the canonical evidence
 pipeline — saved together or not at all. `Millal?` is the day the material or
 event occurred: `occurred_at` is the start of that local day, so the chronology
-shows and orders the row there; no day is pre-filled or invented. It creates no
+shows the row there and orders it at the end of that day; a fresh form says
+today (docs/adr/0172 §4–§5). It creates no
 task, moves no stage or plan, opens no wait and is never a Koja arvamus. Its link
 and description are corrected through `edit_entry`, whose revision keeps both
 earlier values. A link is an `OTHER` entry's only — service and constraint. The
@@ -142,13 +143,16 @@ def test_millal_is_required_and_no_day_is_invented(signed_in, specialist):
     assert not _others(matter).exists()
 
 
-def test_the_millal_box_starts_empty(signed_in, specialist):
+def test_the_millal_box_starts_at_today(signed_in, specialist):
+    """Today's Tallinn day since the owner's decision of 2026-10-19 (docs/adr/0172 §4)."""
+    from app.core.dates import format_estonian_date
+
     matter = factories.MatterFactory(owner=specialist)
 
     page = _page(signed_in, matter)
 
     box = re.search(r'<input[^>]*id="id_muu_occurred_on"[^>]*>', page).group(0)
-    assert 'value=""' in box or "value=" not in box
+    assert f'value="{format_estonian_date(timezone.localdate())}"' in box
     assert "data-datepicker" in box
 
 
