@@ -287,6 +287,28 @@ exactly the role `ENTRY_ADDED` already plays for a note.
 the same save finished (`✓ Tehtud <step>`). Grouping is still `operation_id`
 and nothing else.
 
+**Amended 2026-10-19 — one row per import of historical files.** An importer
+stores a dossier's files with one `EVIDENCE_VERSION_ADDED` each, no actor, no
+operation, stamped with the import's moment — which is true. A file that
+supports a record already reads on that record's row (§5); the rest drew
+«lisas dokumendi · <import day>» once per file at the top of a Teema whose
+history runs back years, as if a person had added a document that day (the
+evidence pilot's isolated rehearsal showed ten such rows on four Teemad).
+
+They are now one row per import: `Ajaloolised dokumendid imporditud`, the
+import's day, `N faili · OneNote: <sektsioon> → <leht>`, and every file under it
+linked to its exact bytes. The grouping identifier is one the import recorded,
+never an inference: the version is the imported copy of a legacy source resource
+(`LegacySourceResourceImport`, which only importers write), and the group is
+that row's `import_batch` — or its source page where no batch was recorded. A
+person's upload has an actor and keeps its own «lisas dokumendi» row. Nothing
+is hidden, no stored date or audit row changes, the files keep their own
+provenance, and visibility is unchanged: the events are scoped before grouping
+(§7), so a file a reader may not see is neither counted nor linked. The
+pagination reads one import's events whole, as it reads an operation whole, so
+a page boundary never shows half of one (app/matters/timeline.py
+`HISTORICAL_IMPORT_ITEM`).
+
 The stage clause is the stage-change event's own summary, which is the stage's
 label at the time it was recorded. It is **not** read off `Matter.stage`: that is
 where the file stands *now*, which is a different claim from what this act did to
