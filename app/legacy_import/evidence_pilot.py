@@ -13,8 +13,9 @@ expected commencement, and every original file (docs/adr/0173).
 every service it calls writes its ordinary change event, stamped with the moment
 of the import and with no actor, and a business date lives where the domain
 keeps it (`sent_at`, `occurred_on`, `stated_on`, `published_on`). It invents no
-stage history, no closure, no follow-up check, no organisation and no person. A
-record the package marks `NEEDS_REVIEW` is not written; the plan lists it.
+stage history, no closure, no follow-up check and no person, and no organisation
+except one the package carries as a reviewed APPROVED entry (§6). A record the
+package marks `NEEDS_REVIEW` or `REJECTED` is not written; the plan lists it.
 
 **What says "imported".** `EvidencePilotRecord`: one row per record written,
 naming the package digest, the record's key and the evidence it rests on.
@@ -44,7 +45,7 @@ from django.utils import timezone
 from app.legacy_import.onenote_archive import ArchiveError, ArchivePage, OneNoteArchive
 
 PILOT = "evidence-pilot"
-PILOT_VERSION = "1.0"
+PILOT_VERSION = "1.1"
 PACKAGE_FORMAT = "juristid.evidence-pilot"
 PACKAGE_FORMAT_VERSION = 1
 PACKAGE_FILE = "package.json"
@@ -57,10 +58,17 @@ SOURCE_SYSTEM = "ONENOTE_DESKTOP+PACKAGE"
 
 READY = "READY"
 NEEDS_REVIEW = "NEEDS_REVIEW"
-REVIEW_STATES = frozenset({READY, NEEDS_REVIEW})
+#: Reviewed and decided against for import: kept in the package with its
+#: reason, never written. Different from NEEDS_REVIEW, which still waits.
+REJECTED = "REJECTED"
+REVIEW_STATES = frozenset({READY, NEEDS_REVIEW, REJECTED})
 
 #: Package precision → the domain's. A month stays a month (docs/adr/0079).
-PRECISION = {"DAY": "EXACT", "MONTH": "MONTH", "YEAR": "YEAR"}
+PRECISION = {"DAY": "EXACT", "MONTH": "MONTH", "QUARTER": "QUARTER", "YEAR": "YEAR"}
+
+#: An organisation entry the package asks the import to create is the owner's
+#: reviewed decision (APPROVED) or still waiting for one (PROPOSED).
+ORGANISATION_STATUSES = frozenset({"APPROVED", "PROPOSED"})
 
 T_DEVELOPMENT = "ProceduralDevelopment"
 T_ENGAGEMENT = "MatterEngagement"
@@ -72,6 +80,10 @@ T_NEWS = "MatterWebsiteOverview.NEWS"
 T_NOTE = "Entry.NOTE"
 T_MEETING = "Entry.MEETING"
 T_EFFECTIVE_DATE = "MatterEffectiveDate"
+T_IMPORTANT_DATE = "MatterImportantDate"
+#: Targets whose date is when something is *planned* to happen, so a date after
+#: the snapshot is ordinary rather than a newer fact.
+PROSPECTIVE_TARGETS = frozenset({"MatterEffectiveDate", "MatterImportantDate"})
 WRITABLE_TARGETS = frozenset(
     {
         T_DEVELOPMENT,
@@ -84,6 +96,7 @@ WRITABLE_TARGETS = frozenset(
         T_NOTE,
         T_MEETING,
         T_EFFECTIVE_DATE,
+        T_IMPORTANT_DATE,
     }
 )
 #: Targets a package may carry for the owner but the pilot never writes.
@@ -138,7 +151,7 @@ def _day(raw: Any) -> dt.date | None:
 
 
 def _anchor(raw: Any, precision: str) -> dt.date | None:
-    """A period's first day from `YYYY-MM-DD`, `YYYY-MM` or `YYYY`, as precision says."""
+    """A period's first day from `YYYY-MM-DD`, `YYYY-MM`, `YYYY-Qn` or `YYYY`, as precision says."""
     text = str(raw or "")
     try:
         if precision == "DAY":
@@ -146,6 +159,11 @@ def _anchor(raw: Any, precision: str) -> dt.date | None:
         if precision == "MONTH":
             year, month = text[:7].split("-")
             return dt.date(int(year), int(month), 1)
+        if precision == "QUARTER":
+            year, quarter = text.split("-Q")
+            if quarter not in {"1", "2", "3", "4"}:
+                return None
+            return dt.date(int(year), 3 * int(quarter) - 2, 1)
         if precision == "YEAR":
             return dt.date(int(text[:4]), 1, 1)
     except ValueError:
@@ -238,6 +256,8 @@ def validate_package(package: dict[str, Any], archive: OneNoteArchive) -> Valida
     if expected.get("topics") is not None and expected["topics"] != len(topics):
         problems.append(f"expected {expected['topics']} topics, the package holds {len(topics)}.")
 
+    problems.extend(_organisation_problems(package.get("organisations") or []))
+
     stage_labels = set(RAW_LABEL_TO_STAGE) | set(CURRENT_LABEL_TO_STAGE)
     roles = set(DocumentRole.values)
     references: set[str] = set()
@@ -269,7 +289,9 @@ def validate_package(package: dict[str, Any], archive: OneNoteArchive) -> Valida
             if step.get("target_date") and _day(step["target_date"]) is None:
                 problems.append(f"{ref}: next_action.target_date is not a date.")
             if step.get("review") not in REVIEW_STATES:
-                problems.append(f"{ref}: next_action.review must be READY or NEEDS_REVIEW.")
+                problems.append(
+                    f"{ref}: next_action.review must be READY, NEEDS_REVIEW or REJECTED."
+                )
 
         source = topic.get("source_page") or {}
         page, resources = _topic_resources(archive, source.get("page_key", ""))
@@ -281,9 +303,27 @@ def validate_package(package: dict[str, Any], archive: OneNoteArchive) -> Valida
         use = accounting.use
 
         engagement_keys: dict[str, bool] = {}
+        #: READY positions that carry their own files, which a joint letter's
+        #: other signatories may share (`shared_documents_from`).
+        position_files: dict[str, bool] = {}
+        submissions: dict[str, bool] = {}
         for record in topic.get("records") or []:
             if record.get("target") == T_ENGAGEMENT:
                 engagement_keys[record.get("key", "")] = record.get("review") == READY
+            if record.get("target") in {T_POSITION_RECEIVED, T_POSITION_DISCOVERED}:
+                position_files[record.get("key", "")] = record.get("review") == READY and bool(
+                    record.get("documents")
+                )
+            if record.get("target") == T_SUBMISSION:
+                submissions[record.get("key", "")] = record.get("review") == READY
+        answered_by = topic.get("answered_by")
+        if answered_by:
+            if not submissions.get(answered_by):
+                problems.append(
+                    f"{ref}: answered_by {answered_by!r} is not a READY sent opinion of this topic."
+                )
+            if not topic.get("response_deadline"):
+                problems.append(f"{ref}: answered_by needs a response_deadline to answer.")
 
         for record in topic.get("records") or []:
             key = record.get("key", "")
@@ -296,10 +336,14 @@ def validate_package(package: dict[str, Any], archive: OneNoteArchive) -> Valida
             target = record.get("target")
             review = record.get("review")
             if review not in REVIEW_STATES:
-                problems.append(f"{key}: review must be READY or NEEDS_REVIEW.")
+                problems.append(f"{key}: review must be READY, NEEDS_REVIEW or REJECTED.")
+            if review == REJECTED and not (record.get("decision_reason") or "").strip():
+                problems.append(f"{key}: a rejected record says why (decision_reason).")
             if target in REVIEW_ONLY_TARGETS:
                 if review == READY:
-                    problems.append(f"{key}: {target} is never imported; mark it NEEDS_REVIEW.")
+                    problems.append(
+                        f"{key}: {target} is never imported; mark it NEEDS_REVIEW or REJECTED."
+                    )
             elif target not in WRITABLE_TARGETS:
                 problems.append(f"{key}: target {target!r} is unknown.")
                 continue
@@ -311,7 +355,7 @@ def validate_package(package: dict[str, Any], archive: OneNoteArchive) -> Valida
             precision = record.get("date_precision")
             if record.get("date") not in (None, ""):
                 if precision not in PRECISION:
-                    problems.append(f"{key}: date_precision must be DAY, MONTH or YEAR.")
+                    problems.append(f"{key}: date_precision must be DAY, MONTH, QUARTER or YEAR.")
                 else:
                     day = _anchor(record["date"], precision)
                     if day is None:
@@ -322,16 +366,18 @@ def validate_package(package: dict[str, Any], archive: OneNoteArchive) -> Valida
                         ready
                         and snapshot_day
                         and day > snapshot_day
-                        # A commencement date is when an act takes effect, not
-                        # when something happened: it is usually in the future.
-                        and target != T_EFFECTIVE_DATE
+                        # A commencement or a planned milestone is when something
+                        # is to happen, not when it happened: usually the future.
+                        and target not in PROSPECTIVE_TARGETS
                     ):
                         problems.append(
                             f"{key}: dated {record['date']}, after the snapshot "
                             f"({snapshot_day}). Newer facts are reported, not imported."
                         )
             if ready:
-                problems.extend(_target_problems(key, target, record, engagement_keys))
+                problems.extend(
+                    _target_problems(key, target, record, engagement_keys, position_files)
+                )
             for doc in record.get("documents") or []:
                 if doc.get("role") not in roles:
                     problems.append(f"{key}: document role {doc.get('role')!r} is unknown.")
@@ -380,13 +426,49 @@ def validate_package(package: dict[str, Any], archive: OneNoteArchive) -> Valida
     return report
 
 
+def _organisation_problems(entries: list[dict[str, Any]]) -> list[str]:
+    """An organisation the package asks the import to create is a reviewed entry."""
+    from app.organisations.models import OrganisationType
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for entry in entries:
+        name = (entry.get("name") or "").strip()
+        if not name:
+            out.append("an organisation entry has no name.")
+            continue
+        if name in seen:
+            out.append(f"organisation {name!r} appears twice.")
+        seen.add(name)
+        if entry.get("organisation_type") not in OrganisationType.values:
+            out.append(
+                f"organisation {name!r}: type {entry.get('organisation_type')!r} is unknown."
+            )
+        if entry.get("status") not in ORGANISATION_STATUSES:
+            out.append(f"organisation {name!r}: status must be APPROVED or PROPOSED.")
+        if not entry.get("evidence"):
+            out.append(f"organisation {name!r} names no evidence for its identity.")
+        for bound in ("valid_from", "valid_to"):
+            if entry.get(bound) and _day(entry[bound]) is None:
+                out.append(f"organisation {name!r}: {bound} is not a date.")
+    return out
+
+
 def _target_problems(
-    key: str, target: str, record: dict, engagements: dict[str, bool]
+    key: str,
+    target: str,
+    record: dict,
+    engagements: dict[str, bool],
+    position_files: dict[str, bool] | None = None,
 ) -> list[str]:
+    from app.intelligence.enums import ImportantDateKind
+    from app.submissions.enums import SubmissionKind
+
     out: list[str] = []
     documents = record.get("documents") or []
+    shared = record.get("shared_documents_from")
     if (
-        target in {T_DEVELOPMENT, T_ENGAGEMENT, T_OVERVIEW, T_NEWS, T_SUBMISSION}
+        target in {T_DEVELOPMENT, T_ENGAGEMENT, T_OVERVIEW, T_NEWS, T_SUBMISSION, T_IMPORTANT_DATE}
         and not (record.get("title") or "").strip()
     ):
         out.append(f"{key}: {target} needs a title.")
@@ -404,7 +486,18 @@ def _target_problems(
             record.get("organisation") or (record.get("source_label") or "").strip()
         ):
             out.append(f"{key}: received feedback names an organisation or a source label.")
-        if not (documents or (record.get("summary") or "").strip() or record.get("url")):
+        if shared:
+            # A joint letter: one position per signatory, the letter filed once
+            # and supporting each of them (a document may support several
+            # records, documents.links).
+            if documents:
+                out.append(f"{key}: a position sharing another's files lists none of its own.")
+            if not (position_files or {}).get(shared):
+                out.append(
+                    f"{key}: shared_documents_from {shared!r} is not a READY position "
+                    "of this topic with files."
+                )
+        if not (documents or shared or (record.get("summary") or "").strip() or record.get("url")):
             out.append(f"{key}: a position needs a document, a summary or a URL.")
         engagement = record.get("engagement_key")
         if engagement and not engagements.get(engagement):
@@ -419,6 +512,15 @@ def _target_problems(
             out.append(f"{key}: a sent opinion needs its sending day.")
         if not record.get("recipients"):
             out.append(f"{key}: a sent opinion needs at least one recipient.")
+        if record.get("submission_kind") and record["submission_kind"] not in SubmissionKind.values:
+            out.append(f"{key}: submission kind {record['submission_kind']!r} is unknown.")
+    if target == T_IMPORTANT_DATE:
+        if not record.get("date") or record.get("date_precision") not in PRECISION:
+            out.append(f"{key}: an important date needs its date and precision.")
+        if record.get("kind", "OTHER") not in ImportantDateKind.values:
+            out.append(f"{key}: important-date kind {record.get('kind')!r} is unknown.")
+        if documents:
+            out.append(f"{key}: an important date carries no files; list them as unlinked.")
     if target in {T_OVERVIEW, T_NEWS}:
         if not (record.get("url") or "").startswith("https://"):
             out.append(f"{key}: a published overview needs its https address.")
@@ -468,6 +570,7 @@ class TopicPlan:
         ]
 
     def held_records(self) -> list[dict[str, Any]]:
+        """Everything not written: waiting for review, or rejected for import."""
         ready = {r["key"] for r in self.ready_records()}
         return [r for r in self.topic.get("records") or [] if r.get("key") not in ready]
 
@@ -486,10 +589,15 @@ class EvidencePlan:
 
     def expected_writes(self) -> dict[str, int]:
         counts: dict[str, int] = {"MATTER": len(self.topics), "NEXT_ACTION": 0, "DOCUMENT": 0}
+        organisations = approved_organisations(self.package)
+        if organisations:
+            counts["ORGANISATION"] = len(organisations)
         for topic in self.topics:
             step = topic.topic.get("next_action")
             if step and step.get("review") == READY:
                 counts["NEXT_ACTION"] += 1
+            if topic.topic.get("answered_by"):
+                counts["DEADLINE_ANSWERED"] = counts.get("DEADLINE_ANSWERED", 0) + 1
             for record in topic.ready_records():
                 counts[record["target"]] = counts.get(record["target"], 0) + 1
                 counts["DOCUMENT"] += len(record.get("documents") or [])
@@ -497,6 +605,22 @@ class EvidencePlan:
                 1 for d in topic.topic.get("documents_unlinked") or [] if d.get("review") == READY
             )
         return counts
+
+
+@dataclass(frozen=True)
+class PendingOrganisation:
+    """An approved package organisation the apply will create (or find) by name."""
+
+    name: str
+
+
+def approved_organisations(package: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """The package's APPROVED organisation entries, by name. PROPOSED ones wait."""
+    return {
+        entry["name"].strip(): entry
+        for entry in package.get("organisations") or []
+        if entry.get("status") == "APPROVED" and (entry.get("name") or "").strip()
+    }
 
 
 def _organisation_mappings(package: dict[str, Any]) -> dict[str, str]:
@@ -545,12 +669,26 @@ def build_plan(root: str | Path) -> EvidencePlan:
     instruments = {item.key: item for item in LegalInstrumentType.objects.all()}
     label_to_stage = {**RAW_LABEL_TO_STAGE, **CURRENT_LABEL_TO_STAGE}
 
+    from app.organisations.services import find_matches
+
+    approved = approved_organisations(package)
+    for name in approved:
+        if len(find_matches(name)) > 1:
+            plan.problems.append(
+                f"organisation {name!r} matches several catalogue rows; "
+                "resolve the duplicate first."
+            )
+
     def organisation(name: str, topic_plan: TopicPlan) -> Any:
         if name in topic_plan.organisations:
             return topic_plan.organisations[name]
-        resolution = resolve_organisation(name, mappings)
-        topic_plan.organisations[name] = resolution.value
-        return resolution.value
+        value = resolve_organisation(name, mappings).value
+        if value is None and name in approved:
+            # Not in the catalogue yet: the apply creates it from the reviewed
+            # entry (get_or_create_organisation), never by similarity.
+            value = PendingOrganisation(name)
+        topic_plan.organisations[name] = value
+        return value
 
     for topic in package.get("topics") or []:
         topic_plan = TopicPlan(topic=topic)
@@ -632,7 +770,9 @@ class ApplyReport:
     batch_id: Any = None
     written: dict[str, int] = field(default_factory=dict)
     held: list[str] = field(default_factory=list)
+    rejected: list[str] = field(default_factory=list)
     resources_skipped: list[str] = field(default_factory=list)
+    organisations_created: list[str] = field(default_factory=list)
 
     def count(self, kind: str) -> None:
         self.written[kind] = self.written.get(kind, 0) + 1
@@ -709,6 +849,17 @@ class _Writer:
             "pilot_version": PILOT_VERSION,
             "package_sha256": plan.digest,
         }
+        #: Approved package organisations, created or found once, by name.
+        self.organisations: dict[str, Any] = {}
+        #: The Documents each written record carries, for a joint letter's
+        #: other signatories (`shared_documents_from`).
+        self.record_documents: dict[str, list[Any]] = {}
+
+    def org(self, value: Any) -> Any:
+        """The Organisation a plan value means; a pending one is the created row."""
+        if isinstance(value, PendingOrganisation):
+            return self.organisations[value.name]
+        return value
 
     # -- provenance -----------------------------------------------------------
 
@@ -755,6 +906,7 @@ class _Writer:
             ),
         )
         self.report.batch_id = self.batch.pk
+        self.write_organisations()
         touched = []
         for topic_plan in self.plan.topics:
             touched.append(self.write_topic(topic_plan).pk)
@@ -784,9 +936,51 @@ class _Writer:
                 "backup_set": self.backup_set,
                 "written": self.report.written,
                 "held": len(self.report.held),
+                "rejected": len(self.report.rejected),
             },
         )
         return self.report, touched
+
+    def write_organisations(self) -> None:
+        """Create (or find) each APPROVED package organisation, once.
+
+        Through `get_or_create_organisation` — the resolver every counterparty
+        field uses: an exact or alias match is reused, two matches refuse, and
+        nothing is merged on similarity. The descriptive fields the resolver
+        does not take (notes, validity, source) are set only on a row this
+        apply created, never on one that already existed.
+        """
+        from app.organisations.services import get_or_create_organisation
+
+        for name, entry in sorted(approved_organisations(self.package).items()):
+            result = get_or_create_organisation(
+                name=name,
+                organisation_type=entry["organisation_type"],
+                registry_code=(entry.get("registry_code") or "").strip(),
+            )
+            organisation = result.organisation
+            if result.created:
+                changed = []
+                for column in ("notes", "source_reference"):
+                    if entry.get(column):
+                        setattr(organisation, column, str(entry[column])[:2000])
+                        changed.append(column)
+                for column in ("valid_from", "valid_to"):
+                    if entry.get(column):
+                        setattr(organisation, column, _day(entry[column]))
+                        changed.append(column)
+                if changed:
+                    organisation.save(update_fields=[*changed, "updated_at"])
+                self.report.organisations_created.append(name)
+            self.organisations[name] = organisation
+            self.remember(
+                matter=None,
+                key=f"ORG:{name}",
+                kind="ORGANISATION",
+                target=organisation,
+                page=None,
+                evidence={**(entry.get("evidence") or {}), "created": result.created},
+            )
 
     def write_topic(self, topic_plan: TopicPlan) -> Any:
         from app.matters.enums import DataQualityTier, RecordMode
@@ -805,7 +999,7 @@ class _Writer:
             owner=topic_plan.owner,
             stage=topic_plan.stage,
             received_date=_day(topic.get("received_date")),
-            addressee_organisation=topic_plan.addressee,
+            addressee_organisation=self.org(topic_plan.addressee),
             legal_instruments=topic_plan.instruments,
             source_era=str(year),
             data_quality_tier=DataQualityTier.TIER_1_VERIFIED_ACTIVE,
@@ -835,20 +1029,54 @@ class _Writer:
         )
         self.write_next_action(matter, topic_plan, page_record)
 
-        # Rounds first, so the feedback that answers one can name it; otherwise
-        # the package's own (chronological) order.
+        # Rounds first, so the feedback that answers one can name it; a joint
+        # letter's sharing signatories last, so the letter is already filed;
+        # otherwise the package's own (chronological) order.
         records: dict[str, Any] = {}
         ready = topic_plan.ready_records()
-        ordered = [r for r in ready if r["target"] == T_ENGAGEMENT] + [
-            r for r in ready if r["target"] != T_ENGAGEMENT
-        ]
+        ordered = (
+            [r for r in ready if r["target"] == T_ENGAGEMENT]
+            + [
+                r
+                for r in ready
+                if r["target"] != T_ENGAGEMENT and not r.get("shared_documents_from")
+            ]
+            + [r for r in ready if r.get("shared_documents_from")]
+        )
         for record in ordered:
             written = self.write_record(
                 matter, topic_plan, record, records, page, page_record, link
             )
             records[record["key"]] = written
         for record in topic_plan.held_records():
-            self.report.held.append(record["key"])
+            if record.get("review") == REJECTED:
+                self.report.rejected.append(record["key"])
+            else:
+                self.report.held.append(record["key"])
+
+        answered_by = topic.get("answered_by")
+        if answered_by:
+            # A Chamber reply the package imports answers the source's current
+            # request (the owner's reconciliation, recorded on the topic). The
+            # deadline moves to history as ANSWERED, naming the opinion; its
+            # business date stays the opinion's `sent_at`.
+            from app.matters.enums import ResponseDeadlineOutcome
+            from app.matters.response_deadlines import resolve_response_deadline
+
+            resolve_response_deadline(
+                matter=matter,
+                outcome=ResponseDeadlineOutcome.ANSWERED,
+                submission=records[answered_by],
+                actor=None,
+            )
+            self.remember(
+                matter=matter,
+                key=f"{topic['reference']}-ANSWERED",
+                kind="DEADLINE_ANSWERED",
+                target=records[answered_by],
+                page=page_record,
+                evidence={"answered_by": answered_by, "deadline": topic.get("response_deadline")},
+            )
 
         for doc in topic.get("documents_unlinked") or []:
             if doc.get("review") == READY:
@@ -865,14 +1093,17 @@ class _Writer:
                     doc.get("reason", ""),
                 )
         for record in topic_plan.held_records():
+            rejected = record.get("review") == REJECTED
             for doc in record.get("documents") or []:
                 self.skip_resource(
                     page,
                     page_record,
                     link,
                     doc["resource_key"],
-                    "RECORD_HELD_FOR_REVIEW",
-                    record["key"],
+                    "RECORD_REJECTED_FOR_IMPORT" if rejected else "RECORD_HELD_FOR_REVIEW",
+                    f"{record['key']}: {record.get('decision_reason', '')}"
+                    if rejected
+                    else record["key"],
                 )
         for item in topic.get("resources_not_imported") or []:
             self.skip_resource(
@@ -974,7 +1205,9 @@ class _Writer:
             return
         key = f"{topic_plan.reference}-NEXT"
         if step.get("review") != READY:
-            self.report.held.append(key)
+            (self.report.rejected if step.get("review") == REJECTED else self.report.held).append(
+                key
+            )
             return
         action = set_next_action(
             matter=matter,
@@ -1014,7 +1247,7 @@ class _Writer:
         link: Any,
     ) -> Any:
         from app.core.dates import start_of_local_day
-        from app.intelligence.services import add_effective_date
+        from app.intelligence.services import add_effective_date, add_important_date
         from app.matters.entry_enums import EntryKind
         from app.matters.services import (
             add_engagement,
@@ -1034,10 +1267,11 @@ class _Writer:
         domain_precision = PRECISION.get(precision, "EXACT")
         documents = record.get("documents") or []
         organisation = (
-            topic_plan.organisations.get(record["organisation"])
+            self.org(topic_plan.organisations.get(record["organisation"]))
             if record.get("organisation")
             else None
         )
+        shared = self.record_documents.get(record.get("shared_documents_from") or "", [])
 
         if target == T_SUBMISSION:
             created = self.write_submission(
@@ -1081,7 +1315,7 @@ class _Writer:
                 source_is_member=bool(record.get("source_is_member"))
                 and target == T_POSITION_RECEIVED,
                 engagement=written.get(record.get("engagement_key") or ""),
-                attachment_count=len(documents),
+                attachment_count=len(documents) + len(shared),
                 actor=None,
             )
         elif target in {T_OVERVIEW, T_NEWS}:
@@ -1117,14 +1351,29 @@ class _Writer:
                 actor=None,
                 source_text=record.get("source_text") or "",
             )
+        elif target == T_IMPORTANT_DATE:
+            first, last = period_bounds(day, domain_precision)  # type: ignore[arg-type]
+            created = add_important_date(
+                matter=matter,
+                title=record["title"].strip(),
+                date_value=first,
+                period_end=last,
+                date_precision=domain_precision,
+                kind=record.get("kind") or "OTHER",
+                note=(record.get("note") or "").strip(),
+                actor=None,
+                source_text=record.get("source_text") or "",
+            )
         else:  # validate_package refuses anything else
             raise EvidencePilotError(f"{record['key']}: target {target!r} cannot be written.")
 
         if target != T_SUBMISSION:
+            filed = []
             for doc in documents:
                 document = self.write_document(
                     matter, page, page_record, link, doc, record=created, key_prefix=record["key"]
                 )
+                filed.append(document)
                 if target in {T_POSITION_RECEIVED, T_POSITION_DISCOVERED}:
                     record_external_position_document(
                         position=created, document=document, actor=None
@@ -1132,6 +1381,17 @@ class _Writer:
                 elif target == T_DEVELOPMENT:
                     record_procedural_development_document(
                         development=created, document=document, actor=None
+                    )
+            self.record_documents[record["key"]] = filed
+            if shared:
+                from app.documents.services import link_document_to_record
+
+                for document in shared:
+                    # The same letter, filed once, supports each co-signatory's
+                    # position (a document may support several records).
+                    link_document_to_record(document=document, record=created, actor=None)
+                    record_external_position_document(
+                        position=created, document=document, actor=None
                     )
         self.remember(
             matter=matter,
@@ -1157,7 +1417,7 @@ class _Writer:
         link: Any,
         day: dt.date | None,
     ) -> Any:
-        from app.submissions.enums import SentAtPrecision
+        from app.submissions.enums import SentAtPrecision, SubmissionKind
         from app.submissions.services import register_sent_opinion
 
         documents = record.get("documents") or []
@@ -1179,8 +1439,10 @@ class _Writer:
             document=final_document,
             version=final_document.current_version,
             title=record["title"].strip(),
+            kind=record.get("submission_kind") or SubmissionKind.FORMAL_OPINION,
             actor=None,
-            recipients=[topic_plan.organisations[name] for name in record["recipients"]],
+            recipients=[self.org(topic_plan.organisations[name]) for name in record["recipients"]],
+            reference=(record.get("reference") or "").strip(),
             summary=(record.get("summary") or "").strip(),
             sent_at=sent_at,
             sent_at_precision=SentAtPrecision.DATE,
@@ -1336,7 +1598,9 @@ def verify_applied(plan: EvidencePlan) -> VerifyReport:
     from app.audit.models import ChangeEvent
     from app.documents.models import Document
     from app.legacy_import.source_pages import LegacySourceResourceImport
-    from app.matters.models import Matter
+    from app.matters.enums import ResponseDeadlineOutcome
+    from app.matters.models import Matter, MatterResponseDeadline
+    from app.organisations.models import Organisation
     from app.submissions.models import Submission
 
     from .models import EvidencePilotRecord
@@ -1371,8 +1635,26 @@ def verify_applied(plan: EvidencePlan) -> VerifyReport:
             report.problems.append(f"{topic['reference']}: owner differs.")
         if matter.title != topic["title"]:
             report.problems.append(f"{topic['reference']}: title differs from the source value.")
-        if matter.response_deadline != _day(topic.get("response_deadline")):
+        deadline = _day(topic.get("response_deadline"))
+        if topic.get("answered_by") and deadline is not None:
+            # Answered by an imported reply: the deadline is history now,
+            # ANSWERED and naming that opinion.
+            answered = MatterResponseDeadline.objects.filter(
+                matter=matter, deadline=deadline, outcome=ResponseDeadlineOutcome.ANSWERED
+            ).exclude(submission=None)
+            if matter.response_deadline is not None or not answered.exists():
+                report.problems.append(
+                    f"{topic['reference']}: the request is not answered by the imported reply."
+                )
+        elif matter.response_deadline != deadline:
             report.problems.append(f"{topic['reference']}: Arvamuse tähtaeg differs.")
+        addressee = topic_plan.organisations.get(topic.get("addressee") or "")
+        expected_addressee = getattr(addressee, "pk", None)
+        if isinstance(addressee, PendingOrganisation):
+            created = Organisation.objects.filter(name=addressee.name).first()
+            expected_addressee = getattr(created, "pk", None)
+        if topic.get("addressee") and matter.addressee_organisation_id != expected_addressee:
+            report.problems.append(f"{topic['reference']}: addressee differs.")
         if matter.received_date != _day(topic.get("received_date")):
             report.problems.append(f"{topic['reference']}: received date differs.")
         if getattr(matter.stage, "pk", None) != getattr(topic_plan.stage, "pk", None):
@@ -1412,4 +1694,8 @@ def verify_applied(plan: EvidencePlan) -> VerifyReport:
     if accounted != len(archive_sha):
         report.problems.append(f"{accounted} of {len(archive_sha)} page resources accounted for.")
     report.checked["resources_accounted"] = accounted
+    for name in approved_organisations(plan.package):
+        if not Organisation.objects.filter(name=name).exists():
+            report.problems.append(f"organisation {name!r} is missing.")
+    report.checked["organisations"] = len(approved_organisations(plan.package))
     return report

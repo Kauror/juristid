@@ -6,7 +6,9 @@ pin the rules the brief set: every file accounted for and re-hashed, nothing
 newer than the snapshot, no sent opinion without its real final letter, no
 organisation or person invented, a held record never written, an apply that
 refuses without each authorisation and writes nothing the second time, and a
-provenance row for everything it wrote.
+provenance row for everything it wrote. The last block covers the reconciliation
+round (0173 §6): reviewed organisations, joint letters, rejected records,
+planned milestones and a reply that answers the current request.
 """
 
 from __future__ import annotations
@@ -703,3 +705,275 @@ def test_verify_reads_back_what_was_written(world, package_root, pilot_on):
     Matter.all_objects.filter(reference_number=5).update(response_deadline=dt.date(YEAR, 4, 1))
     problems = verify_applied(build_plan(package_root)).problems
     assert any("Arvamuse tähtaeg differs" in p for p in problems)
+
+
+# ---------------------------------------------------------------------------
+# the reconciliation round: reviewed organisations, joint letters, rejected
+# records, planned milestones, a reply that answers the current request
+# ---------------------------------------------------------------------------
+
+
+def _organisation(name: str, kind: str = "ASSOCIATION", **extra) -> dict:
+    return {
+        "name": name,
+        "organisation_type": kind,
+        "status": "APPROVED",
+        "evidence": {"blocks": [4], "letterhead": name},
+        **extra,
+    }
+
+
+def _discovered(key: str, organisation: str, **extra) -> dict:
+    return {
+        "key": f"{YEAR}_5-{key}",
+        "target": "MatterExternalPosition.DISCOVERED",
+        "review": "READY",
+        "date": f"{YEAR}-02-12",
+        "date_precision": "DAY",
+        "organisation": organisation,
+        "summary": "Ühispöördumine.",
+        "evidence": _evidence(4),
+        **extra,
+    }
+
+
+def _joint_letter_package() -> dict:
+    """Two signatories of one letter: the file is filed once and supports both."""
+    package = _package()
+    package["organisations"] = [
+        _organisation("Näidisliit", registry_code="80000001", notes="Kirjapäisest."),
+        _organisation("Teine Näidisliit"),
+    ]
+    _record(package, "E03")["documents"] = []
+    _one(package)["records"] += [
+        _discovered(
+            "E09",
+            "Näidisliit",
+            documents=[{"resource_key": "r003", "role": "EXTERNAL_POSITION"}],
+        ),
+        _discovered("E10", "Teine Näidisliit", shared_documents_from=f"{YEAR}_5-E09"),
+    ]
+    return package
+
+
+def _milestone(date: str, precision: str = "QUARTER") -> dict:
+    return {
+        "key": f"{YEAR}_5-E11",
+        "target": "MatterImportantDate",
+        "review": "READY",
+        "date": date,
+        "date_precision": precision,
+        "title": "Valitsus plaanib eelnõu heaks kiita",
+        "note": "Üks allikas ütleb «novembris», teine «aasta lõpuks».",
+        "source_text": "novembris",
+        "evidence": _evidence(1),
+    }
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        (
+            lambda p: p.update({"organisations": [_organisation("Näidisliit", evidence={})]}),
+            "names no evidence for its identity",
+        ),
+        (
+            lambda p: p.update({"organisations": [_organisation("Näidisliit", "KLUBI")]}),
+            "type 'KLUBI' is unknown",
+        ),
+        (
+            lambda p: p.update({"organisations": [_organisation("A"), _organisation("A")]}),
+            "appears twice",
+        ),
+        (
+            lambda p: p.update(
+                {"organisations": [_organisation("Näidisliit", valid_to="2025-13-01")]}
+            ),
+            "valid_to is not a date",
+        ),
+        (lambda p: _record(p, "E08").update({"review": "REJECTED"}), "says why (decision_reason)"),
+        (lambda p: _one(p).update({"answered_by": f"{YEAR}_5-E03"}), "not a READY sent opinion"),
+        (
+            lambda p: p["topics"][1].update({"answered_by": f"{YEAR}_5-E04"}),
+            "not a READY sent opinion",
+        ),
+        (
+            lambda p: _record(p, "E04").update({"submission_kind": "TELEGRAMM"}),
+            "submission kind 'TELEGRAMM' is unknown",
+        ),
+        (
+            lambda p: _one(p)["records"].append(_milestone(f"{YEAR}-Q5")),
+            "does not read as QUARTER",
+        ),
+    ],
+)
+def test_the_reconciliation_fields_are_refused_when_broken(package_root, change, message):
+    problems = _validate(package_root, change)
+    assert any(message in problem for problem in problems), problems
+
+
+def test_a_joint_letters_signatory_shares_the_letter_and_lists_none_of_its_own(package_root):
+    def own_files_too(p):
+        p.update(_joint_letter_package())
+        _record(p, "E10")["documents"] = [{"resource_key": "r005", "role": "OTHER"}]
+
+    problems = _validate(package_root, own_files_too)
+    assert any("lists none of its own" in problem for problem in problems), problems
+
+    def shares_a_fileless_record(p):
+        p.update(_joint_letter_package())
+        _record(p, "E10")["shared_documents_from"] = f"{YEAR}_5-E03"
+
+    problems = _validate(package_root, shares_a_fileless_record)
+    assert any("is not a READY position" in problem for problem in problems), problems
+
+
+def test_a_proposed_organisation_is_not_created_and_blocks_its_record(world, package_root):
+    package = _joint_letter_package()
+    package["organisations"][1]["status"] = "PROPOSED"
+    plan = build_plan(_write(package_root, package))
+    assert any("'Teine Näidisliit' is not in the catalogue" in p for p in plan.problems)
+
+
+def test_an_approved_organisation_is_created_once_with_its_reviewed_identity(
+    world, package_root, pilot_on
+):
+    from app.organisations.models import Organisation
+
+    package_root = _write(package_root, _joint_letter_package())
+    plan = build_plan(package_root)
+    assert plan.problems == []
+    assert plan.expected_writes()["ORGANISATION"] == 2
+    report = _apply(package_root)
+    assert report.organisations_created == ["Näidisliit", "Teine Näidisliit"]
+
+    liit = Organisation.objects.get(name="Näidisliit")
+    assert liit.organisation_type == "ASSOCIATION"
+    assert liit.registry_code == "80000001"
+    assert liit.notes == "Kirjapäisest."
+    row = EvidencePilotRecord.objects.get(record_key="ORG:Näidisliit")
+    assert row.record_kind == "ORGANISATION" and row.matter is None
+    assert row.target_id == liit.pk and row.evidence["created"] is True
+    assert verify_applied(build_plan(package_root)).problems == []
+
+
+def test_a_catalogue_organisation_is_reused_and_left_as_it_was(world, package_root, pilot_on):
+    from app.organisations.models import Organisation
+
+    package = _package()
+    package["organisations"] = [
+        _organisation("Näidisministeerium", "MINISTRY", notes="Ei tohi üle kirjutada.")
+    ]
+    _apply(_write(package_root, package))
+    ministry = Organisation.objects.get(name="Näidisministeerium")
+    assert ministry.notes != "Ei tohi üle kirjutada."
+    assert Organisation.objects.filter(name="Näidisministeerium").count() == 1
+    row = EvidencePilotRecord.objects.get(record_key="ORG:Näidisministeerium")
+    assert row.evidence["created"] is False
+
+
+def test_the_provenance_row_names_a_matter_unless_it_is_an_organisation(world):
+    from django.db import IntegrityError, transaction
+
+    with pytest.raises(IntegrityError), transaction.atomic():
+        EvidencePilotRecord.objects.create(
+            pilot=evidence_pilot.PILOT,
+            pilot_version=evidence_pilot.PILOT_VERSION,
+            package_sha256="0" * 64,
+            record_key="X",
+            record_kind="MATTER",
+            matter=None,
+        )
+
+
+def test_each_signatory_of_a_joint_letter_has_its_position_on_one_filed_letter(
+    world, package_root, pilot_on
+):
+    from app.documents.links import DocumentLink
+
+    _apply(_write(package_root, _joint_letter_package()))
+    one = _matter(f"{YEAR}_5")
+    positions = {
+        p.organisation.name: p
+        for p in MatterExternalPosition.objects.filter(matter=one, provenance="DISCOVERED")
+    }
+    assert set(positions) == {"Näidisliit", "Teine Näidisliit"}
+    letter = Document.objects.get(
+        matter=one, current_version__original_filename="Liikme vastus.pdf"
+    )
+    for position in positions.values():
+        assert DocumentLink.objects.filter(document=letter, external_position=position).exists()
+    assert Document.objects.filter(matter=one).count() == 4
+
+
+def test_a_rejected_record_is_reported_apart_and_its_files_say_why(world, package_root, pilot_on):
+    package = _package()
+    _record(package, "E08").update(
+        {
+            "review": "REJECTED",
+            "decision_reason": "Liikme seisukoht, mitte Koja arvamus.",
+            "documents": [{"resource_key": "r005", "role": "OTHER"}],
+        }
+    )
+    _record(package, "E02")["documents"] = []
+    report = _apply(_write(package_root, package))
+    assert report.rejected == [f"{YEAR}_5-E08"]
+    assert report.held == [f"{YEAR}_6-NEXT"]
+    skipped = LegacySourceResourceImport.objects.get(
+        matter_source_page__matter=_matter(f"{YEAR}_5"), resource__resource_key="r005"
+    )
+    assert skipped.state == ResourceImportState.SKIPPED
+    assert skipped.error_code == "RECORD_REJECTED_FOR_IMPORT"
+    assert "mitte Koja arvamus" in skipped.error_detail
+
+
+def test_a_planned_milestone_is_an_important_date_over_its_whole_quarter(
+    world, package_root, pilot_on
+):
+    from app.intelligence.models import MatterImportantDate
+
+    package = _package()
+    _one(package)["records"].append(_milestone(f"{YEAR}-Q4"))
+    _apply(_write(package_root, package))
+    milestone = MatterImportantDate.objects.get(matter=_matter(f"{YEAR}_5"))
+    assert (milestone.date_value, milestone.period_end) == (
+        dt.date(YEAR, 10, 1),
+        dt.date(YEAR, 12, 31),
+    )
+    assert milestone.date_precision == "QUARTER"
+    assert milestone.kind == "OTHER" and milestone.source_text == "novembris"
+    # A planned milestone is not a commencement.
+    assert MatterEffectiveDate.objects.filter(matter=_matter(f"{YEAR}_5")).count() == 1
+
+
+def test_a_sent_reply_keeps_its_kind_and_reference(world, package_root, pilot_on):
+    package = _package()
+    _record(package, "E04").update(
+        {"submission_kind": "INFORMAL_WRITTEN_RESPONSE", "reference": "4/51"}
+    )
+    _apply(_write(package_root, package))
+    submission = Submission.objects.get(matter=_matter(f"{YEAR}_5"))
+    assert submission.kind == "INFORMAL_WRITTEN_RESPONSE"
+    assert submission.reference == "4/51"
+
+
+def test_a_reply_named_by_answered_by_answers_the_current_request(world, package_root, pilot_on):
+    from app.matters.models import MatterResponseDeadline
+    from app.matters.work_items import response_obligation_of
+
+    package = _package()
+    _one(package)["answered_by"] = f"{YEAR}_5-E04"
+    package_root = _write(package_root, package)
+    plan = build_plan(package_root)
+    assert plan.expected_writes()["DEADLINE_ANSWERED"] == 1
+    _apply(package_root)
+
+    one = _matter(f"{YEAR}_5")
+    assert one.response_deadline is None
+    answered = MatterResponseDeadline.objects.get(matter=one, deadline=dt.date(YEAR, 4, 15))
+    assert answered.outcome == "ANSWERED"
+    assert answered.submission == Submission.objects.get(matter=one)
+    assert not response_obligation_of(one, world["mari"]).is_outstanding
+    assert verify_applied(build_plan(package_root)).problems == []
+    # The other topic's request is still open.
+    assert _matter(f"{YEAR}_6").response_deadline == dt.date(YEAR, 3, 20)

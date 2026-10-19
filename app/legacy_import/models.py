@@ -645,6 +645,11 @@ class EvidencePilotRecord(BaseModel):
     key per model: the pilot writes eight kinds of record and the provenance of
     each is the same shape. Owned by its Matter (``CASCADE``), so deleting a
     pilot Teema removes its provenance with it, as `ExcelPilotImport` does.
+
+    **One kind has no Matter: an organisation** the package's reviewed entry
+    asked the import to create or find. It belongs to the shared catalogue, not
+    to any one Teema, so its provenance row names no Matter — and only that kind
+    may (``legacy_import_evidence_pilot_matter_unless_organisation``).
     """
 
     pilot = models.CharField(max_length=64, db_index=True, verbose_name="piloot")
@@ -655,6 +660,8 @@ class EvidencePilotRecord(BaseModel):
     matter = models.ForeignKey(
         "matters.Matter",
         on_delete=models.CASCADE,
+        null=True,
+        blank=True,
         related_name="evidence_pilot_records",
         verbose_name="teema",
     )
@@ -680,6 +687,11 @@ class EvidencePilotRecord(BaseModel):
             models.UniqueConstraint(
                 fields=["pilot", "package_sha256", "record_key"],
                 name="legacy_import_evidence_pilot_key_once",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(record_kind="ORGANISATION", matter__isnull=True)
+                | (~models.Q(record_kind="ORGANISATION") & models.Q(matter__isnull=False)),
+                name="legacy_import_evidence_pilot_matter_unless_organisation",
             ),
         ]
 

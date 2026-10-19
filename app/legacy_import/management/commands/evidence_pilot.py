@@ -77,13 +77,9 @@ class Command(BaseCommand):
             "database_state": plan.database_state,
             "existing_matters": plan.existing_matters,
             "expected_writes": plan.expected_writes(),
-            "held": [record["key"] for topic in plan.topics for record in topic.held_records()]
-            + [
-                f"{topic.reference}-NEXT"
-                for topic in plan.topics
-                if (topic.topic.get("next_action") or {}).get("review")
-                == evidence_pilot.NEEDS_REVIEW
-            ],
+            "held": _keys(plan, evidence_pilot.NEEDS_REVIEW),
+            "rejected": _keys(plan, evidence_pilot.REJECTED),
+            "organisations": sorted(evidence_pilot.approved_organisations(plan.package)),
             "warnings": {
                 topic.reference: topic.warnings for topic in plan.topics if topic.warnings
             },
@@ -118,6 +114,8 @@ class Command(BaseCommand):
                 "batch": str(report.batch_id),
                 "written": report.written,
                 "held": report.held,
+                "rejected": report.rejected,
+                "organisations_created": report.organisations_created,
                 "resources_skipped": report.resources_skipped,
             },
         )
@@ -151,3 +149,19 @@ class Command(BaseCommand):
                     self.stdout.write(f"  {inner}: {item}")
             else:
                 self.stdout.write(f"{key}: {value}")
+
+
+def _keys(plan: evidence_pilot.EvidencePlan, review: str) -> list[str]:
+    """The record keys (and held current steps) the plan leaves out for one reason."""
+    keys = [
+        record["key"]
+        for topic in plan.topics
+        for record in topic.held_records()
+        if record.get("review") == review
+    ]
+    keys += [
+        f"{topic.reference}-NEXT"
+        for topic in plan.topics
+        if (topic.topic.get("next_action") or {}).get("review") == review
+    ]
+    return keys

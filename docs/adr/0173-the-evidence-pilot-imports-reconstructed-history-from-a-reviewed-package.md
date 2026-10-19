@@ -21,7 +21,8 @@ files but writes no domain records. This is the smallest addition that does both
 one module, one command, one provenance table.
 
 **One additive migration.** `legacy_import/0017` creates `EvidencePilotRecord`.
-Nothing existing changes.
+Nothing existing changes. (Amended in §6: the row's Matter is empty for a
+reviewed organisation, and only then.)
 
 ## 1. A reviewed package, outside the repository
 
@@ -40,13 +41,14 @@ synthetic one.
 
 - **`validate`** — no database. Format and version; unique `YYYY_N` references in
   the package's year; the expected topic count and owner distribution; a known
-  `Hetkeseis` label; ISO dates and a stated precision (DAY, MONTH, YEAR) that
-  reads; **every file on every page accounted for exactly once**, by a record, as
+  `Hetkeseis` label; ISO dates and a stated precision (DAY, MONTH, QUARTER as
+  `YYYY-Qn`, YEAR) that reads; a review state of READY, NEEDS_REVIEW or
+  REJECTED, a rejected record saying why (`decision_reason`); **every file on every page accounted for exactly once**, by a record, as
   an unlinked document, or as not imported with a reason; every file to be
   imported has bytes and **is re-hashed** against the archive; no READY record is
   dated after the snapshot (`snapshot.as_of`) — a newer fact is reported, never
-  imported — except a commencement date, which is a future day by nature; the
-  target-specific minimum below.
+  imported — except a commencement or a planned milestone, which is when
+  something is to happen; the target-specific minimum below.
 - **`plan`** — reads only. Owners through `resolve_owner` (a lone given name held
   by exactly one account, or a name the package maps it to); stages through the
   reviewed label maps; `Õigusakt` through `current_legal_instrument_keys`
@@ -83,11 +85,16 @@ with `actor=None`:
 | `MatterWebsiteOverview.OVERVIEW/NEWS` | `plan_website_overview` → `publish_website_overview` | `published_on` |
 | `Entry.NOTE/MEETING` | `add_entry`, no author | `occurred_at` (start of the Tallinn day) |
 | `MatterEffectiveDate` | `add_effective_date` | `date_value`/`period_end` |
+| `MatterImportantDate` | `add_important_date` (a planned milestone, never a commencement) | `date_value`/`period_end` over the stated period |
+| `organisations[]` (APPROVED) | `get_or_create_organisation` — §6 | — |
+| `answered_by` on a Teema | `resolve_response_deadline(ANSWERED, submission=…)` — §6 | the reply's `sent_at` |
 | files | `create_document` + `add_evidence_version` (SHA-256 compared with the archive) + `link_document_to_record`; `LegacySourcePage`, `MatterSourcePage` (REVIEWED_MATCH), `LegacySourceResource`, `LegacySourceResourceImport` as the corpus import writes them | — |
 
-A record the package marks `NEEDS_REVIEW`, a `ReviewOnly`, `WorkVictoryCandidate`
-or `MatterField` item, and the files of a held record are not written; the files
-are recorded `SKIPPED` with the reason, so the page's catalogue stays complete.
+A record the package marks `NEEDS_REVIEW` or `REJECTED`, a `ReviewOnly`,
+`WorkVictoryCandidate` or `MatterField` item, and the files of a held record are
+not written; the files are recorded `SKIPPED` with the reason
+(`RECORD_HELD_FOR_REVIEW`, or `RECORD_REJECTED_FOR_IMPORT` with the decision), so
+the page's catalogue stays complete. The evidence is never deleted.
 
 ## 4. What it never does
 
@@ -99,8 +106,8 @@ are recorded `SKIPPED` with the reason, so the page's catalogue stays complete.
 - **No stage history.** The current stage only, as 0148 does; earlier rounds are
   records under that one period, not periods with invented dates (0131 §3).
 - **No closure, no follow-up check** (0146 §9 unchanged: `schedule_first_check`
-  is still called by `excel_pilot.py` alone), **no organisation, no person and no
-  alias** created.
+  is still called by `excel_pilot.py` alone), **no person and no alias** created,
+  and **no organisation** except a reviewed package entry (§6).
 - **No sent opinion without its letter**, no member reply filed as an opinion, no
   signed container unpacked (0125: the container is the evidence).
 - **No partial apply** over an existing or half-written database.
@@ -113,11 +120,51 @@ are recorded `SKIPPED` with the reason, so the page's catalogue stays complete.
 - **Historical organisation names** (a ministry before a rename) and bodies
   outside the reviewed baseline (an agency, a central bank, an association) are
   not in the catalogue. A sent opinion or a discovered position naming one is
-  held until a reference-data decision or an approved mapping exists.
+  held until a reviewed package entry (§6) or an approved mapping exists.
 - **Related Teemad** (`link_related_matters`) needs a signed-in person; a
   previous-stage reference is kept in provenance and reported.
 - **A month-precise note or meeting** cannot be stored (`Entry.occurred_at` is a
   moment); such an item is held.
+
+## 6. Amendment — the reconciliation round (2026-10-19)
+
+The owner's second brief asked for the positions and earlier opinions the first
+package held only because their organisation was missing, a reply that arrived
+after the snapshot, and a planned Government milestone. Five package fields, no
+new service:
+
+- **`organisations[]`** — a reviewed reference-data entry: name, type
+  (`OrganisationType`), registry code, notes, `valid_from`/`valid_to`, the
+  evidence for its identity (a letterhead, a signature block, a registry code)
+  and a status. Only **APPROVED** entries are written, before any Teema, through
+  `get_or_create_organisation` — the resolver every counterparty field uses: an
+  exact or alias match is reused and **left as it was**, two catalogue matches
+  refuse the plan, nothing is merged on similarity. Notes, validity and source
+  are set on a row this apply created, never on one that existed. Each is
+  remembered as an `ORGANISATION` provenance row whose `matter` is empty — the
+  one kind allowed to be (a check constraint). A historical name (a ministry
+  before its rename) is its own entry with a note, never relabelled as its
+  successor.
+- **`shared_documents_from`** — a joint letter is one position per signatory;
+  the letter is filed once, on the first, and links to each of the others
+  (`DocumentLink` is unique per document *and* record). A sharing position lists
+  no files of its own.
+- **`REJECTED`** with `decision_reason` — an item the owner decided not to import
+  (a member's reply filed as an opinion, a later fact without corroboration). It
+  is reported apart from `NEEDS_REVIEW`; its files stay accounted and skipped.
+- **`MatterImportantDate`** — a planned milestone (a Government adoption) is an
+  `Oluline tähtaeg` over its stated period (QUARTER, MONTH, …) with its source
+  words, never a `MatterEffectiveDate`.
+- **`answered_by`** — the owner's reconciliation that an imported reply answers
+  the source's current request. The request is still recorded first
+  (`request_response_deadline`); then `resolve_response_deadline` moves it to
+  history as ANSWERED, naming that opinion. An earlier round's opinion never
+  answers it unless the package says so. `submission_kind` and `reference`
+  (`4/176`) are carried onto the opinion.
+
+`verify` checks the answered request, a created addressee and every approved
+organisation. The migration is still the one additive `legacy_import/0017`
+(unmerged, regenerated).
 
 ## Consequences
 
