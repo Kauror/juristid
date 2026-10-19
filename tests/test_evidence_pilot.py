@@ -949,12 +949,12 @@ def test_a_planned_milestone_is_an_important_date_over_its_whole_quarter(
 def test_a_sent_reply_keeps_its_kind_and_reference(world, package_root, pilot_on):
     package = _package()
     _record(package, "E04").update(
-        {"submission_kind": "INFORMAL_WRITTEN_RESPONSE", "reference": "4/51"}
+        {"submission_kind": "INFORMAL_WRITTEN_RESPONSE", "reference": "9/99"}
     )
     _apply(_write(package_root, package))
     submission = Submission.objects.get(matter=_matter(f"{YEAR}_5"))
     assert submission.kind == "INFORMAL_WRITTEN_RESPONSE"
-    assert submission.reference == "4/51"
+    assert submission.reference == "9/99"
 
 
 def test_a_reply_named_by_answered_by_answers_the_current_request(world, package_root, pilot_on):

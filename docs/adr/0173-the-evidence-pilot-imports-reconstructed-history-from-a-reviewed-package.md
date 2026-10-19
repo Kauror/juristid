@@ -160,7 +160,7 @@ new service:
   (`request_response_deadline`); then `resolve_response_deadline` moves it to
   history as ANSWERED, naming that opinion. An earlier round's opinion never
   answers it unless the package says so. `submission_kind` and `reference`
-  (`4/176`) are carried onto the opinion.
+  (the letter number) are carried onto the opinion.
 
 `verify` checks the answered request, a created addressee and every approved
 organisation. The migration is still the one additive `legacy_import/0017`
