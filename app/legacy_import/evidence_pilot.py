@@ -69,6 +69,10 @@ PRECISION = {"DAY": "EXACT", "MONTH": "MONTH", "QUARTER": "QUARTER", "YEAR": "YE
 #: An organisation entry the package asks the import to create is the owner's
 #: reviewed decision (APPROVED) or still waiting for one (PROPOSED).
 ORGANISATION_STATUSES = frozenset({"APPROVED", "PROPOSED"})
+#: `EvidencePilotRecord.record_key` and `Organisation.source_reference` lengths,
+#: checked at validate so a long value refuses the package, not the apply.
+ORGANISATION_KEY_LENGTH = 120
+ORGANISATION_SOURCE_REFERENCE_LENGTH = 200
 
 T_DEVELOPMENT = "ProceduralDevelopment"
 T_ENGAGEMENT = "MatterEngagement"
@@ -217,7 +221,12 @@ class _PageAccounting:
             self.problems.append(f"{ref}: {key} is used by {self.used[key]} and {where}.")
             return
         self.used[key] = where
-        if sha and sha != resource.sha256:
+        if not sha:
+            # The digest covers package.json, not the archive: the package
+            # itself has to pin every file it accounts for, or a re-exported
+            # archive could change the bytes under an unchanged digest.
+            self.problems.append(f"{ref}: {where} names {key} without its SHA-256.")
+        elif sha != resource.sha256:
             self.problems.append(f"{ref}: {key} SHA-256 in the package differs from the archive.")
         if not ready:
             return
@@ -432,6 +441,7 @@ def _organisation_problems(entries: list[dict[str, Any]]) -> list[str]:
 
     out: list[str] = []
     seen: set[str] = set()
+    codes: dict[str, str] = {}
     for entry in entries:
         name = (entry.get("name") or "").strip()
         if not name:
@@ -440,6 +450,23 @@ def _organisation_problems(entries: list[dict[str, Any]]) -> list[str]:
         if name in seen:
             out.append(f"organisation {name!r} appears twice.")
         seen.add(name)
+        if len(f"ORG:{name}") > ORGANISATION_KEY_LENGTH:
+            out.append(f"organisation {name!r}: the name is too long for its provenance key.")
+        code = (entry.get("registry_code") or "").strip()
+        if code:
+            # The resolver reuses a row by registry code, so two entries on one
+            # code would be filed as one body — a historical name merged into
+            # its successor (which usually keeps the code).
+            if code in codes:
+                out.append(
+                    f"organisation {name!r}: registry code {code} is also {codes[code]!r}'s."
+                )
+            codes[code] = name
+        if len(entry.get("source_reference") or "") > ORGANISATION_SOURCE_REFERENCE_LENGTH:
+            out.append(f"organisation {name!r}: source_reference is longer than 200 characters.")
+        bounds = [_day(entry.get(b)) for b in ("valid_from", "valid_to")]
+        if bounds[0] and bounds[1] and bounds[0] > bounds[1]:
+            out.append(f"organisation {name!r}: valid_from is after valid_to.")
         if entry.get("organisation_type") not in OrganisationType.values:
             out.append(
                 f"organisation {name!r}: type {entry.get('organisation_type')!r} is unknown."
@@ -477,6 +504,10 @@ def _target_problems(
     if target == T_ENGAGEMENT:
         if record.get("feedback_deadline") and _day(record["feedback_deadline"]) is None:
             out.append(f"{key}: feedback_deadline is not an exact day.")
+        if record.get("history") and record.get("feedback_deadline"):
+            # add_engagement tracks any round given a reply-by day, so a past
+            # round would open a wait nobody is in. Its date goes in the note.
+            out.append(f"{key}: a past round carries no reply-by day; keep it in the note.")
         if record.get("kind") not in {"WEB_CALL", "EMAIL_CAMPAIGN", "SURVEY", "MEETING", "OTHER"}:
             out.append(f"{key}: engagement kind {record.get('kind')!r} is unknown.")
     if target in {T_POSITION_RECEIVED, T_POSITION_DISCOVERED}:
@@ -524,6 +555,10 @@ def _target_problems(
     if target in {T_OVERVIEW, T_NEWS}:
         if not (record.get("url") or "").startswith("https://"):
             out.append(f"{key}: a published overview needs its https address.")
+        if record.get("date") and record.get("date_precision") != "DAY":
+            # `published_on` is a day with no precision column: a month would be
+            # stored as its first day. Undated reads «Kuupäev teadmata».
+            out.append(f"{key}: a publication date is an exact day; leave a month undated.")
         if documents:
             # A file cannot be linked to an overview (documents.LINK_FIELD_BY_MODEL);
             # refused here rather than half-way through the apply.
@@ -534,12 +569,14 @@ def _target_problems(
         "UNKNOWN",
     }:
         out.append(f"{key}: effective-date kind {record.get('kind')!r} is unknown.")
-    if (
-        target in {T_NOTE, T_MEETING}
-        and record.get("date")
-        and record.get("date_precision") != "DAY"
+    if target in {T_NOTE, T_MEETING} and (
+        not record.get("date") or record.get("date_precision") != "DAY"
     ):
-        out.append(f"{key}: a dated {target} needs an exact day; a month cannot be stored.")
+        # `add_entry` dates an undated entry at the moment of the call — here,
+        # the import — and `occurred_at` cannot hold a month.
+        out.append(
+            f"{key}: a {target} needs an exact day; undated it would read as the import day."
+        )
     return out
 
 
@@ -641,13 +678,10 @@ def build_plan(root: str | Path) -> EvidencePlan:
         resolve_organisation,
         resolve_owner,
     )
-    from app.matters.models import Matter
     from app.taxonomy.legal_instruments import current_legal_instrument_keys
     from app.taxonomy.models import LegalInstrumentType
     from app.workflow.models import StageVocabulary
     from app.workflow.vocabulary import CURRENT_LABEL_TO_STAGE, RAW_LABEL_TO_STAGE
-
-    from .models import EvidencePilotRecord
 
     package, archive = load_package(root)
     digest = package_digest(package)
@@ -669,14 +703,30 @@ def build_plan(root: str | Path) -> EvidencePlan:
     instruments = {item.key: item for item in LegalInstrumentType.objects.all()}
     label_to_stage = {**RAW_LABEL_TO_STAGE, **CURRENT_LABEL_TO_STAGE}
 
+    from app.organisations.models import Organisation
     from app.organisations.services import find_matches
 
     approved = approved_organisations(package)
-    for name in approved:
-        if len(find_matches(name)) > 1:
+    for name, entry in approved.items():
+        matches = find_matches(name)
+        if len(matches) > 1:
             plan.problems.append(
                 f"organisation {name!r} matches several catalogue rows; "
                 "resolve the duplicate first."
+            )
+        code = (entry.get("registry_code") or "").strip()
+        holder = (
+            Organisation.objects.filter(registry_code=code).first()
+            if code and not matches
+            else None
+        )
+        if holder is not None:
+            # get_or_create_organisation would reuse that row by its code and
+            # file this name's records under another name — a historical name
+            # merged into its successor. Map the name, or correct the entry.
+            plan.problems.append(
+                f"organisation {name!r}: registry code {code} already belongs to "
+                f"{holder.name!r}; a name is never merged on a code."
             )
 
     def organisation(name: str, topic_plan: TopicPlan) -> Any:
@@ -738,25 +788,32 @@ def build_plan(root: str | Path) -> EvidencePlan:
                     )
         plan.topics.append(topic_plan)
 
+    plan.database_state, plan.existing_matters = _database_state(plan)
+    return plan
+
+
+def _database_state(plan: EvidencePlan) -> tuple[str, int]:
+    """`fresh` (empty), `applied` (exactly this package) or `foreign`, and the Matter count."""
+    from app.matters.models import Matter
+
+    from .models import EvidencePilotRecord
+
     existing = Matter.all_objects.count()
     mine = (
         Matter.all_objects.filter(
             evidence_pilot_records__pilot=PILOT,
-            evidence_pilot_records__package_sha256=digest,
+            evidence_pilot_records__package_sha256=plan.digest,
             evidence_pilot_records__record_kind="MATTER",
         )
         .distinct()
         .count()
     )
-    written = EvidencePilotRecord.objects.filter(pilot=PILOT, package_sha256=digest).count()
-    plan.existing_matters = existing
+    written = EvidencePilotRecord.objects.filter(pilot=PILOT, package_sha256=plan.digest).count()
     if existing == 0 and written == 0:
-        plan.database_state = "fresh"
-    elif mine == existing == len(plan.topics) and written == sum(plan.expected_writes().values()):
-        plan.database_state = "applied"
-    else:
-        plan.database_state = "foreign"
-    return plan
+        return "fresh", existing
+    if mine == existing == len(plan.topics) and written == sum(plan.expected_writes().values()):
+        return "applied", existing
+    return "foreign", existing
 
 
 # ---------------------------------------------------------------------------
@@ -830,9 +887,31 @@ def apply_plan(
     from app.search.indexing import indexable_matters, refresh_matters
 
     with transaction.atomic():
+        _hold_the_database(plan)
         report, touched = _Writer(plan, backup_set=backup_set.strip()).write()
         refresh_matters(indexable_matters().filter(pk__in=touched))
     return report
+
+
+def _hold_the_database(plan: EvidencePlan) -> None:
+    """Keep anyone else from writing a Matter, then re-read what the plan saw.
+
+    The plan read the database before the transaction opened; a Teema created
+    in between would otherwise be written beside. The lock blocks other writers
+    to `matters_matter` until this transaction ends and lets readers through.
+    """
+    from django.db import connection
+
+    from app.matters.models import Matter
+
+    with connection.cursor() as cursor:
+        cursor.execute(f'LOCK TABLE "{Matter._meta.db_table}" IN SHARE ROW EXCLUSIVE MODE')
+    state, _count = _database_state(plan)
+    if state != plan.database_state:
+        raise EvidencePilotError(
+            f"The database changed after the plan ({plan.database_state} → {state}). "
+            "Nothing was written; plan again."
+        )
 
 
 class _Writer:
@@ -950,7 +1029,7 @@ class _Writer:
         does not take (notes, validity, source) are set only on a row this
         apply created, never on one that already existed.
         """
-        from app.organisations.services import get_or_create_organisation
+        from app.organisations.services import find_matches, get_or_create_organisation
 
         for name, entry in sorted(approved_organisations(self.package).items()):
             result = get_or_create_organisation(
@@ -959,11 +1038,18 @@ class _Writer:
                 registry_code=(entry.get("registry_code") or "").strip(),
             )
             organisation = result.organisation
+            if not result.created and organisation.pk not in {o.pk for o in find_matches(name)}:
+                # Reused by registry code alone — the plan refuses this; a
+                # catalogue change after the plan must not slip through.
+                raise EvidencePilotError(
+                    f"organisation {name!r} resolved to {organisation.name!r} by its registry "
+                    "code; refused."
+                )
             if result.created:
                 changed = []
                 for column in ("notes", "source_reference"):
                     if entry.get(column):
-                        setattr(organisation, column, str(entry[column])[:2000])
+                        setattr(organisation, column, str(entry[column]))
                         changed.append(column)
                 for column in ("valid_from", "valid_to"):
                     if entry.get(column):
@@ -1511,10 +1597,10 @@ class _Writer:
             acquired_at=page.modified_at,
             source_identifier=f"{page.page_key}/{resource.resource_key}",
         )
-        if version.sha256 != resource.sha256:
+        if version.sha256 != resource.sha256 or version.sha256 != doc.get("sha256"):
             raise EvidencePilotError(
                 f"{resource.resource_key}: stored SHA-256 {version.sha256} does not match the "
-                f"archive's {resource.sha256}."
+                f"archive's {resource.sha256} or the reviewed package's {doc.get('sha256')}."
             )
         if not is_extractable(Path(filename).suffix.lower()):
             DocumentVersion.objects.filter(pk=version.pk).update(

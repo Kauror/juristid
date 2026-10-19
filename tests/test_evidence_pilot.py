@@ -324,8 +324,20 @@ def _package() -> dict:
     }
 
 
+def _pinned(package: dict) -> dict:
+    """Every file the package accounts for, pinned to its bytes — as a real build does."""
+    for topic in package["topics"]:
+        page = topic["source_page"]["page_key"]
+        docs = [d for r in topic.get("records") or [] for d in r.get("documents") or []]
+        docs += list(topic.get("documents_unlinked") or [])
+        docs += list(topic.get("resources_not_imported") or [])
+        for doc in docs:
+            doc.setdefault("sha256", _sha(page, doc["resource_key"]))
+    return package
+
+
 def _write(root: Path, package: dict) -> Path:
-    (root / "package.json").write_text(json.dumps(package, ensure_ascii=False), "utf-8")
+    (root / "package.json").write_text(json.dumps(_pinned(package), ensure_ascii=False), "utf-8")
     return root
 
 
@@ -977,3 +989,130 @@ def test_a_reply_named_by_answered_by_answers_the_current_request(world, package
     assert verify_applied(build_plan(package_root)).problems == []
     # The other topic's request is still open.
     assert _matter(f"{YEAR}_6").response_deadline == dt.date(YEAR, 3, 20)
+
+
+# ---------------------------------------------------------------------------
+# the independent review of 2026-10-19: what a later package must not slip in
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        # B1: an undated note would read as written on the import day.
+        (
+            lambda p: _record(p, "E06").update({"date": None, "date_precision": None}),
+            "needs an exact day",
+        ),
+        # B2: `published_on` has no precision, so a month would become its 1st.
+        (
+            lambda p: _record(p, "E05").update({"date": f"{YEAR}-02", "date_precision": "MONTH"}),
+            "publication date is an exact day",
+        ),
+        # B3: two entries on one registry code would be filed as one body.
+        (
+            lambda p: p.update(
+                {
+                    "organisations": [
+                        _organisation("Uus Näidisamet", "AUTHORITY", registry_code="70000001"),
+                        _organisation("Vana Näidisamet", "AUTHORITY", registry_code="70000001"),
+                    ]
+                }
+            ),
+            "registry code 70000001 is also",
+        ),
+        # S1: the digest covers package.json; the package must pin every file.
+        (lambda p: _record(p, "E03")["documents"][0].pop("sha256"), "without its SHA-256"),
+        (lambda p: _one(p)["resources_not_imported"][0].pop("sha256"), "without its SHA-256"),
+        # S2: a past round given a reply-by day would open a wait nobody is in.
+        (
+            lambda p: _record(p, "E02").update({"feedback_deadline": f"{YEAR}-02-20"}),
+            "past round carries no reply-by day",
+        ),
+        # Refused at validate rather than half-way through the apply.
+        (
+            lambda p: p.update({"organisations": [_organisation("N" * 120)]}),
+            "too long for its provenance key",
+        ),
+        (
+            lambda p: p.update(
+                {"organisations": [_organisation("Näidisliit", source_reference="x" * 201)]}
+            ),
+            "source_reference is longer than 200",
+        ),
+        (
+            lambda p: p.update(
+                {
+                    "organisations": [
+                        _organisation(
+                            "Näidisliit", valid_from=f"{YEAR}-05-01", valid_to=f"{YEAR}-01-01"
+                        )
+                    ]
+                }
+            ),
+            "valid_from is after valid_to",
+        ),
+    ],
+)
+def test_the_review_findings_are_refused_at_validate(package_root, change, message):
+    problems = _validate(package_root, change)
+    assert any(message in problem for problem in problems), problems
+
+
+def test_a_name_is_never_merged_into_another_by_its_registry_code(world, package_root, pilot_on):
+    from app.organisations.models import Organisation
+
+    factories.OrganisationFactory(name="Uus Näidisamet", registry_code="70000001")
+    package = _package()
+    package["organisations"] = [
+        _organisation("Vana Näidisamet", "AUTHORITY", registry_code="70000001")
+    ]
+    _one(package)["records"].append(
+        _discovered(
+            "E09",
+            "Vana Näidisamet",
+            documents=[{"resource_key": "r003", "role": "EXTERNAL_POSITION"}],
+        )
+    )
+    _record(package, "E03")["documents"] = []
+    package_root = _write(package_root, package)
+
+    plan = build_plan(package_root)
+    assert any(
+        "registry code 70000001 already belongs to 'Uus Näidisamet'" in p for p in plan.problems
+    )
+    with pytest.raises(EvidencePilotError, match="The plan has problems"):
+        _apply(package_root)
+    assert not Organisation.objects.filter(name="Vana Näidisamet").exists()
+
+
+def test_a_teema_created_after_the_plan_stops_the_apply(world, package_root, pilot_on):
+    plan = build_plan(package_root)
+    assert plan.database_state == "fresh"
+    factories.MatterFactory()
+
+    with pytest.raises(EvidencePilotError, match="changed after the plan"):
+        apply_plan(
+            plan,
+            operator_intent=evidence_pilot.OPERATOR_INTENT,
+            expect_package_sha256=plan.digest,
+            backup_set="sets/20250331T000000Z",
+        )
+    assert Matter.all_objects.count() == 1
+    assert EvidencePilotRecord.objects.count() == 0
+
+
+def test_stored_bytes_must_match_the_reviewed_package_not_only_the_archive(
+    world, package_root, pilot_on
+):
+    # The archive and its resource.json re-exported together with new bytes: the
+    # validate catches it because the package pins the old SHA-256.
+    original = package_root / evidence_pilot.ARCHIVE_DIRECTORY / "pages/p-one/resources/r003"
+    content = b"%PDF-1.4\n% vahetatud\n"
+    (original / "original" / "Liikme vastus.pdf").write_bytes(content)
+    meta = json.loads((original / "resource.json").read_text("utf-8"))
+    meta.update({"sha256": hashlib.sha256(content).hexdigest(), "sizeBytes": len(content)})
+    (original / "resource.json").write_text(json.dumps(meta, ensure_ascii=False), "utf-8")
+
+    problems = _validate(package_root)
+    assert any("r003 SHA-256 in the package differs" in p for p in problems), problems
