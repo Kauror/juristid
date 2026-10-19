@@ -558,8 +558,14 @@ STRIP_RUN_DAY = ('.tl-step:has(.tl-step__what:text-is("Koja arvamus")) .tl-step_
 #: `occurred_on=date(2026, 5, 12)`, and the `Töövõit`'s reporting period. The
 #: engagement's date is the whole content of the row `teema-ajajoon` compares,
 #: so holding it still would photograph a canonical instead of the fixture.
+#:
+#: The third is the one import row (docs/adr/0092 §6, amendment 2026-10-19):
+#: `seed_e2e_data` imports two historical files onto this Matter in the seeding
+#: transaction, and the row is dated by that import — the run's day, like the
+#: other two. Named by its headline (`HISTORICAL_IMPORT_HEADLINE`).
 CHRONOLOGY_RUN_DAY = (
     '.uxtl__ms:has(.uxtl__mswhat:text-is("Teema loodud")) .uxtl__msdate',
+    '.uxtl__ms:has(.uxtl__mswhat:text-is("Ajaloolised dokumendid imporditud")) .uxtl__msdate',
     '.uxtl__ms:has(.uxtl__mswhat:text-is("Arvamus välja")) .uxtl__msdate',
 )
 
