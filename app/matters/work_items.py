@@ -113,7 +113,7 @@ from django.utils import timezone
 
 from app.core import dates
 from app.core.dates import format_estonian_date, short_day_month
-from app.intelligence.enums import FactStatus
+from app.intelligence.enums import FactStatus, is_informational_milestone
 from app.intelligence.models import MatterImportantDate
 from app.legacy_import.current_state import CurrentRegisterState, RegisterCurrency
 from app.legacy_import.register_semantics import OPINION_WORK_COMPLETE_STATES
@@ -317,6 +317,11 @@ class WorkItem:
     #: the opinion gets ``""`` (`app.matters.follow_up_display`).
     is_follow_up: bool = False
     follow_up_label: str = ""
+    #: Whether this row is an informational `Oluline tähtaeg` (a commencement a
+    #: draft proposes, `INFORMATIONAL_IMPORTANT_DATE_KINDS`): a date the file
+    #: watches, never its next step and never late (docs/adr/0120, amendment of
+    #: 2026-10-19). Read off the stored kind; `False` on every other row.
+    is_informational: bool = False
 
     @property
     def date_display(self) -> str:
@@ -700,6 +705,7 @@ def _deadline_item(record: MatterImportantDate, today: date) -> WorkItem:
     the Matter and the milestone moves with it, which is the behaviour a
     department actually has (§4.2).
     """
+    informational = is_informational_milestone(record.kind)
     return WorkItem(
         source_type=SOURCE_IMPORTANT_DEADLINE,
         object_id=record.pk,
@@ -715,10 +721,13 @@ def _deadline_item(record: MatterImportantDate, today: date) -> WorkItem:
         meaning=MEANING_IMPORTANT,
         text=record.title,
         # A milestone is a real commitment, so its last day passing is genuine
-        # lateness — unlike a review date, which is only a reminder.
-        is_overdue=record.period_end < today,
+        # lateness — unlike a review date, which is only a reminder. An
+        # informational one is not a commitment of anybody's here: a draft's
+        # planned commencement passing is not Koda being late.
+        is_overdue=record.period_end < today and not informational,
         is_review_ripe=False,
         today=today,
+        is_informational=informational,
     )
 
 
