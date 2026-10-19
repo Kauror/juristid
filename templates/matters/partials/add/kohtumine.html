@@ -18,6 +18,7 @@
             hx-target="#teema-vaade" hx-swap="outerHTML"
             hx-encoding="multipart/form-data">
         {% csrf_token %}
+        {% include "matters/partials/add/save_once.html" with token=save_once_tokens.meeting_form %}
         <div class="cx-grid cx-grid--links">
           <label class="cx-f cx-f--date">
             <span class="cx-f__lab">Kuupäev{% required_mark %}</span>

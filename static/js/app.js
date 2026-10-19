@@ -85,6 +85,860 @@
     /* Storage is blocked, so nothing was stored in it either. */
   }
 
+  /* ---- One feature that fails to start does not take the others with it -
+   * This whole file is one function, run once per page, and until 2026-10-18
+   * an exception anywhere in it stopped everything registered after the
+   * statement that threw — on every page, the request-failure notices and
+   * the draft keeping below included (JARCH-004). Each feature that does work
+   * while it starts — a load-time scan of the page, a binder run on
+   * `DOMContentLoaded` or after a swap — now starts through `safeInit`, which
+   * logs a failure to the console under the feature's name and lets the next
+   * one start. It hides nothing from a developer: the error is still printed,
+   * and the browser suite's console checks still see it. The same guard
+   * separates two steps that run in one swap listener, so the first failing
+   * does not skip the second.
+   *
+   * Registering a listener on `document` or `document.body` cannot throw, so
+   * a feature that only does that needs no guard (docs/adr/0171).
+   */
+  function safeInit(name, init) {
+    try {
+      init();
+    } catch (error) {
+      if (window.console && window.console.error) {
+        window.console.error("juristid: " + name + " failed", error);
+      }
+    }
+  }
+
+  /* ---- First: what a refused or failed request shows ---------------------
+   * Registered before any feature starts, so nothing a feature does can stop
+   * them being registered: the 400/409 swap and its empty-refusal guard, the
+   * notice for a failure that is not a rendered refusal, the drafts carried
+   * across a swap, and the files a refusal could not keep (docs/adr/0171).
+   * htmx's own `responseHandling` above already swaps 400, 409 and 422; the
+   * listeners here are what the page does with the answer.
+   */
+
+  /* ==== Workspace failures, and what a swap must not take with it =========
+   *
+   * Two defects with one cause: the Teema workspace is one column that most
+   * saves replace whole, and until now the client only knew how to show the
+   * refusals the server renders (ENG-012, ENG-034).
+   *
+   * **A failure that is not a rendered refusal was silent.** A 500, a proxy's
+   * 502 during a restart, a dropped connection, an expired session and a stale
+   * CSRF token all left `Salvesta` looking dead — and an expired gate was
+   * worse: the browser followed the redirect and htmx swapped the password page
+   * into the column, text and all. The server now answers the last two with a
+   * marked 401 / 403 instead of a page (app/core/middleware.py
+   * `HtmxSignInMiddleware`, app/core/views.py `csrf_failure`), and every
+   * failure is shown here the same way: one sentence in Estonian, inside the
+   * form that sent the request, saying that it was not saved and that the text
+   * is still there. Nothing is swapped, so the text *is* still there. Nothing
+   * is sent again on the person's behalf either: a POST that may or may not
+   * have reached the database is the person's to repeat, and after a persona
+   * change in another tab a quiet retry would save it under somebody else's
+   * name.
+   *
+   * **A save in one panel threw away what was typed in the others.** The
+   * column is replaced whole so the task, the process strip and the chronology
+   * cannot disagree about the save that just happened (docs/adr/0074 §10), and
+   * that stays. What changes is that each place a lawyer types into is marked
+   * as a draft host (`data-draft-host`, with an id), and before a swap lands
+   * every host that holds unsaved input — other than the one that sent the
+   * request, whose answer is the server's to give — is carried across it with
+   * htmx's own `hx-preserve`: the element itself moves, so its text, cursor,
+   * chosen files and listeners move with it. Nothing is written to browser
+   * storage; the draft only ever lives in the page it was typed into
+   * (docs/adr/0107).
+   *
+   * A host is carried only into its own place. Where the new column has no
+   * element with that id, or has one about a different record
+   * (`data-draft-state` — the composer and `Muuda` beside a task that has
+   * since been replaced), keeping the old form would post against something
+   * the page no longer shows. That text is shown instead, read-only, as
+   * `Salvestamata sisu` above the task, in the same shape the server uses for
+   * the same situation (QA-06). A whole-record editor that is carried keeps
+   * the revision it was opened with, so saving it later over a newer version
+   * is refused as a conflict rather than overwriting it (docs/adr/0104).
+   */
+
+  /** What each autosaving box last had confirmed by the server. */
+  var autosaved = new WeakMap();
+  /** What each autosaving form has in flight. */
+  var autosaving = new WeakMap();
+
+  var FAILURE_REASONS = {
+    network: "Ühendus serveriga katkes.",
+    server: "Serveris tekkis viga.",
+    "sign-in": "Sisselogimine on aegunud.",
+    csrf: "Leht on aegunud: sisselogimine muutus pärast lehe avamist, näiteks teises aknas.",
+    forbidden: "Sellele toimingule puudub ligipääs.",
+    missing: "Kirjet ei leitud või see pole sulle nähtav.",
+    other: "",
+  };
+
+  function failureKind(xhr) {
+    var status = xhr ? xhr.status : 0;
+    var marked = xhr ? xhr.getResponseHeader("X-Juristid-Failure") : null;
+    if (!status) {
+      return "network";
+    }
+    if (marked === "sign-in" || marked === "csrf") {
+      return marked;
+    }
+    if (status === 403) {
+      return "forbidden";
+    }
+    if (status === 404) {
+      return "missing";
+    }
+    return status >= 500 ? "server" : "other";
+  }
+
+  function failureText(kind, writes) {
+    var reason = FAILURE_REASONS[kind] || "";
+    var tail = "";
+    if (writes && (kind === "sign-in" || kind === "csrf")) {
+      tail = "Sisestatud tekst on alles, kuid seda ei salvestatud — kopeeri see enne jätkamist.";
+    } else if (writes && (kind === "missing" || kind === "forbidden")) {
+      tail = "Sisestatud tekst on alles.";
+    } else if (writes) {
+      tail = "Sisestatud tekst on alles; proovi uuesti.";
+    } else if (kind !== "sign-in" && kind !== "csrf") {
+      tail = "Proovi uuesti.";
+    }
+    return [reason, tail].filter(Boolean).join(" ");
+  }
+
+  /* Where a failure is told: inside the form that sent the request, after its
+   * controls, so it sits beside the thing that did not happen and covers
+   * nothing. A control outside a form gets it right after itself. */
+  function failureHost(elt) {
+    if (!elt || !elt.closest || !document.contains(elt)) {
+      return null;
+    }
+    return elt.closest("form") || elt;
+  }
+
+  function clearFailure(elt) {
+    var host = failureHost(elt);
+    if (!host) {
+      return;
+    }
+    var old =
+      host.tagName === "FORM"
+        ? host.querySelector(":scope > [data-request-failure]")
+        : host.nextElementSibling;
+    if (old && old.hasAttribute("data-request-failure")) {
+      old.remove();
+    }
+  }
+
+  function showFailure(elt, kind, method, xhr) {
+    var writes = String(method || "").toUpperCase() !== "GET";
+    var notice = document.createElement("div");
+    notice.className = "reqfail";
+    notice.setAttribute("role", "alert");
+    notice.setAttribute("data-request-failure", kind);
+    var text = document.createElement("p");
+    text.className = "reqfail__text";
+    var lead = document.createElement("strong");
+    lead.className = "reqfail__lead";
+    lead.textContent = writes ? "Salvestamine ebaõnnestus." : "Sisu laadimine ebaõnnestus.";
+    text.appendChild(lead);
+    var rest = failureText(kind, writes);
+    if (rest) {
+      text.appendChild(document.createTextNode(" " + rest));
+    }
+    notice.appendChild(text);
+
+    /* The one way forward for the two failures a retry cannot fix. A link and
+     * a button the person chooses to use, never a navigation made for them:
+     * leaving is what would lose the text. */
+    var signIn = kind === "sign-in" && xhr ? xhr.getResponseHeader("X-Juristid-Sign-In") : "";
+    if (signIn && signIn.charAt(0) === "/" && signIn.charAt(1) !== "/") {
+      var link = document.createElement("a");
+      link.className = "reqfail__action";
+      link.href = signIn;
+      link.textContent = "Logi uuesti sisse";
+      notice.appendChild(link);
+    } else if (kind === "csrf") {
+      var reload = document.createElement("button");
+      reload.type = "button";
+      reload.className = "button button--quiet button--tiny reqfail__action";
+      reload.textContent = "Laadi leht uuesti";
+      reload.addEventListener("click", function () {
+        window.location.reload();
+      });
+      notice.appendChild(reload);
+    }
+
+    clearFailure(elt);
+    var host = failureHost(elt);
+    if (host && host.tagName === "FORM") {
+      host.appendChild(notice);
+    } else if (host) {
+      host.insertAdjacentElement("afterend", notice);
+    } else {
+      /* The control is gone — a swap replaced it while its request was out.
+       * The page still has to say that something was not saved. */
+      var main = document.getElementById("sisu") || document.body;
+      main.insertBefore(notice, main.firstChild);
+    }
+    if (elt && elt.matches && elt.matches("form[data-autosave]")) {
+      markAutosaveFailed(elt);
+    }
+  }
+
+  function reportFailure(event, kind) {
+    var detail = event.detail || {};
+    var config = detail.requestConfig || {};
+    var elt = detail.elt || config.elt || event.target;
+    showFailure(elt, kind || failureKind(detail.xhr), config.verb, detail.xhr);
+  }
+
+  /* The autosave's own line says «Salvestatud HH:mm» after a save that worked.
+   * After one that did not, it must not go on saying it. */
+  function markAutosaveFailed(form) {
+    var status = document.getElementById(form.getAttribute("data-autosave-status") || "");
+    if (status) {
+      status.textContent = "Salvestamata";
+      status.classList.add("is-unsaved");
+    }
+  }
+
+  function autosaveBox(form) {
+    return form && form.querySelector ? form.querySelector("textarea") : null;
+  }
+
+  /* -- Unsaved input ------------------------------------------------------ */
+
+  function selectChanged(select) {
+    var options = select.options;
+    if (select.multiple) {
+      for (var i = 0; i < options.length; i += 1) {
+        if (options[i].selected !== options[i].defaultSelected) {
+          return true;
+        }
+      }
+      return false;
+    }
+    /* A single select with no `selected` option shows its first one, and that
+     * is not a change the person made. */
+    var initial = 0;
+    for (var j = 0; j < options.length; j += 1) {
+      if (options[j].defaultSelected) {
+        initial = j;
+      }
+    }
+    return options.length > 0 && select.selectedIndex !== initial;
+  }
+
+  function controlChanged(control) {
+    if (control.disabled) {
+      return false;
+    }
+    var type = (control.type || "").toLowerCase();
+    if (/^(hidden|submit|button|reset|image)$/.test(type)) {
+      return false;
+    }
+    if (type === "file") {
+      return !!(control.files && control.files.length);
+    }
+    if (type === "checkbox" || type === "radio") {
+      return control.checked !== control.defaultChecked;
+    }
+    if (control.tagName === "SELECT") {
+      return selectChanged(control);
+    }
+    return control.value !== control.defaultValue;
+  }
+
+  /* Which stored version an autosaving form's box was filled from: the hidden
+   * `…-revision` the server renders and moves on with every 2xx
+   * (templates/matters/partials/note_saved.html). Empty means never saved. */
+  function autosaveRevision(form) {
+    var field = form.querySelector('input[name$="-revision"]');
+    return field ? field.value : "";
+  }
+
+  /* Whether the note has to be carried across a swap, judged against the
+   * render that is about to replace it rather than against the last save this
+   * page heard back about (JQA-003). A panel's answer can be rendered before
+   * the note's autosave commits and still arrive after that autosave's 2xx:
+   * the box then counts as saved, and the old render — the earlier text, the
+   * earlier revision — used to replace it. The text vanished, and the next
+   * keystroke autosaved against the earlier revision into a false 409.
+   *
+   * So the box is kept whenever it holds anything other than what the render
+   * holds, and also when the render's revision is older than the box's: a
+   * stale render never moves the token back. The revision is the row's
+   * `updated_at` in UTC ISO form (app/matters/services.py
+   * `personal_note_revision`), so string order is time order — even when
+   * Python leaves out a zero microsecond, as `+` sorts before `.`. A render
+   * that is newer and holds the same text is let through. A render with other
+   * text is never adopted over the box: if another tab saved it, the next
+   * autosave is the existing 409 with the newer text beside the box
+   * (docs/adr/0077, docs/adr/0107 §2). */
+  function autosaveOutdatedBy(host, place) {
+    var box = autosaveBox(host);
+    var incoming = place ? autosaveBox(place) : null;
+    if (!box) {
+      return false;
+    }
+    if (!incoming) {
+      return autosaved.has(box) && box.value !== autosaved.get(box);
+    }
+    return box.value !== incoming.value || autosaveRevision(place) < autosaveRevision(host);
+  }
+
+  function holdsUnsavedInput(host) {
+    if (host.hasAttribute("data-autosave")) {
+      /* Whether it is kept is decided against the answer, in `keepDrafts`. */
+      return !!autosaveBox(host);
+    }
+    var controls = host.querySelectorAll("input, textarea, select");
+    for (var i = 0; i < controls.length; i += 1) {
+      if (controlChanged(controls[i])) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function controlLabel(control) {
+    var label = null;
+    if (control.id && window.CSS && CSS.escape) {
+      label = document.querySelector('label[for="' + CSS.escape(control.id) + '"]');
+    }
+    label = label || control.closest("label");
+    var text = label ? label.textContent : control.getAttribute("aria-label") || "";
+    return text.replace(/\s+/g, " ").trim() || "Tekst";
+  }
+
+  /* What a host held that the page is about to stop showing: label and value,
+   * as text, for a person to read and copy. A chosen file cannot be carried
+   * as text; its name is, so the person knows to choose it again. */
+  function unsavedLines(host) {
+    var lines = [];
+    host.querySelectorAll("input, textarea, select").forEach(function (control) {
+      if (!controlChanged(control)) {
+        return;
+      }
+      var type = (control.type || "").toLowerCase();
+      var value = "";
+      if (type === "file") {
+        value = Array.prototype.map
+          .call(control.files, function (file) {
+            return file.name;
+          })
+          .join(", ");
+        value += " — fail tuleb uuesti valida";
+      } else if (type === "checkbox" || type === "radio") {
+        return;
+      } else if (control.tagName === "SELECT") {
+        value = Array.prototype.filter
+          .call(control.options, function (option) {
+            return option.selected;
+          })
+          .map(function (option) {
+            return option.textContent.trim();
+          })
+          .join(", ");
+      } else {
+        value = control.value;
+      }
+      if (value.trim()) {
+        lines.push([controlLabel(control), value]);
+      }
+    });
+    return lines;
+  }
+
+  var unsavedCount = 0;
+
+  function showUnsaved(region, lines) {
+    if (!region || !lines.length) {
+      return;
+    }
+    unsavedCount += 1;
+    var heading = "salvestamata-kliendis-" + unsavedCount;
+    var section = document.createElement("section");
+    section.className = "unsaved";
+    section.setAttribute("role", "status");
+    section.setAttribute("aria-labelledby", heading);
+    var h2 = document.createElement("h2");
+    h2.className = "rowlabel";
+    h2.id = heading;
+    h2.textContent = "Salvestamata sisu";
+    var note = document.createElement("p");
+    note.className = "unsaved__note";
+    note.textContent =
+      "Seda ei salvestatud: kirje, mille juures see oli, muutus vahepeal. " +
+      "Kopeeri see endale enne, kui lehe uuesti laadid.";
+    var list = document.createElement("dl");
+    list.className = "unsaved__body";
+    lines.forEach(function (line) {
+      var dt = document.createElement("dt");
+      dt.className = "unsaved__label";
+      dt.textContent = line[0];
+      var dd = document.createElement("dd");
+      dd.className = "unsaved__value";
+      dd.textContent = line[1];
+      list.appendChild(dt);
+      list.appendChild(dd);
+    });
+    section.appendChild(h2);
+    section.appendChild(note);
+    section.appendChild(list);
+    var task = region.querySelector("#praegune-tegevus");
+    if (task && task.parentNode) {
+      task.parentNode.insertBefore(section, task);
+    } else {
+      region.insertBefore(section, region.firstChild);
+    }
+  }
+
+  /* Which `LISA TEEMALE` choices were showing this host. The panels open off
+   * radios the server sets from what *it* is answering, so a panel carried
+   * across a save somebody made elsewhere would arrive hidden. Only a chain
+   * that was entirely open is recorded: a draft left in a panel the person had
+   * already switched away from stays where they left it. */
+  function openChoices(host) {
+    var picks = [];
+    for (var panel = host; panel; panel = panel.parentElement) {
+      if (panel.hasAttribute("data-addpanel") && panel.id) {
+        var pick = document.getElementById(panel.id + "-valik");
+        /* A radio for a `LISA TEEMALE` choice, a checkbox for `✓ Tehtud`
+           (docs/adr/0140 §1): either way the input is what holds "open". */
+        if (pick && (pick.type === "radio" || pick.type === "checkbox")) {
+          if (!pick.checked) {
+            return [];
+          }
+          picks.push(pick.id);
+        }
+      }
+    }
+    return picks;
+  }
+
+  function swapReplaces(detail) {
+    var elt = detail.requestConfig && detail.requestConfig.elt;
+    var style = detail.swapOverride;
+    if (!style && elt && elt.closest) {
+      var owner = elt.closest("[hx-swap]");
+      style = owner ? owner.getAttribute("hx-swap") : "";
+    }
+    style = (style || (window.htmx && window.htmx.config.defaultSwapStyle) || "innerHTML").split(" ")[0];
+    return style === "outerHTML" || style === "innerHTML";
+  }
+
+  var carried = null;
+
+  function keepDrafts(detail) {
+    carried = null;
+    var target = detail.target;
+    var requester = detail.requestConfig && detail.requestConfig.elt;
+    if (!target || !target.querySelectorAll || !swapReplaces(detail)) {
+      return;
+    }
+    var hosts = Array.prototype.filter.call(
+      target.querySelectorAll("[data-draft-host][id]"),
+      function (host) {
+        return host !== target && !(requester && host.contains(requester)) && holdsUnsavedInput(host);
+      },
+    );
+    if (!hosts.length) {
+      return;
+    }
+    var response = String(detail.serverResponse || "");
+    if (/<(html|head|body)[\s>]/i.test(response)) {
+      /* A whole document is htmx's to parse, title and all; a fragment
+       * template would drop the parts it treats specially. No workspace
+       * answer is one. */
+      return;
+    }
+    var template = document.createElement("template");
+    template.innerHTML = response;
+    var fresh = template.content;
+    var kept = [];
+    var lost = [];
+    hosts.forEach(function (host) {
+      var place = fresh.getElementById(host.id);
+      if (host.hasAttribute("data-autosave") && !autosaveOutdatedBy(host, place)) {
+        return;
+      }
+      var same =
+        place &&
+        place.hasAttribute("data-draft-host") &&
+        (place.getAttribute("data-draft-state") || "") === (host.getAttribute("data-draft-state") || "");
+      if (same) {
+        place.setAttribute("hx-preserve", "true");
+        kept.push({ id: host.id, picks: openChoices(host) });
+      } else {
+        lost = lost.concat(unsavedLines(host));
+      }
+    });
+    if (kept.length) {
+      detail.serverResponse = template.innerHTML;
+    }
+    carried = { xhr: detail.xhr, targetId: target.id, kept: kept, lost: lost };
+  }
+
+  function settleDrafts(detail) {
+    if (!carried || carried.xhr !== detail.xhr) {
+      return;
+    }
+    var done = carried;
+    carried = null;
+    done.kept.forEach(function (entry) {
+      var host = document.getElementById(entry.id);
+      if (host) {
+        /* The element htmx put back is the old one, which never had the
+         * marker; this only makes sure no copy of it lingers to carry the
+         * host again on a later swap where it holds nothing. */
+        host.removeAttribute("hx-preserve");
+      }
+      entry.picks.forEach(function (id) {
+        var pick = document.getElementById(id);
+        if (pick) {
+          pick.checked = true;
+        }
+      });
+    });
+    showUnsaved(document.getElementById(done.targetId), done.lost);
+  }
+
+  /* -- Files a refusal could not keep (JUX-001) ----------------------------
+   * A refused save answers 400 with the surface re-rendered, and the text that
+   * was typed comes back from the server. The chosen files cannot: no browser
+   * lets a page put a file into a file input, so the drop box used to reset
+   * without a word, and the corrected save stored the record with no files
+   * (docs/adr/0107, amendment of 2026-10-18).
+   *
+   * So the names are taken from the form as its request leaves, and when the
+   * answer is a refusal the re-rendered form says, beside its drop box, which
+   * files have to be chosen again. Until they are, a save pressed in that form
+   * is stopped in the page, the same notice takes focus, and the person either
+   * chooses the files again or says `Salvesta ilma failita`. Nothing is kept
+   * in the browser beyond the names, and a page with no script is unchanged:
+   * the files are optional and the server takes a record without them. */
+  var filesInFlight = new WeakMap();
+  var filesAgainCount = 0;
+
+  function chosenFileNames(form) {
+    var names = [];
+    form.querySelectorAll("input[type=file]").forEach(function (field) {
+      if (field.disabled || !field.files) {
+        return;
+      }
+      Array.prototype.forEach.call(field.files, function (file) {
+        names.push(file.name);
+      });
+    });
+    return names;
+  }
+
+  /* Where the refused form is found again once the answer has replaced it:
+   * the panel or draft host around it, by id, and inside that the form that
+   * posts to the same address. A form outside any host is found by its
+   * address alone, and only when exactly one form on the page has it. */
+  function formPlace(form) {
+    var host = form.closest("[data-draft-host][id], [data-addpanel][id]");
+    return {
+      hostId: host ? host.id : "",
+      formId: form.id || "",
+      post: form.getAttribute("hx-post") || "",
+    };
+  }
+
+  function formAt(place) {
+    if (place.formId) {
+      var byId = document.getElementById(place.formId);
+      if (byId && byId.tagName === "FORM") {
+        return byId;
+      }
+    }
+    var scope = place.hostId ? document.getElementById(place.hostId) : document;
+    if (!scope || !place.post) {
+      return null;
+    }
+    var forms = Array.prototype.filter.call(scope.querySelectorAll("form"), function (form) {
+      return form.getAttribute("hx-post") === place.post && !!form.querySelector("input[type=file]");
+    });
+    return forms.length === 1 ? forms[0] : null;
+  }
+
+  function filesAgainNotice(form) {
+    return form ? form.querySelector("[data-files-again]") : null;
+  }
+
+  function filesAgainText(names) {
+    var lead = names.length === 1 ? "Fail tuleb uuesti valida: " : "Failid tuleb uuesti valida: ";
+    return lead + names.join(", ");
+  }
+
+  function showFilesAgain(form, names) {
+    if (!form || !names.length) {
+      return;
+    }
+    var old = filesAgainNotice(form);
+    if (old) {
+      old.remove();
+    }
+    filesAgainCount += 1;
+    var notice = document.createElement("div");
+    notice.className = "filesagain";
+    notice.id = "fail-uuesti-" + filesAgainCount;
+    notice.setAttribute("role", "status");
+    notice.setAttribute("aria-live", "polite");
+    notice.setAttribute("tabindex", "-1");
+    notice.setAttribute("data-files-again", "");
+    notice.filesAgainNames = names.slice();
+    var drop = form.querySelector("[data-filedrop], [data-upload-zone]");
+    if (drop && drop.parentNode) {
+      drop.parentNode.insertBefore(notice, drop.nextSibling);
+    } else {
+      var actions = form.querySelector(".addform__actions");
+      form.insertBefore(notice, actions && actions.parentNode === form ? actions : null);
+    }
+    /* Filled after it is in the page: a live region that arrives already
+     * holding its words is not reliably read out. */
+    window.setTimeout(function () {
+      if (!notice.firstChild) {
+        fillFilesAgain(notice, false);
+      }
+    }, 50);
+  }
+
+  function fillFilesAgain(notice, asking) {
+    var names = notice.filesAgainNames || [];
+    notice.textContent = "";
+    var text = document.createElement("p");
+    text.className = "filesagain__text";
+    var lead = document.createElement("strong");
+    lead.className = "filesagain__lead";
+    lead.textContent = filesAgainText(names) + ".";
+    text.appendChild(lead);
+    text.appendChild(
+      document.createTextNode(
+        " Salvestamine ei õnnestunud ja brauser ei hoia " +
+          (names.length === 1 ? "valitud faili" : "valitud faile") +
+          " alles.",
+      ),
+    );
+    notice.appendChild(text);
+    if (!asking) {
+      return;
+    }
+    var ask = document.createElement("p");
+    ask.className = "filesagain__text";
+    ask.textContent =
+      names.length === 1
+        ? "Fail on valimata. Vali see uuesti või salvesta ilma failita."
+        : "Failid on valimata. Vali need uuesti või salvesta ilma failideta.";
+    notice.appendChild(ask);
+    var actions = document.createElement("div");
+    actions.className = "filesagain__actions";
+    var pick = document.createElement("button");
+    pick.type = "button";
+    pick.className = "button button--quiet button--tiny";
+    pick.setAttribute("data-files-again-pick", "");
+    pick.textContent = names.length === 1 ? "Vali fail uuesti" : "Vali failid uuesti";
+    var skip = document.createElement("button");
+    skip.type = "button";
+    skip.className = "button button--quiet button--tiny";
+    skip.setAttribute("data-files-again-skip", "");
+    skip.textContent = "Salvesta ilma failita";
+    actions.appendChild(pick);
+    actions.appendChild(skip);
+    notice.appendChild(actions);
+  }
+
+  /* A save pressed while the notice stands and nothing has been chosen. */
+  function stopsForFiles(form) {
+    var notice = filesAgainNotice(form);
+    if (!notice || chosenFileNames(form).length) {
+      return false;
+    }
+    fillFilesAgain(notice, true);
+    notice.focus();
+    return true;
+  }
+
+  document.addEventListener("click", function (event) {
+    var target = event.target;
+    var button =
+      target && target.closest ? target.closest("[data-files-again-pick], [data-files-again-skip]") : null;
+    var form = button ? button.closest("form") : null;
+    if (!form) {
+      return;
+    }
+    var notice = filesAgainNotice(form);
+    if (button.hasAttribute("data-files-again-pick")) {
+      var field = form.querySelector("input[type=file]:not([disabled])");
+      if (field) {
+        field.click();
+      }
+      return;
+    }
+    if (notice) {
+      notice.remove();
+    }
+    if (typeof form.requestSubmit === "function") {
+      form.requestSubmit();
+    } else if (window.htmx) {
+      window.htmx.trigger(form, "submit");
+    }
+  });
+
+  /* Choosing files again — picked or dropped, both end in `change` — is the
+   * answer the notice asked for. */
+  document.addEventListener("change", function (event) {
+    var field = event.target;
+    if (!field || field.type !== "file" || !field.files || !field.files.length || !field.form) {
+      return;
+    }
+    var notice = filesAgainNotice(field.form);
+    if (notice) {
+      notice.remove();
+    }
+  });
+
+  function noteFilesLeaving(detail) {
+    var form = detail.elt;
+    if (!form || form.tagName !== "FORM" || !detail.xhr) {
+      return;
+    }
+    var names = chosenFileNames(form);
+    if (names.length) {
+      filesInFlight.set(detail.xhr, { place: formPlace(form), names: names });
+    }
+  }
+
+  function tellFilesAgain(detail) {
+    var xhr = detail.xhr;
+    var sent = xhr ? filesInFlight.get(xhr) : null;
+    if (!sent) {
+      return;
+    }
+    filesInFlight.delete(xhr);
+    if (xhr.status === 400 || xhr.status === 409 || xhr.status === 422) {
+      showFilesAgain(formAt(sent.place), sent.names);
+    }
+  }
+
+  /* -- The listeners, each registered once for the life of the page ------- */
+
+  /* A rejected save returns 400 with the surface re-rendered and the errors in
+   * place, and a refused autosave returns 409 with the conflict beside the
+   * box. HTMX drops non-2xx responses unless told otherwise, which would make
+   * a validation failure look like nothing happened at all — and would make a
+   * personal note that was *not* saved look exactly like one that was
+   * (app/matters/views.py `_note_conflict`, QA-09).
+   *
+   * **An empty refusal is not swapped.** There is nothing in it to show, and
+   * swapping nothing into the target deletes the target: the note's refused
+   * save (a bare 400) used to remove its own status line, and every later
+   * autosave then had nowhere to land. It is reported as a failure instead. */
+  document.body.addEventListener("htmx:beforeSwap", function (event) {
+    var detail = event.detail;
+    var status = detail.xhr && detail.xhr.status;
+    if (status === 400 || status === 409) {
+      detail.shouldSwap = true;
+      detail.isError = false;
+    }
+    if (status >= 400 && status < 500 && !String(detail.serverResponse || "").trim()) {
+      detail.shouldSwap = false;
+      detail.isError = true;
+    }
+    if (detail.shouldSwap) {
+      keepDrafts(detail);
+    }
+  });
+
+  document.body.addEventListener("htmx:afterSwap", function (event) {
+    safeInit("settleDrafts", function () {
+      settleDrafts(event.detail || {});
+    });
+    safeInit("tellFilesAgain", function () {
+      tellFilesAgain(event.detail || {});
+    });
+  });
+
+  document.body.addEventListener("htmx:beforeRequest", function (event) {
+    var elt = event.detail && event.detail.elt;
+    if (elt && elt.tagName === "FORM" && stopsForFiles(elt)) {
+      /* Cancelled before htmx marks anything in flight: nothing is posted,
+       * and the save-once token stays unspent for the real save. */
+      event.preventDefault();
+      return;
+    }
+    noteFilesLeaving(event.detail || {});
+    clearFailure(elt);
+    if (elt && elt.matches && elt.matches("form[data-autosave]")) {
+      var box = autosaveBox(elt);
+      if (box) {
+        autosaving.set(elt, box.value);
+      }
+    }
+  });
+
+  /* Only a 2xx moves what the note last saved. htmx fires `afterRequest` on
+   * errors, aborts and timeouts as well, and moving it there disarmed the
+   * unload flush below for exactly the text that had failed to save. A 409 is
+   * the conflict, and the box keeps saying so until it is reconciled. */
+  document.body.addEventListener("htmx:afterRequest", function (event) {
+    var detail = event.detail || {};
+    var elt = detail.elt;
+    if (!elt || !elt.matches || !elt.matches("form[data-autosave]")) {
+      return;
+    }
+    var box = autosaveBox(elt);
+    var status = detail.xhr ? detail.xhr.status : 0;
+    if (box && autosaving.has(elt) && status >= 200 && status < 300) {
+      autosaved.set(box, autosaving.get(elt));
+    }
+    autosaving.delete(elt);
+  });
+
+  /* The inline refusals (400/409/422 with a body) are the server's own answer
+   * and are already on the page; everything else that is an error is told. */
+  document.body.addEventListener("htmx:responseError", function (event) {
+    var detail = event.detail || {};
+    var xhr = detail.xhr;
+    var status = xhr ? xhr.status : 0;
+    if ((status === 400 || status === 409 || status === 422) && String(xhr.response || "").trim()) {
+      return;
+    }
+    reportFailure(event);
+  });
+  document.body.addEventListener("htmx:sendError", function (event) {
+    reportFailure(event, "network");
+  });
+  document.body.addEventListener("htmx:timeout", function (event) {
+    reportFailure(event, "network");
+  });
+
+  /* The one case the debounce cannot cover: a line typed into the note and the
+   * tab closed inside the delay, or a note whose last save failed. One
+   * listener for the page, asking whichever note is there now — it used to be
+   * one more listener per swap, each holding a box that no longer existed. */
+  window.addEventListener("beforeunload", function () {
+    document.querySelectorAll("form[data-autosave]").forEach(function (form) {
+      var box = autosaveBox(form);
+      if (!box || !autosaved.has(box) || box.value === autosaved.get(box)) {
+        return;
+      }
+      var url = form.getAttribute("hx-post");
+      if (url && navigator.sendBeacon) {
+        navigator.sendBeacon(url, new FormData(form));
+      }
+    });
+  });
+
   /* ---- A save must not throw the keyboard back to the top ---------------
    * Every capture on a Teema is an htmx swap, and a swap destroys the element
    * that had focus. The browser's answer to that is `document.body`, so a
@@ -314,52 +1168,54 @@
    * these. The block is open while *any* of them is ticked, which is the same
    * rule the server renders with (`other_instrument_open`, docs/adr/0090).
    */
-  [
-    ["#valdkond-muu input[type=checkbox]", "valdkond-muu-tekst"],
-    ['[data-reveals="oigusakt-muu-tekst"] input', "oigusakt-muu-tekst"]
-  ].forEach(function (pair) {
-    var chips = document.querySelectorAll(pair[0]);
-    var revealed = document.getElementById(pair[1]);
-    if (!chips.length || !revealed) {
-      return;
-    }
-    var anyChecked = function () {
-      return Array.prototype.some.call(chips, function (chip) {
-        return chip.checked;
-      });
-    };
-    var syncOther = function (event) {
-      var open = anyChecked();
-      revealed.hidden = !open;
-      /* On the initial sync, and on the tick that opened it — never on the
-         untick of a second chip while a first stays ticked, which would pull
-         the caret out of whatever somebody is typing in. The first of those two
-         is the behaviour this had before there was more than one chip: a
-         refused save comes back with the box open and the caret in it. */
-      if (open && (!event || (event.target && event.target.checked))) {
-        var input = revealed.querySelector("input");
-        if (input) {
-          input.focus();
-        }
+  safeInit("muu-reveal", function () {
+    [
+      ["#valdkond-muu input[type=checkbox]", "valdkond-muu-tekst"],
+      ['[data-reveals="oigusakt-muu-tekst"] input', "oigusakt-muu-tekst"]
+    ].forEach(function (pair) {
+      var chips = document.querySelectorAll(pair[0]);
+      var revealed = document.getElementById(pair[1]);
+      if (!chips.length || !revealed) {
+        return;
       }
-    };
-    /* Õigusakt is a radio group since the one-instrument rule (docs/adr/0070,
-       amendment of 2026-10-09). Choosing another radio unticks a `Muu` one
-       without a `change` on it, so the whole group is listened to — every
-       input sharing a name with a revealing chip. */
-    var listened = new Set();
-    Array.prototype.forEach.call(chips, function (chip) {
-      var group = chip.type === "radio" && chip.form
-        ? chip.form.querySelectorAll('input[name="' + chip.name + '"]')
-        : [chip];
-      Array.prototype.forEach.call(group, function (input) {
-        if (!listened.has(input)) {
-          listened.add(input);
-          input.addEventListener("change", syncOther);
+      var anyChecked = function () {
+        return Array.prototype.some.call(chips, function (chip) {
+          return chip.checked;
+        });
+      };
+      var syncOther = function (event) {
+        var open = anyChecked();
+        revealed.hidden = !open;
+        /* On the initial sync, and on the tick that opened it — never on the
+           untick of a second chip while a first stays ticked, which would pull
+           the caret out of whatever somebody is typing in. The first of those two
+           is the behaviour this had before there was more than one chip: a
+           refused save comes back with the box open and the caret in it. */
+        if (open && (!event || (event.target && event.target.checked))) {
+          var input = revealed.querySelector("input");
+          if (input) {
+            input.focus();
+          }
         }
+      };
+      /* Õigusakt is a radio group since the one-instrument rule (docs/adr/0070,
+         amendment of 2026-10-09). Choosing another radio unticks a `Muu` one
+         without a `change` on it, so the whole group is listened to — every
+         input sharing a name with a revealing chip. */
+      var listened = new Set();
+      Array.prototype.forEach.call(chips, function (chip) {
+        var group = chip.type === "radio" && chip.form
+          ? chip.form.querySelectorAll('input[name="' + chip.name + '"]')
+          : [chip];
+        Array.prototype.forEach.call(group, function (input) {
+          if (!listened.has(input)) {
+            listened.add(input);
+            input.addEventListener("change", syncOther);
+          }
+        });
       });
+      syncOther();
     });
-    syncOther();
   });
 
   /* ---- Uus teema: say which files are about to be uploaded --------------
@@ -369,9 +1225,12 @@
    * save each of these is an immutable version and removing it is a different
    * kind of act (app/documents, Uus teema redesign §9).
    */
-  var fileInput = document.getElementById("id_files");
-  var fileList = document.getElementById("valitud-failid");
-  if (fileInput && fileList) {
+  safeInit("uus-teema-files", function () {
+    var fileInput = document.getElementById("id_files");
+    var fileList = document.getElementById("valitud-failid");
+    if (!fileInput || !fileList) {
+      return;
+    }
     /* The list of chosen files, their display titles, their `×` and what a
        drop adds are the shared upload queue's (static/js/ux.js,
        `uploadQueue`) — one implementation for this form and every
@@ -1090,7 +1949,7 @@
         schedule();
       }
     }
-  }
+  });
 
   /* ---- Uus teema: a restored form gets its warning back ------------------
    * `Sarnased teemad` recomputes on the fields that decide the answer and on
@@ -1128,7 +1987,7 @@
    * element. Back, forward and back again is one refresh each, and the
    * debounced typing triggers are untouched.
    */
-  (function () {
+  safeInit("sarnased-restore", function () {
     /* The names the draft endpoint actually reads
        (app/related_materials/views.py::draft_suggestions) — its list rather
        than the trigger's, because the trigger names the fields worth
@@ -1198,7 +2057,7 @@
       }
       region.dispatchEvent(new CustomEvent("sarnased:chips"));
     });
-  })();
+  });
 
   /* ---- Composer: Ctrl/Cmd+Enter submits, Esc closes optional fields ------ */
   document.addEventListener("keydown", function (event) {
@@ -1283,7 +2142,12 @@
       form.requestSubmit();
       return;
     }
-    if (event.key !== "Escape") {
+    /* Escape that something inside the form has already handled — the
+       organisation suggestions, a calendar — was meant for that popup, not
+       for the panel around it. It used to close both, so one key hid the
+       form and everything typed in it (2026-10-17 audit, JUX-007). A second
+       Escape, with nothing else open, still closes the panel. */
+    if (event.key !== "Escape" || event.defaultPrevented) {
       return;
     }
     var holder = form.closest("details");
@@ -1695,7 +2559,7 @@
 
     /* The private note saves itself and says so. What it last saved is kept
        per box, and only a save the server confirmed moves it
-       (`Workspace failures` below, ENG-012). */
+       (`Workspace failures` near the top of this file, ENG-012). */
     scope.querySelectorAll("form[data-autosave]").forEach(function (form) {
       if (!once(form, "Autosave")) {
         return;
@@ -1997,8 +2861,42 @@
     }
   }
 
-  function buildCalendar(panel, input, visible) {
+  function daysInMonth(year, month) {
+    return new Date(year, month + 1, 0).getDate();
+  }
+
+  /* The same day `months` away, or the last day of that month when it is
+     shorter: PageDown from 31 January is 28 February, not 3 March. */
+  function addMonths(date, months) {
+    var first = new Date(date.getFullYear(), date.getMonth() + months, 1);
+    var last = daysInMonth(first.getFullYear(), first.getMonth());
+    return new Date(first.getFullYear(), first.getMonth(), Math.min(date.getDate(), last));
+  }
+
+  function addDays(date, days) {
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+  }
+
+  var calendarCount = 0;
+
+  /* ---- The calendar as a dialog with a day grid (2026-10-17 audit, JUX-008)
+   * The panel is a labelled `role="dialog"`; the month is a `role="grid"`
+   * named by its title, in week rows with the weekday names as column headers.
+   * The days are **one Tab stop**: only the active day has `tabindex="0"`, and
+   * the arrow keys move it — Left/Right a day, Up/Down a week, Home/End to the
+   * week's Monday and Sunday, PageUp/PageDown a month (with Shift, a year).
+   * Moving past the month's edge redraws that month and keeps going. Enter or
+   * Space on a day is the button's own click, so choosing is unchanged.
+   *
+   * The rows are `display: contents`, so the seven-column CSS grid and every
+   * measurement in e2e/test_datepicker_target_size.py stay as they were. */
+  function buildCalendar(panel, input, visible, active) {
     panel.textContent = "";
+    if (!panel.dataset.calendarId) {
+      calendarCount += 1;
+      panel.dataset.calendarId = "kalender-" + calendarCount;
+    }
+    var titleId = panel.dataset.calendarId + "-kuu";
 
     var head = document.createElement("div");
     head.className = "datepicker__head";
@@ -2008,9 +2906,11 @@
     previous.className = "datepicker__nav";
     previous.textContent = "‹";
     previous.setAttribute("aria-label", "Eelmine kuu");
+    previous.setAttribute("data-datepicker-nav", "previous");
 
     var title = document.createElement("span");
     title.className = "datepicker__title";
+    title.id = titleId;
     title.setAttribute("aria-live", "polite");
     title.textContent = MONTHS[visible.getMonth()] + " " + visible.getFullYear();
 
@@ -2019,6 +2919,7 @@
     next.className = "datepicker__nav";
     next.textContent = "›";
     next.setAttribute("aria-label", "Järgmine kuu");
+    next.setAttribute("data-datepicker-nav", "next");
 
     /* `stopPropagation`, and it is load-bearing rather than defensive.
      *
@@ -2032,15 +2933,28 @@
      * Keeping the event inside the calendar is the honest fix: navigating a
      * month is not a click outside the calendar and should never have been
      * offered to a listener whose job is to notice one. The document listener
-     * is hardened separately, so neither depends on the other. */
-    previous.addEventListener("click", function (event) {
-      event.stopPropagation();
-      buildCalendar(panel, input, new Date(visible.getFullYear(), visible.getMonth() - 1, 1));
-    });
-    next.addEventListener("click", function (event) {
-      event.stopPropagation();
-      buildCalendar(panel, input, new Date(visible.getFullYear(), visible.getMonth() + 1, 1));
-    });
+     * is hardened separately, so neither depends on the other.
+     *
+     * **Focus goes back to the arrow that was pressed.** The rebuild detaches
+     * it, and focus on a detached node falls to `<body>` — a keyboard user who
+     * pressed «Järgmine kuu» was thrown out of the calendar (JUX-008). The new
+     * arrow of the same direction takes it. */
+    var navigate = function (direction, months) {
+      return function (event) {
+        event.stopPropagation();
+        buildCalendar(
+          panel,
+          input,
+          new Date(visible.getFullYear(), visible.getMonth() + months, 1)
+        );
+        var again = panel.querySelector('[data-datepicker-nav="' + direction + '"]');
+        if (again) {
+          again.focus();
+        }
+      };
+    };
+    previous.addEventListener("click", navigate("previous", -1));
+    next.addEventListener("click", navigate("next", 1));
 
     head.appendChild(previous);
     head.appendChild(title);
@@ -2049,24 +2963,53 @@
 
     var grid = document.createElement("div");
     grid.className = "datepicker__grid";
+    grid.setAttribute("role", "grid");
+    grid.setAttribute("aria-labelledby", titleId);
 
+    var newRow = function () {
+      var row = document.createElement("div");
+      row.className = "datepicker__row";
+      row.setAttribute("role", "row");
+      grid.appendChild(row);
+      return row;
+    };
+
+    var headings = newRow();
     WEEKDAYS.forEach(function (short, index) {
-      var cell = document.createElement("span");
-      cell.className = "datepicker__weekday";
+      var heading = document.createElement("span");
+      heading.className = "datepicker__weekday";
+      heading.setAttribute("role", "columnheader");
       /* The single letter is what fits a seven-column grid; the full weekday is
          what a screen reader should say. Both, rather than one chosen for
          everybody. */
-      cell.setAttribute("aria-label", WEEKDAY_NAMES[index]);
-      cell.title = WEEKDAY_NAMES[index];
-      cell.textContent = short;
-      grid.appendChild(cell);
+      heading.setAttribute("aria-label", WEEKDAY_NAMES[index]);
+      heading.title = WEEKDAY_NAMES[index];
+      heading.textContent = short;
+      headings.appendChild(heading);
     });
 
     var first = new Date(visible.getFullYear(), visible.getMonth(), 1);
     var lead = mondayIndex(first);
-    var days = new Date(visible.getFullYear(), visible.getMonth() + 1, 0).getDate();
+    var days = daysInMonth(visible.getFullYear(), visible.getMonth());
     var selected = parseEstonian(input.value);
     var today = new Date();
+    var inMonth = function (date) {
+      return Boolean(
+        date &&
+          date.getFullYear() === visible.getFullYear() &&
+          date.getMonth() === visible.getMonth()
+      );
+    };
+    /* The one day in the Tab order: the one being moved to, else the chosen
+       one, else today, else the 1st. */
+    var current = first;
+    if (inMonth(active)) {
+      current = active;
+    } else if (inMonth(selected)) {
+      current = selected;
+    } else if (inMonth(today)) {
+      current = today;
+    }
     /* One informational day the calendar points at — `Tagasisidet ootame kuni`
        shows the Matter's `Arvamuse tähtaeg` this way. It is never chosen for
        the person and never limits what they may choose: the marked day is an
@@ -2075,10 +3018,12 @@
     var mark = parseEstonian(input.getAttribute("data-datepicker-mark") || "");
     var markLabel = input.getAttribute("data-datepicker-mark-label") || "";
 
+    var week = newRow();
     for (var blank = 0; blank < lead; blank += 1) {
       var filler = document.createElement("span");
       filler.className = "datepicker__blank";
-      grid.appendChild(filler);
+      filler.setAttribute("role", "gridcell");
+      week.appendChild(filler);
     }
 
     var choose = function (chosen) {
@@ -2097,17 +3042,26 @@
 
     for (var day = 1; day <= days; day += 1) {
       var date = new Date(visible.getFullYear(), visible.getMonth(), day);
+      if (day > 1 && mondayIndex(date) === 0) {
+        week = newRow();
+      }
+      var cell = document.createElement("span");
+      cell.className = "datepicker__cell";
+      cell.setAttribute("role", "gridcell");
       var button = document.createElement("button");
       button.type = "button";
       button.className = "datepicker__day";
       button.textContent = String(day);
+      button.setAttribute("data-datepicker-day", String(day));
       button.setAttribute("aria-label", formatEstonian(date));
+      button.tabIndex = sameDay(date, current) ? 0 : -1;
       if (sameDay(date, today)) {
         button.classList.add("is-today");
       }
       if (selected && sameDay(date, selected)) {
         button.classList.add("is-selected");
         button.setAttribute("aria-current", "date");
+        cell.setAttribute("aria-selected", "true");
       }
       if (mark && markLabel && sameDay(date, mark)) {
         button.classList.add("is-marked");
@@ -2115,8 +3069,50 @@
         button.setAttribute("aria-label", formatEstonian(date) + ", " + markLabel);
       }
       button.addEventListener("click", choose(date));
-      grid.appendChild(button);
+      cell.appendChild(button);
+      week.appendChild(cell);
     }
+
+    grid.addEventListener("keydown", function (event) {
+      var from = event.target && event.target.getAttribute
+        ? event.target.getAttribute("data-datepicker-day")
+        : null;
+      if (!from) {
+        return;
+      }
+      var on = new Date(visible.getFullYear(), visible.getMonth(), parseInt(from, 10));
+      var to = null;
+      switch (event.key) {
+        case "ArrowLeft":
+          to = addDays(on, -1);
+          break;
+        case "ArrowRight":
+          to = addDays(on, 1);
+          break;
+        case "ArrowUp":
+          to = addDays(on, -7);
+          break;
+        case "ArrowDown":
+          to = addDays(on, 7);
+          break;
+        case "Home":
+          to = addDays(on, -mondayIndex(on));
+          break;
+        case "End":
+          to = addDays(on, 6 - mondayIndex(on));
+          break;
+        case "PageUp":
+          to = addMonths(on, event.shiftKey ? -12 : -1);
+          break;
+        case "PageDown":
+          to = addMonths(on, event.shiftKey ? 12 : 1);
+          break;
+        default:
+          return;
+      }
+      event.preventDefault();
+      focusDay(panel, input, visible, to);
+    });
 
     panel.appendChild(grid);
 
@@ -2133,6 +3129,100 @@
       legend.appendChild(document.createTextNode(markLabel + " " + formatEstonian(mark)));
       panel.appendChild(legend);
     }
+  }
+
+  /* Move the grid's one Tab stop to `date` and focus it, redrawing the month
+     first when the date is in another one. */
+  function focusDay(panel, input, visible, date) {
+    if (
+      date.getFullYear() !== visible.getFullYear() ||
+      date.getMonth() !== visible.getMonth()
+    ) {
+      buildCalendar(panel, input, new Date(date.getFullYear(), date.getMonth(), 1), date);
+    } else {
+      panel.querySelectorAll(".datepicker__day").forEach(function (day) {
+        day.tabIndex = -1;
+      });
+    }
+    var target = panel.querySelector(
+      '.datepicker__day[data-datepicker-day="' + date.getDate() + '"]'
+    );
+    if (target) {
+      target.tabIndex = 0;
+      target.focus();
+    }
+  }
+
+  /* The day that holds the Tab stop, focused — on opening the calendar. */
+  function focusActiveDay(panel) {
+    var active = panel.querySelector('.datepicker__day[tabindex="0"]');
+    if (active) {
+      active.focus();
+    }
+  }
+
+  /* ---- The trigger outside the label (JUX-008) ---------------------------
+   * The date box is wrapped where it stands, and where it stands is usually
+   * inside its `<label>` — so the 📅 button ended up in the label too. A
+   * label's content is the box's accessible name, which made every date field
+   * «Millal? (kohustuslik) Ava kalender», and a label holding a second
+   * labelable element is not valid HTML.
+   *
+   * So a label that wraps a date box becomes a `<span>` with the same classes
+   * and attributes — the layout is the classes', not the tag's — and the
+   * label's text becomes a `<label for>` naming the box. When that text is one
+   * element (the usual `<span class="cx-f__lab">`), that element itself turns
+   * into the label, so the box model is unchanged. Without scripting nothing
+   * happens and the server's label stands. */
+  function liftOutOfLabel(input) {
+    var label = input.parentNode ? input.parentNode.closest("label") : null;
+    if (!label || !input.id || label.querySelectorAll("input:not([type=hidden]), select, textarea").length > 1) {
+      return;
+    }
+    var holderChild = input;
+    while (holderChild.parentNode !== label) {
+      holderChild = holderChild.parentNode;
+    }
+    var head = [];
+    for (var node = label.firstChild; node && node !== holderChild; node = node.nextSibling) {
+      if (node.nodeType !== Node.TEXT_NODE || node.textContent.trim()) {
+        head.push(node);
+      }
+    }
+    if (!head.length) {
+      return;
+    }
+
+    var holder = document.createElement("span");
+    Array.prototype.forEach.call(label.attributes, function (attribute) {
+      if (attribute.name !== "for") {
+        holder.setAttribute(attribute.name, attribute.value);
+      }
+    });
+
+    var name;
+    if (head.length === 1 && head[0].nodeType === Node.ELEMENT_NODE) {
+      name = document.createElement("label");
+      Array.prototype.forEach.call(head[0].attributes, function (attribute) {
+        name.setAttribute(attribute.name, attribute.value);
+      });
+      while (head[0].firstChild) {
+        name.appendChild(head[0].firstChild);
+      }
+      label.replaceChild(name, head[0]);
+    } else {
+      name = document.createElement("label");
+      label.insertBefore(name, head[0]);
+      head.forEach(function (part) {
+        name.appendChild(part);
+      });
+    }
+    name.htmlFor = input.id;
+
+    while (label.firstChild) {
+      holder.appendChild(label.firstChild);
+    }
+    label.parentNode.replaceChild(holder, label);
   }
 
   /* ---- An implausibly old date says so, and saves anyway ----------------
@@ -2230,14 +3320,21 @@
 
       var panel = document.createElement("div");
       panel.className = "datepicker__panel";
+      panel.setAttribute("role", "dialog");
+      panel.setAttribute("aria-label", "Vali kuupäev");
       panel.hidden = true;
       wrap.appendChild(panel);
 
+      liftOutOfLabel(input);
+
+      /* Opening puts the cursor on the day the arrow keys start from — the
+         chosen one, else today — as the dialog pattern does (JUX-008). */
       trigger.addEventListener("click", function () {
         if (panel.hidden) {
           buildCalendar(panel, input, parseEstonian(input.value) || new Date());
           panel.hidden = false;
           trigger.setAttribute("aria-expanded", "true");
+          focusActiveDay(panel);
         } else {
           closePicker(panel);
         }
@@ -2245,9 +3342,14 @@
 
       /* Escape closes it and returns focus to the box, and a click anywhere
          else closes it too — a floating panel that stays open until its own
-         button is clicked again is the disclosure people report as stuck. */
+         button is clicked again is the disclosure people report as stuck.
+
+         `preventDefault()` says the key has been handled: Escape here closes
+         the calendar and nothing else, so a surrounding panel that also closes
+         on Escape can leave itself open (2026-10-17 audit, JUX-007). */
       wrap.addEventListener("keydown", function (event) {
         if (event.key === "Escape" && !panel.hidden) {
+          event.preventDefault();
           closePicker(panel);
           input.focus();
         }
@@ -4334,553 +5436,6 @@
     });
   }
 
-  /* ==== Workspace failures, and what a swap must not take with it =========
-   *
-   * Two defects with one cause: the Teema workspace is one column that most
-   * saves replace whole, and until now the client only knew how to show the
-   * refusals the server renders (ENG-012, ENG-034).
-   *
-   * **A failure that is not a rendered refusal was silent.** A 500, a proxy's
-   * 502 during a restart, a dropped connection, an expired session and a stale
-   * CSRF token all left `Salvesta` looking dead — and an expired gate was
-   * worse: the browser followed the redirect and htmx swapped the password page
-   * into the column, text and all. The server now answers the last two with a
-   * marked 401 / 403 instead of a page (app/core/middleware.py
-   * `HtmxSignInMiddleware`, app/core/views.py `csrf_failure`), and every
-   * failure is shown here the same way: one sentence in Estonian, inside the
-   * form that sent the request, saying that it was not saved and that the text
-   * is still there. Nothing is swapped, so the text *is* still there. Nothing
-   * is sent again on the person's behalf either: a POST that may or may not
-   * have reached the database is the person's to repeat, and after a persona
-   * change in another tab a quiet retry would save it under somebody else's
-   * name.
-   *
-   * **A save in one panel threw away what was typed in the others.** The
-   * column is replaced whole so the task, the process strip and the chronology
-   * cannot disagree about the save that just happened (docs/adr/0074 §10), and
-   * that stays. What changes is that each place a lawyer types into is marked
-   * as a draft host (`data-draft-host`, with an id), and before a swap lands
-   * every host that holds unsaved input — other than the one that sent the
-   * request, whose answer is the server's to give — is carried across it with
-   * htmx's own `hx-preserve`: the element itself moves, so its text, cursor,
-   * chosen files and listeners move with it. Nothing is written to browser
-   * storage; the draft only ever lives in the page it was typed into
-   * (docs/adr/0107).
-   *
-   * A host is carried only into its own place. Where the new column has no
-   * element with that id, or has one about a different record
-   * (`data-draft-state` — the composer and `Muuda` beside a task that has
-   * since been replaced), keeping the old form would post against something
-   * the page no longer shows. That text is shown instead, read-only, as
-   * `Salvestamata sisu` above the task, in the same shape the server uses for
-   * the same situation (QA-06). A whole-record editor that is carried keeps
-   * the revision it was opened with, so saving it later over a newer version
-   * is refused as a conflict rather than overwriting it (docs/adr/0104).
-   */
-
-  /** What each autosaving box last had confirmed by the server. */
-  var autosaved = new WeakMap();
-  /** What each autosaving form has in flight. */
-  var autosaving = new WeakMap();
-
-  var FAILURE_REASONS = {
-    network: "Ühendus serveriga katkes.",
-    server: "Serveris tekkis viga.",
-    "sign-in": "Sisselogimine on aegunud.",
-    csrf: "Leht on aegunud: sisselogimine muutus pärast lehe avamist, näiteks teises aknas.",
-    forbidden: "Sellele toimingule puudub ligipääs.",
-    missing: "Kirjet ei leitud või see pole sulle nähtav.",
-    other: "",
-  };
-
-  function failureKind(xhr) {
-    var status = xhr ? xhr.status : 0;
-    var marked = xhr ? xhr.getResponseHeader("X-Juristid-Failure") : null;
-    if (!status) {
-      return "network";
-    }
-    if (marked === "sign-in" || marked === "csrf") {
-      return marked;
-    }
-    if (status === 403) {
-      return "forbidden";
-    }
-    if (status === 404) {
-      return "missing";
-    }
-    return status >= 500 ? "server" : "other";
-  }
-
-  function failureText(kind, writes) {
-    var reason = FAILURE_REASONS[kind] || "";
-    var tail = "";
-    if (writes && (kind === "sign-in" || kind === "csrf")) {
-      tail = "Sisestatud tekst on alles, kuid seda ei salvestatud — kopeeri see enne jätkamist.";
-    } else if (writes && (kind === "missing" || kind === "forbidden")) {
-      tail = "Sisestatud tekst on alles.";
-    } else if (writes) {
-      tail = "Sisestatud tekst on alles; proovi uuesti.";
-    } else if (kind !== "sign-in" && kind !== "csrf") {
-      tail = "Proovi uuesti.";
-    }
-    return [reason, tail].filter(Boolean).join(" ");
-  }
-
-  /* Where a failure is told: inside the form that sent the request, after its
-   * controls, so it sits beside the thing that did not happen and covers
-   * nothing. A control outside a form gets it right after itself. */
-  function failureHost(elt) {
-    if (!elt || !elt.closest || !document.contains(elt)) {
-      return null;
-    }
-    return elt.closest("form") || elt;
-  }
-
-  function clearFailure(elt) {
-    var host = failureHost(elt);
-    if (!host) {
-      return;
-    }
-    var old =
-      host.tagName === "FORM"
-        ? host.querySelector(":scope > [data-request-failure]")
-        : host.nextElementSibling;
-    if (old && old.hasAttribute("data-request-failure")) {
-      old.remove();
-    }
-  }
-
-  function showFailure(elt, kind, method, xhr) {
-    var writes = String(method || "").toUpperCase() !== "GET";
-    var notice = document.createElement("div");
-    notice.className = "reqfail";
-    notice.setAttribute("role", "alert");
-    notice.setAttribute("data-request-failure", kind);
-    var text = document.createElement("p");
-    text.className = "reqfail__text";
-    var lead = document.createElement("strong");
-    lead.className = "reqfail__lead";
-    lead.textContent = writes ? "Salvestamine ebaõnnestus." : "Sisu laadimine ebaõnnestus.";
-    text.appendChild(lead);
-    var rest = failureText(kind, writes);
-    if (rest) {
-      text.appendChild(document.createTextNode(" " + rest));
-    }
-    notice.appendChild(text);
-
-    /* The one way forward for the two failures a retry cannot fix. A link and
-     * a button the person chooses to use, never a navigation made for them:
-     * leaving is what would lose the text. */
-    var signIn = kind === "sign-in" && xhr ? xhr.getResponseHeader("X-Juristid-Sign-In") : "";
-    if (signIn && signIn.charAt(0) === "/" && signIn.charAt(1) !== "/") {
-      var link = document.createElement("a");
-      link.className = "reqfail__action";
-      link.href = signIn;
-      link.textContent = "Logi uuesti sisse";
-      notice.appendChild(link);
-    } else if (kind === "csrf") {
-      var reload = document.createElement("button");
-      reload.type = "button";
-      reload.className = "button button--quiet button--tiny reqfail__action";
-      reload.textContent = "Laadi leht uuesti";
-      reload.addEventListener("click", function () {
-        window.location.reload();
-      });
-      notice.appendChild(reload);
-    }
-
-    clearFailure(elt);
-    var host = failureHost(elt);
-    if (host && host.tagName === "FORM") {
-      host.appendChild(notice);
-    } else if (host) {
-      host.insertAdjacentElement("afterend", notice);
-    } else {
-      /* The control is gone — a swap replaced it while its request was out.
-       * The page still has to say that something was not saved. */
-      var main = document.getElementById("sisu") || document.body;
-      main.insertBefore(notice, main.firstChild);
-    }
-    if (elt && elt.matches && elt.matches("form[data-autosave]")) {
-      markAutosaveFailed(elt);
-    }
-  }
-
-  function reportFailure(event, kind) {
-    var detail = event.detail || {};
-    var config = detail.requestConfig || {};
-    var elt = detail.elt || config.elt || event.target;
-    showFailure(elt, kind || failureKind(detail.xhr), config.verb, detail.xhr);
-  }
-
-  /* The autosave's own line says «Salvestatud HH:mm» after a save that worked.
-   * After one that did not, it must not go on saying it. */
-  function markAutosaveFailed(form) {
-    var status = document.getElementById(form.getAttribute("data-autosave-status") || "");
-    if (status) {
-      status.textContent = "Salvestamata";
-      status.classList.add("is-unsaved");
-    }
-  }
-
-  function autosaveBox(form) {
-    return form && form.querySelector ? form.querySelector("textarea") : null;
-  }
-
-  /* -- Unsaved input ------------------------------------------------------ */
-
-  function selectChanged(select) {
-    var options = select.options;
-    if (select.multiple) {
-      for (var i = 0; i < options.length; i += 1) {
-        if (options[i].selected !== options[i].defaultSelected) {
-          return true;
-        }
-      }
-      return false;
-    }
-    /* A single select with no `selected` option shows its first one, and that
-     * is not a change the person made. */
-    var initial = 0;
-    for (var j = 0; j < options.length; j += 1) {
-      if (options[j].defaultSelected) {
-        initial = j;
-      }
-    }
-    return options.length > 0 && select.selectedIndex !== initial;
-  }
-
-  function controlChanged(control) {
-    if (control.disabled) {
-      return false;
-    }
-    var type = (control.type || "").toLowerCase();
-    if (/^(hidden|submit|button|reset|image)$/.test(type)) {
-      return false;
-    }
-    if (type === "file") {
-      return !!(control.files && control.files.length);
-    }
-    if (type === "checkbox" || type === "radio") {
-      return control.checked !== control.defaultChecked;
-    }
-    if (control.tagName === "SELECT") {
-      return selectChanged(control);
-    }
-    return control.value !== control.defaultValue;
-  }
-
-  function holdsUnsavedInput(host) {
-    if (host.hasAttribute("data-autosave")) {
-      var box = autosaveBox(host);
-      return !!box && autosaved.has(box) && box.value !== autosaved.get(box);
-    }
-    var controls = host.querySelectorAll("input, textarea, select");
-    for (var i = 0; i < controls.length; i += 1) {
-      if (controlChanged(controls[i])) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  function controlLabel(control) {
-    var label = null;
-    if (control.id && window.CSS && CSS.escape) {
-      label = document.querySelector('label[for="' + CSS.escape(control.id) + '"]');
-    }
-    label = label || control.closest("label");
-    var text = label ? label.textContent : control.getAttribute("aria-label") || "";
-    return text.replace(/\s+/g, " ").trim() || "Tekst";
-  }
-
-  /* What a host held that the page is about to stop showing: label and value,
-   * as text, for a person to read and copy. A chosen file cannot be carried
-   * as text; its name is, so the person knows to choose it again. */
-  function unsavedLines(host) {
-    var lines = [];
-    host.querySelectorAll("input, textarea, select").forEach(function (control) {
-      if (!controlChanged(control)) {
-        return;
-      }
-      var type = (control.type || "").toLowerCase();
-      var value = "";
-      if (type === "file") {
-        value = Array.prototype.map
-          .call(control.files, function (file) {
-            return file.name;
-          })
-          .join(", ");
-        value += " — fail tuleb uuesti valida";
-      } else if (type === "checkbox" || type === "radio") {
-        return;
-      } else if (control.tagName === "SELECT") {
-        value = Array.prototype.filter
-          .call(control.options, function (option) {
-            return option.selected;
-          })
-          .map(function (option) {
-            return option.textContent.trim();
-          })
-          .join(", ");
-      } else {
-        value = control.value;
-      }
-      if (value.trim()) {
-        lines.push([controlLabel(control), value]);
-      }
-    });
-    return lines;
-  }
-
-  var unsavedCount = 0;
-
-  function showUnsaved(region, lines) {
-    if (!region || !lines.length) {
-      return;
-    }
-    unsavedCount += 1;
-    var heading = "salvestamata-kliendis-" + unsavedCount;
-    var section = document.createElement("section");
-    section.className = "unsaved";
-    section.setAttribute("role", "status");
-    section.setAttribute("aria-labelledby", heading);
-    var h2 = document.createElement("h2");
-    h2.className = "rowlabel";
-    h2.id = heading;
-    h2.textContent = "Salvestamata sisu";
-    var note = document.createElement("p");
-    note.className = "unsaved__note";
-    note.textContent =
-      "Seda ei salvestatud: kirje, mille juures see oli, muutus vahepeal. " +
-      "Kopeeri see endale enne, kui lehe uuesti laadid.";
-    var list = document.createElement("dl");
-    list.className = "unsaved__body";
-    lines.forEach(function (line) {
-      var dt = document.createElement("dt");
-      dt.className = "unsaved__label";
-      dt.textContent = line[0];
-      var dd = document.createElement("dd");
-      dd.className = "unsaved__value";
-      dd.textContent = line[1];
-      list.appendChild(dt);
-      list.appendChild(dd);
-    });
-    section.appendChild(h2);
-    section.appendChild(note);
-    section.appendChild(list);
-    var task = region.querySelector("#praegune-tegevus");
-    if (task && task.parentNode) {
-      task.parentNode.insertBefore(section, task);
-    } else {
-      region.insertBefore(section, region.firstChild);
-    }
-  }
-
-  /* Which `LISA TEEMALE` choices were showing this host. The panels open off
-   * radios the server sets from what *it* is answering, so a panel carried
-   * across a save somebody made elsewhere would arrive hidden. Only a chain
-   * that was entirely open is recorded: a draft left in a panel the person had
-   * already switched away from stays where they left it. */
-  function openChoices(host) {
-    var picks = [];
-    for (var panel = host; panel; panel = panel.parentElement) {
-      if (panel.hasAttribute("data-addpanel") && panel.id) {
-        var pick = document.getElementById(panel.id + "-valik");
-        /* A radio for a `LISA TEEMALE` choice, a checkbox for `✓ Tehtud`
-           (docs/adr/0140 §1): either way the input is what holds "open". */
-        if (pick && (pick.type === "radio" || pick.type === "checkbox")) {
-          if (!pick.checked) {
-            return [];
-          }
-          picks.push(pick.id);
-        }
-      }
-    }
-    return picks;
-  }
-
-  function swapReplaces(detail) {
-    var elt = detail.requestConfig && detail.requestConfig.elt;
-    var style = detail.swapOverride;
-    if (!style && elt && elt.closest) {
-      var owner = elt.closest("[hx-swap]");
-      style = owner ? owner.getAttribute("hx-swap") : "";
-    }
-    style = (style || (window.htmx && window.htmx.config.defaultSwapStyle) || "innerHTML").split(" ")[0];
-    return style === "outerHTML" || style === "innerHTML";
-  }
-
-  var carried = null;
-
-  function keepDrafts(detail) {
-    carried = null;
-    var target = detail.target;
-    var requester = detail.requestConfig && detail.requestConfig.elt;
-    if (!target || !target.querySelectorAll || !swapReplaces(detail)) {
-      return;
-    }
-    var hosts = Array.prototype.filter.call(
-      target.querySelectorAll("[data-draft-host][id]"),
-      function (host) {
-        return host !== target && !(requester && host.contains(requester)) && holdsUnsavedInput(host);
-      },
-    );
-    if (!hosts.length) {
-      return;
-    }
-    var response = String(detail.serverResponse || "");
-    if (/<(html|head|body)[\s>]/i.test(response)) {
-      /* A whole document is htmx's to parse, title and all; a fragment
-       * template would drop the parts it treats specially. No workspace
-       * answer is one. */
-      return;
-    }
-    var template = document.createElement("template");
-    template.innerHTML = response;
-    var fresh = template.content;
-    var kept = [];
-    var lost = [];
-    hosts.forEach(function (host) {
-      var place = fresh.getElementById(host.id);
-      var same =
-        place &&
-        place.hasAttribute("data-draft-host") &&
-        (place.getAttribute("data-draft-state") || "") === (host.getAttribute("data-draft-state") || "");
-      if (same) {
-        place.setAttribute("hx-preserve", "true");
-        kept.push({ id: host.id, picks: openChoices(host) });
-      } else {
-        lost = lost.concat(unsavedLines(host));
-      }
-    });
-    if (kept.length) {
-      detail.serverResponse = template.innerHTML;
-    }
-    carried = { xhr: detail.xhr, targetId: target.id, kept: kept, lost: lost };
-  }
-
-  function settleDrafts(detail) {
-    if (!carried || carried.xhr !== detail.xhr) {
-      return;
-    }
-    var done = carried;
-    carried = null;
-    done.kept.forEach(function (entry) {
-      var host = document.getElementById(entry.id);
-      if (host) {
-        /* The element htmx put back is the old one, which never had the
-         * marker; this only makes sure no copy of it lingers to carry the
-         * host again on a later swap where it holds nothing. */
-        host.removeAttribute("hx-preserve");
-      }
-      entry.picks.forEach(function (id) {
-        var pick = document.getElementById(id);
-        if (pick) {
-          pick.checked = true;
-        }
-      });
-    });
-    showUnsaved(document.getElementById(done.targetId), done.lost);
-  }
-
-  /* -- The listeners, each registered once for the life of the page ------- */
-
-  /* A rejected save returns 400 with the surface re-rendered and the errors in
-   * place, and a refused autosave returns 409 with the conflict beside the
-   * box. HTMX drops non-2xx responses unless told otherwise, which would make
-   * a validation failure look like nothing happened at all — and would make a
-   * personal note that was *not* saved look exactly like one that was
-   * (app/matters/views.py `_note_conflict`, QA-09).
-   *
-   * **An empty refusal is not swapped.** There is nothing in it to show, and
-   * swapping nothing into the target deletes the target: the note's refused
-   * save (a bare 400) used to remove its own status line, and every later
-   * autosave then had nowhere to land. It is reported as a failure instead. */
-  document.body.addEventListener("htmx:beforeSwap", function (event) {
-    var detail = event.detail;
-    var status = detail.xhr && detail.xhr.status;
-    if (status === 400 || status === 409) {
-      detail.shouldSwap = true;
-      detail.isError = false;
-    }
-    if (status >= 400 && status < 500 && !String(detail.serverResponse || "").trim()) {
-      detail.shouldSwap = false;
-      detail.isError = true;
-    }
-    if (detail.shouldSwap) {
-      keepDrafts(detail);
-    }
-  });
-
-  document.body.addEventListener("htmx:afterSwap", function (event) {
-    settleDrafts(event.detail || {});
-  });
-
-  document.body.addEventListener("htmx:beforeRequest", function (event) {
-    var elt = event.detail && event.detail.elt;
-    clearFailure(elt);
-    if (elt && elt.matches && elt.matches("form[data-autosave]")) {
-      var box = autosaveBox(elt);
-      if (box) {
-        autosaving.set(elt, box.value);
-      }
-    }
-  });
-
-  /* Only a 2xx moves what the note last saved. htmx fires `afterRequest` on
-   * errors, aborts and timeouts as well, and moving it there disarmed the
-   * unload flush below for exactly the text that had failed to save. A 409 is
-   * the conflict, and the box keeps saying so until it is reconciled. */
-  document.body.addEventListener("htmx:afterRequest", function (event) {
-    var detail = event.detail || {};
-    var elt = detail.elt;
-    if (!elt || !elt.matches || !elt.matches("form[data-autosave]")) {
-      return;
-    }
-    var box = autosaveBox(elt);
-    var status = detail.xhr ? detail.xhr.status : 0;
-    if (box && autosaving.has(elt) && status >= 200 && status < 300) {
-      autosaved.set(box, autosaving.get(elt));
-    }
-    autosaving.delete(elt);
-  });
-
-  /* The inline refusals (400/409/422 with a body) are the server's own answer
-   * and are already on the page; everything else that is an error is told. */
-  document.body.addEventListener("htmx:responseError", function (event) {
-    var detail = event.detail || {};
-    var xhr = detail.xhr;
-    var status = xhr ? xhr.status : 0;
-    if ((status === 400 || status === 409 || status === 422) && String(xhr.response || "").trim()) {
-      return;
-    }
-    reportFailure(event);
-  });
-  document.body.addEventListener("htmx:sendError", function (event) {
-    reportFailure(event, "network");
-  });
-  document.body.addEventListener("htmx:timeout", function (event) {
-    reportFailure(event, "network");
-  });
-
-  /* The one case the debounce cannot cover: a line typed into the note and the
-   * tab closed inside the delay, or a note whose last save failed. One
-   * listener for the page, asking whichever note is there now — it used to be
-   * one more listener per swap, each holding a box that no longer existed. */
-  window.addEventListener("beforeunload", function () {
-    document.querySelectorAll("form[data-autosave]").forEach(function (form) {
-      var box = autosaveBox(form);
-      if (!box || !autosaved.has(box) || box.value === autosaved.get(box)) {
-        return;
-      }
-      var url = form.getAttribute("hx-post");
-      if (url && navigator.sendBeacon) {
-        navigator.sendBeacon(url, new FormData(form));
-      }
-    });
-  });
-
   /* ---- Teema käik: one row open at a time --------------------------------
    * Every row renders closed, as its one line, and the button laid over that
    * line opens it; opening one closes whichever was open (docs/adr/0074 §14,
@@ -5057,53 +5612,84 @@
   window.addEventListener("hashchange", openKaikTarget);
 
   document.body.addEventListener("htmx:afterSwap", function (event) {
-    syncKaik(event.detail || {});
-    syncKaikPeriods(event.detail || {});
+    safeInit("syncKaik", function () {
+      syncKaik(event.detail || {});
+    });
+    safeInit("syncKaikPeriods", function () {
+      syncKaikPeriods(event.detail || {});
+    });
   });
 
+  /* Each binder starts on its own (`safeInit`), in the order they always ran:
+     one that throws is logged and the rest still bind. */
+  function startEach(binders, scope) {
+    binders.forEach(function (binder) {
+      safeInit(binder.name, function () {
+        binder(scope);
+      });
+    });
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
-    syncKaik(null);
-    syncKaikPeriods(null);
-    openKaikTarget();
-    bind(document);
-    bindLiveSearch(document);
-    bindPeriodFields(document);
-    bindDatePickers(document);
-    bindChoiceFilters(document);
-    bindExclusiveName(document);
-    bindOrganisationPickers(document);
-    bindOpenChosenDetails(document);
-    bindChipCounts(document);
-    bindStageHelp(document);
-    bindSeisHelp(document);
-    bindStageGuidance(document);
-    bindRelatedPicker(document);
-    bindCreateFormHistory(document);
-    bindInitiative(document);
-    bindSentProposal(document);
-    bindRequiredAction(document);
-    bindSuggestionUse(document);
-    bindPersonaMenu(document);
-    focusFragmentTarget();
+    safeInit("syncKaik", function () {
+      syncKaik(null);
+    });
+    safeInit("syncKaikPeriods", function () {
+      syncKaikPeriods(null);
+    });
+    safeInit("openKaikTarget", openKaikTarget);
+    startEach(
+      [
+        bind,
+        bindLiveSearch,
+        bindPeriodFields,
+        bindDatePickers,
+        bindChoiceFilters,
+        bindExclusiveName,
+        bindOrganisationPickers,
+        bindOpenChosenDetails,
+        bindChipCounts,
+        bindStageHelp,
+        bindSeisHelp,
+        bindStageGuidance,
+        bindRelatedPicker,
+        bindCreateFormHistory,
+        bindInitiative,
+        bindSentProposal,
+        bindRequiredAction,
+        bindSuggestionUse,
+        bindPersonaMenu,
+      ],
+      document,
+    );
+    safeInit("focusFragmentTarget", focusFragmentTarget);
   });
 
   /* HTMX replaces whole surfaces, so re-bind inside whatever just arrived.
      Binding is idempotent, so a swap that returns elements which were already
      bound costs nothing and duplicates nothing. */
   document.body.addEventListener("htmx:afterSwap", function (event) {
-    bind(event.target);
-    bindPeriodFields(event.target.querySelector ? event.target : document);
-    bindDatePickers(event.target.querySelector ? event.target : document);
-    bindChoiceFilters(event.target.querySelector ? event.target : document);
-    bindExclusiveName(event.target.querySelector ? event.target : document);
-    bindOrganisationPickers(event.target.querySelector ? event.target : document);
-    bindOpenChosenDetails(event.target.querySelector ? event.target : document);
-    bindChipCounts(event.target.querySelector ? event.target : document);
-    bindStageHelp(event.target.querySelector ? event.target : document);
-    bindSeisHelp(event.target.querySelector ? event.target : document);
-    bindStageGuidance(event.target.querySelector ? event.target : document);
-    bindRequiredAction(event.target.querySelector ? event.target : document);
-    bindSuggestionUse(event.target.querySelector ? event.target : document);
-    bindPersonaMenu(event.target.querySelector ? event.target : document);
+    var target = event.target;
+    safeInit("bind", function () {
+      bind(target);
+    });
+    startEach(
+      [
+        bindPeriodFields,
+        bindDatePickers,
+        bindChoiceFilters,
+        bindExclusiveName,
+        bindOrganisationPickers,
+        bindOpenChosenDetails,
+        bindChipCounts,
+        bindStageHelp,
+        bindSeisHelp,
+        bindStageGuidance,
+        bindRequiredAction,
+        bindSuggestionUse,
+        bindPersonaMenu,
+      ],
+      target.querySelector ? target : document,
+    );
   });
 })();

@@ -313,7 +313,9 @@ def test_closing_with_nothing_live_asks_nothing_through_http(signed_in, speciali
 
     response = header_stage(signed_in, matter, "in_force")
 
-    assert response.status_code in (200, 302)
+    # Nothing to ask about, so the header saves at once and redraws: a 200
+    # fragment, not a confirmation step and not a redirect.
+    assert response.status_code == 200
     assert LIVE_WORK_LABEL not in response.content.decode()
     matter.refresh_from_db()
     assert not matter.is_open

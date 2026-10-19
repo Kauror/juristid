@@ -184,7 +184,11 @@ def test_what_an_older_version_left_behind_is_removed(page, base_url):
 
 
 def test_signing_out_clears_what_was_left_behind(page, base_url):
-    """Signing out clears the origin's storage even before the next page runs."""
+    """Signing out clears the origin's storage even before the next page runs.
+
+    And its HTTP cache (JSEC-003), so a response an earlier release let the
+    browser keep goes with the session too.
+    """
     sign_in(page, base_url, SANDRA)
     page.evaluate("() => window.localStorage.setItem('juristid-e2e-probe', 'kept')")
     assert "juristid-e2e-probe" in kept(page)
@@ -195,7 +199,7 @@ def test_signing_out_clears_what_was_left_behind(page, base_url):
         sign_out(page, base_url)
 
     # `all_headers`, because Playwright leaves security headers out of `headers`.
-    assert signed_out.value.all_headers().get("clear-site-data") == '"storage"'
+    assert signed_out.value.all_headers().get("clear-site-data") == '"cache", "storage"'
     assert "juristid-e2e-probe" not in kept(page)
 
 

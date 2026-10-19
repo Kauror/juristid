@@ -137,7 +137,6 @@ MOVED = [
     "matters:matter_create",
     "matters:update_engagement",
     "matters:matter_edit",
-    "matters:update_position",
     "matters:update_summary",
     "matters:add_working_document",
     "intelligence:add_important_date",
@@ -215,7 +214,7 @@ def test_a_writer_still_writes(client, specialist):
         },
     )
 
-    assert response.status_code in (200, 302)
+    assert response.status_code == 200
     matter.refresh_from_db()
     assert matter.brief_summary == "Sünteetiline kokkuvõte"
 

@@ -1,6 +1,6 @@
 # ADR 0048 — Implementing the v2 design over the application that exists
 
-- Status: proposed
+- Status: Accepted (written as proposed on its feature branch; accepted when it merged to main, as the index has said since 2026-09-02 — file status corrected 2026-10-18, JARCH-007)
 - Date: 2026-08-29
 - Stage: pre-QA (shared-gate development phase)
 - Related: ADR 0039 (retiring *Minu tiim*, which this keeps retired), ADR 0046
@@ -146,3 +146,23 @@ the brief says to record rather than improvise.
 High for the UI, low for nothing. Every change is a template, a stylesheet
 declaration or a selector; the one migration is additive and carries no
 backfill. The redirects mean the previous addresses keep working either way.
+
+## Amendment of 2026-10-18: the portfolio renders at most 200 rows
+
+*2026-10-17 audit, JPERF-005; for the owner's review.* Minu asjad rendered every
+open file on the desk: six rows on screen and the rest behind «Näita veel N ▾».
+At a stress shape of 4,000 open Matters for one person, that was 2.2 MB of HTML.
+`my_work.PORTFOLIO_LIMIT` (200) now caps the rows the page renders, preview and
+disclosure together:
+
+- the rendered rows are the head of the same order (attention first, then the
+  oldest silence);
+- every count stays the whole desk: the section heading, the chips, the strip,
+  and «Näita veel N»;
+- past the cap the page says «Siin on 200 esimest N-st.» and links to
+  `register_url`, the register list of every open file on this desk;
+- the box «Otsi minu asjadest» filters the rendered rows only, so past the cap
+  the register's own search covers the rest.
+
+A desk below 200 open files renders exactly as before. The bands keep their own
+`BAND_LIMIT` (UX-002), which this does not touch.

@@ -500,12 +500,15 @@ def test_an_unsafe_configuration_refuses_to_start(settings, changes, expected):
     assert expected in {problem.id for problem in check_runtime_safety(None)}
 
 
-def test_the_shared_gate_counts_as_an_authenticator_for_real_data(settings):
+def test_the_shared_gate_counts_as_an_authenticator_for_real_data(settings, monkeypatch):
     """Only with every safeguard present — that is the whole condition."""
     from app.core.checks import check_runtime_safety
 
     settings.DEBUG = False
-    settings.SECRET_KEY = "a-real-secret"  # noqa: S105
+    # Secrets of real length, which real data has required since JOPS-003
+    # (juristid.E017, E019); the gate password above is already long enough.
+    settings.SECRET_KEY = "a-real-secret-" + "s" * 50
+    monkeypatch.setitem(settings.DATABASES["default"], "PASSWORD", "d" * 48)
     settings.REAL_DATA_ALLOWED = True
     settings.SESSION_COOKIE_SECURE = True
     # Behind the tunnel, and saying so — without which no HSTS header is sent
@@ -561,13 +564,16 @@ def test_signing_out_clears_what_the_browser_kept(behind_the_gate):
 
     htmx 2.0.4 kept copies of the register in localStorage, restricted titles
     included, and they outlived the session (ENG-009). Signing out clears the
-    origin's storage — and only that: cookies are the session's own business
-    and a `no-store` page is not in the HTTP cache to clear.
+    origin's storage and its HTTP cache: every response is `no-store` now, but
+    one that was not — a thumbnail sent `private, max-age=300` (JSEC-003) —
+    could have entered it, and a browser that kept a copy from before a
+    deployment must not keep it past the session. Not cookies: they are the
+    session's own business and `logout` has dealt with them.
     """
     response = behind_the_gate.post(reverse("accounts:sign_out"))
 
     assert response.status_code == 302
-    assert response["Clear-Site-Data"] == '"storage"'
+    assert response["Clear-Site-Data"] == '"cache", "storage"'
 
 
 def test_the_client_keeps_no_history_snapshots():

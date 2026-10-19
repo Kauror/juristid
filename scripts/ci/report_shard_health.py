@@ -13,10 +13,20 @@ So this prints the numbers every build, and says the words
 ``CI SHARD TIMINGS NEED REFRESH`` when they cross a threshold that was chosen
 from that measurement rather than from taste.
 
-It is **informational and exits 0 whatever it finds**, including when it cannot
-collect at all. A performance report is not a correctness proof, hosted runners
-have slow days, and a build that goes red because a table is three weeks old
-would teach people to ignore it. The correctness proofs are
+Two things are said **loudly**, by name, not only as a share (JTEST-006): a
+collected file the table has no entry for, and a shard whose actual time is more
+than twice its prediction. The 2026-10-11 table missed 66 files and 30 % of the
+suite's time while this report said "current", and the slowest file ran about
+200 times its estimate; no share threshold sees one file like that. In CI each
+warning is also a GitHub annotation (``::warning``), so it shows on the pull
+request's checks rather than only inside a log.
+
+With ``--strict`` it exits 1 when one of those two fired (`Loud`), and CI runs
+it that way: the step goes red where it is seen. The *job* still succeeds, because
+every step that runs this carries ``continue-on-error``: a performance report
+is not a correctness proof, hosted runners have slow days, and the release gate
+requires every job of a run to succeed. Without ``--strict``, and always when it
+cannot report at all, it exits 0. The correctness proofs are
 ``tests/test_ci_sharding.py`` and ``scripts/ci/assert_shard_completeness.py``;
 this is the gauge next to them, not another gate.
 
@@ -106,7 +116,83 @@ UNMEASURED_FILES_WARN = 0.20
 #: count has been raised past what whole-file granularity supports.
 IMBALANCE_WARN = 1.25
 
+#: How far a shard's actual test time may run past its prediction before that
+#: shard is named. The table balances its own model to within a few percent,
+#: so a shard at twice its prediction is carrying files the table underweighs;
+#: the 2026-10-17 audit found the slowest file at ~200x its estimate.
+ACTUAL_OVER_PREDICTED_WARN = 2.0
+
+#: How many file names a warning lists before it says how many more.
+NAMED_FILES = 10
+
 HEADLINE = "CI SHARD TIMINGS NEED REFRESH"
+
+
+class Loud(str):
+    """A warning ``--strict`` fails on: a file missing from the table, or a shard
+    past twice its prediction. The others (age, unmeasured share, imbalance) are
+    printed and annotated but do not fail the step: an imbalance one heavy file
+    causes is fixed by splitting that file, not by refreshing the table."""
+
+
+def _named(paths: list[str], counts: dict[str, int]) -> str:
+    """The heaviest few of ``paths`` by test count, then how many more."""
+    ordered = sorted(paths, key=lambda path: (-counts.get(path, 0), path))
+    shown = ", ".join(f"{path} ({counts.get(path, 0)})" for path in ordered[:NAMED_FILES])
+    rest = len(ordered) - NAMED_FILES
+    return shown + (f" and {rest} more" if rest > 0 else "")
+
+
+def unmeasured_warning(label: str, unmeasured: list[str], counts: dict[str, int]) -> Loud | None:
+    """One warning naming every collected file the table has no entry for."""
+    if not unmeasured:
+        return None
+    return Loud(
+        f"{label}: {len(unmeasured)} collected file(s) are not in ci/shard-timings.json "
+        f"and are weighed by estimate: {_named(unmeasured, counts)}"
+    )
+
+
+def overrun_warnings(
+    label: str,
+    actual_cases: dict[int, list[tuple[str, float]]],
+    counts: dict[str, int],
+    timings: dict[str, ci_sharding.Measurement],
+    setup: float = 0.0,
+) -> list[Loud]:
+    """Every shard whose actual test time ran past ``ACTUAL_OVER_PREDICTED_WARN`` x its
+    prediction, with the three files in it that ran furthest past their own weight.
+
+    The prediction is the table's weight of the files that shard *ran*, plus the
+    session setup, rather than of the partition recomputed here: a run made
+    under an older table ran other files, and comparing it against today's
+    partition would measure the difference between two tables.
+    """
+    found: list[Loud] = []
+    for index, cases in sorted(actual_cases.items()):
+        per_file: collections.Counter[str] = collections.Counter()
+        for path, seconds in cases:
+            per_file[path] += seconds
+        weight = {path: ci_sharding.weight_of(path, counts.get(path), timings) for path in per_file}
+        predicted = sum(weight.values()) + setup
+        took = sum(per_file.values())
+        if not predicted:
+            continue
+        factor = took / predicted
+        if factor <= ACTUAL_OVER_PREDICTED_WARN:
+            continue
+        heaviest = sorted(per_file, key=lambda path: per_file[path] - weight[path], reverse=True)
+        drivers = ", ".join(
+            f"{path} {per_file[path]:.0f}s vs {weight[path]:.0f}s" for path in heaviest[:3]
+        )
+        found.append(
+            Loud(
+                f"{label}: shard {index} took {took:.0f}s, {factor:.1f}x its prediction of "
+                f"{predicted:.0f}s (over {ACTUAL_OVER_PREDICTED_WARN:.1f}x); "
+                f"furthest past their weight: {drivers}"
+            )
+        )
+    return found
 
 
 def shard_counts() -> dict[str, int]:
@@ -227,6 +313,9 @@ def report_suite(
     )
     print(f"  slowest / median    {slowest:.0f}s / {median:.0f}s = {ratio:.2f}")
 
+    missing = unmeasured_warning(label, unmeasured, counts)
+    if missing:
+        warnings.append(missing)
     if test_share > UNMEASURED_TESTS_WARN:
         warnings.append(
             f"{label}: {test_share:.0%} of collected tests have no measurement "
@@ -238,10 +327,14 @@ def report_suite(
             f"(over {UNMEASURED_FILES_WARN:.0%})"
         )
     if ratio > IMBALANCE_WARN:
+        heaviest = max(files, key=lambda path: ci_sharding.weight_of(path, counts[path], timings))
         warnings.append(
             f"{label}: the slowest shard is predicted at {ratio:.2f}x the median "
             f"(over {IMBALANCE_WARN:.2f}) — the split cannot balance this file set, "
-            "so the shard count is past what whole-file granularity supports"
+            "so the shard count is past what whole-file granularity supports; the "
+            f"heaviest file is {heaviest} at "
+            f"{ci_sharding.weight_of(heaviest, counts[heaviest], timings):.0f}s, "
+            "which a refresh cannot move: split it"
         )
     return warnings
 
@@ -351,6 +444,7 @@ def report_durations(
     *,
     runners_by_job: dict[str, int] | None = None,
     jobs: dict[str, dict[int, dict]] | None = None,
+    warnings: list[str] | None = None,
 ) -> dict[str, object]:
     """What this run's shards were predicted to take, beside what they took.
 
@@ -366,7 +460,12 @@ def report_durations(
     Per runner: its job and its test step, so setup and tests are seen apart —
     the round waits for the slowest *runner*, which is the number to tune.
     Returns the same numbers as data, for the job summary and for later tuning.
+
+    Appends to ``warnings`` every file of the run the table has no entry for,
+    and every shard whose actual test time is more than
+    ``ACTUAL_OVER_PREDICTED_WARN`` times its prediction (`overrun_warnings`).
     """
+    found = warnings if warnings is not None else []
     print("\npredicted against actual, this run")
     reports = shard_reports(directory)
     records = shard_records(directory)
@@ -428,6 +527,11 @@ def report_durations(
                 + (f"  {wall:10.0f}s" if wall else "            -")
                 + (f"  {world:10.0f}s" if world else "            -")
             )
+        label = SUITES[job][0]
+        missing = unmeasured_warning(label, [path for path in files if path not in timings], counts)
+        if missing:
+            found.append(missing)
+        found.extend(overrun_warnings(label, actual_cases, counts, timings, fixed))
         print(f"    predicted  {_ratio(predicted)}")
         print(f"    actual     {_ratio(list(actual.values()))}")
         factors = [
@@ -563,6 +667,11 @@ def _main() -> int:
     )
     parser.add_argument("--repository", default="Kauror/juristid")
     parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="exit 1 on a file missing from the table or a shard past 2x its prediction",
+    )
+    parser.add_argument(
         "--summary-json",
         type=pathlib.Path,
         default=None,
@@ -640,6 +749,7 @@ def _main() -> int:
             setup,
             runners_by_job={job: layout[job].runners for job in SUITES},
             jobs=jobs,
+            warnings=warnings,
         )
         if arguments.summary_json is not None:
             arguments.summary_json.write_text(
@@ -656,11 +766,16 @@ def _main() -> int:
         print()
         print("  Refresh it from the median of recent green runs (docs/ci-architecture.md):")
         print("    uv run python scripts/ci/update_shard_timings.py --latest 5")
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            for warning in warnings:
+                # One annotation per warning, so each shows on the checks page.
+                print(f"::warning title={HEADLINE}::{warning}")
     else:
         print("shard timings are current; nothing to do")
 
-    # Always 0. This reports, it does not gate — see the module docstring.
-    return 0
+    # A report, not a gate: 1 only when asked to be strict and one of the loud
+    # warnings fired, and the steps that ask continue on error (module docstring).
+    return 1 if arguments.strict and any(isinstance(w, Loud) for w in warnings) else 0
 
 
 if __name__ == "__main__":

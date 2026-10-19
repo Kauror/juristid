@@ -187,9 +187,40 @@ def test_restricted_file_routes_are_404_for_reader_and_admin(
             assert client.get(url).status_code == 404, (persona.role, url)
 
 
+def _body(response) -> bytes:
+    if getattr(response, "streaming", False):
+        return b"".join(response.streaming_content)
+    return response.content
+
+
 def test_restricted_file_routes_answer_the_owner(signed_in, restricted_file):
-    for url in _routes(restricted_file):
-        assert signed_in.get(url).status_code in (200, 302)
+    """The owner gets the file itself on each route — not a redirect, not a refusal page."""
+    from app.audit.enums import SecurityEventType
+    from app.audit.models import SecurityAuditEvent
+
+    download_url, open_url, detail_url = _routes(restricted_file)
+
+    download = signed_in.get(download_url)
+    assert download.status_code == 200
+    assert download["Content-Disposition"].startswith("attachment")
+    assert _body(download) == PDF + b"secret"
+
+    opened = signed_in.get(open_url)
+    assert opened.status_code == 200
+    assert opened["Content-Disposition"].startswith("inline")
+    assert _body(opened) == PDF + b"secret"
+
+    detail = signed_in.get(detail_url)
+    assert detail.status_code == 200
+    assert "salajane.pdf" in detail.content.decode()
+
+    served = SecurityAuditEvent.objects.filter(
+        event_type=SecurityEventType.DOCUMENT_DOWNLOADED, subject_id=restricted_file.pk
+    )
+    assert sorted(served.values_list("detail__disposition", flat=True)) == [
+        "attachment",
+        "inline",
+    ]
 
 
 def test_guessed_ids_are_404_not_500(signed_in):

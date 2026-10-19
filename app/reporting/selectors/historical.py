@@ -285,7 +285,8 @@ def legacy_source_pages_by_section(context: ReportingContext) -> MetricResult:
         context=context,
         value=pages.count(),
         segments=segments,
-        url=_materials_url(context),
+        # Pages have no list of their own (`legacy_source_pages`, JDATA-004).
+        url="",
         notes=("See on ajalooline lähteklassifikatsioon, mitte kanooniline valdkond.",),
     )
 
@@ -316,7 +317,8 @@ def legacy_source_pages_by_year(context: ReportingContext) -> MetricResult:
         coverage_count=covered,
         coverage_denominator=total,
         segments=segments,
-        url=_materials_url(context),
+        # Pages have no list of their own (`legacy_source_pages`, JDATA-004).
+        url="",
         notes=("Lehe loomise ajatempel allikas. Ei ole teema aruandlusaasta.",),
     )
 
@@ -335,7 +337,8 @@ def legacy_source_pages_by_role(context: ReportingContext) -> MetricResult:
         context=context,
         value=pages.count(),
         segments=segments,
-        url=_materials_url(context),
+        # Pages have no list of their own (`legacy_source_pages`, JDATA-004).
+        url="",
     )
 
 
@@ -348,7 +351,8 @@ def reading_order_ambiguous(context: ReportingContext) -> MetricResult:
         context=context,
         value=ambiguous.count(),
         population_count=pages.count(),
-        url=_materials_url(context),
+        # Pages have no list of their own (`legacy_source_pages`, JDATA-004).
+        url="",
         notes=(
             "OneNote on vaba paigutusega. Nendel lehtedel võib narratiivi "
             "järjekord olla ebatäpne — sisu ise on olemas.",
@@ -366,7 +370,11 @@ def source_page_text_length(context: ReportingContext) -> MetricResult:
         value=distribution.n,
         population_count=distribution.n,
         distribution=distribution,
-        url=_materials_url(context),
+        # Pages have no list of their own: the materials list counts file
+        # occurrences, so a headline link would open a longer list than this
+        # figure (5 pages, 9 rows) — absent rather than wrong (JDATA-004, the
+        # rule `legacy_source_pages` already keeps).
+        url="",
     )
 
 

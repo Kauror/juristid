@@ -245,3 +245,30 @@ contract (the hidden carrier before the block, docs/adr/0144 §4); Saatja's
 cardinality (0..N); which bodies are valid senders (all of them); `Saabunud`'s
 other fields, its file-first rule and its `--people` row order (docs/adr/0130);
 and `Uus teema`'s `quiet` presentation (docs/adr/0088).
+
+## Amendment, 2026-10-18 — a visible label, a stated requirement, and the refusal on the box (JUX-006)
+
+The 2026-10-17 audit found the pickers outside `Uus teema` named only by their
+placeholder. `Lisa tagasiside`'s organisation, `Koja arvamus`'s `Adressaadid`
+and `Muuda` on a recorded position had a visually hidden label and nothing on
+screen. A refusal on the typed name was tied to the hidden carrier, which no
+one can reach, so the search box had no `aria-describedby` and no
+`aria-invalid`.
+
+`organisation_picker.html` takes three more arguments:
+- `visible_label` draws the label above the box. Callers that already draw a
+  visible legend (`Uus teema`, `Muuda teemat`, `Saabunud`) keep the hidden one,
+  so the name is never shown twice.
+- `required_when` draws the required marker in `[data-orgfind-required]`, for
+  the caller's stylesheet to show while the requirement holds. On `Lisa
+  tagasiside` it is shown only while «Avaldatud mujal» is chosen
+  (docs/adr/0091 §3.3).
+- `owner_field` is the chip field whose message the caller prints after the
+  picker. With `visible_label`, the label is that field's own `field_label`.
+
+On a refused save the search box carries `aria-invalid="true"` and an
+`aria-describedby` naming the typed name's message and the chip field's
+message, whichever exist. That is also how the refusal-focus rule finds the box
+(docs/adr/0107, amendment of the same day).
+
+Nothing about what the picker posts, resolves or creates has changed.

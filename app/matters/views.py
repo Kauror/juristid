@@ -20,14 +20,14 @@ import unicodedata
 import uuid
 from collections.abc import Sequence
 from datetime import UTC, date, timedelta
-from typing import Any
+from typing import Any, cast
 
 from django import forms
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from django.core.paginator import Paginator
+from django.core.paginator import Page, Paginator
 from django.db import transaction
 from django.db.models import Count, F, Q
 from django.db.models.functions import ExtractYear
@@ -55,13 +55,13 @@ from app.accounts.selectors import (
     owner_filter_choices,
 )
 from app.audit.models import ChangeEvent
-from app.audit.operations import stage_episode_scope
 from app.audit.visibility import change_log_event_types, scope_change_events
 from app.core.authorization import (
     distinct_if_fans_out,
     may_assign_work,
     may_write_business_content,
 )
+from app.core.client_ip import client_ip
 from app.core.dates import (
     add_months,
     format_estonian_date,
@@ -83,7 +83,6 @@ from app.documents.services import (
     link_working_document,
     offered_document_roles,
 )
-from app.documents.uploads import UploadRejected
 from app.intelligence import commencements
 from app.intelligence.selectors import (
     VISIBLE_VICTORY_STATUS,
@@ -101,7 +100,6 @@ from app.matters import (
     date_order,
     department_dashboard,
     duplicate_intake,
-    engagement_replies,
     intake_staging,
     legal_process,
     register_dates,
@@ -128,8 +126,6 @@ from app.matters.enums import (
     MatterDataClass,
     MatterOrigin,
     RecordMode,
-    WebsiteOverviewKind,
-    WebsiteOverviewStatus,
 )
 from app.matters.episode_timeline import matter_episode_timeline
 from app.matters.follow_up_restart import restart_offers
@@ -151,11 +147,11 @@ from app.matters.forms import (
     EngagementEvidenceForm,
     EngagementFeedbackForm,
     EngagementForm,
-    EngagementReplyForm,
     EngagementWaitForm,
     EntryEditForm,
     ExternalPositionEditForm,
     ExternalPositionEvidenceForm,
+    FeedbackForm,
     FollowUpCheckForm,
     FollowUpDateForm,
     FollowUpRestartForm,
@@ -172,7 +168,6 @@ from app.matters.forms import (
     PersonalNoteForm,
     PlannedActionForm,
     PlanRevisionForm,
-    PositionForm,
     ProceduralDevelopmentEditForm,
     ProceduralLinkEditForm,
     ReopenForm,
@@ -191,7 +186,6 @@ from app.matters.forms import (
 )
 from app.matters.initiative import (
     KODA_INITIATIVE_LABEL,
-    apply_initiative_after_edit,
     is_koda_initiative,
     names_koda_proposal,
 )
@@ -236,7 +230,7 @@ from app.matters.my_work import (
 from app.matters.next_step import upcoming_milestone
 from app.matters.plan_view import Recommendation, recommendation_for
 from app.matters.process_timeline import process_steps
-from app.matters.publication_kind import classify_publication_url
+from app.matters.publication_kind import classify_publication_url, overview_fulfils_step
 from app.matters.removal import (
     RecordRemovalConflict,
     kind_for,
@@ -274,7 +268,6 @@ from app.matters.services import (
     engagement_revision_token,
     entry_revision_token,
     guard_matter_field_revision,
-    guard_matter_revision,
     matter_field_revision,
     matter_revision_token,
     open_engagement_feedback_wait,
@@ -285,14 +278,10 @@ from app.matters.services import (
     resolve_source_organisations,
     save_personal_note,
     set_brief_summary,
-    set_legal_instrument_other,
-    set_legal_instruments,
     set_matter_dates,
-    set_matter_title,
     set_organisations,
     set_policy_area_other,
     set_policy_areas,
-    set_position,
     set_timeline_steps,
     timeline_steps_revision_token,
 )
@@ -328,6 +317,7 @@ from app.submissions.opinions import (
     open_drafts,
     opinion_document_ids,
     opinion_rail,
+    opinions_url,
     sent_submission_by_document,
     unregistered_opinion_documents,
 )
@@ -761,7 +751,7 @@ def intake(request: HttpRequest) -> HttpResponse:
                     # seeded, as on `Uus teema` (docs/adr/0133 §5, 0141).
                     seed_plan=True,
                 )
-            except (DomainError, UploadRejected) as error:
+            except DomainError as error:
                 messages.error(request, str(error))
             else:
                 messages.success(
@@ -1495,11 +1485,35 @@ def _count_matters(queryset: Any) -> int:
 
 
 class _RegisterPaginator(Paginator):
-    """`Paginator`, counting the way `_count_matters` does and slicing as before."""
+    """`Paginator`, counting the way `_count_matters` does, and paging before annotating.
+
+    **The page is chosen on the primary key, then its rows are read** (2026-10-17
+    audit, JPERF-007). The register's row query carries the correlated
+    subqueries `matter_list_queryset` annotates for its cells, and PostgreSQL
+    evaluated the ones it believes cheap for *every* visible Matter under the
+    top-N sort, before the limit — ten thousand loops each to show twelve rows.
+    So the page is first drawn as ids — the same filters, the same order, the
+    same boundary, and an annotation stays in that query only where the filter
+    or the sort refers to it — and the full row query then runs for those ids
+    alone, its rows put back in the order the ids came in. Same rows, same
+    order, same visibility; one more query, a few cheap ones instead of every
+    subquery for every row.
+    """
 
     @cached_property
     def count(self) -> int:
         return _count_matters(self.object_list)
+
+    def page(self, number: Any) -> Any:
+        number = self.validate_number(number)
+        bottom = (number - 1) * self.per_page
+        top = bottom + self.per_page
+        if top + self.orphans >= self.count:
+            top = self.count
+        queryset = cast(Any, self.object_list)
+        ids = list(queryset.values_list("pk", flat=True)[bottom:top])
+        rows = {row.pk: row for row in queryset.filter(pk__in=ids)} if ids else {}
+        return Page([rows[pk] for pk in ids if pk in rows], number, self)
 
 
 #: Under the commencement presentation, always. A record that nobody entered is
@@ -3064,7 +3078,7 @@ def _read_new_matter_files(request: HttpRequest) -> tuple[list[Any], tuple[str, 
             continue
         try:
             accepted.append(read_upload(handle))
-        except (DomainError, UploadRejected) as error:
+        except DomainError as error:
             # The filename first, because a refusal that does not name its file
             # is unactionable the moment there is more than one. An em dash
             # rather than a colon: the reason is already a sentence of its own.
@@ -3423,7 +3437,13 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "opinion_open_rounds": [
             (engagement, engagement_revision_token(engagement)) for engagement in feedback_waits
         ],
-        "save_once_token": uuid.uuid4(),
+        # One fresh `salvestus` per save-once form: a second save of the same
+        # drawn form is refused (`workspace._spend_once`). One per form, not one
+        # per page, because a draft kept in one panel across another panel's
+        # save keeps the token it was drawn with (static/js/app.js
+        # `keepDrafts`), and that token must still be unspent (docs/adr/0167,
+        # amendment of 2026-10-17).
+        "save_once_tokens": {key: uuid.uuid4() for key in SAVE_ONCE_FORMS},
     }
 
 
@@ -3740,30 +3760,6 @@ def matter_position(request: HttpRequest, pk: Any) -> HttpResponse:
     """
     matter = get_visible_matter(request, pk)
     return redirect(opinions_url(matter))
-
-
-def opinions_url(matter: Any, *, anchor: str = "") -> str:
-    """Dokumendid, showing this Matter's opinions — the one place they live now.
-
-    Every route that used to end on the retired surface ends here: the
-    compatibility redirect, the four Submission write actions, and a Submission
-    search result. Built in one function so `?roll=` and the anchor cannot drift
-    apart across six call sites.
-
-    ``anchor`` is the id of the thing the caller changed, and the caller decides
-    which one: `dokument-<uuid>` for a sent opinion, whose file row this filter
-    renders, and `arvamus-<uuid>` for a draft, whose row is in the `Arvamused`
-    block and is *not* in the filtered table. Passing the wrong one is how a
-    redirect lands on an anchor that is not on the page
-    (`app/submissions/views.py`).
-
-    Anchors are only ever built from identities the caller resolved under the
-    reader's own scope, so one can never name something the page will not
-    render.
-    """
-    page = reverse("matters:matter_documents", kwargs={"pk": matter.pk})
-    url = f"{page}?roll={OPINION_ROLE_FILTER}"
-    return f"{url}#{anchor}" if anchor else url
 
 
 def _historical_context(matter: Any, user: Any) -> dict:
@@ -4517,6 +4513,27 @@ def _engagement_row(
     return response
 
 
+#: The `LISA TEEMALE` forms that carry a save-once token (`salvestus`), by
+#: their `workspace_forms` key: `Koja arvamus` since docs/adr/0135, every
+#: compact door since owner decision D3 of 2026-10-17 (docs/adr/0167,
+#: amendment of 2026-10-17; JQA-005).
+SAVE_ONCE_FORMS = (
+    "koda_opinion_form",
+    "add_engagement_form",
+    "engagement_reply_form",
+    "important_date_form",
+    "effective_date_form",
+    "work_victory_form",
+    "other_form",
+    "meeting_form",
+)
+
+
+def _posted_once_token(request: HttpRequest) -> Any:
+    """The drawn form's `salvestus` token, ``None`` when absent, a refusal when garbled."""
+    return _posted_uuid(request, "salvestus")
+
+
 def _posted_uuid(request: HttpRequest, name: str) -> Any:
     """A UUID the form posted under ``name``, ``None`` when absent, a refusal when garbled."""
     raw = (request.POST.get(name) or "").strip()
@@ -4578,7 +4595,7 @@ def add_engagement_evidence_view(request: HttpRequest, pk: Any, engagement_id: A
         workspace.add_engagement_evidence(
             engagement=engagement, author=request.user, uploads=form.cleaned_data["attachments"]
         )
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         return _evidence_refusal(
             request, matter, key="engagement_evidence_form", form=form, error=str(error)
         )
@@ -4824,7 +4841,7 @@ def complete_engagement_feedback_view(
             conflict=conflict.current,
             status=409,
         )
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         # A closed Matter lands here, and so does a wait that is already
         # finished or was never opened. The sentence goes into the panel that is
         # still open rather than into a page-level banner this row does not have.
@@ -5068,7 +5085,7 @@ def check_follow_up_view(request: HttpRequest, pk: Any, action_id: Any) -> HttpR
             next_check_on=form.cleaned_data.get("next_check_on"),
             uploads=form.cleaned_data["attachments"],
         )
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         return _follow_up_refusal(
             request, matter, key=key, form=form, action_id=check.pk, error=str(error)
         )
@@ -5222,7 +5239,7 @@ def complete_planned_action_view(request: HttpRequest, pk: Any, action_id: Any) 
             body=form.cleaned_data["body"],
             uploads=form.cleaned_data["attachments"],
         )
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         return _workspace_refusal(
             request, matter, key="planned_done_form", form=form, error=str(error)
         )
@@ -5454,6 +5471,10 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
     change is audited exactly as it is when made inline, and a title change on
     an unchanged owner writes one event rather than thirteen — every service
     returns early when the value it was given is the value already there.
+
+    The save itself — the transaction, the period and the order of those
+    services — is the use case `workspace.edit_matter`; this view handles the
+    two forms and the four ways the save can be refused (JARCH-001).
     """
     matter = get_visible_matter(request, pk)
     # `Menetluse link` is a Matter fact and is answered on this page, so it
@@ -5488,117 +5509,53 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
 
     data = form.cleaned_data
     try:
-        # One save, one `Hetkeseis` period: every correction below is written in
-        # the period current when the page was saved, and a stage change — made
-        # last — begins the next one after them (docs/adr/0131 §5).
-        with transaction.atomic(), stage_episode_scope():
-            # First, and inside the transaction: this page posts every field it
-            # holds, so a copy filled before somebody else's save would
-            # otherwise write thirteen stale values over thirteen fresh ones
-            # and call it an edit. The guard takes the Matter row and compares
-            # the committed version, never the instance this request arrived
-            # with (QA-002, `guard_matter_revision`).
-            guard_matter_revision(matter=matter, expected_revision=data.get("revision") or None)
-            # The instrument as it stood before this save: only a change of it
-            # can move `Koja algatus` (`initiative_after_edit`).
-            held_instruments = list(matter.legal_instruments.all())
-            set_matter_title(matter=matter, value=data["title"], actor=request.user)
-            set_brief_summary(
-                matter=matter, value=data.get("brief_summary") or "", actor=request.user
-            )
-            assign_matter(matter=matter, owner=data.get("owner"), actor=request.user)
-            # No `change_track`. `Menetlusliik` is off this page, so there is no
-            # cleaned value to pass and the service is not called with a default
-            # either — a Matter's track survives every save of this form
-            # untouched (docs/adr/0097 §3).
+        # One use case, one transaction, one `Hetkeseis` period; the order of
+        # the services it calls is its contract (`workspace.edit_matter`).
+        workspace.edit_matter(
+            matter=matter,
+            actor=request.user,
+            # Compared against the committed row first, so a copy of this page
+            # filled before somebody else's save is refused (QA-002).
+            expected_revision=data.get("revision") or None,
+            title=data["title"],
+            brief_summary=data.get("brief_summary") or "",
+            owner=data.get("owner"),
+            # No `track`, tags or visibility: `Menetlusliik`, `Sildid` and
+            # `Nähtavus` are off this page and `MatterEditForm`, so a crafted
+            # value in this POST changes nothing (docs/adr/0096 §3,
+            # docs/adr/0097 §2, §3). Nor `addressee_organisation`: the use case
+            # leaves it alone, so a register addressee survives (docs/adr/0097
+            # §4).
+            source_organisations=data.get("source_organisations"),
+            sender_name=data.get("sender_name") or "",
             # `list(...)` rather than the queryset on both set-valued fields,
             # so an empty POST arrives as "none of them" — a decision somebody
             # made — and never as the sentinel that means "leave them alone"
             # (app/matters/services.py, `_UNSET`).
-            # Resolved inside this transaction, and before the Matter is
-            # touched. A typed name that names a body nobody has filed against
-            # yet becomes an Organisation here; if any service below refuses,
-            # the rollback takes that Organisation with it.
-            #
-            # **`addressee_organisation` is not passed, and that is the whole of
-            # what its removal means here.** The parameter defaults to `_UNSET`,
-            # which is the sentinel for «leave this alone» — so a Matter that
-            # carries an addressee from the register keeps it through every save
-            # of this form. Passing `None` would have been the defect: it is a
-            # decision, and it would clear a fact nobody was offered the chance
-            # to state (docs/adr/0097 §4).
-            set_organisations(
-                matter=matter,
-                source_organisations=resolve_source_organisations(
-                    chosen=data.get("source_organisations"),
-                    typed_name=data.get("sender_name") or "",
-                ),
-                actor=request.user,
-            )
-            # `Koja algatus` before the dates, so the date writers below judge
-            # them against the answer this save gives (docs/adr/0151 §2).
-            # Moved only by a change of `Õigusakt` to or from «Koja ettepanek
-            # või pöördumine» in this save — never by an unrelated correction —
-            # and through the audited track writer (docs/adr/0151, amendment of
-            # 2026-10-12, `apply_initiative_after_edit`).
-            apply_initiative_after_edit(
-                matter=matter,
-                held=held_instruments,
-                chosen=list(data.get("legal_instruments") or []),
-                actor=request.user,
-            )
-            set_matter_dates(
-                matter=matter, received_date=data.get("received_date"), actor=request.user
-            )
-            # The deadline asks what a changed date means, here as in the header
-            # (`matters/partials/response_deadline_fields.html`): the same
-            # request moved, or a new one replacing it with an outcome chosen.
-            change_response_deadline(
-                matter=matter,
-                deadline=data.get("response_deadline"),
-                actor=request.user,
-                change=request.POST.get("change", ""),
-                previous_outcome=request.POST.get("previous_outcome", ""),
-                previous_submission=_named_answer(request, matter),
-                previous_note=request.POST.get("previous_note", ""),
-            )
-            set_policy_areas(
-                matter=matter, policy_areas=list(data.get("policy_areas") or []), actor=request.user
-            )
-            set_policy_area_other(
-                matter=matter, value=data.get("policy_area_other") or "", actor=request.user
-            )
-            # Through the service, never `matter.legal_instruments.set(...)`
-            # here: a canonical classification that moved without a change
-            # event is a correction the audit trail cannot answer for, and the
-            # service is what writes one (app/matters/services.py, task §19).
-            set_legal_instruments(
-                matter=matter,
-                legal_instruments=list(data.get("legal_instruments") or []),
-                actor=request.user,
-            )
-            set_legal_instrument_other(
-                matter=matter, value=data.get("legal_instrument_other") or "", actor=request.user
-            )
-            # No `set_tags` call and no `set_matter_visibility` call.
-            # `Sildid` and `Nähtavus` are gone from this page and from
-            # `MatterEditForm`, so there is no cleaned value to pass on and
-            # neither service is called with a default either: a crafted
-            # `tags=` or `visibility=RESTRICTED` in this POST changes nothing,
-            # and a Matter's tags and its visibility survive every save of this
-            # form untouched (docs/adr/0096 §3, docs/adr/0097 §2).
-            _save_procedural_link(matter=matter, form=link_form, actor=request.user)
-            # **`Hetkeseis` last.** The general correction surface offers the
-            # whole vocabulary and goes through the one transition every surface
-            # uses: a new period, and — for «Jõustunud» or «Rohkem ei tegele» on
-            # an open Matter — the closure, after every other field on this page
-            # has been written to the open file (docs/adr/0131 §6, §10).
-            change_stage(
-                matter=matter,
-                stage=data.get("stage"),
-                actor=request.user,
-                follow_ups_confirmed=data.get("confirm_follow_up_closure", False),
-            )
+            legal_instruments=list(data.get("legal_instruments") or []),
+            legal_instrument_other=data.get("legal_instrument_other") or "",
+            received_date=data.get("received_date"),
+            # The deadline asks what a changed date means, here as in the
+            # header (`matters/partials/response_deadline_fields.html`): the
+            # same request moved, or a new one replacing it with an outcome
+            # chosen.
+            response_deadline=data.get("response_deadline"),
+            deadline_change=request.POST.get("change", ""),
+            previous_outcome=request.POST.get("previous_outcome", ""),
+            previous_submission=_named_answer(request, matter),
+            previous_note=request.POST.get("previous_note", ""),
+            policy_areas=list(data.get("policy_areas") or []),
+            policy_area_other=data.get("policy_area_other") or "",
+            stage=data.get("stage"),
+            follow_ups_confirmed=data.get("confirm_follow_up_closure", False),
+            # `Menetluse link` rides in the same `<form>` under its own prefix
+            # and is saved inside the same transaction, just before the stage.
+            # Looked up from this module at call time: it is the seam the
+            # late-failure test replaces (tests/test_addressee_free_entry.py).
+            save_procedural_link=lambda: _save_procedural_link(
+                matter=matter, form=link_form, actor=request.user
+            ),
+        )
     except FollowUpClosureUnconfirmed as refusal:
         # Closing this file would end live work: the page comes back with
         # everything typed, the warning naming what, and the box that confirms
@@ -5771,7 +5728,7 @@ def matter_delete(request: HttpRequest, pk: Any) -> HttpResponse:
             record_refused_deletion(
                 actor=request.user,
                 matter_id=pk,
-                ip_address=request.META.get("REMOTE_ADDR"),
+                ip_address=client_ip(request),
                 user_agent=request.META.get("HTTP_USER_AGENT", ""),
             )
         raise PermissionDenied
@@ -5783,7 +5740,7 @@ def matter_delete(request: HttpRequest, pk: Any) -> HttpResponse:
                 matter=matter,
                 actor=request.user,
                 confirmation=request.POST.get("confirm_digest", ""),
-                ip_address=request.META.get("REMOTE_ADDR"),
+                ip_address=client_ip(request),
                 user_agent=request.META.get("HTTP_USER_AGENT", ""),
             )
         except DomainError as error:
@@ -5884,8 +5841,9 @@ def _save_procedural_link(*, matter: Matter, form: Any, actor: Any) -> None:
     * nobody answered the block — nothing at all. No row, no event, no empty
       record (docs/adr/0089 §7).
 
-    Called inside `matter_edit`'s transaction, so an address the service refuses
-    takes the whole correction back with it. A page that saved twelve fields and
+    Called inside `workspace.edit_matter`'s transaction (as its
+    ``save_procedural_link`` step), so an address the service refuses takes the
+    whole correction back with it. A page that saved twelve fields and
     then reported that the thirteenth was wrong would have left the record in a
     state nobody chose.
     """
@@ -6273,50 +6231,6 @@ _FIELD_SURFACES = {
     # band with a rail and the value it just wrote disappears
     # (docs/adr/0074 §2, templates/matters/partials/header.html).
 }
-
-
-@login_required
-@business_write_required
-@require_http_methods(["POST"])
-def update_position(request: HttpRequest, pk: Any) -> HttpResponse:
-    """`position_summary` and `rationale_summary`, with **no native UI.**
-
-    Nothing in this application links here any more. There is no separate
-    free-text `Koja seisukoht` concept: what the Chamber produced on a Matter is
-    the opinion it sent, and that is a file, in `Koja arvamus` on the facts
-    rail. The rail block went first, and the reader/editor panel on the
-    Arvamused surface went with this change.
-
-    The route is kept rather than deleted, deliberately and on a narrow basis.
-    The two columns behind it are not retired — the register cutover and the
-    opinion archive both wrote into them, they are still read by
-    `app/search/indexing.py`, and dropping the only writer for live, indexed
-    data is a data decision rather than a UI one. It also stays inside the
-    business-write boundary, where `tests/test_business_write_boundary.py`
-    keeps firing every forbidden actor at it: an unreachable route is not an
-    unguarded one, and the day something needs to write a position again it
-    will find a door that is still locked.
-
-    If that day does not come, retiring the columns, this route, `PositionForm`
-    and `set_position` together is one coherent change. Doing it inside a rail
-    correction would not have been.
-    """
-    matter = get_visible_matter(request, pk)
-    form = PositionForm(request.POST)
-    if form.is_valid():
-        set_position(
-            matter=matter,
-            position_summary=form.cleaned_data["position_summary"],
-            rationale_summary=form.cleaned_data["rationale_summary"],
-            actor=request.user,
-        )
-        messages.success(request, "Seisukoht on salvestatud.")
-    # The surface this used to return to is retired. Nothing links here any more
-    # — the route stays inside the business-write boundary rather than being
-    # deleted, because dropping the only writer for live indexed columns is a
-    # data decision and this was a UI one — so it lands where the Matter's
-    # opinion material now is (docs/adr/0061).
-    return redirect(opinions_url(matter))
 
 
 @login_required
@@ -7015,37 +6929,24 @@ def add_website_overview(request: HttpRequest, pk: Any) -> HttpResponse:
         return _workspace_refusal(request, matter, key=key, form=form)
     publication = form.cleaned_data.get("publication")
     try:
-        with transaction.atomic():
-            launched = work_plan.lock_launched_step(
-                matter, launched_id, PlanStepOperation.WEBSITE_OVERVIEW
-            )
-            result = workspace.add_matter_website_overview(
+        step_launch.launch(
+            matter=matter,
+            step_id=launched_id,
+            operation=PlanStepOperation.WEBSITE_OVERVIEW,
+            actor=request.user,
+            save=lambda: workspace.add_matter_website_overview(
                 matter=matter,
                 author=request.user,
                 url=publication[0] if publication else "",
                 published_on=publication[1] if publication else None,
                 title=form.cleaned_data.get("overview_title") or "",
                 kind=form.cleaned_data.get("kind") or "",
-            )
-            if launched is not None and _overview_does_the_step(result.record):
-                work_plan.fulfil_launched_step(
-                    launched=launched, record=result.record, actor=request.user
-                )
+            ),
+            fulfils=overview_fulfils_step,
+        )
     except DomainError as error:
         return _workspace_refusal(request, matter, key=key, form=form, error=str(error))
     return _render_overview(request, matter)
-
-
-def _overview_does_the_step(overview: Any) -> bool:
-    """A published Ülevaade — the reading `RecordedWork` proves the step by.
-
-    A publication whose kind predates the choice reads as an overview, which is
-    what every one of them was filed as (`plan_view.RecordedWork`).
-    """
-    return overview.status == WebsiteOverviewStatus.PUBLISHED and overview.kind in (
-        WebsiteOverviewKind.OVERVIEW,
-        "",
-    )
 
 
 @login_required
@@ -7350,10 +7251,10 @@ def _workspace_choices(open_choice: str, *, has_open_round: bool = False) -> dic
 
     The template cannot do this with `open_choice` alone, and the failure is
     quiet rather than loud. `open_choice` is global to the page: when a refusal
-    comes from `+ Arvamus / tagasiside` it names one of *that* family's
-    children, so every `if open_choice == "marge-…"` test in the `+ Märge` group
+    comes from `+ Koja arvamus / kohtumine` it names one of *that* family's
+    children, so every `if open_choice == "marge-…"` test in the `+ Lisa` group
     is false at once and that group renders with **no radio checked**. Opening
-    `+ Märge` afterwards then shows four chips and no form — nothing errors,
+    `+ Lisa` afterwards then shows its chips and no form — nothing errors,
     nothing logs, and the page is simply missing a control.
 
     So each group is told which of *its* ids is chosen, and the answer is always
@@ -7470,7 +7371,7 @@ def workspace_forms(
         # choices (the field's queryset still validates), and `Organisatsioon`
         # is ranked by the institutions this reader's visible Matters involve,
         # read once for the page (docs/adr/0091 §3.5).
-        "engagement_reply_form": EngagementReplyForm(
+        "engagement_reply_form": FeedbackForm(
             matter=matter, viewer=viewer, open_rounds=open_rounds, choices=organisations
         ),
         "important_date_form": CompactImportantDateForm(),
@@ -7650,6 +7551,18 @@ def _workspace_refusal(
     context = _overview_context(request, matter)
     context.update(_header_context(request, matter))
     context[key] = form
+    # **The refused form is the same drawn form**, so it keeps the token it was
+    # posted with. A refusal before the save spent nothing, so the corrected
+    # save still saves once; an `ALREADY_SAVED` refusal keeps the spent token,
+    # so pressing again is refused again rather than handed a fresh token that
+    # would file the record a second time (docs/adr/0167, amendment of
+    # 2026-10-17). A garbled token is not put back.
+    if key in SAVE_ONCE_FORMS:
+        posted = (request.POST.get("salvestus") or "").strip()
+        try:
+            context["save_once_tokens"][key] = uuid.UUID(posted)
+        except ValueError:
+            pass
     # A canonical form opened from a step comes back still naming that step, so
     # the corrected save still finishes it (docs/adr/0168 §3).
     context["launch"] = step_launch.launched_context(
@@ -7804,7 +7717,7 @@ def complete_current_action(request: HttpRequest, pk: Any) -> HttpResponse:
         return _closure_needs_confirmation(
             request, matter, key="current_action_form", form=form, refusal=refusal
         )
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         return _workspace_refusal(
             request, matter, key="current_action_form", form=form, error=str(error)
         )
@@ -7913,6 +7826,12 @@ def add_note(request: HttpRequest, pk: Any) -> HttpResponse:
     neither changes neither; nothing is read from or written to a
     `Menetluse link`.
     """
+    # No page posts here since `Tavaline` left (2026-10-07): a fixture door for
+    # the test suites, answering only where `ADD_NOTE_TEST_DOOR_ENABLED` is on
+    # and never beside real data, until its uses move to real doors (owner
+    # decision D9, 2026-10-17).
+    if not settings.ADD_NOTE_TEST_DOOR_ENABLED or settings.REAL_DATA_ALLOWED:
+        raise Http404
     matter = get_visible_matter(request, pk)
     # The stage the panel was drawn with, so the form can tell whether a chosen
     # `Uus hetkeseis` moves the file. The form has no `Etapp`: a crafted
@@ -7970,7 +7889,7 @@ def add_note(request: HttpRequest, pk: Any) -> HttpResponse:
         return _closure_needs_confirmation(
             request, matter, key="progress_form", form=form, refusal=refusal
         )
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         return _workspace_refusal(request, matter, key="progress_form", form=form, error=str(error))
     if result.closed:
         # «Jõustunud» or «Rohkem ei tegele» ended the Matter (docs/adr/0131 §10):
@@ -8022,21 +7941,23 @@ def add_engagement_compact(request: HttpRequest, pk: Any) -> HttpResponse:
     if not form.is_valid():
         return _workspace_refusal(request, matter, key=key, form=form)
     try:
-        with transaction.atomic():
-            launched = work_plan.lock_launched_step(
-                matter, launched_id, PlanStepOperation.ENGAGEMENT
-            )
-            result = _add_engagement_from_form(request, matter, form)
-            if launched is not None:
-                work_plan.fulfil_launched_step(
-                    launched=launched, record=result.record, actor=request.user
-                )
-    except (DomainError, UploadRejected) as error:
+        step_launch.launch(
+            matter=matter,
+            step_id=launched_id,
+            operation=PlanStepOperation.ENGAGEMENT,
+            actor=request.user,
+            save=lambda: _add_engagement_from_form(
+                request, matter, form, once_token=_posted_once_token(request)
+            ),
+        )
+    except DomainError as error:
         return _workspace_refusal(request, matter, key=key, form=form, error=str(error))
     return _render_overview(request, matter)
 
 
-def _add_engagement_from_form(request: HttpRequest, matter: Matter, form: Any) -> Any:
+def _add_engagement_from_form(
+    request: HttpRequest, matter: Matter, form: Any, *, once_token: Any = None
+) -> Any:
     """`workspace.add_matter_engagement` with what `Alusta kaasamist` asked."""
     return workspace.add_matter_engagement(
         matter=matter,
@@ -8055,6 +7976,9 @@ def _add_engagement_from_form(request: HttpRequest, matter: Matter, form: Any) -
         feedback_deadline=form.cleaned_data.get("feedback_deadline"),
         uploads=form.cleaned_data.get("attachments") or (),
         record_overview=True,
+        # The drawn form's token: one form, one round (docs/adr/0167,
+        # amendment of 2026-10-17).
+        once_token=once_token,
     )
 
 
@@ -8083,9 +8007,7 @@ def add_engagement_reply(request: HttpRequest, pk: Any) -> HttpResponse:
     wait is touched. Success re-renders the Teema view (200); a refusal is 400
     with the form still bound and writes nothing.
     """
-    return _record_external_position(
-        request, pk, form_class=EngagementReplyForm, key="engagement_reply_form"
-    )
+    return _record_external_position(request, pk)
 
 
 @login_required
@@ -8131,9 +8053,10 @@ def add_important_date(request: HttpRequest, pk: Any) -> HttpResponse:
             matter=matter,
             author=request.user,
             uploads=form.cleaned_data["attachments"],
+            once_token=_posted_once_token(request),
             **form.cleaned_data["important_date_kwargs"],
         )
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         return _workspace_refusal(
             request, matter, key="important_date_form", form=form, error=str(error)
         )
@@ -8154,9 +8077,10 @@ def add_effective_date(request: HttpRequest, pk: Any) -> HttpResponse:
             matter=matter,
             author=request.user,
             uploads=form.cleaned_data["attachments"],
+            once_token=_posted_once_token(request),
             **form.cleaned_data["effective_date_kwargs"],
         )
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         return _workspace_refusal(
             request, matter, key="effective_date_form", form=form, error=str(error)
         )
@@ -8180,9 +8104,10 @@ def add_work_victory(request: HttpRequest, pk: Any) -> HttpResponse:
             matter=matter,
             author=request.user,
             uploads=form.cleaned_data["attachments"],
+            once_token=_posted_once_token(request),
             **form.cleaned_data["work_victory_kwargs"],
         )
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         return _workspace_refusal(
             request, matter, key="work_victory_form", form=form, error=str(error)
         )
@@ -8212,8 +8137,9 @@ def add_other(request: HttpRequest, pk: Any) -> HttpResponse:
             occurred_on=form.cleaned_data["occurred_on"],
             url=form.cleaned_data["url"],
             uploads=form.cleaned_data["attachments"],
+            once_token=_posted_once_token(request),
         )
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         return _workspace_refusal(request, matter, key="other_form", form=form, error=str(error))
     return _render_overview(request, matter)
 
@@ -8240,8 +8166,9 @@ def add_meeting(request: HttpRequest, pk: Any) -> HttpResponse:
             summary=form.cleaned_data["summary"],
             occurred_on=form.cleaned_data["occurred_on"],
             uploads=form.cleaned_data["attachments"],
+            once_token=_posted_once_token(request),
         )
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         return _workspace_refusal(request, matter, key="meeting_form", form=form, error=str(error))
     return _render_overview(request, matter)
 
@@ -8405,39 +8332,32 @@ def _external_position_row(
     )
 
 
-def _record_external_position(
-    request: HttpRequest, pk: Any, *, form_class: Any, key: str
-) -> HttpResponse:
+def _record_external_position(request: HttpRequest, pk: Any) -> HttpResponse:
     """Record one `MatterExternalPosition` from a creation form.
 
     Since the owner's UX round (stage 3, 2026-10-15) the one creation form is
-    `+ Kaasamine · Lisa tagasiside` (`FeedbackForm`); the function stays the one
-    place for the organisation resolution, the refusal handling, the
-    closed-Matter boundary and the engagement-reply rules.
+    `+ Kaasamine · Lisa tagasiside` (`FeedbackForm`). This view is the form's
+    handling and nothing else: the save — the institution, the repeat refusal,
+    the record and finishing the round's wait — is the use case
+    `workspace.record_position_reply`, one transaction under the Matter's lock,
+    so a second caller gets the same guarantees (JARCH-001).
 
-    **The provenance is stated, never inferred** (docs/adr/0091 §3.2). A form
-    that `states_provenance` carries it as a required radio with no default,
-    validated against the two creation provenances and fixed at RECEIVED when a
-    round is linked; any other form class still fixes it itself. Nothing is
-    guessed from the organisation, the round, the link or the text.
+    **The provenance is stated, never inferred** (docs/adr/0091 §3.2). The form
+    carries it as a required radio with no default, validated against the two
+    creation provenances and fixed at RECEIVED when a round is linked. Nothing
+    is guessed from the organisation, the round, the link or the text.
 
     **Only a linked round is answered.** With a round, a repeat is refused and
-    the first answer to an open round finishes its wait in this transaction; a
-    standalone position — received or published elsewhere — touches no wait
-    (docs/adr/0167 §2).
+    the first answer to an open round finishes its wait; a standalone position
+    — received or published elsewhere — touches no wait (docs/adr/0167 §2).
 
     The institution is answered either by the picker's radio group or by the
-    name somebody typed into it, and which of the two wins is
-    `resolve_addressee`'s rule, shared rather than restated: a typed name is a
-    deliberate act and beats a chip that was merely left selected. Resolution
-    happens inside the save's own transaction, so a refusal further down leaves
-    no institution behind (docs/adr/0073, docs/adr/0084 §4).
-
-    **Received feedback may name no institution at all**, and that is the one
-    place the two panels diverge here: `resolve_addressee` is asked only when
-    something was chosen or typed, because calling it with two empty answers
-    would refuse an aggregate survey result for having no author when `Allikas`
-    is exactly the author it has (docs/adr/0091 §3.3).
+    name somebody typed into it; both halves are handed to the use case, which
+    applies `resolve_addressee`'s rule inside its own transaction, so a refusal
+    further down leaves no institution behind (docs/adr/0073, docs/adr/0084
+    §4). **Received feedback may name no institution at all** (docs/adr/0101);
+    a published opinion («Avaldatud mujal») must name its author, and the form
+    refuses it before this (docs/adr/0091 §3.3).
 
     A refusal comes back through `_workspace_refusal` with the form still bound,
     so the link somebody pasted and the explanation they wrote are still in
@@ -8447,91 +8367,47 @@ def _record_external_position(
     before somebody else shut the file (R2-02).
     """
     matter = get_visible_matter(request, pk)
-    form = form_class(request.POST, request.FILES, matter=matter, viewer=request.user)
+    key = "engagement_reply_form"
+    form = FeedbackForm(request.POST, request.FILES, matter=matter, viewer=request.user)
     if not form.is_valid():
         return _workspace_refusal(request, matter, key=key, form=form)
-    chosen = form.cleaned_data.get("organisation")
-    typed = (form.cleaned_data.get("organisation_name") or "").strip()
-    answered = form.cleaned_data.get("engagement")
-    # A position linked to a round is an answer to it; one with no round is a
-    # standalone position and touches no wait (owner's UX round, stage 3).
-    finishes_wait = bool(getattr(form_class, "closes_engagement", False)) and answered is not None
-    # Stated by the person on `Lisa tagasiside` — the validated radio, which the
-    # form has already fixed at RECEIVED for a linked round — and otherwise the
-    # form class's own, as before (docs/adr/0091 §3.2, amended 2026-10-15).
-    provenance = (
-        form.cleaned_data["provenance"]
-        if getattr(form_class, "states_provenance", False)
-        else form_class.provenance
-    )
     try:
-        # One transaction around the resolution and the save. A typed name the
-        # picker does not know becomes a new institution *while the arguments
-        # are evaluated*, which is before the use case's own transaction opens;
-        # without this, a refusal under the lock — a closed Matter in a stale
-        # tab, a rejected upload — left that institution in the catalogue.
-        with transaction.atomic():
-            # `None` where neither half of the picker was answered: received
-            # feedback that names nobody, which since docs/adr/0101 is a record
-            # rather than a gap. A published opinion with no author is refused by
-            # the form before this (docs/adr/0091 §3.3). Resolved first, inside
-            # this transaction, so the repeat check below can compare authors and
-            # a refusal leaves no new institution behind.
-            organisation = (
-                resolve_addressee(chosen=chosen, typed_name=typed)
-                if (chosen is not None or typed)
-                else None
-            )
-            source_is_member = bool(form.cleaned_data.get("source_is_member"))
-            if finishes_wait:
-                # A finished round takes later answers (docs/adr/0167 §2), so a
-                # second press of `Salvesta` must not file the same one twice —
-                # while a second organisation's identical answer is its own.
-                engagement_replies.refuse_repeated_reply(
-                    matter=matter,
-                    engagement=answered,
-                    organisation=organisation,
-                    source_is_member=source_is_member,
-                    summary=form.cleaned_data.get("summary") or "",
-                    url=form.cleaned_data.get("url") or "",
-                    stated_on=form.cleaned_data.get("stated_on_value"),
-                    uploads=form.cleaned_data.get("attachments") or (),
-                )
-            workspace.add_matter_external_position(
-                matter=matter,
-                author=request.user,
-                organisation=organisation,
-                provenance=provenance,
-                # `Allikas` and `Märkus` are not declared by `FeedbackForm`, so
-                # these are the empty answer whatever a POST carries; `Muuda`
-                # still asks both on rows that have them (docs/adr/0095 §5).
-                source_label=form.cleaned_data.get("source_label") or "",
-                url=form.cleaned_data.get("url") or "",
-                # The day box itself at `EXACT`: the period fields are not on the
-                # form, so a crafted `..._precision=QUARTER` is read by nothing
-                # (`ExternalPositionFieldsMixin.offers_precision`).
-                stated_on=form.cleaned_data.get("stated_on_value"),
-                stated_on_precision=form.cleaned_data["stated_on_precision"],
-                summary=form.cleaned_data.get("summary") or "",
-                lawyer_note=form.cleaned_data.get("lawyer_note") or "",
-                # `Liige` — refused off RECEIVED by the form, the service and a
-                # `CHECK` (docs/adr/0095 §4).
-                source_is_member=source_is_member,
-                engagement=answered,
-                uploads=form.cleaned_data["attachments"],
-            )
-            # **`Lisa tagasiside` finishes the wait of the round it answers**
-            # (owner's decision, 2026-10-07, docs/adr/0142 §B): the feedback,
-            # its files and the closed wait are one save — whichever door
-            # opened the form (`PRAEGUNE TEGEVUS → Tehtud` or `+ Kaasamine →
-            # Lisa tagasiside`). Through the canonical close, inside this
-            # transaction. A round already finished — by an earlier answer,
-            # `Lõpeta kaasamine` or somebody else meanwhile — keeps its closure
-            # and simply gains this answer (docs/adr/0167 §2). Nothing else is
-            # completed: no `NextAction` is inferred from feedback.
-            if finishes_wait:
-                engagement_replies.finish_wait_on_reply(engagement=answered, actor=request.user)
-    except (DomainError, UploadRejected) as error:
+        # The institution, the repeat refusal, the record and the wait are one
+        # use case and one transaction (JARCH-001, docs/adr/0167 §2).
+        workspace.record_position_reply(
+            matter=matter,
+            author=request.user,
+            organisation=form.cleaned_data.get("organisation"),
+            organisation_name=form.cleaned_data.get("organisation_name") or "",
+            # Stated by the person — the validated radio, which the form has
+            # already fixed at RECEIVED for a linked round (docs/adr/0091 §3.2,
+            # amended 2026-10-15).
+            provenance=form.cleaned_data["provenance"],
+            # `Allikas` and `Märkus` are not declared by `FeedbackForm`, so
+            # these are the empty answer whatever a POST carries; `Muuda`
+            # still asks both on rows that have them (docs/adr/0095 §5).
+            source_label=form.cleaned_data.get("source_label") or "",
+            url=form.cleaned_data.get("url") or "",
+            # The day box itself at `EXACT`: the period fields are not on the
+            # form, so a crafted `..._precision=QUARTER` is read by nothing
+            # (`ExternalPositionFieldsMixin.offers_precision`).
+            stated_on=form.cleaned_data.get("stated_on_value"),
+            stated_on_precision=form.cleaned_data["stated_on_precision"],
+            summary=form.cleaned_data.get("summary") or "",
+            lawyer_note=form.cleaned_data.get("lawyer_note") or "",
+            # `Liige` — refused off RECEIVED by the form, the service and a
+            # `CHECK` (docs/adr/0095 §4).
+            source_is_member=bool(form.cleaned_data.get("source_is_member")),
+            # A position linked to a round is an answer to it; one with no
+            # round is a standalone position and touches no wait (owner's UX
+            # round, stage 3).
+            engagement=form.cleaned_data.get("engagement"),
+            uploads=form.cleaned_data.get("attachments") or (),
+            # One drawn form, one position — with a round or without
+            # (docs/adr/0170 §4, amendment of 2026-10-17).
+            once_token=_posted_once_token(request),
+        )
+    except DomainError as error:
         return _workspace_refusal(request, matter, key=key, form=form, error=str(error))
     return _render_overview(request, matter)
 
@@ -8830,22 +8706,24 @@ def add_koda_opinion(request: HttpRequest, pk: Any) -> HttpResponse:
     if not form.is_valid():
         return _workspace_refusal(request, matter, key=key, form=form)
     try:
-        # One transaction around the resolution and the save. A typed name the
-        # picker does not know becomes a new institution *while the arguments
-        # are evaluated*, which is before the use case's own transaction opens;
-        # without this, a refusal under the lock — a closed Matter in a stale
-        # tab, a rejected upload — left that institution in the catalogue.
-        with transaction.atomic():
-            launched = work_plan.lock_launched_step(
-                matter, launched_id, PlanStepOperation.SUBMISSION
-            )
-            result = workspace.add_matter_koda_opinion(
+        # One transaction around the resolution and the save: `launch` calls
+        # `save` inside its own. A typed name the picker does not know becomes a
+        # new institution *while the arguments are evaluated*, which is before
+        # the use case's own transaction opens; without this, a refusal under the
+        # lock — a closed Matter in a stale tab, a rejected upload — left that
+        # institution in the catalogue.
+        result = step_launch.launch(
+            matter=matter,
+            step_id=launched_id,
+            operation=PlanStepOperation.SUBMISSION,
+            actor=request.user,
+            save=lambda: workspace.add_matter_koda_opinion(
                 # What else this save finishes, each named by the person and
                 # each checked again under the lock (historical regression,
                 # stage II). Nothing is chosen for them.
                 answers_deadline=request.POST.get("vastab_tahtajale") or None,
                 close_rounds=_named_rounds_to_finish(request, matter),
-                once_token=_posted_uuid(request, "salvestus"),
+                once_token=_posted_once_token(request),
                 # The step `Märgi praegune tegevus tehtuks` named, when it was
                 # ticked: fetched through `visible_to` first, so an identifier for a
                 # step this reader may not see answers 404 rather than confirming it
@@ -8875,14 +8753,11 @@ def add_koda_opinion(request: HttpRequest, pk: Any) -> HttpResponse:
                 # schedules, and any earlier one: confirmed, or refused before a
                 # byte is stored (docs/adr/0146 §8).
                 follow_ups_confirmed=form.cleaned_data.get("confirm_follow_up_closure", False),
-            )
-            if launched is not None:
-                work_plan.fulfil_launched_step(
-                    launched=launched, record=result.record, actor=request.user
-                )
+            ),
+        )
     except FollowUpClosureUnconfirmed as refusal:
         return _closure_needs_confirmation(request, matter, key=key, form=form, refusal=refusal)
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         return _workspace_refusal(request, matter, key=key, form=form, error=str(error))
     if result.closed or request.POST.get("vastab_tahtajale"):
         # A closure, or an answered `Arvamuse tähtaeg`, changes the header too.
@@ -9413,7 +9288,7 @@ def add_development_evidence_view(
             author=request.user,
             uploads=form.cleaned_data["attachments"],
         )
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         return _evidence_refusal(
             request, matter, key="development_evidence_form", form=form, error=str(error)
         )
@@ -9519,7 +9394,7 @@ def add_external_position_evidence_view(
             author=request.user,
             uploads=form.cleaned_data["attachments"],
         )
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         return _evidence_refusal(
             request, matter, key="external_position_evidence_form", form=form, error=str(error)
         )
@@ -9780,7 +9655,7 @@ def add_opinion_working_documents_view(
             author=request.user,
             uploads=form.cleaned_data["attachments"],
         )
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         return _evidence_refusal(
             request, matter, key="opinion_working_documents_form", form=form, error=str(error)
         )

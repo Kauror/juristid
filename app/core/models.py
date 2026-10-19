@@ -6,7 +6,7 @@ authorization chokepoint every other module reuses.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Self
 
 from django.conf import settings
 from django.db import models
@@ -120,9 +120,15 @@ class RemovableRecord(models.Model):
     **What it does.** ``removed_at`` takes the row out of every business read
     through the model's own ``visible_to`` chokepoint, which is the same place
     visibility is enforced and therefore the same place a reader, a count, a
-    search projection, the rail and an export all pass through. Nothing is
-    filtered at call sites, because a filter at a call site is a filter some
-    other call site forgets.
+    search projection, the rail and an export all pass through.
+
+    **A read with no reader is not a reader's read.** Locks, closure, the
+    integrity checker and the operator's cutover planners query without a
+    viewer, so they cannot pass through ``visible_to``; they say so with
+    :meth:`RemovableQuerySet.live`, the one spelling of «still on the file».
+    A bare ``removed_at__isnull=True`` at a call site is the thing to avoid —
+    the 2026-10-17 audit found two cutover planners that had forgotten it
+    (JDATA-005, docs/adr/0102 amendment).
 
     **What it does not do.** No byte is destroyed. The `ChangeEvent` trail
     keeps what was recorded, who recorded it and who removed it; evidence stays
@@ -164,3 +170,16 @@ class RemovableRecord(models.Model):
     @property
     def is_removed(self) -> bool:
         return self.removed_at is not None
+
+
+class RemovableQuerySet(models.QuerySet):
+    """The reads every :class:`RemovableRecord` queryset shares."""
+
+    def live(self) -> Self:
+        """The rows still on the active file — none a lawyer removed.
+
+        ``visible_to`` already applies this for every reader; this is for the
+        reads that have no reader (closure, locks, the integrity checker, the
+        operator's tooling), so that they spell «not removed» one way.
+        """
+        return self.filter(removed_at__isnull=True)

@@ -490,7 +490,10 @@ task composer returns.
    refuse them — and refused rather than truncated), on creation and on
    correction alike; shown by its host as the labelled new-window link other
    chronology rows use, and corrected through `edit_entry`, whose revision keeps
-   the earlier address as it keeps the earlier wording. A correction overtaken
+   the earlier address as it keeps the earlier wording. **Correcting a `Muu`
+   link creates an `EntryRevision`, and a Teema holding a corrected entry cannot
+   be permanently deleted (docs/adr/0165), so the link-correction form says so
+   in one line** (owner decision D13, 2026-10-17). A correction overtaken
    by another writer's (409) shows that writer's description **and** link
    («Praegune link», the whole address as plain text) beside the person's own
    unsaved values, and merges nothing. Only
@@ -501,6 +504,19 @@ task composer returns.
    constraint (same migration) refuses it in the database; every existing row has
    an empty `url`, so it holds from the start. Search indexing is unchanged (the
    description is indexed as every entry body is); no rebuild.
+   **Reversing `0049` is a data loss** (recorded 2026-10-18, JTEST-012): a
+   backward migrate to `0048` drops both columns *with their values* — every
+   `Muu` link and every earlier link a revision kept — while the entries
+   themselves survive, and migrating forward again restores the columns empty.
+   A rollback of this release is therefore code-only; the schema step back is
+   not a rollback (`tests/test_entry_url_migration_reversal.py`;
+   `deploy/unraid-main/RECOVERY.md` §"A backward migrate across `matters.0049`
+   drops Muu links"; `docs/production-readiness.md` 5.2).
+   During a code-only rollback to `9ecbfd21`, a correction of a linked `Muu`
+   entry writes an `EntryRevision` with an empty `url` (the database default),
+   because that release's `edit_entry` does not name the column; the entry keeps
+   its link, and the revision wrongly says the earlier link was empty (JDATA-001,
+   accepted and documented in `RECOVERY.md`).
 3. **The date is the day the material or event occurred.** `Millal?` is a
    required single day with the existing date picker, **empty until the person
    fills it** — nothing is pre-filled and no day is invented. It is stored as the
@@ -591,3 +607,11 @@ generic composer returns.
    the stated day, `capture_supporting_evidence`), so the two exceptions cannot
    drift apart; `Muu`'s public behaviour is unchanged. Search indexing is
    unchanged; no rebuild, no migration.
+
+## Amendment 2026-10-17 — each `LISA TEEMALE` form saves once
+
+Every compact `LISA TEEMALE` form — `Alusta kaasamist`, `Lisa tagasiside`,
+`Oluline tähtaeg`, `Jõustumine`, `Töövõit`, `Muu`, `Kohtumine / arutelu` and,
+as before, `Koja arvamus` — carries a save-once token: the same drawn form
+records once, a refused save spends nothing, and a deliberate repeat is the form
+opened again (owner decision D3; docs/adr/0167, amendment of 2026-10-17).

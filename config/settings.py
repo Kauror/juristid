@@ -86,6 +86,10 @@ MIDDLEWARE = [
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.locale.LocaleMiddleware",
     "django.middleware.common.CommonMiddleware",
+    # A 405 a view returned with no body gets the Estonian error page; inside
+    # BrowserPolicyMiddleware, so the page carries the same policy headers as
+    # every other (app/core/middleware.py, 2026-10-17 audit JUX-013).
+    "app.core.middleware.MethodNotAllowedPageMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     # After the CSRF check, so a forged request is still refused as one; before
     # anything that reads a parameter. A NUL byte is a 400 here rather than a
@@ -208,8 +212,15 @@ SHARED_GATE_MAX_ATTEMPTS = env_int("SHARED_GATE_MAX_ATTEMPTS", 5)
 SHARED_GATE_LOCKOUT_SECONDS = env_int("SHARED_GATE_LOCKOUT_SECONDS", 300)
 SHARED_GATE_MAX_LOCKOUT_SECONDS = env_int("SHARED_GATE_MAX_LOCKOUT_SECONDS", 3600)
 
-# How long a gate session lasts before the password is asked for again.
+# How long a gate session lasts before the password is asked for again,
+# however busy it has been: the absolute limit.
 SHARED_GATE_SESSION_SECONDS = env_int("SHARED_GATE_SESSION_SECONDS", 12 * 60 * 60)
+
+# How long a gate session may go without a request before the password is asked
+# for again: the idle limit. Eight hours, the owner's decision of 2026-10-17
+# (JSEC-005, D11; docs/adr/0016 amendment). The absolute limit above still
+# applies to a session that never goes quiet.
+SHARED_GATE_IDLE_SECONDS = env_int("SHARED_GATE_IDLE_SECONDS", 8 * 60 * 60)
 
 # Where `login_required` sends somebody who has no identity yet, which is a
 # different place in each mode:
@@ -334,6 +345,14 @@ ACCOUNT_LINK_BASE_URL = env("ACCOUNT_LINK_BASE_URL", "")
 # today, and through personal sign-in (or Cloudflare Access) after an approved
 # activation — never through this. See docs/adr/0004 as amended by 0145.
 DEV_LOGIN_ENABLED = env_bool("DEV_LOGIN_ENABLED", default=False)
+
+# `matters:add_note` has had no page since `+ Lisa · Tavaline` left on
+# 2026-10-07; it stays only as a fixture door for the test suites until their
+# uses move to the real doors (owner decision D9, 2026-10-17). It answers only
+# where this is on, which by default is exactly where the synthetic sign-in is,
+# and never beside real data: with REAL_DATA_ALLOWED the route is a 404 whatever
+# this says.
+ADD_NOTE_TEST_DOOR_ENABLED = env_bool("ADD_NOTE_TEST_DOOR_ENABLED", default=DEV_LOGIN_ENABLED)
 
 # A shared PIN in front of the synthetic sign-in. Empty means no PIN, which is
 # the right default for a laptop and for CI.
@@ -704,8 +723,16 @@ X_FRAME_OPTIONS = "DENY"
 # Only ever set where something really does terminate TLS. Trusting
 # `X-Forwarded-Proto` from a client that can reach the application directly
 # would let that client claim its own connection was secure.
-if env_bool("DJANGO_BEHIND_TLS_PROXY", default=False):
+BEHIND_TLS_PROXY = env_bool("DJANGO_BEHIND_TLS_PROXY", default=False)
+if BEHIND_TLS_PROXY:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# Whether `CF-Connecting-IP` names the client on audit rows and in the throttles
+# (app/core/client_ip.py, JOPS-008). The same trust as the forwarded scheme
+# above, and for the same reason: behind the tunnel, which is the only way in,
+# Cloudflare sets the header; anywhere a client reaches the application
+# directly, the client does. Not a second switch, so the two cannot disagree.
+TRUST_CF_CONNECTING_IP = BEHIND_TLS_PROXY
 
 # --------------------------------------------------------------------------
 # Application metadata and logging

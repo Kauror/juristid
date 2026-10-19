@@ -143,6 +143,7 @@ addopts = "--ds=config.test_settings --strict-markers -ra"
 markers = [
     "e2e: browser test; requires a running server and E2E_BASE_URL",
     "writes_last: a browser scenario that writes to a shared world; runs after everything else",
+    "start_up_failure_injected: a browser test that makes a feature's start-up throw on purpose; the start-up error watch skips it",
 ]
 
 [tool.coverage.run]

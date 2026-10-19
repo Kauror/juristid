@@ -62,8 +62,30 @@ mode the persona list is exactly the accounts an administrator created.
 with `DEBUG` (E004), real data with the synthetic sign-in (E003), real data with
 no authenticator (E006), `cloudflare_access` unconfigured (E007), the synthetic
 sign-in beside a real authenticator (E008), an unknown mode (E009), a missing or
-too-short gate password (E010, E011), a disabled rate limit (E012), and a gate
-session cookie that is not `Secure` (E013).
+too-short gate password (E010, E011), a disabled rate limit (E012), a gate
+session cookie that is not `Secure` (E013), a gate idle limit outside 300
+seconds–the absolute limit (E021), and — on real data — a template
+`replace-me…` value left in any secret (E016), a `DJANGO_SECRET_KEY` under 50
+characters (E017), a gate password under 16 (E018), a `POSTGRES_PASSWORD`
+under 16 (E019) and a missing `DJANGO_BEHIND_TLS_PROXY=1` (E020).
+
+**`DJANGO_BEHIND_TLS_PROXY=1` is required here.** It is what lets the
+application believe `CF-Connecting-IP`, the address Cloudflare saw. Without it
+every request seems to come from the tunnel's own address, so the gate's
+per-client throttle becomes one bucket for the whole department: five wrong
+passwords from anybody would lock everybody out. On a synthetic stack the same
+gap is only a warning (E014).
+
+Every process here runs those checks before it does anything. The intake
+reader, the search worker and their healthchecks are `manage.py` commands,
+which check first. The web process starts through
+`scripts/serve-after-checks.sh` — `manage.py check --deploy --fail-level ERROR`,
+then gunicorn — because gunicorn alone runs no checks: before 18.10.2026 a
+refused configuration served pages and answered `/healthz` with 200 (JOPS-004).
+Now it exits before anything listens, Compose restarts it, and
+`docker compose ps` shows `juristid-main-web` restarting instead of healthy;
+`docker compose logs web` names the check. Warnings are printed at each start
+and do not stop it.
 
 ## The shared gate — what it is, and what it is not
 
@@ -116,7 +138,11 @@ RESTRICTED appears merely because the password was typed. Everything except
 Osakond needs a persona, because authoring anything needs somebody to attribute
 it to.
 
-Changing persona does not ask for the password again. Signing out closes both.
+Changing persona does not ask for the password again, and does not restart the
+12-hour clock. Signing out closes both. A session ends 12 hours after the
+password (`SHARED_GATE_SESSION_SECONDS`) or after 8 hours without a request
+(`SHARED_GATE_IDLE_SECONDS`), whichever comes first (docs/adr/0016, amendment of
+2026-10-17).
 
 ### Rotating the password
 
@@ -171,7 +197,9 @@ chmod 600 /mnt/user/appdata/juristid-main/config/juristid.env
 ```
 
 Fill in `DJANGO_SECRET_KEY`, `POSTGRES_PASSWORD`,
-`JURISTID_SHARED_GATE_PASSWORD` and the hostname.
+`JURISTID_SHARED_GATE_PASSWORD` and the hostname. Keep
+`DJANGO_BEHIND_TLS_PROXY=1` as the template has it: it is required, and the
+application refuses to start on real data without it (E020).
 
 Leave `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUDIENCE` empty for now: they are
 the two values `AUTH_MODE=cloudflare_access` needs, and this stack runs
@@ -1239,6 +1267,14 @@ which is the reassuring answer given at exactly the wrong moment.
 `run --rm web` starts a one-off container from the image loaded in step 5 — the
 target code — against the running database. That is the pair the question is
 about: **new code, current schema.** It reports and never migrates.
+
+It is also the first time the target code's system checks read this host's
+environment file. If it stops with `SystemCheckError`, the release's `web` would
+refuse to start as well (the checks run before gunicorn): fix the environment
+file now, before the backup and before anything is replaced — never the check.
+The usual ones: a secret below its floor (E016–E019), and
+`DJANGO_BEHIND_TLS_PROXY=1` missing (E020) — add the line and run this step
+again.
 
 If everything is additive, the old web process keeps working against the new
 schema while it is replaced — reading it and writing to it — which is what makes

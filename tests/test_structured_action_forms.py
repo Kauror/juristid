@@ -44,6 +44,7 @@ from app.workflow.plan import (
 )
 from tests import factories
 from tests.follow_ups import day, et, pdf
+from tests.legacy_plans import start_as_before_adr_0168
 
 pytestmark = pytest.mark.django_db
 
@@ -435,7 +436,7 @@ def test_c_a_news_item_does_not_finish_the_overview_step(signed_in, specialist, 
 
 def test_d_a_current_opinion_step_offers_the_canonical_form(signed_in, specialist, planned):
     step = _step(planned, SEND)
-    activate_plan_step(matter=planned, step=step, actor=specialist)
+    start_as_before_adr_0168(matter=planned, step=step, actor=specialist)
 
     zone = _zone(_page(signed_in, planned))
 
@@ -448,7 +449,7 @@ def test_d_saving_it_completes_the_step_and_its_action_once(
     signed_in, specialist, planned, ministry
 ):
     step = _step(planned, SEND)
-    action = activate_plan_step(matter=planned, step=step, actor=specialist)
+    action = start_as_before_adr_0168(matter=planned, step=step, actor=specialist)
 
     response = _opinion(signed_in, planned, ministry, step)
 
@@ -463,7 +464,7 @@ def test_d_saving_it_completes_the_step_and_its_action_once(
 
 def test_d_with_the_tick_too_it_still_completes_once(signed_in, specialist, planned, ministry):
     step = _step(planned, SEND)
-    action = activate_plan_step(matter=planned, step=step, actor=specialist)
+    action = start_as_before_adr_0168(matter=planned, step=step, actor=specialist)
 
     response = _opinion(signed_in, planned, ministry, step, complete_action=str(action.pk))
 
@@ -490,7 +491,7 @@ def test_d_a_generic_current_step_keeps_mida_tegid(signed_in, specialist, planne
 
 def test_d_a_step_the_record_already_shows_done_keeps_plain_tehtud(signed_in, specialist, planned):
     step = _step(planned, CONSULT)
-    action = activate_plan_step(matter=planned, step=step, actor=specialist)
+    action = start_as_before_adr_0168(matter=planned, step=step, actor=specialist)
     NextAction.objects.filter(pk=action.pk).update(
         created_at=timezone.now() - dt.timedelta(hours=1)
     )

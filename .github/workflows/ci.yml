@@ -81,6 +81,30 @@ jobs:
       - name: Lint
         run: uv run ruff check .
 
+      # The browser scripts are served exactly as written — there is no build
+      # step — so until this, nothing before a browser noticed a syntax error
+      # or a misspelt name in them. Either one, at start-up, stops every
+      # behaviour registered after it in a one-function script (JARCH-004,
+      # docs/adr/0171). Node is set up for this check only: the application
+      # and its image have none. Both versions are exact so the check cannot
+      # change under a run nobody edited; the rules are `eslint.config.mjs`.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.18.1"
+
+      - name: JavaScript parses
+        run: |
+          for script in static/js/*.js; do
+            node --check "$script"
+          done
+
+      - name: JavaScript lint
+        run: |
+          npm install --no-save --no-package-lock --no-audit --no-fund --ignore-scripts \
+            --prefix "$RUNNER_TEMP/eslint" eslint@9.39.4
+          "$RUNNER_TEMP/eslint/node_modules/.bin/eslint" --config eslint.config.mjs \
+            --max-warnings 0 static/js
+
       - name: Static types
         run: uv run mypy
 
@@ -149,9 +173,12 @@ jobs:
       # `CI SHARD TIMINGS NEED REFRESH` when they cross thresholds taken from
       # the 2026-08-30 table's own decay.
       #
-      # `continue-on-error` as well as an exit code of 0, because a report is
-      # not a gate: hosted runners have slow days, and a build that went red
-      # over a three-week-old table would teach people to ignore the words.
+      # `--strict`: a collected file the table does not hold is named, as a
+      # warning annotation, and fails this *step* (JTEST-006). The step carries
+      # `continue-on-error`, so the job and the release gate stay green: a
+      # report is not a gate, and hosted runners have slow days. Age, the
+      # unmeasured share and imbalance are still printed and annotated, but
+      # only the named-file warnings fail the step.
       - name: Shard timings are still current
         continue-on-error: true
         env:
@@ -160,7 +187,7 @@ jobs:
           DJANGO_ALLOWED_HOSTS: localhost
           E2E_BASE_URL: http://127.0.0.1:8000
           E2E_GATE_BASE_URL: http://127.0.0.1:8001
-        run: uv run python scripts/ci/report_shard_health.py
+        run: uv run python scripts/ci/report_shard_health.py --strict
 
   postgres-safety:
     name: PostgreSQL migration and runtime safety
@@ -605,10 +632,21 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  # The auditor is pinned to one version: an unpinned `uvx pip-audit` audited
+  # with whatever was newest on the day, so what it reported could change with
+  # nobody's edit (JSEC-006). Raise it deliberately, in its own change.
+  #
+  # Both sets are audited and both are gates. The runtime set is what the image
+  # ships; the development set is what CI and every laptop run, and it is where
+  # the advisories actually were — `urllib3` reached only the dev group, through
+  # pytest-playwright → pytest-base-url → requests, so a runtime-only audit
+  # could not see it. tests/test_ci_supply_chain.py holds these properties.
   dependency-scan:
     name: Dependency vulnerability baseline
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    env:
+      PIP_AUDIT: pip-audit==2.9.0
     steps:
       - uses: actions/checkout@v4
 
@@ -622,7 +660,17 @@ jobs:
           --format requirements-txt -o requirements.txt
 
       - name: Audit
-        run: uvx pip-audit --strict --no-deps --requirement requirements.txt
+        run: uvx --from "$PIP_AUDIT" pip-audit --strict --no-deps --requirement requirements.txt
+
+      - name: Export the locked development dependency set
+        run: >-
+          uv export --frozen --all-groups --no-emit-project --no-hashes
+          --format requirements-txt -o requirements-all-groups.txt
+
+      - name: Audit the development tools as well
+        run: >-
+          uvx --from "$PIP_AUDIT" pip-audit --strict --no-deps
+          --requirement requirements-all-groups.txt
 
   browser:
     name: "Browser, runner ${{ matrix.runner }} of 9"
@@ -888,10 +936,17 @@ jobs:
           uv run python manage.py migrate --noinput
           uv run python manage.py seed_e2e_data
 
+      # The servers run on the synced environment's own interpreter, not
+      # through `uv run`: a `uv run` process holds uv's cache lock for as long
+      # as it lives, these live until the job ends, and setup-uv's post step
+      # then waits five minutes to prune the cache and fails the job whenever
+      # the cache key was new (runs 39098968112 and 39110131105, every test
+      # green). The browser shards already start theirs this way
+      # (scripts/ci/run_slices.py).
       - name: Start the application
         run: |
           mkdir -p artifacts
-          nohup uv run python manage.py runserver 127.0.0.1:8000 --noreload > artifacts/server.log 2>&1 &
+          nohup .venv/bin/python manage.py runserver 127.0.0.1:8000 --noreload > artifacts/server.log 2>&1 &
           for attempt in $(seq 1 40); do
             if curl --fail --silent http://127.0.0.1:8000/healthz > /dev/null; then
               echo "server is up"; exit 0
@@ -911,7 +966,7 @@ jobs:
           # synthetic sign-in all live in the settings module, not here.
           DJANGO_SETTINGS_MODULE: config.e2e_gate_settings
         run: |
-          nohup uv run python manage.py runserver 127.0.0.1:8001 --noreload > artifacts/server-gate.log 2>&1 &
+          nohup .venv/bin/python manage.py runserver 127.0.0.1:8001 --noreload > artifacts/server-gate.log 2>&1 &
           for attempt in $(seq 1 40); do
             if curl --fail --silent http://127.0.0.1:8001/healthz > /dev/null; then
               echo "shared-gate server is up"; exit 0
@@ -1054,7 +1109,7 @@ jobs:
           uv run python scripts/ci/report_shard_health.py
           --durations junit --no-collect
           --run-id ${{ github.run_id }} --repository ${{ github.repository }}
-          --summary-json shard-health.json
+          --summary-json shard-health.json --strict
 
       - name: Upload the numbers
         if: always()
@@ -1817,6 +1872,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build the production image
+        id: build
         run: docker build -t juristid:ci .
 
       # What the build made, asked from inside it rather than read off the
@@ -1839,6 +1895,51 @@ jobs:
             --entrypoint python juristid:ci scripts/ci/assert_image_runtime.py
           echo "image size:          $(docker image inspect juristid:ci --format '{{.Size}}') bytes"
           echo "docker save | gzip -1: $(docker save juristid:ci | gzip -1 | wc -c) bytes"
+
+      # The image's own start command, run twice (JOPS-004). Refused: real data
+      # with no authenticator (juristid.E006) and the template's placeholder
+      # secrets (E016), which must exit non-zero before gunicorn starts — the
+      # failure that used to answer /healthz with 200. Accepted: the CI
+      # configuration the quality job checks, which must reach gunicorn. No
+      # database is needed for either: the checks read settings only.
+      - name: The image refuses to serve a configuration its checks refuse
+        run: |
+          set -euo pipefail
+          start() {
+            docker run -d --name "$1" -e DJANGO_DEBUG=0 -e DJANGO_ALLOWED_HOSTS=localhost \
+              -e DJANGO_SECRET_KEY="$2" "${@:3}" juristid:ci
+          }
+          start refused replace-me-with-openssl-rand-base64-64 \
+            -e REAL_DATA_ALLOWED=1 -e AUTH_MODE=none \
+            -e POSTGRES_PASSWORD=replace-me-with-openssl-rand-base64-36
+          code="$(timeout 120 docker wait refused || echo still-running)"
+          docker logs refused > refused.log 2>&1
+          docker rm -f refused > /dev/null
+          cat refused.log
+          if [ "$code" = still-running ] || [ "$code" = 0 ]; then
+            echo "::error::a refused configuration was served (exit: $code)"
+            exit 1
+          fi
+          grep -q 'juristid.E006' refused.log
+          grep -q 'juristid.E016' refused.log
+          if grep -q 'Starting gunicorn' refused.log; then
+            echo "::error::gunicorn started before the checks refused"
+            exit 1
+          fi
+          echo "refused configuration -> exit $code, gunicorn never started"
+
+          start served ci-only-secret-not-used-anywhere-else
+          for _ in $(seq 60); do
+            if docker logs served 2>&1 | grep -q 'Booting worker'; then break; fi
+            sleep 1
+          done
+          docker logs served > served.log 2>&1
+          running="$(docker inspect -f '{{.State.Running}}' served)"
+          docker rm -f served > /dev/null
+          cat served.log
+          test "$running" = true
+          grep -q 'Booting worker' served.log
+          echo "accepted configuration -> gunicorn serving"
 
       - name: Start the local stack
         run: docker compose up -d --wait --build
@@ -2036,6 +2137,53 @@ jobs:
             -f deploy/recovery-rehearsal/compose.real-data.source.yml \
             config --format json > rehearsal.json
           python3 scripts/ci/assert_rehearsal_isolation.py rehearsal.json
+
+      # The image this job built, scanned for known vulnerabilities in its
+      # operating-system packages and its virtualenv (JSEC-006, JSEC-007).
+      #
+      # It fails on a HIGH or CRITICAL that has a fixed version available —
+      # something a rebuild or an upgrade would remove — and only reports the
+      # rest. A gate on every HIGH would be red from the first day over CVEs
+      # Debian has not patched, and a gate that is always red gets switched off.
+      # The full report, every severity and fixed or not, is uploaded below.
+      #
+      # Trivy runs from its own image pinned by digest (0.75.0, the version the
+      # 2026-10-17 audit scanned production with), reading the image from the
+      # runner's Docker daemon. Not the trivy-action: a tag can be moved (that
+      # action's were, in March 2026) and a digest cannot. Here rather than in a
+      # job of its own because this job already has the image and the scan adds
+      # well under a minute; a separate job would rebuild it in a slot a shard
+      # runner needs.
+      # It runs whatever the smoke steps above reported, so a smoke failure does
+      # not hide the scan's answer.
+      - name: The image has no fixable HIGH or CRITICAL vulnerability
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        env:
+          TRIVY_IMAGE: aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa
+        run: |
+          set -euo pipefail
+          mkdir -p image-scan
+          trivy() {
+            docker run --rm \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              -v trivy-cache:/root/.cache/trivy \
+              -v "$PWD/image-scan:/out" \
+              "$TRIVY_IMAGE" "$@"
+          }
+          echo "--- the full report, every severity, fixed or not"
+          trivy image --skip-version-check --scanners vuln --format json --output /out/trivy-image.json juristid:ci
+          trivy convert --format table --output /out/trivy-image.txt /out/trivy-image.json
+          echo "--- the gate: HIGH and CRITICAL with a fix available"
+          trivy image --skip-version-check --scanners vuln --skip-db-update --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1 --format table juristid:ci
+
+      - name: Upload the image scan
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-scan
+          path: image-scan/
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Container logs on failure
         if: failure()

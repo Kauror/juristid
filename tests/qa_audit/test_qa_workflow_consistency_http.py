@@ -17,6 +17,7 @@ from app.matters.models import Matter, MatterEngagement
 from app.workflow.consistency import PROOF_ENGAGEMENT, STEP_ALREADY_RECORDED
 from app.workflow.enums import ActionStatus
 from app.workflow.models import MatterPlanStep, NextAction
+from tests.legacy_plans import start_as_before_adr_0168
 
 pytestmark = pytest.mark.django_db
 
@@ -37,11 +38,15 @@ def filed_with_plan(client, title) -> Matter:
 
 
 def start(client, matter, key) -> NextAction:
+    """The step current as `Alusta` made it before docs/adr/0168.
+
+    This used to POST `matters:start_plan_step`, which since owner decision D9
+    (2026-10-17) refuses a structured step: its `Alusta` opens the step's own
+    form. A Matter started before 0168 still carries such a current step, and
+    that is the case the alert is for.
+    """
     step = MatterPlanStep.objects.get(matter=matter, template_step_key=key)
-    response = client.post(
-        reverse("matters:start_plan_step", kwargs={"pk": matter.pk, "step_id": step.pk}), {}
-    )
-    assert response.status_code == 200
+    start_as_before_adr_0168(matter=matter, step=step, actor=matter.owner)
     return NextAction.objects.get(matter=matter, status=ActionStatus.OPEN)
 
 

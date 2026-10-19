@@ -16,6 +16,7 @@
             hx-target="#teema-vaade" hx-swap="outerHTML"
             hx-encoding="multipart/form-data">
         {% csrf_token %}
+        {% include "matters/partials/add/save_once.html" with token=save_once_tokens.other_form %}
         <label class="cx-f">
           <span class="cx-f__lab">Kirjeldus{% required_mark %}</span>
           {{ other_form.description }}

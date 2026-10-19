@@ -23,6 +23,8 @@ import pytest
 import yaml
 from django.conf import settings
 
+from tests.deployment_commands import served
+
 DEPLOY = Path(settings.BASE_DIR) / "deploy" / "unraid-main"
 COMPOSE = DEPLOY / "compose.yml"
 ENV_EXAMPLE = DEPLOY / ".env.example"
@@ -458,7 +460,7 @@ def test_the_database_publishes_nothing_and_has_no_password_in_the_file(
 
 
 def test_the_application_is_served_by_gunicorn(compose: dict[str, Any]) -> None:
-    command = compose["services"]["web"]["command"]
+    command = served(compose["services"]["web"]["command"])
     assert command[0] == "gunicorn"
     assert "runserver" not in " ".join(command)
 

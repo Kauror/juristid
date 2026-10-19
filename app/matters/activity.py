@@ -233,6 +233,10 @@ ANNOTATIONS: tuple[str, ...] = (
     "activity_position_precision",
 )
 
+#: The stored columns :func:`activity_of` reads beside :data:`ANNOTATIONS` — all
+#: of them, so a caller that reads values rather than Matters reads these.
+ACTIVITY_COLUMNS: tuple[str, ...] = ("closed_at", "received_date", "origin", "updated_at")
+
 #: Which annotation carries the precision of each basis that may be a period.
 _PRECISION_OF: dict[str, str] = {
     ActivityBasis.ENGAGEMENT: "activity_engagement_precision",
@@ -465,6 +469,57 @@ def _latest_precision(queryset: QuerySet[Any], date_field: str, precision_field:
     )
     not_exact = queryset.exclude(**{precision_field: DatePrecision.EXACT}).values("matter")
     return Case(When(pk__in=not_exact, then=latest), default=None, output_field=CharField())
+
+
+def known_active_since(user: Any, since: date) -> Q:
+    """Matters with a qualifying fact on or after ``since`` in one of the busiest sources.
+
+    A **sufficient** condition, never a definition: a Matter it matches has a
+    candidate date on or after ``since``, so the latest activity
+    :func:`activity_of` would return is on or after ``since`` too — whatever
+    else the file holds, and whatever the precedence between bases decides,
+    because precedence only picks between facts on the *same* day. A Matter it
+    does not match may still be active; only :func:`activity_of` says.
+
+    What it is for is to keep the per-Matter correlated maximum of
+    :func:`annotate_last_activity` off the files that plainly moved recently
+    (2026-10-17 audit, JPERF-005): «Muutusteta 30 p» annotated every open
+    Matter to find the few that had gone quiet. Each probe is one index lookup
+    — ``(matter_id, occurred_at DESC)`` for entries — through the very sources
+    the annotation reads, so a record this reader may not see, a removed one, or
+    a step an importer set cannot exclude anything here either.
+
+    The timestamps are compared against the first moment of ``since`` in
+    Europe/Tallinn, which is exactly «its local date is on or after ``since``»,
+    the reading `_as_date` gives them (`app.core.dates.start_of_local_day`).
+    """
+    sources = _work_sources(user)
+    moment = start_of_local_day(since)
+    return (
+        Q(received_date__gte=since)
+        | Exists(sources.entries.filter(matter=OuterRef("pk"), occurred_at__gte=moment))
+        | Exists(sources.submissions.filter(matter=OuterRef("pk"), sent_at__gte=moment))
+        | Exists(sources.actions_set.filter(matter=OuterRef("pk"), created_at__gte=moment))
+        | Exists(sources.actions_ended.filter(matter=OuterRef("pk"), ended_at__gte=moment))
+    )
+
+
+def annotated_slice(queryset: QuerySet[Matter], user: Any, *order: Any, limit: int) -> list[Matter]:
+    """The first ``limit`` rows of ``queryset`` in ``order``, with the activity annotations.
+
+    ``annotate_last_activity(queryset).order_by(*order)[:limit]`` asked for the
+    same rows, and PostgreSQL then evaluated the correlated maxima for every
+    row of the population under the sort, before the limit — a capped list
+    paying for the whole population (2026-10-17 audit, JPERF-005, JPERF-007).
+    So the slice is drawn on the primary key first, in the same order, and only
+    those rows are annotated, then put back in that order. Same rows, same
+    order.
+    """
+    ids = list(queryset.order_by(*order).values_list("pk", flat=True)[:limit])
+    if not ids:
+        return []
+    rows = {row.pk: row for row in annotate_last_activity(queryset.filter(pk__in=ids), user)}
+    return [rows[pk] for pk in ids if pk in rows]
 
 
 def annotate_last_activity(queryset: QuerySet[Matter], user: Any) -> QuerySet[Matter]:

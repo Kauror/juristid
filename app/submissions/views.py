@@ -30,8 +30,8 @@ from django.views.decorators.http import require_http_methods
 from app.core.decorators import business_write_required
 from app.core.errors import DomainError
 from app.documents.models import Document, DocumentVersion
-from app.documents.uploads import UploadRejected, read_upload
-from app.matters.views import get_visible_matter, opinions_url
+from app.documents.uploads import read_upload
+from app.matters.views import get_visible_matter
 from app.submissions.enums import SentAtPrecision, SubmissionStatus
 from app.submissions.forms import (
     REGISTER_PREFIX,
@@ -42,7 +42,7 @@ from app.submissions.forms import (
 )
 from app.submissions.links import linked_website_overviews
 from app.submissions.models import Submission
-from app.submissions.opinions import unregistered_opinion_documents
+from app.submissions.opinions import opinions_url, unregistered_opinion_documents
 from app.submissions.services import (
     attach_final_evidence_on_open_matter,
     mark_submission_sent_on_open_matter,
@@ -128,7 +128,7 @@ def attach_evidence(request: HttpRequest, pk: Any) -> HttpResponse:
                 actor=request.user,
             )
         messages.success(request, "Lõplik tõend on lisatud.")
-    except (DomainError, UploadRejected) as error:
+    except DomainError as error:
         messages.error(request, str(error))
 
     submission.refresh_from_db()

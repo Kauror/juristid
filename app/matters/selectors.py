@@ -637,7 +637,6 @@ def latest_overview_url(matter: Any, user: Any) -> str:
         MatterWebsiteOverview.objects.visible_to(user)
         .filter(
             matter=matter,
-            removed_at__isnull=True,
             status=WebsiteOverviewStatus.PUBLISHED,
             kind__in=("", WebsiteOverviewKind.OVERVIEW),
         )

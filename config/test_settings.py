@@ -42,10 +42,20 @@ SECURE_HSTS_SECONDS = 0
 SESSION_COOKIE_SECURE = False
 CSRF_COOKIE_SECURE = False
 
+# The suite models the deployed arrangement, behind the tunnel: `CF-Connecting-IP`
+# names the client (app/core/client_ip.py). Stated rather than inherited from
+# whether this shell exports DJANGO_BEHIND_TLS_PROXY, and switched off through
+# the `settings` fixture by the tests about what happens without a proxy
+# (tests/test_client_ip.py).
+TRUST_CF_CONNECTING_IP = True
+
 # The environment gates are exercised through the `settings` fixture, so the
 # suite starts from the safe position.
 DEV_LOGIN_ENABLED = False
 REAL_DATA_ALLOWED = False
+# `matters:add_note` is a fixture door for this suite (owner decision D9);
+# tests/test_hidden_write_routes.py turns it off to prove the guard.
+ADD_NOTE_TEST_DOOR_ENABLED = True
 APPLICATION_ENVIRONMENT = "test"
 # The suite never contacts koda.ee; a test that needs a title patches the fetch.
 PUBLICATION_TITLE_FETCH = False

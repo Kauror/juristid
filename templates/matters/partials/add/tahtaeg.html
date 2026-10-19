@@ -14,6 +14,7 @@
             hx-target="#teema-vaade" hx-swap="outerHTML"
             hx-encoding="multipart/form-data">
         {% csrf_token %}
+        {% include "matters/partials/add/save_once.html" with token=save_once_tokens.important_date_form %}
         <label class="cx-f">
           <span class="cx-f__lab">Mis tähtaeg{% required_mark %}</span>
           {{ important_date_form.deadline_title }}

@@ -49,7 +49,7 @@ stay wrong, which is the rule `edit_entry` has kept since docs/adr/0075 §12.
 from __future__ import annotations
 
 import uuid as uuid_module
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -65,14 +65,25 @@ from app.core.errors import DomainError
 from app.documents.enums import DocumentRole
 from app.documents.models import Document
 from app.documents.services import capture_supporting_evidence
+from app.matters import engagement_replies
 from app.matters.entry_enums import EntryKind
-from app.matters.enums import EngagementKind, ExternalPositionProvenance
+from app.matters.enums import (
+    EngagementKind,
+    ExternalPositionProvenance,
+    WebsiteOverviewKind,
+    WebsiteOverviewStatus,
+)
 from app.matters.initiative import is_koda_initiative
 from app.matters.locks import (
     lock_open_matter_for_business_write,
     lock_submission_for_evidence_integrity,
 )
-from app.matters.models import Entry, Matter, MatterEngagement
+from app.matters.models import Entry, Matter, MatterEngagement, MatterWebsiteOverview
+from app.matters.publication_kind import (
+    ENGAGEMENT_OVERVIEW_LINK_IS_NEWS,
+    classify_publication_url,
+    same_publication_url,
+)
 from app.matters.services import (
     add_engagement,
     add_entry,
@@ -109,6 +120,12 @@ def _spend_once(locked_matter: Matter, token: Any, purpose: str) -> None:
     Inside the save's transaction and under the Matter's lock, so two presses
     are serialised and the second finds the first's token; a refusal later in
     the same save rolls the token back with everything else.
+
+    `Koja arvamus` and, since owner decision D3 of 2026-10-17, every compact
+    `LISA TEEMALE` door: `Alusta kaasamist`, `Lisa tagasiside`, `Oluline
+    tähtaeg`, `Jõustumine`, `Töövõit`, `Muu` and `Kohtumine` (docs/adr/0167,
+    amendment of 2026-10-17). ``None`` — a POST that carries no token, which
+    no drawn form sends — is not guarded, as before.
     """
     if token is None:
         return
@@ -138,14 +155,11 @@ def _named_open_rounds(
     for engagement_id, revision in rounds:
         engagement = (
             MatterEngagement.objects.select_for_update(no_key=True)
-            .filter(matter=locked_matter, pk=engagement_id, removed_at__isnull=True)
+            .live()
+            .filter(matter=locked_matter, pk=engagement_id)
             .first()
         )
-        if (
-            engagement is None
-            or not engagement.lifecycle_tracked
-            or engagement.feedback_closed_at is not None
-        ):
+        if engagement is None or not engagement.has_open_feedback_wait:
             raise DomainError(ROUND_NOT_OPEN)
         if revision and engagement_revision_token(engagement) != revision:
             raise DomainError(ROUND_CHANGED)
@@ -178,6 +192,9 @@ class WorkspaceResult:
     #: Whether a confirmed stage move also dated its phase on `Menetluse kulg`
     #: (`add_procedural_development(date_phase=True)`, docs/adr/0128 §1).
     phase_dated: bool = False
+    #: Whether a reply was the first answer to its round and finished the
+    #: round's wait (`record_position_reply`, docs/adr/0167 §2).
+    wait_finished: bool = False
 
 
 def _uploads(raw: Any) -> list[Any]:
@@ -636,6 +653,7 @@ def add_matter_engagement(
     feedback_received: str = "",
     uploads: Sequence[Any] = (),
     record_overview: bool = False,
+    once_token: Any = None,
 ) -> WorkspaceResult:
     """`+ Kaasamine` — one consultation, with the replies it produced attached.
 
@@ -684,8 +702,13 @@ def add_matter_engagement(
     service unchanged (docs/adr/0082, narrowed by docs/adr/0086 §1).
 
     It finishes no step and touches no plan (docs/adr/0141).
+
+    ``once_token`` is the drawn form's `salvestus`: a second save of the same
+    form is refused rather than opening a second round and a second wait
+    (docs/adr/0167, amendment of 2026-10-17).
     """
     locked_matter = lock_open_matter_for_business_write(matter.pk)
+    _spend_once(locked_matter, once_token, "kaasamine")
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
         result.record = add_engagement(
@@ -736,14 +759,9 @@ def _overview_for_engagement_link(
     record readers already see and is returned untouched — nothing new is
     written about the round.
     """
-    from app.matters.enums import WebsiteOverviewKind, WebsiteOverviewStatus
-    from app.matters.forms import ENGAGEMENT_OVERVIEW_LINK_IS_NEWS
-    from app.matters.models import MatterWebsiteOverview
-    from app.matters.publication_kind import classify_publication_url, same_publication_url
-
     if classify_publication_url(url) == WebsiteOverviewKind.NEWS:
         raise DomainError(ENGAGEMENT_OVERVIEW_LINK_IS_NEWS)
-    live = MatterWebsiteOverview.objects.filter(matter=matter, removed_at__isnull=True)
+    live = MatterWebsiteOverview.objects.live().filter(matter=matter)
     for published in live.filter(status=WebsiteOverviewStatus.PUBLISHED).order_by("-created_at"):
         if same_publication_url(published.url, url) and published.effective_kind != (
             WebsiteOverviewKind.NEWS
@@ -793,7 +811,8 @@ def add_engagement_evidence(
     locked_matter = lock_open_matter_for_business_write(engagement.matter_id)
     current = (
         MatterEngagement.objects.select_for_update(no_key=True)
-        .filter(pk=engagement.pk, matter=locked_matter, removed_at__isnull=True)
+        .live()
+        .filter(pk=engagement.pk, matter=locked_matter)
         .first()
     )
     if current is None or not current.has_open_feedback_wait:
@@ -891,16 +910,19 @@ def add_matter_important_date(
     period_end: Any,
     date_precision: str,
     uploads: Sequence[Any] = (),
+    once_token: Any = None,
 ) -> WorkspaceResult:
     """`+ Oluline tähtaeg` — a milestone somebody announced, and its letter.
 
     Creates no `NextAction`. A date the file has to live with is not an
     instruction to anybody, and the two were separated deliberately long before
-    this round (brief §17).
+    this round (brief §17). ``once_token``: one drawn form, one row
+    (docs/adr/0167, amendment of 2026-10-17).
     """
     from app.intelligence.services import add_important_date
 
     locked_matter = lock_open_matter_for_business_write(matter.pk)
+    _spend_once(locked_matter, once_token, "oluline-tahtaeg")
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
         result.record = add_important_date(
@@ -930,6 +952,7 @@ def add_matter_effective_date(
     period_end: Any,
     date_precision: str,
     uploads: Sequence[Any] = (),
+    once_token: Any = None,
 ) -> WorkspaceResult:
     """`+ Jõustumine` — what commences, when it does, and the act itself.
 
@@ -941,10 +964,14 @@ def add_matter_effective_date(
     (docs/adr/0079 §13). The form computes both ends through `bounds_for`, and
     `intelligence.services._check_bounds` refuses a pair that disagrees with its
     own precision.
+
+    ``once_token``: one drawn form, one row (docs/adr/0167, amendment of
+    2026-10-17).
     """
     from app.intelligence.services import add_effective_date
 
     locked_matter = lock_open_matter_for_business_write(matter.pk)
+    _spend_once(locked_matter, once_token, "joustumine")
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
         result.record = add_effective_date(
@@ -991,16 +1018,35 @@ def _refuse_a_day_ahead(day: Any, refusal: str) -> None:
     `Oluline tähtaeg`.
 
     **The Tallinn business day**, `timezone.localdate()`: today is accepted at
-    any hour of it, half past midnight included. A datetime is read by its own
-    date, as `start_of_local_day` stores it. ``None`` is the missing-day
-    refusal's question, not this one's.
+    any hour of it, half past midnight included. A datetime is read as its
+    Tallinn day (`_local_day`), the day the row is then stored on. ``None`` is
+    the missing-day refusal's question, not this one's.
     """
     if day is None:
         return
-    if isinstance(day, datetime):
-        day = day.date()
-    if day > timezone.localdate():
+    if _local_day(day) > timezone.localdate():
         raise DomainError(refusal)
+
+
+def _local_day(value: Any) -> Any:
+    """The Tallinn day a stated `occurred_on` names: a date as it is, a datetime by its day.
+
+    An aware instant is read in the local zone — 00:30 in Tallinn is the
+    previous day in UTC — and a naive one by its own date. Done once, ahead of
+    the range check and the day-ahead check, so a datetime caller meets the
+    same two sentences a date caller does rather than a `TypeError` from
+    comparing a date with a datetime (JRE-01). An instant whose local day does
+    not exist in Python's calendar (the last hours of year 9999 seen from
+    Tallinn) is out of range like any other.
+    """
+    if not isinstance(value, datetime):
+        return value
+    if timezone.is_naive(value):
+        return value.date()
+    try:
+        return timezone.localdate(value)
+    except OverflowError:
+        raise DomainError(DAY_OUT_OF_RANGE) from None
 
 
 def _add_dated_entry_with_files(
@@ -1014,6 +1060,8 @@ def _add_dated_entry_with_files(
     day_ahead: str,
     url: str = "",
     uploads: Sequence[Any] = (),
+    once_token: Any = None,
+    once_purpose: str = "",
 ) -> WorkspaceResult:
     """One dated `Entry` and its files, together or not at all.
 
@@ -1025,16 +1073,22 @@ def _add_dated_entry_with_files(
     write lock. The caller's own `@transaction.atomic` makes a refused file
     leave no entry behind. Nothing else is touched.
 
-    The day may not be after today (`_refuse_a_day_ahead`), whoever calls.
+    The day may not be after today (`_refuse_a_day_ahead`), whoever calls,
+    and one drawn form saves once (``once_token``, docs/adr/0167, amendment of
+    2026-10-17).
     """
     if occurred_on is None:
         raise DomainError(missing_day)
+    # One day for both checks and for the stored row: a datetime caller is read
+    # as its Tallinn day here, before the range check compares it (JRE-01).
+    occurred_on = _local_day(occurred_on)
     # Asked here as well as by the day box: year 1 becomes Tallinn midnight in
     # year 0 UTC, which the database refuses as a 500 (JQA-008, CORR-02).
     if not is_supported_day(occurred_on):
         raise DomainError(DAY_OUT_OF_RANGE)
     _refuse_a_day_ahead(occurred_on, day_ahead)
     locked_matter = lock_open_matter_for_business_write(matter.pk)
+    _spend_once(locked_matter, once_token, once_purpose)
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
         result.entry = add_entry(
@@ -1063,6 +1117,7 @@ def add_matter_other(
     occurred_on: Any,
     url: str = "",
     uploads: Sequence[Any] = (),
+    once_token: Any = None,
 ) -> WorkspaceResult:
     """`+ Lisa · Muu` — supporting material that fits no structured kind.
 
@@ -1093,6 +1148,8 @@ def add_matter_other(
         day_ahead=OTHER_ENTRY_DAY_AHEAD,
         url=url,
         uploads=uploads,
+        once_token=once_token,
+        once_purpose="muu",
     )
 
 
@@ -1104,6 +1161,7 @@ def add_matter_meeting(
     summary: str,
     occurred_on: Any,
     uploads: Sequence[Any] = (),
+    once_token: Any = None,
 ) -> WorkspaceResult:
     """`+ Koja arvamus / kohtumine · Kohtumine / arutelu` — a meeting held.
 
@@ -1130,6 +1188,8 @@ def add_matter_meeting(
         missing_day=MEETING_ENTRY_NEEDS_A_DAY,
         day_ahead=MEETING_ENTRY_DAY_AHEAD,
         uploads=uploads,
+        once_token=once_token,
+        once_purpose="kohtumine",
     )
 
 
@@ -1143,6 +1203,7 @@ def add_matter_work_victory(
     period_end: Any,
     date_precision: str,
     uploads: Sequence[Any] = (),
+    once_token: Any = None,
 ) -> WorkspaceResult:
     """`+ Töövõit` — what changed, when it belongs, and the evidence for it.
 
@@ -1157,10 +1218,14 @@ def add_matter_work_victory(
     and never appeared in `?toovoit=<aasta>` or the reporting rail. The three
     columns are now the caller's to supply, and the caller is a form that asks
     (docs/adr/0079 §10).
+
+    ``once_token``: one drawn form, one win (docs/adr/0167, amendment of
+    2026-10-17).
     """
     from app.intelligence.services import add_confirmed_work_victory
 
     locked_matter = lock_open_matter_for_business_write(matter.pk)
+    _spend_once(locked_matter, once_token, "toovoit")
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
         result.record = add_confirmed_work_victory(
@@ -1197,17 +1262,19 @@ def add_matter_external_position(
     source_is_member: bool = False,
     engagement: Any = None,
     uploads: Sequence[Any] = (),
+    once_token: Any = None,
 ) -> WorkspaceResult:
-    """`+ Meile saadetud tagasiside` / `+ Teiste arvamus` — what somebody else said.
+    """`+ Kaasamine · Lisa tagasiside` — what somebody else said.
 
-    **One operation behind two chips**, which is docs/adr/0091 §3's whole
-    architectural claim. `Meile saadetud tagasiside` and `Teiste arvamus` are two
-    professional facts with one shape: an author, a source a colleague can open,
-    an optional date at the precision it is known to, and an optional note from
-    the lawyer. Four models — `EngagementFeedback`, `ExternalPosition`,
-    `AnotherOpinion`, `SurveyFeedback` — would have been four sets of validation
-    and four chronology renderings for one set of rules, so the distinction is a
-    column and the panels are two doors onto this function.
+    **One operation behind one form**, which is docs/adr/0091 §3's whole
+    architectural claim. «Saadeti Kojale» (`RECEIVED`) and «Avaldatud mujal»
+    (`DISCOVERED`) are two professional facts with one shape: an author, a
+    source a colleague can open, an optional date at the precision it is known
+    to, and an optional note from the lawyer. Four models — `EngagementFeedback`,
+    `ExternalPosition`, `AnotherOpinion`, `SurveyFeedback` — would have been four
+    sets of validation and four chronology renderings for one set of rules, so
+    the distinction is a column, stated on the one form (docs/adr/0170; until
+    then two chips, `Meile saadetud tagasiside` and `Teiste arvamus`).
 
     ``provenance`` is the distinction, ``source_label`` is what an aggregate
     answer with no single author is called, and ``lawyer_note`` is this office's
@@ -1242,11 +1309,17 @@ def add_matter_external_position(
     every other operation in this module. A closed Teema renders no launcher,
     and that decides nothing about a POST arriving from a tab that was open
     before somebody else shut the file (R2-02).
+
+    ``once_token`` is `Lisa tagasiside`'s drawn form: a second save of it is
+    refused whether or not it names a round — a standalone position too is
+    repeated deliberately by opening the form again (docs/adr/0170 §4,
+    amendment of 2026-10-17).
     """
     from app.matters.services import record_external_position, record_external_position_document
 
     files = _uploads(uploads)
     locked_matter = lock_open_matter_for_business_write(matter.pk)
+    _spend_once(locked_matter, once_token, "tagasiside")
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
         position = record_external_position(
@@ -1275,6 +1348,100 @@ def add_matter_external_position(
         for document in result.documents:
             record_external_position_document(position=position, document=document, actor=author)
         return result
+
+
+@transaction.atomic
+def record_position_reply(
+    *,
+    matter: Matter,
+    author: Any,
+    provenance: Any,
+    organisation: Any = None,
+    organisation_name: str = "",
+    source_label: str = "",
+    url: str = "",
+    stated_on: Any = None,
+    stated_on_precision: str = DatePrecision.EXACT.value,
+    summary: str = "",
+    lawyer_note: str = "",
+    source_is_member: bool = False,
+    engagement: Any = None,
+    uploads: Sequence[Any] = (),
+    once_token: Any = None,
+) -> WorkspaceResult:
+    """`+ Kaasamine · Lisa tagasiside` — one position, and the round it answers.
+
+    The whole save behind the form, as one use case rather than as a sequence
+    a view composes (JARCH-001): whoever records a reply gets the same
+    guarantees as the form does, in the same order, in one transaction.
+
+    1. **The institution.** ``organisation`` is the picker's chosen answer and
+       ``organisation_name`` the name somebody typed; which of the two wins is
+       `resolve_addressee`'s rule. Neither given is received feedback that
+       names nobody — a record since docs/adr/0101, so `resolve_addressee` is
+       not asked at all (it would refuse two empty answers). Resolved inside
+       this transaction, so any refusal below leaves no new institution
+       behind (docs/adr/0073, docs/adr/0084 §4).
+    2. **A repeat is refused** when a round is named
+       (`engagement_replies.refuse_repeated_reply`, under the Matter's lock):
+       a finished round takes later answers, so a second press of `Salvesta`
+       must not file the same one twice, while a second organisation's
+       identical answer is its own (docs/adr/0167 §2, docs/adr/0170 §4).
+    3. **The record** — `add_matter_external_position`, which refuses a
+       closed Matter under the same lock and spends the drawn form's
+       ``once_token``.
+    4. **The wait.** The first answer to an open round finishes its wait
+       through the canonical close; a round already finished — by an earlier
+       answer, `Lõpeta kaasamine` or somebody else meanwhile — keeps its
+       closure and simply gains this answer
+       (`engagement_replies.finish_wait_on_reply`, docs/adr/0142 §B,
+       docs/adr/0167 §2). A standalone position (no ``engagement``) touches no
+       wait. Nothing else is completed: no `NextAction` is inferred from
+       feedback.
+
+    The provenance is the caller's stated answer, never inferred here
+    (docs/adr/0091 §3.2); the form fixes it at RECEIVED for a linked round.
+    """
+    from app.matters.services import resolve_addressee
+
+    organisation_name = (organisation_name or "").strip()
+    resolved = (
+        resolve_addressee(chosen=organisation, typed_name=organisation_name)
+        if (organisation is not None or organisation_name)
+        else None
+    )
+    if engagement is not None:
+        engagement_replies.refuse_repeated_reply(
+            matter=matter,
+            engagement=engagement,
+            organisation=resolved,
+            source_is_member=source_is_member,
+            summary=summary,
+            url=url,
+            stated_on=stated_on,
+            uploads=uploads or (),
+        )
+    result = add_matter_external_position(
+        matter=matter,
+        author=author,
+        organisation=resolved,
+        provenance=provenance,
+        source_label=source_label,
+        url=url,
+        stated_on=stated_on,
+        stated_on_precision=stated_on_precision,
+        summary=summary,
+        lawyer_note=lawyer_note,
+        source_is_member=source_is_member,
+        engagement=engagement,
+        uploads=uploads,
+        once_token=once_token,
+    )
+    if engagement is not None:
+        result.wait_finished = engagement_replies.finish_wait_on_reply(
+            engagement=engagement, actor=author
+        )
+    return result
 
 
 #: A `Koja arvamus` is recorded with the bytes that went out, or not at all.
@@ -2404,3 +2571,140 @@ def correct_matter_procedural_link(
 # `+ Koja arvamus` move the stage through `stage_transition`, which closes the
 # Matter through `close_matter_for_terminal_stage` after the act it was saved
 # with — the order this use case kept (the win first, the closure last).
+
+
+def _no_procedural_link() -> None:
+    """`edit_matter`'s default: the save answers no `Menetluse link` block."""
+
+
+def edit_matter(
+    *,
+    matter: Matter,
+    actor: Any,
+    expected_revision: str | None,
+    title: str,
+    brief_summary: str,
+    owner: Any,
+    source_organisations: Any,
+    sender_name: str,
+    legal_instruments: Sequence[Any],
+    legal_instrument_other: str,
+    received_date: Any,
+    response_deadline: Any,
+    policy_areas: Sequence[Any],
+    policy_area_other: str,
+    stage: Any,
+    follow_ups_confirmed: bool = False,
+    deadline_change: str = "",
+    previous_outcome: str = "",
+    previous_submission: Any = None,
+    previous_note: str = "",
+    save_procedural_link: Callable[[], None] = _no_procedural_link,
+) -> None:
+    """`Muuda teemat` — the whole record, corrected in one save (JARCH-001).
+
+    **One transaction.** Either every value is applied or none is: a
+    half-saved correction leaves a record stating a combination of facts nobody
+    chose, and a timeline claiming somebody chose it. **One `Hetkeseis`
+    period**: every correction is written in the period current when the page
+    was saved, and the stage change — made last — begins the next one after
+    them (`stage_episode_scope`, docs/adr/0131 §5).
+
+    **One service per fact**, each returning early when handed the value
+    already there, so each change is audited exactly as it is inline and an
+    unchanged field writes nothing. Called in this order, and the order is part
+    of the contract:
+
+    1. `guard_matter_revision` — first: the page posts every field it holds, so
+       a copy filled before somebody else's save is refused rather than
+       written over fresh values (QA-002, `MatterEditConflict`);
+    2. the instruments as they stood **before** this save are read, because
+       only a change of `Õigusakt` may move `Koja algatus` — so this read must
+       come before `set_legal_instruments` (`initiative_after_edit`);
+    3. title, `brief_summary`, owner;
+    4. the senders — a typed name resolved inside this transaction, so any
+       refusal below takes a newly created institution with it. The addressee
+       is **not** passed: `_UNSET` keeps a register addressee through every
+       save (docs/adr/0097 §4);
+    5. `Koja algatus` before the dates, so the date writers judge them against
+       the answer this save gives (docs/adr/0151 §2);
+    6. `Saabunud`, then `Arvamuse tähtaeg` with what a changed deadline means
+       (``deadline_change``, ``previous_outcome``, ``previous_submission``,
+       ``previous_note``);
+    7. Valdkonnad, then the instruments — through their service, so the
+       classification never moves without a change event (task §19);
+    8. ``save_procedural_link`` — the caller's `Menetluse link` block, inside
+       this transaction, so an address refused there takes the whole
+       correction back (`ProceduralLinkConflict`, docs/adr/0089 §7);
+    9. **`Hetkeseis` last**, through the one transition every surface uses —
+       for a terminal stage on an open Matter, the closure, after every other
+       fact has been written to the open file (docs/adr/0131 §6, §10). Ending
+       live follow-up work is refused unless ``follow_ups_confirmed``
+       (`FollowUpClosureUnconfirmed`, docs/adr/0146 §8).
+
+    **Every fact on the page is a required argument**, because this is a
+    whole-record save: a value a caller forgot must not be written as a
+    default — a forgotten `received_date` would clear the date. No track, tags
+    or visibility: those are off the page, and a value the form does not ask
+    for is never written at all (docs/adr/0096 §3, docs/adr/0097 §2, §3).
+    Set-valued answers arrive as sequences, so an empty one is «none of them»
+    — a decision — and never «leave them alone».
+    """
+    from app.audit.operations import stage_episode_scope
+    from app.matters.initiative import apply_initiative_after_edit
+    from app.matters.response_deadlines import change_response_deadline
+    from app.matters.services import (
+        assign_matter,
+        change_stage,
+        guard_matter_revision,
+        resolve_source_organisations,
+        set_brief_summary,
+        set_legal_instrument_other,
+        set_legal_instruments,
+        set_matter_dates,
+        set_matter_title,
+        set_organisations,
+        set_policy_area_other,
+        set_policy_areas,
+    )
+
+    with transaction.atomic(), stage_episode_scope():
+        guard_matter_revision(matter=matter, expected_revision=expected_revision)
+        held_instruments = list(matter.legal_instruments.all())
+        set_matter_title(matter=matter, value=title, actor=actor)
+        set_brief_summary(matter=matter, value=brief_summary, actor=actor)
+        assign_matter(matter=matter, owner=owner, actor=actor)
+        set_organisations(
+            matter=matter,
+            source_organisations=resolve_source_organisations(
+                chosen=source_organisations, typed_name=sender_name
+            ),
+            actor=actor,
+        )
+        apply_initiative_after_edit(
+            matter=matter,
+            held=held_instruments,
+            chosen=list(legal_instruments),
+            actor=actor,
+        )
+        set_matter_dates(matter=matter, received_date=received_date, actor=actor)
+        change_response_deadline(
+            matter=matter,
+            deadline=response_deadline,
+            actor=actor,
+            change=deadline_change,
+            previous_outcome=previous_outcome,
+            previous_submission=previous_submission,
+            previous_note=previous_note,
+        )
+        set_policy_areas(matter=matter, policy_areas=list(policy_areas), actor=actor)
+        set_policy_area_other(matter=matter, value=policy_area_other, actor=actor)
+        set_legal_instruments(matter=matter, legal_instruments=list(legal_instruments), actor=actor)
+        set_legal_instrument_other(matter=matter, value=legal_instrument_other, actor=actor)
+        save_procedural_link()
+        change_stage(
+            matter=matter,
+            stage=stage,
+            actor=actor,
+            follow_ups_confirmed=follow_ups_confirmed,
+        )

@@ -65,6 +65,10 @@ _TOP_LABEL = r"(?:[^\W\d_]{2,63}|xn--[a-z0-9-]{1,59})"
 _BARE_HOST = re.compile(rf"^(?:{_LABEL}\.)+{_TOP_LABEL}\.?(?::\d{{1,5}})?$", re.IGNORECASE)
 _WHITESPACE = re.compile(r"\s")
 
+#: The one sentence a credential-bearing address is refused with, wherever a
+#: caller does not word its own (owner decision D10, 2026-10-17).
+LINK_HAS_CREDENTIALS = "Link ei tohi sisaldada kasutajanime ega parooli."
+
 
 def with_web_scheme(value: str | None) -> str:
     """``value`` stripped, with ``https://`` in front when it is a bare host.
@@ -89,8 +93,9 @@ def normalize_web_address(
     reject_credentials: bool = False,
     not_a_url: str = "Link peab sisaldama veebiaadressi.",
     not_web_scheme: str = "Link peab algama http:// või https:// aadressiga.",
-    has_credentials: str = "Link ei tohi sisaldada kasutajanime ega parooli.",
+    has_credentials: str = LINK_HAS_CREDENTIALS,
     too_long: str | None = None,
+    stored: str | None = None,
 ) -> str:
     """The stored form of a web address, or a `DomainError` in the caller's words.
 
@@ -110,7 +115,18 @@ def normalize_web_address(
     department did not choose and cannot re-issue — refusing it would mean
     refusing to record what actually happened. An address somebody is pasting
     *now*, from a page they have open, has no such history to accommodate
-    (docs/adr/0081 §3, kept by docs/adr/0085 §2).
+    (docs/adr/0081 §3, kept by docs/adr/0085 §2). **Since owner decision D10
+    (2026-10-17) every box a person types an address into passes
+    ``reject_credentials=True``**; the default is left for the historical-register
+    importer, which is the one writer still recording what it did not choose
+    (docs/adr/0085 §2, amendment of 2026-10-17).
+
+    ``stored`` is the value the record already holds, passed by a correction. A
+    credential-bearing address *equal to it* is not refused: rows written before
+    D10 are not rewritten, and a person correcting the title of such a record
+    without touching its link must still be able to save. Only an address that
+    is newly typed or changed is held to the rule. Every other check still
+    applies to it.
 
     The refusal sentences are parameters because several records share a Teema
     page, and a refusal that does not say *which* link it means has to be
@@ -134,7 +150,7 @@ def normalize_web_address(
         # not a number. A refusal, not an unhandled exception from a parser.
         hostname = None
         username = password = None
-    if reject_credentials and (username or password):
+    if reject_credentials and (username or password) and not _is_stored(url, stored):
         raise DomainError(has_credentials)
     if not hostname or _WHITESPACE.search(hostname):
         raise DomainError(not_a_url)
@@ -147,3 +163,72 @@ def normalize_web_address(
             )
         )
     return url
+
+
+def web_address_has_credentials(value: str | None) -> bool:
+    """Whether ``value``, read as an address, carries a user name or a password.
+
+    For a writer that stores an address without passing it through
+    :func:`normalize_web_address` and still has to keep D10's rule. A value that
+    cannot be parsed has no userinfo to find, so it answers `False`; whether it
+    is an address at all is somebody else's question.
+    """
+    try:
+        parts = urlsplit(with_web_scheme(value))
+        return bool(parts.username or parts.password)
+    except ValueError:
+        return False
+
+
+def _is_stored(url: str, stored: str | None) -> bool:
+    """Whether ``url`` is the address the record already holds, unchanged."""
+    if not stored:
+        return False
+    return url == with_web_scheme(stored)
+
+
+def display_host(url: str | None) -> str:
+    """The host an address points at, and nothing else about the address.
+
+    **The credential-safe host label** (red-team finding F-2, 2026-09-12). Every
+    control that names a link by where it goes — a round's `link_label`, a
+    position's, a procedural link's `display_label`, an entry's, and a round's
+    search terms — reads it here, so a new link renderer has one place to call
+    instead of repeating `urlsplit(url).netloc`.
+
+    `urlsplit(url).netloc` is the URL's **authority**, which is
+    ``userinfo@host:port`` — so a link pasted out of a provider dashboard that
+    carries basic-auth credentials yields a "host" with a username and a
+    password in it, and a label copied from it would print them and a search
+    projection would index them. `parsed.hostname` is the host: it drops the
+    userinfo and the port, and lowercases what is left.
+
+    The port goes with the userinfo deliberately. "Host" here means the name
+    that tells a reader which provider a link runs to, and `:8443` is transport
+    machinery of exactly the kind the label exists to leave out; no product
+    contract asks for host and port.
+
+    The fallback is for the historical row that is not a parseable address at
+    all, and it drops anything before an ``@`` before bounding what is left:
+    ``https://user:pw@/path`` has a non-empty authority and *no* hostname, so a
+    fallback that printed the stored string would put the credentials back
+    exactly where this function exists to keep them out of.
+    `normalize_web_address` refuses that shape on the way in as well.
+
+    Moved here from the private `MatterEngagement._hostname`, which three other
+    models called across the class (2026-10-17 audit, JARCH-005).
+    """
+    if not url:
+        return ""
+    try:
+        host = urlsplit(url).hostname or ""
+    except ValueError:
+        # A malformed authority — an unbracketed IPv6 literal, a port that is
+        # not a number. Unparseable is not a crash on a read path.
+        host = ""
+    if host:
+        return host
+    remainder = url.split("://", 1)[-1]
+    if "@" in remainder:
+        remainder = remainder.rsplit("@", 1)[-1]
+    return remainder[:60]

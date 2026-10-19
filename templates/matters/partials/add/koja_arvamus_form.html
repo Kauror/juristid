@@ -73,7 +73,7 @@ panel. Under `PRAEGUNE TEGEVUS` it was drawn a second time for the current
           sent to three committees leaves the Teema's `Saatja` exactly as it
           was. Two facts, two columns (docs/adr/0095 §1).
         {% endcomment %}
-        {% include "matters/partials/organisation_picker.html" with picker_id=picker_id legend=form.recipients.label chips=form.recipients_chip_choices tail=form.recipients_tail_choices typed_field=form.recipient_name add_label="Lisa uus adressaat" clearable=True quiet=True only %}
+        {% include "matters/partials/organisation_picker.html" with picker_id=picker_id legend=form.recipients.label chips=form.recipients_chip_choices tail=form.recipients_tail_choices typed_field=form.recipient_name add_label="Lisa uus adressaat" clearable=True quiet=True visible_label=True owner_field=form.recipients only %}
         {% if form.recipients.errors %}
           <p class="field__error" id="{{ form.recipients.auto_id }}_error">
             {{ form.recipients.errors|first }}</p>

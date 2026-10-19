@@ -125,15 +125,13 @@ def live_work(matter_ids: list[Any]) -> dict[Any, str]:
         ),
         (
             ReviewReason.OPEN_FEEDBACK_WAIT,
-            MatterEngagement.objects.filter(
-                matter_id__in=matter_ids,
-                lifecycle_tracked=True,
-                feedback_closed_at__isnull=True,
-            ),
+            # A removed round or plan never belonged to the file and owes
+            # nothing (docs/adr/0102; JDATA-005).
+            MatterEngagement.objects.live().open_waits().filter(matter_id__in=matter_ids),
         ),
         (
             ReviewReason.PLANNED_WEBSITE_OVERVIEW,
-            MatterWebsiteOverview.objects.filter(
+            MatterWebsiteOverview.objects.live().filter(
                 matter_id__in=matter_ids, status=WebsiteOverviewStatus.PLANNED
             ),
         ),

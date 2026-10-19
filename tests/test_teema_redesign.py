@@ -1354,6 +1354,11 @@ def test_a_low_data_matter_renders_no_empty_sections(signed_in, specialist):
     assert 'class="factspanel"' not in body
 
 
+#: The Teema page's query ceiling: 62 measured, plus a margin of two
+#: (`test_the_matter_page_does_not_explode_into_queries`).
+TEEMA_PAGE_QUERY_CEILING = 64
+
+
 def test_the_matter_page_does_not_explode_into_queries(
     signed_in, django_assert_max_num_queries, specialist, organisation
 ):
@@ -1448,21 +1453,16 @@ def test_the_matter_page_does_not_explode_into_queries(
             actor=specialist,
         )
 
-    # **Plus the deletion plan (docs/adr/0120 §7).** A writer's header asks
-    # `plan_matter_deletion` whether `Kustuta` can succeed. Its walk is the
-    # deletion module's own cost, so it is measured on this Matter and added
-    # rather than folded into the ceiling, which keeps the ceiling on the rest of
-    # the page exactly as tight as it was.
-    from django.db import connection
-    from django.test.utils import CaptureQueriesContext
-
-    from app.matters.deletion import plan_matter_deletion
-
-    with CaptureQueriesContext(connection) as plan:
-        plan_matter_deletion(matter)
-
-    # 58: two fixed reads joined on 2026-10-07 — `KOJA ARVAMUS` asking whether
-    # any opinion was sent, and `Alusta kaasamist` reading the newest Ülevaade.
-    # Neither grows with the page's rows.
-    with django_assert_max_num_queries(58 + len(plan)):
+    # **A fixed ceiling, not `58 + len(plan)`** (2026-10-17 audit, JPERF-001 and
+    # PERFORMANCE-AUDIT.md §10). The deletion plan used to be added on top because
+    # the header walked it to decide `Kustuta`; since AUD-002 the header asks
+    # `deletion_may_be_offered`'s handful of `EXISTS` instead (and only for
+    # somebody who may delete permanently), so the plan's walk — 56 queries on
+    # this Matter — had become 56 queries of slack a regression could hide in.
+    #
+    # **Measured at 62** on PostgreSQL 18, this test run alone (cold per-process
+    # caches, the worst case). The ceiling is that plus two, so a new fixed read
+    # is a decision somebody writes down here rather than something that slips
+    # through.
+    with django_assert_max_num_queries(TEEMA_PAGE_QUERY_CEILING):
         signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk}))

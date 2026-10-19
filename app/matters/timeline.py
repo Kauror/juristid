@@ -212,6 +212,16 @@ SUPPRESSED_WHEN_ENTRY_SHOWN: frozenset[str] = frozenset(
 #: (`_verbs_for`, `TimelineItem.step_only`).
 STEP_SET_CLAUSE = "määras järgmise sammu"
 
+#: What adding a `Muu` or a `Kohtumine` is called, when the save did more than
+#: that. A note needs no clause of its own — a note is what an authored row is —
+#: but «Sandra KOHTUMINE lisas dokumendi» reads as the meeting adding a file;
+#: «Sandra KOHTUMINE lisas kohtumise ja lisas dokumendi» says what the person
+#: did, in the chronology's own «lisas …» clauses (JUX-011).
+ENTRY_RECORD_CLAUSES: dict[str, str] = {
+    EntryKind.MEETING.value: "lisas kohtumise",
+    EntryKind.OTHER.value: "lisas materjali",
+}
+
 _CLAUSES: tuple[tuple[str, str], ...] = (
     (ChangeEventType.EVIDENCE_VERSION_ADDED, "lisas dokumendi"),
     (ChangeEventType.NEXT_ACTION_SET, STEP_SET_CLAUSE),
@@ -758,8 +768,18 @@ class TimelineItem:
 
         Empty for a save that only wrote a note, which is the ordinary case
         (Teema redesign §11.1, design handoff 1b).
+
+        **A `Muu` or a `Kohtumine` that brought a file names itself first**:
+        «lisas kohtumise ja lisas dokumendi», «lisas materjali ja lisas
+        dokumendi». Without it the line read «Sandra KOHTUMINE lisas dokumendi»,
+        as if the meeting had added the file (JUX-011). One with no file still
+        reads as its badge alone, like a note.
         """
-        return _join(verb for verb in self.summary_verbs if verb != "lisas märkuse")
+        rest = [verb for verb in self.summary_verbs if verb != "lisas märkuse"]
+        own = ENTRY_RECORD_CLAUSES.get(self.entry.kind) if self.entry is not None else None
+        if rest and own:
+            rest.insert(0, own)
+        return _join(rest)
 
     @property
     def completion_text(self) -> str:

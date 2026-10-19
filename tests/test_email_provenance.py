@@ -321,6 +321,37 @@ def test_a_thumbnail_is_served_inline_and_the_original_never_is(
     assert "attachment" in original["Content-Disposition"]
 
 
+def test_a_thumbnail_is_never_stored_by_the_browser(
+    normal_matter, capture_evidence, extract, client, specialist
+) -> None:
+    """`no-store`, like every other response rendered for a signed-in reader.
+
+    It was `private, max-age=300`, so a restricted document's preview could be
+    redisplayed from the browser's cache for five minutes after sign-out
+    without the server being asked (JSEC-003). A preview is cheap to fetch
+    again; it is not worth being the one response that outlives the session.
+    """
+    from app.core.middleware import NO_STORE
+    from app.documents.enums import DerivativeKind, DerivativeStatus
+    from app.documents.models import DocumentDerivative
+
+    version = capture_evidence(
+        normal_matter, corpus.government_pdf(), "kaaskiri.pdf", "application/pdf"
+    )
+    extract(version)
+    client.force_login(specialist)
+
+    thumbnail = DocumentDerivative.objects.get(
+        version=version, kind=DerivativeKind.THUMBNAIL, status=DerivativeStatus.ACTIVE
+    )
+    response = client.get(f"/dokumendid/pisipilt/{thumbnail.pk}/")
+
+    assert response.status_code == 200
+    assert response["Cache-Control"] == NO_STORE
+    assert "max-age=300" not in response["Cache-Control"]
+    assert response["Pragma"] == "no-cache"
+
+
 def test_a_restricted_documents_thumbnail_is_not_served(
     restricted_matter, capture_evidence, extract, client, reader
 ) -> None:

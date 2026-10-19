@@ -25,9 +25,11 @@ from app.core.enums import Visibility
 from app.core.models import (
     AppendOnlyModel,
     BaseModel,
+    RemovableQuerySet,
     RemovableRecord,
     VisibilityInheritingModel,
 )
+from app.core.web_addresses import display_host
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import (
     DataQualityTier,
@@ -721,7 +723,7 @@ class TagAssignment(BaseModel):
         return f"{self.matter_id} · {self.tag_id}"
 
 
-class EntryQuerySet(models.QuerySet):
+class EntryQuerySet(RemovableQuerySet):
     def visible_to(self, user: object | None) -> EntryQuerySet:
         """The only supported entry point for reading entries.
 
@@ -737,7 +739,7 @@ class EntryQuerySet(models.QuerySet):
         constraint as a blocker for whole-Matter deletion).
         """
         scoped = apply_scope(self, child_visibility_q(scope_for_user(user)))
-        return scoped.filter(removed_at__isnull=True)
+        return scoped.live()
 
     def chronological(self) -> EntryQuerySet:
         """Newest first, with a deterministic tie break.
@@ -846,14 +848,14 @@ class Entry(VisibilityInheritingModel, RemovableRecord):
     def link_label(self) -> str:
         """What the chronology calls the link: its host, never the raw address.
 
-        `MatterEngagement._hostname`, shared rather than copied, so userinfo and
-        the port are dropped and a link carrying credentials cannot print them
-        (red-team finding F-2). An address with no readable host says
+        `app.core.web_addresses.display_host`, shared rather than copied, so
+        userinfo and the port are dropped and a link carrying credentials cannot
+        print them (red-team finding F-2). An address with no readable host says
         «Ava link» instead of claiming where it points.
         """
         if not self.url:
             return ""
-        return MatterEngagement._hostname(self.url) or "Ava link"
+        return display_host(self.url) or "Ava link"
 
 
 class EntryRevision(AppendOnlyModel):
@@ -994,7 +996,7 @@ EXTERNAL_POSITION_SOURCE_LABEL_MAX_LENGTH = 200
 DEVELOPMENT_TITLE_MAX_LENGTH = 500
 
 
-class MatterEngagementQuerySet(models.QuerySet):
+class MatterEngagementQuerySet(RemovableQuerySet):
     def visible_to(self, user: object | None) -> MatterEngagementQuerySet:
         """The only supported entry point for reading engagements.
 
@@ -1005,7 +1007,28 @@ class MatterEngagementQuerySet(models.QuerySet):
         site is a filter the next call site forgets (docs/adr/0102).
         """
         scoped = apply_scope(self, child_visibility_q(scope_for_user(user)))
-        return scoped.filter(removed_at__isnull=True)
+        return scoped.live()
+
+    def open_waits(self) -> MatterEngagementQuerySet:
+        """Rounds whose wait is OPEN — the SQL twin of `has_open_feedback_wait`.
+
+        A tracked round nobody has finished, deadline or not (docs/adr/0132).
+        Nothing else: whether the reader may see it, whether it was removed,
+        and whether its Matter is open or `FULL` are each caller's own clause,
+        written beside this call where the reader of that caller can see it.
+        """
+        return self.filter(lifecycle_tracked=True, feedback_closed_at__isnull=True)
+
+    def answerable(self) -> MatterEngagementQuerySet:
+        """Rounds a reply may name: tracked, on a `FULL` Matter, open or finished.
+
+        Not narrowed to open waits — a later answer to a finished round is still
+        an answer (docs/adr/0167 §2) — and not to open Matters, for the reason
+        `engagement_replies.answerable_rounds` gives (JQA-009). A round filed as
+        history has no lifecycle and is not offered until `Ootan tagasisidet`
+        starts one.
+        """
+        return self.filter(lifecycle_tracked=True, matter__record_mode=RecordMode.FULL)
 
 
 class MatterEngagement(VisibilityInheritingModel, RemovableRecord):
@@ -1372,6 +1395,9 @@ class MatterEngagement(VisibilityInheritingModel, RemovableRecord):
         result, and nothing closes a round except somebody pressing
         `Lõpeta kaasamine` or the Matter shutting underneath it
         (docs/adr/0086 §4, §6; docs/adr/0132).
+
+        `MatterEngagementQuerySet.open_waits` is the same rule in SQL; the two
+        are held equal by `tests/test_one_rule_one_place.py`.
         """
         return self.lifecycle_tracked and self.feedback_closed_at is None
 
@@ -1397,47 +1423,6 @@ class MatterEngagement(VisibilityInheritingModel, RemovableRecord):
             return False
         return self.feedback_deadline <= (today or timezone.localdate())
 
-    @staticmethod
-    def _hostname(url: str) -> str:
-        """The host an address points at, and nothing else about the address.
-
-        `urlsplit(url).netloc` is the URL's **authority**, which is
-        ``userinfo@host:port`` — so a link pasted out of a provider dashboard
-        that carries basic-auth credentials yields a "host" with a username and
-        a password in it, and this model copies its hosts into a rendered label
-        and into the search projection's `alias_text`. `parsed.hostname` is the
-        host: it drops the userinfo and the port, and lowercases what is left
-        (red-team finding F-2, 2026-09-12).
-
-        The port goes with the userinfo deliberately. "Host" in this model
-        means the name that tells a reader which provider a link runs to, and
-        `:8443` is transport machinery of exactly the kind the label exists to
-        leave out; no product contract here asks for host and port.
-
-        The fallback is for the historical row that is not a parseable address
-        at all, and it drops anything before an ``@`` before bounding what is
-        left: ``https://user:pw@/path`` has a non-empty authority and *no*
-        hostname, so a fallback that printed the stored string would put the
-        credentials back exactly where this method exists to keep them out of.
-        `normalize_engagement_url` now refuses that shape on the way in as well.
-        """
-        if not url:
-            return ""
-        from urllib.parse import urlsplit
-
-        try:
-            host = urlsplit(url).hostname or ""
-        except ValueError:
-            # A malformed authority — an unbracketed IPv6 literal, a port that
-            # is not a number. Unparseable is not a crash on a read path.
-            host = ""
-        if host:
-            return host
-        remainder = url.split("://", 1)[-1]
-        if "@" in remainder:
-            remainder = remainder.rsplit("@", 1)[-1]
-        return remainder[:60]
-
     @property
     def link_label(self) -> str:
         """A link's host, for a control that must not print a tracking URL.
@@ -1445,14 +1430,15 @@ class MatterEngagement(VisibilityInheritingModel, RemovableRecord):
         Campaign and survey links routinely run to hundreds of characters of
         query string. The host is what tells a reader where the link goes; the
         rest is machinery (brief 35) — including any credentials the address
-        carries, which is why this is the parsed hostname and not the authority.
+        carries, which is why this is the parsed hostname and not the authority
+        (`app.core.web_addresses.display_host`).
         """
-        return self._hostname(self.url)
+        return display_host(self.url)
 
     @classmethod
     def _host_terms(cls, url: str) -> list[str]:
         """A single address, reduced to the words somebody would search for."""
-        host = cls._hostname(url)
+        host = display_host(url)
         if not host:
             return []
         labels = [part for part in host.split(".") if part and part != "www"]
@@ -1477,7 +1463,7 @@ class MatterEngagement(VisibilityInheritingModel, RemovableRecord):
         by nothing else (docs/adr/0027, amended 2026-09-12).
 
         **Nor the userinfo, nor the port.** Both live in the URL's authority
-        beside the host, and `_hostname` is what separates them; before it, this
+        beside the host, and `display_host` is what separates them; before it, this
         list was built from `netloc` and a link carrying basic-auth credentials
         indexed the password as a matchable token (red-team finding F-2).
         """
@@ -1487,7 +1473,7 @@ class MatterEngagement(VisibilityInheritingModel, RemovableRecord):
         return list(dict.fromkeys(terms))
 
 
-class MatterWebsiteOverviewQuerySet(models.QuerySet):
+class MatterWebsiteOverviewQuerySet(RemovableQuerySet):
     def visible_to(self, user: object | None) -> MatterWebsiteOverviewQuerySet:
         """The only supported entry point for reading website overviews.
 
@@ -1498,7 +1484,7 @@ class MatterWebsiteOverviewQuerySet(models.QuerySet):
         site is a filter the next call site forgets (docs/adr/0102).
         """
         scoped = apply_scope(self, child_visibility_q(scope_for_user(user)))
-        return scoped.filter(removed_at__isnull=True)
+        return scoped.live()
 
     def planned(self) -> MatterWebsiteOverviewQuerySet:
         return self.filter(status=WebsiteOverviewStatus.PLANNED)
@@ -1908,7 +1894,7 @@ class MatterWebsiteOverview(VisibilityInheritingModel, RemovableRecord):
           `user:pw@host` on the way in since docs/adr/0081 §3, so this is for a
           historical row alone — and a credential printed on a page and copied
           into everybody's browser history is exactly what red-team finding F-2
-          closed on `MatterEngagement._hostname`;
+          closed on `app.core.web_addresses.display_host`;
         * **a trailing slash**, which is punctuation rather than address.
 
         Everything else is printed as stored, host and path and query: a
@@ -1944,7 +1930,7 @@ class MatterWebsiteOverview(VisibilityInheritingModel, RemovableRecord):
         return shown
 
 
-class MatterExternalPositionQuerySet(models.QuerySet):
+class MatterExternalPositionQuerySet(RemovableQuerySet):
     def visible_to(self, user: object | None) -> MatterExternalPositionQuerySet:
         """The only supported entry point for reading external positions.
 
@@ -1959,7 +1945,7 @@ class MatterExternalPositionQuerySet(models.QuerySet):
         inherited it is hidden from the readers the round excludes.
         """
         scoped = apply_scope(self, external_position_visibility_q(scope_for_user(user)))
-        return scoped.filter(removed_at__isnull=True)
+        return scoped.live()
 
 
 class MatterExternalPosition(VisibilityInheritingModel, RemovableRecord):
@@ -2451,14 +2437,14 @@ class MatterExternalPosition(VisibilityInheritingModel, RemovableRecord):
         control is for without claiming anything about where it points
         (docs/adr/0081 §4, docs/adr/0084 §3).
 
-        `MatterEngagement._hostname` is the implementation, shared rather than
-        copied: it is what drops the userinfo and the port, so a link carrying
-        basic-auth credentials cannot put a password into a rendered label
-        (red-team finding F-2).
+        `app.core.web_addresses.display_host` is the implementation, shared
+        rather than copied: it is what drops the userinfo and the port, so a
+        link carrying basic-auth credentials cannot put a password into a
+        rendered label (red-team finding F-2).
         """
         if not self.url:
             return ""
-        return MatterEngagement._hostname(self.url) or EXTERNAL_POSITION_LINK_FALLBACK
+        return display_host(self.url) or EXTERNAL_POSITION_LINK_FALLBACK
 
 
 #: What the chronology calls a position recorded before `provenance` existed.
@@ -2475,7 +2461,7 @@ EXTERNAL_POSITION_LEGACY_HEADLINE = "Väline seisukoht"
 EXTERNAL_POSITION_LINK_FALLBACK = "Ava seisukoht"
 
 
-class MatterProceduralDevelopmentQuerySet(models.QuerySet):
+class MatterProceduralDevelopmentQuerySet(RemovableQuerySet):
     def visible_to(self, user: object | None) -> MatterProceduralDevelopmentQuerySet:
         """The only supported entry point for reading procedural developments.
 
@@ -2486,7 +2472,7 @@ class MatterProceduralDevelopmentQuerySet(models.QuerySet):
         site is a filter the next call site forgets (docs/adr/0102).
         """
         scoped = apply_scope(self, child_visibility_q(scope_for_user(user)))
-        return scoped.filter(removed_at__isnull=True)
+        return scoped.live()
 
 
 class MatterProceduralDevelopment(VisibilityInheritingModel, RemovableRecord):
@@ -3195,14 +3181,14 @@ class MatterProceduralLink(VisibilityInheritingModel):
         to the kind's own name rather than to a sentence repeating it
         (docs/adr/0081 §4, docs/adr/0084 §3).
 
-        `MatterEngagement._hostname` is the implementation, shared rather than
-        copied: it is what drops the userinfo and the port, so a link carrying
-        basic-auth credentials cannot put a password into a rendered label
-        (red-team finding F-2).
+        `app.core.web_addresses.display_host` is the implementation, shared
+        rather than copied: it is what drops the userinfo and the port, so a
+        link carrying basic-auth credentials cannot put a password into a
+        rendered label (red-team finding F-2).
         """
         if self.label:
             return self.label
-        return MatterEngagement._hostname(self.url) or str(self.get_kind_display())
+        return display_host(self.url) or str(self.get_kind_display())
 
 
 class MatterPersonalNote(BaseModel):

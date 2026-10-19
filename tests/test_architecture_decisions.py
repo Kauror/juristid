@@ -87,3 +87,49 @@ def test_the_index_names_every_record_exactly_once() -> None:
 
     for number, target in _index():
         assert (ADR / target).exists(), f"the index links ADR {number} to a missing {target}"
+
+
+#: A record's own status line, in either of the header styles the directory
+#: uses: `- Status: Accepted …` and `**Status:** accepted — …`.
+_STATUS_LINE = re.compile(r"^[-*\s]*\**Status:?\**:?\s*\**\s*([A-Za-z]+)", re.IGNORECASE)
+
+#: The status cell of an index row, the last column of the table.
+_INDEX_STATUS = re.compile(r"^\|\s*\[(\d{4})\]\(([^)]+)\)\s*\|.*\|\s*([^|]*)\|\s*$", re.MULTILINE)
+
+
+def _own_status(path: Path) -> str | None:
+    for line in path.read_text(encoding="utf-8").splitlines()[:20]:
+        match = _STATUS_LINE.match(line)
+        if match:
+            return match.group(1).lower()
+    return None
+
+
+def test_a_record_and_the_index_agree_on_its_status() -> None:
+    """JARCH-007 (2026-10-17 audit): seven records read «proposed» on their own
+    page for weeks after the index had said Accepted, and a reviewer separating
+    decided design from open design reads the page, not the index.
+
+    Compared on the first word only, and only where the record states one: the
+    index cell carries amendment notes, and older records have no status line.
+    """
+    text = (ADR / "README.md").read_text(encoding="utf-8")
+    rows = _INDEX_STATUS.findall(text)
+    assert len(rows) >= 30
+    disagree = []
+    for number, target, cell in rows:
+        own = _own_status(ADR / target)
+        word = re.match(r"[A-Za-z]+", cell.strip())
+        if own and word and own != word.group(0).lower():
+            disagree.append(f"{number}: record says {own!r}, index says {cell.strip()[:40]!r}")
+    assert not disagree, "\n".join(disagree)
+
+
+def test_every_gap_in_the_numbering_is_explained() -> None:
+    """A missing number is either a record on another branch or a skipped one;
+    the index says which, so nobody goes looking for a decision that is not there."""
+    numbers = sorted(int(number) for number in _records())
+    gaps = sorted(set(range(1, numbers[-1] + 1)) - set(numbers))
+    text = (ADR / "README.md").read_text(encoding="utf-8")
+    unexplained = [f"{gap:04d}" for gap in gaps if f"- {gap:04d} —" not in text]
+    assert not unexplained, f"unexplained gaps: {', '.join(unexplained)}"

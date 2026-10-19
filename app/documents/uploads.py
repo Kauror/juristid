@@ -39,12 +39,18 @@ from typing import Any
 
 from django.conf import settings
 
+from app.core.errors import DomainError
 from app.documents.filenames import canonical_filename
 from app.documents.services import ALLOWED_EVIDENCE_MIME_TYPES
 
 
-class UploadRejected(Exception):
-    """The uploaded file is not acceptable evidence."""
+class UploadRejected(DomainError):
+    """The uploaded file is not acceptable evidence.
+
+    A `DomainError` like every other refused write, so a view that answers
+    refusals with ``except DomainError`` answers a rejected file the same way:
+    the sentence beside the form, not a 500 (JARCH-006, 2026-10-17 audit).
+    """
 
 
 #: The media type an ASiC-E container declares for itself, and the one the

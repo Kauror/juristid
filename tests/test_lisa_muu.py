@@ -34,11 +34,13 @@ from app.matters.services import (
     edit_entry,
     entry_revision_token,
 )
+from app.matters.workspace import ALREADY_SAVED
 from app.search.services import search_documents
 from app.submissions.models import Submission
 from app.workflow.models import NextAction
 from tests import factories
 from tests.follow_ups import PDF
+from tests.gate import PASSWORD, apply_shared_gate, assert_asked_to_choose_a_persona, business_rows
 from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
@@ -70,6 +72,15 @@ def _page(client, matter) -> str:
 
 def _others(matter):
     return Entry.objects.filter(matter=matter, kind=EntryKind.OTHER)
+
+
+def _save_once_token(html: str) -> str:
+    """The `salvestus` token of the `Muu` form on a drawn page."""
+    form = html[html.index("/lisa/muu/") :]
+    form = form[: form.index("</form>")]
+    match = re.search(r'name="salvestus" value="([^"]+)"', form)
+    assert match, "the Muu form carries no save-once token"
+    return match.group(1)
 
 
 # -- the launcher ---------------------------------------------------------------
@@ -267,14 +278,30 @@ def test_a_mixed_selection_with_one_refused_file_leaves_no_bytes_behind(
     assert not [p for p in (evidence_root / "evidence").rglob("*") if p.is_file()]
 
 
-def test_a_repeated_identical_post_writes_its_own_row(signed_in, specialist):
-    """Two saves are two records, as for every other `+ Lisa` choice; nothing merges
-    them silently. (The browser's double-submit guard keeps a double click to one.)"""
+def test_the_same_drawn_form_files_once_and_a_fresh_form_files_again(signed_in, specialist):
+    """One drawn form, one record (owner decision D3, 2026-10-17; docs/adr/0167,
+    amendment of 2026-10-17). This test said the opposite until then — «two saves
+    are two records» — and was changed with the decision, not weakened: a repeat
+    of the same drawn form is refused with `ALREADY_SAVED`, and the same words
+    are still a second record when the form is opened again."""
     matter = factories.MatterFactory(owner=specialist)
+    token = _save_once_token(_page(signed_in, matter))
 
-    _post(signed_in, matter, description="Sama tekst.")
-    _post(signed_in, matter, description="Sama tekst.")
+    first = _post(signed_in, matter, description="Sama tekst.", salvestus=token)
+    second = _post(signed_in, matter, description="Sama tekst.", salvestus=token)
 
+    assert (first.status_code, second.status_code) == (200, 400)
+    assert ALREADY_SAVED in second.content.decode()
+    assert _others(matter).count() == 1
+
+    again = _post(
+        signed_in,
+        matter,
+        description="Sama tekst.",
+        salvestus=_save_once_token(first.content.decode()),
+    )
+
+    assert again.status_code == 200
     assert _others(matter).count() == 2
 
 
@@ -320,6 +347,49 @@ def test_a_reader_cannot_add_one(client, reader, specialist):
 
     assert response.status_code == 404
     assert not _others(matter).exists()
+
+
+def test_the_gate_visitor_writes_nothing(normal_matter, settings):
+    """Through the shared gate with no persona chosen: asked to choose one, nothing saved."""
+    from django.test import Client
+
+    apply_shared_gate(settings)
+    gate = Client()
+    assert gate.post(reverse("accounts:shared_gate"), {"password": PASSWORD}).status_code == 302
+    before = business_rows()
+
+    response = _post(
+        gate,
+        normal_matter,
+        description="Värav ei kirjuta.",
+        url="https://example.org/varav",
+        files=[_pdf("varav.pdf")],
+    )
+
+    assert_asked_to_choose_a_persona(response)
+    assert not _others(normal_matter).exists()
+    assert business_rows() == before
+
+
+def test_the_service_refuses_a_missing_day_and_writes_nothing(specialist):
+    """The form asks for `Millal?`; the service refuses every other caller without one."""
+    from app.matters.workspace import OTHER_ENTRY_NEEDS_A_DAY, add_matter_other
+
+    matter = factories.MatterFactory(owner=specialist)
+    before = business_rows()
+
+    with refused(OTHER_ENTRY_NEEDS_A_DAY):
+        add_matter_other(
+            matter=matter,
+            author=specialist,
+            description="Päevata taustamaterjal.",
+            occurred_on=None,
+            url="https://example.org/paevata",
+            uploads=[_pdf("paevata.pdf")],
+        )
+
+    assert not _others(matter).exists()
+    assert business_rows() == before
 
 
 # -- visibility ----------------------------------------------------------------------
@@ -614,9 +684,11 @@ def test_a_refused_corrected_link_is_shown_under_the_link_box_with_what_was_type
     assert not EntryRevision.objects.filter(entry=entry).exists()
 
 
-def test_other_web_address_rules_are_unchanged():
-    """The engagement and external-position rules still tolerate userinfo (a
-    historical register value nobody can re-issue); only `Muu` was tightened."""
+def test_every_paste_now_link_rule_refuses_userinfo_like_muu():
+    """`Muu` refused userinfo first; owner decision D10 (2026-10-17) brought the
+    engagement and external-position rules into line, and left the tolerance to
+    the historical-register importer alone (docs/adr/0085 §2, amendment of
+    2026-10-17; `tests/test_no_credentials_in_links.py` has the doors)."""
     from app.matters.services import (
         normalize_engagement_url,
         normalize_entry_url,
@@ -624,10 +696,13 @@ def test_other_web_address_rules_are_unchanged():
     )
 
     link = "https://user:pw@example.ee/x"
-    assert normalize_engagement_url(link) == link
-    assert normalize_external_position_url(link) == link
+    with refused(CREDENTIALS_REFUSAL):
+        normalize_engagement_url(link)
+    with refused(CREDENTIALS_REFUSAL):
+        normalize_external_position_url(link)
     with refused(CREDENTIALS_REFUSAL):
         normalize_entry_url(link)
+    assert normalize_engagement_url(link, historical=True) == link
 
 
 # -- a correction overtaken by another writer shows their link ---------------------

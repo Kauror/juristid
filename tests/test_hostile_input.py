@@ -39,7 +39,7 @@ from app.core.request_params import (
     text_or_empty,
     uuid_or_none,
 )
-from app.matters.models import Matter
+from app.matters.models import Matter, MatterExternalPosition
 from app.submissions.services import create_submission
 from app.workflow.enums import ActionKind, ActionStatus, DateSemantics
 from app.workflow.models import NextAction
@@ -264,6 +264,37 @@ def test_an_evidence_choice_that_is_not_an_identifier_writes_nothing(client, spe
     assert response.status_code == 302
     submission.refresh_from_db()
     assert submission.final_version_id is None
+    assert ChangeEvent.objects.count() == before
+
+
+@pytest.mark.parametrize("provenance", ["RECEIVED", "DISCOVERED"])
+def test_the_keep_sentinel_on_the_creation_form_is_an_invalid_choice(
+    client, specialist, owned, provenance
+):
+    """`engagement=jaab-samaks` is the correction form's «keep the stored round».
+
+    `Lisa tagasiside` records a new position, so there is no stored round to
+    keep: the word is a crafted value like any other id the list does not hold.
+    It used to pass the field and reach `refuse_repeated_reply`, whose
+    `engagement="jaab-samaks"` filter was a 500 (JSEC-001).
+    """
+    client.force_login(specialist)
+    client.raise_request_exception = False
+    before = ChangeEvent.objects.count()
+    response = client.post(
+        reverse("matters:add_engagement_reply", kwargs={"pk": owned.pk}),
+        {
+            "provenance": provenance,
+            "organisation_name": "Vaenulik Ühing",
+            "engagement": "jaab-samaks",
+            "summary": "Sentinel creation probe",
+            "stated_on": "01.10.2026",
+        },
+        headers={"HX-Request": "true"},
+    )
+    assert response.status_code == 400
+    assert response.context["engagement_reply_form"].has_error("engagement")
+    assert not MatterExternalPosition.objects.filter(matter=owned).exists()
     assert ChangeEvent.objects.count() == before
 
 

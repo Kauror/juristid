@@ -39,6 +39,7 @@ from django.utils import timezone
 
 from app.accounts.enums import ThrottleScope
 from app.accounts.models import AuthenticationThrottle
+from app.core.client_ip import client_ip
 
 
 @dataclass(frozen=True)
@@ -94,18 +95,12 @@ def digest(*parts: str) -> str:
 def network_of(request: HttpRequest) -> str:
     """The client's network address, for counting and nothing else.
 
-    Behind the Cloudflare tunnel every request arrives from the connector, and
-    `CF-Connecting-IP` is the address Cloudflare saw. A client that reaches the
-    application directly could set the header to anything — which is why this
-    is a rate-limit key, never an identity (docs/adr/0016).
+    The address is `app.core.client_ip.client_ip`'s — the same one the audit
+    rows record (JOPS-008): behind the Cloudflare tunnel `CF-Connecting-IP`, and
+    `REMOTE_ADDR` wherever no trusted proxy stands in front. It is a rate-limit
+    key, never an identity (docs/adr/0016).
     """
-    forwarded = request.META.get("HTTP_CF_CONNECTING_IP") or request.META.get(
-        "HTTP_X_FORWARDED_FOR", ""
-    )
-    raw = (forwarded.split(",")[0].strip() if forwarded else "") or request.META.get(
-        "REMOTE_ADDR", ""
-    )
-    return _counting_unit(raw) or "unknown"
+    return _counting_unit(client_ip(request) or "") or "unknown"
 
 
 def _counting_unit(raw: str) -> str:

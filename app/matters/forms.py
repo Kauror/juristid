@@ -60,7 +60,10 @@ from app.matters.models import (
     Matter,
     MatterEngagement,
 )
-from app.matters.publication_kind import classify_publication_url
+from app.matters.publication_kind import (
+    ENGAGEMENT_OVERVIEW_LINK_IS_NEWS,
+    classify_publication_url,
+)
 from app.matters.stage_episodes import stage_choice_label
 from app.organisations.models import Organisation, OrganisationAlias
 from app.taxonomy.legal_instruments import OTHER_LEGAL_INSTRUMENT_KEYS
@@ -293,11 +296,21 @@ def engagement_feedback_deadline_field() -> EstonianDateField:
 
 
 def clean_provider_link(form: forms.Form, field: str) -> str:
-    """The service's own rule, reported under the box somebody typed it in."""
+    """The service's own rule, reported under the box somebody typed it in.
+
+    A correction form carries the engagement it opened on as ``record``, and the
+    column's stored value is handed on as ``stored``: an address with a user
+    name or a password that the row already holds — a historical one, written
+    before owner decision D10 — comes back unchanged and is not refused, while
+    the same shape newly typed is. A creating form has no record and so no
+    exemption. The box is named after its column on both correction forms.
+    """
     from app.matters.services import normalize_engagement_url
 
+    record = getattr(form, "record", None)
+    stored = getattr(record, field, None) if record is not None else None
     try:
-        return normalize_engagement_url(form.cleaned_data.get(field))
+        return normalize_engagement_url(form.cleaned_data.get(field), stored=stored)
     except DomainError as error:
         raise forms.ValidationError(str(error)) from error
 
@@ -3365,6 +3378,11 @@ def attach_organisation_picker(
         for organisation in cast(Any, form).organisation_offered
     ]
     cast(Any, field.widget).alias_terms = reading.alias_terms
+    # Kept on the form, so a caller that rebuilds this control for the same page
+    # — `step_launch.apply_open_request` opening `Lisa tagasiside` on a named
+    # round — hands the page's one reading on rather than reading it again
+    # (2026-10-17 audit, JPERF-001).
+    form.organisation_choices = reading  # type: ignore[attr-defined]
 
 
 #: `InitialOpinionActionForm` stood here, and `Arvamuse tähtaeg` is what became
@@ -3705,19 +3723,6 @@ class EngagementForm(forms.Form):
         if not title:
             raise forms.ValidationError("Kaasamisel peab olema pealkiri.")
         return title
-
-
-class PositionForm(forms.Form):
-    position_summary = forms.CharField(
-        label="Koja seisukoht",
-        required=False,
-        widget=forms.Textarea(attrs={"class": "field__input", "rows": "5"}),
-    )
-    rationale_summary = forms.CharField(
-        label="Põhjendus",
-        required=False,
-        widget=forms.Textarea(attrs={"class": "field__input", "rows": "5"}),
-    )
 
 
 class BriefSummaryForm(forms.Form):
@@ -4465,12 +4470,6 @@ class ReviewActionForm(forms.Form):
         super().__init__(*args, **kwargs)
 
 
-#: Refused in `Ülevaate link`: a news item is not the round's overview.
-ENGAGEMENT_OVERVIEW_LINK_IS_NEWS = (
-    "See on uudise aadress. Ülevaate link on koda.ee «Hetkel käsil» lehe aadress."
-)
-
-
 class CompactEngagementForm(forms.Form):
     """`+ Kaasamine · Alusta kaasamist` — who was asked, when, and by when.
 
@@ -4482,7 +4481,7 @@ class CompactEngagementForm(forms.Form):
       `Märkus` — optional.
 
     `Vastuseid`, `Saadud tagasiside / arvamused` and the reply files left this
-    panel: what came back is `Lisa tagasiside` (`EngagementReplyForm`), and
+    panel: what came back is `Lisa tagasiside` (`FeedbackForm`), and
     a round's count is still corrected through `Muuda` on its row
     (`EngagementForm`). A POST still carrying them reaches a form that does not
     declare them, so nothing of theirs is written here.
@@ -5596,15 +5595,27 @@ ENGAGEMENT_UNCHANGED = "jaab-samaks"
 
 
 class _EngagementChoiceField(forms.ModelChoiceField):
-    """A `Kaasamine` from the reader's own list, or «leave the stored one alone»."""
+    """A `Kaasamine` from the reader's own list, or «leave the stored one alone».
+
+    The second answer exists only where a form says so: `accepts_unchanged` is
+    off by default and switched on per instance by the correction form, and only
+    when the record's stored round is hidden from this reader. Anywhere else —
+    `Lisa tagasiside` above all, which records a new position and has no stored
+    round to keep — `jaab-samaks` is an id the list does not hold and is refused
+    as an invalid choice: a 400 with a field error, not a value that reached a
+    query (JSEC-001, ENG-046).
+    """
+
+    accepts_unchanged = False
 
     def to_python(self, value: Any) -> Any:
-        if value == ENGAGEMENT_UNCHANGED:
+        if value == ENGAGEMENT_UNCHANGED and self.accepts_unchanged:
             return ENGAGEMENT_UNCHANGED
+        # Otherwise the queryset lookup refuses it like any unknown id.
         return super().to_python(value)
 
     def validate(self, value: Any) -> None:
-        if value == ENGAGEMENT_UNCHANGED:
+        if value == ENGAGEMENT_UNCHANGED and self.accepts_unchanged:
             return
         super().validate(value)
 
@@ -5657,32 +5668,33 @@ class ExternalPositionFieldsMixin:
     errors: Any
     is_bound: bool
 
-    #: Whether this surface may ask for an `Allikas` — true on received feedback
-    #: and false everywhere else.
+    #: Whether this surface may ask for an `Allikas` — true only on `Muuda` of
+    #: a received row (`ExternalPositionEditForm`), false everywhere else.
     #:
-    #: A class attribute rather than a check on a posted value, because the
-    #: distinction is a property of the *panel*: `+ Teiste arvamus` has no such
-    #: box, so a POST carrying `source_label` to it is a value that did not come
-    #: off a page and the shared `clean` refuses the record as unauthored. The
-    #: service refuses it again under the row lock, because a form is not a
-    #: boundary (docs/adr/0091 §3.3).
+    #: A property of the *form*, not of a posted value: `Lisa tagasiside`
+    #: (`FeedbackForm`) has no such box (docs/adr/0095 §4), so a POST carrying
+    #: `source_label` to it is a value that did not come off a page. The
+    #: service refuses an `Allikas` off `RECEIVED` again under the row lock,
+    #: because a form is not a boundary (docs/adr/0091 §3.3).
     allows_source_label: bool = False
     #: Whether this surface records feedback somebody sent **to this office**,
     #: and may therefore name nobody.
     #:
     #: Deliberately not `allows_source_label`. That flag answers «does this
-    #: panel offer an `Allikas` box», which docs/adr/0095 §4 turned off for both
-    #: capture panels — and reading it as «may the author be absent» is what
-    #: made the received-feedback panel go on demanding an organisation after
-    #: the rule changed. Two questions, two flags (OWNER-01, docs/adr/0101).
+    #: form offer an `Allikas` box», which docs/adr/0095 §4 turned off on
+    #: creation — and reading it as «may the author be absent» is what made the
+    #: received-feedback panel go on demanding an organisation after the rule
+    #: changed. Two questions, two flags (OWNER-01, docs/adr/0101). On
+    #: `Lisa tagasiside` it is decided per save, from the stated provenance.
     author_is_optional: bool = False
 
     #: Whether this surface asks the date at a precision, or asks for one day.
     #:
     #: `Muuda` keeps the four chips, because a record stated as «kevadel 2019» has
-    #: to be correctable back into exactly what it is; the two creation panels
-    #: dropped them, because a lawyer writing up feedback that arrived this week
-    #: is answering a day and was being asked to classify it first
+    #: to be correctable back into exactly what it is; the creation form
+    #: (`Lisa tagasiside`, two panels before docs/adr/0170) dropped them,
+    #: because a lawyer writing up feedback that arrived this week is answering
+    #: a day and was being asked to classify it first
     #: (docs/adr/0095 §3).
     #:
     #: It is read where the period is *resolved*, not only where it is drawn: a
@@ -5774,8 +5786,12 @@ class ExternalPositionFieldsMixin:
         raw_url = (cleaned.get("url") or "").strip()
         url = ""
         if raw_url:
+            # On `Muuda`, the address the record holds is not refused for
+            # carrying userinfo — a historical row is not rewritten — while a
+            # newly typed or changed one is (owner decision D10).
+            record = getattr(self, "record", None)
             try:
-                url = normalize_external_position_url(raw_url)
+                url = normalize_external_position_url(raw_url, stored=getattr(record, "url", None))
             except DomainError as error:
                 self.add_error("url", str(error))
             else:
@@ -5887,12 +5903,6 @@ class FeedbackForm(ExternalPositionFieldsMixin, forms.Form):
     #: feedback may name nobody (docs/adr/0101), a published opinion may not.
     author_is_optional = True
     offers_precision = False
-    #: `_record_external_position` reads the provenance off the validated radio
-    #: rather than off the class (docs/adr/0091 amendment of 2026-10-15).
-    states_provenance = True
-    #: Saving it against an open round finishes that round's wait in the same
-    #: transaction; a finished round keeps its closure (docs/adr/0167 §2).
-    closes_engagement = True
     panel_slug = "kaasamise_tagasiside"
 
     organisation = _external_position_organisation_field()
@@ -6081,10 +6091,6 @@ class FeedbackForm(ExternalPositionFieldsMixin, forms.Form):
         return cleaned
 
 
-#: The round-only reply form this one replaced (owner's UX round, stage 3).
-EngagementReplyForm = FeedbackForm
-
-
 class ExternalPositionEditForm(ExternalPositionFieldsMixin, forms.Form):
     """`Muuda` on a recorded `Väline seisukoht`. The same questions, no files.
 
@@ -6197,6 +6203,7 @@ class ExternalPositionEditForm(ExternalPositionFieldsMixin, forms.Form):
         )
         if not self.keeps_unseen_engagement:
             return
+        field.accepts_unchanged = True
         field.choices = [
             (ENGAGEMENT_UNCHANGED, "Seotud kaasamine jääb samaks (seda siin ei kuvata)"),
             *list(field.choices),
@@ -6210,6 +6217,21 @@ class ExternalPositionEditForm(ExternalPositionFieldsMixin, forms.Form):
             # Offered only where a stored round is hidden from this reader; a
             # crafted post of the word anywhere else is not a choice the form made.
             raise forms.ValidationError("Valige korrektne väärtus.")
+        # **A published position does not answer a round** (docs/adr/0170 §3).
+        # `correct_external_position` refuses a `DISCOVERED` row a round it did
+        # not already hold; asked here too, so the person reads the refusal under
+        # `Seotud kaasamine` rather than above the form (JUX-012). The round the
+        # row already carries stays choosable, as the service keeps it.
+        if (
+            value is not None
+            and value != ENGAGEMENT_UNCHANGED
+            and self.record is not None
+            and self.record.provenance == ExternalPositionProvenance.DISCOVERED
+            and value.pk != self.record.engagement_id
+        ):
+            from app.matters.services import EXTERNAL_POSITION_ROUND_ANSWER_IS_RECEIVED
+
+            raise forms.ValidationError(EXTERNAL_POSITION_ROUND_ANSWER_IS_RECEIVED)
         return value
 
     @property

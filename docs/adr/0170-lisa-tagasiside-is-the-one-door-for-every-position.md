@@ -104,7 +104,11 @@ refuses `DISCOVERED` with a round, and `correct_external_position` refuses a
 `DISCOVERED` row a round it did not already hold
 (`EXTERNAL_POSITION_ROUND_ANSWER_IS_RECEIVED`). A link a historical row already
 carries is kept, so the row stays correctable without being rewritten; `LEGACY`
-rows are not judged. The page never draws a radio both checked and disabled, and
+rows are not judged. (Amended 2026-10-17, JDATA-002: the kept link is exempt
+only while the stored provenance is unchanged — a correction that keeps the
+round and moves a `RECEIVED` answer to `DISCOVERED` is refused with the same
+sentence, so the exemption keeps a historical link and never moves a
+provenance.) The page never draws a radio both checked and disabled, and
 draws `Liige` ticked only beside a shown «Saadeti Kojale», so a refused form
 re-rendered and saved again cannot post an answer the person could not see. A
 «Saadeti Kojale» checked because a round was chosen (or by `Tehtud`) is cleared
@@ -171,3 +175,43 @@ stay retired unless the owner decides otherwise.
 
 Code-only. Restoring the two routes and panels restores the previous doors; no
 stored row depends on which form wrote it.
+
+## Amendment of 2026-10-17 — §4: a standalone position repeats only from a fresh form
+
+Owner decision D3 of 2026-10-17 (docs/adr/0167, amendment of 2026-10-17).
+§4 said duplicate protection belonged to round answers, so two identical POSTs
+of a standalone position — received or published elsewhere — filed two
+records. **They no longer do.** `Lisa tagasiside` carries a save-once token
+like every compact door: a second save of the same drawn form is refused with
+«See vorm on juba salvestatud.» (400, nothing written), with a round or
+without. Two records of the same view remain the person's to make, deliberately,
+by saving the form as it is re-drawn after the first save (a fresh token). The
+round-answer content check (`refuse_repeated_reply`, 0167 §2.6) is unchanged.
+
+## Amendment of 2026-10-18 — the provenance is asked first; a disabled answer says why (JUX-004, JUX-005)
+
+**The order of §2 changes: `Kuidas seisukoht meieni jõudis?` comes first, then
+the `Organisatsioon` row with `Liige` at its end.** The 2026-10-17 audit
+(JUX-005, WCAG 2.4.3) found `Liige` before the question that reveals it. After
+«Saadeti Kojale», the next Tab went on to `Seotud kaasamine` and `Seisukoht`,
+and `Liige` could be reached only with Shift+Tab. The audit offered two fixes:
+move `Liige` after the fieldset in the document, or ask the provenance first.
+The second is taken, because it keeps the owner's placement of 2026-10-06
+exactly: `Liige` is still at the end of the organisation's own row, after a gap
+from the box. Moving it in the DOM only would have needed absolute
+positioning to keep it there visually, and that breaks the row's wrap on a
+narrow panel. Asking the provenance first is also the logical order: the
+answer decides whether `Liige` exists and whether the organisation is required.
+Tab now runs «Saadeti Kojale» → organisation search → `Liige`.
+
+**A disabled «Avaldatud mujal» looks disabled and says why (JUX-004).** While a
+round is linked (§3) the chip used to keep the enabled colours and the pointer.
+Now:
+- a disabled `.chip__input` has muted words and edge, no hover response and the
+  `not-allowed` cursor, everywhere in the application;
+- the fieldset shows «Kaasamise vastus saadeti Kojale.» whenever a provenance
+  radio is disabled. The stylesheet reads the radio itself, so the server's
+  render and `static/js/ux.js` changing the round always agree;
+- the disabled radio's `aria-describedby` names that sentence.
+
+Pinned in `e2e/test_feedback_provenance_keyboard_and_disabled.py`.

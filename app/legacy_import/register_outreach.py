@@ -762,6 +762,11 @@ def apply_mapping(
                 # its answers, and a decade of open rounds would be work
                 # nobody took on (docs/adr/0132).
                 lifecycle_tracked=False,
+                # The register's address as it stands, userinfo and all: this
+                # is the one writer that records what it did not choose, and
+                # owner decision D10 (2026-10-17) leaves it on the tolerant
+                # path while every person's door refuses credentials.
+                from_historical_register=True,
                 # No actor. Nobody signed in decided this; what did is the
                 # mapping digest recorded beside it.
                 actor=actor,
@@ -788,6 +793,7 @@ def apply_mapping(
             note=link.note,
             occurred_on=link.occurred_on,
             actor=actor,
+            from_historical_register=True,
         )
         recorded.refresh_from_db()
         if before == (recorded.title, recorded.url, recorded.note, recorded.occurred_on):

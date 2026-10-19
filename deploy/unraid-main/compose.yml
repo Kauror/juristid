@@ -23,7 +23,12 @@
 #      docs/adr/0016.
 #   3. `DJANGO_DEBUG=0`, `DEV_LOGIN_ENABLED=0`, `REAL_DATA_ALLOWED=1`. A system
 #      check refuses to start a process that mixes those wrongly
-#      (juristid.E002/E003/E004/E006/E008).
+#      (juristid.E002/E003/E004/E006/E008), or that holds a template
+#      `replace-me…` secret or one too short for real data (E016-E019). Every
+#      service on the application image runs the checks before anything else:
+#      the workers and their healthchecks are `manage.py` commands, and `web`
+#      starts gunicorn through scripts/serve-after-checks.sh, so a refused
+#      configuration exits and restarts rather than serving (JOPS-004).
 #
 # The rehearsal's shared PIN does not exist here and must never be added. The
 # shared gate is not that PIN: a different mode, a long host-side secret, and
@@ -114,6 +119,11 @@ services:
     restart: unless-stopped
     logging: *bounded-logs
     command:
+      # The system checks first, and gunicorn only if they pass (JOPS-004,
+      # scripts/serve-after-checks.sh): a configuration `juristid.E0xx`
+      # refuses exits here instead of serving and reporting healthy.
+      - sh
+      - /app/scripts/serve-after-checks.sh
       - gunicorn
       - config.wsgi:application
       - --bind
@@ -129,8 +139,12 @@ services:
       # this application is business text that must not reach `docker logs`
       # (ENG-071). deploy/unraid-test/compose.yml carries the same format, and
       # tests/test_access_log_privacy.py holds both to it.
+      #
+      # `%(h)s` is the tunnel connector for every request; the second field is
+      # the client address Cloudflare saw (`CF-Connecting-IP`, `-` when absent),
+      # the same address the audit rows record (app/core/client_ip.py, JOPS-008).
       - --access-logformat
-      - '%(h)s %(t)s "%(m)s %(U)s %(H)s" %(s)s %(b)s %(M)sms'
+      - '%(h)s %({cf-connecting-ip}i)s %(t)s "%(m)s %(U)s %(H)s" %(s)s %(b)s %(M)sms'
     env_file:
       - ${JURISTID_ENV_FILE:-/mnt/user/appdata/juristid-main/config/juristid.env}
     environment:

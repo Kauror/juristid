@@ -524,6 +524,21 @@
   max-width: 720px;
 }
 
+/* A page with no application shell around it — `error_page.html`, which
+ * Django renders for 400, 403, 404, 405 and 500. Nothing else spaces it, so it
+ * keeps its own gutter: 16px at the sides on a phone, and air above the
+ * heading at every width (2026-10-17 audit, JUX-014). */
+.page--standalone {
+  box-sizing: border-box;
+  padding: var(--spacing-8) var(--spacing-4);
+}
+
+@media (min-width: 48rem) {
+  .page--standalone {
+    padding: 3rem var(--spacing-6);
+  }
+}
+
 .pagehead {
   display: flex;
   align-items: baseline;
@@ -5202,6 +5217,25 @@ a.barchart__row:hover {
   outline-offset: var(--focus-ring-offset-width);
 }
 
+/* A choice that cannot be made right now — «Avaldatud mujal» while a round is
+ * linked. It used to look exactly like one that can: the same words, the same
+ * edge and a pointer (2026-10-17 audit, JUX-004). Muted words and edge, no
+ * hover response, and the `not-allowed` cursor; the reason is said in words
+ * beside it (`[data-feedback-round-note]`), so the state is never colour
+ * alone. */
+.chip__input:disabled {
+  cursor: not-allowed;
+}
+
+.chip__input:disabled + .chip__name,
+.chip:hover .chip__input:disabled + .chip__name {
+  color: var(--text-muted);
+  border-color: var(--border-subtle);
+  background: transparent;
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
 /* A `Hetkeseis` that does not normally fit any chosen `Õigusakt` — guidance on
    Uus teema, never a rule (app/workflow/stage_guidance.py, docs/adr/0130 §4).
 
@@ -5480,6 +5514,15 @@ a.barchart__row:hover {
  * 1300px search box across the page at 1440 and make the smallest question on
  * the form look like the largest; capped much tighter, a stacked row at 420
  * would leave it an island with the whole width empty beside it. */
+/* The field's name, drawn above the box where no visible legend says it —
+ * Lisa tagasiside's `Organisatsioon`, Koja arvamus's `Adressaadid`, `Muuda` on
+ * a recorded position. A placeholder is not a label (2026-10-17 audit,
+ * JUX-006). The picker's own gap is the chip row's; a label sits as close to
+ * its box as every other label on the Teema page (`.cx-f`'s 3px). */
+.orgfind__label {
+  margin-bottom: calc(3px - var(--spacing-2));
+}
+
 .orgfind__search {
   display: flex;
   align-items: stretch;
@@ -6363,6 +6406,24 @@ fieldset,
 
 .datepicker__blank {
   display: block;
+}
+
+/* A week is a `role="row"` for the grid's semantics and nothing at all for its
+ * layout: the seven-column grid above still places every cell (JUX-008). */
+.datepicker__row {
+  display: contents;
+}
+
+/* The day's `role="gridcell"`, which the button fills exactly as it filled its
+ * grid column when it was the column's item itself. */
+.datepicker__cell {
+  display: flex;
+  min-width: 0;
+}
+
+.datepicker__cell > .datepicker__day {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .datepicker__day {
@@ -10642,6 +10703,12 @@ section:has(.pw-more[open]) tbody.uxextra {
 
 #teema-vaade-wrap .cx-panel {
   flex: none;
+  /* An open panel is a flex item at `flex-basis: 100%`, and a flex item's
+   * `min-width: auto` is its content's min-content width — which outgrew the
+   * row at 320px and pushed `+ Kaasamine` and `Koja arvamus` 11px past the
+   * window (2026-10-17 audit, JUX-010; WCAG 1.4.10). The panel takes the
+   * row's width, and its fields wrap inside it as they already could. */
+  min-width: 0;
 }
 
 #teema-vaade-wrap .cx-panel[open] {
@@ -10724,8 +10791,8 @@ section:has(.pw-more[open]) tbody.uxextra {
   min-width: 0;
 }
 
-/* A date standing alone on its row — `Kuupäev` under `+ Märge` and under
- * `+ Arvamus / tagasiside`. The form is a flex column, so a bare field is
+/* A date standing alone on its row — `Kuupäev` under `+ Lisa` and under
+ * `+ Koja arvamus / kohtumine`. The form is a flex column, so a bare field is
  * stretched to the panel and a `7.9.2026` box ran almost the whole width.
  * Capped at the width `Muuda kulgu` already gives its date column, the
  * calendar button included; `max-width` rather than `width`, so a panel
@@ -10985,6 +11052,12 @@ section:has(.pw-more[open]) tbody.uxextra {
   font-size: 13px;
   line-height: 1.4;
   color: var(--text-muted);
+  /* A chosen file's name is often one token —
+   * `Eelnou_seletuskiri_lisa_…_2026.pdf` — and with nowhere to break it widened
+   * the drop box, the form and the page to ~950px on a phone (2026-10-17
+   * audit, JUX-009; WCAG 1.4.10). It breaks anywhere instead, whole. */
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 #teema-vaade-wrap .cx-drop__pick {
@@ -11415,6 +11488,12 @@ section:has(.pw-more[open]) tbody.uxextra {
   margin-left: var(--spacing-1);
 }
 
+/* With the label drawn above the box, `Liige` still lines up with the box
+ * rather than with the label: the label's line (10px at 1.2) and its 3px. */
+#teema-vaade-wrap .orgpick__row:has(.orgfind__label) > .orgpick__mark {
+  margin-top: calc(4px + 12px + 3px);
+}
+
 /* `+ Kaasamine · Lisa tagasiside`: `Liige` only beside «Saadeti Kojale»
  * (owner's UX round, stage 3). Hidden — not disabled — until that answer is
  * chosen; the form, the service and a `CHECK` refuse it on the other
@@ -11425,8 +11504,28 @@ section:has(.pw-more[open]) tbody.uxextra {
   display: none;
 }
 
+/* The organisation is required for «Avaldatud mujal» alone (docs/adr/0091
+ * §3.3), so its marker — the `*` and the hidden «(kohustuslik)» together — is
+ * shown only while that answer is chosen (2026-10-17 audit, JUX-006). */
+#teema-vaade-wrap .feedbackform:not(:has(input[name="provenance"][value="DISCOVERED"]:checked))
+  [data-orgfind-required] {
+  display: none;
+}
+
 #teema-vaade-wrap .lprail__aside--koda {
   color: var(--text-muted);
+}
+
+/* «Kaasamise vastus saadeti Kojale.» — only while a linked round has disabled
+ * the other answer (JUX-004). Read off the radio, so the server's render and
+ * the script's change of round never disagree about it. */
+#teema-vaade-wrap .feedbackform:not(:has(input[name="provenance"]:disabled))
+  [data-feedback-round-note] {
+  display: none;
+}
+
+#teema-vaade-wrap .feedbackform__roundnote {
+  margin: var(--spacing-1) 0 0;
 }
 
 /* The heading row: the section's name, and `Muuda` pushed to the far end.
@@ -12910,6 +13009,8 @@ section:has(.pw-more[open]) tbody.uxextra {
 .curact__form .cx-drop {
   position: static;
   box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
 }
 
 /* **`flex-basis` is the main axis, and the two hosts have different ones.**
@@ -13081,7 +13182,8 @@ section:has(.pw-more[open]) tbody.uxextra {
 
 /* -- LISA TEEMALE: a family's own choices ---------------------------------
  *
- * The sub-choice row inside `+ Märge` and `+ Arvamus / tagasiside`. It is the
+ * The sub-choice row inside `+ Lisa`, `+ Kaasamine` and
+ * `+ Koja arvamus / kohtumine`. It is the
  * launcher's own construction one level in — radio, chip, panel — so it needs
  * no rules of its own beyond these two: every `.cx-panels` rule above is
  * written `.cx-panels > …` rather than against a depth, and therefore reaches a
@@ -13114,7 +13216,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 
 /* And the sub-choice chips may shrink rather than push the row wide. The
  * launcher's own chips are `flex: none` because the top row is four short
- * labels; `Meile saadetud tagasiside` is not short, and it sits inside a panel
+ * labels; `Kohtumine / arutelu` is not short, and it sits inside a panel
  * that has already spent some of the width. */
 #teema-vaade-wrap .cx-panels--sub > .disclosure-chip {
   flex: 0 1 auto;
@@ -13169,6 +13271,45 @@ section:has(.pw-more[open]) tbody.uxextra {
 
 .reqfail__action {
   flex: none;
+}
+
+/* «Fail tuleb uuesti valida: …» — the files a refused save could not keep
+ * (static/js/app.js, «Files a refusal could not keep», JUX-001).
+ *
+ * Under the drop box it is about, in the warning inset rather than the danger
+ * one: the refusal above already says what was wrong, and this says what the
+ * browser could not carry back. A text lead, not only a colour. Long names
+ * break anywhere, so a filename cannot widen a phone-width form. */
+.filesagain {
+  flex-basis: 100%;
+  grid-column: 1 / -1;
+  margin: var(--spacing-2) 0 0;
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--status-warning-border);
+  background: var(--status-warning-soft);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--typography-size-meta);
+  overflow-wrap: anywhere;
+}
+
+.filesagain__text {
+  margin: 0;
+}
+
+.filesagain__text + .filesagain__text {
+  margin-top: var(--spacing-1);
+}
+
+.filesagain__lead {
+  font-weight: var(--typography-weight-semibold);
+}
+
+.filesagain__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  margin-top: var(--spacing-2);
 }
 
 /* The note's own status line after a save that did not land: it must stop

@@ -8,7 +8,12 @@
   context processors, often because something those depend on is what failed,
   so nothing here may need either: no navigation, no persona, no counts, no
   `{% url %}` beyond what cannot fail. Django's fallbacks were English pages on
-  an Estonian application (ENG-012).
+  an Estonian application (ENG-012). 403.html and 405.html joined the family
+  after the 2026-10-17 audit (JUX-013).
+
+  **Its own gutter.** Without the application's shell nothing else spaces it:
+  `body` has no margin and `.page` no padding, so on a phone the text touched
+  the window's edge (JUX-014). `.page--standalone` gives it the page's gutter.
 {% endcomment %}
 <html lang="et" data-theme="dark">
   <head>
@@ -24,7 +29,7 @@
     <link rel="stylesheet" href="{% static 'css/app.css' %}">
   </head>
   <body>
-    <main class="page page--narrow" id="sisu">
+    <main class="page page--narrow page--standalone" id="sisu">
       <h1>{% block heading %}{% endblock %}</h1>
       {% block body %}{% endblock %}
       <p><a href="/">Avalehele</a></p>

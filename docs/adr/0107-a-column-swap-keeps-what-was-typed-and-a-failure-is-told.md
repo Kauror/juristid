@@ -153,3 +153,144 @@ reads the same whatever caused it.
   `e2e/test_workspace_failures_and_drafts.py` cover the marked hosts. They
   include a test that a clean column carries nothing, so a host that counts
   itself dirty without being typed into is caught.
+
+## Amendment, 2026-10-17 — the note is judged against the answer, not the last save (JQA-003)
+
+§2 counted the note as holding unsaved input when its box differed from the
+last save **this page had heard back about**. That is the wrong comparison when
+two answers cross. A panel's answer can be rendered on the server before the
+note's autosave commits and still reach the page after that autosave's 2xx. The
+box then counted as saved and was not carried, and the old render replaced it:
+the earlier text (often empty) and the earlier revision. The next keystroke
+autosaved against that revision and got a 409 «Märget on muudetud teises
+aknas…» although there was no other window, and a reload brought back the
+earlier text and lost the new.
+
+The note is now judged against **the render that is about to replace it**
+(`static/js/app.js` `autosaveOutdatedBy`). It is carried across the swap when:
+- its text differs from the text in the render; or
+- the render's revision is older than the one the box holds. A stale render
+  never moves the token back.
+
+A render with the same text and a newer revision replaces it as before. A
+render with **different** text is never adopted over the box, even when the box
+holds nothing unsaved. If another tab saved that text, the next autosave gets
+the existing 409, with the newer text beside the box (ADR 0077), as §2 already
+says. Where the new column has no note at all, a note with unsaved text is
+still shown as `Salvestamata sisu`.
+
+The revision is the row's `updated_at` in UTC ISO form, so string order is time
+order. This holds even when Python leaves out a zero microsecond, because `+`
+sorts before `.`. Nothing changed on the server: `save_note` already moves the
+token on with every 2xx, and `rail.html` already renders it inside the form.
+
+The race is pinned in `e2e/test_workspace_failures_and_drafts.py`
+`test_a_panel_answer_rendered_before_the_note_saved_does_not_set_it_back`. The
+test holds both requests in the browser and lets them go in that order, so it
+no longer depends on the timing that made its sibling flaky.
+
+## Amendment, 2026-10-18 — 403 and 405 join the Estonian error pages; the page keeps a gutter (JUX-013, JUX-014)
+
+ENG-012 replaced Django's English fallbacks for 400, 404, 500 and a refused
+CSRF check. The 2026-10-17 audit (V4, `DEBUG=0`) found two answers it left out:
+- **403 from `PermissionDenied`** was Django's English «403 Forbidden», with
+  `lang="en"` and no link home. `templates/403.html` now extends
+  `error_page.html` («Ligipääs puudub»). As on Django's page, the guard's own
+  sentence is not shown, so one 403 never reads differently from another.
+- **405 from `require_http_methods`** had an empty body: a blank page after a
+  re-opened tab or a bookmark of a save. `MethodNotAllowedPageMiddleware`
+  (`app/core/middleware.py`) puts `templates/405.html` into a bodiless 405.
+  The status and the `Allow` header stay the view's. A 405 that already has a
+  body is left alone. The middleware sits inside `BrowserPolicyMiddleware`, so
+  the page carries the same policy headers as every other page.
+
+`error_page.html` has no application shell, so nothing gave it spacing:
+`body` has no margin and `.page` no padding, and on a phone the text touched
+the edge (JUX-014). `.page--standalone` gives it a 16px side gutter and space
+above the heading, more from 48rem.
+
+Pinned in `tests/test_error_pages_403_405.py` (`lang="et"`, one `h1`, the home
+link, status and `Allow`) and `e2e/test_error_page_gutter.py` (the offsets at
+320, 375 and 1440 px).
+
+## Amendment, 2026-10-18 — a refused save says which files to choose again (JUX-001)
+
+§2 carries a host across a swap by moving the element, so chosen files survive
+when *another* form saves. The form that sent the request is excluded on
+purpose: its answer is the server's to give. When that answer is a refusal, the
+server re-renders the form with the typed text and the errors, but it cannot
+send the files back, and no browser lets a page put a file into a file input.
+The drop box used to reset with no notice. The corrected save then stored the
+record with **no files**, while the person believed they were attached.
+
+This affected every form that takes files and answers a refusal with a
+re-render: every `LISA TEEMALE` door (`Muu`, `Kohtumine / arutelu`, `Lisa
+tagasiside`, `Alusta kaasamist`, `Oluline tähtaeg`, `Jõustumine`, `Töövõit`,
+`Koja arvamus`), `✓ Tehtud`, the follow-up check, and the rows' `+ Lisa fail`.
+
+The client now does three things (`static/js/app.js`, «Files a refusal could
+not keep»):
+- **As the request leaves**, it takes the names of the chosen files from the
+  form, with where to find the form again: the panel or draft host around it,
+  by id, and the form's own address inside it.
+- **When the answer is a refusal** (400, 409 or 422), the re-rendered form gets
+  a notice right after its drop box: «Fail tuleb uuesti valida: <names>»
+  («Failid …» for several). It is a `role="status"` live region, in words and
+  not only in colour, and it does not take focus. The refusal's own focus rule
+  (`focusFirstRefusal`) is unchanged.
+- **A save pressed while that notice stands and nothing has been chosen** is
+  cancelled in the page, before htmx marks a request in flight. Nothing is
+  posted, so the save-once token (docs/adr/0167) stays unspent. The notice
+  takes focus and offers `Vali fail uuesti` and `Salvesta ilma failita`.
+  Choosing files again, by picking or dropping, removes the notice.
+  `Salvesta ilma failita` removes it and submits the form.
+
+Only the names are kept, and only in the page. Nothing is stored in the browser
+(§2). This is option (a) of the remediation plan. Staging uploads on selection,
+as `Uus teema` does (`#hoitud-failid`), would keep the files themselves and
+remains the larger follow-up.
+
+Nothing changed on the server. Files stay optional, and a page with no script
+has no notice and no guard. A save without files is accepted as before.
+
+Pinned in `e2e/test_files_after_refusal.py`: `Muu`, and the same sequence over
+`Kohtumine` and `Lisa tagasiside`. Each test refuses a save with a PDF chosen,
+reads the notice naming it, has the next save stopped with nothing posted, then
+chooses the file again and finds the stored row with that one file.
+`Salvesta ilma failita` stores the row with none.
+
+## Amendment, 2026-10-18 — a refusal focuses the control it refused, and is heard (JUX-003)
+
+After a refused save `static/js/ux.js` `focusFirstRefusal` puts the cursor on
+the control the first message is about. On the Teema page that rule found the
+wrong control. The `LISA TEEMALE` forms print their messages as direct
+children of `form.addform`, and `.addform` was one of the field containers the
+lookup climbed to, so it returned the form's *first* control. An empty `Lisa
+tagasiside` focused the organisation search; a `Muu` with no day focused a
+filled `Kirjeldus`; a `Kohtumine` with no summary focused the valid date.
+Nothing announced the refusal, so a screen-reader user heard a field that had
+nothing wrong with it.
+
+The control is now found in this order (`controlForError`):
+1. **The id relation the markup already states.** The control, or group, whose
+   `aria-describedby` names the message's id. Django points a refused widget at
+   `<id>_error`, and the provenance fieldset and the organisation search
+   (docs/adr/0073, amendment of the same day) name theirs the same way. A
+   group gives its first enabled control, so a refused radio group focuses its
+   first radio.
+2. **The id the message spells:** `<id>_error` names the control `<id>`.
+3. The field wrapper around the message, as before — but never the form
+   itself.
+4. The nearest control above the message, as before.
+
+The refusal is also **announced**. Each message of the refused form is put
+back into the page as `role="alert"`: the same element, cloned with the role
+and swapped in for itself, keeping its id. An alert is read when it is
+inserted. Setting the role on a message the swap has already inserted would say
+nothing, and a separate live region holding a copy would put every sentence on
+the page twice. A form-level summary gets the same treatment unless it is
+already an alert.
+
+Pinned in `e2e/test_refusal_focus_on_teema_forms.py`. After each refusal on
+`Lisa tagasiside`, `Muu` and `Kohtumine`, `document.activeElement` is the
+refused control, and its message is an alert.

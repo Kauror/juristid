@@ -74,10 +74,16 @@ services:
     container_name: juristid-test-web
     restart: unless-stopped
     logging: *bounded-logs
-    # The image's default CMD is gunicorn. It is repeated here so that reading
-    # this file answers "what actually serves requests" without a second lookup,
-    # and so nobody reintroduces `runserver` by editing one place.
+    # The image's default CMD is gunicorn behind the system checks. It is
+    # repeated here so that reading this file answers "what actually serves
+    # requests" without a second lookup, and so nobody reintroduces `runserver`
+    # by editing one place.
     command:
+      # The system checks first, and gunicorn only if they pass (JOPS-004,
+      # scripts/serve-after-checks.sh): a configuration `juristid.E0xx`
+      # refuses exits here instead of serving and reporting healthy.
+      - sh
+      - /app/scripts/serve-after-checks.sh
       - gunicorn
       - config.wsgi:application
       - --bind
@@ -93,8 +99,12 @@ services:
       # this application is business text that must not reach `docker logs`
       # (ENG-071). deploy/unraid-main/compose.yml carries the same format, and
       # tests/test_access_log_privacy.py holds both to it.
+      #
+      # `%(h)s` is the tunnel connector for every request; the second field is
+      # the client address Cloudflare saw (`CF-Connecting-IP`, `-` when absent),
+      # the same address the audit rows record (app/core/client_ip.py, JOPS-008).
       - --access-logformat
-      - '%(h)s %(t)s "%(m)s %(U)s %(H)s" %(s)s %(b)s %(M)sms'
+      - '%(h)s %({cf-connecting-ip}i)s %(t)s "%(m)s %(U)s %(H)s" %(s)s %(b)s %(M)sms'
     env_file:
       - ${JURISTID_ENV_FILE:-/mnt/user/appdata/juristid-test/config/juristid.env}
     environment:

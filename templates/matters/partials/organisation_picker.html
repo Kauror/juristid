@@ -76,6 +76,13 @@ Callers pass:
     typed_hook    `sender` or `addressee` — which control the carrier is
     quiet         true where the field starts empty: the shortlist is offered
                   to the search rather than drawn under the box
+    visible_label true where no visible legend names the field: the label is
+                  drawn above the box rather than visually hidden
+    required_when true where the field is required only sometimes: the marker
+                  is drawn in `[data-orgfind-required]` for the caller's
+                  stylesheet to show while it holds
+    owner_field   the chip field whose refusal the caller prints after the
+                  picker, so the search box can be described by it
 
 **`quiet`, and why it is a flag rather than an empty `chips` list.** A caller
 could pass the shortlist as `tail` and get most of this, and it would be lying
@@ -196,11 +203,32 @@ picked before a refused save are the three states this already draws, and
     saatja» is what a screen reader announces and what a test can ask for
     (task §4, §18, §20).
   {% endcomment %}
+  {% comment %}
+    The label. Visually hidden where the caller already draws the field's name
+    as a visible legend (`Uus teema`'s «Saatja»); drawn here where nothing else
+    on screen says what the box is for — `visible_label` — because a
+    placeholder is not a label (2026-10-17 audit, JUX-006; WCAG 3.3.2).
+    `required_when` draws the required marker inside a hook the caller's
+    stylesheet shows only while the requirement holds: Lisa tagasiside's
+    organisation is required for «Avaldatud mujal» alone.
+
+    The refusal is tied to the search box, the one control a person can reach:
+    the message for the typed name is printed below, and `owner_field` is the
+    chip field whose message the caller prints after the picker. Both ids go on
+    `aria-describedby`, with `aria-invalid`, so the box that takes the cursor
+    after a refused save is the box that says what is wrong.
+  {% endcomment %}
+  {% if visible_label %}
+    <label class="cx-f__lab orgfind__label" for="{{ picker_id }}-otsi">{% if owner_field %}{% field_label owner_field %}{% else %}{{ legend }}{% endif %}{% if required_when %}<span data-orgfind-required>{% required_mark %}</span>{% endif %}<span class="visually-hidden"> — otsi või lisa asutus</span></label>
+  {% endif %}
   <div class="orgfind__search">
-    <label class="visually-hidden" for="{{ picker_id }}-otsi">{{ legend }} — otsi või lisa asutus</label>
+    {% if not visible_label %}
+      <label class="visually-hidden" for="{{ picker_id }}-otsi">{{ legend }} — otsi või lisa asutus</label>
+    {% endif %}
     <input class="field__input orgfind__input" id="{{ picker_id }}-otsi"
            type="search" autocomplete="off" data-orgfind-input
-           placeholder="Otsi või lisa asutus…">
+           placeholder="Otsi või lisa asutus…"
+           {% if typed_field.errors or owner_field.errors %}aria-invalid="true" aria-describedby="{% if typed_field.errors %}{{ typed_field.auto_id }}_error{% endif %}{% if typed_field.errors and owner_field.errors %} {% endif %}{% if owner_field.errors %}{{ owner_field.auto_id }}_error{% endif %}"{% endif %}>
     <button type="button" class="orgfind__add" data-orgfind-add disabled>
       <span aria-hidden="true">+</span>
       <span class="visually-hidden">{{ add_label }}</span>

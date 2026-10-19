@@ -11,12 +11,14 @@ organisation's view published elsewhere are two provenances of one
 `+ Arvamus / tagasiside` wrote them. Files, correction history (`Muuda`),
 visibility inheritance and search are the record's own and did not move.
 
+* `Kuidas seisukoht meieni jõudis?` — required, **no default**: «Saadeti
+  Kojale» or «Avaldatud mujal». The provenance is stated, never inferred
+  (docs/adr/0091 §3.2). **First**, since the 2026-10-17 audit (JUX-005): it
+  reveals `Liige` and decides whether the organisation is required, so it is
+  asked before both — and Tab after «Saadeti Kojale» reaches `Liige`;
 * `Organisatsioon` — the shared «otsi või lisa asutus» picker (docs/adr/0073),
   quiet until searched. Optional for «Saadeti Kojale» — received feedback may
   name nobody (docs/adr/0101) — and required for «Avaldatud mujal»;
-* `Kuidas seisukoht meieni jõudis?` — required, **no default**: «Saadeti
-  Kojale» or «Avaldatud mujal». The provenance is stated, never inferred
-  (docs/adr/0091 §3.2);
 * `Liige` — at the end of the organisation's row, shown only while «Saadeti
   Kojale» is chosen. The form, the service and a `CHECK` each refuse it on the
   other provenance (docs/adr/0095 §4);
@@ -40,8 +42,46 @@ visibility inheritance and search are the record's own and did not move.
       hx-target="#teema-vaade" hx-swap="outerHTML"
       hx-encoding="multipart/form-data">
   {% csrf_token %}
+  {% include "matters/partials/add/save_once.html" with token=save_once_tokens.engagement_reply_form %}
+  {% comment %}
+    Whether «Saadeti Kojale» is the round's answer rather than the person's:
+    kept by static/js/ux.js, read back by `FeedbackForm.provenance_is_implied`
+    so a refused form still clears only an implied answer with its round
+    (docs/adr/0170 §3).
+  {% endcomment %}
+  <input type="hidden" name="provenance_implied" data-feedback-implied-flag
+         value="{% if form.provenance_is_implied %}1{% endif %}">
+  <fieldset class="cx-fieldset" data-feedback-provenance
+            {% if form.provenance.errors %}aria-describedby="{{ form.provenance.auto_id }}_error"{% endif %}>
+    <legend class="cx-f__lab">{% field_label form.provenance %}</legend>
+    <div class="chiprow">
+      {% for radio in form.provenance %}
+        <label class="chip">
+          <input type="radio" class="chip__input" name="{{ form.provenance.html_name }}"
+                 id="{{ radio.id_for_label }}" value="{{ radio.data.value }}"
+                 {% if radio.data.value == form.shown_provenance %}checked{% endif %}
+                 {% if form.round_is_linked %}{% if radio.data.value == "RECEIVED" %}{% if form.provenance_is_implied %}data-feedback-implied{% endif %}{% else %}disabled aria-describedby="{{ form.provenance.auto_id }}_round"{% endif %}{% endif %}>
+          <span class="chip__name">{{ radio.choice_label }}</span>
+        </label>
+      {% endfor %}
+    </div>
+    {% comment %}
+      Why «Avaldatud mujal» cannot be chosen while a round is linked — in words,
+      beside the disabled chip that looks disabled (2026-10-17 audit, JUX-004).
+      Shown by the stylesheet whenever a provenance radio is disabled, so the
+      server's first render and `static/js/ux.js` changing the round agree; the
+      script points the disabled radio's `aria-describedby` here.
+    {% endcomment %}
+    <p class="field__help feedbackform__roundnote" id="{{ form.provenance.auto_id }}_round"
+       data-feedback-round-note>Kaasamise vastus saadeti Kojale.</p>
+  </fieldset>
+  {% if form.provenance.errors %}
+    <p class="field__error" id="{{ form.provenance.auto_id }}_error">
+      {{ form.provenance.errors|first }}</p>
+  {% endif %}
+
   <div class="orgpick__row">
-    {% include "matters/partials/organisation_picker.html" with picker_id="tagasiside" legend=form.organisation.label chips=form.organisation_chip_choices tail=form.organisation_tail_choices typed_field=form.organisation_name add_label="Lisa uus organisatsioon" single=True clearable=True clears_group="organisation" quiet=True only %}
+    {% include "matters/partials/organisation_picker.html" with picker_id="tagasiside" legend=form.organisation.label chips=form.organisation_chip_choices tail=form.organisation_tail_choices typed_field=form.organisation_name add_label="Lisa uus organisatsioon" single=True clearable=True clears_group="organisation" quiet=True visible_label=True required_when=True owner_field=form.organisation only %}
     {# `Liige` — only beside «Saadeti Kojale» (static/css/app.css `.feedbackform`). #}
     <div class="orgpick__mark" data-feedback-member>
       <label class="chip">
@@ -60,34 +100,6 @@ visibility inheritance and search are the record's own and did not move.
   {% if form.member_mark.errors %}
     <p class="field__error" id="{{ form.member_mark.auto_id }}_error">
       {{ form.member_mark.errors|first }}</p>
-  {% endif %}
-
-  {% comment %}
-    Whether «Saadeti Kojale» is the round's answer rather than the person's:
-    kept by static/js/ux.js, read back by `FeedbackForm.provenance_is_implied`
-    so a refused form still clears only an implied answer with its round
-    (docs/adr/0170 §3).
-  {% endcomment %}
-  <input type="hidden" name="provenance_implied" data-feedback-implied-flag
-         value="{% if form.provenance_is_implied %}1{% endif %}">
-  <fieldset class="cx-fieldset" data-feedback-provenance
-            {% if form.provenance.errors %}aria-describedby="{{ form.provenance.auto_id }}_error"{% endif %}>
-    <legend class="cx-f__lab">{% field_label form.provenance %}</legend>
-    <div class="chiprow">
-      {% for radio in form.provenance %}
-        <label class="chip">
-          <input type="radio" class="chip__input" name="{{ form.provenance.html_name }}"
-                 id="{{ radio.id_for_label }}" value="{{ radio.data.value }}"
-                 {% if radio.data.value == form.shown_provenance %}checked{% endif %}
-                 {% if form.round_is_linked %}{% if radio.data.value == "RECEIVED" %}{% if form.provenance_is_implied %}data-feedback-implied{% endif %}{% else %}disabled{% endif %}{% endif %}>
-          <span class="chip__name">{{ radio.choice_label }}</span>
-        </label>
-      {% endfor %}
-    </div>
-  </fieldset>
-  {% if form.provenance.errors %}
-    <p class="field__error" id="{{ form.provenance.auto_id }}_error">
-      {{ form.provenance.errors|first }}</p>
   {% endif %}
 
   {% if form.round_count %}

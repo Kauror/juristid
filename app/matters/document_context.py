@@ -52,7 +52,9 @@ DETAIL_LIMIT = 70
 #: What each kind of linked record is called here, in the product's own words.
 #: Keyed by `DocumentLink` column. `external_position` is absent on purpose: its
 #: name is the record's own `kind_label` («Meile saadetud tagasiside», «Teiste
-#: arvamus»), the headline its chronology row carries.
+#: arvamus»), the headline its chronology row carries. `entry` is the fallback
+#: for a row with no kind of its own: an entry is named by its kind — «Muu»,
+#: «Kohtumine», «Märkus» — the badge its chronology row carries (JQA-007).
 KIND_LABELS: dict[str, str] = {
     "submission": "Koja arvamus",
     "engagement": "Kaasamine",
@@ -119,10 +121,11 @@ def _context_of(field: str, record: Any, addressees: dict[Any, list[str]]) -> Re
         return RecordContext(
             KIND_LABELS[field], record.display_period or DATE_UNKNOWN, _short(record.title)
         )
-    # `entry`: a note written under `Mida tegid?` — dated by when it says the
-    # work happened, on the reader's own calendar.
+    # `entry`: a note, a `Muu` or a `Kohtumine` — named by its own kind, so a
+    # meeting's protocol does not read as a «Märkus» (JQA-007) — dated by when
+    # it says the work happened, on the reader's own calendar.
     return RecordContext(
-        KIND_LABELS["entry"],
+        str(record.get_kind_display() or KIND_LABELS["entry"]),
         format_estonian_date(timezone.localtime(record.occurred_at).date()),
     )
 

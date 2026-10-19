@@ -19,6 +19,8 @@ import pytest
 import yaml
 from django.conf import settings
 
+from tests.deployment_commands import served
+
 DEPLOY = Path(settings.BASE_DIR) / "deploy" / "unraid-test"
 COMPOSE = DEPLOY / "compose.yml"
 ENV_EXAMPLE = DEPLOY / ".env.example"
@@ -85,7 +87,7 @@ def test_the_web_service_publishes_exactly_one_port(compose: dict[str, Any]) -> 
 
 def test_the_application_is_served_by_gunicorn(compose: dict[str, Any]) -> None:
     """Never `runserver`: it is single-threaded and not a production server."""
-    command = compose["services"]["web"]["command"]
+    command = served(compose["services"]["web"]["command"])
     assert command[0] == "gunicorn"
     assert "runserver" not in " ".join(command)
 

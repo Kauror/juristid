@@ -56,6 +56,7 @@ def check_runtime_safety(app_configs: Any, **kwargs: Any) -> list[Error | Warnin
         )
 
     problems.extend(_authentication_problems())
+    problems.extend(_real_data_secret_problems())
     problems.extend(_environment_hygiene_problems())
 
     engine = settings.DATABASES["default"]["ENGINE"]
@@ -64,6 +65,118 @@ def check_runtime_safety(app_configs: Any, **kwargs: Any) -> list[Error | Warnin
             Error(
                 f"Unsupported database engine {engine!r}; PostgreSQL 18+ is required.",
                 id="juristid.E005",
+            )
+        )
+
+    return problems
+
+
+#: Every secret in the deployment templates (`deploy/*/.env.example`) is a
+#: placeholder starting with this. The repository is public, so a placeholder
+#: left in a real environment file is a secret the whole internet knows.
+TEMPLATE_PLACEHOLDER_PREFIX = "replace-me"
+
+#: Django's own `--deploy` floor for SECRET_KEY (security.W009), as an error
+#: where real data is. The template generates 88 characters.
+MINIMUM_REAL_DATA_SECRET_KEY_LENGTH = 50
+
+#: The gate password on real data. `juristid.E011`'s 12 stays the floor for the
+#: mode everywhere; real data asks for more, and the template generates 32.
+MINIMUM_REAL_DATA_SHARED_GATE_LENGTH = 16
+
+#: The database password on real data. The template generates 48.
+MINIMUM_REAL_DATA_DATABASE_PASSWORD_LENGTH = 16
+
+
+def _real_data_secrets() -> dict[str, str]:
+    """The host-side secrets a real-data process holds, by environment variable.
+
+    Every message built from these names the variable, never its value.
+    """
+    from app.accounts import shared_gate
+
+    return {
+        "DJANGO_SECRET_KEY": settings.SECRET_KEY or "",
+        "JURISTID_SHARED_GATE_PASSWORD": shared_gate.configured_password(),
+        "POSTGRES_PASSWORD": str(settings.DATABASES["default"].get("PASSWORD") or ""),
+        "LOCAL_AUTH_MFA_ENCRYPTION_KEY": getattr(settings, "LOCAL_AUTH_MFA_ENCRYPTION_KEY", "")
+        or "",
+        "DJANGO_EMAIL_HOST_PASSWORD": getattr(settings, "EMAIL_HOST_PASSWORD", "") or "",
+    }
+
+
+def _real_data_secret_problems() -> list[Error | Warning]:
+    """Real data behind secrets that are real (JOPS-003).
+
+    The template's placeholders are long enough to pass `juristid.E011` and are
+    not the development key `juristid.E001` knows, so a copied `.env.example`
+    with one value left unfilled passed every check and served real data behind
+    a password published in the repository. Only with REAL_DATA_ALLOWED: the
+    development and rehearsal stacks keep their short synthetic values.
+    """
+    if not settings.REAL_DATA_ALLOWED:
+        return []
+
+    from app.accounts import shared_gate
+    from app.accounts.enums import AuthMode
+
+    problems: list[Error | Warning] = []
+    secrets = _real_data_secrets()
+
+    placeholders = sorted(
+        name
+        for name, value in secrets.items()
+        if value.strip().lower().startswith(TEMPLATE_PLACEHOLDER_PREFIX)
+    )
+    if placeholders:
+        problems.append(
+            Error(
+                f"Template placeholders are in use on a real-data deployment: "
+                f"{', '.join(placeholders)}.",
+                hint=(
+                    "Every `replace-me…` value in .env.example is public. Generate each "
+                    "secret as the template's header says and put it in the host-side "
+                    "environment file."
+                ),
+                id="juristid.E016",
+            )
+        )
+
+    if len(secrets["DJANGO_SECRET_KEY"]) < MINIMUM_REAL_DATA_SECRET_KEY_LENGTH:
+        problems.append(
+            Error(
+                f"DJANGO_SECRET_KEY is shorter than {MINIMUM_REAL_DATA_SECRET_KEY_LENGTH} "
+                "characters on a real-data deployment.",
+                hint="Generate it with `openssl rand -base64 64`.",
+                id="juristid.E017",
+            )
+        )
+
+    gate = secrets["JURISTID_SHARED_GATE_PASSWORD"]
+    if (
+        shared_gate.current_mode() == AuthMode.SHARED_GATE
+        and gate
+        and len(gate) < MINIMUM_REAL_DATA_SHARED_GATE_LENGTH
+    ):
+        problems.append(
+            Error(
+                f"The shared gate password is shorter than {MINIMUM_REAL_DATA_SHARED_GATE_LENGTH} "
+                "characters on a real-data deployment.",
+                hint=(
+                    "One password stands in front of the whole register. Generate it with "
+                    "`openssl rand -base64 24`."
+                ),
+                id="juristid.E018",
+            )
+        )
+
+    if len(secrets["POSTGRES_PASSWORD"]) < MINIMUM_REAL_DATA_DATABASE_PASSWORD_LENGTH:
+        problems.append(
+            Error(
+                f"POSTGRES_PASSWORD is shorter than {MINIMUM_REAL_DATA_DATABASE_PASSWORD_LENGTH} "
+                "characters on a real-data deployment.",
+                hint="Generate it with `openssl rand -base64 36`.",
+                id="juristid.E019",
             )
         )
 
@@ -169,9 +282,56 @@ def _authentication_problems() -> list[Error | Warning]:
     if mode == AuthMode.LOCAL_PASSWORD:
         problems.extend(_local_password_problems())
 
+    problems.extend(_client_address_problems(mode))
     problems.extend(_account_email_problems(mode))
 
     return problems
+
+
+def _throttle_needs_the_client_address(mode: str) -> bool:
+    """Real data behind a password throttle keyed on the client address.
+
+    `shared_gate` and `local_password` count wrong passwords per client
+    (`app/accounts/shared_gate.py`, `app/accounts/throttle.py`), and the client is
+    `app.core.client_ip.client_ip`. `cloudflare_access` has no password and no
+    such throttle; `none` serves no real data (E006).
+    """
+    from app.accounts.enums import AuthMode
+
+    return bool(settings.REAL_DATA_ALLOWED) and mode in (
+        AuthMode.SHARED_GATE,
+        AuthMode.LOCAL_PASSWORD,
+    )
+
+
+def _client_address_problems(mode: str) -> list[Error | Warning]:
+    """The throttle must see the client, not the tunnel (JRF-02).
+
+    Behind `cloudflared` every request reaches gunicorn from the connector, and
+    `CF-Connecting-IP` is believed only with `TRUST_CF_CONNECTING_IP`, which is
+    `DJANGO_BEHIND_TLS_PROXY` (JOPS-008). Without it the per-client throttle is
+    one bucket for the whole department: five wrong passwords from anybody lock
+    everybody out. On real data that is refused rather than warned about, so
+    release step 6 (`run --rm web … migration_plan`) stops on it before the
+    backup and the swap. Elsewhere `juristid.E014` still warns.
+    """
+    if not _throttle_needs_the_client_address(mode):
+        return []
+    if getattr(settings, "TRUST_CF_CONNECTING_IP", False):
+        return []
+    return [
+        Error(
+            "Real data behind a password throttle, and the client's address is not trusted "
+            "from the proxy.",
+            hint=(
+                "Set DJANGO_BEHIND_TLS_PROXY=1 (the tunnel is the only way in). Without it "
+                "every request arrives from the tunnel's address, the per-client throttle "
+                "becomes one bucket for everybody, and a few wrong passwords lock the whole "
+                "department out (app/core/client_ip.py)."
+            ),
+            id="juristid.E020",
+        )
+    ]
 
 
 #: OWASP's minimum Argon2id configuration: 19 MiB of memory, two passes.
@@ -367,9 +527,14 @@ def _account_email_problems(mode: str) -> list[Error | Warning]:
 #: throttle is doing all the work, which is not what a throttle is for.
 MINIMUM_SHARED_GATE_LENGTH = 12
 
+#: The shortest idle limit the gate can keep: its last-request stamp is written
+#: at most this often (`shared_gate.LAST_SEEN_RESOLUTION`, five minutes).
+MINIMUM_SHARED_GATE_IDLE_SECONDS = 300
+
 
 def _shared_gate_problems() -> list[Error | Warning]:
     from app.accounts import shared_gate
+    from app.accounts.enums import AuthMode
 
     problems: list[Error | Warning] = []
     password = shared_gate.configured_password()
@@ -409,14 +574,39 @@ def _shared_gate_problems() -> list[Error | Warning]:
             )
         )
 
-    if not settings.DEBUG and not getattr(settings, "SECURE_PROXY_SSL_HEADER", None):
+    if settings.SHARED_GATE_IDLE_SECONDS < MINIMUM_SHARED_GATE_IDLE_SECONDS or (
+        settings.SHARED_GATE_IDLE_SECONDS > settings.SHARED_GATE_SESSION_SECONDS
+    ):
+        problems.append(
+            Error(
+                f"SHARED_GATE_IDLE_SECONDS is outside {MINIMUM_SHARED_GATE_IDLE_SECONDS}–"
+                "SHARED_GATE_SESSION_SECONDS.",
+                hint=(
+                    "The idle clock is stamped at most every five minutes, so a shorter "
+                    "limit asks an active reader for the password; a limit beyond the "
+                    "absolute one never fires. The decided value is 28800 (8 hours)."
+                ),
+                id="juristid.E021",
+            )
+        )
+
+    if (
+        not settings.DEBUG
+        and not getattr(settings, "SECURE_PROXY_SSL_HEADER", None)
+        # On real data the same missing flag is juristid.E020, an error; said once.
+        and not (
+            _throttle_needs_the_client_address(AuthMode.SHARED_GATE)
+            and not getattr(settings, "TRUST_CF_CONNECTING_IP", False)
+        )
+    ):
         problems.append(
             Warning(
                 "The shared gate is on but nothing tells Django the connection is secure.",
                 hint=(
                     "Set DJANGO_BEHIND_TLS_PROXY=1 where a proxy terminates TLS. Without "
-                    "it no HSTS header is sent, request.is_secure() is False, and CSRF "
-                    "skips its referer check."
+                    "it no HSTS header is sent, request.is_secure() is False, CSRF "
+                    "skips its referer check, and audit rows and the gate throttle see "
+                    "the tunnel's address instead of the client's (app/core/client_ip.py)."
                 ),
                 id="juristid.E014",
             )

@@ -41,7 +41,7 @@ step's operation has a canonical form (`app.matters.step_launch`):
 | step (`operation`) | form under `LISA TEEMALE` |
 |---|---|
 | «Kaasa liikmeid / küsi tagasisidet» (`ENGAGEMENT`) | `+ Kaasamine · Alusta kaasamist` |
-| «Saada Koja arvamus» (`SUBMISSION`) | `+ Arvamus / tagasiside · Koja arvamus` |
+| «Saada Koja arvamus» (`SUBMISSION`) | `+ Koja arvamus / kohtumine · Koja arvamus` (the family was `+ Arvamus / tagasiside` until 2026-10-17) |
 | «Koosta kodulehe ülevaade» (`WEBSITE_OVERVIEW`) | `+ Ülevaade / uudis` |
 
 `Alusta` is a link. With scripting it opens every level of the launcher, names
@@ -54,7 +54,9 @@ step is drawn under `PRAEGUNE TEGEVUS`.
 
 The `start_plan_step` endpoint is unchanged (tests and the ADR 0161 alert still
 rely on actions started from such steps before this decision); the page simply
-no longer offers it for a structured step.
+no longer offers it for a structured step. (Amended 2026-10-17 by owner
+decision D9: the endpoint now refuses a structured step on the server; see
+the amendment below.)
 
 ### §2 Without scripting
 
@@ -154,3 +156,25 @@ By code. Remove the `recommendation.launch` / `current_launch` branches from
 `current_action.html`, the `launch_step.html` include from the three forms and
 the `samm` handling from the three views; restore `form-position` to
 `STANDARD_PLAN` and empty `RETIRED_STEP_KEYS`. No data needs undoing.
+
+## Amendment of 2026-10-17 — the server refuses a structured `Alusta` (owner decision D9)
+
+The 2026-10-17 audit (DC-G1) found that §1's canonical-form rule was kept only
+by which link the template drew. A stale tab or a crafted POST to
+`matters:start_plan_step` could still turn «Kaasa liikmeid / küsi tagasisidet»,
+«Saada Koja arvamus» or «Koosta kodulehe ülevaade» into the generic
+`NextAction` that §1 removed.
+
+`app.workflow.plan.activate_plan_step` now refuses a step whose operation is in
+`STRUCTURED_OPERATIONS` (`WEBSITE_OVERVIEW`, `ENGAGEMENT`, `SUBMISSION`, held
+equal to `step_launch.FORMS_BY_OPERATION`). The refusal is
+`STEP_OPENS_ITS_OWN_FORM`, and nothing is written. The route answers 400 with
+that sentence, in the suggestion's own slot. A generic step starts exactly as
+before.
+
+Structured steps made current before this record are untouched. They are still
+finished through their canonical form, and the ADR 0161 alert still reads
+them. The tests that need such a step build it with
+`tests/legacy_plans.start_as_before_adr_0168`, through the same lock and
+`_start` the service used, because the service no longer creates one.
+Pinned by `tests/test_hidden_write_routes.py`.

@@ -24,7 +24,6 @@ from django.urls import reverse
 
 from app.matters.models import Matter
 from app.matters.selectors import current_action_of, open_action_prefetch
-from app.matters.views import opinions_url
 from app.search.models import SearchSourceKind
 from app.search.services import (
     MATCH_REFERENCE,
@@ -34,6 +33,7 @@ from app.search.services import (
     search_matters,
     search_page,
 )
+from app.submissions.opinions import opinions_url
 
 
 @login_required

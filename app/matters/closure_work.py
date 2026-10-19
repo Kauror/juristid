@@ -153,18 +153,11 @@ def live_work_at_closure(
     rows = list(actions.values_list("pk", "status", "follow_up_id"))
     checks = sum(1 for _pk, _status, follow_up in rows if follow_up is not None)
     overview_ids = _ids(
-        MatterWebsiteOverview.objects.filter(
-            matter_id=matter_id, status=WebsiteOverviewStatus.PLANNED, removed_at__isnull=True
+        MatterWebsiteOverview.objects.live().filter(
+            matter_id=matter_id, status=WebsiteOverviewStatus.PLANNED
         )
     )
-    wait_ids = _ids(
-        MatterEngagement.objects.filter(
-            matter_id=matter_id,
-            lifecycle_tracked=True,
-            feedback_closed_at__isnull=True,
-            removed_at__isnull=True,
-        )
-    )
+    wait_ids = _ids(MatterEngagement.objects.live().open_waits().filter(matter_id=matter_id))
     return LiveWork(
         current=any(
             status == ActionStatus.OPEN and follow_up is None for _pk, status, follow_up in rows
