@@ -257,6 +257,30 @@ _MILESTONE_LABELS: dict[str, str] = {
     ChangeEventType.MATTER_CREATED.value: "Teema loodud",
 }
 
+#: **Imported historical files read as one row per import, not one per file**
+#: (docs/adr/0092 §6, amendment of 2026-10-19).
+#:
+#: An import that brings a dossier's files over writes one
+#: `EVIDENCE_VERSION_ADDED` per file, with no actor and no operation, stamped
+#: with the moment of the import — which is true. Read one by one they drew
+#: «lisas dokumendi · <import day>» once per file at the top of a Teema whose
+#: history runs back years, as if a person had added a document that day. A
+#: file that supports a record already reads on that record's row
+#: (`_versions_shown_on_their_record`); this is the rest.
+#:
+#: **Grouped only by an identifier the import recorded**: the version is the
+#: imported copy of a legacy source resource (`LegacySourceResourceImport`,
+#: written by importers and nothing else), and the group is that row's
+#: `import_batch` — or its source page when no batch was recorded. Never by a
+#: shared minute or a missing author. A person's upload has an actor and keeps
+#: its own «lisas dokumendi» row, exactly as before.
+#:
+#: The row is a milestone: a headline and the **import's** day, no clock time,
+#: and every file under it linked to its exact bytes. Nothing is hidden, no
+#: stored date or audit row changes, and the files' own provenance is untouched.
+HISTORICAL_IMPORT_ITEM = "HISTORICAL_DOCUMENTS_IMPORTED"
+HISTORICAL_IMPORT_HEADLINE = "Ajaloolised dokumendid imporditud"
+
 #: What a sent `Koja arvamus` is called on the chronology.
 #:
 #: `Arvamus välja` and not `Koja arvamus`: the strip above names the *thing*, and
@@ -513,6 +537,9 @@ class TimelineItem:
     #: The `Arvamuse tähtaeg` this opinion was recorded as answering — read off
     #: `MatterResponseDeadline.submission`, the explicit link, never a date.
     answered_deadline: str = ""
+    #: How many imported historical files this row stands for, on the one row
+    #: per import (`HISTORICAL_IMPORT_ITEM`); 0 on every other row.
+    imported_documents: int = 0
 
     @property
     def is_milestone(self) -> bool:
@@ -726,6 +753,9 @@ class TimelineItem:
             return MARKER_MEETING if self.entry.kind in _MEETING_KINDS else MARKER_ENTRY
         if self.submission is not None:
             return MARKER_SENT
+        if self.imported_documents:
+            # Several files, but nobody's act: the import's row.
+            return MARKER_SYSTEM
         return MARKER_ENTRY if self.is_grouped else MARKER_SYSTEM
 
     @property
@@ -1057,6 +1087,77 @@ def _milestone_for_event(event: ChangeEvent) -> ChronologyMilestone:
 
 #: The label of a withdrawal's reason on its `Teema käik` row.
 WITHDRAWAL_REASON_LABEL = "Põhjus"
+
+
+@dataclass(frozen=True)
+class ImportedVersion:
+    """Which import brought one file version, and where it came from."""
+
+    #: The import it belongs to: its `ImportBatch`, or its source page.
+    group: str
+    #: `Sektsioon → lehe pealkiri`, as the source called them.
+    source: str
+
+
+def imported_document_versions(matter: Matter) -> dict[Any, ImportedVersion]:
+    """The file versions on this Matter that an import brought, by version.
+
+    Read off `LegacySourceResourceImport` — the row an importer writes for
+    every source file it stored, and nothing else writes — so a version is
+    «imported» because the import said so, not because it has no author. One
+    query for the Matter, like `_versions_shown_on_their_record`.
+    """
+    from app.legacy_import.source_pages import LegacySourceResourceImport, ResourceImportState
+
+    rows = LegacySourceResourceImport.objects.filter(
+        matter_source_page__matter=matter,
+        state=ResourceImportState.IMPORTED,
+        document_version__isnull=False,
+    ).values_list(
+        "document_version_id",
+        "import_batch_id",
+        "matter_source_page__source_page_id",
+        "matter_source_page__source_page__source_section",
+        "matter_source_page__source_page__title",
+    )
+    found: dict[Any, ImportedVersion] = {}
+    for version_id, batch_id, page_id, section, title in rows:
+        group = f"batch:{batch_id}" if batch_id is not None else f"page:{page_id}"
+        source = " → ".join(
+            part for part in ((section or "").strip(), (title or "").strip()) if part
+        )
+        found[version_id] = ImportedVersion(group=group, source=source)
+    return found
+
+
+def _historical_import_row(events: list[ChangeEvent], sources: list[str]) -> TimelineItem:
+    """One import's files as one row, keyed on the import's own first event."""
+    ordered = sorted(events, key=lambda event: (event.occurred_at, event.created_at, str(event.id)))
+    first = ordered[0]
+    count = len(ordered)
+    where = sorted({source for source in sources if source})
+    if len(where) == 1:
+        origin = f"OneNote: {where[0]}"
+    elif where:
+        origin = f"{len(where)} OneNote'i lehelt"
+    else:
+        origin = "ajaloolisest materjalist"
+    return TimelineItem(
+        occurred_at=first.occurred_at,
+        created_at=first.created_at,
+        sort_key=str(first.id),
+        item_type=HISTORICAL_IMPORT_ITEM,
+        event=first,
+        events=tuple(ordered),
+        milestone=ChronologyMilestone(
+            what=HISTORICAL_IMPORT_HEADLINE,
+            # The day of the import — which is what this row says happened.
+            # The files' own dates are their own and are not restated here.
+            display_date=format_estonian_date(_local_day(first.occurred_at)),
+            sub=f"{count} {'fail' if count == 1 else 'faili'} · {origin}",
+        ),
+        imported_documents=count,
+    )
 
 
 def _end_of_day(day: date) -> datetime:
@@ -2145,6 +2246,9 @@ def matter_timeline(
     # second line, and a second dot, for one act (brief §25). Asked of the whole
     # Matter, because it decides whether an event is a row at all.
     shown_on_their_record = _versions_shown_on_their_record(matter, user=user, day=day)
+    # Files an import brought, read as one row per import rather than one
+    # «lisas dokumendi» per file (`HISTORICAL_IMPORT_ITEM`).
+    imported_versions = imported_document_versions(matter)
     # The open step, which `_assemble_timeline` keeps off the chronology as a
     # row of its own (docs/adr/0092 §8).
     open_action = (
@@ -2163,6 +2267,7 @@ def matter_timeline(
         fact_rows=fact_rows,
         shown_on_their_record=frozenset(shown_on_their_record),
         only=only,
+        imported_versions=frozenset(imported_versions),
     )
     batch = window
     while True:
@@ -2175,6 +2280,7 @@ def matter_timeline(
             shown_on_their_record=shown_on_their_record,
             open_action_pk=open_action_pk,
             only=only,
+            imported_versions=imported_versions,
         )
         if bound is not None:
             items = [item for item in items if item.occurred_at >= bound]
@@ -2230,6 +2336,9 @@ class _ChronologySources:
     fact_rows: list[TimelineItem]
     shown_on_their_record: frozenset[Any]
     only: str
+    #: Versions an import brought (`imported_document_versions`): their events
+    #: are read whole, so one import's row is never assembled from half of it.
+    imported_versions: frozenset[Any]
     anchor_q: models.Q = field(init=False)
 
     def __post_init__(self) -> None:
@@ -2477,11 +2586,22 @@ class _ChronologySources:
                 object_id__in=self.entry_scope.filter(in_window).values("pk"),
             )
         operations = self.event_scope.filter(seed).exclude(operation_id=None).values("operation_id")
-        wanted = self.event_scope.filter(
+        whole = (
             seed
             # Every operation touched, whole.
             | models.Q(operation_id__in=operations)
         )
+        if self.imported_versions:
+            # And every import, whole: one import is one row, keyed on its
+            # first file, so a bound falling between two of its files must not
+            # leave a row counting half of them (`HISTORICAL_IMPORT_ITEM`).
+            whole |= models.Q(
+                event_type=ChangeEventType.EVIDENCE_VERSION_ADDED,
+                operation_id=None,
+                actor=None,
+                object_id__in=self.imported_versions,
+            )
+        wanted = self.event_scope.filter(whole)
         if self.only != TIMELINE_FILTER_ENTRIES:
             # Except what folds onto a record read no further than here — a
             # development, a send, a finished wait: those effects belong to a
@@ -2516,6 +2636,7 @@ def _assemble_timeline(
     shown_on_their_record: Any,
     open_action_pk: Any,
     only: str,
+    imported_versions: dict[Any, ImportedVersion] | None = None,
 ) -> list[TimelineItem]:
     """The chronology rows these sources make, in the one order.
 
@@ -2553,6 +2674,33 @@ def _assemble_timeline(
                 event.event_type == ChangeEventType.EVIDENCE_VERSION_ADDED
                 and event.object_id in shown_on_their_record
             )
+        ]
+
+    # One import, one row (`HISTORICAL_IMPORT_ITEM`): a lone evidence event, no
+    # actor, whose version an import recorded as its copy of a source file. A
+    # person's upload has an actor and stays its own «lisas dokumendi» row.
+    imported_rows: list[TimelineItem] = []
+    if imported_versions:
+        by_import: dict[str, list[ChangeEvent]] = {}
+        sources_by_import: dict[str, list[str]] = {}
+        not_imported: list[ChangeEvent] = []
+        for event in renderable:
+            imported = (
+                imported_versions.get(event.object_id)
+                if event.event_type == ChangeEventType.EVIDENCE_VERSION_ADDED
+                and event.operation_id is None
+                and event.actor_id is None
+                else None
+            )
+            if imported is None:
+                not_imported.append(event)
+                continue
+            by_import.setdefault(imported.group, []).append(event)
+            sources_by_import.setdefault(imported.group, []).append(imported.source)
+        renderable = not_imported
+        imported_rows = [
+            _historical_import_row(members, sources_by_import[group])
+            for group, members in by_import.items()
         ]
 
     # One operation, one act, one row. `record_operations` says which operation
@@ -2738,6 +2886,7 @@ def _assemble_timeline(
             stage_effect=row.stage_effect or ((stage.summary or "") if stage is not None else ""),
         )
     items.extend(projected)
+    items.extend(imported_rows)
 
     # Deterministic ordering: the visible time first, then when it was recorded,
     # then the time-sortable id. Without the last two, two things written in the
