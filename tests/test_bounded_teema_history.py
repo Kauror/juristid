@@ -7,7 +7,7 @@ before:
 
 * every period that began after the oldest row read is complete;
 * a period that began before it is marked partial («+» on its count) and the
-  section offers «Näita kogu käik»;
+  section offers «Näita kõik tegevused»;
 * `?kaik=koik` reads every row, grouped the same way, with nothing marked.
 """
 
@@ -91,8 +91,8 @@ def test_the_page_offers_the_whole_history_and_serves_it(signed_in, busy):
     bounded = signed_in.get(page).content.decode()
     whole = signed_in.get(page, {"kaik": "koik"}).content.decode()
 
-    assert "Näita kogu käik" in bounded
+    assert "Näita kõik tegevused" in bounded
     assert "Idee märge 000" not in bounded
-    assert "Näita kogu käik" not in whole
+    assert "Näita kõik tegevused" not in whole
     assert "Idee märge 000" in whole
     assert len(bounded) < len(whole)

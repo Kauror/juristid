@@ -212,7 +212,8 @@ def matter_episode_timeline(
     are read and grouped exactly as the whole history would be, so every
     period that began after the oldest row read is complete. A period that
     began before it is marked ``partial`` and ``has_more`` says older rows
-    exist; ``whole_history`` reads every row, for «Näita kogu käik».
+    exist; ``whole_history`` reads every row, for «Näita kõik tegevused»
+    («Näita kogu käik» until docs/adr/0172 §2).
 
     ``None`` keeps a Matter with no periods — one that has never held a
     `Hetkeseis` since periods exist — on the flat, paged chronology it always

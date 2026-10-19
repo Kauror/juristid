@@ -5,7 +5,7 @@ rows than the grouped read takes by default, across two `Hetkeseis` periods —
 then read at a phone, a laptop and a wide screen. At each width:
 
 * the current period is open and complete, the older one says «+»;
-* «Näita kogu käik» is offered, and following it shows the oldest row;
+* «Näita kõik tegevused» is offered, and following it shows the oldest row;
 * nothing makes the page scroll sideways.
 """
 
@@ -86,7 +86,7 @@ def test_a_busy_history_is_bounded_and_whole_on_request(page, busy_teema, width)
     history = chronology(page)
     expect(history).to_contain_text("Uus märge 000")
     expect(history).not_to_contain_text("Vana märge 000")
-    more = page.get_by_role("link", name="Näita kogu käik", exact=True)
+    more = page.get_by_role("link", name="Näita kõik tegevused", exact=True)
     expect(more).to_be_visible()
     assert not document_overflows(page), f"the page scrolls sideways at {width}px"
 
@@ -96,5 +96,5 @@ def test_a_busy_history_is_bounded_and_whole_on_request(page, busy_teema, width)
     for stage in page.locator("#ajalugu-loend details.kaikstage").all():
         stage.evaluate("node => { node.open = true; }")
     expect(chronology(page)).to_contain_text("Vana märge 000")
-    expect(page.get_by_role("link", name="Näita kogu käik", exact=True)).to_have_count(0)
+    expect(page.get_by_role("link", name="Näita kõik tegevused", exact=True)).to_have_count(0)
     assert not document_overflows(page), f"the whole history scrolls sideways at {width}px"

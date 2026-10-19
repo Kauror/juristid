@@ -60,7 +60,8 @@ because the round stays on the file.
 Every user-facing sentence that named «Teema käik» names `Tegevused`:
 `Kõik muudatused`, the removal and withdrawal confirmations, the document
 page's removal note, the two document refusals, `Kokkuvõte`'s help, the empty
-list, and the 15.10 release note. Code comments, identifiers, audit history and
+list, the 15.10 release note, and the bounded list's «Näita kogu käik», now
+«Näita kõik tegevused». Code comments, identifiers, audit history and
 the release notes written before the rename (5.10) keep the old word, because
 there it describes what the page said at the time. The `removed_at` model
 `help_text` keeps it too: it is read only by the admin, and changing it would be

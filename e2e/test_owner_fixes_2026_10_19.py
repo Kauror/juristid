@@ -53,6 +53,12 @@ def test_muu_starts_today_and_reads_at_the_head_of_its_day(page, base_url):
     open_add_panel(page, "marge-muu")
     expect(millal).to_have_value(_et(date.today()))
 
+    # The panel was left open overnight and only the description is typed into:
+    # focusing anything in the form renews the day before it can be saved.
+    millal.evaluate("box => { box.defaultValue = '1.1.2026'; box.value = '1.1.2026'; }")
+    form.locator('[name="description"]').focus()
+    expect(millal).to_have_value(_et(date.today()))
+
     # A day somebody chose is theirs: reopening does not touch it.
     earlier = date.today() - timedelta(days=3)
     millal.fill(_et(earlier))

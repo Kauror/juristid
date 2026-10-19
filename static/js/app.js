@@ -1221,8 +1221,8 @@
   /* ---- «Muu»: `Millal?` says today when the form is opened ---------------
    * A fresh `+ Lisa · Muu` form is drawn with today's day (owner, 2026-10-19),
    * but the Teema page can stay open overnight: the day the server drew is
-   * then yesterday. So when a panel is opened — and when its day box takes
-   * focus — every box marked `data-today-default` that still holds what it was
+   * then yesterday. So when a panel is opened, when anything in its form takes
+   * focus and as it is saved, every box marked `data-today-default` that still holds what it was
    * drawn with is set to today **in Tallinn**, whatever the computer's own
    * zone. Its default moves with it, so the box does not read as unsaved input
    * to the drafts carried across a swap. A day somebody typed or picked is
@@ -1280,12 +1280,26 @@
     }
   });
 
+  /* Any control of the form, not only the day box: a panel left open
+     overnight is typed into and saved without the day ever being touched. */
   document.addEventListener("focusin", function (event) {
-    var box = event.target;
-    if (box && box.matches && box.matches("[data-today-default]")) {
-      renewTodayDefaults(box);
+    var form = event.target && event.target.closest ? event.target.closest("form") : null;
+    if (form && form.querySelector("[data-today-default]")) {
+      renewTodayDefaults(form);
     }
   });
+
+  /* And once more as the save leaves — capture, so before htmx reads the form. */
+  document.addEventListener(
+    "submit",
+    function (event) {
+      var form = event.target;
+      if (form && form.querySelector && form.querySelector("[data-today-default]")) {
+        renewTodayDefaults(form);
+      }
+    },
+    true,
+  );
 
   /* ---- Uus teema: say which files are about to be uploaded --------------
    * A file input shows "3 files" and nothing about which three. This lists
