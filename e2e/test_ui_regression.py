@@ -2326,6 +2326,11 @@ def _open_matter_fixture(page, day: str) -> None:
         '<p class="uxtl__ms" style="display:contents">'
         '<span class="uxtl__mswhat">Arvamus välja</span>'
         f'<span class="uxtl__msdate">{day}</span></p>'
+        # The one import row, dated by the seeding run like the two above
+        # (docs/adr/0092 §6, amendment 2026-10-19).
+        '<p class="uxtl__ms" style="display:contents">'
+        '<span class="uxtl__mswhat">Ajaloolised dokumendid imporditud</span>'
+        f'<span class="uxtl__msdate">{day}</span></p>'
         '<p class="uxtl__ms" style="display:contents">'
         '<span class="uxtl__mswhat">Kaasamine: Liikmete kaasamiskutse</span>'
         '<span class="uxtl__msdate">12.5.2026</span></p>'
