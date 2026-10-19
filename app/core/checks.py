@@ -282,9 +282,56 @@ def _authentication_problems() -> list[Error | Warning]:
     if mode == AuthMode.LOCAL_PASSWORD:
         problems.extend(_local_password_problems())
 
+    problems.extend(_client_address_problems(mode))
     problems.extend(_account_email_problems(mode))
 
     return problems
+
+
+def _throttle_needs_the_client_address(mode: str) -> bool:
+    """Real data behind a password throttle keyed on the client address.
+
+    `shared_gate` and `local_password` count wrong passwords per client
+    (`app/accounts/shared_gate.py`, `app/accounts/throttle.py`), and the client is
+    `app.core.client_ip.client_ip`. `cloudflare_access` has no password and no
+    such throttle; `none` serves no real data (E006).
+    """
+    from app.accounts.enums import AuthMode
+
+    return bool(settings.REAL_DATA_ALLOWED) and mode in (
+        AuthMode.SHARED_GATE,
+        AuthMode.LOCAL_PASSWORD,
+    )
+
+
+def _client_address_problems(mode: str) -> list[Error | Warning]:
+    """The throttle must see the client, not the tunnel (JRF-02).
+
+    Behind `cloudflared` every request reaches gunicorn from the connector, and
+    `CF-Connecting-IP` is believed only with `TRUST_CF_CONNECTING_IP`, which is
+    `DJANGO_BEHIND_TLS_PROXY` (JOPS-008). Without it the per-client throttle is
+    one bucket for the whole department: five wrong passwords from anybody lock
+    everybody out. On real data that is refused rather than warned about, so
+    release step 6 (`run --rm web … migration_plan`) stops on it before the
+    backup and the swap. Elsewhere `juristid.E014` still warns.
+    """
+    if not _throttle_needs_the_client_address(mode):
+        return []
+    if getattr(settings, "TRUST_CF_CONNECTING_IP", False):
+        return []
+    return [
+        Error(
+            "Real data behind a password throttle, and the client's address is not trusted "
+            "from the proxy.",
+            hint=(
+                "Set DJANGO_BEHIND_TLS_PROXY=1 (the tunnel is the only way in). Without it "
+                "every request arrives from the tunnel's address, the per-client throttle "
+                "becomes one bucket for everybody, and a few wrong passwords lock the whole "
+                "department out (app/core/client_ip.py)."
+            ),
+            id="juristid.E020",
+        )
+    ]
 
 
 #: OWASP's minimum Argon2id configuration: 19 MiB of memory, two passes.
@@ -480,9 +527,14 @@ def _account_email_problems(mode: str) -> list[Error | Warning]:
 #: throttle is doing all the work, which is not what a throttle is for.
 MINIMUM_SHARED_GATE_LENGTH = 12
 
+#: The shortest idle limit the gate can keep: its last-request stamp is written
+#: at most this often (`shared_gate.LAST_SEEN_RESOLUTION`, five minutes).
+MINIMUM_SHARED_GATE_IDLE_SECONDS = 300
+
 
 def _shared_gate_problems() -> list[Error | Warning]:
     from app.accounts import shared_gate
+    from app.accounts.enums import AuthMode
 
     problems: list[Error | Warning] = []
     password = shared_gate.configured_password()
@@ -522,7 +574,31 @@ def _shared_gate_problems() -> list[Error | Warning]:
             )
         )
 
-    if not settings.DEBUG and not getattr(settings, "SECURE_PROXY_SSL_HEADER", None):
+    if settings.SHARED_GATE_IDLE_SECONDS < MINIMUM_SHARED_GATE_IDLE_SECONDS or (
+        settings.SHARED_GATE_IDLE_SECONDS > settings.SHARED_GATE_SESSION_SECONDS
+    ):
+        problems.append(
+            Error(
+                f"SHARED_GATE_IDLE_SECONDS is outside {MINIMUM_SHARED_GATE_IDLE_SECONDS}–"
+                "SHARED_GATE_SESSION_SECONDS.",
+                hint=(
+                    "The idle clock is stamped at most every five minutes, so a shorter "
+                    "limit asks an active reader for the password; a limit beyond the "
+                    "absolute one never fires. The decided value is 28800 (8 hours)."
+                ),
+                id="juristid.E021",
+            )
+        )
+
+    if (
+        not settings.DEBUG
+        and not getattr(settings, "SECURE_PROXY_SSL_HEADER", None)
+        # On real data the same missing flag is juristid.E020, an error; said once.
+        and not (
+            _throttle_needs_the_client_address(AuthMode.SHARED_GATE)
+            and not getattr(settings, "TRUST_CF_CONNECTING_IP", False)
+        )
+    ):
         problems.append(
             Warning(
                 "The shared gate is on but nothing tells Django the connection is secure.",

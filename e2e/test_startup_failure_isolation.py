@@ -26,7 +26,9 @@ from playwright.sync_api import expect
 from e2e.conftest import MARTIN, create_matter, open_add_panel, sign_in, wait_for_htmx
 from e2e.titles import unique_title
 
-pytestmark = pytest.mark.e2e
+#: These tests make a start-up throw, so the suite-wide watch that fails a test
+#: on a `juristid: … failed` console line (`e2e/conftest.py`) must not see it.
+pytestmark = [pytest.mark.e2e, pytest.mark.start_up_failure_injected]
 
 #: The first load-time page scan in app.js (`muu-reveal`), which runs on every
 #: page. Before the fix everything after it in the file was never registered.

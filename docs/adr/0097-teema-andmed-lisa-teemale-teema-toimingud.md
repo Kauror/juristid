@@ -512,6 +512,11 @@ task composer returns.
    not a rollback (`tests/test_entry_url_migration_reversal.py`;
    `deploy/unraid-main/RECOVERY.md` §"A backward migrate across `matters.0049`
    drops Muu links"; `docs/production-readiness.md` 5.2).
+   During a code-only rollback to `9ecbfd21`, a correction of a linked `Muu`
+   entry writes an `EntryRevision` with an empty `url` (the database default),
+   because that release's `edit_entry` does not name the column; the entry keeps
+   its link, and the revision wrongly says the earlier link was empty (JDATA-001,
+   accepted and documented in `RECOVERY.md`).
 3. **The date is the day the material or event occurred.** `Millal?` is a
    required single day with the existing date picker, **empty until the person
    fills it** — nothing is pre-filled and no day is invented. It is stored as the

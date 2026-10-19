@@ -8,15 +8,18 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
-date = 2026-10-17
+date = 2026-10-19
 basis = "deployment"
-prs = [453, 454, 455, 456]
+prs = [453, 454, 455, 456, 457, 459, 461, 463, 464, 465, 468, 470, 474, 480, 482, 483, 484]
 # Teema UX-voor, neli etappi, üks ühendatud väljalase: kaasamise kalender (#453),
 # «+ Lisa · Muu» (#454, ADR 0097), üks «Lisa tagasiside» vorm (#455, ADR 0170)
 # ja «Kohtumine / arutelu» (#456, ADR 0097). Üks migratsioon:
 # matters/0049_entry_url (lisaveerg vaikeväärtusega ja CHECK). Otsinguindeksit
-# uuesti ehitada ei ole vaja. Kui väljalase ei jõua tootmisse 17.10 (Tallinna
-# aja järgi), liigub see kirje väljalaske päeva kuupäevale.
+# uuesti ehitada ei ole vaja. Samas väljalaskes on 17.10 auditi parandusvoorud 0–3
+# (#457–#497; integration/hardening-r1 ja main). Väljalase ei jõudnud tootmisse
+# 17.10 ega 18.10, nii et kõik on üks kirje planeeritud väljalaske päeval 19.10.
+# Kui väljalase ei jõua tootmisse 19.10 (Tallinna aja järgi), liigub see kirje
+# väljalaske päeva kuupäevale.
 changes = [
   "«Alusta kaasamist» kalendris «Tagasisidet ootame kuni» on märgitud teema arvamuse tähtaeg.",
   "«+ Lisa» all on uus valik «Muu» taustamaterjali lisamiseks koos kirjelduse, toimumise kuupäeva ning soovi korral lingi ja failidega.",
@@ -24,6 +27,16 @@ changes = [
   "Mujal avaldatud seisukohal on organisatsioon kohustuslik, Kojale saadetud tagasisidel mitte, ja kummalegi piisab tekstist, lingist või failist.",
   "Tagasisidet ei seota enam kaasamisega automaatselt; esimene sellega seotud vastus lõpetab ootuse, mujal avaldatud seisukoht kaasamist ei muuda.",
   "«+ Arvamus / tagasiside» on nüüd «+ Koja arvamus / kohtumine», kus saab salvestada ka kohtumise või arutelu kuupäeva, lühikokkuvõtte ja failidega.",
+  "«Muu» ja «Kohtumine / arutelu» kuupäev ei saa olla tulevikus; plaanitu jaoks on «Järgmine tegevus» või «Oluline tähtaeg».",
+  "Kuupäev peab jääma aastatesse 1990–2100. Kui varem salvestatud kuupäev on sellest väljas, tuleb see muutmisel parandada.",
+  "Kui salvestamine keeldus, nimetab vorm failid, mis tuleb uuesti valida.",
+  "Iga vorm salvestatakse üks kord: topeltklõps ega korduv vajutus ei lisa sama kirjet teist korda.",
+  "Lingis ei tohi olla kasutajanime ega parooli (nt https://nimi:parool@…); sellist linki ei salvestata.",
+  "Kui Juristidit ei ole 8 tundi kasutatud, küsitakse parooli uuesti. 12 tunni piir jääb samaks.",
+  "Kui lehele ei ole ligipääsu või aadressi ei saa nii avada, on veateade nüüd eesti keeles ja sealt pääseb tagasi.",
+  "Klaviatuuriga: kuupäevavalijas liiguvad nooleklahvid päevade vahel, «Minu asjades» ei jää Tab enam ridade vahele kinni ja keeldumise järel liigub kursor väljale, mida tuleb parandada.",
+  "«Lisa tagasiside» küsib nüüd kõigepealt, kas seisukoht saadeti Kojale või avaldati mujal, ja alles siis organisatsiooni.",
+  "«Minu asjad» näitab kuni 200 ja «Osakond» ühes vahemikus kuni 100 rida. Kui teemasid on rohkem, avab link kõik need teemad registris.",
 ]
 
 [[day]]
