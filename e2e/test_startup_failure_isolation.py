@@ -123,6 +123,7 @@ def test_a_failing_ux_js_binder_leaves_the_refusal_its_focus(page, base_url):
     open_add_panel(page, "marge-muu")
     form = page.locator("#marge-muu form")
     form.locator("[name=description]").fill("Materjal, mille päev on puudu.")
+    form.locator("[name=occurred_on]").fill("")  # opens at today (docs/adr/0172 §4)
     with page.expect_response(
         lambda r: r.url.endswith("/lisa/muu/") and r.request.method == "POST"
     ) as answer:
