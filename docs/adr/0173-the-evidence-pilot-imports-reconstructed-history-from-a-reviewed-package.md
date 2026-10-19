@@ -163,7 +163,25 @@ new service:
   (the letter number) are carried onto the opinion.
 
 `verify` checks the answered request, a created addressee and every approved
-organisation. The migration is still the one additive `legacy_import/0017`
+organisation.
+
+**Amended 2026-10-19, after an independent review of the implementation.**
+Each rule closes a way a later package could write an untrue fact; none
+occurred in the reviewed package:
+- a note or meeting needs its exact day (undated, it read as the import day);
+- a publication date is a day, or the overview is undated;
+- a past round carries no reply-by day;
+- a name is never merged into another by its registry code: two entries on one
+  code are refused at validate, a code held by a differently named catalogue row
+  at plan, and a code-only match at write;
+- the package pins every file's SHA-256 (the digest covers `package.json`, not
+  the archive) and the stored bytes match it;
+- the apply locks `matters_matter` in its transaction and re-reads the database
+  state, so a Teema created after the plan stops it;
+- lengths the database would refuse mid-apply are refused at validate.
+
+A refused apply rolls back every row but can leave stored files with no
+document; the runbook prunes them (`prune_orphaned_evidence`) after any failure. The migration is still the one additive `legacy_import/0017`
 (unmerged, regenerated).
 
 ## Consequences
