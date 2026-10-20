@@ -81,11 +81,19 @@ class ImportantDateKind(models.TextChoices):
     and not what Koda does next. The next-step rule has to recognise it rather
     than read «jõustumine» out of a title, so it is a kind, and it is one of the
     `INFORMATIONAL_IMPORTANT_DATE_KINDS` below.
+
+    `ESTIMATED_COMMENCEMENT` — «Eeldatav jõustumine (allika hinnang)» — is the
+    same kind of fact from a different source (docs/adr/0120, amendment of
+    2026-10-20): a commencement somebody *estimated* — a tracker, a colleague,
+    a news item — rather than a date a draft itself states. It is kept apart
+    from `PLANNED_COMMENCEMENT` so that a record never attributes an estimate to
+    the bill's text; both are informational.
     """
 
     OTHER = "OTHER", "Muu tähtaeg"
     TRANSPOSITION_DEADLINE = "TRANSPOSITION_DEADLINE", "ELi õiguse ülevõtmise tähtaeg"
     PLANNED_COMMENCEMENT = "PLANNED_COMMENCEMENT", "Eelnõus kavandatud jõustumine"
+    ESTIMATED_COMMENCEMENT = "ESTIMATED_COMMENCEMENT", "Eeldatav jõustumine (allika hinnang)"
 
 
 #: **Milestones that inform, as opposed to milestones that are the file's next
@@ -94,7 +102,8 @@ class ImportantDateKind(models.TextChoices):
 #: An `Oluline tähtaeg` a lawyer records as «Ootan ministeeriumi tagasisidet,
 #: 1.10.2026» says what the file is waiting for, and ADR 0120 §2 lets it stand in
 #: for a missing `Järgmiseks`. A milestone of a kind listed here describes an
-#: event outside the department's work — a commencement a draft proposes — and
+#: event outside the department's work — a commencement a draft proposes or a
+#: source estimates — and
 #: therefore **never** does: it is never the next step, it never keeps a Matter
 #: out of a «järgmine tegevus puudub» population, and its period ending is not
 #: lateness. It stays a dated fact on the Teema like any other milestone.
@@ -103,7 +112,7 @@ class ImportantDateKind(models.TextChoices):
 #: default, and every existing row) and `TRANSPOSITION_DEADLINE` keep ADR 0120's
 #: behaviour unchanged; moving a kind into this set is a product decision.
 INFORMATIONAL_IMPORTANT_DATE_KINDS: frozenset[str] = frozenset(
-    {ImportantDateKind.PLANNED_COMMENCEMENT.value}
+    {ImportantDateKind.PLANNED_COMMENCEMENT.value, ImportantDateKind.ESTIMATED_COMMENCEMENT.value}
 )
 
 

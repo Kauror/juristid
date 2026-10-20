@@ -21,10 +21,10 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='matterimportantdate',
             name='kind',
-            field=models.CharField(choices=[('OTHER', 'Muu tähtaeg'), ('TRANSPOSITION_DEADLINE', 'ELi õiguse ülevõtmise tähtaeg'), ('PLANNED_COMMENCEMENT', 'Eelnõus kavandatud jõustumine')], db_index=True, default='OTHER', max_length=32, verbose_name='tähtaja liik'),
+            field=models.CharField(choices=[('OTHER', 'Muu tähtaeg'), ('TRANSPOSITION_DEADLINE', 'ELi õiguse ülevõtmise tähtaeg'), ('PLANNED_COMMENCEMENT', 'Eelnõus kavandatud jõustumine'), ('ESTIMATED_COMMENCEMENT', 'Eeldatav jõustumine (allika hinnang)')], db_index=True, default='OTHER', max_length=32, verbose_name='tähtaja liik'),
         ),
         migrations.AddConstraint(
             model_name='matterimportantdate',
-            constraint=models.CheckConstraint(condition=models.Q(('kind__in', ['OTHER', 'TRANSPOSITION_DEADLINE', 'PLANNED_COMMENCEMENT'])), name='intelligence_important_date_kind_vocabulary'),
+            constraint=models.CheckConstraint(condition=models.Q(('kind__in', ['OTHER', 'TRANSPOSITION_DEADLINE', 'PLANNED_COMMENCEMENT', 'ESTIMATED_COMMENCEMENT'])), name='intelligence_important_date_kind_vocabulary'),
         ),
     ]

@@ -181,3 +181,39 @@ still needs to see. A read model exists precisely so this is not necessary.
 Total, and in one place. The rule is two clauses of one queryset; removing them
 restores the previous behaviour exactly, because nothing was written to express
 it.
+
+## Amendment, 2026-10-20 — a WAIT does not outrank the answer Koda owes
+
+**What was decided before.** «It is not a judgement about the action»: DO, WAIT
+and MONITOR all took the `Arvamuse tähtaeg` off the work lists, dated or not.
+
+**Why it is narrowed.** The 12-topic evidence pilot imports 2026_225 with the
+lawyer's own source step «Mis edasi? Ootan II lugemist Riigikogus» as a WAIT,
+beside an open request to give an opinion by **04.11.2026**. Under the rule
+above, recording that wait removed the 04.11 deadline from Minu asjad, from the
+overdue and this-week counts, from Osakonna töö and from the header's «N p üle»
+— while the Chamber still owed the answer. A WAIT names what somebody *else*
+does next; it is not Koda's plan for its own answer. Hiding the deadline behind
+it solved «no next step» by concealing «an opinion is due».
+
+**What is decided now.** `DEADLINE_KEEPING_KINDS = (WAIT,)`
+(`app/workflow/enums.py`). An open WAIT no longer removes a Matter from
+`outstanding_response_deadlines`, so the deadline stays operational work beside
+the wait — listed, banded, overdue when it passes, and in the header — until a
+sent answer, a VÄLJA mark or an explicit resolution discharges it, exactly as
+before. DO and MONITOR keep the precedence this record gives them: a lawyer who
+has written «Koostan arvamuse, 30.10» or «Jälgin, vaatan uuesti üle 09.10» has
+made a decision about the answer itself. Whether MONITOR should follow WAIT is a
+separate product decision and is **not** taken here.
+
+**What this does not change.**
+- A WAIT is still never overdue and never a deadline (`OVERDUE_KIND`).
+- Nothing is discharged by any `NextAction`, as before.
+- The stored column, `response_obligations` and `Järgmise tegevuseta` are
+  unchanged; a Matter with a WAIT still has a next step.
+- No model change, no migration, no data change. The rule is one `.exclude()`.
+
+**Consequence for existing data.** A Matter that carries an open WAIT *and* an
+undischarged `Arvamuse tähtaeg` now shows that deadline in the work lists (and
+as overdue if it has passed). That is the intended correction, but it can raise
+the overdue figures on the day it is released; the release note must say so.

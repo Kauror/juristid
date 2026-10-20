@@ -125,6 +125,7 @@ from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
 from app.workflow.dates import format_at_precision, period_in_window
 from app.workflow.enums import (
+    DEADLINE_KEEPING_KINDS,
     ActionKind,
     ActionStatus,
     DatePrecision,
@@ -1244,10 +1245,16 @@ def outstanding_response_deadlines(user: Any, *, owner: Any = None) -> QuerySet[
       January and whose lawyer has said «JÄLGIN, vaata uuesti üle 09.10» is not
       overdue in October; it is being monitored, which is what the person
       carrying it decided.
-    * **It is not a judgement about the action.** DO, WAIT and MONITOR all count,
-      and so does an action with no date at all: «I do not yet know when» is
-      still a decision, and a stronger statement about today's work than a date
-      nobody has revisited.
+    * **It is not a judgement about the action — except a WAIT.** DO and
+      MONITOR count, and so does an action with no date at all: «I do not yet
+      know when» is still a decision, and a stronger statement about today's work
+      than a date nobody has revisited. **A WAIT does not** (docs/adr/0050,
+      amendment of 2026-10-20): «Ootan Riigikogu II lugemist» says what somebody
+      *else* will do next, not what Koda will do about the answer it owes, so the
+      ``Arvamuse tähtaeg`` stays live work beside it — on the work lists, in the
+      overdue counts and in the header — until it is answered or discharged.
+      Letting a wait on a third party hide Koda's own deadline was solving one
+      gap by concealing another.
     * **It is not a judgement about who wrote the action.** A ``NextAction``
       materialised by the current-register enrichment carries the register's own
       structured ``JÄRGMISEKS`` value, so it is the department's instruction too.
@@ -1268,8 +1275,10 @@ def outstanding_response_deadlines(user: Any, *, owner: Any = None) -> QuerySet[
     Every subquery is an ``Exists``, so the whole source stays one query however
     many Matters it holds.
     """
-    instructed = NextAction.objects.visible_to(user).filter(
-        matter=OuterRef("pk"), status=ActionStatus.OPEN
+    instructed = (
+        NextAction.objects.visible_to(user)
+        .filter(matter=OuterRef("pk"), status=ActionStatus.OPEN)
+        .exclude(kind__in=DEADLINE_KEEPING_KINDS)
     )
     return (
         response_obligations(user, owner=owner)

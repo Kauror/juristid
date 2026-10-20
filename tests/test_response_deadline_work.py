@@ -1158,17 +1158,16 @@ def test_a_response_deadline_is_work_while_nobody_has_said_what_happens_next(spe
     ("kind", "semantics", "offset"),
     [
         pytest.param(ActionKind.DO, DateSemantics.DEADLINE, 30, id="do-later"),
-        pytest.param(ActionKind.WAIT, DateSemantics.REVIEW_ON, 30, id="wait-later"),
         pytest.param(ActionKind.MONITOR, DateSemantics.REVIEW_ON, 30, id="monitor-later"),
-        pytest.param(ActionKind.WAIT, DateSemantics.REVIEW_ON, None, id="wait-undated"),
         pytest.param(ActionKind.MONITOR, DateSemantics.REVIEW_ON, None, id="monitor-undated"),
     ],
 )
-def test_any_open_next_action_suppresses_the_response_deadline(
+def test_an_open_do_or_monitor_suppresses_the_response_deadline(
     specialist, today, kind, semantics, offset
 ):
-    """Cases 2-5. Every kind, dated or not, and always a *later* date than the
-    deadline it outranks — so nothing here can pass by comparing the two."""
+    """Cases 2-5. DO and MONITOR, dated or not, and always a *later* date than
+    the deadline it outranks — so nothing here can pass by comparing the two.
+    A WAIT no longer does (docs/adr/0050, amendment of 2026-10-20; below)."""
     matter = _matter(specialist, deadline=today - timedelta(days=200))
     _instruct(
         matter,
@@ -1183,6 +1182,27 @@ def test_any_open_next_action_suppresses_the_response_deadline(
         "pk", flat=True
     )
     # And the other question, unmoved: an instruction is a plan, not a response.
+    assert matter.pk in wi.response_obligations(specialist).values_list("pk", flat=True)
+
+
+@pytest.mark.parametrize(
+    "offset",
+    [pytest.param(30, id="wait-later"), pytest.param(None, id="wait-undated")],
+)
+def test_an_open_wait_leaves_the_response_deadline_as_work(specialist, today, offset):
+    """docs/adr/0050, amendment of 2026-10-20: a WAIT names what somebody else
+    does next, so the answer Koda owes stays live work beside it — dated or not."""
+    matter = _matter(specialist, deadline=today - timedelta(days=200))
+    _instruct(
+        matter,
+        specialist,
+        kind=ActionKind.WAIT,
+        on=None if offset is None else today + timedelta(days=offset),
+    )
+
+    (item,) = _response_items(_mine(specialist, today))
+    assert item.matter_id == matter.pk and item.is_overdue
+    assert matter.pk in wi.outstanding_response_deadlines(specialist).values_list("pk", flat=True)
     assert matter.pk in wi.response_obligations(specialist).values_list("pk", flat=True)
 
 
@@ -1249,7 +1269,7 @@ def test_the_count_and_its_drill_through_still_hold_the_same_matters(
     """Case: counts and lists move together, by Matter id rather than by total."""
     kept = _matter(specialist, deadline=today - timedelta(days=3), title="Ilma juhiseta")
     suppressed = _matter(specialist, deadline=today - timedelta(days=3), title="Juhisega")
-    _instruct(suppressed, specialist, kind=ActionKind.WAIT, on=today + timedelta(days=10))
+    _instruct(suppressed, specialist, kind=ActionKind.MONITOR, on=today + timedelta(days=10))
 
     counted = wi.work_population_ids(department_head, wi.WORK_OVERDUE, today=today)
 
@@ -1264,7 +1284,7 @@ def test_the_deadline_this_week_population_obeys_the_precedence(specialist, toda
     matter = _matter(specialist, deadline=anchor + timedelta(days=1))
     assert matter.pk in wi.work_population_ids(specialist, wi.WORK_DEADLINE_THIS_WEEK, today=anchor)
 
-    _instruct(matter, specialist, kind=ActionKind.WAIT, on=anchor + timedelta(days=90))
+    _instruct(matter, specialist, kind=ActionKind.MONITOR, on=anchor + timedelta(days=90))
 
     assert matter.pk not in wi.work_population_ids(
         specialist, wi.WORK_DEADLINE_THIS_WEEK, today=anchor
@@ -1307,7 +1327,7 @@ def test_minu_asjad_shows_the_instruction_rather_than_the_old_deadline(specialis
 def test_ending_the_only_open_action_restores_the_fallback(specialist, today):
     """Case 6. A read model, so the fallback returns on the next read."""
     matter = _matter(specialist, deadline=today + timedelta(days=5))
-    action = _instruct(matter, specialist, kind=ActionKind.WAIT, on=today + timedelta(days=60))
+    action = _instruct(matter, specialist, kind=ActionKind.MONITOR, on=today + timedelta(days=60))
     assert _response_items(_mine(specialist, today)) == []
 
     NextAction.objects.filter(pk=action.pk).update(status=ActionStatus.CANCELLED)
@@ -1434,7 +1454,7 @@ def test_a_restricted_action_still_suppresses_for_a_reader_who_may_see_the_matte
     colleague and suppressed for another.
     """
     matter = _matter(specialist, deadline=today - timedelta(days=10))
-    action = _instruct(matter, specialist, kind=ActionKind.WAIT, on=today + timedelta(days=40))
+    action = _instruct(matter, specialist, kind=ActionKind.MONITOR, on=today + timedelta(days=40))
     NextAction.objects.filter(pk=action.pk).update(visibility_override=Visibility.RESTRICTED)
 
     for viewer in (specialist, other_specialist):

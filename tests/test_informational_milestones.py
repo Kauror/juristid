@@ -89,9 +89,14 @@ def _missing(user, matters) -> set:
 # ---------------------------------------------------------------------------
 
 
-def test_only_the_planned_commencement_is_informational():
-    assert INFORMATIONAL_IMPORTANT_DATE_KINDS == {PLANNED.value}
+def test_only_the_two_commencement_kinds_are_informational():
+    estimated = ImportantDateKind.ESTIMATED_COMMENCEMENT
+    assert INFORMATIONAL_IMPORTANT_DATE_KINDS == {PLANNED.value, estimated.value}
     assert is_informational_milestone(PLANNED)
+    assert is_informational_milestone(estimated)
+    # Two labels, so a source's estimate is never attributed to a bill's text.
+    assert ImportantDateKind(estimated).label == "Eeldatav jõustumine (allika hinnang)"
+    assert ImportantDateKind(estimated).label != ImportantDateKind(PLANNED).label
     # Every existing row is OTHER and keeps ADR 0120's behaviour, as does the
     # transposition deadline: moving a kind is a product decision.
     assert not is_informational_milestone(ImportantDateKind.OTHER)
@@ -332,3 +337,22 @@ def test_every_screen_counts_the_same_files_as_having_no_next_step(specialist, d
             Matter.objects.filter(is_open=True, record_mode="FULL"), department_head
         ).count()
     )
+
+
+def test_a_source_estimated_commencement_is_informational_too(client, specialist):
+    """The 2026_225 shape of v2.3: the owner's selected estimate, not the bill's date."""
+    matter = factories.MatterFactory(owner=specialist, response_deadline=TODAY + timedelta(days=15))
+    _milestone(
+        matter,
+        specialist,
+        days=219,
+        kind=ImportantDateKind.ESTIMATED_COMMENCEMENT,
+        title="Eeldatav jõustumine",
+    )
+    client.force_login(specialist)
+
+    assert "Järgmine samm on määramata" in _zone(client, matter)
+    assert matter.pk in _missing(specialist, [matter])
+    record = MatterImportantDate.objects.get(matter=matter)
+    passed = wi._deadline_item(record, record.period_end + timedelta(days=1))
+    assert passed.is_informational and not passed.is_overdue

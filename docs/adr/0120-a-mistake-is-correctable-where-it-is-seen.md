@@ -308,3 +308,17 @@ An open `Järgmiseks` (DO, WAIT or MONITOR, dated or not), a `PLANNED` action
 and a round waiting for feedback are the next step exactly as before; a
 cancelled, past, removed or restricted milestone is never one; every probe is
 still `visible_to` the reader. No `NextAction` is created by any reading.
+
+## Amendment, 2026-10-20 — a source's estimate is informational, and is not the bill's date
+
+The owner selected Lovable's 27.05.2027 as 2026_225's prospective commencement
+in place of the bill's own 20.05.2027 (evidence pilot v2.3). Recording that
+estimate as `PLANNED_COMMENCEMENT`, «Eelnõus kavandatud jõustumine», would
+attribute a tracker's estimate to the text of bill 947 SE. So
+`ImportantDateKind` gains **`ESTIMATED_COMMENCEMENT`**, «Eeldatav jõustumine
+(allika hinnang)»: a commencement somebody estimated, as opposed to one a draft
+states. It is the second member of `INFORMATIONAL_IMPORTANT_DATE_KINDS`, so it
+is never the next step and never late, exactly like the first. The value joins
+the same, still unreleased migration (now `intelligence/0004_informational_commencement_kinds`);
+no data changes, nothing is backfilled, and the kind is still never read from a
+title.

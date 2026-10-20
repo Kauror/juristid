@@ -147,6 +147,11 @@ OVERDUE_SEMANTICS = DateSemantics.DEADLINE
 #: These are due for a look, never "missed".
 REVIEW_KINDS = (ActionKind.WAIT, ActionKind.MONITOR)
 
+#: Steps that never take an ``Arvamuse tähtaeg`` off the work lists
+#: (docs/adr/0050, amendment of 2026-10-20). A WAIT names what somebody else
+#: will do next; the answer Koda owes stays live work beside it.
+DEADLINE_KEEPING_KINDS = (ActionKind.WAIT,)
+
 
 # -- the work plan (docs/adr/0133) ------------------------------------------
 #
