@@ -688,9 +688,27 @@ class EvidencePilotRecord(BaseModel):
                 fields=["pilot", "package_sha256", "record_key"],
                 name="legacy_import_evidence_pilot_key_once",
             ),
+            # Catalogue rows — an organisation, its reviewed alias, its
+            # predecessor link — belong to no Teema; every other row does.
             models.CheckConstraint(
-                condition=models.Q(record_kind="ORGANISATION", matter__isnull=True)
-                | (~models.Q(record_kind="ORGANISATION") & models.Q(matter__isnull=False)),
+                condition=models.Q(
+                    record_kind__in=[
+                        "ORGANISATION",
+                        "ORGANISATION_ALIAS",
+                        "ORGANISATION_RELATIONSHIP",
+                    ],
+                    matter__isnull=True,
+                )
+                | (
+                    ~models.Q(
+                        record_kind__in=[
+                            "ORGANISATION",
+                            "ORGANISATION_ALIAS",
+                            "ORGANISATION_RELATIONSHIP",
+                        ]
+                    )
+                    & models.Q(matter__isnull=False)
+                ),
                 name="legacy_import_evidence_pilot_matter_unless_organisation",
             ),
         ]

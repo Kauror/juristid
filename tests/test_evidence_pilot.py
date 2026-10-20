@@ -1116,3 +1116,284 @@ def test_stored_bytes_must_match_the_reviewed_package_not_only_the_archive(
 
     problems = _validate(package_root)
     assert any("r003 SHA-256 in the package differs" in p for p in problems), problems
+
+
+# ===========================================================================
+# v2.3: reviewed step kinds and organisation continuity
+#
+# Two package contracts, both explicit and reviewed, never read off wording:
+# a source step states its kind (DO / WAIT / MONITOR), date meaning, optional
+# review_date and precision — a package without them imports exactly as before;
+# an organisation may carry reviewed aliases, and the package may state a
+# CONTINUATION, which sets the successor's predecessor link and never renames,
+# merges or re-addresses anything.
+# ===========================================================================
+
+from app.legacy_import.evidence_pilot import step_shape  # noqa: E402
+from app.organisations.models import AliasType, Organisation  # noqa: E402
+from app.organisations.services import continuity_names, find_matches  # noqa: E402
+from app.search.child_indexing import _submission_values  # noqa: E402
+from app.submissions.enums import SubmissionKind  # noqa: E402
+from app.workflow.enums import ActionKind, DatePrecision, DateSemantics  # noqa: E402
+
+# ---------------------------------------------------------------------------
+# Step kinds — no database
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("step", "expected"),
+    [
+        # v2.2 shape: no kind stated.
+        (
+            {"target_date": "2025-04-14"},
+            (ActionKind.DO, DateSemantics.DEADLINE, "2025-04-14", DatePrecision.EXACT),
+        ),
+        # A wait with no date: expected around, never a deadline.
+        (
+            {"kind": "WAIT"},
+            (ActionKind.WAIT, DateSemantics.EXPECTED_AROUND, None, DatePrecision.EXACT),
+        ),
+        # A watch with a review day.
+        (
+            {"kind": "MONITOR", "review_date": "2025-06-01"},
+            (ActionKind.MONITOR, DateSemantics.REVIEW_ON, "2025-06-01", DatePrecision.EXACT),
+        ),
+        # A wait looked at again in a month.
+        (
+            {"kind": "WAIT", "review_date": "2025-05-01", "date_precision": "MONTH"},
+            (ActionKind.WAIT, DateSemantics.REVIEW_ON, "2025-05-01", DatePrecision.MONTH),
+        ),
+    ],
+)
+def test_each_reviewed_step_kind_has_its_shape(step, expected):
+    shape, problems = step_shape({"text": "x", **step})
+    assert problems == []
+    kind, semantics, day, precision = expected
+    assert shape.kind == kind and shape.date_semantics == semantics
+    assert (shape.target_date.isoformat() if shape.target_date else None) == day
+    assert shape.date_precision == precision
+
+
+@pytest.mark.parametrize(
+    ("step", "message"),
+    [
+        ({"kind": "WAIT", "date_semantics": "DEADLINE"}, "never missed"),
+        (
+            {"kind": "MONITOR", "target_date": "2025-04-01", "date_semantics": "DEADLINE"},
+            "never missed",
+        ),
+        ({"kind": "DO", "review_date": "2025-04-01"}, "belongs to a WAIT or MONITOR"),
+        ({"kind": "WAIT", "review_date": "2025-04-01", "target_date": "2025-04-02"}, "both"),
+        (
+            {"kind": "WAIT", "review_date": "2025-04-01", "date_semantics": "EXPECTED_AROUND"},
+            "REVIEW_ON",
+        ),
+        ({"kind": "OOTAN"}, "not DO, WAIT or MONITOR"),
+        ({"kind": "WAIT", "date_precision": "MONTH"}, "undated"),
+        (
+            {"kind": "WAIT", "review_date": "2025-04-01", "date_precision": "INFERRED"},
+            "reviewed precision",
+        ),
+        ({"kind": "WAIT", "review_date": "1.4.2025"}, "not a date"),
+    ],
+)
+def test_a_step_that_would_invent_a_deadline_or_guess_is_refused(step, message):
+    _, problems = step_shape({"text": "x", **step})
+    assert any(message in problem for problem in problems), problems
+
+
+def test_the_kind_is_never_read_from_the_wording():
+    shape, _ = step_shape({"text": "Ootan Riigikogu II lugemist", "target_date": "2025-04-14"})
+    assert shape.kind == ActionKind.DO
+
+
+def test_a_refused_step_blocks_validation(package_root):
+    def wait_with_deadline(package):
+        package["topics"][0]["next_action"].update(kind="WAIT", date_semantics="DEADLINE")
+
+    assert any("never missed" in p for p in _validate(package_root, wait_with_deadline))
+
+
+# ---------------------------------------------------------------------------
+# Step kinds — the apply
+# ---------------------------------------------------------------------------
+
+
+def test_a_reviewed_wait_is_imported_as_a_wait_with_its_source_words(world, package_root, pilot_on):
+    package = _package()
+    package["topics"][0]["next_action"] = {
+        "text": "Ootan Riigikogu II lugemist",
+        "kind": "WAIT",
+        "source_text": "Mis edasi? Ootan II lugemist Riigikogus",
+        "review": "READY",
+        "evidence": {"blocks": [3]},
+    }
+    _apply(_write(package_root, package))
+
+    matter = Matter.objects.get(reference_year=YEAR, reference_number=5)
+    action = NextAction.objects.get(matter=matter)
+    assert action.kind == ActionKind.WAIT
+    assert action.date_semantics == DateSemantics.EXPECTED_AROUND
+    assert action.target_date is None
+    assert action.source_text == "Mis edasi? Ootan II lugemist Riigikogus"
+    assert action.responsible == world["mari"]
+    assert not action.is_overdue()
+    row = EvidencePilotRecord.objects.get(record_key=f"{YEAR}_5-NEXT")
+    assert row.record_kind == "NEXT_ACTION"
+    assert verify_applied(build_plan(package_root)).problems == []
+
+
+def test_a_package_without_a_kind_still_imports_a_do_step(world, package_root, pilot_on):
+    _apply(package_root)
+    action = NextAction.objects.get(matter__reference_number=5)
+    assert (action.kind, action.date_semantics) == (ActionKind.DO, DateSemantics.DEADLINE)
+
+
+# ---------------------------------------------------------------------------
+# Organisation continuity
+# ---------------------------------------------------------------------------
+
+HISTORICAL = "Vana Näidisministeerium"
+CURRENT = "Näidisministeerium"  # in the catalogue (the `world` fixture)
+
+
+def _continuity_package(**relation) -> dict:
+    package = _package()
+    package["organisation_mappings"] = {}
+    package["organisations"] = [
+        _organisation(
+            HISTORICAL,
+            "MINISTRY",
+            valid_to=f"{YEAR - 1}-12-31",
+            notes="Ajalooline nimi; ümberkorraldamine 1.1.2025 (näidisõigusakt § 1).",
+        ),
+        _organisation(
+            "Näidisliit",
+            aliases=[
+                {"alias": "NL", "alias_type": "ABBREVIATION", "evidence": {"letterhead": "NL"}}
+            ],
+        ),
+    ]
+    package["organisation_relationships"] = [
+        {
+            "predecessor": HISTORICAL,
+            "successor": CURRENT,
+            "relationship": "CONTINUATION",
+            "effective_from": f"{YEAR}-01-01",
+            "evidence": {"legal_basis": "Näidisõigusakt § 1: korraldatakse ümber."},
+            **relation,
+        }
+    ]
+    return package
+
+
+def test_a_continuation_links_the_bodies_and_rewrites_nothing(world, package_root, pilot_on):
+    root = _write(package_root, _continuity_package())
+    plan = build_plan(root)
+    assert plan.problems == []
+    assert plan.expected_writes()["ORGANISATION_RELATIONSHIP"] == 1
+    assert plan.expected_writes()["ORGANISATION_ALIAS"] == 1
+    _apply(root)
+
+    historical = Organisation.objects.get(name=HISTORICAL)
+    current = Organisation.objects.get(name=CURRENT)
+    assert current.predecessor == historical
+    # Both identities stay; neither name was changed or merged.
+    assert historical.name == HISTORICAL and current.name == CURRENT
+    assert str(historical.valid_to) == f"{YEAR - 1}-12-31"
+    assert Organisation.objects.filter(name__in=[HISTORICAL, CURRENT]).count() == 2
+    row = EvidencePilotRecord.objects.get(record_key=f"REL:{HISTORICAL}>{CURRENT}")
+    assert row.record_kind == "ORGANISATION_RELATIONSHIP" and row.matter is None
+    assert row.evidence["relationship"] == "CONTINUATION"
+    assert verify_applied(build_plan(root)).problems == []
+
+
+def test_a_reviewed_alias_resolves_to_its_own_body(world, package_root, pilot_on):
+    _apply(_write(package_root, _continuity_package()))
+    (match,) = find_matches("NL")
+    assert match.name == "Näidisliit"
+    alias = match.aliases.get()
+    assert alias.alias_type == AliasType.ABBREVIATION
+    assert EvidencePilotRecord.objects.filter(record_kind="ORGANISATION_ALIAS").count() == 1
+
+
+def test_a_second_apply_adds_no_second_link_or_alias(world, package_root, pilot_on):
+    root = _write(package_root, _continuity_package())
+    _apply(root)
+    first = EvidencePilotRecord.objects.count()
+    _apply(root)
+    assert EvidencePilotRecord.objects.count() == first
+    assert Organisation.objects.get(name="Näidisliit").aliases.count() == 1
+
+
+def test_an_existing_different_predecessor_is_never_replaced(world, package_root, pilot_on):
+    other = factories.OrganisationFactory(name="Kolmas näidisasutus")
+    Organisation.objects.filter(name=CURRENT).update(predecessor=other)
+    plan = build_plan(_write(package_root, _continuity_package()))
+    assert any("never replaced" in problem for problem in plan.problems)
+
+
+@pytest.mark.parametrize("kind", ["MERGER", "SPLIT", "TRANSFERRED_TASK", ""])
+def test_anything_but_a_continuation_is_refused(package_root, kind):
+    root = _write(package_root, _continuity_package(relationship=kind))
+    assert any("not CONTINUATION" in problem for problem in _validate(root))
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        (lambda r: r.update(effective_from="1.1.2025"), "effective_from is not a date"),
+        (lambda r: r.update(evidence={}), "names no evidence"),
+        (lambda r: r.update(successor=HISTORICAL), "cannot succeed itself"),
+        (lambda r: r.update(effective_from=f"{YEAR - 1}-06-01"), "must end before"),
+    ],
+)
+def test_a_broken_relationship_is_refused(package_root, change, message):
+    package = _continuity_package()
+    change(package["organisation_relationships"][0])
+    assert any(message in problem for problem in _validate(_write(package_root, package)))
+
+
+def test_an_alias_another_body_answers_to_is_refused(world, package_root):
+    factories.OrganisationFactory(name="NL")
+    plan = build_plan(_write(package_root, _continuity_package()))
+    assert any("already resolves to" in problem for problem in plan.problems)
+
+
+def test_an_alias_without_evidence_is_refused(package_root):
+    package = _continuity_package()
+    package["organisations"][1]["aliases"][0]["evidence"] = {}
+    assert any("names no evidence" in p for p in _validate(_write(package_root, package)))
+
+
+# ---------------------------------------------------------------------------
+# Search discovers the continuation without re-addressing anything
+# ---------------------------------------------------------------------------
+
+
+def test_a_letter_to_the_old_name_is_found_by_the_new_one(db):
+    historical = factories.OrganisationFactory(name=HISTORICAL)
+    current = factories.OrganisationFactory(name=CURRENT, predecessor=historical)
+    assert continuity_names(historical) == [CURRENT]
+    assert continuity_names(current) == [HISTORICAL]
+
+    submission = factories.SubmissionFactory(kind=SubmissionKind.FORMAL_OPINION)
+    submission.recipient_rows.create(organisation=historical)
+    values = _submission_values(submission, now=None)
+    assert CURRENT in values["alias_text"]
+    # The letter's own addressee is the historical body, untouched.
+    assert [row.organisation for row in submission.recipient_rows.all()] == [historical]
+
+
+def test_two_bodies_without_a_link_share_nothing(db):
+    one = factories.OrganisationFactory(name="Üks näidisasutus")
+    factories.OrganisationFactory(name="Üks näidisasutus ja teine")
+    assert continuity_names(one) == []
+
+
+def test_the_package_contract_is_unchanged_for_a_v2_2_package(package_root):
+    package = copy.deepcopy(_package())
+    assert "organisation_relationships" not in package
+    assert _validate(_write(package_root, package)) == []
+    assert evidence_pilot.ORGANISATION_RELATIONSHIPS == {"CONTINUATION"}

@@ -72,9 +72,15 @@ class Migration(migrations.Migration):
                     ),
                     models.CheckConstraint(
                         condition=models.Q(
-                            models.Q(("matter__isnull", True), ("record_kind", "ORGANISATION")),
                             models.Q(
-                                models.Q(("record_kind", "ORGANISATION"), _negated=True),
+                                ("matter__isnull", True),
+                                ("record_kind__in", ["ORGANISATION", "ORGANISATION_ALIAS", "ORGANISATION_RELATIONSHIP"]),
+                            ),
+                            models.Q(
+                                models.Q(
+                                    ("record_kind__in", ["ORGANISATION", "ORGANISATION_ALIAS", "ORGANISATION_RELATIONSHIP"]),
+                                    _negated=True,
+                                ),
                                 ("matter__isnull", False),
                             ),
                             _connector="OR",

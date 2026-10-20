@@ -72,6 +72,17 @@ ORGANISATION_STATUSES = frozenset({"APPROVED", "PROPOSED"})
 #: `EvidencePilotRecord.record_key` and `Organisation.source_reference` lengths,
 #: checked at validate so a long value refuses the package, not the apply.
 ORGANISATION_KEY_LENGTH = 120
+#: The provenance kinds that belong to the catalogue, not to one Teema.
+ORGANISATION_RECORD_KINDS = ("ORGANISATION", "ORGANISATION_ALIAS", "ORGANISATION_RELATIONSHIP")
+#: The one institutional relationship a package may state: the same body under a
+#: new name or remit (an `ümberkorraldamine`), recorded as `Organisation.predecessor`
+#: — the link the catalogue keeps for «genuinely a continuation»
+#: (app/organisations/reference_data.py). A split, a merger or a transfer of one
+#: task is **not** representable this way and is refused, never approximated.
+ORGANISATION_RELATIONSHIPS = frozenset({"CONTINUATION"})
+#: How a reviewed source step's date reads when the package does not say. DO is
+#: every package before v2.3; WAIT and MONITOR are never deadlines.
+DEFAULT_STEP_SEMANTICS = {"DO": "DEADLINE", "WAIT": "EXPECTED_AROUND", "MONITOR": "REVIEW_ON"}
 ORGANISATION_SOURCE_REFERENCE_LENGTH = 200
 
 T_DEVELOPMENT = "ProceduralDevelopment"
@@ -266,6 +277,7 @@ def validate_package(package: dict[str, Any], archive: OneNoteArchive) -> Valida
         problems.append(f"expected {expected['topics']} topics, the package holds {len(topics)}.")
 
     problems.extend(_organisation_problems(package.get("organisations") or []))
+    problems.extend(_relationship_problems(package))
 
     stage_labels = set(RAW_LABEL_TO_STAGE) | set(CURRENT_LABEL_TO_STAGE)
     roles = set(DocumentRole.values)
@@ -295,8 +307,7 @@ def validate_package(package: dict[str, Any], archive: OneNoteArchive) -> Valida
         if step:
             if not (step.get("text") or "").strip():
                 problems.append(f"{ref}: next_action has no text.")
-            if step.get("target_date") and _day(step["target_date"]) is None:
-                problems.append(f"{ref}: next_action.target_date is not a date.")
+            problems.extend(f"{ref}: {problem}" for problem in step_shape(step)[1])
             if step.get("review") not in REVIEW_STATES:
                 problems.append(
                     f"{ref}: next_action.review must be READY, NEEDS_REVIEW or REJECTED."
@@ -435,9 +446,99 @@ def validate_package(package: dict[str, Any], archive: OneNoteArchive) -> Valida
     return report
 
 
+@dataclass(frozen=True)
+class StepShape:
+    """A reviewed source step as the workflow service takes it."""
+
+    kind: str
+    date_semantics: str
+    target_date: dt.date | None
+    date_precision: str
+
+
+def step_shape(step: dict[str, Any]) -> tuple[StepShape, list[str]]:
+    """The step's kind, date meaning, date and precision, and what is wrong with them.
+
+    Read from the package's explicit, reviewed fields — `kind`, `date_semantics`,
+    `target_date` or `review_date`, `date_precision` — never from the wording:
+    «Ootan …» is not parsed into a WAIT. A package without them (every one before
+    v2.3) gets v2.2's shape: DO, DEADLINE, exact. A WAIT or a MONITOR is never a
+    deadline, so it can never be invented into one; `review_date` is the day a
+    wait or a watch is looked at again (REVIEW_ON).
+    """
+    from app.workflow.enums import ActionKind, DatePrecision, DateSemantics
+
+    problems: list[str] = []
+    kind = step.get("kind") or ActionKind.DO.value
+    if kind not in ActionKind.values:
+        problems.append(f"next_action.kind {kind!r} is not DO, WAIT or MONITOR.")
+        kind = ActionKind.DO.value
+    target, review = step.get("target_date"), step.get("review_date")
+    if target and review:
+        problems.append("next_action has both a target_date and a review_date.")
+    if review and kind == ActionKind.DO:
+        problems.append("next_action.review_date belongs to a WAIT or MONITOR step, not a DO.")
+    semantics = step.get("date_semantics") or (
+        DateSemantics.REVIEW_ON.value if review else DEFAULT_STEP_SEMANTICS[kind]
+    )
+    if semantics not in DateSemantics.values:
+        problems.append(f"next_action.date_semantics {semantics!r} is unknown.")
+        semantics = DEFAULT_STEP_SEMANTICS[kind]
+    if review and semantics != DateSemantics.REVIEW_ON:
+        problems.append("next_action.review_date needs date_semantics REVIEW_ON.")
+    if kind != ActionKind.DO and semantics == DateSemantics.DEADLINE:
+        problems.append("only a DO step has a deadline; a WAIT or MONITOR is never missed.")
+    raw = review or target
+    day = _day(raw) if raw else None
+    if raw and day is None:
+        problems.append(f"next_action date {raw!r} is not a date.")
+    precision = step.get("date_precision") or DatePrecision.EXACT.value
+    if precision not in DatePrecision.values or precision == DatePrecision.INFERRED:
+        problems.append(f"next_action.date_precision {precision!r} is not a reviewed precision.")
+        precision = DatePrecision.EXACT.value
+    if day is None and precision != DatePrecision.EXACT:
+        problems.append("an undated next_action has no precision.")
+    return StepShape(kind, semantics, day, precision), problems
+
+
+def _relationship_problems(package: dict[str, Any]) -> list[str]:
+    """Every stated institutional relationship is a reviewed CONTINUATION with evidence."""
+    out: list[str] = []
+    approved = approved_organisations(package)
+    successors: set[str] = set()
+    for relation in package.get("organisation_relationships") or []:
+        before = (relation.get("predecessor") or "").strip()
+        after = (relation.get("successor") or "").strip()
+        label = f"organisation relationship {before!r} → {after!r}"
+        if not before or not after:
+            out.append("an organisation relationship needs a predecessor and a successor.")
+            continue
+        if before == after:
+            out.append(f"{label}: an organisation cannot succeed itself.")
+        if relation.get("relationship") not in ORGANISATION_RELATIONSHIPS:
+            out.append(
+                f"{label}: relationship {relation.get('relationship')!r} is not CONTINUATION; "
+                "a split, merger or transferred task is never recorded as a predecessor."
+            )
+        effective = _day(relation.get("effective_from"))
+        if effective is None:
+            out.append(f"{label}: effective_from is not a date.")
+        if not relation.get("evidence"):
+            out.append(f"{label} names no evidence.")
+        if after in successors:
+            out.append(f"{label}: {after!r} already has a predecessor in this package.")
+        successors.add(after)
+        ended = _day((approved.get(before) or {}).get("valid_to"))
+        if effective and ended and ended >= effective:
+            out.append(f"{label}: the predecessor's valid_to must end before effective_from.")
+        if len(f"REL:{before}>{after}") > ORGANISATION_KEY_LENGTH:
+            out.append(f"{label}: the names are too long for a provenance key.")
+    return out
+
+
 def _organisation_problems(entries: list[dict[str, Any]]) -> list[str]:
     """An organisation the package asks the import to create is a reviewed entry."""
-    from app.organisations.models import OrganisationType
+    from app.organisations.models import AliasType, OrganisationType
 
     out: list[str] = []
     seen: set[str] = set()
@@ -478,6 +579,21 @@ def _organisation_problems(entries: list[dict[str, Any]]) -> list[str]:
         for bound in ("valid_from", "valid_to"):
             if entry.get(bound) and _day(entry[bound]) is None:
                 out.append(f"organisation {name!r}: {bound} is not a date.")
+        for alias in entry.get("aliases") or []:
+            text = (alias.get("alias") or "").strip()
+            if not text:
+                out.append(f"organisation {name!r}: an alias is empty.")
+                continue
+            if text.casefold() == name.casefold():
+                out.append(f"organisation {name!r}: alias {text!r} repeats the name.")
+            if alias.get("alias_type") not in AliasType.values:
+                out.append(
+                    f"organisation {name!r}: alias type {alias.get('alias_type')!r} is unknown."
+                )
+            if not alias.get("evidence"):
+                out.append(f"organisation {name!r}: alias {text!r} names no evidence.")
+            if len(f"ALIAS:{name}:{text}") > ORGANISATION_KEY_LENGTH:
+                out.append(f"organisation {name!r}: alias {text!r} is too long for its key.")
     return out
 
 
@@ -629,6 +745,12 @@ class EvidencePlan:
         organisations = approved_organisations(self.package)
         if organisations:
             counts["ORGANISATION"] = len(organisations)
+        aliases = sum(len(entry.get("aliases") or []) for entry in organisations.values())
+        if aliases:
+            counts["ORGANISATION_ALIAS"] = aliases
+        relationships = len(self.package.get("organisation_relationships") or [])
+        if relationships:
+            counts["ORGANISATION_RELATIONSHIP"] = relationships
         for topic in self.topics:
             step = topic.topic.get("next_action")
             if step and step.get("review") == READY:
@@ -728,6 +850,41 @@ def build_plan(root: str | Path) -> EvidencePlan:
                 f"organisation {name!r}: registry code {code} already belongs to "
                 f"{holder.name!r}; a name is never merged on a code."
             )
+        for alias in entry.get("aliases") or []:
+            # A spelling another body already answers to would make the name
+            # ambiguous for every later resolution; it is never added.
+            others = [
+                found.name
+                for found in find_matches((alias.get("alias") or "").strip())
+                if found.name != name
+            ]
+            if others:
+                plan.problems.append(
+                    f"organisation {name!r}: alias {alias.get('alias')!r} already resolves to "
+                    f"{others[0]!r}."
+                )
+
+    for relation in package.get("organisation_relationships") or []:
+        before = (relation.get("predecessor") or "").strip()
+        after = (relation.get("successor") or "").strip()
+        existing = {}
+        for name in (before, after):
+            found = find_matches(name)
+            if len(found) == 1:
+                existing[name] = found[0]
+            elif not found and name not in approved:
+                plan.problems.append(
+                    f"organisation relationship {before!r} → {after!r}: {name!r} is neither in "
+                    "the catalogue nor an approved package organisation."
+                )
+        successor = existing.get(after)
+        if successor is not None and successor.predecessor_id is not None:
+            current = successor.predecessor
+            if current is None or current.name != before:
+                plan.problems.append(
+                    f"organisation relationship {before!r} → {after!r}: {after!r} already has "
+                    f"the predecessor {getattr(current, 'name', '?')!r}; it is never replaced."
+                )
 
     def organisation(name: str, topic_plan: TopicPlan) -> Any:
         if name in topic_plan.organisations:
@@ -986,6 +1143,7 @@ class _Writer:
         )
         self.report.batch_id = self.batch.pk
         self.write_organisations()
+        self.write_organisation_continuity()
         touched = []
         for topic_plan in self.plan.topics:
             touched.append(self.write_topic(topic_plan).pk)
@@ -1066,6 +1224,74 @@ class _Writer:
                 target=organisation,
                 page=None,
                 evidence={**(entry.get("evidence") or {}), "created": result.created},
+            )
+
+    def write_organisation_continuity(self) -> None:
+        """Reviewed aliases and predecessor links — added, never renamed or merged.
+
+        An alias is a spelling the body really used (a historical name, an
+        abbreviation), recorded on its own identity so search and resolution find
+        it. A CONTINUATION sets the successor's `predecessor` — the catalogue's
+        link for the same body under a new name or remit — and only when it is
+        empty: an existing, different predecessor stops the apply rather than
+        being overwritten. Neither touches a historical record's addressee: a
+        2021 letter to «Justiitsministeerium» stays addressed to it.
+        """
+        from app.organisations.models import OrganisationAlias
+        from app.organisations.services import find_exact
+
+        for name, entry in sorted(approved_organisations(self.package).items()):
+            organisation = self.organisations[name]
+            for alias in entry.get("aliases") or []:
+                text = alias["alias"].strip()
+                row = next(
+                    (
+                        a
+                        for a in organisation.aliases.all()
+                        if a.alias.casefold() == text.casefold()
+                    ),
+                    None,
+                )
+                if row is None:
+                    row = OrganisationAlias.objects.create(
+                        organisation=organisation, alias=text, alias_type=alias["alias_type"]
+                    )
+                self.remember(
+                    matter=None,
+                    key=f"ALIAS:{name}:{text}",
+                    kind="ORGANISATION_ALIAS",
+                    target=row,
+                    page=None,
+                    evidence={"alias_type": alias["alias_type"], "evidence": alias["evidence"]},
+                )
+
+        for relation in self.package.get("organisation_relationships") or []:
+            before, after = relation["predecessor"].strip(), relation["successor"].strip()
+            predecessor = self.organisations.get(before) or find_exact(before)
+            successor = self.organisations.get(after) or find_exact(after)
+            if predecessor is None or successor is None:
+                raise EvidencePilotError(
+                    f"relationship {before!r} → {after!r}: a name did not resolve."
+                )
+            if successor.predecessor_id is None:
+                successor.predecessor = predecessor
+                successor.save(update_fields=["predecessor", "updated_at"])
+            elif successor.predecessor_id != predecessor.pk:
+                raise EvidencePilotError(
+                    f"relationship {before!r} → {after!r}: {after!r} already has another "
+                    "predecessor."
+                )
+            self.remember(
+                matter=None,
+                key=f"REL:{before}>{after}",
+                kind="ORGANISATION_RELATIONSHIP",
+                target=successor,
+                page=None,
+                evidence={
+                    "relationship": relation["relationship"],
+                    "effective_from": relation["effective_from"],
+                    "evidence": relation["evidence"],
+                },
             )
 
     def write_topic(self, topic_plan: TopicPlan) -> Any:
@@ -1283,7 +1509,6 @@ class _Writer:
     # -- the current step -----------------------------------------------------
 
     def write_next_action(self, matter: Any, topic_plan: TopicPlan, page_record: Any) -> None:
-        from app.workflow.enums import ActionKind, DatePrecision, DateSemantics
         from app.workflow.services import set_next_action
 
         step = topic_plan.topic.get("next_action")
@@ -1295,13 +1520,16 @@ class _Writer:
                 key
             )
             return
+        shape, problems = step_shape(step)
+        if problems:
+            raise EvidencePilotError(f"{key}: {'; '.join(problems)}")
         action = set_next_action(
             matter=matter,
             text=step["text"].strip(),
-            kind=ActionKind.DO,
-            date_semantics=DateSemantics.DEADLINE,
-            target_date=_day(step.get("target_date")),
-            date_precision=DatePrecision.EXACT,
+            kind=shape.kind,
+            date_semantics=shape.date_semantics,
+            target_date=shape.target_date,
+            date_precision=shape.date_precision,
             source_text=step.get("source_text") or step["text"],
             responsible=topic_plan.owner,
             actor=None,
@@ -1309,6 +1537,9 @@ class _Writer:
                 **self.base,
                 "reference": topic_plan.reference,
                 "treatment": "SOURCE_NEXT_STEP",
+                # The kind is the reviewer's, stated in the package — never read
+                # off the step's wording.
+                "kind_basis": "REVIEWED_PACKAGE" if step.get("kind") else "DEFAULT_DO",
             },
         )
         self.remember(
@@ -1780,8 +2011,27 @@ def verify_applied(plan: EvidencePlan) -> VerifyReport:
     if accounted != len(archive_sha):
         report.problems.append(f"{accounted} of {len(archive_sha)} page resources accounted for.")
     report.checked["resources_accounted"] = accounted
-    for name in approved_organisations(plan.package):
-        if not Organisation.objects.filter(name=name).exists():
+    for name, entry in approved_organisations(plan.package).items():
+        listed = Organisation.objects.filter(name=name).first()
+        if listed is None:
             report.problems.append(f"organisation {name!r} is missing.")
+            continue
+        spelled = {alias.alias.casefold() for alias in listed.aliases.all()}
+        for alias in entry.get("aliases") or []:
+            if alias["alias"].strip().casefold() not in spelled:
+                report.problems.append(
+                    f"organisation {name!r}: alias {alias['alias']!r} is missing."
+                )
+    for relation in plan.package.get("organisation_relationships") or []:
+        before, after = relation["predecessor"].strip(), relation["successor"].strip()
+        successor = Organisation.objects.filter(name=after).select_related("predecessor").first()
+        if (
+            successor is None
+            or successor.predecessor is None
+            or successor.predecessor.name != before
+        ):
+            report.problems.append(
+                f"organisation {after!r} does not record {before!r} as its predecessor."
+            )
     report.checked["organisations"] = len(approved_organisations(plan.package))
     return report

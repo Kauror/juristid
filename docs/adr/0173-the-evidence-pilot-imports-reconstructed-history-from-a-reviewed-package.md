@@ -184,6 +184,63 @@ A refused apply rolls back every row but can leave stored files with no
 document; the runbook prunes them (`prune_orphaned_evidence`) after any failure. The migration is still the one additive `legacy_import/0017`
 (unmerged, regenerated).
 
+## 7. Amendment — reviewed step kinds and organisation continuity (2026-10-20)
+
+The owner's decisions of 20.10.2026 (evidence pilot v2.3) need two package
+contracts that v2.2 could not state. Both are explicit, reviewed fields and are
+never read off the wording.
+
+**A source step states its kind.** `next_action` may carry:
+- `kind`: DO, WAIT or MONITOR;
+- `date_semantics`;
+- `target_date` **or** `review_date`;
+- `date_precision`.
+
+`step_shape` reads them. A package without them (v2.2 and earlier) gets the old
+shape: DO, DEADLINE, exact.
+
+The apply refuses:
+- a WAIT or MONITOR with DEADLINE semantics, because a wait is never missed;
+- a `review_date` on a DO;
+- both dates on one step;
+- an `INFERRED` precision;
+- a precision on an undated step;
+- an unknown kind.
+
+So 2026_225's «Ootan Riigikogu II lugemist» is imported as a WAIT, with no
+invented date, its source words in `source_text` and `kind_basis:
+REVIEWED_PACKAGE` in its provenance. With PR #502's amendment of ADR 0050, the
+WAIT does not take the 04.11 `Arvamuse tähtaeg` off the work lists.
+
+**Organisation continuity.**
+- An approved organisation may carry `aliases`, each with a reviewed
+  `alias_type` and evidence. An alias is added on that body's own identity, and
+  never when another body already answers to it.
+- The package's `organisation_relationships` may state a **CONTINUATION**
+  `{predecessor, successor, effective_from, evidence}`: the same body under a new
+  name or remit. The apply sets the successor's existing
+  `Organisation.predecessor` link, only when it is empty, and an existing
+  different predecessor stops the plan. A split, a merger or a transferred task
+  is refused, because a predecessor link would over-claim it.
+
+Nothing is renamed, merged or re-addressed. A 2021 letter to
+«Justiitsministeerium» keeps that addressee. Each alias and each link gets its
+own provenance row (`ORGANISATION_ALIAS`, `ORGANISATION_RELATIONSHIP`), and the
+row's check constraint (still the unmerged `legacy_import/0017`) allows both
+without a Teema. `verify` reads both back.
+
+**Search learns the link, not a new name.** `continuity_names` (one hop each
+way along `predecessor`) is added to a Matter's, a sent letter's and an external
+position's alias text. A search for either name therefore finds the other's
+records, while each record keeps its own addressee. Organisation saves already
+owe a search rebuild (ADR 0041), so the corpus converges.
+
+The v2.3 package uses this for:
+- «Justiitsministeerium» → «Justiits- ja Digiministeerium». The basis is VVS
+  § 105¹⁹ lg 10: «Justiitsministeerium korraldatakse ümber Justiits- ja
+  Digiministeeriumiks alates 2025. aasta 1. jaanuarist», RT I, 30.12.2024, 1.
+- the reviewed abbreviation «EAHÜ».
+
 ## Consequences
 
 - One new model, one command (`evidence_pilot validate|plan|apply|verify`), one
