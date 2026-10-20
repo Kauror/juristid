@@ -227,7 +227,7 @@ def test_the_population_decides_and_nothing_global_changes():
 
 
 def test_a_full_name_surface_is_never_shortened():
-    """`Vali kasutaja` asks who you are; first names are a smaller answer."""
+    """A surface that starts from full names keeps them (``start_full``)."""
     people = [
         _person("Sandra Tamm", "sandra.tamm@example.invalid"),
         _person("Martin Saar", "martin.saar@example.invalid"),

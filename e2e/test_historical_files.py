@@ -39,9 +39,11 @@ def open_case_file(page, base_url):
     page.goto(f"{base_url}/teemad/?olek=koik")
     page.get_by_role("link", name=re.compile(re.escape(OPEN_TITLE))).first.click()
 
-    historical = page.get_by_role("link", name="Vaata ajaloolist materjali")
-    expect(historical).to_be_visible()
-    historical.click()
+    # The one way in since the Teema row went (owner, 20.10.2026).
+    page.get_by_role("link", name=re.compile(r"^Dokumendid")).first.click()
+    section = page.locator("section[aria-labelledby='ajalooline-heading']")
+    expect(section).to_be_visible()
+    section.locator("a").first.click()
     expect(page.locator(".casefile__name").first).to_be_visible()
 
 

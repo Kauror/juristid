@@ -3339,7 +3339,8 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # `summary_form` and `note_form` are deliberately absent: the header
         # context carries them, it is merged over this one, and reading the
         # private note twice per page is two queries for one answer.
-        "historical": _historical_context(matter, request.user),
+        # The OneNote source pages are not summarised here any more: their way
+        # in is `Dokumendid → Ajalooline OneNote` (owner, 20.10.2026).
         # Stage 2G's structured facts. Read through their own selector, which
         # scopes them like every other child record.
         "intelligence": intelligence,

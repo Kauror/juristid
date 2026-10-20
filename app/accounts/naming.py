@@ -65,10 +65,10 @@ def disambiguated_names(people: Iterable[Any], *, start_full: bool = False) -> d
     collision.
 
     ``start_full`` begins the ladder at the display name instead of the short
-    one, for the surfaces that already show full names — `Vali kasutaja` is a
-    page for choosing *who you are*, and shortening it to first names to save
-    space would be a worse answer to the same question. Those surfaces still get
-    the last rung when two people are called exactly the same thing.
+    one, for a surface that must show full names. Those surfaces still get the
+    last rung when two people are called exactly the same thing. `Vali
+    kasutaja` no longer is one: it names people by first name like the top-bar
+    switcher (owner, 20.10.2026).
     """
     unique: dict[Any, Any] = {}
     for person in people:

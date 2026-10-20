@@ -93,6 +93,7 @@ def source_page(request: HttpRequest, pk: Any) -> HttpResponse:
             "link": link,
             "page": page,
             "blocks": _rendered_blocks(page, resources, documents, readable=readable),
+            "page_links": page_links(page.links),
             "other_matters": (
                 visible_links(request.user)
                 .filter(source_page=page)
@@ -102,6 +103,29 @@ def source_page(request: HttpRequest, pk: Any) -> HttpResponse:
             "nav_active": "teemad",
         },
     )
+
+
+def page_links(stored: Any) -> list[dict[str, str]]:
+    """A page's own hyperlinks as ``{"url", "text"}``, in the order captured.
+
+    The desktop archive has written them in two shapes, and
+    `LegacySourcePage.links` keeps each page's exactly as captured: ``url`` /
+    ``displayText`` in the 2026-08 corpus, ``href`` / ``text`` (with the
+    ``blockOrdinal`` they sat in) in the evidence-pilot capture. Both are read
+    here, nothing stored is rewritten, and an entry with no address is not a
+    link to show. A template that named one shape's key failed the whole page on
+    the other's (production, 20.10.2026).
+    """
+    links = []
+    for item in stored or []:
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("url") or item.get("href") or "").strip()
+        if not url:
+            continue
+        text = str(item.get("displayText") or item.get("text") or "").strip()
+        links.append({"url": url, "text": text})
+    return links
 
 
 def _rendered_blocks(

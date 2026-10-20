@@ -138,26 +138,6 @@ next step and no history renders as a short, deliberate page.
     {% endcomment %}
     {% include "matters/partials/website_overviews.html" %}
 
-    {% if historical %}
-      {% comment %}
-        A fact, not the page. Three numbers and a section name, because a lawyer
-        reads this in about three seconds and a wall of 2019 narrative here
-        would cost them the thing they came for (Stage-2D brief 34).
-      {% endcomment %}
-      <section class="historicalrow" aria-labelledby="ajalooline-materjal-heading">
-        <h2 class="rowlabel" id="ajalooline-materjal-heading">Ajalooline materjal</h2>
-        <span class="historicalrow__summary">
-          {{ historical.page_count }} OneNote'i lehte
-          · {{ historical.file_count|counted:"fail,faili" }}
-          {% if historical.sections %}· {{ historical.sections|join:", " }}{% endif %}
-        </span>
-        <span class="historicalrow__spacer"></span>
-        <a class="quietlink" href="{% url 'legacy_import:source_page' pk=historical.first.pk %}">
-          Vaata ajaloolist materjali →
-        </a>
-      </section>
-    {% endif %}
-
     {% comment %}
       Zone C. Where the file stands, then what has happened — on the page's own
       ground rather than on a panel of its own: it is the longest thing here and

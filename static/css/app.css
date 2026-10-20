@@ -6922,25 +6922,6 @@ button.accordion__action:focus-visible {
 }
 
 
-/* -- historical material row ------------------------------------------ */
-
-.historicalrow {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-35);
-  padding: var(--spacing-3) var(--spacing-8);
-  border-bottom: 1px solid var(--border-subtle);
-  font-size: 12.5px;
-}
-
-.historicalrow__summary {
-  color: var(--text-body);
-}
-
-.historicalrow__spacer {
-  flex: 1;
-}
-
 /* -- Ülevaated / uudised: what the file still owes a reader -------------- */
 
 /* One quiet strip, rendered only when something is planned. It is deliberately
@@ -7734,7 +7715,6 @@ button.accordion__action:focus-visible {
   }
 
   .teema .matterhead,
-  .historicalrow,
   .webrow,
   .accordion__head,
   .accordion__body,

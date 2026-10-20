@@ -168,21 +168,21 @@
     {% endif %}
   </section>
 
-  {% if page.links %}
+  {% if page_links %}
     <section class="card" aria-labelledby="lingid-heading">
       <h2 class="sectionlabel" id="lingid-heading">
         Lehel olnud lingid
-        <span class="sectionlabel__count">{{ page.links|length }}</span>
+        <span class="sectionlabel__count">{{ page_links|length }}</span>
       </h2>
       <ul class="filelist">
-        {% for item in page.links %}
+        {% for item in page_links %}
           <li class="filelist__item">
             {% comment %}
               Shown as text, not as a live link. These URLs come out of a
               document; some are years dead and some point at intranet paths
               that would leak a referrer. A reader can copy one deliberately.
             {% endcomment %}
-            <span>{{ item.displayText|default:item.url|truncatechars:90 }}</span>
+            <span>{{ item.text|default:item.url|truncatechars:90 }}</span>
             <span class="filelist__meta mono">{{ item.url|truncatechars:60 }}</span>
           </li>
         {% endfor %}

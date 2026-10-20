@@ -14,6 +14,8 @@ more than they catch (docs/adr/0010).
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from playwright.sync_api import expect
 
@@ -39,19 +41,27 @@ def open_the_matter(page, base_url: str, title: str) -> None:
     page.wait_for_load_state("networkidle")
 
 
-def test_the_overview_says_the_history_exists_without_becoming_it(page, base_url, screenshots):
-    """Three numbers and a way in. A lawyer reads Ülevaade in three seconds."""
+def open_the_case_file(page):
+    """From an open Teema to its OneNote page, the one way in: `Dokumendid`."""
+    page.get_by_role("link", name=re.compile(r"^Dokumendid")).first.click()
+    section = page.locator("section[aria-labelledby='ajalooline-heading']")
+    expect(section).to_be_visible()
+    section.get_by_role("link", name=HISTORICAL_PAGE_TITLE).click()
+    page.wait_for_load_state("networkidle")
+
+
+def test_the_teema_page_has_no_historical_row_and_dokumendid_leads_in(page, base_url, screenshots):
+    """The owner took the summary row off the Teema page (20.10.2026): the
+    OneNote pages are reached from `Dokumendid → Ajalooline OneNote` only."""
     sign_in(page, base_url, MARTIN)
     open_the_matter(page, base_url, OPEN_TITLE)
 
-    section = page.locator("section[aria-labelledby='ajalooline-materjal-heading']")
-    expect(section).to_be_visible()
-    expect(section).to_contain_text("OneNote")
-    # The narrative itself is on its own page, not spilled onto the overview.
-    expect(section).not_to_contain_text(HISTORICAL_INTRODUCTION)
+    expect(page.locator("section[aria-labelledby='ajalooline-materjal-heading']")).to_have_count(0)
+    expect(page.locator(".historicalrow")).to_have_count(0)
+    expect(page.get_by_text("Vaata ajaloolist materjali")).to_have_count(0)
 
     screenshots(page, "historical-overview")
-    section.get_by_role("link", name="Vaata ajaloolist materjali").click()
+    open_the_case_file(page)
     expect(page.get_by_role("heading", name=HISTORICAL_PAGE_TITLE)).to_be_visible()
 
 
@@ -66,7 +76,7 @@ def test_the_case_file_keeps_the_file_in_the_sentence_that_introduces_it(
     """
     sign_in(page, base_url, MARTIN)
     open_the_matter(page, base_url, OPEN_TITLE)
-    page.get_by_role("link", name="Vaata ajaloolist materjali").click()
+    open_the_case_file(page)
 
     body = page.locator(".casefile")
     expect(body).to_be_visible()
@@ -80,7 +90,7 @@ def test_the_pages_own_xml_is_a_download_and_never_markup(page, base_url):
     """OneNote's markup is a stored file like any other: offered, not rendered."""
     sign_in(page, base_url, MARTIN)
     open_the_matter(page, base_url, OPEN_TITLE)
-    page.get_by_role("link", name="Vaata ajaloolist materjali").click()
+    open_the_case_file(page)
 
     assert "one:Page" not in page.content()
 
