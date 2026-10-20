@@ -257,6 +257,49 @@ _MILESTONE_LABELS: dict[str, str] = {
     ChangeEventType.MATTER_CREATED.value: "Teema loodud",
 }
 
+#: **Imported historical files read on the day they were added to OneNote**
+#: (docs/adr/0092 §6, amendment of 2026-10-20; supersedes the import-day row
+#: of 2026-10-19).
+#:
+#: An import that brings a dossier's files over writes one
+#: `EVIDENCE_VERSION_ADDED` per file, with no actor and no operation, stamped
+#: with the moment of the import — which is true, and is audit, not history.
+#: The history is when each file was added to the OneNote page: the source's
+#: own `creationTime` of the element holding it, which the import stores as
+#: `LegacySourceResource.source_added_at` (source provenance, never an audit
+#: time and never a date read out of a filename).
+#:
+#: So the files an import brought read as **one row per Tallinn calendar day of
+#: addition** — «Dokument lisatud OneNote'i · 30.8.2021», or «OneNote'i lisati 3
+#: dokumenti» — keyed on the earliest addition that day, so the row sorts at its
+#: real place among the Teema's work. Files whose source carries no time read
+#: as **one** honest row, «… — lisamise kuupäev teadmata», with no date at all;
+#: it sorts where the import put the files and claims nothing about when.
+#:
+#: Grouped only by what the import and the source recorded — the version is the
+#: imported copy of a legacy source resource (`LegacySourceResourceImport`,
+#: written by importers and nothing else), and the day is that resource's own
+#: time. Never by a shared minute or a missing author. A person's upload has an
+#: actor and keeps its own «lisas dokumendi» row, exactly as before; a file that
+#: supports a record still reads on that record's row only
+#: (`_versions_shown_on_their_record`), its own OneNote time on its document.
+#: Every file under a row is linked to its exact bytes. Nothing is hidden, no
+#: stored date or audit row changes.
+HISTORICAL_IMPORT_ITEM = "HISTORICAL_DOCUMENTS_IMPORTED"
+#: The headlines, by how many files and whether the source dated them.
+ONENOTE_ADDED_ONE = "Dokument lisatud OneNote'i"
+ONENOTE_ADDED_MANY = "OneNote'i lisati {count} dokumenti"
+ONENOTE_UNDATED_ONE = "OneNote'i dokument — lisamise kuupäev teadmata"
+ONENOTE_UNDATED_MANY = "OneNote'i dokumendid ({count}) — lisamise kuupäev teadmata"
+#: What stands in the date's place when the source has no time.
+ONENOTE_UNDATED_DISPLAY = "kuupäev teadmata"
+#: Said beside a file whose OneNote time is older than the page it is on now.
+#: OneNote keeps an element's creation time when content is moved or copied in
+#: from another page, so the day is when the file reached OneNote, not when it
+#: reached *this* page — and the row says so rather than imply it.
+ONENOTE_PREDATES_PAGE = "lisatud enne praeguse lehe loomist"
+ONENOTE_PREDATES_PAGE_SOME = "{count} neist lisatud enne praeguse lehe loomist"
+
 #: What a sent `Koja arvamus` is called on the chronology.
 #:
 #: `Arvamus välja` and not `Koja arvamus`: the strip above names the *thing*, and
@@ -513,6 +556,9 @@ class TimelineItem:
     #: The `Arvamuse tähtaeg` this opinion was recorded as answering — read off
     #: `MatterResponseDeadline.submission`, the explicit link, never a date.
     answered_deadline: str = ""
+    #: How many imported historical files this row stands for, on the one row
+    #: per import (`HISTORICAL_IMPORT_ITEM`); 0 on every other row.
+    imported_documents: int = 0
 
     @property
     def is_milestone(self) -> bool:
@@ -726,6 +772,9 @@ class TimelineItem:
             return MARKER_MEETING if self.entry.kind in _MEETING_KINDS else MARKER_ENTRY
         if self.submission is not None:
             return MARKER_SENT
+        if self.imported_documents:
+            # Several files, but nobody's act: the import's row.
+            return MARKER_SYSTEM
         return MARKER_ENTRY if self.is_grouped else MARKER_SYSTEM
 
     @property
@@ -1057,6 +1106,129 @@ def _milestone_for_event(event: ChangeEvent) -> ChronologyMilestone:
 
 #: The label of a withdrawal's reason on its `Teema käik` row.
 WITHDRAWAL_REASON_LABEL = "Põhjus"
+
+
+@dataclass(frozen=True)
+class ImportedVersion:
+    """One imported file version: when its source says it was added, and where from."""
+
+    #: Its chronology group: `day:<Tallinn date of addition>`, or `undated`.
+    group: str
+    #: `Sektsioon → lehe pealkiri`, as the source called them.
+    source: str
+    #: When the file was added to OneNote (`LegacySourceResource.source_added_at`),
+    #: or ``None`` when the source carries no time.
+    added_at: datetime | None
+    #: Where its row sorts: `added_at`, or — undated — when the import stored it.
+    anchor: datetime
+    #: Whether `added_at` is earlier than the creation of the page the file is
+    #: on now (`LegacySourcePage.source_created_at`): content moved or copied in
+    #: from an older page. ``False`` when either time is unknown — it claims
+    #: nothing it cannot see.
+    predates_page: bool = False
+
+
+def imported_document_versions(matter: Matter, user: Any = None) -> dict[Any, ImportedVersion]:
+    """The file versions on this Matter that an import brought, by version.
+
+    Read off `LegacySourceResourceImport` — the row an importer writes for
+    every source file it stored, and nothing else writes — so a version is
+    «imported» because the import said so, not because it has no author. One
+    query for the Matter, like `_versions_shown_on_their_record`. With a
+    ``user``, only files that reader may see: a restricted file neither dates
+    nor counts a row they read.
+    """
+    from app.documents.models import Document
+    from app.legacy_import.source_pages import LegacySourceResourceImport, ResourceImportState
+
+    rows = LegacySourceResourceImport.objects.filter(
+        matter_source_page__matter=matter,
+        state=ResourceImportState.IMPORTED,
+        document_version__isnull=False,
+    )
+    if user is not None:
+        rows = rows.filter(document__in=Document.objects.visible_to(user))
+    found: dict[Any, ImportedVersion] = {}
+    for version_id, added_at, stored_at, section, title, page_created in rows.values_list(
+        "document_version_id",
+        "resource__source_added_at",
+        "document_version__created_at",
+        "matter_source_page__source_page__source_section",
+        "matter_source_page__source_page__title",
+        "matter_source_page__source_page__source_created_at",
+    ):
+        source = " → ".join(
+            part for part in ((section or "").strip(), (title or "").strip()) if part
+        )
+        group = f"day:{_local_day(added_at).isoformat()}" if added_at else "undated"
+        found[version_id] = ImportedVersion(
+            group=group,
+            source=source,
+            added_at=added_at,
+            anchor=added_at or stored_at,
+            predates_page=bool(added_at and page_created and added_at < page_created),
+        )
+    return found
+
+
+def imported_row_anchors(imported: dict[Any, ImportedVersion]) -> tuple[datetime, ...]:
+    """Each OneNote row's sort key: the earliest member of its group.
+
+    Exactly the keys `_historical_import_row` gives its rows, so the paging
+    bound counts one anchor per row these files will draw.
+    """
+    anchors: dict[str, datetime] = {}
+    for version in imported.values():
+        held = anchors.get(version.group)
+        anchors[version.group] = version.anchor if held is None else min(held, version.anchor)
+    return tuple(anchors.values())
+
+
+def _historical_import_row(
+    events: list[ChangeEvent], versions: list[ImportedVersion]
+) -> TimelineItem:
+    """One day's OneNote additions — or the undated ones — as one row.
+
+    Keyed on the earliest addition, so the row stands where the work happened;
+    the undated row is keyed where the import stored the files and prints no
+    date. The import's own events ride along unchanged as the row's files.
+    """
+    ordered = sorted(events, key=lambda event: (event.occurred_at, event.created_at, str(event.id)))
+    count = len(ordered)
+    anchor = min(version.anchor for version in versions)
+    dated = versions[0].added_at is not None
+    where = sorted({version.source for version in versions if version.source})
+    if len(where) == 1:
+        origin = f"OneNote: {where[0]}"
+    elif where:
+        origin = f"{len(where)} OneNote'i lehelt"
+    else:
+        origin = "ajaloolisest materjalist"
+    if dated:
+        what = ONENOTE_ADDED_ONE if count == 1 else ONENOTE_ADDED_MANY.format(count=count)
+        display = format_estonian_date(_local_day(anchor))
+        earlier = sum(1 for version in versions if version.predates_page)
+        if earlier == len(versions):
+            origin = f"{origin} · {ONENOTE_PREDATES_PAGE}"
+        elif earlier:
+            origin = f"{origin} · {ONENOTE_PREDATES_PAGE_SOME.format(count=earlier)}"
+    else:
+        what = ONENOTE_UNDATED_ONE if count == 1 else ONENOTE_UNDATED_MANY.format(count=count)
+        display = ONENOTE_UNDATED_DISPLAY
+    return TimelineItem(
+        occurred_at=anchor,
+        created_at=anchor,
+        sort_key=f"onenote:{versions[0].group}",
+        item_type=HISTORICAL_IMPORT_ITEM,
+        event=ordered[0],
+        events=tuple(ordered),
+        milestone=ChronologyMilestone(
+            what=what,
+            display_date=display,
+            sub=f"{count} {'fail' if count == 1 else 'faili'} · {origin}",
+        ),
+        imported_documents=count,
+    )
 
 
 def _end_of_day(day: date) -> datetime:
@@ -2145,6 +2317,9 @@ def matter_timeline(
     # second line, and a second dot, for one act (brief §25). Asked of the whole
     # Matter, because it decides whether an event is a row at all.
     shown_on_their_record = _versions_shown_on_their_record(matter, user=user, day=day)
+    # Files an import brought, read as one row per import rather than one
+    # «lisas dokumendi» per file (`HISTORICAL_IMPORT_ITEM`).
+    imported_versions = imported_document_versions(matter, user)
     # The open step, which `_assemble_timeline` keeps off the chronology as a
     # row of its own (docs/adr/0092 §8).
     open_action = (
@@ -2163,6 +2338,8 @@ def matter_timeline(
         fact_rows=fact_rows,
         shown_on_their_record=frozenset(shown_on_their_record),
         only=only,
+        imported_versions=frozenset(imported_versions),
+        imported_anchors=imported_row_anchors(imported_versions),
     )
     batch = window
     while True:
@@ -2175,6 +2352,7 @@ def matter_timeline(
             shown_on_their_record=shown_on_their_record,
             open_action_pk=open_action_pk,
             only=only,
+            imported_versions=imported_versions,
         )
         if bound is not None:
             items = [item for item in items if item.occurred_at >= bound]
@@ -2230,6 +2408,13 @@ class _ChronologySources:
     fact_rows: list[TimelineItem]
     shown_on_their_record: frozenset[Any]
     only: str
+    #: Versions an import brought (`imported_document_versions`): their events
+    #: are read whole, so one import's row is never assembled from half of it.
+    imported_versions: frozenset[Any]
+    #: One sort key per OneNote row those files draw (`imported_row_anchors`).
+    #: The import's own events are not anchors: their moment is the import's,
+    #: and a row dated 2021 must not be bounded as if it happened today.
+    imported_anchors: tuple[datetime, ...] = ()
     anchor_q: models.Q = field(init=False)
 
     def __post_init__(self) -> None:
@@ -2244,6 +2429,13 @@ class _ChronologySources:
             anchor &= ~models.Q(
                 event_type=ChangeEventType.EVIDENCE_VERSION_ADDED,
                 object_id__in=self.shown_on_their_record,
+            )
+        if self.imported_versions:
+            anchor &= ~models.Q(
+                event_type=ChangeEventType.EVIDENCE_VERSION_ADDED,
+                operation_id=None,
+                actor=None,
+                object_id__in=self.imported_versions,
             )
         if self.only != TIMELINE_FILTER_ENTRIES:
             folded = self._folded_effects()
@@ -2377,6 +2569,7 @@ class _ChronologySources:
 
         if self.only != TIMELINE_FILTER_ENTRIES:
             moments.extend(item.occurred_at for item in self.fact_rows)
+            moments.extend(self.imported_anchors)
             newest_moment(self.event_scope.filter(self.anchor_q), "occurred_at")
             visible = {"matter": self.matter}
             for queryset, date_field in (
@@ -2477,11 +2670,22 @@ class _ChronologySources:
                 object_id__in=self.entry_scope.filter(in_window).values("pk"),
             )
         operations = self.event_scope.filter(seed).exclude(operation_id=None).values("operation_id")
-        wanted = self.event_scope.filter(
+        whole = (
             seed
             # Every operation touched, whole.
             | models.Q(operation_id__in=operations)
         )
+        if self.imported_versions:
+            # And every imported file, whole: a OneNote day is one row, keyed on
+            # its earliest addition, so a bound falling between two of its files
+            # must not leave a row counting half of them (`HISTORICAL_IMPORT_ITEM`).
+            whole |= models.Q(
+                event_type=ChangeEventType.EVIDENCE_VERSION_ADDED,
+                operation_id=None,
+                actor=None,
+                object_id__in=self.imported_versions,
+            )
+        wanted = self.event_scope.filter(whole)
         if self.only != TIMELINE_FILTER_ENTRIES:
             # Except what folds onto a record read no further than here — a
             # development, a send, a finished wait: those effects belong to a
@@ -2516,6 +2720,7 @@ def _assemble_timeline(
     shown_on_their_record: Any,
     open_action_pk: Any,
     only: str,
+    imported_versions: dict[Any, ImportedVersion] | None = None,
 ) -> list[TimelineItem]:
     """The chronology rows these sources make, in the one order.
 
@@ -2553,6 +2758,34 @@ def _assemble_timeline(
                 event.event_type == ChangeEventType.EVIDENCE_VERSION_ADDED
                 and event.object_id in shown_on_their_record
             )
+        ]
+
+    # One OneNote day, one row (`HISTORICAL_IMPORT_ITEM`): a lone evidence event,
+    # no actor, whose version an import recorded as its copy of a source file,
+    # grouped by the day the source says the file was added. A person's upload
+    # has an actor and stays its own «lisas dokumendi» row.
+    imported_rows: list[TimelineItem] = []
+    if imported_versions:
+        by_import: dict[str, list[ChangeEvent]] = {}
+        versions_by_import: dict[str, list[ImportedVersion]] = {}
+        not_imported: list[ChangeEvent] = []
+        for event in renderable:
+            imported = (
+                imported_versions.get(event.object_id)
+                if event.event_type == ChangeEventType.EVIDENCE_VERSION_ADDED
+                and event.operation_id is None
+                and event.actor_id is None
+                else None
+            )
+            if imported is None:
+                not_imported.append(event)
+                continue
+            by_import.setdefault(imported.group, []).append(event)
+            versions_by_import.setdefault(imported.group, []).append(imported)
+        renderable = not_imported
+        imported_rows = [
+            _historical_import_row(members, versions_by_import[group])
+            for group, members in by_import.items()
         ]
 
     # One operation, one act, one row. `record_operations` says which operation
@@ -2738,6 +2971,7 @@ def _assemble_timeline(
             stage_effect=row.stage_effect or ((stage.summary or "") if stage is not None else ""),
         )
     items.extend(projected)
+    items.extend(imported_rows)
 
     # Deterministic ordering: the visible time first, then when it was recorded,
     # then the time-sortable id. Without the last two, two things written in the
