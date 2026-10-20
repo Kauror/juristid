@@ -17,6 +17,7 @@ is where an operator can act on it.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import Any
 
 from django import forms
@@ -481,6 +482,48 @@ def document_detail(request: HttpRequest, pk: Any) -> HttpResponse:
             "attachments": (
                 attachments_of(version, viewer=viewer_for(request)) if version is not None else []
             ),
+            # When the source says the file was added to OneNote — a fact of
+            # its own, apart from the day of whatever event it supports
+            # (docs/adr/0092 §6). ``None`` for a file no import brought.
+            "onenote_addition": onenote_addition_of(version) if version is not None else None,
             "nav_active": "teemad",
         },
+    )
+
+
+@dataclass(frozen=True)
+class OneNoteAddition:
+    """An imported file's OneNote addition time, or the honest absence of one."""
+
+    #: `30.8.2021 11:48` in Tallinn time, or empty when the source has none.
+    display: str
+    #: The source field it was read from, or empty.
+    basis: str
+
+
+def onenote_addition_of(version: Any) -> OneNoteAddition | None:
+    """When the source says this version's file was added to OneNote.
+
+    Read off the import's own row (`LegacySourceResourceImport`) and the source
+    resource it copied; ``None`` when no import brought this version — a
+    person's upload has no OneNote time to state.
+    """
+    from django.utils import timezone
+
+    from app.legacy_import.source_pages import LegacySourceResourceImport
+
+    row = (
+        LegacySourceResourceImport.objects.filter(document_version=version)
+        .select_related("resource")
+        .first()
+    )
+    if row is None:
+        return None
+    added = row.resource.source_added_at
+    if added is None:
+        return OneNoteAddition(display="", basis="")
+    local = timezone.localtime(added)
+    return OneNoteAddition(
+        display=f"{local.day}.{local.month}.{local.year} {local:%H:%M}",
+        basis=row.resource.source_added_basis,
     )
