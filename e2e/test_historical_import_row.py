@@ -44,8 +44,16 @@ def test_each_file_reads_on_its_onenote_day_and_opens_onto_it(page, base_url, wi
     expect(dated).to_have_count(1)
     expect(dated).to_contain_text("10.6.2019")
     dated.get_by_role("button", name=re.compile(re.escape(DATED))).click()
+    # The seeded page was created when the world was seeded, after its 2019 file:
+    # the row says the file reached OneNote before the page it is on now.
     expect(
-        dated.get_by_text(re.compile(r"1 fail · OneNote: .*" + re.escape(HISTORICAL_PAGE_TITLE)))
+        dated.get_by_text(
+            re.compile(
+                r"1 fail · OneNote: .*"
+                + re.escape(HISTORICAL_PAGE_TITLE)
+                + r" · lisatud enne praeguse lehe loomist"
+            )
+        )
     ).to_be_visible()
     expect(
         dated.get_by_role("link", name=re.compile(re.escape(HISTORICAL_FILENAME)))

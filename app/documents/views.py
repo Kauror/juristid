@@ -499,6 +499,9 @@ class OneNoteAddition:
     display: str
     #: The source field it was read from, or empty.
     basis: str
+    #: Whether that time is older than the page the file is on now — content
+    #: moved or copied in (`app.matters.timeline.ONENOTE_PREDATES_PAGE`).
+    predates_page: bool = False
 
 
 def onenote_addition_of(version: Any) -> OneNoteAddition | None:
@@ -514,7 +517,7 @@ def onenote_addition_of(version: Any) -> OneNoteAddition | None:
 
     row = (
         LegacySourceResourceImport.objects.filter(document_version=version)
-        .select_related("resource")
+        .select_related("resource", "resource__source_page")
         .first()
     )
     if row is None:
@@ -523,7 +526,9 @@ def onenote_addition_of(version: Any) -> OneNoteAddition | None:
     if added is None:
         return OneNoteAddition(display="", basis="")
     local = timezone.localtime(added)
+    page_created = row.resource.source_page.source_created_at
     return OneNoteAddition(
         display=f"{local.day}.{local.month}.{local.year} {local:%H:%M}",
         basis=row.resource.source_added_basis,
+        predates_page=bool(page_created and added < page_created),
     )

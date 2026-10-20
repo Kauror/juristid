@@ -41,6 +41,7 @@ from app.matters.services import add_entry
 from app.matters.timeline import (
     HISTORICAL_IMPORT_ITEM,
     ONENOTE_ADDED_ONE,
+    ONENOTE_PREDATES_PAGE,
     ONENOTE_UNDATED_DISPLAY,
     ONENOTE_UNDATED_ONE,
     matter_timeline,
@@ -64,11 +65,26 @@ def _batch() -> ImportBatch:
     )
 
 
-def _import(matter, files, *, page_title="Näidisleht", batch=None, restricted=(), added=None):
+#: When a synthetic page was created in OneNote: before every file these tests
+#: date, so a file reads as added to the page it is on unless a test says not.
+PAGE_CREATED = datetime(2015, 1, 5, 9, 0, tzinfo=UTC)
+
+
+def _import(
+    matter,
+    files,
+    *,
+    page_title="Näidisleht",
+    batch=None,
+    restricted=(),
+    added=None,
+    page_created=PAGE_CREATED,
+):
     """What an importer leaves behind: the page, its files, and the link saying so.
 
     ``added`` maps a filename to the UTC moment the source says it was added to
     OneNote; a file not named there has no source time, like a floating object.
+    ``page_created`` is the page's own OneNote creation time (``None``: unknown).
     """
     added = added or {}
     now = timezone.now()
@@ -84,7 +100,7 @@ def _import(matter, files, *, page_title="Näidisleht", batch=None, restricted=(
         page_order=1,
         page_role=SourcePageRole.MATTER_LIKE,
         role_reason="sünteetiline",
-        source_created_at=now,
+        source_created_at=page_created,
         source_modified_at=now,
         capture_id="c1",
         source_xml_sha256="0" * 64,
@@ -518,3 +534,106 @@ def test_the_page_draws_each_day_once_and_counts_rows_not_files(
     rows = html.count('class="uxtl__item ')
     count = re.search(r"·\s*</span>(\d+)\s+kirje", html) or re.search(r"(\d+)\s+kirje", html)
     assert count is not None and int(count.group(1)) == rows
+
+
+# ---------------------------------------------------------------------------
+# A file older than the page it is on now (MOVED_CONTENT)
+# ---------------------------------------------------------------------------
+#
+# OneNote keeps an element's creation time when content is moved or copied in
+# from another page, so nine pilot files carry a time older than their page.
+# The day is still the day the file reached OneNote; the row must not imply it
+# reached *this* page then.
+
+
+def test_a_file_older_than_its_page_says_so_and_keeps_its_source_day(normal_matter, specialist):
+    _import(
+        normal_matter,
+        FILES[:1],
+        page_title="Näidisseaduse eelnõu",
+        added={FILES[0][0]: _utc(2021, 8, 30, 8, 48, 10)},
+        page_created=_utc(2026, 2, 1, 9, 0),
+    )
+    (row,) = _imports(_rows(normal_matter, specialist))
+    assert row.milestone.what == ONENOTE_ADDED_ONE
+    assert row.milestone.display_date == "30.8.2021"
+    assert row.occurred_at == _utc(2021, 8, 30, 8, 48, 10)
+    assert ONENOTE_PREDATES_PAGE == "lisatud enne praeguse lehe loomist"
+    assert row.milestone.sub == (
+        f"1 fail · OneNote: {SECTION} → Näidisseaduse eelnõu · lisatud enne praeguse lehe loomist"
+    )
+
+
+def test_a_file_added_after_its_page_was_created_claims_no_move(normal_matter, specialist):
+    _import(
+        normal_matter,
+        FILES[:1],
+        added={FILES[0][0]: _utc(2021, 8, 30, 8, 48, 10)},
+        page_created=_utc(2021, 8, 30, 8, 0),
+    )
+    (row,) = _imports(_rows(normal_matter, specialist))
+    assert ONENOTE_PREDATES_PAGE not in row.milestone.sub
+
+
+def test_an_unknown_page_creation_time_claims_nothing(normal_matter, specialist):
+    _import(
+        normal_matter,
+        FILES[:1],
+        added={FILES[0][0]: _utc(2021, 8, 30, 8, 48, 10)},
+        page_created=None,
+    )
+    (row,) = _imports(_rows(normal_matter, specialist))
+    assert row.milestone.sub == f"1 fail · OneNote: {SECTION} → Näidisleht"
+
+
+def test_a_day_row_counts_only_the_files_older_than_their_page(normal_matter, specialist):
+    _import(
+        normal_matter,
+        FILES[:2],
+        page_title="Vana leht",
+        added={name: SAME_DAY[name] for name, _content in FILES[:2]},
+        page_created=_utc(2026, 2, 1, 9, 0),
+    )
+    _import(
+        normal_matter,
+        FILES[2:],
+        page_title="Uus leht",
+        added={FILES[2][0]: SAME_DAY[FILES[2][0]]},
+        page_created=_utc(2021, 8, 1, 9, 0),
+    )
+    (row,) = _imports(_rows(normal_matter, specialist))
+    assert row.imported_documents == 3
+    assert row.milestone.sub == (
+        "3 faili · 2 OneNote'i lehelt · 2 neist lisatud enne praeguse lehe loomist"
+    )
+
+
+def test_an_undated_file_never_claims_to_be_older_than_its_page(normal_matter, specialist):
+    _import(normal_matter, FILES[:1], page_created=_utc(2026, 2, 1, 9, 0))
+    (row,) = _imports(_rows(normal_matter, specialist))
+    assert row.milestone.display_date == ONENOTE_UNDATED_DISPLAY
+    assert ONENOTE_PREDATES_PAGE not in row.milestone.sub
+
+
+def test_the_document_page_says_the_file_is_older_than_its_page(signed_in, normal_matter):
+    (version,) = _import(
+        normal_matter,
+        FILES[:1],
+        added={FILES[0][0]: _utc(2021, 8, 30, 8, 48, 10)},
+        page_created=_utc(2026, 2, 1, 9, 0),
+    )
+    html = signed_in.get(
+        reverse("documents:document_detail", kwargs={"pk": version.document.pk})
+    ).content.decode()
+    assert "30.8.2021 11:48 · lisatud enne praeguse lehe loomist" in html
+
+
+def test_the_document_page_of_a_file_added_to_its_page_says_only_the_time(signed_in, normal_matter):
+    (version,) = _import(
+        normal_matter, FILES[:1], added={FILES[0][0]: _utc(2021, 8, 30, 8, 48, 10)}
+    )
+    html = signed_in.get(
+        reverse("documents:document_detail", kwargs={"pk": version.document.pk})
+    ).content.decode()
+    assert "30.8.2021 11:48" in html
+    assert "enne praeguse lehe loomist" not in html
