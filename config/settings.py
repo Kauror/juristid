@@ -816,6 +816,13 @@ REAL_DATA_ALLOWED = env_bool("REAL_DATA_ALLOWED", default=False)
 # against the hosted test-build, so the running application never carries it.
 EXCEL_PILOT_ENABLED = env_bool("JURISTID_EXCEL_PILOT", default=False)
 
+# The evidence pilot (docs/adr/0173) writes reconstructed professional history —
+# sent opinions with their real signed letters, consultation rounds, received
+# feedback — from a reviewed package into an otherwise empty database. Off by
+# default and never in an env file, for the reason the flag above gives: only the
+# one-off container that runs `evidence_pilot apply` carries it.
+EVIDENCE_PILOT_ENABLED = env_bool("JURISTID_EVIDENCE_PILOT", default=False)
+
 # -- Cloudflare Access ------------------------------------------------------
 #
 # The production authenticator. Cloudflare authenticates a person against the

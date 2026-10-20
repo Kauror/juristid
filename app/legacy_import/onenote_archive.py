@@ -62,6 +62,11 @@ class ArchiveResource:
     relative_path: str
     is_inline: bool
     download_status: str
+    #: When the file was added to the OneNote page: the `creationTime` of the
+    #: outline element holding it, as the desktop archive recorded it
+    #: (`oneNote.blockCreated`). ``None`` when the archive has none — a floating
+    #: object has no outline element — and then no date is claimed at all.
+    source_added_at: datetime | None = None
 
     @property
     def is_captured(self) -> bool:
@@ -212,6 +217,7 @@ class OneNoteArchive:
                 relative_path=relative.replace("\\", "/"),
                 is_inline=(payload.get("inlineOrFile") == "inline"),
                 download_status=payload.get("downloadStatus", ""),
+                source_added_at=_parse_moment((payload.get("oneNote") or {}).get("blockCreated")),
             )
 
     def resource_path(self, page_key: str, resource: ArchiveResource) -> Path:

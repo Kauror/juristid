@@ -2358,9 +2358,11 @@ def add_engagement(
     `app/matters/work_items.py`, which is why closing it is one column on this
     table rather than a state machine somewhere else (docs/adr/0086 §3).
 
-    ``lifecycle_tracked`` is `False` for exactly one caller: the register
+    ``lifecycle_tracked`` is `False` for two importers only: the register
     outreach importer, which files past consultations as history and must not
-    turn a decade of them into open work (`MatterEngagement.lifecycle_tracked`).
+    turn a decade of them into open work (`MatterEngagement.lifecycle_tracked`),
+    and the evidence pilot, for a round its package reconstructs from an earlier
+    year (docs/adr/0173 §3).
     A deadline given alongside it still starts the lifecycle, because a reply-by
     date on a round nobody is waiting for is not a statement anybody can make.
 

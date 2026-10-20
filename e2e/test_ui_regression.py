@@ -558,6 +558,11 @@ STRIP_RUN_DAY = ('.tl-step:has(.tl-step__what:text-is("Koja arvamus")) .tl-step_
 #: `occurred_on=date(2026, 5, 12)`, and the `Töövõit`'s reporting period. The
 #: engagement's date is the whole content of the row `teema-ajajoon` compares,
 #: so holding it still would photograph a canonical instead of the fixture.
+#:
+#: The two OneNote rows of the historical files `seed_e2e_data` imports are
+#: **not** run-day dates (docs/adr/0092 §6, amendment 2026-10-20): one reads the
+#: source's fixed addition day, 10.6.2019, and the other «kuupäev teadmata».
+#: Both stay in the baseline as they are.
 CHRONOLOGY_RUN_DAY = (
     '.uxtl__ms:has(.uxtl__mswhat:text-is("Teema loodud")) .uxtl__msdate',
     '.uxtl__ms:has(.uxtl__mswhat:text-is("Arvamus välja")) .uxtl__msdate',

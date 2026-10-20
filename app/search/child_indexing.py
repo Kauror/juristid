@@ -43,6 +43,7 @@ from app.matters.models import (
     MatterProceduralDevelopment,
     MatterWebsiteOverview,
 )
+from app.organisations.services import continuity_names
 from app.search.models import INDEX_VERSION, SearchDocument, SearchSourceKind
 from app.submissions.models import Submission
 
@@ -102,7 +103,9 @@ def indexable_entries() -> QuerySet[Entry]:
 
 def indexable_submissions() -> QuerySet[Submission]:
     return Submission.objects.select_related("matter").prefetch_related(
-        "recipient_rows__organisation__aliases"
+        "recipient_rows__organisation__aliases",
+        "recipient_rows__organisation__predecessor",
+        "recipient_rows__organisation__successors",
     )
 
 
@@ -271,7 +274,9 @@ def refresh_developments(
 
 def indexable_positions() -> QuerySet:
     """Every `Meile saadetud tagasiside` and `Teiste arvamus`."""
-    return MatterExternalPosition.objects.select_related("matter", "organisation")
+    return MatterExternalPosition.objects.select_related(
+        "matter", "organisation", "organisation__predecessor"
+    ).prefetch_related("organisation__successors")
 
 
 def _position_values(position, now: object) -> dict[str, object]:
@@ -311,7 +316,9 @@ def _position_values(position, now: object) -> dict[str, object]:
         # under the Teema to say which opinion matched (ENG-083).
         "title": organisation or position.source_label or "Seisukoht",
         "identifiers": "",
-        "alias_text": names_with_folded_forms([organisation, position.source_label]),
+        "alias_text": names_with_folded_forms(
+            [organisation, position.source_label, *continuity_names(position.organisation)]
+        ),
         "people_text": "",
         # The summary is the body, so a match inside it can be quoted. It used
         # to be the row's title, and a title is never excerpted: an opinion
@@ -610,6 +617,13 @@ def _submission_values(submission: Submission, now: object) -> dict[str, object]
         for row in submission.recipient_rows.all()
         if row.organisation_id
         for alias in row.organisation.aliases.all()
+    ] + [
+        # A letter to «Justiitsministeerium» is found by its successor's name too,
+        # and keeps its own addressee (`continuity_names`).
+        name
+        for row in submission.recipient_rows.all()
+        if row.organisation_id
+        for name in continuity_names(row.organisation)
     ]
     return {
         "matter": submission.matter,
