@@ -113,7 +113,7 @@ from django.utils import timezone
 
 from app.core import dates
 from app.core.dates import format_estonian_date, short_day_month
-from app.intelligence.enums import FactStatus
+from app.intelligence.enums import FactStatus, is_informational_milestone
 from app.intelligence.models import MatterImportantDate
 from app.legacy_import.current_state import CurrentRegisterState, RegisterCurrency
 from app.legacy_import.register_semantics import OPINION_WORK_COMPLETE_STATES
@@ -125,6 +125,7 @@ from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
 from app.workflow.dates import format_at_precision, period_in_window
 from app.workflow.enums import (
+    DEADLINE_KEEPING_KINDS,
     ActionKind,
     ActionStatus,
     DatePrecision,
@@ -317,6 +318,11 @@ class WorkItem:
     #: the opinion gets ``""`` (`app.matters.follow_up_display`).
     is_follow_up: bool = False
     follow_up_label: str = ""
+    #: Whether this row is an informational `Oluline tähtaeg` (a commencement a
+    #: draft proposes, `INFORMATIONAL_IMPORTANT_DATE_KINDS`): a date the file
+    #: watches, never its next step and never late (docs/adr/0120, amendment of
+    #: 2026-10-19). Read off the stored kind; `False` on every other row.
+    is_informational: bool = False
 
     @property
     def date_display(self) -> str:
@@ -700,6 +706,7 @@ def _deadline_item(record: MatterImportantDate, today: date) -> WorkItem:
     the Matter and the milestone moves with it, which is the behaviour a
     department actually has (§4.2).
     """
+    informational = is_informational_milestone(record.kind)
     return WorkItem(
         source_type=SOURCE_IMPORTANT_DEADLINE,
         object_id=record.pk,
@@ -715,10 +722,13 @@ def _deadline_item(record: MatterImportantDate, today: date) -> WorkItem:
         meaning=MEANING_IMPORTANT,
         text=record.title,
         # A milestone is a real commitment, so its last day passing is genuine
-        # lateness — unlike a review date, which is only a reminder.
-        is_overdue=record.period_end < today,
+        # lateness — unlike a review date, which is only a reminder. An
+        # informational one is not a commitment of anybody's here: a draft's
+        # planned commencement passing is not Koda being late.
+        is_overdue=record.period_end < today and not informational,
         is_review_ripe=False,
         today=today,
+        is_informational=informational,
     )
 
 
@@ -1235,10 +1245,16 @@ def outstanding_response_deadlines(user: Any, *, owner: Any = None) -> QuerySet[
       January and whose lawyer has said «JÄLGIN, vaata uuesti üle 09.10» is not
       overdue in October; it is being monitored, which is what the person
       carrying it decided.
-    * **It is not a judgement about the action.** DO, WAIT and MONITOR all count,
-      and so does an action with no date at all: «I do not yet know when» is
-      still a decision, and a stronger statement about today's work than a date
-      nobody has revisited.
+    * **It is not a judgement about the action — except a WAIT.** DO and
+      MONITOR count, and so does an action with no date at all: «I do not yet
+      know when» is still a decision, and a stronger statement about today's work
+      than a date nobody has revisited. **A WAIT does not** (docs/adr/0050,
+      amendment of 2026-10-20): «Ootan Riigikogu II lugemist» says what somebody
+      *else* will do next, not what Koda will do about the answer it owes, so the
+      ``Arvamuse tähtaeg`` stays live work beside it — on the work lists, in the
+      overdue counts and in the header — until it is answered or discharged.
+      Letting a wait on a third party hide Koda's own deadline was solving one
+      gap by concealing another.
     * **It is not a judgement about who wrote the action.** A ``NextAction``
       materialised by the current-register enrichment carries the register's own
       structured ``JÄRGMISEKS`` value, so it is the department's instruction too.
@@ -1259,8 +1275,10 @@ def outstanding_response_deadlines(user: Any, *, owner: Any = None) -> QuerySet[
     Every subquery is an ``Exists``, so the whole source stays one query however
     many Matters it holds.
     """
-    instructed = NextAction.objects.visible_to(user).filter(
-        matter=OuterRef("pk"), status=ActionStatus.OPEN
+    instructed = (
+        NextAction.objects.visible_to(user)
+        .filter(matter=OuterRef("pk"), status=ActionStatus.OPEN)
+        .exclude(kind__in=DEADLINE_KEEPING_KINDS)
     )
     return (
         response_obligations(user, owner=owner)

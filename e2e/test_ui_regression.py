@@ -2283,7 +2283,7 @@ def test_a_closed_matter_day_really_does_move_without_the_normalisation(page, se
 
 
 def _open_matter_fixture(page, day: str) -> None:
-    """The open Matter's nine date slots, in the two shapes the page renders.
+    """The open Matter's ten date slots, in the two shapes the page renders.
 
     Every slot, not only the varying ones, because the scoping is the thing
     under test: a fixture holding just the two run-day dates would pass under a
