@@ -265,6 +265,8 @@ _MILESTONE_LABELS: dict[str, str] = {
 #: reopened here; what changed in docs/adr/0092 is where the row is read from,
 #: not what it is called (app/matters/process_timeline.py `SENT_LABEL`).
 SUBMISSION_MILESTONE = "Arvamus välja"
+#: An official «no comments» answer is a send, not an opinion (docs/adr/0174).
+NO_OBJECTION_MILESTONE = "Vastus välja"
 
 #: What a published row prints where its publication date would go, when nobody
 #: knows what that date is.
@@ -1597,8 +1599,12 @@ def submission_milestone(submission: Any, addressees: Sequence[str] = ()) -> Chr
         parts.append(str(submission.get_kind_display()))
     if addressees:
         parts.append(", ".join(addressees))
+    from app.submissions.enums import NOT_AN_OPINION_KINDS
+
     return ChronologyMilestone(
-        what=SUBMISSION_MILESTONE,
+        what=NO_OBJECTION_MILESTONE
+        if submission.kind in NOT_AN_OPINION_KINDS
+        else SUBMISSION_MILESTONE,
         display_date=format_estonian_date(submission_chronology_day(submission)),
         sub=" · ".join(parts),
     )

@@ -180,6 +180,7 @@ consequences and reversibility.
 | [0170](0170-lisa-tagasiside-is-the-one-door-for-every-position.md) | `Lisa tagasiside` is the one door for every position | Accepted (owner's UX round, stage 3, 2026-10-15); `+ Kaasamine · Lisa tagasiside` records member feedback sent to Koda and positions published elsewhere through one form with a required, default-free provenance radio; organisation optional for received feedback (0101) and required for published positions; text, link or file — any one (0084 §3); `Liige` only with «Saadeti Kojale»; optional, never-preselected `Seotud kaasamine` that fixes the provenance (except `Tehtud` on a wait); retires `Meile saadetud tagasiside` / `Teiste arvamus` and their routes; amends 0091 §3.5, 0095 §4–§5, 0142 §B, 0167 §2; no migrations; §4 amended 2026-10-17 by 0167's amendment (D3): a standalone position no longer repeats by a double POST — the same drawn form saves once, a deliberate repeat needs a fresh form |
 | [0171](0171-the-browser-layer-is-one-delegated-script-and-a-feature-that-fails-to-start-stops-only-itself.md) | The browser layer is one delegated script, and a feature that fails to start stops only itself | Proposed (JARCH-004, 2026-10-18); no migrations, nothing visible changes; describes app.js/ux.js as one global delegated progressive-enhancement layer (document listeners, the htmx swap layer, draft keeping, refusal display) and proposes AGENTS.md wording in place of «isolated islands»; implemented: `safeInit` per feature start-up and per binder, the request-lifecycle handlers registered before any feature |
 | [0172](0172-owner-acceptance-fixes-of-2026-10-19.md) | The owner's acceptance fixes of 2026-10-19 | Accepted (owner's corrective brief, 2026-10-19); no migrations; a filed `Kaasamine` supersedes the `website-overview` suggestion (reading only, `proves` and the 0161 alert unchanged; amends 0144 §2); `Tegevused` in every user-facing sentence; the 19.10 note names `+ Lisa tegevus`; `+ Lisa · Muu` `Millal?` defaults to today's Tallinn day, renewed when opened (amends 0097's 2026-10-15 amendment); a day-dated `Muu`/`Kohtumine` sorts at the end of its day and a `Muu` row's closed line carries its first words; watched `Oluline tähtaeg` and `Töövõit` drawn on `Menetluse kulg` as `KIND_EVENT` markers, never stages (amends 0131 §13) |
+| [0174](0174-an-official-no-comments-answer-is-a-send-not-an-opinion.md) | An official «no comments» answer is a send, not an opinion | Proposed (owner decision of 2026-10-20); `SubmissionKind.NO_OBJECTION_RESPONSE` — answers a request, keeps its e-mail as evidence, never counted as «arvamus välja», never followed up; one choices-only migration `submissions/0011` |
 
 **Numbers with no record on this branch.** `tests/test_architecture_decisions.py`
 requires every gap in the numbering to be named here:
@@ -190,6 +191,9 @@ requires every gap in the numbering to be named here:
   lands with that PR.
 - 0164 — not used. The number was skipped during the QA remediation of
   2026-10-14 (between 0163 and 0165), and no record was ever written under it.
+- 0173 — «The evidence pilot imports reconstructed history from a reviewed
+  package». It is on `feature/lovable12-pilot-package` (PR #500, still open);
+  the record lands with that PR.
 
 Naming: `NNNN-short-decision-title.md`.
 

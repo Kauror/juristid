@@ -108,7 +108,7 @@ from app.matters.register_filters import (
     register_population,
 )
 from app.matters.selectors import MISSING
-from app.submissions.enums import SubmissionStatus
+from app.submissions.enums import NOT_AN_OPINION_KINDS, SubmissionStatus
 from app.submissions.models import Submission
 
 #: How far back "recently arrived" reaches. A fortnight, because a department
@@ -287,8 +287,11 @@ def sent_submissions(user: Any, *, since: date, until: date | None = None) -> Qu
     or three hours ahead of UTC, so a letter sent at half past midnight belongs
     to the day the sender was living in.
     """
-    queryset = Submission.objects.visible_to(user).filter(
-        status=SubmissionStatus.SENT, sent_at__isnull=False
+    queryset = (
+        Submission.objects.visible_to(user)
+        .filter(status=SubmissionStatus.SENT, sent_at__isnull=False)
+        # Opinions: an official «no comments» answer is not one (docs/adr/0174).
+        .exclude(kind__in=NOT_AN_OPINION_KINDS)
     )
     # As a range on the timestamp (`local_day_range`), which is the same local
     # dates and which the `sent_at` index can answer (2026-10-17 audit, JPERF-005).

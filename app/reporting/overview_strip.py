@@ -280,6 +280,13 @@ def rail(
     sent = results.get("SUBMISSIONS_SENT")
     if sent is not None and sent.has_value:
         reporting_rows.append(Figure(sent.value, "arvamusi välja", sent.drillthrough_url))
+    # Official «no comments» answers, counted beside the opinions rather than in
+    # them (docs/adr/0174), and drawn only when there is one: a zero would be a
+    # row about a kind most years never use.
+    if context is not None:
+        answered = _no_objection_answers(context, today)
+        if answered is not None:
+            reporting_rows.append(answered)
     # Both counted and both linked through the register, for the reason
     # `strip` above states: the lists these two used to open are retired, so the
     # only list either number can open is a list of Matters — and a caption
@@ -302,3 +309,22 @@ def rail(
         RailBlock("Praegu", now_rows),
         RailBlock(f"Aruandlus {today.year}", reporting_rows),
     ]
+
+
+def _no_objection_answers(context: ReportingContext, today: date) -> Figure | None:
+    """This year's official «no comments» answers, or ``None`` when there were none.
+
+    The same population and list as «arvamusi välja» — `sent_submissions` over
+    the heading's year, every chip kept — narrowed to the kind by name, so the
+    figure and the list it opens count the same letters.
+    """
+    from app.reporting.context import PARAM_PERIOD
+    from app.reporting.selectors.submissions import _submission_url, sent_submissions
+    from app.submissions.enums import SubmissionKind
+
+    kind = SubmissionKind.NO_OBJECTION_RESPONSE.value
+    value = sent_submissions(context, year=today.year, kind=kind).count()
+    if not value:
+        return None
+    url = _submission_url(context, arvamus=kind, **{PARAM_PERIOD: str(today.year)})
+    return Figure(value, "vastust märkusteta", url)
