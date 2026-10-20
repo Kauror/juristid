@@ -437,7 +437,12 @@ def _upcoming_milestones(items: list[wi.WorkItem], today: date) -> dict[Any, wi.
         if item.source_type != wi.SOURCE_IMPORTANT_DEADLINE or item.when is None:
             continue
         end = item.period_end or item.when
-        if not milestone_is_upcoming(status=FactStatus.ACTIVE, period_end=end, today=today):
+        # An informational milestone is a date the file watches, never its next
+        # step (`INFORMATIONAL_IMPORTANT_DATE_KINDS`): the same test the page
+        # and `without_next_step` apply, read off the item rather than a record.
+        if item.is_informational or not milestone_is_upcoming(
+            status=FactStatus.ACTIVE, period_end=end, today=today
+        ):
             continue
         key = milestone_order(item.when, end, item.object_id)
         current = chosen.get(item.matter_id)

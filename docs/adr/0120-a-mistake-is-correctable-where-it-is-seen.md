@@ -256,3 +256,69 @@ blocker the check does not yet name is told on the confirmation page rather
 than by withholding the link, so the offer can be wrong only towards offering.
 It never hides a deletion that could succeed. Permissions, the evidence
 safety rules and the deletion semantics are untouched.
+
+## Amendment, 2026-10-19 — an informational milestone is never the next step
+
+### What was decided before
+
+§2: when no `Järgmiseks` is set, the nearest upcoming `Oluline tähtaeg` —
+*any* active, visible one whose period has not ended — is the file's next step,
+on the Teema, on `Minu asjad`, in the register and in every
+«järgmine tegevus puudub» population (`without_next_step`).
+
+### Why it is narrowed
+
+The rule was written for a milestone that says what the file is waiting for:
+«Ootan ministeeriumi tagasisidet, 1.10.2026». It also caught a milestone that
+says nothing about the lawyer's work: a commencement a *draft* proposes. A
+Teema with an open `Arvamuse tähtaeg`, a draft's «Eelnõus kavandatud jõustumine
+20.05.2027» and no step read that milestone in `PRAEGUNE TEGEVUS`, left
+`järgmise tegevuseta` and `Vajab sekkumist`, and hid the one thing those
+populations exist to show — that nobody has said what happens next. No
+`NextAction` was written; the reading made it look as if one had been. (Found on
+the twelve-topic evidence pilot's isolated rehearsal, 2026-10-19.)
+
+### What is decided now
+
+`ImportantDateKind` gains `PLANNED_COMMENCEMENT` — «Eelnõus kavandatud
+jõustumine» — and the kinds are split explicitly by
+`INFORMATIONAL_IMPORTANT_DATE_KINDS` (`app/intelligence/enums.py`). A milestone
+of an informational kind:
+
+- is **never the next step** — `next_step.milestone_is_upcoming`,
+  `upcoming_milestone`, `upcoming_milestones` and so `without_next_step` skip it;
+  `Minu asjad`'s portfolio row skips it through the work item's
+  `is_informational`;
+- is **never late** — its period ending is not Koda's lateness, so the work item
+  and the header's nearest deadline do not call it overdue;
+- **stays a dated fact** on the Teema — `Menetluse kulg`, `Tegevused`, the
+  header's nearest date — and in the work lists as a date, exactly like any
+  other milestone.
+
+Decided by the stored `kind`, never by the title. **Safe default:** `OTHER` —
+every row written so far — and `TRANSPOSITION_DEADLINE` keep §2 unchanged;
+moving a kind into the informational set is a product decision. One additive
+migration, `intelligence/0004`, re-creates the kind vocabulary's check with the
+new value; no data changes and nothing is backfilled. The `Oluline tähtaeg`
+form does not ask the kind (unchanged); importers and later surfaces set it.
+
+### What this amendment does not change
+
+An open `Järgmiseks` (DO, WAIT or MONITOR, dated or not), a `PLANNED` action
+and a round waiting for feedback are the next step exactly as before; a
+cancelled, past, removed or restricted milestone is never one; every probe is
+still `visible_to` the reader. No `NextAction` is created by any reading.
+
+## Amendment, 2026-10-20 — a source's estimate is informational, and is not the bill's date
+
+The owner selected Lovable's 27.05.2027 as 2026_225's prospective commencement
+in place of the bill's own 20.05.2027 (evidence pilot v2.3). Recording that
+estimate as `PLANNED_COMMENCEMENT`, «Eelnõus kavandatud jõustumine», would
+attribute a tracker's estimate to the text of bill 947 SE. So
+`ImportantDateKind` gains **`ESTIMATED_COMMENCEMENT`**, «Eeldatav jõustumine
+(allika hinnang)»: a commencement somebody estimated, as opposed to one a draft
+states. It is the second member of `INFORMATIONAL_IMPORTANT_DATE_KINDS`, so it
+is never the next step and never late, exactly like the first. The value joins
+the same, still unreleased migration (now `intelligence/0004_informational_commencement_kinds`);
+no data changes, nothing is backfilled, and the kind is still never read from a
+title.

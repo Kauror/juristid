@@ -73,10 +73,52 @@ class ImportantDateKind(models.TextChoices):
     `OTHER` is the default and stays the overwhelming majority. **Nothing is
     backfilled**: a row written before this column existed reads `OTHER` because
     nobody has said otherwise, which is exactly what it means.
+
+    `PLANNED_COMMENCEMENT` — «Eelnõus kavandatud jõustumine» — earns its value
+    the same way (docs/adr/0120, amendment of 2026-10-19): a commencement a
+    *draft* proposes is a date the department watches, not a commencement
+    (`MatterEffectiveDate` would read «Jõustus» once it passed, adopted or not)
+    and not what Koda does next. The next-step rule has to recognise it rather
+    than read «jõustumine» out of a title, so it is a kind, and it is one of the
+    `INFORMATIONAL_IMPORTANT_DATE_KINDS` below.
+
+    `ESTIMATED_COMMENCEMENT` — «Eeldatav jõustumine (allika hinnang)» — is the
+    same kind of fact from a different source (docs/adr/0120, amendment of
+    2026-10-20): a commencement somebody *estimated* — a tracker, a colleague,
+    a news item — rather than a date a draft itself states. It is kept apart
+    from `PLANNED_COMMENCEMENT` so that a record never attributes an estimate to
+    the bill's text; both are informational.
     """
 
     OTHER = "OTHER", "Muu tähtaeg"
     TRANSPOSITION_DEADLINE = "TRANSPOSITION_DEADLINE", "ELi õiguse ülevõtmise tähtaeg"
+    PLANNED_COMMENCEMENT = "PLANNED_COMMENCEMENT", "Eelnõus kavandatud jõustumine"
+    ESTIMATED_COMMENCEMENT = "ESTIMATED_COMMENCEMENT", "Eeldatav jõustumine (allika hinnang)"
+
+
+#: **Milestones that inform, as opposed to milestones that are the file's next
+#: step** (docs/adr/0120 §2, amendment of 2026-10-19).
+#:
+#: An `Oluline tähtaeg` a lawyer records as «Ootan ministeeriumi tagasisidet,
+#: 1.10.2026» says what the file is waiting for, and ADR 0120 §2 lets it stand in
+#: for a missing `Järgmiseks`. A milestone of a kind listed here describes an
+#: event outside the department's work — a commencement a draft proposes or a
+#: source estimates — and
+#: therefore **never** does: it is never the next step, it never keeps a Matter
+#: out of a «järgmine tegevus puudub» population, and its period ending is not
+#: lateness. It stays a dated fact on the Teema like any other milestone.
+#:
+#: Decided by the stored `kind` and nothing else — never the title. `OTHER` (the
+#: default, and every existing row) and `TRANSPOSITION_DEADLINE` keep ADR 0120's
+#: behaviour unchanged; moving a kind into this set is a product decision.
+INFORMATIONAL_IMPORTANT_DATE_KINDS: frozenset[str] = frozenset(
+    {ImportantDateKind.PLANNED_COMMENCEMENT.value, ImportantDateKind.ESTIMATED_COMMENCEMENT.value}
+)
+
+
+def is_informational_milestone(kind: str | None) -> bool:
+    """Whether an `Oluline tähtaeg` of this kind only informs (never a next step, never late)."""
+    return (kind or ImportantDateKind.OTHER) in INFORMATIONAL_IMPORTANT_DATE_KINDS
 
 
 class EventKind(models.TextChoices):

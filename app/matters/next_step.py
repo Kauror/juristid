@@ -21,7 +21,12 @@ gives it:
 * **its period has not ended** — the period's *last* day, the rule
   `MatterImportantDate.has_passed` states and `intelligence.selectors` splits
   «upcoming» from «past» by, so «oktoober 2026» stays ahead of us until
-  31 October and a milestone dated today is still today's.
+  31 October and a milestone dated today is still today's;
+* **it is not informational** — a milestone whose `kind` is one of
+  `INFORMATIONAL_IMPORTANT_DATE_KINDS` («Eelnõus kavandatud jõustumine»)
+  describes an event outside the department's work and is never what the file
+  does next (docs/adr/0120, amendment of 2026-10-19). Decided by the stored
+  kind, never by the title; every existing row is `OTHER` and keeps the rule.
 
 A past milestone was valid to record and stays in `Teema käik`; it is simply not
 what happens *next*.
@@ -56,15 +61,26 @@ from typing import Any
 from django.db.models import Exists, OuterRef, Prefetch, QuerySet
 from django.utils import timezone
 
-from app.intelligence.enums import FactStatus
+from app.intelligence.enums import (
+    INFORMATIONAL_IMPORTANT_DATE_KINDS,
+    FactStatus,
+    is_informational_milestone,
+)
 from app.intelligence.models import MatterImportantDate
 from app.workflow.enums import ActionStatus
 from app.workflow.models import NextAction
 
 
-def milestone_is_upcoming(*, status: str, period_end: date | None, today: date) -> bool:
-    """Whether a milestone in this state may be a Matter's next step today."""
-    return status == FactStatus.ACTIVE and period_end is not None and period_end >= today
+def milestone_is_upcoming(
+    *, status: str, period_end: date | None, today: date, kind: str | None = None
+) -> bool:
+    """Whether a milestone in this state, of this kind, may be a Matter's next step today."""
+    return (
+        status == FactStatus.ACTIVE
+        and period_end is not None
+        and period_end >= today
+        and not is_informational_milestone(kind)
+    )
 
 
 def milestone_order(date_value: date, period_end: date, pk: Any) -> tuple[date, date, str]:
@@ -87,7 +103,9 @@ def upcoming_milestone(
         record
         for record in records
         if record.removed_at is None
-        and milestone_is_upcoming(status=record.status, period_end=record.period_end, today=day)
+        and milestone_is_upcoming(
+            status=record.status, period_end=record.period_end, today=day, kind=record.kind
+        )
     ]
     return min(
         candidates,
@@ -98,8 +116,10 @@ def upcoming_milestone(
 
 def upcoming_milestones(user: Any, today: date) -> QuerySet[MatterImportantDate]:
     """`milestone_is_upcoming`, as a reader-scoped queryset."""
-    return MatterImportantDate.objects.visible_to(user).filter(
-        status=FactStatus.ACTIVE, period_end__gte=today
+    return (
+        MatterImportantDate.objects.visible_to(user)
+        .filter(status=FactStatus.ACTIVE, period_end__gte=today)
+        .exclude(kind__in=INFORMATIONAL_IMPORTANT_DATE_KINDS)
     )
 
 
