@@ -40,6 +40,7 @@ from app.matters.models import (
     MatterExternalPosition,
     MatterProceduralDevelopment,
 )
+from app.organisations.services import continuity_names
 from app.search.child_indexing import _generations, bounded_body
 from app.search.models import INDEX_VERSION, INITIAL_GENERATION, SearchDocument, SearchSourceKind
 from app.submissions.models import Submission
@@ -244,6 +245,11 @@ def indexable_matters() -> QuerySet[Matter]:
         "source_organisations",
         "source_organisations__aliases",
         "addressee_organisation__aliases",
+        # The recorded continuation, one hop each way (`continuity_names`).
+        "source_organisations__predecessor",
+        "source_organisations__successors",
+        "addressee_organisation__predecessor",
+        "addressee_organisation__successors",
         "policy_areas",
         "tags",
         "tags__aliases",
@@ -291,6 +297,9 @@ def _alias_text_for(matter: Matter) -> str:
             continue
         parts.append(organisation.name)
         parts.extend(alias.alias for alias in organisation.aliases.all())
+        # The same body under its predecessor's or successor's name — a reviewed
+        # link, never a similarity (`continuity_names`).
+        parts.extend(continuity_names(organisation))
     for area in matter.policy_areas.all():
         parts.append(area.name_et)
     # The free-text area, beside the canonical names rather than instead of

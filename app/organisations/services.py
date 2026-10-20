@@ -80,6 +80,29 @@ def find_matches(name: str) -> list[Organisation]:
     return list(Organisation.objects.filter(aliases__normalized_alias=normalized).distinct()[:2])
 
 
+def continuity_names(organisation: Organisation | None) -> list[str]:
+    """The names this body is also known by through a recorded continuation.
+
+    One hop each way along `Organisation.predecessor` — the catalogue's link for
+    the same body under a new name or remit, which is only ever set from a
+    reviewed source (app/organisations/reference_data.py, the evidence pilot's
+    `organisation_relationships`). So a search for «Justiits- ja
+    Digiministeerium» also finds a 2021 letter addressed to «Justiitsministeerium»,
+    and the reverse, **without rewriting either record's addressee**: the
+    historical row keeps its name, only the index learns the relationship.
+
+    Read through `predecessor` and `successors.all()`, so a caller that
+    prefetched both pays no query here. Never a similarity: two bodies with no
+    stored link share nothing.
+    """
+    if organisation is None:
+        return []
+    linked = [organisation.predecessor, *organisation.successors.all()]
+    return sorted(
+        {other.name for other in linked if other is not None and other.pk != organisation.pk}
+    )
+
+
 def find_exact(name: str) -> Organisation | None:
     """The one institution this name unambiguously refers to, or nothing.
 

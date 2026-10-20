@@ -450,7 +450,7 @@ def active_deadline(
     in memory. Anything passed here must already be authorization-scoped —
     which is why the parameter is not the default.
     """
-    from app.intelligence.enums import FactStatus
+    from app.intelligence.enums import FactStatus, is_informational_milestone
     from app.intelligence.models import MatterImportantDate
 
     day = today or timezone.localdate()
@@ -474,14 +474,17 @@ def active_deadline(
         milestones = (
             MatterImportantDate.objects.filter(matter=matter, status=FactStatus.ACTIVE)
             .visible_to(user)
-            .only("date_value", "period_end", "date_precision", "title")
+            .only("date_value", "period_end", "date_precision", "title", "kind")
         )
+    informational: set[tuple[date, date, str]] = set()
     for record in milestones:
         if record.status != FactStatus.ACTIVE:
             continue
         candidates.append(
             (record.date_value, record.period_end, record.title, record.display_date, False)
         )
+        if is_informational_milestone(record.kind):
+            informational.add((record.date_value, record.period_end, record.title))
 
     if not candidates:
         return None
@@ -507,6 +510,10 @@ def active_deadline(
         from app.matters.work_items import response_deadline_is_outstanding
 
         overdue = response_deadline_is_outstanding(matter, user)
+    elif (anchor_value, period_end, label) in informational:
+        # An informational milestone (a draft's planned commencement) passing
+        # is not lateness — the reading `wi.WorkItem` gives it too.
+        overdue = False
     else:
         # A milestone nobody discharges. Its last day passing is genuine
         # lateness, which is the reading `wi.WorkItem` already gives it.

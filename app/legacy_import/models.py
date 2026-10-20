@@ -622,6 +622,101 @@ class ExcelPilotImport(BaseModel):
         return f"{self.pilot} {self.source_reference_label}"
 
 
+class EvidencePilotRecord(BaseModel):
+    """One record the evidence pilot wrote, and the evidence it was written from.
+
+    The evidence pilot (docs/adr/0173) builds a handful of Teemad from a
+    reviewed package: the current state a source system recorded, and the
+    professional history reconstructed from the original OneNote dossier and
+    its attachments. Every Matter, step, round, position, opinion, overview,
+    development, note, date and document it writes gets one row here, in the
+    same transaction.
+
+    **This row is what says "imported historical fact".** The services the
+    pilot calls write their ordinary change events, stamped with the moment of
+    the import and with no actor — which is true: that is when Juristid learnt
+    the fact. What the event cannot say is *where the fact came from*; this row
+    does, by naming the package digest, the record's key in it and the source
+    blocks, files and web captures it rests on (``evidence``). A query here, not
+    a guess about a missing actor, separates an imported record from work done
+    in the application.
+
+    The target is named by model label and primary key rather than a foreign
+    key per model: the pilot writes eight kinds of record and the provenance of
+    each is the same shape. Owned by its Matter (``CASCADE``), so deleting a
+    pilot Teema removes its provenance with it, as `ExcelPilotImport` does.
+
+    **One kind has no Matter: an organisation** the package's reviewed entry
+    asked the import to create or find. It belongs to the shared catalogue, not
+    to any one Teema, so its provenance row names no Matter — and only that kind
+    may (``legacy_import_evidence_pilot_matter_unless_organisation``).
+    """
+
+    pilot = models.CharField(max_length=64, db_index=True, verbose_name="piloot")
+    pilot_version = models.CharField(max_length=32, verbose_name="piloodi versioon")
+    package_sha256 = models.CharField(max_length=64, db_index=True, verbose_name="paketi SHA-256")
+    record_key = models.CharField(max_length=120, verbose_name="kirje võti paketis")
+    record_kind = models.CharField(max_length=48, verbose_name="kirje liik")
+    matter = models.ForeignKey(
+        "matters.Matter",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="evidence_pilot_records",
+        verbose_name="teema",
+    )
+    target_model = models.CharField(max_length=100, verbose_name="kirje mudel")
+    target_id = models.UUIDField(null=True, blank=True, verbose_name="kirje ID")
+    source_page = models.ForeignKey(
+        LegacySourcePage,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="evidence_pilot_records",
+        verbose_name="allikaleht",
+    )
+    #: Where the record came from: source blocks, files, web captures, the date's
+    #: basis and the reviewer's confidence. Never read by a page.
+    evidence = models.JSONField(default=dict, blank=True, verbose_name="tõendid")
+
+    class Meta:
+        verbose_name = "tõendipiloodi kirje"
+        verbose_name_plural = "tõendipiloodi kirjed"
+        ordering = ["record_key"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["pilot", "package_sha256", "record_key"],
+                name="legacy_import_evidence_pilot_key_once",
+            ),
+            # Catalogue rows — an organisation, its reviewed alias, its
+            # predecessor link — belong to no Teema; every other row does.
+            models.CheckConstraint(
+                condition=models.Q(
+                    record_kind__in=[
+                        "ORGANISATION",
+                        "ORGANISATION_ALIAS",
+                        "ORGANISATION_RELATIONSHIP",
+                    ],
+                    matter__isnull=True,
+                )
+                | (
+                    ~models.Q(
+                        record_kind__in=[
+                            "ORGANISATION",
+                            "ORGANISATION_ALIAS",
+                            "ORGANISATION_RELATIONSHIP",
+                        ]
+                    )
+                    & models.Q(matter__isnull=False)
+                ),
+                name="legacy_import_evidence_pilot_matter_unless_organisation",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.pilot} {self.record_key}"
+
+
 def placeholder_versions() -> Any:
     """Every placeholder evidence version the pilot generated, as a queryset.
 
@@ -637,6 +732,7 @@ __all__ = [
     "CandidateState",
     "ConflictState",
     "CurrentRegisterState",
+    "EvidencePilotRecord",
     "ExcelPilotImport",
     "HistoricalMatchCandidate",
     "ImportBatch",
