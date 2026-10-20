@@ -329,6 +329,16 @@ a page boundary never splits a day. Nothing stored changes: re-cataloguing a
 page fills a still-empty time from the source and never corrects a recorded one
 (app/matters/timeline.py `HISTORICAL_IMPORT_ITEM`, app/legacy_import/historical_apply.py).
 
+**A file older than its page (MOVED_CONTENT).** OneNote keeps an element's
+creation time when content is moved or copied in from another page, so a file
+can carry a time older than the page it is on now
+(`LegacySourcePage.source_created_at`). Its row still reads on that day — the
+day the file reached OneNote — and its subline adds «lisatud enne praeguse lehe
+loomist» (or «N neist …» on a day row where only some are), as its document
+page does beside the time, so the row never implies the file was added to *this*
+page then. Where either time is unknown nothing is claimed
+(`ONENOTE_PREDATES_PAGE`, independent review of v2.3, 2026-10-20).
+
 The stage clause is the stage-change event's own summary, which is the stage's
 label at the time it was recorded. It is **not** read off `Matter.stage`: that is
 where the file stands *now*, which is a different claim from what this act did to

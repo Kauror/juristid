@@ -155,7 +155,7 @@
         <div><dt>Suurus</dt><dd>{{ version.size_bytes|filesizeformat }}</dd></div>
         <div><dt>Saadi</dt><dd>{{ version.acquired_at|date:"j.n.Y H:i" }}</dd></div>
         {% if onenote_addition %}
-          <div><dt>Lisatud OneNote'i</dt><dd>{% if onenote_addition.display %}{{ onenote_addition.display }}{% else %}kuupäev teadmata{% endif %}</dd></div>
+          <div><dt>Lisatud OneNote'i</dt><dd>{% if onenote_addition.display %}{{ onenote_addition.display }}{% if onenote_addition.predates_page %} · lisatud enne praeguse lehe loomist{% endif %}{% else %}kuupäev teadmata{% endif %}</dd></div>
         {% endif %}
         <div><dt>Versioon</dt><dd>{{ version.version_number }}{% if versions|length > 1 %} / {{ versions|length }}{% endif %}</dd></div>
         <div><dt>Töötlemine</dt>

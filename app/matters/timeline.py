@@ -293,6 +293,12 @@ ONENOTE_UNDATED_ONE = "OneNote'i dokument — lisamise kuupäev teadmata"
 ONENOTE_UNDATED_MANY = "OneNote'i dokumendid ({count}) — lisamise kuupäev teadmata"
 #: What stands in the date's place when the source has no time.
 ONENOTE_UNDATED_DISPLAY = "kuupäev teadmata"
+#: Said beside a file whose OneNote time is older than the page it is on now.
+#: OneNote keeps an element's creation time when content is moved or copied in
+#: from another page, so the day is when the file reached OneNote, not when it
+#: reached *this* page — and the row says so rather than imply it.
+ONENOTE_PREDATES_PAGE = "lisatud enne praeguse lehe loomist"
+ONENOTE_PREDATES_PAGE_SOME = "{count} neist lisatud enne praeguse lehe loomist"
 
 #: What a sent `Koja arvamus` is called on the chronology.
 #:
@@ -1115,6 +1121,11 @@ class ImportedVersion:
     added_at: datetime | None
     #: Where its row sorts: `added_at`, or — undated — when the import stored it.
     anchor: datetime
+    #: Whether `added_at` is earlier than the creation of the page the file is
+    #: on now (`LegacySourcePage.source_created_at`): content moved or copied in
+    #: from an older page. ``False`` when either time is unknown — it claims
+    #: nothing it cannot see.
+    predates_page: bool = False
 
 
 def imported_document_versions(matter: Matter, user: Any = None) -> dict[Any, ImportedVersion]:
@@ -1138,19 +1149,24 @@ def imported_document_versions(matter: Matter, user: Any = None) -> dict[Any, Im
     if user is not None:
         rows = rows.filter(document__in=Document.objects.visible_to(user))
     found: dict[Any, ImportedVersion] = {}
-    for version_id, added_at, stored_at, section, title in rows.values_list(
+    for version_id, added_at, stored_at, section, title, page_created in rows.values_list(
         "document_version_id",
         "resource__source_added_at",
         "document_version__created_at",
         "matter_source_page__source_page__source_section",
         "matter_source_page__source_page__title",
+        "matter_source_page__source_page__source_created_at",
     ):
         source = " → ".join(
             part for part in ((section or "").strip(), (title or "").strip()) if part
         )
         group = f"day:{_local_day(added_at).isoformat()}" if added_at else "undated"
         found[version_id] = ImportedVersion(
-            group=group, source=source, added_at=added_at, anchor=added_at or stored_at
+            group=group,
+            source=source,
+            added_at=added_at,
+            anchor=added_at or stored_at,
+            predates_page=bool(added_at and page_created and added_at < page_created),
         )
     return found
 
@@ -1191,6 +1207,11 @@ def _historical_import_row(
     if dated:
         what = ONENOTE_ADDED_ONE if count == 1 else ONENOTE_ADDED_MANY.format(count=count)
         display = format_estonian_date(_local_day(anchor))
+        earlier = sum(1 for version in versions if version.predates_page)
+        if earlier == len(versions):
+            origin = f"{origin} · {ONENOTE_PREDATES_PAGE}"
+        elif earlier:
+            origin = f"{origin} · {ONENOTE_PREDATES_PAGE_SOME.format(count=earlier)}"
     else:
         what = ONENOTE_UNDATED_ONE if count == 1 else ONENOTE_UNDATED_MANY.format(count=count)
         display = ONENOTE_UNDATED_DISPLAY
