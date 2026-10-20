@@ -66,8 +66,10 @@ def test_release_notes_since_the_rename_use_the_current_names():
         for line in day.changes:
             assert not OLD_TERM.search(line), (day.date, line)
             assert "«Järgmine tegevus» või «Oluline tähtaeg»" not in line, (day.date, line)
-    newest = load_release_notes()[0]
-    assert any("«+ Lisa tegevus»" in line for line in newest.changes)
+    # The entry of the release that renamed the button (19.10) names it. Pinned to
+    # that day: a later entry describes its own release, not this one.
+    renamed = next(day for day in load_release_notes() if day.date == date(2026, 10, 19))
+    assert any("«+ Lisa tegevus»" in line for line in renamed.changes)
 
 
 @pytest.mark.django_db
