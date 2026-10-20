@@ -559,13 +559,12 @@ STRIP_RUN_DAY = ('.tl-step:has(.tl-step__what:text-is("Koja arvamus")) .tl-step_
 #: engagement's date is the whole content of the row `teema-ajajoon` compares,
 #: so holding it still would photograph a canonical instead of the fixture.
 #:
-#: The third is the one import row (docs/adr/0092 §6, amendment 2026-10-19):
-#: `seed_e2e_data` imports two historical files onto this Matter in the seeding
-#: transaction, and the row is dated by that import — the run's day, like the
-#: other two. Named by its headline (`HISTORICAL_IMPORT_HEADLINE`).
+#: The two OneNote rows of the historical files `seed_e2e_data` imports are
+#: **not** run-day dates (docs/adr/0092 §6, amendment 2026-10-20): one reads the
+#: source's fixed addition day, 10.6.2019, and the other «kuupäev teadmata».
+#: Both stay in the baseline as they are.
 CHRONOLOGY_RUN_DAY = (
     '.uxtl__ms:has(.uxtl__mswhat:text-is("Teema loodud")) .uxtl__msdate',
-    '.uxtl__ms:has(.uxtl__mswhat:text-is("Ajaloolised dokumendid imporditud")) .uxtl__msdate',
     '.uxtl__ms:has(.uxtl__mswhat:text-is("Arvamus välja")) .uxtl__msdate',
 )
 
@@ -2284,7 +2283,7 @@ def test_a_closed_matter_day_really_does_move_without_the_normalisation(page, se
 
 
 def _open_matter_fixture(page, day: str) -> None:
-    """The open Matter's ten date slots, in the two shapes the page renders.
+    """The open Matter's nine date slots, in the two shapes the page renders.
 
     Every slot, not only the varying ones, because the scoping is the thing
     under test: a fixture holding just the two run-day dates would pass under a
@@ -2325,11 +2324,6 @@ def _open_matter_fixture(page, day: str) -> None:
         f'<span class="uxtl__msdate">{day}</span></p>'
         '<p class="uxtl__ms" style="display:contents">'
         '<span class="uxtl__mswhat">Arvamus välja</span>'
-        f'<span class="uxtl__msdate">{day}</span></p>'
-        # The one import row, dated by the seeding run like the two above
-        # (docs/adr/0092 §6, amendment 2026-10-19).
-        '<p class="uxtl__ms" style="display:contents">'
-        '<span class="uxtl__mswhat">Ajaloolised dokumendid imporditud</span>'
         f'<span class="uxtl__msdate">{day}</span></p>'
         '<p class="uxtl__ms" style="display:contents">'
         '<span class="uxtl__mswhat">Kaasamine: Liikmete kaasamiskutse</span>'

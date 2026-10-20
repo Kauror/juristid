@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 from django.urls import reverse
@@ -39,8 +39,10 @@ from app.legacy_import.source_pages import (
 )
 from app.matters.services import add_entry
 from app.matters.timeline import (
-    HISTORICAL_IMPORT_HEADLINE,
     HISTORICAL_IMPORT_ITEM,
+    ONENOTE_ADDED_ONE,
+    ONENOTE_UNDATED_DISPLAY,
+    ONENOTE_UNDATED_ONE,
     matter_timeline,
 )
 
@@ -62,8 +64,13 @@ def _batch() -> ImportBatch:
     )
 
 
-def _import(matter, files, *, page_title="Näidisleht", batch=None, restricted=()):
-    """What an importer leaves behind: the page, its files, and the link saying so."""
+def _import(matter, files, *, page_title="Näidisleht", batch=None, restricted=(), added=None):
+    """What an importer leaves behind: the page, its files, and the link saying so.
+
+    ``added`` maps a filename to the UTC moment the source says it was added to
+    OneNote; a file not named there has no source time, like a floating object.
+    """
+    added = added or {}
     now = timezone.now()
     key = f"p-{LegacySourcePage.objects.count() + 1}"
     page = LegacySourcePage.objects.create(
@@ -111,6 +118,8 @@ def _import(matter, files, *, page_title="Näidisleht", batch=None, restricted=(
             sha256=hashlib.sha256(content).hexdigest(),
             size_bytes=len(content),
             archive_relative_path=f"resources/r{ordinal:03d}/original/{name}",
+            source_added_at=added.get(name),
+            source_added_basis="ONENOTE_BLOCK_CREATED" if name in added else "",
         )
         document = create_document(
             matter=matter,
@@ -153,28 +162,174 @@ def _imports(rows):
     return [row for row in rows if row.item_type == HISTORICAL_IMPORT_ITEM]
 
 
-def test_one_imports_files_read_as_one_row_named_as_an_import(normal_matter, specialist):
-    versions = _import(normal_matter, FILES, page_title="Näidisseaduse eelnõu", batch=_batch())
+def _utc(*parts) -> datetime:
+    return datetime(*parts, tzinfo=UTC)
 
+
+#: Three files added to OneNote on one Tallinn day, 30.8.2021.
+SAME_DAY = {
+    "Ministeeriumi kiri 2021.pdf": _utc(2021, 8, 30, 8, 48, 10),
+    "Seletuskiri.pdf": _utc(2021, 8, 30, 8, 48, 22),
+    "Liikme vastus.pdf": _utc(2021, 8, 30, 10, 10, 24),
+}
+
+
+def _ids(rows) -> list:
+    return [str(event.object_id) for row in rows for event in row.events]
+
+
+# ---------------------------------------------------------------------------
+# A. and B. — the day a file was added to OneNote
+# ---------------------------------------------------------------------------
+
+
+def test_one_file_reads_on_the_day_it_was_added_to_onenote(normal_matter, specialist):
+    (version,) = _import(
+        normal_matter,
+        FILES[:1],
+        page_title="Näidisseaduse eelnõu",
+        added={FILES[0][0]: _utc(2021, 8, 30, 8, 48, 10)},
+    )
+    (row,) = _imports(_rows(normal_matter, specialist))
+    assert row.milestone.what == ONENOTE_ADDED_ONE == "Dokument lisatud OneNote'i"
+    assert row.milestone.display_date == "30.8.2021"
+    assert row.milestone.sub == f"1 fail · OneNote: {SECTION} → Näidisseaduse eelnõu"
+    # Sorted at the moment the source names, not at the import.
+    assert row.occurred_at == _utc(2021, 8, 30, 8, 48, 10)
+    assert [file.url for file in row.files] == [
+        reverse("documents:download", kwargs={"pk": version.pk})
+    ]
+    # Never drawn as a person's upload.
+    assert row.actor is None and row.is_system and not row.removable
+
+
+def test_files_added_on_one_day_are_one_row_that_opens_onto_each(normal_matter, specialist):
+    versions = _import(normal_matter, FILES, added=SAME_DAY)
     rows = _rows(normal_matter, specialist)
     (row,) = _imports(rows)
+    assert row.milestone.what == "OneNote'i lisati 3 dokumenti"
+    assert row.milestone.display_date == "30.8.2021"
     assert row.imported_documents == 3
-    assert row.milestone.what == HISTORICAL_IMPORT_HEADLINE
-    assert row.milestone.sub == f"3 faili · OneNote: {SECTION} → Näidisseaduse eelnõu"
-    # Dated by the import, at day precision, like every milestone.
-    assert row.milestone.display_date == format_estonian_date(timezone.localdate())
-    assert row.is_system and not row.is_primary and not row.removable
-    # Every file under it, linked to its exact bytes.
+    assert row.occurred_at == min(SAME_DAY.values())
     assert sorted(file.label for file in row.files) == sorted(name for name, _ in FILES)
     assert {file.url for file in row.files} == {
         reverse("documents:download", kwargs={"pk": version.pk}) for version in versions
     }
-    # And no «lisas dokumendi» line per file.
     assert not [r for r in rows if r.summary_sentence == "lisas dokumendi"]
 
 
+def test_different_days_on_one_page_are_different_rows(normal_matter, specialist):
+    _import(
+        normal_matter,
+        FILES,
+        added={
+            FILES[0][0]: _utc(2021, 8, 30, 8, 0),
+            FILES[1][0]: _utc(2021, 8, 31, 12, 0),
+            FILES[2][0]: _utc(2024, 7, 17, 9, 0),
+        },
+    )
+    rows = _imports(_rows(normal_matter, specialist))
+    assert [row.milestone.display_date for row in rows] == ["17.7.2024", "31.8.2021", "30.8.2021"]
+    assert all(row.imported_documents == 1 for row in rows)
+
+
+def test_the_day_is_the_tallinn_day_not_the_utc_one(normal_matter, specialist):
+    """22:30 UTC on 30 August is 01:30 on 31 August in Tallinn (EEST, UTC+3)."""
+    _import(
+        normal_matter,
+        FILES[:2],
+        added={
+            FILES[0][0]: _utc(2021, 8, 30, 22, 30),
+            FILES[1][0]: _utc(2021, 8, 31, 9, 0),
+        },
+    )
+    (row,) = _imports(_rows(normal_matter, specialist))
+    assert row.milestone.display_date == "31.8.2021"
+    assert row.imported_documents == 2
+
+
+@pytest.mark.parametrize(
+    ("moment", "day"),
+    [
+        # The night summer time ends (31.10.2021 04:00 EEST → 03:00 EET).
+        (_utc(2021, 10, 30, 21, 30), "31.10.2021"),  # 00:30 EEST
+        (_utc(2021, 10, 31, 21, 30), "31.10.2021"),  # 23:30 EET
+        # The night it begins (28.3.2021 03:00 EET → 04:00 EEST).
+        (_utc(2021, 3, 27, 22, 30), "28.3.2021"),  # 00:30 EET
+        (_utc(2021, 3, 28, 20, 59), "28.3.2021"),  # 23:59 EEST
+        (_utc(2021, 3, 28, 21, 0), "29.3.2021"),  # 00:00 EEST
+    ],
+)
+def test_daylight_saving_changes_keep_the_local_calendar_day(
+    normal_matter, specialist, moment, day
+):
+    _import(normal_matter, FILES[:1], added={FILES[0][0]: moment})
+    (row,) = _imports(_rows(normal_matter, specialist))
+    assert row.milestone.display_date == day
+
+
+# ---------------------------------------------------------------------------
+# D. — no source time, no invented day
+# ---------------------------------------------------------------------------
+
+
+def test_a_file_with_no_source_time_claims_no_day(normal_matter, specialist):
+    _import(normal_matter, FILES[:1])
+    (row,) = _imports(_rows(normal_matter, specialist))
+    assert row.milestone.what == ONENOTE_UNDATED_ONE
+    assert row.milestone.display_date == ONENOTE_UNDATED_DISPLAY == "kuupäev teadmata"
+    # The import's own day is not printed anywhere on the row.
+    assert format_estonian_date(timezone.localdate()) not in (
+        row.milestone.display_date + row.milestone.sub
+    )
+
+
+def test_dated_and_undated_files_of_one_page_part_honestly(normal_matter, specialist):
+    _import(normal_matter, FILES, added={FILES[0][0]: _utc(2021, 8, 30, 8, 0)})
+    rows = _imports(_rows(normal_matter, specialist))
+    assert sorted(row.milestone.what for row in rows) == sorted(
+        ["Dokument lisatud OneNote'i", "OneNote'i dokumendid (2) — lisamise kuupäev teadmata"]
+    )
+
+
+# ---------------------------------------------------------------------------
+# C. — a file that supports a record, and every other row
+# ---------------------------------------------------------------------------
+
+
+def test_a_file_on_a_record_is_not_a_second_row_and_keeps_its_own_time(
+    signed_in, normal_matter, specialist
+):
+    from app.documents.models import DocumentLink
+    from app.matters.models import MatterEngagement
+
+    versions = _import(normal_matter, FILES[:2], added=SAME_DAY)
+    round_ = MatterEngagement.objects.create(
+        matter=normal_matter, title="Liikmete kaasamine", occurred_on=datetime(2021, 8, 30).date()
+    )
+    DocumentLink.objects.create(document=versions[0].document, engagement=round_)
+
+    (row,) = _imports(_rows(normal_matter, specialist))
+    assert row.imported_documents == 1
+    assert [file.label for file in row.files] == [FILES[1][0]]
+    # The supporting file still states when it reached OneNote, apart from the
+    # day of the round it supports.
+    html = signed_in.get(
+        reverse("documents:document_detail", kwargs={"pk": versions[0].document.pk})
+    ).content.decode()
+    assert "Lisatud OneNote'i" in html and "30.8.2021 11:48" in html
+
+
+def test_an_undated_file_says_so_on_its_own_page(signed_in, normal_matter):
+    (version,) = _import(normal_matter, FILES[:1])
+    html = signed_in.get(
+        reverse("documents:document_detail", kwargs={"pk": version.document.pk})
+    ).content.decode()
+    assert "Lisatud OneNote'i" in html and "kuupäev teadmata" in html
+
+
 def test_a_persons_upload_keeps_its_own_row(normal_matter, specialist, capture_evidence):
-    _import(normal_matter, FILES, batch=_batch())
+    _import(normal_matter, FILES, added=SAME_DAY)
     capture_evidence(
         normal_matter,
         b"%PDF-1.4 uus",
@@ -183,7 +338,6 @@ def test_a_persons_upload_keeps_its_own_row(normal_matter, specialist, capture_e
         uploaded_by=specialist,
         created_by=specialist,
     )
-
     rows = _rows(normal_matter, specialist)
     assert len(_imports(rows)) == 1
     (upload,) = [r for r in rows if r.summary_sentence == "lisas dokumendi"]
@@ -192,46 +346,85 @@ def test_a_persons_upload_keeps_its_own_row(normal_matter, specialist, capture_e
     assert upload.imported_documents == 0
 
 
-def test_two_imports_are_two_rows_and_a_page_stands_in_for_a_missing_batch(
-    normal_matter, specialist
-):
-    _import(normal_matter, FILES[:2], page_title="Esimene leht", batch=_batch())
-    _import(normal_matter, FILES[2:], page_title="Teine leht", batch=None)
-
-    rows = _imports(_rows(normal_matter, specialist))
-    assert sorted(row.imported_documents for row in rows) == [1, 2]
-    assert sorted(row.milestone.sub for row in rows) == [
-        f"1 fail · OneNote: {SECTION} → Teine leht",
-        f"2 faili · OneNote: {SECTION} → Esimene leht",
-    ]
-
-
-def test_the_real_chronology_keeps_its_own_dates_around_the_import(normal_matter, specialist):
-    old = timezone.make_aware(datetime(2021, 8, 31, 12, 0))
-    note = add_entry(
-        matter=normal_matter, body="<p>Koda saatis arvamuse.</p>", author=None, occurred_at=old
+def test_old_and_new_work_sort_together_by_when_it_happened(normal_matter, specialist):
+    before = add_entry(
+        matter=normal_matter,
+        body="<p>Enne.</p>",
+        author=None,
+        occurred_at=timezone.make_aware(datetime(2021, 8, 29, 12, 0)),
     )
-    _import(normal_matter, FILES, batch=_batch())
-
+    after = add_entry(
+        matter=normal_matter,
+        body="<p>Pärast.</p>",
+        author=None,
+        occurred_at=timezone.make_aware(datetime(2021, 9, 1, 12, 0)),
+    )
+    _import(normal_matter, FILES, added=SAME_DAY)
     rows = _rows(normal_matter, specialist)
-    order = [row.item_type for row in rows]
-    imported_at = order.index(HISTORICAL_IMPORT_ITEM)
-    note_at = next(index for index, row in enumerate(rows) if row.entry == note)
-    # Newest first: the import happened today, the note in 2021.
-    assert imported_at < note_at
-    assert rows[note_at].occurred_at.date().year == 2021
+    position = {id(row): index for index, row in enumerate(rows)}
+    (imported,) = _imports(rows)
+    by_entry = {row.entry: row for row in rows if row.entry is not None}
+    # Newest first: 1.9 note, 30.8 OneNote row, 29.8 note — not the import day.
+    assert position[id(by_entry[after])] < position[id(imported)] < position[id(by_entry[before])]
 
 
-def test_a_page_boundary_never_splits_one_import(normal_matter, specialist):
-    batch = _batch()
-    _import(normal_matter, FILES, batch=batch)
+# ---------------------------------------------------------------------------
+# Duplicates, permissions, paging, idempotency
+# ---------------------------------------------------------------------------
+
+
+def test_each_file_is_on_exactly_one_row_even_with_identical_bytes(normal_matter, specialist):
+    twins = [("Koopia A.pdf", b"%PDF-1.4 sama"), ("Koopia B.pdf", b"%PDF-1.4 sama")]
+    versions = _import(
+        normal_matter,
+        twins,
+        added={
+            "Koopia A.pdf": _utc(2021, 8, 30, 8, 0),
+            "Koopia B.pdf": _utc(2021, 8, 30, 9, 0),
+        },
+    )
+    rows = _imports(_rows(normal_matter, specialist))
+    assert sorted(_ids(rows)) == sorted(str(v.pk) for v in versions)
+    assert len(_ids(rows)) == len(set(_ids(rows)))
+
+
+def test_a_restricted_file_is_neither_counted_nor_linked_nor_dates_a_row(
+    normal_matter, specialist, reader
+):
+    _import(
+        normal_matter,
+        FILES,
+        added={**SAME_DAY, "Liikme vastus.pdf": _utc(2019, 1, 2, 10, 0)},
+        restricted=("Liikme vastus.pdf",),
+    )
+    theirs = _imports(_rows(normal_matter, specialist))
+    assert sorted(row.milestone.display_date for row in theirs) == ["2.1.2019", "30.8.2021"]
+
+    (readers,) = _imports(_rows(normal_matter, reader))
+    assert readers.imported_documents == 2
+    assert readers.milestone.sub.startswith("2 faili")
+    assert "Liikme vastus.pdf" not in [file.label for file in readers.files]
+
+
+def test_a_page_boundary_never_splits_a_day_and_drops_nothing(normal_matter, specialist):
+    _import(
+        normal_matter,
+        FILES,
+        added={
+            FILES[0][0]: _utc(2021, 8, 30, 8, 0),
+            FILES[1][0]: _utc(2021, 8, 30, 9, 0),
+            FILES[2][0]: _utc(2023, 5, 4, 9, 0),
+        },
+    )
+    _import(normal_matter, [("Dateerimata.pdf", b"%PDF-1.4 d")], page_title="Teine leht")
     for day in (1, 2, 3):
         add_entry(
             matter=normal_matter,
             body=f"<p>Märkus {day}</p>",
             author=specialist,
-            occurred_at=timezone.make_aware(datetime(2025, 1, day, 9, 0)),
+            occurred_at=timezone.make_aware(datetime(2022, 1, day, 9, 0)),
         )
+    whole = _rows(normal_matter, specialist)
 
     seen = []
     offset = 0
@@ -241,35 +434,55 @@ def test_a_page_boundary_never_splits_one_import(normal_matter, specialist):
         offset += 1
         if not more:
             break
+    assert [row.sort_key for row in seen] == [row.sort_key for row in whole]
     imports = _imports(seen)
-    assert len(imports) == 1 and imports[0].imported_documents == 3
+    assert sorted(row.imported_documents for row in imports) == [1, 1, 2]
     assert len({row.sort_key for row in seen}) == len(seen)
 
 
-def test_a_restricted_file_is_neither_counted_nor_linked_for_a_reader_who_may_not_see_it(
-    normal_matter, specialist, reader
-):
-    _import(normal_matter, FILES, batch=_batch(), restricted=("Liikme vastus.pdf",))
+def test_cataloguing_again_fills_only_a_missing_time(normal_matter):
+    from app.legacy_import.historical_apply import _catalogue_resources
+    from app.legacy_import.onenote_archive import ArchiveResource
 
-    (theirs,) = _imports(_rows(normal_matter, specialist))
-    assert theirs.imported_documents == 3 and len(theirs.files) == 3
+    _import(normal_matter, FILES[:2], added={FILES[0][0]: _utc(2021, 8, 30, 8, 0)})
+    page = LegacySourcePage.objects.get()
 
-    (readers,) = _imports(_rows(normal_matter, reader))
-    assert readers.imported_documents == 2
-    assert readers.milestone.sub.startswith("2 faili")
-    assert "Liikme vastus.pdf" not in [file.label for file in readers.files]
+    class _Page:
+        resources = [
+            ArchiveResource(
+                resource_key=f"r{ordinal:03d}",
+                original_filename=name,
+                resource_kind="FILE_ATTACHMENT",
+                source_block_ordinal=ordinal,
+                sha256="",
+                size_bytes=0,
+                relative_path="",
+                is_inline=False,
+                download_status="CAPTURED",
+                source_added_at=_utc(2030, 1, 1, 0, 0),
+            )
+            for ordinal, (name, _content) in enumerate(FILES[:2], start=1)
+        ]
+
+    assert _catalogue_resources(page, _Page()) == 0  # no new rows
+    times = dict(LegacySourceResource.objects.values_list("resource_key", "source_added_at"))
+    # A recorded time is never corrected by a later reading; a missing one is filled.
+    assert times["r001"] == _utc(2021, 8, 30, 8, 0)
+    assert times["r002"] == _utc(2030, 1, 1, 0, 0)
+    assert _catalogue_resources(page, _Page()) == 0
+    assert (
+        dict(LegacySourceResource.objects.values_list("resource_key", "source_added_at")) == times
+    )
 
 
 def test_reading_the_chronology_changes_no_stored_fact(normal_matter, specialist):
-    versions = _import(normal_matter, FILES, batch=_batch())
+    versions = _import(normal_matter, FILES, added=SAME_DAY)
     before = list(
         ChangeEvent.objects.filter(matter=normal_matter)
         .order_by("id")
         .values_list("id", "event_type", "occurred_at", "actor_id", "object_id")
     )
-
     _rows(normal_matter, specialist)
-
     after = list(
         ChangeEvent.objects.filter(matter=normal_matter)
         .order_by("id")
@@ -277,26 +490,30 @@ def test_reading_the_chronology_changes_no_stored_fact(normal_matter, specialist
     )
     assert before == after
     evidence = [row for row in after if row[1] == ChangeEventType.EVIDENCE_VERSION_ADDED]
+    # The audit keeps the import's own moment; only the reading is historical.
     assert len(evidence) == 3 and all(row[3] is None for row in evidence)
+    assert all(row[2].year == timezone.now().year for row in evidence)
     for version in versions:
         version.refresh_from_db()
         assert version.sha256 == hashlib.sha256(dict(FILES)[version.original_filename]).hexdigest()
 
 
-def test_the_page_draws_one_import_row_and_counts_rows_not_files(
+def test_the_page_draws_each_day_once_and_counts_rows_not_files(
     signed_in, normal_matter, specialist
 ):
-    _import(normal_matter, FILES, page_title="Näidisseaduse eelnõu", batch=_batch())
+    _import(normal_matter, FILES, page_title="Näidisseaduse eelnõu", added=SAME_DAY)
 
     html = signed_in.get(
         reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk})
     ).content.decode()
-    assert html.count(HISTORICAL_IMPORT_HEADLINE) == 1
+    assert (
+        html.count("OneNote&#x27;i lisati 3 dokumenti") + html.count("OneNote'i lisati 3 dokumenti")
+        == 1
+    )
     assert "3 faili · OneNote: Näidissektsioon → Näidisseaduse eelnõu" in html
     assert "lisas dokumendi" not in html
     for name, _content in FILES:
         assert name in html
-    # The accordion toggle is named by the row's own line.
     assert re.search(r'aria-labelledby="kaik-[^"]+-rida"', html)
     rows = html.count('class="uxtl__item ')
     count = re.search(r"·\s*</span>(\d+)\s+kirje", html) or re.search(r"(\d+)\s+kirje", html)

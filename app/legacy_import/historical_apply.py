@@ -255,13 +255,30 @@ def _role(raw: str) -> str:
     return raw if raw in SourcePageRole.values else SourcePageRole.UNCLEAR
 
 
+#: The one source field `LegacySourceResource.source_added_at` is read from.
+SOURCE_ADDED_BASIS = "ONENOTE_BLOCK_CREATED"
+
+
 def _catalogue_resources(record: LegacySourcePage, page: ArchivePage) -> int:
-    """The page's files, as a catalogue. No bytes are copied here."""
-    existing = set(
-        LegacySourceResource.objects.filter(source_page=record).values_list(
-            "resource_key", flat=True
+    """The page's files, as a catalogue. No bytes are copied here.
+
+    A row catalogued before the archive's attachment times were read gets its
+    time now, **only if it still has none**: it is the same source fact read
+    again, never a correction of one already recorded (docs/adr/0092 §6).
+    """
+    rows = {
+        row.resource_key: row
+        for row in LegacySourceResource.objects.filter(source_page=record).only(
+            "pk", "resource_key", "source_added_at"
         )
-    )
+    }
+    existing = set(rows)
+    for resource in page.resources:
+        row = rows.get(resource.resource_key)
+        if row is not None and row.source_added_at is None and resource.source_added_at:
+            LegacySourceResource.objects.filter(pk=row.pk, source_added_at__isnull=True).update(
+                source_added_at=resource.source_added_at, source_added_basis=SOURCE_ADDED_BASIS
+            )
     fresh = [
         LegacySourceResource(
             source_page=record,
@@ -277,6 +294,8 @@ def _catalogue_resources(record: LegacySourcePage, page: ArchivePage) -> int:
             size_bytes=resource.size_bytes,
             archive_relative_path=resource.relative_path,
             is_inline=resource.is_inline,
+            source_added_at=resource.source_added_at,
+            source_added_basis=SOURCE_ADDED_BASIS if resource.source_added_at else "",
         )
         for resource in page.resources
         if resource.resource_key not in existing
