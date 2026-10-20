@@ -124,6 +124,8 @@ from app.workflow.lateness import is_past_period
 #: opinion. `Submission` has no short name of its own and «Koja arvamus
 #: pakendiseaduse kohta, 2026-06-02» is not a column heading.
 SENT_LABEL = "Koja arvamus"
+#: The rail's word for an official «no comments» answer (docs/adr/0174).
+NO_OBJECTION_SENT_LABEL = "Koja vastus"
 
 #: `Arvamuse tähtaeg`, which is `Matter.response_deadline`'s own `verbose_name`
 #: and the header band's own word for the same column. Not a bare `Tähtaeg`,
@@ -422,7 +424,7 @@ def process_steps(
     """
     from app.intelligence.enums import FactStatus, ImportantDateKind
     from app.intelligence.selectors import matter_intelligence
-    from app.submissions.enums import SubmissionStatus
+    from app.submissions.enums import NOT_AN_OPINION_KINDS, SubmissionStatus
     from app.submissions.models import Submission
 
     facts = intelligence if intelligence is not None else matter_intelligence(matter, user)
@@ -647,7 +649,9 @@ def process_steps(
         sent_on = timezone.localtime(submission.sent_at).date()
         steps.append(
             ProcessStep(
-                label=SENT_LABEL,
+                label=NO_OBJECTION_SENT_LABEL
+                if submission.kind in NOT_AN_OPINION_KINDS
+                else SENT_LABEL,
                 display=format_estonian_date(sent_on),
                 detail=(
                     submission.get_status_display()

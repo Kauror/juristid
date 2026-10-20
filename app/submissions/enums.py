@@ -22,7 +22,19 @@ class SubmissionKind(models.TextChoices):
     #: nobody asked for (docs/adr/0151 §5). Recorded and evidenced like every
     #: other send, and followed up thirty days later like every other send.
     KODA_PROPOSAL = "KODA_PROPOSAL", "Koja ettepanek või pöördumine"
+    #: Koda's official answer that it has **no comments or proposals** — «Oleme
+    #: eelnõuga tutvunud ning täiendavaid ettepanekuid ei ole» — sent by e-mail
+    #: or letter (docs/adr/0174). An answer, not an opinion: it ends the request
+    #: like any send, keeps its e-mail or letter as evidence, and is never
+    #: counted as an «arvamus välja» or followed up thirty days later.
+    NO_OBJECTION_RESPONSE = "NO_OBJECTION_RESPONSE", "Vastus: märkusi ja ettepanekuid ei ole"
     OTHER = "OTHER", "Muu"
+
+
+#: Sends that answer a request without stating a position: counted apart from
+#: opinions, never followed up (docs/adr/0174). A sent one still discharges an
+#: `Arvamuse tähtaeg` like every other send.
+NOT_AN_OPINION_KINDS: frozenset[str] = frozenset({SubmissionKind.NO_OBJECTION_RESPONSE.value})
 
 
 class SubmissionStatus(models.TextChoices):

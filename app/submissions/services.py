@@ -1245,8 +1245,13 @@ def schedule_follow_up_of(submission: Submission, *, actor: Any = None) -> None:
     the wrappers schedule nothing: the archive apply and the importers file
     historical letters through them, and a letter from 2019 is not a task.
     """
+    from app.submissions.enums import NOT_AN_OPINION_KINDS
     from app.workflow.follow_ups import schedule_first_check
 
+    # A «no comments» answer asks nothing of anybody, so there is nothing to
+    # check on thirty days later (docs/adr/0174).
+    if submission.kind in NOT_AN_OPINION_KINDS:
+        return
     schedule_first_check(submission=submission, actor=actor)
 
 
