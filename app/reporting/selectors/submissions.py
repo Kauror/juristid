@@ -47,7 +47,12 @@ from app.reporting.selectors.base import (
     top_segments,
     visible_matters,
 )
-from app.submissions.enums import RecipientRole, SubmissionKind, SubmissionStatus
+from app.submissions.enums import (
+    NOT_AN_OPINION_KINDS,
+    RecipientRole,
+    SubmissionKind,
+    SubmissionStatus,
+)
 from app.submissions.models import Submission, addressed_to, addressee_prefetch
 
 _ERA_NOTE = (
@@ -110,6 +115,11 @@ def sent_submissions(
         queryset = queryset.filter(addressed_to(recipient_id))
     if kind:
         queryset = queryset.filter(kind=kind)
+    else:
+        # «Arvamusi välja» counts opinions. An official «no comments» answer is
+        # a send and is listed, but it is counted on its own (docs/adr/0174);
+        # asking for its kind by name still finds it.
+        queryset = queryset.exclude(kind__in=NOT_AN_OPINION_KINDS)
 
     return queryset
 
