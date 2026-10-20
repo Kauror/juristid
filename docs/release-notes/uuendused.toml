@@ -19,7 +19,7 @@ changes = [
   "Kui järgmine tegevus on ootamine («Ootan …»), jääb arvamuse esitamise tähtaeg nähtavale ja tööde hulka.",
   "Koja kirjaliku vastuse, et märkusi ega ettepanekuid ei ole, saab salvestada ametliku vastusena: see vastab pöördumisele, järelkontrolli ei looda ja statistikas ei loeta seda arvamuseks.",
   "Eelnõus kavandatud või allika hinnatud jõustumine on teadmiseks: see ei asenda teema järgmist tegevust ega muutu hilinenuks.",
-  "OneNote'ist imporditud dokumendid on teema käigus nende algse OneNote'i lisamise kuupäeva järgi; kui kuupäev pole teada, on see öeldud.",
+  "OneNote'ist imporditud dokumendid on «Tegevused» all nende algse OneNote'i lisamise kuupäeva järgi; kui kuupäev pole teada, on see öeldud.",
   "Organisatsioonide ajaloolised nimed ja ümberkorraldused võimaldavad otsingus leida ka varasema nime all saadetud kirjavahetuse.",
 ]
 
