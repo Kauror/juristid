@@ -287,27 +287,47 @@ exactly the role `ENTRY_ADDED` already plays for a note.
 the same save finished (`✓ Tehtud <step>`). Grouping is still `operation_id`
 and nothing else.
 
-**Amended 2026-10-19 — one row per import of historical files.** An importer
+**Amended 2026-10-20 — imported historical files read on the day they were
+added to OneNote** (supersedes the import-day row of 2026-10-19). An importer
 stores a dossier's files with one `EVIDENCE_VERSION_ADDED` each, no actor, no
-operation, stamped with the import's moment — which is true. A file that
-supports a record already reads on that record's row (§5); the rest drew
+operation, stamped with the import's moment — which is true, and is audit. A
+file that supports a record reads on that record's row (§5); the rest drew
 «lisas dokumendi · <import day>» once per file at the top of a Teema whose
-history runs back years, as if a person had added a document that day (the
-evidence pilot's isolated rehearsal showed ten such rows on four Teemad).
+history runs back years. The 2026-10-19 row named them as one import, but still
+dated them by the import, and the owner's purpose for the pilot is the
+department's real chronology, not the day the database was filled.
 
-They are now one row per import: `Ajaloolised dokumendid imporditud`, the
-import's day, `N faili · OneNote: <sektsioon> → <leht>`, and every file under it
-linked to its exact bytes. The grouping identifier is one the import recorded,
-never an inference: the version is the imported copy of a legacy source resource
-(`LegacySourceResourceImport`, which only importers write), and the group is
-that row's `import_batch` — or its source page where no batch was recorded. A
-person's upload has an actor and keeps its own «lisas dokumendi» row. Nothing
-is hidden, no stored date or audit row changes, the files keep their own
-provenance, and visibility is unchanged: the events are scoped before grouping
-(§7), so a file a reader may not see is neither counted nor linked. The
-pagination reads one import's events whole, as it reads an operation whole, so
-a page boundary never shows half of one (app/matters/timeline.py
-`HISTORICAL_IMPORT_ITEM`).
+The OneNote desktop archive records, for every attached file inside an outline
+element, that element's `creationTime` — the moment the file was put on the
+page (`oneNote.blockCreated`, read from the page XML). It is **source
+provenance**: stored as `LegacySourceResource.source_added_at` with
+`source_added_basis = ONENOTE_BLOCK_CREATED` (migration `legacy_import/0018`,
+two nullable columns), never as an audit time, never derived from the page's
+dates, the file's own metadata or a date in its name. A floating object has no
+outline element and therefore no such time, and gets none.
+
+The chronology now reads:
+- **one row per Tallinn calendar day of addition** — «Dokument lisatud OneNote'i»
+  or «OneNote'i lisati N dokumenti», the day, `N faili · OneNote: <sektsioon> →
+  <leht>`, every file linked to its exact bytes — keyed on the earliest
+  addition that day, so it sorts where the work happened among the Teema's
+  other rows. The day is the Europe/Tallinn date of the UTC source time, DST
+  included;
+- **one row for the files whose source has no time** — «OneNote'i dokument(id)
+  — lisamise kuupäev teadmata», with «kuupäev teadmata» where the date would be.
+  It sorts where the import stored the files and claims nothing about when.
+
+A file that supports a record still reads only on that record's row, and its
+document page states «Lisatud OneNote'i: <day time>» (or «kuupäev teadmata»)
+beside «Saadi», so when the file reached OneNote and when the event it supports
+happened stay two facts. A person's upload has an actor and keeps its own
+«lisas dokumendi» row. Visibility is unchanged: the events are scoped before
+grouping (§7) and the row keys are read only from files the reader may see. The
+pagination counts one anchor per OneNote row (`imported_row_anchors`) instead
+of the import events' own moments, and still reads every imported file whole, so
+a page boundary never splits a day. Nothing stored changes: re-cataloguing a
+page fills a still-empty time from the source and never corrects a recorded one
+(app/matters/timeline.py `HISTORICAL_IMPORT_ITEM`, app/legacy_import/historical_apply.py).
 
 The stage clause is the stage-change event's own summary, which is the stage's
 label at the time it was recorded. It is **not** read off `Matter.stage`: that is

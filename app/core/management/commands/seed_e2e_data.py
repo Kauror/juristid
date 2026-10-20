@@ -10,7 +10,7 @@ Synthetic only, and refuses to run anywhere that claims to hold real data.
 from __future__ import annotations
 
 import hashlib
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from django.conf import settings
@@ -80,6 +80,11 @@ HISTORICAL_FILENAME = "seisukoht-2019.asice"
 #: succeeds on it and the Andmekvaliteet queue the browser suite asserts is
 #: empty stays empty — the trap a `.pdf` stub fell into once already.
 HISTORICAL_INLINE_FILENAME = "markmed-2019.txt"
+#: When the signed container was added to OneNote, as the source records it
+#: (docs/adr/0092 §6): a fixed historical moment, so the chronology draws
+#: «Dokument lisatud OneNote'i · 10.6.2019» on every run. The text file carries
+#: no time, so the same Teema also draws the honest undated row.
+HISTORICAL_ADDED_AT = "2019-06-10T07:15:00+00:00"
 HISTORICAL_INLINE_TEXT = (
     "Sünteetilised märkmed 2019. aasta kooskõlastusringilt.\n"
     "Koda pidas rakendusaega liiga lühikeseks.\n"
@@ -968,6 +973,8 @@ class Command(BaseCommand):
             sha256=hashlib.sha256(content).hexdigest(),
             size_bytes=len(content),
             archive_relative_path="resources/e2e-resource-1/original/" + HISTORICAL_FILENAME,
+            source_added_at=datetime.fromisoformat(HISTORICAL_ADDED_AT),
+            source_added_basis="ONENOTE_BLOCK_CREATED",
         )
         link = MatterSourcePage.objects.create(
             matter=matter,

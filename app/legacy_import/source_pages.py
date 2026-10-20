@@ -349,6 +349,20 @@ class LegacySourceResource(BaseModel):
     archive_relative_path = models.TextField(verbose_name="tee arhiivis")
     is_inline = models.BooleanField(default=False, verbose_name="lehesisene")
 
+    # **When the file was added to OneNote** — source provenance, not an audit
+    # time (docs/adr/0092 §6, amendment of 2026-10-20). The `creationTime` of
+    # the outline element that holds the file on the page, as the desktop
+    # archive recorded it; never the page's own dates, never the file's own
+    # metadata, never a date read out of its name, and never the moment
+    # Juristid imported it. Empty when the source carries none, and then the
+    # chronology says so instead of inventing a day.
+    source_added_at = models.DateTimeField(null=True, blank=True, verbose_name="lisatud allikasse")
+    #: Which source field `source_added_at` was read from, so a reviewer can
+    #: tell this reading from any later one. Blank with no time.
+    source_added_basis = models.CharField(
+        max_length=64, blank=True, default="", verbose_name="lisamise aja alus"
+    )
+
     class Meta:
         verbose_name = "ajalooline lähtefail"
         verbose_name_plural = "ajaloolised lähtefailid"
