@@ -580,6 +580,21 @@ CHRONOLOGY_EXPECTED_DAY = (
     f'.uxtl__ms:has(.uxtl__mswhat:text-is("{EXPECTED_DAY_TITLE}")) .uxtl__msdate',
 )
 
+#: The same expected date **on the process strip**, where it reads again as an
+#: «Eesolev tähtaeg» marker (`UPCOMING_DEADLINE_EVENT`, app/matters/process_timeline.py)
+#: — so docs/adr/0131 §13's «the chronology's alone» no longer holds. Nothing
+#: held it still there, and the four committed Teema baselines photographed
+#: whatever day they were taken on: «3.12.2026», the 19.10.2026 seed's
+#: today + 45. On 20.10.2026 every pull request, whatever it changed, failed
+#: `teema-kaik`, `teema-ulevaade`, `teema-1024` and `hele-teema-ulevaade` on
+#: the one digit «4.12.2026». Held at the string those baselines already hold,
+#: for the reason `CANONICAL_EXPECTED_DAY` gives — keeping the committed images
+#: valid rather than retaking four of them for the calendar.
+STRIP_EXPECTED_DAY = (
+    f'.tl-step:has(.tl-step__what:text-is("{EXPECTED_DAY_TITLE}")) .tl-step__date',
+)
+CANONICAL_STRIP_EXPECTED_DAY = "3.12.2026"
+
 #: `12.9.2026` — the canonical visual day, and the same one `teema-suletud`
 #: already holds.
 #:
@@ -740,8 +755,10 @@ NORMALISED_TEXT: tuple[tuple[str, str], ...] = (
 #: `NORMALISED_TEXT` above, where it is one list to read; this table is for the
 #: case where the page renders one class in two meanings at once.
 _STRIP_AND_CHRONOLOGY_RUN_DAYS = (*STRIP_RUN_DAY, *CHRONOLOGY_RUN_DAY)
-#: The expected date is the chronology's alone since docs/adr/0131 §13.
+#: The expected date on the chronology; its strip marker is held apart
+#: (`STRIP_EXPECTED_DAY`), at the string the baselines hold.
 _STRIP_AND_CHRONOLOGY_EXPECTED_DAYS = CHRONOLOGY_EXPECTED_DAY
+_STRIP_EXPECTED_HELD = ((STRIP_EXPECTED_DAY[0], CANONICAL_STRIP_EXPECTED_DAY),)
 
 
 def _held_still(
@@ -778,7 +795,7 @@ SCENARIO_NORMALISED_TEXT: dict[str, tuple[tuple[str, str], ...]] = {
     # clip carries only the slots that are inside it, so a selector declared
     # here is a selector that capture really renders — which is what lets
     # `REQUIRED_NORMALISATIONS` insist on all of them.
-    "teema-kaik": _held_still(STRIP_RUN_DAY, ()),
+    "teema-kaik": (*_held_still(STRIP_RUN_DAY, ()), *_STRIP_EXPECTED_HELD),
     "teema-ajajoon": _held_still(CHRONOLOGY_RUN_DAY, CHRONOLOGY_EXPECTED_DAY),
     # The same clip with the one outcome opened (docs/adr/0074 §14, amended
     # 2026-09-27): the same two rows are on it, closed or open.
@@ -791,10 +808,12 @@ SCENARIO_NORMALISED_TEXT: dict[str, tuple[tuple[str, str], ...]] = {
     # whoever's unrelated change finally pushes the total past the limit.
     "teema-ulevaade": (
         *_held_still(_STRIP_AND_CHRONOLOGY_RUN_DAYS, _STRIP_AND_CHRONOLOGY_EXPECTED_DAYS),
+        *_STRIP_EXPECTED_HELD,
         *_CURRENT_ACTION_HELD,
     ),
     "teema-1024": (
         *_held_still(_STRIP_AND_CHRONOLOGY_RUN_DAYS, _STRIP_AND_CHRONOLOGY_EXPECTED_DAYS),
+        *_STRIP_EXPECTED_HELD,
         *_CURRENT_ACTION_HELD,
     ),
     # The `PRAEGUNE TEGEVUS` clip of the same Matter: only its date is in it.
@@ -876,18 +895,20 @@ REQUIRED_NORMALISATIONS: dict[str, tuple[str, ...]] = {
     #
     # The expected date joins them on the same four, and for the same reason:
     # the seed adds it to this Matter on every run.
-    "teema-kaik": STRIP_RUN_DAY,
+    "teema-kaik": (*STRIP_RUN_DAY, *STRIP_EXPECTED_DAY),
     "teema-ajajoon": (*CHRONOLOGY_RUN_DAY, *CHRONOLOGY_EXPECTED_DAY),
     "teema-ajajoon-avatud": (*CHRONOLOGY_RUN_DAY, *CHRONOLOGY_EXPECTED_DAY),
     "teema-ulevaade": (
         *_STRIP_AND_CHRONOLOGY_RUN_DAYS,
         *_STRIP_AND_CHRONOLOGY_EXPECTED_DAYS,
+        *STRIP_EXPECTED_DAY,
         *RAIL_OPINION_SENT,
         *CURRENT_ACTION_DAY,
     ),
     "teema-1024": (
         *_STRIP_AND_CHRONOLOGY_RUN_DAYS,
         *_STRIP_AND_CHRONOLOGY_EXPECTED_DAYS,
+        *STRIP_EXPECTED_DAY,
         *RAIL_OPINION_SENT,
         *CURRENT_ACTION_DAY,
     ),
@@ -2257,7 +2278,7 @@ def test_a_closed_matter_day_really_does_move_without_the_normalisation(page, se
 
 
 def _open_matter_fixture(page, day: str) -> None:
-    """The open Matter's nine date slots, in the two shapes the page renders.
+    """The open Matter's ten date slots, in the two shapes the page renders.
 
     Every slot, not only the varying ones, because the scoping is the thing
     under test: a fixture holding just the two run-day dates would pass under a
@@ -2281,6 +2302,11 @@ def _open_matter_fixture(page, day: str) -> None:
         # against a page that does not exist.
         '<span class="tl-step" style="display:contents">'
         f'<span class="tl-step__what">Koja arvamus</span>'
+        f'<span class="tl-step__date">{day}</span></span>'
+        # The expected date's «Eesolev tähtaeg» marker on the strip, stamped
+        # from the same clock (`STRIP_EXPECTED_DAY`).
+        '<span class="tl-step" style="display:contents">'
+        f'<span class="tl-step__what">{EXPECTED_DAY_TITLE}</span>'
         f'<span class="tl-step__date">{day}</span></span>'
         '<span class="tl-step" style="display:contents">'
         '<span class="tl-step__what">Jõustumine</span>'
