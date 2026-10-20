@@ -675,3 +675,80 @@ def test_the_switcher_is_absent_where_there_is_no_persona_to_switch(client, sett
 
     assert 'id="persona-pill"' not in page
     assert reverse("matters:my_work") in page
+
+
+# -- names on the page: first names, told apart only where needed ----------
+# (owner, 20.10.2026: «Marko», not «Marko Udras»)
+
+
+def _row_names(page: str) -> list[str]:
+    import re
+
+    return re.findall(r'class="personarow__name">([^<]+)<', page)
+
+
+def test_a_unique_first_name_is_shown_alone(behind_the_gate, department):
+    page = behind_the_gate.get(reverse("accounts:choose_persona")).content.decode()
+    names = _row_names(page)
+    assert "Marko" in names and "Ireen" in names
+    assert "Marko Näidisjuht" not in page
+    # Every person is a single first name; «Ilma kasutajata» is the list's own
+    # no-persona row, not a person.
+    people = [name for name in names if name.strip() != "Ilma kasutajata"]
+    assert people and all(" " not in name.strip() for name in people)
+
+
+def test_marko_udras_reads_marko(behind_the_gate, department):
+    factories.DepartmentHeadFactory(display_name="Marko Udras")
+    department["head"].display_name = "Toomas Näidisjuht"
+    department["head"].save(update_fields=["display_name"])
+    page = behind_the_gate.get(reverse("accounts:choose_persona")).content.decode()
+    assert "Marko" in _row_names(page)
+    assert "Marko Udras" not in page
+
+
+def test_two_people_with_one_first_name_stay_distinguishable(behind_the_gate, department):
+    tamm = factories.UserFactory(role=UserRole.SPECIALIST, display_name="Sandra Tamm")
+    kask = factories.UserFactory(role=UserRole.SPECIALIST, display_name="Sandra Kask")
+    page = behind_the_gate.get(reverse("accounts:choose_persona")).content.decode()
+    names = _row_names(page)
+    assert "Sandra Tamm" in names and "Sandra Kask" in names
+    # Only the colliding names grow; everybody else keeps the first name.
+    assert "Ireen" in names and "Marko" in names
+    assert f'value="{tamm.pk}"' in page and f'value="{kask.pk}"' in page
+
+
+def test_the_selected_person_reads_the_same_in_the_list_and_the_switcher(
+    behind_the_gate, department
+):
+    _act_as(behind_the_gate, str(department["head"].pk))
+    page = behind_the_gate.get(reverse("accounts:choose_persona")).content.decode()
+    import re
+
+    assert "Marko" in _row_names(page)
+    # The top-bar switcher on the same page names the same people the same way.
+    switcher = re.findall(r'class="personaoption__name">\s*([^<]+?)\s*<', page)
+    assert switcher
+    assert {"Ireen", "Sandra"} <= set(switcher)
+    assert set(_row_names(page)) - {"Ilma kasutajata"} <= set(switcher) | {"Marko"}
+
+
+def test_choosing_by_first_name_still_posts_the_account_id(behind_the_gate, department):
+    head = department["head"]
+    page = behind_the_gate.get(reverse("accounts:choose_persona")).content.decode()
+    assert f'value="{head.pk}"' in page
+    response = _act_as(behind_the_gate, str(head.pk))
+    assert _current(behind_the_gate.get(reverse("accounts:choose_persona"))) == head
+    assert response.status_code in (302, 303)
+
+
+def test_shortening_the_label_changes_no_account(behind_the_gate, department):
+    before = {
+        u.pk: (u.display_name, u.upn, u.role, u.is_active)
+        for u in (department["head"], department["specialist"])
+    }
+    behind_the_gate.get(reverse("accounts:choose_persona"))
+    _act_as(behind_the_gate, str(department["head"].pk))
+    for user in (department["head"], department["specialist"]):
+        user.refresh_from_db()
+        assert (user.display_name, user.upn, user.role, user.is_active) == before[user.pk]

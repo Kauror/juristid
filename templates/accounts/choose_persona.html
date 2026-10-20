@@ -17,6 +17,10 @@
   control it is about instead of above a list somebody has already scrolled past
   (Vali kasutaja brief 8, 9, 18).
 
+  Names are first names, told apart only where two people share one — the same
+  rule and the same labels as the top-bar switcher (owner, 20.10.2026: «Marko»,
+  not «Marko Udras»). The value posted is the account id, never a name.
+
   The fast path is the top-bar pill. This page stays for the direct route, for
   explicit switching, and for the no-persona landing — which is where
   `login_required` sends a reader who opens Minu asjad without having said who
@@ -53,7 +57,7 @@
             <p class="personarow personarow--current">
               <span class="personarow__avatar personarow__avatar--current"
                     aria-hidden="true">{{ person.initials }}</span>
-              <span class="personarow__name">{{ person|full_name_among:people }}</span>
+              <span class="personarow__name">{{ person|name_among:people }}</span>
               <span class="personarow__state">Praegu valitud</span>
             </p>
           {% else %}
@@ -69,7 +73,7 @@
               {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
               <button type="submit" class="personarow">
                 <span class="personarow__avatar" aria-hidden="true">{{ person.initials }}</span>
-                <span class="personarow__name">{{ person|full_name_among:people }}</span>
+                <span class="personarow__name">{{ person|name_among:people }}</span>
                 <span class="personarow__action">Vali</span>
               </button>
             </form>

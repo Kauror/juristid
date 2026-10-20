@@ -10,7 +10,7 @@
 [[day]]
 date = 2026-10-20
 basis = "deployment"
-prs = [500, 501, 502, 503]
+prs = [500, 501, 502, 503, 505]
 # Tõendipiloodi importija (ADR 0173, legacy_import/0017), OneNote'i lisamisaeg
 # (ADR 0092 §6, legacy_import/0018), informatiivsed jõustumiskuupäevad ja ootamise
 # reegel (ADR 0120, ADR 0050, intelligence/0004), märkusteta vastus (ADR 0174,
@@ -21,6 +21,9 @@ changes = [
   "Eelnõus kavandatud või allika hinnatud jõustumine on teadmiseks: see ei asenda teema järgmist tegevust ega muutu hilinenuks.",
   "OneNote'ist imporditud dokumendid on «Tegevused» all nende algse OneNote'i lisamise kuupäeva järgi; kui kuupäev pole teada, on see öeldud.",
   "Organisatsioonide ajaloolised nimed ja ümberkorraldused võimaldavad otsingus leida ka varasema nime all saadetud kirjavahetuse.",
+  "Ajaloolise OneNote'i lehe avamine töötab ka siis, kui lehel on lingid.",
+  "Teema lehel ei ole enam rida «Ajalooline materjal»; OneNote'i lehed avanevad «Dokumendid» alt jaotisest «Ajalooline OneNote».",
+  "Kasutaja valikus on inimesed eesnimega; kui kahel on sama eesnimi, eristatakse neid.",
 ]
 
 [[day]]
