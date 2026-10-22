@@ -134,22 +134,15 @@ def test_switching_from_the_bar_keeps_the_page_and_follows_the_role(past_the_doo
     # and `Osakond` inside «Veel», which is one question with two answers.
     expect(page.locator(f"nav[aria-label='Peamine'] a[href='{DEPARTMENT}']")).to_have_count(1)
 
-    # 13–15. Stepping back to nobody: the persona goes, and the page that was
-    # being read asks who is reading before it shows anything (ADR 0181).
+    # 13–14. No step back to nobody: without a persona nothing is shown, so the
+    # popover offers colleagues only (ADR 0181). The choice survives a reload:
+    # it is session state, not a decoration the previous response carried.
     menu = _open_menu(page)
-    menu.get_by_role("button", name="Ilma kasutajata").click()
-    page.wait_for_load_state("networkidle")
-
-    assert CHOOSER in page.url
-    assert MY_WORK not in navigation_targets(page)
-    expect(page.locator(".personapill--none")).to_be_visible()
-
-    # 16–17. And it survives a reload: the choice is session state, not a
-    # decoration the previous response happened to carry.
+    expect(menu.get_by_role("button", name="Ilma kasutajata")).to_have_count(0)
+    page.keyboard.press("Escape")
     page.reload()
     page.wait_for_load_state("networkidle")
-    expect(page.locator(".personapill--none")).to_be_visible()
-    assert MY_WORK not in navigation_targets(page)
+    expect(_pill(page)).to_contain_text(HEAD)
 
 
 def test_the_selected_persona_survives_moving_between_pages(past_the_door, gate_base_url):
@@ -264,7 +257,8 @@ def test_the_full_page_lists_the_department_inside_the_normal_shell(past_the_doo
     assert SPECIALIST in body
     assert HEAD in body
     assert ADMINISTRATOR not in body
-    assert "Ilma kasutajata" in body
+    # Not a row since ADR 0181: nobody is a state, not a view to choose.
+    assert "Ilma kasutajata" not in body
 
 
 def test_the_whole_row_is_the_button_on_the_full_page(past_the_door, gate_base_url):
