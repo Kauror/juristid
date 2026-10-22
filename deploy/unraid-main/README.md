@@ -969,7 +969,7 @@ row in a database is exactly the guess the module exists to prevent. The apply i
 additive — it never removes an area, never creates one, never creates a `Tag`,
 never rewrites a captured section — so a second run is a genuine no-op.
 
-**`resolve_archive_recipients`** — read-only unless `--apply`; also `--mappings
+**`resolve_archive_recipients`** — read-only unless `--apply`, which needs `--expect-plan-sha256` (the digest the read-only run printed, ADR 0184); also `--mappings
 PATH` (a reviewed alias file, TOML or JSON) and `--show N` (default 25, `0` for
 all). It attaches historical opinion recipients that improved reference data can
 now resolve exactly. Idempotent: a Submission that already carries the

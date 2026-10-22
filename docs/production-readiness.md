@@ -114,7 +114,7 @@ implied by a deployment.
 | 3.1 | Register import | `import_legacy_register --dry-run` | `--apply --expect-plan-sha256 …` | The plan digest: workbook, mapping and contract bytes, every row decision and the rows it resolved to (ADR 0184) |
 | 3.2 | Current portfolio | `final_register_cutover --snapshot <sha> --dry-run` | `--apply` | The snapshot digest must be in `REVIEWED_SNAPSHOT_SHA256` |
 | 3.3 | Historical cutover | `historical_cutover_state --cutover-year 2026 --dry-run` | `--apply` | The cutover year is a reviewed constant |
-| 3.4 | Opinion archive catalogue | `opinion_archive plan --opinions … --expect-archive-sha256 …` | `opinion_archive catalogue` | Archive digest |
+| 3.4 | Opinion archive catalogue | `opinion_archive plan --opinions … --expect-archive-sha256 …` | `opinion_archive catalogue --expect-archive-sha256 …` (required, ADR 0184) | Archive digest |
 | 3.5 | Opinion archive bytes | `opinion_archive materialize-plan` | `opinion_archive materialize` | Holding bytes is not filing them |
 | 3.6 | Opinion canonical records | `opinion_archive plan` (same plan) | `opinion_archive apply` | Only automatic classes file themselves |
 | 3.7 | Archive text and search | `opinion_archive_search status` | `extract-text`, then `rebuild` | Not blocked by any gate, and no longer performed by anything running on its own (ADR 0072). There is no scan state in front of a parser, and corpus-wide extraction is not a deployed service: draining this backlog is what took production's checkpoint `fsync` from 2.5 s to 155 s on 2026-09-10. Run `run_extraction_worker --once --limit N` deliberately, outside working hours, and watch the array; the rebuild after it remains a separate owner-decided operation |

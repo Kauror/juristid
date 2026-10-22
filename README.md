@@ -265,7 +265,8 @@ uv run python manage.py backfill_legacy_owners --dry-run
 ```
 
 ```bash
-uv run python manage.py backfill_legacy_owners --apply --mapping-file private-data/mapping.toml
+uv run python manage.py backfill_legacy_owners --apply --mapping-file private-data/mapping.toml \
+    --expect-plan-sha256 "<the plan sha256 the dry run printed>"   # docs/adr/0184
 ```
 
 Activate one reviewed register year as current work. The year must be listed in
