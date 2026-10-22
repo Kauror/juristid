@@ -26,6 +26,7 @@ from django.utils import timezone
 from app.accounts import email_policy, mail, mfa, passwords, throttle, tokens
 from app.accounts.enums import CredentialTokenPurpose, ProvisioningState, ThrottleScope
 from app.accounts.models import AccountCredentialToken, RecoveryCode, TotpDevice, User
+from app.audit import provenance
 from app.audit.enums import SecurityEventType
 from app.audit.services import record_security_event
 from app.core.client_ip import client_ip
@@ -196,14 +197,7 @@ def request_password_reset(request: HttpRequest, *, email: str) -> None:
         return
 
     user = User.objects.filter(upn=address).first() if address else None
-    eligible = (
-        user is not None
-        and user.provisioning_state == ProvisioningState.ACTIVATED
-        and user.is_active
-        and user.has_local_password
-        and not (user.is_synthetic and settings.REAL_DATA_ALLOWED)
-    )
-    if not eligible or user is None:
+    if not _reset_eligible(user) or user is None:
         detail["outcome"] = "no_eligible_account"
         record_security_event(
             event_type=SecurityEventType.PASSWORD_RESET_REQUESTED,
@@ -226,15 +220,49 @@ def request_password_reset(request: HttpRequest, *, email: str) -> None:
         detail=detail,
     )
     user_id = user.pk
-    after_the_response(lambda: _send_reset_link(user_id))
+    epoch = user.security_epoch
+    correlation = provenance.current_correlation_id()
+    after_the_response(lambda: _send_reset_link(user_id, epoch, correlation))
 
 
-def _send_reset_link(user_id: uuid.UUID) -> None:
-    with transaction.atomic():
-        user = User.objects.filter(pk=user_id).first()
-        if user is None:  # pragma: no cover - accounts are never deleted
+def _reset_eligible(user: User | None) -> bool:
+    """Whether a reset link may go to this account now — asked twice, see below."""
+    return (
+        user is not None
+        and user.provisioning_state == ProvisioningState.ACTIVATED
+        and user.is_active
+        and user.has_local_password
+        and not (user.is_synthetic and settings.REAL_DATA_ALLOWED)
+    )
+
+
+def _send_reset_link(user_id: uuid.UUID, epoch: int, correlation: uuid.UUID | None = None) -> None:
+    """Issue and mail the link the request asked for — if it is still due.
+
+    This runs after the response, possibly much later: a worker can be slow or
+    paused. So the request's decision is not trusted here. Under the account's
+    row lock the account must **still** be eligible and its security epoch
+    must **still** be the one the request saw; a password changed, a factor
+    reset or an account switched off in between means no link is minted
+    (docs/adr/0180 §5). The audit rows it writes carry the request's
+    correlation id, and say they are the system's.
+    """
+    with provenance.correlated(correlation), transaction.atomic():
+        user = User.objects.select_for_update().filter(pk=user_id).first()
+        if not _reset_eligible(user) or user is None or user.security_epoch != epoch:
+            record_security_event(
+                event_type=SecurityEventType.PASSWORD_RESET_REQUESTED,
+                succeeded=False,
+                subject=user,
+                detail={"outcome": "no_longer_due"},
+            )
             return
-        issued = tokens.issue(user=user, purpose=CredentialTokenPurpose.PASSWORD_RESET)
+        try:
+            issued = tokens.issue(
+                user=user, purpose=CredentialTokenPurpose.PASSWORD_RESET, expected_epoch=epoch
+            )
+        except tokens.StaleIssuance:  # pragma: no cover - the lock above already decided
+            return
         delivery = mail.send_credential_link(
             user=user,
             purpose=CredentialTokenPurpose.PASSWORD_RESET,

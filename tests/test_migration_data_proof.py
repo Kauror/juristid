@@ -39,6 +39,10 @@ FROM_ZERO = "A fresh database migrates from zero"
 #: RunPython migrations the step-back does not reach, and the populated test that
 #: proves each one. `(app, migration) -> "path::test"`.
 POPULATED_PROOFS: dict[tuple[str, str], str] = {
+    ("accounts", "0005_credential_link_epoch_and_one_live"): (
+        "tests/test_credential_link_epoch.py::"
+        "test_the_migration_supersedes_duplicate_live_links_and_keeps_the_newest"
+    ),
     ("matters", "0008_multiple_source_organisations"): (
         "tests/test_multiple_senders_migration.py::"
         "test_reversing_refuses_once_a_matter_has_two_senders"
