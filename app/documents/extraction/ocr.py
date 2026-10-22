@@ -24,7 +24,7 @@ import shutil
 from django.conf import settings
 
 from app.documents.extraction.errors import ExtractionFailed
-from app.documents.extraction.limits import Limits, configure_image_safety
+from app.documents.extraction.limits import Limits, open_bounded_image
 
 logger = logging.getLogger(__name__)
 
@@ -95,26 +95,20 @@ def configured_languages() -> tuple[str, ...]:
 
 
 def recognise_image(content: bytes, limits: Limits) -> str:
-    """Read one image's text. Returns an empty string when there is none."""
-    configure_image_safety(limits)
-    import io
+    """Read one image's text. Returns an empty string when there is none.
 
+    The image is opened by its header and refused over the pixel ceiling before
+    it is decoded (`open_bounded_image`, csf_9b7b703ca586c216499d33bd); Pillow
+    used to decode anything up to twice the limit with a warning.
+    """
     import pytesseract
-    from PIL import Image, UnidentifiedImageError
 
     ocr_engine_version()  # raises OcrUnavailable if the engine is not usable
 
     del pytesseract  # imported above only so an absent binding fails early
-    try:
-        with Image.open(io.BytesIO(content)) as image:
-            image.load()
-            return recognise_pil_image(image)
-    except UnidentifiedImageError as error:
-        raise ExtractionFailed("unreadable_image", "Pilti ei õnnestunud avada.") from error
-    except Image.DecompressionBombError as error:
-        raise ExtractionFailed(
-            "image_too_large", "Pildi mõõtmed ületavad lubatud piiri."
-        ) from error
+    with open_bounded_image(content, limits) as image:
+        image.load()
+        return recognise_pil_image(image)
 
 
 def recognise_pil_image(image: object) -> str:
