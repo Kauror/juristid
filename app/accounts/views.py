@@ -315,7 +315,7 @@ def gate(request: HttpRequest) -> HttpResponse:
         raise Http404("This deployment does not use a shared gate.")
 
     if shared_gate.has_passed(request):
-        return redirect(settings.LOGIN_REDIRECT_URL)
+        return _after_gate(request)
 
     context: dict[str, Any] = {}
 
@@ -334,9 +334,24 @@ def gate(request: HttpRequest) -> HttpResponse:
             user_agent=request.META.get("HTTP_USER_AGENT", ""),
             detail=shared_gate.audit_detail(request),
         )
-        return redirect(settings.LOGIN_REDIRECT_URL)
+        return _after_gate(request)
 
     return render(request, "accounts/shared_gate.html", context)
+
+
+def _after_gate(request: HttpRequest) -> HttpResponse:
+    """The start page — or, when one was given, a ``next`` on this site.
+
+    The middleware gives one only for the MCP consent and enrolment pages
+    (`shared_gate.gate_return_target`), so an OAuth flow that met the gate
+    comes back to it; every other visit lands where it always has. The form
+    posts back to its own address, so the ``next`` in the query string reaches
+    the POST too. `_safe_next` refuses anything that is not a path here.
+    """
+    target = _safe_next(request)
+    if target:
+        return HttpResponseRedirect(target)
+    return redirect(settings.LOGIN_REDIRECT_URL)
 
 
 def _gate_refused(

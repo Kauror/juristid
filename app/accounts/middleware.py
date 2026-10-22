@@ -40,6 +40,7 @@ from __future__ import annotations
 import functools
 import logging
 from typing import Any
+from urllib.parse import urlencode
 
 from django.contrib.auth import login, logout
 from django.contrib.auth.views import redirect_to_login
@@ -100,6 +101,11 @@ class AuthenticationModeMiddleware:
     def __call__(self, request: HttpRequest) -> HttpResponse:
         mode = shared_gate.current_mode()
         if mode == AuthMode.NONE or request.path.startswith(EXEMPT_PREFIXES):
+            return self.get_response(request)
+        if shared_gate.is_machine_endpoint(request.path):
+            # The MCP token, revocation and metadata endpoints: exact paths,
+            # only while MCP access is on. They authenticate the client
+            # themselves (docs/adr/0185 §4).
             return self.get_response(request)
         if mode == AuthMode.CLOUDFLARE_ACCESS:
             return self._cloudflare_access(request)
@@ -181,6 +187,11 @@ class AuthenticationModeMiddleware:
 
         if request.path == gate_url:
             return self.get_response(request)
+        back = shared_gate.gate_return_target(request)
+        if back:
+            # An MCP consent or enrolment page reached from outside: come back
+            # to it after the password (docs/adr/0185). Only those pages.
+            return redirect(f"{gate_url}?{urlencode({'next': back})}")
         return redirect(gate_url)
 
     def _end_a_superseded_gate(self, request: HttpRequest) -> None:
