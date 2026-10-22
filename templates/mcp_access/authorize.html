@@ -23,49 +23,33 @@
     <p class="acctnote">Tegutsed kasutajana <strong>{{ persona.display_name }}</strong>.</p>
   </section>
 
-  {% if not may_connect %}
-    <p class="message message--warning" role="status">
-      Kasutajal {{ persona.display_name }} ei ole MCP ligipääsu. Ligipääsu annab Juristidi haldaja.
-    </p>
-    <form method="post" class="card card--form form">
-      {% csrf_token %}
-      <div class="form__actions">
-        <button type="submit" name="otsus" value="keeldu" class="button button--quiet">Keeldu</button>
-        {% if switch_url %}<a class="acctlink" href="{{ switch_url }}">Vaheta kasutajat</a>{% endif %}
-      </div>
-    </form>
-  {% elif locked_minutes %}
-    <p class="message message--warning" role="status">
-      Liiga palju valesid koode. Proovi umbes {{ locked_minutes }} minuti pärast uuesti.
-    </p>
-    <form method="post" class="card card--form form">
-      {% csrf_token %}
-      <div class="form__actions">
-        <button type="submit" name="otsus" value="keeldu" class="button button--quiet">Keeldu</button>
-      </div>
-    </form>
-  {% else %}
-    <form method="post" class="card card--form form" novalidate>
-      {% csrf_token %}
-      <label class="field">
-        <span class="field__label">Kood rakendusest «Juristidi MCP autentija»</span>
-        <input class="field__input mono"
-               type="text"
-               name="kood"
-               inputmode="numeric"
-               autocomplete="one-time-code"
-               pattern="[0-9]{6}"
-               maxlength="6"
-               autocapitalize="off"
-               spellcheck="false"
-               autofocus>
-      </label>
-      <div class="form__actions">
-        <button type="submit" name="otsus" value="luba" class="button button--primary">Luba</button>
-        <button type="submit" name="otsus" value="keeldu" class="button button--quiet">Keeldu</button>
-        {% if switch_url %}<a class="acctlink" href="{{ switch_url }}">Vaheta kasutajat</a>{% endif %}
-      </div>
-    </form>
-  {% endif %}
+  {% comment %}
+    The same form for every persona. Whether this persona has a grant, is
+    locked or is suspended is said only after its own current code has been
+    verified (MCPSEC-01): until then a wrong code and «no access» get one and
+    the same answer.
+  {% endcomment %}
+  <form method="post" class="card card--form form" novalidate>
+    {% csrf_token %}
+    <label class="field">
+      <span class="field__label">Kood rakendusest «Juristidi MCP autentija»</span>
+      <input class="field__input mono"
+             type="text"
+             name="kood"
+             inputmode="numeric"
+             autocomplete="one-time-code"
+             pattern="[0-9]{6}"
+             maxlength="6"
+             autocapitalize="off"
+             spellcheck="false"
+             autofocus>
+    </label>
+    <p class="acctnote">Mitu valet koodi järjest lukustab ühendamise ajutiselt. Ligipääsu annab Juristidi haldaja.</p>
+    <div class="form__actions">
+      <button type="submit" name="otsus" value="luba" class="button button--primary">Luba</button>
+      <button type="submit" name="otsus" value="keeldu" class="button button--quiet">Keeldu</button>
+      {% if switch_url %}<a class="acctlink" href="{{ switch_url }}">Vaheta kasutajat</a>{% endif %}
+    </div>
+  </form>
 </div>
 {% endblock %}

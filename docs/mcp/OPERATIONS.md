@@ -277,7 +277,8 @@ must be refused at the authorization step. Record both in the enablement report.
 | Does the server answer and see its database? | `docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T mcp python manage.py check_mcp_server` | exit 0 |
 | Is the tunnel client ready to take work? | `docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T mcp-tunnel wget -q -O - http://127.0.0.1:8080/readyz` | `ready` |
 | What has the tunnel client observed? | `docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T mcp-tunnel wget -q -O - 'http://127.0.0.1:8080/health?details=true'` | `"ready": true`; per-component detail |
-| Who holds access? | `docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py mcp_access list` | the people you granted, nobody else |
+| Who holds access? | `docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py mcp_access list` | the people you granted, nobody else; `lukus kuni` `-` and `valesid koode` small |
+| Is anybody guessing authenticator codes? | `docker compose -p juristid-main -f deploy/unraid-main/compose.yml logs --since 24h web \| grep 'MCP grant'` | nothing. Every lock and every suspension prints one WARNING line naming the grant and the account (never a code); a suspension means twenty wrong codes without a success |
 
 The tunnel client's health and admin endpoints listen on the container's
 loopback only (`HEALTH_LISTEN_ADDR=127.0.0.1:8080`): they are reachable through
@@ -410,7 +411,10 @@ held, so like every log here it stays on this host (OPERATOR.md).
 | HTTP 403 on a tool call | `mcp` log | the token is valid but lacks the `juristid.read` scope | a client asking for the wrong scope; reconnect the plugin |
 | A tool answers «not found» | ChatGPT | the id is unknown **or** not visible to that person — deliberately indistinguishable | check the record in the browser *as that person's persona* |
 | `invalid_grant` / `invalid_target` at `/oauth/token` | `web` log | an expired or reused code, a PKCE mismatch, or a `resource` not in `MCP_RESOURCE_URLS` | for a resource refusal, the log names the resource requested: that is the URL `MCP_RESOURCE_URLS` must list |
-| The authorization page refuses the person | browser | no grant, grant locked (five wrong codes lock it for fifteen minutes), no enrolled authenticator, wrong persona, or no business role | `mcp_access list`; a new `enrolment-link` if they never enrolled |
+| «Kood ei sobi või sellel kasutajal pole MCP ligipääsu» | browser | a wrong code, no grant, a pending grant (never enrolled), wrong persona, or no business role — deliberately one message, so the page does not reveal who holds a grant | `mcp_access list`; a new `enrolment-link` if they never enrolled |
+| «Liiga palju valesid koode» (after the person's own right code) | browser | the grant is locked: five wrong codes in a row; consecutive locks last 15 min, 1 h, 4 h | wait, or `mcp_access unlock --user <upn>` once you know the wrong codes were the person's own |
+| «Ligipääs on peatatud» | browser; `web` log WARNING `MCP grant … suspended` | the fourth consecutive lock — twenty wrong codes without a success. Treat it as somebody guessing at that colleague's code | talk to the person first; then `mcp_access unlock --user <upn>`. The wrong-code count stays in `mcp_access list` until their next success |
+| «Liiga palju katseid» | browser | this gate session or this address failed too often in 15 minutes, whichever personas it tried | wait; repeated, it is somebody spraying codes — the `web` log and `McpAccessEvent` rows with reason `throttled` show when |
 | `/readyz` says `503 oauth discovery failed` | `mcp-tunnel` | the client could not read `mcp`'s protected-resource metadata, or the metadata named an origin it does not trust | `MCP_OAUTH_TRUSTED_ORIGINS` must be exactly the public origin; `mcp` must be healthy |
 | `/readyz` says `503 mcp probe failed` | `mcp-tunnel` | the client cannot reach `http://mcp:8001/mcp` | `mcp` stopped or unhealthy |
 | `mcp-tunnel` log: 401/403 from the control plane | `mcp-tunnel` | the runtime key is wrong, expired or lacks Tunnels Read + Use, or the tunnel id is not the key's organisation's | a new restricted key in the tunnel file, then recreate `mcp-tunnel` |

@@ -1,6 +1,6 @@
 """MCP access: grants, authenticators, enrolment links, codes, tokens, events (docs/adr/0185).
 
-Additive: six new tables, no other app's table touched. The event table is
+Additive: seven new tables, no other app's table touched. The event table is
 append-only in the database, by the shared `core_reject_mutation()` trigger
 function, as every audit table is.
 """
@@ -35,6 +35,9 @@ class Migration(migrations.Migration):
                 ('revoke_reason', models.CharField(blank=True, default='', max_length=300, verbose_name='tühistamise põhjus')),
                 ('failed_attempts', models.PositiveIntegerField(default=0, verbose_name='valed koodid järjest')),
                 ('locked_until', models.DateTimeField(blank=True, null=True, verbose_name='lukus kuni')),
+                ('lock_count', models.PositiveIntegerField(default=0, verbose_name='lukustusi järjest')),
+                ('total_failed_attempts', models.PositiveIntegerField(default=0, verbose_name='valed koodid pärast viimast õnnestumist')),
+                ('suspended_at', models.DateTimeField(blank=True, null=True, verbose_name='peatatud')),
                 ('created_by', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='+', to=settings.AUTH_USER_MODEL, verbose_name='andis')),
                 ('user', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='mcp_access_grants', to=settings.AUTH_USER_MODEL, verbose_name='kasutaja')),
             ],
@@ -48,7 +51,7 @@ class Migration(migrations.Migration):
             fields=[
                 ('id', models.UUIDField(default=app.core.ids.uuid7, editable=False, primary_key=True, serialize=False)),
                 ('created_at', models.DateTimeField(auto_now_add=True, db_index=True)),
-                ('event_type', models.CharField(choices=[('GRANT_CREATED', 'Ligipääs antud'), ('GRANT_REFUSED', 'Ligipääsu andmisest keelduti'), ('ENROLMENT_LINK_ISSUED', 'Seadistuslink väljastatud'), ('ENROLMENT_COMPLETED', 'Autentija seadistatud'), ('ENROLMENT_REFUSED', 'Seadistamisest keelduti'), ('AUTHORIZATION_GRANTED', 'Ühendus lubatud'), ('AUTHORIZATION_DENIED', 'Kasutaja keeldus'), ('AUTHORIZATION_REFUSED', 'Ühenduse lubamisest keelduti'), ('GRANT_LOCKED', 'Ligipääs ajutiselt lukus'), ('GRANT_UNLOCKED', 'Lukk eemaldatud'), ('TOKEN_ISSUED', 'Võtmed väljastatud'), ('TOKEN_REFRESHED', 'Võtmed uuendatud'), ('TOKEN_REFUSED', 'Võtmete väljastamisest keelduti'), ('REFRESH_REUSE_DETECTED', 'Uuendusvõtit kasutati korduvalt'), ('TOKEN_REVOKED', 'Võti tühistatud'), ('GRANT_REVOKED', 'Ligipääs tühistatud')], max_length=32, verbose_name='sündmus')),
+                ('event_type', models.CharField(choices=[('GRANT_CREATED', 'Ligipääs antud'), ('GRANT_REFUSED', 'Ligipääsu andmisest keelduti'), ('ENROLMENT_LINK_ISSUED', 'Seadistuslink väljastatud'), ('ENROLMENT_COMPLETED', 'Autentija seadistatud'), ('ENROLMENT_REFUSED', 'Seadistamisest keelduti'), ('AUTHORIZATION_GRANTED', 'Ühendus lubatud'), ('AUTHORIZATION_DENIED', 'Kasutaja keeldus'), ('AUTHORIZATION_REFUSED', 'Ühenduse lubamisest keelduti'), ('GRANT_LOCKED', 'Ligipääs ajutiselt lukus'), ('GRANT_SUSPENDED', 'Ligipääs peatatud valede koodide tõttu'), ('GRANT_UNLOCKED', 'Lukk eemaldatud'), ('TOKEN_ISSUED', 'Võtmed väljastatud'), ('TOKEN_REFRESHED', 'Võtmed uuendatud'), ('TOKEN_REFUSED', 'Võtmete väljastamisest keelduti'), ('REFRESH_REUSE_DETECTED', 'Uuendusvõtit kasutati korduvalt'), ('TOKEN_REVOKED', 'Võti tühistatud'), ('GRANT_REVOKED', 'Ligipääs tühistatud')], max_length=32, verbose_name='sündmus')),
                 ('succeeded', models.BooleanField(default=True, verbose_name='õnnestus')),
                 ('client_id', models.CharField(blank=True, default='', max_length=500, verbose_name='klient')),
                 ('ip_address', models.GenericIPAddressField(blank=True, null=True, verbose_name='IP-aadress')),
@@ -61,6 +64,21 @@ class Migration(migrations.Migration):
                 'verbose_name': 'MCP ligipääsu sündmus',
                 'verbose_name_plural': 'MCP ligipääsu sündmused',
                 'ordering': ['-created_at'],
+            },
+        ),
+        migrations.CreateModel(
+            name='McpAuthorizeThrottle',
+            fields=[
+                ('id', models.UUIDField(default=app.core.ids.uuid7, editable=False, primary_key=True, serialize=False)),
+                ('created_at', models.DateTimeField(auto_now_add=True, db_index=True)),
+                ('updated_at', models.DateTimeField(auto_now=True)),
+                ('key', models.CharField(max_length=64, unique=True, verbose_name='tunnus')),
+                ('failures', models.PositiveIntegerField(default=0, verbose_name='ebaõnnestumisi')),
+                ('window_started_at', models.DateTimeField(verbose_name='aken algas')),
+            ],
+            options={
+                'verbose_name': 'MCP autoriseerimise piirang',
+                'verbose_name_plural': 'MCP autoriseerimise piirangud',
             },
         ),
         migrations.CreateModel(

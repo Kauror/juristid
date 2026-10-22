@@ -17,9 +17,12 @@
   authenticator; the outstanding one stops working.
 * **revoke** ends the grant and every token, code and link it has, at once.
 * **revoke-all** is the kill switch: every grant and every token.
-* **unlock** clears the lock five wrong authenticator codes put on a grant.
-* **list** prints every grant: account, status, whether enrolled, live tokens
-  and the last token issue or refresh. No secret, no digest.
+* **unlock** clears the lock wrong authenticator codes put on a grant, and the
+  suspension the fourth consecutive lock puts on it (MCPSEC-01). The count of
+  wrong codes since the last success is kept: only a success resets it.
+* **list** prints every grant: account, status, whether enrolled, live tokens,
+  the last token issue or refresh, the lock or suspension, and the wrong codes
+  since the last success. No secret, no digest.
 
 With `MCP_ENABLED` off, only `list`, `revoke` and `revoke-all` run: turning
 access *off* must never depend on it being on. Every change records an
@@ -56,7 +59,7 @@ class Command(BaseCommand):
         revoke.add_argument("--reason", required=True, help="Why. Kept in the audit.")
         revoke_all = sub.add_parser("revoke-all", help="End every grant and every token.")
         revoke_all.add_argument("--reason", required=True, help="Why. Kept in the audit.")
-        unlock = sub.add_parser("unlock", help="Clear a grant's wrong-code lock.")
+        unlock = sub.add_parser("unlock", help="Clear a grant's wrong-code lock or suspension.")
         unlock.add_argument("--user", required=True, help="The account's UPN.")
         sub.add_parser("list", help="Every grant, without secrets.")
 
@@ -117,11 +120,16 @@ class Command(BaseCommand):
         if not rows:
             self.stdout.write("MCP ligipääse ei ole.")
             return
-        self.stdout.write("upn\tolek\tautentija\taktiivseid võtmeid\tviimane kasutus\tlukus kuni")
+        self.stdout.write(
+            "upn\tolek\tautentija\taktiivseid võtmeid\tviimane kasutus\tlukus kuni\tvalesid koode"
+        )
         for row in rows:
             last = f"{row.last_used:%Y-%m-%d %H:%M}" if row.last_used else "-"
-            locked = f"{row.locked_until:%Y-%m-%d %H:%M}" if row.locked_until else "-"
+            if row.suspended:
+                locked = "PEATATUD (mcp_access unlock)"
+            else:
+                locked = f"{row.locked_until:%Y-%m-%d %H:%M}" if row.locked_until else "-"
             self.stdout.write(
                 f"{row.upn}\t{row.status}\t{'jah' if row.enrolled else 'ei'}\t"
-                f"{row.active_tokens}\t{last}\t{locked}"
+                f"{row.active_tokens}\t{last}\t{locked}\t{row.total_failed_attempts}"
             )

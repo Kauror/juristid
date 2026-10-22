@@ -1044,6 +1044,14 @@ MCP_ACCESS_TOKEN_SECONDS = env_int("MCP_ACCESS_TOKEN_SECONDS", 3600)
 MCP_REFRESH_TOKEN_SECONDS = env_int("MCP_REFRESH_TOKEN_SECONDS", 30 * 24 * 3600)
 MCP_AUTHORIZATION_CODE_SECONDS = 60
 MCP_ENROLMENT_LINK_SECONDS = env_int("MCP_ENROLMENT_LINK_SECONDS", 30 * 60)
+# Wrong authenticator codes one gate session, and one client address, may type
+# at `/oauth/authorize` in a window, whichever personas they try (MCPSEC-01).
+# The per-grant lock is in app/mcp_access/services.py; this stops one session
+# guessing a little at everybody's. The address limit is higher because the
+# office shares one address.
+MCP_AUTHORIZE_THROTTLE_SECONDS = env_int("MCP_AUTHORIZE_THROTTLE_SECONDS", 15 * 60)
+MCP_AUTHORIZE_MAX_FAILURES_PER_SESSION = env_int("MCP_AUTHORIZE_MAX_FAILURES_PER_SESSION", 10)
+MCP_AUTHORIZE_MAX_FAILURES_PER_ADDRESS = env_int("MCP_AUTHORIZE_MAX_FAILURES_PER_ADDRESS", 30)
 # Pre-registered OAuth clients, by client id (a client metadata document URL).
 # Only ChatGPT's own metadata document by default; there is no open dynamic
 # client registration.

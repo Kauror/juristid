@@ -3,7 +3,8 @@
 docs/adr/0185 §3: the gate password is shared and the persona is a choice, so
 neither alone may connect an AI client. These tests walk the real browser path
 — gate, persona chooser, consent page — and prove the code from one persona's
-authenticator opens nothing for another, five wrong codes lock the grant, and a
+authenticator opens nothing for another, five wrong codes lock the grant
+(tests/test_mcp_access_lockout.py has the escalation), and a
 refusal goes back to the client only once its redirect URI is known good.
 """
 
@@ -233,22 +234,23 @@ def test_a_spent_code_cannot_be_typed_again(client, moment):
 
 
 def test_five_wrong_codes_lock_the_grant_and_then_even_the_right_one_waits(client, moment):
+    """MCPSEC-01: the fifth wrong code is answered like the first four — the lock
+    is revealed only to the persona's own right code."""
     user = factories.UserFactory()
     grant, secret = support.enrolled(user, moment)
     _as(client, user)
-    for attempt in range(4):
+    for attempt in range(5):
         assert client.post(_url(), {"otsus": "luba", "kood": "000000"}).status_code == 400, attempt
-    fifth = client.post(_url(), {"otsus": "luba", "kood": "000000"})
-    assert fifth.status_code == 429
 
     locked = client.post(_url(), {"otsus": "luba", "kood": support.code_at(secret, moment)})
 
     assert locked.status_code == 429
+    assert "Liiga palju valesid koode" in locked.content.decode()
     assert not McpAuthorizationCode.objects.exists()
     grant.refresh_from_db()
     assert grant.locked_until is not None
     assert McpAccessEvent.objects.filter(event_type=McpAccessEventType.GRANT_LOCKED).count() == 1
-    assert "Liiga palju valesid koode" in client.get(_url()).content.decode()
+    assert "Liiga palju valesid koode" not in client.get(_url()).content.decode()
 
 
 def test_deny_returns_access_denied_with_state_and_iss(client, moment):
@@ -268,15 +270,18 @@ def test_deny_returns_access_denied_with_state_and_iss(client, moment):
     ).exists()
 
 
-def test_a_persona_without_a_grant_is_told_so_and_can_only_refuse(client):
+def test_a_persona_without_a_grant_is_not_told_so_before_a_code_is_typed(client):
+    """MCPSEC-01: the page does not reveal which personas hold a grant."""
     user = factories.UserFactory()
     _as(client, user)
     page = client.get(_url())
     body = page.content.decode()
     assert page.status_code == 200
-    assert "ei ole MCP ligipääsu" in body and 'name="kood"' not in body
+    assert "ei ole MCP ligipääsu" not in body and 'name="kood"' in body
     assert "Vaheta kasutajat" in body
-    assert client.post(_url(), {"otsus": "luba", "kood": "123456"}).status_code == 403
+    refused = client.post(_url(), {"otsus": "luba", "kood": "123456"})
+    assert refused.status_code == 400
+    assert views.GENERIC_REFUSAL in refused.content.decode()
     assert not McpAuthorizationCode.objects.exists()
 
 
@@ -286,7 +291,7 @@ def test_a_pending_grant_cannot_authorize(client):
     user = factories.UserFactory()
     services.grant_access(user=user, provenance=support.OPERATOR)
     _as(client, user)
-    assert client.post(_url(), {"otsus": "luba", "kood": "123456"}).status_code == 403
+    assert client.post(_url(), {"otsus": "luba", "kood": "123456"}).status_code == 400
 
 
 def test_an_account_that_lost_its_business_role_cannot_authorize(moment, settings):
@@ -301,7 +306,7 @@ def test_an_account_that_lost_its_business_role_cannot_authorize(moment, setting
     signed_in = Client()
     signed_in.force_login(User.objects.get(pk=user.pk))
     response = signed_in.post(_url(), {"otsus": "luba", "kood": support.code_at(secret, moment)})
-    assert response.status_code == 403
+    assert response.status_code == 400
     assert not McpAuthorizationCode.objects.exists()
 
 

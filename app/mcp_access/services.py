@@ -16,8 +16,10 @@ between: is the grant ACTIVE, is the account active, and does
 from __future__ import annotations
 
 import getpass
+import logging
 import socket
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
@@ -38,14 +40,22 @@ from app.mcp_access.models import (
     McpAccessGrant,
     McpAuthenticator,
     McpAuthorizationCode,
+    McpAuthorizeThrottle,
     McpEnrolmentLink,
     McpToken,
     TokenKind,
 )
 
-#: Wrong authenticator codes in a row before the grant locks, and for how long.
+#: Wrong authenticator codes in a row before the grant locks.
 MAX_FAILED_CODES = 5
-LOCK_SECONDS = 15 * 60
+#: How long each consecutive lock lasts (MCPSEC-01). The lock after the last
+#: rung suspends the grant until an operator runs ``mcp_access unlock``: at most
+#: ``MAX_FAILED_CODES * (len(LOCK_LADDER_SECONDS) + 1)`` = 20 guesses before a
+#: person has to be involved, against up to three valid codes in a million.
+LOCK_LADDER_SECONDS = (15 * 60, 60 * 60, 4 * 60 * 60)
+LOCK_SECONDS = LOCK_LADDER_SECONDS[0]
+
+logger = logging.getLogger("app.mcp_access")
 
 WEB = "web"
 
@@ -312,11 +322,37 @@ def unlock(*, user: User, provenance: str) -> bool:
     )
     if grant is None:
         raise GrantRefused("kontol ei ole kehtivat ligipääsu")
-    was_locked = grant.locked_until is not None or grant.failed_attempts > 0
+    was_suspended = grant.is_suspended
+    was_locked = (
+        grant.locked_until is not None
+        or grant.failed_attempts > 0
+        or grant.lock_count > 0
+        or was_suspended
+    )
+    # The lock, the escalation and the suspension end; the cumulative count of
+    # wrong codes does not. Only a successful authorization resets that, so the
+    # history an operator is unlocking stays visible (`mcp_access list`).
     grant.failed_attempts = 0
     grant.locked_until = None
-    grant.save(update_fields=["failed_attempts", "locked_until", "updated_at"])
-    record(McpAccessEventType.GRANT_UNLOCKED, user=user, grant=grant, provenance=provenance)
+    grant.lock_count = 0
+    grant.suspended_at = None
+    grant.save(
+        update_fields=[
+            "failed_attempts",
+            "locked_until",
+            "lock_count",
+            "suspended_at",
+            "updated_at",
+        ]
+    )
+    record(
+        McpAccessEventType.GRANT_UNLOCKED,
+        user=user,
+        grant=grant,
+        provenance=provenance,
+        was_suspended=was_suspended,
+        total_failed_attempts=grant.total_failed_attempts,
+    )
     return was_locked
 
 
@@ -328,6 +364,8 @@ class GrantRow:
     active_tokens: int
     last_used: datetime | None
     locked_until: datetime | None
+    suspended: bool = False
+    total_failed_attempts: int = 0
 
 
 def grant_rows() -> list[GrantRow]:
@@ -357,6 +395,8 @@ def grant_rows() -> list[GrantRow]:
                 active_tokens=int(grant.active_tokens),
                 last_used=max(stamps) if stamps else None,
                 locked_until=grant.locked_until if grant.is_locked_at(now) else None,
+                suspended=grant.is_suspended,
+                total_failed_attempts=grant.total_failed_attempts,
             )
         )
     return result
@@ -473,7 +513,15 @@ class AuthorizationRequest:
 
 @dataclass(frozen=True)
 class AuthorizationOutcome:
-    #: ``"ok"``, ``"bad_code"``, ``"locked"`` or ``"no_grant"``.
+    """What the consent page is told.
+
+    ``status`` is ``"ok"``; ``"bad_code"`` or ``"no_grant"`` — which the page
+    answers identically, so a guess learns nothing about the persona; or, only
+    once the persona's own current code has been verified, ``"locked"`` or
+    ``"suspended"``; or ``"throttled"`` when this session or address has failed
+    too often to have any code checked (`authorize_attempt`).
+    """
+
     status: str
     code: str = ""
     wait: int = 0
@@ -485,16 +533,110 @@ def _seconds_until(moment: datetime | None, now: datetime) -> int:
     return max(1, int((moment - now).total_seconds()))
 
 
+def _count_wrong_code(
+    grant: McpAccessGrant,
+    *,
+    user: User,
+    client_id: str,
+    ip_address: str | None,
+    now: datetime,
+) -> AuthorizationOutcome:
+    """One wrong code against a held grant: count it, and lock or suspend when due.
+
+    Counted whether or not the grant is already locked: a lock refuses the
+    *right* code, it is not a pause in which guesses are free. The answer is
+    ``bad_code`` every time — the guess that trips a lock is told nothing the
+    other guesses were not.
+    """
+    grant.total_failed_attempts += 1
+    if not grant.is_suspended:
+        grant.failed_attempts += 1
+    tripped = not grant.is_suspended and grant.failed_attempts >= MAX_FAILED_CODES
+    seconds = 0
+    if tripped:
+        grant.failed_attempts = 0
+        grant.lock_count += 1
+        if grant.lock_count > len(LOCK_LADDER_SECONDS):
+            grant.suspended_at = now
+            grant.locked_until = None
+        else:
+            seconds = LOCK_LADDER_SECONDS[grant.lock_count - 1]
+            grant.locked_until = now + timedelta(seconds=seconds)
+    grant.save(
+        update_fields=[
+            "failed_attempts",
+            "total_failed_attempts",
+            "lock_count",
+            "locked_until",
+            "suspended_at",
+            "updated_at",
+        ]
+    )
+    record(
+        McpAccessEventType.AUTHORIZATION_REFUSED,
+        succeeded=False,
+        user=user,
+        grant=grant,
+        client_id=client_id,
+        ip_address=ip_address,
+        reason="bad_code",
+        total_failed_attempts=grant.total_failed_attempts,
+    )
+    if tripped and grant.is_suspended:
+        record(
+            McpAccessEventType.GRANT_SUSPENDED,
+            succeeded=False,
+            user=user,
+            grant=grant,
+            client_id=client_id,
+            ip_address=ip_address,
+            lock_count=grant.lock_count,
+            total_failed_attempts=grant.total_failed_attempts,
+        )
+        logger.warning(
+            "MCP grant %s (user %s) suspended after %s wrong authenticator codes since the "
+            "last success; only `manage.py mcp_access unlock` reopens it",
+            grant.pk,
+            user.pk,
+            grant.total_failed_attempts,
+        )
+    elif tripped:
+        record(
+            McpAccessEventType.GRANT_LOCKED,
+            succeeded=False,
+            user=user,
+            grant=grant,
+            client_id=client_id,
+            ip_address=ip_address,
+            seconds=seconds,
+            lock_count=grant.lock_count,
+            total_failed_attempts=grant.total_failed_attempts,
+        )
+        logger.warning(
+            "MCP grant %s (user %s) locked for %s s: lock %s of %s, %s wrong authenticator "
+            "codes since the last success",
+            grant.pk,
+            user.pk,
+            seconds,
+            grant.lock_count,
+            len(LOCK_LADDER_SECONDS),
+            grant.total_failed_attempts,
+        )
+    return AuthorizationOutcome(status="bad_code")
+
+
 @transaction.atomic
 def authorize(
     *, user: User, request: AuthorizationRequest, totp_code: str, ip_address: str | None
 ) -> AuthorizationOutcome:
     """Check the persona's authenticator code and mint a one-time authorization code.
 
-    Under the grant's lock: five wrong codes in a row lock *authorizing* for
-    fifteen minutes; a locked grant has its code checked by nobody. The code is
-    spent on success (its time step is recorded), so the same or an earlier
-    code is refused afterwards, in any worker.
+    Under the grant's lock. A wrong code is counted (`_count_wrong_code`):
+    five in a row lock *authorizing*, consecutive locks escalate, and the
+    lock after the last rung suspends the grant until an operator unlocks it.
+    A right code is spent whatever follows (its time step is recorded), so the
+    same or an earlier code is refused afterwards, in any worker — and only a
+    right code learns that the grant is locked or suspended.
     """
     client_id = request.client.client_id
     fresh = User.objects.filter(pk=user.pk).first()
@@ -515,18 +657,6 @@ def authorize(
         )
         return AuthorizationOutcome(status="no_grant")
     now = timezone.now()
-    if grant.is_locked_at(now):
-        record(
-            McpAccessEventType.AUTHORIZATION_REFUSED,
-            succeeded=False,
-            user=fresh,
-            grant=grant,
-            client_id=client_id,
-            ip_address=ip_address,
-            reason="locked",
-        )
-        return AuthorizationOutcome(status="locked", wait=_seconds_until(grant.locked_until, now))
-
     authenticator = McpAuthenticator.objects.select_for_update().filter(grant=grant).first()
     secret = credentials.unseal(authenticator.encrypted_secret) if authenticator else None
     step = (
@@ -535,12 +665,13 @@ def authorize(
         else None
     )
     if step is None or authenticator is None:
-        grant.failed_attempts += 1
-        locked = grant.failed_attempts >= MAX_FAILED_CODES
-        if locked:
-            grant.failed_attempts = 0
-            grant.locked_until = now + timedelta(seconds=LOCK_SECONDS)
-        grant.save(update_fields=["failed_attempts", "locked_until", "updated_at"])
+        return _count_wrong_code(
+            grant, user=fresh, client_id=client_id, ip_address=ip_address, now=now
+        )
+
+    authenticator.last_used_step = step
+    authenticator.save(update_fields=["last_used_step", "updated_at"])
+    if grant.is_suspended or grant.is_locked_at(now):
         record(
             McpAccessEventType.AUTHORIZATION_REFUSED,
             succeeded=False,
@@ -548,26 +679,25 @@ def authorize(
             grant=grant,
             client_id=client_id,
             ip_address=ip_address,
-            reason="bad_code",
+            reason="suspended" if grant.is_suspended else "locked",
         )
-        if locked:
-            record(
-                McpAccessEventType.GRANT_LOCKED,
-                succeeded=False,
-                user=fresh,
-                grant=grant,
-                client_id=client_id,
-                ip_address=ip_address,
-                seconds=LOCK_SECONDS,
-            )
-            return AuthorizationOutcome(status="locked", wait=LOCK_SECONDS)
-        return AuthorizationOutcome(status="bad_code")
+        if grant.is_suspended:
+            return AuthorizationOutcome(status="suspended")
+        return AuthorizationOutcome(status="locked", wait=_seconds_until(grant.locked_until, now))
 
-    authenticator.last_used_step = step
-    authenticator.save(update_fields=["last_used_step", "updated_at"])
     grant.failed_attempts = 0
+    grant.total_failed_attempts = 0
+    grant.lock_count = 0
     grant.locked_until = None
-    grant.save(update_fields=["failed_attempts", "locked_until", "updated_at"])
+    grant.save(
+        update_fields=[
+            "failed_attempts",
+            "total_failed_attempts",
+            "lock_count",
+            "locked_until",
+            "updated_at",
+        ]
+    )
     raw = credentials.new_opaque()
     McpAuthorizationCode.objects.create(
         digest=credentials.digest(raw),
@@ -591,6 +721,77 @@ def authorize(
         scope=request.scope,
     )
     return AuthorizationOutcome(status="ok", code=raw)
+
+
+# -- the per-session and per-address throttle ------------------------------------------
+
+
+@dataclass(frozen=True)
+class ThrottleKey:
+    """One counter `authorize_attempt` checks: an HMAC'd key and its failure limit."""
+
+    key: str
+    limit: int
+
+
+def _held_throttle(key: str, *, now: datetime) -> McpAuthorizeThrottle:
+    """This key's row, created if absent, held under its own lock.
+
+    The two-step shape of `app.accounts.shared_gate._locked_throttle`, for the
+    reasons given there: `get_or_create` so two first attempts cannot lose each
+    other, then the locking read.
+    """
+    McpAuthorizeThrottle.objects.get_or_create(key=key, defaults={"window_started_at": now})
+    return McpAuthorizeThrottle.objects.select_for_update().get(key=key)
+
+
+def authorize_attempt(
+    *,
+    user: User,
+    request: AuthorizationRequest,
+    totp_code: str,
+    ip_address: str | None,
+    throttle: Sequence[ThrottleKey],
+) -> AuthorizationOutcome:
+    """`authorize`, unless this session or address has already failed too often.
+
+    The per-grant lock bounds the guesses at one colleague's code; this bounds
+    one gate session — and one client address — across *every* persona it can
+    choose (MCPSEC-01). Each key's row is taken under its own lock, in a fixed
+    order, before anything is checked, and charged after a failure in the same
+    transaction, so parallel attempts cannot all read "under the limit". A
+    refused attempt has no code checked and charges no grant. The window is
+    fixed (`MCP_AUTHORIZE_THROTTLE_SECONDS`) and a success resets nothing: a
+    colleague's own right code must not buy another round of guesses.
+    """
+    window = timedelta(seconds=int(settings.MCP_AUTHORIZE_THROTTLE_SECONDS))
+    with transaction.atomic():
+        now = timezone.now()
+        rows: list[tuple[McpAuthorizeThrottle, int]] = []
+        for item in sorted(throttle, key=lambda entry: entry.key):
+            row = _held_throttle(item.key, now=now)
+            if row.window_started_at + window <= now:
+                row.failures = 0
+                row.window_started_at = now
+            rows.append((row, item.limit))
+        blocked = [row for row, limit in rows if row.failures >= limit]
+        if blocked:
+            record(
+                McpAccessEventType.AUTHORIZATION_REFUSED,
+                succeeded=False,
+                user=user if user.is_authenticated else None,
+                client_id=request.client.client_id,
+                ip_address=ip_address,
+                reason="throttled",
+            )
+            wait = max(_seconds_until(row.window_started_at + window, now) for row in blocked)
+            return AuthorizationOutcome(status="throttled", wait=wait)
+        outcome = authorize(user=user, request=request, totp_code=totp_code, ip_address=ip_address)
+        for row, _limit in rows:
+            if outcome.status != "ok":
+                row.failures += 1
+            row.save(update_fields=["failures", "window_started_at", "updated_at"])
+        return outcome
 
 
 def record_denied(

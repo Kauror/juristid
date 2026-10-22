@@ -108,9 +108,32 @@ A colleague can connect only when **all** of these hold:
    type a current code from **that** authenticator.
 
 The second factor is what makes the identity individual: the gate password is shared,
-the authenticator is not. Codes are single-use (the last accepted step is stored),
-and five wrong codes lock the grant for fifteen minutes. The TOTP secret is encrypted
-at rest with the existing `mfa` key derivation, under a distinct purpose.
+the authenticator is not. Codes are single-use (the last accepted step is stored).
+Because anybody with the gate password can pick any persona and start guessing, wrong
+codes are bounded, not merely slowed (security review MCPSEC-01):
+
+- five wrong codes in a row lock *authorizing* on that grant; consecutive locks
+  escalate — 15 minutes, 1 hour, 4 hours — and the next one **suspends** the grant
+  until an operator runs `mcp_access unlock`. That is at most twenty guesses, against
+  up to three valid codes in a million, before a person must be involved. Wrong codes
+  typed during a lock still count; a lock refuses the right code, it is no free pause;
+- a cumulative wrong-code counter is reset only by a successful authorization (the
+  operator's unlock ends the suspension and keeps the count), and `mcp_access list`
+  shows it;
+- every lock and every suspension writes an `McpAccessEvent` and a WARNING log line,
+  neither carrying a code;
+- one gate session, and one client address, may fail only so often in a window
+  (`MCP_AUTHORIZE_MAX_FAILURES_PER_SESSION` / `…_PER_ADDRESS` per
+  `MCP_AUTHORIZE_THROTTLE_SECONDS`), whichever personas it tries; a refused attempt has
+  no code checked and charges no grant;
+- the consent page looks the same for every persona and answers a wrong code, no
+  grant, a pending grant and no business role with one message («Kood ei sobi või
+  sellel kasutajal pole MCP ligipääsu»). Only the persona's own current code learns
+  that its grant is locked or suspended.
+
+A lock or suspension refuses authorizing, never a token already issued — otherwise
+typing wrong codes would disconnect a colleague. The TOTP secret is encrypted at rest
+with the existing `mfa` key derivation, under a distinct purpose.
 
 This is deliberately **not** `AUTH_MODE=local_password`: nothing in the browser
 changes, no personal password exists, and the authenticator opens nothing but the
