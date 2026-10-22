@@ -669,3 +669,80 @@ def test_a_sheet_touched_at_excels_last_row_still_reads_under_the_defaults():
     text = " ".join(text for text, _locator in fragments_of(result))
     assert "Pealkiri" in text
     assert "viimane rida" in text
+
+
+# ---------------------------------------------------------------------------
+# Paths that call a parser directly meet the same postcondition
+# ---------------------------------------------------------------------------
+
+
+def test_an_oversized_opinion_archive_parse_is_refused_by_the_postcondition(
+    db, settings, monkeypatch
+) -> None:
+    """`opinion_text` calls `PdfParser` itself, outside `parse_source`.
+
+    A parser that returned more than the limits allow used to be stored there
+    (cut to the archive's own excerpt length and marked DONE); it is now FAILED
+    with the postcondition's code, like every other path.
+    """
+    import datetime
+
+    from django.core.files.base import ContentFile
+    from django.utils import timezone
+
+    from app.documents.extraction import pdf as pdf_module
+    from app.documents.services import evidence_storage
+    from app.legacy_import import opinion_text
+    from app.legacy_import.opinion_binary import OpinionArchiveBinary, OpinionArchiveText
+    from app.legacy_import.opinion_enums import ArchiveTextState
+
+    settings.EXTRACTION_MAX_CHARACTERS = 100
+    settings.REAL_DATA_ALLOWED = False
+    monkeypatch.setattr(pdf_module.PdfParser, "parse", lambda self, source: _text("x" * 101))
+
+    sha = "d" * 64
+    key = evidence_storage().save(
+        f"opinion-archive/{sha[:2]}/{sha[2:4]}/{sha}", ContentFile(b"%PDF-1.4\n")
+    )
+    binary = OpinionArchiveBinary.objects.create(
+        sha256=sha,
+        size_bytes=9,
+        mime_type="application/pdf",
+        storage_key=key,
+        source_archive_sha256="a" * 64,
+        materialized_at=timezone.make_aware(datetime.datetime(2026, 1, 1)),
+    )
+
+    report = opinion_text.extract_all()
+
+    assert report.failed == 1
+    assert report.extracted == 0
+    text = OpinionArchiveText.objects.get(binary=binary)
+    assert text.state == ArchiveTextState.FAILED
+    assert text.note.startswith("character_limit")
+    assert not text.body
+
+
+def test_no_path_outside_parse_source_calls_a_parser_without_the_postcondition() -> None:
+    """Every direct parser call in the application states the guard itself.
+
+    `parse_source` applies `guard_parse_result` to whatever a parser returns. A
+    module that calls a parser directly — a registry lookup, or a parser class
+    instantiated and asked to parse — skips that unless it calls the guard as
+    well, which is how `opinion_text` had escaped it.
+    """
+    from pathlib import Path
+
+    from django.conf import settings as django_settings
+
+    app = Path(django_settings.BASE_DIR) / "app"
+    extraction = app / "documents" / "extraction"
+    direct = re.compile(r"Parser\(\)\.parse\(|\.for_mime_type\(|\bparser\.parse\(")
+    unguarded = []
+    for path in sorted(app.rglob("*.py")):
+        if extraction in path.parents:
+            continue
+        source = path.read_text(encoding="utf-8")
+        if direct.search(source) and "guard_parse_result(" not in source:
+            unguarded.append(path.relative_to(app.parent).as_posix())
+    assert unguarded == []
