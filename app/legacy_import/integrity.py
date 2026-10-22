@@ -114,6 +114,20 @@ def require_digest(actual: str, expected: str, *, flag: str, what: str) -> str:
     return actual
 
 
+def hold_tables(*models: Any) -> None:
+    """Keep other writers off these tables until the current transaction ends.
+
+    ``SHARE ROW EXCLUSIVE``: readers pass, other writers wait, and this
+    transaction may still write. A reviewed apply takes it before rebuilding
+    its plan, so the rows the digest names are the rows it writes against.
+    """
+    from django.db import connection
+
+    with connection.cursor() as cursor:
+        for model in models:
+            cursor.execute(f'LOCK TABLE "{model._meta.db_table}" IN SHARE ROW EXCLUSIVE MODE')
+
+
 # ---------------------------------------------------------------------------
 # Manifests
 # ---------------------------------------------------------------------------
