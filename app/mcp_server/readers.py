@@ -46,7 +46,7 @@ from datetime import date, datetime
 from typing import Any
 
 from django.conf import settings
-from django.db.models import Count, QuerySet
+from django.db.models import Count, Q, QuerySet
 from django.utils import timezone
 from django.utils.html import strip_tags
 
@@ -884,10 +884,8 @@ def _development(development: Any, today: date) -> dict[str, Any]:
 
 
 def _snapshot(user: Any, matter: Any, today: date) -> dict[str, Any]:
-    from app.documents.models import Document
     from app.intelligence.selectors import VISIBLE_VICTORY_STATUS, matter_intelligence
-    from app.legacy_import.historical_views import visible_links
-    from app.matters.models import Entry, MatterEngagement, MatterProceduralDevelopment
+    from app.matters.models import MatterEngagement, MatterProceduralDevelopment
     from app.matters.selectors import current_action_of, planned_actions_of, response_deadline_of
     from app.submissions.models import Submission
 
@@ -896,24 +894,21 @@ def _snapshot(user: Any, matter: Any, today: date) -> dict[str, Any]:
     planned = planned_actions_of(matter, user)
     deadline = response_deadline_of(matter, user, today)
     facts = matter_intelligence(matter, user, today)
+    sent_rows = Submission.objects.filter(matter=matter).visible_to(user).historically_sent()
     sent = list(
-        Submission.objects.filter(matter=matter)
-        .visible_to(user)
-        .historically_sent()
-        .prefetch_related("recipients")
-        .order_by("-sent_at", "-pk")[: LIST_LIMIT * 2]
+        sent_rows.prefetch_related("recipients").order_by("-sent_at", "-pk")[: LIST_LIMIT * 2]
     )
-    developments = list(
-        MatterProceduralDevelopment.objects.filter(matter=matter)
-        .visible_to(user)
-        .order_by("-occurred_on", "-created_at", "-pk")[:5]
+    # Counted in the database, never from the list above, which is cut
+    # (MCPSEC-05): a Matter with 25 sends has sent 25.
+    sent_counts = sent_rows.aggregate(
+        total=Count("pk"),
+        no_comments=Count("pk", filter=Q(kind="NO_OBJECTION_RESPONSE")),
+        opinions_standing=Count("pk", filter=Q(status="SENT") & ~Q(kind="NO_OBJECTION_RESPONSE")),
     )
-    waits = list(
-        MatterEngagement.objects.filter(matter=matter)
-        .visible_to(user)
-        .open_waits()
-        .order_by("feedback_deadline", "pk")[:5]
-    )
+    development_rows = MatterProceduralDevelopment.objects.filter(matter=matter).visible_to(user)
+    developments = list(development_rows.order_by("-occurred_on", "-created_at", "-pk")[:5])
+    wait_rows = MatterEngagement.objects.filter(matter=matter).visible_to(user).open_waits()
+    waits = list(wait_rows.order_by("feedback_deadline", "pk")[:5])
     organisations = [organisation.name for organisation in matter.source_organisations.all()]
     collaborators = [_person(person) for person in matter.collaborators.all()]
 
@@ -932,6 +927,72 @@ def _snapshot(user: Any, matter: Any, today: date) -> dict[str, Any]:
     victories = [
         record for record in facts.work_victories if record.status == VISIBLE_VICTORY_STATUS
     ]
+    snapshot = _snapshot_body(
+        user=user,
+        matter=matter,
+        today=today,
+        current=current,
+        planned=planned,
+        deadline=deadline,
+        facts=facts,
+        sent=sent,
+        sent_counts=sent_counts,
+        developments=developments,
+        waits=waits,
+        organisations=organisations,
+        collaborators=collaborators,
+        missing=missing,
+        work_status=work_status,
+        victories=victories,
+    )
+    # How long each bounded list is in full. Nothing in the snapshot is cut
+    # without the answer saying so (MCPSEC-05). A short page is the whole list,
+    # so only a full one costs a COUNT.
+    full_lengths = {
+        "alternate_titles": len(matter.alternate_titles),
+        "planned_actions": len(planned),
+        "upcoming_dates": len(facts.upcoming_dates),
+        "past_dates": len(facts.past_dates),
+        "commencements": len(facts.effective_dates),
+        "submissions_sent": int(sent_counts["total"] or 0),
+        "open_feedback_waits": len(waits) if len(waits) < 5 else int(wait_rows.count()),
+        "latest_developments": (
+            len(developments) if len(developments) < 5 else int(development_rows.count())
+        ),
+        "work_victories": len(victories),
+    }
+    totals = {}
+    for name, total in full_lengths.items():
+        shown = len(snapshot[name])
+        totals[name] = {"shown": shown, "total": max(total, shown), "truncated": total > shown}
+    snapshot["list_totals"] = totals
+    snapshot["truncated_lists"] = [name for name, value in totals.items() if value["truncated"]]
+    return snapshot
+
+
+def _snapshot_body(
+    *,
+    user: Any,
+    matter: Any,
+    today: date,
+    current: Any,
+    planned: Any,
+    deadline: Any,
+    facts: Any,
+    sent: list[Any],
+    sent_counts: dict[str, Any],
+    developments: list[Any],
+    waits: list[Any],
+    organisations: list[str],
+    collaborators: list[str | None],
+    missing: list[str],
+    work_status: Any,
+    victories: list[Any],
+) -> dict[str, Any]:
+    from app.documents.models import Document
+    from app.legacy_import.historical_views import visible_links
+    from app.matters.models import Entry
+
     return {
         **_matter_ref(matter),
         "alternate_titles": [_clip(title, TITLE_CHARS) for title in matter.alternate_titles][
@@ -1015,10 +1076,11 @@ def _snapshot(user: Any, matter: Any, today: date) -> dict[str, Any]:
         "counts": {
             "documents": Document.objects.filter(matter=matter).visible_to(user).count(),
             "entries": Entry.objects.filter(matter=matter).visible_to(user).count(),
-            "opinions_sent": sum(1 for row in sent if row.kind != "NO_OBJECTION_RESPONSE"),
-            "no_comments_replies_sent": sum(
-                1 for row in sent if row.kind == "NO_OBJECTION_RESPONSE"
-            ),
+            # Every send that went out (withdrawn or superseded later included),
+            # counted in the database; `opinions_standing` is those still SENT.
+            "opinions_sent": int(sent_counts["total"] or 0) - int(sent_counts["no_comments"] or 0),
+            "no_comments_replies_sent": int(sent_counts["no_comments"] or 0),
+            "opinions_standing": int(sent_counts["opinions_standing"] or 0),
             "historical_pages": visible_links(user).filter(matter=matter).count(),
             "important_dates": len(facts.upcoming_dates) + len(facts.past_dates),
             "commencements": len(facts.effective_dates),
@@ -1121,6 +1183,13 @@ def _snapshot_text(snapshot: dict[str, Any]) -> str:
         )
     if snapshot["missing"]:
         parts.append("Not recorded: " + ", ".join(snapshot["missing"]))
+    shortened = [
+        f"{name} ({snapshot['list_totals'][name]['shown']} of "
+        f"{snapshot['list_totals'][name]['total']})"
+        for name in snapshot.get("truncated_lists", [])
+    ]
+    if shortened:
+        parts.append("Shortened lists: " + ", ".join(shortened))
     return "\n\n".join(part for part in parts if part)
 
 
@@ -1302,10 +1371,12 @@ def _activity_item(item: Any, matter: Any, today: date) -> dict[str, Any]:
         certainty = record_facts["date"]["certainty"]
     elif _no_longer_stands(item.record):
         certainty = PREVIOUS
-    text = _clip("\n".join(part for part in parts if part), ACTIVITY_ITEM_CHARS)
-    extra: dict[str, Any] = {}
+    full_text = "\n".join(part for part in parts if part)
+    text = _clip(full_text, ACTIVITY_ITEM_CHARS)
+    # Cut, it says so: `fetch` of the item's id returns the record whole.
+    extra: dict[str, Any] = {"text_truncated": len(full_text.strip()) > ACTIVITY_ITEM_CHARS}
     if record_name == "MatterEffectiveDate" and record_facts is not None:
-        extra = {"timing": record_facts["timing"], "timing_note": record_facts["timing_note"]}
+        extra |= {"timing": record_facts["timing"], "timing_note": record_facts["timing_note"]}
     return {
         **extra,
         "id": source_id,
