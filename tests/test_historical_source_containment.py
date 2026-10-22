@@ -430,7 +430,7 @@ def test_no_legacy_reader_opens_an_archive_page_by_a_bare_path():
 
     from django.conf import settings
 
-    reader = re.compile(r"(read_text|read_bytes|open)\(")
+    reader = re.compile(r"\b(read_text|read_bytes|open)\(")
     offenders = []
     for path in sorted((Path(settings.BASE_DIR) / "app" / "legacy_import").rglob("*.py")):
         if path.name in {"safe_paths.py", "limits.py"}:
