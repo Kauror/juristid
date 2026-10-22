@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+from typing import cast
+from urllib.parse import urlsplit
 
 from config.env import (
     database_config_from_url,
@@ -72,6 +74,7 @@ LOCAL_APPS = [
     "app.intelligence",
     "app.related_materials",
     "app.mcp_access",
+    "app.mcp_server",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + LOCAL_APPS
@@ -165,6 +168,38 @@ else:
     }
 _database["CONN_MAX_AGE"] = env_int("DJANGO_DB_CONN_MAX_AGE", 60)
 _database["OPTIONS"] = {"sslmode": env("POSTGRES_SSLMODE", "prefer")}
+
+# -- process role: the read-only MCP server (docs/adr/0185 §1) ---------------
+#
+# Which kind of process this is. Empty — the default, and what every service
+# but one runs as — is the browser application and its workers, unchanged.
+# `mcp` is the MCP server (`manage.py run_mcp_server`), and in that role:
+#
+# - every database session starts read-only (`default_transaction_read_only`),
+#   so an INSERT, UPDATE or DELETE from this process — a future mistake, the
+#   cache table, a `last_login` stamp — fails with ReadOnlySqlTransaction
+#   instead of changing a row;
+# - every statement is bounded by the tool-call timeout, so a call the runtime
+#   has given up on does not keep its query running;
+# - connections are not kept between requests: each tool call opens its own in
+#   a worker thread and closes it before the thread is reused
+#   (app/mcp_server/runtime.py).
+#
+# The system checks know the role too: they stop asking this process for the
+# browser's secrets and start asking for the MCP configuration
+# (app/core/checks.py, juristid.E040–E046). Any other value is refused.
+JURISTID_PROCESS_ROLE = env("JURISTID_PROCESS_ROLE", "").strip().lower()
+MCP_PROCESS_ROLE = "mcp"
+if JURISTID_PROCESS_ROLE == MCP_PROCESS_ROLE:
+    _statement_timeout_ms = max(1, env_int("MCP_CALL_TIMEOUT_SECONDS", 60)) * 1000
+    _role_options = (
+        f"-c default_transaction_read_only=on -c statement_timeout={_statement_timeout_ms}"
+    )
+    _connection_options = dict(cast(dict[str, object], _database["OPTIONS"]))
+    _existing_options = str(_connection_options.get("options") or "").strip()
+    _connection_options["options"] = f"{_existing_options} {_role_options}".strip()
+    _database["OPTIONS"] = _connection_options
+    _database["CONN_MAX_AGE"] = 0
 
 DATABASES = {"default": _database}
 
@@ -1030,6 +1065,39 @@ MCP_MAX_CONCURRENT_CALLS = env_int("MCP_MAX_CONCURRENT_CALLS", 4)
 MCP_CALL_TIMEOUT_SECONDS = env_int("MCP_CALL_TIMEOUT_SECONDS", 60)
 MCP_FETCH_MAX_CHARS = env_int("MCP_FETCH_MAX_CHARS", 20_000)
 MCP_MAX_REQUEST_BYTES = env_int("MCP_MAX_REQUEST_BYTES", 64 * 1024)
+
+# -- the `mcp` process's transport (workstream B, docs/adr/0185 §6) ----------
+#
+# The Host headers the MCP server answers. A request naming any other host is
+# refused before anything reads it (421), which is what stops a DNS-rebinding
+# page from talking to the server through somebody's browser. By default: the
+# hosts of MCP_RESOURCE_URLS (the public and/or tunnel URL a client was given),
+# the Compose service name the tunnel client dials (`mcp`, `mcp:<port>`), and
+# loopback for the container's own healthcheck. `host:*` matches any port.
+_MCP_DEFAULT_ALLOWED_HOSTS = [
+    *dict.fromkeys(
+        urlsplit(url).netloc.lower() for url in MCP_RESOURCE_URLS if urlsplit(url).netloc
+    ),
+    "mcp",
+    f"mcp:{MCP_LISTEN_PORT}",
+    "localhost",
+    "localhost:*",
+    "127.0.0.1",
+    "127.0.0.1:*",
+]
+MCP_ALLOWED_HOSTS = env_list("MCP_ALLOWED_HOSTS") or _MCP_DEFAULT_ALLOWED_HOSTS
+# The Origin headers it accepts when a request carries one. A server-to-server
+# client sends none and is not affected; a browser page always sends its own,
+# and only these may reach the endpoint. Bearer tokens are never ambient, so
+# this is defence in depth rather than the control.
+MCP_ALLOWED_ORIGINS = env_list("MCP_ALLOWED_ORIGINS") or [
+    *dict.fromkeys(
+        f"{urlsplit(url).scheme}://{urlsplit(url).netloc}".lower()
+        for url in [*MCP_RESOURCE_URLS, JURISTID_PUBLIC_ORIGIN]
+        if urlsplit(url).netloc
+    ),
+    "https://chatgpt.com",
+]
 
 LOGGING = {
     "version": 1,
