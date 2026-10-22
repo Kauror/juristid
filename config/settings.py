@@ -1042,8 +1042,31 @@ MCP_RESOURCE_URLS = env_list("MCP_RESOURCE_URLS")
 MCP_SCOPE = "juristid.read"
 MCP_ACCESS_TOKEN_SECONDS = env_int("MCP_ACCESS_TOKEN_SECONDS", 3600)
 MCP_REFRESH_TOKEN_SECONDS = env_int("MCP_REFRESH_TOKEN_SECONDS", 30 * 24 * 3600)
+# The absolute lifetime of a token family: however often it is refreshed, a
+# connection ends this long after the person typed their authenticator code,
+# and they authorize again (MCPSEC-08).
+MCP_REFRESH_FAMILY_MAX_SECONDS = env_int("MCP_REFRESH_FAMILY_MAX_SECONDS", 90 * 24 * 3600)
+# How long after a rotation the same client may present the just-rotated
+# refresh token again — a retry after a timeout, or two refreshes in flight —
+# and get the same new pair instead of a revoked family (MCPSEC-09).
+MCP_REFRESH_GRACE_SECONDS = env_int("MCP_REFRESH_GRACE_SECONDS", 30)
 MCP_AUTHORIZATION_CODE_SECONDS = 60
 MCP_ENROLMENT_LINK_SECONDS = env_int("MCP_ENROLMENT_LINK_SECONDS", 30 * 60)
+# The key the personal MCP authenticators' TOTP secrets are sealed under, on
+# `web` only (MCPSEC-07). Unset, they fall back to the MFA key derivation —
+# `LOCAL_AUTH_MFA_ENCRYPTION_KEY or SECRET_KEY` — which on the shared-gate
+# stack is SECRET_KEY: rotating that would make every authenticator
+# unreadable. mcp_access.E004 requires it on real data; the `mcp` process must
+# not hold it (juristid.E046). Changing it means everybody enrols again.
+MCP_AUTHENTICATOR_KEY = env("MCP_AUTHENTICATOR_KEY", "")
+# Wrong authenticator codes one gate session, and one client address, may type
+# at `/oauth/authorize` in a window, whichever personas they try (MCPSEC-01).
+# The per-grant lock is in app/mcp_access/services.py; this stops one session
+# guessing a little at everybody's. The address limit is higher because the
+# office shares one address.
+MCP_AUTHORIZE_THROTTLE_SECONDS = env_int("MCP_AUTHORIZE_THROTTLE_SECONDS", 15 * 60)
+MCP_AUTHORIZE_MAX_FAILURES_PER_SESSION = env_int("MCP_AUTHORIZE_MAX_FAILURES_PER_SESSION", 10)
+MCP_AUTHORIZE_MAX_FAILURES_PER_ADDRESS = env_int("MCP_AUTHORIZE_MAX_FAILURES_PER_ADDRESS", 30)
 # Pre-registered OAuth clients, by client id (a client metadata document URL).
 # Only ChatGPT's own metadata document by default; there is no open dynamic
 # client registration.
@@ -1051,7 +1074,10 @@ MCP_OAUTH_CLIENTS: dict[str, dict[str, object]] = {
     "https://chatgpt.com/oauth/client.json": {
         "client_name": "ChatGPT",
         "redirect_uris": ["https://chatgpt.com/connector_platform_oauth_redirect"],
-        "token_endpoint_auth_methods": ["private_key_jwt", "none"],
+        # ChatGPT's client metadata document declares private_key_jwt, and
+        # with `none` beside it a leaked refresh token could be rotated by
+        # anybody, from anywhere (MCPSEC-08). Signed assertions only.
+        "token_endpoint_auth_methods": ["private_key_jwt"],
         "jwks_uri": "https://chatgpt.com/oauth/jwks.json",
     },
 }

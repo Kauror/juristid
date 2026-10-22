@@ -26,6 +26,43 @@ def _is_https_origin(value: str, *, path_allowed: bool) -> bool:
     return path_allowed or parts.path in ("", "/")
 
 
+MIN_AUTHENTICATOR_KEY_LENGTH = 32
+
+
+def _authenticator_key_problems() -> list[Error]:
+    """mcp_access.E004: on real data, MCP authenticators have a key of their own (MCPSEC-07).
+
+    Only `web` seals and opens them; the `mcp` process never does and must not
+    hold the key (juristid.E046), so the check is skipped there.
+    """
+    if (getattr(settings, "JURISTID_PROCESS_ROLE", "") or "") == "mcp":
+        return []
+    if not getattr(settings, "REAL_DATA_ALLOWED", False):
+        return []
+    key = str(getattr(settings, "MCP_AUTHENTICATOR_KEY", "") or "")
+    weak = (
+        len(key) < MIN_AUTHENTICATOR_KEY_LENGTH
+        or key.startswith("replace-me")
+        or key == settings.SECRET_KEY
+        or key == (getattr(settings, "LOCAL_AUTH_MFA_ENCRYPTION_KEY", "") or "")
+    )
+    if not weak:
+        return []
+    return [
+        Error(
+            "MCP_ENABLED on real data needs MCP_AUTHENTICATOR_KEY: at least "
+            f"{MIN_AUTHENTICATOR_KEY_LENGTH} characters, its own value — not DJANGO_SECRET_KEY "
+            "and not LOCAL_AUTH_MFA_ENCRYPTION_KEY.",
+            hint=(
+                "Generate it into juristid.env (docs/mcp/OPERATIONS.md, first-time enablement "
+                "step 3). Without it the authenticators are sealed under DJANGO_SECRET_KEY and a "
+                "routine rotation of that key would lock every colleague out."
+            ),
+            id="mcp_access.E004",
+        )
+    ]
+
+
 @register()
 def mcp_access_settings(app_configs: Any = None, **kwargs: Any) -> list[Error]:
     if not getattr(settings, "MCP_ENABLED", False):
@@ -46,6 +83,7 @@ def mcp_access_settings(app_configs: Any = None, **kwargs: Any) -> list[Error]:
                 id="mcp_access.E002",
             )
         )
+    errors += _authenticator_key_problems()
     clients = getattr(settings, "MCP_OAUTH_CLIENTS", {}) or {}
     for client_id in clients:
         client = config.client(client_id)

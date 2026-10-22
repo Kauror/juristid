@@ -33,14 +33,16 @@ chat, a ticket, a screenshot or a transcript.
 **It can** answer, from a colleague's own ChatGPT conversation in the Chamber's
 workspace, the questions Juristid's pages answer: search the register and the
 documents' extracted text, fetch one record, show a Teema's snapshot, its
-chronology and its documents, and list what enters into force in a window. Seven
-tools, every one read-only, every answer carrying links back to the records.
+chronology and its documents, list what enters into force in a window, and list
+the matters a colleague is responsible for or Koda is waiting on an organisation
+for (`list_matters`). Eight tools, every one read-only, every answer carrying links back to the records.
 Every call runs **as the person who connected**, through the same visibility
 rules as the browser (ADR 0181): nothing they could not open in Juristid comes
 back, and an unknown id and a forbidden one look the same.
 
-**It cannot** write anything — there is no write tool, and the process's
-database connections refuse writes (`default_transaction_read_only=on`); send
+**It cannot** write anything — there is no write tool, the process connects
+as its own SELECT-only database role `juristid_mcp`, and its connections also
+start read-only (`default_transaction_read_only=on`); send
 mail or notifications; read a stored file's bytes (document text comes from the
 extracted fragments in PostgreSQL); run a query, a path, a URL or a model name a
 caller supplies; or act as anybody other than the person whose token it holds.
@@ -56,19 +58,17 @@ key, the tunnel id and the one origin it may trust. Grants and tokens are rows
 in the Juristid database (`app.mcp_access`), backed up and restored with
 everything else; tokens are stored only as SHA-256 digests.
 
-**Not done in Phase 1, and stated rather than hidden:** the server shares the
-application's database role and relies on read-only transactions as the lock —
-a SELECT-only role would be a second one; and a person who knows the gate
-password **and** holds a colleague's authenticator can connect as that colleague
-(ADR 0185, *Consequences*).
+**Stated rather than hidden:** a person who knows the gate password **and**
+holds a colleague's authenticator can connect as that colleague (ADR 0185,
+*Consequences*). The other residual risks are under *Residual risks* below.
 
 ## The pieces
 
 | Service | Container | Image | Environment | Reaches |
 | --- | --- | --- | --- | --- |
 | `web` (existing) | `juristid-main-web` | the release image | `juristid.env` + `MCP_ENABLED`, `JURISTID_PUBLIC_ORIGIN`, `MCP_RESOURCE_URLS` | serves `/.well-known/oauth-authorization-server`, `/oauth/authorize`, `/oauth/token`, `/oauth/revoke` and the enrolment pages through the Cloudflare tunnel |
-| `mcp` | `juristid-main-mcp` | the release image | `juristid-mcp.env` only | `db` on `internal`; listens on `mcp:8001`, no host port |
-| `mcp-tunnel` | `juristid-main-mcp-tunnel` | `ghcr.io/openai/tunnel-client:v0.0.17@sha256:67b473b4…` | `juristid-mcp-tunnel.env` only | `http://mcp:8001/mcp` inside; `api.openai.com:443` outbound; the public origin's OAuth metadata |
+| `mcp` | `juristid-main-mcp` | the release image | `juristid-mcp.env` only; database role `juristid_mcp` (SELECT only) | `db` on `internal`; listens on `mcp:8001` on `mcp_edge`, no host port |
+| `mcp-tunnel` | `juristid-main-mcp-tunnel` | `ghcr.io/openai/tunnel-client:v0.0.17@sha256:67b473b4…` | `juristid-mcp-tunnel.env` only | only `mcp_edge`: `http://mcp:8001/mcp`; `api.openai.com:443` outbound; the public origin's OAuth metadata — never `db`, `web` or `tunnel` |
 
 Both new services are behind the `mcp` profile. A release's `up -d --no-build`,
 a restore's `up -d tunnel` and the backup scripts neither start, replace nor
@@ -112,11 +112,16 @@ install -m 600 -o root -g root deploy/unraid-main/juristid-mcp.env.example /mnt/
 install -m 600 -o root -g root deploy/unraid-main/juristid-mcp-tunnel.env.example /mnt/user/appdata/juristid-main/config/juristid-mcp-tunnel.env
 ```
 
-The MCP server's own signing key, generated straight into its file so it
-reaches neither the terminal nor the shell history:
+The MCP server's own signing key and its own database password, each
+generated straight into its file so it reaches neither the terminal nor the
+shell history:
 
 ```bash
 sed -i "s|^DJANGO_SECRET_KEY=.*|DJANGO_SECRET_KEY=$(openssl rand -base64 64 | tr -d '\n/+=')|" /mnt/user/appdata/juristid-main/config/juristid-mcp.env
+```
+
+```bash
+sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$(openssl rand -base64 48 | tr -d '\n/+=')|" /mnt/user/appdata/juristid-main/config/juristid-mcp.env
 ```
 
 Then fill in the rest **in an editor**, reading the comments in each file as
@@ -124,7 +129,8 @@ you go:
 
 | File | Key | Value |
 | --- | --- | --- |
-| `juristid-mcp.env` | `POSTGRES_PASSWORD` | the same as in `juristid.env` — copied in the editor, never with a command that prints it |
+| `juristid-mcp.env` | `POSTGRES_USER` | `juristid_mcp`, as the template has it — **not** `juristid.env`'s role |
+| `juristid-mcp.env` | `POSTGRES_PASSWORD` | already generated above; its own, never `juristid.env`'s |
 | `juristid-mcp.env` | `JURISTID_PUBLIC_ORIGIN` | `https://juristid.orgusaar.ee` |
 | `juristid-mcp.env` | `MCP_RESOURCE_URLS` | the tunnel's MCP endpoint, `https://api.openai.com/v1/mcp/<tunnel id>` (confirm in step 7) |
 | `juristid-mcp-tunnel.env` | `CONTROL_PLANE_API_KEY` | the restricted runtime key from step 1 |
@@ -148,6 +154,24 @@ In `juristid.env`, the three lines the template added (read their comments in
 
 The two files must agree on the last two: `web` issues a token for a resource,
 `mcp` accepts it only if the resource is on its own list.
+
+And the key the personal authenticators are sealed under (MCPSEC-07), in
+`juristid.env` only — never in `juristid-mcp.env`, which the preflight and
+juristid.E046 refuse. `web` will not start on real data with `MCP_ENABLED=1`
+and no such key (mcp_access.E004). Uncomment the template's line, then
+generate the value straight into the file:
+
+```bash
+sed -i "s|^# *MCP_AUTHENTICATOR_KEY=.*|MCP_AUTHENTICATOR_KEY=$(openssl rand -base64 48 | tr -d '\n/+=')|" /mnt/user/appdata/juristid-main/config/juristid.env
+```
+
+**Rotating it** makes every enrolled authenticator unreadable: the next
+authorization of each colleague is refused with the generic message, the `web`
+log says `the authenticator secret cannot be read`, and nobody's wrong-code
+counter moves. Rotate only together with re-enrolling everybody —
+`mcp_access revoke --user …`, `grant`, `enrolment-link`, for each person. A
+`DJANGO_SECRET_KEY` rotation, by contrast, no longer touches the
+authenticators.
 
 ### 4. Name the release that is running
 
@@ -183,13 +207,38 @@ scripts/deploy/juristid-deploy-preflight.sh --repo /mnt/user/appdata/juristid-ma
 
 It must say both MCP files are mode 600 and that the AI-access services
 resolve. Then recreate the application services with the new web environment
-and start the MCP server, in one command — every service named, `--no-deps` so
-neither `db` nor `tunnel` moves, `--no-build` so a missing tag is an error and
-never a build:
+— every service named, `--no-deps` so neither `db` nor `tunnel` moves,
+`--no-build` so a missing tag is an error and never a build:
 
 ```bash
-docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-reader searchindex intake-sweeper mcp
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-reader searchindex intake-sweeper
 ```
+
+**Create the MCP server's database role before it ever starts** (MCPSEC-03).
+`web` runs it, because `web`'s role owns the tables; the password goes from
+`juristid-mcp.env` to the command's stdin and is printed nowhere — not by
+`sed`, not by the command, which hands PostgreSQL only its SCRAM verifier:
+
+```bash
+sed -n 's/^POSTGRES_PASSWORD=//p' /mnt/user/appdata/juristid-main/config/juristid-mcp.env | docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py mcp_db_role --apply --password-stdin
+```
+
+It answers `Role juristid_mcp: SELECT only on schema public (owner …), read-only
+by default, 1 table(s) withheld; password set.` It is idempotent: run it again
+whenever in doubt, and after rotating the password. To read the SQL first,
+`… exec -T web python manage.py mcp_db_role --print-sql` prints it and changes
+nothing. A later release's new tables are readable without re-running it (the
+role has a default privilege on the owner's future tables).
+
+Then start the MCP server:
+
+```bash
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps mcp
+```
+
+If it restarts in a loop with `juristid.E047`, it is connected as a role that
+can write — `POSTGRES_USER` in `juristid-mcp.env` is not `juristid_mcp`, or the
+role step above was skipped.
 
 Wait for both to be healthy (`starting` for up to a minute is normal):
 
@@ -246,7 +295,7 @@ By a workspace admin of **Kaubanduskoda** who has Tunnels **Read** + **Use**
    `https://juristid.orgusaar.ee` as the authorization server and opens it in
    the admin's browser.
 4. Complete the sign-in (step 8 must have been done for the admin's own account
-   first, or this step is refused — correctly). ChatGPT then lists the seven
+   first, or this step is refused — correctly). ChatGPT then lists the eight
    tools; every one should show as read-only.
 5. **Confirm the resource.** If the token step fails with a resource refusal,
    the `web` log names the resource ChatGPT asked for (step *Diagnosing*); put
@@ -277,7 +326,8 @@ must be refused at the authorization step. Record both in the enablement report.
 | Does the server answer and see its database? | `docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T mcp python manage.py check_mcp_server` | exit 0 |
 | Is the tunnel client ready to take work? | `docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T mcp-tunnel wget -q -O - http://127.0.0.1:8080/readyz` | `ready` |
 | What has the tunnel client observed? | `docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T mcp-tunnel wget -q -O - 'http://127.0.0.1:8080/health?details=true'` | `"ready": true`; per-component detail |
-| Who holds access? | `docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py mcp_access list` | the people you granted, nobody else |
+| Who holds access? | `docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py mcp_access list` | the people you granted, nobody else; `lukus kuni` `-` and `valesid koode` small |
+| Is anybody guessing authenticator codes? | `docker compose -p juristid-main -f deploy/unraid-main/compose.yml logs --since 24h web \| grep 'MCP grant'` | nothing. Every lock and every suspension prints one WARNING line naming the grant and the account (never a code); a suspension means twenty wrong codes without a success |
 
 The tunnel client's health and admin endpoints listen on the container's
 loopback only (`HEALTH_LISTEN_ADDR=127.0.0.1:8080`): they are reachable through
@@ -409,8 +459,12 @@ held, so like every log here it stays on this host (OPERATOR.md).
 | HTTP 401 on a tool call | `mcp` log; ChatGPT asks the person to reconnect | the bearer token is missing, unknown, expired (1 hour), revoked, or issued for a resource not in `MCP_RESOURCE_URLS`; or the grant ended, the account was deactivated or its security epoch moved | usually nothing — ChatGPT refreshes or re-authorizes. Repeated for everybody after a change: compare `MCP_RESOURCE_URLS` in both files |
 | HTTP 403 on a tool call | `mcp` log | the token is valid but lacks the `juristid.read` scope | a client asking for the wrong scope; reconnect the plugin |
 | A tool answers «not found» | ChatGPT | the id is unknown **or** not visible to that person — deliberately indistinguishable | check the record in the browser *as that person's persona* |
+| ChatGPT asks a colleague to reconnect every 90 days | ChatGPT | the token family's absolute lifetime (`MCP_REFRESH_FAMILY_MAX_SECONDS`, MCPSEC-08): the connection is as old as the authenticator code typed for it | nothing; it is the design. `McpAccessEvent` reason `family_expired` |
 | `invalid_grant` / `invalid_target` at `/oauth/token` | `web` log | an expired or reused code, a PKCE mismatch, or a `resource` not in `MCP_RESOURCE_URLS` | for a resource refusal, the log names the resource requested: that is the URL `MCP_RESOURCE_URLS` must list |
-| The authorization page refuses the person | browser | no grant, grant locked (five wrong codes lock it for fifteen minutes), no enrolled authenticator, wrong persona, or no business role | `mcp_access list`; a new `enrolment-link` if they never enrolled |
+| «Kood ei sobi või sellel kasutajal pole MCP ligipääsu» | browser | a wrong code, no grant, a pending grant (never enrolled), wrong persona, or no business role — deliberately one message, so the page does not reveal who holds a grant | `mcp_access list`; a new `enrolment-link` if they never enrolled |
+| «Liiga palju valesid koode» (after the person's own right code) | browser | the grant is locked: five wrong codes in a row; consecutive locks last 15 min, 1 h, 4 h | wait, or `mcp_access unlock --user <upn>` once you know the wrong codes were the person's own |
+| «Ligipääs on peatatud» | browser; `web` log WARNING `MCP grant … suspended` | the fourth consecutive lock — twenty wrong codes without a success. Treat it as somebody guessing at that colleague's code | talk to the person first; then `mcp_access unlock --user <upn>`. The wrong-code count stays in `mcp_access list` until their next success |
+| «Liiga palju katseid» | browser | this gate session or this address failed too often in 15 minutes, whichever personas it tried | wait; repeated, it is somebody spraying codes — the `web` log and `McpAccessEvent` rows with reason `throttled` show when |
 | `/readyz` says `503 oauth discovery failed` | `mcp-tunnel` | the client could not read `mcp`'s protected-resource metadata, or the metadata named an origin it does not trust | `MCP_OAUTH_TRUSTED_ORIGINS` must be exactly the public origin; `mcp` must be healthy |
 | `/readyz` says `503 mcp probe failed` | `mcp-tunnel` | the client cannot reach `http://mcp:8001/mcp` | `mcp` stopped or unhealthy |
 | `mcp-tunnel` log: 401/403 from the control plane | `mcp-tunnel` | the runtime key is wrong, expired or lacks Tunnels Read + Use, or the tunnel id is not the key's organisation's | a new restricted key in the tunnel file, then recreate `mcp-tunnel` |
@@ -454,10 +508,48 @@ name, description or schema is not seen by anybody until a workspace admin:
 
 A release whose notes do not mention the MCP tools needs none of this.
 
+## Residual risks
+
+What the security review (2026-10-22) left open on purpose, so that nobody
+mistakes a known gap for an oversight. MCPSEC-01 to -10, -13, -14 and -16 are
+fixed in code; these are not, and each says what holds instead.
+
+- **Consent phishing (MCPSEC-11).** A colleague can start a connection in their
+  own ChatGPT and send the `/oauth/authorize?…` address to somebody else to
+  approve. Whether that binds the approver's account to the sender's connector
+  depends on how ChatGPT ties `state` to the browser, which Juristid cannot see.
+  What holds: the consent page names the client and the acting persona, and
+  says to continue only if you started this connection yourself, just now, and
+  to press «Keeldu» if somebody sent you the link. Tell colleagues the same
+  when you grant them.
+- **The enrolment link is a bearer secret (MCPSEC-12).** For 30 minutes,
+  whoever holds it and the gate password can enrol their own phone as that
+  person; the real person then only sees «link invalid». So: hand it over in
+  person or read it out by phone, never by e-mail, Teams or a ticket; and
+  after `ENROLMENT_COMPLETED` appears (`mcp_access list` shows `autentija
+  jah`), confirm with the person that it was them before they connect
+  ChatGPT. If they say no: `mcp_access revoke`, then `grant` again.
+- **The audience list, not the arrival resource (MCPSEC-15).** A token minted
+  for any `MCP_RESOURCE_URLS` entry is accepted at every entry. Harmless while
+  the tunnel URL is the only one. Before a public MCP URL is ever added (which
+  needs the owner's approval anyway), bind the token to the resource it
+  arrived at.
+- **Search freshness (MCPSEC-17).** `search` and `search_records` titles and
+  snippets come from the search projection, so a record removed a moment ago
+  can still surface by title until it is reindexed; `fetch` re-checks and
+  answers not-found. `check_search_freshness` covers it as it does for
+  `/otsing/`.
+- **Two factors, not one person (ADR 0185, *Consequences*).** Somebody who
+  knows the gate password and holds a colleague's authenticator can connect as
+  that colleague. The lockout (MCPSEC-01) bounds guessing; it cannot help
+  against a phone that was handed over.
+
 ## What must not be done
 
-- **Never give `mcp` or `mcp-tunnel` a host port**, a Cloudflare hostname or a
-  second network. The fallback ADR 0185 names — a public MCP hostname — widens
+- **Never give `mcp` or `mcp-tunnel` a host port**, a Cloudflare hostname or
+  another network, and never put any other service on `mcp_edge`: the tunnel
+  client must reach `mcp` and nothing else (MCPSEC-02,
+  `tests/test_deployment_unraid_main.py`). The fallback ADR 0185 names — a public MCP hostname — widens
   the surface and needs the owner's explicit approval first.
 - **Never put `juristid.env` in either service**, and never copy the gate
   password, the MFA key or a mail credential into `juristid-mcp.env`.

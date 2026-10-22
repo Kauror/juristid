@@ -434,11 +434,12 @@ def test_dates_say_what_kind_of_fact_they_are(matter, specialist) -> None:
     assert "has passed" in commencement["text"]
 
 
-def test_a_victory_says_whether_it_is_confirmed(matter, specialist) -> None:
+def test_a_candidate_victory_is_not_shown(matter, specialist) -> None:
+    """MCPSEC-14: a candidate is read only where it is reviewed, never by a client
+    (tests/test_mcp_readers_victories.py has the confirmed and NOT_REALIZED cases)."""
     victory = factories.WorkVictoryFactory(matter=matter, title="Maksumäär jäi samaks")
-    answer = readers.fetch_source(specialist, f"win:{victory.pk}")
-    assert answer["metadata"]["confirmed"] is False
-    assert answer["metadata"]["certainty"] != "confirmed"
+    with pytest.raises(NotFound):
+        readers.fetch_source(specialist, f"win:{victory.pk}")
 
 
 def test_an_engagement_a_position_and_an_overview_are_fetchable(matter, specialist) -> None:

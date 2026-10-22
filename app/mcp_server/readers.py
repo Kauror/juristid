@@ -1,6 +1,6 @@
 """What the MCP tools answer, as plain Python over the services the pages use.
 
-Seven readers, one per tool (docs/adr/0185 §2), each a pure function of the
+Eight readers, one per tool (docs/adr/0185 §2), each a pure function of the
 authenticated `User` and the tool's arguments that returns a JSON-ready dict.
 No MCP SDK here and nothing asynchronous: `app.mcp_server.server` calls these
 in its worker threads, exactly as a view would call a selector.
@@ -42,11 +42,12 @@ import html
 import re
 import uuid
 from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
 from django.conf import settings
-from django.db.models import Count, QuerySet
+from django.db.models import Count, Q, QuerySet
 from django.utils import timezone
 from django.utils.html import strip_tags
 
@@ -240,9 +241,20 @@ def _matter_ref(matter: Any) -> dict[str, Any]:
     }
 
 
+#: What starts every title built from a TEST Matter's heading (MCPSEC-16).
+TEST_DATA_PREFIX = "[TEST] "
+
+
 def _matter_heading(matter: Any) -> str:
+    """«2026_225 · Title», or «[TEST] 2026_225 · Title» for a TEST Matter.
+
+    `search` answers ``id``, ``title`` and ``url`` only, so the title is where
+    a client learns that a hit is development data, not the department's work
+    (MCPSEC-16). Every search title and every fetch title is built from here.
+    """
     reference = matter.display_reference
-    return f"{reference} · {matter.title}" if reference else matter.title
+    heading = f"{reference} · {matter.title}" if reference else matter.title
+    return f"{TEST_DATA_PREFIX}{heading}" if matter.is_test_data else heading
 
 
 def _page_number(page: Any, *, maximum: int = MAX_PAGE) -> int:
@@ -446,15 +458,94 @@ def _source_label(kind: str) -> str:
         return ""
 
 
-def result_title(result: SearchResult) -> str:
-    """«2026_225 · Pakendiseaduse muutmine — Dokumendi sisu: Seletuskiri, lk 3»."""
+@dataclass(frozen=True)
+class RowFacts:
+    """What a search row's projection does not carry, read once per page (EVAL-001, EVAL-003).
+
+    ``submissions`` maps a submission's pk to ``(kind, status, sent_at)``;
+    ``entry_days`` an entry's pk to the department's day it happened.
+    """
+
+    submissions: dict[Any, tuple[str, str, datetime | None]]
+    entry_days: dict[Any, date | None]
+
+
+NO_FACTS = RowFacts(submissions={}, entry_days={})
+
+
+def row_facts(results: Sequence[SearchResult], user: Any) -> RowFacts:
+    """One statement per kind present, never per row, through each family's ``visible_to``."""
+    from app.matters.models import Entry
+    from app.submissions.models import Submission
+
+    submission_ids = {
+        result.source_object_id
+        for result in results
+        if result.source_kind == SearchSourceKind.SUBMISSION and result.source_object_id
+    }
+    entry_ids = {
+        result.source_object_id
+        for result in results
+        if result.source_kind == SearchSourceKind.ENTRY and result.source_object_id
+    }
+    submissions: dict[Any, tuple[str, str, datetime | None]] = {}
+    if submission_ids:
+        for pk, kind, status, sent_at in (
+            Submission.objects.visible_to(user)
+            .filter(pk__in=submission_ids)
+            .values_list("pk", "kind", "status", "sent_at")
+        ):
+            submissions[pk] = (kind, status, sent_at)
+    entry_days: dict[Any, date | None] = {}
+    if entry_ids:
+        for pk, moment in (
+            Entry.objects.visible_to(user).filter(pk__in=entry_ids).values_list("pk", "occurred_at")
+        ):
+            entry_days[pk] = _local_date(moment)
+    return RowFacts(submissions=submissions, entry_days=entry_days)
+
+
+def _submission_kind(result: SearchResult, facts: RowFacts) -> str | None:
+    if result.source_kind != SearchSourceKind.SUBMISSION:
+        return None
+    found = facts.submissions.get(result.source_object_id)
+    return found[0] if found else None
+
+
+def row_label(result: SearchResult, facts: RowFacts = NO_FACTS) -> str:
+    """The row's badge: the search page's, except for a reply that is not an opinion.
+
+    The projection has one badge for every SUBMISSION — «Arvamus» — and an
+    official «no comments» reply (`NO_OBJECTION_RESPONSE`) is not an opinion
+    (docs/adr/0174). Such a row takes the submission's own kind label
+    («Vastus: märkusi ja ettepanekuid ei ole») instead (EVAL-001).
+    """
+    from app.submissions.enums import NOT_AN_OPINION_KINDS, SubmissionKind
+
+    kind = _submission_kind(result, facts)
+    if kind in NOT_AN_OPINION_KINDS:
+        return str(SubmissionKind(kind).label)
+    return _source_label(result.source_kind)
+
+
+def result_title(result: SearchResult, facts: RowFacts = NO_FACTS) -> str:
+    """«2026_225 · Pakendiseaduse muutmine — Dokumendi sisu: Seletuskiri, lk 3».
+
+    An entry's title ends with its date: two entries of one Matter are both
+    «Sissekanne: Märkus», and the date is what tells them apart (EVAL-003).
+    """
     heading = _matter_heading(result.matter)
     if result.source_kind == SearchSourceKind.MATTER:
         return _clip(heading, TITLE_CHARS)
-    label = _source_label(result.source_kind)
+    label = row_label(result, facts)
     detail = result.source_title or result.document_title
     if result.source_locator:
         detail = f"{detail}, {result.source_locator}" if detail else result.source_locator
+    if result.source_kind == SearchSourceKind.ENTRY:
+        day = facts.entry_days.get(result.source_object_id)
+        if day is not None:
+            stamp = format_at_precision(day, "EXACT")
+            detail = f"{detail}, {stamp}" if detail else stamp
     detail = _one_line(detail)
     tail = f"{label}: {detail}" if detail else label
     return _clip(f"{heading} — {tail}" if tail else heading, TITLE_CHARS)
@@ -474,6 +565,7 @@ def search_results(user: Any, query: str, *, limit: int = SEARCH_RESULT_LIMIT) -
         raise InvalidArgument("limit must be a positive whole number.")
     limit = min(limit, SEARCH_RESULT_LIMIT)
     found = search_page(query=term, user=user, page_number=1, per_page=limit)
+    facts = row_facts(found.results, user)
     results: list[dict[str, str]] = []
     seen: set[str] = set()
     for result in found.results:
@@ -484,7 +576,11 @@ def search_results(user: Any, query: str, *, limit: int = SEARCH_RESULT_LIMIT) -
             continue
         seen.add(source_id)
         results.append(
-            {"id": source_id, "title": result_title(result), "url": links.result_url(result)}
+            {
+                "id": source_id,
+                "title": result_title(result, facts),
+                "url": links.result_url(result),
+            }
         )
     return {"results": results}
 
@@ -514,7 +610,9 @@ def _source_kinds(values: Any) -> list[str] | None:
     return kinds
 
 
-def _source_dates(results: list[SearchResult], user: Any) -> dict[str, dict[str, Any]]:
+def _source_dates(
+    results: list[SearchResult], user: Any, facts: RowFacts
+) -> dict[str, dict[str, Any]]:
     """Each row's own date, by source id — one statement per kind present, never per row.
 
     Read through each family's own ``visible_to`` although the rows came from an
@@ -525,13 +623,12 @@ def _source_dates(results: list[SearchResult], user: Any) -> dict[str, dict[str,
     from app.intelligence.models import MatterImportantDate, MatterWorkVictory
     from app.legacy_import.historical_views import visible_links
     from app.matters.models import (
-        Entry,
         MatterEngagement,
         MatterExternalPosition,
         MatterProceduralDevelopment,
         MatterWebsiteOverview,
     )
-    from app.submissions.models import Submission
+    from app.submissions.enums import SubmissionStatus
 
     by_kind: dict[str, set[Any]] = {}
     for result in results:
@@ -554,22 +651,15 @@ def _source_dates(results: list[SearchResult], user: Any) -> dict[str, dict[str,
         dates[(kind, pk)] = {**_dated(value, precision or "EXACT", certainty), "basis": basis}
 
     kinds = by_kind
-    if SearchSourceKind.ENTRY.value in kinds:
-        for pk, moment in (
-            Entry.objects.visible_to(user)
-            .filter(pk__in=kinds["ENTRY"])
-            .values_list("pk", "occurred_at")
-        ):
-            put("ENTRY", pk, _local_date(moment), "EXACT", "occurred")
-    if SearchSourceKind.SUBMISSION.value in kinds:
-        rows = (
-            Submission.objects.visible_to(user)
-            .historically_sent()
-            .filter(pk__in=kinds["SUBMISSION"])
-            .values_list("pk", "sent_at")
-        )
-        for pk, moment in rows:
-            put("SUBMISSION", pk, _local_date(moment), "EXACT", "sent")
+    # Entries and submissions were read with the page's other row facts
+    # (`row_facts`), once; a submission's date is its send, so only one that
+    # was sent — the `historically_sent()` rule — has one.
+    for pk, day in facts.entry_days.items():
+        put("ENTRY", pk, day, "EXACT", "occurred")
+    sent_statuses = {SubmissionStatus.SENT, SubmissionStatus.WITHDRAWN, SubmissionStatus.SUPERSEDED}
+    for pk, (_kind, status, sent_at) in facts.submissions.items():
+        if status in sent_statuses and sent_at is not None:
+            put("SUBMISSION", pk, _local_date(sent_at), "EXACT", "sent")
     document_ids = kinds.get("DOCUMENT", set()) | kinds.get("DOCUMENT_FRAGMENT", set())
     if document_ids:
         for pk, moment in (
@@ -659,17 +749,36 @@ def search_records(
     # `Paginator.get_page` reads a number past the end as the last page. A tool
     # asking for page 4 of 2 is told it is empty rather than handed page 2 again.
     results = found.results if found.page.number == number else []
-    dates = _source_dates(results, user)
+    facts = row_facts(results, user)
+    dates = _source_dates(results, user, facts)
     rows = []
     for result in results:
         source_id = result_source_id(result)
+        from app.submissions.enums import NOT_AN_OPINION_KINDS, SubmissionKind
+
+        # The search page's badge, except where it would call a reply that is
+        # not an opinion «Arvamus» (EVAL-001, `row_label`).
+        label = result.source_label or _source_label(result.source_kind)
+        extra: dict[str, Any] = {}
+        submission_kind = _submission_kind(result, facts)
+        if submission_kind is not None:
+            is_opinion = submission_kind not in NOT_AN_OPINION_KINDS
+            if not is_opinion:
+                label = row_label(result, facts)
+            extra = {
+                "submission_kind": submission_kind,
+                "submission_kind_label": str(SubmissionKind(submission_kind).label),
+                "is_opinion": is_opinion,
+                "is_official_no_comments_reply": not is_opinion,
+            }
         rows.append(
             {
+                **extra,
                 "id": source_id,
                 "source_kind": result.source_kind,
-                "source_label": result.source_label or _source_label(result.source_kind),
+                "source_label": label,
                 "matter": _matter_ref(result.matter),
-                "title": result_title(result),
+                "title": result_title(result, facts),
                 "snippet": snippet_text(result),
                 "locator": result.source_locator or None,
                 "source_date": dates.get(source_id),
@@ -884,10 +993,8 @@ def _development(development: Any, today: date) -> dict[str, Any]:
 
 
 def _snapshot(user: Any, matter: Any, today: date) -> dict[str, Any]:
-    from app.documents.models import Document
     from app.intelligence.selectors import VISIBLE_VICTORY_STATUS, matter_intelligence
-    from app.legacy_import.historical_views import visible_links
-    from app.matters.models import Entry, MatterEngagement, MatterProceduralDevelopment
+    from app.matters.models import MatterEngagement, MatterProceduralDevelopment
     from app.matters.selectors import current_action_of, planned_actions_of, response_deadline_of
     from app.submissions.models import Submission
 
@@ -896,24 +1003,21 @@ def _snapshot(user: Any, matter: Any, today: date) -> dict[str, Any]:
     planned = planned_actions_of(matter, user)
     deadline = response_deadline_of(matter, user, today)
     facts = matter_intelligence(matter, user, today)
+    sent_rows = Submission.objects.filter(matter=matter).visible_to(user).historically_sent()
     sent = list(
-        Submission.objects.filter(matter=matter)
-        .visible_to(user)
-        .historically_sent()
-        .prefetch_related("recipients")
-        .order_by("-sent_at", "-pk")[: LIST_LIMIT * 2]
+        sent_rows.prefetch_related("recipients").order_by("-sent_at", "-pk")[: LIST_LIMIT * 2]
     )
-    developments = list(
-        MatterProceduralDevelopment.objects.filter(matter=matter)
-        .visible_to(user)
-        .order_by("-occurred_on", "-created_at", "-pk")[:5]
+    # Counted in the database, never from the list above, which is cut
+    # (MCPSEC-05): a Matter with 25 sends has sent 25.
+    sent_counts = sent_rows.aggregate(
+        total=Count("pk"),
+        no_comments=Count("pk", filter=Q(kind="NO_OBJECTION_RESPONSE")),
+        opinions_standing=Count("pk", filter=Q(status="SENT") & ~Q(kind="NO_OBJECTION_RESPONSE")),
     )
-    waits = list(
-        MatterEngagement.objects.filter(matter=matter)
-        .visible_to(user)
-        .open_waits()
-        .order_by("feedback_deadline", "pk")[:5]
-    )
+    development_rows = MatterProceduralDevelopment.objects.filter(matter=matter).visible_to(user)
+    developments = list(development_rows.order_by("-occurred_on", "-created_at", "-pk")[:5])
+    wait_rows = MatterEngagement.objects.filter(matter=matter).visible_to(user).open_waits()
+    waits = list(wait_rows.order_by("feedback_deadline", "pk")[:5])
     organisations = [organisation.name for organisation in matter.source_organisations.all()]
     collaborators = [_person(person) for person in matter.collaborators.all()]
 
@@ -932,6 +1036,72 @@ def _snapshot(user: Any, matter: Any, today: date) -> dict[str, Any]:
     victories = [
         record for record in facts.work_victories if record.status == VISIBLE_VICTORY_STATUS
     ]
+    snapshot = _snapshot_body(
+        user=user,
+        matter=matter,
+        today=today,
+        current=current,
+        planned=planned,
+        deadline=deadline,
+        facts=facts,
+        sent=sent,
+        sent_counts=sent_counts,
+        developments=developments,
+        waits=waits,
+        organisations=organisations,
+        collaborators=collaborators,
+        missing=missing,
+        work_status=work_status,
+        victories=victories,
+    )
+    # How long each bounded list is in full. Nothing in the snapshot is cut
+    # without the answer saying so (MCPSEC-05). A short page is the whole list,
+    # so only a full one costs a COUNT.
+    full_lengths = {
+        "alternate_titles": len(matter.alternate_titles),
+        "planned_actions": len(planned),
+        "upcoming_dates": len(facts.upcoming_dates),
+        "past_dates": len(facts.past_dates),
+        "commencements": len(facts.effective_dates),
+        "submissions_sent": int(sent_counts["total"] or 0),
+        "open_feedback_waits": len(waits) if len(waits) < 5 else int(wait_rows.count()),
+        "latest_developments": (
+            len(developments) if len(developments) < 5 else int(development_rows.count())
+        ),
+        "work_victories": len(victories),
+    }
+    totals = {}
+    for name, total in full_lengths.items():
+        shown = len(snapshot[name])
+        totals[name] = {"shown": shown, "total": max(total, shown), "truncated": total > shown}
+    snapshot["list_totals"] = totals
+    snapshot["truncated_lists"] = [name for name, value in totals.items() if value["truncated"]]
+    return snapshot
+
+
+def _snapshot_body(
+    *,
+    user: Any,
+    matter: Any,
+    today: date,
+    current: Any,
+    planned: Any,
+    deadline: Any,
+    facts: Any,
+    sent: list[Any],
+    sent_counts: dict[str, Any],
+    developments: list[Any],
+    waits: list[Any],
+    organisations: list[str],
+    collaborators: list[str | None],
+    missing: list[str],
+    work_status: Any,
+    victories: list[Any],
+) -> dict[str, Any]:
+    from app.documents.models import Document
+    from app.legacy_import.historical_views import visible_links
+    from app.matters.models import Entry
+
     return {
         **_matter_ref(matter),
         "alternate_titles": [_clip(title, TITLE_CHARS) for title in matter.alternate_titles][
@@ -1015,10 +1185,11 @@ def _snapshot(user: Any, matter: Any, today: date) -> dict[str, Any]:
         "counts": {
             "documents": Document.objects.filter(matter=matter).visible_to(user).count(),
             "entries": Entry.objects.filter(matter=matter).visible_to(user).count(),
-            "opinions_sent": sum(1 for row in sent if row.kind != "NO_OBJECTION_RESPONSE"),
-            "no_comments_replies_sent": sum(
-                1 for row in sent if row.kind == "NO_OBJECTION_RESPONSE"
-            ),
+            # Every send that went out (withdrawn or superseded later included),
+            # counted in the database; `opinions_standing` is those still SENT.
+            "opinions_sent": int(sent_counts["total"] or 0) - int(sent_counts["no_comments"] or 0),
+            "no_comments_replies_sent": int(sent_counts["no_comments"] or 0),
+            "opinions_standing": int(sent_counts["opinions_standing"] or 0),
             "historical_pages": visible_links(user).filter(matter=matter).count(),
             "important_dates": len(facts.upcoming_dates) + len(facts.past_dates),
             "commencements": len(facts.effective_dates),
@@ -1121,6 +1292,13 @@ def _snapshot_text(snapshot: dict[str, Any]) -> str:
         )
     if snapshot["missing"]:
         parts.append("Not recorded: " + ", ".join(snapshot["missing"]))
+    shortened = [
+        f"{name} ({snapshot['list_totals'][name]['shown']} of "
+        f"{snapshot['list_totals'][name]['total']})"
+        for name in snapshot.get("truncated_lists", [])
+    ]
+    if shortened:
+        parts.append("Shortened lists: " + ", ".join(shortened))
     return "\n\n".join(part for part in parts if part)
 
 
@@ -1165,6 +1343,53 @@ _RECORD_PREFIXES: dict[str, str] = {
     "MatterWorkVictory": ids.WORK_VICTORY,
     "Submission": ids.SUBMISSION,
 }
+
+
+def _commencement_line(facts: dict[str, Any]) -> str:
+    """A commencement in neutral words: scheduled, a recorded date, or a previous record.
+
+    Never «Jõustus» / «entered into force»: Juristid records the date the act
+    names, not whether it took effect (docs/adr/0185 §2, MCPSEC-04).
+    """
+    when = facts["date"]["display"] or "date not recorded"
+    what = facts["what"] or "commencement"
+    if facts["date"]["certainty"] == PREVIOUS:
+        return f"Previous commencement record ({facts['status_label']}): {what}, {when}"
+    timing = facts["timing"]
+    if timing == "upcoming":
+        return f"Scheduled to enter into force on {when}: {what}"
+    if timing == "in_period":
+        return (
+            f"Recorded commencement period {when} has begun: {what} (the exact day is not recorded)"
+        )
+    if timing == "past":
+        return (
+            f"Recorded commencement date {when}: {what} (passed; Juristid does not record "
+            "whether it actually entered into force)"
+        )
+    return f"Commencement, no date recorded: {what}"
+
+
+def _no_longer_stands(record: Any) -> bool:
+    """A record whose `FactStatus` says it was cancelled or superseded."""
+    from app.intelligence.enums import FactStatus
+
+    status = getattr(record, "status", None)
+    return status in (FactStatus.CANCELLED, FactStatus.SUPERSEDED)
+
+
+def _shown_in_activity(item: Any) -> bool:
+    """Every chronology row but a work victory the product does not show (MCPSEC-14).
+
+    The chronology draws a victory once it has a `confirmed_at`, which a
+    NOT_REALIZED one keeps; the product shows `VISIBLE_VICTORY_STATUS` alone.
+    """
+    from app.intelligence.selectors import VISIBLE_VICTORY_STATUS
+
+    record = item.record
+    if record is None or type(record).__name__ != "MatterWorkVictory":
+        return True
+    return bool(record.status == VISIBLE_VICTORY_STATUS)
 
 
 def _activity_item(item: Any, matter: Any, today: date) -> dict[str, Any]:
@@ -1214,11 +1439,26 @@ def _activity_item(item: Any, matter: Any, today: date) -> dict[str, Any]:
     elif item.event is not None:
         kind = "historical_import" if item.imported_documents else "event"
 
+    # What a dated record *is* comes from the record, never from where the
+    # chronology drew it (MCPSEC-04): the chronology's milestone carries no
+    # certainty, and its lead word for a commencement whose date has passed is
+    # «Jõustus» — the browser's word (docs/adr/0123), and a claim this answer
+    # must not make (docs/adr/0185 §2).
+    record_facts: dict[str, Any] | None = None
+    record_name = type(item.record).__name__ if item.record is not None else ""
+    if record_name == "MatterEffectiveDate":
+        record_facts = _effective_date(item.record, today)
+    elif record_name == "MatterImportantDate":
+        record_facts = _important_date(item.record, today)
+
     milestone = item.milestone
     if milestone is not None:
-        line = milestone.what
-        if milestone.sub:
-            line = f"{line} — {milestone.sub}"
+        if record_name == "MatterEffectiveDate" and record_facts is not None:
+            line = _commencement_line(record_facts)
+        else:
+            line = milestone.what
+            if milestone.sub:
+                line = f"{line} — {milestone.sub}"
         parts.insert(0, line)
         if milestone.own_note:
             parts.append(f"{milestone.own_note_label or 'Märkus'}: {milestone.own_note}")
@@ -1247,8 +1487,24 @@ def _activity_item(item: Any, matter: Any, today: date) -> dict[str, Any]:
         parts.append("Failid: " + ", ".join(names) + (f" (+{more})" if more > 0 else ""))
     if is_approximate(precision) and precision != "RECORDED_DAY" and certainty == CONFIRMED:
         certainty = ESTIMATED
-    text = _clip("\n".join(part for part in parts if part), ACTIVITY_ITEM_CHARS)
+    if record_facts is not None:
+        # The same label `get_matter` gives the same record: cancelled or
+        # superseded → previous, a planned or estimated commencement milestone
+        # → planned / estimated, an approximate date → estimated.
+        certainty = record_facts["date"]["certainty"]
+    elif _no_longer_stands(item.record):
+        certainty = PREVIOUS
+    elif record_name == "MatterWorkVictory":
+        # A confirmed judgement; its period is a reporting label, not a plan.
+        certainty = CONFIRMED
+    full_text = "\n".join(part for part in parts if part)
+    text = _clip(full_text, ACTIVITY_ITEM_CHARS)
+    # Cut, it says so: `fetch` of the item's id returns the record whole.
+    extra: dict[str, Any] = {"text_truncated": len(full_text.strip()) > ACTIVITY_ITEM_CHARS}
+    if record_name == "MatterEffectiveDate" and record_facts is not None:
+        extra |= {"timing": record_facts["timing"], "timing_note": record_facts["timing_note"]}
     return {
+        **extra,
         "id": source_id,
         "kind": kind,
         "item_type": item.item_type,
@@ -1300,6 +1556,8 @@ def matter_activity(
     today = _today()
 
     def inside(item: Any) -> bool:
+        if not _shown_in_activity(item):
+            return False
         day = _local_date(item.occurred_at)
         if day is None:
             return False
@@ -1972,10 +2230,12 @@ def _fetch_simple(
     model: Any,
     label: str,
     describe: Callable[[Any, date], tuple[str, str, dict[str, Any]]],
+    narrow: Callable[[QuerySet[Any]], QuerySet[Any]] | None = None,
 ) -> dict[str, Any]:
-    record = (
-        _live(model.objects.visible_to(user)).select_related("matter").filter(pk=source.pk).first()
-    )
+    rows = _live(model.objects.visible_to(user)).select_related("matter")
+    if narrow is not None:
+        rows = narrow(rows)
+    record = rows.filter(pk=source.pk).first()
     if record is None:
         raise NotFound()
     detail, body, extra = describe(record, _today())
@@ -2112,6 +2372,19 @@ def _describe_effective_date(record: Any, today: date) -> tuple[str, str, dict[s
     return record.description, body, {"kind": "commencement", **facts}
 
 
+def _shown_victories(rows: QuerySet[Any]) -> QuerySet[Any]:
+    """The product's own rule: only a confirmed `Töövõit` is shown (MCPSEC-14).
+
+    `VISIBLE_VICTORY_STATUS` is what the Teema page, the register, Statistika
+    and search read (`app.search.child_indexing.is_shown_work_victory`). A
+    candidate is a proposal read only in the review block, NOT_REALIZED a claim
+    that did not hold; either answers like a record that does not exist.
+    """
+    from app.intelligence.selectors import VISIBLE_VICTORY_STATUS
+
+    return rows.filter(status=VISIBLE_VICTORY_STATUS)
+
+
 def _describe_victory(record: Any, today: date) -> tuple[str, str, dict[str, Any]]:
     del today
     body = _lines(
@@ -2128,7 +2401,9 @@ def _describe_victory(record: Any, today: date) -> tuple[str, str, dict[str, Any
             "kind": "work_victory",
             "status": record.status,
             "confirmed": bool(record.is_confirmed),
-            "certainty": CONFIRMED if record.is_confirmed else PLANNED,
+            # Only shown victories reach here (`_shown_victories`), each a
+            # person's confirmed judgement.
+            "certainty": CONFIRMED,
         },
     )
 
@@ -2171,7 +2446,235 @@ def fetch_source(user: Any, source_id: str) -> dict[str, Any]:
     if source.prefix == ids.HISTORICAL_PAGE:
         return _fetch_historical(user, source)
     model, label, describe = simple[source.prefix]
-    return _fetch_simple(user, source, model=model, label=label, describe=describe)
+    return _fetch_simple(
+        user,
+        source,
+        model=model,
+        label=label,
+        describe=describe,
+        narrow=_shown_victories if source.prefix == ids.WORK_VICTORY else None,
+    )
+
+
+# ---------------------------------------------------------------------------
+# list_matters — the register, filtered (owner questions C/E)
+# ---------------------------------------------------------------------------
+
+#: Rows per `list_matters` page, and how many pages it serves.
+MATTERS_PER_PAGE = 20
+MAX_MATTER_PAGES = 10
+#: The most people or organisations one name fragment may stand for. More than
+#: this and the fragment is too vague to be an answer; the reader says so.
+MAX_NAME_MATCHES = 25
+NEXT_ACTION_KINDS = ("DO", "WAIT", "MONITOR", "NONE")
+RECORD_MODES = ("FULL", "ARCHIVE", "ALL")
+
+
+def _fragment(value: Any, name: str, *, limit: int) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise InvalidArgument(f"{name} must be text.")
+    text = " ".join(value.split())
+    if not text:
+        return None
+    if len(text) > limit:
+        raise InvalidArgument(f"{name} must be at most {limit} characters.")
+    return text
+
+
+def _people_named(fragment: str) -> list[Any]:
+    """The people current work may be assigned to whose name or address holds ``fragment``.
+
+    The register's own list of colleagues (`department_workers`: active, a
+    department role, not a technical account) — the people a `Vastutaja` is
+    chosen from — matched on display name or UPN, case-insensitively.
+    """
+    from app.accounts.selectors import department_workers
+
+    return list(
+        department_workers()
+        .filter(Q(display_name__icontains=fragment) | Q(upn__icontains=fragment))
+        .order_by("display_name", "pk")[: MAX_NAME_MATCHES + 1]
+    )
+
+
+def _organisations_named(fragment: str) -> list[Any]:
+    """Organisations whose name or a recorded alias holds ``fragment``."""
+    from app.organisations.models import Organisation
+
+    return list(
+        Organisation.objects.filter(
+            Q(name__icontains=fragment) | Q(aliases__alias__icontains=fragment)
+        )
+        .distinct()
+        .order_by("name", "pk")[: MAX_NAME_MATCHES + 1]
+    )
+
+
+def _open_action_of_kind(user: Any, kind: str) -> Any:
+    """Has an open next action of this kind, through `NextAction.objects.visible_to`."""
+    from django.db.models import Exists, OuterRef
+
+    from app.workflow.enums import ActionStatus
+    from app.workflow.models import NextAction
+
+    actions = NextAction.objects.visible_to(user).filter(
+        status=ActionStatus.OPEN, kind=kind, matter=OuterRef("pk")
+    )
+    return Exists(actions)
+
+
+def _matter_row(user: Any, matter: Any, today: date) -> dict[str, Any]:
+    from app.matters.selectors import current_action_of, response_deadline_of
+
+    current = current_action_of(matter, user)
+    deadline = response_deadline_of(matter, user, today)
+    work_status = matter.work_status
+    return {
+        **_matter_ref(matter),
+        "title": _clip(matter.title, TITLE_CHARS),
+        "is_open": matter.is_open,
+        "record_mode": matter.record_mode,
+        "owner": _person(matter.owner),
+        "stage": (
+            {"key": matter.stage.key, "label": matter.stage.label_et} if matter.stage else None
+        ),
+        "work_status": {"key": work_status.key, "label": work_status.label},
+        "current_next_action": _action(current, today) if current is not None else None,
+        "waiting_for": (
+            _clip(current.text, SUMMARY_CHARS)
+            if current is not None and current.kind == "WAIT"
+            else None
+        ),
+        "opinion_deadline": (
+            {
+                **_dated(deadline.value, "EXACT", CONFIRMED, display=deadline.display),
+                "is_overdue": deadline.is_overdue,
+                "still_owed": deadline.is_active,
+            }
+            if deadline is not None
+            else None
+        ),
+    }
+
+
+def list_matters(
+    user: Any,
+    *,
+    responsible: str | None = None,
+    organisation: str | None = None,
+    next_action_kind: str | None = None,
+    is_open: bool | None = True,
+    record_mode: str = "FULL",
+    page: int = 1,
+) -> dict[str, Any]:
+    """`list_matters`: the register's matters, filtered, 20 per page.
+
+    The register's own population and rules: `matter_list_queryset(user)` — the
+    authorized base every Teemad page starts from — narrowed by
+    `register_filters.status_q` (open / closed), the record mode, the person
+    responsible (`Vastutaja`, the Matter's owner), an organisation (the
+    register's «asutus»: it sent the matter or Koda answered it — or, for a
+    WAIT, the open step's own text names it, which is how «what are we waiting
+    for from X» is recorded), and the current next action's kind
+    (`NONE` asks the register's one next-step rule, `?tegevus=puudub`). Every
+    filter applies before counting and slicing, so ``total`` is the narrowed,
+    authorized population.
+
+    **Default: current work** — open matters in FULL record mode. ARCHIVE rows
+    are the imported historical register: closed files with no working next
+    step, which would drown «what is X responsible for» in decade-old entries.
+    `record_mode="ALL"` and `open=None` widen it.
+
+    A name fragment that matches nobody answers with an empty list and says
+    so; one that matches several people lists every matched name, and the rows
+    of all of them, so the client can tell the reader which they meant.
+    """
+    from app.matters import register_filters, selectors
+
+    _require_reader(user)
+    number = _page_number(page, maximum=MAX_MATTER_PAGES)
+    person = _fragment(responsible, "responsible", limit=100)
+    body = _fragment(organisation, "organisation", limit=200)
+    kind = next_action_kind.strip().upper() if isinstance(next_action_kind, str) else None
+    if kind is not None and kind not in NEXT_ACTION_KINDS:
+        raise InvalidArgument("next_action_kind must be one of: DO, WAIT, MONITOR, NONE.")
+    mode = record_mode.strip().upper() if isinstance(record_mode, str) else "FULL"
+    if mode not in RECORD_MODES:
+        raise InvalidArgument("record_mode must be one of: FULL, ARCHIVE, ALL.")
+    if is_open is not None and not isinstance(is_open, bool):
+        raise InvalidArgument("open must be true, false or omitted.")
+    today = _today()
+
+    queryset = selectors.matter_list_queryset(user)
+    if is_open is not None:
+        queryset = queryset.filter(register_filters.status_q("avatud" if is_open else "suletud"))
+    if mode != "ALL":
+        queryset = queryset.filter(record_mode=mode)
+
+    filters: dict[str, Any] = {}
+    if person is not None:
+        people = _people_named(person)
+        filters["responsible"] = {
+            "query": person,
+            "people_matched": [_person(user_row) for user_row in people[:MAX_NAME_MATCHES]],
+            "too_many_matches": len(people) > MAX_NAME_MATCHES,
+        }
+        queryset = queryset.filter(owner__in=[row.pk for row in people[:MAX_NAME_MATCHES]])
+    if body is not None:
+        bodies = _organisations_named(body)
+        filters["organisation"] = {
+            "query": body,
+            "organisations_matched": [row.name for row in bodies[:MAX_NAME_MATCHES]],
+            "too_many_matches": len(bodies) > MAX_NAME_MATCHES,
+            "also_matches_wait_text": True,
+        }
+        ids_ = [row.pk for row in bodies[:MAX_NAME_MATCHES]]
+        queryset = queryset.filter(
+            Q(source_organisations__in=ids_)
+            | Q(addressee_organisation__in=ids_)
+            | Q(pk__in=_wait_naming(user, body))
+        ).distinct()
+    if kind == "NONE":
+        queryset = selectors.filter_by_next_action(queryset, user, selectors.MISSING, today)
+    elif kind is not None:
+        queryset = queryset.filter(_open_action_of_kind(user, kind))
+
+    total = queryset.count()
+    first = (number - 1) * MATTERS_PER_PAGE
+    rows = list(
+        queryset.order_by("-reference_year", "-reference_number", "pk")[
+            first : first + MATTERS_PER_PAGE
+        ]
+    )
+    return {
+        "filters": {
+            **filters,
+            "next_action_kind": kind,
+            "open": is_open,
+            "record_mode": mode,
+        },
+        "page": number,
+        "per_page": MATTERS_PER_PAGE,
+        "total": total,
+        "has_more": first + len(rows) < total and number < MAX_MATTER_PAGES,
+        "truncated": total > MATTERS_PER_PAGE * MAX_MATTER_PAGES,
+        "matters": [_matter_row(user, matter, today) for matter in rows],
+        "as_of": today.isoformat(),
+    }
+
+
+def _wait_naming(user: Any, fragment: str) -> Any:
+    """Matters whose open WAIT step's text names ``fragment`` — «what we wait for from X»."""
+    from app.workflow.enums import ActionStatus
+    from app.workflow.models import NextAction
+
+    return (
+        NextAction.objects.visible_to(user)
+        .filter(status=ActionStatus.OPEN, kind="WAIT", text__icontains=fragment)
+        .values("matter_id")
+    )
 
 
 __all__ = [
@@ -2184,6 +2687,7 @@ __all__ = [
     "NotFound",
     "ReaderError",
     "fetch_source",
+    "list_matters",
     "matter_activity",
     "matter_documents",
     "matter_snapshot",

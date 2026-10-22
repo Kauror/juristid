@@ -43,6 +43,11 @@ Tools:
   where their text was extracted.
 - get_upcoming_commencements(from?, to?, page?): what enters into force in a window
   (default today to 30 days ahead).
+- list_matters(responsible?, organisation?, next_action_kind?, open?, record_mode?,
+  page?): the register's matters filtered - use it for «what is Marko responsible
+  for?» (responsible), «what are we waiting for from the ministry?» (organisation with
+  next_action_kind WAIT) and «which matters have no next step?» (NONE). Default: open
+  current work, 20 per page with the total.
 
 Values are labelled confirmed, planned, estimated, previous or missing where the
 register distinguishes them; keep the label in your answer. A date in the past is

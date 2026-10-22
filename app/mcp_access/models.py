@@ -43,6 +43,7 @@ class McpAccessEventType(models.TextChoices):
     AUTHORIZATION_DENIED = "AUTHORIZATION_DENIED", "Kasutaja keeldus"
     AUTHORIZATION_REFUSED = "AUTHORIZATION_REFUSED", "Ühenduse lubamisest keelduti"
     GRANT_LOCKED = "GRANT_LOCKED", "Ligipääs ajutiselt lukus"
+    GRANT_SUSPENDED = "GRANT_SUSPENDED", "Ligipääs peatatud valede koodide tõttu"
     GRANT_UNLOCKED = "GRANT_UNLOCKED", "Lukk eemaldatud"
     TOKEN_ISSUED = "TOKEN_ISSUED", "Võtmed väljastatud"
     TOKEN_REFRESHED = "TOKEN_REFRESHED", "Võtmed uuendatud"
@@ -60,9 +61,22 @@ class McpAccessGrant(BaseModel):
     ACTIVE when the person has enrolled their authenticator; REVOKED is final —
     a new decision is a new grant, enrolled afresh.
 
-    ``failed_attempts`` and ``locked_until`` count wrong authenticator codes at
-    the authorization step. The lock refuses *authorizing*, never a token that
-    was already issued: ending those is what revocation is for.
+    Wrong authenticator codes at the authorization step (MCPSEC-01):
+
+    * ``failed_attempts`` counts wrong codes since the last lock or success;
+      the fifth locks the grant (``locked_until``);
+    * ``lock_count`` counts locks since the last success, and each lock is
+      longer than the one before it; the lock after the last rung of
+      `app.mcp_access.services.LOCK_LADDER_SECONDS` *suspends* the grant
+      (``suspended_at``) until an operator runs ``mcp_access unlock``;
+    * ``total_failed_attempts`` counts every wrong code since the last
+      successful authorization, and nothing but a success resets it — not the
+      lock running out, not the operator's unlock.
+
+    A lock or a suspension refuses *authorizing*, never a token that was
+    already issued: ending those is what revocation is for, and a guesser who
+    could disconnect a colleague by typing wrong codes would have a
+    denial-of-service button.
     """
 
     user = models.ForeignKey(
@@ -95,6 +109,11 @@ class McpAccessGrant(BaseModel):
     )
     failed_attempts = models.PositiveIntegerField(default=0, verbose_name="valed koodid järjest")
     locked_until = models.DateTimeField(null=True, blank=True, verbose_name="lukus kuni")
+    lock_count = models.PositiveIntegerField(default=0, verbose_name="lukustusi järjest")
+    total_failed_attempts = models.PositiveIntegerField(
+        default=0, verbose_name="valed koodid pärast viimast õnnestumist"
+    )
+    suspended_at = models.DateTimeField(null=True, blank=True, verbose_name="peatatud")
 
     class Meta:
         verbose_name = "MCP ligipääs"
@@ -119,6 +138,10 @@ class McpAccessGrant(BaseModel):
 
     def is_locked_at(self, moment: datetime) -> bool:
         return self.locked_until is not None and self.locked_until > moment
+
+    @property
+    def is_suspended(self) -> bool:
+        return self.suspended_at is not None
 
 
 class McpAuthenticator(BaseModel):
@@ -269,6 +292,16 @@ class McpToken(BaseModel):
         verbose_name="asendaja",
     )
     last_used_at = models.DateTimeField(null=True, blank=True, verbose_name="viimati kasutatud")
+    #: When the authorization this family descends from was granted — the
+    #: person's own code. Copied to every rotation; a refresh past
+    #: `MCP_REFRESH_FAMILY_MAX_SECONDS` from here is refused, so a connection
+    #: in daily use still asks for the authenticator again (MCPSEC-08).
+    family_started_at = models.DateTimeField(null=True, blank=True, verbose_name="võtmepere algus")
+    #: How the client authenticated at the code exchange (`none` or
+    #: `private_key_jwt`); a refresh must authenticate the same way (MCPSEC-08).
+    auth_method = models.CharField(
+        max_length=32, blank=True, default="", verbose_name="kliendi autentimisviis"
+    )
 
     class Meta:
         verbose_name = "MCP võti"
@@ -281,6 +314,33 @@ class McpToken(BaseModel):
     @property
     def scope_set(self) -> frozenset[str]:
         return frozenset(part for part in self.scopes.split() if part)
+
+
+class McpAuthorizeThrottle(BaseModel):
+    """Wrong-code attempts at `/oauth/authorize` per gate session or client address.
+
+    The per-grant lock stops guessing one colleague's code; this stops one
+    session — or one address — from guessing a little at *everybody's*
+    (MCPSEC-01). ``key`` is an HMAC of the session's gate pass or the address
+    (`app.accounts.shared_gate.key_for_address`), never either in the clear.
+
+    A table rather than a cache entry for the reason `accounts.SharedGateThrottle`
+    gives: Django's database cache culls rows when it grows, and a limit an
+    attacker can flush by making noise is not a limit. A fixed window: at most
+    the configured number of failures between ``window_started_at`` and the
+    end of the window, counted under the row's own lock.
+    """
+
+    key = models.CharField(max_length=64, unique=True, verbose_name="tunnus")
+    failures = models.PositiveIntegerField(default=0, verbose_name="ebaõnnestumisi")
+    window_started_at = models.DateTimeField(verbose_name="aken algas")
+
+    class Meta:
+        verbose_name = "MCP autoriseerimise piirang"
+        verbose_name_plural = "MCP autoriseerimise piirangud"
+
+    def __str__(self) -> str:
+        return f"{self.key[:12]}… {self.failures} failure(s)"
 
 
 class McpAccessEvent(AppendOnlyModel):

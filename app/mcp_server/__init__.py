@@ -6,7 +6,7 @@ management commands, with no models. It runs in its own process,
 sessions are read-only, and answers through the same services the pages use,
 as the reader the bearer token names:
 
-- `server`       the MCP server, its seven tools and the ASGI application;
+- `server`       the MCP server, its eight tools and the ASGI application;
 - `schemas`      the tools' input and output schemas;
 - `auth`         bearer-token verification and the protected-resource metadata;
 - `runtime`      the bounded worker pool every database call runs in;

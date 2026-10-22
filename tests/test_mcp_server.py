@@ -29,6 +29,9 @@ TOOL_NAMES = {
     "get_matter_activity",
     "get_matter_documents",
     "get_upcoming_commencements",
+    # The eighth, added deliberately: «what is Marko responsible for?» and «what are
+    # we waiting for from X?» had no tool that could answer them (QA evaluation).
+    "list_matters",
 }
 
 
@@ -110,10 +113,10 @@ def _tools(fakes) -> list[dict[str, Any]]:
     return tools
 
 
-def test_exactly_the_seven_read_only_tools_are_listed(fakes):
+def test_exactly_the_eight_read_only_tools_are_listed(fakes):
     tools = _tools(fakes)
     assert {tool["name"] for tool in tools} == TOOL_NAMES
-    assert len(tools) == 7
+    assert len(tools) == 8
     for tool in tools:
         annotations = tool["annotations"]
         assert annotations["readOnlyHint"] is True, tool["name"]
@@ -138,6 +141,14 @@ def test_every_input_schema_is_strict_and_names_no_identity(fakes):
         "get_matter_activity": {"matter", "since", "until", "kind", "page"},
         "get_matter_documents": {"matter", "page"},
         "get_upcoming_commencements": {"from", "to", "page"},
+        "list_matters": {
+            "responsible",
+            "organisation",
+            "next_action_kind",
+            "open",
+            "record_mode",
+            "page",
+        },
     }
     for name, properties in expected.items():
         schema = tools[name]["inputSchema"]
@@ -154,7 +165,7 @@ def test_every_input_schema_is_strict_and_names_no_identity(fakes):
     assert tools["search"]["inputSchema"]["required"] == ["query"]
     assert '"maxLength": 200' in flat(tools["fetch"]["inputSchema"])
     assert '"maxLength": 200' in flat(tools["get_matter"]["inputSchema"])
-    for name in ("search_records", "get_matter_activity", "get_matter_documents"):
+    for name in ("search_records", "get_matter_activity", "get_matter_documents", "list_matters"):
         page = flat(tools[name]["inputSchema"]["properties"]["page"])
         assert '"minimum": 1' in page and '"maximum": 10' in page, name
     dates = flat(tools["get_upcoming_commencements"]["inputSchema"])
@@ -262,6 +273,20 @@ def test_fetch_returns_the_company_knowledge_shape_twice(fakes):
             "upcoming_commencements",
             (),
             {"start": None, "end": None, "page": 1},
+        ),
+        (
+            "list_matters",
+            {"responsible": "Marko", "next_action_kind": "WAIT"},
+            "list_matters",
+            (),
+            {
+                "responsible": "Marko",
+                "organisation": None,
+                "next_action_kind": "WAIT",
+                "is_open": True,
+                "record_mode": "FULL",
+                "page": 1,
+            },
         ),
     ],
 )

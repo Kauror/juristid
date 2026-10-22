@@ -23,6 +23,7 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlencode, urlsplit
 
+from django.conf import settings
 from django.contrib.auth.views import redirect_to_login
 from django.core.cache import cache
 from django.http import (
@@ -35,14 +36,12 @@ from django.http import (
 )
 from django.shortcuts import redirect, render
 from django.urls import reverse
-from django.utils import timezone
 from django.utils.cache import add_never_cache_headers
 from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from app.accounts import shared_gate
-from app.core.authorization import may_read_business_content
 from app.core.browser_policy import CONTENT_SECURITY_POLICY_DIRECTIVES
 from app.core.client_ip import client_ip
 from app.mcp_access import config, credentials, oauth, services
@@ -58,6 +57,18 @@ RATE_LIMIT = 30
 RATE_WINDOW = 60
 
 READ_ONLY_DESCRIPTION = "Ainult lugemine: otsing ja teemade, dokumentide ning ajaloo lugemine"
+
+#: The one answer to a wrong code *and* to a persona that cannot connect (no
+#: grant, a pending grant, no business role): until the persona's own current
+#: code is verified the page does not say which (MCPSEC-01).
+GENERIC_REFUSAL = (
+    "Kood ei sobi või sellel kasutajal pole MCP ligipääsu. Sisesta autentija praegune kood; "
+    "kui see ikka ei sobi, pöördu Juristidi haldaja poole."
+)
+SUSPENDED_MESSAGE = (
+    "Ligipääs on peatatud, sest valesid koode sisestati liiga palju. "
+    "Selle avab uuesti Juristidi haldaja."
+)
 
 
 def mcp_enabled_only(view: Callable[..., HttpResponse]) -> Callable[..., HttpResponse]:
@@ -92,9 +103,9 @@ def authorization_server_metadata(request: HttpRequest) -> HttpResponse:
         "response_modes_supported": ["query"],
         "grant_types_supported": ["authorization_code", "refresh_token"],
         "code_challenge_methods_supported": ["S256"],
-        "token_endpoint_auth_methods_supported": ["private_key_jwt", "none"],
+        "token_endpoint_auth_methods_supported": config.advertised_auth_methods(),
         "token_endpoint_auth_signing_alg_values_supported": ["RS256"],
-        "revocation_endpoint_auth_methods_supported": ["private_key_jwt", "none"],
+        "revocation_endpoint_auth_methods_supported": config.advertised_auth_methods(),
         "scopes_supported": [config.scope()],
         "client_id_metadata_document_supported": True,
         "authorization_response_iss_parameter_supported": True,
@@ -147,14 +158,10 @@ def _authorize_page(
     error: str = "",
     status: int = 200,
 ) -> HttpResponse:
+    # Deliberately nothing about the persona's grant: whether it has one, is
+    # locked or is suspended is said only after its own current code has been
+    # verified (MCPSEC-01). Every persona sees the same page.
     user: Any = request.user
-    grant = services.active_grant(user)
-    may_connect = grant is not None and services.may_connect(user, grant)
-    locked_minutes = 0
-    if grant is not None and may_connect:
-        now = timezone.now()
-        if grant.is_locked_at(now) and grant.locked_until is not None:
-            locked_minutes = max(1, round((grant.locked_until - now).total_seconds() / 60))
     switch_url = ""
     if shared_gate.is_shared_gate():
         switch_url = (
@@ -167,8 +174,6 @@ def _authorize_page(
             "client_name": parsed.client.name,
             "description": READ_ONLY_DESCRIPTION,
             "persona": user,
-            "may_connect": may_connect and may_read_business_content(user),
-            "locked_minutes": locked_minutes,
             "error": error,
             "switch_url": switch_url,
         },
@@ -218,24 +223,56 @@ def authorize(request: HttpRequest) -> HttpResponse:
         )
     if decision != "luba":
         return _authorize_page(request, parsed, error="Vali «Luba» või «Keeldu».", status=400)
-    outcome = services.authorize(
-        user=user, request=parsed, totp_code=request.POST.get("kood", ""), ip_address=ip
+    outcome = services.authorize_attempt(
+        user=user,
+        request=parsed,
+        totp_code=request.POST.get("kood", ""),
+        ip_address=ip,
+        throttle=_throttle_keys(request, ip),
     )
     if outcome.status == "ok":
         return _redirect_back(parsed.redirect_uri, {"code": outcome.code, "state": parsed.state})
+    minutes = max(1, round(outcome.wait / 60))
+    if outcome.status == "throttled":
+        return _authorize_page(
+            request,
+            parsed,
+            error=f"Liiga palju katseid. Proovi umbes {minutes} minuti pärast uuesti.",
+            status=429,
+        )
+    # Only the persona's own current code reaches these two.
     if outcome.status == "locked":
-        minutes = max(1, round(outcome.wait / 60))
         return _authorize_page(
             request,
             parsed,
             error=f"Liiga palju valesid koode. Proovi umbes {minutes} minuti pärast uuesti.",
             status=429,
         )
-    if outcome.status == "no_grant":
-        return _authorize_page(request, parsed, status=403)
-    return _authorize_page(
-        request, parsed, error="Kood ei sobi. Sisesta autentija praegune kood.", status=400
-    )
+    if outcome.status == "suspended":
+        return _authorize_page(request, parsed, error=SUSPENDED_MESSAGE, status=403)
+    # No grant, a pending one, no business role, or a wrong code: one answer.
+    return _authorize_page(request, parsed, error=GENERIC_REFUSAL, status=400)
+
+
+def _throttle_keys(request: HttpRequest, ip: str | None) -> list[services.ThrottleKey]:
+    """This gate session's and this address's counters (MCPSEC-01).
+
+    The session is named by its gate pass, which survives a persona change —
+    `login` gives the session a new identifier, the pass is carried — so
+    switching persona does not start a fresh count. Outside the shared gate the
+    session key stands in. Both are HMAC'd before they are stored.
+    """
+    gate_pass = shared_gate.gate_passed_at(request) or request.session.session_key or "none"
+    return [
+        services.ThrottleKey(
+            key=shared_gate.key_for_address(f"mcp-authorize|session|{gate_pass}"),
+            limit=int(settings.MCP_AUTHORIZE_MAX_FAILURES_PER_SESSION),
+        ),
+        services.ThrottleKey(
+            key=shared_gate.key_for_address(f"mcp-authorize|address|{ip or 'unknown'}"),
+            limit=int(settings.MCP_AUTHORIZE_MAX_FAILURES_PER_ADDRESS),
+        ),
+    ]
 
 
 # -- the machine endpoints ------------------------------------------------------------
@@ -307,6 +344,12 @@ def token(request: HttpRequest) -> HttpResponse:
         )
         return _oauth_error(client)
     grant_type = params.get("grant_type", "")
+    # `authenticate_client` accepted an assertion only if it verified.
+    auth_method = (
+        config.AUTH_METHOD_PRIVATE_KEY_JWT
+        if params.get("client_assertion")
+        else config.AUTH_METHOD_NONE
+    )
     result: services.IssuedTokens | OAuthError
     if grant_type == "authorization_code":
         if not params.get("resource"):
@@ -319,6 +362,7 @@ def token(request: HttpRequest) -> HttpResponse:
                 code_verifier=params.get("code_verifier", ""),
                 resource=params.get("resource", ""),
                 ip_address=client_ip(request),
+                auth_method=auth_method,
             )
     elif grant_type == "refresh_token":
         result = services.refresh(
@@ -327,6 +371,7 @@ def token(request: HttpRequest) -> HttpResponse:
             resource=params.get("resource", ""),
             scope=params.get("scope", ""),
             ip_address=client_ip(request),
+            auth_method=auth_method,
         )
     else:
         result = OAuthError("unsupported_grant_type", "Unsupported grant_type.")

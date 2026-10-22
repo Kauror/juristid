@@ -251,7 +251,7 @@ if [ -n "$ENV_FILE" ]; then
   if [ -f "$MCP_ENV" ]; then
     mcp_env_problems "MCP server" "$MCP_ENV" \
       JURISTID_SHARED_GATE_PASSWORD LOCAL_AUTH_MFA_ENCRYPTION_KEY DJANGO_EMAIL_HOST_PASSWORD \
-      CONTROL_PLANE_API_KEY
+      CONTROL_PLANE_API_KEY MCP_AUTHENTICATOR_KEY
   else
     note "  AI access is not set up here ($MCP_ENV absent); mcp and mcp-tunnel are not checked"
   fi
@@ -326,7 +326,8 @@ Ready. Nothing has been changed yet. The deployment, in order:
 
 NEXT
 
-deployment_plan "$JURISTID_PROJECT" "$JURISTID_COMPOSE_FILE" "$REPO" "$TARGET"
+deployment_plan "$JURISTID_PROJECT" "$JURISTID_COMPOSE_FILE" "$REPO" "$TARGET" \
+  "$(mcp_container_state "$JURISTID_PROJECT")"
 
 cat <<'NEXT'
 

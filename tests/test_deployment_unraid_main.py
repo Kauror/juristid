@@ -124,13 +124,43 @@ def test_it_shares_nothing_with_the_rehearsal(
     assert mine.isdisjoint(theirs)
 
 
-def test_the_stack_uses_its_own_network_and_joins_no_other(compose: dict[str, Any]) -> None:
+#: Which network each service joins (MCPSEC-02). Every service is on
+#: `internal` except the OpenAI tunnel client, which is on `mcp_edge` alone:
+#: it reaches `mcp` and the internet, never `db`, `web` or `tunnel`.
+EXPECTED_NETWORKS = {"mcp": ["internal", "mcp_edge"], "mcp-tunnel": ["mcp_edge"]}
+
+
+def test_the_stack_uses_its_own_networks_and_joins_no_other(compose: dict[str, Any]) -> None:
     networks = compose["networks"]
-    assert list(networks) == ["internal"]
+    assert sorted(networks) == ["internal", "mcp_edge"]
     assert networks["internal"]["name"] == "juristid-main-internal"
-    assert networks["internal"].get("external") is not True
-    for service in compose["services"].values():
-        assert service["networks"] == ["internal"]
+    assert networks["mcp_edge"]["name"] == "juristid-main-mcp-edge"
+    for network in networks.values():
+        assert network.get("external") is not True
+    for name, service in compose["services"].items():
+        assert service["networks"] == EXPECTED_NETWORKS.get(name, ["internal"]), name
+
+
+def test_only_mcp_shares_a_network_with_the_tunnel_client(compose: dict[str, Any]) -> None:
+    """The tunnel client cannot reach `db`, `web`, `tunnel` or a worker at all.
+
+    A third-party binary steered by a third-party control plane: on `internal`
+    it could dial `db:5432`, and `web:8000` directly — past Cloudflare, with a
+    `CF-Connecting-IP` of its choosing (MCPSEC-02). It shares one network with
+    exactly one service, and that network holds exactly those two.
+    """
+    services = compose["services"]
+    tunnel_networks = set(services[MCP_TUNNEL]["networks"])
+    reachable = {
+        name
+        for name, service in services.items()
+        if name != MCP_TUNNEL and tunnel_networks & set(service["networks"])
+    }
+    assert reachable == {MCP}
+    on_edge = {name for name, service in services.items() if "mcp_edge" in service["networks"]}
+    assert on_edge == {MCP, MCP_TUNNEL}
+    for name in ("db", "web", "tunnel"):
+        assert "mcp_edge" not in services[name]["networks"], name
 
 
 #: `${NAME:-default}`. The default has to be substituted *before* the volume
@@ -968,7 +998,7 @@ def test_the_mcp_server_reaches_no_file_at_all(compose: dict[str, Any]) -> None:
     """No evidence, no derivatives, no corpus, no staging volume — no volume."""
     server = compose["services"][MCP]
     assert "volumes" not in server
-    assert server["networks"] == ["internal"]
+    assert server["networks"] == ["internal", "mcp_edge"]
     assert "ports" not in server
     assert "expose" not in server
 
@@ -1001,12 +1031,12 @@ def test_the_tunnel_client_is_pinned_and_holds_only_its_own_file(compose: dict[s
         "/mnt/user/appdata/juristid-main/config/juristid-mcp-tunnel.env}"
     ]
     assert "volumes" not in client
-    assert client["networks"] == ["internal"]
+    assert client["networks"] == ["mcp_edge"]
     # Not root: the image sets no USER, and Alpine's `nobody` is enough.
     assert client["user"] == "65534:65534"
 
 
-def test_the_tunnel_client_reaches_the_server_on_the_internal_network_only(
+def test_the_tunnel_client_reaches_the_server_on_the_edge_network_only(
     compose: dict[str, Any],
 ) -> None:
     """Plain HTTP between two containers on one bridge, health on loopback."""
@@ -1023,10 +1053,24 @@ def test_the_tunnel_client_reaches_the_server_on_the_internal_network_only(
     assert environment["HEALTH_LISTEN_ADDR"] == "127.0.0.1:8080", "the probe asks this port"
 
 
-def test_the_shared_network_can_reach_the_internet(compose: dict[str, Any]) -> None:
-    """`mcp-tunnel` (and `tunnel`) dial out; an `internal: true` network cannot."""
-    assert compose["networks"]["internal"].get("internal") is not True
-    assert compose["networks"]["internal"]["driver"] == "bridge"
+def test_the_server_accepts_the_host_the_tunnel_client_dials() -> None:
+    """`mcp:8001` — MCP_SERVER_URL's host — is in the default Host allow-list."""
+    from urllib.parse import urlsplit
+
+    from config import settings as project_settings
+
+    dialled = urlsplit("http://mcp:8001/mcp").netloc
+    assert dialled in project_settings._MCP_DEFAULT_ALLOWED_HOSTS
+
+
+def test_both_networks_can_reach_the_internet(compose: dict[str, Any]) -> None:
+    """`tunnel` (on `internal`) and `mcp-tunnel` (on `mcp_edge`) dial out.
+
+    An `internal: true` network cannot, so neither may be one.
+    """
+    for name in ("internal", "mcp_edge"):
+        assert compose["networks"][name].get("internal") is not True, name
+        assert compose["networks"][name]["driver"] == "bridge", name
 
 
 def test_the_mcp_templates_carry_placeholders_and_no_browser_secret() -> None:
@@ -1040,6 +1084,9 @@ def test_the_mcp_templates_carry_placeholders_and_no_browser_secret() -> None:
     assert mcp["MCP_ENABLED"] == "1"
     for key in ("DJANGO_SECRET_KEY", "POSTGRES_PASSWORD"):
         assert mcp[key].startswith("replace-me"), key
+    # Its own SELECT-only role, never the application's owner role (MCPSEC-03).
+    assert mcp["POSTGRES_USER"] == "juristid_mcp"
+    assert "juristid.env" not in mcp["POSTGRES_PASSWORD"]
     assert mcp["JURISTID_PUBLIC_ORIGIN"].startswith("https://")
     assert all(url.startswith("https://") for url in mcp["MCP_RESOURCE_URLS"].split(","))
     text = MCP_ENV_EXAMPLE.read_text(encoding="utf-8")
