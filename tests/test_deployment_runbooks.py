@@ -885,7 +885,10 @@ def test_no_runbook_tells_an_operator_to_resolve_the_compose_file_into_the_open(
         for line in command_lines(runbook.read_text(encoding="utf-8")):
             if "docker compose" not in line:
                 continue
-            assert not re.search(r"\bconfig\b", line), (
+            # `config` as a word of the command — the subcommand — and not as a
+            # path segment: `--env-file …/config/juristid.env` resolves nothing
+            # into the open (ADR 0179's empty-cluster step names that file).
+            assert not re.search(r"(?:^|\s)config(?:\s|$)", line), (
                 f"{runbook.name}: resolves the Compose file into the transcript, "
                 f"inlining every value from env_file\n  {line}"
             )

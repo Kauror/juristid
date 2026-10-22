@@ -694,8 +694,19 @@ image is root's and not writable by it. Do not answer a permissions problem with
 of the ownership is that a process which should only read cannot write.
 
 ```bash
-docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d db
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml --env-file /mnt/user/appdata/juristid-main/config/juristid.env up -d db
 ```
+
+`--env-file` on this one command, and only here (ADR 0179). The database no
+longer reads the application's environment file: it is given `POSTGRES_DB`,
+`POSTGRES_USER` and `POSTGRES_PASSWORD` by interpolation, and the password is
+needed only while an empty cluster is initialised. `--env-file` lends the
+file's values to that interpolation without passing the file into any
+container. Leave it out and the image refuses to initialise («superuser
+password is not specified») — run the line again with it. The next command
+that starts `db` without `--env-file` recreates it once with the password
+empty, which is the day-to-day shape and harmless: the cluster already holds
+the password, and the data is on the bind mount.
 
 ```bash
 scripts/deploy/juristid-restore.sh --project juristid-main --compose-file deploy/unraid-main/compose.yml --set /mnt/user/backups/juristid-main/sets/20260822T190000Z --backup-root /mnt/user/backups/juristid-main --data-root /mnt/user/appdata/juristid-main
@@ -842,8 +853,10 @@ docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d tunnel
 ### PostgreSQL major versions
 
 A dump taken from PostgreSQL 18 is restored by PostgreSQL 18. The Compose file
-pins `postgres:18` and a test keeps it pinned; minor versions inside 18 are
-fine and expected.
+pins `postgres:18` by tag *and* digest (ADR 0179), and tests keep both pinned;
+a restore therefore starts the exact server the dump came from (18.6 since
+2026-10-22). Moving to a newer minor inside 18 is fine and expected — as a
+deliberate edit of the digest, never as a side effect of a pull.
 
 Restoring into an older major does not work and should not be attempted.
 Restoring into a *newer* major is a separate exercise — read that release's

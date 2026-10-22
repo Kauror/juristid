@@ -453,7 +453,11 @@ def test_the_database_publishes_nothing_and_has_no_password_in_the_file(
 ) -> None:
     database = compose["services"]["db"]
     assert "ports" not in database
-    assert "POSTGRES_PASSWORD" not in database.get("environment", {})
+    # Named, since ADR 0179, but only as an interpolation the operator fills from
+    # the environment file when a cluster is initialised — never a value.
+    assert database.get("environment", {}).get("POSTGRES_PASSWORD", "${POSTGRES_PASSWORD:-}") == (
+        "${POSTGRES_PASSWORD:-}"
+    )
 
 
 # -- how it runs -----------------------------------------------------------
@@ -683,9 +687,12 @@ def test_the_database_image_pins_its_major(compose: dict[str, Any]) -> None:
 
     A dump taken from PostgreSQL 18 needs an 18 server to read it, and a
     silently newer major would be discovered on the day a backup is needed.
-    Minor versions inside 18 are welcome; the tag stops the major from moving.
+    Minor versions inside 18 are welcome; the tag stops the major from moving,
+    and the digest beside it (ADR 0179) stops anything moving without an edit.
     """
-    assert compose["services"]["db"]["image"] == "postgres:18"
+    image = compose["services"]["db"]["image"]
+    assert image.partition("@")[0] == "postgres:18"
+    assert image.partition("@")[2].startswith("sha256:")
 
 
 def test_the_tunnel_waits_for_a_web_process_that_answers(

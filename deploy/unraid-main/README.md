@@ -248,10 +248,21 @@ in this shell.
 ### 5. Start
 
 ```bash
-docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d db
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml --env-file /mnt/user/appdata/juristid-main/config/juristid.env up -d db
 docker compose -p juristid-main -f deploy/unraid-main/compose.yml run --rm web python manage.py migrate
 docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build
 ```
+
+`--env-file` on this one command, and only here (ADR 0179). The database no
+longer reads the application's environment file: it is given `POSTGRES_DB`,
+`POSTGRES_USER` and `POSTGRES_PASSWORD` by interpolation, and the password is
+needed only while an empty cluster is initialised. `--env-file` lends the
+file's values to that interpolation without passing the file into any
+container. Leave it out and the image refuses to initialise («superuser
+password is not specified») — run the line again with it. The next command
+that starts `db` without `--env-file` recreates it once with the password
+empty, which is the day-to-day shape and harmless: the cluster already holds
+the password, and the data is on the bind mount.
 
 `JURISTID_GIT_SHA` and `JURISTID_IMAGE_TAG` must still be exported here.
 Without them `run --rm web` resolves `juristid-main-web:local`, and since no

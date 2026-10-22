@@ -345,9 +345,12 @@ def test_the_database_is_postgresql_18(compose: dict[str, Any]) -> None:
     """A dump from 18 is restored by 18 (docs/adr/0022).
 
     An older major would prove the procedure against a server that could not run
-    it; a newer one would prove a migration nobody has planned.
+    it; a newer one would prove a migration nobody has planned. The tag carries
+    a digest as well (ADR 0179); the tag is what says which major.
     """
-    assert _services(compose)["db"]["image"] == "postgres:18"
+    image = _services(compose)["db"]["image"]
+    assert image.partition("@")[0] == "postgres:18"
+    assert image.partition("@")[2].startswith("sha256:")
 
 
 def test_postgres_persists_where_the_18_image_actually_keeps_it(
