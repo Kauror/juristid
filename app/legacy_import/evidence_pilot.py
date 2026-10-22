@@ -42,6 +42,20 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
+from app.legacy_import import safe_paths
+from app.legacy_import.integrity import (
+    IntegrityError,
+    SourceManifest,
+    build_manifest,
+    canonical_sha256,
+    require_digest,
+)
+from app.legacy_import.limits import (
+    SourceLimitExceeded,
+    WorkBudget,
+    current_limits,
+    load_json_document,
+)
 from app.legacy_import.onenote_archive import ArchiveError, ArchivePage, OneNoteArchive
 
 PILOT = "evidence-pilot"
@@ -135,20 +149,59 @@ def package_digest(package: dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def load_package(root: str | Path) -> tuple[dict[str, Any], OneNoteArchive]:
+def load_package(
+    root: str | Path,
+    *,
+    manifest: SourceManifest | None = None,
+    budget: WorkBudget | None = None,
+) -> tuple[dict[str, Any], OneNoteArchive]:
+    """`package.json` and the archive beside it, read within limits.
+
+    With a `manifest` (docs/adr/0184), `package.json` and every archive file
+    read later must be exactly the bytes it lists: the decisions parsed are the
+    decisions that were hashed.
+    """
     root = Path(root)
-    path = root / PACKAGE_FILE
-    if not path.is_file():
-        raise EvidencePilotError(f"{root} holds no {PACKAGE_FILE}.")
+    limits = current_limits()
+    budget = budget or WorkBudget(limits)
     try:
-        package = json.loads(path.read_text(encoding="utf-8"))
+        if safe_paths.lookup(root, PACKAGE_FILE) is not safe_paths.Kind.FILE:
+            raise EvidencePilotError(f"{root} holds no {PACKAGE_FILE}.")
+        data = safe_paths.read_bytes(
+            root, PACKAGE_FILE, max_bytes=limits.max_json_bytes, budget=budget
+        )
+        if manifest is not None:
+            manifest.verify(PACKAGE_FILE, data)
+        package = load_json_document(data, what=PACKAGE_FILE, limits=limits)
     except json.JSONDecodeError as error:
         raise EvidencePilotError(f"{PACKAGE_FILE} is not valid JSON: {error}") from error
+    except (safe_paths.UnsafeSourcePath, SourceLimitExceeded, IntegrityError) as error:
+        raise EvidencePilotError(str(error)) from error
+    if not isinstance(package, dict):
+        raise EvidencePilotError(f"{PACKAGE_FILE} is not a JSON object.")
     try:
-        archive = OneNoteArchive(root / ARCHIVE_DIRECTORY)
-    except ArchiveError as error:
+        archive = OneNoteArchive(
+            root / ARCHIVE_DIRECTORY,
+            manifest=manifest.subtree(ARCHIVE_DIRECTORY) if manifest is not None else None,
+            budget=budget,
+        )
+    except (ArchiveError, IntegrityError, SourceLimitExceeded) as error:
         raise EvidencePilotError(str(error)) from error
     return package, archive
+
+
+def package_manifest(root: str | Path, *, budget: WorkBudget | None = None) -> SourceManifest:
+    """Every file of the package directory: path, size, SHA-256 (docs/adr/0184).
+
+    The package digest covers `package.json` only; this covers what it is read
+    with — page metadata, text, blocks, links, source XML, resource records and
+    originals, and anything else in the directory, so an added, removed or
+    changed file is a different package.
+    """
+    try:
+        return build_manifest(Path(root), budget=budget)
+    except (IntegrityError, SourceLimitExceeded, safe_paths.UnsafeSourcePath) as error:
+        raise EvidencePilotError(str(error)) from error
 
 
 def parse_reference(reference: str) -> tuple[int, int] | None:
@@ -319,6 +372,10 @@ def validate_package(package: dict[str, Any], archive: OneNoteArchive) -> Valida
             problems.append(f"{ref}: source page {source.get('page_key')!r} is not in the archive.")
             continue
         report.resources_on_pages += len(resources)
+        try:
+            archive.read_page_xml(page)
+        except ArchiveError as error:
+            problems.append(f"{ref}: {error}")
         accounting = _PageAccounting(ref=ref, page=page, resources=resources, archive=archive)
         use = accounting.use
 
@@ -739,6 +796,12 @@ class EvidencePlan:
     problems: list[str] = field(default_factory=list)
     database_state: str = "fresh"
     existing_matters: int = 0
+    #: Every file of the package as read (docs/adr/0184); the archive reads
+    #: through it.
+    manifest: SourceManifest | None = None
+    #: The catalogue rows each approved organisation name (and each name in a
+    #: relationship) matched when the plan was made, as primary keys.
+    catalogue: dict[str, list[str]] = field(default_factory=dict)
 
     def expected_writes(self) -> dict[str, int]:
         counts: dict[str, int] = {"MATTER": len(self.topics), "NEXT_ACTION": 0, "DOCUMENT": 0}
@@ -805,11 +868,21 @@ def build_plan(root: str | Path) -> EvidencePlan:
     from app.workflow.models import StageVocabulary
     from app.workflow.vocabulary import CURRENT_LABEL_TO_STAGE, RAW_LABEL_TO_STAGE
 
-    package, archive = load_package(root)
+    budget = WorkBudget()
+    manifest = package_manifest(root, budget=budget)
+    package, archive = load_package(root, manifest=manifest, budget=budget)
     digest = package_digest(package)
-    validation = validate_package(package, archive)
+    try:
+        validation = validate_package(package, archive)
+    except (IntegrityError, SourceLimitExceeded) as error:
+        raise EvidencePilotError(str(error)) from error
     plan = EvidencePlan(
-        root=Path(root), package=package, digest=digest, archive=archive, validation=validation
+        root=Path(root),
+        package=package,
+        digest=digest,
+        archive=archive,
+        validation=validation,
+        manifest=manifest,
     )
     plan.problems.extend(validation.problems)
 
@@ -831,6 +904,7 @@ def build_plan(root: str | Path) -> EvidencePlan:
     approved = approved_organisations(package)
     for name, entry in approved.items():
         matches = find_matches(name)
+        plan.catalogue[name] = sorted(str(found.pk) for found in matches)
         if len(matches) > 1:
             plan.problems.append(
                 f"organisation {name!r} matches several catalogue rows; "
@@ -870,6 +944,7 @@ def build_plan(root: str | Path) -> EvidencePlan:
         existing = {}
         for name in (before, after):
             found = find_matches(name)
+            plan.catalogue.setdefault(name, sorted(str(item.pk) for item in found))
             if len(found) == 1:
                 existing[name] = found[0]
             elif not found and name not in approved:
@@ -949,6 +1024,43 @@ def build_plan(root: str | Path) -> EvidencePlan:
     return plan
 
 
+#: Bumped when what `plan_digest` covers changes.
+PLAN_DIGEST_VERSION = "evidence-pilot-plan/1"
+
+
+def plan_digest(plan: EvidencePlan) -> str:
+    """What an operator approves before `apply` (docs/adr/0184).
+
+    The package digest (the decisions), the package manifest (every file the
+    decisions are read with), and what the plan resolved them to in this
+    database: owners, stages, instruments, addressees and organisations as row
+    identities, the catalogue rows each approved name matched, and the
+    database state. The package digest alone stays the identity of the import
+    in provenance, so an applied package is recognised as before.
+    """
+    return canonical_sha256(
+        {
+            "version": PLAN_DIGEST_VERSION,
+            "package_sha256": plan.digest,
+            "manifest_sha256": plan.manifest.digest() if plan.manifest is not None else "",
+            "database_state": plan.database_state,
+            "existing_matters": plan.existing_matters,
+            "catalogue": plan.catalogue,
+            "topics": [
+                {
+                    "reference": topic.reference,
+                    "owner": topic.owner,
+                    "stage": topic.stage,
+                    "instruments": topic.instruments,
+                    "addressee": topic.addressee,
+                    "organisations": topic.organisations,
+                }
+                for topic in plan.topics
+            ],
+        }
+    )
+
+
 def _database_state(plan: EvidencePlan) -> tuple[str, int]:
     """`fresh` (empty), `applied` (exactly this package) or `foreign`, and the Matter count."""
     from app.matters.models import Matter
@@ -993,7 +1105,12 @@ class ApplyReport:
 
 
 def _refuse_unless_authorised(
-    plan: EvidencePlan, *, operator_intent: str, expect_package_sha256: str, backup_set: str
+    plan: EvidencePlan,
+    *,
+    operator_intent: str,
+    expect_package_sha256: str,
+    expect_plan_sha256: str,
+    backup_set: str,
 ) -> None:
     if not getattr(settings, "EVIDENCE_PILOT_ENABLED", False):
         raise EvidencePilotError(
@@ -1010,6 +1127,11 @@ def _refuse_unless_authorised(
     if (expect_package_sha256 or "").strip().lower() != plan.digest:
         raise EvidencePilotError(
             f"The package digest is {plan.digest}; pass exactly that as --expect-package-sha256."
+        )
+    if not (expect_plan_sha256 or "").strip():
+        raise EvidencePilotError(
+            f"The plan digest is {plan_digest(plan)}; review the plan and pass it as "
+            "--expect-plan-sha256."
         )
     if not backup_set.strip():
         raise EvidencePilotError(
@@ -1029,13 +1151,26 @@ def _refuse_unless_authorised(
 
 
 def apply_plan(
-    plan: EvidencePlan, *, operator_intent: str, expect_package_sha256: str, backup_set: str
+    plan: EvidencePlan,
+    *,
+    operator_intent: str,
+    expect_package_sha256: str,
+    expect_plan_sha256: str,
+    backup_set: str,
 ) -> ApplyReport:
-    """Write the package. One transaction; refuses without every authorisation."""
+    """Write the package. One transaction; refuses without every authorisation.
+
+    The plan is built again inside the transaction, after the lock — the
+    package re-hashed file by file, the database re-resolved — and must hash to
+    the digest the operator approved; the writer then reads only through that
+    plan's manifest. An applied package writes nothing and is reported as such
+    before any of this, whatever digest is passed (docs/adr/0184).
+    """
     _refuse_unless_authorised(
         plan,
         operator_intent=operator_intent,
         expect_package_sha256=expect_package_sha256,
+        expect_plan_sha256=expect_plan_sha256,
         backup_set=backup_set,
     )
     if plan.database_state == "applied":
@@ -1045,7 +1180,25 @@ def apply_plan(
 
     with transaction.atomic():
         _hold_the_database(plan)
-        report, touched = _Writer(plan, backup_set=backup_set.strip()).write()
+        current = build_plan(plan.root)
+        try:
+            approved = require_digest(
+                plan_digest(current),
+                expect_plan_sha256,
+                flag="--expect-plan-sha256",
+                what="The evidence-pilot plan",
+            )
+        except IntegrityError as error:
+            raise EvidencePilotError(str(error)) from error
+        if current.problems or current.database_state != "fresh":
+            raise EvidencePilotError(
+                "The plan rebuilt for the apply is not writable; nothing was written."
+            )
+        writer = _Writer(current, backup_set=backup_set.strip(), plan_sha256=approved)
+        try:
+            report, touched = writer.write()
+        except (IntegrityError, SourceLimitExceeded, ArchiveError) as error:
+            raise EvidencePilotError(f"{error} Nothing was written.") from error
         refresh_matters(indexable_matters().filter(pk__in=touched))
     return report
 
@@ -1074,9 +1227,11 @@ def _hold_the_database(plan: EvidencePlan) -> None:
 class _Writer:
     """Everything `apply_plan` writes, in the order the workflow expects."""
 
-    def __init__(self, plan: EvidencePlan, *, backup_set: str) -> None:
+    def __init__(self, plan: EvidencePlan, *, backup_set: str, plan_sha256: str = "") -> None:
         self.plan = plan
         self.backup_set = backup_set
+        #: The approved plan digest, recorded on the batch and its audit event.
+        self.plan_sha256 = plan_sha256
         self.report = ApplyReport()
         self.package = plan.package
         self.base = {
@@ -1138,7 +1293,10 @@ class _Writer:
             reconciliation_status=ReconciliationStatus.RUNNING,
             notes=(
                 f"{PILOT}: {len(self.plan.topics)} teemat paketist {self.plan.digest}; allika "
-                f"seis {snapshot.get('as_of')}; varukoopia {self.backup_set} (docs/adr/0173)."
+                f"seis {snapshot.get('as_of')}; varukoopia {self.backup_set} (docs/adr/0173); "
+                f"plan-sha256 {self.plan_sha256}; manifest-sha256 "
+                f"{self.plan.manifest.digest() if self.plan.manifest is not None else ''} "
+                "(docs/adr/0184)."
             ),
         )
         self.report.batch_id = self.batch.pk
@@ -1169,6 +1327,8 @@ class _Writer:
             subject=self.batch,
             detail={
                 **self.base,
+                "plan_sha256": self.plan_sha256,
+                "manifest_sha256": self.plan.manifest.digest() if self.plan.manifest else "",
                 "topics": len(touched),
                 "backup_set": self.backup_set,
                 "written": self.report.written,

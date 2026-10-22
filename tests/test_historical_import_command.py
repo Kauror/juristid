@@ -82,6 +82,18 @@ def _paths(corpus: dict) -> list[str]:
     ]
 
 
+def _approved(corpus: dict) -> list[str]:
+    """The plan digest an operator would have reviewed: the current plan's (docs/adr/0184)."""
+    from app.legacy_import.historical_plan import build_plan, plan_digest
+
+    plan = build_plan(
+        excel_path=corpus["excel_path"],
+        archive_root=corpus["archive_root"],
+        audit_root=corpus["audit_root"],
+    )
+    return ["--expect-plan-sha256", plan_digest(plan)]
+
+
 def _run(*args: str) -> tuple[int, str]:
     """Exit status and everything the command said, as an operator sees it.
 
@@ -110,7 +122,7 @@ def _table(out: str) -> dict[str, int]:
 
 @pytest.fixture
 def applied(corpus, register, gate_open):
-    rc, out = _run("apply", *_paths(corpus))
+    rc, out = _run("apply", *_paths(corpus), *_approved(corpus))
     assert rc == 0, out
     return out
 
@@ -214,7 +226,7 @@ def test_apply_records_what_it_did_on_the_batch_and_says_the_same(
 ):
     report = tmp_path / "apply.json"
 
-    rc, out = _run("apply", *_paths(corpus), "--report", str(report))
+    rc, out = _run("apply", *_paths(corpus), *_approved(corpus), "--report", str(report))
 
     assert rc == 0, out
     batch = ImportBatch.objects.get()
@@ -254,7 +266,7 @@ def test_a_second_apply_refreshes_and_creates_nothing(applied, corpus):
         HistoricalMatchCandidate.objects.count(),
     )
 
-    rc, out = _run("apply", *_paths(corpus))
+    rc, out = _run("apply", *_paths(corpus), *_approved(corpus))
 
     assert rc == 0, out
     assert "source pages          0 new, 9 refreshed" in out
