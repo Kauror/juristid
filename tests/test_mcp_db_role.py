@@ -30,7 +30,7 @@ from app.core import checks
 from app.mcp_server import db_role
 from tests import factories
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = pytest.mark.django_db(transaction=True, serialized_rollback=True)
 
 
 def _apply(role: str, password: str | None) -> str:

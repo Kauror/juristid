@@ -530,6 +530,9 @@ OPERATIONAL_MODELS = frozenset(
         "mcp_access.McpEnrolmentLink",
         "mcp_access.McpAuthorizationCode",
         "mcp_access.McpToken",
+        # Wrong-code counters per gate session and client address on the
+        # consent page: a lockout clock, like the shared gate's own.
+        "mcp_access.McpAuthorizeThrottle",
     }
 )
 

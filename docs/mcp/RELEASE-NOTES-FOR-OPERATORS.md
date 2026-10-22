@@ -14,8 +14,10 @@ needs its own approval:
 
 1. *The release* — this file, then the README. With `MCP_ENABLED` unset (the
    template says `0`) and no `juristid-mcp.env` on the host, it changes nothing
-   anybody can see: every OAuth route answers 404, no grant can be made, and
-   neither new service starts. It is a code release with one additive migration.
+   anybody can see: every OAuth route stays behind the shared gate (an
+   anonymous request is sent to `/varav/`; a gate-passed persona gets 404), no
+   grant can be made, and neither new service starts. It is a code release with
+   one migration that only creates the new app's tables.
 2. *The enablement* — [`OPERATIONS.md`](OPERATIONS.md) §"First-time
    enablement", afterwards, once the owner says so and the OpenAI tunnel exists.
 
@@ -28,7 +30,7 @@ release that fails half-way must not leave AI access half-on.
 | --- | --- |
 | New tables | `app.mcp_access`: grants, enrolled authenticators, authorization codes, tokens — migration `mcp_access.0001_initial`. Additive: no existing table changes, no row is rewritten. |
 | New services | `mcp`, `mcp-tunnel` in `deploy/unraid-main/compose.yml`, both behind the `mcp` profile — not started by this release. |
-| New routes on `web` | `/.well-known/oauth-authorization-server`, `/oauth/authorize`, `/oauth/token`, `/oauth/revoke`, `/mcp-ligipaas/…` — 404 while `MCP_ENABLED` is off. |
+| New routes on `web` | `/.well-known/oauth-authorization-server`, `/oauth/authorize`, `/oauth/token`, `/oauth/revoke`, `/mcp-ligipaas/…` — while `MCP_ENABLED` is off they are behind the gate like every page, and 404 behind it. |
 | New dependency | `mcp` 2.3.0 (and through it `starlette`, `uvicorn`, `httpx`, `pydantic`), in the same image; the release image is built by `release-image.yml` exactly as before. |
 | New pinned third-party image | `ghcr.io/openai/tunnel-client:v0.0.17@sha256:67b473b4bc23bc984e4a381752e9a2fa75649746edc06e46b27025611835c5c0` — pulled only when `mcp-tunnel` is first started, not by the release. |
 | Search index | unchanged — the manifest's `search_rebuild_required` says `NO` unless something else in the range moved `INDEX_VERSION`. |
@@ -45,10 +47,13 @@ load). No change. The preflight now also reports «AI access is not set up here�
 
 **Step 6, the migration plan.** `migration_plan` lists exactly the new app's
 migrations — `mcp_access.0001_initial` (and any later `mcp_access` migration
-the release carries) — and calls them additive. Anything else in the plan is
-another change in the range and is reviewed as usual. A non-additive
-`mcp_access` operation on this first release is a **stop**: there is nothing
-for it to alter.
+the release carries). The plan's own classifier flags `0001_initial` as
+consequential — two `AddConstraint` and one `RunSQL` (the event table's
+append-only trigger) — because it cannot see that every one of them acts on a
+table the same migration creates. That exact set is expected. Anything else in
+the plan is another change in the range and is reviewed as usual; any other
+`mcp_access` operation on this first release (an `AlterField`, a `RunPython`,
+a `RemoveField`) is a **stop**: there is nothing for it to alter.
 
 **Step 7, pre-migration audits.** None for this release.
 
@@ -68,7 +73,9 @@ all of which must hold:
 curl -s -o /dev/null -w '%{http_code}\n' https://juristid.orgusaar.ee/.well-known/oauth-authorization-server
 ```
 
-prints `404` — the OAuth surface exists in the code and is off.
+prints `302` with `Location: /varav/` and no `next` — with AI access off the
+OAuth paths are not exempt from the gate. (Behind the gate, as a persona, the
+same path answers 404.)
 
 ```bash
 docker ps -a --filter label=com.docker.compose.project=juristid-main --format '{{.Names}}'
