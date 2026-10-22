@@ -188,6 +188,7 @@ consequences and reversibility.
 | [0178](0178-historical-source-readers-stay-inside-their-corpus-and-within-budget.md) | Historical source readers stay inside their corpus, and within a budget | Proposed (security remediation, 2026-10-22); no migrations; one path rule and no-follow, inode-checked opens for every OneNote and directory-archive read (`safe_paths`); `LEGACY_IMPORT_*` limits on ZIP and workbook size, members, inflation, ratio, sheets and ranges (`limits`) |
 | [0179](0179-third-party-code-is-pinned-by-content-and-the-database-gets-only-its-own-variables.md) | Third-party code is pinned by content, and the database gets only its own variables | Proposed (Codex security findings csf_b46bef0c / csf_14aa9cd1, 2026-10-22); every third-party image `tag@sha256:<index digest>` (production's own `postgres:18` 18.6 and `cloudflared:2026.8.2` digests), every Action `@<40-hex> # vX.Y.Z` at the commit its major tag held; `db` loses `env_file:` and gets `POSTGRES_DB`/`POSTGRES_USER`/`POSTGRES_PASSWORD` by interpolation, the password only via `--env-file` when an empty cluster is initialised; tunnel unchanged (no environment); no migrations; deploying recreates `db` and `tunnel` once |
 | [0180](0180-audit-rows-record-how-their-actor-arrived.md) | Audit rows record how their actor arrived, and one-time links are serialised and epoch-bound | Proposed (security remediation, 2026-10-22); every new `ChangeEvent`/`SecurityAuditEvent` records method, assurance, authenticated principal, acting persona and a request correlation id, centrally (`app/audit/provenance.py`, `audit/0038`), old rows «not recorded»; shared-gate actors read «(valitud ühisparooliga)»; one-time links issued under the account lock, one live per person and purpose (partial unique index), bound to `security_epoch` at issue and redemption (`accounts/0005`); records finding #1 (persona choice verifies nobody) as an accepted pilot risk; amends 0016 and 0145 §7 |
+| [0184](0184-import-approvals-bind-bytes-and-decisions-and-historical-inputs-are-bounded.md) | Import approvals bind bytes and decisions, and historical inputs are bounded | Proposed (security hardening round 2, 2026-10-22; csf_566209e1, csf_ff21dec7, csf_c79fda7c); no migrations; `import_legacy_register --apply`, `evidence_pilot apply` and `historical_import apply` require `--expect-plan-sha256` over the source bytes (a manifest of every file), the decisions and the database rows they resolved to, recomputed at apply; `LEGACY_IMPORT_*` bounds on JSON, text, CSV, pages, resources, directory listings, tree size and a per-run work budget |
 
 **Numbers with no record on this branch.** `tests/test_architecture_decisions.py`
 requires every gap in the numbering to be named here:
@@ -198,6 +199,12 @@ requires every gap in the numbering to be named here:
   lands with that PR.
 - 0164 — not used. The number was skipped during the QA remediation of
   2026-10-14 (between 0163 and 0165), and no record was ever written under it.
+- 0181 — reserved for another round-2 security workstream (2026-10-22); the
+  record lands with that branch.
+- 0182 — reserved for another round-2 security workstream (2026-10-22); the
+  record lands with that branch.
+- 0183 — reserved for another round-2 security workstream (2026-10-22); the
+  record lands with that branch.
 
 Naming: `NNNN-short-decision-title.md`.
 
