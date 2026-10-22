@@ -34,7 +34,6 @@ from __future__ import annotations
 
 import struct
 import zlib
-from dataclasses import dataclass
 from typing import Any
 
 from django.conf import settings
@@ -42,6 +41,7 @@ from django.conf import settings
 from app.core.errors import DomainError
 from app.documents.filenames import canonical_filename
 from app.documents.services import ALLOWED_EVIDENCE_MIME_TYPES
+from app.documents.upload_body import BytesBody, UploadBody, UploadedFileBody
 
 
 class UploadRejected(DomainError):
@@ -175,15 +175,110 @@ def starts_like_signed_container(content: bytes) -> bool:
     return declared == _SIGNED_CONTAINER_MEDIA_TYPE
 
 
-@dataclass(frozen=True)
 class AcceptedUpload:
-    content: bytes
-    filename: str
-    mime_type: str
-    #: The display title typed beside the file before the save, or ``""``
-    #: (docs/adr/0142 §A, amended 2026-10-07). Becomes `Document.title`; the
-    #: filename stays the version's `original_filename` whatever is typed here.
-    display_title: str = ""
+    """One file that passed :func:`read_upload`, and where its bytes are.
+
+    **A body, not bytes** (csf_35546c06657fae7b9935969d, docs/adr/0182). The
+    bytes stay where the upload handlers or the pending-upload volume already
+    put them and are streamed from there when a store writes them
+    (`app.documents.upload_body.store_body`); a batch of accepted files is a
+    list of sizes and file handles, not gigabytes in a web worker.
+
+    ``content=`` still builds one from bytes a caller already holds (an
+    importer, a test), and :attr:`content` still reads the bytes back — every
+    upload door writes ``body`` instead.
+    """
+
+    __slots__ = ("body", "display_title", "filename", "mime_type")
+
+    def __init__(
+        self,
+        content: bytes | None = None,
+        filename: str = "",
+        mime_type: str = "",
+        display_title: str = "",
+        *,
+        body: UploadBody | None = None,
+    ) -> None:
+        if body is None:
+            body = BytesBody(content or b"")
+        elif content is not None:  # pragma: no cover - a caller slip
+            raise TypeError("AcceptedUpload takes content= or body=, not both")
+        self.body: UploadBody = body
+        self.filename = filename
+        self.mime_type = mime_type
+        #: The display title typed beside the file before the save, or ``""``
+        #: (docs/adr/0142 §A, amended 2026-10-07). Becomes `Document.title`; the
+        #: filename stays the version's `original_filename` whatever is typed here.
+        self.display_title = display_title
+
+    @property
+    def size(self) -> int:
+        return self.body.size
+
+    @property
+    def content(self) -> bytes:
+        """Every byte, read into memory now. Upload doors use :attr:`body`."""
+        return self.body.read_all()
+
+    def sha256(self) -> str:
+        return self.body.sha256()
+
+    def __repr__(self) -> str:
+        return f"AcceptedUpload({self.mime_type}, {self.size} bytes)"
+
+
+#: The most a request, and the files one save files, may carry. One sentence
+#: per limit, the same at the request boundary (`app.documents.upload_limits`)
+#: and at a door that adds held files to new ones (:func:`check_upload_batch`).
+TOO_MANY_FILES = "Korraga saab saata kuni {limit} faili. Lisa ülejäänud failid eraldi."
+BATCH_TOO_LARGE = (
+    "Valitud failid on kokku suuremad kui lubatud {limit_mb} MB. Lisa failid väiksemate osadena."
+)
+
+
+def too_many_files_refusal() -> str:
+    return TOO_MANY_FILES.format(limit=settings.UPLOAD_MAX_FILES_PER_REQUEST)
+
+
+def batch_too_large_refusal() -> str:
+    return BATCH_TOO_LARGE.format(limit_mb=settings.UPLOAD_MAX_REQUEST_BYTES // (1024 * 1024))
+
+
+def check_upload_batch(sizes: list[int]) -> None:
+    """Refuse a save whose files, together, are more than one request may carry.
+
+    The aggregate half of the upload policy (docs/adr/0182). The request
+    boundary already refuses a request over these numbers before its body is
+    read; this is the same rule for a save that *also* files what an earlier
+    refusal is holding (`app.documents.pending`), so held bytes and new bytes
+    are counted together. Sizes only: nothing is read to answer it.
+    """
+    if len(sizes) > settings.UPLOAD_MAX_FILES_PER_REQUEST:
+        raise UploadRejected(too_many_files_refusal())
+    if sum(sizes) > settings.UPLOAD_MAX_REQUEST_BYTES:
+        raise UploadRejected(batch_too_large_refusal())
+
+
+#: How much of a file the content checks may read: a ZIP local header with the
+#: longest possible name and extra field, and the bounded `mimetype` input
+#: :func:`starts_like_signed_container` inflates. Every other signature is a
+#: prefix of a few bytes.
+SIGNATURE_HEAD_BYTES = _ZIP_LOCAL_HEADER.size + 2 * 0xFFFF + _MIMETYPE_INPUT_LIMIT
+
+
+def _body_of(uploaded_file: Any, size: int) -> UploadBody:
+    """Where this file's bytes are, without reading them."""
+    if callable(getattr(uploaded_file, "seek", None)):
+        body = UploadedFileBody(uploaded_file)
+        body.size = size
+        return body
+    # A file-like object with no seek (no Django upload is one): read it, but
+    # never more than one byte past the ceiling the size check just applied.
+    content = uploaded_file.read(settings.MAX_EVIDENCE_UPLOAD_BYTES + 1)
+    if not isinstance(content, bytes):  # pragma: no cover - defensive
+        raise UploadRejected("Faili ei õnnestunud lugeda.")
+    return BytesBody(content)
 
 
 def _extension(filename: str) -> str:
@@ -192,10 +287,16 @@ def _extension(filename: str) -> str:
 
 
 def read_upload(uploaded_file: Any) -> AcceptedUpload:
-    """Validate one uploaded file and return its bytes.
+    """Validate one uploaded file and say where its bytes are.
 
     Raises :class:`UploadRejected` with a message meant for the person who
     chose the file.
+
+    The size, extension and content checks are what they always were; what
+    changed is that the file is no longer read into memory to make them. The
+    size is the one the upload handler counted, the content checks read only
+    :data:`SIGNATURE_HEAD_BYTES`, and the accepted file carries a body that a
+    store streams from (docs/adr/0182).
     """
     if uploaded_file is None:
         raise UploadRejected("Faili ei valitud.")
@@ -217,16 +318,19 @@ def read_upload(uploaded_file: Any) -> AcceptedUpload:
     if mime_type not in ALLOWED_EVIDENCE_MIME_TYPES:  # pragma: no cover - guards a mapping slip
         raise UploadRejected("Failitüüp ei ole lubatud tõendivorming.")
 
-    content = uploaded_file.read()
-    if not isinstance(content, bytes):  # pragma: no cover - defensive
+    # The bytes stay where the upload handler wrote them; only the head the
+    # content checks need is read (csf_35546c06657fae7b9935969d).
+    body = _body_of(uploaded_file, size)
+    head = body.head(SIGNATURE_HEAD_BYTES)
+    if not isinstance(head, bytes):  # pragma: no cover - defensive
         raise UploadRejected("Faili ei õnnestunud lugeda.")
 
     signatures = CONTENT_SIGNATURES.get(mime_type)
-    if signatures and not any(content.startswith(signature) for signature in signatures):
+    if signatures and not any(head.startswith(signature) for signature in signatures):
         raise UploadRejected(
             "Faili sisu ei vasta selle laiendile. Kontrolli, kas fail on terve ja õiget tüüpi."
         )
-    if mime_type == SIGNED_CONTAINER_MIME_TYPE and not starts_like_signed_container(content):
+    if mime_type == SIGNED_CONTAINER_MIME_TYPE and not starts_like_signed_container(head):
         # Named, because «does not match its extension» says nothing to
         # somebody holding a file DigiDoc saved: what is wrong is that this is
         # not a signed container at all, whatever its name says.
@@ -239,7 +343,7 @@ def read_upload(uploaded_file: Any) -> AcceptedUpload:
     # on a Mac and the same name typed on Windows are one name, and a blind
     # `[:400]` used to cut the extension off an over-long one.
     return AcceptedUpload(
-        content=content,
+        body=body,
         filename=canonical_filename(filename),
         mime_type=mime_type,
         display_title=clean_display_title(getattr(uploaded_file, "display_title", "")),

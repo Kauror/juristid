@@ -1672,7 +1672,7 @@ def add_matter_koda_opinion(
         )
         version = add_evidence_version(
             document=document,
-            content=accepted.content,
+            content=accepted.body,
             original_filename=accepted.filename,
             mime_type=accepted.mime_type,
             uploaded_by=author,
@@ -1692,7 +1692,7 @@ def add_matter_koda_opinion(
             further_versions.append(
                 add_evidence_version(
                     document=extra_document,
-                    content=extra.content,
+                    content=extra.body,
                     original_filename=extra.filename,
                     mime_type=extra.mime_type,
                     uploaded_by=author,

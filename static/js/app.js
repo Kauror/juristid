@@ -176,6 +176,9 @@
     csrf: "Leht on aegunud: sisselogimine muutus pärast lehe avamist, näiteks teises aknas.",
     forbidden: "Sellele toimingule puudub ligipääs.",
     missing: "Kirjet ei leitud või see pole sulle nähtav.",
+    /* A request over the upload policy's limits (docs/adr/0182): answered 413
+     * before any view ran, so nothing was saved. */
+    "upload-too-large": "Valitud faile oli korraga liiga palju või need olid kokku liiga suured.",
     other: "",
   };
 
@@ -185,7 +188,7 @@
     if (!status) {
       return "network";
     }
-    if (marked === "sign-in" || marked === "csrf") {
+    if (marked === "sign-in" || marked === "csrf" || marked === "upload-too-large") {
       return marked;
     }
     if (status === 403) {
@@ -202,6 +205,8 @@
     var tail = "";
     if (writes && (kind === "sign-in" || kind === "csrf")) {
       tail = "Sisestatud tekst on alles, kuid seda ei salvestatud — kopeeri see enne jätkamist.";
+    } else if (kind === "upload-too-large") {
+      tail = "Midagi ei salvestatud; vali vähem või väiksemaid faile.";
     } else if (writes && (kind === "missing" || kind === "forbidden")) {
       tail = "Sisestatud tekst on alles.";
     } else if (writes) {
