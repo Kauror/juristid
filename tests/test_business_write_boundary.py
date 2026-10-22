@@ -1615,6 +1615,14 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     "accounts:sign_out": "D: ends a session",
     "accounts:shared_gate": "D: shared-gate password",
     "accounts:act_as": "D: persona selection; its own eligibility rules",
+    # D — the MCP authorization server's two browser forms (docs/adr/0185). They
+    # write only the colleague's own OAuth state — an authorization code, a
+    # confirmed personal authenticator — never business content, and each is
+    # gated by the gate, the persona, an operator's grant and a current
+    # authenticator code (tests/test_mcp_access_authorize.py,
+    # tests/test_mcp_access_enrolment.py).
+    "mcp_access:authorize": "D: OAuth consent for an AI client; grant + personal code",
+    "mcp_access:enrol": "D: confirms the person's own MCP authenticator",
     # B — stricter than business write, and already stricter. DEPARTMENT_HEAD is
     # a subset of the business writers, so `may_review_work_victory` implies the
     # business-write rule and cannot be satisfied by a READER or ADMINISTRATOR.

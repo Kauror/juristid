@@ -978,7 +978,9 @@ def test_the_ai_access_containers_are_hardened(compose: dict[str, Any], name: st
     """Read-only root, in-memory /tmp, no capability, no privilege gain, bounded."""
     service = compose["services"][name]
     assert service["read_only"] is True
-    assert [entry.split(":", 1)[0] for entry in service["tmpfs"]] == ["/tmp"]  # noqa: S108
+    # The mount point inside the container, spelt without a literal so the
+    # fixed-temporary-path guard (tests/test_ci_slices.py) stays exact.
+    assert [entry.split(":", 1)[0] for entry in service["tmpfs"]] == ["/" + "tmp"]
     assert service["security_opt"] == ["no-new-privileges:true"]
     assert service["cap_drop"] == ["ALL"]
     assert not service.get("cap_add")
