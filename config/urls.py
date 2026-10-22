@@ -49,5 +49,9 @@ urlpatterns = [
         "organisatsioonid/",
         include(("app.organisations.urls", "organisations"), namespace="organisations"),
     ),
+    # The read-only MCP server's authorization server: RFC 8414 metadata, the
+    # OAuth endpoints and the authenticator enrolment page. Exact paths that no
+    # other app claims; every one is a 404 unless MCP_ENABLED (docs/adr/0185).
+    path("", include(("app.mcp_access.urls", "mcp_access"), namespace="mcp_access")),
     path("admin/", admin.site.urls),
 ]

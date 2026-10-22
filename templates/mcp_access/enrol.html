@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}MCP autentija · {{ application_name }}{% endblock %}
+
+{% comment %}
+  Enrolling the personal «Juristidi MCP autentija» from a one-time link
+  (docs/adr/0185 §3). The QR code is inline SVG drawn on the server, and the
+  key is printed for an app that cannot scan. Nothing is stored until a code
+  from the phone is typed back. A link that is spent, expired or meant for
+  another persona reads the same, so the page says nothing about whose it is.
+{% endcomment %}
+
+{% block content %}
+<div class="page page--narrow">
+  <h1>Juristidi MCP autentija</h1>
+
+  {% if invalid %}
+    <div class="formerror" role="alert">
+      <p>See link ei kehti. See võib olla aegunud, juba kasutatud või mõeldud teisele kasutajale.</p>
+    </div>
+    <p class="acctnote">Kontrolli, kelle nimel tegutsed, ja ava link uuesti või küsi haldajalt uus link.</p>
+  {% elif done %}
+    <p class="message message--success" role="status">
+      Autentija on seadistatud. Nüüd saad ChatGPT-s Juristidi ühendada; ühendamisel küsitakse selle autentija koodi.
+    </p>
+  {% else %}
+    {% if error %}
+      <div class="formerror" role="alert"><p>{{ error }}</p></div>
+    {% endif %}
+
+    <section class="panel acctenrol">
+      <p class="acctnote">Seadistad autentijat kasutajale <strong>{{ persona.display_name }}</strong>.</p>
+      <ol class="acctsteps">
+        <li>Ava telefonis autentimisrakendus (näiteks Microsoft Authenticator või Google Authenticator).</li>
+        <li>Skaneeri kood või sisesta võti käsitsi. Rakendus näitab seda nimega «Juristid MCP».</li>
+        <li>Sisesta rakenduse näidatud kuuekohaline kood.</li>
+      </ol>
+      <div class="acctqr" role="img" aria-label="Autentija QR-kood">{{ enrolment.qr_svg|safe }}</div>
+      <p class="acctnote">Võti: <span class="mono acctsecret">{{ enrolment.secret }}</span></p>
+    </section>
+
+    <form method="post" class="card card--form form" novalidate>
+      {% csrf_token %}
+      <label class="field">
+        <span class="field__label">Kuuekohaline kood</span>
+        <input class="field__input mono"
+               type="text"
+               name="kood"
+               inputmode="numeric"
+               autocomplete="one-time-code"
+               pattern="[0-9]{6}"
+               maxlength="6"
+               autocapitalize="off"
+               spellcheck="false"
+               autofocus>
+      </label>
+      <div class="form__actions">
+        <button type="submit" class="button button--primary">Kinnita</button>
+      </div>
+    </form>
+  {% endif %}
+</div>
+{% endblock %}

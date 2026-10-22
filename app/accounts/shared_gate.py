@@ -71,6 +71,23 @@ LAST_SEEN_RESOLUTION = timedelta(minutes=5)
 #: serves. Everything else is behind the password.
 EXEMPT_PREFIXES = ("/healthz", "/static/")
 
+#: The MCP authorization server's machine endpoints (docs/adr/0185 §4): its
+#: RFC 8414 metadata, the token endpoint and the revocation endpoint. The
+#: client's backend calls them, never a browser session, and they authenticate
+#: the *client* themselves — a gate password or a persona would mean nothing to
+#: them. Exempt by exact path, never by prefix, and only while MCP access is
+#: switched on; the browser half (`/oauth/authorize`, the enrolment page) stays
+#: behind the gate and a persona like every other page.
+_MACHINE_ROUTES = (
+    "mcp_access:authorization_server_metadata",
+    "mcp_access:token",
+    "mcp_access:revoke",
+)
+#: The MCP browser pages a client or an operator sends somebody to from
+#: outside. A visitor stopped at the gate on the way comes back to them, query
+#: string and all; every other page keeps landing where it always has.
+_GATE_RETURN_ROUTES = ("mcp_access:authorize", "mcp_access:enrol")
+
 
 @dataclass(frozen=True)
 class AttemptOutcome:
@@ -84,6 +101,34 @@ class AttemptOutcome:
     passed: bool
     reason: str = ""
     wait: int = 0
+
+
+# -- the MCP authorization server's exact-path exemptions --------------------
+
+
+@functools.cache
+def _route_paths(routes: tuple[str, ...]) -> frozenset[str]:
+    from django.urls import reverse
+
+    return frozenset(reverse(name) for name in routes)
+
+
+def _mcp_enabled() -> bool:
+    return bool(getattr(settings, "MCP_ENABLED", False))
+
+
+def is_machine_endpoint(path: str) -> bool:
+    """Whether ``path`` is exactly one of the MCP machine endpoints, while MCP is on."""
+    return _mcp_enabled() and path in _route_paths(_MACHINE_ROUTES)
+
+
+def gate_return_target(request: HttpRequest) -> str:
+    """Where to come back to after the gate: an MCP browser page's full path, or ""."""
+    if request.method != "GET" or not _mcp_enabled():
+        return ""
+    if request.path not in _route_paths(_GATE_RETURN_ROUTES):
+        return ""
+    return request.get_full_path()
 
 
 # -- the mode --------------------------------------------------------------
