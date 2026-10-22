@@ -31,12 +31,15 @@ import zipfile
 import pytest
 
 from app.documents.extraction import office as office_module
+from app.documents.extraction import parsers as _registered  # noqa: F401
 from app.documents.extraction import text as text_module
 from app.documents.extraction.base import SourceFile, normalise, registry
 from app.documents.extraction.errors import ExtractionFailed
 from app.documents.extraction.limits import current_limits, preflight_zip_directory
 
 DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+PPTX = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+EML = "message/rfc822"
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 TEXT = "text/plain"
 PNG = "image/png"
@@ -112,7 +115,10 @@ def test_an_image_in_pillows_warning_band_is_refused_before_it_is_decoded(
 ):
     """1.5 × the ceiling: Pillow only warned here and then decoded it."""
     settings.EXTRACTION_MAX_IMAGE_PIXELS = 10_000
-    refused_with("image_too_large", parse, PNG, _png(150, 100))
+    error = refused_with("image_too_large", parse, PNG, _png(150, 100))
+    # Said so a person can act on it: the size, the limit, and what was not made.
+    assert "15000 pikslit, lubatud kuni 0.01 megapikslit" in error.detail
+    assert "originaal on salvestatud" in error.detail
 
 
 def test_the_thumbnail_and_ocr_paths_each_refuse_from_the_header(settings, no_decode, ocr_engine):
@@ -578,17 +584,17 @@ def test_a_docx_part_over_its_budget_is_refused_before_python_docx_parses_it(
     settings, no_docx_open
 ):
     content = _docx(_big_body)
-    settings.EXTRACTION_MAX_DOCX_PART_BYTES = BIG_BODY_PART_LIMIT
+    settings.EXTRACTION_MAX_OFFICE_XML_PART_BYTES = BIG_BODY_PART_LIMIT
     no_docx_open()
-    error = refused_with("docx_part_limit", parse, DOCX, content)
+    error = refused_with("xml_part_limit", parse, DOCX, content)
     assert "lubatud on 500000" in error.detail
 
 
 def test_the_docx_xml_total_is_budgeted_across_parts(settings, no_docx_open):
     content = _docx(_rich)
-    settings.EXTRACTION_MAX_DOCX_XML_BYTES = BIG_BODY_PART_LIMIT
+    settings.EXTRACTION_MAX_OFFICE_XML_BYTES = BIG_BODY_PART_LIMIT
     no_docx_open()
-    refused_with("docx_xml_limit", parse, DOCX, content)
+    refused_with("xml_total_limit", parse, DOCX, content)
 
 
 def _rewritten(content: bytes, rewrite) -> bytes:
@@ -616,9 +622,9 @@ def test_a_part_renamed_to_look_binary_is_still_charged_as_xml(settings, no_docx
         return name, data
 
     content = _rewritten(_docx(_big_body), rename)
-    settings.EXTRACTION_MAX_DOCX_PART_BYTES = BIG_BODY_PART_LIMIT
+    settings.EXTRACTION_MAX_OFFICE_XML_PART_BYTES = BIG_BODY_PART_LIMIT
     no_docx_open()
-    refused_with("docx_part_limit", parse, DOCX, content)
+    refused_with("xml_part_limit", parse, DOCX, content)
 
 
 def test_paragraphs_past_the_budget_are_refused_before_one_is_built(settings, monkeypatch):
@@ -643,6 +649,28 @@ def _with_document_xml(content: bytes, edit) -> bytes:
         content,
         lambda name, data: (name, edit(data)) if name == "word/document.xml" else (name, data),
     )
+
+
+def test_a_cell_declaring_a_span_below_one_is_read_one_column_wide():
+    """Word draws gridSpan="0" one column wide; one bad attribute fails nothing."""
+
+    def build(document):
+        table = document.add_table(rows=1, cols=2)
+        table.cell(0, 0).text = "Vasak"
+        table.cell(0, 1).text = "Parem"
+
+    content = _with_document_xml(
+        _docx(build),
+        lambda data: data.replace(b"<w:tcPr>", b'<w:tcPr><w:gridSpan w:val="0"/>', 1),
+    )
+    result = parse(DOCX, content)
+    [table] = [
+        fragment
+        for payload in result.derivatives
+        for fragment in payload.fragments
+        if fragment.locator.get("table") == 1
+    ]
+    assert table.text == "Vasak | Parem"
 
 
 def test_a_cell_declaring_an_enormous_span_is_refused_before_the_row_is_expanded(monkeypatch):
@@ -725,3 +753,174 @@ def test_the_docx_walk_is_charged_to_the_table_budget(settings):
 def test_the_office_module_keeps_one_parser_per_format():
     assert registry.for_mime_type(DOCX) is not None
     assert isinstance(registry.for_mime_type(DOCX), office_module.DocxParser)
+
+
+# ---------------------------------------------------------------------------
+# Every XML-bearing member of every Office format is budgeted (review B1, B2)
+# ---------------------------------------------------------------------------
+
+#: Padding that inflates a member's XML without changing what it means.
+#: Incompressible, so the round-1 compression-ratio guard does not answer first.
+PADDING = b"<!--" + random.Random(5).randbytes(300_000).hex().encode() + b"-->"  # noqa: S311
+
+
+def _pad_member(content: bytes, member: str) -> bytes:
+    """``member`` padded with an XML comment; added, padded, if the file has none."""
+
+    def pad(name: str, data: bytes):
+        if name != member:
+            return name, data
+        head, _, rest = data.partition(b"?>")
+        return name, (head + b"?>" + PADDING + rest) if rest else PADDING + data
+
+    padded = _rewritten(content, pad)
+    if member in zipfile.ZipFile(io.BytesIO(padded)).namelist():
+        return padded
+    out = io.BytesIO(padded)
+    with zipfile.ZipFile(out, "a", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(member, PADDING)
+    return out.getvalue()
+
+
+def _forbid(monkeypatch, module, attribute: str) -> None:
+    def opened(*args, **kwargs):
+        raise AssertionError(f"{module.__name__}.{attribute} was called")
+
+    monkeypatch.setattr(module, attribute, opened)
+
+
+def test_a_docx_package_relationship_part_is_charged(settings, monkeypatch):
+    """`/_rels/.rels` has no extension for a content-type lookup; it is still XML."""
+    import docx
+
+    content = _pad_member(_docx(lambda document: document.add_paragraph("x")), "_rels/.rels")
+    settings.EXTRACTION_MAX_OFFICE_XML_PART_BYTES = BIG_BODY_PART_LIMIT
+    _forbid(monkeypatch, docx, "Document")
+    refused_with("xml_part_limit", parse, DOCX, content)
+
+
+def test_a_member_nobody_declared_is_charged(settings, monkeypatch):
+    import docx
+
+    def add_undeclared(name: str, data: bytes):
+        if name == "word/settings.xml":
+            return "word/settings.dat", PADDING
+        return name, data
+
+    content = _rewritten(_docx(lambda document: document.add_paragraph("x")), add_undeclared)
+    settings.EXTRACTION_MAX_OFFICE_XML_PART_BYTES = BIG_BODY_PART_LIMIT
+    _forbid(monkeypatch, docx, "Document")
+    refused_with("xml_part_limit", parse, DOCX, content)
+
+
+def test_a_member_declared_as_an_image_is_not_charged_as_xml(settings):
+    def big_thumbnail(name: str, data: bytes):
+        if name == "docProps/thumbnail.jpeg":
+            return name, data + random.Random(6).randbytes(600_000)  # noqa: S311
+        return name, data
+
+    content = _rewritten(_docx(lambda document: document.add_paragraph("Sisu")), big_thumbnail)
+    settings.EXTRACTION_MAX_OFFICE_XML_PART_BYTES = BIG_BODY_PART_LIMIT
+    assert outcome(parse, DOCX, content)[0] == "read"
+
+
+def _xlsx(build) -> bytes:
+    import openpyxl
+
+    workbook = openpyxl.Workbook()
+    build(workbook)
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
+@pytest.mark.parametrize(
+    "member", ["xl/worksheets/sheet1.xml", "xl/sharedStrings.xml", "xl/styles.xml", "_rels/.rels"]
+)
+def test_every_xlsx_xml_part_is_budgeted_before_openpyxl_loads_it(settings, monkeypatch, member):
+    import openpyxl
+
+    def build(workbook):
+        workbook.active["A1"] = "Tere"
+
+    content = _pad_member(_xlsx(build), member)
+    settings.EXTRACTION_MAX_OFFICE_XML_PART_BYTES = BIG_BODY_PART_LIMIT
+    _forbid(monkeypatch, openpyxl, "load_workbook")
+    refused_with("xml_part_limit", parse, XLSX, content)
+
+
+def test_xlsx_xml_parts_are_budgeted_together(settings, monkeypatch):
+    import openpyxl
+
+    def build(workbook):
+        for index in range(3):
+            sheet = workbook.create_sheet(f"Leht {index}")
+            for row in range(1, 2_000):
+                sheet.cell(row=row, column=1, value=f"rida {row}")
+
+    content = _xlsx(build)
+    settings.EXTRACTION_MAX_OFFICE_XML_BYTES = 100_000
+    _forbid(monkeypatch, openpyxl, "load_workbook")
+    refused_with("xml_total_limit", parse, XLSX, content)
+
+
+def test_an_ordinary_workbook_and_presentation_still_read():
+    from tests import synthetic_corpus as corpus
+
+    assert outcome(parse, XLSX, corpus.annex_xlsx())[0] == "read"
+    assert outcome(parse, PPTX, corpus.briefing_pptx())[0] == "read"
+
+
+@pytest.mark.parametrize("member", ["ppt/slides/slide1.xml", "ppt/_rels/presentation.xml.rels"])
+def test_every_pptx_xml_part_is_budgeted_before_python_pptx_parses_it(
+    settings, monkeypatch, member
+):
+    import pptx
+
+    from tests import synthetic_corpus as corpus
+
+    content = _pad_member(corpus.briefing_pptx(), member)
+    settings.EXTRACTION_MAX_OFFICE_XML_PART_BYTES = BIG_BODY_PART_LIMIT
+    _forbid(monkeypatch, pptx, "Presentation")
+    refused_with("xml_part_limit", parse, PPTX, content)
+
+
+# ---------------------------------------------------------------------------
+# EML MIME parts are counted while the parser builds them (review B3)
+# ---------------------------------------------------------------------------
+
+
+def _multipart_eml(parts: int) -> bytes:
+    lines = [
+        b"From: Saatja <saatja@naidis.invalid>",
+        b"Subject: Palju osi",
+        b"MIME-Version: 1.0",
+        b'Content-Type: multipart/mixed; boundary="PIIR"',
+        b"",
+    ]
+    for index in range(parts):
+        lines += [b"--PIIR", b"Content-Type: text/plain", b"", f"osa {index}".encode()]
+    lines += [b"--PIIR--", b""]
+    return b"\r\n".join(lines)
+
+
+def test_an_eml_of_too_many_mime_parts_is_refused_while_it_is_parsed(settings, monkeypatch):
+    from email.message import EmailMessage
+
+    settings.EXTRACTION_MAX_EMAIL_PARTS = 20
+    built: list[int] = []
+    original = EmailMessage.__init__
+
+    def counting(self, *args, **kwargs):
+        built.append(1)
+        original(self, *args, **kwargs)
+
+    monkeypatch.setattr(EmailMessage, "__init__", counting)
+    refused_with("email_part_limit", parse, EML, _multipart_eml(5_000))
+    # Stopped at the limit, not after building five thousand parts.
+    assert len(built) <= settings.EXTRACTION_MAX_EMAIL_PARTS + 2
+
+
+def test_an_eml_within_the_part_limit_reads(settings):
+    settings.EXTRACTION_MAX_EMAIL_PARTS = 20
+    assert outcome(parse, EML, _multipart_eml(5))[0] == "read"

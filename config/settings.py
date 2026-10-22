@@ -670,16 +670,24 @@ EXTRACTION_MAX_TEXT_LINES = env_int("EXTRACTION_MAX_TEXT_LINES", 10_000_000)
 # entry is about a hundred bytes; 16 MiB is eight kilobytes for each of the
 # EXTRACTION_MAX_ARCHIVE_MEMBERS entries allowed.
 EXTRACTION_MAX_ZIP_DIRECTORY_BYTES = env_int("EXTRACTION_MAX_ZIP_DIRECTORY_BYTES", 16 * 1024 * 1024)
-# What python-docx may parse into an XML tree: one part (word/document.xml, a
-# header, styles) and all XML parts of the package together, uncompressed, as
-# the bounded central directory declares them. The tree is several times the
-# XML in memory, so this is the knob that bounds the parser's memory. A
-# thousand-page draft's document.xml is a few tens of megabytes.
-EXTRACTION_MAX_DOCX_PART_BYTES = env_int("EXTRACTION_MAX_DOCX_PART_BYTES", 64 * 1024 * 1024)
-EXTRACTION_MAX_DOCX_XML_BYTES = env_int("EXTRACTION_MAX_DOCX_XML_BYTES", 128 * 1024 * 1024)
+# What an Office library (python-docx, python-pptx, openpyxl) may parse as XML:
+# one part (a document body, a worksheet, shared strings, a slide, a `.rels`)
+# and all XML parts of the package together, uncompressed, as the bounded
+# central directory declares them. A tree is several times its XML in memory,
+# so this is the knob that bounds the parsers' memory. A thousand-page draft's
+# document.xml is a few tens of megabytes; a 64 MiB worksheet is about two
+# million cells, twenty times the largest historical register.
+EXTRACTION_MAX_OFFICE_XML_PART_BYTES = env_int(
+    "EXTRACTION_MAX_OFFICE_XML_PART_BYTES", 64 * 1024 * 1024
+)
+EXTRACTION_MAX_OFFICE_XML_BYTES = env_int("EXTRACTION_MAX_OFFICE_XML_BYTES", 128 * 1024 * 1024)
 # Body paragraphs one DOCX may have, counted before python-docx builds one
 # object for each: a thousand-page draft has a few tens of thousands.
 EXTRACTION_MAX_DOCX_PARAGRAPHS = env_int("EXTRACTION_MAX_DOCX_PARAGRAPHS", 1_000_000)
+# MIME parts one `.eml` may have, nested messages included, counted while the
+# standard parser builds them. A real message is a few dozen parts at most, and
+# only fifty attachments are kept from it anyway (EXTRACTION_MAX_EMAIL_ATTACHMENTS).
+EXTRACTION_MAX_EMAIL_PARTS = env_int("EXTRACTION_MAX_EMAIL_PARTS", 1_000)
 
 # A page whose native text layer is thinner than this is treated as scanned.
 # Not zero: real government PDFs carry a header, a page number and a stamp on an

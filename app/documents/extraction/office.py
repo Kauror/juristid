@@ -69,7 +69,7 @@ class DocxParser:
            (`guard_office_container`, as before);
         2. every part python-docx would parse as XML is charged, by its
            uncompressed size, against a per-part and a whole-package budget
-           *before* python-docx opens the package (:func:`_guard_docx_parts`);
+           *before* python-docx opens the package (:func:`guard_office_xml_parts`);
         3. body paragraphs are counted on the parsed tree before one paragraph
            object exists, and read in a stream;
         4. table rows and the grid cells each row expands to (spans and
@@ -87,8 +87,7 @@ class DocxParser:
 
         limits = current_limits()
         handle = io.BytesIO(source.content)
-        members = guard_office_container(handle, limits)
-        _guard_docx_parts(handle, members, limits)
+        guard_office_xml_parts(handle, guard_office_container(handle, limits), limits)
 
         try:
             document = docx.Document(handle)
@@ -203,20 +202,42 @@ class DocxParser:
         )
 
 
-#: Content types python-docx parses into an XML tree end in "xml"
-#: (``…+xml``, ``application/xml``); relationship parts are among them.
-_XML_CONTENT_TYPE_SUFFIX = "xml"
+#: Members every Office library parses as XML by their name alone: the package
+#: index and every relationship part (python-docx, python-pptx and openpyxl all
+#: read ``*.rels`` without consulting a content type), plus anything named XML.
+_XML_NAME_SUFFIXES = (".xml", ".rels", ".vml")
 _CONTENT_TYPES_MEMBER = "[Content_Types].xml"
 
 
-def _guard_docx_parts(handle: IO[bytes], members: list[Any], limits: Limits) -> None:
-    """Charge every part python-docx would parse as XML, before it parses any.
+def _is_xml_content_type(content_type: str) -> bool:
+    lowered = content_type.lower().split(";")[0].strip()
+    return lowered.endswith("xml")
 
-    By declared content type, not by file name: a part renamed `.png` but
-    declared XML is still parsed as XML. The sizes are the central directory's
-    uncompressed sizes, which `zipfile` enforces as it inflates (a member that
-    inflates past its declared size fails its CRC rather than growing), so the
-    budget is a bound on what the parser can be handed, not a claim.
+
+def guard_office_xml_parts(handle: IO[bytes], members: list[Any], limits: Limits) -> None:
+    """Charge every member an Office library may parse as XML, before any is parsed.
+
+    python-docx, python-pptx and openpyxl build an XML tree (or, for openpyxl's
+    shared strings and styles, a whole in-memory structure) from every such
+    part they load, and a tree is several times its XML in memory
+    (csf_eb1ed7815b093aba8872620b, docs/adr/0182). Each one is charged by its
+    uncompressed size against ``max_office_xml_part_bytes``, and all of them
+    together against ``max_office_xml_bytes``.
+
+    **Which members.** Everything named ``*.xml``, ``*.rels`` or ``*.vml`` —
+    relationship parts are parsed by name, whatever ``[Content_Types].xml``
+    says, and ``/_rels/.rels`` has no extension for a content-type lookup to
+    find. Every other member is charged too unless the package *declares* it a
+    non-XML type (an image, a font, an embedded binary): a part renamed
+    ``.png`` but declared XML is charged, and a member nobody declared is
+    charged rather than guessed at.
+
+    **Which sizes.** The central directory's uncompressed sizes, which the
+    preflight has already bounded and which `zipfile` enforces while inflating
+    (a member that inflates past its declared size fails its CRC rather than
+    growing), so the budget bounds what a parser can be handed rather than
+    trusting a claim. The one member read here, the content-type index, is
+    read through a bounded read as well.
     """
     import zipfile
 
@@ -224,49 +245,49 @@ def _guard_docx_parts(handle: IO[bytes], members: list[Any], limits: Limits) -> 
     from docx.opc.pkgreader import _ContentTypeMap
 
     sizes = {info.filename: info.file_size for info in members if not info.is_dir()}
+    content_types = None
     declared = sizes.get(_CONTENT_TYPES_MEMBER)
-    if declared is None:
-        raise ExtractionFailed(
-            "unreadable_docx", "DOCX-i ei õnnestunud avada; fail võib olla rikutud."
-        )
-    _charge_docx_part(_CONTENT_TYPES_MEMBER, declared, limits)
-    try:
-        with zipfile.ZipFile(handle) as archive:
-            content_types = _ContentTypeMap.from_xml(archive.read(_CONTENT_TYPES_MEMBER))
-    except Exception as error:
-        raise ExtractionFailed(
-            "unreadable_docx", "DOCX-i ei õnnestunud avada; fail võib olla rikutud."
-        ) from error
-    finally:
-        handle.seek(0)
-
-    xml_total = declared
-    for name, size in sizes.items():
-        if name == _CONTENT_TYPES_MEMBER:
-            continue
+    if declared is not None:
+        _charge_xml_part(declared, limits)
         try:
-            content_type = content_types[PackURI(f"/{name}")]
-        except (KeyError, ValueError):
-            # No declared type: python-docx cannot load it as a part at all.
-            continue
-        if not str(content_type).lower().endswith(_XML_CONTENT_TYPE_SUFFIX):
-            continue
-        _charge_docx_part(name, size, limits)
-        xml_total += size
-        if xml_total > limits.max_docx_xml_bytes:
+            with zipfile.ZipFile(handle) as archive, archive.open(_CONTENT_TYPES_MEMBER) as part:
+                index = part.read(limits.max_office_xml_part_bytes + 1)
+            _charge_xml_part(len(index), limits)
+            content_types = _ContentTypeMap.from_xml(index)
+        except ExtractionFailed:
+            raise
+        except Exception:
+            # An index the libraries cannot read either: every member is
+            # charged, and the library reports the broken package itself.
+            content_types = None
+        finally:
+            handle.seek(0)
+
+    total = 0
+    for name, size in sizes.items():
+        if not name.lower().endswith(_XML_NAME_SUFFIXES) and content_types is not None:
+            try:
+                content_type = str(content_types[PackURI(f"/{name}")])
+            except (KeyError, ValueError):
+                content_type = ""
+            if content_type and not _is_xml_content_type(content_type):
+                continue
+        _charge_xml_part(size, limits)
+        total += size
+        if total > limits.max_office_xml_bytes:
             raise ExtractionFailed(
-                "docx_xml_limit",
-                f"DOCX-i XML-osad on kokku üle {limits.max_docx_xml_bytes} baiti. "
+                "xml_total_limit",
+                f"Office-paketi XML-osad on kokku üle {limits.max_office_xml_bytes} baiti. "
                 "Originaal on alles.",
             )
 
 
-def _charge_docx_part(name: str, size: int, limits: Limits) -> None:
-    if size > limits.max_docx_part_bytes:
+def _charge_xml_part(size: int, limits: Limits) -> None:
+    if size > limits.max_office_xml_part_bytes:
         raise ExtractionFailed(
-            "docx_part_limit",
-            f"DOCX-i osa on {size} baiti, lubatud on {limits.max_docx_part_bytes}. "
-            "Originaal on alles.",
+            "xml_part_limit",
+            f"Office-paketi XML-osa on {size} baiti, lubatud on "
+            f"{limits.max_office_xml_part_bytes}. Originaal on alles.",
         )
 
 
@@ -293,16 +314,12 @@ def _table_text(table: Any, budget: TableBudget, total: int, limits: Limits, num
     characters = 0
     above: dict[int, Any] | None = None
     for row_number, tr in enumerate(table._tbl.tr_lst, start=1):
-        offset = tr.grid_before
-        if offset < 0:
-            raise _malformed_table()
+        offset = max(0, tr.grid_before)
         roots: dict[int, Any] = {}
         expanded: list[Any] = []
         width = 0
         for tc in tr.tc_lst:
-            span = tc.grid_span
-            if span < 1:
-                raise _malformed_table()
+            span = _span(tc)
             if tc.vMerge == "continue":
                 # python-docx raises ValueError here (no row above, or no cell
                 # starting at this column in it); so does this.
@@ -312,7 +329,7 @@ def _table_text(table: Any, budget: TableBudget, total: int, limits: Limits, num
             else:
                 root = tc
             roots.setdefault(offset, root)
-            root_span = root.grid_span
+            root_span = _span(root)
             width += root_span
             expanded.append((root, root_span))
             offset += span
@@ -340,10 +357,14 @@ def _table_text(table: Any, budget: TableBudget, total: int, limits: Limits, num
     return "\n".join(rows)
 
 
-def _malformed_table() -> ExtractionFailed:
-    return ExtractionFailed(
-        "unreadable_docx", "DOCX-i tabel on vigane (lahtri ulatus on negatiivne või null)."
-    )
+def _span(tc: Any) -> int:
+    """A cell's width in grid columns; a declared span below one is one, as Word reads it.
+
+    python-docx would list such a cell zero times and leave the next cell at
+    the same column; Word draws it one column wide, and so does this, rather
+    than failing the whole document over one malformed attribute.
+    """
+    return max(1, int(tc.grid_span))
 
 
 class _HeaderFooterResolver:
@@ -429,7 +450,9 @@ class XlsxParser:
 
         limits = current_limits()
         handle = io.BytesIO(source.content)
-        guard_office_container(handle, limits)
+        # Worksheets, shared strings, styles and relationships: every XML part
+        # is budgeted before openpyxl loads any (docs/adr/0182).
+        guard_office_xml_parts(handle, guard_office_container(handle, limits), limits)
 
         try:
             # data_only=True asks for the values Excel last cached, which is a
@@ -577,7 +600,9 @@ class PptxParser:
 
         limits = current_limits()
         handle = io.BytesIO(source.content)
-        guard_office_container(handle, limits)
+        # Slides, layouts, masters, notes and relationships: every XML part is
+        # budgeted before python-pptx parses any (docs/adr/0182).
+        guard_office_xml_parts(handle, guard_office_container(handle, limits), limits)
 
         try:
             presentation = pptx.Presentation(handle)
