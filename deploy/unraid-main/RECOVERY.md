@@ -764,6 +764,69 @@ Once this change is deployed, **take a new backup and run level 2 on it**: that
 set will be the first one whose clean state is provable. Nothing needs to be
 deleted for that to happen.
 
+#### What a restore refuses to copy
+
+*Security finding #14 (`csf_39e48feffb03b493cbb024ca`), October 2026 — partial
+mitigation only; read the last paragraph.*
+
+A backup writes regular files in directories and nothing else, and the evidence
+tree is the immutable store the application serves bytes from. So a symbolic
+link, a FIFO, a socket or a device anywhere in a backup is something the backup
+did not put there, and a restore must not carry it into the store: a link there
+is a pointer the application would follow to whatever file on the host it
+names. Before this, verification tested members with `[ -f ]`, which follows a
+link, and the copy was `rsync -a`, which preserves one.
+
+Now, none of that crosses:
+
+* **verification** (level 1) refuses a set whose own files include a link or a
+  special file, and a `SHA256SUMS` that names anything but plain file names
+  inside the set or leaves out `database.dump` or `manifest.json`. Level 2
+  walks both byte pools without following links and refuses a pool that is a
+  link, any link (to a file or to a directory), FIFO, socket or device in it,
+  a member that is a link, and a membership inventory `SHA256SUMS` does not
+  cover. Inventory paths that are absolute or contain `..` were already
+  refused;
+* **the restore** asks the same of both pools, and refuses an `evidence/` or
+  `legacy-source/` under the data root that already holds a link or a special
+  file, **before it copies anything or starts any container**. It walks the
+  pools again immediately before the copy, and copies with `--no-links
+  --no-specials --no-devices`;
+* **after the copy and before `pg_restore`**, it proves the written trees hold
+  regular files only and, for a version 3 set, exactly the members the set
+  names at the byte total it was sealed against. If that proof fails the
+  database has not been touched; move `evidence/` and `legacy-source/` under
+  the data root aside — do not delete them, they show what happened — and do
+  not restore from that backup root until it has been investigated.
+
+A refusal here is not a fault to work around. Do not delete the offending
+object to make the restore pass: find out how it got into a directory only the
+backup writes. To see what a pool holds, read-only:
+
+```bash
+find -P /mnt/user/backups/juristid-main/evidence /mnt/user/backups/juristid-main/legacy-source ! -type f ! -type d
+```
+
+It should print nothing. Run it once after deploying this change: one hit in a
+shared pool makes **every** set beside it unverifiable until it is explained.
+Hard links are not refused and need not be — a hard link is a regular file, and
+what is copied is its bytes, which is the case below.
+
+**What this does not fix.** All of the above is about the *kind* of object, not
+its bytes. `SHA256SUMS` sits inside the set it describes and the pools carry no
+digests at all, so somebody able to rewrite **both** a backup set (or its pool)
+**and** its `SHA256SUMS` can still forge content that verifies at every level
+and restores. Closing that needs a manifest signed with a key kept somewhere
+the backup host cannot write — a future infrastructure decision that the owner
+has explicitly deferred, together with off-host backup and key management.
+Finding #14 is therefore **only partially mitigated**: links and special files
+can no longer be restored, forged regular files still can. Until a trust anchor
+outside the host exists, the only checks that can notice forged evidence bytes
+are `check_evidence_integrity --verify-sha` (each object against the digest the
+restored database records for it) and `recovery_fingerprint --compare` against
+a fingerprint kept somewhere the attacker could not also rewrite — and neither
+helps against a database dump forged to match.
+
 ### Then verify, before anything is published
 
 ```bash

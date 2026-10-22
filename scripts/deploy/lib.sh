@@ -311,12 +311,48 @@ inventory_first_unsafe() {
 # The first member that is not a regular file in the tree, printed, with status
 # 0 when there was one. `[ -f ]` is a builtin, so this walks tens of thousands
 # of entries without forking once.
+#
+# `[ -L ]` first, because `[ -f ]` follows a symbolic link: a member that is a
+# link to a regular file anywhere on the host passes `-f`, and a restore that
+# copied it would put a link — or the bytes behind it — into the immutable
+# evidence tree as if the backup had held them (#14). A link is never a member.
 inventory_first_missing() {
   local tree="$1" inventory="$2" entry
   while IFS= read -r -d '' entry; do
-    [ -f "$tree/$entry" ] || { printf '%s' "$entry"; return 0; }
+    { [ ! -L "$tree/$entry" ] && [ -f "$tree/$entry" ]; } || { printf '%s' "$entry"; return 0; }
   done <"$inventory"
   return 1
+}
+
+# The first object under a tree that is neither a regular file nor a directory,
+# printed, with status 0 when there was one.
+#
+# A backup pool, a backup set and a restored evidence tree hold regular files in
+# directories and nothing else. The backup copies regular files; nothing in the
+# application writes a link, a FIFO, a socket or a device into evidence. So any
+# of them here was put there by something other than the backup, and a restore
+# must not carry it into the immutable store: a symbolic link there is a pointer
+# the application would follow to whatever file it names (#14).
+#
+# `find -H`: the tree argument itself may be reached through a link (the operator
+# names it), and nothing beneath it is ever followed. `! -type f ! -type d` is
+# evaluated on the object itself, so a link is reported as a link whatever it
+# points at, and so is a link to a directory, which `-type d` would otherwise
+# walk into under `-L`.
+#
+# A tree that could not be walked to the end is reported as an offender rather
+# than as clean. Callers read this through a command substitution, where a `die`
+# would only end the subshell and read as "nothing found" — so the failure is
+# printed as the answer instead, and the caller refuses on it.
+tree_first_unsafe_object() {
+  local tree="$1" found
+  [ -d "$tree" ] || return 1
+  if ! found="$(find -H "$tree" ! -type f ! -type d -print -quit 2>/dev/null)"; then
+    printf '%s (the tree could not be read to the end, so it cannot be shown to hold only regular files)' "$tree"
+    return 0
+  fi
+  [ -n "$found" ] || return 1
+  printf '%s' "$found"
 }
 
 # The entries of an inventory that are regular files in a tree, written to a new

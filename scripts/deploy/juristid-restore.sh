@@ -13,11 +13,13 @@
 # ORDER
 #
 #   1. read what the set says it contains, and take the refusals that need no
-#      tool at all — a corrupt membership list, storage that is not empty
+#      tool at all — a corrupt membership list, storage that is not empty, a
+#      link or special file in a pool or in the target
 #   2. verify the set (levels 1 and 2) — a restore from a corrupt archive
 #      leaves a half-populated database that looks like a working one
 #   3. refuse a database that still holds a register
-#   4. evidence and page XML into the data root, never overwriting
+#   4. evidence and page XML into the data root, never overwriting, regular
+#      files only — and proved to be exactly that before step 5 (#14)
 #   5. the database, in one transaction
 #   6. hand back to the operator, who verifies before anything is published
 #
@@ -162,6 +164,12 @@ manifest_string_in() {
     sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" | head -n 1
 }
 
+# A number inside one named object, scoped the same way.
+manifest_number_in() {
+  sed -n "/\"$1\"/,/}/p" "$SET_DIR/manifest.json" |
+    sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p" | head -n 1
+}
+
 MANIFEST_VERSION="$(manifest_field manifest_version)"
 MANIFEST_VERSION="${MANIFEST_VERSION:-1}"
 
@@ -239,6 +247,32 @@ if [ "$DATABASE_ONLY" -eq 0 ]; then
   elif [ -n "$RELAXED_TREES" ] && [ "$ACCEPT_LEGACY_POOL" -eq 0 ]; then
     die "this set is manifest version $MANIFEST_VERSION and its manifest records that the empty-tree guard was relaxed for $RELAXED_TREES. A set at that version carries no membership, so the only filesystem restore available copies the whole shared pool — and for a tree the operator called empty that is known to produce objects the set never described. Restore the database alone with --database-only, or pass --accept-legacy-pool-restore if you have read deploy/unraid-main/RECOVERY.md and want the pool-wide copy anyway."
   fi
+
+  # Regular files in directories, and nothing else, on both sides of the copy
+  # (#14). Every manifest version: a pre-membership restore copies the whole
+  # pool, so for it every object in the pool is one it would write.
+  #
+  # The pools: a symbolic link, FIFO, socket or device was not written by the
+  # backup, and a link carried into the immutable evidence tree is a pointer the
+  # application follows to whatever file it names. The verifier refuses the same
+  # objects at level 2; asked here as well so the refusal needs no container and
+  # comes before anything is started.
+  #
+  # The targets: `count_files` counts regular files only, so a link already in
+  # an otherwise empty evidence tree passes as empty, and a link to a directory
+  # there is a place rsync could be made to write through.
+  for tree in evidence legacy-source; do
+    if [ -L "$BACKUP_ROOT/$tree" ]; then
+      die "the $tree byte pool at $BACKUP_ROOT/$tree is a symbolic link. The backup creates it as a directory. Nothing has been written. Do not restore from this backup root until it has been investigated."
+    fi
+    if offender="$(tree_first_unsafe_object "$BACKUP_ROOT/$tree")"; then
+      die "the $tree byte pool holds '$offender', which is not a regular file or a directory — a symbolic link, FIFO, socket or device. The backup writes none of these, and a restore must not carry one into the evidence store. Nothing has been written. Do not restore from this backup root until it has been investigated (deploy/unraid-main/RECOVERY.md, \"What a restore refuses to copy\")."
+    fi
+    if offender="$(tree_first_unsafe_object "$DATA_ROOT/$tree")"; then
+      die "$DATA_ROOT/$tree already holds '$offender', which is not a regular file or a directory. A restore writes regular files into storage that holds nothing of the kind, so this was not made by one. Nothing has been changed. Move it aside deliberately, with deploy/unraid-main/RECOVERY.md open, and run this again."
+    fi
+  done
+  unset tree offender
 fi
 
 require_command docker "the database is restored inside the deployment's own container"
@@ -301,25 +335,90 @@ note "  the target database is empty"
 # --ignore-existing, never --delete. Evidence is immutable, so an object that is
 # already there is the same object; and a restore that deletes is a restore that
 # can destroy data newer than the backup it came from.
+#
+# --no-links --no-specials --no-devices take back the three things `-a` would
+# otherwise copy as themselves (#14). They are the last line, not the first:
+# rsync *skips* such an object with a warning and exits 0, which would turn a
+# tampered pool into a quietly incomplete restore. The refusal is the walk
+# before the copy and the proof after it; these flags are what holds if
+# something appears between the two.
 restore_tree() {
   local label="$1" inventory="$2" pool="$3" target="$4"
 
   if [ -n "$inventory" ]; then
-    rsync -a --numeric-ids --ignore-existing --from0 --files-from="$inventory" \
+    rsync -a --no-links --no-specials --no-devices --numeric-ids --ignore-existing --from0 --files-from="$inventory" \
       "$pool/" "$target/"
     note "  $label: $(inventory_count "$inventory") object(s), exactly the membership this set recorded"
   else
-    rsync -a --numeric-ids --ignore-existing "$pool/" "$target/"
+    rsync -a --no-links --no-specials --no-devices --numeric-ids --ignore-existing "$pool/" "$target/"
     note "  $label: the whole shared pool — manifest version $MANIFEST_VERSION records no membership, so this is every object the pool holds and not necessarily this set's"
   fi
 }
 
+# Immediately before the copy, again. Verification ran a container in between,
+# and the pool is a directory other things can write to; the walk is cheap next
+# to a copy and it closes most of that window. Both pools before either copy, so
+# a refusal here still means nothing has been written.
+refuse_unsafe_pool_before_copy() {
+  local label="$1" pool="$2" offender
+  [ ! -L "$pool" ] ||
+    die "the $label byte pool at $pool became a symbolic link after it was verified. Nothing has been copied. Do not restore from this backup root until it has been investigated."
+  if offender="$(tree_first_unsafe_object "$pool")"; then
+    die "the $label byte pool now holds '$offender', which is not a regular file or a directory, and it did not when the set was verified. Nothing has been copied. Do not restore from this backup root until it has been investigated."
+  fi
+}
+
+# What was written, proved before the database is touched (#14). Regular files
+# in directories and nothing else; for a set that names its members, exactly
+# those members — the target was empty, so the count says nothing else arrived —
+# each a regular file and not a link, adding up to the byte total the set was
+# sealed against and the verifier proved the pool still holds.
+#
+# Bytes, not digests: an inventory names paths and the manifest records their
+# total, so this is the same arithmetic level 2 uses. Proving each object's
+# content against the database is `recovery_fingerprint` after the restore, and
+# it stays the operator's step.
+restored_tree_failed() {
+  local message="$1"
+  die "$message The database has not been touched. Move $DATA_ROOT/evidence and $DATA_ROOT/legacy-source aside (do not delete them; they are evidence of what happened) and do not restore from this backup root until it has been investigated."
+}
+
+prove_restored_tree() {
+  local label="$1" inventory="$2" target="$3" snapshot="$4"
+  local offender restored members recorded_bytes actual_bytes
+
+  if offender="$(tree_first_unsafe_object "$target")"; then
+    restored_tree_failed "the restored $label tree holds '$offender', which is not a regular file or a directory."
+  fi
+  [ -n "$inventory" ] || return 0
+
+  restored="$(count_files "$target")"
+  members="$(inventory_count "$inventory")"
+  [ "$restored" -eq "$members" ] ||
+    restored_tree_failed "the restored $label tree holds $restored regular file(s); this set names $members."
+  if offender="$(inventory_first_missing "$target" "$inventory")"; then
+    restored_tree_failed "$label member '$offender' is not a regular file in the restored tree."
+  fi
+  recorded_bytes="$(manifest_number_in "$snapshot" total_bytes)"
+  actual_bytes="$(inventory_selected_bytes "$target" "$inventory")"
+  if [ -n "$recorded_bytes" ] && [ "$actual_bytes" -ne "$recorded_bytes" ]; then
+    restored_tree_failed "the restored $label members come to $actual_bytes byte(s); this set was sealed against $recorded_bytes."
+  fi
+  note "  $label: $restored regular file(s), $actual_bytes byte(s), no links or special files"
+}
+
 if [ "$DATABASE_ONLY" -eq 0 ]; then
   step "Evidence and page XML"
+  refuse_unsafe_pool_before_copy "evidence" "$BACKUP_ROOT/evidence"
+  refuse_unsafe_pool_before_copy "legacy-source" "$BACKUP_ROOT/legacy-source"
   mkdir -p "$DATA_ROOT/evidence" "$DATA_ROOT/legacy-source" "$DATA_ROOT/derivatives"
 
   restore_tree "evidence" "${EVIDENCE_INVENTORY:-}" "$BACKUP_ROOT/evidence" "$DATA_ROOT/evidence"
   restore_tree "page XML" "${LEGACY_INVENTORY:-}" "$BACKUP_ROOT/legacy-source" "$DATA_ROOT/legacy-source"
+
+  step "Proving what was written, before the database"
+  prove_restored_tree "evidence" "${EVIDENCE_INVENTORY:-}" "$DATA_ROOT/evidence" evidence_snapshot
+  prove_restored_tree "page XML" "${LEGACY_INVENTORY:-}" "$DATA_ROOT/legacy-source" legacy_source_snapshot
 
   evidence_files="$(count_files "$DATA_ROOT/evidence")"
   legacy_files="$(count_files "$DATA_ROOT/legacy-source")"
