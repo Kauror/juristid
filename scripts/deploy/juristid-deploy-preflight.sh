@@ -262,6 +262,20 @@ if [ -n "$ENV_FILE" ]; then
       fail "the MCP tunnel environment file exists without the MCP server's. The tunnel has nothing to carry requests to."
   fi
 
+  # AI access switched on in web's file without the keys web then requires
+  # stops `web` itself on real data (mcp_access.E004, NEW-09) — all of
+  # Juristid, not only AI access. Key names and states only, never a value.
+  if mcp_enabled_in "$ENV_FILE"; then
+    not_ready="$(mcp_web_keys_not_ready "$ENV_FILE")"
+    if [ -n "$not_ready" ]; then
+      while read -r key state; do
+        fail "juristid.env has MCP_ENABLED on and $key is $state: web would refuse to start. Run scripts/deploy/juristid-mcp-web-keys.sh --env-file $ENV_FILE first (docs/mcp/OPERATIONS.md, step 3)."
+      done <<<"$not_ready"
+    else
+      pass "MCP_ENABLED is on and web's AI-access keys are in place (${MCP_WEB_KEYS[*]})"
+    fi
+  fi
+
   # The resolution above left both services out: they are behind the `mcp`
   # profile. Naming them enables it for this one command, so they are resolved
   # — and held to the same no-port rule — only where their files exist.

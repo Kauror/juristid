@@ -181,6 +181,59 @@ mcp_container_state() {
   esac
 }
 
+# The keys `web` must hold in juristid.env before MCP_ENABLED=1 (NEW-09).
+#
+# With AI access on and one of these missing or weak, `web` refuses to start on
+# real data (mcp_access.E004) — fail-closed, but the blast radius is all of
+# Juristid, not just AI access. So `juristid-mcp-web-keys.sh` generates them,
+# verified, before the operator switches anything on, and the preflight refuses
+# a juristid.env that switches AI access on without them. Never a value: only
+# key names and states are printed.
+MCP_WEB_KEYS=(MCP_AUTHENTICATOR_KEY)
+MCP_WEB_KEY_MIN_LENGTH=40
+
+# Whether an environment file switches AI access on, read the way
+# config/env.py reads MCP_ENABLED (1, true, yes, on; the last line wins).
+mcp_enabled_in() {
+  local value
+  value="$(sed -n 's/^[[:space:]]*MCP_ENABLED=//p' "$1" | tail -n 1 | tr -d "\"' \t\r" | tr '[:upper:]' '[:lower:]')"
+  case "$value" in
+    1 | true | yes | on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# One key's state in an environment file: ok, missing, duplicated or weak.
+#
+# ok is exactly one line naming the key, as `KEY=` at the start of the line,
+# with at least MCP_WEB_KEY_MIN_LENGTH characters and no placeholder. A
+# commented template line does not name it. `grep -c` prints 0 and exits 1 on
+# no match, hence `|| true` inside the substitutions.
+mcp_web_key_state() {
+  local file="$1" key="$2" named strong placeholder
+  named="$(grep -cE "^[[:space:]]*${key}=" "$file" || true)"
+  strong="$(grep -cE "^${key}=.{${MCP_WEB_KEY_MIN_LENGTH},}" "$file" || true)"
+  placeholder="$(grep -cE "^${key}=replace-me" "$file" || true)"
+  if [ "$named" = 0 ]; then
+    printf 'missing\n'
+  elif [ "$named" != 1 ]; then
+    printf 'duplicated\n'
+  elif [ "$strong" != 1 ] || [ "$placeholder" != 0 ]; then
+    printf 'weak\n'
+  else
+    printf 'ok\n'
+  fi
+}
+
+# Every web key that is not ok, one `KEY state` per line; nothing when all are.
+mcp_web_keys_not_ready() {
+  local file="$1" key state
+  for key in "${MCP_WEB_KEYS[@]}"; do
+    state="$(mcp_web_key_state "$file" "$key")"
+    [ "$state" = ok ] || printf '%s %s\n' "$key" "$state"
+  done
+}
+
 # How many files a tree holds, and how many bytes they add up to.
 #
 # Shared, because the backup writes these two numbers into the manifest and the

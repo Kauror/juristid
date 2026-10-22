@@ -141,10 +141,40 @@ No `replace-me…` may remain in either file: a placeholder stops the process
 (juristid.E016). The preflight now checks both files' modes and refuses one
 that names a key it must not hold.
 
-### 3. The web environment
+### 3. The web environment — the keys first, then the switch
 
-In `juristid.env`, the three lines the template added (read their comments in
-`deploy/unraid-main/.env.example`):
+**The keys before `MCP_ENABLED=1`, always.** `web` will not start on real data
+with `MCP_ENABLED=1` and a missing or weak key (mcp_access.E004) — and `web` is
+all of Juristid, not only AI access (security review NEW-09). With
+`MCP_ENABLED=0` it needs none of them and starts as before.
+
+The keys live in `juristid.env` only — never in `juristid-mcp.env`, which the
+preflight and juristid.E046 refuse:
+
+- `MCP_AUTHENTICATOR_KEY` — what the personal authenticators are sealed under
+  (MCPSEC-07).
+
+Generate them straight into the file, so no value reaches the terminal or the
+shell history. The helper keeps a key that is already set (it never rotates
+one), replaces the template's commented line, a placeholder or a short value,
+appends the line when the file has none at all, and then proves its own write:
+
+```bash
+scripts/deploy/juristid-mcp-web-keys.sh --env-file /mnt/user/appdata/juristid-main/config/juristid.env
+```
+
+It must end with `Only now set MCP_ENABLED=1.` Check it yourself as well; this
+must print exactly `1`:
+
+```bash
+grep -c '^MCP_AUTHENTICATOR_KEY=.\{40,\}' /mnt/user/appdata/juristid-main/config/juristid.env
+```
+
+Anything other than `1` — or a `FAIL` from the helper — and you stop here,
+with `MCP_ENABLED` still off. Run the helper again; it is idempotent.
+
+**Only then**, in `juristid.env`, in an editor, the three lines the template
+added (read their comments in `deploy/unraid-main/.env.example`):
 
 | Key | Value |
 | --- | --- |
@@ -153,17 +183,9 @@ In `juristid.env`, the three lines the template added (read their comments in
 | `MCP_RESOURCE_URLS` | identical to `juristid-mcp.env` |
 
 The two files must agree on the last two: `web` issues a token for a resource,
-`mcp` accepts it only if the resource is on its own list.
-
-And the key the personal authenticators are sealed under (MCPSEC-07), in
-`juristid.env` only — never in `juristid-mcp.env`, which the preflight and
-juristid.E046 refuse. `web` will not start on real data with `MCP_ENABLED=1`
-and no such key (mcp_access.E004). Uncomment the template's line, then
-generate the value straight into the file:
-
-```bash
-sed -i "s|^# *MCP_AUTHENTICATOR_KEY=.*|MCP_AUTHENTICATOR_KEY=$(openssl rand -base64 48 | tr -d '\n/+=')|" /mnt/user/appdata/juristid-main/config/juristid.env
-```
+`mcp` accepts it only if the resource is on its own list. The preflight in
+step 5 refuses a `juristid.env` that has `MCP_ENABLED` on without the keys, so
+the recreate below is never reached with a `web` that cannot start.
 
 **Rotating it** makes every enrolled authenticator unreadable: the next
 authorization of each colleague is refused with the generic message, the `web`
@@ -205,8 +227,8 @@ runbook knows — stop.
 scripts/deploy/juristid-deploy-preflight.sh --repo /mnt/user/appdata/juristid-main/repo --target $JURISTID_GIT_SHA --compose-file deploy/unraid-main/compose.yml --env-file /mnt/user/appdata/juristid-main/config/juristid.env --data-root /mnt/user/appdata/juristid-main --backup-root /mnt/user/backups/juristid-main
 ```
 
-It must say both MCP files are mode 600 and that the AI-access services
-resolve. Then recreate the application services with the new web environment
+It must say both MCP files are mode 600, that the AI-access services resolve
+and that web's AI-access keys are in place. Then recreate the application services with the new web environment
 — every service named, `--no-deps` so neither `db` nor `tunnel` moves,
 `--no-build` so a missing tag is an error and never a build:
 
