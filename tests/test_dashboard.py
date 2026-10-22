@@ -83,8 +83,9 @@ def test_the_owner_counts_both(world, specialist) -> None:
     assert _active(specialist) == 2
 
 
-def test_an_unrelated_specialist_counts_only_what_they_see(world, reader) -> None:
-    assert _active(reader) == 1
+def test_a_reader_counts_both(world, reader) -> None:
+    """Since docs/adr/0181 a READER reads restricted work as its owner does."""
+    assert _active(reader) == 2
 
 
 def test_a_department_head_counts_both(world, department_head) -> None:
@@ -92,8 +93,13 @@ def test_a_department_head_counts_both(world, department_head) -> None:
 
 
 def test_a_technical_administrator_does_not(world, administrator) -> None:
-    """Administering the system is not permission to read the content."""
-    assert _active(administrator) == 1
+    """Administering the system is not permission to read the content.
+
+    Since docs/adr/0181 not even the NORMAL Matter: an outsider counts nothing.
+    """
+    assert _active(administrator) == 0
+    assert not dashboard.without_next_action(administrator).exists()
+    assert not dashboard.drafting_matters(administrator).exists()
 
 
 def test_an_anonymous_caller_counts_nothing(world) -> None:
@@ -145,13 +151,21 @@ def test_the_page_is_reached_by_its_own_address(world, client, specialist) -> No
     assert response.resolver_match.view_name == "matters:department"
 
 
-def test_the_page_renders_and_hides_what_it_should(world, client, reader) -> None:
+def test_the_page_shows_a_reader_everything_and_an_outsider_nothing(
+    world, client, reader, administrator
+) -> None:
+    """Since docs/adr/0181 the READER sees the restricted Matter; an administrator nothing."""
     client.force_login(reader)
     response = client.get(reverse("matters:department"))
     assert response.status_code == 200
     body = response.content.decode()
     assert "Osakond" in body
+    assert RESTRICTED_TITLE in body
+
+    client.force_login(administrator)
+    body = client.get(reverse("matters:department")).content.decode()
     assert RESTRICTED_TITLE not in body
+    assert "Avalik pakendiseaduse eelnõu" not in body
 
 
 def test_the_page_requires_signing_in(world, client) -> None:

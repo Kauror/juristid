@@ -40,7 +40,9 @@ TABLE_PAGES: list[tuple[str, str, bool]] = [
     ("martin", "/saabunud/", True),
     ("martin", "/statistika/arvamused/", True),
     ("martin", "/statistika/materjalid/", False),
-    ("admin", "/haldus/arvamuste-arhiiv/", True),
+    # A business reader since docs/adr/0181: the administrator reads the
+    # archive only through a break-glass grant.
+    ("martin", "/haldus/arvamuste-arhiiv/", True),
 ]
 
 LINKED_TABLE_PAGES = [(persona, route) for persona, route, linked in TABLE_PAGES if linked]

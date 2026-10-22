@@ -295,14 +295,15 @@ def test_an_ownerless_matter_puts_the_wait_on_nobodys_desk(specialist):
     )
 
 
-def test_a_restricted_round_contributes_nothing_to_a_reader_who_may_not_see_it(specialist, reader):
+def test_a_restricted_round_waits_alike_for_every_reader_and_for_no_outsider(
+    specialist, reader, administrator
+):
     """AUTH-003. Scoped through the engagement's own `visible_to`.
 
-    A `Kaasamine` may carry a stricter override than its Matter, so a
-    consultation restricted below a NORMAL file has to disappear from the work
-    model entirely for somebody outside it — not appear stripped of its title,
-    and not move a band boundary. A reader who may see the *Matter* is the sharp
-    case: the file is open to them and the round is not (docs/adr/0038).
+    A `Kaasamine` may carry a stricter override than its Matter. Since
+    docs/adr/0181 that override is a label: a READER keeps the wait exactly as
+    the participant does, and the somebody outside it — an administrator
+    without a grant — has nothing in the work model, before or after.
 
     The before/after is the assertion. Without it, a source that returned
     nothing to this reader for some unrelated reason would pass in silence.
@@ -313,12 +314,14 @@ def test_a_restricted_round_contributes_nothing_to_a_reader_who_may_not_see_it(s
     engagement = _waiting(matter)
 
     assert len(_waits(reader)) == 1, "the reader could not see the Matter at all"
+    assert _waits(administrator) == []
 
     engagement.visibility_override = Visibility.RESTRICTED
     engagement.save(update_fields=["visibility_override"])
 
-    assert _waits(reader) == []
+    assert len(_waits(reader)) == 1, "the reader lost a wait it may read"
     assert len(_waits(specialist)) == 1, "the participant lost their own wait"
+    assert _waits(administrator) == []
 
 
 # ===========================================================================

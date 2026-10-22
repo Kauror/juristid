@@ -13,7 +13,10 @@ assumption produced the characters they are reading.
 
 from __future__ import annotations
 
+import codecs
 import csv
+import re
+from collections.abc import Callable, Iterator
 
 from app.documents.enums import DerivativeKind, LocatorKind, TextSource
 from app.documents.extraction.base import (
@@ -26,9 +29,11 @@ from app.documents.extraction.base import (
 )
 from app.documents.extraction.errors import ExtractionFailed
 from app.documents.extraction.limits import (
+    Limits,
     TableBudget,
     current_limits,
     guard_character_budget,
+    open_bounded_image,
 )
 from app.documents.extraction.ocr import (
     OcrUnavailable,
@@ -100,34 +105,204 @@ def decode_text(content: bytes) -> tuple[str, str]:
     )
 
 
+#: Raw bytes decoded at a time while a plain-text file streams. The decoded
+#: piece, the pending line and the block being built are all that is ever in
+#: memory besides the bytes themselves (csf_ea514a0f447d737dfb1bdfb9).
+TEXT_CHUNK_BYTES = 1024 * 1024
+
+#: The C0 controls `_control_share` counts: everything below a space except
+#: tab, line feed, form feed and carriage return.
+_CONTROL_CHARACTERS = re.compile(r"[\x00-\x08\x0b\x0e-\x1f]")
+
+#: Every character ``str.splitlines`` ends a line at ("\r\n" is one break).
+_LINE_BREAKS = frozenset("\n\r\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029")
+
+#: How much of one line is kept raw before its finished words are collapsed.
+_LINE_COMPACT_CHARACTERS = 64 * 1024
+
+
+def _decoded_pieces(content: bytes, encoding: str) -> Iterator[str]:
+    """``content.decode(encoding)``, a bounded piece at a time, strictly.
+
+    An incremental decoder fed the whole input gives exactly the text — or the
+    `UnicodeDecodeError` — that one ``bytes.decode`` call gives, the BOM
+    handling of ``utf-8-sig`` included.
+    """
+    decoder = codecs.getincrementaldecoder(encoding)(errors="strict")
+    for start in range(0, len(content), TEXT_CHUNK_BYTES):
+        piece = decoder.decode(content[start : start + TEXT_CHUNK_BYTES], final=False)
+        if piece:
+            yield piece
+    tail = decoder.decode(b"", final=True)
+    if tail:
+        yield tail
+
+
+def detect_text_encoding(content: bytes) -> str:
+    """:func:`decode_text`'s answer, reached without holding the decoded text.
+
+    The same encodings in the same order, the same refusal for undecodable
+    bytes, and the same control-character share over the whole text, counted
+    a piece at a time.
+    """
+    for encoding in TEXT_ENCODINGS:
+        length = 0
+        controls = 0
+        try:
+            for piece in _decoded_pieces(content, encoding):
+                length += len(piece)
+                controls += len(_CONTROL_CHARACTERS.findall(piece))
+        except UnicodeDecodeError:
+            continue
+        if length and controls / length > MAX_CONTROL_CHARACTER_SHARE:
+            raise ExtractionFailed(
+                "not_text",
+                "Fail ei näe välja nagu tekst — sisus on ohtralt juhtmärke. "
+                "Sisu ei eraldata, et vigast teksti mitte otsingusse kirjutada.",
+            )
+        return encoding
+    raise ExtractionFailed(
+        "undecodable_text",
+        "Faili märgistikku ei õnnestunud tuvastada. Sisu ei eraldata, "
+        "et vigast teksti mitte otsingusse kirjutada.",
+    )
+
+
+class _PendingLine:
+    """One line being read, kept as its whitespace-collapsed form.
+
+    ``" ".join(line.split())`` — what `normalise` makes of every line — built
+    incrementally: finished words are joined into ``head`` as they complete,
+    and only the word still being read stays raw. A line of a hundred million
+    spaces is therefore an empty string, as it always normalised to, and never
+    a hundred-megabyte one.
+    """
+
+    def __init__(self) -> None:
+        self.head = ""
+        self.tail = ""
+        self.open = False
+
+    def feed(self, text: str) -> None:
+        self.open = True
+        self.tail += text
+        if len(self.tail) > _LINE_COMPACT_CHARACTERS:
+            self._compact()
+
+    def _compact(self) -> None:
+        words = self.tail.split()
+        if words and not self.tail[-1].isspace():
+            self.tail = words.pop()
+        else:
+            self.tail = ""
+        if words:
+            joined = " ".join(words)
+            self.head = f"{self.head} {joined}" if self.head else joined
+
+    def least_length(self) -> int:
+        """The collapsed length of what has been read of this line so far.
+
+        A lower bound on the finished line: more input can only add to it.
+        """
+        rest = len(" ".join(self.tail.split()))
+        return len(self.head) + (1 if self.head and rest else 0) + rest
+
+    def finish(self) -> str:
+        rest = " ".join(self.tail.split())
+        line = f"{self.head} {rest}" if self.head and rest else self.head or rest
+        self.head, self.tail, self.open = "", "", False
+        return line
+
+
+def normalised_text_lines(
+    pieces: Iterator[str], check: Callable[[_PendingLine], None]
+) -> Iterator[str]:
+    """``[" ".join(line.split()) for line in text.splitlines()]``, streamed.
+
+    Line breaks are exactly ``str.splitlines``' — "\r\n" is one break even when
+    the two characters arrive in different pieces — and so is the line count,
+    a final line without a break included. ``check`` sees the pending line
+    whenever it has grown, so a caller can refuse a line before it is whole.
+    """
+    pending = _PendingLine()
+    held_cr = False
+    for piece in pieces:
+        if held_cr:
+            piece = "\r" + piece
+            held_cr = False
+        if piece.endswith("\r"):
+            # Whether it ends the line alone or with a "\n" is in the next piece.
+            piece = piece[:-1]
+            held_cr = True
+        for part in piece.splitlines(keepends=True):
+            if part[-1] in _LINE_BREAKS:
+                pending.feed(part[:-2] if part.endswith("\r\n") else part[:-1])
+                check(pending)
+                yield pending.finish()
+            else:
+                pending.feed(part)
+                check(pending)
+    if held_cr:
+        pending.feed("")
+        yield pending.finish()
+    elif pending.open:
+        yield pending.finish()
+
+
 class TextParser:
     name = "text"
     version = "1"
     mime_types = frozenset({"text/plain"})
 
     def parse(self, source: SourceFile) -> ParseResult:
+        """Read a plain-text file in bounded pieces; the output is what it always was.
+
+        This used to decode the whole file into one string and split all of it
+        into a list of lines before the character budget saw a single
+        fragment, so a hundred-megabyte file was a few hundred megabytes of
+        text and a list of millions of lines first (csf_ea514a0f447d737dfb1bdfb9,
+        docs/adr/0182). Now the raw size is checked before anything is decoded,
+        the encoding is decided by a streaming pass that keeps no text, and the
+        second pass builds each block of two hundred lines as it arrives —
+        charging lines, characters and fragments as it goes, and refusing a
+        line before it is whole once it could no longer fit. Fragments, line
+        ranges, the encoding and the line count are exactly the old ones; a
+        test keeps the old algorithm as the definition of "exactly".
+        """
         limits = current_limits()
-        text, encoding = decode_text(source.content)
-        lines = text.splitlines()
+        if len(source.content) > limits.max_text_bytes:
+            raise ExtractionFailed(
+                "text_size_limit",
+                f"Tekstifail on suurem kui {limits.max_text_bytes} baiti. Originaal on alles.",
+            )
+        encoding = detect_text_encoding(source.content)
 
         fragments: list[Fragment] = []
         total = 0
-        for start in range(0, len(lines), LINES_PER_FRAGMENT):
-            chunk = lines[start : start + LINES_PER_FRAGMENT]
-            body = normalise("\n".join(chunk))
-            if not body:
-                continue
-            total += len(body)
-            guard_character_budget(total, limits)
-            first, last = start + 1, start + len(chunk)
-            fragments.append(
-                Fragment(
-                    text=body,
-                    locator_kind=LocatorKind.LINE_RANGE,
-                    locator={"line_from": first, "line_to": last},
-                    locator_label=f"read {first}–{last}",
+        block: list[str] = []
+        block_characters = 0
+        line_count = 0
+
+        def check(pending: _PendingLine) -> None:
+            # A lower bound on the block this line will end up in: refused as
+            # soon as even that cannot fit, which is where the old parser would
+            # have refused it once the whole block was built.
+            guard_character_budget(total + block_characters + pending.least_length(), limits)
+
+        for line in normalised_text_lines(_decoded_pieces(source.content, encoding), check):
+            line_count += 1
+            if line_count > limits.max_text_lines:
+                raise ExtractionFailed(
+                    "text_line_limit",
+                    f"Tekstifailis on üle {limits.max_text_lines} rea. Originaal on alles.",
                 )
-            )
+            block.append(line)
+            block_characters += len(line)
+            if len(block) == LINES_PER_FRAGMENT:
+                total = _flush_text_block(block, line_count, fragments, total, limits)
+                block, block_characters = [], 0
+        if block:
+            total = _flush_text_block(block, line_count, fragments, total, limits)
 
         if not fragments:
             raise ExtractionFailed("no_text", "Fail on tühi.")
@@ -136,10 +311,38 @@ class TextParser:
             derivatives=(
                 DerivativePayload(
                     fragments=tuple(fragments),
-                    metadata={"encoding": encoding, "line_count": len(lines)},
+                    metadata={"encoding": encoding, "line_count": line_count},
                 ),
             )
         )
+
+
+def _flush_text_block(
+    block: list[str], last: int, fragments: list[Fragment], total: int, limits: Limits
+) -> int:
+    body = normalise("\n".join(block))
+    if not body:
+        return total
+    total += len(body)
+    guard_character_budget(total, limits)
+    if len(fragments) >= limits.max_fragments:
+        # The central postcondition's own refusal, made while reading rather
+        # than after every fragment has been built.
+        raise ExtractionFailed(
+            "fragment_limit",
+            f"Eraldatud tekst koosneb üle {limits.max_fragments} osast, "
+            f"lubatud on {limits.max_fragments}.",
+        )
+    first = last - len(block) + 1
+    fragments.append(
+        Fragment(
+            text=body,
+            locator_kind=LocatorKind.LINE_RANGE,
+            locator={"line_from": first, "line_to": last},
+            locator_label=f"read {first}–{last}",
+        )
+    )
+    return total
 
 
 class CsvParser:
@@ -311,6 +514,12 @@ class ImageParser:
 
     def parse(self, source: SourceFile) -> ParseResult:
         limits = current_limits()
+
+        # The pixel ceiling, from the header and before anything is decoded:
+        # one refusal for an oversized image whichever path would have
+        # decoded it first (csf_9b7b703ca586c216499d33bd, docs/adr/0182).
+        with open_bounded_image(source.content, limits):
+            pass
 
         # Built first and kept whatever happens next. A photograph of a building
         # is a perfectly valid piece of evidence with no text in it, and the

@@ -580,19 +580,22 @@ def test_another_person_cannot_acknowledge_it(client, specialist, other_speciali
     assert notice.viewed_at is None
 
 
-def test_acknowledgement_refuses_a_matter_the_recipient_may_not_read(client, specialist, reader):
+def test_acknowledgement_refuses_a_matter_the_recipient_may_not_read(
+    client, specialist, administrator
+):
     """The Matter goes through `get_visible_matter` like every other route.
 
-    A READER whose account holds a notice about a RESTRICTED file they neither
-    own nor collaborate on: the notice is theirs, and the Matter is still not
-    theirs to read. The route must refuse before it redirects, and must not
-    stamp a receipt on the way (03-BACKEND §5).
+    An account holding a notice about a RESTRICTED file it may not read: the
+    notice is theirs, and the Matter is still not theirs to read. The route must
+    refuse before it redirects, and must not stamp a receipt on the way
+    (03-BACKEND §5). Since docs/adr/0181 a READER reads every file, so the
+    recipient who may not is an administrator without a grant.
     """
     matter = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
     notice = MatterAssignmentNotice.objects.create(
-        matter=matter, recipient=reader, assigned_by=specialist
+        matter=matter, recipient=administrator, assigned_by=specialist
     )
-    client.force_login(reader)
+    client.force_login(administrator)
 
     response = client.post(_open_url(notice))
 

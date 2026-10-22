@@ -404,8 +404,10 @@ def test_6_what_is_not_a_standing_event_draws_none(normal_matter, specialist):
 
 
 def test_6_a_restricted_event_draws_nothing_for_who_may_not_see_it(
-    normal_matter, specialist, reader
+    normal_matter, specialist, reader, administrator
 ):
+    # docs/adr/0181: a READER may see it (draws it as the owner does); an
+    # administrator without a grant may not.
     from app.core.enums import Visibility
 
     _deadline(
@@ -415,7 +417,9 @@ def test_6_a_restricted_event_draws_nothing_for_who_may_not_see_it(
         visibility_override=Visibility.RESTRICTED,
     )
 
-    assert "salajane tähtaeg" not in [step.label for step in _events(normal_matter, reader)]
+    assert "salajane tähtaeg" in [step.label for step in _events(normal_matter, specialist)]
+    assert "salajane tähtaeg" in [step.label for step in _events(normal_matter, reader)]
+    assert "salajane tähtaeg" not in [step.label for step in _events(normal_matter, administrator)]
 
 
 def test_6_markers_are_events_beside_unchanged_stages(signed_in, specialist, normal_matter):

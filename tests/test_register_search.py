@@ -184,8 +184,14 @@ def test_a_query_and_a_filter_intersect(signed_in, specialist):
     assert titles_on(response) == [wanted.title]
 
 
-def test_a_restricted_matter_never_reaches_the_search_or_its_count(client, reader, specialist):
-    """The count leaks existence as surely as the title would (brief 16)."""
+def test_a_restricted_matter_reaches_a_readers_search_and_never_an_outsiders(
+    client, reader, administrator, specialist
+):
+    """The count leaks existence as surely as the title would (brief 16).
+
+    Since docs/adr/0181 a READER finds and counts the restricted Matter as the
+    owner does; an administrator without a grant finds and counts nothing.
+    """
     indexed(factories.MatterFactory(title="Pakendiseaduse avalik osa", owner=specialist))
     indexed(
         factories.MatterFactory(
@@ -197,9 +203,13 @@ def test_a_restricted_matter_never_reaches_the_search_or_its_count(client, reade
 
     client.force_login(reader)
     response = client.get(REGISTER, {"q": "pakendiseaduse", "olek": "koik"})
+    assert total_of(response) == 2
+    assert "piiratud" in " ".join(titles_on(response)).lower()
 
-    assert total_of(response) == 1
-    assert "piiratud" not in " ".join(titles_on(response)).lower()
+    client.force_login(administrator)
+    response = client.get(REGISTER, {"q": "pakendiseaduse", "olek": "koik"})
+    assert total_of(response) == 0
+    assert titles_on(response) == []
 
 
 def test_the_search_box_carries_the_other_filters(signed_in):
@@ -523,8 +533,15 @@ def test_the_materials_filter_asks_about_files(signed_in, specialist):
     assert titles_on(absent) == [without.title]
 
 
-def test_a_document_nobody_may_open_does_not_count_as_material(client, specialist, reader):
-    """A document can be restricted below its Matter (brief 2)."""
+def test_a_restricted_document_counts_as_material_for_a_reader_and_nothing_for_an_outsider(
+    client, specialist, reader, administrator
+):
+    """A document can be marked restricted below its Matter (brief 2).
+
+    It used to count as no material for a READER; since docs/adr/0181 the
+    READER may open it, so it counts; an administrator without a grant lists
+    the Matter under neither filter.
+    """
     matter = factories.MatterFactory(title="Nähtav teema", owner=specialist)
     factories.DocumentFactory(matter=matter, visibility_override=Visibility.RESTRICTED)
 
@@ -532,8 +549,13 @@ def test_a_document_nobody_may_open_does_not_count_as_material(client, specialis
     present = client.get(REGISTER, {"materjalid": "on", "olek": "koik"})
     absent = client.get(REGISTER, {"materjalid": "puudub", "olek": "koik"})
 
-    assert titles_on(present) == []
-    assert titles_on(absent) == [matter.title]
+    assert titles_on(present) == [matter.title]
+    assert titles_on(absent) == []
+
+    client.force_login(administrator)
+    for value in ("on", "puudub"):
+        response = client.get(REGISTER, {"materjalid": value, "olek": "koik"})
+        assert titles_on(response) == [], value
 
 
 def test_an_unknown_materials_value_empties_the_list(signed_in):

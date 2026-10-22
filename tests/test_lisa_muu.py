@@ -399,25 +399,29 @@ def test_the_service_refuses_a_missing_day_and_writes_nothing(specialist):
 # -- visibility ----------------------------------------------------------------------
 
 
-def test_search_finds_it_for_a_lawyer_and_never_for_a_reader_of_a_restricted_matter(
-    signed_in, specialist, reader, restricted_matter
+def test_search_finds_it_for_a_lawyer_and_a_reader_of_a_restricted_matter_and_no_outsider(
+    signed_in, specialist, reader, administrator, restricted_matter
 ):
+    """Since docs/adr/0181 a READER reads restricted work; an administrator does not."""
     _post(signed_in, restricted_matter, description="Konfidentsiaalne taustamaterjal kalmaar.")
 
     assert search_documents(query="kalmaar", user=specialist).exists()
-    assert not search_documents(query="kalmaar", user=reader).exists()
+    assert search_documents(query="kalmaar", user=reader).exists()
+    assert not search_documents(query="kalmaar", user=administrator).exists()
 
 
-def test_a_restricted_matters_file_is_not_downloadable_by_a_reader(
-    client, signed_in, specialist, reader, restricted_matter
+def test_a_restricted_matters_file_is_downloadable_by_a_reader_and_no_outsider(
+    client, signed_in, specialist, reader, administrator, restricted_matter
 ):
     _post(signed_in, restricted_matter, description="Piiratud fail.", files=[_pdf()])
     version = Document.objects.get(matter=restricted_matter).current_version
+    url = reverse("documents:download", kwargs={"pk": version.pk})
+
     client.force_login(reader)
+    assert client.get(url).status_code == 200
 
-    response = client.get(reverse("documents:download", kwargs={"pk": version.pk}))
-
-    assert response.status_code == 404
+    client.force_login(administrator)
+    assert client.get(url).status_code == 404
 
 
 # -- correction ------------------------------------------------------------------------

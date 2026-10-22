@@ -93,32 +93,11 @@
       </div>
     </div>
 
-    {% if current %}
-      {% comment %}
-        No `next` here, unlike every row above it. This page is reached with
-        `?next=/minu-too/` when somebody opened a personal surface without
-        having said whose it is — and honouring that target for a choice of
-        *nobody* would send them straight back to this page, which reads as the
-        button having done nothing. The fallback is Osakond, which is the
-        surface no-persona is for. The top-bar popover does carry the current
-        page, because there the whole point is not to lose it (brief 19, 23).
-      {% endcomment %}
-      <form method="post" action="{% url 'accounts:act_as' %}">
-        {% csrf_token %}
-        <input type="hidden" name="user_id" value="">
-        <button type="submit" class="personarow personarow--nobody">
-          <span class="personarow__avatar personarow__avatar--none" aria-hidden="true">—</span>
-          <span class="personarow__name">Ilma kasutajata</span>
-          <span class="personarow__action">Vali</span>
-        </button>
-      </form>
-    {% else %}
-      <p class="personarow personarow--nobody personarow--current">
-        <span class="personarow__avatar personarow__avatar--none" aria-hidden="true">—</span>
-        <span class="personarow__name">Ilma kasutajata</span>
-        <span class="personarow__state">Praegu valitud</span>
-      </p>
-    {% endif %}
+    {% comment %}
+      No «Ilma kasutajata» row since docs/adr/0181: without a persona nothing of
+      the department is shown, so it is not a view to choose. The heading above
+      still says «Praegu: Ilma kasutajata» while nobody is chosen.
+    {% endcomment %}
   </div>
 </div>
 {% endblock %}

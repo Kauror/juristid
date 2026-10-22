@@ -24,7 +24,7 @@ unobservable through those routes.**
 
 The reason is structural. Every role that may write also sees RESTRICTED
 content — `ROLES_WITH_BUSINESS_WRITE` is a subset of
-`ROLES_WITH_RESTRICTED_ACCESS` since docs/adr/0042 — so there is no actor who
+`ROLES_WITH_BUSINESS_READ` since docs/adr/0042 — so there is no actor who
 may write but may not see. An actor who fails the visibility check therefore
 fails the write gate too, and now fails it *first*.
 
@@ -51,8 +51,8 @@ import pytest
 from django.urls import get_resolver, reverse
 
 from app.core.authorization import (
+    ROLES_WITH_BUSINESS_READ,
     ROLES_WITH_BUSINESS_WRITE,
-    ROLES_WITH_RESTRICTED_ACCESS,
     acting_role,
 )
 from app.core.decorators import WRITE_REFUSED
@@ -78,7 +78,7 @@ def test_no_actor_may_write_without_being_able_to_see():
     tests that currently pass for the right reason would begin passing for the
     wrong one.
     """
-    assert ROLES_WITH_BUSINESS_WRITE <= ROLES_WITH_RESTRICTED_ACCESS, (
+    assert ROLES_WITH_BUSINESS_WRITE <= ROLES_WITH_BUSINESS_READ, (
         "a role may now write without being able to see RESTRICTED content. "
         "The write gate runs before `get_visible_matter` on seventeen routes, so "
         "that actor's visibility failure is now hidden behind a write failure. "
@@ -257,7 +257,9 @@ def test_the_dead_shared_gate_alias_is_gone():
     from app.legacy_import import opinion_access
 
     assert not hasattr(opinion_access, "SHARED_GATE_ARCHIVE_READERS")
-    assert opinion_access.ARCHIVE_READERS
+    # And the archive's own reader set with it: since docs/adr/0181 the archive
+    # asks the one internal read predicate.
+    assert not hasattr(opinion_access, "ARCHIVE_READERS")
 
 
 # ---------------------------------------------------------------------------
@@ -270,7 +272,11 @@ def test_the_opinion_queue_link_is_offered_by_the_predicate_that_guards_it(
 ):
     """Offer and serve move together, or the reader gets a 403 button."""
     from app.reporting.selectors import opinions
+    from tests.break_glass import grant_to
 
+    # The queue's rows are business content (docs/adr/0181): no grant, no link.
+    assert opinions._queue_url(reporting_context(administrator)) == ""
+    grant_to(administrator)
     assert opinions._queue_url(reporting_context(administrator)) != ""
     assert opinions._queue_url(reporting_context(reader)) == ""
 

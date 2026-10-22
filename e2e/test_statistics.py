@@ -179,9 +179,26 @@ def test_a_signed_container_is_never_shown_as_a_failure(page, base_url, screensh
     screenshots(page, "statistika-allkirjastatud")
 
 
-def test_the_reconciliation_count_links_to_the_review_queue(page, base_url):
-    """An administrator's surface, reached from the number that describes it."""
+def test_the_reconciliation_queue_is_counted_for_nobody_who_reads_nothing(page, base_url):
+    """The administrator reads no business content without a grant (ADR 0181).
+
+    So Andmekvaliteet counts no reconciliation candidate for them and offers no
+    row to follow, and the queue itself refuses them.
+    """
     sign_in(page, base_url, ADMIN)
+    open_statistics(page, base_url, "andmekvaliteet/")
+    expect(page.locator(".queuerow").filter(has_text="Ajaloo sidumise vastuolud")).to_have_count(0)
+
+    response = page.goto(f"{base_url}/haldus/ajaloo-ulevaatus/")
+    assert response is not None and response.status == 403
+
+
+def test_the_reconciliation_count_links_to_the_review_queue(page, base_url, admin_with_break_glass):
+    """An administrator's surface, reached from the number that describes it.
+
+    With the break-glass grant the queue's rows need (docs/adr/0181).
+    """
+    sign_in(page, base_url, admin_with_break_glass)
     open_statistics(page, base_url, "andmekvaliteet/")
 
     # The conflict candidate, because it is the one no other browser test
@@ -197,9 +214,9 @@ def test_the_headline_agrees_with_the_register_for_each_persona(page, base_url):
 
     The Statistika card and the Teemad register compute their totals through
     entirely different code. If either forgot to scope, they would disagree —
-    and Sandra, a lawyer, must see strictly more than a reader, who is outside
-    the legal team (docs/adr/0042). Martin cannot play that part any more: since
-    that decision he reads the department exactly as Sandra does.
+    and every authorized internal user must see the same department, a READER
+    as much as Sandra, while the technical administrator sees none of it
+    (docs/adr/0181).
 
     Deliberately *not* an assertion on absolute numbers: this suite shares one
     seeded database with tests that create Matters. The exact arithmetic of
@@ -208,11 +225,11 @@ def test_the_headline_agrees_with_the_register_for_each_persona(page, base_url):
     surfaces agree and that the title never leaks.
     """
     totals = {}
-    for persona in (READER, SANDRA):
+    for persona in (READER, SANDRA, ADMIN):
         sign_in(page, base_url, persona)
         open_statistics(page, base_url, "teemad/")
         totals[persona.upn] = headline(page)
-        if persona is READER:
+        if persona is ADMIN:
             assert RESTRICTED_TITLE not in page.content()
 
         page.goto(f"{base_url}/teemad/?olek=koik")
@@ -223,12 +240,13 @@ def test_the_headline_agrees_with_the_register_for_each_persona(page, base_url):
         )
         sign_out(page, base_url)
 
-    assert totals[SANDRA.upn] > totals[READER.upn]
+    assert totals[SANDRA.upn] == totals[READER.upn]
+    assert totals[ADMIN.upn] == 0 < totals[SANDRA.upn]
 
 
 def test_a_csv_export_respects_the_filter_that_was_on_screen(page, base_url):
-    # A reader, because the assertion below is that the restricted row is not in
-    # the export — and since docs/adr/0042 a lawyer's export legitimately has it.
+    # A reader's export is every authorized user's export since docs/adr/0181;
+    # what is asserted is that the period on screen is the period exported.
     sign_in(page, base_url, READER)
     open_statistics(page, base_url, "teemad/", period="kaesolev")
 
@@ -239,7 +257,6 @@ def test_a_csv_export_respects_the_filter_that_was_on_screen(page, base_url):
 
     body = saved.path().read_bytes().decode("utf-8-sig")
     assert OPEN_TITLE in body
-    assert RESTRICTED_TITLE not in body
 
 
 def test_a_definition_is_available_beside_every_number(page, base_url, screenshots):

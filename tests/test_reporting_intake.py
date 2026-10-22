@@ -186,11 +186,14 @@ def test_a_matter_in_two_policy_areas_is_not_counted_twice(world, reporting_cont
     assert matrix.grand_total == 4
 
 
-def test_the_restricted_matter_is_absent_from_the_intake_matrix(world, reporting_context):
+def test_the_restricted_matter_is_in_every_readers_intake_matrix_and_no_outsiders(
+    world, reporting_context
+):
     """It arrived in April and is owned by Sandra.
 
-    Absent for a reader, who may not open it. A lawyer reads it since
-    docs/adr/0042, so April is legitimately a row for Martin and for Sandra.
+    A lawyer reads it since docs/adr/0042, and since docs/adr/0181 so does a
+    READER: April is a row for the reader exactly as for Sandra. An
+    administrator without a grant counts nothing at all.
     """
     reader = compute(
         keys.NEW_NATIVE_MATTERS_BY_RESPONSIBILITY_MONTH, reporting_context(world.reader)
@@ -199,9 +202,15 @@ def test_the_restricted_matter_is_absent_from_the_intake_matrix(world, reporting
         keys.NEW_NATIVE_MATTERS_BY_RESPONSIBILITY_MONTH, reporting_context(world.sandra)
     ).matrix
     assert reader is not None and sandra is not None
-    assert reader.grand_total == 3
     assert sandra.grand_total == 4
-    assert "Apr" not in [row.label for row in reader.rows]
+    assert reader.grand_total == sandra.grand_total
+    assert [row.label for row in reader.rows] == [row.label for row in sandra.rows]
+    assert "Apr" in [row.label for row in reader.rows]
+
+    outsider = compute(
+        keys.NEW_NATIVE_MATTERS_BY_RESPONSIBILITY_MONTH, reporting_context(world.admin)
+    ).matrix
+    assert outsider is None or outsider.grand_total == 0
 
 
 # ---------------------------------------------------------------------------

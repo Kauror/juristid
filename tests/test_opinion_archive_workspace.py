@@ -11,7 +11,9 @@ Three boundaries are asserted here and they are genuinely different questions:
 search it, download a letter? Answered about the *corpus*, because an unfiled
 letter has no Matter to inherit from. Under the shared gate that is the
 department head and the administrator; outside it, the administrator alone, as
-before.
+before. Since docs/adr/0181 it is `may_read_business_content` in every mode:
+every business-read role, READER included, and an administrator only through
+break-glass.
 
 **The register.** Once inside, what may the page say about a *Matter*? That is
 the ordinary question, answered by `Matter.objects.visible_to` exactly as
@@ -128,7 +130,10 @@ def reader(db):
 
 @pytest.fixture
 def library_reader(db):
-    """A READER-role account, which this surface never admits."""
+    """A READER-role account, which this surface never admitted.
+
+    Since docs/adr/0181 it reads the archive like every business-read role.
+    """
     return factories.UserFactory(role=UserRole.READER)
 
 
@@ -179,6 +184,22 @@ def individually(client, settings):
     return sign_in
 
 
+def with_break_glass(person):
+    """An active, audited grant: since docs/adr/0181 the only way an
+    administrator reads business content, the archive included."""
+    from datetime import timedelta
+
+    from app.accounts.services import grant_break_glass
+
+    grant_break_glass(
+        user=person,
+        granted_by=factories.DepartmentHeadFactory(),
+        reason="Sünteetiline arhiivi seostamine",
+        duration=timedelta(hours=1),
+    )
+    return person
+
+
 def item_of(binary) -> OpinionArchiveItem:
     return OpinionArchiveItem.objects.get(binary=binary)
 
@@ -222,20 +243,21 @@ def link_url(binary):
 # ---------------------------------------------------------------------------
 
 
-def test_the_corpus_admits_the_two_lawyer_roles_and_the_administrator(
+def test_the_corpus_admits_every_business_read_role_and_not_the_administrator(
     shared, reader, administrator, specialist, library_reader
 ):
-    """`ARCHIVE_READERS` is `ROLES_WITH_RESTRICTED_ACCESS` plus ADMINISTRATOR.
+    """`may_read_archive` is `may_read_business_content` (docs/adr/0181).
 
-    The specialist is here since ADR 0042: the same person reads every
-    RESTRICTED Matter these letters are filed onto, and could not open the
-    letter. `library_reader` — the READER role — is the one deliberately left
-    out, and its absence is what keeps this from being "anybody signed in".
+    `ARCHIVE_READERS` is gone. The specialist is here since ADR 0042, the
+    READER (`library_reader`) since 0181; the administrator without a grant is
+    the one left out, and its absence is what keeps this from being "anybody
+    signed in".
     """
     assert may_read_archive(reader)
-    assert may_read_archive(administrator)
     assert may_read_archive(specialist)
-    assert not may_read_archive(library_reader)
+    assert may_read_archive(library_reader)
+    assert not may_read_archive(administrator)
+    assert may_read_archive(with_break_glass(administrator))
 
 
 def test_nobody_without_a_persona_reads_the_archive(shared):
@@ -270,30 +292,31 @@ def test_reading_does_not_depend_on_which_door_was_answered(
     authenticates the individual better; it does not make a lawyer less
     entitled to their own department's correspondence.
 
-    Filing is asserted here too, because it is the half that did *not* move:
-    the administrator still may not make the business claim, in any mode.
+    Filing is asserted here too, because it is the half that did *not* move.
+    Since docs/adr/0181 the READER reads and the administrator without a grant
+    does not, in every mode alike.
     """
     for mode in (AuthMode.NONE, AuthMode.CLOUDFLARE_ACCESS, AuthMode.SHARED_GATE):
         settings.AUTH_MODE = mode
-        assert may_read_archive(administrator), mode
+        assert not may_read_archive(administrator), mode
         assert may_read_archive(specialist), mode
         assert may_read_archive(reader), mode
-        assert not may_read_archive(library_reader), mode
+        assert may_read_archive(library_reader), mode
         assert not may_manage_archive_links(specialist), mode
         assert not may_manage_archive_links(library_reader), mode
 
 
-def test_under_the_shared_gate_the_administrator_reads_but_does_not_file(
+def test_under_the_shared_gate_the_administrator_neither_reads_nor_files(
     shared, reader, administrator
 ):
     """Technical administration is not business authorship.
 
-    The same separation `ROLES_WITH_BUSINESS_WRITE` makes everywhere else: the
-    administrator operates the migration and may read every letter it holds,
-    and saying what the Chamber's correspondence *concerns* stays with the
-    person answerable for the register.
+    The same separation `ROLES_WITH_BUSINESS_WRITE` makes everywhere else:
+    saying what the Chamber's correspondence *concerns* stays with the person
+    answerable for the register. Since docs/adr/0181 the administrator without
+    a grant does not read the letters either.
     """
-    assert may_read_archive(administrator)
+    assert not may_read_archive(administrator)
     assert not may_manage_archive_links(administrator)
     assert may_read_archive(reader)
     assert may_manage_archive_links(reader)
@@ -330,7 +353,7 @@ def test_a_department_head_persona_reaches_every_archive_surface(behind_the_gate
     assert behind_the_gate.get(file_url(stored)).status_code == 200
 
 
-def test_the_shared_gate_lets_an_administrator_read_the_corpus_but_not_file_it(
+def test_the_shared_gate_lets_an_administrator_neither_read_the_corpus_nor_file_it(
     shared, administrator
 ):
     """The rule, at the predicate, because no screen can reach it any more.
@@ -347,12 +370,15 @@ def test_the_shared_gate_lets_an_administrator_read_the_corpus_but_not_file_it(
     Access — where an administrator *is* an identity the system can name — it
     starts mattering again. A rule with no test is a rule that drifts while
     nobody is looking.
+
+    docs/adr/0181: the administrator no longer reads the corpus without a
+    break-glass grant, and filing still needs reading.
     """
-    assert may_read_archive(administrator)
+    assert not may_read_archive(administrator)
     assert not may_manage_archive_links(administrator)
 
 
-def test_an_administrator_who_is_named_individually_may_file_a_letter(
+def test_an_administrator_who_is_named_individually_may_file_a_letter_with_a_grant(
     individually, administrator, binary, normal_matter
 ):
     """And outside the shared gate the widening does not apply.
@@ -361,8 +387,18 @@ def test_an_administrator_who_is_named_individually_may_file_a_letter(
     department head only while the department is behind one password, because
     that is the mode in which the system cannot say who acted. This is the other
     branch, and it is the one the deployment is heading for.
+
+    Since docs/adr/0181 filing still needs reading, and an administrator reads
+    only through break-glass: refused without a grant, filing with one.
     """
     client = individually(administrator)
+    refused = client.post(
+        link_url(binary), {"action": "link", "viide": normal_matter.display_reference}
+    )
+    assert refused.status_code == 403
+    assert not OpinionArchiveMatterLink.objects.exists()
+
+    with_break_glass(administrator)
     response = client.post(
         link_url(binary), {"action": "link", "viide": normal_matter.display_reference}
     )
@@ -390,18 +426,20 @@ def test_a_non_department_account_cannot_become_a_persona_and_reach_the_letters(
     assert behind_the_gate.get(detail_url(stored)).status_code in (302, 403)
 
 
-def test_a_reader_is_refused_every_archive_surface(individually, stored, normal_matter):
-    """The role outside `ARCHIVE_READERS` reaches none of the four surfaces.
+def test_an_administrator_without_a_grant_is_refused_every_archive_surface(
+    individually, administrator, stored, normal_matter
+):
+    """The role outside `may_read_archive` reaches none of the four surfaces.
 
     Browse, detail, file and the link POST are asserted together on purpose:
-    the boundary is only worth anything if every one of them asks it.
+    the boundary is only worth anything if every one of them asks it. Since
+    docs/adr/0181 that role is the administrator without a grant (READER reads,
+    `test_a_specialist_or_reader_reaches_the_letters_but_not_the_filing`).
 
-    Signed in individually rather than through a persona, because READER is not
-    a selectable persona at all (docs/adr/0034) — a `act_as` POST for one is
-    refused before the archive is ever consulted, which would prove the persona
-    rule a second time and this rule not at all.
+    Signed in individually rather than through a persona, because ADMINISTRATOR
+    is not a selectable persona at all (docs/adr/0034).
     """
-    client = individually(factories.UserFactory(role=UserRole.READER))
+    client = individually(administrator)
 
     assert client.get(browse_url()).status_code == 403
     assert client.get(detail_url(stored)).status_code == 403
@@ -415,14 +453,17 @@ def test_a_reader_is_refused_every_archive_surface(individually, stored, normal_
     assert OpinionArchiveMatterLink.objects.count() == 0
 
 
-def test_a_specialist_reaches_the_letters_but_not_the_filing(individually, stored, normal_matter):
+@pytest.mark.parametrize("role", [UserRole.SPECIALIST, UserRole.READER])
+def test_a_specialist_or_reader_reaches_the_letters_but_not_the_filing(
+    individually, stored, normal_matter, role
+):
     """The two halves of the widening, on one person.
 
     Reading moved and filing did not, so the same specialist opens the browse,
     the detail and the file, and is refused the POST that would say which
-    Matter the letter concerns.
+    Matter the letter concerns. A READER is the same since docs/adr/0181.
     """
-    client = individually(factories.UserFactory(role=UserRole.SPECIALIST))
+    client = individually(factories.UserFactory(role=role))
 
     assert client.get(browse_url()).status_code == 200
     assert client.get(detail_url(stored)).status_code == 200
@@ -451,28 +492,32 @@ def test_a_session_with_no_persona_is_refused_the_letters(behind_the_gate, store
     assert b"%PDF" not in response.content
 
 
-def test_a_refused_persona_cannot_learn_the_size_of_the_corpus(shared, library_reader, binary):
+def test_a_refused_persona_cannot_learn_the_size_of_the_corpus(shared, administrator, binary):
     """Authorization comes before counting, not after it.
 
     A refusal that still returned totals would tell a refused reader how many
     letters Koda holds and how many remain unfiled — which is most of what the
-    boundary is protecting.
+    boundary is protecting. The refused persona is the administrator without a
+    grant since docs/adr/0181.
     """
     from app.legacy_import.opinion_search import ArchiveFilters
 
-    counts = archive_counts(library_reader)
+    counts = archive_counts(administrator)
     assert counts == {"total": 0, "with_body": 0, "linked": 0, "with_submission": 0}
-    assert search_archive(user=library_reader, filters=ArchiveFilters()).count() == 0
+    assert search_archive(user=administrator, filters=ArchiveFilters()).count() == 0
 
 
 def test_the_direct_file_url_serves_nothing_to_a_refused_reader(
-    individually, stored, library_reader
+    individually, stored, administrator
 ):
-    """Knowing the exact binary UUID is not a credential either."""
+    """Knowing the exact binary UUID is not a credential either.
+
+    Refused persona: the administrator without a grant (docs/adr/0181).
+    """
     from app.audit.enums import SecurityEventType
     from app.audit.models import SecurityAuditEvent
 
-    response = individually(library_reader).get(file_url(stored))
+    response = individually(administrator).get(file_url(stored))
 
     assert response.status_code == 403
     assert not SecurityAuditEvent.objects.filter(
@@ -523,15 +568,16 @@ def test_the_workspace_offers_the_archive_tab_to_a_reader(behind_the_gate, reade
 
 
 def test_the_workspace_does_not_offer_the_archive_tab_to_a_refused_reader(
-    individually, library_reader
+    individually, administrator
 ):
     """And says the corpus exists rather than pretending it does not.
 
     A refused reader is told the archive is held and separately read, which is
     a different statement from a page that silently omits it — and no count
-    appears with it (docs/adr/0028).
+    appears with it (docs/adr/0028). The refused reader is the administrator
+    without a grant since docs/adr/0181.
     """
-    body = individually(library_reader).get(reverse("submissions:sent")).content.decode()
+    body = individually(administrator).get(reverse("submissions:sent")).content.decode()
     assert reverse("submissions:archive") not in body
     assert "arvamuste arhiiv on eraldi hoiul" in body
 
@@ -554,7 +600,11 @@ def test_the_candidate_queue_is_not_offered_to_a_reader_who_cannot_use_it(
 def test_the_candidate_queue_is_still_offered_to_the_administrator(
     individually, administrator, binary
 ):
+    """docs/adr/0181: the browse page needs reading, so the administrator holds
+    a break-glass grant here; without one the page is refused outright."""
     client = individually(administrator)
+    assert client.get(browse_url()).status_code == 403
+    with_break_glass(administrator)
     body = client.get(browse_url()).content.decode()
     assert reverse("legacy_import:opinion_queue") in body
 
@@ -595,32 +645,36 @@ def filed(binary, two_matters):
     return binary
 
 
-def test_an_archive_reader_is_told_a_hidden_relationship_exists_and_nothing_else(
-    individually, administrator, filed, two_matters
+def test_an_archive_reader_sees_every_filed_matter_and_an_outsider_nothing(
+    individually, administrator, library_reader, filed, two_matters
 ):
     """The load-bearing one. Archive access is not a route into the register.
 
-    The administrator may open every letter Koda holds. That says nothing about
-    which register entries they may read, and P3.3 must not let one become the
-    other: the RESTRICTED Matter's title, reference and detail URL stay behind
-    the ordinary rule, and only the archive-side fact that *something* is filed
-    here survives.
+    Since docs/adr/0181 `may_read_archive` *is* the business-read predicate, so
+    nobody who may open a letter is unable to read a Matter it is filed
+    against: the READER sees both the ordinary and the RESTRICTED Matter, as the
+    head does. The perimeter is the administrator without a grant, who opens
+    neither the letter nor anything it names.
     """
     normal, restricted = two_matters
-    client = individually(administrator)
+    client = individually(library_reader)
     body = client.get(detail_url(filed)).content.decode()
 
     assert normal.title in body
     assert reverse("matters:matter_detail", kwargs={"pk": normal.pk}) in body
+    assert restricted.title in body
+    assert reverse("matters:matter_detail", kwargs={"pk": restricted.pk}) in body
+    assert "ei kuvata" not in body
 
+    client = individually(administrator)
+    refused = client.get(detail_url(filed))
+    body = refused.content.decode()
+
+    assert refused.status_code == 403
+    assert normal.title not in body
     assert restricted.title not in body
     assert restricted.display_reference not in body
     assert reverse("matters:matter_detail", kwargs={"pk": restricted.pk}) not in body
-
-    # And it does not claim the letter is unfiled while the projection records
-    # that it is not.
-    assert "Ükski teema ei ole selle kirjaga seotud" not in body
-    assert "ei kuvata" in body
 
 
 def test_a_department_head_reaches_both_through_the_ordinary_role_grant(
@@ -629,7 +683,7 @@ def test_a_department_head_reaches_both_through_the_ordinary_role_grant(
     """No archive-specific exception, and none needed.
 
     The head already reads RESTRICTED content through
-    `ROLES_WITH_RESTRICTED_ACCESS`. The archive page inherits that by asking the
+    `ROLES_WITH_BUSINESS_READ`. The archive page inherits that by asking the
     same predicate as every other surface rather than by knowing anything about
     roles itself.
     """
@@ -646,8 +700,9 @@ def test_an_administrator_cannot_link_a_matter_they_may_not_read(
 ):
     """Non-shared mode, where the administrator is the link reviewer.
 
-    They may open every letter in the archive and may not read a RESTRICTED
-    register entry. Linking must not become the way to confirm one exists.
+    Since docs/adr/0181 an administrator without a grant reads neither the
+    letter nor the register entry, so the link POST is refused outright.
+    Linking must not become the way to confirm a Matter exists.
     """
     _, restricted = two_matters
     client.force_login(administrator)
@@ -658,21 +713,31 @@ def test_an_administrator_cannot_link_a_matter_they_may_not_read(
     )
     body = response.content.decode()
 
+    assert response.status_code == 403
     assert restricted.title not in body
-    assert "ei leitud" in body
     assert not OpinionArchiveMatterLink.objects.filter(matter=restricted).exists()
 
 
-def test_a_hidden_candidate_shows_its_class_and_not_its_matter(
-    individually, administrator, binary, two_matters
+def test_a_restricted_candidate_shows_its_matter_to_a_reader_and_nothing_to_an_outsider(
+    individually, administrator, library_reader, binary, two_matters
 ):
-    """Archive-side evidence is the archive's to show; the Matter is not."""
+    """Archive-side evidence is the archive's to show; the Matter follows reading.
+
+    Since docs/adr/0181 every archive reader reads the RESTRICTED Matter the
+    candidate names; the administrator without a grant reads neither.
+    """
     _, restricted = two_matters
     propose(binary, restricted, explanation="Sünteetiline selgitus.")
-    client = individually(administrator)
-    body = client.get(detail_url(binary)).content.decode()
+    body = individually(library_reader).get(detail_url(binary)).content.decode()
 
     assert "Sünteetiline selgitus." in body
+    assert restricted.title in body
+
+    refused = individually(administrator).get(detail_url(binary))
+    body = refused.content.decode()
+
+    assert refused.status_code == 403
+    assert "Sünteetiline selgitus." not in body
     assert restricted.title not in body
     assert reverse("matters:matter_detail", kwargs={"pk": restricted.pk}) not in body
 

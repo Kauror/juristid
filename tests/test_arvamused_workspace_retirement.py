@@ -291,7 +291,11 @@ def test_a_matter_with_no_opinions_says_so_once(signed_in, specialist):
 def test_archive_letters_still_render_where_they_are_allowed(client, specialist):
     """Signed in as an ADMINISTRATOR, because `may_read_archive` is a question
     about the corpus and outside the shared gate only that role passes it
-    (app/legacy_import/opinion_access.py, docs/adr/0028)."""
+    (app/legacy_import/opinion_access.py, docs/adr/0028).
+
+    Since docs/adr/0181 `may_read_archive` is `may_read_business_content`: the
+    READER reads the archive and the ADMINISTRATOR does not, so this signs in as
+    a READER."""
     matter = factories.MatterFactory(owner=specialist)
     head = factories.DepartmentHeadFactory()
     link_matter(
@@ -304,7 +308,7 @@ def test_archive_letters_still_render_where_they_are_allowed(client, specialist)
     # projection has to exist. Synthetic rows in a test database; this is the
     # same call the sibling suite makes (tests/test_opinions_workspace.py).
     rebuild_archive_index()
-    client.force_login(factories.AdministratorFactory())
+    client.force_login(factories.ReaderFactory())
 
     body = _page(client, matter)
 
@@ -312,15 +316,15 @@ def test_archive_letters_still_render_where_they_are_allowed(client, specialist)
     assert "Varasem kiri" in body
 
 
-def test_a_reader_who_may_not_open_the_archive_sees_no_letters(client, specialist):
+def test_an_outsider_who_may_not_open_the_archive_sees_no_letters(client, specialist):
     """The other half of the same rule.
 
     The refused reader is a READER since ADR 0056 — the two lawyer roles read
     the corpus now, so a specialist is the wrong person to ask this about.
+    Since docs/adr/0181 the READER reads the archive too; the refused person is
+    an ADMINISTRATOR without a grant, who reads no business content at all.
     """
-    from app.accounts.enums import UserRole
-
-    reader = factories.UserFactory(role=UserRole.READER)
+    outsider = factories.AdministratorFactory()
     matter = factories.MatterFactory(owner=specialist)
     head = factories.DepartmentHeadFactory()
     link_matter(
@@ -330,8 +334,11 @@ def test_a_reader_who_may_not_open_the_archive_sees_no_letters(client, specialis
         actor=head,
     )
 
-    client.force_login(reader)
-    assert "Seotud arhiivikirjad" not in _page(client, matter)
+    client.force_login(outsider)
+    response = client.get(reverse("matters:matter_documents", kwargs={"pk": matter.pk}))
+    assert response.status_code == 404
+    assert "Seotud arhiivikirjad" not in response.content.decode()
+    assert "Varasem kiri" not in response.content.decode()
 
 
 def test_the_rail_is_where_it_always_was_and_dokumendid_still_has_none(signed_in, specialist):

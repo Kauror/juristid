@@ -154,8 +154,15 @@ def test_the_transposition_deadline_keeps_its_short_name(normal_matter, speciali
     assert TITLE not in labels
 
 
-def test_a_restricted_deadline_draws_no_column_for_a_reader(restricted_matter, reader):
-    """Scoped through the record's own `visible_to`, like every other source."""
+def test_a_restricted_deadline_draws_a_column_for_a_reader_and_none_for_an_outsider(
+    restricted_matter, reader, administrator
+):
+    """Scoped through the record's own `visible_to`, like every other source.
+
+    Since docs/adr/0181 a READER reads a restricted Matter's dates; an
+    administrator without a business role reads none.
+    """
     _record(restricted_matter, when=datetime.date.today() + datetime.timedelta(days=60))
 
-    assert TITLE not in _labels(restricted_matter, reader)
+    assert TITLE in _labels(restricted_matter, reader)
+    assert TITLE not in _labels(restricted_matter, administrator)

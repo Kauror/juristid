@@ -1026,11 +1026,16 @@ def test_an_entry_file_is_not_printed_twice_on_its_own_row(signed_in, normal_mat
     assert [file.label for file in row.files] == ["kiri.pdf"]
 
 
-def test_a_restricted_document_contributes_no_link_to_a_reader_who_may_not_see_it(
-    signed_in, normal_matter, specialist, reader
+def test_a_restricted_document_contributes_its_link_to_a_reader_and_none_to_an_outsider(
+    signed_in, normal_matter, specialist, reader, administrator
 ):
-    """The link is readable only when **both** of its ends are."""
+    """The link is readable only when **both** of its ends are.
+
+    Since docs/adr/0181 a READER reads both ends, so gets the author's row; an
+    administrator without a business role reads neither end, so no link.
+    """
     from app.core.enums import Visibility
+    from app.documents.links import DocumentLink
 
     _post(
         signed_in,
@@ -1046,7 +1051,9 @@ def test_a_restricted_document_contributes_no_link_to_a_reader_who_may_not_see_i
     items, _ = matter_timeline(matter=normal_matter, user=reader)
     row = next(item for item in items if item.milestone and item.milestone.what == "Töövõit")
 
-    assert row.files == ()
+    assert [file.label for file in row.files] == ["saladus.pdf"]
+    assert not DocumentLink.objects.visible_to(administrator).exists()
+    assert DocumentLink.objects.visible_to(reader).filter(document=document).exists()
     # And the author still sees it.
     mine, _ = matter_timeline(matter=normal_matter, user=specialist)
     theirs = next(item for item in mine if item.milestone and item.milestone.what == "Töövõit")

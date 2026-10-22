@@ -568,6 +568,13 @@ def test_the_review_queue_link_is_offered_only_to_an_administrator(world, report
     A reader without that role sees the number and is told where it is handled,
     rather than being handed a link that 404s.
     """
+    from tests.break_glass import grant_to
+
+    # Since docs/adr/0181 the queue's rows need a grant, and so does the link.
+    assert not compute(
+        keys.RECONCILIATION_CONFLICT, reporting_context(world.admin)
+    ).drillthrough_url
+    grant_to(world.admin, granted_by=world.head)
     assert compute(keys.RECONCILIATION_CONFLICT, reporting_context(world.admin)).drillthrough_url
     assert not compute(
         keys.RECONCILIATION_CONFLICT, reporting_context(world.martin)

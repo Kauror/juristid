@@ -475,16 +475,21 @@ def test_a_document_cannot_be_linked_across_matters(specialist, ministry, eviden
         link_document_to_record(document=stray, record=position, actor=specialist)
 
 
-def test_a_restricted_position_hides_its_document_link(specialist, reader, ministry, evidence_root):
+def test_a_restricted_positions_document_link_reaches_a_reader_and_no_outsider(
+    specialist, reader, administrator, ministry, evidence_root
+):
+    """Since docs/adr/0181 RESTRICTED divides no authorized readers."""
     matter = factories.MatterFactory(owner=specialist)
     position = _recorded(matter, ministry, specialist, uploads=[_pdf()])
     MatterExternalPosition.objects.filter(pk=position.pk).update(
         visibility_override=Visibility.RESTRICTED
     )
 
-    assert DocumentLink.objects.visible_to(reader).filter(external_position=position).count() == 0
+    theirs = DocumentLink.objects.visible_to(reader).filter(external_position=position)
+    assert theirs.count() == 1
     mine = DocumentLink.objects.visible_to(specialist).filter(external_position=position)
     assert mine.count() == 1
+    assert not DocumentLink.objects.visible_to(administrator).exists()
 
 
 # ---------------------------------------------------------------------------
@@ -641,15 +646,19 @@ def test_an_address_without_its_scheme_is_stored_with_https(normal_matter, speci
     assert position.url == "https://koda.ee/ilma-skeemita"
 
 
-def test_a_reader_who_may_not_see_the_position_gets_no_row(specialist, reader, ministry):
+def test_a_restricted_position_is_a_row_for_a_reader_and_for_no_outsider(
+    specialist, reader, administrator, ministry
+):
+    """Since docs/adr/0181 a READER gets the row its owner gets; an outsider gets nothing."""
     matter = factories.MatterFactory(owner=specialist)
     position = _recorded(matter, ministry, specialist, url=POSITION_URL)
     MatterExternalPosition.objects.filter(pk=position.pk).update(
         visibility_override=Visibility.RESTRICTED
     )
 
-    assert not [item for item in _timeline(matter, reader) if item.external_position]
+    assert [item for item in _timeline(matter, reader) if item.external_position]
     assert [item for item in _timeline(matter, specialist) if item.external_position]
+    assert not MatterExternalPosition.objects.visible_to(administrator).exists()
 
 
 def test_recording_a_position_writes_no_entry(normal_matter, specialist, ministry):
@@ -1506,18 +1515,22 @@ def test_a_reader_may_not_write_a_position(client, reader, normal_matter, minist
     assert not MatterExternalPosition.objects.filter(matter=normal_matter).exists()
 
 
-def test_a_restricted_position_is_invisible_to_a_reader_on_the_page(
-    client, reader, specialist, normal_matter, ministry
+def test_a_restricted_position_is_on_a_readers_page_and_on_no_outsiders(
+    client, reader, administrator, specialist, normal_matter, ministry
 ):
+    """Since docs/adr/0181 a READER reads it; an administrator gets a 404."""
     position = _recorded(normal_matter, ministry, specialist, url=POSITION_URL)
     MatterExternalPosition.objects.filter(pk=position.pk).update(
         visibility_override=Visibility.RESTRICTED
     )
     client.force_login(reader)
 
-    body = _detail(client, normal_matter)
+    assert "Teiste arvamus: Rahandusministeerium" in _detail(client, normal_matter)
 
-    assert "Teiste arvamus: Rahandusministeerium" not in body
+    client.force_login(administrator)
+    response = client.get(reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk}))
+    assert response.status_code == 404
+    assert "Rahandusministeerium" not in response.content.decode()
 
 
 def test_a_reader_may_not_open_the_correction_form(

@@ -118,10 +118,11 @@ def restricted_with_opinion(specialist, organisation):
     return matter
 
 
-@pytest.mark.parametrize("persona", ["reader", "administrator", "superuser"])
-def test_restricted_opinion_summary_is_not_found_counted_or_suggested(
+@pytest.mark.parametrize("persona", ["administrator", "superuser"])
+def test_restricted_opinion_summary_is_not_found_counted_or_suggested_for_an_outsider(
     request, client, restricted_with_opinion, persona
 ):
+    # docs/adr/0181: a READER is no longer an outsider (see the next test).
     user = request.getfixturevalue(persona)
     client.force_login(user)
 
@@ -136,21 +137,33 @@ def test_restricted_opinion_summary_is_not_found_counted_or_suggested(
     assert suggestions["has_more"] is False
 
 
-def test_the_owner_finds_the_restricted_summary_with_a_highlight(
-    signed_in, restricted_with_opinion
+@pytest.mark.parametrize("persona", ["specialist", "reader"])
+def test_the_owner_and_a_reader_find_the_restricted_summary_with_a_highlight(
+    request, client, restricted_with_opinion, persona
 ):
-    page = _search(signed_in, SECRET)
+    user = request.getfixturevalue(persona)
+    client.force_login(user)
+    page = _search(client, SECRET)
     assert page.context["result_count"] == 1
+    assert result_count(query=SECRET, user=user) == 1
     assert SECRET in page.content.decode()
 
 
-def test_restricted_matter_reference_does_not_redirect_a_reader(client, reader, specialist):
+def test_restricted_matter_reference_redirects_a_reader_and_not_an_outsider(
+    client, reader, specialist, administrator
+):
+    """docs/adr/0181: the READER is taken to the file like its owner; an
+    administrator without a grant is not."""
     matter = _matter(specialist, visibility=Visibility.RESTRICTED)
-    client.force_login(reader)
     reference = f"{matter.reference_year}_{matter.reference_number}"
 
+    client.force_login(reader)
     response = _search(client, reference)
+    assert response.status_code == 302
+    assert response["Location"] == reverse("matters:matter_detail", kwargs={"pk": matter.pk})
 
+    client.force_login(administrator)
+    response = _search(client, reference)
     assert response.status_code == 200
     assert response.context["result_count"] == 0
 
@@ -177,19 +190,24 @@ def test_document_rename_through_the_view_is_searchable_at_once(
     assert not search_documents(query="Vanapealkiri", user=specialist).exists()
 
 
-def test_matter_restriction_hides_its_rows_from_a_reader_without_a_rebuild(
-    specialist, reader, organisation
+def test_matter_restriction_changes_no_readers_rows_and_opens_none_to_an_outsider(
+    specialist, reader, administrator, organisation
 ):
+    """docs/adr/0181: restricting is a label, not a boundary between readers."""
     from app.matters.services import set_matter_visibility
 
     matter = _matter(specialist, title="Hiljem piiratud teema")
     send_koja_arvamus(matter, specialist, [organisation], day(-1))
-    assert search_documents(query="Hiljem piiratud", user=reader).exists()
+    before = result_count(query="Hiljem piiratud", user=reader)
+    assert before > 0
+    assert result_count(query="Hiljem piiratud", user=administrator) == 0
 
     set_matter_visibility(matter=matter, visibility=Visibility.RESTRICTED, actor=specialist)
 
-    assert not search_documents(query="Hiljem piiratud", user=reader).exists()
-    assert result_count(query="Hiljem piiratud", user=reader) == 0
+    assert result_count(query="Hiljem piiratud", user=reader) == before
+    assert result_count(query="Hiljem piiratud", user=specialist) == before
+    assert not search_documents(query="Hiljem piiratud", user=administrator).exists()
+    assert result_count(query="Hiljem piiratud", user=administrator) == 0
 
 
 def test_corrected_opinion_summary_is_searchable_at_once(signed_in, specialist, organisation):

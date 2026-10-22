@@ -365,8 +365,37 @@ class BackfillResult:
     examined: int
 
 
+#: Bumped when what `backfill_plan_digest` covers changes.
+BACKFILL_PLAN_DIGEST_VERSION = "owner-backfill-plan/1"
+
+
+def backfill_plan_digest(plan: BackfillPlan, mappings: MappingTables) -> str:
+    """What an operator approves before ``backfill_legacy_owners --apply`` (docs/adr/0184).
+
+    The mapping file's bytes, every era contract's bytes, and every Matter's
+    decision with the source observations and the accounts it resolved to.
+    """
+    from app.legacy_import.contracts import load_contracts
+    from app.legacy_import.integrity import canonical_sha256
+
+    return canonical_sha256(
+        {
+            "version": BACKFILL_PLAN_DIGEST_VERSION,
+            "operation_version": BACKFILL_VERSION,
+            "mapping_sha256": mappings.source_sha256,
+            "contracts": {
+                str(year): contract.source_sha256
+                for year, contract in sorted(load_contracts().items())
+            },
+            "plans": plan.plans,
+        }
+    )
+
+
 @transaction.atomic
-def apply_backfill_plan(plan: BackfillPlan, *, actor: Any = None) -> BackfillResult:
+def apply_backfill_plan(
+    plan: BackfillPlan, *, actor: Any = None, approval_sha256: str = ""
+) -> BackfillResult:
     """Assign the owners the plan found. One transaction, or none of them.
 
     Goes through :func:`app.matters.services.assign_matter` rather than writing
@@ -385,11 +414,14 @@ def apply_backfill_plan(plan: BackfillPlan, *, actor: Any = None) -> BackfillRes
         matter = lock_matter_for_write(candidate.matter.pk)
         if matter.owner_id is not None:
             continue
+        provenance = dict(candidate.provenance)
+        if approval_sha256:
+            provenance["plan_sha256"] = approval_sha256
         assign_matter(
             matter=matter,
             owner=candidate.owner,
             actor=actor,
-            provenance=candidate.provenance,
+            provenance=provenance,
         )
         touched.append(matter.pk)
         assigned += 1

@@ -26,15 +26,20 @@ Three rules, the same ones `app.documents.extraction.limits` keeps for uploads:
 
 from __future__ import annotations
 
+import csv
 import hashlib
+import io
+import json
 import os
 import re
+import tempfile
 import zipfile
 import zlib
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, BinaryIO
+from typing import Any, BinaryIO, cast
 
 MiB = 1024 * 1024
 GiB = 1024 * MiB
@@ -72,6 +77,26 @@ _DEFAULTS: dict[str, int] = {
     "LEGACY_IMPORT_MAX_SHEET_ROWS": 200_000,
     "LEGACY_IMPORT_MAX_SHEET_CELLS": 25_000_000,
     "LEGACY_IMPORT_MAX_WORKBOOK_CELLS": 100_000_000,
+    # Columns a sheet really holds (its loaded extent). The *declared* width is
+    # not bounded: the real register declares ``A1:WVP313`` — 16,016 columns of
+    # formatting — and loads at most 34 (docs/adr/0184).
+    "LEGACY_IMPORT_MAX_SHEET_COLUMNS": 1_000,
+    # Source trees and the documents in them (docs/adr/0184): the OneNote
+    # archive, an evidence package, the migration audit, an opinions folder.
+    "LEGACY_IMPORT_MAX_JSON_BYTES": 64 * MiB,
+    "LEGACY_IMPORT_MAX_TEXT_BYTES": 64 * MiB,
+    "LEGACY_IMPORT_MAX_CSV_BYTES": 256 * MiB,
+    "LEGACY_IMPORT_MAX_CSV_ROWS": 1_000_000,
+    "LEGACY_IMPORT_MAX_CSV_FIELD_CHARS": 131_072,
+    "LEGACY_IMPORT_MAX_PAGES": 20_000,
+    "LEGACY_IMPORT_MAX_PAGE_RESOURCES": 5_000,
+    "LEGACY_IMPORT_MAX_DIRECTORY_MEMBERS": 50_000,
+    "LEGACY_IMPORT_MAX_SOURCE_FILES": 500_000,
+    "LEGACY_IMPORT_MAX_TOTAL_SOURCE_BYTES": 32 * GiB,
+    # The whole run: every byte any reader takes from a source, counted once
+    # per read, so re-reading the same corpus is charged too.
+    "LEGACY_IMPORT_MAX_WORK_BYTES": 128 * GiB,
+    "LEGACY_IMPORT_MAX_WORK_FILES": 5_000_000,
 }
 
 
@@ -101,6 +126,19 @@ class SourceLimits:
     max_sheet_rows: int
     max_sheet_cells: int
     max_workbook_cells: int
+    max_sheet_columns: int = _DEFAULTS["LEGACY_IMPORT_MAX_SHEET_COLUMNS"]
+    max_json_bytes: int = _DEFAULTS["LEGACY_IMPORT_MAX_JSON_BYTES"]
+    max_text_bytes: int = _DEFAULTS["LEGACY_IMPORT_MAX_TEXT_BYTES"]
+    max_csv_bytes: int = _DEFAULTS["LEGACY_IMPORT_MAX_CSV_BYTES"]
+    max_csv_rows: int = _DEFAULTS["LEGACY_IMPORT_MAX_CSV_ROWS"]
+    max_csv_field_chars: int = _DEFAULTS["LEGACY_IMPORT_MAX_CSV_FIELD_CHARS"]
+    max_pages: int = _DEFAULTS["LEGACY_IMPORT_MAX_PAGES"]
+    max_page_resources: int = _DEFAULTS["LEGACY_IMPORT_MAX_PAGE_RESOURCES"]
+    max_directory_members: int = _DEFAULTS["LEGACY_IMPORT_MAX_DIRECTORY_MEMBERS"]
+    max_source_files: int = _DEFAULTS["LEGACY_IMPORT_MAX_SOURCE_FILES"]
+    max_total_source_bytes: int = _DEFAULTS["LEGACY_IMPORT_MAX_TOTAL_SOURCE_BYTES"]
+    max_work_bytes: int = _DEFAULTS["LEGACY_IMPORT_MAX_WORK_BYTES"]
+    max_work_files: int = _DEFAULTS["LEGACY_IMPORT_MAX_WORK_FILES"]
 
 
 def current_limits() -> SourceLimits:
@@ -120,7 +158,111 @@ def current_limits() -> SourceLimits:
         max_sheet_rows=_configured("LEGACY_IMPORT_MAX_SHEET_ROWS"),
         max_sheet_cells=_configured("LEGACY_IMPORT_MAX_SHEET_CELLS"),
         max_workbook_cells=_configured("LEGACY_IMPORT_MAX_WORKBOOK_CELLS"),
+        max_sheet_columns=_configured("LEGACY_IMPORT_MAX_SHEET_COLUMNS"),
+        max_json_bytes=_configured("LEGACY_IMPORT_MAX_JSON_BYTES"),
+        max_text_bytes=_configured("LEGACY_IMPORT_MAX_TEXT_BYTES"),
+        max_csv_bytes=_configured("LEGACY_IMPORT_MAX_CSV_BYTES"),
+        max_csv_rows=_configured("LEGACY_IMPORT_MAX_CSV_ROWS"),
+        max_csv_field_chars=_configured("LEGACY_IMPORT_MAX_CSV_FIELD_CHARS"),
+        max_pages=_configured("LEGACY_IMPORT_MAX_PAGES"),
+        max_page_resources=_configured("LEGACY_IMPORT_MAX_PAGE_RESOURCES"),
+        max_directory_members=_configured("LEGACY_IMPORT_MAX_DIRECTORY_MEMBERS"),
+        max_source_files=_configured("LEGACY_IMPORT_MAX_SOURCE_FILES"),
+        max_total_source_bytes=_configured("LEGACY_IMPORT_MAX_TOTAL_SOURCE_BYTES"),
+        max_work_bytes=_configured("LEGACY_IMPORT_MAX_WORK_BYTES"),
+        max_work_files=_configured("LEGACY_IMPORT_MAX_WORK_FILES"),
     )
+
+
+class WorkBudget:
+    """Everything one run reads from its sources, counted as it is read.
+
+    Per-file limits stop one oversized file; this stops a source made of very
+    many acceptable ones, and a run that reads the same corpus over and over.
+    Every bounded read in `safe_paths` charges the budget it is handed.
+    """
+
+    def __init__(self, limits: SourceLimits | None = None) -> None:
+        limits = limits or current_limits()
+        self.max_bytes = limits.max_work_bytes
+        self.max_files = limits.max_work_files
+        self.bytes = 0
+        self.files = 0
+
+    def open_file(self) -> None:
+        self.files += 1
+        if self.files > self.max_files:
+            raise SourceLimitExceeded(
+                f"This run has opened more than {self.max_files} source files; "
+                f"the limit is {self.max_files}."
+            )
+
+    def charge(self, size: int) -> None:
+        self.bytes += size
+        if self.bytes > self.max_bytes:
+            raise SourceLimitExceeded(
+                f"This run has read more than {self.max_bytes} bytes of source; "
+                f"the limit is {self.max_bytes}."
+            )
+
+
+# ---------------------------------------------------------------------------
+# JSON and CSV documents
+# ---------------------------------------------------------------------------
+
+
+def check_document_size(size: int, maximum: int, *, what: str) -> None:
+    if size > maximum:
+        raise SourceLimitExceeded(f"{what} is {size} bytes; the limit is {maximum}.")
+
+
+def load_json_document(data: bytes, *, what: str, limits: SourceLimits | None = None) -> Any:
+    """A JSON document, refused by size before it is parsed and by shape while it is.
+
+    The size bounds the memory a parse can take; a document nested deeper than
+    the interpreter's recursion limit is refused rather than crashing the run.
+    """
+    limits = limits or current_limits()
+    check_document_size(len(data), limits.max_json_bytes, what=what)
+    try:
+        return json.loads(data.decode("utf-8"))
+    except RecursionError as error:
+        raise SourceLimitExceeded(f"{what} is nested too deeply to read.") from error
+
+
+def read_csv_document(
+    data: bytes, *, what: str, limits: SourceLimits | None = None, **reader: Any
+) -> list[dict[str, str]]:
+    """The rows of a CSV document, bounded in bytes, rows and field length.
+
+    The field bound is checked per cell rather than by raising the process-wide
+    ``csv.field_size_limit``, which every other reader in the process shares;
+    the C reader's own limit (131,072 characters by default) still applies, and
+    a field past it is refused here with the same message.
+    """
+    limits = limits or current_limits()
+    check_document_size(len(data), limits.max_csv_bytes, what=what)
+    # utf-8-sig: the audit's CSVs open in Excel, so they carry a BOM, and a
+    # BOM on the first header turns `page_key` into `﻿page_key`.
+    text = data.decode("utf-8-sig")
+    rows: list[dict[str, str]] = []
+    try:
+        for count, row in enumerate(csv.DictReader(io.StringIO(text, newline=""), **reader), 1):
+            if count > limits.max_csv_rows:
+                raise SourceLimitExceeded(
+                    f"{what} has more than {limits.max_csv_rows} rows; "
+                    f"the limit is {limits.max_csv_rows}."
+                )
+            for value in row.values():
+                if isinstance(value, str) and len(value) > limits.max_csv_field_chars:
+                    raise SourceLimitExceeded(
+                        f"{what} has a field longer than {limits.max_csv_field_chars} "
+                        f"characters; the limit is {limits.max_csv_field_chars}."
+                    )
+            rows.append(row)
+    except csv.Error as error:
+        raise SourceLimitExceeded(f"{what} cannot be read as CSV: {error}") from error
+    return rows
 
 
 # ---------------------------------------------------------------------------
@@ -301,7 +443,61 @@ def _dimension_of(archive: zipfile.ZipFile, info: zipfile.ZipInfo) -> str | None
     return match.group(1).decode("ascii", errors="replace") if match else None
 
 
-def check_workbook_file(path: Path, limits: SourceLimits | None = None) -> None:
+#: How much of a private copy stays in memory before it spills to a temporary file.
+_SPOOL_IN_MEMORY = 64 * MiB
+
+
+@contextmanager
+def private_copy(path: Path, *, max_bytes: int, what: str) -> Iterator[tuple[str, BinaryIO]]:
+    """(SHA-256, a private copy) of `path`, read once and hashed as it is copied.
+
+    The caller parses the copy, so the digest it reports — and an operator
+    pins — is the digest of the bytes it parsed, not of a file that may have
+    been replaced between a hashing open and a parsing one (docs/adr/0184). The
+    copy lives in memory up to 64 MiB, then in a temporary file deleted on exit.
+    """
+    path = Path(path)
+    digest = hashlib.sha256()
+    size = 0
+    spool = tempfile.SpooledTemporaryFile(max_size=_SPOOL_IN_MEMORY)
+    try:
+        with path.open("rb") as handle:
+            while block := handle.read(_CHUNK):
+                size += len(block)
+                if size > max_bytes:
+                    raise SourceLimitExceeded(
+                        f"{path.name}: the {what} is larger than {max_bytes} bytes; "
+                        f"the limit is {max_bytes}."
+                    )
+                digest.update(block)
+                spool.write(block)
+        spool.seek(0)
+        yield digest.hexdigest(), cast(BinaryIO, spool)
+    finally:
+        spool.close()
+
+
+def read_workbook_bytes(path: Path, limits: SourceLimits | None = None) -> bytes:
+    """A workbook's bytes, read once and refused past the workbook size limit."""
+    limits = limits or current_limits()
+    path = Path(path)
+    parts: list[bytes] = []
+    size = 0
+    with path.open("rb") as handle:
+        while block := handle.read(_CHUNK):
+            size += len(block)
+            if size > limits.max_workbook_bytes:
+                raise SourceLimitExceeded(
+                    f"{path.name}: the workbook is larger than {limits.max_workbook_bytes} "
+                    f"bytes; the limit is {limits.max_workbook_bytes}."
+                )
+            parts.append(block)
+    return b"".join(parts)
+
+
+def check_workbook_file(
+    path: Path, limits: SourceLimits | None = None, *, data: bytes | None = None
+) -> None:
     """Refuse a workbook shaped like a decompression or dimension attack, before parsing.
 
     An XLSX is a ZIP of XML parts. Its size, its parts' declared sizes and
@@ -311,9 +507,15 @@ def check_workbook_file(path: Path, limits: SourceLimits | None = None) -> None:
     """
     limits = limits or current_limits()
     path = Path(path)
-    check_file_size(path, limits.max_workbook_bytes, what="workbook")
+    if data is None:
+        check_file_size(path, limits.max_workbook_bytes, what="workbook")
+    elif len(data) > limits.max_workbook_bytes:
+        raise SourceLimitExceeded(
+            f"{path.name}: the workbook is {len(data)} bytes; the limit is "
+            f"{limits.max_workbook_bytes}."
+        )
     try:
-        with zipfile.ZipFile(path) as archive:
+        with zipfile.ZipFile(io.BytesIO(data) if data is not None else path) as archive:
             check_zip_directory(
                 archive.infolist(),
                 max_members=limits.max_workbook_parts,
@@ -328,25 +530,33 @@ def check_workbook_file(path: Path, limits: SourceLimits | None = None) -> None:
                     f"{path.name} has {len(sheets)} worksheets; the limit is "
                     f"{limits.max_worksheets}."
                 )
-            total = 0
             for info in sheets:
                 ref = _dimension_of(archive, info)
                 extent = declared_extent(ref) if ref else None
                 if extent is None:
                     continue
-                total += _check_extent(path.name, info.filename, *extent, limits=limits)
-                if total > limits.max_workbook_cells:
-                    raise SourceLimitExceeded(
-                        f"{path.name} declares more than {limits.max_workbook_cells} cells."
-                    )
+                # Rows only (docs/adr/0184). A declared width is formatting:
+                # openpyxl loads the cells that exist, every reader walks the
+                # loaded extent, and `check_loaded_workbook` bounds that — rows,
+                # real columns and cells — before any row loop.
+                _check_rows(path.name, info.filename, extent[0], limits=limits)
     except zipfile.BadZipFile as error:
         raise SourceLimitExceeded(f"{path.name} is not a readable workbook: {error}") from error
 
 
-def _check_extent(name: str, sheet: str, rows: int, columns: int, *, limits: SourceLimits) -> int:
+def _check_rows(name: str, sheet: str, rows: int, *, limits: SourceLimits) -> None:
     if rows > limits.max_sheet_rows:
         raise SourceLimitExceeded(
             f"{name}: sheet {sheet!r} spans {rows} rows; the limit is {limits.max_sheet_rows}."
+        )
+
+
+def _check_extent(name: str, sheet: str, rows: int, columns: int, *, limits: SourceLimits) -> int:
+    _check_rows(name, sheet, rows, limits=limits)
+    if columns > limits.max_sheet_columns:
+        raise SourceLimitExceeded(
+            f"{name}: sheet {sheet!r} holds {columns} columns; the limit is "
+            f"{limits.max_sheet_columns}."
         )
     cells = rows * columns
     if cells > limits.max_sheet_cells:

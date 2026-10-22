@@ -35,6 +35,7 @@ from app.submissions.enums import (
 )
 from app.submissions.models import SubmissionRecipient
 from tests import factories
+from tests.break_glass import grant_to
 
 pytestmark = pytest.mark.django_db
 
@@ -91,6 +92,29 @@ def context(db):
     return build
 
 
+@pytest.fixture
+def break_glass(administrator):
+    """An active break-glass grant for the `administrator` fixture.
+
+    Since docs/adr/0181 an administrator reads no business content without one,
+    so a queue decision that names a Matter cannot find the Matter without it
+    («Valitud teemat ei leitud»). The queue's own gate is unchanged.
+    """
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from app.accounts.models import BreakGlassGrant
+
+    return BreakGlassGrant.objects.create(
+        user=administrator,
+        granted_by=factories.DepartmentHeadFactory(),
+        reason="Arhiivi ülevaatus",
+        starts_at=timezone.now() - timedelta(minutes=1),
+        expires_at=timezone.now() + timedelta(hours=1),
+    )
+
+
 def candidate(batch, item, *, matter=None, state=OpinionCandidateState.PENDING, klass=None):
     return OpinionMatchCandidate.objects.create(
         item=item,
@@ -115,7 +139,7 @@ def test_the_queue_is_administrative_and_a_specialist_is_refused(client, special
 def test_an_administrator_may_open_the_queue(client, administrator):
     batch, item = catalogue()
     candidate(batch, item)
-    client.force_login(administrator)
+    client.force_login(grant_to(administrator))
     response = client.get(reverse("legacy_import:opinion_queue"))
     assert response.status_code == 200
     body = response.content.decode()
@@ -138,7 +162,7 @@ def test_a_decision_requires_a_post(client, administrator):
 
 
 def test_linking_records_the_matter_without_claiming_the_letter_was_sent(
-    client, administrator, normal_matter
+    client, administrator, break_glass, normal_matter
 ):
     batch, item = catalogue()
     row = candidate(batch, item, matter=normal_matter)
@@ -154,7 +178,9 @@ def test_linking_records_the_matter_without_claiming_the_letter_was_sent(
     assert row.decided_by_id == administrator.pk
 
 
-def test_confirming_a_send_without_any_date_is_refused(client, administrator, normal_matter):
+def test_confirming_a_send_without_any_date_is_refused(
+    client, administrator, break_glass, normal_matter
+):
     batch, item = catalogue()
     row = candidate(batch, item, matter=normal_matter)
     client.force_login(administrator)
@@ -169,7 +195,9 @@ def test_confirming_a_send_without_any_date_is_refused(client, administrator, no
     assert row.review_approves_submission is False
 
 
-def test_a_reviewed_date_is_recorded_as_a_reviewed_date(client, administrator, normal_matter):
+def test_a_reviewed_date_is_recorded_as_a_reviewed_date(
+    client, administrator, break_glass, normal_matter
+):
     """Never as a register value: a person's judgement must stay legible as one."""
     batch, item = catalogue()
     row = candidate(batch, item, matter=normal_matter)
@@ -185,7 +213,7 @@ def test_a_reviewed_date_is_recorded_as_a_reviewed_date(client, administrator, n
     assert row.excel_sent_date is None
 
 
-def test_deciding_twice_leaves_one_decision(client, administrator, normal_matter):
+def test_deciding_twice_leaves_one_decision(client, administrator, break_glass, normal_matter):
     batch, item = catalogue()
     row = candidate(batch, item, matter=normal_matter)
     client.force_login(administrator)
@@ -235,20 +263,33 @@ def test_matter_coverage_counts_a_settled_file(context, specialist, normal_matte
     assert compute(keys.OPINION_ARCHIVE_MATTER_COVERAGE, context(specialist)).value == 100
 
 
-def test_a_candidate_naming_a_restricted_matter_is_not_counted_for_everyone(
-    context, specialist, administrator
-):
-    """The outsider reads the archive and not the Matter: the administrator.
+def _withheld():
+    import re
 
-    A reader who may not read the archive at all is not asked here — every
-    archive metric is withheld from them (tests/test_reporting_archive_access.py).
+    from app.reporting.archive_access import ARCHIVE_WITHHELD, ArchiveMetricWithheld
+
+    return pytest.raises(ArchiveMetricWithheld, match=re.escape(ARCHIVE_WITHHELD))
+
+
+def test_a_candidate_naming_a_restricted_matter_counts_for_every_reader_and_no_outsider(
+    context, specialist, reader, administrator
+):
+    """Since docs/adr/0181 nobody reads the archive and not the Matter.
+
+    Every authorized reader (a READER too) reads both and counts the candidate
+    as the owner does; the administrator without a grant reads neither, and every
+    archive metric is withheld from it (tests/test_reporting_archive_access.py).
     """
     restricted = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
     batch, item = catalogue()
     candidate(batch, item, matter=restricted)
-    assert _sees(specialist, restricted) and not _sees(administrator, restricted)
+    assert _sees(specialist, restricted) and _sees(reader, restricted)
+    assert not _sees(administrator, restricted)
 
-    assert compute(keys.OPINION_ARCHIVE_UNRESOLVED, context(administrator)).value == 0
+    owner = compute(keys.OPINION_ARCHIVE_UNRESOLVED, context(specialist)).value
+    assert compute(keys.OPINION_ARCHIVE_UNRESOLVED, context(reader)).value == owner == 1
+    with _withheld():
+        compute(keys.OPINION_ARCHIVE_UNRESOLVED, context(administrator))
 
 
 def _sees(user, matter) -> bool:
@@ -259,26 +300,28 @@ def _sees(user, matter) -> bool:
 
 @pytest.mark.parametrize("state", [OpinionCandidateState.APPLIED, OpinionCandidateState.LINKED])
 def test_matter_coverage_counts_a_restricted_link_only_for_who_may_see_it(
-    context, specialist, administrator, state
+    context, specialist, reader, administrator, state
 ):
     """AUD-044: the numerator is the reader's; the inventory is every archive reader's.
 
-    The outsider is the administrator, who reads the archive but not RESTRICTED
-    Matters (docs/adr/0175 withholds the whole metric from non-archive readers).
+    Since docs/adr/0181 every archive reader (a READER too) reads the RESTRICTED
+    Matter and gets the owner's figure; the administrator without a grant reads
+    neither, and the whole metric is withheld from it (docs/adr/0175).
     """
     restricted = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
     batch, item = catalogue()
     candidate(batch, item, matter=restricted, state=state)
-    assert _sees(specialist, restricted) and not _sees(administrator, restricted)
+    assert _sees(specialist, restricted) and _sees(reader, restricted)
+    assert not _sees(administrator, restricted)
 
     participant = compute(keys.OPINION_ARCHIVE_MATTER_COVERAGE, context(specialist))
-    outsider = compute(keys.OPINION_ARCHIVE_MATTER_COVERAGE, context(administrator))
+    colleague = compute(keys.OPINION_ARCHIVE_MATTER_COVERAGE, context(reader))
 
     assert (participant.value, participant.coverage_count) == (100, 1)
-    # The outsider's figure does not move, and its denominator is the same
-    # archive — so nothing about the restricted Matter can be read off it.
-    assert (outsider.value, outsider.coverage_count) == (0, 0)
-    assert participant.coverage_denominator == outsider.coverage_denominator == 1
+    assert (colleague.value, colleague.coverage_count) == (100, 1)
+    assert participant.coverage_denominator == colleague.coverage_denominator == 1
+    with _withheld():
+        compute(keys.OPINION_ARCHIVE_MATTER_COVERAGE, context(administrator))
 
 
 def test_matter_coverage_counts_a_file_once_however_many_matters_it_reached(context, specialist):
@@ -297,8 +340,10 @@ def test_matter_coverage_counts_a_file_once_however_many_matters_it_reached(cont
 
 
 def test_historical_submission_coverage_counts_a_restricted_reconstruction_only_for_who_may_see_it(
-    context, specialist, administrator
+    context, specialist, reader, administrator
 ):
+    # docs/adr/0181: a READER gets the owner's figure; the administrator without a
+    # grant has the whole archive metric withheld.
     from app.legacy_import.opinion_archive import OpinionSubmissionImport
 
     restricted = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
@@ -306,14 +351,17 @@ def test_historical_submission_coverage_counts_a_restricted_reconstruction_only_
     submission = sent_submission(restricted, sent=datetime.date(2024, 4, 10))
     OpinionSubmissionImport.objects.create(item=item, batch=batch, submission=submission)
 
-    assert _sees(specialist, restricted) and not _sees(administrator, restricted)
+    assert _sees(specialist, restricted) and _sees(reader, restricted)
+    assert not _sees(administrator, restricted)
 
     participant = compute(keys.HISTORICAL_SUBMISSION_COVERAGE, context(specialist))
-    outsider = compute(keys.HISTORICAL_SUBMISSION_COVERAGE, context(administrator))
+    colleague = compute(keys.HISTORICAL_SUBMISSION_COVERAGE, context(reader))
 
     assert (participant.value, participant.coverage_count) == (100, 1)
-    assert (outsider.value, outsider.coverage_count) == (0, 0)
-    assert participant.coverage_denominator == outsider.coverage_denominator == 1
+    assert (colleague.value, colleague.coverage_count) == (100, 1)
+    assert participant.coverage_denominator == colleague.coverage_denominator == 1
+    with _withheld():
+        compute(keys.HISTORICAL_SUBMISSION_COVERAGE, context(administrator))
 
 
 # ---------------------------------------------------------------------------
@@ -421,7 +469,9 @@ def test_a_date_only_submission_never_renders_an_invented_time(client, specialis
 
 
 @pytest.mark.parametrize("decision", ["link", "confirm-sent"])
-def test_an_archive_file_is_never_settled_on_a_test_matter(client, administrator, decision):
+def test_an_archive_file_is_never_settled_on_a_test_matter(
+    client, administrator, break_glass, decision
+):
     """QA-STATS-04: the archive is real correspondence; a TEST Matter is not its home.
 
     Settling a letter on a development record put real evidence on it and

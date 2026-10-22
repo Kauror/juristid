@@ -35,7 +35,7 @@ from django.urls import reverse
 from app.core.authorization import apply as apply_scope
 from app.core.authorization import (
     matter_visibility_q,
-    may_review_historical_matches,
+    may_open_historical_review,
     scope_for_user,
 )
 from app.legacy_import.source_pages import CandidateClass, CandidateState, HistoricalMatchCandidate
@@ -60,10 +60,17 @@ def visible_candidates(context: ReportingContext) -> QuerySet[HistoricalMatchCan
 
     A candidate with no Matter is an unlinked page: there is no Matter to
     authorize through, and the row carries no Matter content — only the audit's
-    own class and score. Those are included; a candidate that *does* name a
-    Matter is included only if the reader may see it.
+    own class and score. Those are included for an authorized internal
+    reader; a candidate that *does* name a Matter is included only if the
+    reader may see it. Anybody else gets none (docs/adr/0181).
     """
     scope = scope_for_user(context.viewer)
+    if not scope.is_authenticated:
+        # Somebody who may read no business content counts no candidate either
+        # — not even one that names no Matter: an unlinked page or letter is
+        # still the corpus, and its count is a statement about it
+        # (docs/adr/0181).
+        return HistoricalMatchCandidate.objects.none()
     with_matter = apply_scope(
         HistoricalMatchCandidate.objects.filter(matter__isnull=False),
         matter_visibility_q(scope, prefix="matter__"),
@@ -74,8 +81,12 @@ def visible_candidates(context: ReportingContext) -> QuerySet[HistoricalMatchCan
 
 
 def can_open_review_queue(context: ReportingContext) -> bool:
-    """The link to the queue, asked the way the queue's own gate asks it (ENG-128)."""
-    return may_review_historical_matches(context.viewer)
+    """The link to the queue, asked the way the queue's own gate asks it (ENG-128).
+
+    Both of the queue's questions since docs/adr/0181: who works it, and whether
+    they may read what it shows.
+    """
+    return may_open_historical_review(context.viewer)
 
 
 def _review_url(context: ReportingContext, **params: str) -> str:

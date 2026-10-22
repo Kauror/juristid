@@ -1,15 +1,20 @@
 """Plan or perform a legacy register import.
 
     python manage.py import_legacy_register PATH --dry-run --report-dir DIR
-    python manage.py import_legacy_register PATH --apply   --report-dir DIR
+    python manage.py import_legacy_register PATH --apply   --report-dir DIR \
+        --expect-plan-sha256 D
 
 There is no default mode. One of ``--dry-run`` and ``--apply`` must be given,
 and giving neither is an error rather than a safe guess, because the safe guess
 is the one people stop reading. An import is not reversible by re-running it.
 
 ``--apply`` additionally refuses to run when the environment has not been
-cleared for real data, and refuses when the plan still contains rows needing
-review unless the operator says, in as many words, that they accept that.
+cleared for real data, refuses when the plan still contains rows needing
+review unless the operator says, in as many words, that they accept that, and
+refuses unless the plan it builds — inside the transaction that writes, with
+the Matter table locked — hashes to the digest the dry run printed and a person
+reviewed: the workbook's bytes, the mapping file, the era contracts, every
+row's decision and every database row it rests on (docs/adr/0184).
 """
 
 from __future__ import annotations
@@ -19,13 +24,30 @@ from typing import Any
 
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError, CommandParser
+from django.db import connection, transaction
 
 from app.legacy_import.apply import apply_plan
 from app.legacy_import.contracts import ContractError
 from app.legacy_import.enums import RowOutcome
+from app.legacy_import.integrity import IntegrityError, require_digest
+from app.legacy_import.limits import SourceLimitExceeded
 from app.legacy_import.plan_reports import build_summary, write_plan_reports
 from app.legacy_import.planner import build_plan
+from app.legacy_import.register_approval import register_plan_digest
 from app.legacy_import.resolution import MappingFileError, MappingTables
+
+
+def _hold_matters() -> None:
+    """Keep other writers off ``matters_matter`` until this transaction ends.
+
+    Readers pass. The plan reads which references exist; a Teema created under
+    one of them between the plan and the write would otherwise be duplicated
+    or matched by a decision nobody reviewed.
+    """
+    from app.matters.models import Matter
+
+    with connection.cursor() as cursor:
+        cursor.execute(f'LOCK TABLE "{Matter._meta.db_table}" IN SHARE ROW EXCLUSIVE MODE')
 
 
 class Command(BaseCommand):
@@ -56,38 +78,46 @@ class Command(BaseCommand):
             help="Apply even though some rows still need review. They are skipped, not guessed.",
         )
         parser.add_argument("--notes", default="", help="Recorded on the ImportBatch.")
+        parser.add_argument(
+            "--expect-plan-sha256",
+            default="",
+            help="apply: the plan digest the dry run printed and a person reviewed. Required.",
+        )
 
     def handle(self, *args: Any, **options: Any) -> None:
         path = Path(options["workbook"])
         if not path.exists():
             raise CommandError(f"Workbook not found: {path}")
 
-        try:
-            mappings = MappingTables.load(options["mapping_file"])
-        except MappingFileError as error:
-            raise CommandError(str(error)) from error
-
-        try:
-            plan = build_plan(path, mappings=mappings)
-        except (ContractError, MappingFileError) as error:
-            raise CommandError(str(error)) from error
-
-        summary = build_summary(plan, mode="dry-run" if options["dry_run"] else "apply")
-        self._print(summary)
-
-        if not plan.is_complete:  # pragma: no cover - defensive
-            raise CommandError("Row accounting is incomplete; refusing to continue.")
-
-        directory = Path(options["report_dir"])
-        write_plan_reports(plan, directory, mode=summary["mode"])
-        self.stdout.write(self.style.SUCCESS(f"\nReports written to {directory}"))
-
         if options["dry_run"]:
+            plan, mappings = self._plan(path, options)
+            digest = register_plan_digest(plan, mappings)
+            self._report(plan, options, digest)
             self.stdout.write("Dry run: nothing was written to the database.")
+            self.stdout.write(
+                "Apply this plan with --apply --expect-plan-sha256 " + digest + " once reviewed."
+            )
             return
 
-        self._guard_apply(plan, options)
-        result = apply_plan(plan, notes=options["notes"])
+        with transaction.atomic():
+            # The plan is built here, inside the transaction that writes, with
+            # the Matter table held against other writers: the database it
+            # resolved against is the database it writes to.
+            _hold_matters()
+            plan, mappings = self._plan(path, options)
+            digest = register_plan_digest(plan, mappings)
+            self._report(plan, options, digest)
+            self._guard_apply(plan, options)
+            try:
+                require_digest(
+                    digest,
+                    options["expect_plan_sha256"],
+                    flag="--expect-plan-sha256",
+                    what="The register import plan",
+                )
+            except IntegrityError as error:
+                raise CommandError(str(error)) from error
+            result = apply_plan(plan, notes=options["notes"], approval_sha256=digest)
 
         self.stdout.write("")
         self.stdout.write(self.style.SUCCESS("Applied"))
@@ -99,6 +129,29 @@ class Command(BaseCommand):
         self.stdout.write(f"  reserved numbers   {result.reserved}")
         self.stdout.write(f"  blank rows skipped {result.skipped}")
         self.stdout.write(f"  reference sequence {result.references_reserved}")
+
+    def _plan(self, path: Path, options: dict[str, Any]) -> tuple[Any, MappingTables]:
+        try:
+            mappings = MappingTables.load(options["mapping_file"])
+        except MappingFileError as error:
+            raise CommandError(str(error)) from error
+        try:
+            plan = build_plan(path, mappings=mappings)
+        except (ContractError, MappingFileError, SourceLimitExceeded) as error:
+            raise CommandError(str(error)) from error
+        return plan, mappings
+
+    def _report(self, plan: Any, options: dict[str, Any], digest: str) -> None:
+        summary = build_summary(plan, mode="dry-run" if options["dry_run"] else "apply")
+        self._print(summary)
+        self.stdout.write(f"  plan sha256 {digest}")
+
+        if not plan.is_complete:  # pragma: no cover - defensive
+            raise CommandError("Row accounting is incomplete; refusing to continue.")
+
+        directory = Path(options["report_dir"])
+        write_plan_reports(plan, directory, mode=summary["mode"])
+        self.stdout.write(self.style.SUCCESS(f"\nReports written to {directory}"))
 
     def _guard_apply(self, plan: Any, options: dict[str, Any]) -> None:
         if not getattr(settings, "REAL_DATA_ALLOWED", False):

@@ -27,14 +27,18 @@ invented them (Stage-2D brief 59).
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
+import re
 import time
 import urllib.request
 from typing import Any
+from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.core.cache import cache
+from django.utils.crypto import salted_hmac
 
 logger = logging.getLogger(__name__)
 
@@ -161,3 +165,101 @@ def identity_from_request(meta: dict[str, Any]) -> tuple[str, dict[str, Any]]:
 def seconds_until_expiry(claims: dict[str, Any]) -> int:
     expiry = int(claims.get("exp") or 0)
     return max(0, expiry - int(time.time()))
+
+
+# -- signing out ---------------------------------------------------------------
+#
+# Under Access this application does not own the sign-in: Cloudflare does, and
+# keeps forwarding the same signed assertion until its own session ends. Ending
+# only the local session therefore ended nothing — the very next request carried
+# the assertion again and the middleware signed the person straight back in
+# (csf_92343c92). Signing out has two halves now (docs/adr/0183):
+#
+# 1. **Upstream.** The sign-out answers with a redirect to Cloudflare's own
+#    logout endpoint, `/cdn-cgi/access/logout`, which ends the Access session.
+# 2. **Here, until upstream has happened.** The fresh, signed-out session
+#    remembers a keyed fingerprint of the assertion it was signed out with, and
+#    the middleware refuses to sign anybody in from that same assertion again.
+#    A *different* assertion — the person has signed in at Access afresh — signs
+#    in as usual.
+
+#: Cloudflare's logout endpoint, on the team domain or on the application's own.
+LOGOUT_PATH = "/cdn-cgi/access/logout"
+
+#: Every Cloudflare Zero Trust team domain is `<team>.cloudflareaccess.com`.
+TEAM_HOST_SUFFIX = ".cloudflareaccess.com"
+
+#: Session key for the fingerprint of the assertion this browser signed out with.
+SIGNED_OUT_ASSERTION = "cf_access:signed_out_assertion"
+
+_SIGNED_OUT_SALT = "app.accounts.cloudflare_access.signed_out_assertion"
+
+#: A DNS host name: dot-separated labels of letters, digits and inner hyphens.
+_LABEL = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+_HOST_LABELS = re.compile(rf"^{_LABEL}(?:\.{_LABEL})+$")
+
+
+def team_logout_url() -> str:
+    """The team domain's logout URL, or "" when the team domain is not one.
+
+    Built from `CF_ACCESS_TEAM_DOMAIN` — configuration, never the request — and
+    only when that is a plain `https://<team>.cloudflareaccess.com`: no path, no
+    query, no port, no credentials. Anything else gets no absolute URL at all,
+    so this can never become a redirect to somewhere a setting was mistyped to.
+    """
+    raw = (getattr(settings, "CF_ACCESS_TEAM_DOMAIN", "") or "").strip().rstrip("/")
+    if not raw:
+        return ""
+    if "://" not in raw:
+        raw = f"https://{raw}"
+    try:
+        parts = urlsplit(raw)
+        port = parts.port
+    except ValueError:
+        return ""
+    host = (parts.hostname or "").lower()
+    if (
+        parts.scheme != "https"
+        or port is not None
+        or parts.username
+        or parts.password
+        or parts.path
+        or parts.query
+        or parts.fragment
+        or not host.endswith(TEAM_HOST_SUFFIX)
+        or host == TEAM_HOST_SUFFIX.lstrip(".")
+        or not _HOST_LABELS.match(host)
+    ):
+        return ""
+    return f"https://{host}{LOGOUT_PATH}"
+
+
+def logout_url() -> str:
+    """Where the sign-out sends the browser: the team logout, else this host's own.
+
+    The team domain's endpoint ends the person's Access session for every
+    application. When the team domain is not a recognisable one, the
+    application's own `/cdn-cgi/access/logout` — a path on this host, which
+    Cloudflare's edge answers before the request reaches Juristid — ends the
+    Access session for this application.
+    """
+    return team_logout_url() or LOGOUT_PATH
+
+
+def _fingerprint(token: str) -> str:
+    """A keyed digest of an assertion: enough to recognise it, useless as one."""
+    return salted_hmac(_SIGNED_OUT_SALT, token, algorithm="sha256").hexdigest()[:32]
+
+
+def remember_signed_out(session: Any, token: str) -> None:
+    """Record, in a freshly signed-out session, the assertion it was signed out with."""
+    if token:
+        session[SIGNED_OUT_ASSERTION] = _fingerprint(token)
+
+
+def was_signed_out_with(session: Any, token: str) -> bool:
+    """Whether this browser signed out while holding exactly this assertion."""
+    stored = session.get(SIGNED_OUT_ASSERTION)
+    if not token or not isinstance(stored, str) or not stored:
+        return False
+    return hmac.compare_digest(stored, _fingerprint(token))

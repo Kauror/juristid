@@ -38,7 +38,7 @@ from app.audit.enums import SecurityEventType
 from app.audit.services import record_security_event
 from app.core.authorization import may_write_business_content
 from app.core.client_ip import client_ip
-from app.core.decorators import business_write_required, gate_required, viewer_for
+from app.core.decorators import business_write_required, viewer_for
 from app.core.errors import DomainError
 from app.core.http import content_disposition
 from app.core.middleware import NO_STORE
@@ -161,7 +161,7 @@ def upload_evidence(request: HttpRequest, matter_id: Any) -> HttpResponse:
             matter=matter,
             title=form.cleaned_data["title"].strip() or upload.filename,
             role=form.cleaned_data["role"],
-            content=upload.content,
+            content=upload.body,
             original_filename=upload.filename,
             mime_type=upload.mime_type,
             actor=request.user,
@@ -204,7 +204,7 @@ def add_version(request: HttpRequest, pk: Any) -> HttpResponse:
         upload = read_upload(request.FILES.get("upload"))
         add_version_on_open_matter(
             document=document,
-            content=upload.content,
+            content=upload.body,
             original_filename=upload.filename,
             mime_type=upload.mime_type,
             uploaded_by=request.user,
@@ -281,7 +281,7 @@ def remove(request: HttpRequest, pk: Any) -> HttpResponse:
     return redirect("matters:matter_documents", pk=document.matter_id)
 
 
-@gate_required
+@login_required
 def download(request: HttpRequest, pk: Any) -> FileResponse:
     """Stream one evidence version to a user entitled to read it.
 
@@ -333,7 +333,7 @@ def download(request: HttpRequest, pk: Any) -> FileResponse:
     return response
 
 
-@gate_required
+@login_required
 def open_inline(request: HttpRequest, pk: Any) -> HttpResponseBase:
     """Render one stored file in the browser, when that is safe.
 
@@ -380,7 +380,7 @@ def open_inline(request: HttpRequest, pk: Any) -> HttpResponseBase:
     return inline.apply_inline_headers(response, filename=version.original_filename)
 
 
-@gate_required
+@login_required
 def thumbnail(request: HttpRequest, pk: Any) -> FileResponse:
     """Serve a generated preview image, inline.
 
@@ -427,7 +427,7 @@ def thumbnail(request: HttpRequest, pk: Any) -> FileResponse:
     return response
 
 
-@gate_required
+@login_required
 def document_detail(request: HttpRequest, pk: Any) -> HttpResponse:
     """One document: its evidence, its derived preview, and the line between.
 

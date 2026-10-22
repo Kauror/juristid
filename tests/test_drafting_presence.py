@@ -217,22 +217,27 @@ def test_the_parsed_date_would_have_disagreed(applied):
 # ---------------------------------------------------------------------------
 
 
-def test_the_count_is_still_authorized_before_it_is_counted(applied):
+def test_the_count_is_still_authorized_before_it_is_counted(applied, administrator):
     """A hidden Matter must not appear in somebody else's total.
 
     The fix changes which column the filter reads and nothing about where
-    authorization happens; this is here so that stays true. Counted for the
-    reader, because since docs/adr/0042 a lawyer reads the department and so
-    cannot show a restriction taking effect.
+    authorization happens; this is here so that stays true. Since
+    docs/adr/0181 every authorized reader — the READER included — reads the
+    department, RESTRICTED or not, so the total that must stay empty is the
+    administrator's (no grant), and the READER's must equal the head's.
     """
     from app.core.enums import Visibility
     from app.matters.models import Matter
 
     visible = dashboard.drafting_matters(applied.people.head)
-    assert visible.count() >= 1
+    total = visible.count()
+    assert total >= 1
+    assert dashboard.drafting_matters(administrator).count() == 0
 
     Matter.objects.filter(pk__in=[m.pk for m in visible]).update(visibility=Visibility.RESTRICTED)
-    assert dashboard.drafting_matters(applied.people.reader).count() == 0
+    assert dashboard.drafting_matters(applied.people.reader).count() == total
+    assert dashboard.drafting_matters(applied.people.head).count() == total
+    assert dashboard.drafting_matters(administrator).count() == 0
 
 
 def test_rebuilding_the_derived_state_changes_nothing(applied):

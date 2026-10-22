@@ -238,13 +238,19 @@ def test_each_page_renders_what_the_code_it_replaced_rendered(
     assert new == before
 
 
-def test_quiet_differs_by_reader_so_the_comparison_can_fail(
-    specialist, other_specialist, reader, organisation
+def test_a_restricted_entry_keeps_a_file_active_for_every_reader_alike(
+    specialist, other_specialist, reader, administrator, organisation
 ):
-    """A restricted entry yesterday makes a file active for one reader and quiet for another."""
+    """A restricted entry yesterday makes a file active for every authorized reader.
+
+    It used to make the file active for the specialist and quiet for a READER,
+    which is what let the comparison below fail. Since docs/adr/0181 a READER
+    sees yesterday's entry too, so the two populations are one; an
+    administrator without a business role has no quiet files at all.
+    """
     matters = _world(specialist, other_specialist, organisation)
-    # Old work and a restricted entry yesterday (shape 2), on a Matter a READER may open.
-    hidden_activity = [
+    # Old work and a restricted entry yesterday (shape 2), on a NORMAL Matter.
+    restricted_activity = [
         m
         for index, m in enumerate(matters[:-1])
         if index % 4 == 2 and m.visibility == Visibility.NORMAL
@@ -253,12 +259,11 @@ def test_quiet_differs_by_reader_so_the_comparison_can_fail(
     for_specialist = set(wi.quiet_matters(specialist))
     for_reader = set(wi.quiet_matters(reader))
 
-    # Some of them have other recent work too; the ones that do not are quiet
-    # for the READER only, because only the specialist may see yesterday's entry.
-    quiet_for_the_reader_only = [m for m in hidden_activity if m.pk in for_reader]
-    assert quiet_for_the_reader_only
-    for matter in quiet_for_the_reader_only:
-        assert matter.pk not in for_specialist
+    assert for_reader == for_specialist
+    # The restricted entry is what keeps these active, for both alike.
+    kept_active = [m for m in restricted_activity if m.pk not in for_specialist]
+    assert kept_active
+    assert set(wi.quiet_matters(administrator)) == set()
 
 
 def _old_quiet(user, today):

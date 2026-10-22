@@ -114,12 +114,17 @@ def test_removing_a_note_removes_its_projection(normal_matter, specialist):
     ).exists()
 
 
-def test_a_note_on_a_restricted_matter_is_not_findable_by_a_reader(
-    restricted_matter, specialist, reader
+def test_a_note_on_a_restricted_matter_is_findable_by_a_reader_and_not_an_outsider(
+    restricted_matter, specialist, reader, administrator
 ):
+    # docs/adr/0181: a READER finds it as the owner does; an administrator nothing.
     _note(restricted_matter, specialist)
 
-    assert _titles(reader, "teise lugemise versiooni") == []
+    assert _titles(reader, "teise lugemise versiooni") == [restricted_matter.title]
+    assert _titles(reader, "teise lugemise versiooni") == _titles(
+        specialist, "teise lugemise versiooni"
+    )
+    assert _titles(administrator, "teise lugemise versiooni") == []
 
 
 # ---------------------------------------------------------------------------
@@ -191,33 +196,60 @@ def test_the_lawyers_private_note_stays_out_of_the_corpus(normal_matter, special
     assert _titles(specialist, "kulumõjuga") == []
 
 
-def test_an_opinion_on_a_restricted_matter_is_not_findable_by_a_reader(
-    restricted_matter, specialist, reader
+def test_an_opinion_on_a_restricted_matter_is_findable_by_a_reader_and_not_an_outsider(
+    restricted_matter, specialist, reader, administrator
 ):
+    # docs/adr/0181: a READER finds it as the owner does; an administrator nothing.
     _position(restricted_matter, specialist)
 
-    assert _titles(reader, "pikemat üleminekuaega") == []
+    assert _titles(reader, "pikemat üleminekuaega") == [restricted_matter.title]
+    assert _titles(reader, "pikemat üleminekuaega") == _titles(specialist, "pikemat üleminekuaega")
+    assert _titles(administrator, "pikemat üleminekuaega") == []
 
 
-def test_a_restricted_opinion_disappears_without_a_reindex(normal_matter, specialist, reader):
+def test_a_restricted_opinion_disappears_without_a_reindex(
+    normal_matter, specialist, reader, administrator, monkeypatch
+):
     """Authorization is evaluated against the record's *current* override.
 
     This is the whole reason the opinion gets a row of its own rather than
     being folded into the Matter's, and it is the rule AUTH-003 established for
     `Kaasamine`: restricting a child hides it from search on the next query,
     with nothing reindexed.
+
+    Since docs/adr/0181 no request reaches a narrowed scope — a real READER keeps
+    finding it, an outsider never does — so the live derivation is proved through
+    the participation-narrowed scope an uninvolved reader held before, by hand.
     """
+    from app.core import authorization
+    from app.core.authorization import Scope
     from app.core.enums import Visibility
+    from tests import factories
+
+    uninvolved = factories.ReaderFactory()
+    real = authorization.scope_for_user
+
+    def scope(user):
+        if getattr(user, "pk", None) == uninvolved.pk:
+            return Scope(
+                user=user,
+                is_authenticated=True,
+                sees_restricted_by_role=False,
+                break_glass_grant_id=None,
+            )
+        return real(user)
+
+    monkeypatch.setattr("app.search.services.scope_for_user", scope)
 
     position = _position(normal_matter, specialist)
-    # A reader may read this open Matter, so the child is the only thing the
-    # override can be about. Since docs/adr/0042 both lawyer roles read the
-    # whole department, which is why the unauthorized party here is a reader
-    # rather than a colleague.
-    assert normal_matter.title in _titles(reader, "pikemat üleminekuaega")
+    # The narrowed scope reads this NORMAL Matter, so the child is the only thing
+    # the override can be about.
+    assert normal_matter.title in _titles(uninvolved, "pikemat üleminekuaega")
 
     MatterExternalPosition.objects.filter(pk=position.pk).update(
         visibility_override=Visibility.RESTRICTED
     )
 
-    assert _titles(reader, "pikemat üleminekuaega") == []
+    assert _titles(uninvolved, "pikemat üleminekuaega") == []
+    assert normal_matter.title in _titles(reader, "pikemat üleminekuaega")
+    assert _titles(administrator, "pikemat üleminekuaega") == []

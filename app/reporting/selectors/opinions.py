@@ -22,7 +22,7 @@ from django.urls import reverse
 
 from app.core.authorization import apply as apply_scope
 from app.core.authorization import child_visibility_q, matter_visibility_q, scope_for_user
-from app.legacy_import.opinion_access import may_use_opinion_queue
+from app.legacy_import.opinion_access import may_open_opinion_queue
 from app.legacy_import.opinion_archive import (
     OpinionArchiveItem,
     OpinionMatchCandidate,
@@ -44,13 +44,20 @@ def visible_candidates(context: ReportingContext) -> QuerySet[OpinionMatchCandid
     """Archive match candidates a published statistic may count.
 
     A candidate naming no Matter carries no Matter content and is counted for
-    everyone. One naming a Matter counts only when the reader may see that
-    Matter **and the Matter is real data**: a file settled on a TEST Matter is
+    every authorized internal reader — and for nobody else (docs/adr/0181).
+    One naming a Matter counts only when the reader may see that Matter **and
+    the Matter is real data**: a file settled on a TEST Matter is
     a test of the archive flow, not coverage of Koda's archive, and moved the
     published percentage (QA-STATS-04, docs/adr/0024 — reporting opts in to
     real data, it is never the default).
     """
     scope = scope_for_user(context.viewer)
+    if not scope.is_authenticated:
+        # Somebody who may read no business content counts no candidate either
+        # — not even one that names no Matter: an unlinked page or letter is
+        # still the corpus, and its count is a statement about it
+        # (docs/adr/0181).
+        return OpinionMatchCandidate.objects.none()
     with_matter = apply_scope(
         OpinionMatchCandidate.objects.filter(
             matter__isnull=False, matter__data_class=MatterDataClass.REAL
@@ -67,7 +74,7 @@ def _queue_url(context: ReportingContext, **params: str) -> str:
     # serve are decided by one predicate. Offering a button that can only
     # produce a 403 is the failure `archive_views` names at its own call to
     # this (DUP-05).
-    if not may_use_opinion_queue(context.viewer):
+    if not may_open_opinion_queue(context.viewer):
         return ""
     base = reverse("legacy_import:opinion_queue")
     query = "&".join(f"{key}={value}" for key, value in params.items() if value)

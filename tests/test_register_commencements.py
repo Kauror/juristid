@@ -479,7 +479,10 @@ def test_a_title_that_says_joustumine_is_not_a_commencement(signed_in):
 # ---------------------------------------------------------------------------
 
 
-def test_a_restricted_commencement_on_a_readable_matter_is_not_shown(client, reader):
+def test_a_restricted_commencement_on_a_readable_matter_is_shown_to_a_reader_not_an_outsider(
+    client, reader, administrator
+):
+    """docs/adr/0181: a READER reads the RESTRICTED record; the outsider nothing."""
     matter = factories.MatterFactory(title="Avalik teema")
     commence(matter, datetime.date(2027, 1, 1), description="avalik")
     commence(
@@ -488,24 +491,33 @@ def test_a_restricted_commencement_on_a_readable_matter_is_not_shown(client, rea
         description="salajane",
         visibility_override=Visibility.RESTRICTED,
     )
+    calendar = {"joustumine": "on", "olek": "koik", "vaade": "kalender", "kuu": "2027-01"}
     client.force_login(reader)
 
     response = listing(client)
-    assert every_description(response) == ["avalik"]
-    assert response.context["commencement_total"] == 1
+    assert sorted(every_description(response)) == ["avalik", "salajane"]
+    assert response.context["commencement_total"] == 2
+    assert "salajane" in client.get(REGISTER, calendar).content.decode()
+
+    client.force_login(administrator)
+    response = listing(client)
+    assert every_description(response) == []
+    assert response.context["commencement_total"] == 0
     assert "salajane" not in response.content.decode()
-
-    calendar_view = client.get(
-        REGISTER, {"joustumine": "on", "olek": "koik", "vaade": "kalender", "kuu": "2027-01"}
-    )
-    assert "salajane" not in calendar_view.content.decode()
+    assert "salajane" not in client.get(REGISTER, calendar).content.decode()
 
 
-def test_a_restricted_matters_commencements_never_reach_a_non_participant(client, reader):
+def test_a_restricted_matters_commencements_reach_a_reader_and_never_an_outsider(
+    client, reader, administrator
+):
+    """docs/adr/0181: participation no longer matters for reading."""
     hidden = factories.MatterFactory(title="Salajane teema", visibility=Visibility.RESTRICTED)
     commence(hidden, datetime.date(2027, 1, 1), description="peidus")
     client.force_login(reader)
 
+    assert every_description(listing(client)) == ["peidus"]
+
+    client.force_login(administrator)
     response = listing(client)
 
     assert response.context["commencement_total"] == 0
@@ -514,11 +526,14 @@ def test_a_restricted_matters_commencements_never_reach_a_non_participant(client
 
 
 @pytest.mark.parametrize("view", ["joustumised", "kalender"])
-def test_a_closed_restricted_matter_stays_hidden_under_the_wider_default(client, reader, view):
+def test_a_closed_restricted_matter_stays_hidden_under_the_wider_default(
+    client, reader, specialist, administrator, view
+):
     """Widening the default status to closed files widens nothing about who may
     read them: a restricted closed Matter's commencements, and a restricted
     record on a readable closed Matter, stay out of rows, counts and the
-    calendar."""
+    calendar for an outsider. Since docs/adr/0181 the READER is no outsider: it
+    gets the lawyer's figures, and the outsider is the administrator."""
     hidden = closed_matter(title="Salajane suletud", visibility=Visibility.RESTRICTED)
     commence(hidden, datetime.date(2027, 1, 4), description="peidus suletud")
     readable = closed_matter(title="Loetav suletud")
@@ -531,14 +546,32 @@ def test_a_closed_restricted_matter_stays_hidden_under_the_wider_default(client,
     )
     client.force_login(reader)
 
-    response = client.get(REGISTER, {"joustumine": "on", "vaade": view, "kuu": "2027-01"})
+    params = {"joustumine": "on", "vaade": view, "kuu": "2027-01"}
+
+    def figures(response):
+        return (
+            response.context["commencement_total"],
+            response.context["total"],
+            response.context["commencement_coverage"]["missing"],
+        )
+
+    response = client.get(REGISTER, params)
 
     assert response.context["commencement_status"]["is_default"] is True
-    assert response.context["commencement_total"] == 1
-    assert response.context["total"] == 1
-    assert response.context["commencement_coverage"]["missing"] == 0
     body = response.content.decode()
-    assert "loetav kirje" in body
+    for text in ("loetav kirje", "peidus suletud", "piiratud kirje"):
+        assert text in body, text
+    client.force_login(specialist)
+    assert figures(response) == figures(client.get(REGISTER, params))
+    assert figures(response)[1] == 2
+
+    client.force_login(administrator)
+    response = client.get(REGISTER, params)
+
+    assert response.context["commencement_status"]["is_default"] is True
+    assert figures(response) == (0, 0, 0)
+    body = response.content.decode()
+    assert "loetav kirje" not in body
     assert "peidus suletud" not in body
     assert "Salajane suletud" not in body
     assert "piiratud kirje" not in body

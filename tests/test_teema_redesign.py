@@ -126,9 +126,10 @@ def test_a_restricted_matter_is_chipped_and_says_nothing_more(signed_in, special
     assert "lockchip--restricted" in body
 
 
-def test_a_restricted_matter_is_unreachable_for_an_outsider(client, reader, specialist):
+def test_a_restricted_matter_is_unreachable_for_an_outsider(client, administrator, specialist):
+    """The outsider is an administrator without a grant since docs/adr/0181."""
     matter = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
-    client.force_login(reader)
+    client.force_login(administrator)
 
     response = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk}))
 
@@ -286,14 +287,21 @@ def test_the_summary_is_searchable(normal_matter, specialist):
     assert "liikmesettevõtet" in row.body_text
 
 
-def test_the_summary_respects_matter_visibility(client, reader, specialist):
+def test_the_summary_respects_matter_visibility(client, reader, administrator, specialist):
+    """Since docs/adr/0181 a READER reads it; an administrator without a grant does not."""
     matter = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
     set_brief_summary(matter=matter, value="Ei tohi lekkida.", actor=specialist)
-    client.force_login(reader)
+    client.force_login(administrator)
 
     response = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk}))
 
     assert response.status_code == 404
+    assert "Ei tohi lekkida." not in response.content.decode()
+
+    client.force_login(reader)
+    response = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk}))
+    assert response.status_code == 200
+    assert "Ei tohi lekkida." in response.content.decode()
 
 
 # ---------------------------------------------------------------------------
@@ -1279,8 +1287,14 @@ def test_the_documents_tab_filters_by_role(signed_in, specialist):
     assert "protokoll.pdf" not in body
 
 
-def test_a_restricted_document_never_reaches_an_unauthorised_reader(client, specialist, reader):
-    """Not masked — absent. Nothing about it is rendered, not even its size."""
+def test_a_restricted_document_never_reaches_an_unauthorised_reader(
+    client, specialist, reader, administrator
+):
+    """Not masked — absent. Nothing about it is rendered, not even its size.
+
+    Since docs/adr/0181 the unauthorised reader is an administrator without a
+    grant; a READER is authorized and sees the document as the owner does.
+    """
     matter = factories.MatterFactory(owner=specialist)
     document = create_document(
         matter=matter,
@@ -1297,14 +1311,17 @@ def test_a_restricted_document_never_reaches_an_unauthorised_reader(client, spec
         uploaded_by=specialist,
     )
 
-    # A colleague who may read the Matter and is not a participant in it. A
-    # collaborator legitimately *does* see a restricted child, so testing with
-    # one would prove nothing.
-    client.force_login(reader)
-    body = _body(client.get(reverse("matters:matter_documents", kwargs={"pk": matter.pk})))
+    client.force_login(administrator)
+    response = client.get(reverse("matters:matter_documents", kwargs={"pk": matter.pk}))
+    body = response.content.decode()
 
+    assert response.status_code == 404
     assert "selgitused.pdf" not in body
     assert "Liikmesettevõtte selgitused" not in body
+
+    client.force_login(reader)
+    body = _body(client.get(reverse("matters:matter_documents", kwargs={"pk": matter.pk})))
+    assert "Liikmesettevõtte selgitused" in body
 
 
 def test_the_upload_form_asks_for_the_role_before_committing(signed_in, specialist):

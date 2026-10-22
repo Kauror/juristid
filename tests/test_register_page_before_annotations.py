@@ -12,7 +12,9 @@ Two things are held here.
   see different things (a specialist, a READER who may not see restricted work, a
   department head), under every sort, status, data-class, scope and organisation
   filter, renders byte for byte what slicing the annotated query rendered — the
-  old paginator is the oracle, run on the same world in the same test.
+  old paginator is the oracle, run on the same world in the same test. (Since
+  docs/adr/0181 a READER sees restricted work too; the readers still differ by
+  scope — ``?ulatus=minu`` — and an administrator without a grant sees nothing.)
 * **The cost stays bounded.** The row query names the page's ids, and the whole
   page stays within the audit's budget of 30 queries however many Matters the
   register holds.
@@ -203,39 +205,47 @@ def test_the_whole_register_page_is_unchanged_too(
 
 
 def test_the_arvamused_figure_is_still_every_sent_opinion_the_reader_may_see(
-    client, specialist, other_specialist, reader, organisation
+    client, specialist, other_specialist, reader, administrator, organisation
 ):
     """The Saadetud figure reuses the list's own count; it still answers the old question.
 
     The old figure was its own `COUNT` of `visible_to(reader)` at SENT. A restricted
-    Matter carries one of the sent opinions, so the specialist's figure and the
-    READER's differ, and each must still equal that old count.
+    Matter carries one of the sent opinions; since docs/adr/0181 the READER counts
+    it as the specialist does, the administrator without a grant counts nothing,
+    and each must still equal that old count.
     """
     _world(specialist, other_specialist, organisation)
     figures = {}
-    for user in (specialist, reader):
+    for user in (specialist, reader, administrator):
         client.force_login(user)
         response = client.get(reverse("matters:matter_list"))
         expected = Submission.objects.visible_to(user).filter(status=SubmissionStatus.SENT).count()
         assert response.context["opinion_sent_count"] == expected
         figures[user.pk] = expected
-    assert figures[specialist.pk] > figures[reader.pk] > 0
+    assert figures[specialist.pk] == figures[reader.pk] > figures[administrator.pk] == 0
 
 
 def test_the_rows_differ_between_readers_so_the_comparison_can_fail(
-    client, specialist, other_specialist, reader, organisation
+    client, specialist, other_specialist, reader, administrator, organisation
 ):
-    """The world is not one every reader sees alike, or the test above proves little."""
+    """The world is not one every reader sees alike, or the test above proves little.
+
+    Since docs/adr/0181 the READER sees the restricted Teema as the specialist
+    does, so the readers differ by scope (``?ulatus=minu``) instead, and an
+    administrator without a grant sees none of it.
+    """
     matters = _world(specialist, other_specialist, organisation)
     restricted = next(m for m in matters if m.visibility == Visibility.RESTRICTED and m.is_open)
 
-    client.force_login(specialist)
-    seen_by_specialist = _normalised(_register(client, {"kaupa": "50"}, 1))
-    client.force_login(reader)
-    seen_by_reader = _normalised(_register(client, {"kaupa": "50"}, 1))
+    def seen(user, params):
+        client.force_login(user)
+        return _normalised(_register(client, params, 1))
 
-    assert restricted.title in seen_by_specialist
-    assert restricted.title not in seen_by_reader
+    assert restricted.title in seen(specialist, {"kaupa": "50"})
+    assert restricted.title in seen(reader, {"kaupa": "50"})
+    assert restricted.title not in seen(administrator, {"kaupa": "50"})
+    mine = {"ulatus": "minu", "kaupa": "50"}
+    assert seen(specialist, mine).count("eelnõu ") > seen(reader, mine).count("eelnõu ")
 
 
 def test_the_row_query_reads_only_the_page_it_shows(

@@ -96,6 +96,11 @@ MIDDLEWARE = [
     # every other (app/core/middleware.py, 2026-10-17 audit JUX-013).
     "app.core.middleware.MethodNotAllowedPageMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
+    # The first thing that parses a multipart body: a request over the upload
+    # policy (UPLOAD_MAX_*) is answered 413 here, its temporary files already
+    # closed, before the NUL check, CSRF's own read or any view touches a field
+    # (app/documents/upload_limits.py, docs/adr/0182).
+    "app.documents.upload_limits.UploadLimitMiddleware",
     # After the CSRF check, so a forged request is still refused as one; before
     # anything that reads a parameter. A NUL byte is a 400 here rather than a
     # 500 in whichever view first compares it with a text column (ENG-046).
@@ -556,8 +561,39 @@ STORAGES = {
 # Transport-level upload guardrails. Business rules for evidence capture live
 # in app/documents.
 DATA_UPLOAD_MAX_MEMORY_SIZE = env_int("DJANGO_DATA_UPLOAD_MAX_MEMORY_SIZE", 10 * 1024 * 1024)
+# Django keeps a request's files in memory only when the *whole request* is at
+# most this; anything larger goes to temporary files on disk, so this is also
+# the most file bytes one request can hold in a worker's memory.
 FILE_UPLOAD_MAX_MEMORY_SIZE = env_int("DJANGO_FILE_UPLOAD_MAX_MEMORY_SIZE", 10 * 1024 * 1024)
 MAX_EVIDENCE_UPLOAD_BYTES = env_int("MAX_EVIDENCE_UPLOAD_BYTES", 100 * 1024 * 1024)
+
+# The aggregate upload policy, one for every upload door
+# (csf_35546c06657fae7b9935969d, docs/adr/0182). Checked at the request
+# boundary by the first upload handler — the declared Content-Length before a
+# byte of the body is read, then the files and bytes as they stream — and again
+# by a door that files held uploads together with new ones
+# (`app.documents.uploads.check_upload_batch`). Over either, the request is
+# answered 413 before any view runs.
+#
+# A hundred files is the ceiling Django already applied to every request
+# (DATA_UPLOAD_MAX_NUMBER_FILES' default), so no upload that worked before is
+# refused for its count — a `Kaasamine` round's replies arrive by the dozen.
+# With the files streamed rather than held in memory, the count bounds file
+# handles and the bytes are what bound the worker: 512 MiB is five maximum-size
+# files, and a real ministry packet is tens of megabytes.
+UPLOAD_MAX_FILES_PER_REQUEST = env_int("UPLOAD_MAX_FILES_PER_REQUEST", 100)
+UPLOAD_MAX_REQUEST_BYTES = env_int("UPLOAD_MAX_REQUEST_BYTES", 512 * 1024 * 1024)
+# Django's own ceiling on file *parts* — empty file inputs included, which it
+# counts and the policy does not — stays just above the policy's, so the
+# policy's sentence (a 413) is what a person over the limit sees rather than
+# Django's bare 400.
+DATA_UPLOAD_MAX_NUMBER_FILES = UPLOAD_MAX_FILES_PER_REQUEST + 10
+# The policy's own handler first; Django's two after it, unchanged.
+FILE_UPLOAD_HANDLERS = [
+    "app.documents.upload_limits.UploadLimitHandler",
+    "django.core.files.uploadhandler.MemoryFileUploadHandler",
+    "django.core.files.uploadhandler.TemporaryFileUploadHandler",
+]
 
 # How old an unreferenced stored object must be before `prune_orphaned_evidence`
 # will delete it. Evidence bytes are written before the row that describes them,
@@ -619,6 +655,39 @@ EXTRACTION_MAX_EMAIL_BODY_CHARACTERS = env_int("EXTRACTION_MAX_EMAIL_BODY_CHARAC
 # Fragment rows one file may produce, whatever parser made them. A 500-page PDF
 # is 500; a register workbook of 30 full sheets is 15 000.
 EXTRACTION_MAX_FRAGMENTS = env_int("EXTRACTION_MAX_FRAGMENTS", 50_000)
+
+# Round 2 of the parser bounds (docs/adr/0182).
+#
+# A plain-text file is decoded and split in bounded chunks, never whole. Its
+# raw size is checked first — the upload ceiling, so no file that could be
+# uploaded is refused by it — and its lines are charged as they are counted:
+# ten million is the most lines a file can have and still fit the fragment
+# budget with text in every block of two hundred.
+EXTRACTION_MAX_TEXT_BYTES = env_int("EXTRACTION_MAX_TEXT_BYTES", 100 * 1024 * 1024)
+EXTRACTION_MAX_TEXT_LINES = env_int("EXTRACTION_MAX_TEXT_LINES", 10_000_000)
+# An Office package's central directory, read and walked from the end of the
+# file before `zipfile` allocates an entry for any of it. A real DOCX/XLSX/PPTX
+# entry is about a hundred bytes; 16 MiB is eight kilobytes for each of the
+# EXTRACTION_MAX_ARCHIVE_MEMBERS entries allowed.
+EXTRACTION_MAX_ZIP_DIRECTORY_BYTES = env_int("EXTRACTION_MAX_ZIP_DIRECTORY_BYTES", 16 * 1024 * 1024)
+# What an Office library (python-docx, python-pptx, openpyxl) may parse as XML:
+# one part (a document body, a worksheet, shared strings, a slide, a `.rels`)
+# and all XML parts of the package together, uncompressed, as the bounded
+# central directory declares them. A tree is several times its XML in memory,
+# so this is the knob that bounds the parsers' memory. A thousand-page draft's
+# document.xml is a few tens of megabytes; a 64 MiB worksheet is about two
+# million cells, twenty times the largest historical register.
+EXTRACTION_MAX_OFFICE_XML_PART_BYTES = env_int(
+    "EXTRACTION_MAX_OFFICE_XML_PART_BYTES", 64 * 1024 * 1024
+)
+EXTRACTION_MAX_OFFICE_XML_BYTES = env_int("EXTRACTION_MAX_OFFICE_XML_BYTES", 128 * 1024 * 1024)
+# Body paragraphs one DOCX may have, counted before python-docx builds one
+# object for each: a thousand-page draft has a few tens of thousands.
+EXTRACTION_MAX_DOCX_PARAGRAPHS = env_int("EXTRACTION_MAX_DOCX_PARAGRAPHS", 1_000_000)
+# MIME parts one `.eml` may have, nested messages included, counted while the
+# standard parser builds them. A real message is a few dozen parts at most, and
+# only fifty attachments are kept from it anyway (EXTRACTION_MAX_EMAIL_ATTACHMENTS).
+EXTRACTION_MAX_EMAIL_PARTS = env_int("EXTRACTION_MAX_EMAIL_PARTS", 1_000)
 
 # A page whose native text layer is thinner than this is treated as scanned.
 # Not zero: real government PDFs carry a header, a page number and a stamp on an

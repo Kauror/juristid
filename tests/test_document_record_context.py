@@ -309,7 +309,10 @@ def test_the_upload_date_and_the_order_are_untouched(signed_in, matter, speciali
 # ---------------------------------------------------------------------------
 
 
-def test_a_restricted_record_is_not_disclosed(client, matter, specialist, reader):
+def test_a_restricted_record_is_named_to_a_reader_and_disclosed_to_no_outsider(
+    client, matter, specialist, reader, administrator
+):
+    """Since docs/adr/0181 a READER reads the restricted record as its author does."""
     add_procedural_development(
         matter=matter,
         author=specialist,
@@ -322,14 +325,16 @@ def test_a_restricted_record_is_not_disclosed(client, matter, specialist, reader
     )
     client.force_login(reader)
 
-    body = _page(client, matter)
+    row = _row(_page(client, matter), _document(matter, "lisa.pdf"))
+    assert len(_contexts(row)) == 1
+    assert "Salajane samm" in _contexts(row)[0]
 
-    # The file itself is at the Matter's visibility (the pinned gap of 0075's
-    # links); what must not appear is anything about the record.
-    row = _row(body, _document(matter, "lisa.pdf"))
-    assert _contexts(row) == []
+    client.force_login(administrator)
+    response = client.get(reverse("matters:matter_documents", kwargs={"pk": matter.pk}))
+    body = response.content.decode()
+    assert response.status_code == 404
     assert "Salajane samm" not in body
-    assert "Märge ·" not in body
+    assert "lisa.pdf" not in body
 
 
 def test_the_same_page_names_it_for_somebody_who_may_see_it(signed_in, matter, specialist):

@@ -326,7 +326,10 @@ def test_an_administrator_does_not_inherit_the_manager_sections(client, world):
 
 
 class TestSharedGate:
-    """The no-persona reader, whose access this page inherited from Ülevaade."""
+    """The no-persona reader, whose access this page inherited from Ülevaade.
+
+    Since docs/adr/0181 it has none: the page sends it to the persona chooser.
+    """
 
     PASSWORD = "seda-parooli-ei-ole-kusagil-mujal"  # noqa: S105
 
@@ -342,11 +345,15 @@ class TestSharedGate:
         assert response.status_code == 302
         return client
 
-    def test_the_department_page_opens_with_no_persona(self, behind_the_gate, world):
+    def test_the_department_page_asks_a_session_with_no_persona_to_choose_one(
+        self, behind_the_gate, world
+    ):
+        # docs/adr/0181: Osakond is `@login_required`; no persona → the chooser.
         response = behind_the_gate.get(PAGE)
-        assert response.status_code == 200
-        assert not response.wsgi_request.user.is_authenticated
-        assert "Vajab sekkumist" in response.content.decode()
+        assert response.status_code == 302
+        assert response["Location"].startswith(reverse("accounts:choose_persona"))
+        assert "Vajab sekkumist" not in response.content.decode()
+        assert behind_the_gate.get(PAGE, HTTP_HX_REQUEST="true").status_code == 401
 
     def test_it_carries_neither_manager_section(self, behind_the_gate, world):
         """Knowing a password says nothing about who is reading."""
@@ -364,10 +371,12 @@ class TestSharedGate:
         )
         assert "Piiratud teema jagatud ukse taga" not in behind_the_gate.get(PAGE).content.decode()
 
-    def test_the_old_address_still_opens_it(self, behind_the_gate, world):
+    def test_the_old_address_also_leads_to_the_persona_chooser(self, behind_the_gate, world):
+        # docs/adr/0181: like the page itself, it asks who is reading first.
         response = behind_the_gate.get(OVERVIEW_LEGACY, follow=True)
         assert response.status_code == 200
-        assert response.request["PATH_INFO"] == PAGE
+        assert response.request["PATH_INFO"] == reverse("accounts:choose_persona")
+        assert "Vajab sekkumist" not in response.content.decode()
 
 
 # =========================================================================
@@ -997,8 +1006,8 @@ def test_a_review_date_still_never_reaches_a_window(client, department_head, fou
     assert "kõik 1" in panel
 
 
-def test_a_restricted_deadline_is_disclosed_to_the_team_and_not_to_a_reader(
-    client, department_head, specialist, reader, today
+def test_a_restricted_deadline_is_disclosed_to_every_reader_and_not_to_an_outsider(
+    client, department_head, specialist, reader, administrator, today
 ):
     """Authorization is upstream of the disclosure, and stayed there.
 
@@ -1009,7 +1018,8 @@ def test_a_restricted_deadline_is_disclosed_to_the_team_and_not_to_a_reader(
 
     A `READER` rather than a second specialist, because since docs/adr/0042 a
     second specialist is not an outsider — asserting absence against one would
-    be asserting nothing (`tests/conftest.py`).
+    be asserting nothing (`tests/conftest.py`). Since docs/adr/0181 the READER
+    reads it too; the outsider is the administrator without a grant.
     """
     restricted = create_matter(
         title="Piiratud tähtajaga teema",
@@ -1027,7 +1037,7 @@ def test_a_restricted_deadline_is_disclosed_to_the_team_and_not_to_a_reader(
         actor=specialist,
     )
 
-    for person, may_see in ((department_head, True), (reader, False)):
+    for person, may_see in ((department_head, True), (reader, True), (administrator, False)):
         panel = eesolev(client, person)
         assert ("Piiratud tähtajaga teema" in panel) is may_see, person
         group = next(g for g in dd.upcoming_groups(person, today) if g.key == "tana")
@@ -1438,26 +1448,40 @@ def test_restricted_not_leaked(client, department_head, specialist, other_specia
         actor=specialist,
     )
 
-    outsider = factories.UserFactory(role=UserRole.READER)
+    # docs/adr/0181: a READER's numbers are the head's; the outsider is an
+    # administrator without a grant, whose page counts nothing at all.
+    reader = factories.UserFactory(role=UserRole.READER)
+    outsider = factories.AdministratorFactory()
     head_page = page_for(department_head, today=today)
+    reader_page = dep.build_department(reader, is_head=False, today=today)
     outsider_page = dep.build_department(outsider, is_head=False, today=today)
 
     def overdue(built):
         return next(figure.value for figure in built.seis if figure.key == "overdue")
 
-    assert overdue(head_page) == overdue(outsider_page) + 1
+    assert overdue(reader_page) == overdue(head_page) >= 2
     assert hidden.pk in {row.matter.pk for row in head_page.interventions}
+    assert hidden.pk in {row.matter.pk for row in reader_page.interventions}
+    assert reader_page.open_matters == head_page.open_matters
+    assert overdue(outsider_page) == 0
     assert hidden.pk not in {row.matter.pk for row in outsider_page.interventions}
-    assert outsider_page.open_matters == head_page.open_matters - 1
+    assert outsider_page.open_matters == 0
+
+    client.force_login(reader)
+    body = client.get(PAGE).content.decode()
+    assert "Piiratud eelnõu, mida ei tohi näha" in body
+    assert "Tavaline eelnõu" in body
 
     client.force_login(outsider)
     body = client.get(PAGE).content.decode()
     assert "Piiratud eelnõu, mida ei tohi näha" not in body
-    assert "Tavaline eelnõu" in body
+    assert "Tavaline eelnõu" not in body
 
 
 def test_a_restricted_matter_stays_out_of_the_rails(department_head, specialist, today):
-    outsider = factories.UserFactory(role=UserRole.READER)
+    # docs/adr/0181: a READER counts it as the head does; an outsider counts nothing.
+    reader = factories.UserFactory(role=UserRole.READER)
+    outsider = factories.AdministratorFactory()
     hidden = create_matter(
         title="Piiratud, vastutajata",
         owner=None,
@@ -1468,12 +1492,14 @@ def test_a_restricted_matter_stays_out_of_the_rails(department_head, specialist,
     )
     assert hidden.pk
 
-    head_rail = {row.label: row.count for row in page_for(department_head, today=today).incoming}
-    outsider_rail = {
-        row.label: row.count
-        for row in dep.build_department(outsider, is_head=False, today=today).incoming
-    }
-    assert head_rail["Uut sel nädalal"] == outsider_rail["Uut sel nädalal"] + 1
+    def rail(person, *, is_head=False):
+        built = dep.build_department(person, is_head=is_head, today=today)
+        return {row.label: row.count for row in built.incoming}
+
+    head_rail = rail(department_head, is_head=True)
+    assert head_rail["Uut sel nädalal"] >= 1
+    assert rail(reader)["Uut sel nädalal"] == head_rail["Uut sel nädalal"]
+    assert rail(outsider)["Uut sel nädalal"] == 0
 
 
 # =========================================================================

@@ -574,8 +574,13 @@ def test_usage_counts_distinct_matters_per_sender(specialist):
     assert second in ranked
 
 
-def test_a_hidden_matter_does_not_rank_its_sender(specialist, reader):
-    """Ordering derived from records nobody can see would disclose them."""
+def test_a_hidden_matter_does_not_rank_its_sender(specialist, reader, administrator):
+    """Ordering derived from records nobody can see would disclose them.
+
+    Since docs/adr/0181 a READER sees the RESTRICTED Matters and ranks as the
+    owner does; the viewer they are hidden from is the administrator without a
+    grant, for whom they must not move a chip.
+    """
     hidden_sender = factories.OrganisationFactory(name="Salajane saatja")
     open_sender = factories.OrganisationFactory(name="Avalik saatja")
 
@@ -588,7 +593,11 @@ def test_a_hidden_matter_does_not_rank_its_sender(specialist, reader):
     factories.MatterFactory(owner=specialist, source_organisations=[open_sender])
 
     ranked = organisations_by_usage(reader)
-    assert ranked[0] == open_sender
+    assert ranked == organisations_by_usage(specialist)
+    assert ranked[0] == hidden_sender
+
+    for_outsider = organisations_by_usage(administrator)
+    assert for_outsider.index(open_sender) < for_outsider.index(hidden_sender)
 
 
 # -- reporting --------------------------------------------------------------

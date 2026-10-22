@@ -297,16 +297,23 @@ def test_the_initial_action_reaches_the_owners_work_surfaces(normal_matter, spec
     assert any(item.text == OPINION_PREPARATION_TEXT for item in items)
 
 
-def test_a_restricted_step_is_not_visible_to_a_reader_who_may_not_see_it(
-    restricted_matter, specialist, reader
+def test_a_restricted_step_is_visible_to_every_reader_and_no_outsider(
+    restricted_matter, specialist, reader, administrator
 ):
-    """The ordinary child-visibility rule, asserted on the new writer."""
+    """The ordinary child-visibility rule, asserted on the new writer.
+
+    Since docs/adr/0181 a READER sees it as the owner does; the administrator
+    without a grant does not.
+    """
     establish_opinion_preparation_action(
         matter=restricted_matter, prepare_by=PREPARE_BY, actor=specialist
     )
 
-    assert not NextAction.objects.visible_to(reader).filter(matter=restricted_matter).exists()
+    assert NextAction.objects.visible_to(reader).filter(matter=restricted_matter).exists()
     assert NextAction.objects.visible_to(specialist).filter(matter=restricted_matter).exists()
+    assert (
+        not NextAction.objects.visible_to(administrator).filter(matter=restricted_matter).exists()
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1617,7 +1624,10 @@ def test_the_development_route_accepts_an_empty_date(client, specialist, normal_
     assert MatterProceduralDevelopment.objects.get(matter=normal_matter).occurred_on is None
 
 
-def test_a_restricted_development_does_not_leak(normal_matter, specialist, reader):
+def test_a_restricted_development_reaches_every_reader_and_no_outsider(
+    normal_matter, specialist, reader, administrator
+):
+    """docs/adr/0181: the READER reads it as the owner does; the outsider not."""
     development = add_procedural_development(
         matter=normal_matter,
         author=specialist,
@@ -1628,13 +1638,20 @@ def test_a_restricted_development_does_not_leak(normal_matter, specialist, reade
     development.visibility_override = Visibility.RESTRICTED
     development.save(update_fields=["visibility_override"])
 
-    assert not MatterProceduralDevelopment.objects.visible_to(reader).exists()
-    items, _ = matter_timeline(matter=normal_matter, user=reader, limit=50)
-    rendered = " ".join(
-        f"{item.milestone.what} {item.milestone.own_note}"
-        for item in items
-        if item.milestone is not None
-    )
+    def rendered_for(user):
+        items, _ = matter_timeline(matter=normal_matter, user=user, limit=50)
+        return " ".join(
+            f"{item.milestone.what} {item.milestone.own_note}"
+            for item in items
+            if item.milestone is not None
+        )
+
+    assert MatterProceduralDevelopment.objects.visible_to(reader).exists()
+    assert rendered_for(reader) == rendered_for(specialist)
+    assert "Riigikokku" in rendered_for(reader)
+
+    assert not MatterProceduralDevelopment.objects.visible_to(administrator).exists()
+    rendered = rendered_for(administrator)
     assert "Riigikokku" not in rendered
     assert "ettepanekut" not in rendered
 
@@ -2189,10 +2206,14 @@ def test_a_restricted_submission_puts_no_continuation_on_the_page(
 # ---------------------------------------------------------------------------
 
 
-def test_a_restricted_matters_feedback_does_not_leak(
-    client, restricted_matter, specialist, reader, association
+def test_a_restricted_matters_feedback_reaches_every_reader_and_no_outsider(
+    client, restricted_matter, specialist, reader, administrator, association
 ):
-    """Scenario G. Nothing about the record reaches a reader who may not see it."""
+    """Scenario G. Nothing about the record reaches a reader who may not see it.
+
+    Since docs/adr/0181 that is the administrator without a grant; a READER
+    reads the RESTRICTED Matter's feedback as its owner does.
+    """
     _received(
         restricted_matter,
         specialist,
@@ -2202,19 +2223,27 @@ def test_a_restricted_matters_feedback_does_not_leak(
         source_label="",
     )
 
-    assert not MatterExternalPosition.objects.visible_to(reader).exists()
+    assert MatterExternalPosition.objects.visible_to(reader).count() == 1
     assert MatterExternalPosition.objects.visible_to(specialist).count() == 1
+    assert not MatterExternalPosition.objects.visible_to(administrator).exists()
 
     client.force_login(reader)
+    response = client.get(reverse("matters:matter_detail", kwargs={"pk": restricted_matter.pk}))
+    assert response.status_code == 200
+    client.force_login(administrator)
     response = client.get(reverse("matters:matter_detail", kwargs={"pk": restricted_matter.pk}))
     assert response.status_code == 404
 
 
-def test_a_restricted_child_does_not_leak_through_the_chronology(
-    normal_matter, specialist, reader, ministry
+def test_a_restricted_child_reaches_every_readers_chronology_and_no_outsiders(
+    normal_matter, specialist, reader, administrator, ministry
 ):
-    """A visible Matter carrying a restricted position shows the reader nothing
-    of it — not the organisation, not the position, not the lawyer's note."""
+    """A visible Matter carrying a restricted position shows an outsider nothing
+    of it — not the organisation, not the position, not the lawyer's note.
+
+    Since docs/adr/0181 the outsider is the administrator without a grant; a
+    READER's chronology is the owner's, restricted position included.
+    """
     position = _discovered(
         normal_matter,
         specialist,
@@ -2225,12 +2254,20 @@ def test_a_restricted_child_does_not_leak_through_the_chronology(
     position.visibility_override = Visibility.RESTRICTED
     position.save(update_fields=["visibility_override"])
 
-    items, _ = matter_timeline(matter=normal_matter, user=reader, limit=50)
-    rendered = " ".join(
-        f"{item.milestone.what} {item.milestone.sub} {item.milestone.own_note}"
-        for item in items
-        if item.milestone is not None
-    )
+    def rendered_for(user):
+        items, _ = matter_timeline(matter=normal_matter, user=user, limit=50)
+        return " ".join(
+            f"{item.milestone.what} {item.milestone.sub} {item.milestone.own_note}"
+            for item in items
+            if item.milestone is not None
+        )
+
+    for_reader = rendered_for(reader)
+    assert for_reader == rendered_for(specialist)
+    assert "Toetab varianti B." in for_reader
+    assert ministry.name in for_reader
+
+    rendered = rendered_for(administrator)
     assert "Toetab varianti B." not in rendered
     assert "nõrk" not in rendered
     assert ministry.name not in rendered

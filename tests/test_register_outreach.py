@@ -42,6 +42,7 @@ from app.matters.models import Matter, MatterEngagement
 from app.matters.services import create_imported_matter
 from app.search.models import SearchDocument
 from app.workflow.models import NextAction
+from tests import factories
 from tests.synthetic_cutover import SNAPSHOT_DATE, approve_snapshot
 from tests.synthetic_portfolio import (
     CURRENT_YEAR,
@@ -603,6 +604,9 @@ def test_an_imported_engagement_obeys_matter_visibility(world):
     An importer that produced a child record visible more widely than its parent
     would be AUTH-003 with a different spelling — so the Matter here is
     restricted, which is the only state where the two answers differ.
+
+    Since docs/adr/0181 every internal reader (the READER too) reads it; the
+    perimeter is an outsider (ADMINISTRATOR without a grant) and anonymous.
     """
     people = world.people
     matter = add_matter(world, visibility=Visibility.RESTRICTED)
@@ -614,7 +618,9 @@ def test_an_imported_engagement_obeys_matter_visibility(world):
     # impossible for an importer to leave a stale, less-restrictive copy.
     assert engagement.visibility_override == ""
     assert engagement.effective_visibility == matter.visibility == Visibility.RESTRICTED
-    assert not MatterEngagement.objects.visible_to(people.reader).filter(pk=engagement.pk).exists()
+    assert MatterEngagement.objects.visible_to(people.reader).filter(pk=engagement.pk).exists()
+    outsider = factories.AdministratorFactory()
+    assert not MatterEngagement.objects.visible_to(outsider).filter(pk=engagement.pk).exists()
     assert not MatterEngagement.objects.visible_to(None).filter(pk=engagement.pk).exists()
 
 
@@ -638,8 +644,11 @@ def test_a_web_call_obeys_matter_visibility(world):
     assert engagement.kind == EngagementKind.WEB_CALL
     assert engagement.effective_visibility == Visibility.RESTRICTED
     # A public page is public; the *pointer* on a restricted file is not, and
-    # the record inherits the file rather than the page.
-    assert not MatterEngagement.objects.visible_to(people.reader).filter(pk=engagement.pk).exists()
+    # the record inherits the file rather than the page. Since docs/adr/0181 the
+    # READER reads it like any internal user; an outsider does not.
+    assert MatterEngagement.objects.visible_to(people.reader).filter(pk=engagement.pk).exists()
+    outsider = factories.AdministratorFactory()
+    assert not MatterEngagement.objects.visible_to(outsider).filter(pk=engagement.pk).exists()
 
 
 def test_the_search_projection_is_refreshed_for_touched_matters(world):

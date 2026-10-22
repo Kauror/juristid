@@ -702,9 +702,11 @@ def _restricted_opinion(matter, specialist, organisation):
     return submission
 
 
-def test_a_restricted_opinions_working_document_is_restricted_with_it(
-    matter, specialist, reader, organisation
+def test_a_restricted_opinions_working_document_carries_its_label_and_reaches_every_reader(
+    matter, specialist, reader, administrator, organisation
 ):
+    """The label is copied as before; since docs/adr/0181 it hides nothing from a
+    READER, and an administrator without a grant reads neither file nor relation."""
     submission = _restricted_opinion(matter, specialist, organisation)
 
     document = add_opinion_working_documents(
@@ -712,34 +714,53 @@ def test_a_restricted_opinions_working_document_is_restricted_with_it(
     ).documents[0]
 
     assert document.visibility_override == Visibility.RESTRICTED
-    assert not Document.objects.visible_to(reader).filter(pk=document.pk).exists()
-    assert Document.objects.visible_to(specialist).filter(pk=document.pk).exists()
-    assert not DocumentLink.objects.visible_to(reader).filter(submission=submission).exists()
-    assert DocumentLink.objects.visible_to(specialist).filter(submission=submission).exists()
+    for user in (specialist, reader):
+        assert Document.objects.visible_to(user).filter(pk=document.pk).exists()
+        assert DocumentLink.objects.visible_to(user).filter(submission=submission).exists()
+    assert not Document.objects.visible_to(administrator).filter(pk=document.pk).exists()
+    assert not DocumentLink.objects.visible_to(administrator).filter(submission=submission).exists()
 
 
-def test_a_reader_sees_neither_the_file_nor_the_relation(
-    client, matter, specialist, reader, organisation
+def test_a_reader_sees_the_file_and_the_relation_and_an_outsider_neither(
+    client, matter, specialist, reader, administrator, organisation
 ):
+    """It used to be hidden from a READER; since docs/adr/0181 the READER reads
+    what the owner reads, and an administrator without a grant gets a 404."""
     submission = _restricted_opinion(matter, specialist, organisation)
     add_opinion_working_documents(submission=submission, author=specialist, uploads=[_docx()])
-    client.force_login(reader)
 
-    teema = _teema(client, matter)
-    dokumendid = _dokumendid(client, matter)
+    def seen(user) -> list[bool]:
+        client.force_login(user)
+        teema = _teema(client, matter)
+        dokumendid = _dokumendid(client, matter)
+        return [
+            needle in body
+            for body in (teema, dokumendid)
+            for needle in (DOCX_NAME, "Koja arvamus ·", organisation.name)
+        ] + ["Arvamus välja" in teema[teema.index('id="ajajoon"') :]]
 
-    for body in (teema, dokumendid):
+    as_reader = seen(reader)
+    assert as_reader == seen(specialist)
+    assert as_reader[3]  # the working document is listed on Dokumendid
+
+    client.force_login(administrator)
+    for page in (
+        client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})),
+        client.get(reverse("matters:matter_documents", kwargs={"pk": matter.pk})),
+    ):
+        assert page.status_code == 404
+        body = page.content.decode()
         assert DOCX_NAME not in body
-        assert "Koja arvamus ·" not in body
         assert organisation.name not in body
-    assert "Arvamus välja" not in teema[teema.index('id="ajajoon"') :]
 
 
-def test_a_normal_file_linked_to_a_restricted_opinion_discloses_no_relation(
-    client, matter, specialist, reader, organisation
+def test_a_normal_file_linked_to_a_restricted_opinion_shows_its_relation_to_every_reader(
+    client, matter, specialist, reader, administrator, organisation
 ):
     """The pinned gap 0075's links keep — a normal file on a restricted record —
-    reached by hand here: the file may be listed, the relation may not."""
+    reached by hand here. It used to hide the relation from a READER; since
+    docs/adr/0181 the READER's row says what the owner's says, and an
+    administrator without a grant reaches neither file nor relation."""
     submission = _restricted_opinion(matter, specialist, organisation)
     document = create_document(matter=matter, title="Avalik eelnõu.docx")
     add_evidence_version(
@@ -749,68 +770,93 @@ def test_a_normal_file_linked_to_a_restricted_opinion_discloses_no_relation(
         mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
     link_document_to_record(document=document, record=submission, actor=specialist)
-    client.force_login(reader)
 
-    body = _dokumendid(client, matter)
+    def row_facts(user) -> list[bool]:
+        client.force_login(user)
+        body = _dokumendid(client, matter)
+        assert "Avalik eelnõu.docx" in body
+        row = body[body.index(f'id="dokument-{document.pk}"') :]
+        row = row[: row.index("</tr>")]
+        return [needle in row for needle in ("Seotud kirje", "Koja arvamus", organisation.name)]
 
-    assert "Avalik eelnõu.docx" in body
-    row = body[body.index(f'id="dokument-{document.pk}"') :]
-    row = row[: row.index("</tr>")]
-    assert "Seotud kirje" not in row
-    assert "Koja arvamus" not in row
-    assert organisation.name not in row
+    as_reader = row_facts(reader)
+    assert as_reader == row_facts(specialist)
+    assert any(as_reader)
+
+    client.force_login(administrator)
+    page = client.get(reverse("matters:matter_documents", kwargs={"pk": matter.pk}))
+    assert page.status_code == 404
+    assert "Avalik eelnõu.docx" not in page.content.decode()
 
 
 def test_search_finds_a_restricted_working_document_only_for_who_may_see_it(
-    matter, specialist, reader, organisation
+    matter, specialist, reader, administrator, organisation
 ):
+    """Since docs/adr/0181 that is every reader, READER included; never an outsider."""
     submission = _restricted_opinion(matter, specialist, organisation)
     add_opinion_working_documents(
         submission=submission, author=specialist, uploads=[_docx("Salajane tööversioon.docx")]
     )
 
     assert result_count(query="tööversioon", user=specialist) >= 1
-    assert result_count(query="tööversioon", user=reader) == 0
+    assert result_count(query="tööversioon", user=reader) == result_count(
+        query="tööversioon", user=specialist
+    )
+    assert result_count(query="tööversioon", user=administrator) == 0
 
 
-def test_counts_do_not_move_for_a_reader(client, matter, specialist, reader, organisation):
-    """A count that moves is a disclosure (docs/adr/0038)."""
+def test_counts_move_alike_for_a_reader_and_the_owner_and_never_for_an_outsider(
+    client, matter, specialist, reader, administrator, organisation
+):
+    """A count that moves is a disclosure (docs/adr/0038).
+
+    Since docs/adr/0181 the READER counts what the owner counts; the outsider
+    whose count must not move is an administrator without a grant.
+    """
     _opinion(matter, specialist, organisation, upload=_pdf("Avalik.pdf"))
-    client.force_login(reader)
-    before = _dokumendid(client, matter)
     before_count = Document.objects.visible_to(reader).filter(matter=matter).count()
+    assert Document.objects.visible_to(administrator).filter(matter=matter).count() == 0
 
     submission = _restricted_opinion(matter, specialist, organisation)
     add_opinion_working_documents(submission=submission, author=specialist, uploads=[_docx()])
 
     after_count = Document.objects.visible_to(reader).filter(matter=matter).count()
-    # The restricted letter and its working document add nothing the reader can count.
-    assert after_count == before_count
-    after = _dokumendid(client, matter)
+    assert after_count == Document.objects.visible_to(specialist).filter(matter=matter).count()
+    assert after_count == before_count + 2  # the restricted letter and its working document
+    assert Document.objects.visible_to(administrator).filter(matter=matter).count() == 0
+
     tab = re.compile(r"Dokumendid\s*<span[^>]*>(\d+)</span>")
-    if tab.search(before) and tab.search(after):
-        assert tab.search(before).group(1) == tab.search(after).group(1)
+    client.force_login(reader)
+    as_reader = tab.search(_dokumendid(client, matter))
+    client.force_login(specialist)
+    as_owner = tab.search(_dokumendid(client, matter))
+    if as_reader and as_owner:
+        assert as_reader.group(1) == as_owner.group(1)
 
 
-def test_a_restricted_matter_is_a_404_for_a_reader(client, specialist, reader, organisation):
+def test_a_restricted_matter_opens_for_a_reader_and_is_a_404_for_an_outsider(
+    client, specialist, reader, administrator, organisation
+):
+    """Since docs/adr/0181 a READER reads the restricted Matter (and still writes
+    nothing: the add route stays a 404); an administrator without a grant gets
+    a 404 for both and no relation."""
     restricted = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
     submission = _opinion(restricted, specialist, organisation, working=[_docx()]).record
-    client.force_login(reader)
+    detail = reverse("matters:matter_detail", kwargs={"pk": restricted.pk})
+    add = reverse(
+        "matters:add_opinion_working_documents",
+        kwargs={"pk": restricted.pk, "submission_id": submission.pk},
+    )
 
-    assert (
-        client.get(reverse("matters:matter_detail", kwargs={"pk": restricted.pk})).status_code
-        == 404
-    )
-    assert (
-        client.get(
-            reverse(
-                "matters:add_opinion_working_documents",
-                kwargs={"pk": restricted.pk, "submission_id": submission.pk},
-            )
-        ).status_code
-        == 404
-    )
-    assert not DocumentLink.objects.visible_to(reader).filter(submission=submission).exists()
+    client.force_login(administrator)
+    assert client.get(detail).status_code == 404
+    assert client.get(add).status_code == 404
+    assert not DocumentLink.objects.visible_to(administrator).filter(submission=submission).exists()
+
+    client.force_login(reader)
+    assert client.get(detail).status_code == 200
+    assert client.get(add).status_code == 404
+    assert DocumentLink.objects.visible_to(reader).filter(submission=submission).exists()
 
 
 def test_the_owner_sees_the_working_document_everywhere(
@@ -902,19 +948,24 @@ def test_a_withdrawn_opinion_says_so_in_the_rail(signed_in, matter, specialist, 
     assert "tagasi võetud" in block
 
 
-def test_the_rail_names_no_working_document_of_a_restricted_opinion(
+def test_the_rail_names_the_working_document_of_a_restricted_opinion_to_a_reader(
     client, matter, specialist, reader, organisation
 ):
+    """It used to leave it out for a READER; since docs/adr/0181 the READER's rail
+    lists the same files as the owner's."""
     _opinion(matter, specialist, organisation, upload=_pdf("Avalik.pdf"))
     submission = _restricted_opinion(matter, specialist, organisation)
     add_opinion_working_documents(submission=submission, author=specialist, uploads=[_docx()])
+    client.force_login(specialist)
+    as_owner = _rail_block(_teema(client, matter))
     client.force_login(reader)
 
     block = _rail_block(_teema(client, matter))
 
     assert "Avalik.pdf" in block
-    assert DOCX_NAME not in block
-    assert block.count("railcard__row--file") == 1
+    assert DOCX_NAME in block
+    assert block.count("railcard__row--file") == as_owner.count("railcard__row--file")
+    assert block.count("railcard__row--file") > 1
 
 
 # ---------------------------------------------------------------------------

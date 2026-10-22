@@ -57,6 +57,7 @@ from app.legacy_import.opinion_search_models import (
     ARCHIVE_INDEX_VERSION,
     OpinionArchiveSearchDocument,
 )
+from tests.break_glass import grant_to
 
 pytestmark = pytest.mark.django_db
 
@@ -176,7 +177,7 @@ def test_a_rebuild_is_idempotent(held):
     assert before == after
 
 
-def test_extracting_text_and_rebuilding_puts_the_body_in_the_index(held, administrator):
+def test_extracting_text_and_rebuilding_puts_the_body_in_the_index(held, reader):
     """The rebuild rule the runbook's `extract-text`, `rebuild` sequence rests on.
 
     A rebuild that skipped rows already at the current index version would do
@@ -207,7 +208,7 @@ def test_extracting_text_and_rebuilding_puts_the_body_in_the_index(held, adminis
     assert report.written == 1
     assert report.unchanged == 1
 
-    rows = search_archive(user=administrator, filters=ArchiveFilters(query="riigilõivuseaduse"))
+    rows = search_archive(user=reader, filters=ArchiveFilters(query="riigilõivuseaduse"))
     assert [row.binary_id for row in rows] == [second.pk]
 
 
@@ -276,41 +277,39 @@ def test_an_old_index_version_is_a_finding_and_a_rebuild_fixes_it(held):
 # ---------------------------------------------------------------------------
 
 
-def test_a_letter_is_found_by_its_title(held, administrator):
+def test_a_letter_is_found_by_its_title(held, reader):
     # The word as the title writes it. The Estonian configuration stems both
     # sides the same way; it does not turn a compound's genitive into its
     # nominative, and a test that assumed otherwise was testing the stemmer
     # rather than the projection.
-    rows = search_archive(user=administrator, filters=ArchiveFilters(query="ehitusseadustiku"))
+    rows = search_archive(user=reader, filters=ArchiveFilters(query="ehitusseadustiku"))
     assert rows.count() == 1
 
 
-def test_a_letter_is_found_by_its_body(held, administrator):
-    rows = search_archive(user=administrator, filters=ArchiveFilters(query="eelnõu"))
+def test_a_letter_is_found_by_its_body(held, reader):
+    rows = search_archive(user=reader, filters=ArchiveFilters(query="eelnõu"))
     assert rows.count() == 1
 
 
-def test_a_pasted_hash_finds_the_letter_it_names(held, administrator):
+def test_a_pasted_hash_finds_the_letter_it_names(held, reader):
     first, _ = held
-    rows = search_archive(user=administrator, filters=ArchiveFilters(query=first.sha256))
+    rows = search_archive(user=reader, filters=ArchiveFilters(query=first.sha256))
     # An exact containment test rather than a text search: the Estonian stemmer
     # would make a hash unrecognisable, and somebody pasting one is not
     # searching for words.
     assert [row.binary_id for row in rows] == [first.pk]
 
 
-def test_a_pasted_archive_path_finds_the_letter_it_names(held, administrator):
+def test_a_pasted_archive_path_finds_the_letter_it_names(held, reader):
     first, _ = held
-    rows = search_archive(
-        user=administrator, filters=ArchiveFilters(query="Opinions/koopia/esimene.pdf")
-    )
+    rows = search_archive(user=reader, filters=ArchiveFilters(query="Opinions/koopia/esimene.pdf"))
     assert [row.binary_id for row in rows] == [first.pk]
 
 
-def test_filters_narrow_without_searching(held, administrator):
-    rows = search_archive(user=administrator, filters=ArchiveFilters(year="2023"))
+def test_filters_narrow_without_searching(held, reader):
+    rows = search_archive(user=reader, filters=ArchiveFilters(year="2023"))
     assert rows.count() == 1
-    rows = search_archive(user=administrator, filters=ArchiveFilters(body="jah"))
+    rows = search_archive(user=reader, filters=ArchiveFilters(body="jah"))
     assert rows.count() == 1
 
 
@@ -329,18 +328,18 @@ def test_a_year_that_is_not_a_year_is_refused(held, administrator):
 # ---------------------------------------------------------------------------
 
 
-def test_a_reader_sees_no_archive_rows_and_no_totals(held, reader):
+def test_an_administrator_without_a_grant_sees_no_archive_rows_and_no_totals(held, administrator):
     """Not a smaller list: none, and no count either.
 
     A refused reader who can still read the coverage figures knows how large
     the corpus is, which is most of what the boundary was protecting.
 
-    READER is the refused role since ADR 0042's set reached this module: the
-    two lawyer roles read the corpus, and READER is deliberately not one of
-    them (app/legacy_import/opinion_access.py).
+    Since docs/adr/0181 the refused persona is an administrator without a
+    grant: `may_read_archive` is `may_read_business_content`, so a READER reads
+    the corpus and technical administration does not.
     """
-    assert search_archive(user=reader, filters=ArchiveFilters()).count() == 0
-    assert archive_counts(reader) == {
+    assert search_archive(user=administrator, filters=ArchiveFilters()).count() == 0
+    assert archive_counts(administrator) == {
         "total": 0,
         "with_body": 0,
         "linked": 0,
@@ -348,8 +347,10 @@ def test_a_reader_sees_no_archive_rows_and_no_totals(held, reader):
     }
 
 
-def test_an_administrator_sees_the_corpus(held, administrator):
-    assert archive_counts(administrator)["total"] == 2
+def test_a_reader_sees_the_corpus(held, reader, department_head):
+    """Since docs/adr/0181 a READER reads the archive exactly as the head does."""
+    assert archive_counts(reader)["total"] == 2
+    assert archive_counts(reader) == archive_counts(department_head)
 
 
 def test_an_anonymous_visitor_sees_nothing(held):
@@ -359,8 +360,8 @@ def test_an_anonymous_visitor_sees_nothing(held):
     assert archive_counts(None)["total"] == 0
 
 
-def test_the_shared_gate_opens_the_archive_to_high_authority_personas(
-    held, administrator, department_head, settings
+def test_the_shared_gate_opens_the_archive_to_every_business_persona(
+    held, reader, department_head, settings
 ):
     """The development-phase widening, pinned where the old refusal was.
 
@@ -372,20 +373,31 @@ def test_the_shared_gate_opens_the_archive_to_high_authority_personas(
     So the corpus is served and the record stays honest instead: every download
     carries `authenticated_via` beside the persona, and the widening reaches
     only the two roles trusted with the whole register (docs/adr/0028).
+
+    Since docs/adr/0181 those are the business-read roles, READER included;
+    an administrator without a grant is not one of them.
     """
     from app.accounts.enums import AuthMode
 
     settings.AUTH_MODE = AuthMode.SHARED_GATE
-    assert search_archive(user=administrator, filters=ArchiveFilters()).count() == 2
+    assert search_archive(user=reader, filters=ArchiveFilters()).count() == 2
     assert search_archive(user=department_head, filters=ArchiveFilters()).count() == 2
 
 
-def test_the_shared_gate_does_not_open_the_archive_to_everybody_behind_it(held, reader, settings):
-    """Knowing the shared password is not on its own an archive credential."""
+def test_the_shared_gate_does_not_open_the_archive_to_everybody_behind_it(
+    held, administrator, settings
+):
+    """Knowing the shared password is not on its own an archive credential.
+
+    Since docs/adr/0181 the persona it refuses is an administrator without a
+    grant, and the persona-less sentinel (a READER reads the archive).
+    """
     from app.accounts.enums import AuthMode
+    from app.core.authorization import DEPARTMENT_VIEWER
 
     settings.AUTH_MODE = AuthMode.SHARED_GATE
-    assert search_archive(user=reader, filters=ArchiveFilters()).count() == 0
+    assert search_archive(user=administrator, filters=ArchiveFilters()).count() == 0
+    assert search_archive(user=DEPARTMENT_VIEWER, filters=ArchiveFilters()).count() == 0
 
 
 def test_an_inactive_administrator_is_refused(held, administrator):
@@ -398,14 +410,14 @@ def test_an_inactive_administrator_is_refused(held, administrator):
 # ---------------------------------------------------------------------------
 
 
-def test_the_browse_screen_refuses_a_reader(client, reader, held):
-    client.force_login(reader)
+def test_the_browse_screen_refuses_an_administrator(client, administrator, held):
+    client.force_login(administrator)
     response = client.get(reverse("legacy_import:opinion_archive_browse"))
     assert response.status_code == 403
 
 
-def test_the_browse_screen_lists_what_is_held(client, administrator, held):
-    client.force_login(administrator)
+def test_the_browse_screen_lists_what_is_held(client, reader, held):
+    client.force_login(reader)
     response = client.get(reverse("legacy_import:opinion_archive_browse"))
     assert response.status_code == 200
     body = response.content.decode()
@@ -413,8 +425,8 @@ def test_the_browse_screen_lists_what_is_held(client, administrator, held):
     assert "Maksukorralduse seadus" in body
 
 
-def test_a_refused_query_says_so_instead_of_showing_an_empty_list(client, administrator, held):
-    client.force_login(administrator)
+def test_a_refused_query_says_so_instead_of_showing_an_empty_list(client, reader, held):
+    client.force_login(reader)
     response = client.get(reverse("legacy_import:opinion_archive_browse"), {"q": "a" * 501})
     assert response.status_code == 200
     body = response.content.decode()
@@ -422,16 +434,16 @@ def test_a_refused_query_says_so_instead_of_showing_an_empty_list(client, admini
     assert "Ükski arhiivi kiri" not in body
 
 
-def test_the_detail_screen_refuses_a_reader(client, reader, held):
+def test_the_detail_screen_refuses_an_administrator(client, administrator, held):
     first, _ = held
-    client.force_login(reader)
+    client.force_login(administrator)
     response = client.get(reverse("legacy_import:opinion_archive_detail", kwargs={"pk": first.pk}))
     assert response.status_code == 403
 
 
-def test_the_detail_screen_lists_every_occurrence(client, administrator, held):
+def test_the_detail_screen_lists_every_occurrence(client, reader, held):
     first, _ = held
-    client.force_login(administrator)
+    client.force_login(reader)
     response = client.get(reverse("legacy_import:opinion_archive_detail", kwargs={"pk": first.pk}))
     body = response.content.decode()
     assert "Opinions/2024/esimene.pdf" in body
@@ -455,14 +467,16 @@ def stored(held, evidence_root, settings):
     return first
 
 
-def test_a_reader_may_not_download_an_archive_letter(client, reader, stored):
-    client.force_login(reader)
+def test_an_administrator_without_a_grant_may_not_download_an_archive_letter(
+    client, administrator, stored
+):
+    client.force_login(administrator)
     response = client.get(reverse("legacy_import:opinion_archive_file", kwargs={"pk": stored.pk}))
     assert response.status_code == 403
 
 
-def test_an_administrator_reads_the_letter_inline_under_safe_headers(client, administrator, stored):
-    client.force_login(administrator)
+def test_a_reader_reads_the_letter_inline_under_safe_headers(client, reader, stored):
+    client.force_login(reader)
     response = client.get(reverse("legacy_import:opinion_archive_file", kwargs={"pk": stored.pk}))
     assert response.status_code == 200
     assert response["Content-Type"] == "application/pdf"
@@ -471,12 +485,12 @@ def test_an_administrator_reads_the_letter_inline_under_safe_headers(client, adm
     assert response["Content-Disposition"].startswith("inline")
 
 
-def test_the_served_filename_is_the_hash_not_the_archive_name(client, administrator, stored):
+def test_the_served_filename_is_the_hash_not_the_archive_name(client, reader, stored):
     """The ZIP's names carry recipients, subjects and mojibake.
 
     A Content-Disposition is the wrong place to learn who a letter was to.
     """
-    client.force_login(administrator)
+    client.force_login(reader)
     response = client.get(reverse("legacy_import:opinion_archive_file", kwargs={"pk": stored.pk}))
     disposition = response["Content-Disposition"]
     assert stored.sha256[:16] in disposition
@@ -489,18 +503,18 @@ def test_the_storage_key_never_appears_in_a_url(client, administrator, stored):
     assert str(stored.pk) in url
 
 
-def test_a_row_whose_bytes_are_gone_is_a_controlled_404(client, administrator, held, evidence_root):
+def test_a_row_whose_bytes_are_gone_is_a_controlled_404(client, reader, held, evidence_root):
     first, _ = held
-    client.force_login(administrator)
+    client.force_login(reader)
     response = client.get(reverse("legacy_import:opinion_archive_file", kwargs={"pk": first.pk}))
     assert response.status_code == 404
 
 
-def test_reading_a_letter_is_recorded(client, administrator, stored):
+def test_reading_a_letter_is_recorded(client, reader, stored):
     from app.audit.enums import SecurityEventType
     from app.audit.models import SecurityAuditEvent
 
-    client.force_login(administrator)
+    client.force_login(reader)
     client.get(reverse("legacy_import:opinion_archive_file", kwargs={"pk": stored.pk}))
 
     event = SecurityAuditEvent.objects.filter(
@@ -707,7 +721,7 @@ def test_a_reviewer_rejecting_a_letter_moves_the_projection_at_once(client, admi
     candidate = a_candidate(first, klass=OpinionMatchClass.REVIEW_REQUIRED)
     assert _row(first).review_state == OpinionCandidateState.PENDING
 
-    client.force_login(administrator)
+    client.force_login(grant_to(administrator))
     response = client.post(
         reverse("legacy_import:opinion_decide", kwargs={"pk": candidate.pk}),
         {"decision": "reject", "note": "Ei ole selle teema kohta."},
@@ -718,13 +732,22 @@ def test_a_reviewer_rejecting_a_letter_moves_the_projection_at_once(client, admi
 
 
 def test_a_reviewer_linking_a_letter_moves_the_projection_at_once(
-    client, administrator, held, specialist
+    client, administrator, held, specialist, department_head
 ):
+    """The queue is still the administrator's; since docs/adr/0181 the Matter it
+    files the letter onto needs a break-glass grant, so the reviewer holds one."""
+    from app.accounts.services import grant_break_glass
     from app.matters.services import create_matter
 
     first, _second = held
     candidate = a_candidate(first, klass=OpinionMatchClass.REVIEW_REQUIRED)
     matter = create_matter(title="Ehitusseadustik", owner=specialist, reference_year=2026)
+    grant_break_glass(
+        user=administrator,
+        granted_by=department_head,
+        reason="arhiivi ülevaatus",
+        duration=datetime.timedelta(hours=2),
+    )
 
     client.force_login(administrator)
     response = client.post(
@@ -973,7 +996,7 @@ def test_a_superseded_candidate_alone_leaves_the_row_empty(held, normal_matter):
     assert archive_index_findings() == []
 
 
-def test_a_candidates_register_reference_reaches_the_row_it_is_searchable_from(held, administrator):
+def test_a_candidates_register_reference_reaches_the_row_it_is_searchable_from(held, reader):
     """The reason the handler recomputes the row rather than patching two columns.
 
     `excel_reference` is indexed among the row's `identifiers`, so a refresh
@@ -995,7 +1018,7 @@ def test_a_candidates_register_reference_reaches_the_row_it_is_searchable_from(h
     )
 
     assert "2024_317" in _row(first).identifiers
-    rows = search_archive(user=administrator, filters=ArchiveFilters(query="2024_317"))
+    rows = search_archive(user=reader, filters=ArchiveFilters(query="2024_317"))
     assert [row.binary_id for row in rows] == [first.pk]
 
 
@@ -1104,7 +1127,7 @@ def test_cataloguing_a_further_filing_reaches_the_row_at_once(held):
     assert archive_index_findings() == []
 
 
-def test_renaming_a_filing_moves_what_the_letter_is_found_by(held, administrator):
+def test_renaming_a_filing_moves_what_the_letter_is_found_by(held, reader):
     """The five columns a save can move, through the model that owns them.
 
     No production writer edits a catalogued occurrence today — a later snapshot
@@ -1140,7 +1163,7 @@ def test_renaming_a_filing_moves_what_the_letter_is_found_by(held, administrator
     # And the bounded refresh landed where a rebuild would, ordering included.
     assert rebuild_archive_index().written == 0
 
-    found = search_archive(user=administrator, filters=ArchiveFilters(query="ymber-nimetatud.pdf"))
+    found = search_archive(user=reader, filters=ArchiveFilters(query="ymber-nimetatud.pdf"))
     assert [hit.binary_id for hit in found] == [first.pk]
 
 
@@ -1563,12 +1586,12 @@ def test_a_reading_written_after_indexing_reaches_the_row(held):
     assert "X-501" not in _row(second).identifiers
 
 
-def test_a_register_handle_becomes_searchable_without_a_rebuild(held, administrator):
+def test_a_register_handle_becomes_searchable_without_a_rebuild(held, reader):
     """`external_id` is the letter's KodaDash-side handle and is indexed as one."""
     first, _second = held
     a_reading(first, external_id="KD-2024-88")
 
-    found = search_archive(user=administrator, filters=ArchiveFilters(query="KD-2024-88"))
+    found = search_archive(user=reader, filters=ArchiveFilters(query="KD-2024-88"))
     assert [hit.binary_id for hit in found] == [first.pk]
 
 
@@ -2005,16 +2028,16 @@ def test_extracting_text_reaches_the_row_through_the_writer_that_extracts_it(hel
     assert _row(first).body_text.startswith("Käesolevaga")
 
 
-def test_a_freshly_extracted_body_is_searchable_without_a_rebuild(held, administrator):
+def test_a_freshly_extracted_body_is_searchable_without_a_rebuild(held, reader):
     """Held, extracted and findable are one event rather than three."""
     _first, second = held
     a_parse(second, body="Sünteetiline lõik riigilõivude ümberkorraldamise kohta.")
 
-    found = search_archive(user=administrator, filters=ArchiveFilters(query="ümberkorraldamise"))
+    found = search_archive(user=reader, filters=ArchiveFilters(query="ümberkorraldamise"))
     assert [hit.binary_id for hit in found] == [second.pk]
 
 
-def test_a_re_extraction_replaces_what_the_letter_is_findable_by(held, administrator):
+def test_a_re_extraction_replaces_what_the_letter_is_findable_by(held, reader):
     """The direction the old lag check could not see.
 
     A body that was replaced left the row serving the previous parse, so the
@@ -2030,15 +2053,11 @@ def test_a_re_extraction_replaces_what_the_letter_is_findable_by(held, administr
     row = _row(first)
     assert row.body_text == "Hoopis teine sisu: keskkonnatasude arvestus."
     assert row.has_body_text is True
+    assert list(search_archive(user=reader, filters=ArchiveFilters(query="keskkonnatasude"))) != []
     assert (
-        list(search_archive(user=administrator, filters=ArchiveFilters(query="keskkonnatasude")))
-        != []
-    )
-    assert (
-        list(search_archive(user=administrator, filters=ArchiveFilters(query="ehitusseadustiku")))
-        != []
+        list(search_archive(user=reader, filters=ArchiveFilters(query="ehitusseadustiku"))) != []
     ), "still found by its title, which is not the body"
-    body_hit = search_archive(user=administrator, filters=ArchiveFilters(query="Käesolevaga"))
+    body_hit = search_archive(user=reader, filters=ArchiveFilters(query="Käesolevaga"))
     assert list(body_hit) == [], "the superseded body is gone from the index"
     assert archive_index_findings() == []
     assert rebuild_archive_index().written == 0

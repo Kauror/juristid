@@ -383,8 +383,11 @@ def test_the_widest_filter_offers_no_further_one(signed_in, specialist):
     assert "Vasteid leidub ka teistes olekutes." not in body
 
 
-def test_the_hint_is_counted_after_authorization(client, specialist, reader):
-    """«There is something you cannot see» is a disclosure, so it is not said."""
+def test_the_hint_is_counted_after_authorization(client, specialist, reader, administrator):
+    """«There is something you cannot see» is a disclosure, so it is not said.
+
+    Since docs/adr/0181 the READER can see the restricted Matter, so the hint is
+    said to it; the person who must not hear it is an outsider."""
     from app.core.enums import Visibility
     from app.matters.services import close_matter
     from app.workflow.enums import Disposition
@@ -394,7 +397,9 @@ def test_the_hint_is_counted_after_authorization(client, specialist, reader):
     )
     close_matter(matter=matter, disposition=Disposition.COMPLETED, actor=specialist)
     client.force_login(reader)
+    assert "Vasteid leidub ka teistes olekutes." in _register(client, q="salajane")
 
+    client.force_login(administrator)
     body = _register(client, q="salajane")
 
     assert "Vasteid leidub ka teistes olekutes." not in body

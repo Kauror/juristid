@@ -339,20 +339,32 @@ def test_the_owner_heading_filters_and_maaramata_works(signed_in, specialist, ot
     assert mine.title not in titles_on(by_person)
 
 
-def test_a_person_reachable_only_through_a_restricted_matter_is_not_named(client, stages):
+def test_a_person_reachable_only_through_a_restricted_matter_is_named_only_internally(
+    client, stages
+):
     """An option is a name on a page. A name that appears only because of
     records this reader may not see tells them a colleague, a file and a working
-    relationship exist (app/accounts/selectors.py)."""
+    relationship exist (app/accounts/selectors.py).
+
+    Since docs/adr/0181 the READER sees the restricted Matter, so its head names
+    the person exactly as a lawyer's does; an outsider (ADMINISTRATOR without a
+    grant) sees no register and no name."""
     hidden_owner = factories.UserFactory(display_name="Varjatud Vastutaja", is_active=False)
     matter(owner=hidden_owner, visibility=Visibility.RESTRICTED, title="Piiratud teema")
     matter(title="Tavaline teema")  # so there is a table to read the head off
-    stranger = factories.ReaderFactory()
-    client.force_login(stranger)
 
+    client.force_login(factories.UserFactory())
+    lawyers = thead_of(client.get(REGISTER, {"olek": "koik"}))
+    client.force_login(factories.ReaderFactory())
     head = thead_of(client.get(REGISTER, {"olek": "koik"}))
+    assert (hidden_owner.display_name in head) == (hidden_owner.display_name in lawyers)
+    assert (str(hidden_owner.pk) in head) == (str(hidden_owner.pk) in lawyers)
 
-    assert hidden_owner.display_name not in head
-    assert str(hidden_owner.pk) not in head
+    client.force_login(factories.AdministratorFactory())
+    body = body_of(client.get(REGISTER, {"olek": "koik"}))
+
+    assert hidden_owner.display_name not in body
+    assert str(hidden_owner.pk) not in body
 
 
 def test_a_row_owner_is_the_filter_that_selects_them(signed_in, specialist):
@@ -570,6 +582,9 @@ def test_a_restricted_step_moves_neither_the_date_nor_the_row(client, specialist
     row shows — and sorts on — the Matter's own deadline, and its position says
     nothing about a step that reader cannot read.
 
+    Since docs/adr/0181 the READER may see it and gets the owner's page; the
+    reader who may not is an outsider, whose register holds no row at all.
+
     **Three weeks, and not one day.** `estonian(hidden_day) not in body_of(...)`
     is a search of the whole page, so it is only an answer about the restricted
     step while no *other* cell can print that same day. `Viimane tegevus`
@@ -596,17 +611,10 @@ def test_a_restricted_step_moves_neither_the_date_nor_the_row(client, specialist
         owner=specialist, title="Tavaline teema", response_deadline=TODAY + timedelta(days=5)
     )
 
-    stranger = factories.ReaderFactory()  # not a lawyer: docs/adr/0042
-    client.force_login(stranger)
+    client.force_login(factories.AdministratorFactory())
     theirs = client.get(REGISTER, {"jarjestus": views.DATE_SORT_ASC})
 
-    assert titles_on(theirs) == [other.title, subject.title]
-    assert dates_rendered(theirs) == [
-        estonian(TODAY + timedelta(days=5)),
-        estonian(TODAY + timedelta(days=40)),
-    ]
-    assert estonian(hidden_day) not in dates_rendered(theirs)
-    assert estonian(hidden_day) not in last_activity_rendered(theirs)
+    assert titles_on(theirs) == []
     assert "Varjatud samm" not in body_of(theirs)
     assert estonian(hidden_day) not in body_of(theirs)
 
@@ -615,6 +623,11 @@ def test_a_restricted_step_moves_neither_the_date_nor_the_row(client, specialist
 
     assert titles_on(mine) == [subject.title, other.title]
     assert dates_rendered(mine)[0] == estonian(hidden_day)
+
+    client.force_login(factories.ReaderFactory())
+    readers = client.get(REGISTER, {"jarjestus": views.DATE_SORT_ASC})
+    assert titles_on(readers) == titles_on(mine)
+    assert dates_rendered(readers) == dates_rendered(mine)
 
 
 def test_a_restricted_step_dated_today_is_still_nowhere_on_the_page(client, specialist):
@@ -629,6 +642,9 @@ def test_a_restricted_step_dated_today_is_still_nowhere_on_the_page(client, spec
 
     Nothing here waits for a clock: `timezone.localdate()` is read inside the
     test, so the restricted day *is* the rendering day on every day of the year.
+
+    Since docs/adr/0181 the READER gets the owner's page; the reader kept from the
+    step is an outsider, whose register holds no row at all.
     """
     today = timezone.localdate()
     subject = matter(
@@ -643,28 +659,24 @@ def test_a_restricted_step_dated_today_is_still_nowhere_on_the_page(client, spec
         owner=specialist, title="Tavaline teema", response_deadline=today + timedelta(days=5)
     )
 
-    stranger = factories.ReaderFactory()  # not a lawyer: docs/adr/0042
-    client.force_login(stranger)
+    client.force_login(factories.AdministratorFactory())
     theirs = client.get(REGISTER, {"jarjestus": views.DATE_SORT_ASC})
 
-    # The row is still sorted and dated on the Matter's own deadline, and the
-    # step's own words never reach the page.
-    assert titles_on(theirs) == [other.title, subject.title]
-    assert dates_rendered(theirs) == [
-        estonian(today + timedelta(days=5)),
-        estonian(today + timedelta(days=40)),
-    ]
+    # No row, and the step's own words never reach the page.
+    assert titles_on(theirs) == []
     assert "Varjatud tänane samm" not in body_of(theirs)
-    # `Viimane tegevus` is the one column whose digits may equal today's, and it
-    # may only do so because the row was touched — never because a restricted
-    # child carries that day.
-    assert estonian(today) not in dates_rendered(theirs)
 
     client.force_login(specialist)
     mine = client.get(REGISTER, {"jarjestus": views.DATE_SORT_ASC})
 
     assert titles_on(mine) == [subject.title, other.title]
     assert dates_rendered(mine)[0] == estonian(today)
+
+    client.force_login(factories.ReaderFactory())
+    readers = client.get(REGISTER, {"jarjestus": views.DATE_SORT_ASC})
+    assert titles_on(readers) == titles_on(mine)
+    assert dates_rendered(readers) == dates_rendered(mine)
+    assert "Varjatud tänane samm" in body_of(readers)
 
 
 def test_an_approximate_step_sorts_on_its_day_and_prints_its_quarter(signed_in, specialist):
@@ -786,8 +798,11 @@ def test_the_latest_fact_wins_rather_than_the_most_canonical(signed_in, speciali
     assert titles_on(response) == [subject.title, other.title]
 
 
-def test_a_restricted_entry_moves_neither_the_column_nor_the_row(client, specialist):
-    """A date that moved would announce that the entry exists."""
+def test_a_restricted_entry_moves_the_readers_column_as_the_owners(client, specialist):
+    """A date that moved would announce that the entry exists.
+
+    Since docs/adr/0181 the READER reads the entry, so its column and row move
+    exactly as the owner's; an outsider's register holds no row at all."""
     subject = matter(
         owner=specialist,
         title="Piiratud sissekandega teema",
@@ -803,21 +818,17 @@ def test_a_restricted_entry_moves_neither_the_column_nor_the_row(client, special
         owner=specialist, title="Tavaline teema", received_date=TODAY - timedelta(days=3)
     )
 
-    stranger = factories.ReaderFactory()
-    client.force_login(stranger)
-    theirs = client.get(REGISTER, {"jarjestus": views.ACTIVITY_SORT_NEWEST})
-
-    assert titles_on(theirs) == [other.title, subject.title]
-    assert last_activity_rendered(theirs) == [
-        estonian(TODAY - timedelta(days=3)),
-        estonian(TODAY - timedelta(days=40)),
-    ]
+    client.force_login(factories.AdministratorFactory())
+    assert titles_on(client.get(REGISTER, {"jarjestus": views.ACTIVITY_SORT_NEWEST})) == []
 
     client.force_login(specialist)
-    assert (
-        titles_on(client.get(REGISTER, {"jarjestus": views.ACTIVITY_SORT_NEWEST}))[0]
-        == subject.title
-    )
+    mine = client.get(REGISTER, {"jarjestus": views.ACTIVITY_SORT_NEWEST})
+    assert titles_on(mine) == [subject.title, other.title]
+
+    client.force_login(factories.ReaderFactory())
+    theirs = client.get(REGISTER, {"jarjestus": views.ACTIVITY_SORT_NEWEST})
+    assert titles_on(theirs) == titles_on(mine)
+    assert last_activity_rendered(theirs) == last_activity_rendered(mine)
 
 
 # ===========================================================================

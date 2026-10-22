@@ -10,8 +10,10 @@ worth a second parser.
 from __future__ import annotations
 
 import email
+import email.parser
 import email.policy
 from email.message import EmailMessage
+from typing import Any
 
 from app.documents.extraction.base import (
     ParsedAttachment,
@@ -33,6 +35,38 @@ from app.documents.extraction.errors import ExtractionFailed
 from app.documents.extraction.limits import CharacterBudget, Limits, current_limits
 
 
+def parse_bounded_message(content: bytes, limits: Limits) -> EmailMessage:
+    """``email.message_from_bytes`` that stops at ``max_email_parts`` MIME parts.
+
+    The standard parser builds one message object per MIME part, nested
+    attached messages included, before anything here can count them, so a
+    message of a few megabytes made of empty parts was hundreds of thousands
+    of objects first. The parser is the same; its message factory counts every
+    object it is asked for and refuses the message the moment the count passes
+    the limit, while the parse is still running (docs/adr/0182).
+    """
+    created = 0
+    # The feed parser calls its factory once on construction to probe its
+    # signature; that object is never part of the message.
+    allowed = limits.max_email_parts + 1
+
+    def factory(*args: Any, **kwargs: Any) -> EmailMessage:
+        nonlocal created
+        created += 1
+        if created > allowed:
+            raise ExtractionFailed(
+                "email_part_limit",
+                f"E-kirjas on üle {limits.max_email_parts} MIME-osa. Originaal on alles.",
+            )
+        return EmailMessage(*args, **kwargs)
+
+    parser = email.parser.BytesParser(_class=factory, policy=email.policy.default)
+    message = parser.parsebytes(content)
+    if not isinstance(message, EmailMessage):  # pragma: no cover - the factory makes them
+        raise ExtractionFailed("unreadable_eml", "E-kirja struktuur on ootamatu.")
+    return message
+
+
 class EmlParser:
     name = "eml"
     version = "1"
@@ -41,7 +75,9 @@ class EmlParser:
     def parse(self, source: SourceFile) -> ParseResult:
         limits = current_limits()
         try:
-            message = email.message_from_bytes(source.content, policy=email.policy.default)
+            message = parse_bounded_message(source.content, limits)
+        except ExtractionFailed:
+            raise
         except Exception as error:
             raise ExtractionFailed(
                 "unreadable_eml", "E-kirja ei õnnestunud lugeda; fail võib olla rikutud."

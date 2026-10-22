@@ -252,11 +252,11 @@ def test_a_restricted_document_is_invisible_to_a_reader(page, base_url, syntheti
     page.get_by_placeholder("Otsi teemat, viidet, asutust…").fill(ONLY_INSIDE_THE_PDF)
     page.keyboard.press("Enter")
 
-    expect(page.locator("body")).not_to_contain_text(RESTRICTED_TITLE)
-    outsider_summary = page.locator(".pagehead__context").inner_text()
-    assert outsider_summary != owner_summary, (
-        "the outsider's result count matched the owner's, so the restricted "
-        f"document influenced it: {outsider_summary!r}"
+    # Every authorized internal user reads the same results (docs/adr/0181).
+    expect(page.get_by_text(re.compile(r"\d+ vastet päringule"))).to_be_visible()
+    reader_summary = page.locator(".pagehead__context").inner_text()
+    assert reader_summary == owner_summary, (
+        f"a reader and the owner were answered differently: {reader_summary!r}"
     )
 
 

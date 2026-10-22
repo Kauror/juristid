@@ -488,12 +488,12 @@ def test_a_register_row_still_opens_its_matter(page, base_url):
 def test_a_restricted_matters_facts_never_reach_the_register_filters(page, base_url, query):
     """Not the row, not the title, not the Matter behind it.
 
-    A `READER` has no relationship to Sandra's restricted Matter, so nothing
-    about it may appear — and, crucially, its *absence* from `puudub` must not
-    disclose it either. The filter scopes the child table before the existence
-    test contributes anything (Stage-2G brief 31, docs/adr/0071).
+    The technical administrator reads no business content (docs/adr/0181), so
+    nothing about it may appear — and, crucially, its *absence* from `puudub`
+    must not disclose it either. The filter scopes the child table before the
+    existence test contributes anything (Stage-2G brief 31, docs/adr/0071).
     """
-    sign_in(page, base_url, READER)
+    sign_in(page, base_url, ADMIN)
     open_register(page, base_url, f"{query}&olek=koik")
 
     expect(page.get_by_text("Konfidentsiaalne")).to_have_count(0)
@@ -515,10 +515,18 @@ def test_a_technical_administrator_sees_no_restricted_facts(page, base_url):
     expect(page.get_by_text(RESTRICTED_TITLE)).to_have_count(0)
 
 
-def test_an_administrator_has_no_write_controls(page, base_url):
-    sign_in(page, base_url, ADMIN)
-    open_the_matter(page, base_url, OPEN_TITLE)
+def test_an_administrator_reaches_no_matter_to_write_on(page, base_url):
+    """No write controls, because no Matter at all (docs/adr/0181).
 
+    Until then the administrator read NORMAL Teemad and was shown no add
+    control on them; technical administration now reads no business content,
+    so even the ordinary Teema is not in their register.
+    """
+    sign_in(page, base_url, ADMIN)
+    page.goto(f"{base_url}/teemad/?olek=koik")
+    page.wait_for_load_state("networkidle")
+
+    expect(page.get_by_role("link", name=OPEN_TITLE)).to_have_count(0)
     expect(page.get_by_role("link", name="+ Lisa tähtaeg")).to_have_count(0)
     expect(page.get_by_role("link", name="+ Lisa töövõit")).to_have_count(0)
 

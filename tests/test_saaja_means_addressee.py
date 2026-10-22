@@ -227,9 +227,14 @@ def test_a_send_with_only_a_copy_reads_as_having_no_addressee(signed_in, special
 
 
 def test_the_options_never_name_an_addressee_of_a_submission_the_reader_cannot_see(
-    client, reader, specialist, ministry
+    client, reader, administrator, specialist, ministry
 ):
-    """An option is a statement that a visible letter went there (AUTHORIZATION)."""
+    """An option is a statement that a visible letter went there (AUTHORIZATION).
+
+    Since docs/adr/0181 a READER sees the restricted letter, so is offered its
+    addressee; the viewer who cannot see it is an administrator without a
+    business role, who is offered nobody.
+    """
     hidden_body = factories.OrganisationFactory(name="Varjatud amet")
     _send(
         factories.MatterFactory(owner=specialist),
@@ -246,9 +251,10 @@ def test_the_options_never_name_an_addressee_of_a_submission_the_reader_cannot_s
 
     offered = list(recipient_options(reader))
     assert ministry in offered
-    assert hidden_body not in offered
+    assert hidden_body in offered
+    assert list(recipient_options(administrator)) == []
 
-    client.force_login(reader)
+    client.force_login(administrator)
     body = client.get(SENT_URL).content.decode()
     assert "Varjatud amet" not in body
     # And the filter itself does not become an oracle for it.

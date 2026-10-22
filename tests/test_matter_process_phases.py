@@ -941,7 +941,9 @@ def test_a_recorded_phase_is_never_drawn_as_one_that_may_be_ahead(specialist):
 # ---------------------------------------------------------------------------
 
 
-def test_a_restricted_step_leaks_no_row_date_count_or_node(specialist, reader, organisation):
+def test_a_restricted_step_leaks_no_row_date_count_or_node(
+    specialist, reader, administrator, organisation
+):
     """Test 14, and the rule the whole module is scoped for.
 
     A `Menetluse areng` is what marks a node on `Menetluse kulg`, so it is the one
@@ -951,6 +953,9 @@ def test_a_restricted_step_leaks_no_row_date_count_or_node(specialist, reader, o
     been.
 
     They see one row fewer and one node fewer, and nothing anywhere says so.
+
+    Since docs/adr/0181 the READER sees exactly what the owner sees; the reader
+    who learns nothing is an outsider (ADMINISTRATOR without a grant).
     """
     matter = _matter(specialist, instruments=("seadus",))
     _step(matter, specialist, "Eelnõu kooskõlastusringile", date(2026, 1, 9), PHASE_KOOSKOLASTUS)
@@ -965,24 +970,32 @@ def test_a_restricted_step_leaks_no_row_date_count_or_node(specialist, reader, o
     assert _recorded(matter, specialist) == sorted([PHASE_KOOSKOLASTUS, PHASE_VALITSUS])
     assert "Märge: Valitsus arutas salajast versiooni" in _headlines(matter, specialist)
 
-    # The reader sees neither the step nor its node — and the opinion still reads
-    # where its own date puts it, with no gap, no `Valitsuses` marked and no 01.04
-    # anywhere.
-    assert _recorded(matter, reader) == [PHASE_KOOSKOLASTUS]
-    assert _headlines(matter, reader) == ["Arvamus välja", "Märge: Eelnõu kooskõlastusringile"]
+    # The READER sees exactly the owner's rows, nodes and dates.
+    assert _recorded(matter, reader) == _recorded(matter, specialist)
+    assert _headlines(matter, reader) == _headlines(matter, specialist)
     assert _record_rows(matter, reader)[0].record.pk == opinion.pk
-    assert "salajast" not in _rendered_for(matter, reader)
-    assert "2026-04-01" not in _rendered_for(matter, reader)
-    assert "01.04.2026" not in _rendered_for(matter, reader)
+    assert _rendered_for(matter, reader) == _rendered_for(matter, specialist)
+
+    # The outsider sees neither the step nor its node, no row and no date.
+    assert _recorded(matter, administrator) == []
+    assert _headlines(matter, administrator) == []
+    assert "salajast" not in _rendered_for(matter, administrator)
+    assert "2026-04-01" not in _rendered_for(matter, administrator)
+    assert "01.04.2026" not in _rendered_for(matter, administrator)
 
 
-def test_the_visible_current_stage_does_not_expose_the_record_that_caused_it(specialist, reader):
+def test_the_visible_current_stage_does_not_expose_the_record_that_caused_it(
+    specialist, reader, administrator
+):
     """§12. `Hetkeseis` may be shown; the restricted step behind it may not.
 
     A restricted development that also moved the file leaves the Matter openly on
     `Riigikogus` — that column is the Matter's own and is not restricted. What
     must not follow it is the step's headline, its date, or a `Kirjas` marking
     saying the file's arrival there is on the record.
+
+    Since docs/adr/0181 the READER reads the step and its `Kirjas` marking as the
+    owner does; only an outsider (ADMINISTRATOR without a grant) is kept from it.
     """
     matter = _matter(specialist, instruments=("seadus",))
     _step(matter, specialist, "Eelnõu kooskõlastusringile", date(2026, 1, 9), PHASE_KOOSKOLASTUS)
@@ -999,13 +1012,16 @@ def test_the_visible_current_stage_does_not_expose_the_record_that_caused_it(spe
 
     rail = legal_process_rail(matter=matter, user=reader)
     assert rail.current_label == "Riigikogus"
-    # For this reader `Riigikogus` is only «where the file is now». It is not
-    # `Kirjas`, because the record that would prove it is one they may not see —
-    # and neither the step's headline nor its date reaches the page.
-    assert _rail_states(matter, reader)["Riigikogus"] == "current"
-    assert _recorded(matter, reader) == [PHASE_KOOSKOLASTUS]
-    assert "Riigikokku" not in _rendered_for(matter, reader)
-    assert "01.06.2026" not in _rendered_for(matter, reader)
+    # The READER's rail, recorded phases and chronology are the owner's.
+    assert _rail_states(matter, reader) == _rail_states(matter, specialist)
+    assert _recorded(matter, reader) == _recorded(matter, specialist)
+    assert "Riigikokku" in _rendered_for(matter, reader)
+    assert "1.6.2026" in _rendered_for(matter, reader)
+    # Neither the step's headline nor its date reaches an outsider.
+    assert _recorded(matter, administrator) == []
+    assert "Riigikokku" not in _rendered_for(matter, administrator)
+    assert "1.6.2026" not in _rendered_for(matter, administrator)
+    assert "01.06.2026" not in _rendered_for(matter, administrator)
 
 
 def test_a_deleted_matter_leaves_no_history_behind(specialist, signed_in):
@@ -1144,8 +1160,13 @@ def test_an_unplaced_step_marks_no_node(specialist):
     assert states["Kooskõlastusring"] == "unknown"
 
 
-def test_a_restricted_step_marks_no_node_for_a_reader_who_may_not_see_it(specialist, reader):
-    """The rail is scoped before it is drawn, like everything else on this page."""
+def test_a_restricted_step_marks_the_readers_node_and_no_outsiders(
+    specialist, reader, administrator
+):
+    """The rail is scoped before it is drawn, like everything else on this page.
+
+    Since docs/adr/0181 the READER's rail is the owner's; an outsider's marks
+    nothing."""
     matter = _matter(specialist, instruments=("vtk", "seadus"))
     secret = _step(matter, specialist, "VTK kooskõlastusringile", date(2025, 2, 10), PHASE_VTK)
     secret.visibility_override = Visibility.RESTRICTED
@@ -1164,7 +1185,11 @@ def test_a_restricted_step_marks_no_node_for_a_reader_who_may_not_see_it(special
     }
     reader_states = {n.label: n.state for n in legal_process_rail(matter=matter, user=reader).nodes}
     assert owner_states["VTK"] == "recorded"
-    assert reader_states["VTK"] == "unknown"
+    assert reader_states == owner_states
+    outsider_states = {
+        n.label: n.state for n in legal_process_rail(matter=matter, user=administrator).nodes
+    }
+    assert outsider_states["VTK"] == "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -1294,8 +1319,12 @@ def test_a_passed_transposition_deadline_reads_in_the_chronology_and_not_on_the_
     )
 
 
-def test_a_restricted_transposition_deadline_draws_no_column(specialist, reader):
-    """Scoped before it is drawn, like every other source on this strip."""
+def test_a_restricted_transposition_deadline_draws_a_column_for_readers_not_outsiders(
+    specialist, reader, administrator
+):
+    """Scoped before it is drawn, like every other source on this strip.
+
+    Since docs/adr/0181 the READER sees the owner's strip; an outsider does not."""
     matter = _matter(specialist, instruments=("direktiiv",))
     ahead = timezone.localdate() + timedelta(days=400)
     record = add_important_date(
@@ -1311,8 +1340,10 @@ def test_a_restricted_transposition_deadline_draws_no_column(specialist, reader)
 
     owner = [step.label for step in process_steps(matter=matter, user=specialist)]
     seen = [step.label for step in process_steps(matter=matter, user=reader)]
+    outsider = [step.label for step in process_steps(matter=matter, user=administrator)]
     assert TRANSPOSITION_DEADLINE_LABEL in owner
-    assert TRANSPOSITION_DEADLINE_LABEL not in seen
+    assert seen == owner
+    assert TRANSPOSITION_DEADLINE_LABEL not in outsider
 
 
 def test_the_deadline_is_found_by_its_kind_and_never_by_its_title(specialist):

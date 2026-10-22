@@ -148,9 +148,28 @@ password (`SHARED_GATE_SESSION_SECONDS`) or after 8 hours without a request
 
 Edit `JURISTID_SHARED_GATE_PASSWORD` in the host's environment file and restart
 the web container. Nothing is stored anywhere else, so nothing else has to
-change. Everyone's session survives until it ages out
-(`SHARED_GATE_SESSION_SECONDS`); to end them immediately, also rotate
-`DJANGO_SECRET_KEY`.
+change.
+
+**Rotating the shared password now ends every open gate session.** Each session
+records which password it was opened under (a keyed digest, never the password
+or its hash), and the gate checks it on every request: the first request after
+the restart from a session opened under the old password ends that session
+completely — persona included — and asks for the new password. That is what
+makes rotation the way to take the door back from somebody who should no longer
+have it. There is no need to rotate `DJANGO_SECRET_KEY` for it (which would
+also end every session, and reset the throttles), and changing persona never
+carries a session across a rotation. Each ended session is recorded once as
+`SESSION_ENDED` with `reason = shared_password_changed` (docs/adr/0183).
+
+**Never rotate back to a password used before.** The check is made when a session
+next makes a request, not at the moment of rotation, so a session opened under
+password A that made no request while B was configured would pass again if A
+were set once more. Always choose a new password.
+
+Tell the department the new password before the restart: everybody types it
+once at their next request. The release that introduced this (ADR 0183) did
+the same once by itself — sessions opened before it carry no version and are
+treated as opened under an old password.
 
 ## First deployment
 
@@ -233,6 +252,17 @@ Cloudflare Access is the next hardening step and is **not** required to run:
 with `AUTH_MODE=shared_gate` the application authenticates its own requests. When
 the Access application exists, set `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUDIENCE`
 and `AUTH_MODE=cloudflare_access`, and restart. Nothing else changes.
+
+Under Access, «Välju» ends the local session and then sends the browser to
+`https://<team>.cloudflareaccess.com/cdn-cgi/access/logout`, built from
+`CF_ACCESS_TEAM_DOMAIN` (only a plain `https://<team>.cloudflareaccess.com` is
+accepted; anything else falls back to this host's own `/cdn-cgi/access/logout`).
+Until that logout has happened the browser's fresh session refuses the
+assertion it signed out with, and shows a page offering the logout rather than
+signing the person back in. Before relying on it, check once on the real Access
+application that after «Välju» the next visit asks for the Koja sign-in again;
+if the application's own token survives the team logout, the page's second
+button (this host's `/cdn-cgi/access/logout`) ends it (docs/adr/0183).
 
 ### 4. Load the release image
 
@@ -379,7 +409,7 @@ C="docker compose -p juristid-main -f deploy/unraid-main/compose.yml run --rm we
 
 $C historical_import plan          # reads everything, writes nothing
 $C historical_import dry-run       # the real apply, rolled back
-$C historical_import apply         # commits pages, links, Matters, the queue
+$C historical_import apply --expect-plan-sha256 D  # D = the digest `plan` printed (ADR 0184); commits pages, links, Matters, the queue
 $C historical_import materialise   # copies originals into evidence; resumable
 $C historical_import status
 $C historical_import verify
@@ -969,7 +999,7 @@ row in a database is exactly the guess the module exists to prevent. The apply i
 additive — it never removes an area, never creates one, never creates a `Tag`,
 never rewrites a captured section — so a second run is a genuine no-op.
 
-**`resolve_archive_recipients`** — read-only unless `--apply`; also `--mappings
+**`resolve_archive_recipients`** — read-only unless `--apply`, which needs `--expect-plan-sha256` (the digest the read-only run printed, ADR 0184); also `--mappings
 PATH` (a reviewed alias file, TOML or JSON) and `--show N` (default 25, `0` for
 all). It attaches historical opinion recipients that improved reference data can
 now resolve exactly. Idempotent: a Submission that already carries the

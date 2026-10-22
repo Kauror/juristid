@@ -153,22 +153,32 @@ def test_editing_to_the_same_text_is_not_an_edit(normal_matter, specialist):
     assert EntryRevision.objects.filter(entry=entry).count() == 0
 
 
-def test_entry_inherits_matter_visibility(restricted_matter, specialist, reader):
+def test_an_entry_on_a_restricted_matter_is_read_by_every_reader_and_no_outsider(
+    restricted_matter, specialist, reader, administrator
+):
+    """Since docs/adr/0181 the READER reads it as the owner does; an outsider not."""
     add_entry(matter=restricted_matter, body="<p>Tundlik</p>", author=specialist)
-    assert Entry.objects.visible_to(reader).count() == 0
+    assert Entry.objects.visible_to(reader).count() == 1
     assert Entry.objects.visible_to(specialist).count() == 1
+    assert Entry.objects.visible_to(administrator).count() == 0
 
 
-def test_an_entry_can_be_more_restrictive_than_its_matter(normal_matter, specialist, reader):
+def test_a_restricted_entry_keeps_its_label_and_is_read_by_every_reader(
+    normal_matter, specialist, reader, administrator
+):
+    """An entry can still be marked more restrictive than its Matter — a label since
+    docs/adr/0181, so the READER reads both entries and an outsider neither."""
     add_entry(matter=normal_matter, body="<p>Avalik</p>", author=specialist)
-    add_entry(
+    marked = add_entry(
         matter=normal_matter,
         body="<p>Ainult vastutajale</p>",
         author=specialist,
         visibility_override=Visibility.RESTRICTED,
     )
-    assert Entry.objects.visible_to(reader).count() == 1
+    assert Entry.objects.get(pk=marked.pk).visibility_override == Visibility.RESTRICTED
+    assert Entry.objects.visible_to(reader).count() == 2
     assert Entry.objects.visible_to(specialist).count() == 2
+    assert Entry.objects.visible_to(administrator).count() == 0
 
 
 # -- the composer -----------------------------------------------------------

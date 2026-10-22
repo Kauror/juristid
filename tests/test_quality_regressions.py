@@ -25,6 +25,7 @@ from app.submissions.services import (
     mark_submission_sent,
 )
 from tests import factories
+from tests.break_glass import grant_to
 
 pytestmark = pytest.mark.django_db
 
@@ -65,18 +66,21 @@ def restricted_evidence(normal_matter, department_head, evidence_root):
     )
 
 
-def test_the_restricted_document_really_is_invisible_to_the_reader(
-    restricted_evidence, specialist, reader, department_head
+def test_the_restricted_document_really_is_invisible_to_an_outsider(
+    restricted_evidence, specialist, reader, administrator, department_head
 ):
     """The fixture's premise, asserted rather than assumed.
 
     Without this the interesting test could pass because the document was
     readable all along — which is exactly what happened the first time this was
-    written against the Matter's own owner.
+    written against the Matter's own owner. Since docs/adr/0181 every authorized
+    reader (READER included) reads it, so the outsider is an administrator
+    without a business role.
     """
     from app.documents.models import Document
 
-    assert Document.objects.visible_to(reader).count() == 0
+    assert Document.objects.visible_to(administrator).count() == 0
+    assert Document.objects.visible_to(reader).count() == 1
     # The owner participates, so they do see it. Stated here so the next reader
     # does not "simplify" the test back to the specialist who owns the Matter.
     assert Document.objects.visible_to(specialist).count() == 1
@@ -84,7 +88,7 @@ def test_the_restricted_document_really_is_invisible_to_the_reader(
 
 
 def test_a_specialist_cannot_bind_evidence_they_may_not_read(
-    client, reader, normal_matter, restricted_evidence
+    client, administrator, normal_matter, restricted_evidence
 ):
     """The post the interface never offers, which is not the same as refused.
 
@@ -92,9 +96,14 @@ def test_a_specialist_cannot_bind_evidence_they_may_not_read(
     reader can open may hold a document they cannot, so the filter admitted one
     — and the submission card then printed its filename, size and SHA-256 to
     everybody who could see the submission.
+
+    Since docs/adr/0181 every business writer reads every document, so the
+    only account left that may not read it is an outsider — an administrator
+    without a business role — and the post is asserted for that account.
     """
     from app.documents.models import Document, DocumentVersion
 
+    reader = administrator
     submission = create_submission(matter=normal_matter, title="Arvamus", actor=reader)
 
     # The two halves of the difference, pinned rather than assumed. The rule
@@ -217,7 +226,7 @@ def test_a_finished_candidate_is_not_re_decided(
     """
     candidate = archive_candidate(state=state, matter=normal_matter)
 
-    client.force_login(administrator)
+    client.force_login(grant_to(administrator))
     response = client.post(
         reverse("legacy_import:opinion_decide", kwargs={"pk": candidate.pk}),
         {"decision": "reject"},
@@ -238,7 +247,7 @@ def test_a_reviewer_may_still_correct_their_own_earlier_answer(
 
     candidate = archive_candidate(state=OpinionCandidateState.REJECTED, matter=normal_matter)
 
-    client.force_login(administrator)
+    client.force_login(grant_to(administrator))
     client.post(
         reverse("legacy_import:opinion_decide", kwargs={"pk": candidate.pk}),
         {"decision": "defer"},
@@ -256,7 +265,7 @@ def test_a_pending_candidate_is_still_decidable(
 
     candidate = archive_candidate(state=OpinionCandidateState.PENDING, matter=normal_matter)
 
-    client.force_login(administrator)
+    client.force_login(grant_to(administrator))
     client.post(
         reverse("legacy_import:opinion_decide", kwargs={"pk": candidate.pk}),
         {"decision": "reject"},

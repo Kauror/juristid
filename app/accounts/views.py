@@ -25,7 +25,8 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
-from app.accounts import local_auth, shared_gate
+from app.accounts import cloudflare_access, local_auth, shared_gate
+from app.accounts.enums import AuthMode
 from app.accounts.models import User
 from app.accounts.selectors import persona_candidates, persona_from_id
 from app.audit.enums import SecurityEventType
@@ -237,6 +238,11 @@ def sign_out(request: HttpRequest) -> HttpResponse:
     `logout` flushes the session, which takes the gate state with it — so
     signing out really does mean the password is asked for again, rather than
     dropping back to a still-open door with nobody standing in it.
+
+    Under Cloudflare Access (dormant) the local session is not the whole
+    sign-in: the browser goes on to Cloudflare's logout, and this browser's
+    fresh session refuses the assertion it signed out with until then
+    (`cloudflare_access.logout_url`, docs/adr/0183).
     """
     actor = request.user if request.user.is_authenticated else None
     if shared_gate.is_shared_gate():
@@ -258,11 +264,29 @@ def sign_out(request: HttpRequest) -> HttpResponse:
             user_agent=request.META.get("HTTP_USER_AGENT", ""),
             detail={"path": "local_password"},
         )
+    access = shared_gate.current_mode() == AuthMode.CLOUDFLARE_ACCESS
+    assertion = request.META.get(cloudflare_access.HEADER, "") if access else ""
+    if access and actor is not None:
+        record_security_event(
+            event_type=SecurityEventType.SIGNED_OUT,
+            actor=actor,
+            ip_address=client_ip(request),
+            user_agent=request.META.get("HTTP_USER_AGENT", ""),
+            detail={"path": "cloudflare_access"},
+        )
     shared_gate.close_gate(request)
     logout(request)
-    response = redirect(
-        f"{reverse('accounts:sign_in')}?olek=valjunud" if local else reverse("core:home")
-    )
+    response: HttpResponse
+    if access:
+        # Cloudflare owns this sign-in, and would sign the person straight back
+        # in from the assertion it keeps forwarding: end its session too, and
+        # until it has ended, refuse that same assertion here (docs/adr/0183).
+        cloudflare_access.remember_signed_out(request.session, assertion)
+        response = HttpResponseRedirect(cloudflare_access.logout_url())
+    else:
+        response = redirect(
+            f"{reverse('accounts:sign_in')}?olek=valjunud" if local else reverse("core:home")
+        )
     # What the browser itself kept of the session goes with it: the origin's
     # storage, where an older htmx kept copies of the register (ENG-009), and
     # its HTTP cache. Every authenticated response is `no-store` today, but one
@@ -381,15 +405,16 @@ def act_as(request: HttpRequest) -> HttpResponse:
     previous = request.user if request.user.is_authenticated else None
     raw = request.POST.get("user_id", "")
 
-    # The time the password was typed, carried across `login` / `logout` so a
-    # persona change does not restart the 12-hour absolute limit.
-    passed_at = shared_gate.gate_passed_at(request)
+    # The time the password was typed and the password version it was typed
+    # against, carried across `login` / `logout` so a persona change neither
+    # restarts the 12-hour absolute limit nor escapes a password rotation.
+    carried = shared_gate.current_pass(request)
 
     if raw == "":
         # Stepping back to the department view. Worth having: it is the only way
         # to see what a page looks like to somebody with no persona selected.
         logout(request)
-        shared_gate.open_gate(request, passed_at=passed_at)
+        shared_gate.open_gate(request, carried=carried)
         _record_persona_change(request, previous=previous, chosen=None)
         # The same safe target a named choice gets. Switching from the top bar
         # has to leave somebody where they were reading, and "somewhere else
@@ -413,7 +438,7 @@ def act_as(request: HttpRequest) -> HttpResponse:
     login(request, person, backend=MODEL_BACKEND)
     # `login` cycles the session key and would otherwise drop the gate state
     # with it, sending somebody back to the password form for changing persona.
-    shared_gate.open_gate(request, passed_at=passed_at)
+    shared_gate.open_gate(request, carried=carried)
     shared_gate.note_persona_chosen(request)
     _record_persona_change(request, previous=previous, chosen=person)
     messages.success(request, f"Vaatad rakendust nüüd kasutajana {person.display_name}.")

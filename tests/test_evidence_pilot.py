@@ -369,6 +369,7 @@ def _apply(root: Path, **overrides):
     arguments = {
         "operator_intent": evidence_pilot.OPERATOR_INTENT,
         "expect_package_sha256": plan.digest,
+        "expect_plan_sha256": evidence_pilot.plan_digest(plan),
         "backup_set": "sets/20250331T000000Z",
         **overrides,
     }
@@ -562,6 +563,8 @@ def test_an_owner_who_is_not_exactly_one_account_blocks_the_plan(world, package_
         ("REAL_DATA_ALLOWED", {}, "REAL_DATA_ALLOWED is off"),
         (None, {"operator_intent": "jah"}, "--operator-intent evidence-pilot"),
         (None, {"expect_package_sha256": "0" * 64}, "pass exactly that"),
+        (None, {"expect_plan_sha256": " "}, "pass it as --expect-plan-sha256"),
+        (None, {"expect_plan_sha256": "0" * 64}, "changed since it was approved"),
         (None, {"backup_set": " "}, "Name the verified backup set"),
     ],
 )
@@ -1096,6 +1099,7 @@ def test_a_teema_created_after_the_plan_stops_the_apply(world, package_root, pil
             plan,
             operator_intent=evidence_pilot.OPERATOR_INTENT,
             expect_package_sha256=plan.digest,
+            expect_plan_sha256=evidence_pilot.plan_digest(plan),
             backup_set="sets/20250331T000000Z",
         )
     assert Matter.all_objects.count() == 1

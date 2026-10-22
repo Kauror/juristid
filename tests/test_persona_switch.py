@@ -18,9 +18,16 @@ by trying names, which is exactly the shape docs/adr/0016 exists to refuse.
 **Navigation follows the role, not a name.** Osakonna töö is the department
 head's surface because of the role they hold, and Minu töö needs a "minu" to be
 about (docs/adr/0034).
+
+Since docs/adr/0181 a session with no persona reads no business page at all:
+Osakond, like every business route, sends it to the persona chooser (an htmx
+request gets a 401). What such a session still renders is the shell around
+pages that hold no business data — the chooser itself and Uuendused.
 """
 
 from __future__ import annotations
+
+import re
 
 import pytest
 from django.urls import reverse
@@ -77,6 +84,17 @@ def _current(response):
     return user if user.is_authenticated else None
 
 
+#: A page a persona-less gate session still renders (docs/adr/0181): product
+#: release notes, which hold no business data.
+NO_PERSONA_PAGE = "/uuendused/"
+
+
+def _sent_to_the_chooser(response) -> None:
+    """docs/adr/0181: a business page asks a persona-less session who is reading."""
+    assert response.status_code == 302
+    assert response["Location"].startswith(reverse("accounts:choose_persona"))
+
+
 # -- the page ---------------------------------------------------------------
 
 
@@ -122,10 +140,27 @@ def test_the_page_says_who_is_selected_in_its_header(behind_the_gate, department
 
 
 def test_the_page_renders_the_no_persona_state(behind_the_gate, department):
+    """The state is named in the heading; it is not offered as a row (docs/adr/0181)."""
     page = behind_the_gate.get(reverse("accounts:choose_persona")).content.decode()
 
-    assert "Ilma kasutajata" in page
-    assert "Praegu valitud" in page
+    assert re.search(r'personahead__nowname">Ilma kasutajata<', page)
+    assert "personarow--nobody" not in page
+    assert "Praegu valitud" not in page
+
+
+def test_no_persona_less_choice_is_offered_once_somebody_is_chosen(behind_the_gate, department):
+    """Neither the page nor the bar offers «Ilma kasutajata» as a choice (docs/adr/0181).
+
+    A session with no persona reads nothing, so the choice would only open the
+    persona page again. Choosing another colleague stays; ending is «Välju».
+    """
+    _act_as(behind_the_gate, str(department["head"].pk))
+    page = behind_the_gate.get(reverse("accounts:choose_persona")).content.decode()
+
+    assert 'name="user_id" value=""' not in page
+    assert "personarow--nobody" not in page
+    assert "personaoption--nobody" not in page
+    assert "Ilma kasutajata" not in page
 
 
 def test_the_page_carries_none_of_the_copy_the_redesign_removed(behind_the_gate, department):
@@ -309,7 +344,8 @@ def test_a_session_already_acting_as_an_excluded_account_is_dropped(behind_the_g
 
     response = behind_the_gate.get("/osakond/")
 
-    assert response.status_code == 200
+    # Dropped, so persona-less, so sent to choose one (docs/adr/0181).
+    _sent_to_the_chooser(response)
     assert not response.wsgi_request.user.is_authenticated
     # And the door stays open: nobody is asked for the password again because
     # of a change they did not make.
@@ -359,10 +395,10 @@ def test_a_stale_technical_persona_cannot_reach_the_department_surface(behind_th
 
     response = behind_the_gate.get(reverse("matters:department"))
 
-    # The page is readable by anybody past the door, so what is asserted is the
-    # thing that matters: the session is not authenticated as that account, so
-    # the manager-only sections are not built for it (ADR 0049).
-    assert response.status_code == 200
+    # The session is not authenticated as that account, so the manager-only
+    # sections are not built for it (ADR 0049) — and since docs/adr/0181 a
+    # session with no persona is not shown the page at all.
+    _sent_to_the_chooser(response)
     assert not response.wsgi_request.user.is_authenticated
     assert "uxstat" not in response.content.decode()
 
@@ -493,15 +529,16 @@ def test_switching_away_from_the_head_takes_the_restricted_sight_with_it(
     assert "Konfidentsiaalne" not in behind_the_gate.get("/teemad/?olek=koik").content.decode()
 
 
-def test_no_persona_does_not_inherit_the_previous_persona_restricted_access(
-    behind_the_gate, restricted_world
-):
+def test_no_persona_does_not_inherit_the_previous_persona_access(behind_the_gate, restricted_world):
+    """Since docs/adr/0181 dropping the persona drops every business read, NORMAL too."""
     _act_as(behind_the_gate, str(restricted_world["head"].pk))
     _act_as(behind_the_gate, "")
 
-    page = behind_the_gate.get("/osakond/").content.decode()
+    response = behind_the_gate.get("/osakond/")
+    page = response.content.decode()
 
-    assert "Avalik eelnõu kõigile" in page
+    _sent_to_the_chooser(response)
+    assert "Avalik eelnõu kõigile" not in page
     assert "Konfidentsiaalne liikmete tagasiside" not in page
 
 
@@ -540,17 +577,18 @@ def test_a_department_head_gets_the_same_single_destination(behind_the_gate, dep
     assert page.count(f'href="{reverse("matters:department")}"') == 1
 
 
-def test_no_persona_keeps_the_department_page_and_gets_no_minu_too(behind_the_gate, department):
+def test_no_persona_is_sent_to_the_chooser_and_gets_no_minu_too(behind_the_gate, department):
     """Minu töö is not a surface without a "minu" (brief 23).
 
-    Osakond is, and stays: it is the department's own dashboard and the reason
-    somebody past the door has anything to read before choosing a name.
+    Osakond used to stay readable without a persona. Since docs/adr/0181 it asks
+    who is reading first; the bar on a page that still renders keeps the single
+    Osakond destination and offers no Minu töö.
     """
-    page = _nav(behind_the_gate)
+    page = behind_the_gate.get(NO_PERSONA_PAGE).content.decode()
 
     assert reverse("matters:my_work") not in page
     assert page.count(f'href="{reverse("matters:department")}"') == 1
-    assert behind_the_gate.get("/osakond/").status_code == 200
+    _sent_to_the_chooser(behind_the_gate.get("/osakond/"))
 
 
 def test_minu_too_without_a_persona_invents_nobody(behind_the_gate, department):
@@ -582,11 +620,13 @@ def test_the_manager_sections_refuse_a_specialist_at_the_route(behind_the_gate, 
 
 
 def test_the_manager_sections_refuse_a_session_with_no_persona(behind_the_gate, department):
-    """Knowing the shared password is not being the department head."""
+    """Knowing the shared password is not being the department head.
+
+    Since docs/adr/0181 it is not reading the page at all.
+    """
     response = behind_the_gate.get(reverse("matters:department"))
 
-    assert response.status_code == 200
-    assert not response.context["page"].is_head
+    _sent_to_the_chooser(response)
     assert "uxstat" not in response.content.decode()
 
 
@@ -599,7 +639,7 @@ def test_an_administrator_cannot_reach_the_manager_sections_by_becoming_one(
     response = _act_as(behind_the_gate, str(department["admin"].pk))
 
     assert _current(response) is None
-    assert not behind_the_gate.get(reverse("matters:department")).context["page"].is_head
+    _sent_to_the_chooser(behind_the_gate.get(reverse("matters:department")))
 
 
 # -- the top-bar switcher ---------------------------------------------------
@@ -640,21 +680,21 @@ def test_the_popover_names_the_selected_person_on_the_pill(behind_the_gate, depa
 
 
 def test_with_no_persona_the_pill_says_so(behind_the_gate, department):
-    page = behind_the_gate.get("/osakond/").content.decode()
+    page = behind_the_gate.get(NO_PERSONA_PAGE).content.decode()
 
     assert "personapill--none" in page
     assert "Ilma kasutajata" in page
 
 
 def test_the_popover_footer_is_the_one_place_the_caveat_survives(behind_the_gate, department):
-    page = behind_the_gate.get("/osakond/").content.decode()
+    page = behind_the_gate.get(NO_PERSONA_PAGE).content.decode()
 
     assert "Valik ei ole autentimine" in page
     assert page.count("Valik ei ole autentimine") == 1
 
 
 def test_the_pill_declares_the_popover_it_controls(behind_the_gate, department):
-    page = behind_the_gate.get("/osakond/").content.decode()
+    page = behind_the_gate.get(NO_PERSONA_PAGE).content.decode()
 
     assert 'aria-controls="persona-menu"' in page
     assert 'aria-expanded="false"' in page
@@ -692,9 +732,9 @@ def test_a_unique_first_name_is_shown_alone(behind_the_gate, department):
     names = _row_names(page)
     assert "Marko" in names and "Ireen" in names
     assert "Marko Näidisjuht" not in page
-    # Every person is a single first name; «Ilma kasutajata» is the list's own
-    # no-persona row, not a person.
-    people = [name for name in names if name.strip() != "Ilma kasutajata"]
+    # Every person is a single first name; the list holds people only.
+    people = [name for name in names if name.strip()]
+    assert "Ilma kasutajata" not in names
     assert people and all(" " not in name.strip() for name in people)
 
 
@@ -730,7 +770,7 @@ def test_the_selected_person_reads_the_same_in_the_list_and_the_switcher(
     switcher = re.findall(r'class="personaoption__name">\s*([^<]+?)\s*<', page)
     assert switcher
     assert {"Ireen", "Sandra"} <= set(switcher)
-    assert set(_row_names(page)) - {"Ilma kasutajata"} <= set(switcher) | {"Marko"}
+    assert set(_row_names(page)) <= set(switcher) | {"Marko"}
 
 
 def test_choosing_by_first_name_still_posts_the_account_id(behind_the_gate, department):

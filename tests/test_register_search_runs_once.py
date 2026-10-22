@@ -57,8 +57,11 @@ def test_an_empty_page_asks_elsewhere_without_searching_again(signed_in, special
     assert len(searches) == 1, searches
 
 
-def test_a_reader_still_reaches_only_what_they_may_see(client, reader, specialist):
-    """The ids come from the reader's own search, so a restricted match stays out."""
+def test_a_reader_still_reaches_only_what_they_may_see(client, reader, specialist, administrator):
+    """The ids come from the reader's own search, so what they may not see stays out.
+
+    Since docs/adr/0181 the READER may see the restricted match too; an outsider
+    (ADMINISTRATOR without a grant) reaches neither."""
     indexed(factories.MatterFactory(owner=specialist, title="Pakendiseaduse muudatus"))
     indexed(
         factories.MatterFactory(
@@ -69,6 +72,13 @@ def test_a_reader_still_reaches_only_what_they_may_see(client, reader, specialis
 
     response, searches = _get(client, q="pakend", olek="koik")
 
-    assert titles_on(response) == ["Pakendiseaduse muudatus"]
-    assert total_of(response) == 1
+    assert sorted(titles_on(response)) == ["Pakendi salajane töö", "Pakendiseaduse muudatus"]
+    assert total_of(response) == 2
     assert len(searches) == 1
+
+    client.force_login(administrator)
+    response, searches = _get(client, q="pakend", olek="koik")
+
+    assert titles_on(response) == []
+    assert total_of(response) == 0
+    assert len(searches) <= 1

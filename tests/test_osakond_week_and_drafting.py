@@ -158,12 +158,16 @@ def test_the_week_across_the_autumn_clock_change(department_head, filed, send):
     assert week_count(department_head, dt.date(2026, 10, 26)) == 1
 
 
-def test_only_sent_opinions_the_reader_may_see_are_counted(department_head, reader, filed, send):
+def test_only_sent_opinions_the_reader_may_see_are_counted(
+    department_head, reader, administrator, filed, send
+):
+    """Since docs/adr/0181 a READER counts the restricted send too; an outsider counts none."""
     send(filed, local(2026, 10, 6))
     send(filed, local(2026, 10, 7), visibility_override=Visibility.RESTRICTED)
     create_submission(matter=filed, title="Koostamisel arvamus")  # a DRAFT is not a send
-    assert week_count(reader, dt.date(2026, 10, 9)) == 1
+    assert week_count(reader, dt.date(2026, 10, 9)) == 2
     assert week_count(department_head, dt.date(2026, 10, 9)) == 2
+    assert week_count(administrator, dt.date(2026, 10, 9)) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -322,23 +326,31 @@ def test_a_concluded_matter_is_not_drafting(department_head, filed, specialist):
     assert drafting(department_head) == set()
 
 
-def test_a_restricted_step_does_not_reveal_the_work(reader, filed, specialist):
+def test_a_restricted_step_reveals_the_work_to_every_reader_and_no_outsider(
+    reader, administrator, filed, specialist
+):
+    """Since docs/adr/0181 RESTRICTED divides no authorized readers."""
     step = prepare(filed, specialist, dt.date(2026, 11, 2))
     NextAction.objects.filter(pk=step.pk).update(visibility_override=Visibility.RESTRICTED)
-    assert drafting(reader) == set()
+    assert drafting(reader) == {filed.pk}
     assert drafting(specialist) == {filed.pk}
+    assert drafting(administrator) == set()
 
 
-def test_historical_drafts_still_count_and_one_matter_is_one_row(department_head, reader, filed):
+def test_historical_drafts_still_count_and_one_matter_is_one_row(
+    department_head, reader, administrator, filed
+):
     create_submission(matter=filed, title="Esimene kavand")
     create_submission(matter=filed, title="Teine kavand")
     assert list(drafting_matters(department_head).values_list("pk", flat=True)) == [filed.pk]
 
-    hidden = create_matter(title="Piiratud kavandiga eelnõu")
+    # Since docs/adr/0181 a READER counts a restricted draft; an outsider does not.
+    restricted = create_matter(title="Piiratud kavandiga eelnõu")
     create_submission(
-        matter=hidden, title="Piiratud kavand", visibility_override=Visibility.RESTRICTED
+        matter=restricted, title="Piiratud kavand", visibility_override=Visibility.RESTRICTED
     )
-    assert hidden.pk not in drafting(reader)
+    assert restricted.pk in drafting(reader)
+    assert drafting(administrator) == set()
 
 
 def test_a_sent_opinion_with_no_draft_and_no_open_opinion_step_is_not_drafting(

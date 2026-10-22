@@ -967,16 +967,24 @@ def test_the_search_projection_still_counts_what_the_register_counts(rich_matter
     assert projected == Matter.objects.count()
 
 
-def test_the_admin_can_still_see_a_tombstone(rich_matter, specialist, client, superuser):
+def test_the_admin_can_still_see_a_tombstone_through_a_grant(
+    rich_matter, specialist, client, superuser, department_head
+):
     """The one place a deleted Matter stays reachable, and it is read-only.
 
     `Matter.objects` closes every business surface; administration is where
     somebody asks what happened to a record the audit trail names, and a row
     the admin could not open would be a dead end (docs/adr/0096 §4.2).
+
+    Since docs/adr/0181 a superuser without a business role reads no Matter at
+    all, a tombstone included, until a break-glass grant opens it.
     """
+    import datetime as dt
+
     from django.contrib.admin.sites import site
     from django.test import RequestFactory
 
+    from app.accounts.services import grant_break_glass
     from app.core.admin import MatterAdmin
 
     delete_matter(matter=rich_matter, actor=specialist)
@@ -984,6 +992,13 @@ def test_the_admin_can_still_see_a_tombstone(rich_matter, specialist, client, su
     request = RequestFactory().get("/admin/matters/matter/")
     request.user = superuser
     admin = MatterAdmin(Matter, site)
+    assert not admin.get_queryset(request).filter(pk=rich_matter.pk).exists()
+    grant_break_glass(
+        user=superuser,
+        granted_by=department_head,
+        reason="tõrke uurimine",
+        duration=dt.timedelta(hours=2),
+    )
     assert admin.get_queryset(request).filter(pk=rich_matter.pk).exists()
     # Read-only as a whole since ENG-008, which is stronger than the two
     # `deleted_*` columns being read-only: nothing on the row can be changed,

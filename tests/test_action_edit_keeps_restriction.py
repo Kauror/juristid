@@ -18,6 +18,10 @@ plan (AUD-040, D-7) — and that planned work does not inherit either.
 Asserted through the real operation and the real route, never by building rows:
 the restricted edit, the controls, the plan-linked edit, new work and the next
 step not inheriting, the stale edit, and copy-at-creation semantics.
+
+Since docs/adr/0181 the restriction is a label, not a boundary between internal
+users: a READER reads the restricted step like its owner, and the reader who must
+learn nothing is an outsider (an ADMINISTRATOR without a grant).
 """
 
 from __future__ import annotations
@@ -101,9 +105,12 @@ def matter(specialist):
 # ---------------------------------------------------------------------------
 
 
-def test_an_edited_restricted_step_stays_restricted(client, matter, specialist, reader):
+def test_an_edited_restricted_step_stays_restricted(
+    client, matter, specialist, reader, administrator
+):
     original = _action(matter, specialist, restricted=True)
-    assert not NextAction.objects.visible_to(reader).filter(pk=original.pk).exists()
+    assert NextAction.objects.visible_to(reader).filter(pk=original.pk).exists()
+    assert not NextAction.objects.visible_to(administrator).filter(pk=original.pk).exists()
 
     replacement = _edit(matter, specialist, original)
 
@@ -115,15 +122,25 @@ def test_an_edited_restricted_step_stays_restricted(client, matter, specialist, 
     assert replacement.visibility_override == Visibility.RESTRICTED
     assert replacement.text == EDITED_WORDS
 
-    assert not NextAction.objects.visible_to(reader).filter(pk=replacement.pk).exists()
+    # docs/adr/0181: the READER sees it exactly where the owner does.
+    assert NextAction.objects.visible_to(reader).filter(pk=replacement.pk).exists()
+    owners = _readers_surfaces(client, specialist, matter, specialist)
     for surface, body in _readers_surfaces(client, reader, matter, specialist).items():
+        if surface == "desk":
+            # Another person's desk is not a READER's page (non-200, so ""),
+            # before docs/adr/0181 and after it.
+            assert body == ""
+            continue
+        assert (MARKER in body) == (MARKER in owners[surface]), surface
+    assert not NextAction.objects.visible_to(administrator).filter(pk=replacement.pk).exists()
+    for surface, body in _readers_surfaces(client, administrator, matter, specialist).items():
         assert MARKER not in body, surface
 
     assert NextAction.objects.visible_to(specialist).filter(pk=replacement.pk).exists()
     assert EDITED_WORDS in _page(client, specialist, "matters:matter_detail", pk=matter.pk)
 
 
-def test_the_muuda_route_keeps_the_restriction(client, matter, specialist, reader):
+def test_the_muuda_route_keeps_the_restriction(client, matter, specialist, reader, administrator):
     """The same rule through the page's own POST, not just the service."""
     original = _action(matter, specialist, restricted=True)
     client.force_login(specialist)
@@ -142,7 +159,9 @@ def test_the_muuda_route_keeps_the_restriction(client, matter, specialist, reade
     assert replacement.pk != original.pk
     assert replacement.text == EDITED_WORDS
     assert replacement.visibility_override == Visibility.RESTRICTED
-    assert MARKER not in _page(client, reader, "matters:matter_detail", pk=matter.pk)
+    # docs/adr/0181: the label stays; the READER reads it, an outsider does not.
+    assert EDITED_WORDS in _page(client, reader, "matters:matter_detail", pk=matter.pk)
+    assert MARKER not in _page(client, administrator, "matters:matter_detail", pk=matter.pk)
 
 
 # ---------------------------------------------------------------------------
@@ -178,7 +197,9 @@ def test_a_restricted_matters_step_needs_no_redundant_override(specialist):
 # ---------------------------------------------------------------------------
 
 
-def test_an_edited_plan_step_keeps_its_step_and_its_restriction(matter, specialist, reader):
+def test_an_edited_plan_step_keeps_its_step_and_its_restriction(
+    matter, specialist, reader, administrator
+):
     work_plan.seed_standard_plan(matter=matter, actor=specialist)
     step = work_plan.plan_steps_of(matter)[0]
     original = _restrict(work_plan.activate_plan_step(matter=matter, step=step, actor=specialist))
@@ -187,7 +208,8 @@ def test_an_edited_plan_step_keeps_its_step_and_its_restriction(matter, speciali
 
     assert replacement.plan_step_id == step.pk
     assert replacement.visibility_override == Visibility.RESTRICTED
-    assert not NextAction.objects.visible_to(reader).filter(pk=replacement.pk).exists()
+    assert NextAction.objects.visible_to(reader).filter(pk=replacement.pk).exists()
+    assert not NextAction.objects.visible_to(administrator).filter(pk=replacement.pk).exists()
 
 
 # ---------------------------------------------------------------------------

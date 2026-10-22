@@ -21,7 +21,9 @@ database are different acts and only one of them happened.
 
 **Authorization.** A visible `Submission` is not authority to name its evidence.
 A restricted final version produces no filename, no badge, no anchor and no
-count anywhere on this page.
+count anywhere on this page. Since docs/adr/0181 that holds for an outsider
+(an administrator without a business role); every authorized reader is named
+the restricted opinion exactly as its owner is.
 
 **The old address.** A redirect and not a 404, after the authorization check, so
 a bookmark still works and a stranger still learns nothing.
@@ -834,8 +836,20 @@ def test_reading_documents_writes_no_change_event(signed_in, specialist):
 # ---------------------------------------------------------------------------
 
 
-def test_a_restricted_opinion_is_not_named_badged_anchored_or_counted(client, reader, specialist):
-    """AUTH-003 §21: a filename is a disclosure whether or not the bytes are."""
+def _outsider_body(client, url: str) -> str:
+    """An administrator without a business role: a 404, and the body it carried."""
+    client.force_login(factories.AdministratorFactory())
+    response = client.get(url)
+    assert response.status_code == 404
+    return response.content.decode()
+
+
+def test_a_restricted_opinion_is_named_to_a_reader_and_to_no_outsider(client, reader, specialist):
+    """AUTH-003 §21: a filename is a disclosure whether or not the bytes are.
+
+    Since docs/adr/0181 a READER is named, badged and anchored the restricted
+    opinion as its owner is; an outsider learns none of it.
+    """
     matter = factories.MatterFactory(owner=specialist)
     document = _file(matter, name="Salajane_arvamus.pdf", actor=specialist)
     document.visibility_override = Visibility.RESTRICTED
@@ -847,35 +861,42 @@ def test_a_restricted_opinion_is_not_named_badged_anchored_or_counted(client, re
     body = response.content.decode()
 
     assert response.status_code == 200
+    assert "Salajane_arvamus.pdf" in body
+    assert "badge--opinion" in body
+    assert f"dokument-{document.pk}" in body
+
+    body = _outsider_body(client, _documents_url(matter))
     assert "Salajane_arvamus.pdf" not in body
     assert "badge--opinion" not in body
     assert f"dokument-{document.pk}" not in body
     assert document.current_version.sha256[:16] not in body
-    assert list(response.context["unregistered_opinions"]) == []
 
 
-def test_a_restricted_opinion_is_not_named_in_the_rail(client, reader, specialist):
+def test_a_restricted_opinion_is_named_in_a_readers_rail_and_no_outsiders(
+    client, reader, specialist
+):
     matter = factories.MatterFactory(owner=specialist)
     document = _file(matter, name="Salajane_arvamus.pdf", actor=specialist)
     document.visibility_override = Visibility.RESTRICTED
     document.save(update_fields=["visibility_override"])
     client.force_login(reader)
+    url = reverse("matters:matter_detail", kwargs={"pk": matter.pk})
 
-    body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
-
-    assert "Salajane_arvamus.pdf" not in body
-    assert '<span class="railcard__none">Puudub</span>' in body
+    assert "Salajane_arvamus.pdf" in client.get(url).content.decode()
+    assert "Salajane_arvamus.pdf" not in _outsider_body(client, url)
 
 
 def test_the_arvamus_filter_does_not_widen_visibility(client, reader, specialist):
+    """Since docs/adr/0181 a READER finds it; the filter opens nothing to an outsider."""
     matter = factories.MatterFactory(owner=specialist)
     document = _file(matter, name="Salajane_arvamus.pdf", actor=specialist)
     document.visibility_override = Visibility.RESTRICTED
     document.save(update_fields=["visibility_override"])
     client.force_login(reader)
 
-    body = _page(client, matter, roll=OPINION_ROLE_FILTER)
+    assert "Salajane_arvamus.pdf" in _page(client, matter, roll=OPINION_ROLE_FILTER)
 
+    body = _outsider_body(client, _documents_url(matter, roll=OPINION_ROLE_FILTER))
     assert "Salajane_arvamus.pdf" not in body
 
 
@@ -904,15 +925,15 @@ def test_the_old_address_does_not_loop(signed_in, specialist):
     assert len(response.redirect_chain) == 1
 
 
-def test_the_old_address_still_checks_who_is_asking(client, reader, specialist):
+def test_the_old_address_still_checks_who_is_asking(client, administrator, specialist):
     """404 and never a redirect: a redirect would confirm the Matter exists.
 
-    A READER, because both lawyer roles read the department including its
-    RESTRICTED files since docs/adr/0042 — a "stranger specialist" is not a
-    stranger to this Matter and would prove nothing.
+    An administrator without a business role, because both lawyer roles read
+    the department including its RESTRICTED files since docs/adr/0042, and a
+    READER since docs/adr/0181 — neither is a stranger to this Matter.
     """
     matter = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
-    client.force_login(reader)
+    client.force_login(administrator)
 
     response = client.get(reverse("matters:matter_position", kwargs={"pk": matter.pk}))
 
@@ -1164,13 +1185,15 @@ def _link_a_letter(matter, *, sha: str = "b" * 64, title: str = "Varasem kiri"):
 def test_an_archive_reader_still_reaches_the_letters_from_the_matter(client, specialist):
     """Retiring a surface could not be allowed to take access with it (§22).
 
-    Signed in as an ADMINISTRATOR, because `may_read_archive` is a question
-    about the corpus and this fixture set gives that role the corpus
-    (docs/adr/0028, docs/adr/0056).
+    Signed in as a READER: since docs/adr/0181 `may_read_archive` is
+    `may_read_business_content`, so the archive follows the business-read roles
+    and an administrator without a grant reads neither the Matter nor the corpus.
     """
+    from app.accounts.enums import UserRole
+
     matter = factories.MatterFactory(owner=specialist)
     binary = _link_a_letter(matter)
-    client.force_login(factories.AdministratorFactory())
+    client.force_login(factories.UserFactory(role=UserRole.READER))
 
     body = _page(client, matter)
 
@@ -1183,14 +1206,16 @@ def test_an_archive_reader_still_reaches_the_letters_from_the_matter(client, spe
     assert "match_class" not in body
 
 
-def test_a_reader_without_the_archive_gets_no_row_no_count_and_no_hint(client, specialist):
+def test_an_outsider_gets_no_row_no_count_and_no_hint(client, specialist):
+    """Since docs/adr/0181 every reader of the Matter reads the archive; an outsider neither."""
     from app.accounts.enums import UserRole
 
     matter = factories.MatterFactory(owner=specialist)
     _link_a_letter(matter, sha="c" * 64, title="Salajane kiri")
     client.force_login(factories.UserFactory(role=UserRole.READER))
+    assert "Salajane kiri" in _page(client, matter)
 
-    body = _page(client, matter)
+    body = _outsider_body(client, _documents_url(matter))
 
     assert "Seotud arhiivikirjad" not in body
     assert "seotud-arhiivikirjad" not in body
@@ -1208,7 +1233,7 @@ def test_archive_letters_are_kept_apart_from_the_file_table(client, specialist):
     document = _file(matter, name="Koja_arvamus.pdf", actor=specialist)
     _send(matter, document, actor=specialist)
     _link_a_letter(matter)
-    client.force_login(factories.AdministratorFactory())
+    client.force_login(specialist)
 
     body = _page(client, matter)
     letters = body.split('id="seotud-arhiivikirjad"', 1)[1]

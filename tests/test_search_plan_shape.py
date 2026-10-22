@@ -225,13 +225,33 @@ def test_a_title_typo_is_answered_by_the_trigram_index(projection):
     assert "search_title_trgm" in indexes
 
 
-def test_the_query_as_it_stood_before_could_only_scan(projection):
+def test_the_query_as_it_stood_before_could_only_scan(projection, monkeypatch):
     """The frozen pre-ENG-010 query, for contrast: no setting makes it use a
     text index. Denied a sequential scan it reads the whole table through some
-    other index instead, which is the same work under another name."""
+    other index instead, which is the same work under another name.
+
+    Since docs/adr/0181 a READER reads everything and no request builds the
+    participation-narrowed scope the frozen query de-duplicated for; it is built
+    here by hand, for the reader, so the contrast is still the one it was.
+    """
+    from app.core import authorization
+    from app.core.authorization import Scope
     from tests.search_reference import reference_search_documents
 
     owner, reader = projection
+    real = authorization.scope_for_user
+
+    def scope(user):
+        if getattr(user, "pk", None) == reader.pk:
+            return Scope(
+                user=user,
+                is_authenticated=True,
+                sees_restricted_by_role=False,
+                break_glass_grant_id=None,
+            )
+        return real(user)
+
+    monkeypatch.setattr("tests.search_reference.scope_for_user", scope)
     for user in (owner, reader):
         indexes, nodes = _shape(
             reference_search_documents(query=RARE, user=user).values_list("pk")[:50]

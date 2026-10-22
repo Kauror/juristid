@@ -1,0 +1,14 @@
+{% extends "error_page.html" %}
+{% comment %}
+  A request carrying more files, or more bytes, than one upload may
+  (docs/adr/0182). Rendered by `app.documents.upload_limits.UploadLimitMiddleware`
+  before any view runs, so nothing was saved; the sentence says which limit.
+  An htmx request gets the sentence as plain text and `X-Juristid-Failure:
+  upload-too-large` instead (static/js/app.js).
+{% endcomment %}
+{% block title %}Failid on liiga suured{% endblock %}
+{% block heading %}Failid on liiga suured{% endblock %}
+{% block body %}
+  <p class="lead">{{ refusal }}</p>
+  <p>Midagi ei salvestatud. Mine tagasi lehele, kus vorm oli, ja vali failid uuesti.</p>
+{% endblock %}

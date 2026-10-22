@@ -656,8 +656,14 @@ def test_a_confirmed_relation_is_not_suggested_again(specialist):
     assert _suggested_matters(candidate, specialist) == []
 
 
-def test_a_restricted_matter_leaves_no_trace_for_a_reader(specialist, reader):
-    """Brief §29–30: count, ranking, reasons, hidden count — nothing."""
+def test_a_restricted_matter_is_suggested_alike_to_a_reader_and_leaves_no_trace_for_an_outsider(
+    specialist, reader, administrator
+):
+    """Brief §29–30: count, ranking, reasons, hidden count — nothing, for an outsider.
+
+    Since docs/adr/0181 a READER gets exactly the specialist's suggestions; the
+    outsider is an administrator without a grant, who gets none at all.
+    """
     current = _matter(specialist, "Jäätmeseaduse muutmine", number=948)
     visible = _matter(specialist, "Jäätmeseaduse rakendamine", number=949)
     hidden = _matter(
@@ -670,32 +676,46 @@ def test_a_restricted_matter_leaves_no_trace_for_a_reader(specialist, reader):
 
     for_reader = engine.suggestions_for(current, reader, include_hidden=True)
     for_specialist = engine.suggestions_for(current, specialist, include_hidden=True)
+    for_outsider = engine.suggestions_for(current, administrator, include_hidden=True)
 
-    assert [item.matter for item in for_reader.matters] == [visible]
-    assert for_reader.hidden_count == 0
-    assert for_reader.hidden_matters == ()
+    assert [item.matter for item in for_specialist.matters] == [visible]
     assert for_specialist.hidden_count == 1
     assert [item.matter for item in for_specialist.hidden_matters] == [hidden]
+    assert [item.matter for item in for_reader.matters] == [visible]
+    assert for_reader.hidden_count == 1
+    assert [item.matter for item in for_reader.hidden_matters] == [hidden]
+    assert for_outsider.matters == ()
+    assert for_outsider.hidden_count == 0
+    assert for_outsider.hidden_matters == ()
 
 
-def test_a_confirmed_relation_to_a_restricted_matter_is_invisible_to_a_reader(
-    specialist, reader, signed_in, client
+def test_a_confirmed_relation_to_a_restricted_matter_reaches_a_reader_and_no_outsider(
+    specialist, reader, administrator, signed_in, client
 ):
+    """Since docs/adr/0181 a READER sees the relation as the specialist does; an
+    administrator without a grant sees neither Matter."""
     normal = _matter(specialist, "Jäätmeseaduse muutmine", number=951)
     restricted = _matter(
         specialist, "Konfidentsiaalne jäätmeteema", number=952, visibility=Visibility.RESTRICTED
     )
     services.link_related_matters(matter=normal, other=restricted, actor=specialist)
 
-    assert related_materials_for(normal, reader).relations == ()
-    assert [item.other for item in related_materials_for(normal, specialist).relations] == [
-        restricted
-    ]
+    for user in (specialist, reader):
+        assert [item.other for item in related_materials_for(normal, user).relations] == [
+            restricted
+        ]
+    assert related_materials_for(normal, administrator).relations == ()
 
     client.force_login(reader)
-    body = client.get(reverse("matters:matter_detail", kwargs={"pk": normal.pk})).content.decode()
-    assert "Konfidentsiaalne jäätmeteema" not in body
-    assert "Seotud teemad" not in body
+    body = client.get(
+        reverse(SECTION, kwargs={"pk": normal.pk}) + "?avatud=1", **HX
+    ).content.decode()
+    assert "Konfidentsiaalne jäätmeteema" in body
+
+    client.force_login(administrator)
+    response = client.get(reverse("matters:matter_detail", kwargs={"pk": normal.pk}))
+    assert response.status_code == 404
+    assert "Konfidentsiaalne jäätmeteema" not in response.content.decode()
     body = client.get(
         reverse(SECTION, kwargs={"pk": normal.pk}) + "?avatud=1", **HX
     ).content.decode()
@@ -736,19 +756,25 @@ def test_a_sent_opinion_on_another_matter_is_offered_as_background(specialist):
     assert item.open_url == opinions_url(source)
 
 
-def test_a_restricted_opinion_is_invisible_to_a_reader(specialist, reader):
+def test_a_restricted_opinion_is_offered_to_a_reader_and_never_to_an_outsider(
+    specialist, reader, administrator
+):
+    """Since docs/adr/0181 a READER is offered it as the specialist is."""
     source = _matter(specialist, "Pakendiseaduse muutmine 2024", number=957, year=2024)
     current = _matter(specialist, "Pakendiseaduse muutmine 2026", number=958)
     opinion = _sent_opinion(source, "Koja arvamus pakendiseaduse muutmise kohta")
     _restrict(opinion)
 
-    assert _suggested_materials(current, reader) == []
+    assert _suggested_materials(current, administrator) == []
     assert _suggested_materials(current, specialist) == [
         "Koja arvamus pakendiseaduse muutmise kohta"
     ]
+    assert _suggested_materials(current, reader) == _suggested_materials(current, specialist)
 
 
-def test_an_archive_letter_is_offered_only_to_an_archive_reader(specialist, reader):
+def test_an_archive_letter_is_offered_only_to_an_archive_reader(specialist, reader, administrator):
+    """Since docs/adr/0181 every business reader reads the archive, READER
+    included; an administrator without a grant does not."""
     current = _matter(specialist, "Pakendiseaduse muutmine", number=959)
     binary, _, _ = _hold_letter(seed="letter-959", title="Pakendiseaduse muutmise arvamus")
 
@@ -760,7 +786,8 @@ def test_an_archive_letter_is_offered_only_to_an_archive_reader(specialist, read
     )
     assert "Sama õigusakt: pakendiseadus" in for_specialist[0].reasons
 
-    assert engine.suggestions_for(current, reader).materials == ()
+    assert engine.suggestions_for(current, reader).materials == for_specialist
+    assert engine.suggestions_for(current, administrator).materials == ()
 
 
 def test_a_letter_called_not_an_opinion_is_never_offered(specialist):
@@ -830,9 +857,17 @@ def test_a_letter_with_a_visible_submission_is_offered_once_as_the_submission(sp
     assert [(item.kind, item.key) for item in materials] == [(engine.KIND_SUBMISSION, opinion.pk)]
 
 
-def test_a_hidden_submission_does_not_silence_a_visible_letter(specialist, administrator):
-    """Brief §17: the archive is the administrator's to read; the restricted
-    Submission behind a letter must not become an oracle by suppressing it."""
+def test_a_restricted_submission_and_its_letter_are_offered_alike_to_every_reader(
+    specialist, reader, administrator
+):
+    """Brief §17: the restricted Submission behind a letter must not become an
+    oracle by suppressing it.
+
+    That case needed somebody who read the archive and not the Submission — the
+    administrator. Since docs/adr/0181 every archive reader reads the Submission
+    too, so the READER is offered what the specialist is (the Submission, once),
+    and an administrator without a grant is offered nothing at all.
+    """
     source = _matter(specialist, "Pakendiseaduse muutmine 2024", number=966, year=2024)
     current = _matter(specialist, "Pakendiseaduse muutmine 2026", number=967)
     opinion = _sent_opinion(source, "Koja arvamus pakendiseaduse muutmise kohta")
@@ -846,15 +881,13 @@ def test_a_hidden_submission_does_not_silence_a_visible_letter(specialist, admin
     )
     refresh_archive_binaries([binary.pk])
 
-    for_admin = engine.suggestions_for(current, administrator).materials
-    assert [(item.kind, item.key) for item in for_admin] == [(engine.KIND_ARCHIVE, binary.pk)]
-    assert for_admin[0].label == "Arhiivimaterjal"
-    assert "Koja arvamus" not in for_admin[0].title
+    assert engine.suggestions_for(current, administrator).materials == ()
 
     for_specialist = engine.suggestions_for(current, specialist).materials
     assert [(item.kind, item.key) for item in for_specialist] == [
         (engine.KIND_SUBMISSION, opinion.pk)
     ]
+    assert engine.suggestions_for(current, reader).materials == for_specialist
 
 
 def test_an_opinion_on_a_confirmed_related_matter_is_offered_and_says_why(specialist):
@@ -1372,14 +1405,15 @@ def test_the_preview_command_refuses_real_data_without_the_flag(specialist, sett
         call_command("related_materials_preview", "2026_1502", viewer=specialist.upn)
 
 
-def test_the_preview_command_does_not_distinguish_hidden_from_missing(specialist, reader):
+def test_the_preview_command_does_not_distinguish_hidden_from_missing(specialist, administrator):
+    """The viewer who may not see it is an administrator without a grant since docs/adr/0181."""
     restricted = _matter(
         specialist, "Konfidentsiaalne", number=1503, visibility=Visibility.RESTRICTED
     )
     with pytest.raises(CommandError) as hidden:
-        call_command("related_materials_preview", "2026_1503", viewer=reader.upn)
+        call_command("related_materials_preview", "2026_1503", viewer=administrator.upn)
     with pytest.raises(CommandError) as missing:
-        call_command("related_materials_preview", "2026_9999", viewer=reader.upn)
+        call_command("related_materials_preview", "2026_9999", viewer=administrator.upn)
     assert str(hidden.value) == str(missing.value)
     assert restricted.title not in str(hidden.value)
 

@@ -224,9 +224,8 @@ def test_the_technical_administrator_does_not_inherit_the_manager_sections(page,
 def test_nobody_signed_in_does_not_reach_the_page(page, base_url):
     """Signed out of the individual mode, this is behind the sign-in surface.
 
-    The shared-gate reader is the separate case and is covered in
-    `tests/test_department_page.py`: past the department door with no persona
-    the page renders, without either manager section.
+    The shared-gate reader with no persona is refused too since docs/adr/0181
+    and sent to choose one (`tests/test_business_routes_need_a_reader.py`).
     """
     sign_in(page, base_url, SANDRA)
     sign_out(page, base_url)
@@ -700,12 +699,13 @@ def test_the_windows_open_independently_and_the_section_link_still_navigates(pag
 # =========================================================================
 
 
-def test_the_head_counts_restricted_work_and_a_reader_does_not(page, base_url):
-    """One Matter, two readers, two correct answers.
+def test_every_reader_counts_restricted_work_and_an_administrator_does_not(page, base_url):
+    """One Matter, three people, one rule.
 
-    The head sees it because DEPARTMENT_HEAD is entitled to; a reader does not,
-    because a reader is outside the legal team (docs/adr/0042). Asserted in a browser
-    because a leak here would be a leak in rendering, not in a query.
+    The head and a READER both see it: every authorized internal user reads all
+    business content (docs/adr/0181). The technical administrator, with no
+    business role and no grant, sees nothing. Asserted in a browser because a
+    leak here would be a leak in rendering, not in a query.
 
     Both halves *search* for the title rather than reading the first page of the
     register. The register pages at twelve rows, so the presence half depended on
@@ -734,10 +734,16 @@ def test_the_head_counts_restricted_work_and_a_reader_does_not(page, base_url):
     sign_in(page, base_url, READER)
     page.goto(query)
     page.wait_for_load_state("networkidle")
+    expect(row.first).to_be_visible()
+    sign_out(page, base_url)
+
+    sign_in(page, base_url, ADMIN)
+    page.goto(query)
+    page.wait_for_load_state("networkidle")
     expect(row).to_have_count(0)
 
-    # The department page is theirs to read now, and the restricted file is
-    # still not on it — neither as a title nor inside a count.
+    # The department page opens for them, and the restricted file is not on it
+    # — neither as a title nor inside a count.
     response = page.goto(f"{base_url}{WORK_PATH}")
     assert response is not None
     assert response.status == 200

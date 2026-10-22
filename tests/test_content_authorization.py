@@ -74,9 +74,13 @@ def test_a_collaborator_sees_it(corpus_with_restricted_child, specialist, other_
     assert result_count(query=HIDDEN_WORD, user=other_specialist) == 1
 
 
-def test_an_unrelated_specialist_sees_nothing_of_it(corpus_with_restricted_child, reader) -> None:
-    assert result_count(query=HIDDEN_WORD, user=reader) == 0
-    assert search(query=HIDDEN_WORD, user=reader) == []
+def test_a_reader_sees_it_as_the_owner_does(
+    corpus_with_restricted_child, specialist, reader
+) -> None:
+    """docs/adr/0181: a READER is an authorized internal user and reads it all;
+    the outsiders below (administrator, superuser, anonymous) still read nothing."""
+    assert result_count(query=HIDDEN_WORD, user=reader) == 1
+    assert search(query=HIDDEN_WORD, user=reader) == search(query=HIDDEN_WORD, user=specialist)
 
 
 def test_the_department_head_sees_it(corpus_with_restricted_child, department_head) -> None:
@@ -122,21 +126,25 @@ def test_a_break_glass_grant_opens_it(
 
 
 def test_a_hidden_document_does_not_move_the_count(
-    corpus_with_restricted_child, specialist, reader
+    corpus_with_restricted_child, specialist, reader, administrator
 ) -> None:
-    """Never "4 results, 1 hidden". The number must simply be 3.
+    """Never "4 results, 1 hidden". The number must simply be what is shown.
 
     The term is one both documents contain, so the restricted one genuinely
     *would* be in the outsider's count if authorization were applied after
-    counting rather than before it.
+    counting rather than before it. Since docs/adr/0181 the READER is no
+    outsider — it counts exactly what the owner counts — and the outsider is the
+    administrator without a grant, whose count is zero like its rows.
     """
     query = SHARED_WORD
 
     owner_total = result_count(query=query, user=specialist)
-    outsider_total = result_count(query=query, user=reader)
+    assert owner_total > 0
+    assert result_count(query=query, user=reader) == owner_total
 
-    assert owner_total > outsider_total > 0
-    assert outsider_total == len(search(query=query, user=reader))
+    outsider_total = result_count(query=query, user=administrator)
+    assert outsider_total == 0
+    assert outsider_total == len(search(query=query, user=administrator))
 
 
 def test_the_count_equals_the_rows_for_every_viewpoint(
@@ -148,40 +156,52 @@ def test_the_count_equals_the_rows_for_every_viewpoint(
         assert result_count(query="eelnõu", user=user) == len(rows)
 
 
-def test_a_hidden_document_contributes_no_snippet(corpus_with_restricted_child, reader) -> None:
-    for result in search(query="Näidisministeerium", user=reader):
-        text = "".join(run.text for run in result.snippet)
-        assert HIDDEN_WORD not in text
+def test_a_restricted_documents_snippet_reaches_every_reader_and_no_outsider(
+    corpus_with_restricted_child, specialist, reader, administrator
+) -> None:
+    """docs/adr/0181: the READER's snippets are the owner's; the outsider has none."""
+    for_owner = search(query="Näidisministeerium", user=specialist)
+    assert any(HIDDEN_WORD in "".join(run.text for run in result.snippet) for result in for_owner)
+    assert search(query="Näidisministeerium", user=reader) == for_owner
+    assert search(query="Näidisministeerium", user=administrator) == []
 
 
 def test_restricting_a_document_takes_effect_without_a_reindex(
-    corpus_with_restricted_child, specialist, reader
+    corpus_with_restricted_child, specialist, reader, administrator
 ) -> None:
     """The property ADR 0013 refused to trade away, one level further down.
 
     Nothing is reindexed here on purpose. If visibility were stored in the
     projection this test would pass only after a rebuild — and the window
     between restricting something and rebuilding is exactly when somebody looks.
+    Since docs/adr/0181 restricting is a label: every reader keeps the row, and
+    the outsider never had it.
     """
     matter, _ = corpus_with_restricted_child
     visible = matter.documents.get(title="Avalik lisa")
     assert result_count(query=corpus.ONLY_ON_PDF_PAGE_4, user=reader) == 1
+    assert result_count(query=corpus.ONLY_ON_PDF_PAGE_4, user=administrator) == 0
 
     visible.visibility_override = Visibility.RESTRICTED
     visible.save(update_fields=["visibility_override"])
 
-    assert result_count(query=corpus.ONLY_ON_PDF_PAGE_4, user=reader) == 0
+    assert result_count(query=corpus.ONLY_ON_PDF_PAGE_4, user=reader) == 1
     assert result_count(query=corpus.ONLY_ON_PDF_PAGE_4, user=specialist) == 1
+    assert result_count(query=corpus.ONLY_ON_PDF_PAGE_4, user=administrator) == 0
 
 
-def test_restricting_the_matter_hides_all_of_its_content(
-    corpus_with_restricted_child, reader
+def test_restricting_the_matter_changes_no_readers_content_and_opens_none_to_an_outsider(
+    corpus_with_restricted_child, reader, administrator
 ) -> None:
+    """docs/adr/0181: a RESTRICTED Matter is read by every authorized reader."""
     matter, _ = corpus_with_restricted_child
+    before = result_count(query="Näidisministeerium", user=reader)
+    assert before > 0
     matter.visibility = Visibility.RESTRICTED
     matter.save(update_fields=["visibility"])
 
-    assert result_count(query="Näidisministeerium", user=reader) == 0
+    assert result_count(query="Näidisministeerium", user=reader) == before
+    assert result_count(query="Näidisministeerium", user=administrator) == 0
 
 
 # -- entries and submissions -----------------------------------------------
@@ -215,10 +235,12 @@ def test_an_entry_is_searchable_by_its_text(matter_with_children, specialist) ->
 
 
 def test_a_restricted_entry_is_invisible_to_an_outsider(
-    matter_with_children, reader, specialist
+    matter_with_children, reader, specialist, administrator
 ) -> None:
+    # docs/adr/0181: the READER is an insider; the outsider is the administrator.
     assert result_count(query=HIDDEN_WORD, user=specialist) == 2  # entry and submission
-    assert result_count(query=HIDDEN_WORD, user=reader) == 0
+    assert result_count(query=HIDDEN_WORD, user=reader) == 2
+    assert result_count(query=HIDDEN_WORD, user=administrator) == 0
 
 
 def test_a_submission_is_searchable_by_title_and_notes(matter_with_children, specialist) -> None:
@@ -230,27 +252,30 @@ def test_a_submission_is_searchable_by_title_and_notes(matter_with_children, spe
 
 
 def test_a_restricted_submission_contributes_nothing_to_an_outsider(
-    matter_with_children, reader
+    matter_with_children, specialist, reader, administrator
 ) -> None:
-    for result in search(query="arvamus", user=reader):
-        assert "Piiratud arvamus" not in result.matter.title
-        assert HIDDEN_WORD not in "".join(run.text for run in result.snippet)
+    # docs/adr/0181: the READER reads what the owner reads; the outsider nothing.
+    assert search(query="arvamus", user=reader) == search(query="arvamus", user=specialist)
+    assert result_count(query="arvamus", user=administrator) == 0
+    assert search(query="arvamus", user=administrator) == []
 
 
 def test_a_rebuild_does_not_change_who_can_see_what(
-    matter_with_children, specialist, reader
+    matter_with_children, specialist, reader, administrator
 ) -> None:
     """Rebuilding writes the index from scratch. It must not write authorization."""
     before = (
         result_count(query=HIDDEN_WORD, user=specialist),
         result_count(query=HIDDEN_WORD, user=reader),
+        result_count(query=HIDDEN_WORD, user=administrator),
     )
     rebuild_all()
     after = (
         result_count(query=HIDDEN_WORD, user=specialist),
         result_count(query=HIDDEN_WORD, user=reader),
+        result_count(query=HIDDEN_WORD, user=administrator),
     )
-    assert before == after == (2, 0)
+    assert before == after == (2, 2, 0)
 
 
 def test_the_projection_stores_no_visibility_column() -> None:

@@ -633,25 +633,30 @@ def test_the_risk_strip_and_the_team_total_still_agree(department_head, every_co
 # =========================================================================
 
 
-def test_a_matter_the_reader_may_not_see_changes_nothing_about_the_bucket(
-    reader, specialist
+def test_a_restricted_matter_moves_the_bucket_for_a_reader_and_nothing_for_an_outsider(
+    reader, administrator, specialist
 ) -> None:
     """The bucket is computed over the viewer's own authorized world.
 
     A restricted Matter owned outside the department must not decide whether the
-    row appears, what it counts, or what Kokku says — for a reader who is not
-    entitled to it. Both lawyer roles read RESTRICTED work by role (ADR 0042),
-    so the reader who genuinely cannot is a `READER`.
+    row appears, what it counts, or what Kokku says — for a viewer who is not
+    entitled to it. Since docs/adr/0181 a READER is entitled (it counts the
+    Matter exactly as the head does); the viewer who genuinely cannot is an
+    administrator without a grant.
     """
     stranger = factories.ReaderFactory(display_name="Valine Lugeja")
-    before = rows_for(reader)
+    before = rows_for(administrator)
 
     factories.MatterFactory(owner=stranger, visibility=Visibility.RESTRICTED)
-    after = rows_for(reader)
+    after = rows_for(administrator)
 
     assert outside_row(before) is None
     assert outside_row(after) is None
     assert value(total_row(after), "open") == value(total_row(before), "open")
+
+    as_reader = rows_for(reader)
+    assert value(outside_row(as_reader), "open") == 1
+    assert value(total_row(as_reader), "open") == 1
 
 
 def test_the_entitled_reader_does_see_it(department_head) -> None:

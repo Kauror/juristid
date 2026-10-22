@@ -1,13 +1,12 @@
 """The Statistika workspace: five tabs, two drill-through lists, four exports.
 
-Every view here is ``@gate_required`` rather than ``@login_required``, and
-authorizes as ``viewer_for(request)``. In shared-gate mode somebody arrives
-before choosing a persona, and the department scope — NORMAL visibility, no
-participation — is exactly what they may see. Reaching for ``request.user``
-instead would render an empty page to a reader who is entitled to the
-department's statistics, and borrowing an arbitrary person's identity to fill
-it would show one lawyer's restricted files to whoever knew a shared password
-(Stage-2D auth brief 6, Stage-2E brief 11).
+Every view here is ``@login_required`` and authorizes as
+``viewer_for(request)``. Until docs/adr/0181 they were ``@gate_required`` and
+rendered for a shared-gate session that had chosen no persona, as a department
+scope of NORMAL records. Under one internal read policy the statistics are
+business content like any other: a session that has not said who is reading
+is sent to the persona chooser, and every authorized internal user then sees
+the same figures (Stage-2E brief 11).
 
 Views do no arithmetic. They parse the URL into a ``ReportingContext``, ask
 ``services.compute`` for results, and render. Everything a number means is
@@ -22,12 +21,13 @@ from datetime import date
 from typing import Any
 from urllib.parse import urlencode
 
+from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.http import Http404, HttpRequest, HttpResponse, StreamingHttpResponse
 from django.shortcuts import render
 from django.utils import timezone
 
-from app.core.decorators import gate_required, viewer_for
+from app.core.decorators import viewer_for
 from app.core.request_params import digits_or_none
 from app.reporting import charts, exports, filters, overview_strip, services
 from app.reporting import context as reporting_context
@@ -183,7 +183,7 @@ def _matrices(results: list[MetricResult]) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
-@gate_required
+@login_required
 def overview(request: HttpRequest) -> HttpResponse:
     """Ülevaade — counts and tables, and nothing that has to be interpreted.
 
@@ -234,7 +234,7 @@ def overview(request: HttpRequest) -> HttpResponse:
     )
 
 
-@gate_required
+@login_required
 def matters(request: HttpRequest) -> HttpResponse:
     context = reporting_context.from_request(request)
     page = services.matters_page(context)
@@ -255,7 +255,7 @@ def matters(request: HttpRequest) -> HttpResponse:
     )
 
 
-@gate_required
+@login_required
 def activity(request: HttpRequest) -> HttpResponse:
     """Koja tegevus — canonical Submissions, then the archive, kept apart.
 
@@ -287,7 +287,7 @@ def activity(request: HttpRequest) -> HttpResponse:
     )
 
 
-@gate_required
+@login_required
 def historical_materials(request: HttpRequest) -> HttpResponse:
     context = reporting_context.from_request(request)
     page = services.historical_page(context)
@@ -307,7 +307,7 @@ def historical_materials(request: HttpRequest) -> HttpResponse:
     )
 
 
-@gate_required
+@login_required
 def data_quality(request: HttpRequest) -> HttpResponse:
     context = reporting_context.from_request(request)
     page = services.quality_page(context)
@@ -384,7 +384,7 @@ def _year_param(request: HttpRequest) -> int | None:
     return year
 
 
-@gate_required
+@login_required
 def submissions_list(request: HttpRequest) -> HttpResponse:
     """Sent Submissions, as this statistic counted them.
 
@@ -466,7 +466,7 @@ def _submission_selection(request: HttpRequest) -> dict[str, Any]:
     }
 
 
-@gate_required
+@login_required
 def metric_rows(request: HttpRequest) -> HttpResponse:
     """The rows one group of a management metric counted (docs/adr/0160).
 
@@ -529,7 +529,7 @@ def _materials_selection(request: HttpRequest) -> dict[str, str]:
     return selection
 
 
-@gate_required
+@login_required
 def materials_list(request: HttpRequest) -> HttpResponse:
     """Historical resource occurrences, filtered exactly as the chart was."""
     context = reporting_context.from_request(request)
@@ -571,7 +571,7 @@ def materials_list(request: HttpRequest) -> HttpResponse:
 # ---------------------------------------------------------------------------
 
 
-@gate_required
+@login_required
 def definitions(request: HttpRequest) -> HttpResponse:
     """The whole catalogue, as the product's own reference page.
 
@@ -591,7 +591,7 @@ def definitions(request: HttpRequest) -> HttpResponse:
     )
 
 
-@gate_required
+@login_required
 def export(request: HttpRequest, slug: str) -> StreamingHttpResponse:
     """One CSV, from the same selectors and the same filters as the page."""
     context = reporting_context.from_request(request)

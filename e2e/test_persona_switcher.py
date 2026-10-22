@@ -30,6 +30,7 @@ ADMINISTRATOR = "Testadministraator"
 
 MY_WORK = "/minu-asjad/"
 DEPARTMENT = "/osakond/"
+CHOOSER = "/konto/kasutaja/"
 
 
 def _pill(page):
@@ -50,10 +51,15 @@ def _open_menu(page):
 
 @pytest.fixture
 def past_the_door(page, gate_base_url):
-    """Behind the shared password, on Osakond, with nobody selected."""
+    """Behind the shared password with nobody selected, asking for Osakond.
+
+    Since docs/adr/0181 nothing of the department is shown before a persona is
+    chosen, so asking for Osakond lands on the persona page, `next` in hand.
+    """
     pass_the_gate(page, gate_base_url)
     page.goto(f"{gate_base_url}{DEPARTMENT}")
     page.wait_for_load_state("networkidle")
+    assert CHOOSER in page.url, page.url
     return page
 
 
@@ -70,13 +76,18 @@ def test_switching_from_the_bar_keeps_the_page_and_follows_the_role(past_the_doo
     """
     page = past_the_door
 
-    # With nobody selected there is no personal queue to offer. The department
-    # page is offered all the same — it is what the shared door opens onto, and
-    # it is one destination for every role now (ADR 0049).
+    # With nobody selected there is no personal queue to offer, and nothing of
+    # the department either: the shared password is not a reader (ADR 0181).
     assert MY_WORK not in navigation_targets(page)
-    assert DEPARTMENT in navigation_targets(page)
 
-    # 3–5. Open the popover and walk to the first choice with the keyboard.
+    # 1–2. The page's own row carries `next`, so choosing the department head
+    # there lands on the Osakond that was asked for.
+    page.locator("button.personarow").filter(has_text=HEAD).first.click()
+    page.wait_for_load_state("networkidle")
+    assert page.url.endswith(DEPARTMENT)
+    expect(_pill(page)).to_contain_text(HEAD)
+
+    # 3–5. Open the popover and walk to a specialist with the keyboard.
     menu = _open_menu(page)
     assert ADMINISTRATOR not in menu.inner_text(), (
         "a technical account is being offered as a persona"
@@ -123,22 +134,15 @@ def test_switching_from_the_bar_keeps_the_page_and_follows_the_role(past_the_doo
     # and `Osakond` inside «Veel», which is one question with two answers.
     expect(page.locator(f"nav[aria-label='Peamine'] a[href='{DEPARTMENT}']")).to_have_count(1)
 
-    # 13–15. Stepping back to nobody.
+    # 13–14. No step back to nobody: without a persona nothing is shown, so the
+    # popover offers colleagues only (ADR 0181). The choice survives a reload:
+    # it is session state, not a decoration the previous response carried.
     menu = _open_menu(page)
-    menu.get_by_role("button", name="Ilma kasutajata").click()
-    page.wait_for_load_state("networkidle")
-
-    assert page.url.endswith(DEPARTMENT)
-    assert MY_WORK not in navigation_targets(page)
-    assert DEPARTMENT in navigation_targets(page)
-    expect(page.locator(".personapill--none")).to_be_visible()
-
-    # 16–17. And it survives a reload: the choice is session state, not a
-    # decoration the previous response happened to carry.
+    expect(menu.get_by_role("button", name="Ilma kasutajata")).to_have_count(0)
+    page.keyboard.press("Escape")
     page.reload()
     page.wait_for_load_state("networkidle")
-    expect(page.locator(".personapill--none")).to_be_visible()
-    assert MY_WORK not in navigation_targets(page)
+    expect(_pill(page)).to_contain_text(HEAD)
 
 
 def test_the_selected_persona_survives_moving_between_pages(past_the_door, gate_base_url):
@@ -253,7 +257,8 @@ def test_the_full_page_lists_the_department_inside_the_normal_shell(past_the_doo
     assert SPECIALIST in body
     assert HEAD in body
     assert ADMINISTRATOR not in body
-    assert "Ilma kasutajata" in body
+    # Not a row since ADR 0181: nobody is a state, not a view to choose.
+    assert "Ilma kasutajata" not in body
 
 
 def test_the_whole_row_is_the_button_on_the_full_page(past_the_door, gate_base_url):

@@ -23,6 +23,7 @@ operator supplies the answers through a reviewed mapping file. That file is
 
 from __future__ import annotations
 
+import hashlib
 import json
 import tomllib
 from collections.abc import Callable, Iterable
@@ -34,6 +35,7 @@ from django.db.models import Q
 
 from app.accounts.models import User
 from app.core.text import normalize_for_matching, normalize_organisation_name
+from app.legacy_import.limits import current_limits
 from app.organisations.models import Organisation
 from app.workflow.models import LegacyStatusMapping, StageVocabulary, resolve_legacy_status
 
@@ -57,6 +59,9 @@ class MappingTables:
     owners: dict[str, str] = field(default_factory=dict)
     organisations: dict[str, str] = field(default_factory=dict)
     record_modes: dict[str, str] = field(default_factory=dict)
+    #: SHA-256 of the file's bytes as parsed; "" when no file was given. A
+    #: reviewed plan's digest covers it (docs/adr/0184).
+    source_sha256: str = ""
 
     @classmethod
     def empty(cls) -> MappingTables:
@@ -70,7 +75,15 @@ class MappingTables:
         if not file_path.exists():
             raise MappingFileError(f"Mapping file not found: {file_path}")
 
-        text = file_path.read_text(encoding="utf-8")
+        # Read once, bounded, and hashed as read: the digest names the bytes
+        # the tables below were parsed from.
+        data = file_path.read_bytes() if file_path.is_file() else b""
+        if len(data) > current_limits().max_json_bytes:
+            raise MappingFileError(f"{file_path.name} is larger than a mapping file can be.")
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise MappingFileError(f"{file_path.name}: {error}") from error
         try:
             raw: dict[str, Any] = (
                 json.loads(text) if file_path.suffix == ".json" else tomllib.loads(text)
@@ -86,6 +99,7 @@ class MappingTables:
                 raw, "organisations", file_path, fold=normalize_organisation_name
             ),
             record_modes=_normalised_section(raw, "record_modes", file_path),
+            source_sha256=hashlib.sha256(data).hexdigest(),
         )
 
 

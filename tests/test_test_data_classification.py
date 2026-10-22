@@ -348,16 +348,22 @@ def test_the_helpers_partition_the_population(specialist):
     assert Matter.objects.count() == 4
 
 
-def test_the_helpers_compose_with_authorization(specialist, reader):
-    """Visibility first, class second, and neither can widen the other."""
+def test_the_helpers_compose_with_authorization(specialist, reader, administrator):
+    """Visibility first, class second, and neither can widen the other.
+
+    Since docs/adr/0181 the READER sees the restricted test matter too; the
+    viewer who sees neither class is an outsider (ADMINISTRATOR without a grant).
+    """
     factories.MatterFactory(owner=specialist)
     _test_matter(owner=specialist)
     _test_matter(owner=specialist, visibility=Visibility.RESTRICTED)
 
     visible = Matter.objects.visible_to(reader)
     assert visible.real_data().count() == 1
-    assert visible.test_data().count() == 1
-    # The restricted test matter belongs to somebody else and stays invisible.
+    assert visible.test_data().count() == 2
+    outside = Matter.objects.visible_to(administrator)
+    assert outside.real_data().count() == 0
+    assert outside.test_data().count() == 0
     assert Matter.objects.test_data().count() == 2
 
 
@@ -417,12 +423,18 @@ def test_an_unreadable_value_falls_back_to_the_default(signed_in, specialist):
     assert _register_ids(signed_in, andmed="rämps") == {real.pk, test.pk}
 
 
-def test_the_filter_cannot_widen_visibility(client, specialist, reader):
-    """Authorization is applied before the class narrowing, always."""
-    factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
+def test_the_filter_cannot_widen_visibility(client, specialist, reader, administrator):
+    """Authorization is applied before the class narrowing, always.
+
+    Since docs/adr/0181 the READER sees both; an outsider (ADMINISTRATOR without
+    a grant) sees neither, whatever the class filter says."""
+    hidden = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
     mine = _test_matter(owner=specialist)
     client.force_login(reader)
-    assert _register_ids(client, andmed=selectors.DATA_CLASS_ALL) == {mine.pk}
+    assert _register_ids(client, andmed=selectors.DATA_CLASS_ALL) == {mine.pk, hidden.pk}
+    client.force_login(administrator)
+    for value in (selectors.DATA_CLASS_ALL, selectors.DATA_CLASS_TEST, selectors.DATA_CLASS_REAL):
+        assert _register_ids(client, andmed=value) == set(), value
 
 
 def test_the_selection_survives_in_the_url(signed_in, specialist):
@@ -457,10 +469,13 @@ def test_a_real_matter_carries_no_test_marker(signed_in, specialist):
     assert "badge--test" not in response.content.decode()
 
 
-def test_the_badge_does_not_disclose_a_restricted_matter(client, reader, specialist):
-    """The badge rides on the detail page and inherits its authorization."""
+def test_the_badge_does_not_disclose_a_restricted_matter(client, administrator, specialist):
+    """The badge rides on the detail page and inherits its authorization.
+
+    Asked of an outsider (ADMINISTRATOR without a grant): since docs/adr/0181 a
+    READER opens the restricted Matter."""
     hidden = _test_matter(owner=specialist, visibility=Visibility.RESTRICTED)
-    client.force_login(reader)
+    client.force_login(administrator)
     response = client.get(reverse("matters:matter_detail", kwargs={"pk": hidden.pk}))
     assert response.status_code == 404
 

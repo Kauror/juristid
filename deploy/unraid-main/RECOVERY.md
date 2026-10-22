@@ -1022,7 +1022,7 @@ have two different answers:
 | --- | --- |
 | `POSTGRES_PASSWORD` | **must be restored**, or the restored database will not accept the application. Recoverable another way: change it in the database and in the env file together. |
 | `DJANGO_SECRET_KEY` | may be regenerated. Everyone is signed out, and nothing in the database depends on it. In a disaster that is an acceptable cost. |
-| `JURISTID_SHARED_GATE_PASSWORD` | may be regenerated, and the department told the new one. It is hashed at process start and stored nowhere. |
+| `JURISTID_SHARED_GATE_PASSWORD` | may be regenerated, and the department told the new one. It is hashed at process start and stored nowhere. Regenerating it ends every open gate session at its next request (docs/adr/0183). |
 | Cloudflare tunnel credential | may be reissued — see below. |
 
 So the only secret whose loss is genuinely awkward is the database password, and

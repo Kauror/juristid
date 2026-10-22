@@ -31,10 +31,21 @@ from __future__ import annotations
 import hashlib
 from collections import defaultdict
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePath
+from typing import Any
 
 from app.legacy_import.historical_audit import Candidate, MigrationAudit, PageProfile
+from app.legacy_import.integrity import (
+    IntegrityError,
+    SourceManifest,
+    build_manifest,
+    canonical_sha256,
+    manifest_differences,
+    parse_manifest_tsv,
+)
+from app.legacy_import.limits import SourceLimitExceeded, WorkBudget, current_limits
 from app.legacy_import.onenote_archive import ArchivePage, OneNoteArchive
+from app.legacy_import.safe_paths import UnsafeSourcePath
 
 #: Only a page the audit called MATTER_LIKE may become a Matter on its own.
 MATTER_ELIGIBLE_ROLE = "MATTER_LIKE"
@@ -63,6 +74,11 @@ class ExactLinkPlan:
     excel_reference: str
     page_key: str
     audit_row: str
+    #: The register Matter this reference named when the plan was made (its
+    #: primary key as text), or "" when the register had none. The apply links
+    #: only to this Matter: a register that changed since is reported, not
+    #: followed (docs/adr/0184).
+    matter_id: str = ""
 
 
 @dataclass
@@ -73,6 +89,16 @@ class HistoricalPlan:
     manifest_sha256: str
     archive_root: Path
     audit_root: Path
+
+    #: What the plan was read from, file by file (docs/adr/0184): every file
+    #: of the archive, and every audit report it parsed.
+    archive_manifest: SourceManifest | None = None
+    audit_manifest: SourceManifest | None = None
+    #: The archive reader the plan used, bound to `archive_manifest`: apply
+    #: reads through it, so a file changed after the plan is refused.
+    archive: OneNoteArchive | None = None
+    #: Source pages the database already holds, by page id (primary key as text).
+    existing_pages: dict[str, str] = field(default_factory=dict)
 
     source_pages: list[SourcePagePlan] = field(default_factory=list)
     exact_links: list[ExactLinkPlan] = field(default_factory=list)
@@ -85,6 +111,17 @@ class HistoricalPlan:
 
     warnings: list[str] = field(default_factory=list)
     findings: list[str] = field(default_factory=list)
+    #: The findings that stop an apply, kept apart from the printed list rather
+    #: than recognised by their wording: a finding can quote a page key, and a
+    #: page key is archive-controlled text (docs/adr/0184).
+    fatal_findings: list[str] = field(default_factory=list)
+    #: The operator declared, with ``--archive-manifest-absent``, that the audit
+    #: holds no archive manifest. Without that, a missing manifest refuses.
+    manifest_declared_absent: bool = False
+
+    def fatal(self, finding: str) -> None:
+        self.findings.append(finding)
+        self.fatal_findings.append(finding)
 
     @property
     def onenote_only_matters(self) -> list[SourcePagePlan]:
@@ -141,12 +178,23 @@ class HistoricalPlan:
         return "\n".join(lines)
 
 
-def file_sha256(path: Path) -> str:
+def file_sha256(path: Path, *, max_bytes: int | None = None) -> str:
+    """A file's SHA-256, streamed, refused past `max_bytes`."""
     digest = hashlib.sha256()
-    with path.open("rb") as handle:
+    size = 0
+    with Path(path).open("rb") as handle:
         for chunk in iter(lambda: handle.read(1 << 20), b""):
+            size += len(chunk)
+            if max_bytes is not None and size > max_bytes:
+                raise SourceLimitExceeded(f"{Path(path).name} is larger than {max_bytes} bytes.")
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def manifest_text_sha256(text: str) -> str:
+    """The archive manifest's canonical digest: sorted lines, LF, no trailing newline."""
+    lines = text.replace("\r\n", "\n").strip("\n").split("\n")
+    return hashlib.sha256("\n".join(sorted(lines)).encode("utf-8")).hexdigest()
 
 
 def manifest_sha256(manifest: Path) -> str:
@@ -156,8 +204,56 @@ def manifest_sha256(manifest: Path) -> str:
     than trusted, because "the hash the audit printed" and "the hash of what is
     on this disk" are the two things this check exists to compare.
     """
-    lines = manifest.read_text(encoding="utf-8").replace("\r\n", "\n").strip("\n").split("\n")
-    return hashlib.sha256("\n".join(sorted(lines)).encode("utf-8")).hexdigest()
+    return manifest_text_sha256(manifest.read_text(encoding="utf-8"))
+
+
+#: The audit's own list of every archived file: path, size and SHA-256.
+ARCHIVE_MANIFEST_REPORT = "reports/source-integrity/archive-manifest.tsv"
+
+#: Bumped when what `plan_digest` covers changes.
+PLAN_DIGEST_VERSION = "historical-plan/1"
+
+
+def plan_digest(plan: HistoricalPlan) -> str:
+    """What an operator approves before `historical_import apply` (docs/adr/0184).
+
+    The Excel snapshot's hash, the archive's every file, the audit reports the
+    decisions came from, and the decisions themselves — which pages become
+    Matters and why, which page links to which register Matter, every review
+    candidate, and which pages the database already holds. Counts, warnings
+    and wording are left out: they cannot change what is written.
+    """
+    return canonical_sha256(
+        {
+            "version": PLAN_DIGEST_VERSION,
+            "excel_sha256": plan.excel_sha256,
+            "archive_manifest_sha256": plan.archive_manifest.digest()
+            if plan.archive_manifest is not None
+            else "",
+            "audit_sha256": plan.audit_manifest.digest() if plan.audit_manifest else "",
+            "manifest_declared_absent": plan.manifest_declared_absent,
+            "pages": [
+                {
+                    "page_key": item.page.page_key,
+                    "page_id": item.page.page_id,
+                    "capture_id": item.page.capture_id,
+                    "xml_sha256": item.page.xml_sha256,
+                    "role": item.profile.role,
+                    "becomes_matter": item.becomes_matter,
+                    "matter_title": item.matter_title,
+                    "skip_reason": item.skip_reason,
+                    "existing": plan.existing_pages.get(item.page.page_id, ""),
+                    "resources": [
+                        [r.resource_key, r.relative_path, r.size_bytes, r.sha256]
+                        for r in item.page.resources
+                    ],
+                }
+                for item in plan.source_pages
+            ],
+            "exact_links": plan.exact_links,
+            "candidates": plan.candidates,
+        }
+    )
 
 
 def build_plan(
@@ -167,22 +263,43 @@ def build_plan(
     audit_root: Path,
     expected_excel_sha256: str = "",
     expected_manifest_sha256: str = "",
+    archive_manifest_absent: bool = False,
 ) -> HistoricalPlan:
-    """Read the sources and decide. Writes nothing, anywhere."""
-    archive = OneNoteArchive(archive_root)
-    audit = MigrationAudit(audit_root)
+    """Read the sources and decide. Writes nothing, anywhere.
+
+    Every file is read within the run's limits, and the archive is hashed whole
+    first: the plan then reads it only through that manifest, and refuses an
+    archive that does not match the audit's own list file for file.
+    """
+    limits = current_limits()
+    budget = WorkBudget(limits)
+    audit = MigrationAudit(audit_root, budget=budget)
     baseline = audit.baseline()
 
-    excel_digest = file_sha256(excel_path)
-    manifest_path = audit_root / "reports/source-integrity/archive-manifest.tsv"
-    archive_digest = manifest_sha256(manifest_path) if manifest_path.is_file() else ""
+    excel_digest = file_sha256(excel_path, max_bytes=limits.max_workbook_bytes)
+    manifest_text = audit.read_text(ARCHIVE_MANIFEST_REPORT)
+    archive_digest = manifest_text_sha256(manifest_text) if manifest_text is not None else ""
 
     plan = HistoricalPlan(
         excel_sha256=excel_digest,
         manifest_sha256=archive_digest,
         archive_root=archive_root,
         audit_root=audit_root,
+        manifest_declared_absent=archive_manifest_absent,
     )
+
+    # Fail closed: without the audit's own list the archive cannot be checked
+    # file for file, and that is a decision for a person, not a silent default.
+    if manifest_text is None and not archive_manifest_absent:
+        raise PlanError(
+            f"The audit holds no {ARCHIVE_MANIFEST_REPORT}, so the archive cannot be checked "
+            "file for file. Restore it, or declare its absence with --archive-manifest-absent "
+            "(recorded on the batch)."
+        )
+    if manifest_text is not None and archive_manifest_absent:
+        raise PlanError(
+            f"--archive-manifest-absent was given, but the audit holds {ARCHIVE_MANIFEST_REPORT}."
+        )
 
     # -- the gate ---------------------------------------------------------
     #
@@ -200,14 +317,39 @@ def build_plan(
                 "Refusing to plan an import against a source that has changed."
             )
 
+    # -- the archive, file for file ------------------------------------------
+    #
+    # The manifest's digest says the *list* is unchanged; this says the disk
+    # still holds what the list says, and nothing else. Everything below reads
+    # the archive through this manifest.
+    try:
+        on_disk = build_manifest(Path(archive_root), limits=limits, budget=budget)
+        if manifest_text is not None:
+            claimed = parse_manifest_tsv(manifest_text, what=ARCHIVE_MANIFEST_REPORT)
+            differences = manifest_differences(on_disk, claimed)
+            if differences:
+                raise PlanError(
+                    f"The archive does not match {ARCHIVE_MANIFEST_REPORT} "
+                    f"({len(differences)} difference(s)): "
+                    + "; ".join(differences[:5])
+                    + ". Refusing to plan an import against a source that has changed."
+                )
+    except (IntegrityError, UnsafeSourcePath) as error:
+        raise PlanError(str(error)) from error
+    plan.archive_manifest = on_disk
+    archive = OneNoteArchive(archive_root, manifest=on_disk, budget=budget)
+    plan.archive = archive
+
     profiles = audit.page_profiles()
     exact_by_page: dict[str, list[str]] = defaultdict(list)
     for match in audit.exact_matches():
+        matter = _register_matter(match.excel_reference)
         plan.exact_links.append(
             ExactLinkPlan(
                 excel_reference=match.excel_reference,
                 page_key=match.page_key,
                 audit_row=match.audit_row,
+                matter_id="" if matter is None else str(matter.pk),
             )
         )
         exact_by_page[match.page_key].append(match.excel_reference)
@@ -221,7 +363,17 @@ def build_plan(
     }
 
     extensions: dict[str, int] = defaultdict(int)
-    for page in archive.pages():
+    try:
+        pages = list(archive.pages())
+    except IntegrityError as error:
+        raise PlanError(str(error)) from error
+    for page in pages:
+        xml = PurePath(page.xml_path).relative_to(archive.root).as_posix()
+        stored = on_disk.entries.get(xml)
+        if stored is None or stored.sha256 != (page.xml_sha256 or "").lower():
+            # Fatal at the gate: the page's identity is the XML hash it claims,
+            # and bytes that do not hash to it are not that page.
+            plan.fatal(f"{page.page_key}: page.source.xml does not hash to the xmlSha256 it claims")
         profile = profiles.get(page.page_key)
         if profile is None:
             plan.warnings.append(f"{page.page_key}: archived but absent from the audit summary")
@@ -264,8 +416,31 @@ def build_plan(
         count for extension, count in extensions.items() if not is_extractable(extension)
     )
 
+    from app.legacy_import.source_pages import LegacySourcePage, SourceSystem
+
+    plan.existing_pages = {
+        page_id: str(pk)
+        for page_id, pk in LegacySourcePage.objects.filter(
+            source_system=SourceSystem.ONENOTE_DESKTOP,
+            source_page_id__in=[item.page.page_id for item in plan.source_pages],
+        ).values_list("source_page_id", "pk")
+    }
+    # Last, so it lists every audit report the plan parsed.
+    plan.audit_manifest = audit.consumed()
+
     _reconcile_against_baseline(plan, baseline)
     return plan
+
+
+def _register_matter(reference: str) -> Any:
+    """The register Matter a reference names now, or None. The same rule apply uses."""
+    from app.matters.models import Matter
+
+    parsed = Matter.parse_reference(reference)
+    if parsed is None:
+        return None
+    year, number = parsed
+    return Matter.objects.filter(reference_year=year, reference_number=number).first()
 
 
 def _decide_matter(
@@ -317,6 +492,6 @@ def _reconcile_against_baseline(plan: HistoricalPlan, baseline) -> None:
     )
     for label, planned, expected in checks:
         if expected and planned != expected:
-            plan.findings.append(f"{label}: planned {planned:,}, audit baseline says {expected:,}")
+            plan.fatal(f"{label}: planned {planned:,}, audit baseline says {expected:,}")
         else:
             plan.findings.append(f"{label}: {planned:,} — reconciles")

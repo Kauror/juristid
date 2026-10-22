@@ -160,8 +160,8 @@ def test_the_head_counts_a_restricted_matter_because_the_role_entitles_it(
 
     Asserted on the team table, which is where the page counts Matters now: the
     same person's row, read by three people. Both lawyers agree since
-    docs/adr/0042; somebody outside the legal team is short by exactly the
-    restricted file.
+    docs/adr/0042, and the READER since docs/adr/0181; an administrator without
+    a business role counts nothing at all.
     """
     sandra = portfolio.people.sandra
     restricted = Matter.objects.get(title=RESTRICTED)
@@ -171,16 +171,18 @@ def test_the_head_counts_a_restricted_matter_because_the_role_entitles_it(
     seen_by_lawyer = cell_of(portfolio.people.martin, sandra.display_name, "open").value
     seen_by_reader = cell_of(portfolio.people.reader, sandra.display_name, "open").value
     assert seen_by_head == seen_by_lawyer
-    assert seen_by_head == seen_by_reader + 1
+    assert seen_by_head == seen_by_reader
+    assert not overview.active_matters(factories.AdministratorFactory()).exists()
 
 
-def test_a_restricted_matter_the_head_can_count_is_absent_for_an_unrelated_specialist(
+def test_a_restricted_matter_counts_for_every_reader_and_no_outsider(
     portfolio: Portfolio,
 ) -> None:
     """The same number, three readers — by design.
 
-    Both lawyers count it since docs/adr/0042; somebody outside the legal team
-    does not, which is the scoping this asserts.
+    Both lawyers count it since docs/adr/0042, and the READER since
+    docs/adr/0181; an administrator without a business role does not, which is
+    the scoping this asserts.
     """
     restricted = Matter.objects.get(title=RESTRICTED)
     assert restricted.owner == portfolio.people.sandra
@@ -188,9 +190,12 @@ def test_a_restricted_matter_the_head_can_count_is_absent_for_an_unrelated_speci
     head_total = overview.active_matters(portfolio.people.head).filter(pk=restricted.pk).count()
     lawyer_total = overview.active_matters(portfolio.people.martin).filter(pk=restricted.pk).count()
     reader_total = overview.active_matters(portfolio.people.reader).filter(pk=restricted.pk).count()
+    outsider = factories.AdministratorFactory()
+    outsider_total = overview.active_matters(outsider).filter(pk=restricted.pk).count()
     assert head_total == 1
     assert lawyer_total == 1
-    assert reader_total == 0
+    assert reader_total == 1
+    assert outsider_total == 0
 
 
 def test_a_specialist_sees_their_own_restricted_matter(portfolio: Portfolio) -> None:

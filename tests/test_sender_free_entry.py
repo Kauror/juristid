@@ -355,12 +355,14 @@ def test_a_short_catalogue_offers_everything_it_has(specialist):
     assert len(organisations_by_usage(specialist)) == 3
 
 
-def test_a_restricted_matter_moves_no_chip(specialist, reader):
+def test_a_restricted_matter_moves_no_chip(specialist, reader, administrator):
     """The authorization rule, stated on the shortlist rather than on a page.
 
     Four restricted Matters name one body and one visible Matter names another.
-    A reader who cannot see the restricted four must not be shown an order that
-    only those four could explain — that order *is* the disclosure.
+    A viewer who cannot see the restricted four must not be shown an order that
+    only those four could explain — that order *is* the disclosure. Since
+    docs/adr/0181 a READER sees them and gets the specialist's order; the viewer
+    who cannot is an administrator without a business role.
     """
     hidden = factories.OrganisationFactory(name="Zulu salajane")
     open_sender = factories.OrganisationFactory(name="Avalik saatja")
@@ -375,11 +377,13 @@ def test_a_restricted_matter_moves_no_chip(specialist, reader):
 
     for_reader = [item.name for item in organisations_by_usage(reader)]
     for_specialist = [item.name for item in organisations_by_usage(specialist)]
+    for_outsider = [item.name for item in organisations_by_usage(administrator)]
 
-    # The reader's order is the alphabet after the one body they can account
-    # for; the specialist's is led by the body four hidden Matters name.
-    assert for_reader[0] == "Avalik saatja"
+    # Every authorized reader's order is led by the body four restricted
+    # Matters name; the outsider's is the plain alphabet, which puts it last.
     assert for_specialist[0] == "Zulu salajane"
+    assert for_reader == for_specialist
+    assert for_outsider.index("Zulu salajane") > for_outsider.index("Avalik saatja")
 
 
 def test_a_selected_sender_outside_the_shortlist_stays_visible(specialist):

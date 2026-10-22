@@ -3,7 +3,7 @@
     manage.py historical_import inspect
     manage.py historical_import plan
     manage.py historical_import dry-run
-    manage.py historical_import apply
+    manage.py historical_import apply --expect-plan-sha256 D
     manage.py historical_import materialise [--limit N] [--retry-failed]
     manage.py historical_import status
     manage.py historical_import verify
@@ -21,8 +21,11 @@ could not do what it was asked (ENG-007). A failed file is tried again only
 when somebody asks, with `materialise --retry-failed`, and an attachment that
 is empty in OneNote itself is never tried again — it cannot succeed.
 
-**The apply gate is not advisory.** Source hashes must match, the audit baseline
-must reconcile, and the plan must carry no fatal finding. If any of those fails,
+**The apply gate is not advisory.** Source hashes must match, the archive must
+match the audit's own manifest file for file, the audit baseline must
+reconcile, the plan must carry no fatal finding, and the plan this run built
+must hash to the digest `plan` printed and a person approved
+(``--expect-plan-sha256``, docs/adr/0184). If any of those fails,
 the command stops rather than importing what it can — a partially imported
 historical corpus looks exactly like a complete one to everybody who reads it
 later (Stage-2D brief 46).
@@ -58,6 +61,19 @@ class Command(BaseCommand):
         )
         parser.add_argument("--expect-manifest-sha256", default="")
         parser.add_argument(
+            "--archive-manifest-absent",
+            action="store_true",
+            help=(
+                "The audit has no archive-manifest.tsv and the operator accepts planning "
+                "without the file-for-file check. Recorded on the batch."
+            ),
+        )
+        parser.add_argument(
+            "--expect-plan-sha256",
+            default="",
+            help="apply: the plan digest `plan` printed and a person reviewed. Required.",
+        )
+        parser.add_argument(
             "--limit", type=int, default=None, help="materialise: stop after this many files."
         )
         parser.add_argument(
@@ -81,25 +97,47 @@ class Command(BaseCommand):
         if phase == "materialise":
             return self._materialise(options)
 
+        from app.legacy_import.historical_plan import plan_digest
+
         plan = self._plan(options)
+        digest = plan_digest(plan)
         if phase in {"inspect", "plan"}:
             self.stdout.write(plan.as_text())
+            self.stdout.write(f"  plan SHA-256          {digest}")
             self.stdout.write("")
             for finding in plan.findings:
                 self.stdout.write(f"  {finding}")
             if options.get("report"):
-                self._write_report(options["report"], plan.summary())
+                self._write_report(options["report"], plan.summary() | {"plan_sha256": digest})
             return None
 
         self._require_gate(plan)
         if phase == "dry-run":
+            self.stdout.write(f"plan SHA-256 {digest}")
             return self._dry_run(plan, options)
-        return self._apply(plan, options)
+        # The digest is recomputed here, from the plan this process just built
+        # and will execute, and every archive read during the apply is checked
+        # against the manifest inside it (docs/adr/0184).
+        from app.legacy_import.integrity import IntegrityError, require_digest
+
+        try:
+            require_digest(
+                digest,
+                options["expect_plan_sha256"],
+                flag="--expect-plan-sha256",
+                what="The historical import plan",
+            )
+        except IntegrityError as error:
+            raise CommandError(str(error)) from error
+        return self._apply(plan, options, digest)
 
     # -- phases ------------------------------------------------------------
 
     def _plan(self, options: dict) -> Any:
+        from app.legacy_import.historical_audit import AuditError
         from app.legacy_import.historical_plan import PlanError, build_plan
+        from app.legacy_import.limits import SourceLimitExceeded
+        from app.legacy_import.onenote_archive import ArchiveError
 
         excel, archive, audit = self._paths(options)
         try:
@@ -109,8 +147,9 @@ class Command(BaseCommand):
                 audit_root=audit,
                 expected_excel_sha256=options["expect_excel_sha256"],
                 expected_manifest_sha256=options["expect_manifest_sha256"],
+                archive_manifest_absent=bool(options["archive_manifest_absent"]),
             )
-        except PlanError as error:
+        except (PlanError, ArchiveError, AuditError, SourceLimitExceeded) as error:
             raise CommandError(str(error)) from error
 
     def _require_gate(self, plan: Any) -> None:
@@ -120,7 +159,7 @@ class Command(BaseCommand):
                 "REAL_DATA_ALLOWED is off in this environment. The historical corpus is real "
                 "Koda material and may only be imported where the deployment says so."
             )
-        fatal = [finding for finding in plan.findings if "reconciles" not in finding]
+        fatal = list(plan.fatal_findings)
         if fatal:
             raise CommandError(
                 "The plan does not reconcile with the audit baseline:\n  "
@@ -141,9 +180,9 @@ class Command(BaseCommand):
         it mattered (Stage-2D brief 45).
         """
         from app.legacy_import.historical_apply import apply_structure, open_batch
-        from app.legacy_import.onenote_archive import OneNoteArchive
 
-        archive = OneNoteArchive(plan.archive_root)
+        # The reader the plan used, bound to its manifest.
+        archive = plan.archive
         self.stdout.write("Dry run — every write below is rolled back.\n")
 
         class _Rollback(Exception):
@@ -174,12 +213,11 @@ class Command(BaseCommand):
             report.failures, "the dry run met", remedy="apply would leave these pages out."
         )
 
-    def _apply(self, plan: Any, options: dict) -> None:
+    def _apply(self, plan: Any, options: dict, digest: str) -> None:
         from app.legacy_import.historical_apply import apply_structure, open_batch
-        from app.legacy_import.onenote_archive import OneNoteArchive
 
-        archive = OneNoteArchive(plan.archive_root)
-        batch = open_batch(plan, importer_version=IMPORTER_VERSION)
+        archive = plan.archive
+        batch = open_batch(plan, importer_version=IMPORTER_VERSION, plan_sha256=digest)
         self.stdout.write(f"Import batch {batch.pk}\n")
 
         report = apply_structure(plan, batch=batch, archive=archive)

@@ -15,6 +15,7 @@ runbook's wording:
 from __future__ import annotations
 
 import re
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,7 @@ from django.conf import settings as django_settings
 
 from app.accounts import capabilities, throttle, tokens
 from app.accounts.enums import Capability, CredentialTokenPurpose, UserRole
+from app.accounts.services import grant_break_glass
 from app.core.authorization import has_capability
 from app.legacy_import.opinion_access import may_manage_archive_links, may_read_archive
 from tests import factories
@@ -44,9 +46,25 @@ def test_archive_link_review_moves_from_the_head_to_the_administrator(settings):
 
     apply_local_password(settings)
     assert not may_manage_archive_links(head)
+    # Reading did not move: only filing changes hands. Since docs/adr/0181
+    # reading is `may_read_business_content`: the head reads, the administrator
+    # (no business role, no grant) does not, in either mode — and filing is
+    # never wider than reading, so the administrator files only through a
+    # break-glass grant.
+    assert may_read_archive(head) and not may_read_archive(administrator)
+    assert not may_manage_archive_links(administrator)
+    grant_break_glass(
+        user=administrator,
+        granted_by=head,
+        reason="Arhiivikirjade sidumine",
+        duration=timedelta(hours=1),
+    )
+    assert may_read_archive(administrator)
     assert may_manage_archive_links(administrator)
-    # Reading did not move: only filing changes hands.
-    assert may_read_archive(head) and may_read_archive(administrator)
+
+    apply_shared_gate(settings)
+    assert may_read_archive(head)
+    assert not may_manage_archive_links(administrator)
 
 
 @pytest.mark.django_db

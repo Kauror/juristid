@@ -4,10 +4,17 @@ Every read of business content — lists, detail pages, search, counts, exports,
 downloads and later AI retrieval — resolves through ``scope_for_user`` and the
 ``Q`` builders here. Modules must not re-implement visibility rules locally.
 
-Three rules matter and are tested:
+Four rules matter and are tested:
 
+0. **One internal read policy** (docs/adr/0181). Every authorized internal
+   user — an active account acting under a business role, see
+   :func:`may_read_business_content` — reads *all* business content, NORMAL
+   and RESTRICTED alike. Everybody else reads nothing at all: no rows, no
+   counts, no fragments. A scope is therefore all-or-nothing, and the
+   NORMAL/RESTRICTED derivations below decide nothing between two people who
+   are both allowed in.
 1. Technical administration is not business access. Neither ``is_superuser``
-   nor the ADMINISTRATOR role grants sight of RESTRICTED content; a
+   nor the ADMINISTRATOR role grants sight of business content; a
    time-bounded, audited break-glass grant does.
 2. A child record's effective visibility is **derived** from its Matter and its
    own override, here, in SQL. Nothing stores it, so nothing can hold a stale
@@ -37,33 +44,42 @@ from app.accounts import capabilities
 from app.accounts.enums import Capability, UserRole
 from app.core.enums import Visibility
 
-# Business roles that may read RESTRICTED content without a break-glass grant.
+# The business roles whose holders read business content — all of it, NORMAL
+# and RESTRICTED — without a break-glass grant (docs/adr/0181).
 #
-# Both lawyer roles, because inside the legal department the confidentiality
-# boundary is the application, not the Matter. A lawyer who cannot see what a
-# colleague is working on cannot answer for the department's position on it, and
-# the register this replaces was a shared notebook. `RESTRICTED` still divides
-# the department from everyone else — it just stopped dividing one lawyer from
-# another (docs/adr/0042).
+# Juristid is an internal system, and the owner's policy is that every
+# authorized internal user reads everything the department holds: Matters and
+# their history, notes, opinions, documents and every version, emails and their
+# attachments, the historical OneNote material and its source, dates, the
+# statistics and their exports, related materials and the opinion archive.
+# `RESTRICTED` stopped dividing one lawyer from another in docs/adr/0042; it now
+# stops dividing any authorized user from another. It remains a label on the
+# record — a statement about how sensitive the material is — and nothing reads
+# it as an access boundary.
+#
+# READER is here since docs/adr/0181. docs/adr/0042 left what a READER may see
+# as "a separate decision nobody has taken"; the owner took it: READER is an
+# internal read-only role, and read-only means it reads. It still writes
+# nothing (`ROLES_WITH_BUSINESS_WRITE` below is unchanged).
 #
 # Ownership and `collaborators` stay exactly where they are, and keep meaning
 # what they always meant: who is answerable for a file and who is working it.
-# That is a question about responsibility, and it was never the same question as
-# who may know the file exists.
 #
-# ADMINISTRATOR is still deliberately absent, and that absence carries more
-# weight now that it is the only business role left outside: technical
-# administration is not legal work, and an administrator who needs to read a
-# restricted file uses break-glass, which is audited (master specification 5.2).
-# READER is absent because this decision is about the legal team; what a
-# management or communications reader may see is a separate decision nobody has
-# taken (specification 5.1).
-ROLES_WITH_RESTRICTED_ACCESS: frozenset[str] = frozenset(
-    {UserRole.SPECIALIST.value, UserRole.DEPARTMENT_HEAD.value}
+# ADMINISTRATOR is still deliberately absent: technical administration is not
+# business access (AGENTS.md, master specification 5.2). An administrator who
+# needs to read business content uses break-glass, which is audited — or holds a
+# business role, which is a decision somebody signs.
+ROLES_WITH_BUSINESS_READ: frozenset[str] = frozenset(
+    {
+        UserRole.SPECIALIST.value,
+        UserRole.DEPARTMENT_HEAD.value,
+        UserRole.READER.value,
+    }
 )
 
 # Roles that may add or change business content on a Matter they can already
-# see. ADMINISTRATOR is absent for the same reason it is absent above: technical
+# see. Reading is not writing (docs/adr/0181): this set did not move when READER
+# joined the readers. ADMINISTRATOR is absent for the same reason it is absent above: technical
 # administration is not business authorship, and an administrator who needs to
 # author work has a business role for it. READER is absent because reading
 # without editing is the entire definition of the role (specification 5.1).
@@ -102,6 +118,35 @@ def acting_role(user: object | None) -> str:
     if not getattr(user, "is_active", False):
         return ""
     return str(getattr(user, "role", "") or "")
+
+
+def may_read_business_content(user: object | None) -> bool:
+    """Is this an authorized internal user — may they read business content?
+
+    **The one predicate** every business read resolves to (docs/adr/0181):
+    `scope_for_user` builds its all-or-nothing scope from it, the opinion
+    archive (`may_read_archive`) and the statistics' archive guard
+    (`reads_opinion_archive`) delegate to it, and the persona requirement at the
+    HTTP boundary is the same question asked of the request.
+
+    Yes, for an active, authenticated account acting under a business role —
+    SPECIALIST, DEPARTMENT_HEAD or READER — in every authentication mode: the
+    persona somebody chose behind the shared gate, the person Cloudflare Access
+    or the dormant personal sign-in authenticated. Also yes, while it lasts, for
+    any active account holding an audited break-glass grant.
+
+    No for everybody else, and every refusal fails closed through
+    `acting_role`: anonymous; an inactive, pending or invited account; the
+    shared-gate `DepartmentViewer` sentinel — a session that knows the password
+    and has not said who is reading; ADMINISTRATOR and ``is_superuser`` without a
+    business role; and any role this module has not heard of.
+    """
+    role = acting_role(user)
+    if not role:
+        return False
+    if role in ROLES_WITH_BUSINESS_READ:
+        return True
+    return active_break_glass_grant_id(user) is not None
 
 
 def may_write_business_content(user: object | None) -> bool:
@@ -264,16 +309,29 @@ def may_assign_work(user: object | None) -> bool:
 
 @dataclass(frozen=True)
 class Scope:
-    """What one user may currently see."""
+    """What one user may currently see.
+
+    Since docs/adr/0181 `scope_for_user` builds exactly two kinds: an authorized
+    internal reader's (``is_authenticated`` and ``sees_all_restricted``, so
+    every builder below answers ``Q()``), and nobody's (``is_authenticated``
+    false, so every builder answers ``NOTHING``). ``is_authenticated`` here
+    means "may read business content", which is narrower than Django's flag of
+    the same name: the shared-gate sentinel and an administrator without a
+    grant are authenticated to Django and get a scope that reads nothing.
+
+    The participation and NORMAL-only halves of the builders stay — they are
+    what a hand-built scope still gets, and every one of them narrows — but no
+    request reaches them.
+    """
 
     user: object | None
     is_authenticated: bool
     sees_restricted_by_role: bool
     #: The grant this scope *relies on*, which is not the same as every grant
     #: the user holds. A role that already sees RESTRICTED content relies on no
-    #: grant, so this is ``None`` for both lawyer roles even where one exists —
-    #: and that is the honest reading: the grant is a reason for seeing
-    #: restricted work, and for those two it is not the reason.
+    #: grant, so this is ``None`` for every business-read role even where one
+    #: exists — and that is the honest reading: the grant is a reason for
+    #: reading business content, and for those roles it is not the reason.
     #:
     #: Nothing may read this to answer "does this person hold a grant". The one
     #: consumer is :attr:`sees_all_restricted`, which asks the role first.
@@ -294,9 +352,16 @@ class DepartmentViewer:
     shared password (Stage-2D auth brief 6).
 
     So this is not a `User`. It has no primary key, cannot be written to a
-    foreign key, cannot own anything and never appears as an audit actor. The
-    only thing it does is map to a scope: NORMAL visibility, and no
-    participation of any kind.
+    foreign key, cannot own anything and never appears as an audit actor.
+
+    **Since docs/adr/0181 it reads nothing.** It used to map to NORMAL
+    visibility, which made the shared password alone a key to every NORMAL
+    record. Under one internal read policy a session that has not said who is
+    reading is not an authorized internal user: `scope_for_user` maps it to the
+    empty scope, and the HTTP boundary (`app.core.decorators`) sends it to the
+    persona chooser before any business page renders. The sentinel survives
+    because `app.accounts.shared_gate.viewer` still hands it out, and handing
+    it out must stay harmless.
     """
 
     is_authenticated = True
@@ -353,16 +418,39 @@ def may_review_historical_matches(user: object | None) -> bool:
     return acting_role(user) == UserRole.ADMINISTRATOR.value
 
 
-def department_scope() -> Scope:
-    """Everything NORMAL, and nothing that depends on knowing who you are.
+#: What a reconciliation queue answers somebody who may work it but may not read
+#: what it shows. The queues are the administrator's; their rows are OneNote
+#: pages, archive letters and the Matters proposed for them — business content,
+#: which technical administration reads only through a break-glass grant
+#: (docs/adr/0181). One sentence for both queues.
+QUEUE_NEEDS_A_READER = (
+    "Ülevaatuse read on äriandmed: haldur näeb neid ainult kehtiva hädaligipääsuga."
+)
 
-    `user=None` is load-bearing: `restricted_participation_q` refuses to build
-    an owner clause without a user, so this scope cannot reach a RESTRICTED
-    Matter by any route.
+
+def may_open_historical_review(user: object | None) -> bool:
+    """May this person open the historical reconciliation queue *and* see its rows?
+
+    Both halves, and they stay two questions: who works the queue is
+    `may_review_historical_matches` (unchanged, the administrator's), and what
+    its rows show is business content, so `may_read_business_content` decides
+    whether they may be shown at all (docs/adr/0181). The Statistika link to the
+    queue asks this, so it never offers a door to a refusal.
+    """
+    return may_review_historical_matches(user) and may_read_business_content(user)
+
+
+def no_scope() -> Scope:
+    """The scope of somebody who may read no business content at all.
+
+    Anonymous, inactive, the shared-gate sentinel, an administrator without a
+    grant (docs/adr/0181). ``is_authenticated=False`` makes every builder here
+    answer ``NOTHING``, and ``user=None`` keeps `restricted_participation_q`
+    from building an owner clause that would match ownerless rows.
     """
     return Scope(
         user=None,
-        is_authenticated=True,
+        is_authenticated=False,
         sees_restricted_by_role=False,
         break_glass_grant_id=None,
     )
@@ -425,10 +513,10 @@ def active_break_glass_grant_id(user: object) -> uuid.UUID | None:
     anonymous visitor before this, from their own early returns.
 
     That ordering is what makes a ``pk`` key safe, and it is not incidental.
-    ``DepartmentViewer.pk`` and ``AnonymousUser.pk`` are **both** ``None`` while
-    mapping to opposite scopes — NORMAL visibility and nothing at all — so a
-    cache keyed on ``pk`` that either of them could enter would eventually hand
-    a shared-gate reader's scope to an anonymous one. They cannot enter it.
+    ``DepartmentViewer.pk`` and ``AnonymousUser.pk`` are **both** ``None``, so a
+    cache keyed on ``pk`` that either of them could enter would answer one of
+    them with the other's lookup. Both read nothing since docs/adr/0181, and
+    they still cannot enter it: `acting_role` refuses them first.
     ``tests/test_authorization.py`` asserts both halves: that they never reach
     this, and that a request following a shared-gate request still sees nothing.
     """
@@ -452,38 +540,44 @@ def active_break_glass_grant_id(user: object) -> uuid.UUID | None:
 
 
 def scope_for_user(user: object | None) -> Scope:
-    if isinstance(user, DepartmentViewer):
-        # Recognised before the generic path, because the generic path would go
-        # looking for this sentinel's break-glass grants and hand a non-model to
-        # the ORM.
-        return department_scope()
-    if user is None or not getattr(user, "is_authenticated", False):
+    """All of the business content, or none of it (docs/adr/0181).
+
+    Built from the same facts `may_read_business_content` asks, in the same
+    order, so the predicate and the scope cannot disagree: no acting role —
+    anonymous, inactive, the shared-gate sentinel — is the empty scope before
+    any lookup; a business-read role sees everything with no lookup; any other
+    acting role sees everything only through an active break-glass grant, and
+    nothing otherwise.
+    """
+    role = acting_role(user)
+    if not role:
+        # `acting_role` answers the sentinel and the anonymous visitor before
+        # anything reaches `active_break_glass_grant_id`, whose per-request memo
+        # is keyed on a primary key both of them lack.
+        return no_scope()
+
+    if role in ROLES_WITH_BUSINESS_READ:
+        # No grant lookup: the role already answers the only question a grant
+        # is consulted for, and `scope_for_user` runs once per `visible_to` —
+        # over a hundred times on a statistics page (PERF-01).
         return Scope(
-            user=None,
-            is_authenticated=False,
-            sees_restricted_by_role=False,
-            break_glass_grant_id=None,
-        )
-    if not getattr(user, "is_active", False):
-        return Scope(
-            user=None,
-            is_authenticated=False,
-            sees_restricted_by_role=False,
+            user=user,
+            is_authenticated=True,
+            sees_restricted_by_role=True,
             break_glass_grant_id=None,
         )
 
-    role = getattr(user, "role", "")
-    sees_by_role = role in ROLES_WITH_RESTRICTED_ACCESS
+    grant_id = active_break_glass_grant_id(user)
+    if grant_id is None:
+        # ADMINISTRATOR, `is_superuser` without a business role, or a role this
+        # module has not heard of. Technical administration is not business
+        # access: not even NORMAL content (docs/adr/0181).
+        return no_scope()
     return Scope(
         user=user,
         is_authenticated=True,
-        sees_restricted_by_role=sees_by_role,
-        # Not asked when the role already answers the only question the grant is
-        # consulted for. `sees_all_restricted` short-circuits on the role, so for
-        # a lawyer the lookup was a database round trip whose result could not
-        # change anything — and `scope_for_user` runs once per `visible_to`,
-        # which is over a hundred times on a statistics page (PERF-01).
-        break_glass_grant_id=None if sees_by_role else active_break_glass_grant_id(user),
+        sees_restricted_by_role=False,
+        break_glass_grant_id=grant_id,
     )
 
 

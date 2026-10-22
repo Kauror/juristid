@@ -110,6 +110,16 @@ def test_rail_rows_under_a_chip_open_exactly_the_real_records_they_count(
         context = reporting_context(viewer, policy_area_key=world.area_tax.key)
         narrowed = _open_full(viewer).filter(policy_areas=world.area_tax)
     rail = _rail(world, viewer, context)
+    # Since docs/adr/0181 a READER counts what the head counts, restricted included.
+    filters = (
+        {"owner_id": world.sandra.pk}
+        if chip == "owner"
+        else {"policy_area_key": world.area_tax.key}
+    )
+    head_rail = _rail(world, world.head, reporting_context(world.head, **filters))
+    assert {c: f.value for c, f in rail.items()} == {c: f.value for c, f in head_rail.items()}
+    outsider_rail = _rail(world, world.admin, reporting_context(world.admin, **filters))
+    assert all(f.value == 0 for f in outsider_rail.values())
     twins = set(Matter.objects.filter(title__endswith="(TEST)").values_list("pk", flat=True))
     client.force_login(viewer)
 
@@ -136,7 +146,6 @@ def test_rail_rows_under_a_chip_open_exactly_the_real_records_they_count(
             assert (
                 not Matter.objects.filter(pk__in=ids).exclude(policy_areas=world.area_tax).exists()
             ), caption
-        assert (world.restricted.pk in ids) is False or viewer_name == "head", caption
 
 
 def test_the_chip_moves_the_rail_and_the_strip_together(client, twins_and_facts):

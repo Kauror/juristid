@@ -59,6 +59,12 @@ class ResolutionReport:
     #: Named, so a run that resolved nothing can be told apart from one that
     #: found nothing to do.
     notes: list[str] = field(default_factory=list)
+    #: What an apply writes, decided once: (Submission, Organisation, raw
+    #: string) per recipient. The reviewed digest is taken over these, and the
+    #: apply writes exactly these (docs/adr/0184).
+    decisions: list[tuple[Any, Any, str]] = field(default_factory=list)
+    #: SHA-256 of the alias file's bytes, "" without one.
+    mapping_sha256: str = ""
 
     @property
     def resolvable(self) -> int:
@@ -94,7 +100,7 @@ def resolve_recipients(
     from app.legacy_import.resolution import MappingTables, resolve_organisation
     from app.submissions.models import SubmissionRecipient
 
-    report = ResolutionReport()
+    report = ResolutionReport(mapping_sha256=getattr(mappings, "source_sha256", "") or "")
     # Reviewed aliases only, and supplied by the caller. Defaulting to a file
     # this module went looking for would make the answer depend on what happened
     # to be on the operator's disk.
@@ -118,15 +124,12 @@ def resolve_recipients(
             continue
 
         report.resolved += 1
+        report.decisions.append((row.submission, resolution.value, raw))
         if not apply:
             continue
 
         with transaction.atomic():
-            SubmissionRecipient.objects.get_or_create(
-                submission=row.submission,
-                organisation=resolution.value,
-                defaults={"role": RecipientRole.ADDRESSEE, "note": raw[:200]},
-            )
+            _attach(row.submission, resolution.value, raw)
             # Purely additive: no field on the provenance row is touched.
             #
             # `recipient_basis` says where the *string* came from — the register's
@@ -142,3 +145,46 @@ def resolve_recipients(
             "ülevaadatud vastendusele. Uusi organisatsioone siin ei looda."
         )
     return report
+
+
+def _attach(submission: Any, organisation: Any, raw: str) -> None:
+    from app.submissions.models import SubmissionRecipient
+
+    SubmissionRecipient.objects.get_or_create(
+        submission=submission,
+        organisation=organisation,
+        defaults={"role": RecipientRole.ADDRESSEE, "note": raw[:200]},
+    )
+    # Purely additive: the provenance row is not touched (see resolve_recipients).
+
+
+#: Bumped when what `recipient_plan_digest` covers changes.
+RECIPIENT_PLAN_DIGEST_VERSION = "archive-recipients-plan/1"
+
+
+def recipient_plan_digest(report: ResolutionReport) -> str:
+    """What an operator approves before ``resolve_archive_recipients --apply``.
+
+    The alias file's bytes and every attachment the pass decided — Submission,
+    Organisation, the source string — sorted by identity (docs/adr/0184).
+    """
+    from app.legacy_import.integrity import canonical_sha256
+
+    decisions = sorted(
+        (str(submission.pk), str(organisation.pk), raw)
+        for submission, organisation, raw in report.decisions
+    )
+    return canonical_sha256(
+        {
+            "version": RECIPIENT_PLAN_DIGEST_VERSION,
+            "mapping_sha256": report.mapping_sha256,
+            "decisions": decisions,
+        }
+    )
+
+
+def apply_recipient_plan(report: ResolutionReport) -> int:
+    """Write exactly the attachments a reviewed pass decided. Caller holds the transaction."""
+    for submission, organisation, raw in report.decisions:
+        _attach(submission, organisation, raw)
+    return len(report.decisions)

@@ -78,6 +78,31 @@ def binary(db):
     )
 
 
+def grant_break_glass(user):
+    """An active break-glass grant for `user`.
+
+    Since docs/adr/0181 an administrator reads no business content without one,
+    so filing a letter onto a Matter — which reads the archive and the Matter —
+    needs it (`may_manage_archive_links`). Without it the screen refuses (403).
+    """
+    from datetime import timedelta
+
+    from app.accounts.models import BreakGlassGrant
+
+    return BreakGlassGrant.objects.create(
+        user=user,
+        granted_by=factories.DepartmentHeadFactory(),
+        reason="Arhiivi ülevaatus",
+        starts_at=timezone.now() - timedelta(minutes=1),
+        expires_at=timezone.now() + timedelta(hours=1),
+    )
+
+
+@pytest.fixture
+def break_glass(administrator):
+    return grant_break_glass(administrator)
+
+
 @pytest.fixture
 def item(batch, binary):
     return OpinionArchiveItem.objects.create(
@@ -348,7 +373,7 @@ def test_derivation_is_idempotent(item, normal_matter):
     assert second.unchanged == 1
 
 
-def test_the_link_screen_never_creates_a_matter(client, administrator, binary):
+def test_the_link_screen_never_creates_a_matter(client, administrator, break_glass, binary):
     from app.matters.models import Matter
 
     before = Matter.objects.count()
@@ -377,6 +402,14 @@ def test_linking_from_the_screen_records_a_reviewed_link(
     client, administrator, binary, normal_matter
 ):
     client.force_login(administrator)
+    url = reverse("legacy_import:opinion_archive_link", kwargs={"pk": binary.pk})
+    # docs/adr/0181: without a break-glass grant the administrator reads neither
+    # the archive nor the Matter, so it files nothing.
+    response = client.post(url, {"action": "link", "viide": normal_matter.display_reference})
+    assert response.status_code == 403
+    assert not OpinionArchiveMatterLink.objects.exists()
+
+    grant_break_glass(administrator)
     client.post(
         reverse("legacy_import:opinion_archive_link", kwargs={"pk": binary.pk}),
         {"action": "link", "viide": normal_matter.display_reference, "markus": "Kuulub siia."},
@@ -389,7 +422,7 @@ def test_linking_from_the_screen_records_a_reviewed_link(
 
 
 def test_a_link_to_a_matter_without_a_reference_can_still_be_withdrawn(
-    client, administrator, binary
+    client, administrator, break_glass, binary
 ):
     """The register holds archive rows with no reference at all.
 
@@ -413,7 +446,7 @@ def test_a_link_to_a_matter_without_a_reference_can_still_be_withdrawn(
     assert OpinionArchiveMatterLink.objects.count() == 0
 
 
-def test_linking_creates_no_submission(client, administrator, binary, normal_matter):
+def test_linking_creates_no_submission(client, administrator, break_glass, binary, normal_matter):
     from app.submissions.models import Submission
 
     client.force_login(administrator)
@@ -422,6 +455,8 @@ def test_linking_creates_no_submission(client, administrator, binary, normal_mat
         {"action": "link", "viide": normal_matter.display_reference},
         follow=True,
     )
+    # The grant makes the link real (docs/adr/0181), so the absence is meaningful.
+    assert OpinionArchiveMatterLink.objects.count() == 1
     assert Submission.objects.count() == 0
 
 

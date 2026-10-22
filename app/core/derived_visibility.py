@@ -20,6 +20,13 @@ Two halves, and both are needed:
   the readers the round excludes. It also covers a reply re-pointed at a
   restricted round later, and a round restricted after its replies were filed.
 
+**Since docs/adr/0181 nothing here narrows anybody a request is served for.**
+`scope_for_user` is all-or-nothing: an authorized internal reader's scope sees
+all restricted work (so `_is_narrowed` is false and the plain child rule is
+``Q()``), and everybody else's sees nothing at all. The creation half still
+copies a round's restriction, because the label is still true; the read half
+stays for a hand-built scope and narrows only.
+
 The read-time rule only ever *narrows*: a scope that sees all restricted work
 gets the plain child rule with no join, and the Matter's participants (owner,
 collaborators) keep the participation half exactly as `child_visibility_q`

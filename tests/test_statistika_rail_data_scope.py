@@ -143,12 +143,19 @@ def test_every_rail_figure_equals_the_register_list_it_opens(
 
 
 def test_the_restricted_matter_counts_only_for_a_reader_who_may_see_it(test_matters_present):
-    """The rail is authorized before it is scoped: head sees one more, reader does not."""
+    """The rail is authorized before it is scoped.
+
+    Since docs/adr/0181 the head and a READER count the restricted Matter alike;
+    an administrator without a business role counts nothing.
+    """
     world = test_matters_present
     head = {f.caption: f.value for f in _rail(world.head, world.today)}
     reader = {f.caption: f.value for f in _rail(world.reader, world.today)}
+    outsider = {f.caption: f.value for f in _rail(world.admin, world.today)}
     for caption in ("avatud teemat", "üle tähtaja", "teemat töövõiduga", "teemat jõustunud aktiga"):
-        assert head[caption] == reader[caption] + 1, caption
+        assert head[caption] == reader[caption], caption
+        assert head[caption] > 0, caption
+        assert outsider[caption] == 0, caption
 
 
 @pytest.mark.parametrize("viewer_name", ["head", "reader"])
@@ -201,9 +208,10 @@ def test_the_strip_victory_figure_counts_and_opens_real_data_only(
 
     client.force_login(viewer)
     assert register_total(client, figure.url) == figure.value
-    # One real victory Matter for the reader, the restricted one besides for head;
-    # their TEST twins are in the list only when the scope is taken off.
-    assert figure.value == (2 if viewer_name == "head" else 1)
+    # One real victory Matter and the restricted one besides — for the head and,
+    # since docs/adr/0181, for a READER alike; their TEST twins are in the list
+    # only when the scope is taken off.
+    assert figure.value == 2
     assert register_total(client, figure.url, andmed="") == 2 * figure.value
 
 

@@ -44,8 +44,9 @@ from typing import Any
 from django.contrib.auth import login, logout
 from django.contrib.auth.views import redirect_to_login
 from django.http import HttpRequest, HttpResponse
-from django.shortcuts import redirect
+from django.shortcuts import redirect, render
 from django.urls import reverse
+from django.utils.cache import add_never_cache_headers
 
 from app.accounts import cloudflare_access, local_auth, shared_gate
 from app.accounts.enums import AuthMode
@@ -167,6 +168,9 @@ class AuthenticationModeMiddleware:
             self._drop_an_ineligible_persona(request)
             return self.get_response(request)
 
+        if shared_gate.opened_under_another_password(request):
+            self._end_a_superseded_gate(request)
+
         # A session that carries a persona but not a valid gate is a session
         # whose gate expired — absolutely or through being idle — or one
         # restored from before the gate existed.
@@ -178,6 +182,30 @@ class AuthenticationModeMiddleware:
         if request.path == gate_url:
             return self.get_response(request)
         return redirect(gate_url)
+
+    def _end_a_superseded_gate(self, request: HttpRequest) -> None:
+        """End a session opened under a shared password that is no longer configured.
+
+        Rotating `JURISTID_SHARED_GATE_PASSWORD` is how the department takes the
+        door back from somebody who should no longer have it, and it only does
+        that if the sessions the old password opened end too (csf_19450e2c,
+        docs/adr/0183). The whole session goes — the gate, the persona and
+        anything else in it — not only the gate keys, so nothing opened under
+        the old password survives into a session re-opened under the new one.
+
+        Recorded once: the flush removes what this test looks for, so the next
+        request from the same browser is simply a visitor at the gate.
+        """
+        record_security_event(
+            event_type=SecurityEventType.SESSION_ENDED,
+            actor=None,
+            ip_address=client_ip(request),
+            user_agent=request.META.get("HTTP_USER_AGENT", ""),
+            detail=shared_gate.audit_detail(
+                request, path="shared_gate", reason="shared_password_changed"
+            ),
+        )
+        logout(request)
 
     def _drop_an_ineligible_persona(self, request: HttpRequest) -> None:
         """Stop acting as somebody who may no longer be acted as.
@@ -198,7 +226,7 @@ class AuthenticationModeMiddleware:
         user = getattr(request, "user", None)
         if user is None or not user.is_authenticated or is_persona_candidate(user):
             return
-        passed_at = shared_gate.gate_passed_at(request)
+        carried = shared_gate.current_pass(request)
 
         record_security_event(
             event_type=SecurityEventType.PERSONA_SELECTED,
@@ -216,8 +244,9 @@ class AuthenticationModeMiddleware:
         # `logout` flushes the session, which would take the gate with it and
         # send somebody back to the password form for a change they did not
         # make. Re-opening it is what `act_as` does for the same reason, with
-        # the original pass time, so the 12-hour clock keeps counting.
-        shared_gate.open_gate(request, passed_at=passed_at)
+        # the original pass time and password version, so the 12-hour clock
+        # keeps counting and a later rotation still ends this session.
+        shared_gate.open_gate(request, carried=carried)
 
     # -- cloudflare access -------------------------------------------------
 
@@ -236,6 +265,16 @@ class AuthenticationModeMiddleware:
             # favour of the older session.
             logout(request)
 
+        token = request.META.get(cloudflare_access.HEADER, "")
+        if cloudflare_access.was_signed_out_with(request.session, token):
+            # Signed out here, and Cloudflare is still forwarding the assertion
+            # from before: its own session has not ended yet. Signing back in
+            # from it would undo the sign-out the person just asked for
+            # (csf_92343c92, docs/adr/0183). A page, not a redirect, so there
+            # is no loop to fall into: it offers the logout that ends the
+            # Access session, after which a new sign-in brings a new assertion.
+            return self._signed_out(request)
+
         person = User.objects.filter(upn__iexact=email, is_active=True).first()
         if person is None:
             return self._deny(request, reason="no_account", email=email)
@@ -245,9 +284,22 @@ class AuthenticationModeMiddleware:
             return self._deny(request, reason="synthetic_account", email=email)
 
         login(request, person, backend=MODEL_BACKEND)
+        request.session.pop(cloudflare_access.SIGNED_OUT_ASSERTION, None)
         request.session["cf_access_email"] = email
         request.session.set_expiry(cloudflare_access.seconds_until_expiry(claims))
         return self.get_response(request)
+
+    def _signed_out(self, request: HttpRequest) -> HttpResponse:
+        response = render(
+            request,
+            "accounts/access_signed_out.html",
+            {
+                "logout_url": cloudflare_access.logout_url(),
+                "application_logout_url": cloudflare_access.LOGOUT_PATH,
+            },
+        )
+        add_never_cache_headers(response)
+        return response
 
     def _deny(self, request: HttpRequest, *, reason: str, email: str = "") -> HttpResponse:
         record_security_event(

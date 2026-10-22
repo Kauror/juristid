@@ -29,7 +29,6 @@ extracted text is not carried across at all.
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import os
 import uuid
@@ -39,7 +38,6 @@ from pathlib import Path
 from typing import Any
 
 from django.conf import settings
-from django.core.files.base import ContentFile
 from django.core.files.storage import storages
 from django.db import transaction
 from django.db.models import Exists, Max, OuterRef, Q, Sum
@@ -50,6 +48,7 @@ from app.core.errors import DomainError
 from app.core.ids import uuid7
 from app.documents import pending
 from app.documents.enums import ExtractionState
+from app.documents.upload_body import StoredBody, store_body
 from app.documents.uploads import AcceptedUpload
 from app.matters.intake import MAX_INTAKE_FILES, file_incoming, role_for
 from app.matters.intake_suggestions.availability import create_form_suggestions_offered
@@ -373,7 +372,7 @@ def stage_uploads(
         over = quota_refusal(
             owner=owner,
             session=session,
-            incoming_bytes=sum(len(upload.content) for upload in uploads),
+            incoming_bytes=sum(upload.size for upload in uploads),
         )
         if over:
             return StagingResult(
@@ -410,7 +409,10 @@ def _stage_each(
     for upload in uploads:
         name = f"{STORAGE_PREFIX}/{session.pk}/{uuid7()}"
         written.append(name)
-        key = storage.save(name, ContentFile(upload.content))
+        # Streamed from the upload handler's file and hashed on the way, so the
+        # recorded checksum is of the bytes written and no file is held in
+        # memory (docs/adr/0182). A partial write removes itself.
+        key, digest = store_body(storage, name, upload.body)
         if key != name:  # pragma: no cover - a uuid7 name is never taken
             written.append(key)
         staged.append(
@@ -420,8 +422,8 @@ def _stage_each(
                 storage_key=key,
                 original_filename=upload.filename,
                 mime_type=upload.mime_type,
-                size_bytes=len(upload.content),
-                sha256=hashlib.sha256(upload.content).hexdigest(),
+                size_bytes=upload.size,
+                sha256=digest,
                 role=role_for(upload.filename),
             )
         )
@@ -596,8 +598,7 @@ def promote_intake_files(
 
     for staged in session.files.live().in_order():
         try:
-            with storage.open(staged.storage_key, "rb") as handle:
-                content = handle.read()
+            size = storage.size(staged.storage_key)
         except (FileNotFoundError, OSError) as error:
             # The bytes are the point of the whole feature, so this refuses the
             # save rather than creating a Matter that is missing a document
@@ -605,8 +606,13 @@ def promote_intake_files(
             raise DomainError(
                 f"Faili „{staged.original_filename}” ei õnnestunud lugeda. Vali see uuesti."
             ) from error
+        # Streamed, never read whole into this worker (docs/adr/0182): checked
+        # once here, before any row is written, and again as the evidence store
+        # writes it (`expected_sha256`), so what is filed is provably the file
+        # the browser sent.
+        content = StoredBody(storage, staged.storage_key, size, label=staged.original_filename)
 
-        digest = hashlib.sha256(content).hexdigest()
+        digest = content.sha256()
         if digest != staged.sha256:
             # Not reachable by any ordinary route — nothing rewrites a staged
             # object — which is exactly why it is checked. Silent corruption of
@@ -634,6 +640,7 @@ def promote_intake_files(
             extraction_note=promoted_extraction_note(staged),
             title=(titles or {}).get(str(staged.pk), ""),
             role=role,
+            expected_sha256=staged.sha256,
         )
         if filed is not None:
             filed.append(document)
@@ -672,7 +679,7 @@ def without_staged_copies(
         remaining[key] = remaining.get(key, 0) + 1
     kept: list[AcceptedUpload] = []
     for upload in uploads:
-        key = (upload.filename, hashlib.sha256(upload.content).hexdigest())
+        key = (upload.filename, upload.sha256())
         if remaining.get(key):
             remaining[key] -= 1
             continue

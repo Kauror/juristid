@@ -56,52 +56,24 @@ from typing import Any
 
 from app.accounts.enums import UserRole
 from app.accounts.shared_gate import is_shared_gate
-from app.core.authorization import acting_role
+from app.core.authorization import acting_role, may_read_business_content
 
-#: Roles that may read the corpus, in every authentication mode.
+#: Who may read the corpus: since docs/adr/0181, exactly who may read any other
+#: business content — `may_read_business_content`, asked in every mode.
 #:
-#: The two lawyer roles, plus the administrator because operating the migration
-#: is the job. It is deliberately `ROLES_WITH_RESTRICTED_ACCESS` **plus**
-#: ADMINISTRATOR, and both halves of that are decisions.
+#: There used to be a set of its own here, `ARCHIVE_READERS`: the two lawyer
+#: roles plus ADMINISTRATOR, "because operating the migration is the job", and
+#: without READER. One internal read policy settles both halves. A READER is an
+#: authorized internal user and reads the Chamber's own correspondence like
+#: every other one. An administrator without a business role is technical
+#: administration, which is not business access — the outgoing letters are the
+#: department's work product, not a migration artefact — and reads the corpus
+#: through an audited break-glass grant like any other business content. A
+#: second set would have been a second answer to the same question, and the one
+#: that disagreed would have been the one nobody noticed.
 #:
-#: *Why the specialist is here.* ADR 0042 settled that the confidentiality
-#: boundary is the application rather than the Matter, and put SPECIALIST and
-#: DEPARTMENT_HEAD in one set that reads department-wide — including every
-#: RESTRICTED Matter these letters are filed onto. This module predates that
-#: and was left behind by it, and the gap was not theoretical: a specialist
-#: could open the Matter, its timeline, its documents and their filenames, and
-#: could not open the Chamber's own outgoing letter about it. Historical
-#: outgoing opinions are ordinary department work product, not a migration
-#: tool, and 767 of them were unreadable by the people whose work they are.
-#:
-#: *Why the administrator is still here, and what it is not.* Operating the
-#: reconciliation requires reading what is being reconciled. It stays what it
-#: always was — a statement about the **corpus**, never about a Matter — and
-#: ADMINISTRATOR remains outside `ROLES_WITH_RESTRICTED_ACCESS`, so an
-#: administrator who reaches an archive row still learns nothing about which
-#: register entries they may open. Everything the archive renders about a
-#: Matter goes through `Matter.objects.visible_to` exactly as before.
-#:
-#: *Why this is no longer a shared-gate special case.* The old rule widened
-#: under the shared gate and narrowed to the administrator alone outside it,
-#: which meant the department would silently lose the archive on the day
-#: Cloudflare Access replaced the shared door — the opposite of what that
-#: change is for. Access authenticates the individual *better*; it does not
-#: make a lawyer less entitled to their own department's correspondence. One
-#: set, asked in every mode, is also one fewer thing that can disagree with
-#: itself.
-#:
-#: `READER` is absent, deliberately and for ADR 0042's reason: it is a
-#: different audience with a different question behind it, and widening it is a
-#: separate decision that is not taken here. `DepartmentViewer` — the shared
-#: password with no persona chosen — has an empty role and is in no set.
-ARCHIVE_READERS: frozenset[str] = frozenset(
-    {
-        UserRole.SPECIALIST.value,
-        UserRole.DEPARTMENT_HEAD.value,
-        UserRole.ADMINISTRATOR.value,
-    }
-)
+#: The reconciliation queue (`may_use_opinion_queue`) and filing a letter onto
+#: a Matter (`may_manage_archive_links`) are not reading, and are unchanged.
 
 
 #: Who may add or withdraw a reviewed archive-to-Matter relationship while the
@@ -127,10 +99,7 @@ def may_read_archive(user: Any) -> bool:
     open: everything the archive renders about a Matter is still filtered
     through `Matter.objects.visible_to` (docs/adr/0028).
     """
-    role = acting_role(user)
-    if not role:
-        return False
-    return role in ARCHIVE_READERS
+    return may_read_business_content(user)
 
 
 def may_manage_archive_links(user: Any) -> bool:
@@ -138,10 +107,17 @@ def may_manage_archive_links(user: Any) -> bool:
 
     Never wider than reading: a reviewer has to be able to open the letter they
     are filing. It is deliberately much *narrower*, and the gap widened when
-    reading did: three roles may now read the corpus, and only one of them is
-    answerable for what the department's correspondence concerns. A specialist
-    reading a historical letter is doing their job; a specialist asserting
-    which Matter it belongs to is making a claim the department signs.
+    reading did: every authorized internal user may now read the corpus, and
+    only one role is answerable for what the department's correspondence
+    concerns. A specialist reading a historical letter is doing their job; a
+    specialist asserting which Matter it belongs to is making a claim the
+    department signs.
+
+    Outside the shared gate the reviewer is the administrator, and since
+    docs/adr/0181 an administrator reads business content only through a
+    break-glass grant — so the reading prerequisite below, unchanged, now asks
+    for one. The link itself also needs the Matter, which `archive_link` reads
+    through `visible_to` and which needs the same grant.
     """
     if not may_read_archive(user):
         return False
@@ -181,9 +157,25 @@ def require_archive_link_reviewer(user: Any) -> None:
         raise PermissionDenied("Arhiivi seoseid saab muuta ülevaatuse õigusega kasutaja.")
 
 
+def may_open_opinion_queue(user: Any) -> bool:
+    """May this person open the opinion queue *and* see its rows?
+
+    Working the queue stays `may_use_opinion_queue`, the administrator's. Its
+    rows are archive letters and the Matters proposed for them — business
+    content — so they are shown only to somebody who may read business content:
+    an administrator through a break-glass grant (docs/adr/0181). The links to
+    the queue ask this, so none of them is a door to a refusal.
+    """
+    return may_use_opinion_queue(user) and may_read_business_content(user)
+
+
 def require_opinion_queue_operator(user: Any) -> None:
-    """Raise unless this person may work the reconciliation queue."""
+    """Raise unless this person may work the queue and read what it shows."""
     from django.core.exceptions import PermissionDenied
+
+    from app.core.authorization import QUEUE_NEEDS_A_READER
 
     if not may_use_opinion_queue(user):
         raise PermissionDenied("Arvamuste ülevaatus on halduri töövahend.")
+    if not may_read_business_content(user):
+        raise PermissionDenied(QUEUE_NEEDS_A_READER)

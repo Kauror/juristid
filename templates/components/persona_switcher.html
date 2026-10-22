@@ -81,30 +81,13 @@
     {% endfor %}
 
     {% comment %}
-      No persona is a first-class choice, not an escape hatch: it is the state a
-      visitor lands in, and the only way to see what a page looks like before
-      anybody is selected. Same POST, same audit row (brief 13, 17).
+      No «Ilma kasutajata» choice since docs/adr/0181. A session with no persona
+      reads nothing — every business page sends it back to choose one — so a
+      persona-less choice would only pretend to open a view that is not there.
+      Choosing somebody else stays here; ending the session is «Välju». The pill
+      still says «Ilma kasutajata» while nobody is chosen, because that is the
+      state, not an offer.
     {% endcomment %}
-    {% if user.is_authenticated %}
-      <form class="personamenu__form" method="post" action="{% url 'accounts:act_as' %}">
-        {% csrf_token %}
-        <input type="hidden" name="user_id" value="">
-        <input type="hidden" name="next" value="{{ request.get_full_path }}">
-        <button type="submit" class="personaoption personaoption--nobody" data-persona-option>
-          <span class="personaoption__avatar personaoption__avatar--none"
-                aria-hidden="true">—</span>
-          <span class="personaoption__name">Ilma kasutajata</span>
-        </button>
-      </form>
-    {% else %}
-      <p class="personaoption personaoption--current personaoption--nobody">
-        <span class="personaoption__avatar personaoption__avatar--none"
-              aria-hidden="true">—</span>
-        <span class="personaoption__name">Ilma kasutajata</span>
-        <span class="personaoption__mark" aria-hidden="true">✓</span>
-        <span class="visually-hidden">— praegu valitud</span>
-      </p>
-    {% endif %}
 
     <p class="personamenu__note">
       Valik ei ole autentimine — see muudab ainult, kelle vaadet näidatakse.

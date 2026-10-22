@@ -46,21 +46,28 @@ def open_archive(page, base_url):
 # -- the boundary ------------------------------------------------------------
 
 
-def test_a_reader_following_the_url_is_refused(page, base_url):
+def test_an_administrator_following_the_url_is_refused(page, base_url):
     """Refused, not shown an empty archive.
 
     An empty list would tell a reader the corpus is empty, which is a different
     and untrue statement about what Koda holds.
 
-    READER rather than a specialist since docs/adr/0056 — the same substitution
-    ADR 0042 already forced on the rest of these tests, arriving here now that
-    the archive uses that set too. A specialist can no longer play this part
-    because these are the department's own letters.
+    The administrator since docs/adr/0181: the archive asks the one internal
+    read predicate, which every business role passes — a READER included — and
+    technical administration without a grant does not.
     """
-    sign_in(page, base_url, READER)
+    sign_in(page, base_url, ADMIN)
     response = page.goto(f"{base_url}{ARCHIVE_PATH}")
     assert response is not None
     assert response.status == 403
+
+
+def test_a_reader_reaches_the_archive(page, base_url):
+    """An authorized internal user reads the department's letters (ADR 0181)."""
+    sign_in(page, base_url, READER)
+    response = page.goto(f"{base_url}{ARCHIVE_PATH}")
+    assert response is not None
+    assert response.status == 200
 
 
 def test_a_specialist_reaches_the_archive(page, base_url):
@@ -76,16 +83,26 @@ def test_a_specialist_reaches_the_archive(page, base_url):
     expect(page.get_by_role("heading", name="Arvamuste arhiiv")).to_be_visible()
 
 
-def test_an_administrator_reaches_the_archive_from_the_queue(page, base_url):
+def test_an_administrator_reaches_the_archive_from_the_queue(
+    page, base_url, admin_with_break_glass
+):
     """Through the interface, not by knowing the URL.
 
-    The archive was unreachable from anywhere before this stage, which is most
-    of why nobody could read the letters.
+    The queue and the archive are both business content to an administrator
+    since ADR 0181: without a grant the queue refuses outright, and with one it
+    offers «Ava arhiiv», which opens.
     """
-    sign_in(page, base_url, ADMIN)
+    sign_in(page, base_url, admin_with_break_glass)
     page.goto(f"{base_url}/haldus/arvamuste-ulevaatus/")
     page.get_by_role("link", name="Ava arhiiv").click()
     expect(page.get_by_role("heading", name="Arvamuste arhiiv")).to_be_visible()
+
+
+def test_the_queue_refuses_an_administrator_without_a_grant(page, base_url):
+    sign_in(page, base_url, ADMIN)
+    response = page.goto(f"{base_url}/haldus/arvamuste-ulevaatus/")
+    assert response is not None and response.status == 403
+    expect(page.get_by_role("link", name="Ava arhiiv")).to_have_count(0)
 
 
 # -- finding a letter --------------------------------------------------------
@@ -93,7 +110,7 @@ def test_an_administrator_reaches_the_archive_from_the_queue(page, base_url):
 
 def test_the_coverage_strip_precedes_the_search_box(page, base_url, screenshots):
     """Two thirds of this corpus has no Matter, and the page says so first."""
-    sign_in(page, base_url, ADMIN)
+    sign_in(page, base_url, HEAD)
     open_archive(page, base_url)
     screenshots(page, "arvamuste-arhiiv")
 
@@ -103,7 +120,7 @@ def test_the_coverage_strip_precedes_the_search_box(page, base_url, screenshots)
 
 
 def test_a_letter_is_found_by_its_title(page, base_url):
-    sign_in(page, base_url, ADMIN)
+    sign_in(page, base_url, HEAD)
     open_archive(page, base_url)
 
     page.get_by_label("Otsi arhiivist").fill("näidisseaduse")
@@ -115,7 +132,7 @@ def test_a_letter_is_found_by_its_title(page, base_url):
 
 def test_a_letter_is_found_by_its_contents(page, base_url):
     """The reason the second pass and the text extraction exist at all."""
-    sign_in(page, base_url, ADMIN)
+    sign_in(page, base_url, HEAD)
     open_archive(page, base_url)
 
     page.get_by_label("Otsi arhiivist").fill("eelnõu")
@@ -124,7 +141,7 @@ def test_a_letter_is_found_by_its_contents(page, base_url):
 
 
 def test_a_pasted_hash_finds_the_letter_it_names(page, base_url):
-    sign_in(page, base_url, ADMIN)
+    sign_in(page, base_url, HEAD)
     open_archive(page, base_url)
 
     page.get_by_label("Otsi arhiivist").fill(LINKED_SHA)
@@ -133,7 +150,7 @@ def test_a_pasted_hash_finds_the_letter_it_names(page, base_url):
 
 
 def test_an_overlong_query_says_it_was_refused(page, base_url):
-    sign_in(page, base_url, ADMIN)
+    sign_in(page, base_url, HEAD)
     page.goto(f"{base_url}{ARCHIVE_PATH}?q={'a' * 501}")
     expect(page.locator(".notice")).to_contain_text("tähemärki")
     expect(page.locator(".empty")).to_have_count(0)
@@ -149,7 +166,7 @@ def open_letter(page, base_url, title):
 
 
 def test_the_detail_page_says_what_the_letter_is_tied_to(page, base_url, screenshots):
-    sign_in(page, base_url, ADMIN)
+    sign_in(page, base_url, HEAD)
     open_letter(page, base_url, LINKED_TITLE)
     screenshots(page, "arvamuste-arhiiv-kiri")
 
@@ -157,16 +174,23 @@ def test_the_detail_page_says_what_the_letter_is_tied_to(page, base_url, screens
     expect(page.get_by_role("heading", name="Esinemised arhiivis")).to_be_visible()
 
 
-def test_the_link_form_says_it_is_not_an_opinion(page, base_url):
-    """A reviewer who thinks they recorded a sent opinion has been misled."""
-    sign_in(page, base_url, ADMIN)
+def test_the_link_form_is_not_offered_to_a_reader_who_may_not_file(page, base_url):
+    """Filing is a business claim, not reading (docs/adr/0028).
+
+    Outside the shared gate the reviewer is the administrator, who since
+    docs/adr/0181 needs a break-glass grant to read the letter at all; the
+    department head reads it and is the reviewer only behind the shared gate.
+    The form's own wording is asserted where a reviewer reaches it
+    (`tests/test_opinion_archive_workspace.py`).
+    """
+    sign_in(page, base_url, HEAD)
     open_letter(page, base_url, UNLINKED_TITLE)
 
-    expect(page.locator(".form__hint")).to_contain_text("ei loo arvamust")
+    expect(page.locator(".form__hint").filter(has_text="ei loo arvamust")).to_have_count(0)
 
 
 def test_the_letter_opens_in_the_browser(page, base_url):
-    sign_in(page, base_url, ADMIN)
+    sign_in(page, base_url, HEAD)
     open_letter(page, base_url, LINKED_TITLE)
 
     link = page.get_by_role("link", name="Ava kiri")
@@ -184,7 +208,7 @@ def test_the_letter_opens_in_the_browser(page, base_url):
 def test_the_download_offers_the_hash_rather_than_the_archive_name(page, base_url):
     """The ZIP's names carry recipients and subjects; a header is the wrong
     place for a reader to learn who a letter was to."""
-    sign_in(page, base_url, ADMIN)
+    sign_in(page, base_url, HEAD)
     open_letter(page, base_url, LINKED_TITLE)
 
     href = page.get_by_role("link", name="Laadi alla").get_attribute("href") or ""
@@ -198,18 +222,16 @@ def test_the_download_offers_the_hash_rather_than_the_archive_name(page, base_ur
 # -- the register boundary, in a browser --------------------------------------
 
 
-def test_the_archive_names_the_matter_it_may_and_not_the_one_it_may_not(page, base_url):
-    """The property the whole P3.3 boundary rests on, checked on the screen.
+def test_the_archive_names_both_matters_to_every_reader(page, base_url):
+    """The letter is filed onto two Matters, one ordinary and one RESTRICTED.
 
-    The seeded letter is filed onto two Matters: one ordinary and one
-    RESTRICTED. The administrator may open every letter Koda holds — reading
-    the corpus is a decision about the corpus — and may not read a restricted
-    register entry. So the page has to name the first, refuse the second, and
-    still not pretend the letter is unfiled (docs/adr/0028).
-
-    A database test proves the queryset; only a browser proves what is rendered.
+    Until docs/adr/0181 the archive's reader (then the administrator) could
+    not read the restricted one, and the page named only the first. Every
+    archive reader is now an authorized internal user who reads both, so both
+    are named and both are links. A database test proves the queryset; only a
+    browser proves what is rendered.
     """
-    sign_in(page, base_url, ADMIN)
+    sign_in(page, base_url, READER)
     open_letter(page, base_url, LINKED_TITLE)
 
     section = page.locator("section").filter(has=page.get_by_role("heading", name="Seotud teemad"))
@@ -217,25 +239,9 @@ def test_the_archive_names_the_matter_it_may_and_not_the_one_it_may_not(page, ba
 
     # A prefix, because the link truncates a realistically long title.
     assert OPEN_TITLE[:60] in body
-    assert RESTRICTED_TITLE not in body
-    # Present but unnamed, rather than absent. "This letter concerns nothing"
-    # would be a false statement about the archive rather than a discreet one.
-    assert "ei kuvata" in body
-    assert "Ükski teema ei ole selle kirjaga seotud" not in body
-
-
-def test_the_administrator_is_offered_no_way_into_the_restricted_matter(page, base_url):
-    """No link to follow, either. A URL is an identity as much as a title is.
-
-    The letter is filed onto two Matters and the section offers exactly one
-    destination: withholding a title while leaving a working link beside it
-    would be a boundary that only looks like one.
-    """
-    sign_in(page, base_url, ADMIN)
-    open_letter(page, base_url, LINKED_TITLE)
-
-    section = page.locator("section").filter(has=page.get_by_role("heading", name="Seotud teemad"))
-    expect(section.first.locator("a[href*='/teemad/']")).to_have_count(1)
+    assert RESTRICTED_TITLE[:60] in body
+    assert "ei kuvata" not in body
+    expect(section.first.locator("a[href*='/teemad/']")).to_have_count(2)
 
 
 # -- what did not widen -------------------------------------------------------
@@ -247,9 +253,9 @@ def test_reading_the_archive_does_not_depend_on_which_door_was_answered(page, ba
     The old rule made the head's access a shared-gate concession and narrowed
     to the administrator alone where identity is real — which would have taken
     the archive from the whole department the day Cloudflare Access replaced
-    the shared password. `ARCHIVE_READERS` is now one set asked in every mode,
-    and this is that claim made where the deployment authenticates individuals
-    (docs/adr/0056).
+    the shared password. The archive asks the one internal read predicate in
+    every mode (docs/adr/0181), and this is that claim made where the
+    deployment authenticates individuals (docs/adr/0056).
     """
     sign_in(page, base_url, HEAD)
     response = page.goto(f"{base_url}{ARCHIVE_PATH}")
@@ -298,7 +304,7 @@ def test_the_teemad_section_is_how_a_reader_reaches_the_archive(page, base_url):
     somebody who scrolled to the section is not thrown back to the top of a
     register they have already read past.
     """
-    sign_in(page, base_url, ADMIN)
+    sign_in(page, base_url, HEAD)
     go_to(page, "Teemad")
     section = page.locator("#arvamused")
     expect(section.get_by_role("heading", name="Arvamused")).to_be_visible()
@@ -318,7 +324,7 @@ def test_the_section_hands_over_to_the_full_workspace(page, base_url):
     the workspace that was not deleted, with its own filters and its own paging.
     If this link stops working the consolidation has quietly removed a surface.
     """
-    sign_in(page, base_url, ADMIN)
+    sign_in(page, base_url, HEAD)
     go_to(page, "Teemad")
     page.locator("#arvamused").get_by_role(
         "link", name=re.compile(r"^Vaata kõiki arvamusi")
@@ -338,7 +344,7 @@ def test_the_two_searches_on_the_teemad_page_stay_apart(page, base_url):
     misrouted or a target id mistyped would swap the wrong region, and the
     server-side tests would still pass.
     """
-    sign_in(page, base_url, ADMIN)
+    sign_in(page, base_url, HEAD)
     go_to(page, "Teemad")
     register_rows = page.locator("#teemad-tulemused tbody tr").count()
     address = page.url
@@ -375,7 +381,7 @@ def test_the_opinion_tab_does_not_undo_a_live_teemad_search(page, base_url):
     rendered and the href is always right, which is exactly why it went
     unnoticed until the section was driven by hand.
     """
-    sign_in(page, base_url, ADMIN)
+    sign_in(page, base_url, HEAD)
     go_to(page, "Teemad")
 
     page.locator("#teemad-otsing").fill("pakendiseaduse")
@@ -409,7 +415,7 @@ def test_the_opinion_tab_does_not_undo_a_live_teemad_search(page, base_url):
 
 def test_the_administrative_archive_url_still_opens(page, base_url):
     """The direct route is untouched; only the link to it left the bar."""
-    sign_in(page, base_url, ADMIN)
+    sign_in(page, base_url, HEAD)
     open_archive(page, base_url)
 
 
@@ -418,14 +424,14 @@ def test_the_administrative_archive_url_still_opens(page, base_url):
 
 def test_the_workspace_says_a_link_is_not_a_sent_opinion(page, base_url):
     """Load-bearing copy. Filing a letter is not filing an opinion."""
-    sign_in(page, base_url, ADMIN)
+    sign_in(page, base_url, HEAD)
     open_archive(page, base_url)
     expect(page.get_by_text("Arenduse arhiivitööruum")).to_be_visible()
 
 
 def test_the_unlinked_shortcut_narrows_to_the_review_workload(page, base_url):
     """523 of 767 in production, and the reason anybody opens this page."""
-    sign_in(page, base_url, ADMIN)
+    sign_in(page, base_url, HEAD)
     open_archive(page, base_url)
 
     # Scoped to the filter strip: the seeded unlinked letter is *called*
@@ -477,7 +483,7 @@ def test_the_live_opinion_search_keeps_the_address_honest(page, base_url):
 
     Six things, in the order somebody would hit them (docs/adr/0047).
     """
-    sign_in(page, base_url, ADMIN)
+    sign_in(page, base_url, HEAD)
     go_to(page, "Teemad")
 
     # 1. A teemad search is active, live, and in the address.
@@ -537,7 +543,7 @@ def test_back_returns_to_the_previous_opinion_search(page, base_url):
     own history handling stays in step. A hand-rolled `pushState` beside htmx's
     bookkeeping is the version of this that restores the wrong DOM.
     """
-    sign_in(page, base_url, ADMIN)
+    sign_in(page, base_url, HEAD)
     go_to(page, "Teemad")
 
     opinion_search(page, "ministeeriumile")
@@ -573,7 +579,7 @@ def test_the_register_search_is_not_disturbed_by_the_opinion_push(page, base_url
     which is worse than not pushing at all. `static/js/app.js` resyncs them on
     every htmx push; this is what proves it.
     """
-    sign_in(page, base_url, ADMIN)
+    sign_in(page, base_url, HEAD)
     go_to(page, "Teemad")
 
     page.locator("#teemad-otsing").fill("pakendiseaduse")
