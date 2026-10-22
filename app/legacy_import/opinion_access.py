@@ -157,9 +157,25 @@ def require_archive_link_reviewer(user: Any) -> None:
         raise PermissionDenied("Arhiivi seoseid saab muuta ülevaatuse õigusega kasutaja.")
 
 
+def may_open_opinion_queue(user: Any) -> bool:
+    """May this person open the opinion queue *and* see its rows?
+
+    Working the queue stays `may_use_opinion_queue`, the administrator's. Its
+    rows are archive letters and the Matters proposed for them — business
+    content — so they are shown only to somebody who may read business content:
+    an administrator through a break-glass grant (docs/adr/0181). The links to
+    the queue ask this, so none of them is a door to a refusal.
+    """
+    return may_use_opinion_queue(user) and may_read_business_content(user)
+
+
 def require_opinion_queue_operator(user: Any) -> None:
-    """Raise unless this person may work the reconciliation queue."""
+    """Raise unless this person may work the queue and read what it shows."""
     from django.core.exceptions import PermissionDenied
+
+    from app.core.authorization import QUEUE_NEEDS_A_READER
 
     if not may_use_opinion_queue(user):
         raise PermissionDenied("Arvamuste ülevaatus on halduri töövahend.")
+    if not may_read_business_content(user):
+        raise PermissionDenied(QUEUE_NEEDS_A_READER)

@@ -47,6 +47,7 @@ from app.submissions.models import Submission
 from app.taxonomy.models import PolicyArea
 from app.workflow.models import NextAction
 from tests import factories
+from tests.break_glass import grant_to
 
 pytestmark = pytest.mark.django_db
 
@@ -221,7 +222,7 @@ ADMINISTRATOR_SURFACES = [
 
 @pytest.mark.parametrize("route", ADMINISTRATOR_SURFACES)
 def test_the_migration_queues_answer_for_an_administrator(client, empty_world, route):
-    client.force_login(empty_world.administrator)
+    client.force_login(grant_to(empty_world.administrator))
 
     assert client.get(reverse(route)).status_code == 200, route
 

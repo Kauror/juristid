@@ -34,6 +34,7 @@ from app.legacy_import.source_pages import (
     LegacySourcePage,
 )
 from tests import factories
+from tests.break_glass import grant_to
 
 pytestmark = pytest.mark.django_db
 
@@ -124,7 +125,7 @@ def historical_backlog(db, specialist):
 def test_the_opinion_queue_cost_does_not_grow_with_the_backlog(
     client, administrator, opinion_backlog, django_assert_max_num_queries
 ):
-    client.force_login(administrator)
+    client.force_login(grant_to(administrator))
     url = reverse("legacy_import:opinion_queue")
 
     with django_assert_max_num_queries(QUERY_BUDGET):
@@ -137,7 +138,7 @@ def test_the_opinion_queue_cost_does_not_grow_with_the_backlog(
 def test_the_historical_queue_cost_does_not_grow_with_the_backlog(
     client, administrator, historical_backlog, django_assert_max_num_queries
 ):
-    client.force_login(administrator)
+    client.force_login(grant_to(administrator))
     url = reverse("legacy_import:review_queue")
 
     with django_assert_max_num_queries(QUERY_BUDGET):
@@ -153,7 +154,7 @@ def test_every_class_keeps_a_row_in_the_filter_strip(client, administrator, opin
     to be filled in — otherwise replacing seven counts with one would quietly
     delete most of the filter strip.
     """
-    client.force_login(administrator)
+    client.force_login(grant_to(administrator))
 
     response = client.get(reverse("legacy_import:opinion_queue"))
 
@@ -163,7 +164,7 @@ def test_every_class_keeps_a_row_in_the_filter_strip(client, administrator, opin
 def test_the_historical_filter_strip_keeps_every_class_too(
     client, administrator, historical_backlog
 ):
-    client.force_login(administrator)
+    client.force_login(grant_to(administrator))
 
     response = client.get(reverse("legacy_import:review_queue"))
 

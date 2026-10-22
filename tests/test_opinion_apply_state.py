@@ -48,6 +48,7 @@ from app.submissions.enums import SubmissionKind, SubmissionStatus
 from app.submissions.models import Submission, SubmissionRecipient
 from tests import factories
 from tests import synthetic_opinions as syn
+from tests.break_glass import grant_to
 
 pytestmark = pytest.mark.django_db
 
@@ -186,7 +187,7 @@ def test_an_applied_candidate_leaves_the_review_queue(client, archive_path, admi
     plan = plan_for(archive_path([item]))
     apply_plan(plan, batch=open_batch(plan))
 
-    client.force_login(administrator)
+    client.force_login(grant_to(administrator))
     response = client.get(reverse("legacy_import:opinion_queue"))
 
     assert response.status_code == 200

@@ -594,3 +594,141 @@ def test_reading_everything_is_not_writing_anything(world, pdf_bytes):
     )
     assert response.status_code == 404
     assert Document.objects.count() == documents_before
+
+
+# ---------------------------------------------------------------------------
+# The administrator's reconciliation queues show business content
+# ---------------------------------------------------------------------------
+
+QUEUE_PAGE_TITLE = "AJALOOLINE-ULEVAATUS-4431"
+QUEUE_LETTER_TITLE = "ARHIIVIKIRI-ULEVAATUS-4432"
+
+
+@pytest.fixture
+def queues(world) -> dict[str, Any]:
+    """One pending candidate in each queue, each naming the RESTRICTED Matter."""
+    import datetime as dt
+
+    from app.legacy_import.opinion_archive import (
+        OpinionArchiveBatch,
+        OpinionArchiveItem,
+        OpinionMatchCandidate,
+    )
+    from app.legacy_import.opinion_binary import OpinionArchiveBinary
+    from app.legacy_import.opinion_enums import OpinionCandidateState, OpinionMatchClass
+    from app.legacy_import.source_pages import HistoricalMatchCandidate, LegacySourcePage
+
+    now = timezone.now()
+    page = LegacySourcePage.objects.create(
+        source_page_id="{policy-review}",
+        page_key="policy-review",
+        source_notebook="Õigusloome",
+        source_section="2019",
+        capture_id="policy",
+        title=QUEUE_PAGE_TITLE,
+        first_imported_at=now,
+        latest_imported_at=now,
+    )
+    historical = HistoricalMatchCandidate.objects.create(
+        source_page=page, matter=world["restricted"], excel_title=RESTRICTED_TITLE
+    )
+    batch = OpinionArchiveBatch.objects.create(
+        archive_sha256="c" * 64,
+        importer_version="test/0",
+        started_at=dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
+    )
+    binary = OpinionArchiveBinary.objects.create(
+        sha256="d" * 64,
+        size_bytes=512,
+        mime_type="application/pdf",
+        storage_key="opinion-archive/dd/dd/" + "d" * 64,
+        source_archive_sha256="c" * 64,
+        materialized_at=now,
+    )
+    item = OpinionArchiveItem.objects.create(
+        batch=batch,
+        archive_sha256="c" * 64,
+        archive_relative_path="Opinions/ulevaatus.pdf",
+        original_filename="ulevaatus.pdf",
+        sha256=binary.sha256,
+        size_bytes=512,
+        detected_type="application/pdf",
+        filename_date=dt.date(2024, 4, 10),
+        filename_recipient="Naidisministeerium",
+        filename_title=QUEUE_LETTER_TITLE,
+        binary=binary,
+    )
+    opinion = OpinionMatchCandidate.objects.create(
+        item=item,
+        matter=world["restricted"],
+        batch=batch,
+        match_class=OpinionMatchClass.CONTENT_MULTI_SIGNAL,
+        state=OpinionCandidateState.PENDING,
+    )
+    return {"historical": historical, "opinion": opinion}
+
+
+QUEUE_URLS = {
+    "historical": "legacy_import:review_queue",
+    "opinion": "legacy_import:opinion_queue",
+}
+QUEUE_TOKENS = (QUEUE_PAGE_TITLE, QUEUE_LETTER_TITLE, RESTRICTED_TITLE)
+
+
+@pytest.mark.parametrize("queue", sorted(QUEUE_URLS))
+def test_an_administrator_without_a_grant_sees_no_queue_row(world, queues, queue):
+    """The queue stays theirs to work; its rows are business content (docs/adr/0181)."""
+
+    response = _signed_in(world["administrator"]).get(reverse(QUEUE_URLS[queue]) + "?olek=PENDING")
+
+    assert response.status_code == 403
+    body = _body(response)
+    assert not [token for token in QUEUE_TOKENS if token in body], body[:400]
+
+
+@pytest.mark.parametrize("queue", sorted(QUEUE_URLS))
+def test_an_administrator_with_a_grant_works_the_queue_with_its_rows(world, queues, queue):
+    from app.accounts.services import grant_break_glass
+
+    grant_break_glass(
+        user=world["administrator"],
+        granted_by=world["department_head"],
+        reason="Ajaloo sidumine",
+        duration=timedelta(hours=1),
+    )
+    response = _signed_in(world["administrator"]).get(reverse(QUEUE_URLS[queue]) + "?olek=PENDING")
+
+    assert response.status_code == 200
+    body = _body(response)
+    assert (QUEUE_PAGE_TITLE if queue == "historical" else QUEUE_LETTER_TITLE) in body
+
+
+@pytest.mark.parametrize("queue", sorted(QUEUE_URLS))
+def test_nobody_else_reaches_a_queue_at_all(world, queues, queue):
+    """Working the queue is still the administrator's alone: a reader is refused."""
+    response = _signed_in(world["reader"]).get(reverse(QUEUE_URLS[queue]))
+
+    assert response.status_code in (403, 404)
+    body = _body(response)
+    assert not [token for token in QUEUE_TOKENS if token in body]
+
+
+def test_an_administrator_without_a_grant_cannot_decide_a_candidate(world, queues):
+    """The decision routes ask the same two questions before anything is read."""
+    from app.legacy_import.source_pages import CandidateState
+
+    client = _signed_in(world["administrator"])
+    historical = queues["historical"]
+    response = client.post(
+        reverse("legacy_import:review_decide", kwargs={"pk": historical.pk}),
+        {"action": "background"},
+    )
+    assert response.status_code == 403
+    historical.refresh_from_db()
+    assert historical.state == CandidateState.PENDING
+
+    opinion = queues["opinion"]
+    response = client.post(
+        reverse("legacy_import:opinion_decide", kwargs={"pk": opinion.pk}), {"action": "x"}
+    )
+    assert response.status_code == 403

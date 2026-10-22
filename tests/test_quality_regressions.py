@@ -25,6 +25,7 @@ from app.submissions.services import (
     mark_submission_sent,
 )
 from tests import factories
+from tests.break_glass import grant_to
 
 pytestmark = pytest.mark.django_db
 
@@ -225,7 +226,7 @@ def test_a_finished_candidate_is_not_re_decided(
     """
     candidate = archive_candidate(state=state, matter=normal_matter)
 
-    client.force_login(administrator)
+    client.force_login(grant_to(administrator))
     response = client.post(
         reverse("legacy_import:opinion_decide", kwargs={"pk": candidate.pk}),
         {"decision": "reject"},
@@ -246,7 +247,7 @@ def test_a_reviewer_may_still_correct_their_own_earlier_answer(
 
     candidate = archive_candidate(state=OpinionCandidateState.REJECTED, matter=normal_matter)
 
-    client.force_login(administrator)
+    client.force_login(grant_to(administrator))
     client.post(
         reverse("legacy_import:opinion_decide", kwargs={"pk": candidate.pk}),
         {"decision": "defer"},
@@ -264,7 +265,7 @@ def test_a_pending_candidate_is_still_decidable(
 
     candidate = archive_candidate(state=OpinionCandidateState.PENDING, matter=normal_matter)
 
-    client.force_login(administrator)
+    client.force_login(grant_to(administrator))
     client.post(
         reverse("legacy_import:opinion_decide", kwargs={"pk": candidate.pk}),
         {"decision": "reject"},

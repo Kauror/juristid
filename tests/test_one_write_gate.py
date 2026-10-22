@@ -272,7 +272,11 @@ def test_the_opinion_queue_link_is_offered_by_the_predicate_that_guards_it(
 ):
     """Offer and serve move together, or the reader gets a 403 button."""
     from app.reporting.selectors import opinions
+    from tests.break_glass import grant_to
 
+    # The queue's rows are business content (docs/adr/0181): no grant, no link.
+    assert opinions._queue_url(reporting_context(administrator)) == ""
+    grant_to(administrator)
     assert opinions._queue_url(reporting_context(administrator)) != ""
     assert opinions._queue_url(reporting_context(reader)) == ""
 

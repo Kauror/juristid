@@ -136,21 +136,20 @@ def test_a_restricted_matters_history_is_as_unreachable_as_the_matter(page, base
 
 
 def test_an_operator_settles_a_match_with_the_evidence_in_front_of_them(
-    page, base_url, screenshots
+    page, base_url, screenshots, admin_with_break_glass
 ):
     """Both sides on one card, and the buttons beside them.
 
     A reviewer who has to open two other pages to decide will decide badly, or
     not at all — 535 times (Stage-2D brief 39, 40).
     """
-    sign_in(page, base_url, ADMIN)
+    # With the break-glass grant the queue's rows need (docs/adr/0181).
+    sign_in(page, base_url, admin_with_break_glass)
     page.goto(f"{base_url}/haldus/ajaloo-ulevaatus/")
 
     card = page.locator(".reviewcard").filter(has_text=CANDIDATE_PAGE_TITLE)
     expect(card).to_be_visible()
-    # The register side names a Matter, which the administrator reads only
-    # through a break-glass grant (docs/adr/0181): withheld, and said so.
-    expect(card).to_contain_text("selles kasutajavaates ei kuvata")
+    expect(card).to_contain_text("Alkoholiaktsiisi eelnõu")  # the register side
     expect(card).to_contain_text("2019_44")
     screenshots(page, "historical-review-queue")
 

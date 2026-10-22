@@ -52,11 +52,24 @@ def test_the_queue_and_its_link_answer_the_same_question(client, administrator, 
 
     from app.reporting.context import ReportingContext, parse_period
     from app.reporting.selectors.quality import can_open_review_queue
+    from tests.break_glass import grant_to
 
     url = reverse("legacy_import:review_queue")
     client.force_login(specialist)
     assert client.get(url).status_code == 404
     client.force_login(administrator)
+    # The queue is the administrator's; its rows need a grant (docs/adr/0181),
+    # and the link asks both questions, so neither offers a refusal.
+    assert client.get(url).status_code == 403
+    context = ReportingContext(
+        viewer=administrator,
+        period=parse_period("koik", timezone.localdate()),
+        today=timezone.localdate(),
+        now=timezone.now(),
+    )
+    assert can_open_review_queue(context) is False
+
+    grant_to(administrator)
     assert client.get(url).status_code == 200
 
     for user, expected in ((administrator, True), (specialist, False)):

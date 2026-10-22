@@ -32,6 +32,7 @@ from app.core.browser_policy import (
 from app.documents.enums import DocumentRole
 from app.documents.services import add_evidence_version, create_document
 from tests import factories
+from tests.break_glass import grant_to
 
 ROOT = Path(settings.BASE_DIR)
 
@@ -132,7 +133,7 @@ def test_the_sign_in_and_error_pages_carry_it(client, settings):
 
 @pytest.mark.django_db
 def test_the_legacy_queues_carry_it(client):
-    client.force_login(factories.AdministratorFactory())
+    client.force_login(grant_to(factories.AdministratorFactory()))
     for route in ("legacy_import:opinion_queue", "legacy_import:review_queue"):
         response = client.get(reverse(route))
         assert response.status_code == 200, route

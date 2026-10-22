@@ -19,7 +19,7 @@ import re
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import ADMIN, BROWSER_POLICY_REFUSALS, MARTIN, sign_in
+from e2e.conftest import BROWSER_POLICY_REFUSALS, MARTIN, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -45,9 +45,15 @@ def test_a_page_arrives_with_both_policies(page, base_url):
 
 @pytest.mark.parametrize("field", ["klass", "olek"])
 @pytest.mark.parametrize("queue", sorted(QUEUES))
-def test_a_queue_filter_submits_itself_without_inline_code(page, base_url, queue, field):
-    """Choosing a Klass or an Olek reloads the queue with it, as it always did."""
-    sign_in(page, base_url, ADMIN)
+def test_a_queue_filter_submits_itself_without_inline_code(
+    page, base_url, queue, field, admin_with_break_glass
+):
+    """Choosing a Klass or an Olek reloads the queue with it, as it always did.
+
+    The operator holds a break-glass grant: the queue's rows are business
+    content (docs/adr/0181).
+    """
+    sign_in(page, base_url, admin_with_break_glass)
     page.goto(f"{base_url}{QUEUES[queue]}")
     select = page.locator(f"select[name='{field}']")
     expect(select).to_have_attribute("data-autosubmit", "")

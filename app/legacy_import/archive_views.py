@@ -53,7 +53,7 @@ from app.documents.services import evidence_storage
 from app.legacy_import import opinion_links
 from app.legacy_import.opinion_access import (
     may_manage_archive_links,
-    may_use_opinion_queue,
+    may_open_opinion_queue,
     require_archive_link_reviewer,
     require_archive_reader,
 )
@@ -190,7 +190,7 @@ def archive_browse(request: HttpRequest) -> HttpResponse:
             # Offered by capability, not by assumption. A department head may
             # read the archive and may not work the candidate queue, and a
             # button that can only ever produce a 403 is worse than no button.
-            "can_use_opinion_queue": may_use_opinion_queue(request.user),
+            "can_use_opinion_queue": may_open_opinion_queue(request.user),
             "can_manage_links": may_manage_archive_links(request.user),
             "shared_gate_mode": shared_gate.is_shared_gate(),
             "nav_active": "haldus",

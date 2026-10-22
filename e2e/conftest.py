@@ -708,6 +708,57 @@ def plant_historical_instruments(page, labels) -> None:
     page.wait_for_load_state("networkidle")
 
 
+#: Grants (`grant`) or revokes every active grant of (`revoke`) the `ADMIN`
+#: persona's break-glass access, from the department head, through the audited
+#: services. The administrator reads no business content without one
+#: (docs/adr/0181), and the reconciliation queues show nothing else.
+_BREAK_GLASS_SCRIPT = (
+    "import os;"
+    "from datetime import timedelta;"
+    "from django.utils import timezone;"
+    "from app.accounts.models import BreakGlassGrant, User;"
+    "from app.accounts.services import grant_break_glass, revoke_break_glass;"
+    "admin = User.objects.get(upn='admin@example.invalid');"
+    "head = User.objects.get(upn='juht@example.invalid');"
+    "active = BreakGlassGrant.objects.active_at(timezone.now()).filter(user=admin);"
+    "grant_break_glass(user=admin, granted_by=head, reason='E2E migratsiooni ulevaatus',"
+    " duration=timedelta(hours=1)) if os.environ['E2E_BREAK_GLASS'] == 'grant'"
+    " else [revoke_break_glass(grant=g, revoked_by=head) for g in active];"
+    "print('ok')"
+)
+
+
+def _break_glass(action: str) -> None:
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, "manage.py", "shell", "-c", _BREAK_GLASS_SCRIPT],
+        cwd=REPOSITORY_ROOT,
+        env={
+            **os.environ,
+            "DJANGO_SETTINGS_MODULE": "config.settings",
+            "E2E_BREAK_GLASS": action,
+        },
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert result.returncode == 0, "\n".join(["stdout:", result.stdout, "stderr:", result.stderr])
+
+
+@pytest.fixture
+def admin_with_break_glass():
+    """`ADMIN`, holding an active break-glass grant for the length of one test.
+
+    Revoked again afterwards, so no other test meets an administrator who reads
+    the department.
+    """
+    _break_glass("grant")
+    try:
+        yield ADMIN
+    finally:
+        _break_glass("revoke")
+
+
 def open_hetkeseis(page) -> None:
     """Make `Hetkeseis` answerable on `Uus teema` — which it already is."""
     _reach_classification(page, HETKESEIS_FIELD)

@@ -27,6 +27,8 @@ pages that hold no business data — the chooser itself and Uuendused.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from django.urls import reverse
 
@@ -138,10 +140,27 @@ def test_the_page_says_who_is_selected_in_its_header(behind_the_gate, department
 
 
 def test_the_page_renders_the_no_persona_state(behind_the_gate, department):
+    """The state is named in the heading; it is not offered as a row (docs/adr/0181)."""
     page = behind_the_gate.get(reverse("accounts:choose_persona")).content.decode()
 
-    assert "Ilma kasutajata" in page
-    assert "Praegu valitud" in page
+    assert re.search(r'personahead__nowname">Ilma kasutajata<', page)
+    assert "personarow--nobody" not in page
+    assert "Praegu valitud" not in page
+
+
+def test_no_persona_less_choice_is_offered_once_somebody_is_chosen(behind_the_gate, department):
+    """Neither the page nor the bar offers «Ilma kasutajata» as a choice (docs/adr/0181).
+
+    A session with no persona reads nothing, so the choice would only open the
+    persona page again. Choosing another colleague stays; ending is «Välju».
+    """
+    _act_as(behind_the_gate, str(department["head"].pk))
+    page = behind_the_gate.get(reverse("accounts:choose_persona")).content.decode()
+
+    assert 'name="user_id" value=""' not in page
+    assert "personarow--nobody" not in page
+    assert "personaoption--nobody" not in page
+    assert "Ilma kasutajata" not in page
 
 
 def test_the_page_carries_none_of_the_copy_the_redesign_removed(behind_the_gate, department):
@@ -713,9 +732,9 @@ def test_a_unique_first_name_is_shown_alone(behind_the_gate, department):
     names = _row_names(page)
     assert "Marko" in names and "Ireen" in names
     assert "Marko Näidisjuht" not in page
-    # Every person is a single first name; «Ilma kasutajata» is the list's own
-    # no-persona row, not a person.
-    people = [name for name in names if name.strip() != "Ilma kasutajata"]
+    # Every person is a single first name; the list holds people only.
+    people = [name for name in names if name.strip()]
+    assert "Ilma kasutajata" not in names
     assert people and all(" " not in name.strip() for name in people)
 
 
@@ -751,7 +770,7 @@ def test_the_selected_person_reads_the_same_in_the_list_and_the_switcher(
     switcher = re.findall(r'class="personaoption__name">\s*([^<]+?)\s*<', page)
     assert switcher
     assert {"Ireen", "Sandra"} <= set(switcher)
-    assert set(_row_names(page)) - {"Ilma kasutajata"} <= set(switcher) | {"Marko"}
+    assert set(_row_names(page)) <= set(switcher) | {"Marko"}
 
 
 def test_choosing_by_first_name_still_posts_the_account_id(behind_the_gate, department):

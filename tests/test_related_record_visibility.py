@@ -40,6 +40,7 @@ from app.matters.removal import remove_matter_record
 from app.matters.services import add_engagement, record_external_position
 from app.submissions.enums import SubmissionStatus
 from tests import factories
+from tests.break_glass import grant_to
 
 pytestmark = pytest.mark.django_db
 
@@ -432,15 +433,17 @@ def test_the_opinion_queue_names_no_restricted_matter(
     _candidate(archive_item, normal_matter)
     client.force_login(administrator)
 
-    body = client.get(reverse("legacy_import:opinion_queue")).content.decode()
+    # Since docs/adr/0181 the queue's rows are business content: without a
+    # grant the administrator gets a refusal that names no Matter and no letter.
+    response = client.get(reverse("legacy_import:opinion_queue"))
+    body = response.content.decode()
 
+    assert response.status_code == 403
     assert HIDDEN_MATTER not in body
     assert str(hidden_matter.pk) not in body
-    # Since docs/adr/0181 an administrator without a grant reads no Matter at
-    # all, so the NORMAL one is withheld the same way.
     assert normal_matter.title[:40] not in body
     assert str(normal_matter.pk) not in body
-    assert "Ettepanek osutab teemale, mida selles kasutajavaates ei kuvata." in body
+    assert "Naidisarvamus" not in body
 
 
 def _decide(client, candidate, matter_id):
@@ -468,10 +471,22 @@ def test_a_crafted_link_to_a_hidden_matter_is_refused_like_a_missing_one(
     delete_matter(matter=tombstone, actor=specialist)
     client.force_login(administrator)
 
+    # Without a grant the decision route refuses before it reads anything
+    # (docs/adr/0181), and nothing moves.
+    unread = _candidate(archive_item, klass=OpinionMatchClass.values[-1])
+    response = _decide(client, unread, str(hidden_matter.pk))
+    assert response.status_code == 403
+    unread.refresh_from_db()
+    assert unread.state == OpinionCandidateState.PENDING and unread.matter_id is None
+    unread.delete()
+
+    # With one, the administrator reads every Matter, so a Matter cannot be
+    # hidden from them any more; what must still answer alike is everything
+    # that is not a readable Matter.
+    grant_to(administrator)
     answers = {}
     for (label, target), klass in zip(
         (
-            ("hidden", str(hidden_matter.pk)),
             ("random", str(uuid.uuid4())),
             ("tombstone", str(tombstone.pk)),
             ("malformed", "not-a-uuid"),
@@ -487,11 +502,9 @@ def test_a_crafted_link_to_a_hidden_matter_is_refused_like_a_missing_one(
         assert candidate.state == OpinionCandidateState.PENDING, label
         assert candidate.matter_id is None, label
         answers[label] = _messages(response)
-        body = response.content.decode()
-        assert HIDDEN_MATTER not in body and hidden_matter.display_reference not in body
 
     assert len({tuple(answer) for answer in answers.values()}) == 1, answers
-    assert answers["hidden"] == ["Valitud teemat ei leitud."]
+    assert answers["random"] == ["Valitud teemat ei leitud."]
 
 
 def test_a_proposal_pointing_at_a_hidden_matter_cannot_be_confirmed(
@@ -503,15 +516,16 @@ def test_a_proposal_pointing_at_a_hidden_matter_cannot_be_confirmed(
     candidate = _candidate(archive_item, hidden_matter)
     client.force_login(administrator)
 
+    # An administrator without a grant reads no Matter, and since
+    # docs/adr/0181 the decision route refuses them before reading any.
     response = client.post(
         reverse("legacy_import:opinion_decide", kwargs={"pk": candidate.pk}),
         {"decision": "link"},
-        follow=True,
     )
 
     candidate.refresh_from_db()
+    assert response.status_code == 403
     assert candidate.state == OpinionCandidateState.PENDING
-    assert _messages(response) == ["Valitud teemat ei leitud."]
 
 
 def test_a_link_to_a_visible_matter_still_works(
@@ -573,16 +587,20 @@ def test_the_history_queue_names_no_restricted_matter_and_will_not_link_to_it(
 
     client.force_login(administrator)
 
-    body = client.get(reverse("legacy_import:review_queue")).content.decode()
+    # Without a grant the queue and its decision route refuse before reading
+    # anything (docs/adr/0181): no title, no page, no link made.
+    response = client.get(reverse("legacy_import:review_queue"))
+    body = response.content.decode()
+    assert response.status_code == 403
     assert HIDDEN_MATTER not in body
     assert str(hidden_matter.pk) not in body
+    assert "R3 ülevaatuse leht" not in body
 
     response = client.post(
         reverse("legacy_import:review_decide", kwargs={"pk": historical_candidate.pk}),
         {"decision": "link"},
-        follow=True,
     )
-    assert _messages(response) == ["Valitud teemat ei leitud."]
+    assert response.status_code == 403
     assert not MatterSourcePage.objects.filter(matter=hidden_matter).exists()
 
 

@@ -418,6 +418,28 @@ def may_review_historical_matches(user: object | None) -> bool:
     return acting_role(user) == UserRole.ADMINISTRATOR.value
 
 
+#: What a reconciliation queue answers somebody who may work it but may not read
+#: what it shows. The queues are the administrator's; their rows are OneNote
+#: pages, archive letters and the Matters proposed for them — business content,
+#: which technical administration reads only through a break-glass grant
+#: (docs/adr/0181). One sentence for both queues.
+QUEUE_NEEDS_A_READER = (
+    "Ülevaatuse read on äriandmed: haldur näeb neid ainult kehtiva hädaligipääsuga."
+)
+
+
+def may_open_historical_review(user: object | None) -> bool:
+    """May this person open the historical reconciliation queue *and* see its rows?
+
+    Both halves, and they stay two questions: who works the queue is
+    `may_review_historical_matches` (unchanged, the administrator's), and what
+    its rows show is business content, so `may_read_business_content` decides
+    whether they may be shown at all (docs/adr/0181). The Statistika link to the
+    queue asks this, so it never offers a door to a refusal.
+    """
+    return may_review_historical_matches(user) and may_read_business_content(user)
+
+
 def no_scope() -> Scope:
     """The scope of somebody who may read no business content at all.
 

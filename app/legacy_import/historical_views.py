@@ -18,18 +18,21 @@ from typing import Any
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import PermissionDenied
 from django.db.models import Count
 from django.http import FileResponse, Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
-from app.core.authorization import apply as apply_scope
 from app.core.authorization import (
+    QUEUE_NEEDS_A_READER,
     matter_visibility_q,
+    may_read_business_content,
     may_review_historical_matches,
     scope_for_user,
 )
+from app.core.authorization import apply as apply_scope
 from app.core.http import content_disposition
 from app.documents.inline import may_open_inline
 from app.documents.models import Document
@@ -261,6 +264,13 @@ def _require_administrator(request: HttpRequest) -> None:
     """
     if not may_review_historical_matches(request.user):
         raise Http404
+    # The queue is the administrator's; its rows — OneNote page titles, sizes,
+    # the Excel title, the proposed Matter — are business content, which the
+    # administrator reads only through a break-glass grant (docs/adr/0181). A
+    # 403 rather than the 404 above: the route is theirs, its content is not
+    # yet, and saying so is what sends them to ask for a grant.
+    if not may_read_business_content(request.user):
+        raise PermissionDenied(QUEUE_NEEDS_A_READER)
 
 
 def _reviewer(request: HttpRequest) -> Any:
