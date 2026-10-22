@@ -159,11 +159,12 @@ class ListMattersArguments(StrictArguments):
     responsible: Annotated[
         str | None,
         Field(
-            min_length=1,
+            min_length=2,
             max_length=100,
             description=(
                 "Only matters this person is responsible for (Vastutaja): their name or part "
-                "of it, e.g. Marko."
+                "of it, at least 2 characters, e.g. Marko. Former colleagues' matters are found "
+                "too."
             ),
         ),
     ] = None

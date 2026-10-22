@@ -2483,18 +2483,27 @@ def _fragment(value: Any, name: str, *, limit: int) -> str | None:
     return text
 
 
-def _people_named(fragment: str) -> list[Any]:
-    """The people current work may be assigned to whose name or address holds ``fragment``.
+#: The shortest `responsible` fragment: one letter would match nearly everybody.
+MIN_PERSON_FRAGMENT = 2
 
-    The register's own list of colleagues (`department_workers`: active, a
-    department role, not a technical account) — the people a `Vastutaja` is
-    chosen from — matched on display name or UPN, case-insensitively.
+
+def _people_named(user: Any, fragment: str) -> list[Any]:
+    """The people the register's `Vastutaja` filter offers whose name holds ``fragment``.
+
+    The register's own resolution, `owner_filter_choices` over what this reader
+    may see: today's department workers, and everybody who owns a Matter in
+    that population — so a former colleague's files stay findable by their
+    name (NEW-11), and nobody is named because of a record the reader cannot
+    see. Matched on the display name only, case-insensitively: an address
+    fragment such as «@orgusaar» would otherwise answer with the department's
+    directory.
     """
-    from app.accounts.selectors import department_workers
+    from app.accounts.selectors import owner_filter_choices
+    from app.matters.models import Matter
 
     return list(
-        department_workers()
-        .filter(Q(display_name__icontains=fragment) | Q(upn__icontains=fragment))
+        owner_filter_choices(Matter.objects.visible_to(user))
+        .filter(display_name__icontains=fragment)
         .order_by("display_name", "pk")[: MAX_NAME_MATCHES + 1]
     )
 
@@ -2604,6 +2613,8 @@ def list_matters(
     _require_reader(user)
     number = _page_number(page, maximum=MAX_MATTER_PAGES)
     person = _fragment(responsible, "responsible", limit=100)
+    if person is not None and len(person) < MIN_PERSON_FRAGMENT:
+        raise InvalidArgument(f"responsible must be at least {MIN_PERSON_FRAGMENT} characters.")
     body = _fragment(organisation, "organisation", limit=200)
     kind = next_action_kind.strip().upper() if isinstance(next_action_kind, str) else None
     if kind is not None and kind not in NEXT_ACTION_KINDS:
@@ -2628,7 +2639,7 @@ def list_matters(
 
     filters: dict[str, Any] = {}
     if person is not None:
-        people = _people_named(person)
+        people = _people_named(user, person)
         filters["responsible"] = {
             "query": person,
             "people_matched": [_person(user_row) for user_row in people[:MAX_NAME_MATCHES]],

@@ -199,3 +199,43 @@ def test_the_tool_schema_defaults_to_real_matters():
 
     field = schemas.ListMattersArguments.model_json_schema()["properties"]["include_test_data"]
     assert field["default"] is False
+
+
+# -- NEW-11: `responsible` is a name, and a former colleague's matters stay findable ------
+
+
+def test_an_address_fragment_lists_nobody(people):
+    marko, kati = people
+    factories.MatterFactory(owner=marko)
+    factories.MatterFactory(owner=kati)
+    for fragment in ("@example.invalid", "marko.mets", "example"):
+        answer = readers.list_matters(kati, responsible=fragment)
+        assert answer["filters"]["responsible"]["people_matched"] == [], fragment
+        assert answer["total"] == 0, fragment
+
+
+def test_a_former_colleagues_matters_are_found_by_their_name(people):
+    _, kati = people
+    former = factories.UserFactory(display_name="Endine Kolleeg", is_active=False)
+    left_behind = factories.MatterFactory(owner=former, title="Pooleli jäänud teema")
+    # A former colleague who owns nothing this reader can see is named by nobody.
+    factories.UserFactory(display_name="Endine Teine", is_active=False)
+
+    answer = readers.list_matters(kati, responsible="endine")
+
+    assert answer["filters"]["responsible"]["people_matched"] == ["Endine Kolleeg"]
+    assert _references(answer) == {left_behind.display_reference}
+
+
+def test_a_one_letter_fragment_is_refused(people):
+    marko, _ = people
+    with pytest.raises(InvalidArgument, match="responsible must be at least 2 characters"):
+        readers.list_matters(marko, responsible=" m ")
+
+
+def test_the_tool_schema_asks_for_two_characters():
+    from app.mcp_server import schemas
+
+    field = schemas.ListMattersArguments.model_json_schema()["properties"]["responsible"]
+    [text] = [option for option in field["anyOf"] if option.get("type") == "string"]
+    assert text["minLength"] == 2
