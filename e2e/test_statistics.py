@@ -179,17 +179,22 @@ def test_a_signed_container_is_never_shown_as_a_failure(page, base_url, screensh
     screenshots(page, "statistika-allkirjastatud")
 
 
-def test_the_reconciliation_count_links_to_the_review_queue(page, base_url):
-    """An administrator's surface, reached from the number that describes it."""
+def test_the_reconciliation_queue_is_counted_for_nobody_who_reads_nothing(page, base_url):
+    """An administrator's surface, and the number that describes it.
+
+    The administrator reads no business content without a break-glass grant
+    (docs/adr/0181), so Andmekvaliteet counts no reconciliation candidate for
+    them and offers no row to follow; the queue itself still opens for them,
+    the capability being unchanged. The link from a counted row into the queue
+    is proved against the database with a grant held
+    (`tests/test_reporting_drillthrough.py`).
+    """
     sign_in(page, base_url, ADMIN)
     open_statistics(page, base_url, "andmekvaliteet/")
+    expect(page.locator(".queuerow").filter(has_text="Ajaloo sidumise vastuolud")).to_have_count(0)
 
-    # The conflict candidate, because it is the one no other browser test
-    # decides. This suite shares a single seeded database.
-    row = page.locator(".queuerow").filter(has_text="Ajaloo sidumise vastuolud").first
-    row.get_by_role("link").first.click()
-    page.wait_for_load_state("networkidle")
-    assert "/haldus/ajaloo-ulevaatus/" in page.url
+    response = page.goto(f"{base_url}/haldus/ajaloo-ulevaatus/")
+    assert response is not None and response.status == 200
 
 
 def test_the_headline_agrees_with_the_register_for_each_persona(page, base_url):

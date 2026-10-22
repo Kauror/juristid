@@ -163,7 +163,22 @@ def test_a_section_bar_narrows_the_tab_rather_than_opening_the_file_list(
 
 
 def test_the_reconciliation_classes_link_into_the_review_queue(client, world, reporting_context):
-    """An administrator's queue, filtered to the class the bar counted."""
+    """An administrator's queue, filtered to the class the bar counted.
+
+    Since docs/adr/0181 the administrator reads no business content without a
+    break-glass grant, so the bar counts nothing for them until one is held.
+    """
+    from datetime import timedelta
+
+    from app.accounts.services import grant_break_glass
+
+    assert not compute(keys.RECONCILIATION_BY_CLASS, reporting_context(world.admin)).segments
+    grant_break_glass(
+        user=world.admin,
+        granted_by=world.head,
+        reason="Ajaloo sidumise ülevaatus",
+        duration=timedelta(hours=1),
+    )
     client.force_login(world.admin)
     result = compute(keys.RECONCILIATION_BY_CLASS, reporting_context(world.admin))
     assert result.segments
