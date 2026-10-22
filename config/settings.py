@@ -1042,6 +1042,10 @@ MCP_RESOURCE_URLS = env_list("MCP_RESOURCE_URLS")
 MCP_SCOPE = "juristid.read"
 MCP_ACCESS_TOKEN_SECONDS = env_int("MCP_ACCESS_TOKEN_SECONDS", 3600)
 MCP_REFRESH_TOKEN_SECONDS = env_int("MCP_REFRESH_TOKEN_SECONDS", 30 * 24 * 3600)
+# The absolute lifetime of a token family: however often it is refreshed, a
+# connection ends this long after the person typed their authenticator code,
+# and they authorize again (MCPSEC-08).
+MCP_REFRESH_FAMILY_MAX_SECONDS = env_int("MCP_REFRESH_FAMILY_MAX_SECONDS", 90 * 24 * 3600)
 MCP_AUTHORIZATION_CODE_SECONDS = 60
 MCP_ENROLMENT_LINK_SECONDS = env_int("MCP_ENROLMENT_LINK_SECONDS", 30 * 60)
 # The key the personal MCP authenticators' TOTP secrets are sealed under, on
@@ -1066,7 +1070,10 @@ MCP_OAUTH_CLIENTS: dict[str, dict[str, object]] = {
     "https://chatgpt.com/oauth/client.json": {
         "client_name": "ChatGPT",
         "redirect_uris": ["https://chatgpt.com/connector_platform_oauth_redirect"],
-        "token_endpoint_auth_methods": ["private_key_jwt", "none"],
+        # ChatGPT's client metadata document declares private_key_jwt, and
+        # with `none` beside it a leaked refresh token could be rotated by
+        # anybody, from anywhere (MCPSEC-08). Signed assertions only.
+        "token_endpoint_auth_methods": ["private_key_jwt"],
         "jwks_uri": "https://chatgpt.com/oauth/jwks.json",
     },
 }

@@ -82,6 +82,22 @@ def resource_is_allowed(value: str) -> bool:
     return bool(normalised) and normalised in allowed_resources()
 
 
+def advertised_auth_methods() -> list[str]:
+    """The client authentication methods some registered client may use (RFC 8414).
+
+    Only what is configured: with ChatGPT registered for `private_key_jwt`
+    alone, `none` is not advertised (MCPSEC-08). Stronger first.
+    """
+    configured: set[str] = set()
+    for client_id in getattr(settings, "MCP_OAUTH_CLIENTS", {}) or {}:
+        found = client(client_id)
+        if found is not None:
+            configured |= set(found.auth_methods)
+    return [
+        method for method in (AUTH_METHOD_PRIVATE_KEY_JWT, AUTH_METHOD_NONE) if method in configured
+    ]
+
+
 def client(client_id: str) -> OAuthClient | None:
     """The registered client with exactly this id, or None.
 

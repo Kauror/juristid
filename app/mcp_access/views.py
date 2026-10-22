@@ -103,9 +103,9 @@ def authorization_server_metadata(request: HttpRequest) -> HttpResponse:
         "response_modes_supported": ["query"],
         "grant_types_supported": ["authorization_code", "refresh_token"],
         "code_challenge_methods_supported": ["S256"],
-        "token_endpoint_auth_methods_supported": ["private_key_jwt", "none"],
+        "token_endpoint_auth_methods_supported": config.advertised_auth_methods(),
         "token_endpoint_auth_signing_alg_values_supported": ["RS256"],
-        "revocation_endpoint_auth_methods_supported": ["private_key_jwt", "none"],
+        "revocation_endpoint_auth_methods_supported": config.advertised_auth_methods(),
         "scopes_supported": [config.scope()],
         "client_id_metadata_document_supported": True,
         "authorization_response_iss_parameter_supported": True,
@@ -344,6 +344,12 @@ def token(request: HttpRequest) -> HttpResponse:
         )
         return _oauth_error(client)
     grant_type = params.get("grant_type", "")
+    # `authenticate_client` accepted an assertion only if it verified.
+    auth_method = (
+        config.AUTH_METHOD_PRIVATE_KEY_JWT
+        if params.get("client_assertion")
+        else config.AUTH_METHOD_NONE
+    )
     result: services.IssuedTokens | OAuthError
     if grant_type == "authorization_code":
         if not params.get("resource"):
@@ -356,6 +362,7 @@ def token(request: HttpRequest) -> HttpResponse:
                 code_verifier=params.get("code_verifier", ""),
                 resource=params.get("resource", ""),
                 ip_address=client_ip(request),
+                auth_method=auth_method,
             )
     elif grant_type == "refresh_token":
         result = services.refresh(
@@ -364,6 +371,7 @@ def token(request: HttpRequest) -> HttpResponse:
             resource=params.get("resource", ""),
             scope=params.get("scope", ""),
             ip_address=client_ip(request),
+            auth_method=auth_method,
         )
     else:
         result = OAuthError("unsupported_grant_type", "Unsupported grant_type.")

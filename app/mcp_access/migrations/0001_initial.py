@@ -158,6 +158,8 @@ class Migration(migrations.Migration):
                 ('revoked_at', models.DateTimeField(blank=True, null=True, verbose_name='tühistatud')),
                 ('revoke_reason', models.CharField(blank=True, default='', max_length=64, verbose_name='tühistamise põhjus')),
                 ('last_used_at', models.DateTimeField(blank=True, null=True, verbose_name='viimati kasutatud')),
+                ('family_started_at', models.DateTimeField(blank=True, null=True, verbose_name='võtmepere algus')),
+                ('auth_method', models.CharField(blank=True, default='', max_length=32, verbose_name='kliendi autentimisviis')),
                 ('grant', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='tokens', to='mcp_access.mcpaccessgrant', verbose_name='ligipääs')),
                 ('replaced_by', models.OneToOneField(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='replaces', to='mcp_access.mcptoken', verbose_name='asendaja')),
                 ('user', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='+', to=settings.AUTH_USER_MODEL, verbose_name='kasutaja')),

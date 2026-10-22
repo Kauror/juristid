@@ -292,6 +292,16 @@ class McpToken(BaseModel):
         verbose_name="asendaja",
     )
     last_used_at = models.DateTimeField(null=True, blank=True, verbose_name="viimati kasutatud")
+    #: When the authorization this family descends from was granted — the
+    #: person's own code. Copied to every rotation; a refresh past
+    #: `MCP_REFRESH_FAMILY_MAX_SECONDS` from here is refused, so a connection
+    #: in daily use still asks for the authenticator again (MCPSEC-08).
+    family_started_at = models.DateTimeField(null=True, blank=True, verbose_name="võtmepere algus")
+    #: How the client authenticated at the code exchange (`none` or
+    #: `private_key_jwt`); a refresh must authenticate the same way (MCPSEC-08).
+    auth_method = models.CharField(
+        max_length=32, blank=True, default="", verbose_name="kliendi autentimisviis"
+    )
 
     class Meta:
         verbose_name = "MCP võti"

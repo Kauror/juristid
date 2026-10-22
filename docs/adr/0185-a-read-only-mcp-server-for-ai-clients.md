@@ -159,13 +159,21 @@ model).
 - Clients: **pre-registered public client metadata**, from settings — by default only
   ChatGPT's client metadata document `https://chatgpt.com/oauth/client.json` with its
   redirect URI `https://chatgpt.com/connector_platform_oauth_redirect`. Client
-  authentication is `none` (PKCE) or `private_key_jwt` verified against the client's
-  published JWKS. No open dynamic registration; no client secret on our side.
+  authentication is `private_key_jwt`, verified against the client's published JWKS —
+  the method ChatGPT's metadata document declares; `none` (PKCE only) exists for a
+  client registered with it and is not ChatGPT's (security review MCPSEC-08: with
+  `none` beside it, a leaked refresh token could be rotated by anybody). The metadata
+  advertises only the methods registered clients use. No open dynamic registration;
+  no client secret on our side.
 - Authorization code: 60 seconds, single use, bound to client, redirect URI, PKCE
   challenge (S256 only), scope and resource. Responses carry `iss` (RFC 9207).
 - Access token: opaque, 256 bits, **1 hour**, stored only as SHA-256, bound to user,
   grant, client, scope and resource (audience). Refresh token: opaque, **30 days**,
-  rotated on every use; reuse of a rotated refresh token revokes the whole family.
+  rotated on every use; reuse of a rotated refresh token revokes the whole family. A
+  family has an **absolute lifetime of 90 days** from the authorization
+  (`MCP_REFRESH_FAMILY_MAX_SECONDS`), however often it is refreshed, after which the
+  person types their authenticator code again; and a refresh must authenticate the way
+  the code exchange did (MCPSEC-08).
 - The resource (audience) must be one of `MCP_RESOURCE_URLS` — the public MCP URL
   and/or the Secure MCP Tunnel URL OpenAI rewrites discovery to.
 - Revocation: `/oauth/revoke` (RFC 7009); `mcp_access revoke --user` ends the grant

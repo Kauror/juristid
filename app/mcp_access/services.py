@@ -878,6 +878,8 @@ def _issue_pair(
     resource: str,
     family_id: uuid.UUID,
     now: datetime,
+    family_started_at: datetime,
+    auth_method: str = "",
 ) -> tuple[IssuedTokens, McpToken]:
     access_raw = credentials.new_opaque()
     refresh_raw = credentials.new_opaque()
@@ -891,7 +893,11 @@ def _issue_pair(
         "resource": resource,
         "user_epoch": user.security_epoch,
         "issued_at": now,
+        "family_started_at": family_started_at,
+        "auth_method": auth_method[:32],
     }
+    # Never past the family's absolute end (MCPSEC-08).
+    family_ends = family_started_at + timedelta(seconds=family_max_seconds())
     McpToken.objects.create(
         kind=TokenKind.ACCESS,
         digest=credentials.digest(access_raw),
@@ -901,7 +907,9 @@ def _issue_pair(
     refresh = McpToken.objects.create(
         kind=TokenKind.REFRESH,
         digest=credentials.digest(refresh_raw),
-        expires_at=now + timedelta(seconds=int(settings.MCP_REFRESH_TOKEN_SECONDS)),
+        expires_at=min(
+            now + timedelta(seconds=int(settings.MCP_REFRESH_TOKEN_SECONDS)), family_ends
+        ),
         **common,
     )
     issued = IssuedTokens(
@@ -912,6 +920,10 @@ def _issue_pair(
         family_id=family_id,
     )
     return issued, refresh
+
+
+def family_max_seconds() -> int:
+    return int(getattr(settings, "MCP_REFRESH_FAMILY_MAX_SECONDS", 90 * 24 * 3600))
 
 
 def _still_may_connect(grant: McpAccessGrant, user_id: Any, epoch: int) -> User | None:
@@ -930,6 +942,7 @@ def exchange_code(
     code_verifier: str,
     resource: str,
     ip_address: str | None,
+    auth_method: str = "",
 ) -> IssuedTokens | OAuthError:
     """``grant_type=authorization_code`` (RFC 6749 §4.1.3 with RFC 7636 and RFC 8707)."""
     with transaction.atomic():
@@ -940,6 +953,7 @@ def exchange_code(
             code_verifier=code_verifier,
             resource=resource,
             ip_address=ip_address,
+            auth_method=auth_method,
         )
 
 
@@ -951,6 +965,7 @@ def _exchange_code(
     code_verifier: str,
     resource: str,
     ip_address: str | None,
+    auth_method: str = "",
 ) -> IssuedTokens | OAuthError:
     invalid = OAuthError("invalid_grant", "The authorization code is invalid.")
     code_digest = credentials.opaque_digest(code)
@@ -1013,6 +1028,8 @@ def _exchange_code(
         resource=record_row.resource,
         family_id=family_id,
         now=now,
+        family_started_at=now,
+        auth_method=auth_method,
     )
     record_row.family_id = family_id
     record_row.save(update_fields=["family_id", "updated_at"])
@@ -1035,6 +1052,7 @@ def refresh(
     resource: str,
     scope: str,
     ip_address: str | None,
+    auth_method: str = "",
 ) -> IssuedTokens | OAuthError:
     """``grant_type=refresh_token``, rotating the refresh token (RFC 6749 §6, OAuth 2.1 §4.3)."""
     with transaction.atomic():
@@ -1044,6 +1062,7 @@ def refresh(
             resource=resource,
             scope=scope,
             ip_address=ip_address,
+            auth_method=auth_method,
         )
 
 
@@ -1054,6 +1073,7 @@ def _refresh(
     resource: str,
     scope: str,
     ip_address: str | None,
+    auth_method: str = "",
 ) -> IssuedTokens | OAuthError:
     invalid = OAuthError("invalid_grant", "The refresh token is invalid.")
     token_digest = credentials.opaque_digest(refresh_token)
@@ -1105,6 +1125,18 @@ def _refresh(
         return refuse("revoked")
     if token.expires_at <= now:
         return refuse("expired")
+    family_started = token.family_started_at or token.issued_at
+    if family_started + timedelta(seconds=family_max_seconds()) <= now:
+        # However often it was refreshed, the connection is as old as the code
+        # the person typed: they authorize again (MCPSEC-08).
+        _revoke_tokens(
+            McpToken.objects.filter(family_id=token.family_id), reason="family_expired", now=now
+        )
+        return refuse("family_expired")
+    if token.auth_method and auth_method and token.auth_method != auth_method:
+        # Bound to how the client authenticated at the code exchange: a family
+        # begun with a signed assertion is not refreshed without one.
+        return refuse("auth_method_changed")
     if resource and config.normalise_resource(resource) != token.resource:
         return refuse("resource_mismatch", error=OAuthError("invalid_target", "Wrong resource."))
     if not config.resource_is_allowed(token.resource):
@@ -1127,6 +1159,8 @@ def _refresh(
         resource=token.resource,
         family_id=token.family_id,
         now=now,
+        family_started_at=family_started,
+        auth_method=token.auth_method or auth_method,
     )
     token.replaced_by = new_refresh
     token.revoked_at = now
