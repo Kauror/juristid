@@ -117,7 +117,7 @@ def credential_stamp(user: User) -> str:
     active flag. Derived, not a counter, so no code path that changes a
     credential can forget to bump it.
     """
-    material = f"{user.password}{user.upn}{int(user.is_active)}"
+    material = f"{user.password}\x1f{user.upn}\x1f{int(user.is_active)}"
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
