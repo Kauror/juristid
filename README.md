@@ -239,7 +239,8 @@ Perform it. There is no default mode — neither `--dry-run` nor `--apply` is
 assumed, because the safe assumption is the one people stop reading:
 
 ```bash
-uv run python manage.py import_legacy_register private-data/register.xlsx --apply --report-dir import-output/apply
+uv run python manage.py import_legacy_register private-data/register.xlsx --apply --report-dir import-output/apply \
+    --expect-plan-sha256 "<the plan sha256 the dry run printed>"   # docs/adr/0184
 ```
 
 Validate the contracts and regenerate their overview:
