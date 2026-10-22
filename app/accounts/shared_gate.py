@@ -42,6 +42,7 @@ from django.contrib.auth.hashers import check_password, make_password
 from django.db import transaction
 from django.http import HttpRequest
 from django.utils import timezone
+from django.utils.crypto import salted_hmac
 
 from app.accounts.enums import AUTHENTICATED_VIA, AuthMode
 from app.core.client_ip import client_ip
@@ -53,6 +54,12 @@ logger = logging.getLogger(__name__)
 GATE_PASSED_AT = "shared_gate:passed_at"
 GATE_LAST_SEEN = "shared_gate:last_seen"
 GATE_PERSONA_CHOSEN_AT = "shared_gate:persona_chosen_at"
+#: Which shared password this session was opened under — a keyed digest of it,
+#: never the password or its hash (`credential_version`, docs/adr/0183).
+GATE_CREDENTIAL = "shared_gate:credential"
+
+#: The HMAC's purpose string. Changing it would end every open gate session.
+_CREDENTIAL_SALT = "app.accounts.shared_gate.credential_version"
 
 #: How stale the last-activity stamp may get before a request rewrites it. The
 #: idle clock is therefore up to this much early, never late, and an ordinary
@@ -133,6 +140,51 @@ def verify_password(supplied: str) -> bool:
         # False as well means a misconfiguration cannot become an open door.
         return False
     return check_password(supplied, _hash_for(configured))
+
+
+def credential_version() -> str:
+    """Which shared password is configured now, as a value a session may keep.
+
+    A session that passed the gate records this, and `has_passed` compares it on
+    every request. Rotating `JURISTID_SHARED_GATE_PASSWORD` changes it, so every
+    session opened under the old password stops passing at its next request —
+    in every worker, because the value is derived from configuration and from
+    nothing a process remembers (csf_19450e2c, docs/adr/0183).
+
+    **Keyed, truncated, and never the hash.** An HMAC-SHA256 under the
+    deployment's `SECRET_KEY` with its own purpose string, cut to 128 bits. The
+    session table is a database table like any other, and an unkeyed digest of
+    the password stored in it would be something to guess the password against
+    offline; this one says nothing about the password to anybody without the
+    secret key. `_hash_for`'s PBKDF2 digest cannot serve: its salt is random per
+    process, so two workers would disagree about the same password.
+
+    An unconfigured gate has no version, and "" never matches a session.
+    """
+    configured = configured_password()
+    if not configured:
+        return ""
+    digest = salted_hmac(_CREDENTIAL_SALT, configured, algorithm="sha256")
+    return digest.hexdigest()[:32]
+
+
+def credential_is_current(request: HttpRequest) -> bool:
+    """Whether this session was opened under the password configured now."""
+    stored = request.session.get(GATE_CREDENTIAL)
+    current = credential_version()
+    if not current or not isinstance(stored, str) or not stored:
+        return False
+    return hmac.compare_digest(stored, current)
+
+
+def opened_under_another_password(request: HttpRequest) -> bool:
+    """Whether this session passed the gate under a password no longer configured.
+
+    Also true for a session opened before sessions recorded the version at all:
+    nothing can tell which password that was, and a session that cannot show it
+    was opened under the current one is treated as opened under an old one.
+    """
+    return bool(request.session.get(GATE_PASSED_AT)) and not credential_is_current(request)
 
 
 # -- who is knocking -------------------------------------------------------
@@ -339,8 +391,14 @@ def has_passed(request: HttpRequest) -> bool:
     2026-10-17) since the last request. A session opened before the idle clock
     existed has no stamp and is measured from the password instead. A stamp
     that is present and unreadable is no pass.
+
+    **The password it was opened under:** the one configured now
+    (`credential_is_current`, docs/adr/0183). Rotating the shared password ends
+    every session opened under the old one.
     """
     if not is_shared_gate():
+        return False
+    if not credential_is_current(request):
         return False
     passed_at = _stamp(request, GATE_PASSED_AT)
     if passed_at is None:
@@ -371,35 +429,69 @@ def note_activity(request: HttpRequest) -> None:
         request.session[GATE_LAST_SEEN] = now.isoformat()
 
 
-def open_gate(request: HttpRequest, *, passed_at: str | None = None) -> None:
+@dataclass(frozen=True)
+class GatePass:
+    """What a session's pass consisted of, carried across `login` / `logout`.
+
+    The time the password was typed and the password version it was typed
+    against travel together, so nothing that re-opens the gate for a persona
+    change can carry one without the other.
+    """
+
+    passed_at: str | None
+    credential: str | None
+
+
+def current_pass(request: HttpRequest) -> GatePass:
+    """This session's pass, to hand back to `open_gate` after `login` / `logout`."""
+    credential = request.session.get(GATE_CREDENTIAL)
+    return GatePass(
+        passed_at=gate_passed_at(request),
+        credential=credential if isinstance(credential, str) and credential else None,
+    )
+
+
+def open_gate(request: HttpRequest, *, carried: GatePass | None = None) -> None:
     """Record that this session passed, and give it a new session identifier.
 
     `cycle_key` rotates the identifier while keeping the session's contents,
     which is what stops a fixated identifier handed to somebody beforehand from
     becoming an authenticated one afterwards.
 
-    ``passed_at`` carries the original pass across a persona change: `login` and
+    ``carried`` carries the original pass across a persona change: `login` and
     `logout` replace the session, and re-opening the gate with *now* would have
     restarted the 12-hour absolute clock every time somebody picked a name.
     Picking a name is not typing the password. Only the gate view, which has
-    just checked the password, opens it with a fresh time. The idle clock does
+    just checked the password, opens it with a fresh time **and the current
+    password version**. A carried pass keeps the version it was opened under —
+    never the current one — so a persona change cannot launder a session from
+    before a rotation into one after it, and a carried pass with no version
+    stays one that `has_passed` refuses (docs/adr/0183). The idle clock does
     restart: a persona change is a request like any other.
     """
     request.session.cycle_key()
     now = timezone.now().isoformat()
-    request.session[GATE_PASSED_AT] = passed_at or now
+    if carried is None:
+        passed_at, credential = now, credential_version()
+    else:
+        passed_at, credential = carried.passed_at or now, carried.credential or ""
+    request.session[GATE_PASSED_AT] = passed_at
     request.session[GATE_LAST_SEEN] = now
+    if credential:
+        request.session[GATE_CREDENTIAL] = credential
+    else:
+        request.session.pop(GATE_CREDENTIAL, None)
     request.session.set_expiry(settings.SHARED_GATE_SESSION_SECONDS)
 
 
 def gate_passed_at(request: HttpRequest) -> str | None:
-    """The stored time of this session's pass, to hand back to `open_gate`."""
+    """The stored time of this session's pass."""
     raw = request.session.get(GATE_PASSED_AT)
     return raw if isinstance(raw, str) and raw else None
 
 
 def close_gate(request: HttpRequest) -> None:
-    for key in (GATE_PASSED_AT, GATE_LAST_SEEN, GATE_PERSONA_CHOSEN_AT):
+    for key in (GATE_PASSED_AT, GATE_LAST_SEEN, GATE_PERSONA_CHOSEN_AT, GATE_CREDENTIAL):
         request.session.pop(key, None)
 
 

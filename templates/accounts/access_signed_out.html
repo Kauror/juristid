@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Välja logitud · {{ application_name }}{% endblock %}
+
+{% comment %}
+  Cloudflare Access only (dormant). This browser signed out of Juristid, and
+  Cloudflare is still forwarding the sign-in it had before: its own session has
+  not ended yet. Signing back in from that would undo the sign-out, so the page
+  says so and offers Cloudflare's logout instead (docs/adr/0183).
+
+  A page rather than a redirect, so there is no loop to fall into, and nothing
+  on it from the application: whoever reaches it is signed out.
+{% endcomment %}
+
+{% block content %}
+<div class="page page--narrow">
+  <h1>Oled välja logitud</h1>
+
+  <div class="card">
+    <p>
+      Koja sisselogimine on selles brauseris veel avatud. Uuesti sisenemiseks või
+      arvuti teisele inimesele andmiseks lõpeta ka see.
+    </p>
+    <p class="form__actions">
+      <a class="button button--primary" href="{{ logout_url }}">Lõpeta Koja sisselogimine</a>
+      {% if application_logout_url != logout_url %}
+        <a class="button button--quiet" href="{{ application_logout_url }}">Lõpeta ainult selle rakenduse sisselogimine</a>
+      {% endif %}
+    </p>
+  </div>
+</div>
+{% endblock %}
