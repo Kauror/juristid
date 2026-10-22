@@ -480,6 +480,176 @@ services:
     networks:
       - internal
 
+  # -- AI access: the read-only MCP server and its tunnel (docs/adr/0185) -----
+  #
+  # Both are behind the `mcp` profile, and that is the switch. Compose leaves a
+  # profiled service out of every command that does not name it or activate
+  # its profile, so `up -d --no-build` (a release), `up -d tunnel` (a restore)
+  # and the backup scripts neither start, replace nor stop them. They start
+  # only when named:
+  #
+  #   docker compose -p juristid-main -f compose.yml up -d --no-build --no-deps mcp
+  #   docker compose -p juristid-main -f compose.yml up -d --no-build --no-deps mcp-tunnel
+  #
+  # and stop the same way, without touching anything else:
+  #
+  #   docker compose -p juristid-main -f compose.yml stop mcp-tunnel mcp
+  #
+  # A service named on the command line has its profile enabled for that
+  # command (compose-go `WithServicesEnabled`, Compose v2); its `env_file` is
+  # read only then, so a host where AI access was never set up — no
+  # `juristid-mcp.env` at all — resolves and deploys exactly as before.
+  # docs/mcp/OPERATIONS.md is the runbook.
+
+  # The MCP server: ChatGPT's questions, answered from the register as the
+  # person who connected, through the same services the pages call.
+  #
+  # Read-only twice over: no tool writes, and its database connections open
+  # with `default_transaction_read_only=on` (JURISTID_PROCESS_ROLE=mcp), so an
+  # INSERT from this process fails in PostgreSQL whatever the code says.
+  mcp:
+    # The release image, like every application service: a release that
+    # replaces `web` replaces this too (README "Deploying a release", step 9 —
+    # named there, because a profiled service is not part of an unqualified
+    # `up`). `assert_deployment_identity.py` derives it from this prefix.
+    image: juristid-main-web:${JURISTID_IMAGE_TAG:-local}
+    container_name: juristid-main-mcp
+    profiles: ["mcp"]
+    restart: unless-stopped
+    logging: *bounded-logs
+    # A `manage.py` command, so Django's system checks run before it listens
+    # and a refused configuration exits rather than serving (JOPS-004).
+    command: ["python", "manage.py", "run_mcp_server"]
+    # The image's HEALTHCHECK asks gunicorn's port 8000, which this container
+    # does not have, so it is replaced: inherited, it could only ever be red.
+    healthcheck:
+      test: ["CMD", "python", "manage.py", "check_mcp_server", "--quiet"]
+      interval: 30s
+      timeout: 15s
+      start_period: 60s
+      retries: 3
+    # Its OWN environment file, not `juristid.env`. That one holds the shared
+    # gate password, the MFA key and the mail credentials; this process
+    # verifies bearer tokens by their SHA-256 and reads, so it is given none of
+    # them (ADR 0185 §6, tests/test_service_secret_isolation.py). What it does
+    # hold is in deploy/unraid-main/juristid-mcp.env.example.
+    env_file:
+      - ${JURISTID_MCP_ENV_FILE:-/mnt/user/appdata/juristid-main/config/juristid-mcp.env}
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      # What makes the database connections read-only and the browser's gate
+      # secrets unnecessary (config/settings.py, app/core/checks.py).
+      JURISTID_PROCESS_ROLE: mcp
+      # As on every other service in this file: `config/test_safety.py` refuses
+      # to run the test suite in a process that inherits this marker.
+      JURISTID_RUNTIME: deployed
+      # The container-network address, so `mcp-tunnel` can reach it as
+      # http://mcp:8001/mcp. Still no host port: `internal` is the only network.
+      MCP_LISTEN_HOST: 0.0.0.0
+      MCP_LISTEN_PORT: "8001"
+      SEED_DEV_DATA: "0"
+    depends_on:
+      db:
+        condition: service_healthy
+    # No volumes at all. Not the evidence tree, not the derivatives, not the
+    # staging volume: every answer comes out of PostgreSQL, document text
+    # included (its extracted fragments), and a process that holds a bearer
+    # token from a third party has no reason to reach a stored file.
+    networks:
+      - internal
+    # Nothing in this container is written to: Python runs with
+    # PYTHONDONTWRITEBYTECODE, logs go to stdout, sessions and caches are in
+    # PostgreSQL (and read-only from here). `/tmp` is the one scratch
+    # directory, in memory, for anything a library insists on.
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # Bounded so a runaway answer cannot starve `web` and `db` on the same
+    # host. MCP_MAX_CONCURRENT_CALLS (4) bounded threads, one Django process.
+    mem_limit: 768m
+    cpus: 1.0
+    pids_limit: 128
+
+  # The OpenAI Secure MCP Tunnel client: an outbound-only HTTPS connection to
+  # api.openai.com:443 that carries ChatGPT's MCP requests to `mcp` and nothing
+  # else. No inbound port, no Cloudflare hostname, no public MCP URL.
+  #
+  # `internal` is an ordinary bridge (not `internal: true`), which is what lets
+  # this and `tunnel` reach the internet at all.
+  mcp-tunnel:
+    # Tag for the reader, digest for Docker (ADR 0179). v0.0.17 is the
+    # multi-platform OCI index ghcr.io/openai/tunnel-client:v0.0.17 resolved to
+    # on 2026-10-22 (anonymous registry read; amd64 manifest
+    # sha256:2a2a85e7…, image revision a248b7f7…, built 2026-10-21). Alpine
+    # 3.22, entrypoint `/usr/bin/tunnel-client run`. Moving it: read the
+    # release notes at https://github.com/openai/tunnel-client/releases,
+    # resolve the new tag's index digest, replace both here, and recreate only
+    # this service.
+    image: ghcr.io/openai/tunnel-client:v0.0.17@sha256:67b473b4bc23bc984e4a381752e9a2fa75649746edc06e46b27025611835c5c0
+    container_name: juristid-main-mcp-tunnel
+    profiles: ["mcp"]
+    restart: unless-stopped
+    logging: *bounded-logs
+    # The image sets no USER and would run as root. It needs no privilege — a
+    # static Go binary making outbound connections and a loopback health
+    # listener on an unprivileged port — so it runs as Alpine's `nobody`.
+    user: "65534:65534"
+    # The runtime API key and the tunnel id, and nothing else: no value of
+    # `juristid.env` or `juristid-mcp.env` (tests/test_service_secret_isolation.py).
+    env_file:
+      - ${JURISTID_MCP_TUNNEL_ENV_FILE:-/mnt/user/appdata/juristid-main/config/juristid-mcp-tunnel.env}
+    environment:
+      # Plain HTTP, and only on the internal network: the bearer token in it
+      # never leaves this host's bridge between the two containers.
+      MCP_SERVER_URL: http://mcp:8001/mcp
+      # At start the client reads the server's protected-resource metadata
+      # (RFC 9728) from that same origin and registers it as a target, under
+      # the HTTPS-only policy of its OAuth relay. The origin is plain HTTP on a
+      # private bridge — the one hop that never leaves this host — so the
+      # policy is relaxed for it explicitly; without this `/readyz` stays 503.
+      # The metadata names the authorization server, the public Juristid
+      # origin, which the client must also be told to trust:
+      # MCP_OAUTH_TRUSTED_ORIGINS, in the environment file because it is this
+      # host's hostname and the repository is public.
+      HARPOON_ALLOW_PLAINTEXT_HTTP: "true"
+      # Loopback, the client's own default, named so it stays that way: the
+      # health endpoints and the embedded admin UI answer only inside this
+      # container, which is where the healthcheck below runs.
+      HEALTH_LISTEN_ADDR: 127.0.0.1:8080
+      LOG_FORMAT: json
+      LOG_LEVEL: info
+    # `/readyz` is 200 once the client can take work and 503 while it is gated.
+    # busybox `wget` is in the image (/usr/bin/wget); there is no curl.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/readyz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    depends_on:
+      # Healthy, not merely started: a tunnel that announces itself before the
+      # server answers hands ChatGPT errors that look like a broken connector.
+      mcp:
+        condition: service_healthy
+    networks:
+      - internal
+    read_only: true
+    tmpfs:
+      - /tmp:size=8m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+
 networks:
   internal:
     name: juristid-main-internal

@@ -128,6 +128,10 @@ deployment_plan() {
   scripts/deploy/juristid-backup.sh --project $project --compose-file $compose_file ...
   docker compose -p $project -f $compose_file run --rm web python manage.py migrate
   docker compose -p $project -f $compose_file up -d --no-build
+  # Only where AI access is running (docker ps shows juristid-main-mcp): the MCP
+  # server is behind a profile, so the line above left it on the previous image.
+  # Never where it was stopped on purpose — naming it starts it (docs/mcp/OPERATIONS.md):
+  #   docker compose -p $project -f $compose_file up -d --no-build --no-deps mcp
   docker compose -p $project -f $compose_file exec -T web python manage.py deployment_readiness
   curl -s https://juristid.orgusaar.ee/healthz   # revision must equal $target
 PLAN
