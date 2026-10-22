@@ -35,8 +35,8 @@ from app.core.enums import Visibility
 from app.core.errors import DomainError
 from app.documents.enums import DocumentRole, ExtractionState
 from app.documents.models import Document
-from app.documents.services import add_evidence_version, create_document
-from app.documents.uploads import AcceptedUpload, read_upload
+from app.documents.services import EvidenceContent, add_evidence_version, create_document
+from app.documents.uploads import AcceptedUpload, check_upload_batch, read_upload
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import MatterDataClass
 from app.matters.models import Matter
@@ -68,13 +68,14 @@ def file_incoming(
     *,
     matter: Matter,
     filename: str,
-    content: bytes,
+    content: EvidenceContent,
     mime_type: str,
     actor: Any,
     extraction_state: str = ExtractionState.PENDING,
     extraction_note: str = "",
     title: str = "",
     role: str = "",
+    expected_sha256: str = "",
 ) -> Document:
     """One incoming file as one Document with one immutable version.
 
@@ -117,6 +118,7 @@ def file_incoming(
         uploaded_by=actor,
         extraction_state=extraction_state,
         extraction_note=extraction_note,
+        expected_sha256=expected_sha256,
     )
     return document
 
@@ -153,6 +155,9 @@ def validate_uploads(files: list[Any]) -> list[AcceptedUpload]:
         raise DomainError("Vali vähemalt üks fail.")
     if len(files) > MAX_INTAKE_FILES:
         raise DomainError(f"Korraga saab lisada kuni {MAX_INTAKE_FILES} faili.")
+    # The aggregate policy, from the sizes the upload handler counted, before
+    # any file is opened (docs/adr/0182).
+    check_upload_batch([int(getattr(handle, "size", 0) or 0) for handle in files])
     return [read_upload(handle) for handle in files]
 
 
@@ -336,7 +341,7 @@ def register_incoming(
             file_incoming(
                 matter=matter,
                 filename=upload.filename,
-                content=upload.content,
+                content=upload.body,
                 mime_type=upload.mime_type,
                 actor=actor,
             )

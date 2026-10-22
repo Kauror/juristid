@@ -161,7 +161,7 @@ def upload_evidence(request: HttpRequest, matter_id: Any) -> HttpResponse:
             matter=matter,
             title=form.cleaned_data["title"].strip() or upload.filename,
             role=form.cleaned_data["role"],
-            content=upload.content,
+            content=upload.body,
             original_filename=upload.filename,
             mime_type=upload.mime_type,
             actor=request.user,
@@ -204,7 +204,7 @@ def add_version(request: HttpRequest, pk: Any) -> HttpResponse:
         upload = read_upload(request.FILES.get("upload"))
         add_version_on_open_matter(
             document=document,
-            content=upload.content,
+            content=upload.body,
             original_filename=upload.filename,
             mime_type=upload.mime_type,
             uploaded_by=request.user,

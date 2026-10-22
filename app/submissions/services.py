@@ -21,7 +21,7 @@ from app.core.enums import Visibility, most_restrictive, validate_visibility_ove
 from app.core.errors import DomainError
 from app.documents.enums import DocumentRole
 from app.documents.models import Document, DocumentLink, DocumentVersion
-from app.documents.services import add_evidence_version, create_document
+from app.documents.services import EvidenceContent, add_evidence_version, create_document
 from app.matters.locks import (
     lock_matter_for_evidence_integrity,
     lock_open_matter_for_business_write,
@@ -206,7 +206,7 @@ def _evidence_under_document_lock(version: DocumentVersion) -> DocumentVersion:
 def attach_final_evidence(
     *,
     submission: Submission,
-    content: bytes,
+    content: EvidenceContent,
     original_filename: str,
     mime_type: str,
     actor: Any = None,
@@ -1059,7 +1059,7 @@ def bind_further_sent_files(
 def attach_final_evidence_on_open_matter(
     *,
     submission: Submission,
-    content: bytes,
+    content: EvidenceContent,
     original_filename: str,
     mime_type: str,
     actor: Any = None,

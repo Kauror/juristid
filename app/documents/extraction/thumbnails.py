@@ -23,6 +23,7 @@ from app.documents.extraction.limits import (
     Limits,
     bounded_render_scale,
     configure_image_safety,
+    open_bounded_image,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,12 +44,13 @@ def image_thumbnail(content: bytes, limits: Limits) -> DerivativePayload | None:
     Returns ``None`` rather than raising. A missing thumbnail costs a preview
     tile; a raised exception would cost the extraction of a file whose text was
     read perfectly well.
-    """
-    configure_image_safety(limits)
-    from PIL import Image
 
+    The pixel ceiling is checked from the header, before anything is decoded
+    (`open_bounded_image`, csf_9b7b703ca586c216499d33bd): an image over it gets
+    no thumbnail, and its parser refuses it by name.
+    """
     try:
-        with Image.open(io.BytesIO(content)) as image:
+        with open_bounded_image(content, limits) as image:
             image.load()
             return _payload(image)
     except Exception:

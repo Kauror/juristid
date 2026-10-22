@@ -122,7 +122,7 @@ def attach_evidence(request: HttpRequest, pk: Any) -> HttpResponse:
             upload = read_upload(form.cleaned_data["upload"])
             attach_final_evidence_on_open_matter(
                 submission=submission,
-                content=upload.content,
+                content=upload.body,
                 original_filename=upload.filename,
                 mime_type=upload.mime_type,
                 actor=request.user,

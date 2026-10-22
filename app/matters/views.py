@@ -83,6 +83,7 @@ from app.documents.services import (
     link_working_document,
     offered_document_roles,
 )
+from app.documents.uploads import check_upload_batch
 from app.intelligence import commencements
 from app.intelligence.selectors import (
     VISIBLE_VICTORY_STATUS,
@@ -2263,6 +2264,13 @@ def matter_create(request: HttpRequest) -> HttpResponse:
         # picked again after a refusal is a second file and is filed as one —
         # the preview lists both, so nothing is deduplicated behind their back.
         uploads = [*resumed, *chosen]
+        # Held and new together are one save, so they meet the aggregate
+        # upload policy together: the request boundary counted only what this
+        # request carried (docs/adr/0182). Sizes only; nothing is read.
+        try:
+            check_upload_batch([upload.size for upload in uploads])
+        except DomainError as error:
+            upload_refusals = (*upload_refusals, str(error))
 
         refused = bool(upload_refusals) or not form.is_valid()
         # `Arvamuse tähtaeg` is a field on `form`, so a badly typed date is
@@ -3130,7 +3138,7 @@ def _attach_incoming_file(matter: Any, upload: Any, *, actor: Any, role: str = "
     return file_incoming(
         matter=matter,
         filename=upload.filename,
-        content=upload.content,
+        content=upload.body,
         mime_type=upload.mime_type,
         actor=actor,
         title=getattr(upload, "display_title", ""),

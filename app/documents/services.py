@@ -21,7 +21,6 @@ from collections.abc import Sequence
 from typing import Any
 
 from django.conf import settings
-from django.core.files.base import ContentFile
 from django.core.files.storage import storages
 from django.db import transaction
 from django.db.models import Max
@@ -37,10 +36,19 @@ from app.documents.enums import DocumentRole, ExtractionState
 from app.documents.filenames import canonical_filename
 from app.documents.limits import WORKING_DOCUMENT_URL_MAX_LENGTH
 from app.documents.models import Document, DocumentVersion
+from app.documents.upload_body import BytesBody, UploadBody, store_body
 from app.matters.locks import lock_open_matter_for_business_write
 from app.matters.models import Matter
 
 logger = logging.getLogger(__name__)
+
+#: What an evidence write takes: bytes a caller holds, or an upload body that is
+#: streamed from where it already is (docs/adr/0182).
+EvidenceContent = bytes | UploadBody
+
+#: Refused when the bytes written are not the ones recorded earlier (a staged
+#: file's checksum). The same words staging promotion has always used.
+EVIDENCE_CHANGED = "Faili „{name}” sisu on muutunud. Vali see uuesti."
 
 #: The column's own bound, read off the model so the two cannot drift.
 _EXTRACTION_NOTE_LENGTH: int = DocumentVersion._meta.get_field("extraction_note").max_length or 300
@@ -422,10 +430,11 @@ def link_working_document(
 def add_evidence_version(
     *,
     document: Document,
-    content: bytes,
+    content: EvidenceContent,
     original_filename: str,
     mime_type: str,
     uploaded_by: Any = None,
+    expected_sha256: str = "",
     acquired_at: Any = None,
     source_path: str = "",
     source_url: str = "",
@@ -449,12 +458,21 @@ def add_evidence_version(
     There is no ``malware_scan_state`` parameter. The column still exists on
     the model and still defaults to ``PENDING``, and nothing anywhere reads it
     (app/documents/enums.py, docs/adr/0072).
+
+    ``content`` is bytes or an upload body (`app.documents.upload_body`). Either
+    way it is **streamed** into the store and hashed on the way through, so the
+    checksum on the row is of exactly the bytes written and an upload door
+    never holds a whole file in memory (csf_35546c06657fae7b9935969d,
+    docs/adr/0182). ``expected_sha256`` is a checksum recorded earlier for the
+    same bytes — a staged file's — and a write that does not match it is
+    discarded and refused.
     """
+    body = content if isinstance(content, UploadBody) else BytesBody(content)
     if mime_type not in ALLOWED_EVIDENCE_MIME_TYPES:
         raise DomainError(f"MIME type {mime_type!r} is not an accepted evidence format.")
-    if len(content) == 0:
+    if body.size == 0:
         raise DomainError("Refusing to store an empty evidence file.")
-    if len(content) > settings.MAX_EVIDENCE_UPLOAD_BYTES:
+    if body.size > settings.MAX_EVIDENCE_UPLOAD_BYTES:
         raise DomainError(
             f"Evidence file exceeds the {settings.MAX_EVIDENCE_UPLOAD_BYTES} byte limit."
         )
@@ -478,10 +496,12 @@ def add_evidence_version(
     if storage.exists(key):
         raise DomainError(f"Refusing to overwrite an existing stored object at {key!r}.")
 
-    digest = hashlib.sha256(content).hexdigest()
-    stored_key = storage.save(key, ContentFile(content))
+    # Streamed and hashed in one pass; a partial or short write leaves nothing.
+    stored_key, digest = store_body(storage, key, body)
 
     try:
+        if expected_sha256 and digest != expected_sha256:
+            raise DomainError(EVIDENCE_CHANGED.format(name=original_filename))
         version = DocumentVersion.objects.create(
             id=version_id,
             document=locked,
@@ -489,7 +509,7 @@ def add_evidence_version(
             storage_key=stored_key,
             original_filename=canonical_filename(original_filename),
             mime_type=mime_type,
-            size_bytes=len(content),
+            size_bytes=body.size,
             sha256=digest,
             uploaded_by=uploaded_by,
             acquired_at=acquired_at or timezone.now(),
@@ -515,7 +535,7 @@ def add_evidence_version(
                 "document": str(locked.id),
                 "version": next_number,
                 "sha256": digest,
-                "size_bytes": len(content),
+                "size_bytes": body.size,
             },
         )
     except BaseException:
@@ -682,8 +702,11 @@ def read_uploads(uploads: Sequence[Any]) -> list[Any]:
     # Imported here rather than at module scope: `app.documents.uploads` reads
     # `ALLOWED_EVIDENCE_MIME_TYPES` from this module, so the two may not import
     # each other on the way in.
-    from app.documents.uploads import UploadRejected, read_upload
+    from app.documents.uploads import UploadRejected, check_upload_batch, read_upload
 
+    # The aggregate policy first, from the sizes the upload handler counted:
+    # nothing is opened for a batch that could never be filed (docs/adr/0182).
+    check_upload_batch([int(getattr(upload, "size", 0) or 0) for upload in uploads])
     accepted_files = []
     refusals: list[str] = []
     for upload in uploads:
@@ -752,7 +775,7 @@ def capture_accepted_evidence(
         )
         add_evidence_version(
             document=document,
-            content=file.content,
+            content=file.body,
             original_filename=file.filename,
             mime_type=file.mime_type,
             uploaded_by=actor,
@@ -841,7 +864,7 @@ def capture_evidence_on_open_matter(
     matter: Matter,
     title: str,
     role: str,
-    content: bytes,
+    content: EvidenceContent,
     original_filename: str,
     mime_type: str,
     actor: Any = None,
@@ -891,7 +914,7 @@ def capture_evidence_on_open_matter(
 def add_version_on_open_matter(
     *,
     document: Document,
-    content: bytes,
+    content: EvidenceContent,
     original_filename: str,
     mime_type: str,
     uploaded_by: Any = None,

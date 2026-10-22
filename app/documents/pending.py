@@ -59,12 +59,12 @@ from pathlib import Path
 from typing import Any
 
 from django.conf import settings
-from django.core.files.base import ContentFile
 from django.core.files.storage import storages
 from django.db import connection, transaction
 from django.utils import timezone
 
 from app.core.ids import uuid7
+from app.documents.upload_body import BodyChanged, StoredBody, store_body
 from app.documents.uploads import AcceptedUpload
 
 logger = logging.getLogger(__name__)
@@ -235,7 +235,7 @@ def hold(
             "pending upload hold is full (%d held); a %s file of %d bytes was not held",
             len(manifest),
             dropped.mime_type,
-            len(dropped.content),
+            dropped.size,
         )
         uploads = uploads[:room]
 
@@ -245,11 +245,11 @@ def hold(
     if uploads:
         with transaction.atomic():
             lock_storage_quota()
-            refusal = _hold_refusal(storage, sum(len(upload.content) for upload in uploads))
+            refusal = _hold_refusal(storage, sum(upload.size for upload in uploads))
             if not refusal:
                 try:
                     _hold_each(storage, uploads, manifest, held, written)
-                except OSError:
+                except (OSError, BodyChanged):
                     logger.warning("holding uploads failed; nothing was held", exc_info=True)
                     for key in written:
                         manifest.pop(key, None)
@@ -287,13 +287,17 @@ def _hold_each(
         # the manifest pointing at an object that is not there. A UUIDv7 never
         # collides, so in practice these are the same string — reading the
         # answer back is what makes that a fact rather than an assumption.
-        key = storage.save(name, ContentFile(upload.content))
+        #
+        # Streamed from where the upload handler wrote it, never read into
+        # memory first (docs/adr/0182); a write that fails part-way removes its
+        # own partial object (`store_body`).
+        key, _digest = store_body(storage, name, upload.body)
         if key != name:  # pragma: no cover - a uuid7 name is never taken
             written.append(key)
         manifest[key] = {
             "filename": upload.filename,
             "mime_type": upload.mime_type,
-            "size": len(upload.content),
+            "size": upload.size,
             "held_at": timezone.now().isoformat(),
         }
         held.append(
@@ -301,7 +305,7 @@ def _hold_each(
                 key=key,
                 filename=upload.filename,
                 mime_type=upload.mime_type,
-                size=len(upload.content),
+                size=upload.size,
             )
         )
 
@@ -345,16 +349,20 @@ def resume(session: Any, keys: list[str]) -> list[AcceptedUpload]:
         if entry is None:
             continue
         try:
-            with storage.open(key, "rb") as handle:
-                content = handle.read()
+            # The size the volume reports, not the manifest's: what is read
+            # back is what gets counted (docs/adr/0182).
+            size = storage.size(key)
         except (FileNotFoundError, OSError):
             logger.warning("held upload %s is no longer readable", key)
             continue
+        filename = entry.get("filename", "")
         resumed.append(
             AcceptedUpload(
-                content=content,
-                filename=entry.get("filename", ""),
+                filename=filename,
                 mime_type=entry.get("mime_type", ""),
+                # Read from the volume when the save writes it, in chunks: a
+                # resumed batch is file handles, not bytes in this worker.
+                body=StoredBody(storage, key, size, label=filename),
             )
         )
 

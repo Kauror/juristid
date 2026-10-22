@@ -20,10 +20,13 @@ rather than a code change.
 
 from __future__ import annotations
 
+import io
 import math
+import struct
+import warnings
 import zipfile
 from dataclasses import dataclass
-from typing import IO
+from typing import IO, Any
 
 from django.conf import settings
 
@@ -52,6 +55,12 @@ class Limits:
     max_csv_record_characters: int
     max_email_body_characters: int
     max_fragments: int
+    max_text_bytes: int
+    max_text_lines: int
+    max_zip_directory_bytes: int
+    max_docx_part_bytes: int
+    max_docx_xml_bytes: int
+    max_docx_paragraphs: int
 
     @classmethod
     def from_settings(cls) -> Limits:
@@ -73,6 +82,12 @@ class Limits:
             max_csv_record_characters=settings.EXTRACTION_MAX_CSV_RECORD_CHARACTERS,
             max_email_body_characters=settings.EXTRACTION_MAX_EMAIL_BODY_CHARACTERS,
             max_fragments=settings.EXTRACTION_MAX_FRAGMENTS,
+            max_text_bytes=settings.EXTRACTION_MAX_TEXT_BYTES,
+            max_text_lines=settings.EXTRACTION_MAX_TEXT_LINES,
+            max_zip_directory_bytes=settings.EXTRACTION_MAX_ZIP_DIRECTORY_BYTES,
+            max_docx_part_bytes=settings.EXTRACTION_MAX_DOCX_PART_BYTES,
+            max_docx_xml_bytes=settings.EXTRACTION_MAX_DOCX_XML_BYTES,
+            max_docx_paragraphs=settings.EXTRACTION_MAX_DOCX_PARAGRAPHS,
         )
 
 
@@ -80,7 +95,170 @@ def current_limits() -> Limits:
     return Limits.from_settings()
 
 
-def guard_office_container(handle: IO[bytes], limits: Limits) -> None:
+#: ZIP structures read by :func:`preflight_zip_directory`, as APPNOTE.TXT
+#: (4.3.12, 4.3.14-16) and `zipfile` define them.
+_EOCD = struct.Struct("<4s4H2LH")
+_EOCD_SIGNATURE = b"PK\x05\x06"
+_ZIP64_LOCATOR = struct.Struct("<4sLQL")
+_ZIP64_LOCATOR_SIGNATURE = b"PK\x06\x07"
+_ZIP64_EOCD = struct.Struct("<4sQ2H2L4Q")
+_ZIP64_EOCD_SIGNATURE = b"PK\x06\x06"
+_CENTRAL_HEADER = struct.Struct("<4s4B4HL2L5H2L")
+_CENTRAL_SIGNATURE = b"PK\x01\x02"
+_MAX_COMMENT = 0xFFFF
+
+
+def _invalid_container() -> ExtractionFailed:
+    return ExtractionFailed(
+        "invalid_container",
+        "Fail ei ole terve Office-pakett (ZIP-struktuur on vigane).",
+    )
+
+
+def _too_many_members(count: int | None, limits: Limits) -> ExtractionFailed:
+    said = f"{count}" if count is not None else f"üle {limits.max_archive_members}"
+    return ExtractionFailed(
+        "too_many_members",
+        f"Pakett sisaldab {said} faili, lubatud on {limits.max_archive_members}.",
+    )
+
+
+def preflight_zip_directory(handle: IO[bytes], limits: Limits) -> None:
+    """Check a ZIP's directory from its own end records before `zipfile` reads it.
+
+    `zipfile.ZipFile()` reads the whole central directory into memory and
+    builds one `ZipInfo` per entry before anybody can count them, so the
+    member limit below used to run after the allocation it was meant to
+    prevent: a small file of hundreds of thousands of empty entries cost every
+    one of them first (csf_5fb4e796365c901966387382, docs/adr/0182).
+
+    This reads only the end of the file — the End Of Central Directory record,
+    within the 64 KiB comment window, and the ZIP64 locator and record when
+    there is one — and refuses before any directory byte is read when:
+
+    * the records are missing, malformed, multi-disk, or say ZIP64 (a
+      ``0xFFFF``/``0xFFFFFFFF`` sentinel) without a consistent ZIP64 record;
+    * the declared entry count is over ``max_archive_members``;
+    * the declared directory is larger than ``max_zip_directory_bytes`` or does
+      not fit in the file before its end record.
+
+    It then walks the directory itself, one fixed-size entry header at a time
+    and seeking over names and extra fields, so the walk allocates nothing per
+    entry and stops at the first entry past the limit. A directory whose
+    entries do not add up to exactly its declared size and count is refused as
+    malformed. Only a directory that passes all of it is handed to `zipfile`.
+    """
+    handle.seek(0, io.SEEK_END)
+    file_size = handle.tell()
+    if file_size < _EOCD.size:
+        raise _invalid_container()
+    window = min(file_size, _EOCD.size + _MAX_COMMENT)
+    handle.seek(file_size - window)
+    tail = handle.read(window)
+    # Where `zipfile` looks for it: the last 22 bytes when there is no comment,
+    # otherwise the last signature within the comment window.
+    at = len(tail) - _EOCD.size
+    if not (tail.startswith(_EOCD_SIGNATURE, at) and tail.endswith(b"\x00\x00")):
+        at = tail.rfind(_EOCD_SIGNATURE)
+    if at < 0 or at + _EOCD.size > len(tail):
+        raise _invalid_container()
+    (_sig, disk, disk_start, entries_here, entries, cd_size, cd_offset, _comment) = (
+        _EOCD.unpack_from(tail, at)
+    )
+    location = file_size - window + at
+
+    zip64 = _read_zip64(handle, location)
+    if zip64 is not None:
+        disk, disk_start, entries_here, entries, cd_size, cd_offset, location = zip64
+    elif 0xFFFF in (entries_here, entries) or 0xFFFFFFFF in (cd_size, cd_offset):
+        # A ZIP64 sentinel with no ZIP64 record to resolve it.
+        raise _invalid_container()
+
+    if disk != 0 or disk_start != 0 or entries_here != entries:
+        raise _invalid_container()
+    if entries > limits.max_archive_members:
+        raise _too_many_members(entries, limits)
+    if cd_size > limits.max_zip_directory_bytes:
+        raise ExtractionFailed(
+            "zip_directory_limit",
+            f"Paketi sisukord on {cd_size} baiti, lubatud on {limits.max_zip_directory_bytes}.",
+        )
+    # Where `zipfile` itself will read it from: immediately before the end
+    # record (prepended data shifts the declared offset, not this).
+    start = location - cd_size
+    if start < 0:
+        raise _invalid_container()
+    _walk_central_directory(handle, start, cd_size, entries, limits)
+    handle.seek(0)
+
+
+def _read_zip64(handle: IO[bytes], eocd_location: int) -> tuple[int, ...] | None:
+    """The ZIP64 end record's numbers, if a locator precedes the end record."""
+    locator_at = eocd_location - _ZIP64_LOCATOR.size
+    if locator_at < 0:
+        return None
+    handle.seek(locator_at)
+    data = handle.read(_ZIP64_LOCATOR.size)
+    if len(data) != _ZIP64_LOCATOR.size:
+        raise _invalid_container()
+    signature, locator_disk, record_offset, disks = _ZIP64_LOCATOR.unpack(data)
+    if signature != _ZIP64_LOCATOR_SIGNATURE:
+        return None
+    if locator_disk != 0 or disks > 1:
+        raise _invalid_container()
+    record_at = locator_at - _ZIP64_EOCD.size
+    if record_at < 0 or record_offset > record_at:
+        raise _invalid_container()
+    handle.seek(record_at)
+    data = handle.read(_ZIP64_EOCD.size)
+    if len(data) != _ZIP64_EOCD.size:
+        raise _invalid_container()
+    (
+        signature,
+        record_size,
+        _made,
+        _needed,
+        disk,
+        disk_start,
+        entries_here,
+        entries,
+        cd_size,
+        cd_offset,
+    ) = _ZIP64_EOCD.unpack(data)
+    # A record with "extensible data" is not something an Office writer
+    # produces; refusing it keeps the record exactly where it was looked for.
+    if signature != _ZIP64_EOCD_SIGNATURE or record_size + 12 != _ZIP64_EOCD.size:
+        raise _invalid_container()
+    # The directory ends where the record begins, as `zipfile` also requires.
+    if cd_offset + cd_size != record_offset:
+        raise _invalid_container()
+    return disk, disk_start, entries_here, entries, cd_size, cd_offset, record_at
+
+
+def _walk_central_directory(
+    handle: IO[bytes], start: int, size: int, declared: int, limits: Limits
+) -> None:
+    handle.seek(start)
+    walked = 0
+    count = 0
+    while walked < size:
+        header = handle.read(_CENTRAL_HEADER.size)
+        if len(header) != _CENTRAL_HEADER.size or walked + _CENTRAL_HEADER.size > size:
+            raise _invalid_container()
+        fields = _CENTRAL_HEADER.unpack(header)
+        if fields[0] != _CENTRAL_SIGNATURE:
+            raise _invalid_container()
+        count += 1
+        if count > limits.max_archive_members:
+            raise _too_many_members(None, limits)
+        variable = fields[12] + fields[13] + fields[14]
+        walked += _CENTRAL_HEADER.size + variable
+        handle.seek(variable, io.SEEK_CUR)
+    if walked != size or count != declared:
+        raise _invalid_container()
+
+
+def guard_office_container(handle: IO[bytes], limits: Limits) -> list[zipfile.ZipInfo]:
     """Refuse an OOXML package that is shaped like a decompression attack.
 
     DOCX, XLSX and PPTX are all ZIP containers, and every one of the parsers
@@ -93,7 +271,12 @@ def guard_office_container(handle: IO[bytes], limits: Limits) -> None:
     miss: total inflated size (one enormous member), member count (a million
     tiny ones), and per-member compression ratio (a member that is modest in
     total but absurd in ratio, which is what nested bombs look like).
+
+    The directory itself is checked first, from the file's end records, before
+    `zipfile` allocates anything for it (:func:`preflight_zip_directory`).
+    Returns the members, so a parser can budget the parts it will parse.
     """
+    preflight_zip_directory(handle, limits)
     try:
         with zipfile.ZipFile(handle) as archive:
             infos = archive.infolist()
@@ -133,6 +316,7 @@ def guard_office_container(handle: IO[bytes], limits: Limits) -> None:
                     "Paketi liikme pakkimissuhe on ebausutav.",
                 )
     handle.seek(0)
+    return infos
 
 
 def guard_character_budget(total: int, limits: Limits) -> None:
@@ -283,13 +467,48 @@ def _metadata_characters(value: object) -> int:
 def configure_image_safety(limits: Limits) -> None:
     """Point Pillow's decompression-bomb guard at our own number.
 
-    Pillow already refuses images past ``Image.MAX_IMAGE_PIXELS`` — but it
-    *warns* by default rather than raising, and a warning in a worker loop is a
-    log line nobody reads attached to a process that is already allocating.
+    Pillow only *warns* past ``Image.MAX_IMAGE_PIXELS`` and raises
+    ``DecompressionBombError`` past twice that. Setting it to the limit, as
+    this used to, let an image of up to twice ``max_image_pixels`` decode with
+    nothing but a warning (csf_9b7b703ca586c216499d33bd). Half the limit makes
+    Pillow's own hard error fire at the limit, as a backstop for any path that
+    opens an image; :func:`open_bounded_image` is the check every extraction
+    path makes, explicitly, before decoding. The warning band below the limit
+    is ours to ignore: those images are within it.
     """
     from PIL import Image
 
-    Image.MAX_IMAGE_PIXELS = limits.max_image_pixels
+    Image.MAX_IMAGE_PIXELS = max(1, (limits.max_image_pixels + 1) // 2)
+    warnings.filterwarnings("ignore", category=Image.DecompressionBombWarning)
+
+
+def image_too_large() -> ExtractionFailed:
+    return ExtractionFailed("image_too_large", "Pildi mõõtmed ületavad lubatud piiri.")
+
+
+def open_bounded_image(content: bytes, limits: Limits) -> Any:
+    """Open an image by its header and refuse it, *before decoding*, if too large.
+
+    ``Image.open`` reads only the header; ``width × height`` is checked against
+    ``max_image_pixels`` there, and only an image within it is ever handed on
+    to ``load()``, ``convert()``, ``thumbnail()`` or OCR. One refusal for every
+    image path — `image_too_large`, the reason the OCR path always gave — and
+    the caller closes what it is given.
+    """
+    configure_image_safety(limits)
+    from PIL import Image, UnidentifiedImageError
+
+    try:
+        image = Image.open(io.BytesIO(content))
+    except Image.DecompressionBombError as error:
+        raise image_too_large() from error
+    except UnidentifiedImageError as error:
+        raise ExtractionFailed("unreadable_image", "Pilti ei õnnestunud avada.") from error
+    width, height = image.size
+    if max(1, width) * max(1, height) > limits.max_image_pixels:
+        image.close()
+        raise image_too_large()
+    return image
 
 
 def bounded_render_scale(width_pt: float, height_pt: float, wanted: float, limits: Limits) -> float:
