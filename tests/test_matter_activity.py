@@ -342,11 +342,14 @@ def test_an_imported_matter_never_falls_back_to_its_row_timestamp(specialist):
 # -- authorization ----------------------------------------------------------
 
 
-def test_a_restricted_entry_does_not_announce_itself_through_the_date(specialist, reader):
+def test_a_restricted_entry_does_not_announce_itself_through_the_date(
+    specialist, reader, administrator
+):
     """A date column is a channel like any other.
 
     Somebody who cannot open the entry must not learn from the register that
-    something happened on 3 March.
+    something happened on 3 March. Since docs/adr/0181 a READER opens it, so the
+    somebody is an administrator without a business role.
     """
     matter = factories.MatterFactory(owner=specialist, received_date=dt.date(2026, 1, 8))
     factories.EntryFactory(
@@ -357,7 +360,8 @@ def test_a_restricted_entry_does_not_announce_itself_through_the_date(specialist
     )
 
     assert _fact(matter, specialist).basis == ActivityBasis.ENTRY
-    assert _fact(matter, reader).basis == ActivityBasis.RECEIVED
+    assert _fact(matter, reader).basis == ActivityBasis.ENTRY
+    assert _fact(matter, administrator).basis == ActivityBasis.RECEIVED
 
 
 # -- cost -------------------------------------------------------------------

@@ -385,13 +385,15 @@ def test_a_month_precision_date_still_prints_as_a_month(client, department_head,
 
 @pytest.mark.django_db
 def test_the_groups_are_still_read_through_visible_to(
-    client, department_head, reader, specialist, wednesday
+    client, department_head, reader, administrator, specialist, wednesday
 ) -> None:
     """Requirement 15. Authorization before arithmetic, unchanged.
 
     A restricted Matter contributes nothing to a row, a count or a header for a
     reader who may not see it — and the count in «kõik N →» is the count for
-    *that* reader, not a departmental total leaked through a header.
+    *that* reader, not a departmental total leaked through a header. Since
+    docs/adr/0181 a READER sees what the head sees; the reader who may not is
+    the administrator without a grant, who sees nothing at all.
     """
     today = wednesday
     _deadline(
@@ -407,10 +409,17 @@ def test_the_groups_are_still_read_through_visible_to(
     assert head.matter_count == 2
 
     for_reader = _upcoming(reader, today)["nadal"]
-    assert _titles(for_reader) == {"Tavaline teema"}
-    assert for_reader.matter_count == 1
+    assert _titles(for_reader) == {"Piiratud teema", "Tavaline teema"}
+    assert for_reader.matter_count == 2
+    assert "Piiratud teema" in _panel(client, reader)
 
-    assert "Piiratud teema" not in _panel(client, reader)
+    for_outsider = _upcoming(administrator, today)["nadal"]
+    assert _titles(for_outsider) == set()
+    assert for_outsider.matter_count == 0
+    client.force_login(administrator)
+    outsider_page = client.get(reverse("matters:department") + "?vaade=osakond")
+    assert "Piiratud teema" not in outsider_page.content.decode()
+    assert "Tavaline teema" not in outsider_page.content.decode()
 
 
 @pytest.mark.django_db

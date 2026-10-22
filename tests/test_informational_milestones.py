@@ -213,7 +213,9 @@ def test_an_open_round_waiting_for_feedback_is_the_next_step(client, specialist)
 # ---------------------------------------------------------------------------
 
 
-def test_cancelled_past_and_restricted_milestones_are_never_the_step(specialist, reader):
+def test_cancelled_past_and_restricted_milestones_are_never_the_step(
+    specialist, reader, administrator
+):
     cancelled = factories.MatterFactory(owner=specialist)
     record = _milestone(cancelled, specialist, days=10, kind=ImportantDateKind.OTHER, title="X")
     MatterImportantDate.objects.filter(pk=record.pk).update(status=FactStatus.CANCELLED)
@@ -230,8 +232,11 @@ def test_cancelled_past_and_restricted_milestones_are_never_the_step(specialist,
     assert _missing(specialist, [cancelled, past]) == {cancelled.pk, past.pk}
     # A restriction below the Matter decides nothing for a reader who may not
     # see it: the step it would stand for is not theirs to see (AUTH-003).
+    # Since docs/adr/0181 a READER sees it as the owner does; the one who may
+    # not is the administrator without a grant.
     assert restricted.pk not in _missing(specialist, [restricted])
-    assert restricted.pk in _missing(reader, [restricted])
+    assert restricted.pk not in _missing(reader, [restricted])
+    assert restricted.pk in _missing(administrator, [restricted])
 
 
 def test_an_informational_milestone_that_has_passed_is_not_late(specialist):

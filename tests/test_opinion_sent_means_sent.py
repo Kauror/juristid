@@ -131,13 +131,16 @@ def test_f_a_sent_submission_is_sent_with_or_without_a_register_row(
     [OpinionSentState.BLANK, OpinionSentState.NOT_SENT, OpinionSentState.RECORDED_OTHER],
 )
 def test_g_a_hidden_send_is_sent_only_for_who_may_see_it(
-    file, department_head, reader, send, state
+    file, department_head, reader, administrator, send, state
 ):
+    """Since docs/adr/0181 the READER sees the restricted send like the head;
+    who may not see it is an outsider (ADMINISTRATOR without a grant)."""
     _mark(file, state=state)
     send(file, visibility_override=Visibility.RESTRICTED)
 
     assert listed(department_head, SENT) == {file.pk}
-    assert listed(reader, SENT) == set()
+    assert listed(reader, SENT) == {file.pk}
+    assert listed(administrator, SENT) == set()
 
 
 def test_h_a_register_date_is_sent_whatever_the_reader_may_see(

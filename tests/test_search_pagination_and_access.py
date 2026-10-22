@@ -10,6 +10,10 @@ participation half of the visibility rule reaches the collaborators through a
 subquery now, not a join, and the substring tiers go through new indexes; a
 restricted sentinel must stay invisible to every persona that may not read it,
 through every tier, in every count, and on every page.
+
+Since docs/adr/0181 the personas that may read are the business-read roles
+(READER included), and they read every sentinel; the administrator without a
+grant and the persona-less gate sentinel read none.
 """
 
 from __future__ import annotations
@@ -98,11 +102,30 @@ def test_the_same_page_is_the_same_rows_on_every_request(corpus):
         assert again == first
 
 
-def test_a_reader_gets_full_pages_with_no_holes_where_restricted_rows_are(corpus):
-    """Authorization is in the query being sliced, so a hidden row is not a gap."""
+def test_a_narrowed_scope_gets_full_pages_with_no_holes_where_restricted_rows_are(
+    corpus, monkeypatch
+):
+    """Authorization is in the query being sliced, so a hidden row is not a gap.
+
+    Asked of a READER until docs/adr/0181; a READER now reads every row (its
+    total is the lawyer's), so the narrowing is a hand-built scope: the reader
+    as a non-participant who does not read RESTRICTED by role.
+    """
+    from app.core.authorization import Scope
+    from app.search import services as search_services
+
     lawyer_total = result_count(query=BROAD, user=corpus.specialist)
+    assert result_count(query=BROAD, user=corpus.reader) == lawyer_total
+
+    narrowed = Scope(
+        user=corpus.reader,
+        is_authenticated=True,
+        sees_restricted_by_role=False,
+        break_glass_grant_id=None,
+    )
+    monkeypatch.setattr(search_services, "scope_for_user", lambda user: narrowed)
     reader_total = result_count(query=BROAD, user=corpus.reader)
-    assert reader_total < lawyer_total
+    assert 0 < reader_total < lawyer_total
 
     per_page = 20
     number, sizes = 1, []
@@ -161,26 +184,29 @@ def test_a_short_result_set_has_no_pagination(corpus):
 # -- the authorization matrix -------------------------------------------------
 
 LAWYERS = ("specialist", "other_specialist", "department_head")
-EVERYONE = (*LAWYERS, "reader", "administrator", "department_viewer")
+#: The business-read roles (docs/adr/0181): they read everything, NORMAL and
+#: RESTRICTED alike. The administrator without a grant and the persona-less
+#: shared-gate sentinel read nothing at all.
+READERS = (*LAWYERS, "reader")
 
 #: Which personas may read each sentinel, and why.
 EXPECTED = {
-    # Ordinary rows: every authenticated persona, the shared gate included.
-    "matter_title": EVERYONE,
-    "development_note": EVERYONE,
-    "engagement_title": EVERYONE,
-    "position_summary": EVERYONE,
-    "submission_summary": EVERYONE,
-    "entry_body": EVERYONE,
-    "fragment_body": EVERYONE,
-    "document_title": EVERYONE,
-    # A RESTRICTED Matter: the two lawyer roles by role, nobody else.
-    "restricted_matter_title": LAWYERS,
+    # Ordinary rows: every business reader; no longer the administrator or the gate.
+    "matter_title": READERS,
+    "development_note": READERS,
+    "engagement_title": READERS,
+    "position_summary": READERS,
+    "submission_summary": READERS,
+    "entry_body": READERS,
+    "fragment_body": READERS,
+    "document_title": READERS,
+    # A RESTRICTED Matter: every business reader, the READER included.
+    "restricted_matter_title": READERS,
     # A RESTRICTED Matter on which the READER collaborates.
-    "collaborator_matter_title": (*LAWYERS, "reader"),
+    "collaborator_matter_title": READERS,
     # RESTRICTED children of an ordinary Matter the READER does not work on.
-    "restricted_development_note": LAWYERS,
-    "restricted_document_title": LAWYERS,
+    "restricted_development_note": READERS,
+    "restricted_document_title": READERS,
 }
 
 
@@ -222,7 +248,9 @@ def test_the_restricted_sentinels_do_not_leak_through_any_tier(corpus):
     # nothing for anyone.
     for probe in probes:
         assert _all_ids(probe, corpus.other_specialist), probe
-    for user in (corpus.reader, corpus.administrator):
+        # docs/adr/0181: the READER is somebody allowed, and finds the same rows.
+        assert _all_ids(probe, corpus.reader) == _all_ids(probe, corpus.other_specialist), probe
+    for user in (corpus.administrator,):
         for probe in probes:
             assert _all_ids(probe, user) == [], probe
             assert (
@@ -241,20 +269,22 @@ def test_the_restricted_sentinels_do_not_leak_through_any_tier(corpus):
             assert suggestions["results"] == [], probe
 
 
-def test_a_break_glass_grant_opens_restricted_rows_to_the_reader(corpus):
+def test_a_break_glass_grant_opens_restricted_rows_to_an_administrator(corpus):
+    """The READER reads them without one since docs/adr/0181; the administrator needs it."""
     from app.accounts.services import grant_break_glass
 
     word = search_corpus.SENTINELS["restricted_development_note"]
     lawyer = result_count(query=word, user=corpus.specialist)
     assert lawyer >= 1
-    assert result_count(query=word, user=corpus.reader) == 0
+    assert result_count(query=word, user=corpus.reader) == lawyer
+    assert result_count(query=word, user=corpus.administrator) == 0
     grant_break_glass(
-        user=corpus.reader,
+        user=corpus.administrator,
         granted_by=corpus.department_head,
         reason="Sünteetiline juhtum",
         duration=timedelta(hours=1),
     )
-    assert result_count(query=word, user=corpus.reader) == lawyer
+    assert result_count(query=word, user=corpus.administrator) == lawyer
 
 
 def test_a_removed_note_and_a_deleted_matter_are_gone_from_every_persona(corpus):

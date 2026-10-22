@@ -207,19 +207,18 @@ def test_reading_everything_does_not_make_a_specialist_the_department_head(
 
 @pytest.mark.parametrize(
     "who",
-    ["reader", "administrator", "department_viewer", "anonymous", "inactive", "unknown_role"],
+    ["administrator", "department_viewer", "anonymous", "inactive", "unknown_role"],
 )
-def test_the_boundary_still_refuses_everybody_it_refused_before(
-    restricted, who, reader, administrator
-):
+def test_the_boundary_still_refuses_everybody_it_refused_before(restricted, who, administrator):
     """One place naming every actor the decision deliberately did not widen.
 
     Each of these has its own tests elsewhere; this is the summary that fails if
     somebody widens the role set again without thinking about who else is in it.
+    READER left this list with docs/adr/0181: it is an authorized internal user
+    and reads the department (`test_a_reader_reads_the_department_and_writes_nothing`).
     """
     matter = restricted[0]
     actor = {
-        "reader": reader,
         "administrator": administrator,
         "department_viewer": DEPARTMENT_VIEWER,
         "anonymous": None,
@@ -232,10 +231,22 @@ def test_the_boundary_still_refuses_everybody_it_refused_before(
     assert not may_write_business_content(actor)
 
 
-def test_the_widened_role_set_is_exactly_the_two_lawyer_roles():
-    """A guard on the decision itself, in the one place it is written down."""
-    from app.core.authorization import ROLES_WITH_RESTRICTED_ACCESS
+def test_a_reader_reads_the_department_and_writes_nothing(restricted, reader):
+    """docs/adr/0181 took the decision docs/adr/0042 left open: READER reads."""
+    matter = restricted[0]
+    assert Matter.objects.visible_to(reader).filter(pk=matter.pk).exists()
+    assert Document.objects.visible_to(reader).filter(matter=matter).exists()
+    assert not may_write_business_content(reader)
+    assert not may_review_work_victory(reader)
 
-    assert ROLES_WITH_RESTRICTED_ACCESS == frozenset(
-        {UserRole.SPECIALIST.value, UserRole.DEPARTMENT_HEAD.value}
+
+def test_the_widened_role_set_is_exactly_the_three_business_roles():
+    """A guard on the decision itself, in the one place it is written down.
+
+    The two lawyer roles since docs/adr/0042, and READER since docs/adr/0181.
+    """
+    from app.core.authorization import ROLES_WITH_BUSINESS_READ
+
+    assert ROLES_WITH_BUSINESS_READ == frozenset(
+        {UserRole.SPECIALIST.value, UserRole.DEPARTMENT_HEAD.value, UserRole.READER.value}
     )

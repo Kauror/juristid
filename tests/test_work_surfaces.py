@@ -70,19 +70,25 @@ def test_matter_list_paginates_and_filters(signed_in, specialist):
     assert len(everything.context["page"].object_list) == 30
 
 
-def test_matter_list_counts_exclude_restricted_matters(client, specialist, reader):
+def test_matter_list_counts_are_scoped_before_the_page_is_built(
+    client, specialist, reader, administrator
+):
     """Authorization runs before the count, not after the page is built.
 
-    Counted for the reader, who may not open the restricted one. A lawyer sees
-    both since docs/adr/0042, so only somebody outside the legal team can show
-    that the count is scoped at all.
+    A lawyer sees both since docs/adr/0042 and a READER since docs/adr/0181, so
+    only somebody outside the application's readers — an administrator without
+    a grant — can show that the count is scoped at all.
     """
     factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
     factories.MatterFactory(owner=specialist, visibility=Visibility.NORMAL)
 
     client.force_login(reader)
     response = client.get(reverse("matters:matter_list"))
-    assert response.context["page"].paginator.count == 1
+    assert response.context["page"].paginator.count == 2
+
+    client.force_login(administrator)
+    response = client.get(reverse("matters:matter_list"))
+    assert response.context["page"].paginator.count == 0
 
 
 def test_matter_list_filters_by_owner_and_status(signed_in, specialist, other_specialist):
@@ -143,24 +149,32 @@ def test_search_finds_a_matter_by_organisation(specialist):
     assert matter.id in {result.matter.id for result in results}
 
 
-def test_search_never_returns_a_restricted_matter(specialist, reader):
-    factories.MatterFactory(
+def test_search_returns_a_restricted_matter_to_a_reader_and_never_to_an_outsider(
+    specialist, reader, administrator
+):
+    # docs/adr/0181: a READER finds it as the owner does; an administrator never.
+    hidden = factories.MatterFactory(
         owner=specialist,
         title="Salajane pakendiseaduse teema",
         visibility=Visibility.RESTRICTED,
     )
-    assert search_matters(query="pakendiseaduse", user=reader) == []
+    assert [row.matter for row in search_matters(query="pakendiseaduse", user=reader)] == [hidden]
+    assert search_matters(query="pakendiseaduse", user=administrator) == []
 
 
-def test_search_by_reference_does_not_leak_a_restricted_matter(specialist, reader):
-    """Guessing an exact reference must not confirm the record exists."""
+def test_search_by_reference_does_not_leak_a_restricted_matter(specialist, administrator):
+    """Guessing an exact reference must not confirm the record exists.
+
+    To somebody who may not read it: since docs/adr/0181 an administrator
+    without a grant (a READER may read it).
+    """
     hidden = create_matter(
         title="Salajane",
         actor=specialist,
         owner=specialist,
         visibility=Visibility.RESTRICTED,
     )
-    assert search_matters(query=hidden.display_reference, user=reader) == []
+    assert search_matters(query=hidden.display_reference, user=administrator) == []
 
 
 def test_an_empty_query_returns_nothing(specialist):
@@ -239,9 +253,10 @@ def test_timeline_never_shows_security_audit_events(normal_matter, specialist):
     )
 
 
-def test_timeline_hides_a_restricted_entry_from_an_uninvolved_user(
-    normal_matter, specialist, reader
+def test_timeline_shows_a_restricted_entry_to_every_reader_and_no_outsider(
+    normal_matter, specialist, reader, administrator
 ):
+    # docs/adr/0181: involvement no longer decides reading; an outsider reads nothing.
     add_entry(matter=normal_matter, body="<p>Avalik</p>", author=specialist)
     add_entry(
         matter=normal_matter,
@@ -252,8 +267,13 @@ def test_timeline_hides_a_restricted_entry_from_an_uninvolved_user(
 
     items, _ = matter_timeline(matter=normal_matter, user=reader)
     bodies = " ".join(item.entry.body for item in items if item.is_entry)
-    assert "Salajane" not in bodies
+    assert "Salajane" in bodies
     assert "Avalik" in bodies
+
+    items, _ = matter_timeline(matter=normal_matter, user=administrator)
+    bodies = " ".join(item.entry.body for item in items if item.is_entry)
+    assert "Salajane" not in bodies
+    assert "Avalik" not in bodies
 
 
 def test_timeline_paginates_deterministically(normal_matter, specialist):

@@ -7,7 +7,8 @@ day fixed at 13.10.2026) and adding the shapes it does not hold:
 * a letter sent at 00:30 Tallinn the day after the deadline (still the deadline
   day in UTC) — late;
 * a TEST twin and a restricted Matter with the same full history — record
-  identity of every list for head and reader;
+  identity of every list for head and reader (since docs/adr/0181 the reader
+  lists the restricted one too; an administrator without a grant lists none);
 * a request recorded on the same day as a date-only send — «ei saa kontrollida»
   (DC-STATS-02, owner decision D10 of 2026-10-14).
 
@@ -28,6 +29,7 @@ from app.reporting.selectors import management
 from app.reporting.services import compute
 from app.submissions.enums import SentAtPrecision
 from app.workflow.enums import Track
+from tests import factories
 from tests.test_reporting_management import (  # noqa: F401 - `mgmt` is a fixture
     ANSWERED,
     MOVED,
@@ -148,15 +150,37 @@ def mirrored(mgmt):  # noqa: F811
         (keys.RESPONSE_PREPARATION_TIME, "8-14"),
     ],
 )
-def test_lists_hold_real_and_entitled_records_only(mgmt, mirrored, client, viewer, key, group):  # noqa: F811
+def test_lists_hold_real_records_and_the_same_ones_for_every_reader(
+    mgmt,  # noqa: F811
+    mirrored,
+    client,
+    viewer,
+    key,
+    group,
+):
+    """Since docs/adr/0181 a READER lists the restricted Matter exactly as the head does."""
     user = getattr(mgmt, viewer)
     titles = _rows(ctx(user), key, group)
     assert mirrored["peegel päris"].title in titles
     assert mirrored["peegel TEST"].title not in titles
-    assert (mirrored["peegel piiratud"].title in titles) is (viewer == "head")
+    assert mirrored["peegel piiratud"].title in titles
+    assert titles == _rows(ctx(mgmt.head), key, group)
     url = management.metric_list_url(ctx(user), key, group)
     client.force_login(user)
     assert _list_titles(client, url) == titles
+
+
+@pytest.mark.parametrize(
+    "key,group",
+    [
+        (keys.OPINIONS_ON_TIME, management.ON_TIME),
+        (keys.RESPONSE_PREPARATION_TIME, management.PREP_ALL),
+    ],
+)
+def test_an_administrator_without_a_grant_lists_none_of_them(mgmt, mirrored, key, group):  # noqa: F811
+    """The perimeter of docs/adr/0181: an outsider's list holds no record at all."""
+    outsider = factories.AdministratorFactory()
+    assert _rows(ctx(outsider), key, group) == set()
 
 
 def test_mirrored_test_matter_moves_no_deadline_figure(mgmt):  # noqa: F811

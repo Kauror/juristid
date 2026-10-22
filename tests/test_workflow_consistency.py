@@ -296,7 +296,11 @@ def test_editing_the_step_after_the_record_clears_the_alert(planned, specialist)
 # ---------------------------------------------------------------------------
 
 
-def test_a_restricted_record_proves_nothing_to_a_reader(planned, specialist, reader):
+def test_a_restricted_record_proves_alike_to_a_reader_and_nothing_to_an_outsider(
+    planned, specialist, reader, administrator
+):
+    """Since docs/adr/0181 a READER reads the restricted round, so it is told
+    what the specialist is told; an administrator without a grant is told nothing."""
     _start(planned, specialist, CONSULT)
     engagement = _round(planned, specialist)
     MatterEngagement.objects.filter(pk=engagement.pk).update(
@@ -304,19 +308,27 @@ def test_a_restricted_record_proves_nothing_to_a_reader(planned, specialist, rea
     )
 
     assert _alert(planned, specialist) is not None
-    assert _alert(planned, reader) is None
+    assert _alert(planned, reader) == _alert(planned, specialist)
+    assert _alert(planned, administrator) is None
 
 
-def test_a_restricted_step_is_not_a_readers_current_step(planned, specialist, reader):
+def test_a_restricted_step_is_a_readers_current_step_and_no_outsiders(
+    planned, specialist, reader, administrator
+):
+    """Since docs/adr/0181 the restricted step is the READER's current step too."""
     action = _start(planned, specialist, CONSULT)
     NextAction.objects.filter(pk=action.pk).update(visibility_override=Visibility.RESTRICTED)
     _round(planned, specialist)
 
     assert _alert(planned, specialist) is not None
-    assert _alert(planned, reader) is None
+    assert _alert(planned, reader) == _alert(planned, specialist)
+    assert _alert(planned, administrator) is None
 
 
-def test_the_narrowed_record_is_reader_scoped_too(planned, specialist, reader):
+def test_the_narrowed_record_is_scoped_like_everything_else(
+    planned, specialist, reader, administrator
+):
+    """A READER reads the restricted round since docs/adr/0181; an outsider does not."""
     action = _start(planned, specialist, CONSULT)
     engagement = _round(planned, specialist)
     MatterEngagement.objects.filter(pk=engagement.pk).update(
@@ -324,7 +336,8 @@ def test_the_narrowed_record_is_reader_scoped_too(planned, specialist, reader):
     )
 
     assert RecordedWork.of(planned, specialist, since=action.created_at).engagement
-    assert not RecordedWork.of(planned, reader, since=action.created_at).engagement
+    assert RecordedWork.of(planned, reader, since=action.created_at).engagement
+    assert not RecordedWork.of(planned, administrator, since=action.created_at).engagement
 
 
 def test_since_leaves_the_plain_reading_unchanged(planned, specialist):
@@ -378,7 +391,11 @@ def test_a_reader_sees_the_reason_without_the_writers_remedy(client, planned, sp
     assert "«✓ Tehtud»" not in zone
 
 
-def test_a_reader_is_not_told_of_a_restricted_record(client, planned, specialist, reader):
+def test_a_reader_is_told_of_a_restricted_record_and_an_outsider_gets_no_page(
+    client, planned, specialist, reader, administrator
+):
+    """It used to stay silent for a READER; since docs/adr/0181 the READER reads
+    the round and sees the alert, and an administrator without a grant gets a 404."""
     _start(planned, specialist, CONSULT)
     engagement = _round(planned, specialist)
     MatterEngagement.objects.filter(pk=engagement.pk).update(
@@ -386,7 +403,12 @@ def test_a_reader_is_not_told_of_a_restricted_record(client, planned, specialist
     )
     client.force_login(reader)
 
-    assert "data-consistency-alert" not in _zone(client, planned)
+    assert "data-consistency-alert" in _zone(client, planned)
+
+    client.force_login(administrator)
+    response = client.get(reverse("matters:matter_detail", kwargs={"pk": planned.pk}))
+    assert response.status_code == 404
+    assert "data-consistency-alert" not in response.content.decode()
 
 
 def test_no_alert_no_markup(client, planned, specialist):

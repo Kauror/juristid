@@ -383,17 +383,24 @@ def test_an_instruction_does_not_discharge_what_the_register_left_open(specialis
 # decide what a reader who cannot see it is told about a NORMAL Matter.
 
 
-def test_a_restricted_opinion_does_not_discharge_it_for_a_reader_who_cannot_see_it(
-    specialist, reader, today, capture_evidence, extract
+def test_a_restricted_opinion_discharges_it_for_a_reader_and_an_outsider_sees_neither(
+    specialist, reader, administrator, today, capture_evidence, extract
 ):
-    """Removing a row is observable — AUTH-003 applied to the new concept."""
+    """Removing a row is observable — AUTH-003 applied to the new concept.
+
+    Since docs/adr/0181 a READER sees the restricted opinion, so it discharges
+    the obligation for them as for its author; an administrator without a grant
+    sees neither the Matter nor the obligation.
+    """
     matter = _matter(specialist, deadline=today - timedelta(days=10))
     assert matter.pk in _obliged(reader)
 
     _send_restricted_opinion(matter, capture_evidence, extract)
 
-    assert matter.pk in _obliged(reader)
-    assert wi.response_obligation_of(matter, reader, today).is_outstanding is True
+    assert matter.pk not in _obliged(reader)
+    assert wi.response_obligation_of(matter, reader, today).is_outstanding is False
+    assert matter.pk not in _obliged(administrator)
+    assert wi.response_obligation_of(matter, administrator, today).is_outstanding is False
 
 
 def test_a_participant_sees_their_own_opinion_discharge_it(
@@ -409,7 +416,9 @@ def test_a_participant_sees_their_own_opinion_discharge_it(
     assert wi.response_obligation_of(matter, specialist, today).is_outstanding is False
 
 
-def test_a_restricted_step_cannot_be_inferred_from_the_obligation(specialist, reader, today):
+def test_a_restricted_step_cannot_be_inferred_from_the_obligation(
+    specialist, reader, administrator, today
+):
     """The obligation never reads ``NextAction`` at all, so a restricted step
     moves nothing — which is the strongest form of not leaking it."""
     matter = _matter(specialist, deadline=today - timedelta(days=10))
@@ -421,19 +430,27 @@ def test_a_restricted_step_cannot_be_inferred_from_the_obligation(specialist, re
 
     assert _obliged(reader) == before
     # And the operational population, which does read it, keeps its own rule:
-    # invisible to the reader, so for them the deadline is still today's work.
-    assert matter.pk in _operational(reader)
+    # since docs/adr/0181 the READER sees the step as its author does, and an
+    # administrator without a grant sees neither the Matter nor the step.
+    assert matter.pk not in _operational(reader)
     assert matter.pk not in _operational(specialist)
+    assert matter.pk not in _operational(administrator)
+    assert matter.pk not in _obliged(administrator)
 
 
-def test_a_matter_the_reader_may_not_see_yields_no_obligation(specialist, reader, today):
+def test_a_matter_an_outsider_may_not_see_yields_no_obligation(
+    specialist, reader, administrator, today
+):
+    # docs/adr/0181: a READER may see it; the outsider is an administrator.
     matter = _matter(
         specialist, deadline=today - timedelta(days=10), visibility=Visibility.RESTRICTED
     )
 
-    assert matter.pk not in _obliged(reader)
-    assert wi.response_obligation_of(matter, reader, today).is_outstanding is False
+    assert matter.pk not in _obliged(administrator)
+    assert wi.response_obligation_of(matter, administrator, today).is_outstanding is False
     assert wi.response_obligation_of(matter, specialist, today).is_outstanding is True
+    assert matter.pk in _obliged(reader)
+    assert wi.response_obligation_of(matter, reader, today).is_outstanding is True
 
 
 # ---------------------------------------------------------------------------
@@ -582,13 +599,14 @@ def test_a_closed_matter_is_described_honestly_and_queued_nowhere(specialist, to
     assert matter.response_deadline == today - timedelta(days=30)
 
 
-def test_open_only_false_drops_the_open_clause_and_nothing_else(specialist, reader, today):
+def test_open_only_false_drops_the_open_clause_and_nothing_else(specialist, administrator, today):
     """An ARCHIVE row and a restricted Matter stay out of both spellings.
 
     The flag widens the population by exactly one clause. A reading that also
     dropped the record mode would put a decade of imported register rows into a
     report about what Koda still owes, and one that dropped the reader scope
-    would be the leak the scope exists to prevent.
+    would be the leak the scope exists to prevent. (The scoped-out viewer is an
+    administrator without a grant since docs/adr/0181; a READER sees it.)
     """
     archived = factories.ArchiveMatterFactory(
         owner=specialist,
@@ -603,7 +621,7 @@ def test_open_only_false_drops_the_open_clause_and_nothing_else(specialist, read
 
     for open_only in (True, False):
         assert archived.pk not in _obliged(specialist, open_only=open_only)
-        assert hidden.pk not in _obliged(reader, open_only=open_only)
+        assert hidden.pk not in _obliged(administrator, open_only=open_only)
         assert hidden.pk in _obliged(specialist, open_only=open_only)
 
 

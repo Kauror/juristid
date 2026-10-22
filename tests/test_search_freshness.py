@@ -718,8 +718,47 @@ def test_the_worker_is_a_no_op_when_nothing_is_owed(specialist):
 # ---------------------------------------------------------------------------
 # Authorization: freshness must never make an unsafe row fresher
 # ---------------------------------------------------------------------------
+#
+# Since docs/adr/0181 every authorized reader reads restricted work and an
+# outsider reads nothing, so no request reaches the participation-narrowed
+# scope these were written against. The projection's live-join builder still
+# serves one, and it is what these pin: the stranger below searches through a
+# narrowed scope built by hand (`narrowed_search`).
 
 
+@pytest.fixture
+def narrowed_search(monkeypatch):
+    """Search through the scope a non-participant held before docs/adr/0181."""
+    from app.core.authorization import Scope
+    from app.search import services as search_services
+
+    def narrowed(user: object) -> Scope:
+        return Scope(
+            user=user,
+            is_authenticated=True,
+            sees_restricted_by_role=False,
+            break_glass_grant_id=None,
+        )
+
+    monkeypatch.setattr(search_services, "scope_for_user", narrowed)
+
+
+def test_a_restricted_engagement_is_found_by_every_reader_and_no_outsider(specialist):
+    """The policy itself (docs/adr/0181), through the unpatched search service."""
+    matter = factories.MatterFactory(owner=specialist, title="Avalik teema")
+    engagement = add_engagement(
+        matter=matter, kind="SURVEY", title="SALAJANE-KAASAMINE", actor=specialist
+    )
+    engagement.visibility_override = Visibility.RESTRICTED
+    engagement.save(update_fields=["visibility_override"])
+
+    expected = [(SearchSourceKind.ENGAGEMENT.value, str(matter.pk))]
+    assert found("SALAJANE-KAASAMINE", specialist) == expected
+    assert found("SALAJANE-KAASAMINE", factories.ReaderFactory()) == expected
+    assert found("SALAJANE-KAASAMINE", factories.AdministratorFactory()) == []
+
+
+@pytest.mark.usefixtures("narrowed_search")
 def test_a_restricted_engagement_refreshed_automatically_stays_invisible(specialist):
     matter = factories.MatterFactory(owner=specialist, title="Avalik teema")
     engagement = add_engagement(
@@ -735,6 +774,7 @@ def test_a_restricted_engagement_refreshed_automatically_stays_invisible(special
     ]
 
 
+@pytest.mark.usefixtures("narrowed_search")
 def test_restricting_an_engagement_takes_effect_without_any_refresh(specialist):
     """The projection stores no visibility, and a freshness path must not change that."""
     matter = factories.MatterFactory(owner=specialist, title="Avalik teema")
@@ -750,6 +790,7 @@ def test_restricting_an_engagement_takes_effect_without_any_refresh(specialist):
     assert found("KAASAMINE-NÄHTAV", stranger) == []
 
 
+@pytest.mark.usefixtures("narrowed_search")
 def test_a_rebuild_paying_off_debt_preserves_child_restrictions(specialist):
     matter = factories.MatterFactory(owner=specialist, title="Avalik teema")
     organisation = factories.OrganisationFactory(name="Ministeerium")

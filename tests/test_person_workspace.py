@@ -263,13 +263,15 @@ def test_count_matches_population(client, specialist, today):
         assert listed.context["total"] == figure.value, figure.caption
 
 
-def test_restricted_matter_not_counted(client, specialist, reader, today):
-    """A reader without the entitlement sees a smaller number, not a lock.
+def test_restricted_matter_counted_for_a_reader_and_not_for_an_outsider(
+    client, specialist, reader, administrator, today
+):
+    """A viewer without the entitlement sees a smaller number, not a lock.
 
-    `reader` is the one role that is genuinely outside the department's
-    business access — since docs/adr/0042 a second specialist is not an
-    outsider. What it must see is a *shorter* list, and never the restricted
-    Matter's own words (01-EHITUSJUHIS §3.4).
+    Since docs/adr/0181 a READER is entitled and counts exactly what the owner
+    counts; the viewer genuinely outside is an administrator without a grant,
+    who sees nothing of the person's work and never the restricted Matter's own
+    words (01-EHITUSJUHIS §3.4).
     """
     restricted_title = "Liikme konfidentsiaalne kaebus"
     matter = factories.MatterFactory(
@@ -287,14 +289,22 @@ def test_restricted_matter_not_counted(client, specialist, reader, today):
     factories.MatterFactory(owner=specialist, title="Tavaline teema")
 
     entitled = build_my_work(specialist, today=today)
-    refused = build_my_work(reader, today=today, subject=specialist)
+    as_reader = build_my_work(reader, today=today, subject=specialist)
+    refused = build_my_work(administrator, today=today, subject=specialist)
 
     assert entitled.open_matters == 2
-    assert refused.open_matters == 1
+    assert as_reader.open_matters == 2
+    assert {row.matter.title for row in as_reader.portfolio.all_rows} == {
+        row.matter.title for row in entitled.portfolio.all_rows
+    }
+    assert restricted_title in {row.matter.title for row in as_reader.portfolio.all_rows}
+    assert refused.open_matters == 0
     assert restricted_title not in {row.matter.title for row in refused.portfolio.all_rows}
     assert refused.overdue == 0
 
     client.force_login(reader)
+    assert restricted_title in client.get(reverse("matters:matter_list")).content.decode()
+    client.force_login(administrator)
     assert restricted_title not in client.get(reverse("matters:matter_list")).content.decode()
 
 

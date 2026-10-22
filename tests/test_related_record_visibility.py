@@ -15,6 +15,10 @@ the object is reached through a foreign key or an administrative queue:
 
 Plus the side effect ENG-047 found: correcting an unrelated field of a position
 cleared a relation to a round the corrector could not see.
+
+Since docs/adr/0181 every authorized reader (READER included) reads restricted
+records, so "somebody who may not read it" is an outsider — an administrator
+without a business role, who now reads no Matter at all without a grant.
 """
 
 from __future__ import annotations
@@ -151,13 +155,13 @@ def test_a_restricted_round_is_not_named_to_somebody_who_may_not_read_it(
     )
     _position(normal_matter, specialist, organisation, engagement)
 
-    for person in (reader, administrator):
-        client.force_login(person)
-        assert HIDDEN_ROUND not in _detail(client, normal_matter)
-        assert str(engagement.pk) not in _detail(client, normal_matter)
+    client.force_login(administrator)
+    assert HIDDEN_ROUND not in _detail(client, normal_matter)
+    assert str(engagement.pk) not in _detail(client, normal_matter)
 
-    client.force_login(specialist)  # the owner may read it
-    assert f"Vastus kaasamisele: {HIDDEN_ROUND}" in _detail(client, normal_matter)
+    for person in (specialist, reader):  # the owner, and since docs/adr/0181 a READER
+        client.force_login(person)
+        assert f"Vastus kaasamisele: {HIDDEN_ROUND}" in _detail(client, normal_matter)
 
 
 def test_the_department_head_still_reads_a_restricted_round(
@@ -242,9 +246,10 @@ def test_keep_is_not_a_value_a_form_without_a_hidden_round_accepts(
 # -- ENG-047: final evidence on the sent list ----------------------------------------
 
 
-def test_restricted_final_evidence_is_neither_linked_nor_named(
-    client, specialist, reader, capture_evidence
+def test_restricted_final_evidence_is_linked_for_a_reader_and_nothing_for_an_outsider(
+    client, specialist, reader, administrator, capture_evidence
 ):
+    """Since docs/adr/0181 a READER gets the owner's link; an outsider not even the row."""
     matter = factories.MatterFactory(owner=specialist)
     version = capture_evidence(
         matter,
@@ -261,15 +266,16 @@ def test_restricted_final_evidence_is_neither_linked_nor_named(
         final_version=version,
     )
 
-    client.force_login(reader)
+    client.force_login(administrator)
     body = client.get(reverse("submissions:sent")).content.decode()
-    assert "R3 saadetud arvamus" in body  # the Submission itself is readable
+    assert "R3 saadetud arvamus" not in body
     assert str(version.pk) not in body
     assert "salajane-lopparvamus" not in body
 
-    client.force_login(specialist)
-    owner_view = client.get(reverse("submissions:sent")).content.decode()
-    assert reverse("documents:open", kwargs={"pk": version.pk}) in owner_view
+    for person in (specialist, reader):
+        client.force_login(person)
+        view = client.get(reverse("submissions:sent")).content.decode()
+        assert reverse("documents:open", kwargs={"pk": version.pk}) in view
 
 
 # -- ENG-047: historical source page ---------------------------------------------
@@ -329,23 +335,33 @@ def source_page_with_files(specialist, capture_evidence):
     return link
 
 
-def test_a_historical_page_names_no_attachment_its_reader_may_not_read(
-    client, reader, specialist, source_page_with_files
+def test_a_historical_page_names_every_attachment_to_a_reader_and_none_to_an_outsider(
+    client, reader, administrator, specialist, source_page_with_files
 ):
+    """Since docs/adr/0181 a READER reads the restricted attachment as its owner does.
+
+    The page-level placeholder for an unreadable attachment is unreachable from a
+    request now: whoever may open the page may open every file on it.
+    """
     from app.documents.models import DocumentVersion
 
     url = reverse("legacy_import:source_page", kwargs={"pk": source_page_with_files.pk})
     hidden = DocumentVersion.objects.get(original_filename="salajane-liikme-kiri.pdf")
 
-    client.force_login(reader)
-    body = client.get(url).content.decode()
-    assert "avalik-kiri.pdf" in body
+    for person in (reader, specialist):
+        client.force_login(person)
+        body = client.get(url).content.decode()
+        assert "avalik-kiri.pdf" in body
+        assert "salajane-liikme-kiri.pdf" in body
+        assert "Fail, mida selles kasutajavaates ei kuvata" not in body
+
+    client.force_login(administrator)
+    response = client.get(url)
+    body = response.content.decode()
+    assert response.status_code == 404
+    assert "avalik-kiri" not in body
     assert "salajane-liikme-kiri" not in body
     assert str(hidden.pk) not in body and str(hidden.document_id) not in body
-    assert "Fail, mida selles kasutajavaates ei kuvata" in body
-
-    client.force_login(specialist)
-    assert "salajane-liikme-kiri.pdf" in client.get(url).content.decode()
 
 
 # -- ENG-047: a removed row is not the file's current fact ------------------------
@@ -420,7 +436,10 @@ def test_the_opinion_queue_names_no_restricted_matter(
 
     assert HIDDEN_MATTER not in body
     assert str(hidden_matter.pk) not in body
-    assert normal_matter.title[:40] in body
+    # Since docs/adr/0181 an administrator without a grant reads no Matter at
+    # all, so the NORMAL one is withheld the same way.
+    assert normal_matter.title[:40] not in body
+    assert str(normal_matter.pk) not in body
     assert "Ettepanek osutab teemale, mida selles kasutajavaates ei kuvata." in body
 
 
@@ -498,9 +517,25 @@ def test_a_proposal_pointing_at_a_hidden_matter_cannot_be_confirmed(
 def test_a_link_to_a_visible_matter_still_works(
     client,
     administrator,
+    department_head,
     archive_item,
     normal_matter,
 ):
+    """Visible to the administrator through a break-glass grant (docs/adr/0181).
+
+    Without one an administrator reads no Matter, so the link would be refused
+    exactly as a link to a hidden one is.
+    """
+    from datetime import timedelta
+
+    from app.accounts.services import grant_break_glass
+
+    grant_break_glass(
+        user=administrator,
+        granted_by=department_head,
+        reason="Arhiivi sidumine",
+        duration=timedelta(hours=1),
+    )
     candidate = _candidate(archive_item)
     client.force_login(administrator)
 
@@ -602,7 +637,8 @@ def test_no_surface_reveals_more_than_the_matter_itself(
         "reader": reader,
         "administrator": administrator,
     }[role]
-    may_read_restricted = role in {"owner", "department_head"}
+    # Since docs/adr/0181 a READER reads restricted work; an administrator nothing.
+    may_read_restricted = role in {"owner", "department_head", "reader"}
     client.force_login(person)
 
     detail = client.get(reverse("matters:matter_detail", kwargs={"pk": hidden.pk}))

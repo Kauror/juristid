@@ -246,17 +246,16 @@ def test_the_bar_still_offers_teemad(signed_in) -> None:
     assert TEEMAD_URL in navigation
 
 
-def test_the_bar_hides_arvamused_from_the_reader_who_could_read_the_archive(
-    client, administrator
-) -> None:
+def test_the_bar_hides_arvamused_from_the_reader_who_could_read_the_archive(client, reader) -> None:
     """Removed for everybody, not hidden from those without access.
 
-    An ADMINISTRATOR is the persona ``may_read_archive`` admits. If the item is
+    A READER is a persona ``may_read_archive`` admits (docs/adr/0181; it was the
+    ADMINISTRATOR before). If the item is
     gone for them it is gone, rather than having become conditional on a
     permission — which would be a different and much worse change.
     """
-    assert may_read_archive(administrator)
-    client.force_login(administrator)
+    assert may_read_archive(reader)
+    client.force_login(reader)
 
     navigation = navigation_of(client.get(reverse("matters:department")))
 
@@ -492,11 +491,11 @@ def test_saadetud_is_the_sections_default_source(signed_in, opinion_on_a_matter)
     assert "Pakendiseaduse muudatused" in section
 
 
-def test_the_archive_tab_is_offered_to_a_reader_who_may_read_it(client, administrator) -> None:
-    assert may_read_archive(administrator)
+def test_the_archive_tab_is_offered_to_a_reader_who_may_read_it(client, reader) -> None:
+    assert may_read_archive(reader)
     hold(sha="b" * 64, title="Varasem kiri pakendite kohta")
     rebuild_archive_index()
-    client.force_login(administrator)
+    client.force_login(reader)
 
     section = opinion_section_of(body_of(client.get(TEEMAD_URL)))
 
@@ -504,17 +503,17 @@ def test_the_archive_tab_is_offered_to_a_reader_who_may_read_it(client, administ
     assert "arvamus_vaade=arhiiv" in section
 
 
-def test_the_archive_tab_is_not_offered_to_a_reader_who_may_not(client, reader) -> None:
-    """READER is the role outside `ARCHIVE_READERS` since ADR 0042 reached it.
+def test_the_archive_tab_is_not_offered_to_a_reader_who_may_not(client, administrator) -> None:
+    """ADMINISTRATOR without a grant is the refused persona since docs/adr/0181.
 
-    The two lawyer roles read the corpus now — a specialist who may open every
-    RESTRICTED Matter these letters are filed onto was the gap that closed —
-    so the refused reader this asserts about has to be one who genuinely is.
+    `ARCHIVE_READERS` is gone: `may_read_archive` is `may_read_business_content`,
+    so a READER reads the corpus and an administrator without break-glass does
+    not — the refused reader this asserts about has to be one who genuinely is.
     """
-    assert not may_read_archive(reader)
+    assert not may_read_archive(administrator)
     hold(sha="c" * 64, title="Varasem kiri pakendite kohta")
     rebuild_archive_index()
-    client.force_login(reader)
+    client.force_login(administrator)
 
     section = opinion_section_of(body_of(client.get(TEEMAD_URL)))
 
@@ -534,10 +533,10 @@ def test_the_archive_tab_is_offered_to_a_specialist(client, specialist) -> None:
     assert "Varasem kiri pakendite kohta" in section
 
 
-def test_the_archive_opens_in_the_section_for_a_reader_who_may(client, administrator) -> None:
+def test_the_archive_opens_in_the_section_for_a_reader_who_may(client, reader) -> None:
     hold(sha="d" * 64, title="Varasem kiri pakendite kohta")
     rebuild_archive_index()
-    client.force_login(administrator)
+    client.force_login(reader)
 
     section = opinion_section_of(body_of(client.get(TEEMAD_URL, {"arvamus_vaade": "arhiiv"})))
 
@@ -551,18 +550,19 @@ def test_the_archive_opens_in_the_section_for_a_reader_who_may(client, administr
 # ---------------------------------------------------------------------------
 
 
-def test_a_refused_reader_cannot_reach_the_archive_by_asking_for_it(client, reader) -> None:
+def test_a_refused_reader_cannot_reach_the_archive_by_asking_for_it(client, administrator) -> None:
     """The section's parameter is not a way past ``may_read_archive``.
 
     Resolved down to Saadetud in Python, before a query is built — so no archive
     row, no archive count and no archive year reaches the page. It resolves
     rather than raising on purpose: a crafted opinion parameter must not take
-    the whole register away from somebody who was reading teemad.
+    the whole register away from somebody who was reading teemad. The refused
+    persona is the administrator without a grant since docs/adr/0181.
     """
-    assert not may_read_archive(reader)
+    assert not may_read_archive(administrator)
     hold(sha="e" * 64, title="Salajane varasem kiri")
     rebuild_archive_index()
-    client.force_login(reader)
+    client.force_login(administrator)
 
     response = client.get(TEEMAD_URL, {"arvamus_vaade": "arhiiv"})
     body = body_of(response)
@@ -575,42 +575,53 @@ def test_a_refused_reader_cannot_reach_the_archive_by_asking_for_it(client, read
     assert "ei ole veel ühtegi arvamust välja saadetud" in section
 
 
-def test_the_fragment_route_refuses_the_archive_the_same_way(client, reader) -> None:
+def test_the_fragment_route_refuses_the_archive_the_same_way(client, administrator) -> None:
     """The block answers a box on somebody else's page, and holds the same line."""
     hold(sha="f" * 64, title="Salajane varasem kiri")
     rebuild_archive_index()
-    client.force_login(reader)
+    client.force_login(administrator)
 
     fragment = body_of(client.get(BLOCK_URL, {"arvamus_vaade": "arhiiv"}))
 
     assert "Salajane varasem kiri" not in fragment
 
 
-def test_an_opinion_on_an_invisible_matter_is_not_in_the_section(
-    client, reader, specialist, capture_evidence
+def test_an_opinion_on_a_restricted_matter_is_in_every_readers_section_and_no_outsiders(
+    client, reader, specialist, administrator, capture_evidence
 ) -> None:
-    """Visibility is inherited from the Matter, never re-derived here."""
+    """Visibility is inherited from the Matter, never re-derived here.
+
+    Since docs/adr/0181 every authorized reader reads the RESTRICTED Matter's
+    opinion exactly as its owner does; the outsider sees none of it.
+    """
     hidden = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
     evidence = capture_evidence(hidden, b"%PDF-1.4 s", "x.pdf", "application/pdf")
     sent_submission(hidden, evidence=evidence, title="Piiratud arvamus")
 
-    client.force_login(reader)
+    for insider in (specialist, reader):
+        client.force_login(insider)
+        section = opinion_section_of(body_of(client.get(TEEMAD_URL)))
+        assert hidden.title in section
+        assert "<strong>1</strong> vastet" in section
+
+    client.force_login(administrator)
     section = opinion_section_of(body_of(client.get(TEEMAD_URL)))
 
-    assert "Piiratud arvamus" not in section
+    assert hidden.title not in section
     assert "<strong>0</strong> vastet" in section
 
 
-def test_a_refused_reader_is_told_nothing_about_the_corpus_size(client, reader) -> None:
+def test_a_refused_reader_is_told_nothing_about_the_corpus_size(client, administrator) -> None:
     """A count is an access decision too.
 
     Three held letters, and a refused reader's page must not print three
-    anywhere in the section — not as a tab count, not as a total.
+    anywhere in the section — not as a tab count, not as a total. The refused
+    persona is the administrator without a grant since docs/adr/0181.
     """
     for index, letter in enumerate("abc"):
         hold(sha=letter * 64, title=f"Varasem kiri {index}")
     rebuild_archive_index()
-    client.force_login(reader)
+    client.force_login(administrator)
 
     section = opinion_section_of(body_of(client.get(TEEMAD_URL)))
 
@@ -625,9 +636,9 @@ def test_a_refused_reader_is_told_nothing_about_the_corpus_size(client, reader) 
 
 
 @pytest.mark.parametrize("path", [SENT_URL, ARCHIVE_URL])
-def test_the_standalone_urls_still_resolve(client, administrator, path) -> None:
+def test_the_standalone_urls_still_resolve(client, reader, path) -> None:
     """A bookmark from before this change still opens the page it opened then."""
-    client.force_login(administrator)
+    client.force_login(reader)
 
     response = client.get(path)
 
@@ -635,10 +646,10 @@ def test_the_standalone_urls_still_resolve(client, administrator, path) -> None:
     assert '<h1 class="pagehead__title">Arvamused</h1>' in response.content.decode()
 
 
-def test_the_standalone_archive_still_refuses_a_reader_who_may_not(client, reader) -> None:
+def test_the_standalone_archive_still_refuses_a_reader_who_may_not(client, administrator) -> None:
     """The route's own refusal is unchanged; only the link to it left the bar."""
-    assert not may_read_archive(reader)
-    client.force_login(reader)
+    assert not may_read_archive(administrator)
+    client.force_login(administrator)
 
     assert client.get(ARCHIVE_URL).status_code == 403
 
@@ -989,13 +1000,15 @@ def test_the_file_carries_no_version_and_no_size(signed_in, opinion_on_a_matter)
     assert filesizeformat(version.size_bytes) not in cell
 
 
-def test_an_unreadable_file_is_still_not_named(client, reader, specialist, capture_evidence):
-    """AUTH-003 §21, unchanged: naming the file is itself a disclosure.
+def test_a_restricted_file_is_named_to_every_reader_and_its_row_to_no_outsider(
+    client, reader, specialist, administrator, capture_evidence
+):
+    """AUTH-003 §21: naming the file is itself a disclosure.
 
-    A Submission a reader may see can point at a Document restricted below it,
-    because a Document carries its own override. The row appears — this is not a
-    test about hiding the arvamus — and says «Fail puudub» where the filename
-    would be.
+    A Submission can point at a Document restricted below it, because a
+    Document carries its own override. Since docs/adr/0181 that override is a
+    label, not a boundary between authorized readers: the READER's row names
+    and links the file exactly as the owner's does. The outsider gets no row.
     """
     matter = factories.MatterFactory(owner=specialist, title="Nähtav teema")
     evidence = capture_evidence(
@@ -1006,25 +1019,34 @@ def test_an_unreadable_file_is_still_not_named(client, reader, specialist, captu
         visibility_override=Visibility.RESTRICTED,
     )
     sent_submission(matter, evidence=evidence, title="Arvamus salajase failiga")
-    client.force_login(reader)
 
-    row = one_row(client)
+    rows = {}
+    for insider in (specialist, reader):
+        client.force_login(insider)
+        rows[insider.pk] = one_row(client)
+        assert "Nähtav teema" in rows[insider.pk]
+        assert "Salajane_arvamus.pdf" in rows[insider.pk]
+        assert "Fail puudub" not in rows[insider.pk]
+        assert reverse("documents:download", kwargs={"pk": evidence.pk}) in rows[insider.pk]
+    assert rows[specialist.pk] == rows[reader.pk]
 
-    assert "Nähtav teema" in row
-    assert "Salajane_arvamus.pdf" not in row
-    assert "Fail puudub" in row
-    assert reverse("documents:download", kwargs={"pk": evidence.pk}) not in row
+    client.force_login(administrator)
+    section = opinion_section_of(body_of(client.get(TEEMAD_URL)))
+    assert submission_rows_of(section) == []
+    assert "Nähtav teema" not in section
+    assert "Salajane_arvamus.pdf" not in section
 
 
-def test_the_archive_tab_keeps_its_own_row_shape(client, administrator) -> None:
+def test_the_archive_tab_keeps_its_own_row_shape(client, reader) -> None:
     """Out of scope and proved so.
 
     The archive is a table of four identical columns and is not the `submission`
-    component. A change to the sent row must not have reached it.
+    component. A change to the sent row must not have reached it. Read as a
+    READER, the archive's reader since docs/adr/0181.
     """
     hold(sha="7" * 64, title="Varasem kiri pakenditest", recipient="Näidisministeerium")
     rebuild_archive_index()
-    client.force_login(administrator)
+    client.force_login(reader)
 
     section = opinion_section_of(body_of(client.get(TEEMAD_URL, {"arvamus_vaade": "arhiiv"})))
 
@@ -1035,12 +1057,14 @@ def test_the_archive_tab_keeps_its_own_row_shape(client, administrator) -> None:
     assert "Varasem kiri pakenditest" in section
 
 
-def test_an_archive_row_never_names_a_teema(client, administrator, specialist) -> None:
+def test_an_archive_row_never_names_a_teema(client, administrator, reader, specialist) -> None:
     """ADR 0028, unchanged by the move.
 
     An archive row naming its Matter would make the archive a route into the
     register — a reader could learn the title of a RESTRICTED entry from a
     letter tied to it. Embedding the workspace must not have loosened that.
+    The row shape still holds since docs/adr/0181, read as a READER (who now
+    reads the archive); the administrator only records the link.
     """
     restricted = factories.MatterFactory(
         owner=specialist, visibility=Visibility.RESTRICTED, title="Piiratud teema pealkiri"
@@ -1053,7 +1077,7 @@ def test_an_archive_row_never_names_a_teema(client, administrator, specialist) -
         binary=binary, matter=restricted, basis=ArchiveLinkBasis.REVIEWED, actor=administrator
     )
     rebuild_archive_index()
-    client.force_login(administrator)
+    client.force_login(reader)
 
     section = opinion_section_of(body_of(client.get(TEEMAD_URL, {"arvamus_vaade": "arhiiv"})))
 
@@ -1209,9 +1233,9 @@ def test_the_default_source_is_not_written_into_the_address(signed_in) -> None:
     assert "arvamus_vaade" not in signed_in.get(BLOCK_URL, {}).headers["HX-Push-Url"]
 
 
-def test_the_chosen_source_is_written_into_the_address(client, administrator) -> None:
+def test_the_chosen_source_is_written_into_the_address(client, reader) -> None:
     """Arhiivikirjad is a choice, so it survives a reload and a pasted link."""
-    client.force_login(administrator)
+    client.force_login(reader)
 
     pushed = client.get(BLOCK_URL, {"arvamus_vaade": "arhiiv"}).headers["HX-Push-Url"]
 

@@ -429,7 +429,11 @@ def test_a_withdrawn_answer_needs_review_and_reopens_nothing(specialist, send):
     assert matter.response_deadline is None
 
 
-def test_the_answering_opinion_is_named_only_to_a_reader_who_may_see_it(specialist, reader, send):
+def test_the_answering_opinion_is_named_only_to_a_reader_who_may_see_it(
+    specialist, reader, administrator, send
+):
+    """Since docs/adr/0181 the READER may see the restricted opinion and is told
+    it like the owner; an outsider (ADMINISTRATOR without a grant) is not."""
     matter = _requested(specialist, _days(-1))
     secret = send(matter, title="Salajane arvamus", restricted=True)
     resolve_response_deadline(
@@ -437,10 +441,11 @@ def test_the_answering_opinion_is_named_only_to_a_reader_who_may_see_it(speciali
     )
 
     (seen_by_reader,) = ended_deadlines(matter, reader)
-    assert seen_by_reader.submission is None
-    assert not seen_by_reader.needs_review
+    assert seen_by_reader.submission == secret
     (seen_by_owner,) = ended_deadlines(matter, specialist)
     assert seen_by_owner.submission == secret
+    assert seen_by_reader.needs_review == seen_by_owner.needs_review
+    assert all(row.submission is None for row in ended_deadlines(matter, administrator))
 
 
 # ---------------------------------------------------------------------------

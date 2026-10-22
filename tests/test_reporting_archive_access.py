@@ -14,7 +14,13 @@ What is asserted here:
 * the refusal comes before any archive query;
 * a viewer the rule admits gets exactly the numbers the selector computes;
 * browse and Statistika follow one decision: moving a role in or out of
-  `ARCHIVE_READERS` moves both.
+  `ROLES_WITH_BUSINESS_READ` moves both.
+
+Since docs/adr/0181 the archive's rule is the one internal read predicate,
+`may_read_business_content`: a READER reads the archive and an administrator
+without a business role does not, so the refused viewer here is the
+administrator (it was the READER) and the admitted ones are the three business
+roles (they were the two lawyers and the administrator).
 """
 
 from __future__ import annotations
@@ -28,6 +34,7 @@ from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
 from app.accounts.enums import UserRole
+from app.core import authorization
 from app.core.authorization import DEPARTMENT_VIEWER
 from app.legacy_import import opinion_access
 from app.legacy_import.opinion_archive import OpinionArchiveItem
@@ -127,10 +134,10 @@ def test_every_selector_in_the_archive_module_is_registered():
 
 
 def _refused_viewers(world):
-    return {"reader": world.reader, "department": DEPARTMENT_VIEWER}
+    return {"admin": world.admin, "department": DEPARTMENT_VIEWER}
 
 
-@pytest.mark.parametrize("who", ["reader", "department"])
+@pytest.mark.parametrize("who", ["admin", "department"])
 @pytest.mark.parametrize("key", sorted(EXPECTED_ARCHIVE_METRICS))
 def test_a_viewer_who_may_not_read_the_archive_gets_no_archive_metric(
     who, key, world, archive_world, reporting_context
@@ -147,7 +154,7 @@ def test_a_viewer_who_may_not_read_the_archive_gets_no_archive_metric(
 
 @pytest.mark.parametrize("key", sorted(EXPECTED_ARCHIVE_METRICS))
 def test_the_refusal_comes_before_any_archive_query(key, world, archive_world, reporting_context):
-    context = reporting_context(world.reader)
+    context = reporting_context(world.admin)
     with CaptureQueriesContext(connection) as queries:
         with pytest.raises(ArchiveMetricWithheld, match=re.escape(ARCHIVE_WITHHELD)):
             services.compute(key, context)
@@ -158,7 +165,7 @@ def test_the_refusal_comes_before_any_archive_query(key, world, archive_world, r
 def test_no_page_builder_hands_a_refused_viewer_an_archive_result(
     world, archive_world, reporting_context
 ):
-    context = reporting_context(world.reader)
+    context = reporting_context(world.admin)
     pages = {
         "matters": services.matters_page(context),
         "activity": services.activity_page(context),
@@ -175,8 +182,8 @@ def test_no_page_builder_hands_a_refused_viewer_an_archive_result(
 
 
 @pytest.mark.parametrize("path", STATISTIKA_PAGES)
-def test_no_statistika_page_shows_a_reader_the_archive(path, client, world, archive_world):
-    client.force_login(world.reader)
+def test_no_statistika_page_shows_an_administrator_the_archive(path, client, world, archive_world):
+    client.force_login(world.admin)
     response = client.get(path, {"periood": "koik"})
     assert response.status_code == 200, path
     body = response.content.decode()
@@ -187,8 +194,8 @@ def test_no_statistika_page_shows_a_reader_the_archive(path, client, world, arch
 
 
 @pytest.mark.parametrize("slug", CSV_EXPORTS)
-def test_no_csv_export_carries_the_archive_to_a_reader(slug, client, world, archive_world):
-    client.force_login(world.reader)
+def test_no_csv_export_carries_the_archive_to_an_administrator(slug, client, world, archive_world):
+    client.force_login(world.admin)
     body = _csv(client, slug)
     for word in ARCHIVE_WORDS:
         assert word not in body, (slug, word)
@@ -201,7 +208,7 @@ def test_no_csv_export_carries_the_archive_to_a_reader(slug, client, world, arch
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("who", ["martin", "head", "admin"])
+@pytest.mark.parametrize("who", ["martin", "head", "reader"])
 @pytest.mark.parametrize("key", sorted(EXPECTED_ARCHIVE_METRICS))
 def test_an_archive_reader_gets_exactly_what_the_selector_computes(
     who, key, world, archive_world, reporting_context
@@ -237,11 +244,13 @@ def test_an_archive_reader_still_sees_the_archive_section(client, world, archive
 def test_browse_and_statistika_follow_one_decision(
     monkeypatch, client, world, archive_world, reporting_context
 ):
-    """Widen the reader set to READER and narrow it past SPECIALIST: both move."""
+    """Narrow the business readers past SPECIALIST: browse and Statistika both move."""
     browse = reverse("legacy_import:opinion_archive_browse")
     key = keys.OPINION_ARCHIVE_DISTINCT_BINARIES
 
-    monkeypatch.setattr(opinion_access, "ARCHIVE_READERS", frozenset({UserRole.READER.value}))
+    monkeypatch.setattr(
+        authorization, "ROLES_WITH_BUSINESS_READ", frozenset({UserRole.READER.value})
+    )
 
     client.force_login(world.reader)
     assert client.get(browse).status_code == 200

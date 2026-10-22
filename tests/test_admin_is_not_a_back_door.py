@@ -170,11 +170,22 @@ def test_a_tag_assignment_is_not_written_through_the_admin(admin_client):
     assert admin_client.get("/admin/matters/tagassignment/add/").status_code == 403
 
 
-def test_a_tombstone_is_listed_and_cannot_be_edited(admin_client, specialist):
+def test_a_tombstone_is_listed_only_through_a_grant_and_cannot_be_edited(
+    admin_client, superuser, department_head, specialist
+):
+    """Since docs/adr/0181 a superuser without a grant reads no Matter, a tombstone included."""
     from app.matters.deletion import delete_matter
 
     matter = factories.MatterFactory(owner=specialist, title="Kustutatud teema")
     delete_matter(matter=matter, actor=specialist)
+
+    assert "Kustutatud teema" not in admin_client.get("/admin/matters/matter/").content.decode()
+    grant_break_glass(
+        user=superuser,
+        granted_by=department_head,
+        reason="tõrke uurimine",
+        duration=dt.timedelta(hours=2),
+    )
 
     listing = admin_client.get("/admin/matters/matter/").content.decode()
     assert "Kustutatud teema" in listing
@@ -264,12 +275,13 @@ ADMIN_PAGES = (
 )
 
 
-def test_the_admin_lists_nothing_restricted(admin_client, secret_world, ordinary):
+def test_the_admin_lists_no_business_record(admin_client, secret_world, ordinary):
+    """Since docs/adr/0181 a superuser without a grant lists not even the NORMAL Matter."""
     for page in ADMIN_PAGES:
         body = admin_client.get(page).content.decode()
         assert HIDDEN_TITLE not in body, page
         assert HIDDEN_FILE not in body, page
-    assert "Tavaline avatud teema" in admin_client.get(ADMIN_PAGES[0]).content.decode()
+    assert "Tavaline avatud teema" not in admin_client.get(ADMIN_PAGES[0]).content.decode()
 
 
 def test_the_admin_opens_no_restricted_record(admin_client, secret_world):

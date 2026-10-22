@@ -112,27 +112,44 @@ def test_the_scoped_counter_survives_a_collaborator_join(shared_world, specialis
     assert from_groups == Matter.objects.visible_to(specialist).count()
 
 
-def test_a_restricted_matter_still_contributes_to_nothing(shared_world, other_specialist):
-    """The fix must not have widened anything on its way past authorization."""
+def test_a_restricted_matter_still_contributes_to_nothing(
+    shared_world, other_specialist, administrator
+):
+    """The fix must not have widened anything on its way past authorization.
+
+    Since docs/adr/0181 no request reaches a narrowed scope: a READER counts all
+    three like a lawyer, and the administrator without a grant counts none. The
+    builder's narrowing is still what this guards, so the NORMAL-only scope is
+    built by hand (`Scope(..., sees_restricted_by_role=False)`).
+    """
     hidden = factories.MatterFactory(
         title="Piiratud eelnõu",
         owner=other_specialist,
         visibility=Visibility.RESTRICTED,
         stage=shared_world["stage"],
     )
-    outsider = factories.ReaderFactory()  # not a lawyer: docs/adr/0042
+    reader = factories.ReaderFactory()
 
-    from app.core.authorization import scoped_count
+    from app.core.authorization import Scope, apply, matter_visibility_q, scoped_count
 
-    rows = (
-        Matter.objects.visible_to(outsider)
-        .values("stage__label_et")
-        .annotate(total=scoped_count())
-        .order_by()
+    def labels(queryset):
+        rows = queryset.values("stage__label_et").annotate(total=scoped_count()).order_by()
+        return {row["stage__label_et"]: row["total"] for row in rows}
+
+    narrowed = Scope(
+        user=factories.UserFactory(),
+        is_authenticated=True,
+        sees_restricted_by_role=False,
+        break_glass_grant_id=None,
     )
-    labels = {row["stage__label_et"]: row["total"] for row in rows}
+    by_hand = apply(Matter.objects.all(), matter_visibility_q(narrowed))
+    stage = shared_world["stage"].label_et
 
     # Two, not three: the restricted row is absent from the count as well as
     # from the list, which is the property the whole dashboard rests on.
-    assert labels.get(shared_world["stage"].label_et, 0) == 2
-    assert Matter.objects.visible_to(outsider).filter(pk=hidden.pk).count() == 0
+    assert labels(by_hand).get(stage, 0) == 2
+    assert by_hand.filter(pk=hidden.pk).count() == 0
+
+    assert labels(Matter.objects.visible_to(reader)).get(stage, 0) == 3
+    assert labels(Matter.objects.visible_to(administrator)) == {}
+    assert Matter.objects.visible_to(administrator).filter(pk=hidden.pk).count() == 0

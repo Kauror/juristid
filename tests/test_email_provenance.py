@@ -352,11 +352,14 @@ def test_a_thumbnail_is_never_stored_by_the_browser(
     assert response["Pragma"] == "no-cache"
 
 
-def test_a_restricted_documents_thumbnail_is_not_served(
-    restricted_matter, capture_evidence, extract, client, reader
+def test_a_restricted_documents_thumbnail_is_served_to_a_reader_not_to_an_outsider(
+    restricted_matter, capture_evidence, extract, client, reader, administrator
 ) -> None:
     """A preview that leaked where a download did not would be the more
-    embarrassing of the two."""
+    embarrassing of the two.
+
+    Since docs/adr/0181 the READER reads restricted documents; the outsider who
+    must get the 404 is an ADMINISTRATOR without a grant."""
     from app.documents.enums import DerivativeKind, DerivativeStatus
     from app.documents.models import DocumentDerivative
 
@@ -370,12 +373,16 @@ def test_a_restricted_documents_thumbnail_is_not_served(
         version=version, kind=DerivativeKind.THUMBNAIL, status=DerivativeStatus.ACTIVE
     )
 
+    assert client.get(f"/dokumendid/pisipilt/{thumbnail.pk}/").status_code == 200
+    assert client.get(f"/dokumendid/{version.document_id}/").status_code == 200
+
+    client.force_login(administrator)
     assert client.get(f"/dokumendid/pisipilt/{thumbnail.pk}/").status_code == 404
     assert client.get(f"/dokumendid/{version.document_id}/").status_code == 404
 
 
-def test_provenance_names_no_file_the_reader_may_not_open(
-    email_version, extract, client, reader
+def test_provenance_names_every_file_to_a_reader_and_none_to_an_outsider(
+    email_version, extract, client, reader, administrator
 ) -> None:
     """Both directions of the provenance block read through `visible_to`.
 
@@ -383,6 +390,10 @@ def test_provenance_names_no_file_the_reader_may_not_open(
     two agree. A stored copy is not the rule, though (`app.core.authorization`):
     once one file is stricter than the other, the page listing it must not print
     its name, which is what the list shows and what is most telling about it.
+
+    Since docs/adr/0181 (csf_0e7751e7) a stricter file is still read by every
+    internal user: the READER sees both names and both links whichever side is
+    restricted, and an outsider (ADMINISTRATOR without a grant) none of them.
     """
     from app.core.enums import Visibility
     from app.documents.models import Document
@@ -394,17 +405,21 @@ def test_provenance_names_no_file_the_reader_may_not_open(
     client.force_login(reader)
 
     Document.objects.filter(pk=hidden.document_id).update(visibility_override=Visibility.RESTRICTED)
-    assert client.get(f"/dokumendid/{hidden.document_id}/").status_code == 404
+    assert client.get(f"/dokumendid/{hidden.document_id}/").status_code == 200
     body = client.get(f"/dokumendid/{email_version.document_id}/").content.decode()
-    assert hidden.original_filename not in body
+    assert hidden.original_filename in body
     assert shown.original_filename in body
 
     Document.objects.filter(pk=email_version.document_id).update(
         visibility_override=Visibility.RESTRICTED
     )
     body = client.get(f"/dokumendid/{shown.document_id}/").content.decode()
-    # The attachment's own provenance note, written at intake, still says which
-    # message it came from; that is the attachment's record. What goes is the
-    # link to a page this reader would be refused.
-    assert "See fail oli manus number" not in body
-    assert f'href="/dokumendid/{email_version.document_id}/"' not in body
+    # The attachment's own provenance note and the link to its message both stay.
+    assert "See fail oli manus number" in body
+    assert f'href="/dokumendid/{email_version.document_id}/"' in body
+
+    client.force_login(administrator)
+    for document_id in (hidden.document_id, shown.document_id, email_version.document_id):
+        response = client.get(f"/dokumendid/{document_id}/")
+        assert response.status_code == 404
+        assert hidden.original_filename not in response.content.decode()

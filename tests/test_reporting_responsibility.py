@@ -249,45 +249,52 @@ def test_a_wide_matrix_folds_its_tail_into_a_labelled_column() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_the_restricted_matter_moves_no_responsibility_total(
+def test_the_restricted_matter_moves_every_readers_total_alike_and_no_outsiders(
     world, responsibility_world, reporting_context
 ):
     """Sandra owns one restricted Matter, and since docs/adr/0042 Martin sees it.
 
-    Every aggregate that groups by a person has to agree between two lawyers,
-    and to be off by exactly one against somebody outside the legal team.
+    Every aggregate that groups by a person has to agree between two lawyers —
+    and, since docs/adr/0181, with the READER too; somebody outside (an
+    administrator without a grant) counts nothing at all.
     """
     martin = compute(keys.ACTIVE_FULL_MATTERS_BY_RESPONSIBILITY, reporting_context(world.martin))
     sandra = compute(keys.ACTIVE_FULL_MATTERS_BY_RESPONSIBILITY, reporting_context(world.sandra))
     reader = compute(keys.ACTIVE_FULL_MATTERS_BY_RESPONSIBILITY, reporting_context(world.reader))
-    assert sandra.value == martin.value
-    assert sandra.value == reader.value + 1
+    outsider = compute(keys.ACTIVE_FULL_MATTERS_BY_RESPONSIBILITY, reporting_context(world.admin))
+    assert sandra.value == martin.value == reader.value > 0
+    assert not outsider.value
 
     by_martin = {segment.label: segment.value for segment in martin.segments}
     by_sandra = {segment.label: segment.value for segment in sandra.segments}
     by_reader = {segment.label: segment.value for segment in reader.segments}
-    assert by_sandra["Sandra Testjurist"] == by_martin["Sandra Testjurist"]
-    assert by_sandra["Sandra Testjurist"] == by_reader["Sandra Testjurist"] + 1
-    assert by_sandra[responsibility.UNASSIGNED_LABEL] == by_reader[responsibility.UNASSIGNED_LABEL]
+    assert by_sandra == by_martin == by_reader
+    assert not any(segment.value for segment in outsider.segments)
 
 
-def test_the_department_scope_never_sees_the_restricted_matter(
+def test_the_department_sentinel_sees_nothing_at_all(
     world, responsibility_world, reporting_context
 ):
+    # docs/adr/0181: the persona-less gate session reads no business content.
     department = compute(
         keys.ACTIVE_FULL_MATTERS_BY_RESPONSIBILITY, reporting_context(DEPARTMENT_VIEWER)
     )
     reader = compute(keys.ACTIVE_FULL_MATTERS_BY_RESPONSIBILITY, reporting_context(world.reader))
-    assert department.value == reader.value
+    assert reader.value > 0
+    assert not department.value
+    assert not any(segment.value for segment in department.segments)
 
 
 def test_the_year_matrix_is_scoped_before_it_is_grouped(
     world, responsibility_world, reporting_context
 ):
+    # docs/adr/0181: the READER's matrix is Sandra's; an outsider's holds nothing.
     reader = matrix_of(world.reader, keys.MATTERS_BY_YEAR_AND_RESPONSIBILITY, reporting_context)
     sandra = matrix_of(world.sandra, keys.MATTERS_BY_YEAR_AND_RESPONSIBILITY, reporting_context)
+    outsider = matrix_of(world.admin, keys.MATTERS_BY_YEAR_AND_RESPONSIBILITY, reporting_context)
     assert reader is not None and sandra is not None
-    assert sandra.grand_total == reader.grand_total + 1
+    assert sandra.grand_total == reader.grand_total > 0
+    assert outsider is None or not outsider.grand_total
 
 
 # ---------------------------------------------------------------------------

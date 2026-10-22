@@ -22,6 +22,10 @@ Asserted through the real operation, never by building the rows by hand:
   rewritten;
 * **unchanged contracts** — a stale action still refuses the whole save, and a
   `Soovitatud järgmisena`-linked action gets the same rule.
+
+Since docs/adr/0181 the copied restriction is a label, not a boundary between
+authorized users: a READER reads the restricted `Entry` and its file exactly as
+the specialist does, and an administrator without a business role reads neither.
 """
 
 from __future__ import annotations
@@ -92,6 +96,14 @@ def _teema(client, user, matter) -> str:
     return client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
 
 
+def _teema_refused(client, user, matter) -> str:
+    """An outsider's answer for the Teema page: a 404, and the body it carried."""
+    client.force_login(user)
+    response = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk}))
+    assert response.status_code == 404
+    return response.content.decode()
+
+
 def _dokumendid(client, user, matter) -> str:
     client.force_login(user)
     return client.get(
@@ -109,32 +121,33 @@ def matter(specialist):
 # ---------------------------------------------------------------------------
 
 
-def test_a_restricted_actions_completion_entry_is_restricted(client, matter, specialist, reader):
+def test_a_restricted_actions_completion_entry_is_restricted_and_read_by_every_reader(
+    client, matter, specialist, reader, administrator
+):
     action = _action(matter, specialist, restricted=True)
-    readers_entries_before = Entry.objects.visible_to(reader).filter(matter=matter).count()
-    assert not NextAction.objects.visible_to(reader).filter(pk=action.pk).exists()
+    assert NextAction.objects.visible_to(reader).filter(pk=action.pk).exists()
 
     entry = _complete(matter, specialist, action).entry
 
     assert matter.visibility == Visibility.NORMAL
     assert entry.visibility_override == Visibility.RESTRICTED
 
-    # Not on any surface for a reader who may not see the action.
-    assert not Entry.objects.visible_to(reader).filter(pk=entry.pk).exists()
-    assert entry.pk not in _timeline_entries(matter, reader)
-    readers_page = _teema(client, reader, matter)
-    assert BODY_WORD not in readers_page
-    assert "Salastatudsamm" not in readers_page
-    assert result_count(query=BODY_WORD, user=reader) == 0
-    assert Entry.objects.visible_to(reader).filter(matter=matter).count() == (
-        readers_entries_before
+    # Every authorized reader reads it on every surface, as the specialist does.
+    for viewer in (reader, specialist):
+        assert Entry.objects.visible_to(viewer).filter(pk=entry.pk).exists()
+        assert entry.pk in _timeline_entries(matter, viewer)
+        assert BODY_WORD in _teema(client, viewer, matter)
+        assert result_count(query=BODY_WORD, user=viewer) >= 1
+    assert result_count(query=BODY_WORD, user=reader) == result_count(
+        query=BODY_WORD, user=specialist
     )
 
-    # Still there for somebody who may see it.
-    assert Entry.objects.visible_to(specialist).filter(pk=entry.pk).exists()
-    assert entry.pk in _timeline_entries(matter, specialist)
-    assert BODY_WORD in _teema(client, specialist, matter)
-    assert result_count(query=BODY_WORD, user=specialist) >= 1
+    # An outsider reads nothing of it.
+    assert not Entry.objects.visible_to(administrator).exists()
+    outsiders_page = _teema_refused(client, administrator, matter)
+    assert BODY_WORD not in outsiders_page
+    assert "Salastatudsamm" not in outsiders_page
+    assert result_count(query=BODY_WORD, user=administrator) == 0
 
     action.refresh_from_db()
     assert action.status == ActionStatus.COMPLETED
@@ -145,11 +158,10 @@ def test_a_restricted_actions_completion_entry_is_restricted(client, matter, spe
 # ---------------------------------------------------------------------------
 
 
-def test_a_restricted_actions_completion_file_is_restricted_through_the_entry(
-    client, matter, specialist, reader
+def test_a_restricted_actions_completion_file_is_restricted_and_read_by_every_reader(
+    client, matter, specialist, reader, administrator
 ):
     action = _action(matter, specialist, restricted=True)
-    readers_files_before = Document.objects.visible_to(reader).filter(matter=matter).count()
 
     result = _complete(matter, specialist, action, uploads=[_pdf()])
     (document,) = result.documents
@@ -157,21 +169,19 @@ def test_a_restricted_actions_completion_file_is_restricted_through_the_entry(
     assert result.entry.visibility_override == Visibility.RESTRICTED
     assert document.visibility_override == Visibility.RESTRICTED
 
-    readers_page = _teema(client, reader, matter)
-    readers_files = _dokumendid(client, reader, matter)
-    assert BODY_WORD not in readers_page
-    assert document.title not in readers_page
-    assert document.title not in readers_files
-    assert Document.objects.visible_to(reader).filter(matter=matter).count() == (
-        readers_files_before
-    )
-    assert result_count(query=BODY_WORD, user=reader) == 0
-    assert result_count(query=FILE_WORD, user=reader) == 0
+    for viewer in (reader, specialist):
+        assert BODY_WORD in _teema(client, viewer, matter)
+        assert document.title in _dokumendid(client, viewer, matter)
+        assert Document.objects.visible_to(viewer).filter(pk=document.pk).exists()
+        assert result_count(query=BODY_WORD, user=viewer) >= 1
+        assert result_count(query=FILE_WORD, user=viewer) >= 1
 
-    assert BODY_WORD in _teema(client, specialist, matter)
-    assert document.title in _dokumendid(client, specialist, matter)
-    assert result_count(query=BODY_WORD, user=specialist) >= 1
-    assert result_count(query=FILE_WORD, user=specialist) >= 1
+    outsiders_page = _teema_refused(client, administrator, matter)
+    assert BODY_WORD not in outsiders_page
+    assert document.title not in outsiders_page
+    assert not Document.objects.visible_to(administrator).exists()
+    assert result_count(query=BODY_WORD, user=administrator) == 0
+    assert result_count(query=FILE_WORD, user=administrator) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -208,7 +218,10 @@ def test_a_restricted_matter_needs_no_redundant_override(specialist):
 # ---------------------------------------------------------------------------
 
 
-def test_relaxing_the_action_later_leaves_the_entry_restricted(matter, specialist, reader):
+def test_relaxing_the_action_later_leaves_the_entry_restricted(
+    matter, specialist, reader, administrator
+):
+    """The label is copied, not joined; since docs/adr/0181 it gates no authorized reader."""
     action = _action(matter, specialist, restricted=True)
     entry = _complete(matter, specialist, action).entry
 
@@ -216,7 +229,9 @@ def test_relaxing_the_action_later_leaves_the_entry_restricted(matter, specialis
 
     entry.refresh_from_db()
     assert entry.visibility_override == Visibility.RESTRICTED
-    assert not Entry.objects.visible_to(reader).filter(pk=entry.pk).exists()
+    assert entry.effective_visibility == Visibility.RESTRICTED
+    assert Entry.objects.visible_to(reader).filter(pk=entry.pk).exists()
+    assert not Entry.objects.visible_to(administrator).filter(pk=entry.pk).exists()
 
 
 def test_an_existing_entry_is_not_rewritten_when_its_action_is_restricted_later(
@@ -261,7 +276,9 @@ def test_a_stale_restricted_action_refuses_the_whole_save(matter, specialist):
 # ---------------------------------------------------------------------------
 
 
-def test_a_restricted_plan_linked_actions_completion_is_restricted(matter, specialist, reader):
+def test_a_restricted_plan_linked_actions_completion_is_restricted(
+    matter, specialist, reader, administrator
+):
     from app.workflow.models import MatterPlanStep
 
     step = MatterPlanStep.objects.create(matter=matter, title="Tutvu materjaliga", position=0)
@@ -272,8 +289,10 @@ def test_a_restricted_plan_linked_actions_completion_is_restricted(matter, speci
     entry = _complete(matter, specialist, action).entry
 
     assert entry.visibility_override == Visibility.RESTRICTED
-    assert not Entry.objects.visible_to(reader).filter(pk=entry.pk).exists()
-    assert result_count(query=BODY_WORD, user=reader) == 0
+    assert Entry.objects.visible_to(reader).filter(pk=entry.pk).exists()
+    assert result_count(query=BODY_WORD, user=reader) >= 1
+    assert not Entry.objects.visible_to(administrator).filter(pk=entry.pk).exists()
+    assert result_count(query=BODY_WORD, user=administrator) == 0
     step.refresh_from_db()
     assert step.state == "COMPLETED"
 

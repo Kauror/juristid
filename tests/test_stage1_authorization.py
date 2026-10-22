@@ -3,6 +3,10 @@
 A UI that merely omits a row is not access control. These tests go at the
 routes: list, detail, search, timeline, download and every child URL, for a user
 who is not involved and for an administrator whose role is technical only.
+
+Since docs/adr/0181 every authorized internal user — a READER included —
+reaches it all, and the user it stays hidden from is the administrator (or
+superuser) without a grant, or the anonymous visitor.
 """
 
 from __future__ import annotations
@@ -75,7 +79,9 @@ def test_the_owner_reaches_everything(client, specialist, restricted_world):
         assert client.get(url, follow=True).status_code == 200, url
 
 
-def test_an_uninvolved_specialist_reaches_nothing(client, reader, restricted_world):
+def test_an_uninvolved_reader_reaches_everything_and_an_outsider_nothing(
+    client, reader, administrator, restricted_world
+):
     """404 rather than 403: a 403 would confirm the record exists.
 
     Followed, because one of these addresses is now a compatibility redirect
@@ -83,8 +89,15 @@ def test_an_uninvolved_specialist_reaches_nothing(client, reader, restricted_wor
     assertion is the *final* answer. It is 404 at the first hop — the retired
     route resolves the Matter before it reverses anything — and following proves
     the redirect did not hand an unauthorized caller a working URL.
+
+    Since docs/adr/0181 the uninvolved READER reaches every address as the owner
+    does; the unauthorized caller is the administrator without a grant.
     """
     client.force_login(reader)
+    for url in _urls(restricted_world):
+        assert client.get(url, follow=True).status_code == 200, url
+
+    client.force_login(administrator)
     for url in _urls(restricted_world):
         assert client.get(url, follow=True).status_code == 404, url
 
@@ -108,8 +121,16 @@ def test_a_superuser_alone_does_not_either(client, superuser, restricted_world):
         assert client.get(url).status_code == 404, url
 
 
-def test_it_is_absent_from_the_register_and_its_count(client, reader, restricted_world):
+def test_it_is_in_a_readers_register_and_absent_from_an_outsiders(
+    client, reader, administrator, restricted_world
+):
+    """docs/adr/0181: the READER's register counts it; the outsider's does not."""
     client.force_login(reader)
+    response = client.get(reverse("matters:matter_list"), {"olek": "koik"})
+    assert response.context["page"].paginator.count == 1
+    assert "Piiratud teema" in response.content.decode()
+
+    client.force_login(administrator)
     response = client.get(reverse("matters:matter_list"), {"olek": "koik"})
     assert response.context["page"].paginator.count == 0
     assert "Piiratud teema" not in response.content.decode()
@@ -123,8 +144,15 @@ def test_it_is_absent_from_my_work(client, other_specialist, restricted_world):
     assert response.context["work"].open_matters == 0
 
 
-def test_it_is_absent_from_search_results_and_snippets(client, reader, restricted_world):
+def test_it_is_found_by_a_reader_and_absent_from_an_outsiders_search(
+    client, reader, administrator, restricted_world
+):
+    """docs/adr/0181: the READER finds it as the owner does; the outsider not."""
     client.force_login(reader)
+    response = client.get(reverse("search:search"), {"q": "piiratud"})
+    assert response.context["result_count"] == 1
+
+    client.force_login(administrator)
     response = client.get(reverse("search:search"), {"q": "piiratud"})
     assert response.context["result_count"] == 0
     assert "Piiratud teema" not in response.content.decode()
@@ -136,10 +164,14 @@ def test_the_owner_does_find_it(client, specialist, restricted_world):
     assert response.context["result_count"] == 1
 
 
-def test_a_restricted_child_inside_a_normal_matter_stays_hidden(
-    client, specialist, reader, normal_matter
+def test_a_restricted_child_inside_a_normal_matter_reaches_a_reader_not_an_outsider(
+    client, specialist, reader, administrator, normal_matter
 ):
-    """Visibility is per record, not only per Matter."""
+    """Visibility is per record, not only per Matter.
+
+    Since docs/adr/0181 the record's restriction is a label between authorized
+    readers: the READER sees both entries, the outsider neither.
+    """
     add_entry(
         matter=normal_matter,
         body="<p>Ainult vastutajale nähtav</p>",
@@ -153,6 +185,13 @@ def test_a_restricted_child_inside_a_normal_matter_stays_hidden(
     body = response.content.decode()
     assert response.status_code == 200
     assert "Kõigile nähtav" in body
+    assert "Ainult vastutajale nähtav" in body
+
+    client.force_login(administrator)
+    response = client.get(reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk}))
+    body = response.content.decode()
+    assert response.status_code == 404
+    assert "Kõigile nähtav" not in body
     assert "Ainult vastutajale nähtav" not in body
 
 
@@ -172,7 +211,7 @@ def test_posting_to_a_restricted_matter_is_refused(client, reader, restricted_wo
     one — but it does mean this route can no longer *demonstrate* the
     visibility rule, because every actor who fails visibility also fails the
     write gate (`ROLES_WITH_BUSINESS_WRITE` is a subset of
-    `ROLES_WITH_RESTRICTED_ACCESS`). The visibility rule itself is asserted
+    `ROLES_WITH_BUSINESS_READ`). The visibility rule itself is asserted
     where it is still observable, in `tests/test_authorization.py`, and
     `tests/test_one_write_gate.py` guards the subset relation that makes this
     reasoning true.

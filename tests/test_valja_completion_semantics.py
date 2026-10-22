@@ -354,12 +354,13 @@ def test_a_newer_snapshot_blanking_the_cell_restores_the_deadline(specialist, to
 # ---------------------------------------------------------------------------
 
 
-def test_the_new_rule_cannot_disclose_a_restricted_matter(specialist, reader, today):
+def test_the_new_rule_cannot_disclose_a_restricted_matter(specialist, administrator, today):
     """Case 16. The subquery is reader-blind and may only ever remove a row.
 
     A RESTRICTED Matter is invisible to a READER before the rule and after it,
     whichever way the register reads — so the difference between the two
-    populations discloses nothing.
+    populations discloses nothing. Since docs/adr/0181 a READER sees it; the
+    viewer it is invisible to is an outsider (ADMINISTRATOR without a grant).
     """
     matter = _matter(
         specialist, deadline=today - timedelta(days=30), visibility=Visibility.RESTRICTED
@@ -367,14 +368,14 @@ def test_the_new_rule_cannot_disclose_a_restricted_matter(specialist, reader, to
     _mark(matter, state=OpinionSentState.BLANK)
 
     assert matter.pk in _outstanding(specialist)
-    assert matter.pk not in _outstanding(reader)
+    assert matter.pk not in _outstanding(administrator)
 
     CurrentRegisterState.objects.filter(matter=matter).update(
         opinion_sent_state=OpinionSentState.DATE, opinion_sent_recorded=True
     )
 
     assert matter.pk not in _outstanding(specialist)
-    assert matter.pk not in _outstanding(reader)
+    assert matter.pk not in _outstanding(administrator)
 
 
 # ---------------------------------------------------------------------------

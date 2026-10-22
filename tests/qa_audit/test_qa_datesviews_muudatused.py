@@ -334,8 +334,8 @@ def test_tehtud_and_muudatused_agree_on_every_named_window():
         assert (tehtud.start, tehtud.end) == (muudatused.start, muudatused.end), key
 
 
-def test_an_opinion_restricted_after_sending_hides_its_checks_events(
-    department_head, reader, specialist, ministry
+def test_an_opinion_restricted_after_sending_keeps_its_checks_events_for_every_reader(
+    department_head, reader, specialist, ministry, administrator
 ):
     """ADR 0146 §10: a check's events reach exactly the readers its opinion
     does, read live — here through Muudatused for a reader lent the view.
@@ -343,7 +343,10 @@ def test_an_opinion_restricted_after_sending_hides_its_checks_events(
     Since D1 (QA remediation 2026-10-14) the check the send scheduled is the
     system's and is counted in `Coverage.automatic_steps`, not under
     «Järgmised tegevused»; that figure is read from the same scoped events, so
-    it is where the restriction must show."""
+    it is where the restriction must show.
+
+    Since docs/adr/0181 the READER reads the restricted opinion and its check
+    like the head; only an outsider (ADMINISTRATOR without a grant) sees none."""
     from app.core.enums import Visibility
     from app.submissions.models import Submission
 
@@ -359,9 +362,14 @@ def test_an_opinion_restricted_after_sending_hides_its_checks_events(
     )
     Submission.objects.filter(pk=opinion.pk).update(visibility_override=Visibility.RESTRICTED)
 
-    assert dc.build_changes(reader).coverage.automatic_steps == 0
-    assert _category(dc.build_changes(reader), "tegevused").count == 0
+    assert dc.build_changes(reader).coverage.automatic_steps == reader_before
+    assert (
+        _category(dc.build_changes(reader), "tegevused").count
+        == _category(dc.build_changes(department_head), "tegevused").count
+    )
     assert dc.build_changes(department_head).coverage.automatic_steps == reader_before
+    assert dc.build_changes(administrator).coverage.automatic_steps == 0
+    assert _category(dc.build_changes(administrator), "tegevused").count == 0
 
 
 def test_one_closure_reads_as_one_entry_not_one_cancellation_per_step(department_head, specialist):

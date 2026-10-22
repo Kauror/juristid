@@ -173,7 +173,12 @@ def test_a_milestone_that_is_not_ahead_is_not_the_next_step(signed_in, specialis
 # -- E. authorization ---------------------------------------------------------
 
 
-def test_a_hidden_milestone_decides_nothing_for_the_reader(client, reader, specialist):
+def test_a_restricted_milestone_decides_alike_for_a_reader_and_nothing_for_an_outsider(
+    client, reader, administrator, specialist
+):
+    """It used to be hidden from a READER, who then saw `MISSING`; since
+    docs/adr/0181 the READER's row is the specialist's, and an administrator
+    without a grant sees neither the Matter nor the milestone."""
     matter = factories.MatterFactory(owner=specialist, title="Nähtav teema")
     _milestone(
         matter,
@@ -181,31 +186,23 @@ def test_a_hidden_milestone_decides_nothing_for_the_reader(client, reader, speci
         days=11,
         visibility_override=Visibility.RESTRICTED,
     )
-    hidden_day = (_today() + dt.timedelta(days=11)).strftime("%d.%m")
+
+    client.force_login(specialist)
+    as_owner = _cell(client, matter)
+    assert "Salajane tähtaeg" in as_owner
+    assert LABEL in as_owner
 
     client.force_login(reader)
+    cell = _cell(client, matter)
+    assert cell == as_owner
+    assert MISSING not in cell
+    assert not _listed_without_next_step(client, matter)
+
+    client.force_login(administrator)
     body = client.get(REGISTER, {"olek": "koik"}).content.decode()
-    cell = _cell(client, matter)
-    # The Matter is there; the milestone is not — not its title, not its day,
-    # not its label — and it does not keep the Matter out of the gap list.
-    assert "Nähtav teema" in body
+    assert "Nähtav teema" not in body
     assert "Salajane tähtaeg" not in body
-    assert hidden_day not in cell
-    assert LABEL not in cell
-    assert MISSING in cell
-    assert _listed_without_next_step(client, matter)
-
-    # With the register's own instruction, the reader gets that instead.
-    _source_instruction(matter, "Uurida ministeeriumilt")
-    cell = _cell(client, matter)
-    assert "Uurida ministeeriumilt" in cell
-    assert "Salajane tähtaeg" not in cell
-
-    # The specialist may read the milestone, so for them it is the next step.
-    client.force_login(specialist)
-    cell = _cell(client, matter)
-    assert "Salajane tähtaeg" in cell
-    assert LABEL in cell
+    assert f"/teemad/{matter.pk}/" not in body
 
 
 # -- F. the Excel instruction comes after the milestone -------------------------

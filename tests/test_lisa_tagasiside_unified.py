@@ -656,9 +656,11 @@ def test_the_gate_visitor_writes_nothing(normal_matter, organisation, settings):
     assert business_rows() == before
 
 
-def test_a_reply_to_a_restricted_round_is_restricted_and_unsearchable_for_a_reader(
-    signed_in, specialist, reader, organisation
+def test_a_reply_to_a_restricted_round_is_marked_and_found_by_readers_only(
+    signed_in, specialist, reader, administrator, organisation
 ):
+    """The label is still copied (0162); since docs/adr/0181 a READER finds the
+    reply as the specialist does and an administrator without a grant does not."""
     matter = factories.MatterFactory(owner=specialist, visibility=Visibility.NORMAL)
     round_ = MatterEngagement.objects.create(
         matter=matter,
@@ -686,8 +688,11 @@ def test_a_reply_to_a_restricted_round_is_restricted_and_unsearchable_for_a_read
     assert position.visibility_override == Visibility.RESTRICTED
     link = DocumentLink.objects.get(external_position=position)
     assert link.document.visibility_override == Visibility.RESTRICTED
-    assert result_count(query="PIIRATUD-VASTUS-5531", user=reader) == 0
+    assert result_count(query="PIIRATUD-VASTUS-5531", user=administrator) == 0
     assert result_count(query="PIIRATUD-VASTUS-5531", user=specialist) >= 1
+    assert result_count(query="PIIRATUD-VASTUS-5531", user=reader) == result_count(
+        query="PIIRATUD-VASTUS-5531", user=specialist
+    )
 
 
 # ---------------------------------------------------------------------------

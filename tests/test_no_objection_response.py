@@ -194,14 +194,20 @@ def test_the_chronology_and_the_rail_name_it_as_an_answer(specialist, ministry):
     assert NO_OBJECTION_SENT_LABEL == "Koja vastus" != SENT_LABEL
 
 
-def test_a_restricted_answer_is_counted_only_for_a_reader_who_may_see_it(
-    specialist, reader, ministry
+def test_a_restricted_answer_is_counted_for_every_reader_and_no_outsider(
+    specialist, reader, administrator, ministry
 ):
+    """Since docs/adr/0181 a READER counts it as the owner does; an administrator not."""
     from app.core.enums import Visibility
 
     matter = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
     _answer(matter, specialist, ministry)
-    context = ReportingContext(
-        viewer=reader, period=parse_period("koik", TODAY), today=TODAY, now=timezone.now()
-    )
-    assert sent_submissions(context, kind=NO_OBJECTION).count() == 0
+
+    def count(viewer) -> int:
+        context = ReportingContext(
+            viewer=viewer, period=parse_period("koik", TODAY), today=TODAY, now=timezone.now()
+        )
+        return sent_submissions(context, kind=NO_OBJECTION).count()
+
+    assert count(reader) == count(specialist) == 1
+    assert count(administrator) == 0

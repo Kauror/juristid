@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
@@ -1581,14 +1582,19 @@ def test_two_sends_on_one_day_read_in_the_order_they_were_sent(
 # -- Y: a restricted commencement --------------------------------------------
 
 
-def test_a_restricted_commencement_changes_no_geometry(client, normal_matter, specialist, reader):
+def test_a_restricted_commencement_draws_for_a_reader_and_never_for_an_outsider(
+    client, normal_matter, specialist, reader, administrator
+):
     """**Y, §13.** `Jõustumine` is the strip's second scoped source, and the
     first that is a Matter *child* carrying its own visibility override.
 
     It arrives already scoped, through the page's single `matter_intelligence`
     read — never derived from every record and pruned afterwards, which would
-    leave the column count, the connector spacing and the width behind. A READER
-    is the oracle, because both lawyer roles read RESTRICTED content by design.
+    leave the column count, the connector spacing and the width behind.
+
+    Since docs/adr/0181 a READER reads RESTRICTED content too and draws the
+    column exactly as the owner does; the viewer who may not — an
+    administrator without a grant — gets no page and no step.
     """
     _started(normal_matter, days_ago=30)
     client.force_login(reader)
@@ -1614,12 +1620,17 @@ def test_a_restricted_commencement_changes_no_geometry(client, normal_matter, sp
     )
     after = strip_of()
 
-    assert before == after
-    assert "Jõustumine" not in after
-    # And the owner does see it, so the fixture is not vacuous.
+    assert before != after
+    assert "Jõustumine" in after
+    assert [step.label for step in process_steps(matter=normal_matter, user=reader)] == [
+        step.label for step in process_steps(matter=normal_matter, user=specialist)
+    ]
     assert [step.label for step in process_steps(matter=normal_matter, user=specialist)] == [
         "Jõustumine",
     ]
+    assert process_steps(matter=normal_matter, user=administrator) == []
+    client.force_login(administrator)
+    assert client.get(url).status_code == 404
 
 
 # -- O: Töövõit --------------------------------------------------------------
@@ -1646,8 +1657,8 @@ def test_a_work_victory_is_not_a_procedural_step(specialist):
 # -- P: authorization --------------------------------------------------------
 
 
-def test_a_restricted_opinion_changes_no_geometry(
-    client, normal_matter, specialist, reader, organisation, capture_evidence
+def test_a_restricted_opinion_draws_for_a_reader_and_never_for_an_outsider(
+    client, normal_matter, specialist, reader, administrator, organisation, capture_evidence
 ):
     """**P, §18.** Scoped before it is derived, not filtered afterwards.
 
@@ -1658,7 +1669,9 @@ def test_a_restricted_opinion_changes_no_geometry(
 
     A READER, not a second lawyer. Both lawyer roles read RESTRICTED content by
     design, so a specialist is the wrong oracle for «cannot see it»
-    (`ROLES_WITH_RESTRICTED_ACCESS`, docs/adr/0042).
+    (`ROLES_WITH_BUSINESS_READ`, docs/adr/0042). Since docs/adr/0181 a READER
+    reads it too and draws it as the owner does; the viewer who may not is an
+    administrator without a grant, who gets no page and no step.
     """
     _started(normal_matter, days_ago=30)
     client.force_login(reader)
@@ -1681,12 +1694,17 @@ def test_a_restricted_opinion_changes_no_geometry(
     )
     after = strip_of()
 
-    assert before == after
-    assert "Koja arvamus" not in after
-    # And the owner does see it, so the fixture is not vacuous.
+    assert before != after
+    assert "Koja arvamus" in after
+    assert [step.label for step in process_steps(matter=normal_matter, user=reader)] == [
+        "Koja arvamus",
+    ]
     assert [step.label for step in process_steps(matter=normal_matter, user=specialist)] == [
         "Koja arvamus",
     ]
+    assert process_steps(matter=normal_matter, user=administrator) == []
+    client.force_login(administrator)
+    assert client.get(url).status_code == 404
 
 
 # -- Q: reached, today and ahead (2026-09-12 amendment) ----------------------
@@ -1957,8 +1975,8 @@ def test_a_closure_before_a_future_deadline_still_shows_both(specialist):
     ]
 
 
-def test_a_reader_who_cannot_see_a_commencement_gets_the_same_geometry(
-    client, normal_matter, specialist, reader
+def test_a_reader_reads_a_restricted_commencement_with_the_owners_geometry(
+    client, normal_matter, specialist, reader, administrator
 ):
     """**Q12.** The temporal reading is derived from the scoped list, so a
     restricted child cannot move a state, a fill or a single byte of the strip.
@@ -1966,6 +1984,9 @@ def test_a_reader_who_cannot_see_a_commencement_gets_the_same_geometry(
     This is the AUTH-003 oracle again, aimed at what the amendment added: a
     hidden `Jõustumine` that changed one column's `state` or one segment's
     `--tl-reach` would be a disclosure exactly as a changed dot count is.
+
+    Since docs/adr/0181 a READER is not refused it: its reading is the owner's,
+    column and state alike; an administrator without a grant reads no step.
     """
     today = timezone.localdate()
     _started(normal_matter, days_ago=20)
@@ -1987,12 +2008,16 @@ def test_a_reader_who_cannot_see_a_commencement_gets_the_same_geometry(
     )
     after = strip_of()
 
-    assert before == after
-    assert "Jõustumine" not in after
-    # Not vacuous: the owner sees three columns and the last of them is ahead.
-    assert _labelled(process_steps(matter=normal_matter, user=specialist, today=today)) == [
+    assert before != after
+    assert "Jõustumine" in after
+    expected = [("Arvamuse tähtaeg", "future"), ("Jõustumine", "future")]
+    assert _labelled(process_steps(matter=normal_matter, user=specialist, today=today)) == (
+        expected
+    )
+    assert _labelled(process_steps(matter=normal_matter, user=reader, today=today)) == expected
+    # The Matter's own deadline is not a child; the restricted commencement is.
+    assert _labelled(process_steps(matter=normal_matter, user=administrator, today=today)) == [
         ("Arvamuse tähtaeg", "future"),
-        ("Jõustumine", "future"),
     ]
 
 
@@ -2205,7 +2230,14 @@ def _page_regions(client, matter) -> tuple[str, str, str]:
     ["engagement", "important_date", "effective_date", "work_victory", "submission"],
 )
 def test_a_restricted_child_changes_nothing_for_an_unauthorized_reader(
-    client, normal_matter, reader, specialist, organisation, capture_evidence, restricted
+    client,
+    normal_matter,
+    reader,
+    administrator,
+    specialist,
+    organisation,
+    capture_evidence,
+    restricted,
 ):
     """**§56, the strong oracle.** The page before adding a RESTRICTED child and
     the page after it must be identical for a reader who may not see it — text,
@@ -2214,14 +2246,19 @@ def test_a_restricted_child_changes_nothing_for_an_unauthorized_reader(
     Scoped *before* the presentation is derived, never filtered afterwards: a
     strip built from every child and then pruned would leave the column count and
     the connector spacing behind (AUTH-003, docs/adr/0074 §13).
+
+    Since docs/adr/0181 the READER may see it (its page changes and names the
+    child); the reader who may not is an administrator without a grant, whose
+    refusal of the page is byte for byte the same before and after.
     """
-    # A READER, not a second lawyer. Both lawyer roles read RESTRICTED content
-    # by design, so a specialist is the wrong oracle for "cannot see it"
-    # (`ROLES_WITH_RESTRICTED_ACCESS`, docs/adr/0042).
+    url = reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk})
+    outsider = Client()
+    outsider.force_login(administrator)
     client.force_login(reader)
     normal_matter.visibility = Visibility.NORMAL
     normal_matter.save(update_fields=["visibility"])
     before = _page_regions(client, normal_matter)
+    refused_before = outsider.get(url)
 
     today = timezone.localdate()
     if restricted == "engagement":
@@ -2279,14 +2316,23 @@ def test_a_restricted_child_changes_nothing_for_an_unauthorized_reader(
     record.save(update_fields=["visibility_override"])
 
     after = _page_regions(client, normal_matter)
+    refused_after = outsider.get(url)
 
-    assert after == before, "a restricted child changed the page for a reader who may not see it"
+    assert after != before, "a READER reads the restricted child (docs/adr/0181)"
+    assert refused_before.status_code == refused_after.status_code == 404
+    assert refused_before.content == refused_after.content, (
+        "a restricted child changed the page for a reader who may not see it"
+    )
 
 
 def test_the_count_matches_what_the_reader_can_actually_see(
-    client, normal_matter, reader, specialist
+    client, normal_matter, reader, specialist, administrator
 ):
-    """**§38.** «14 kirjet» when the reader can see thirteen is a disclosure."""
+    """**§38.** «14 kirjet» when the reader can see thirteen is a disclosure.
+
+    Since docs/adr/0181 a READER sees the restricted row and counts it; an
+    administrator without a grant gets no page and no rows.
+    """
     client.force_login(reader)
     add_engagement(
         matter=normal_matter,
@@ -2315,7 +2361,14 @@ def test_the_count_matches_what_the_reader_can_actually_see(
     # both correct Estonian and the partitive after one was the QA-12 slip
     # (app/core/templatetags/counts.py).
     assert counted(len(items), "kirje,kirjet") in body
-    assert "Piiratud koosolek" not in body
+    assert "Piiratud koosolek" in body
+    assert len(items) == len(matter_timeline(matter=normal_matter, user=specialist, limit=50)[0])
+
+    assert matter_timeline(matter=normal_matter, user=administrator, limit=50)[0] == []
+    client.force_login(administrator)
+    refused = client.get(reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk}))
+    assert refused.status_code == 404
+    assert "Piiratud koosolek" not in refused.content.decode()
 
 
 # ===========================================================================

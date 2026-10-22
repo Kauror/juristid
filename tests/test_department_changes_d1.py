@@ -380,13 +380,20 @@ def test_a_closure_on_the_repeated_hour_is_dated_that_tallinn_day(department_hea
     assert _closure_rows(window("26.10.2026")) == []
 
 
-def test_a_restricted_step_ended_by_closure_is_not_counted_for_a_reader(reader, specialist):
-    """Authorization before arithmetic: the reader's entry counts what they may see."""
-    reader.capability_overrides = {
-        **(reader.capability_overrides or {}),
-        "department.view_management": "allow",
-    }
-    reader.save(update_fields=["capability_overrides"])
+def test_a_restricted_step_ended_by_closure_counts_for_a_reader_and_not_an_outsider(
+    reader, specialist, department_head, administrator
+):
+    """Authorization before arithmetic: the reader's entry counts what they may see.
+
+    Since docs/adr/0181 a READER sees the restricted step as the head does; an
+    administrator lent the same view reads no business content, so no entry.
+    """
+    for user in (reader, administrator):
+        user.capability_overrides = {
+            **(user.capability_overrides or {}),
+            "department.view_management": "allow",
+        }
+        user.save(update_fields=["capability_overrides"])
     matter = _with_steps(specialist, "Osaliselt piiratud", planned=1)
     NextAction.objects.filter(matter=matter, status=ActionStatus.PLANNED).update(
         visibility_override=Visibility.RESTRICTED
@@ -399,7 +406,9 @@ def test_a_restricted_step_ended_by_closure_is_not_counted_for_a_reader(reader, 
     )
 
     [row] = _closure_rows(dc.build_changes(reader))
-    assert row.detail == "lõppes 1 tegevus"
+    [head_row] = _closure_rows(dc.build_changes(department_head))
+    assert row.detail == head_row.detail == "lõppes 2 tegevust"
+    assert _closure_rows(dc.build_changes(administrator)) == []
 
 
 def test_closure_entries_are_newest_first_among_the_steps(department_head, specialist):

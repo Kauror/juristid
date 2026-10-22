@@ -203,8 +203,14 @@ def test_an_unparseable_person_empties_the_list(late_world, department_head):
     assert rows(department_head, too=wi.WORK_OVERDUE, too_vastutaja="mitte-uuid") == set()
 
 
-def test_a_restricted_matter_reaches_neither_half(late_world, specialist, reader, today):
-    """Both the count and the list come from ``visible_to``, so neither may leak."""
+def test_a_restricted_matter_reaches_neither_half(
+    late_world, specialist, reader, administrator, today
+):
+    """Both the count and the list come from ``visible_to``, so neither may leak.
+
+    Since docs/adr/0181 a READER reads it like the owner; the one it must not
+    reach is the administrator without a grant.
+    """
     from app.core.enums import Visibility
 
     hidden = create_matter(
@@ -224,7 +230,8 @@ def test_a_restricted_matter_reaches_neither_half(late_world, specialist, reader
     )
 
     assert "Piiratud hilinenud" in rows(specialist, too=wi.WORK_OVERDUE)
-    assert "Piiratud hilinenud" not in rows(reader, too=wi.WORK_OVERDUE)
+    assert "Piiratud hilinenud" in rows(reader, too=wi.WORK_OVERDUE)
+    assert "Piiratud hilinenud" not in rows(administrator, too=wi.WORK_OVERDUE)
 
 
 # ---------------------------------------------------------------------------

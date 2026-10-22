@@ -408,13 +408,17 @@ def test_the_service_refuses_a_missing_day_and_writes_nothing(specialist):
 # -- visibility ----------------------------------------------------------------------
 
 
-def test_search_finds_the_summary_for_a_lawyer_and_never_for_a_reader_of_a_restricted_matter(
-    signed_in, specialist, reader, restricted_matter
+def test_search_finds_a_restricted_summary_for_every_reader_and_never_for_an_outsider(
+    signed_in, specialist, reader, administrator, restricted_matter
 ):
+    """Since docs/adr/0181 the READER finds it as the lawyer does."""
     _post(signed_in, restricted_matter, summary="Konfidentsiaalne arutelu kalmaarlinn.")
 
     assert search_documents(query="kalmaarlinn", user=specialist).exists()
-    assert not search_documents(query="kalmaarlinn", user=reader).exists()
+    assert search_documents(query="kalmaarlinn", user=reader).count() == (
+        search_documents(query="kalmaarlinn", user=specialist).count()
+    )
+    assert not search_documents(query="kalmaarlinn", user=administrator).exists()
 
 
 def test_search_finds_the_summary_on_a_normal_matter_for_a_reader(
@@ -425,16 +429,24 @@ def test_search_finds_the_summary_on_a_normal_matter_for_a_reader(
     assert search_documents(query="merihobu", user=reader).exists()
 
 
-def test_a_restricted_matters_meeting_and_file_are_not_visible_to_a_reader(
-    client, signed_in, specialist, reader, restricted_matter
+def test_a_restricted_matters_meeting_and_file_reach_a_reader_and_no_outsider(
+    client, signed_in, specialist, reader, administrator, restricted_matter
 ):
+    """Since docs/adr/0181 a READER opens both; an administrator without a grant neither."""
     _post(signed_in, restricted_matter, summary="Piiratud kohtumine.", files=[_pdf()])
     version = Document.objects.get(matter=restricted_matter).current_version
-    client.force_login(reader)
+    download = reverse("documents:download", kwargs={"pk": version.pk})
+    detail = reverse("matters:matter_detail", kwargs={"pk": restricted_matter.pk})
 
-    assert client.get(reverse("documents:download", kwargs={"pk": version.pk})).status_code == 404
-    page = client.get(reverse("matters:matter_detail", kwargs={"pk": restricted_matter.pk}))
-    assert page.status_code == 404
+    client.force_login(administrator)
+    assert client.get(download).status_code == 404
+    assert client.get(detail).status_code == 404
+
+    client.force_login(reader)
+    assert client.get(download).status_code == 200
+    page = client.get(detail)
+    assert page.status_code == 200
+    assert "Piiratud kohtumine." in page.content.decode()
 
 
 # -- correction ------------------------------------------------------------------------

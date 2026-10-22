@@ -189,8 +189,11 @@ def test_restricted_package_is_permission_safe(lawyers):
 
     visible_to_specialist = Matter.objects.visible_to(specialist)
     assert piiratud in visible_to_specialist
+    # docs/adr/0181: the READER is an internal user and reads it too; only an
+    # outsider (ADMINISTRATOR without a grant) does not.
+    assert piiratud in Matter.objects.visible_to(reader)
 
-    for outsider in (reader, administrator):
+    for outsider in (administrator,):
         scope = Matter.objects.visible_to(outsider)
         assert piiratud not in scope
         # The restricted side of the relation must not surface either.

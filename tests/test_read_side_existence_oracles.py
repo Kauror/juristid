@@ -29,6 +29,10 @@ The adversary is READER and ADMINISTRATOR: the two roles that may sign in and
 read NORMAL work but never RESTRICTED work. A SPECIALIST who is not on the file
 is *authorized* by ADR 0042 and is not an adversary here.
 
+Since docs/adr/0181 a READER is authorized too and reads the hidden work as the
+owner does; the adversaries are an ADMINISTRATOR and a superuser without a
+business role, who read nothing at all.
+
 The control test comes first. Capturing the same world twice must give the same
 bytes, or a difference between A and B says nothing.
 """
@@ -210,6 +214,9 @@ def world(db, capture_evidence, extract):
         "reader": factories.UserFactory(role=UserRole.READER, display_name="Lugeja Luts"),
         "administrator": factories.UserFactory(
             role=UserRole.ADMINISTRATOR, display_name="Haldur Hallik"
+        ),
+        "superuser": factories.AdministratorFactory(
+            is_superuser=True, display_name="Superkasutaja Sulev"
         ),
     }
 
@@ -561,9 +568,9 @@ def test_capturing_the_same_world_twice_is_identical(world):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("persona", ["reader", "administrator"])
+@pytest.mark.parametrize("persona", ["administrator", "superuser"])
 @pytest.mark.parametrize("hidden", list(HIDDEN_WORLDS))
-def test_a_hidden_record_changes_nothing_the_reader_receives(
+def test_a_hidden_record_changes_nothing_an_outsider_receives(
     world, capture_evidence, extract, persona, hidden
 ):
     client = _client(world[persona])
@@ -583,10 +590,16 @@ def test_a_hidden_record_changes_nothing_the_reader_receives(
     assert _differences(before, after) == ""
 
 
+@pytest.mark.parametrize("persona", ["owner", "reader"])
 @pytest.mark.parametrize("hidden", list(HIDDEN_WORLDS))
-def test_the_participant_still_sees_the_hidden_work(world, capture_evidence, extract, hidden):
-    """The other half of the contract: scoping must not blind the file's owner."""
-    client = _client(world["owner"])
+def test_every_authorized_reader_still_sees_the_hidden_work(
+    world, capture_evidence, extract, hidden, persona
+):
+    """The other half of the contract: scoping must not blind the file's owner.
+
+    Nor, since docs/adr/0181, a READER, who reads it exactly as the owner does.
+    """
+    client = _client(world[persona])
     urls = surfaces(world)
 
     before = _capture(client, urls)
@@ -648,7 +661,7 @@ def _crafted_routes(hidden) -> list[tuple[str, dict[str, object]]]:
     ]
 
 
-@pytest.mark.parametrize("persona", ["reader", "administrator"])
+@pytest.mark.parametrize("persona", ["administrator", "superuser"])
 @pytest.mark.parametrize("hidden", list(HIDDEN_WORLDS))
 def test_a_hidden_id_is_indistinguishable_from_a_random_one(
     world, capture_evidence, extract, persona, hidden

@@ -129,28 +129,39 @@ def test_the_storage_key_is_never_exposed(signed_in, stored):
 # -- authorization ----------------------------------------------------------
 
 
-def test_a_restricted_document_is_a_404_on_both_routes(client, stored, specialist):
-    """The same answer from both, or the second route is a way round the first."""
+def test_a_restricted_document_is_a_404_on_both_routes_for_an_outsider(client, stored, specialist):
+    """The same answer from both, or the second route is a way round the first.
+
+    Since docs/adr/0181 the READER opens it like the owner; the 404 is an
+    outsider's (ADMINISTRATOR without a grant)."""
     hidden = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
     version = stored(corpus.government_pdf(), "kaaskiri.pdf", PDF, matter=hidden)
 
-    client.force_login(factories.ReaderFactory())
+    client.force_login(factories.AdministratorFactory())
     assert client.get(reverse("documents:open", kwargs={"pk": version.pk})).status_code == 404
     assert client.get(reverse("documents:download", kwargs={"pk": version.pk})).status_code == 404
+
+    client.force_login(factories.ReaderFactory())
+    assert client.get(reverse("documents:open", kwargs={"pk": version.pk})).status_code == 200
 
     client.force_login(specialist)
     assert client.get(reverse("documents:open", kwargs={"pk": version.pk})).status_code == 200
 
 
-def test_the_department_scope_reads_a_normal_file_but_not_a_restricted_one(
+def test_a_persona_less_gate_session_opens_no_file_until_it_chooses_a_persona(
     client, stored, specialist, settings
 ):
-    """Past the shared gate, before anybody picks a persona (brief 33)."""
+    """Past the shared gate, before anybody picks a persona (brief 33).
+
+    It read NORMAL files and was refused RESTRICTED ones; since docs/adr/0181 it
+    reads neither and is sent to the persona chooser, and a chosen persona reads
+    both."""
     from app.accounts.enums import AuthMode
 
     settings.AUTH_MODE = AuthMode.SHARED_GATE
     settings.SHARED_GATE_PASSWORD = "seda-parooli-ei-ole-kusagil-mujal"  # noqa: S105
     settings.DEV_LOGIN_ENABLED = False
+    settings.LOGIN_URL = "accounts:choose_persona"
 
     open_version = stored(corpus.government_pdf(), "avalik.pdf", PDF)
     hidden = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
@@ -163,10 +174,15 @@ def test_the_department_scope_reads_a_normal_file_but_not_a_restricted_one(
     token = re.search(r'name="csrfmiddlewaretoken"\s+value="([^"]+)"', page).group(1)
     client.post(gate, {"password": settings.SHARED_GATE_PASSWORD, "csrfmiddlewaretoken": token})
 
-    assert client.get(reverse("documents:open", kwargs={"pk": open_version.pk})).status_code == 200
-    assert (
-        client.get(reverse("documents:open", kwargs={"pk": hidden_version.pk})).status_code == 404
-    )
+    chooser = reverse("accounts:choose_persona")
+    for version in (open_version, hidden_version):
+        response = client.get(reverse("documents:open", kwargs={"pk": version.pk}))
+        assert response.status_code == 302
+        assert response["Location"].startswith(chooser)
+
+    client.post(reverse("accounts:act_as"), {"user_id": str(specialist.pk)})
+    for version in (open_version, hidden_version):
+        assert client.get(reverse("documents:open", kwargs={"pk": version.pk})).status_code == 200
 
 
 def test_opening_a_file_is_audited_without_claiming_an_identity(signed_in, stored, specialist):

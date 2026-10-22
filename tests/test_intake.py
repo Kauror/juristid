@@ -220,7 +220,9 @@ def test_intake_files_material_as_normal_and_refuses_to_be_told_otherwise(
     assert Matter.objects.visible_to(reader).filter(pk=matter.pk).exists()
 
 
-def test_incoming_evidence_downloads_only_for_the_authorized(client, specialist, reader) -> None:
+def test_incoming_evidence_downloads_only_for_the_authorized(
+    client, specialist, reader, administrator
+) -> None:
     client.force_login(specialist)
     # An owner, deliberately. A RESTRICTED Matter with nobody on it is invisible
     # even to whoever filed it, because restricted access follows participation
@@ -245,7 +247,12 @@ def test_incoming_evidence_downloads_only_for_the_authorized(client, specialist,
 
     assert client.get(reverse("documents:download", kwargs={"pk": version.pk})).status_code == 200
 
+    # docs/adr/0181: a READER is authorized and downloads it; the outsider is an
+    # administrator without a grant.
     client.force_login(reader)
+    assert client.get(reverse("documents:download", kwargs={"pk": version.pk})).status_code == 200
+
+    client.force_login(administrator)
     # 404 rather than 403: a 403 would confirm the file exists.
     assert client.get(reverse("documents:download", kwargs={"pk": version.pk})).status_code == 404
 

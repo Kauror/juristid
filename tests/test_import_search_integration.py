@@ -132,9 +132,10 @@ def test_search_can_be_rebuilt_without_re_importing(imported, specialist) -> Non
 # -- Scenario H: a restricted imported Matter ------------------------------
 
 
-def test_a_restricted_imported_matter_is_visible_only_to_its_owner(
+def test_a_restricted_imported_matter_is_visible_to_every_reader_and_no_outsider(
     imported, specialist, reader, administrator, department_head
 ) -> None:
+    """docs/adr/0181: owner, head and READER alike; the administrator nothing."""
     matter = imported["recent"]
     matter.owner = specialist
     matter.save(update_fields=["owner", "updated_at"])
@@ -142,35 +143,44 @@ def test_a_restricted_imported_matter_is_visible_only_to_its_owner(
 
     assert RECENT_TITLE in _titles(search_matters(query="käibemaksuseaduse", user=specialist))
     assert RECENT_TITLE in _titles(search_matters(query="käibemaksuseaduse", user=department_head))
-    assert RECENT_TITLE not in _titles(search_matters(query="käibemaksuseaduse", user=reader))
+    assert RECENT_TITLE in _titles(search_matters(query="käibemaksuseaduse", user=reader))
     # Technical administration is not business access.
     assert RECENT_TITLE not in _titles(
         search_matters(query="käibemaksuseaduse", user=administrator)
     )
 
 
-def test_a_hidden_imported_matter_does_not_change_the_visible_count(
-    imported, specialist, reader
+def test_restricting_an_imported_matter_does_not_change_any_readers_count(
+    imported, specialist, reader, administrator
 ) -> None:
+    """docs/adr/0181: RESTRICTED is a label; the outsider's count is zero throughout."""
     matter = imported["recent"]
     matter.owner = specialist
     matter.save(update_fields=["owner", "updated_at"])
 
     assert result_count(query="Sünteetiline", user=reader) == 2
+    assert result_count(query="Sünteetiline", user=administrator) == 0
     set_matter_visibility(matter=matter, visibility=Visibility.RESTRICTED)
-    assert result_count(query="Sünteetiline", user=reader) == 1
+    assert result_count(query="Sünteetiline", user=reader) == 2
     assert result_count(query="Sünteetiline", user=specialist) == 2
+    assert result_count(query="Sünteetiline", user=administrator) == 0
 
 
-def test_importing_a_matter_gives_it_no_second_route_past_authorization(imported, reader) -> None:
-    """An imported record is a Matter like any other, including its permissions."""
+def test_importing_a_matter_gives_it_no_second_route_past_authorization(
+    imported, administrator
+) -> None:
+    """An imported record is a Matter like any other, including its permissions.
+
+    The persona that may not read is the administrator without a grant since
+    docs/adr/0181 (a READER reads RESTRICTED Matters).
+    """
     for matter in Matter.objects.all():
         set_matter_visibility(matter=matter, visibility=Visibility.RESTRICTED)
 
-    assert search_matters(query="Sünteetiline", user=reader) == []
-    assert search_matters(query="2017_42", user=reader) == []
-    assert search_matters(query="Näidisministeerium", user=reader) == []
-    assert result_count(query="Sünteetiline", user=reader) == 0
+    assert search_matters(query="Sünteetiline", user=administrator) == []
+    assert search_matters(query="2017_42", user=administrator) == []
+    assert search_matters(query="Näidisministeerium", user=administrator) == []
+    assert result_count(query="Sünteetiline", user=administrator) == 0
 
 
 # -- performance -----------------------------------------------------------

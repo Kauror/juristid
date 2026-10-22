@@ -703,7 +703,11 @@ def test_the_write_control_follows_the_central_policy(client, specialist):
     assert may_write_business_content(reader) is False
 
 
-def test_an_engagement_on_a_restricted_matter_does_not_leak(client, specialist, reader):
+def test_an_engagement_on_a_restricted_matter_reaches_a_reader_but_not_an_outsider(
+    client, specialist, reader, administrator
+):
+    """docs/adr/0181: the READER reads it (and still cannot change it); an
+    outsider (ADMINISTRATOR without a grant) learns nothing."""
     restricted = factories.MatterFactory(
         owner=specialist, visibility=Visibility.RESTRICTED, title="Piiratud teema"
     )
@@ -715,21 +719,31 @@ def test_an_engagement_on_a_restricted_matter_does_not_leak(client, specialist, 
     )
 
     assert MatterEngagement.objects.visible_to(specialist).filter(pk=engagement.pk).exists()
-    assert not MatterEngagement.objects.visible_to(reader).filter(pk=engagement.pk).exists()
+    assert MatterEngagement.objects.visible_to(reader).filter(pk=engagement.pk).exists()
+    assert not MatterEngagement.objects.visible_to(administrator).filter(pk=engagement.pk).exists()
 
+    update = reverse(
+        "matters:update_engagement",
+        kwargs={"pk": restricted.pk, "engagement_id": engagement.pk},
+    )
     client.force_login(reader)
     detail = client.get(reverse("matters:matter_detail", kwargs={"pk": restricted.pk}))
-    assert detail.status_code == 404
+    assert detail.status_code == 200
+    assert "Salajane kaasamiskutse" in detail.content.decode()
+    # Read is not write: the READER's change is still refused.
     assert (
-        client.post(
-            reverse(
-                "matters:update_engagement",
-                kwargs={"pk": restricted.pk, "engagement_id": engagement.pk},
-            ),
-            {"kind": EngagementKind.SURVEY, "title": "Muudetud"},
-        ).status_code
-        == 404
+        client.post(update, {"kind": EngagementKind.SURVEY, "title": "Muudetud"}).status_code == 404
     )
+
+    client.force_login(administrator)
+    detail = client.get(reverse("matters:matter_detail", kwargs={"pk": restricted.pk}))
+    assert detail.status_code == 404
+    assert "Salajane kaasamiskutse" not in detail.content.decode()
+    assert (
+        client.post(update, {"kind": EngagementKind.SURVEY, "title": "Muudetud"}).status_code == 404
+    )
+    engagement.refresh_from_db()
+    assert engagement.title == "Salajane kaasamiskutse"
 
 
 # -- search ------------------------------------------------------------------
@@ -1143,12 +1157,15 @@ def test_an_engagement_with_no_links_renders_no_link_row(signed_in, specialist):
     assert "uxtl__links" not in body
 
 
-def test_a_restricted_engagements_links_do_not_reach_a_reader_who_cannot_see_it(client, specialist):
+def test_a_restricted_engagements_links_reach_a_reader_as_the_owner_and_no_outsider(
+    client, specialist
+):
     """**J (visibility).** The links inherit the engagement's scope exactly.
 
     Nothing new is needed for this — every read already goes through
     `visible_to` — and that is the point of the test: it proves the new columns
-    did not open a second door beside the one that is guarded.
+    did not open a second door beside the one that is guarded. Since
+    docs/adr/0181 the READER sees them as the owner; an outsider does not.
     """
     reader = factories.ReaderFactory()
     matter = factories.MatterFactory(owner=specialist)
@@ -1164,9 +1181,18 @@ def test_a_restricted_engagements_links_do_not_reach_a_reader_who_cannot_see_it(
         visibility_override=Visibility.RESTRICTED
     )
 
+    url = reverse("matters:matter_detail", kwargs={"pk": matter.pk})
+    client.force_login(specialist)
+    owners = client.get(url).content.decode()
     client.force_login(reader)
-    body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
+    body = client.get(url).content.decode()
 
+    assert "Salajane küsitlus" in body
+    for token in ("Salajane küsitlus", SMAILY_URL, ALCHEMER_URL):
+        assert (token in body) == (token in owners), token
+
+    client.force_login(factories.AdministratorFactory())
+    body = client.get(url).content.decode()
     assert "Salajane küsitlus" not in body
     assert SMAILY_URL not in body
     assert ALCHEMER_URL not in body

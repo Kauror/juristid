@@ -296,11 +296,16 @@ def test_a_restricted_matter_keeps_its_visibility_and_its_filter(signed_in, read
     A test asserting the narrower promise would be asserting a rule the product
     deliberately does not have (`tests/test_authorization_matrix.py` owns the
     matrix itself).
+
+    Since docs/adr/0181 `RESTRICTED` is a label read by every internal user, the
+    READER included; the filter still keeps out an outsider (ADMINISTRATOR
+    without a grant).
     """
     matter = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
 
     assert matter in Matter.objects.visible_to(specialist)
-    assert matter not in Matter.objects.visible_to(reader)
+    assert matter in Matter.objects.visible_to(reader)
+    assert matter not in Matter.objects.visible_to(factories.AdministratorFactory())
     matter.refresh_from_db()
     assert matter.visibility == Visibility.RESTRICTED
 

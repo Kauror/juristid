@@ -804,7 +804,7 @@ def test_any_business_writer_may_correct_a_colleagues_kaasamine(
 
 
 def test_a_restricted_child_is_read_through_its_own_scope(
-    client, reader, normal_matter, specialist
+    client, reader, administrator, normal_matter, specialist
 ):
     """AUTH-003. The child is read through its own `visible_to`, not off the Matter.
 
@@ -813,11 +813,14 @@ def test_a_restricted_child_is_read_through_its_own_scope(
     asserted here — and never `matter.engagements`.
 
     The *route* cannot show the two answers apart, and that is a property of
-    the role sets rather than of this view: `ROLES_WITH_RESTRICTED_ACCESS` and
+    the role sets rather than of this view: `ROLES_WITH_BUSINESS_READ` and
     `ROLES_WITH_BUSINESS_WRITE` hold the same two roles, so anybody the
     decorator lets through can also read restricted content. What the route can
     be held to is that a restricted record and a record that does not exist
     give a reader the *same* answer, so a refusal describes no surface.
+
+    Since docs/adr/0181 the READER reads the restricted child (and still writes
+    nothing); the scope's outsider is the administrator without a grant.
     """
     from app.core.enums import Visibility
 
@@ -831,19 +834,19 @@ def test_a_restricted_child_is_read_through_its_own_scope(
     hidden.visibility_override = Visibility.RESTRICTED
     hidden.save(update_fields=["visibility_override"])
 
-    scoped = MatterEngagement.objects.visible_to(reader)
-    assert not scoped.filter(pk=hidden.pk).exists()
+    assert MatterEngagement.objects.visible_to(reader).filter(pk=hidden.pk).exists()
     assert MatterEngagement.objects.visible_to(specialist).filter(pk=hidden.pk).exists()
+    assert not MatterEngagement.objects.visible_to(administrator).filter(pk=hidden.pk).exists()
 
-    client.force_login(reader)
     missing = reverse(
         "matters:update_engagement",
         kwargs={"pk": normal_matter.pk, "engagement_id": _uuid.uuid4()},
     )
-
-    assert client.get(_url(normal_matter, hidden)).status_code == 404
-    assert client.get(missing).status_code == 404
-    assert client.post(_url(normal_matter, hidden), _fields(hidden)).status_code == 404
+    for person in (reader, administrator):
+        client.force_login(person)
+        assert client.get(_url(normal_matter, hidden)).status_code == 404
+        assert client.get(missing).status_code == 404
+        assert client.post(_url(normal_matter, hidden), _fields(hidden)).status_code == 404
     hidden.refresh_from_db()
     assert hidden.title == "Piiratud voor"
 

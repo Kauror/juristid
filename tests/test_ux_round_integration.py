@@ -744,36 +744,30 @@ def test_scenario_3_the_stored_shape(restricted_world):
     assert restricted_world["muu_version"].document.visibility_override in ("", None)
 
 
-@pytest.mark.parametrize("persona", ["reader", "administrator"])
-def test_scenario_3_a_reader_sees_the_muu_but_never_the_restricted_round(restricted_world, persona):
+def test_scenario_3_an_outsider_sees_neither_the_muu_nor_the_restricted_round(restricted_world):
+    """Was asked of a READER and an administrator. Since docs/adr/0181 the READER
+    sees everything (below); an administrator without a grant sees nothing."""
     world = restricted_world
-    user = world[persona]
-    client = _client(user)
+    client = _client(world["administrator"])
 
     for name, url in _surfaces(world["matter"]).items():
         response = client.get(url)
-        assert response.status_code == 200, name
+        assert response.status_code == 404, name
         body = response.content.decode()
-        for hidden in (S3_ROUND, S3_REPLY, S3_REPLY_FILE):
-            assert hidden not in body, (persona, name, hidden)
-        if name in ("matter_detail", "timeline_page"):
-            assert S3_MUU in body, (persona, name)
-        if name == "matter_documents":
-            assert S3_MUU_FILE in body, persona
+        for hidden in (S3_ROUND, S3_REPLY, S3_REPLY_FILE, S3_MUU, S3_MUU_FILE):
+            assert hidden not in body, (name, hidden)
 
-    for name, url in _file_routes(world["reply_version"]).items():
-        assert client.get(url).status_code == 404, (persona, name)
-    if persona == "reader":
-        assert client.get(_file_routes(world["muu_version"])["download"]).status_code == 200
+    for version in (world["reply_version"], world["muu_version"]):
+        for name, url in _file_routes(version).items():
+            assert client.get(url).status_code == 404, name
 
-    for hidden in (S3_ROUND, S3_REPLY, "uxint-piiratud-vastus"):
-        assert result_count(query=hidden, user=user) == 0, (persona, hidden)
-    if persona == "reader":
-        assert result_count(query=S3_MUU, user=user) >= 1
+    for hidden in (S3_ROUND, S3_REPLY, "uxint-piiratud-vastus", S3_MUU):
+        assert result_count(query=hidden, user=world["administrator"]) == 0, hidden
 
 
-@pytest.mark.parametrize("persona", ["owner", "head"])
-def test_scenario_3_the_owner_and_the_head_see_everything(restricted_world, persona):
+@pytest.mark.parametrize("persona", ["owner", "head", "reader"])
+def test_scenario_3_every_business_reader_sees_everything(restricted_world, persona):
+    """The READER joined the owner and the head in docs/adr/0181."""
     world = restricted_world
     user = world[persona]
     client = _client(user)

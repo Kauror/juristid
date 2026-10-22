@@ -26,11 +26,12 @@ import pytest
 from django.core.management import CommandError, call_command
 from django.utils import timezone
 
-from app.core.authorization import DEPARTMENT_VIEWER
+from app.core.authorization import DEPARTMENT_VIEWER, Scope
 from app.core.enums import Visibility
 from app.matters.enums import RecordMode
 from app.matters.models import Matter
 from app.reporting.models import OperationalMatterSnapshot
+from app.reporting.selectors import snapshots
 from app.reporting.selectors.snapshots import capture, snapshot_population, visible_snapshots
 from app.workflow.enums import ActionKind, ActionStatus, DateSemantics, Disposition
 
@@ -193,13 +194,31 @@ def test_each_day_gets_its_own_photograph(world):
 
 
 def test_a_snapshot_row_is_read_through_the_live_matter(world):
+    """Since docs/adr/0181 every business reader reads all six, an outsider none."""
     capture(on=world.today)
     assert visible_snapshots(world.martin).count() == 6
     assert visible_snapshots(world.sandra).count() == 6
     assert visible_snapshots(world.head).count() == 6
-    assert visible_snapshots(world.admin).count() == 5
-    assert visible_snapshots(DEPARTMENT_VIEWER).count() == 5
+    assert visible_snapshots(world.reader).count() == 6
+    assert visible_snapshots(world.admin).count() == 0
+    assert visible_snapshots(DEPARTMENT_VIEWER).count() == 0
     assert visible_snapshots(None).count() == 0
+
+
+def _narrowed(monkeypatch, user) -> None:
+    """Make the selector read through a scope that does not see RESTRICTED children.
+
+    No request builds one since docs/adr/0181 (`scope_for_user` is all or
+    nothing), but the blanking is still what such a scope gets, and it is the
+    selector's own rule, so it is exercised through a hand-built scope.
+    """
+    narrowed = Scope(
+        user=user,
+        is_authenticated=True,
+        sees_restricted_by_role=False,
+        break_glass_grant_id=None,
+    )
+    monkeypatch.setattr(snapshots, "scope_for_user", lambda viewer: narrowed)
 
 
 def test_restricting_a_matter_today_hides_its_past_snapshots(world):
@@ -225,37 +244,36 @@ def test_the_model_stores_no_visibility_of_its_own(world):
     assert "visibility_override" not in columns
 
 
-def test_a_restricted_step_is_blanked_for_the_shared_gate(world):
-    """The reader who actually exists in production.
+def test_a_restricted_step_is_blanked_for_a_scope_that_knows_nobody(world, monkeypatch):
+    """The shape the shared-gate sentinel's scope used to have.
 
-    Under `AUTH_MODE=shared_gate` only SPECIALIST and DEPARTMENT_HEAD accounts
-    are personas, so READER and ADMINISTRATOR are code-level roles nobody signs
-    in as. `DepartmentViewer` — past the door, no persona — is the one reader
-    here who is neither a lawyer nor a participant, and it is the likeliest
-    first consumer of an operational trend.
-
-    Its scope has `user=None`, so `restricted_participation_q` refuses to build
-    a clause at all and the whole answer comes from the step's own override.
+    `DepartmentViewer` — past the door, no persona — read NORMAL content with a
+    scope of `user=None`, so `restricted_participation_q` refuses to build a
+    clause at all and the whole answer comes from the step's own override.
+    Since docs/adr/0181 the sentinel reads nothing and a READER reads the step;
+    the blanking is held here through that hand-built scope.
     """
     from app.workflow.models import NextAction
 
     step = NextAction.objects.get(matter=world.native_open, status=ActionStatus.OPEN)
     capture(on=world.today)
-
-    row = visible_snapshots(DEPARTMENT_VIEWER).get(matter=world.native_open)
-    assert row.visible_next_action_kind == ActionKind.DO
-    assert row.visible_next_action_date is not None
-
     step.visibility_override = Visibility.RESTRICTED
     step.save(update_fields=["visibility_override"])
 
-    row = visible_snapshots(DEPARTMENT_VIEWER).get(matter=world.native_open)
+    # The real request scopes: the reader sees the step, the sentinel no row.
+    row = visible_snapshots(world.reader).get(matter=world.native_open)
+    assert row.visible_next_action_kind == ActionKind.DO
+    assert row.visible_next_action_date is not None
+    assert visible_snapshots(DEPARTMENT_VIEWER).count() == 0
+
+    _narrowed(monkeypatch, None)
+    row = visible_snapshots(world.reader).get(matter=world.native_open)
     assert (row.visible_next_action_kind, row.visible_next_action_date) == ("", None)
     # The Matter is still there. Only the step it was carrying went quiet.
-    assert visible_snapshots(DEPARTMENT_VIEWER).count() == 5
+    assert visible_snapshots(world.reader).count() == 5
 
 
-def test_a_row_captured_before_the_pointer_existed_blanks(world):
+def test_a_row_captured_before_the_pointer_existed_blanks(world, monkeypatch):
     """The honest cost of having no backfill, asserted rather than described.
 
     Nothing recorded which step those rows photographed, so the read cannot
@@ -266,12 +284,16 @@ def test_a_row_captured_before_the_pointer_existed_blanks(world):
     capture(on=world.today)
     OperationalMatterSnapshot.objects.filter(matter=world.native_open).update(next_action=None)
 
+    # Since docs/adr/0181 every business reader sees every restricted child,
+    # READER included, so the blanking needs a hand-built narrowed scope.
+    for viewer in (world.martin, world.reader):
+        seen = visible_snapshots(viewer).get(matter=world.native_open)
+        assert seen.visible_next_action_kind == ActionKind.DO
+
+    _narrowed(monkeypatch, world.reader)
     blanked = visible_snapshots(world.reader).get(matter=world.native_open)
     assert (blanked.visible_next_action_kind, blanked.visible_next_action_date) == ("", None)
     assert blanked.next_action_kind == ActionKind.DO, "the stored column is untouched"
-
-    lawyer = visible_snapshots(world.martin).get(matter=world.native_open)
-    assert lawyer.visible_next_action_kind == ActionKind.DO
 
 
 # ---------------------------------------------------------------------------

@@ -19,6 +19,11 @@ and this file adds:
 
 Same harness, same two worlds, same comparison: everything captured before the
 hidden record is added must be byte-identical after it (CSRF normalised).
+
+Since docs/adr/0181 a READER (collaborating or not) reads RESTRICTED work like its
+owner, and a persona-less gate session reads nothing — it is sent to the persona
+chooser. The oracle's adversary is now an outsider: an ADMINISTRATOR without a
+grant, and the persona-less gate session.
 """
 
 from __future__ import annotations
@@ -250,38 +255,48 @@ def _assert_nothing_moved(before, after, persona: str) -> None:
 
 
 @pytest.mark.parametrize("hidden", list(ALL_HIDDEN))
-def test_reader_newer_surfaces_do_not_move(world, capture_evidence, extract, hidden):  # noqa: F811
-    client = _signed_in(world["reader"])
+def test_outsider_newer_surfaces_do_not_move(world, capture_evidence, extract, hidden):  # noqa: F811
+    """An ADMINISTRATOR without a grant learns nothing (docs/adr/0181: was READER)."""
+    client = _signed_in(world["administrator"])
     urls = _all_urls(world, _signed_in(world["owner"]))
 
     before = _capture(client, urls)
     ALL_HIDDEN[hidden](world, capture_evidence, extract)
     after = _capture(client, urls)
 
-    _assert_nothing_moved(before, after, "reader")
+    _assert_nothing_moved(before, after, "administrator")
 
 
 @pytest.mark.parametrize("hidden", list(ALL_HIDDEN))
-def test_collaborating_reader_learns_nothing_about_another_file(
+def test_collaborating_reader_reads_another_file_as_its_owner_does(
     world,  # noqa: F811
     collaborating_reader,
     capture_evidence,
     extract,
     hidden,
 ):
+    """docs/adr/0181: participation no longer decides reading — the READER sees
+    another file's restricted work exactly as that file's owner does."""
     reader, own = collaborating_reader
     client = _signed_in(reader)
-    urls = _all_urls(world, _signed_in(world["owner"])) + [  # noqa: RUF005
+    owner = _signed_in(world["owner"])
+    urls = _all_urls(world, owner) + [  # noqa: RUF005
         reverse("matters:matter_detail", kwargs={"pk": own.pk}),
     ]
 
     before = _capture(client, urls)
-    # The allowed half: their own restricted file opens.
     assert before[reverse("matters:matter_detail", kwargs={"pk": own.pk})][0] == 200
     ALL_HIDDEN[hidden](world, capture_evidence, extract)
     after = _capture(client, urls)
 
-    _assert_nothing_moved(before, after, "collaborating reader")
+    assert _differences(before, after) != ""
+    search = reverse("search:search")
+    for term in (HIDDEN_PHRASE, HIDDEN_TITLE):
+        url = f"{search}?q={term}"
+        owners = owner.get(url).content.decode()
+        for token in (HIDDEN_TITLE, HIDDEN_PHRASE):
+            assert (token in after[url][2]) == (token in owners), (url, token)
+    assert HIDDEN_PHRASE in after[f"{search}?q={HIDDEN_PHRASE}"][2]
 
 
 @pytest.fixture
@@ -302,30 +317,43 @@ def test_department_viewer_gate_surfaces_do_not_move(
     extract,
     hidden,
 ):
-    # Harvest as the department head behind the same gate is impossible without
-    # a second session; harvest from the department viewer itself (it reaches
-    # every gate page), which is what an outsider with the password would do.
-    urls = _all_urls(world, department_viewer)
+    # The persona-less session reaches no business page since docs/adr/0181, so
+    # the links are harvested as the owner, through the same gate.
+    owner = Client()
+    owner.post(reverse("accounts:shared_gate"), {"password": PASSWORD})
+    owner.post(reverse("accounts:act_as"), {"user_id": str(world["owner"].pk)})
+    urls = _all_urls(world, owner)
 
     before = _capture(department_viewer, urls)
-    reachable = [u for u, (status, _l, _b) in before.items() if status == 200]
-    assert any(u.startswith("/statistika/") for u in reachable), (
-        "the gate reader reached no Statistika page"
-    )
+    statistika = {u: before[u] for u in urls if u.startswith("/statistika/")}
+    assert statistika
+    chooser = reverse("accounts:choose_persona")
+    for url, (status, location, _body) in statistika.items():
+        assert status == 302, (url, status)
+        assert location.startswith(chooser), (url, location)
     ALL_HIDDEN[hidden](world, capture_evidence, extract)
     after = _capture(department_viewer, urls)
 
     _assert_nothing_moved(before, after, "department viewer")
 
 
-def test_department_viewer_sees_normal_work_on_the_gate_pages(world, department_viewer):  # noqa: F811
-    """The allowed half: the gate pages are useful, not empty."""
-    body = department_viewer.get(reverse("submissions:sent")).content.decode()
-    assert "Avalik arvamus" in body
-    download = department_viewer.get(
-        reverse("documents:download", kwargs={"pk": world["document"].versions.first().pk})
+def test_department_viewer_must_choose_a_persona_before_the_gate_pages(world, department_viewer):  # noqa: F811
+    """docs/adr/0181: no persona, no business page; with one, the pages are useful."""
+    sent = reverse("submissions:sent")
+    download_url = reverse(
+        "documents:download", kwargs={"pk": world["document"].versions.first().pk}
     )
-    assert download.status_code == 200
+    chooser = reverse("accounts:choose_persona")
+    for url in (sent, download_url):
+        response = department_viewer.get(url)
+        assert response.status_code == 302, url
+        assert response["Location"].startswith(chooser), url
+        assert "Avalik arvamus" not in response.content.decode()
+
+    chosen = department_viewer.post(reverse("accounts:act_as"), {"user_id": world["owner"].pk})
+    assert chosen.status_code == 302
+    assert "Avalik arvamus" in department_viewer.get(sent).content.decode()
+    assert department_viewer.get(download_url).status_code == 200
 
 
 def test_the_lawyers_see_the_restricted_related_link(world, capture_evidence, extract):  # noqa: F811

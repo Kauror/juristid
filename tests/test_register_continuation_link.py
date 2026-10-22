@@ -96,9 +96,11 @@ def test_the_same_number_in_another_year_is_not_the_named_matter(client, special
     assert str(other_year.pk) not in body
 
 
-def test_a_restricted_successor_is_plain_text_to_a_reader_who_cannot_open_it(
-    client, specialist, reader, predecessor
+def test_a_restricted_successor_is_linked_for_a_reader_and_never_for_an_outsider(
+    client, specialist, reader, administrator, predecessor
 ):
+    # docs/adr/0181: a READER may open it and gets the owner's link; an
+    # administrator without a grant opens neither Teema.
     hidden = factories.MatterFactory(
         owner=specialist,
         reference_year=2026,
@@ -107,9 +109,14 @@ def test_a_restricted_successor_is_plain_text_to_a_reader_who_cannot_open_it(
     )
     matter = _continues_under(predecessor, "2026_999")
 
-    assert register_facts_for(matter, reader).continues_under_id is None
-    body = _page(client, reader, matter)
-    assert "teema 2026_999" in body
+    assert register_facts_for(matter, reader).continues_under_id == hidden.pk
+    assert reverse("matters:matter_detail", kwargs={"pk": hidden.pk}) in _page(
+        client, reader, matter
+    )
+
+    assert register_facts_for(matter, administrator).continues_under_id is None
+    body = _page(client, administrator, matter)
+    assert "teema 2026_999" not in body
     assert str(hidden.pk) not in body
 
     # Its owner may open it, and gets the link.

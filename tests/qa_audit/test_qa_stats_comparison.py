@@ -126,7 +126,10 @@ def test_year_figures_agree_by_record_identity_across_new_year(viewer_name, clie
     }
     assert sends["real_early"].pk in expected and sends["real_late"].pk not in expected
     assert sends["test_early"].pk not in expected
-    assert (sends["restricted_early"].pk in expected) is (viewer_name == "head")
+    # docs/adr/0181: the READER reads the restricted send exactly as the head
+    # does; the administrator without a grant reads none of it.
+    assert sends["restricted_early"].pk in expected
+    assert not Submission.objects.visible_to(world.admin).exists()
 
     period_card = compute(keys.SUBMISSIONS_SENT, _ctx(viewer, str(year), world.today))
     by_period = compute(keys.SUBMISSIONS_SENT_BY_PERIOD, _ctx(viewer, "koik", world.today))

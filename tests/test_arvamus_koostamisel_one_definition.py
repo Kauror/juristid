@@ -244,41 +244,48 @@ def test_a_draft_on_a_closed_matter_is_not_current_work(department_head, martin)
 # ---------------------------------------------------------------------------
 
 
-def test_a_draft_the_reader_may_not_see_does_not_count_for_them(
-    department_head, reader, martin
+def test_a_restricted_draft_counts_for_every_reader_and_for_no_outsider(
+    department_head, reader, administrator, martin
 ) -> None:
-    """A restricted draft on an ordinary Matter: the head counts it, a reader does not.
+    """A restricted draft on an ordinary Matter: the head and a reader count it alike.
 
-    The Matter itself is readable to both. What differs is the child, which
-    carries its own stricter visibility — and counting it for somebody who may
-    not open it would disclose that a draft exists.
+    The Matter itself is readable to both. Since docs/adr/0181 the child's own
+    RESTRICTED mark is a label, not a boundary between authorized users; an
+    administrator without a business role reads nothing, so counts nothing.
     """
     matter = factories.MatterFactory(owner=martin)
     draft_on(matter, visibility_override=Visibility.RESTRICTED)
 
     assert listed(department_head, DRAFTING) == {matter.pk}
-    assert listed(reader, DRAFTING) == set()
+    assert listed(reader, DRAFTING) == {matter.pk}
     assert matter.pk in ids(Matter.objects.visible_to(reader))
+    assert listed(administrator, DRAFTING) == set()
+    assert not Matter.objects.visible_to(administrator).exists()
 
 
-def test_a_restricted_matter_is_absent_for_a_reader(department_head, reader, martin) -> None:
+def test_a_restricted_matter_counts_for_a_reader_and_is_absent_for_an_outsider(
+    department_head, reader, administrator, martin
+) -> None:
+    """Since docs/adr/0181 a READER reads RESTRICTED work; an administrator does not."""
     matter = factories.MatterFactory(owner=martin, visibility=Visibility.RESTRICTED)
     draft_on(matter)
 
     assert listed(department_head, DRAFTING) == {matter.pk}
-    assert listed(reader, DRAFTING) == set()
-    assert dashboard.drafting_matters(reader).count() == 0
+    assert listed(reader, DRAFTING) == {matter.pk}
+    assert ids(dashboard.drafting_matters(reader)) == {matter.pk}
+    assert listed(administrator, DRAFTING) == set()
+    assert dashboard.drafting_matters(administrator).count() == 0
 
 
-def test_a_send_the_reader_may_not_see_does_not_retire_the_register_cell_for_them(
-    department_head, reader, martin, send_on
+def test_a_restricted_send_retires_the_register_cell_for_every_reader(
+    department_head, reader, administrator, martin, send_on
 ) -> None:
     """No oracle. A hidden send must not make a readable file change state.
 
     For the head the restricted send is the outbound record, so the blank VÄLJA
-    is stale. For a reader who may not see that send, the file reads exactly as
-    it would if the send did not exist — which is the same rule
-    `work_items._discharge_exists` applies to the response obligation.
+    is stale. Since docs/adr/0181 a reader sees that send too, so the file reads
+    the same for them; an administrator without a business role sees neither
+    the file nor its state.
     """
     matter = factories.MatterFactory(owner=martin)
     register_row(matter, sent_recorded=False)
@@ -286,8 +293,10 @@ def test_a_send_the_reader_may_not_see_does_not_retire_the_register_cell_for_the
 
     assert listed(department_head, DRAFTING) == set()
     assert listed(department_head, SENT) == {matter.pk}
-    assert listed(reader, DRAFTING) == {matter.pk}
-    assert listed(reader, SENT) == set()
+    assert listed(reader, DRAFTING) == set()
+    assert listed(reader, SENT) == {matter.pk}
+    assert listed(administrator, DRAFTING) == set()
+    assert listed(administrator, SENT) == set()
 
 
 # ---------------------------------------------------------------------------

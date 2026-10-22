@@ -12,12 +12,14 @@ Two changes, and the second only because the first does not reach far enough.
 short-circuits on `sees_restricted_by_role`, so for a SPECIALIST or a
 DEPARTMENT_HEAD the grant could not change anything and the round trip bought
 nothing. That removes the query entirely for the two roles that do the
-department's work.
+department's work — and, since docs/adr/0181, for READER too, which joined
+`ROLES_WITH_BUSINESS_READ`.
 
 **The lookup is remembered for the rest of the request.** It has to be, because
 a READER is a real role with a real job and the first change does nothing for
 one: a reader still holds a grant sometimes, so the question is genuinely worth
-asking — once, not ninety times.
+asking — once, not ninety times. (Since docs/adr/0181 the role this is asked
+for is the ADMINISTRATOR, and the tests below use it where they used READER.)
 
 What this file protects is not the numbers. It is the two properties that make
 remembering an answer safe at the authorization chokepoint: the memo cannot
@@ -26,11 +28,12 @@ outlive its request, and the two callers with no primary key cannot enter it.
 Why the key is the thing to watch
 ---------------------------------
 `DepartmentViewer.pk` and `AnonymousUser.pk` are **both** `None`, and they map to
-opposite scopes — the shared-gate sentinel sees every NORMAL Matter, an
-anonymous visitor sees nothing at all. A memo keyed on `pk` that either could
-enter would eventually answer an anonymous request with a shared-gate reader's
-scope, which is a fail-open at the one place this codebase has spent the most
-care keeping fail-closed.
+opposite scopes — the shared-gate sentinel saw every NORMAL Matter, an
+anonymous visitor sees nothing at all. (Since docs/adr/0181 both read nothing;
+the ordering is still asserted, because the key would still be shared.) A memo
+keyed on `pk` that either could enter would eventually answer an anonymous
+request with a shared-gate reader's scope, which is a fail-open at the one place
+this codebase has spent the most care keeping fail-closed.
 
 They cannot enter it, because `scope_for_user` returns for both of them before
 the lookup is reached. That is a property of the ordering rather than of the
@@ -118,43 +121,46 @@ def test_the_memo_is_closed_even_when_the_view_raises(reader):
     assert authorization._looked_up_grants.get() is None
 
 
-def test_one_requests_answer_does_not_reach_the_next(reader, department_head, restricted_matter):
+def test_one_requests_answer_does_not_reach_the_next(
+    administrator, department_head, restricted_matter
+):
     """A grant created between two requests takes effect on the second.
 
     The memo is bounded to a request precisely so that this stays true. If it
     outlived one, a grant would appear not to work until the worker thread
-    happened to be recycled.
+    happened to be recycled. The administrator since docs/adr/0181: a READER's
+    role already answers and no grant is consulted for it.
     """
     with remember_grants_for_one_request():
-        assert restricted_matter not in Matter.objects.visible_to(reader)
+        assert restricted_matter not in Matter.objects.visible_to(administrator)
 
     grant_break_glass(
-        user=reader,
+        user=administrator,
         granted_by=department_head,
         reason="Tugijuhtum",
         duration=timedelta(hours=1),
     )
 
     with remember_grants_for_one_request():
-        assert restricted_matter in Matter.objects.visible_to(reader)
+        assert restricted_matter in Matter.objects.visible_to(administrator)
 
 
 def test_a_revoked_grant_stops_working_on_the_next_request(
-    reader, department_head, restricted_matter
+    administrator, department_head, restricted_matter
 ):
     grant = grant_break_glass(
-        user=reader,
+        user=administrator,
         granted_by=department_head,
         reason="Tugijuhtum",
         duration=timedelta(hours=1),
     )
     with remember_grants_for_one_request():
-        assert restricted_matter in Matter.objects.visible_to(reader)
+        assert restricted_matter in Matter.objects.visible_to(administrator)
 
     revoke_break_glass(grant=grant, revoked_by=department_head)
 
     with remember_grants_for_one_request():
-        assert restricted_matter not in Matter.objects.visible_to(reader)
+        assert restricted_matter not in Matter.objects.visible_to(administrator)
 
 
 # ---------------------------------------------------------------------------
@@ -191,15 +197,16 @@ def test_an_anonymous_reader_after_a_shared_gate_reader_still_sees_nothing(
 ):
     """The fail-open this design exists to make unreachable.
 
-    Both identities key to `None`. If they shared a memo, the sentinel's NORMAL
+    Both identities key to `None`. If they shared a memo, the sentinel's
     scope would be served to the anonymous request that followed it — inside one
     request here, which is stricter than the worker thread that would do it in
-    production.
+    production. Since docs/adr/0181 the sentinel's scope is empty too, so both
+    see nothing, before and after each other.
     """
     with remember_grants_for_one_request():
-        assert normal_matter in Matter.objects.visible_to(DEPARTMENT_VIEWER)
+        assert normal_matter not in Matter.objects.visible_to(DEPARTMENT_VIEWER)
         assert Matter.objects.visible_to(None).count() == 0
-        assert normal_matter in Matter.objects.visible_to(DEPARTMENT_VIEWER)
+        assert Matter.objects.visible_to(DEPARTMENT_VIEWER).count() == 0
 
 
 def test_a_deactivated_account_is_not_remembered_as_anything(specialist):
@@ -248,28 +255,29 @@ def test_a_lawyers_scope_relies_on_no_grant_even_when_one_exists(
     assert restricted_matter in Matter.objects.visible_to(specialist)
 
 
-def test_a_reader_is_still_asked_because_the_answer_can_change_what_they_see(
-    reader, department_head, restricted_matter
+def test_an_administrator_is_still_asked_because_the_answer_can_change_what_they_see(
+    administrator, department_head, restricted_matter
 ):
+    """The role outside `ROLES_WITH_BUSINESS_READ` (docs/adr/0181; READER before)."""
     with CaptureQueriesContext(connection) as captured:
-        assert scope_for_user(reader).sees_all_restricted is False
+        assert scope_for_user(administrator).sees_all_restricted is False
     assert break_glass_queries(captured) == 1
 
     grant = grant_break_glass(
-        user=reader,
+        user=administrator,
         granted_by=department_head,
         reason="Tugijuhtum",
         duration=timedelta(hours=1),
     )
-    assert scope_for_user(reader).break_glass_grant_id == grant.id
-    assert restricted_matter in Matter.objects.visible_to(reader)
+    assert scope_for_user(administrator).break_glass_grant_id == grant.id
+    assert restricted_matter in Matter.objects.visible_to(administrator)
 
 
 def test_an_expired_grant_is_remembered_as_absent_not_as_present(
-    reader, department_head, restricted_matter
+    administrator, department_head, restricted_matter
 ):
     grant = grant_break_glass(
-        user=reader,
+        user=administrator,
         granted_by=department_head,
         reason="Tugijuhtum",
         duration=timedelta(hours=1),
@@ -279,8 +287,8 @@ def test_an_expired_grant_is_remembered_as_absent_not_as_present(
     grant.save(update_fields=["starts_at", "expires_at", "updated_at"])
 
     with remember_grants_for_one_request():
-        assert restricted_matter not in Matter.objects.visible_to(reader)
-        assert restricted_matter not in Matter.objects.visible_to(reader)
+        assert restricted_matter not in Matter.objects.visible_to(administrator)
+        assert restricted_matter not in Matter.objects.visible_to(administrator)
 
 
 # ---------------------------------------------------------------------------

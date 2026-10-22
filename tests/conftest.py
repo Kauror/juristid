@@ -125,13 +125,13 @@ def department_head(db):
 
 @pytest.fixture
 def reader(db):
-    """An authenticated colleague with no legal-business authorization.
+    """An authenticated, read-only colleague.
 
-    Since docs/adr/0042 a second specialist is not an outsider, so the tests
-    that ask "may somebody who is not authorized to this see it" need somebody
-    who genuinely is not. `READER` is that person: a real, active, authenticated
-    account with a real role, deliberately left outside
-    `ROLES_WITH_RESTRICTED_ACCESS` and outside `ROLES_WITH_BUSINESS_WRITE`.
+    Since docs/adr/0181 a READER is an authorized internal user: inside
+    `ROLES_WITH_BUSINESS_READ`, so it reads every record, and outside
+    `ROLES_WITH_BUSINESS_WRITE`, so it changes none. A test asking "may
+    somebody who is not authorized see this" wants `administrator` — a real,
+    active, authenticated account that reads no business content.
     """
     return factories.ReaderFactory()
 

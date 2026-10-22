@@ -129,20 +129,23 @@ def test_a_deleted_successor_is_refused(working_matter, specialist):
     _assert_still_open(working_matter, before)
 
 
-def test_a_successor_the_closer_cannot_read_is_refused_as_if_absent(working_matter, reader):
+def test_a_successor_the_closer_cannot_read_is_refused_as_if_absent(working_matter, administrator):
     """The service's own statement of the rule, whoever calls it. The routes
     already refuse a `READER` any closure; the refusal here names nothing about
-    the restricted file, so it is the same sentence a missing one gets."""
+    the restricted file, so it is the same sentence a missing one gets.
+
+    Since docs/adr/0181 a READER can read the successor; the closer who cannot
+    is an outsider (ADMINISTRATOR without a grant)."""
     hidden = factories.MatterFactory(
         owner=factories.UserFactory(), visibility=Visibility.RESTRICTED
     )
     before = _events(working_matter)
 
-    with pytest.raises(DomainError) as refusal:
+    with refused(matter_services.SUCCESSOR_DELETED_REFUSAL) as refusal:
         close_matter(
             matter=working_matter,
             disposition=Disposition.SUPERSEDED,
-            actor=reader,
+            actor=administrator,
             successor=hidden,
         )
 
@@ -232,7 +235,9 @@ def test_the_live_closure_still_closes(signed_in, specialist):
     assert matter.disposition == Disposition.COMPLETED
 
 
-def test_seotud_names_no_end_of_the_chain_the_reader_may_not_open(client, specialist, reader):
+def test_seotud_names_both_ends_of_the_chain_to_a_reader_and_none_to_an_outsider(
+    client, specialist, reader, administrator
+):
     """`Seotud` reads both ends through the reader's own scope.
 
     Closing a file as superseded checks the successor against the closing
@@ -240,6 +245,10 @@ def test_seotud_names_no_end_of_the_chain_the_reader_may_not_open(client, specia
     A reader of the earlier file then gets 404 on the later one, and the rail
     must not print its title on the way there — nor, read the other way, the
     title of a restricted file this one continued.
+
+    Since docs/adr/0181 the READER opens both ends and sees the chain as the
+    owner does; an outsider (ADMINISTRATOR without a grant) opens neither file
+    and reads no title.
     """
     hidden = "Konfidentsiaalne jätkuteema"
     earlier = factories.MatterFactory(owner=specialist, title="Avalik varasem teema")
@@ -261,8 +270,8 @@ def test_seotud_names_no_end_of_the_chain_the_reader_may_not_open(client, specia
     )
 
     client.force_login(reader)
-    assert client.get(f"/teemad/{later.pk}/").status_code == 404
-    assert client.get(f"/teemad/{secret_earlier.pk}/").status_code == 404
+    assert client.get(f"/teemad/{later.pk}/").status_code == 200
+    assert client.get(f"/teemad/{secret_earlier.pk}/").status_code == 200
     for page, hidden_matter, hidden_title, label in (
         (earlier, later, hidden, "Jätkub teemana"),
         (shown, secret_earlier, "Konfidentsiaalne eelkäija", "Eelnev teema"),
@@ -270,11 +279,19 @@ def test_seotud_names_no_end_of_the_chain_the_reader_may_not_open(client, specia
         response = client.get(f"/teemad/{page.pk}/")
         assert response.status_code == 200
         body = response.content.decode()
+        assert hidden_title in body
+        assert f"/teemad/{hidden_matter.pk}/" in body
+        assert label in body
+
+    client.force_login(administrator)
+    for page in (earlier, later, shown, secret_earlier):
+        response = client.get(f"/teemad/{page.pk}/")
+        assert response.status_code == 404
+        body = response.content.decode()
         # Neither its title, nor a link to it, nor the row that would say one
-        # exists: the card is not drawn at all when it would only hold that.
-        assert hidden_title not in body
-        assert f"/teemad/{hidden_matter.pk}/" not in body
-        assert label not in body
+        # exists.
+        assert hidden not in body
+        assert "Konfidentsiaalne eelkäija" not in body
         assert '<span class="railcard__label">Seotud</span>' not in body
 
     # The person who may read both still sees the chain.

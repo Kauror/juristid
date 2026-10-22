@@ -177,11 +177,15 @@ def _routes(version):
 
 
 @pytest.mark.parametrize("fixture_name", ["restricted_file", "restricted_child_file"])
-def test_restricted_file_routes_are_404_for_reader_and_admin(
+def test_restricted_file_routes_open_for_a_reader_and_are_404_for_admin(
     request, client, reader, administrator, superuser, fixture_name
 ):
+    # docs/adr/0181: a READER reads RESTRICTED files; technical administration does not.
     version = request.getfixturevalue(fixture_name)
-    for persona in (reader, administrator, superuser):
+    client.force_login(reader)
+    for url in _routes(version):
+        assert client.get(url).status_code == 200, (reader.role, url)
+    for persona in (administrator, superuser):
         client.force_login(persona)
         for url in _routes(version):
             assert client.get(url).status_code == 404, (persona.role, url)

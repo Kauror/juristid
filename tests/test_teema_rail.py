@@ -376,23 +376,27 @@ def test_a_reader_may_not_upload_one_by_posting(client, reader, specialist):
     assert not Document.objects.filter(matter=matter).exists()
 
 
-def test_an_opinion_restricted_below_its_matter_is_not_named_in_the_rail(
-    client, reader, specialist
+def test_an_opinion_restricted_below_its_matter_is_named_in_a_readers_rail_only(
+    client, reader, administrator, specialist
 ):
     """AUTH-003 §21: a filename is a disclosure whether or not the bytes are.
 
     The retired block enforced this by intersecting a Submission's visibility
     with its evidence's. The list is `Document`s now, so `visible_to` is the
-    whole rule — but the rule itself has not moved.
+    whole rule — but the rule itself has not moved. Since docs/adr/0181 a READER
+    may read the file and is shown its name; an administrator without a grant
+    gets no page at all.
     """
     matter = factories.MatterFactory(owner=specialist)
     _opinion_document(matter, name="Salajane_arvamus.pdf", visibility=Visibility.RESTRICTED)
     client.force_login(reader)
+    assert "Salajane_arvamus.pdf" in _rail_block(_detail(client, matter), "koja-arvamus")
 
-    body = _detail(client, matter)
+    client.force_login(administrator)
+    response = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk}))
 
-    assert "Salajane_arvamus.pdf" not in body
-    assert '<span class="railcard__none">Puudub</span>' in body
+    assert response.status_code == 404
+    assert "Salajane_arvamus.pdf" not in response.content.decode()
 
 
 def test_a_sent_submissions_final_evidence_is_the_same_row(signed_in, specialist, organisation):
@@ -587,13 +591,14 @@ def test_a_document_in_both_branches_is_listed_once(signed_in, specialist, organ
 
 
 def test_visibility_still_gates_the_filename_of_a_sent_opinion(
-    client, reader, specialist, organisation
+    client, reader, administrator, specialist, organisation
 ):
     """AUTH-003 §21 applies to the whole union, not just the role branch.
 
     Restricted after the send, so the domain check that guards *binding* is not
     what is being tested here — the question is only whether the widened read
-    model still narrows by `visible_to`.
+    model still narrows by `visible_to`. Since docs/adr/0181 a READER may read
+    it (named, as for the owner); an administrator without a grant may not.
     """
     matter = factories.MatterFactory(owner=specialist)
     document = _incoming_document(matter, name="Salajane_saadetud.pdf")
@@ -603,10 +608,13 @@ def test_visibility_still_gates_the_filename_of_a_sent_opinion(
     document.save(update_fields=["visibility_override"])
 
     client.force_login(reader)
-    block = _rail_block(_detail(client, matter), "koja-arvamus")
+    assert "Salajane_saadetud.pdf" in _rail_block(_detail(client, matter), "koja-arvamus")
 
-    assert "Salajane_saadetud.pdf" not in block
-    assert '<span class="railcard__none">Puudub</span>' in block
+    client.force_login(administrator)
+    response = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk}))
+
+    assert response.status_code == 404
+    assert "Salajane_saadetud.pdf" not in response.content.decode()
 
 
 def test_the_union_does_not_reach_across_matters(signed_in, specialist, organisation):

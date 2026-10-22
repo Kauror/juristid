@@ -211,30 +211,52 @@ def test_a_normal_document_on_a_normal_matter_is_found_by_any_reader(
 def test_a_restricted_document_on_a_normal_matter_is_hidden_with_its_filename(
     specialist, reader, administrator, capture_evidence
 ):
-    """Outsiders are the reader and the administrator: since docs/adr/0042 every
-    specialist is authorized to restricted content."""
+    """The outsider is the administrator: since docs/adr/0042 every specialist,
+    and since docs/adr/0181 a READER, is authorized to restricted content."""
     matter = factories.MatterFactory(owner=specialist)
     document = _restricted_document(matter, capture_evidence, override=Visibility.RESTRICTED)
 
-    for outsider in (reader, administrator):
-        for term in ("ZQXSECRET", "zqxsalajane-fail.txt", "zqxsalajane"):
-            assert not _document_results(search(query=term, user=outsider), document), term
-    assert _document_results(search(query="ZQXSECRET", user=specialist), document)
+    for term in ("ZQXSECRET", "zqxsalajane-fail.txt", "zqxsalajane"):
+        assert not _document_results(search(query=term, user=administrator), document), term
+    for person in (specialist, reader):
+        assert _document_results(search(query="ZQXSECRET", user=person), document), person
 
 
 def test_a_normal_document_on_a_restricted_matter_is_hidden(
     specialist, reader, administrator, capture_evidence
 ):
+    """Hidden from the administrator; since docs/adr/0181 a READER finds it."""
     matter = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
     document = _restricted_document(matter, capture_evidence)
 
-    for outsider in (reader, administrator):
-        for term in ("ZQXSECRET", "zqxsalajane-fail.txt"):
-            assert not search(query=term, user=outsider), term
-    assert _document_results(search(query="ZQXSECRET", user=specialist), document)
+    for term in ("ZQXSECRET", "zqxsalajane-fail.txt"):
+        assert not search(query=term, user=administrator), term
+    for person in (specialist, reader):
+        assert _document_results(search(query="ZQXSECRET", user=person), document), person
 
 
-def test_restricting_a_document_hides_it_on_the_next_query(specialist, reader, capture_evidence):
+def test_restricting_a_document_hides_it_on_the_next_query(
+    specialist, reader, capture_evidence, monkeypatch
+):
+    """The projection stores no visibility: the live join decides on the next query.
+
+    Since docs/adr/0181 no request reaches a scope that restricting a document
+    narrows, so the reader searches through the participation-narrowed scope a
+    non-participant held before, built by hand — the builder is what this pins.
+    """
+    from app.core.authorization import Scope
+    from app.search import services as search_services
+
+    monkeypatch.setattr(
+        search_services,
+        "scope_for_user",
+        lambda user: Scope(
+            user=user,
+            is_authenticated=True,
+            sees_restricted_by_role=False,
+            break_glass_grant_id=None,
+        ),
+    )
     matter = factories.MatterFactory(owner=specialist)
     document = _restricted_document(matter, capture_evidence)
     assert _document_results(search(query="ZQXSECRET", user=reader), document)
@@ -245,11 +267,12 @@ def test_restricting_a_document_hides_it_on_the_next_query(specialist, reader, c
 
 
 def test_the_search_page_does_not_print_a_hidden_filename(
-    specialist, reader, capture_evidence, client
+    specialist, administrator, capture_evidence, client
 ):
+    """Read by an administrator without a business role (docs/adr/0181)."""
     matter = factories.MatterFactory(owner=specialist)
     _restricted_document(matter, capture_evidence, override=Visibility.RESTRICTED)
-    client.force_login(reader)
+    client.force_login(administrator)
 
     page = client.get(reverse("search:search"), {"q": "zqxsalajane"}).content.decode()
 

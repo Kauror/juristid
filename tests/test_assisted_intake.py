@@ -1594,9 +1594,10 @@ def test_a_refused_save_keeps_what_was_typed_and_does_not_re_run_suggestions(
 
 
 @pytestmark_db
-def test_a_restricted_document_contributes_no_evidence_to_a_reader_who_may_not_see_it(
-    specialist, reader, ministry, capture_evidence, extract
+def test_a_restricted_document_is_evidence_for_every_reader_and_none_for_an_outsider(
+    specialist, reader, administrator, ministry, capture_evidence, extract
 ) -> None:
+    """docs/adr/0181: the READER reads it as the owner does; the outsider does not."""
     matter = factories.MatterFactory(owner=specialist)
     hidden = capture_evidence(
         matter,
@@ -1609,8 +1610,9 @@ def test_a_restricted_document_contributes_no_evidence_to_a_reader_who_may_not_s
     for_owner = build_analysis_input(matter, specialist)
     for_reader = build_analysis_input(matter, reader)
     assert [d.filename for d in for_owner.documents] == ["salajane.pdf"]
-    assert for_reader.documents == ()
-    analysis = analyse_matter(matter, reader)
+    assert for_reader == for_owner
+    assert build_analysis_input(matter, administrator).documents == ()
+    analysis = analyse_matter(matter, administrator)
     assert not analysis.fields and not analysis.findings and analysis.documents == ()
 
 
@@ -1807,7 +1809,7 @@ def test_a_human_title_is_not_overwritten_when_a_later_file_matches_it(
 
 @pytestmark_db
 def test_the_human_title_decision_does_not_depend_on_what_the_viewer_can_see(
-    client, specialist, reader, ministry, capture_evidence, extract
+    client, specialist, reader, administrator, ministry, capture_evidence, extract
 ) -> None:
     """Two viewers, two different sets of documents, one answer.
 
@@ -1817,11 +1819,10 @@ def test_the_human_title_decision_does_not_depend_on_what_the_viewer_can_see(
     is the test that will notice if one is ever reintroduced over a per-viewer
     input.
 
-    `reader` is the viewer the visible set genuinely differs for. RESTRICTED
-    content is unlocked by *role* for SPECIALIST and DEPARTMENT_HEAD alike
-    (`app.core.authorization.ROLES_WITH_RESTRICTED_ACCESS`), so a second
-    specialist or a head of department reads exactly what the owner reads and
-    would prove nothing here.
+    `administrator` is the viewer the visible set genuinely differs for. Since
+    docs/adr/0181 every business-read role, READER included, reads exactly what
+    the owner reads (`app.core.authorization.ROLES_WITH_BUSINESS_READ`) and
+    would prove nothing here; an administrator without a grant reads nothing.
     """
     from app.matters.services import create_matter
 
@@ -1841,11 +1842,12 @@ def test_the_human_title_decision_does_not_depend_on_what_the_viewer_can_see(
     assert [d.filename for d in build_analysis_input(matter, specialist).documents] == [
         "Pakendiseaduse_muutmise_seaduse_eelnõu.pdf"
     ]
-    assert build_analysis_input(matter, reader).documents == ()
+    assert build_analysis_input(matter, administrator).documents == ()
+    assert build_analysis_input(matter, reader) == build_analysis_input(matter, specialist)
 
-    # And the title decision is the same one for both of them.
+    # And the title decision is the same one for all of them.
     current = CurrentValues.of(matter)
-    for viewer in (specialist, reader):
+    for viewer in (specialist, reader, administrator):
         initial, annotated = prefill_initial(
             analyse_matter(matter, viewer), base={"title": matter.title}, current=current
         )
@@ -2064,23 +2066,19 @@ def test_an_over_budget_page_still_writes_nothing(signed_in, specialist, capture
 
 
 @pytestmark_db
-def test_a_hidden_document_spends_no_budget_and_changes_no_suggestion(
-    specialist, reader, ministry, capture_evidence, extract
+def test_a_restricted_document_is_bounded_for_every_reader_and_costs_an_outsider_nothing(
+    specialist, reader, administrator, ministry, capture_evidence, extract
 ) -> None:
-    """Authorisation runs before budgeting, so a hidden file costs nothing.
+    """Authorisation runs before budgeting, so an unreadable file costs nothing.
 
-    The viewer this is proved with is `reader`, not the owner. RESTRICTED
-    content is unlocked by role for SPECIALIST and DEPARTMENT_HEAD
-    (`app.core.authorization.ROLES_WITH_RESTRICTED_ACCESS`), so the owner is
-    *meant* to read the bulky file — and the second half checks that when they
-    do, it is bounded like anything else rather than exempt for being secret.
+    Since docs/adr/0181 every authorized reader — the owner and a READER alike —
+    reads the RESTRICTED file, and it is bounded like anything else rather than
+    exempt for being secret. The viewer for whom it is unreadable is the
+    administrator without a grant, who reads nothing of the Matter at all.
     """
     matter = factories.MatterFactory(owner=specialist, reference_year=2099, reference_number=927)
     letter = capture_evidence(matter, corpus.text_pdf([COVERING_LETTER]), "kaaskiri.pdf", PDF)
     extract(letter)
-    before = build_analysis_input(matter, reader)
-    open_read = sum(len(b.text) for d in before.documents for b in d.blocks)
-    assert open_read > 0
 
     hidden = capture_evidence(
         matter,
@@ -2091,15 +2089,16 @@ def test_a_hidden_document_spends_no_budget_and_changes_no_suggestion(
     )
     _publish_text(hidden, [(_bulky("Salajane", 150_000), TextSource.NATIVE)])
 
-    after = build_analysis_input(matter, reader)
-    assert sum(len(b.text) for d in after.documents for b in d.blocks) == open_read
-    assert [d.filename for d in after.documents] == ["kaaskiri.pdf"]
-    assert not after.skipped_for_budget
-    assert not after.partial
+    outsider = build_analysis_input(matter, administrator)
+    assert outsider.documents == ()
+    assert not outsider.skipped_for_budget
+    assert not outsider.partial
 
-    # For somebody who may read it, the same file is read — and truncated at
+    # For everybody who may read it, the same file is read — and truncated at
     # the per-document ceiling, not admitted whole because it is restricted.
     for_owner = build_analysis_input(matter, specialist)
+    for_reader = build_analysis_input(matter, reader)
+    assert for_reader == for_owner
     secret = next(d for d in for_owner.documents if d.filename == "salajane.pdf")
     assert sum(len(b.text) for b in secret.blocks) == intake_input.MAX_CHARACTERS_PER_DOCUMENT
     assert secret.truncated
