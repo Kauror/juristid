@@ -35,8 +35,10 @@ that Koda sent no opinions (brief 28, 29).
 Authorization: anything that names or derives from a Matter is scoped through
 ``visible_matters`` before it is grouped, so a restricted Matter cannot move a
 responsibility total or a link-coverage percentage. Unlinked archive inventory
-names no Matter — a filename, a size and a hash — and follows the existing
-archive reporting rule of being counted for everyone (brief 45, 78).
+names no Matter, but it is still the corpus, so every metric here is first
+refused to anybody `may_read_archive` refuses (`reads_opinion_archive`,
+docs/adr/0175): a reader who may not open the archive is not told its size,
+its years or its coverage either (brief 45, 78).
 """
 
 from __future__ import annotations
@@ -49,6 +51,7 @@ from app.core.dates import format_estonian_date
 from app.legacy_import.opinion_archive import OpinionArchiveItem
 from app.legacy_import.opinion_binary import OpinionArchiveMatterLink
 from app.reporting import metric_catalogue as keys
+from app.reporting.archive_access import reads_opinion_archive
 from app.reporting.context import ReportingContext
 from app.reporting.metric_catalogue import OPINION_ARCHIVE_FIRST_YEAR, definition
 from app.reporting.metric_types import (
@@ -167,6 +170,7 @@ def _empty_result(spec_key: str, context: ReportingContext) -> MetricResult:
 # ---------------------------------------------------------------------------
 
 
+@reads_opinion_archive
 def opinion_archive_by_year(context: ReportingContext) -> MetricResult:
     """Distinct archive letters per year of their own filename date.
 
@@ -211,6 +215,7 @@ def opinion_archive_by_year(context: ReportingContext) -> MetricResult:
     )
 
 
+@reads_opinion_archive
 def opinion_archive_by_month(context: ReportingContext) -> MetricResult:
     """The same letters by month, and never past the evidence.
 
@@ -281,6 +286,7 @@ def opinion_archive_by_month(context: ReportingContext) -> MetricResult:
     )
 
 
+@reads_opinion_archive
 def opinion_archive_yoy_change(context: ReportingContext) -> MetricResult:
     """The archive's latest year against the same stretch of the year before.
 
@@ -362,6 +368,7 @@ def _linked_shas(context: ReportingContext) -> set[str]:
     return set(_linked_rows(context).values_list("binary__sha256", flat=True))
 
 
+@reads_opinion_archive
 def opinion_archive_link_coverage(context: ReportingContext) -> MetricResult:
     """How much of the archive has reached a Teema, as distinct files.
 
@@ -409,6 +416,7 @@ def opinion_archive_link_coverage(context: ReportingContext) -> MetricResult:
     )
 
 
+@reads_opinion_archive
 def opinion_archive_linked_by_responsibility(context: ReportingContext) -> MetricResult:
     """Distinct archive files per responsible lawyer, through their Matters.
 
@@ -487,6 +495,7 @@ def opinion_archive_linked_by_responsibility(context: ReportingContext) -> Metri
     )
 
 
+@reads_opinion_archive
 def opinion_archive_linked_by_month_and_responsibility(context: ReportingContext) -> MetricResult:
     """Linked archive files by month and by responsible lawyer.
 

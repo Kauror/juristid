@@ -22,6 +22,7 @@ the export still diffs cleanly against the one before it.
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Any
 
 #: The characters a spreadsheet reads as «a formula starts here».
@@ -34,7 +35,19 @@ FORMULA_PREFIXES = frozenset("=+-@")
 #: Control characters a spreadsheet skips before deciding what the cell begins
 #: with. A tab, a carriage return or a newline in front of ``=`` hides the
 #: formula from a naive first-character check and from nothing else.
+#:
+#: Named for the record; :func:`_leading` looks through a wider class. Any
+#: whitespace (a space, a no-break space, a vertical tab) and any control or
+#: format character (NUL, DEL, a zero-width space, a byte-order mark) in front
+#: of a formula character is looked through, because whether an application
+#: trims it on import is that application's setting — LibreOffice's «Trim
+#: spaces», a sheet's paste of text — and not something an export can know
+#: (csf_1cecc4b5be8fb1a7be4fe125).
 CONTROL_PREFIXES = "\t\r\n"
+
+#: Unicode categories looked through in front of a formula character: control
+#: characters (C0, DEL, C1) and format characters (zero-width space, BOM).
+_INVISIBLE_CATEGORIES = frozenset({"Cc", "Cf"})
 
 #: A value that only looks dangerous.
 #:
@@ -45,6 +58,16 @@ CONTROL_PREFIXES = "\t\r\n"
 _NUMERIC = re.compile(r"^[-+]?\d+(?:[.,]\d+)?$")
 
 
+def _leading(value: str) -> str:
+    """The value from the first character a spreadsheet could read as content."""
+    index = 0
+    while index < len(value) and (
+        value[index].isspace() or unicodedata.category(value[index]) in _INVISIBLE_CATEGORIES
+    ):
+        index += 1
+    return value[index:]
+
+
 def csv_safe(value: Any) -> Any:
     """One cell, made inert if a spreadsheet would otherwise execute it.
 
@@ -52,13 +75,13 @@ def csv_safe(value: Any) -> Any:
     column that is meant to be numeric stays numeric — `csv.writer` renders them
     and nothing here has made them text.
 
-    A string is prefixed with a single apostrophe when, after any leading tab,
-    carriage return or newline, it begins with one of :data:`FORMULA_PREFIXES`
-    *and* is not simply a number.
+    A string is prefixed with a single apostrophe when, after any leading
+    whitespace, control or format characters (:func:`_leading`), it begins with
+    one of :data:`FORMULA_PREFIXES` *and* is not simply a number.
     """
     if not isinstance(value, str) or not value:
         return value
-    stripped = value.lstrip(CONTROL_PREFIXES)
+    stripped = _leading(value)
     if not stripped or stripped[0] not in FORMULA_PREFIXES:
         return value
     if _NUMERIC.match(stripped):

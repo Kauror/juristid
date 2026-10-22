@@ -17,6 +17,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from app.reporting import metric_catalogue as keys
+from app.reporting.archive_access import may_report_archive, reads_archive
 from app.reporting.context import ReportingContext
 from app.reporting.metric_catalogue import CATALOGUE
 from app.reporting.metric_types import MetricResult
@@ -153,8 +154,30 @@ if _missing or _extra:  # pragma: no cover - import-time guard
     )
 
 
+#: Every metric that reads the opinion archive, derived from the selectors'
+#: own registration rather than listed by hand, so a new archive selector is
+#: guarded the moment it is written (app/reporting/archive_access.py).
+ARCHIVE_METRICS: frozenset[str] = frozenset(
+    key for key, computer in COMPUTERS.items() if reads_archive(computer)
+)
+
+
+def withheld(key: str, context: ReportingContext) -> bool:
+    """Whether this viewer may not be shown this metric at all.
+
+    Only the archive metrics, and only for somebody `may_read_archive` refuses.
+    A page leaves such a metric out rather than printing a zero that would read
+    as a measurement of an empty archive (docs/adr/0175).
+    """
+    return key in ARCHIVE_METRICS and not may_report_archive(context)
+
+
 def compute(key: str, context: ReportingContext) -> MetricResult:
-    """Answer one metric. The only way a surface obtains a number."""
+    """Answer one metric. The only way a surface obtains a number.
+
+    An archive metric asked for by a non-reader raises
+    `archive_access.ArchiveMetricWithheld` from the selector's own guard.
+    """
     try:
         computer = COMPUTERS[key]
     except KeyError as exc:  # pragma: no cover - programming error
@@ -164,7 +187,8 @@ def compute(key: str, context: ReportingContext) -> MetricResult:
 
 
 def compute_many(metric_keys: list[str], context: ReportingContext) -> list[MetricResult]:
-    return [compute(key, context) for key in metric_keys]
+    """The metrics this viewer may see, in order; withheld ones are left out."""
+    return [compute(key, context) for key in metric_keys if not withheld(key, context)]
 
 
 # ---------------------------------------------------------------------------

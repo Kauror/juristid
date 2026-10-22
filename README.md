@@ -204,9 +204,16 @@ rest of the gate. So:
 
 Within an approved environment, the ignored directories are the right places to
 put things, and `tests/test_repository_data_safety.py` fails if a workbook or an
-import report is ever tracked. The row-level CSV reports reproduce source content
-and stay local; only `summary.json` and `summary.md` carry counts alone and are
-safe to share.
+import report is ever tracked. Only `summary.json` and `summary.md` are safe to
+share: they are written from an allowlisted schema of counts, parser/importer/
+contract versions and yes/no flags (`PublicSummary` in
+`app/legacy_import/reporting.py`), and carry no file name, sheet name, header,
+reference, vocabulary term or cell value. Everything else in the report
+directory stays local: `operator-summary.json` / `operator-summary.md` name the
+source file and hold the structural findings, duplicate references and
+vocabulary differences a reviewer needs, and the row-level CSV reports reproduce
+source content (every cell neutralised against spreadsheet formulas,
+`app/core/csv_safety.py`).
 
 If you have a copy of the real register on an unapproved machine — including one
 made to try these commands — delete it. The original is authoritative and lives

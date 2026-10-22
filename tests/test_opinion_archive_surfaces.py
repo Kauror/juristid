@@ -236,13 +236,19 @@ def test_matter_coverage_counts_a_settled_file(context, specialist, normal_matte
 
 
 def test_a_candidate_naming_a_restricted_matter_is_not_counted_for_everyone(
-    context, specialist, reader
+    context, specialist, administrator
 ):
+    """The outsider reads the archive and not the Matter: the administrator.
+
+    A reader who may not read the archive at all is not asked here — every
+    archive metric is withheld from them (tests/test_reporting_archive_access.py).
+    """
     restricted = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
     batch, item = catalogue()
     candidate(batch, item, matter=restricted)
+    assert _sees(specialist, restricted) and not _sees(administrator, restricted)
 
-    assert compute(keys.OPINION_ARCHIVE_UNRESOLVED, context(reader)).value == 0
+    assert compute(keys.OPINION_ARCHIVE_UNRESOLVED, context(administrator)).value == 0
 
 
 def _sees(user, matter) -> bool:
@@ -253,16 +259,20 @@ def _sees(user, matter) -> bool:
 
 @pytest.mark.parametrize("state", [OpinionCandidateState.APPLIED, OpinionCandidateState.LINKED])
 def test_matter_coverage_counts_a_restricted_link_only_for_who_may_see_it(
-    context, specialist, reader, state
+    context, specialist, administrator, state
 ):
-    """AUD-044: the numerator is the reader's; the archive inventory is everyone's."""
+    """AUD-044: the numerator is the reader's; the inventory is every archive reader's.
+
+    The outsider is the administrator, who reads the archive but not RESTRICTED
+    Matters (docs/adr/0175 withholds the whole metric from non-archive readers).
+    """
     restricted = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
     batch, item = catalogue()
     candidate(batch, item, matter=restricted, state=state)
-    assert _sees(specialist, restricted) and not _sees(reader, restricted)
+    assert _sees(specialist, restricted) and not _sees(administrator, restricted)
 
     participant = compute(keys.OPINION_ARCHIVE_MATTER_COVERAGE, context(specialist))
-    outsider = compute(keys.OPINION_ARCHIVE_MATTER_COVERAGE, context(reader))
+    outsider = compute(keys.OPINION_ARCHIVE_MATTER_COVERAGE, context(administrator))
 
     assert (participant.value, participant.coverage_count) == (100, 1)
     # The outsider's figure does not move, and its denominator is the same
@@ -287,7 +297,7 @@ def test_matter_coverage_counts_a_file_once_however_many_matters_it_reached(cont
 
 
 def test_historical_submission_coverage_counts_a_restricted_reconstruction_only_for_who_may_see_it(
-    context, specialist, reader
+    context, specialist, administrator
 ):
     from app.legacy_import.opinion_archive import OpinionSubmissionImport
 
@@ -296,8 +306,10 @@ def test_historical_submission_coverage_counts_a_restricted_reconstruction_only_
     submission = sent_submission(restricted, sent=datetime.date(2024, 4, 10))
     OpinionSubmissionImport.objects.create(item=item, batch=batch, submission=submission)
 
+    assert _sees(specialist, restricted) and not _sees(administrator, restricted)
+
     participant = compute(keys.HISTORICAL_SUBMISSION_COVERAGE, context(specialist))
-    outsider = compute(keys.HISTORICAL_SUBMISSION_COVERAGE, context(reader))
+    outsider = compute(keys.HISTORICAL_SUBMISSION_COVERAGE, context(administrator))
 
     assert (participant.value, participant.coverage_count) == (100, 1)
     assert (outsider.value, outsider.coverage_count) == (0, 0)

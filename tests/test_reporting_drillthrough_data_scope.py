@@ -39,7 +39,7 @@ from app.matters.models import Matter, TagAssignment
 from app.matters.selectors import DATA_CLASS_REAL
 from app.reporting import metric_catalogue as keys
 from app.reporting.selectors.base import REGISTER_DATA_SCOPE, register_url
-from app.reporting.services import COMPUTERS, compute
+from app.reporting.services import COMPUTERS, compute, withheld
 from app.workflow.enums import Track
 from app.workflow.models import NextAction
 
@@ -178,6 +178,8 @@ def _add_twin_opinions(world, twins: list[Matter]) -> None:
 def _snapshot(context) -> dict[str, tuple]:
     snapshot = {}
     for key in COMPUTERS:
+        if withheld(key, context):  # the archive, for a non-reader (docs/adr/0175)
+            continue
         result = compute(key, context)
         snapshot[key] = (
             result.value,
@@ -246,6 +248,8 @@ def test_every_register_link_opens_what_its_figure_counted_with_test_matters_pre
 
     links = 0
     for key in COMPUTERS:
+        if withheld(key, context):  # the archive, for a non-reader (docs/adr/0175)
+            continue
         result = compute(key, context)
         for link in register_links(key, result):
             total = register_total(client, link.url)

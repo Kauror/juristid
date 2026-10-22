@@ -39,6 +39,17 @@ pytestmark = pytest.mark.django_db
         "\r+SUM(A1)",
         "\n-cmd",
         "=",
+        # Looked through as well (csf_1cecc4b5be8fb1a7be4fe125): whether an
+        # application trims leading whitespace on import is its own setting.
+        " =SUM(A1)",
+        " =SUM(A1)",
+        "\x0b@SUM(1+1)",
+        "\x0c+SUM(A1)",
+        "\x00=SUM(A1)",
+        "\x7f-cmd",
+        "​=SUM(A1)",
+        "﻿=SUM(A1)",
+        " \t\r\n =SUM(A1)",
     ],
 )
 def test_a_formula_leading_cell_is_made_inert(typed):
@@ -58,20 +69,24 @@ def test_a_formula_leading_cell_is_made_inert(typed):
         "",
         "2026-09-12",
         "1 = 1",
-        " =SUM(A1)",
+        " ",
+        "\t",
+        " Pakendiseadus = pakend",
     ],
 )
 def test_an_ordinary_cell_is_returned_byte_for_byte(ordinary):
-    """Including a leading space before an `=`.
+    """Only the *leading* character after whitespace and controls decides.
 
-    A spreadsheet does not evaluate that one, and prefixing every cell that
-    contains the character somewhere would put an apostrophe in front of half the
-    export.
+    Prefixing every cell that contains a formula character somewhere would put
+    an apostrophe in front of half the export. A leading space before an `=`
+    used to be listed here as ordinary; it is not, because whether a leading
+    space is trimmed on import is the application's setting — LibreOffice's
+    «Trim spaces» — and not the export's (csf_1cecc4b5be8fb1a7be4fe125).
     """
     assert csv_safe(ordinary) == ordinary
 
 
-@pytest.mark.parametrize("number", ["-5", "-3.2", "-3,2", "+7", "12"])
+@pytest.mark.parametrize("number", ["-5", "-3.2", "-3,2", "+7", "12", " -5", "\t-3,2"])
 def test_a_negative_number_written_as_text_stays_a_number(number):
     """`-` is on the dangerous list, and a negative figure begins with one.
 

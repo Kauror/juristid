@@ -6,9 +6,10 @@ otherwise people go back to opening the real file in Excel, which is how a
 register gets edited by accident.
 
 So nothing in this module imports a model, opens a connection or writes a row.
-It reads the file, applies the era contracts, and produces two kinds of report:
-aggregate counts that are safe to publish, and row-level detail that stays in
-local ignored storage.
+It reads the file, applies the era contracts, and produces three kinds of
+report: an allowlisted public summary of counts that is safe to publish, and an
+operator summary and row-level detail that stay in local ignored storage
+(app/legacy_import/reporting.py).
 """
 
 from __future__ import annotations
@@ -22,7 +23,12 @@ from app.legacy_import.enums import BLOCKING_ANOMALIES, Anomaly, RowOutcome
 from app.legacy_import.extraction import ExtractedRow, extract_sheet, summarize
 from app.legacy_import.next_actions import NextActionCandidate, extract_candidate
 from app.legacy_import.parser import PARSER_VERSION, RegisterWorkbook, WorkbookInventory
-from app.legacy_import.reporting import WrittenReports, inspection_markdown, write_reports
+from app.legacy_import.reporting import (
+    PublicSummary,
+    WrittenReports,
+    inspection_markdown,
+    write_reports,
+)
 from app.workflow.vocabulary import CONTROLLED_LABELS
 
 ROW_HEADER = [
@@ -187,11 +193,14 @@ def _compare_vocabulary(
 
 
 def build_summary(inspection: Inspection) -> dict[str, Any]:
-    """Aggregate-only. Nothing here reproduces a cell's contents.
+    """The operator's summary: aggregate in shape, and **not publishable**.
 
-    The single exception is the status vocabulary, which is controlled
-    reference data rather than case content: the whole point of reporting it is
-    to show which labels a year used.
+    It names the source file, its sheet names, duplicate references, the
+    header text behind each structural finding, the per-sheet status values and
+    the workbook's own vocabulary terms. That is what a person reconciling the
+    workbook needs, and it is written only to ``operator-summary.*`` in ignored
+    local storage. The publishable ``summary.*`` is :func:`public_summary`,
+    built from this through an allowlist (csf_31caadb347feb9939db2cd4e).
     """
     inventory = inspection.inventory
     totals: dict[str, int] = {}
@@ -286,6 +295,74 @@ def build_summary(inspection: Inspection) -> dict[str, Any]:
     }
 
 
+#: The totals `build_summary` adds up, copied into the public summary by name.
+_PUBLIC_TOTALS = (
+    "rows_below_header",
+    "blank_rows",
+    "matter_rows",
+    "reserved_references",
+    "valid_references",
+    "hyperlinks",
+    "other_hyperlinks",
+    "next_action_populated",
+    "status_populated",
+    "feedback_responded_present",
+    "feedback_requested_present",
+    "feedback_measured_zero",
+    "unknown_column_values",
+)
+
+
+def public_summary(summary: dict[str, Any]) -> PublicSummary:
+    """The publishable summary: counts, versions and flags, by name.
+
+    Read from the operator summary field by field. Nothing is copied wholesale,
+    so a field added to `build_summary` tomorrow stays local until somebody
+    allowlists a count of it here and in `reporting.PUBLIC_COUNTS`.
+    """
+    source = summary["source"]
+    totals = summary["totals"]
+    vocabulary = summary.get("vocabulary") or {}
+    candidates = summary["next_action_candidates"]
+    counts: dict[str, int] = {
+        "byte_size": int(source["byte_size"]),
+        "sheet_count": len(source["sheet_names"]),
+        "year_sheet_count": len(summary["sheets"]),
+        "sheets_without_contract": len(source["sheets_without_contract"]),
+        "structure_findings": len(summary["structure_findings"]),
+        "duplicate_references": len(summary["duplicate_references"]),
+        "next_action_candidates": int(candidates["total"]),
+        "next_action_candidates_deterministic": int(candidates["deterministic"]),
+        **{key: int(totals[key]) for key in _PUBLIC_TOTALS},
+    }
+    if vocabulary:
+        counts.update(
+            {
+                "vocabulary_workbook_labels": int(vocabulary["workbook_label_count"]),
+                "vocabulary_known_labels": int(vocabulary["known_label_count"]),
+                "vocabulary_labels_missing_from_seed": len(vocabulary["labels_missing_from_seed"]),
+                "vocabulary_labels_missing_from_workbook": len(
+                    vocabulary["labels_missing_from_workbook"]
+                ),
+                "vocabulary_used_labels_not_controlled": len(
+                    vocabulary["used_labels_not_in_controlled_vocabulary"]
+                ),
+                "vocabulary_labels_with_explanation": int(vocabulary["has_explanations"]),
+            }
+        )
+    return PublicSummary(
+        report="inspection",
+        parser_version=str(source["parser_version"]),
+        contract_versions=str(source["contract_versions"]),
+        counts=counts,
+        categories={"outcomes": summary["outcomes"], "anomalies": summary["anomalies"]},
+        flags={
+            "structure_ok": not summary["structure_findings"]
+            and not source["sheets_without_contract"],
+        },
+    )
+
+
 def _row_record(row: ExtractedRow) -> list[Any]:
     return [
         row.sheet,
@@ -373,8 +450,9 @@ def write_inspection_reports(inspection: Inspection, directory: Path) -> Written
     summary = build_summary(inspection)
     return write_reports(
         directory,
-        summary=summary,
-        markdown=inspection_markdown(summary),
+        public=public_summary(summary),
+        operator_summary=summary,
+        operator_markdown=inspection_markdown(summary),
         rows=rows,
         row_header=ROW_HEADER,
         anomalies=anomalies,

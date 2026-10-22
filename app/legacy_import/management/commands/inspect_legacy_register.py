@@ -59,11 +59,11 @@ class Command(BaseCommand):
         written = write_inspection_reports(inspection, directory)
         self.stdout.write("")
         self.stdout.write(self.style.SUCCESS(f"Reports written to {directory}"))
-        self.stdout.write("  aggregate (safe to publish):")
+        self.stdout.write("  public aggregate (allowlisted counts, safe to publish):")
         for report in written.aggregate:
             self.stdout.write(f"    {report.name}")
-        self.stdout.write("  row-level (local only, never uploaded):")
-        for report in written.row_level:
+        self.stdout.write("  operator summary and row-level (local only, never uploaded):")
+        for report in written.local_only:
             self.stdout.write(f"    {report.name}")
 
     def _print(self, summary: dict[str, Any]) -> None:

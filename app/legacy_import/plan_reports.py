@@ -1,10 +1,12 @@
 """Reports for a database-aware run.
 
-Same two-class split as the offline inspector: ``summary.json`` and
-``summary.md`` are counts and may be published, everything else reproduces
-source content and stays local. The plan reports add what the offline reports
-cannot know — which rows would create, which would match something already
-present, and which mappings are missing before any of that is safe.
+Same split as the offline inspector (app/legacy_import/reporting.py):
+``summary.json`` and ``summary.md`` are written from an allowlisted
+`PublicSummary` of counts and may be published; ``operator-summary.*`` and the
+CSV files reproduce source content and stay local. The plan reports add what
+the offline reports cannot know — which rows would create, which would match
+something already present, and which mappings are missing before any of that
+is safe.
 """
 
 from __future__ import annotations
@@ -16,7 +18,12 @@ from app.legacy_import.apply import IMPORTER_VERSION
 from app.legacy_import.contracts import contract_versions
 from app.legacy_import.enums import ProposedRecordMode, RowOutcome
 from app.legacy_import.planner import ImportPlan, RowPlan
-from app.legacy_import.reporting import WrittenReports, write_reports
+from app.legacy_import.reporting import (
+    PublicSummary,
+    WrittenReports,
+    local_only_banner,
+    write_reports,
+)
 
 ROW_HEADER = [
     "leht",
@@ -123,6 +130,12 @@ def _mapping_gaps(plan: ImportPlan) -> list[list[Any]]:
 
 
 def build_summary(plan: ImportPlan, *, mode: str) -> dict[str, Any]:
+    """The operator's summary of a plan. Names the source; **not publishable**.
+
+    Written only to ``operator-summary.*``. The publishable summary is
+    :func:`public_summary`, built from this through an allowlist
+    (csf_31caadb347feb9939db2cd4e).
+    """
     inventory = plan.inventory
     record_modes: dict[str, int] = {}
     onenote_links = 0
@@ -186,10 +199,51 @@ def build_summary(plan: ImportPlan, *, mode: str) -> dict[str, Any]:
     }
 
 
+def public_summary(summary: dict[str, Any]) -> PublicSummary:
+    """Counts, versions and flags from a plan summary, each by name."""
+    source = summary["source"]
+    gaps = summary["mapping_gaps"]
+    candidates = summary["next_action_candidates"]
+    return PublicSummary(
+        report=summary["mode"],
+        parser_version=str(source["parser_version"]),
+        importer_version=str(source["importer_version"]),
+        contract_versions=str(source["contract_versions"]),
+        counts={
+            "byte_size": int(source["byte_size"]),
+            "sheet_count": len(source["sheet_names"]),
+            "sheets_without_contract": len(source["sheets_without_contract"]),
+            "structure_findings": len(summary["structure_findings"]),
+            "rows_considered": int(summary["rows_considered"]),
+            "review_required": int(summary["review_required"]),
+            "full_candidates": int(summary["full_candidates"]),
+            "onenote_links_retained": int(summary["onenote_links_retained"]),
+            "mapping_gap_owners": int(gaps["owners"]),
+            "mapping_gap_organisations": int(gaps["organisations"]),
+            "mapping_gap_statuses": int(gaps["statuses"]),
+            "next_action_candidates": int(candidates["total"]),
+            "next_action_candidates_deterministic": int(candidates["deterministic"]),
+        },
+        categories={
+            "outcomes": summary["outcomes"],
+            "anomalies": summary["anomalies"],
+            "proposed_record_modes": summary["proposed_record_modes"],
+        },
+        flags={
+            "accounting_is_complete": bool(summary["accounting_is_complete"]),
+            "structure_ok": not summary["structure_findings"]
+            and not source["sheets_without_contract"],
+            "onenote_content_imported": False,
+        },
+    )
+
+
 def _markdown(summary: dict[str, Any]) -> str:
     source = summary["source"]
     lines = [
-        f"# Registri import — {summary['mode']}",
+        f"# Registri import — {summary['mode']} (ainult kohalik)",
+        "",
+        f"_{local_only_banner()}_",
         "",
         f"- fail: `{source['file_name']}`",
         f"- SHA-256: `{source['sha256']}`",
@@ -278,8 +332,9 @@ def write_plan_reports(plan: ImportPlan, directory: Path, *, mode: str) -> Writt
 
     return write_reports(
         directory,
-        summary=summary,
-        markdown=_markdown(summary),
+        public=public_summary(summary),
+        operator_summary=summary,
+        operator_markdown=_markdown(summary),
         rows=rows,
         row_header=ROW_HEADER,
         anomalies=anomalies,
