@@ -35,6 +35,8 @@ from app.documents.extraction.base import (
 )
 from app.documents.extraction.errors import ExtractionFailed
 from app.documents.extraction.limits import (
+    Limits,
+    TableBudget,
     current_limits,
     guard_character_budget,
     guard_office_container,
@@ -182,9 +184,12 @@ class XlsxParser:
 
         fragments: list[Fragment] = []
         total = 0
+        # One walk budget for the whole workbook: a thousand sheets of ten
+        # thousand blank cells cost the same as one sheet of ten million.
+        budget = TableBudget(limits)
         try:
             for sheet in workbook.worksheets:
-                total = self._read_sheet(sheet, fragments, total, limits)
+                total = self._read_sheet(sheet, fragments, total, limits, budget)
         finally:
             workbook.close()
 
@@ -205,16 +210,32 @@ class XlsxParser:
         )
 
     def _read_sheet(
-        self, sheet: object, fragments: list[Fragment], total: int, limits: object
+        self,
+        sheet: object,
+        fragments: list[Fragment],
+        total: int,
+        limits: Limits,
+        budget: TableBudget,
     ) -> int:
         """One sheet, grouped into bounded row blocks.
 
-        A worksheet whose used range is a million mostly-empty rows is common —
-        somebody once pressed Ctrl+Down — and turning that into a million
-        fragments would be a self-inflicted denial of service. Blank cells
-        contribute nothing, and a block that produced no text produces no
-        fragment.
+        A worksheet whose used range is a million mostly-empty rows — somebody
+        once pressed Ctrl+Down — would be a million fragments if blank rows
+        produced any, so they do not: blank cells contribute nothing, and a
+        block that produced no text produces no fragment.
+
+        They are not free, though. openpyxl walks the *declared* used range and
+        pads every row to its width, so the walk is charged to ``budget``
+        whether a cell holds anything or not, and a declared range the budget
+        could never afford is refused before the first row is read
+        (csf_a74bfe6e, docs/adr/0176).
         """
+        where = f'Tööleht "{sheet.title}"'  # type: ignore[attr-defined]
+        # After a read-only load these are the worksheet's own dimension
+        # record: a claim rather than a count, and absent on some generators'
+        # files — which is why every row is charged again as it is read.
+        budget.declared(sheet.max_row, sheet.max_column, where)  # type: ignore[attr-defined]
+
         rows_per_block = 50
         block: list[str] = []
         first_row = 1
@@ -222,7 +243,12 @@ class XlsxParser:
         row_number = 0
 
         for row_number, row in enumerate(sheet.iter_rows(values_only=True), start=1):  # type: ignore[attr-defined]
-            line = " | ".join(_cell_text(value) for value in row if _cell_text(value))
+            budget.visit(row_number, len(row), where)
+            line = " | ".join(
+                budget.cell(text, where)
+                for text in (_cell_text(value) for value in row if value is not None)
+                if text
+            )
             if line:
                 block.append(f"{row_number}: {line}")
             if row_number - first_row + 1 >= rows_per_block:
@@ -231,7 +257,7 @@ class XlsxParser:
                 )
                 block = []
                 first_row = row_number + 1
-            if produced >= limits.max_xlsx_fragments_per_sheet:  # type: ignore[attr-defined]
+            if produced >= limits.max_xlsx_fragments_per_sheet:
                 raise ExtractionFailed(
                     "sheet_fragment_limit",
                     f'Tööleht "{sheet.title}" ületab lubatud osade arvu.',  # type: ignore[attr-defined]
@@ -251,14 +277,14 @@ class XlsxParser:
         last_row: int,
         fragments: list[Fragment],
         total: int,
-        limits: object,
+        limits: Limits,
         produced: int,
     ) -> tuple[int, int]:
         if not block:
             return total, produced
         body = "\n".join(block)
         total += len(body)
-        guard_character_budget(total, limits)  # type: ignore[arg-type]
+        guard_character_budget(total, limits)
         name = sheet.title  # type: ignore[attr-defined]
         fragments.append(
             Fragment(

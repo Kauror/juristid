@@ -56,6 +56,7 @@ from app.documents.enums import (
 from app.documents.extraction import parsers  # noqa: F401  (registers every parser)
 from app.documents.extraction.base import DerivativePayload, ParseResult, SourceFile, registry
 from app.documents.extraction.errors import ExtractionFailed, ExtractionNotApplicable
+from app.documents.extraction.limits import current_limits, guard_parse_result
 from app.documents.models import (
     DocumentDerivative,
     DocumentTextFragment,
@@ -324,6 +325,11 @@ def parse_source(
     source = SourceFile(content=content, filename=filename, mime_type=mime_type)
     try:
         result = parser.parse(source)
+        # The postcondition every parser's output must meet, checked here
+        # because this is the one path all of them share: a parser that forgot
+        # a budget fails like one that enforced it, through the same FAILED
+        # state, instead of handing its output on (docs/adr/0176).
+        guard_parse_result(result, current_limits())
     except ExtractionNotApplicable as error:
         return ParseOutcome(state=ExtractionState.NOT_APPLICABLE, note=error.detail, parser=parser)
     except ExtractionFailed as error:

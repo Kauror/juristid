@@ -545,6 +545,42 @@ EXTRACTION_MAX_EMAIL_ATTACHMENTS = env_int("EXTRACTION_MAX_EMAIL_ATTACHMENTS", 5
 EXTRACTION_MAX_EMAIL_DEPTH = env_int("EXTRACTION_MAX_EMAIL_DEPTH", 3)
 EXTRACTION_MAX_XLSX_FRAGMENTS_PER_SHEET = env_int("EXTRACTION_MAX_XLSX_FRAGMENTS_PER_SHEET", 500)
 
+# What reading a table may *visit*, empty cells included (docs/adr/0176). The
+# character budget above only counts text that comes out, and a worksheet whose
+# used range is a million blank rows produces none, so the walk is charged on
+# its own. Declared XLSX dimensions are checked against these before the first
+# row is read; CSV and XLSX rows are charged as they are read.
+#
+# Sized against the corpus with room to spare: the historical registers are a
+# few thousand rows by a few dozen columns (~0.1 M cells), and the existing
+# 500-fragments-per-sheet cap already stops a sheet at 25 000 rows *with text*.
+# Rows stop at Excel's own last row, so no sheet Excel can save is refused on
+# its height alone — a sheet somebody Ctrl+Down-ed to row 1 048 576 and touched
+# there still reads. The walk budget is what bounds it: 100 M visited cells is
+# about fifteen seconds of one worker, and a declared range past it (the
+# A1:XFD1048576 attack is 17 000 M) is refused before the first row. 2 000
+# columns is twice what LibreOffice writes for a full-width sheet (AMJ = 1 024).
+EXTRACTION_MAX_TABLE_ROWS = env_int("EXTRACTION_MAX_TABLE_ROWS", 1_048_576)
+EXTRACTION_MAX_TABLE_COLUMNS = env_int("EXTRACTION_MAX_TABLE_COLUMNS", 2_000)
+EXTRACTION_MAX_TABLE_CELLS = env_int("EXTRACTION_MAX_TABLE_CELLS", 100_000_000)
+# Excel itself stops a cell at 32 767 characters; 131 072 is the csv module's
+# own long-standing field limit, so no file that read before is refused by it.
+EXTRACTION_MAX_TABLE_CELL_CHARACTERS = env_int("EXTRACTION_MAX_TABLE_CELL_CHARACTERS", 131_072)
+# A CSV is decoded whole, so its size is checked before decoding. Four times the
+# character budget: a CSV larger than that cannot fit the budget unless three
+# quarters of it are separators and blanks.
+EXTRACTION_MAX_CSV_BYTES = env_int("EXTRACTION_MAX_CSV_BYTES", 32 * 1024 * 1024)
+# Raw characters one CSV record may span, quoted line breaks included. Bounds
+# the row the csv module builds before any of it can be inspected.
+EXTRACTION_MAX_CSV_RECORD_CHARACTERS = env_int("EXTRACTION_MAX_CSV_RECORD_CHARACTERS", 1_000_000)
+# The decoded body of one email, before it is flattened to text. The HTML
+# sanitiser reads about 1 MB a second, so this caps one message at ~15 s; a real
+# message body, quoted thread included, is a few hundred kilobytes.
+EXTRACTION_MAX_EMAIL_BODY_CHARACTERS = env_int("EXTRACTION_MAX_EMAIL_BODY_CHARACTERS", 16_000_000)
+# Fragment rows one file may produce, whatever parser made them. A 500-page PDF
+# is 500; a register workbook of 30 full sheets is 15 000.
+EXTRACTION_MAX_FRAGMENTS = env_int("EXTRACTION_MAX_FRAGMENTS", 50_000)
+
 # A page whose native text layer is thinner than this is treated as scanned.
 # Not zero: real government PDFs carry a header, a page number and a stamp on an
 # otherwise photographed page, and calling that "has text" leaves the body

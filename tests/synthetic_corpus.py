@@ -435,8 +435,14 @@ def outlook_msg(
     attachment: bool = True,
     extra_attachments: tuple[tuple[str, bytes], ...] = (),
     embedded_message: bool = False,
+    subject: str | None = None,
+    body: str | None = None,
+    html_body: str | None = None,
 ) -> bytes:
     """A synthetic Outlook message, built with `extract-msg`'s own OLE writer.
+
+    ``subject`` and ``body`` replace the defaults; ``html_body`` replaces the
+    plain body with an HTML one (PR_HTML), the shape of an HTML-only message.
 
     Writing one rather than committing one keeps the corpus generated end to
     end. The property streams below are the minimum a real `.msg` carries for
@@ -457,9 +463,11 @@ def outlook_msg(
         # PR_MESSAGE_CLASS — without it the file is an OLE container and not a
         # message, and `openMsg` says so.
         "__substg1.0_001A001F": unicode_property("IPM.Note"),
-        "__substg1.0_0037001F": unicode_property(f"{DRAFT_TITLE} — Outlooki koopia"),
+        "__substg1.0_0037001F": unicode_property(
+            f"{DRAFT_TITLE} — Outlooki koopia" if subject is None else subject
+        ),
         "__substg1.0_1000001F": unicode_property(
-            f"Tere\r\n\r\nSaadame {DRAFT_TITLE} {ONLY_IN_EMAIL_BODY}.\r\n"
+            f"Tere\r\n\r\nSaadame {DRAFT_TITLE} {ONLY_IN_EMAIL_BODY}.\r\n" if body is None else body
         ),
         "__substg1.0_0C1A001F": unicode_property("Kadri Näidis"),
         "__substg1.0_0E04001F": unicode_property("Koja õigusosakond"),
@@ -468,6 +476,9 @@ def outlook_msg(
             "Date: Mon, 17 Aug 2026 09:12:00 +0300\r\n"
         ),
     }
+    if html_body is not None:
+        del streams["__substg1.0_1000001F"]
+        streams["__substg1.0_10130102"] = html_body.encode("utf-8")
 
     parts: list[tuple[str, bytes]] = []
     if attachment:
@@ -485,7 +496,8 @@ def outlook_msg(
     properties = bytearray(header)
     for name, payload in streams.items():
         tag = int(name.rsplit("_", 1)[-1], 16)
-        properties += struct.pack("<IIII", tag, 6, len(payload) + 2, 0)
+        length = len(payload) + (2 if name.endswith("001F") else 0)
+        properties += struct.pack("<IIII", tag, 6, length, 0)
     writer.addEntry("__properties_version1.0", bytes(properties))
     for name, payload in streams.items():
         writer.addEntry(name, payload)
