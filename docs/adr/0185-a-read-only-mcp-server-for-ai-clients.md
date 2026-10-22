@@ -138,7 +138,11 @@ codes are bounded, not merely slowed (security review MCPSEC-01):
 
 A lock or suspension refuses authorizing, never a token already issued — otherwise
 typing wrong codes would disconnect a colleague. The TOTP secret is encrypted at rest
-with the existing `mfa` key derivation, under a distinct purpose.
+under a key of its own, `MCP_AUTHENTICATOR_KEY` on `web` (required on real data,
+mcp_access.E004; never held by `mcp`, juristid.E046), through HKDF under a purpose of
+its own — so a routine `DJANGO_SECRET_KEY` rotation cannot make every authenticator
+unreadable (security review MCPSEC-07). Without the key, as on a laptop, the existing
+`mfa` key derivation stands in under the same distinct purpose.
 
 This is deliberately **not** `AUTH_MODE=local_password`: nothing in the browser
 changes, no personal password exists, and the authenticator opens nothing but the

@@ -1044,6 +1044,13 @@ MCP_ACCESS_TOKEN_SECONDS = env_int("MCP_ACCESS_TOKEN_SECONDS", 3600)
 MCP_REFRESH_TOKEN_SECONDS = env_int("MCP_REFRESH_TOKEN_SECONDS", 30 * 24 * 3600)
 MCP_AUTHORIZATION_CODE_SECONDS = 60
 MCP_ENROLMENT_LINK_SECONDS = env_int("MCP_ENROLMENT_LINK_SECONDS", 30 * 60)
+# The key the personal MCP authenticators' TOTP secrets are sealed under, on
+# `web` only (MCPSEC-07). Unset, they fall back to the MFA key derivation —
+# `LOCAL_AUTH_MFA_ENCRYPTION_KEY or SECRET_KEY` — which on the shared-gate
+# stack is SECRET_KEY: rotating that would make every authenticator
+# unreadable. mcp_access.E004 requires it on real data; the `mcp` process must
+# not hold it (juristid.E046). Changing it means everybody enrols again.
+MCP_AUTHENTICATOR_KEY = env("MCP_AUTHENTICATOR_KEY", "")
 # Wrong authenticator codes one gate session, and one client address, may type
 # at `/oauth/authorize` in a window, whichever personas they try (MCPSEC-01).
 # The per-grant lock is in app/mcp_access/services.py; this stops one session

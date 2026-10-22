@@ -526,8 +526,10 @@ class AuthorizationOutcome:
     ``status`` is ``"ok"``; ``"bad_code"`` or ``"no_grant"`` — which the page
     answers identically, so a guess learns nothing about the persona; or, only
     once the persona's own current code has been verified, ``"locked"`` or
-    ``"suspended"``; or ``"throttled"`` when this session or address has failed
-    too often to have any code checked (`authorize_attempt`).
+    ``"suspended"``; ``"unreadable"`` when the authenticator's secret cannot be
+    opened with the configured key (answered like ``bad_code``, counted as
+    nothing, MCPSEC-07); or ``"throttled"`` when this session or address has
+    failed too often to have any code checked (`authorize_attempt`).
     """
 
     status: str
@@ -667,6 +669,28 @@ def authorize(
     now = timezone.now()
     authenticator = McpAuthenticator.objects.select_for_update().filter(grant=grant).first()
     secret = credentials.unseal(authenticator.encrypted_secret) if authenticator else None
+    if authenticator is not None and secret is None:
+        # The key the secret was sealed under is not the one configured now
+        # (MCPSEC-07). No code can be checked, so none is counted as wrong:
+        # counting would lock every colleague out after a key change, for a
+        # reason none of them caused. The answer is the generic one; the
+        # operator sees why.
+        record(
+            McpAccessEventType.AUTHORIZATION_REFUSED,
+            succeeded=False,
+            user=fresh,
+            grant=grant,
+            client_id=client_id,
+            ip_address=ip_address,
+            reason="authenticator_unreadable",
+        )
+        logger.warning(
+            "MCP grant %s (user %s): the authenticator secret cannot be read with the "
+            "configured MCP_AUTHENTICATOR_KEY; the person must enrol again",
+            grant.pk,
+            fresh.pk,
+        )
+        return AuthorizationOutcome(status="unreadable")
     step = (
         credentials.matching_step(secret, totp_code, after_step=authenticator.last_used_step)
         if secret is not None and authenticator is not None

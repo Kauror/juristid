@@ -154,6 +154,24 @@ In `juristid.env`, the three lines the template added (read their comments in
 The two files must agree on the last two: `web` issues a token for a resource,
 `mcp` accepts it only if the resource is on its own list.
 
+And the key the personal authenticators are sealed under (MCPSEC-07), in
+`juristid.env` only — never in `juristid-mcp.env`, which the preflight and
+juristid.E046 refuse. `web` will not start on real data with `MCP_ENABLED=1`
+and no such key (mcp_access.E004). Uncomment the template's line, then
+generate the value straight into the file:
+
+```bash
+sed -i "s|^# *MCP_AUTHENTICATOR_KEY=.*|MCP_AUTHENTICATOR_KEY=$(openssl rand -base64 48 | tr -d '\n/+=')|" /mnt/user/appdata/juristid-main/config/juristid.env
+```
+
+**Rotating it** makes every enrolled authenticator unreadable: the next
+authorization of each colleague is refused with the generic message, the `web`
+log says `the authenticator secret cannot be read`, and nobody's wrong-code
+counter moves. Rotate only together with re-enrolling everybody —
+`mcp_access revoke --user …`, `grant`, `enrolment-link`, for each person. A
+`DJANGO_SECRET_KEY` rotation, by contrast, no longer touches the
+authenticators.
+
 ### 4. Name the release that is running
 
 Starting `mcp` resolves the release image from the same two variables a release

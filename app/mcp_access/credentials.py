@@ -21,6 +21,10 @@ import secrets
 from dataclasses import dataclass
 
 import pyotp
+from cryptography.fernet import Fernet, InvalidToken
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from django.conf import settings
 
 from app.accounts import mfa
 
@@ -152,13 +156,55 @@ def _enrolment(secret: str, account_label: str) -> Enrolment:
     return Enrolment(secret=secret, uri=uri, qr_svg=mfa.qr_svg(uri), sealed=seal(secret))
 
 
+#: The HKDF salt of the dedicated MCP key (MCPSEC-07). Not the personal
+#: sign-in's: the same key material could never open one as the other.
+DEDICATED_KEY_SALT = b"juristid-mcp-access"
+
+
+def _dedicated_fernet() -> Fernet | None:
+    """Fernet under `MCP_AUTHENTICATOR_KEY`, when one is configured (MCPSEC-07).
+
+    Without it the secrets are sealed by `app.accounts.mfa` under the MCP
+    purpose, from `LOCAL_AUTH_MFA_ENCRYPTION_KEY or SECRET_KEY` — and on the
+    shared-gate stack that is `SECRET_KEY`, so a routine `DJANGO_SECRET_KEY`
+    rotation would make every MCP authenticator unreadable. A key of its own
+    rotates only when somebody decides to (`mcp_access.E004` requires it on
+    real data). The personal sign-in's encryption is not touched by it.
+    """
+    material = str(getattr(settings, "MCP_AUTHENTICATOR_KEY", "") or "")
+    if not material:
+        return None
+    derived = HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=DEDICATED_KEY_SALT,
+        info=AUTHENTICATOR_PURPOSE,
+    ).derive(material.encode("utf-8"))
+    return Fernet(base64.urlsafe_b64encode(derived))
+
+
 def seal(secret: str) -> str:
+    dedicated = _dedicated_fernet()
+    if dedicated is not None:
+        return dedicated.encrypt(secret.encode("ascii")).decode("ascii")
     return mfa.seal(secret, purpose=AUTHENTICATOR_PURPOSE)
 
 
 def unseal(sealed: object) -> str | None:
+    """The secret, or None when it is not sealed under the key configured now.
+
+    There is no fallback from the dedicated key to the old one: changing the
+    key is a decision to re-enrol everybody (docs/mcp/OPERATIONS.md), never a
+    state in which two keys quietly both work.
+    """
     if not isinstance(sealed, str) or not sealed:
         return None
+    dedicated = _dedicated_fernet()
+    if dedicated is not None:
+        try:
+            return dedicated.decrypt(sealed.encode("ascii")).decode("ascii")
+        except (InvalidToken, ValueError):
+            return None
     return mfa.unseal(sealed, purpose=AUTHENTICATOR_PURPOSE)
 
 
