@@ -1022,7 +1022,9 @@ MCP_OAUTH_CLIENTS: dict[str, dict[str, object]] = {
 }
 # The `mcp` process: where it listens inside the container network, how much
 # it does at once and how much it returns.
-MCP_LISTEN_HOST = env("MCP_LISTEN_HOST", "0.0.0.0")
+# Loopback by default; the Compose service sets the container-network address,
+# and it publishes no host port (deploy/unraid-main/compose.yml).
+MCP_LISTEN_HOST = env("MCP_LISTEN_HOST", "127.0.0.1")
 MCP_LISTEN_PORT = env_int("MCP_LISTEN_PORT", 8001)
 MCP_MAX_CONCURRENT_CALLS = env_int("MCP_MAX_CONCURRENT_CALLS", 4)
 MCP_CALL_TIMEOUT_SECONDS = env_int("MCP_CALL_TIMEOUT_SECONDS", 60)
