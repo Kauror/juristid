@@ -575,12 +575,19 @@ MAX_EVIDENCE_UPLOAD_BYTES = env_int("MAX_EVIDENCE_UPLOAD_BYTES", 100 * 1024 * 10
 # (`app.documents.uploads.check_upload_batch`). Over either, the request is
 # answered 413 before any view runs.
 #
-# Twenty-five files is the most a refused `Uus teema` form holds
-# (`app.documents.pending.MAX_HELD_FILES`) and five more than any one file
-# picker takes (`MAX_INTAKE_FILES`). 512 MiB is five maximum-size files; a real
-# ministry packet is tens of megabytes.
-UPLOAD_MAX_FILES_PER_REQUEST = env_int("UPLOAD_MAX_FILES_PER_REQUEST", 25)
+# A hundred files is the ceiling Django already applied to every request
+# (DATA_UPLOAD_MAX_NUMBER_FILES' default), so no upload that worked before is
+# refused for its count — a `Kaasamine` round's replies arrive by the dozen.
+# With the files streamed rather than held in memory, the count bounds file
+# handles and the bytes are what bound the worker: 512 MiB is five maximum-size
+# files, and a real ministry packet is tens of megabytes.
+UPLOAD_MAX_FILES_PER_REQUEST = env_int("UPLOAD_MAX_FILES_PER_REQUEST", 100)
 UPLOAD_MAX_REQUEST_BYTES = env_int("UPLOAD_MAX_REQUEST_BYTES", 512 * 1024 * 1024)
+# Django's own ceiling on file *parts* — empty file inputs included, which it
+# counts and the policy does not — stays just above the policy's, so the
+# policy's sentence (a 413) is what a person over the limit sees rather than
+# Django's bare 400.
+DATA_UPLOAD_MAX_NUMBER_FILES = UPLOAD_MAX_FILES_PER_REQUEST + 10
 # The policy's own handler first; Django's two after it, unchanged.
 FILE_UPLOAD_HANDLERS = [
     "app.documents.upload_limits.UploadLimitHandler",

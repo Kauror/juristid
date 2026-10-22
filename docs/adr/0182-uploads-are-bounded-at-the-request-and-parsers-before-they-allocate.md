@@ -152,7 +152,8 @@ boundaries forced everywhere.
 
 | Setting | Default | Why |
 | --- | --- | --- |
-| `UPLOAD_MAX_FILES_PER_REQUEST` | 25 | The most a refused form holds (`MAX_HELD_FILES`), five more than one picker takes (`MAX_INTAKE_FILES`). |
+| `UPLOAD_MAX_FILES_PER_REQUEST` | 100 | Django's existing per-request ceiling, so no upload that worked is refused for its count (a `Kaasamine` round's replies come by the dozen); with files streamed, the bytes bound the worker. |
+| `DATA_UPLOAD_MAX_NUMBER_FILES` | policy + 10 (110) | Django's part ceiling (empty inputs included) stays just above the policy's, so the 413 sentence answers first. |
 | `UPLOAD_MAX_REQUEST_BYTES` | 512 MiB | Five maximum-size files; a ministry packet is tens of MB. Also the batch ceiling for held + new. |
 | `FILE_UPLOAD_HANDLERS` | policy handler, then Django's two | The boundary itself. |
 | `EXTRACTION_MAX_TEXT_BYTES` | 100 MiB | The upload ceiling: no file that could be uploaded is refused by it. |

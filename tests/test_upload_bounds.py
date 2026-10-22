@@ -330,3 +330,5 @@ def test_the_policy_handler_is_first_and_its_middleware_parses_first(settings):
     # Before the first middleware that reads a form field in __call__.
     assert ours < middleware.index("app.core.middleware.RefuseNulMiddleware")
     assert ours < middleware.index("app.core.middleware.UploadTitlesMiddleware")
+    # Django's own part ceiling must not answer before the policy's sentence.
+    assert settings.DATA_UPLOAD_MAX_NUMBER_FILES > settings.UPLOAD_MAX_FILES_PER_REQUEST
