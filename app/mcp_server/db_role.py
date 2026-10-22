@@ -78,7 +78,10 @@ REQUIRED_READABLE = (
 #: healthcheck need, few enough that a runaway cannot starve `web`.
 CONNECTION_LIMIT = 16
 
-_IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
+#: Matched with `fullmatch`: `$` alone would also accept a trailing newline
+#: (NEW-08). Not injectable even then — the name is double-quoted and `"` is
+#: not in the class — but a role name is exactly these characters or nothing.
+_IDENTIFIER = re.compile(r"[a-z_][a-z0-9_]{0,62}")
 SCRAM_ITERATIONS = 4096
 
 #: What one session of the role may write to temporary files at once —
@@ -105,7 +108,7 @@ def role_settings(*, statement_timeout_seconds: int) -> dict[str, str]:
 
 def valid_identifier(name: str) -> bool:
     """A plain lower-case PostgreSQL identifier: nothing that needs quoting rules."""
-    return bool(_IDENTIFIER.match(name or ""))
+    return isinstance(name, str) and _IDENTIFIER.fullmatch(name) is not None
 
 
 def quote_identifier(name: str) -> str:
