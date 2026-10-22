@@ -402,6 +402,11 @@ record, not professional chronology (master specification 16.5).
           (a next step, files) still reads below. Every chronology line carries
           the day only; the clock time stays in `Kõik muudatused`.
         {% endcomment %}
+        {% comment %}
+          The author's tooltip adds «valitud ühisparooliga» when the act was
+          saved by a persona chosen behind the shared password, so the name is
+          not read as a personally verified act (docs/adr/0180 §4).
+        {% endcomment %}
         {% if item.completion_text %}
         <p class="uxtl__meta uxtl__meta--done" id="kaik-{{ item.row_key }}-rida">
           <span class="uxtl__check" aria-hidden="true">✓</span>
@@ -410,7 +415,7 @@ record, not professional chronology (master specification 16.5).
             <span class="uxtl__did">{{ item.besides_the_completion }}</span>
           {% endif %}
           {% if item.actor %}
-            <span class="uxtl__author uxtl__author--quiet" title="{{ item.actor.display_name }}">{{ item.actor|name_among:colleagues }}</span>
+            <span class="uxtl__author uxtl__author--quiet" title="{{ item.actor.display_name }}{% if item.actor_qualifier %} ({{ item.actor_qualifier }}){% endif %}">{{ item.actor|name_among:colleagues }}</span>
           {% endif %}
           {% include "matters/partials/entry_edited_marker.html" with entry=item.entry oob=False %}
           <time class="uxtl__time" datetime="{{ item.occurred_at|date:'c' }}">{{ item.occurred_at|date:"j.n.Y" }}</time>
@@ -422,7 +427,7 @@ record, not professional chronology (master specification 16.5).
             <span class="uxtl__nextdate">{{ item.next_step.date_line }}</span>
           {% endif %}
           {% if item.actor %}
-            <span class="uxtl__author uxtl__author--quiet" title="{{ item.actor.display_name }}">{{ item.actor|name_among:colleagues }}</span>
+            <span class="uxtl__author uxtl__author--quiet" title="{{ item.actor.display_name }}{% if item.actor_qualifier %} ({{ item.actor_qualifier }}){% endif %}">{{ item.actor|name_among:colleagues }}</span>
           {% endif %}
           <time class="uxtl__time" datetime="{{ item.occurred_at|date:'c' }}">{{ item.occurred_at|date:"j.n.Y" }}</time>
         </p>
@@ -435,7 +440,7 @@ record, not professional chronology (master specification 16.5).
             (docs/adr/0148 §6).
           {% endcomment %}
           {% if item.actor %}
-            <span class="uxtl__author" title="{{ item.actor.display_name }}">{{ item.actor|name_among:colleagues }}</span>
+            <span class="uxtl__author" title="{{ item.actor.display_name }}{% if item.actor_qualifier %} ({{ item.actor_qualifier }}){% endif %}">{{ item.actor|name_among:colleagues }}</span>
           {% elif item.is_entry %}
             <span class="uxtl__author">{{ item.entry.get_kind_display }}</span>
           {% endif %}

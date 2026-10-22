@@ -157,7 +157,7 @@
               <tr>
                 <td>{{ row.event.occurred_at|date:"j.n.Y H:i" }}</td>
                 <td>{{ row.label }}{% if not row.event.succeeded %} <span class="badge badge--warning">ei õnnestunud</span>{% endif %}</td>
-                <td>{{ row.event.actor.display_name|default:"süsteem" }}</td>
+                <td>{{ row.event.actor.display_name|default:"süsteem" }}{% if row.event.actor and row.event.actor_qualifier %} ({{ row.event.actor_qualifier }}){% endif %}</td>
                 <td>{{ row.summary|default:"—" }}</td>
               </tr>
             {% endfor %}
