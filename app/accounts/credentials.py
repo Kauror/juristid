@@ -247,23 +247,34 @@ def _send_reset_link(user_id: uuid.UUID, stamp: str, correlation: uuid.UUID | No
     between means no link is minted
     (docs/adr/0180 §5). The audit rows it writes carry the request's
     correlation id, and say they are the system's.
+
+    **The lock covers the decision and the issue, not the message.** Sending
+    takes an SMTP conversation — up to the transport's timeout — and holding
+    the account's row for it would hold up that person's sign-in and every
+    other write to their account for as long. So the link is issued and
+    committed first and mailed afterwards, outside any transaction. Nothing is
+    lost by that: the link is bound to the credentials it was issued under, so
+    a password change committed while the message is on its way kills it
+    anyway. A message that could not be sent ends its own link — that one
+    link, not a newer one issued meanwhile.
     """
-    with provenance.correlated(correlation), transaction.atomic():
-        user = User.objects.select_for_update().filter(pk=user_id).first()
-        if not _reset_eligible(user) or user is None or tokens.credential_stamp(user) != stamp:
-            record_security_event(
-                event_type=SecurityEventType.PASSWORD_RESET_REQUESTED,
-                succeeded=False,
-                subject=user,
-                detail={"outcome": "no_longer_due"},
-            )
-            return
-        try:
-            issued = tokens.issue(
-                user=user, purpose=CredentialTokenPurpose.PASSWORD_RESET, expected_stamp=stamp
-            )
-        except tokens.StaleIssuance:  # pragma: no cover - the lock above already decided
-            return
+    with provenance.correlated(correlation):
+        with transaction.atomic():
+            user = User.objects.select_for_update().filter(pk=user_id).first()
+            if not _reset_eligible(user) or user is None or tokens.credential_stamp(user) != stamp:
+                record_security_event(
+                    event_type=SecurityEventType.PASSWORD_RESET_REQUESTED,
+                    succeeded=False,
+                    subject=user,
+                    detail={"outcome": "no_longer_due"},
+                )
+                return
+            try:
+                issued = tokens.issue(
+                    user=user, purpose=CredentialTokenPurpose.PASSWORD_RESET, expected_stamp=stamp
+                )
+            except tokens.StaleIssuance:  # pragma: no cover - the lock above already decided
+                return
         delivery = mail.send_credential_link(
             user=user,
             purpose=CredentialTokenPurpose.PASSWORD_RESET,
@@ -272,11 +283,7 @@ def _send_reset_link(user_id: uuid.UUID, stamp: str, correlation: uuid.UUID | No
             expires_at=issued.record.expires_at,
         )
         if not delivery.delivered:
-            tokens.invalidate_outstanding(
-                user=user,
-                purpose=CredentialTokenPurpose.PASSWORD_RESET,
-                reason=f"not_delivered:{delivery.reason}",
-            )
+            tokens.invalidate_link(issued.record, reason=f"not_delivered:{delivery.reason}")
 
 
 def after_the_response(work: Callable[[], None]) -> None:

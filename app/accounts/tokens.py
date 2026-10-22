@@ -245,6 +245,32 @@ def invalidate_outstanding(*, user: User, purpose: str | None = None, reason: st
     )
 
 
+def invalidate_link(record: AccountCredentialToken, *, reason: str) -> bool:
+    """End this one link if it is still live; ``True`` when it was.
+
+    For a link whose message could not be sent. Deliberately not
+    `invalidate_outstanding`: the message is sent after the issuing transaction
+    has committed, so by the time it fails a newer link may already exist for
+    the same person, and that one was not this failure's to end.
+    """
+    return bool(
+        AccountCredentialToken.objects.filter(
+            pk=record.pk, used_at__isnull=True, invalidated_at__isnull=True
+        ).update(
+            invalidated_at=timezone.now(),
+            invalidation_reason=reason[:64],
+            updated_at=timezone.now(),
+        )
+    )
+
+
+def is_live(record: AccountCredentialToken) -> bool:
+    """Whether this link is still unused and not invalidated, read afresh."""
+    return AccountCredentialToken.objects.filter(
+        pk=record.pk, used_at__isnull=True, invalidated_at__isnull=True
+    ).exists()
+
+
 def has_outstanding(*, user: User, purpose: str) -> bool:
     return AccountCredentialToken.objects.filter(
         user=user,
