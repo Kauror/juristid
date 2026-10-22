@@ -29,8 +29,9 @@ memory before producing any output to measure:
 1. **Walk budgets** (`TableBudget`, `app/documents/extraction/limits.py`).
    XLSX and CSV charge every row and every cell they *visit*, empty ones
    included (an empty row costs one cell): `EXTRACTION_MAX_TABLE_ROWS` per
-   sheet or file (500 000), `EXTRACTION_MAX_TABLE_COLUMNS` per row (2 000),
-   `EXTRACTION_MAX_TABLE_CELLS` across the whole file (10 000 000) and
+   sheet or file (1 048 576, Excel's last row), `EXTRACTION_MAX_TABLE_COLUMNS`
+   per row (2 000), `EXTRACTION_MAX_TABLE_CELLS` across the whole file
+   (100 000 000, about fifteen seconds of one worker) and
    `EXTRACTION_MAX_TABLE_CELL_CHARACTERS` per cell (131 072). A worksheet's
    declared dimensions are checked against the same numbers **before its first
    row is read** (`sheet_dimension_limit`); the walk is charged again as it
@@ -64,12 +65,13 @@ takes about 1.5 s. All are environment variables.
 
 ## Consequences
 
-- A workbook whose dimension record claims more than 500 000 rows, 2 000
-  columns or 10 M cells is refused even if most of it is empty — the
-  "somebody pressed Ctrl+Down to row 1 048 576" file. It is reported FAILED
-  with the declared size in the reason; an operator who needs it raises
-  `EXTRACTION_MAX_TABLE_ROWS`. Excel records column formatting in `<cols>`,
-  which does not enlarge the dimension, so ordinary files are not affected.
+- A workbook whose dimension record claims more than 2 000 columns or 100 M
+  cells is refused even if most of it is empty. It is reported FAILED with the
+  declared size in the reason. No sheet is refused on its height alone: the
+  "somebody pressed Ctrl+Down to row 1 048 576 and typed there" file still
+  reads, a few dozen columns wide, at a cost of seconds — legitimate Office
+  documents keep working, and the orchestrator chose that over a tighter
+  budget (2026-10-22 review).
 - Container-level CPU, memory and PID limits for the reader remain the
   deployment's job (Compose); they are recommended, not set, here.
 - openpyxl still parses one XML `<row>` whole and loads shared strings at

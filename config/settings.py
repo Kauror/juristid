@@ -554,11 +554,15 @@ EXTRACTION_MAX_XLSX_FRAGMENTS_PER_SHEET = env_int("EXTRACTION_MAX_XLSX_FRAGMENTS
 # Sized against the corpus with room to spare: the historical registers are a
 # few thousand rows by a few dozen columns (~0.1 M cells), and the existing
 # 500-fragments-per-sheet cap already stops a sheet at 25 000 rows *with text*.
-# Visiting 10 M cells costs a few seconds of one worker. 2 000 columns is twice
-# what LibreOffice writes for a full-width sheet (AMJ = 1 024).
-EXTRACTION_MAX_TABLE_ROWS = env_int("EXTRACTION_MAX_TABLE_ROWS", 500_000)
+# Rows stop at Excel's own last row, so no sheet Excel can save is refused on
+# its height alone — a sheet somebody Ctrl+Down-ed to row 1 048 576 and touched
+# there still reads. The walk budget is what bounds it: 100 M visited cells is
+# about fifteen seconds of one worker, and a declared range past it (the
+# A1:XFD1048576 attack is 17 000 M) is refused before the first row. 2 000
+# columns is twice what LibreOffice writes for a full-width sheet (AMJ = 1 024).
+EXTRACTION_MAX_TABLE_ROWS = env_int("EXTRACTION_MAX_TABLE_ROWS", 1_048_576)
 EXTRACTION_MAX_TABLE_COLUMNS = env_int("EXTRACTION_MAX_TABLE_COLUMNS", 2_000)
-EXTRACTION_MAX_TABLE_CELLS = env_int("EXTRACTION_MAX_TABLE_CELLS", 10_000_000)
+EXTRACTION_MAX_TABLE_CELLS = env_int("EXTRACTION_MAX_TABLE_CELLS", 100_000_000)
 # Excel itself stops a cell at 32 767 characters; 131 072 is the csv module's
 # own long-standing field limit, so no file that read before is refused by it.
 EXTRACTION_MAX_TABLE_CELL_CHARACTERS = env_int("EXTRACTION_MAX_TABLE_CELL_CHARACTERS", 131_072)

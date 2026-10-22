@@ -649,3 +649,23 @@ def test_an_oversized_evidence_email_is_recorded_failed_with_its_reason(
     assert failure.error_code == "character_limit"
     assert failure.generator == "eml"
     assert not DocumentTextFragment.objects.filter(derivative__version=version).exists()
+
+
+def test_a_sheet_touched_at_excels_last_row_still_reads_under_the_defaults():
+    """Ctrl+Down to row 1 048 576 and a value there: legitimate, and not refused.
+
+    Ten columns wide, so the walk is ~10 M visited cells — inside the default
+    budget. Only the declared width or the total cell count refuses a sheet,
+    never its height alone.
+    """
+
+    def last_row(workbook) -> None:
+        sheet = workbook.active
+        sheet["A1"] = "Pealkiri"
+        sheet.cell(row=1_048_576, column=10, value="viimane rida")
+
+    result = parse(XLSX, _xlsx(last_row))
+
+    text = " ".join(text for text, _locator in fragments_of(result))
+    assert "Pealkiri" in text
+    assert "viimane rida" in text
