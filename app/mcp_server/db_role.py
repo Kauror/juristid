@@ -14,7 +14,35 @@ Two halves, both pure functions of a cursor or of names:
 * `privilege_problems` — what the `mcp` process checks about the role it is
   connected as before it serves anything (juristid.E047): not a superuser,
   not a member of another role, owner of nothing, no write, truncate or DDL
-  privilege anywhere in the schema, and read-only by default.
+  privilege anywhere in the schema, read-only by default, and the role-level
+  bounds below in place.
+
+Privileges stop writes; they do not stop a session from using the server's
+resources (security review NEW-02). So the role also carries, *as role
+settings* — applied at every login, before any code in the process runs:
+
+* `temp_file_limit` (256 MB): any query can spill a sort or a hash to disk,
+  and a long scan with a small `work_mem` can fill it. This bounds those
+  files per session, and it is superuser-only: the role cannot raise it.
+* `statement_timeout` (`MCP_CALL_TIMEOUT_SECONDS`) and
+  `idle_in_transaction_session_timeout`: the connection option already sets
+  the first; the role setting holds it for a connection opened any other way.
+  Both are user-settable, so they bound mistakes, not an attacker with code
+  execution in `mcp`.
+* `default_transaction_read_only = on`: a session must undo it explicitly.
+* `CONNECTION LIMIT`.
+
+Stated as residual (docs/mcp/OPERATIONS.md, *Residual risks*), each needing
+code execution inside `mcp`:
+
+* explicit **temporary tables**. TEMPORARY stays with PUBLIC, as on every
+  database: revoking it is a database-wide change, left to the owner. A
+  session that switches read-only off can create them, and PostgreSQL does
+  not count their storage against `temp_file_limit` (its documentation of
+  that setting says so);
+* **advisory locks** — `pg_advisory_lock` on a key `web` uses blocks its
+  writers until the session ends — which no privilege prevents;
+* holding connections, up to the limit.
 
 The password never passes through here in the clear on its way to the server:
 `scram_verifier` turns it into the SCRAM-SHA-256 verifier PostgreSQL stores,
@@ -52,6 +80,27 @@ CONNECTION_LIMIT = 16
 
 _IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 SCRAM_ITERATIONS = 4096
+
+#: What one session of the role may write to temporary files at once —
+#: spilled sorts and hashes, held cursors; not explicit temporary tables,
+#: which PostgreSQL does not count. Superuser-only to change.
+TEMP_FILE_LIMIT = "256MB"
+TEMP_FILE_LIMIT_KB = 256 * 1024
+
+#: The tool-call timeout's default (`MCP_CALL_TIMEOUT_SECONDS`), for callers
+#: that do not pass one.
+DEFAULT_STATEMENT_TIMEOUT_SECONDS = 60
+
+
+def role_settings(*, statement_timeout_seconds: int) -> dict[str, str]:
+    """The settings `role_sql` gives the role, as PostgreSQL stores them."""
+    seconds = max(1, int(statement_timeout_seconds))
+    return {
+        "default_transaction_read_only": "on",
+        "temp_file_limit": TEMP_FILE_LIMIT,
+        "statement_timeout": f"{seconds}s",
+        "idle_in_transaction_session_timeout": f"{seconds}s",
+    }
 
 
 def valid_identifier(name: str) -> bool:
@@ -102,6 +151,7 @@ def role_sql(
     password_verifier: str | None = None,
     connection_limit: int = CONNECTION_LIMIT,
     withheld: Sequence[str] = WITHHELD_TABLES,
+    statement_timeout_seconds: int = DEFAULT_STATEMENT_TIMEOUT_SECONDS,
 ) -> list[str]:
     """The statements that make ``role`` a SELECT-only login, idempotently.
 
@@ -128,11 +178,19 @@ def role_sql(
             f"ALTER ROLE {r} WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT "
             f"NOREPLICATION NOBYPASSRLS CONNECTION LIMIT {int(connection_limit)}"
         ),
-        # The second lock, now on the role as well as on the connection.
-        f"ALTER ROLE {r} SET default_transaction_read_only = on",
+        # The second lock and the resource bounds, on the role as well as on
+        # the connection (NEW-02). Values are fixed or integers, quoted.
+        *(
+            f"ALTER ROLE {r} SET {name} = {quote_literal(value)}"
+            for name, value in role_settings(
+                statement_timeout_seconds=statement_timeout_seconds
+            ).items()
+        ),
         f"GRANT CONNECT ON DATABASE {d} TO {r}",
-        # TEMPORARY stays with PUBLIC, as on every database: a temporary
-        # table is the session's own and outlives nothing.
+        # TEMPORARY stays with PUBLIC, as on every database: revoking it is a
+        # database-wide change, left to the owner (NEW-02). A temporary table
+        # is the session's own and outlives nothing; read-only by default
+        # refuses one until the session undoes it.
         f"REVOKE CREATE ON DATABASE {d} FROM {r}",
         f"REVOKE CREATE ON SCHEMA public FROM {r}",
         f"GRANT USAGE ON SCHEMA public TO {r}",
@@ -220,7 +278,62 @@ def privilege_problems(cursor: Any) -> list[str]:
     (read_only,) = cursor.fetchone()
     if str(read_only).lower() != "on":
         problems.append("the session is not read-only by default")
+    problems += _role_setting_problems(cursor, name)
     return problems
+
+
+def _role_setting_problems(cursor: Any, name: str) -> list[str]:
+    """The role-level bounds `role_sql` sets, read from the catalogue (NEW-02).
+
+    From `pg_db_role_setting`, not `SHOW`: the connection option sets
+    read-only and the statement timeout for this very session, so `SHOW`
+    would pass for a role that has neither. A setting for this role in this
+    database overrides the role's general one, as at login.
+    """
+    cursor.execute(
+        "SELECT s.setconfig FROM pg_db_role_setting s "
+        "JOIN pg_roles r ON r.oid = s.setrole "
+        "WHERE r.rolname = current_user AND s.setdatabase IN "
+        "(0, (SELECT oid FROM pg_database WHERE datname = current_database())) "
+        "ORDER BY s.setdatabase"
+    )
+    stored: dict[str, str] = {}
+    for (config,) in cursor.fetchall():
+        for item in config or []:
+            key, _, value = str(item).partition("=")
+            stored[key.strip().lower()] = value.strip()
+    problems = []
+    if stored.get("default_transaction_read_only", "").lower() not in ("on", "true", "1"):
+        problems.append(f"role {name} is not read-only by default as a role setting")
+    temp_kb = _kilobytes(stored.get("temp_file_limit"))
+    if temp_kb is None or temp_kb < 0 or temp_kb > TEMP_FILE_LIMIT_KB:
+        problems.append(f"role {name} has no temp_file_limit of at most {TEMP_FILE_LIMIT}")
+    for setting in ("statement_timeout", "idle_in_transaction_session_timeout"):
+        milliseconds = _milliseconds(stored.get(setting))
+        if milliseconds is None or milliseconds <= 0:
+            problems.append(f"role {name} has no {setting} as a role setting")
+    return problems
+
+
+_QUANTITY = re.compile(r"^\s*'?(-?\d+)\s*([a-zA-Z]*)'?\s*$")
+_KB_UNITS = {"": 1, "kb": 1, "mb": 1024, "gb": 1024**2, "tb": 1024**3}
+_MS_UNITS = {"": 1, "ms": 1, "s": 1000, "min": 60_000, "h": 3_600_000, "d": 86_400_000}
+
+
+def _kilobytes(value: str | None) -> int | None:
+    """A memory setting in kB (its unit when none is given), or None."""
+    found = _QUANTITY.match(value or "")
+    if not found or found.group(2).lower() not in _KB_UNITS:
+        return None
+    return int(found.group(1)) * _KB_UNITS[found.group(2).lower()]
+
+
+def _milliseconds(value: str | None) -> int | None:
+    """A time setting in ms (its unit when none is given), or None."""
+    found = _QUANTITY.match(value or "")
+    if not found or found.group(2).lower() not in _MS_UNITS:
+        return None
+    return int(found.group(1)) * _MS_UNITS[found.group(2).lower()]
 
 
 def _readability_problems(

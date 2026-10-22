@@ -246,8 +246,15 @@ sed -n 's/^POSTGRES_PASSWORD=//p' /mnt/user/appdata/juristid-main/config/juristi
 ```
 
 It answers `Role juristid_mcp: SELECT only on schema public (owner …), read-only
-by default, 1 table(s) withheld; password set.` It is idempotent: run it again
-whenever in doubt, and after rotating the password. To read the SQL first,
+by default, statement_timeout 60s, temp files at most 256MB, 1 table(s)
+withheld; password set.` Besides SELECT, the role carries its bounds as role
+settings, applied at every login (NEW-02): `temp_file_limit` 256 MB (which it
+cannot raise), `statement_timeout` and `idle_in_transaction_session_timeout`
+equal to the tool-call timeout, `default_transaction_read_only = on`, and a
+connection limit of 16. If `juristid-mcp.env` sets `MCP_CALL_TIMEOUT_SECONDS`
+to something other than 60, add `--statement-timeout-seconds <that value>`.
+`juristid.E047` stops `mcp` if any of them is missing. It is idempotent: run it
+again whenever in doubt, and after rotating the password. To read the SQL first,
 `… exec -T web python manage.py mcp_db_role --print-sql` prints it and changes
 nothing. A later release's new tables are readable without re-running it (the
 role has a default privilege on the owner's future tables).
@@ -561,6 +568,24 @@ fixed in code; these are not, and each says what holds instead.
   can still surface by title until it is reindexed; `fetch` re-checks and
   answers not-found. `check_search_freshness` covers it as it does for
   `/otsing/`.
+- **What the SELECT-only role can still do (NEW-02).** Code running inside
+  `mcp` (which takes a compromise of that process) can read every table but
+  `django_session` — nothing in them is usable as a credential — and can still:
+  switch its session's read-only default off and create *temporary* tables,
+  because TEMPORARY stays with PUBLIC (revoking it is a database-wide change
+  that would reach `web`); lower or lift its own `statement_timeout` and
+  `idle_in_transaction_session_timeout`, which are user-settable; and take
+  advisory locks (`pg_advisory_lock`) on keys `web` uses, blocking its
+  writers until the session ends — no privilege prevents that. What holds:
+  spilled sorts and hashes are bounded at 256 MB per session by
+  `temp_file_limit`, which only a superuser can raise; at most 16
+  connections; and stopping `mcp` ends every session, and with it every lock
+  and every temporary table. What does **not** hold: PostgreSQL does not count
+  explicit temporary tables against `temp_file_limit`, so such a session could
+  still fill the database disk with them. Closing that is
+  `REVOKE TEMPORARY ON DATABASE juristid FROM PUBLIC` plus a `GRANT` to the
+  owner role — a database-wide change, deliberately not made by
+  `mcp_db_role`, and the owner's decision.
 - **Two factors, not one person (ADR 0185, *Consequences*).** Somebody who
   knows the gate password and holds a colleague's authenticator can connect as
   that colleague. The lockout (MCPSEC-01) bounds guessing; it cannot help

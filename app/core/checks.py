@@ -794,8 +794,11 @@ def check_mcp_database_role(app_configs: Any = None, **kwargs: Any) -> list[Erro
     So in the `mcp` role the connected role must hold no superuser or
     role-creating attribute, belong to no other role, own nothing, hold no
     INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER or CREATE privilege in
-    schema public, read the token tables, not read `django_session`, and start
-    read-only (`app.mcp_server.db_role.privilege_problems`).
+    schema public, read the token tables, not read `django_session`, start
+    read-only, and carry its bounds as role settings — `temp_file_limit`,
+    `statement_timeout`, `idle_in_transaction_session_timeout`, read-only by
+    default (NEW-02) — read from the catalogue, not from this session's options
+    (`app.mcp_server.db_role.privilege_problems`).
 
     An error wherever real data is allowed; a warning elsewhere, where a laptop
     or CI connects as the one role it has. A database check: `run_mcp_server`

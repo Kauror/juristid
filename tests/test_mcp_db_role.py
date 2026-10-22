@@ -211,7 +211,7 @@ def test_print_sql_changes_nothing_and_names_no_password():
     text = out.getvalue()
     assert 'GRANT SELECT ON ALL TABLES IN SCHEMA public TO "juristid_mcp";' in text
     assert "ALTER DEFAULT PRIVILEGES FOR ROLE" in text
-    assert "NOINHERIT" in text and "default_transaction_read_only = on" in text
+    assert "NOINHERIT" in text and "default_transaction_read_only = 'on'" in text
     assert 'REVOKE ALL ON TABLE "django_session" FROM "juristid_mcp";' in text
     assert "PASSWORD '" not in text
     with connection.cursor() as cursor:
@@ -280,3 +280,107 @@ def test_run_mcp_server_refuses_to_serve_as_the_owner_role_on_real_data(settings
     with pytest.raises(SystemCheckError, match=r"juristid\.E047"):
         call_command("run_mcp_server", stdout=io.StringIO(), stderr=io.StringIO())
     assert served == []
+
+
+# -- the role's resource bounds (security review NEW-02) ---------------------------
+
+
+def test_every_login_of_the_role_starts_bounded(mcp_role):
+    role, password = mcp_role
+    with _connect(role, password) as conn, conn.cursor() as cursor:
+        for setting, expected in (
+            ("temp_file_limit", "256MB"),
+            ("statement_timeout", "1min"),
+            ("idle_in_transaction_session_timeout", "1min"),
+            ("default_transaction_read_only", "on"),
+        ):
+            cursor.execute(f"SHOW {setting}")
+            assert cursor.fetchone()[0] == expected, setting
+        cursor.execute("SELECT rolconnlimit FROM pg_roles WHERE rolname = current_user")
+        assert cursor.fetchone()[0] == db_role.CONNECTION_LIMIT
+
+
+def test_the_role_cannot_raise_its_temporary_file_limit(mcp_role):
+    role, password = mcp_role
+    with _connect(role, password) as conn, conn.cursor() as cursor:
+        with pytest.raises(pg_errors.InsufficientPrivilege):
+            cursor.execute("SET temp_file_limit = -1")
+
+
+def test_a_sort_that_spills_past_the_limit_is_refused(mcp_role):
+    """Spilled sorts and hashes are what temp_file_limit bounds (lowered here to 1 MB)."""
+    role, password = mcp_role
+    with connection.cursor() as cursor:
+        cursor.execute(f"ALTER ROLE \"{role}\" SET temp_file_limit = '1MB'")
+    with _connect(role, password) as conn, conn.cursor() as cursor:
+        cursor.execute("SET work_mem = '64kB'")
+        with pytest.raises(pg_errors.ConfigurationLimitExceeded):
+            cursor.execute(
+                "SELECT count(*) FROM (SELECT g FROM generate_series(1, 2000000) AS g "
+                "ORDER BY g DESC) AS sorted"
+            )
+
+
+@pytest.mark.parametrize(
+    ("statement", "named"),
+    [
+        ("ALTER ROLE {role} RESET temp_file_limit", "temp_file_limit"),
+        ("ALTER ROLE {role} SET temp_file_limit = -1", "temp_file_limit"),
+        ("ALTER ROLE {role} SET temp_file_limit = '1GB'", "temp_file_limit"),
+        ("ALTER ROLE {role} SET statement_timeout = 0", "statement_timeout"),
+        ("ALTER ROLE {role} RESET idle_in_transaction_session_timeout", "idle_in_transaction"),
+        ("ALTER ROLE {role} RESET default_transaction_read_only", "read-only by default"),
+    ],
+    ids=[
+        "no-temp-limit",
+        "unlimited-temp",
+        "temp-limit-too-high",
+        "no-statement-timeout",
+        "no-idle-timeout",
+        "not-read-only-by-role",
+    ],
+)
+def test_e047_names_a_missing_role_level_bound(mcp_role, statement, named):
+    """Read from the catalogue: the connection option would make `SHOW` pass."""
+    role, password = mcp_role
+    with connection.cursor() as cursor:
+        cursor.execute(statement.format(role=f'"{role}"'))
+    with _connect(role, password) as conn, conn.cursor() as cursor:
+        cursor.execute("SET default_transaction_read_only = on")
+        cursor.execute("SET statement_timeout = '60s'")
+        problems = db_role.privilege_problems(cursor)
+    assert any(named in problem for problem in problems), problems
+
+    _apply(role, None)
+    with _connect(role, password) as conn, conn.cursor() as cursor:
+        assert db_role.privilege_problems(cursor) == []
+
+
+def test_the_statement_timeout_follows_the_call_timeout(settings):
+    settings.MCP_CALL_TIMEOUT_SECONDS = 25
+    out = io.StringIO()
+    call_command("mcp_db_role", "--print-sql", "--role", "juristid_mcp", stdout=out)
+    text = out.getvalue()
+    assert "ALTER ROLE \"juristid_mcp\" SET statement_timeout = '25s';" in text
+    assert "ALTER ROLE \"juristid_mcp\" SET idle_in_transaction_session_timeout = '25s';" in text
+    assert "ALTER ROLE \"juristid_mcp\" SET temp_file_limit = '256MB';" in text
+    out = io.StringIO()
+    call_command(
+        "mcp_db_role",
+        "--print-sql",
+        "--role",
+        "juristid_mcp",
+        "--statement-timeout-seconds",
+        "90",
+        stdout=out,
+    )
+    assert "statement_timeout = '90s';" in out.getvalue()
+
+
+def test_temporary_stays_with_public_so_web_is_untouched():
+    """The fix bounds the role; it does not change the database `web` uses."""
+    statements = db_role.role_sql(role="juristid_mcp", owner="juristid", database="juristid")
+    assert not any(
+        "TEMP" in statement.upper() and "REVOKE" in statement for statement in statements
+    )
+    assert not any("PUBLIC" in statement for statement in statements)
