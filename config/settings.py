@@ -1059,6 +1059,12 @@ MCP_ENROLMENT_LINK_SECONDS = env_int("MCP_ENROLMENT_LINK_SECONDS", 30 * 60)
 # unreadable. mcp_access.E004 requires it on real data; the `mcp` process must
 # not hold it (juristid.E046). Changing it means everybody enrols again.
 MCP_AUTHENTICATOR_KEY = env("MCP_AUTHENTICATOR_KEY", "")
+# The key a rotated refresh token's successor is derived under, on `web` only
+# (NEW-01). Unset, SECRET_KEY stands in — tests and laptops only:
+# mcp_access.E005 requires it on real data, and the `mcp` process must not
+# hold it (juristid.E046). Changing it costs at most a retry inside the
+# refresh grace window; nobody re-enrols.
+MCP_TOKEN_DERIVATION_KEY = env("MCP_TOKEN_DERIVATION_KEY", "")
 # Wrong authenticator codes one gate session, and one client address, may type
 # at `/oauth/authorize` in a window, whichever personas they try (MCPSEC-01).
 # The per-grant lock is in app/mcp_access/services.py; this stops one session

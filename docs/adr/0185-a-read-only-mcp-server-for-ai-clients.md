@@ -178,8 +178,11 @@ model).
   rotated on every use; reuse of a rotated refresh token revokes the whole family —
   except that the same client presenting the just-rotated token again within 30 s,
   while its replacement is unused (a retry after a timeout, two refreshes in flight),
-  gets the same new pair back, derived from the presented token under the server's
-  key so nothing raw is stored (MCPSEC-09). A
+  gets the same new pair back, derived from the presented token under a key of
+  its own, `MCP_TOKEN_DERIVATION_KEY` on `web` (required on real data,
+  mcp_access.E005; never held by `mcp`) — not `DJANGO_SECRET_KEY`, which with one
+  refresh token would let somebody compute the family's later tokens offline
+  (NEW-01) — so nothing raw is stored (MCPSEC-09). A
   family has an **absolute lifetime of 90 days** from the authorization
   (`MCP_REFRESH_FAMILY_MAX_SECONDS`), however often it is refreshed, after which the
   person types their authenticator code again; and a refresh must authenticate the way

@@ -189,7 +189,7 @@ mcp_container_state() {
 # verified, before the operator switches anything on, and the preflight refuses
 # a juristid.env that switches AI access on without them. Never a value: only
 # key names and states are printed.
-MCP_WEB_KEYS=(MCP_AUTHENTICATOR_KEY)
+MCP_WEB_KEYS=(MCP_AUTHENTICATOR_KEY MCP_TOKEN_DERIVATION_KEY)
 MCP_WEB_KEY_MIN_LENGTH=40
 
 # Whether an environment file switches AI access on, read the way

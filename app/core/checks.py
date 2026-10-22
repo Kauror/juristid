@@ -667,6 +667,8 @@ MCP_FORBIDDEN_SECRETS = {
     "DJANGO_EMAIL_HOST_PASSWORD": "EMAIL_HOST_PASSWORD",
     # Seals the MCP authenticators; only `web` opens them (MCPSEC-07).
     "MCP_AUTHENTICATOR_KEY": "MCP_AUTHENTICATOR_KEY",
+    # Derives a rotated refresh token's successor; only `web` rotates (NEW-01).
+    "MCP_TOKEN_DERIVATION_KEY": "MCP_TOKEN_DERIVATION_KEY",
 }
 
 

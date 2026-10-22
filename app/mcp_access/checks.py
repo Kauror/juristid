@@ -63,6 +63,43 @@ def _authenticator_key_problems() -> list[Error]:
     ]
 
 
+def _derivation_key_problems() -> list[Error]:
+    """mcp_access.E005: on real data, the refresh successor chain has a key of its own (NEW-01).
+
+    `credentials.successor_pair` derives a rotated refresh token's successor
+    from the presented token under this key. Under `SECRET_KEY` — the
+    fallback off real data — that key and one refresh token would let
+    somebody compute a family's every later token offline. Only `web`
+    rotates refresh tokens; the `mcp` process must not hold it (juristid.E046).
+    """
+    if (getattr(settings, "JURISTID_PROCESS_ROLE", "") or "") == "mcp":
+        return []
+    if not getattr(settings, "REAL_DATA_ALLOWED", False):
+        return []
+    key = str(getattr(settings, "MCP_TOKEN_DERIVATION_KEY", "") or "")
+    others = {
+        settings.SECRET_KEY,
+        str(getattr(settings, "LOCAL_AUTH_MFA_ENCRYPTION_KEY", "") or ""),
+        str(getattr(settings, "MCP_AUTHENTICATOR_KEY", "") or ""),
+    }
+    weak = len(key) < MIN_AUTHENTICATOR_KEY_LENGTH or key.startswith("replace-me") or key in others
+    if not weak:
+        return []
+    return [
+        Error(
+            "MCP_ENABLED on real data needs MCP_TOKEN_DERIVATION_KEY: at least "
+            f"{MIN_AUTHENTICATOR_KEY_LENGTH} characters, its own value — not DJANGO_SECRET_KEY, "
+            "not LOCAL_AUTH_MFA_ENCRYPTION_KEY and not MCP_AUTHENTICATOR_KEY.",
+            hint=(
+                "Generate it into juristid.env with scripts/deploy/juristid-mcp-web-keys.sh "
+                "(docs/mcp/OPERATIONS.md, first-time enablement step 3). Under DJANGO_SECRET_KEY, "
+                "that key and one refresh token would yield every later token of its family."
+            ),
+            id="mcp_access.E005",
+        )
+    ]
+
+
 @register()
 def mcp_access_settings(app_configs: Any = None, **kwargs: Any) -> list[Error]:
     if not getattr(settings, "MCP_ENABLED", False):
@@ -84,6 +121,7 @@ def mcp_access_settings(app_configs: Any = None, **kwargs: Any) -> list[Error]:
             )
         )
     errors += _authenticator_key_problems()
+    errors += _derivation_key_problems()
     clients = getattr(settings, "MCP_OAUTH_CLIENTS", {}) or {}
     for client_id in clients:
         client = config.client(client_id)

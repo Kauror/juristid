@@ -54,20 +54,36 @@ def new_opaque() -> str:
 SUCCESSOR_PURPOSE = b"mcp-access-refresh-successor-v1"
 
 
+def _successor_key_material() -> str:
+    """`MCP_TOKEN_DERIVATION_KEY`, the successor chain's own key (NEW-01).
+
+    Not `SECRET_KEY`: whoever holds that — a leaked juristid.env, an old
+    backup — and one refresh token of a family could compute every later
+    token of it offline, and so ride the chain without ever tripping reuse
+    detection. A key that exists for this alone, on `web` only (the `mcp`
+    process must not hold it, juristid.E046), keeps the two compromises
+    separate. `SECRET_KEY` stands in only where `mcp_access.E005` does not
+    require the key: tests, a laptop, CI.
+    """
+    return str(getattr(settings, "MCP_TOKEN_DERIVATION_KEY", "") or "") or settings.SECRET_KEY
+
+
 def successor_pair(refresh_token: str) -> tuple[str, str]:
     """The access and refresh token a rotation of ``refresh_token`` issues.
 
-    Deterministic under the deployment's key, so the same presented token
-    yields the same pair: a retried refresh can be answered with what the
-    first attempt issued, although only digests are stored. 256 bits each,
-    base64url without padding — the shape `new_opaque` mints.
+    Deterministic under `MCP_TOKEN_DERIVATION_KEY`, so the same presented
+    token yields the same pair: a retried refresh can be answered with what
+    the first attempt issued, although only digests are stored. 256 bits
+    each, base64url without padding — the shape `new_opaque` mints. Changing
+    the key costs at most the retry of a rotation less than
+    `MCP_REFRESH_GRACE_SECONDS` old.
     """
     key = HKDF(
         algorithm=hashes.SHA256(),
         length=32,
         salt=b"juristid-mcp-access",
         info=SUCCESSOR_PURPOSE,
-    ).derive(settings.SECRET_KEY.encode("utf-8"))
+    ).derive(_successor_key_material().encode("utf-8"))
 
     def derive(label: bytes) -> str:
         raw = hmac.new(key, label + b"|" + refresh_token.encode("ascii"), hashlib.sha256).digest()

@@ -38,7 +38,7 @@ OPERATIONS = ROOT / "docs" / "mcp" / "OPERATIONS.md"
 BASH = shutil.which("bash") or "bash"
 
 #: The keys `web` must hold before AI access is switched on.
-WEB_KEYS = ("MCP_AUTHENTICATOR_KEY",)
+WEB_KEYS = ("MCP_AUTHENTICATOR_KEY", "MCP_TOKEN_DERIVATION_KEY")
 STRONG = "s" * 64
 TEMPLATE_LINE = "# MCP_AUTHENTICATOR_KEY=replace-me-with-openssl-rand-base64-48"
 
@@ -66,6 +66,10 @@ def _write(tmp_path: Path, text: str) -> Path:
 def _values(path: Path, key: str) -> list[str]:
     text = path.read_text(encoding="utf-8")
     return re.findall(rf"(?m)^{key}=(.*)$", text)
+
+
+def _names_a_key(line: str) -> bool:
+    return any(key in line for key in WEB_KEYS)
 
 
 def _verified(path: Path, key: str) -> int:
@@ -104,16 +108,17 @@ def test_the_helper_writes_one_verified_key_and_prints_no_value(tmp_path, origin
     assert "Only now set MCP_ENABLED=1." in result.stdout
     # Every other line is kept, the last one whole, and MCP_ENABLED untouched.
     kept = [
-        line
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if "AUTHENTICATOR" not in line
+        line for line in path.read_text(encoding="utf-8").splitlines() if not _names_a_key(line)
     ]
-    assert kept == [line for line in original.splitlines() if "AUTHENTICATOR" not in line]
+    assert kept == [line for line in original.splitlines() if not _names_a_key(line)]
     assert kept[-1] == "MCP_ENABLED=0"
 
 
 def test_a_key_already_set_is_kept_never_rotated(tmp_path):
-    original = f"MCP_AUTHENTICATOR_KEY={STRONG}\n{TEMPLATE_LINE}\nMCP_ENABLED=1\n"
+    original = (
+        f"MCP_AUTHENTICATOR_KEY={STRONG}\n{TEMPLATE_LINE}\n"
+        f"MCP_TOKEN_DERIVATION_KEY={'d' * 50}\nMCP_ENABLED=1\n"
+    )
     path = _write(tmp_path, original)
     result = _helper(path)
     assert result.returncode == 0, result.stderr
@@ -235,14 +240,17 @@ def test_with_mcp_enabled_off_web_needs_no_key_on_real_data(settings):
     settings.REAL_DATA_ALLOWED = True
     settings.JURISTID_PROCESS_ROLE = ""
     settings.MCP_AUTHENTICATOR_KEY = ""
+    settings.MCP_TOKEN_DERIVATION_KEY = ""
     assert checks.mcp_access_settings() == []
 
 
-def test_with_mcp_enabled_on_real_data_the_key_is_required(settings):
+def test_with_mcp_enabled_on_real_data_the_keys_are_required(settings):
     from tests import mcp_access_support as support
 
     support.enable(settings)
     settings.REAL_DATA_ALLOWED = True
     settings.JURISTID_PROCESS_ROLE = ""
     settings.MCP_AUTHENTICATOR_KEY = ""
-    assert "mcp_access.E004" in {item.id for item in checks.mcp_access_settings()}
+    settings.MCP_TOKEN_DERIVATION_KEY = ""
+    found = {item.id for item in checks.mcp_access_settings()}
+    assert {"mcp_access.E004", "mcp_access.E005"} <= found

@@ -152,7 +152,10 @@ The keys live in `juristid.env` only — never in `juristid-mcp.env`, which the
 preflight and juristid.E046 refuse:
 
 - `MCP_AUTHENTICATOR_KEY` — what the personal authenticators are sealed under
-  (MCPSEC-07).
+  (MCPSEC-07);
+- `MCP_TOKEN_DERIVATION_KEY` — what a rotated refresh token's successor is
+  derived under (NEW-01), so that `DJANGO_SECRET_KEY` and one refresh token
+  are not enough to compute a connection's later tokens (mcp_access.E005).
 
 Generate them straight into the file, so no value reaches the terminal or the
 shell history. The helper keeps a key that is already set (it never rotates
@@ -163,11 +166,15 @@ appends the line when the file has none at all, and then proves its own write:
 scripts/deploy/juristid-mcp-web-keys.sh --env-file /mnt/user/appdata/juristid-main/config/juristid.env
 ```
 
-It must end with `Only now set MCP_ENABLED=1.` Check it yourself as well; this
-must print exactly `1`:
+It must end with `Only now set MCP_ENABLED=1.` Check it yourself as well; each
+of these must print exactly `1`:
 
 ```bash
 grep -c '^MCP_AUTHENTICATOR_KEY=.\{40,\}' /mnt/user/appdata/juristid-main/config/juristid.env
+```
+
+```bash
+grep -c '^MCP_TOKEN_DERIVATION_KEY=.\{40,\}' /mnt/user/appdata/juristid-main/config/juristid.env
 ```
 
 Anything other than `1` — or a `FAIL` from the helper — and you stop here,
@@ -193,7 +200,10 @@ log says `the authenticator secret cannot be read`, and nobody's wrong-code
 counter moves. Rotate only together with re-enrolling everybody —
 `mcp_access revoke --user …`, `grant`, `enrolment-link`, for each person. A
 `DJANGO_SECRET_KEY` rotation, by contrast, no longer touches the
-authenticators.
+authenticators. **Rotating `MCP_TOKEN_DERIVATION_KEY`** costs at most a
+refresh retried inside the 30-second grace window (that family is revoked and
+the person reconnects); nobody re-enrols. The helper never rotates a key it
+finds: to rotate one, delete its line in an editor and run the helper again.
 
 ### 4. Name the release that is running
 
