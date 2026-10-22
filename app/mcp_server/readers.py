@@ -42,6 +42,7 @@ import html
 import re
 import uuid
 from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
@@ -457,15 +458,94 @@ def _source_label(kind: str) -> str:
         return ""
 
 
-def result_title(result: SearchResult) -> str:
-    """«2026_225 · Pakendiseaduse muutmine — Dokumendi sisu: Seletuskiri, lk 3»."""
+@dataclass(frozen=True)
+class RowFacts:
+    """What a search row's projection does not carry, read once per page (EVAL-001, EVAL-003).
+
+    ``submissions`` maps a submission's pk to ``(kind, status, sent_at)``;
+    ``entry_days`` an entry's pk to the department's day it happened.
+    """
+
+    submissions: dict[Any, tuple[str, str, datetime | None]]
+    entry_days: dict[Any, date | None]
+
+
+NO_FACTS = RowFacts(submissions={}, entry_days={})
+
+
+def row_facts(results: Sequence[SearchResult], user: Any) -> RowFacts:
+    """One statement per kind present, never per row, through each family's ``visible_to``."""
+    from app.matters.models import Entry
+    from app.submissions.models import Submission
+
+    submission_ids = {
+        result.source_object_id
+        for result in results
+        if result.source_kind == SearchSourceKind.SUBMISSION and result.source_object_id
+    }
+    entry_ids = {
+        result.source_object_id
+        for result in results
+        if result.source_kind == SearchSourceKind.ENTRY and result.source_object_id
+    }
+    submissions: dict[Any, tuple[str, str, datetime | None]] = {}
+    if submission_ids:
+        for pk, kind, status, sent_at in (
+            Submission.objects.visible_to(user)
+            .filter(pk__in=submission_ids)
+            .values_list("pk", "kind", "status", "sent_at")
+        ):
+            submissions[pk] = (kind, status, sent_at)
+    entry_days: dict[Any, date | None] = {}
+    if entry_ids:
+        for pk, moment in (
+            Entry.objects.visible_to(user).filter(pk__in=entry_ids).values_list("pk", "occurred_at")
+        ):
+            entry_days[pk] = _local_date(moment)
+    return RowFacts(submissions=submissions, entry_days=entry_days)
+
+
+def _submission_kind(result: SearchResult, facts: RowFacts) -> str | None:
+    if result.source_kind != SearchSourceKind.SUBMISSION:
+        return None
+    found = facts.submissions.get(result.source_object_id)
+    return found[0] if found else None
+
+
+def row_label(result: SearchResult, facts: RowFacts = NO_FACTS) -> str:
+    """The row's badge: the search page's, except for a reply that is not an opinion.
+
+    The projection has one badge for every SUBMISSION — «Arvamus» — and an
+    official «no comments» reply (`NO_OBJECTION_RESPONSE`) is not an opinion
+    (docs/adr/0174). Such a row takes the submission's own kind label
+    («Vastus: märkusi ja ettepanekuid ei ole») instead (EVAL-001).
+    """
+    from app.submissions.enums import NOT_AN_OPINION_KINDS, SubmissionKind
+
+    kind = _submission_kind(result, facts)
+    if kind in NOT_AN_OPINION_KINDS:
+        return str(SubmissionKind(kind).label)
+    return _source_label(result.source_kind)
+
+
+def result_title(result: SearchResult, facts: RowFacts = NO_FACTS) -> str:
+    """«2026_225 · Pakendiseaduse muutmine — Dokumendi sisu: Seletuskiri, lk 3».
+
+    An entry's title ends with its date: two entries of one Matter are both
+    «Sissekanne: Märkus», and the date is what tells them apart (EVAL-003).
+    """
     heading = _matter_heading(result.matter)
     if result.source_kind == SearchSourceKind.MATTER:
         return _clip(heading, TITLE_CHARS)
-    label = _source_label(result.source_kind)
+    label = row_label(result, facts)
     detail = result.source_title or result.document_title
     if result.source_locator:
         detail = f"{detail}, {result.source_locator}" if detail else result.source_locator
+    if result.source_kind == SearchSourceKind.ENTRY:
+        day = facts.entry_days.get(result.source_object_id)
+        if day is not None:
+            stamp = format_at_precision(day, "EXACT")
+            detail = f"{detail}, {stamp}" if detail else stamp
     detail = _one_line(detail)
     tail = f"{label}: {detail}" if detail else label
     return _clip(f"{heading} — {tail}" if tail else heading, TITLE_CHARS)
@@ -485,6 +565,7 @@ def search_results(user: Any, query: str, *, limit: int = SEARCH_RESULT_LIMIT) -
         raise InvalidArgument("limit must be a positive whole number.")
     limit = min(limit, SEARCH_RESULT_LIMIT)
     found = search_page(query=term, user=user, page_number=1, per_page=limit)
+    facts = row_facts(found.results, user)
     results: list[dict[str, str]] = []
     seen: set[str] = set()
     for result in found.results:
@@ -495,7 +576,11 @@ def search_results(user: Any, query: str, *, limit: int = SEARCH_RESULT_LIMIT) -
             continue
         seen.add(source_id)
         results.append(
-            {"id": source_id, "title": result_title(result), "url": links.result_url(result)}
+            {
+                "id": source_id,
+                "title": result_title(result, facts),
+                "url": links.result_url(result),
+            }
         )
     return {"results": results}
 
@@ -525,7 +610,9 @@ def _source_kinds(values: Any) -> list[str] | None:
     return kinds
 
 
-def _source_dates(results: list[SearchResult], user: Any) -> dict[str, dict[str, Any]]:
+def _source_dates(
+    results: list[SearchResult], user: Any, facts: RowFacts
+) -> dict[str, dict[str, Any]]:
     """Each row's own date, by source id — one statement per kind present, never per row.
 
     Read through each family's own ``visible_to`` although the rows came from an
@@ -536,13 +623,12 @@ def _source_dates(results: list[SearchResult], user: Any) -> dict[str, dict[str,
     from app.intelligence.models import MatterImportantDate, MatterWorkVictory
     from app.legacy_import.historical_views import visible_links
     from app.matters.models import (
-        Entry,
         MatterEngagement,
         MatterExternalPosition,
         MatterProceduralDevelopment,
         MatterWebsiteOverview,
     )
-    from app.submissions.models import Submission
+    from app.submissions.enums import SubmissionStatus
 
     by_kind: dict[str, set[Any]] = {}
     for result in results:
@@ -565,22 +651,15 @@ def _source_dates(results: list[SearchResult], user: Any) -> dict[str, dict[str,
         dates[(kind, pk)] = {**_dated(value, precision or "EXACT", certainty), "basis": basis}
 
     kinds = by_kind
-    if SearchSourceKind.ENTRY.value in kinds:
-        for pk, moment in (
-            Entry.objects.visible_to(user)
-            .filter(pk__in=kinds["ENTRY"])
-            .values_list("pk", "occurred_at")
-        ):
-            put("ENTRY", pk, _local_date(moment), "EXACT", "occurred")
-    if SearchSourceKind.SUBMISSION.value in kinds:
-        rows = (
-            Submission.objects.visible_to(user)
-            .historically_sent()
-            .filter(pk__in=kinds["SUBMISSION"])
-            .values_list("pk", "sent_at")
-        )
-        for pk, moment in rows:
-            put("SUBMISSION", pk, _local_date(moment), "EXACT", "sent")
+    # Entries and submissions were read with the page's other row facts
+    # (`row_facts`), once; a submission's date is its send, so only one that
+    # was sent — the `historically_sent()` rule — has one.
+    for pk, day in facts.entry_days.items():
+        put("ENTRY", pk, day, "EXACT", "occurred")
+    sent_statuses = {SubmissionStatus.SENT, SubmissionStatus.WITHDRAWN, SubmissionStatus.SUPERSEDED}
+    for pk, (_kind, status, sent_at) in facts.submissions.items():
+        if status in sent_statuses and sent_at is not None:
+            put("SUBMISSION", pk, _local_date(sent_at), "EXACT", "sent")
     document_ids = kinds.get("DOCUMENT", set()) | kinds.get("DOCUMENT_FRAGMENT", set())
     if document_ids:
         for pk, moment in (
@@ -670,17 +749,36 @@ def search_records(
     # `Paginator.get_page` reads a number past the end as the last page. A tool
     # asking for page 4 of 2 is told it is empty rather than handed page 2 again.
     results = found.results if found.page.number == number else []
-    dates = _source_dates(results, user)
+    facts = row_facts(results, user)
+    dates = _source_dates(results, user, facts)
     rows = []
     for result in results:
         source_id = result_source_id(result)
+        from app.submissions.enums import NOT_AN_OPINION_KINDS, SubmissionKind
+
+        # The search page's badge, except where it would call a reply that is
+        # not an opinion «Arvamus» (EVAL-001, `row_label`).
+        label = result.source_label or _source_label(result.source_kind)
+        extra: dict[str, Any] = {}
+        submission_kind = _submission_kind(result, facts)
+        if submission_kind is not None:
+            is_opinion = submission_kind not in NOT_AN_OPINION_KINDS
+            if not is_opinion:
+                label = row_label(result, facts)
+            extra = {
+                "submission_kind": submission_kind,
+                "submission_kind_label": str(SubmissionKind(submission_kind).label),
+                "is_opinion": is_opinion,
+                "is_official_no_comments_reply": not is_opinion,
+            }
         rows.append(
             {
+                **extra,
                 "id": source_id,
                 "source_kind": result.source_kind,
-                "source_label": result.source_label or _source_label(result.source_kind),
+                "source_label": label,
                 "matter": _matter_ref(result.matter),
-                "title": result_title(result),
+                "title": result_title(result, facts),
                 "snippet": snippet_text(result),
                 "locator": result.source_locator or None,
                 "source_date": dates.get(source_id),
