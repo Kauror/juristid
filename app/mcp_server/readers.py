@@ -1167,6 +1167,39 @@ _RECORD_PREFIXES: dict[str, str] = {
 }
 
 
+def _commencement_line(facts: dict[str, Any]) -> str:
+    """A commencement in neutral words: scheduled, a recorded date, or a previous record.
+
+    Never «Jõustus» / «entered into force»: Juristid records the date the act
+    names, not whether it took effect (docs/adr/0185 §2, MCPSEC-04).
+    """
+    when = facts["date"]["display"] or "date not recorded"
+    what = facts["what"] or "commencement"
+    if facts["date"]["certainty"] == PREVIOUS:
+        return f"Previous commencement record ({facts['status_label']}): {what}, {when}"
+    timing = facts["timing"]
+    if timing == "upcoming":
+        return f"Scheduled to enter into force on {when}: {what}"
+    if timing == "in_period":
+        return (
+            f"Recorded commencement period {when} has begun: {what} (the exact day is not recorded)"
+        )
+    if timing == "past":
+        return (
+            f"Recorded commencement date {when}: {what} (passed; Juristid does not record "
+            "whether it actually entered into force)"
+        )
+    return f"Commencement, no date recorded: {what}"
+
+
+def _no_longer_stands(record: Any) -> bool:
+    """A record whose `FactStatus` says it was cancelled or superseded."""
+    from app.intelligence.enums import FactStatus
+
+    status = getattr(record, "status", None)
+    return status in (FactStatus.CANCELLED, FactStatus.SUPERSEDED)
+
+
 def _activity_item(item: Any, matter: Any, today: date) -> dict[str, Any]:
     """One chronology row in words, with its date, precision, kind and link."""
     day = _local_date(item.occurred_at)
@@ -1214,11 +1247,26 @@ def _activity_item(item: Any, matter: Any, today: date) -> dict[str, Any]:
     elif item.event is not None:
         kind = "historical_import" if item.imported_documents else "event"
 
+    # What a dated record *is* comes from the record, never from where the
+    # chronology drew it (MCPSEC-04): the chronology's milestone carries no
+    # certainty, and its lead word for a commencement whose date has passed is
+    # «Jõustus» — the browser's word (docs/adr/0123), and a claim this answer
+    # must not make (docs/adr/0185 §2).
+    record_facts: dict[str, Any] | None = None
+    record_name = type(item.record).__name__ if item.record is not None else ""
+    if record_name == "MatterEffectiveDate":
+        record_facts = _effective_date(item.record, today)
+    elif record_name == "MatterImportantDate":
+        record_facts = _important_date(item.record, today)
+
     milestone = item.milestone
     if milestone is not None:
-        line = milestone.what
-        if milestone.sub:
-            line = f"{line} — {milestone.sub}"
+        if record_name == "MatterEffectiveDate" and record_facts is not None:
+            line = _commencement_line(record_facts)
+        else:
+            line = milestone.what
+            if milestone.sub:
+                line = f"{line} — {milestone.sub}"
         parts.insert(0, line)
         if milestone.own_note:
             parts.append(f"{milestone.own_note_label or 'Märkus'}: {milestone.own_note}")
@@ -1247,8 +1295,19 @@ def _activity_item(item: Any, matter: Any, today: date) -> dict[str, Any]:
         parts.append("Failid: " + ", ".join(names) + (f" (+{more})" if more > 0 else ""))
     if is_approximate(precision) and precision != "RECORDED_DAY" and certainty == CONFIRMED:
         certainty = ESTIMATED
+    if record_facts is not None:
+        # The same label `get_matter` gives the same record: cancelled or
+        # superseded → previous, a planned or estimated commencement milestone
+        # → planned / estimated, an approximate date → estimated.
+        certainty = record_facts["date"]["certainty"]
+    elif _no_longer_stands(item.record):
+        certainty = PREVIOUS
     text = _clip("\n".join(part for part in parts if part), ACTIVITY_ITEM_CHARS)
+    extra: dict[str, Any] = {}
+    if record_name == "MatterEffectiveDate" and record_facts is not None:
+        extra = {"timing": record_facts["timing"], "timing_note": record_facts["timing_note"]}
     return {
+        **extra,
         "id": source_id,
         "kind": kind,
         "item_type": item.item_type,
