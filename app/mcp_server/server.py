@@ -1,7 +1,7 @@
-"""The MCP server: seven read-only tools over Juristid, and the ASGI application around them.
+"""The MCP server: eight read-only tools over Juristid, and the ASGI application around them.
 
 `build_server()` is the `MCPServer` (the official SDK, `mcp` 2.x) with the
-seven tools of docs/adr/0185 §2 and nothing else — no resources, prompts or
+eight tools of docs/adr/0185 §2 and nothing else — no resources, prompts or
 subscriptions. `build_app()` is what `manage.py run_mcp_server` serves:
 
     GET  /healthz                                       {"status": "ok"}, no token, no data
@@ -312,6 +312,35 @@ def tool_specs() -> list[ToolSpec]:
             count=_length_of("documents"),
         ),
         ToolSpec(
+            name="list_matters",
+            title="List Juristid matters",
+            description=(
+                "List matters (teemad) from the register, filtered: by the responsible lawyer "
+                "(Vastutaja, a name or part of it), by an organisation (it sent the matter, Koda "
+                "answered it, or the open WAIT step names it), by the current next action's kind "
+                "(DO, WAIT, MONITOR, or NONE for no next step), open or closed. Default: open "
+                "current work. Each row: reference (like 2026_225), title, owner, stage "
+                "(Hetkeseis), work status, the next action with its date and certainty, the "
+                "opinion deadline and the Juristid URL. Answers «what is Marko responsible "
+                "for?» and «what are we waiting for from the ministry?». 20 per page, pages 1 to "
+                "10, with the total. Read-only."
+            ),
+            arguments=schemas.ListMattersArguments,
+            output=schemas.ListMattersOutput,
+            invoking="Listing matters…",
+            invoked="Listed matters",
+            read=lambda readers, user, a: readers.list_matters(
+                user,
+                responsible=a.get("responsible"),
+                organisation=a.get("organisation"),
+                next_action_kind=a.get("next_action_kind"),
+                is_open=a.get("open", True),
+                record_mode=a.get("record_mode") or "FULL",
+                page=_page(a),
+            ),
+            count=_length_of("matters"),
+        ),
+        ToolSpec(
             name="get_upcoming_commencements",
             title="Upcoming commencements",
             description=(
@@ -529,7 +558,7 @@ async def call_tool(
 def build_server(
     *, runtime: ReaderRuntime | None = None, token_verifier: TokenVerifier | None = None
 ) -> MCPServer:
-    """The MCP server with Juristid's seven read-only tools."""
+    """The MCP server with Juristid's eight read-only tools."""
     runtime = runtime or ReaderRuntime.from_settings()
     verifier = token_verifier or JuristidTokenVerifier(runtime)
     server = MCPServer(

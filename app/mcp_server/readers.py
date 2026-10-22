@@ -1,6 +1,6 @@
 """What the MCP tools answer, as plain Python over the services the pages use.
 
-Seven readers, one per tool (docs/adr/0185 §2), each a pure function of the
+Eight readers, one per tool (docs/adr/0185 §2), each a pure function of the
 authenticated `User` and the tool's arguments that returns a JSON-ready dict.
 No MCP SDK here and nothing asynchronous: `app.mcp_server.server` calls these
 in its worker threads, exactly as a view would call a selector.
@@ -2450,6 +2450,227 @@ def fetch_source(user: Any, source_id: str) -> dict[str, Any]:
     )
 
 
+# ---------------------------------------------------------------------------
+# list_matters — the register, filtered (owner questions C/E)
+# ---------------------------------------------------------------------------
+
+#: Rows per `list_matters` page, and how many pages it serves.
+MATTERS_PER_PAGE = 20
+MAX_MATTER_PAGES = 10
+#: The most people or organisations one name fragment may stand for. More than
+#: this and the fragment is too vague to be an answer; the reader says so.
+MAX_NAME_MATCHES = 25
+NEXT_ACTION_KINDS = ("DO", "WAIT", "MONITOR", "NONE")
+RECORD_MODES = ("FULL", "ARCHIVE", "ALL")
+
+
+def _fragment(value: Any, name: str, *, limit: int) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise InvalidArgument(f"{name} must be text.")
+    text = " ".join(value.split())
+    if not text:
+        return None
+    if len(text) > limit:
+        raise InvalidArgument(f"{name} must be at most {limit} characters.")
+    return text
+
+
+def _people_named(fragment: str) -> list[Any]:
+    """The people current work may be assigned to whose name or address holds ``fragment``.
+
+    The register's own list of colleagues (`department_workers`: active, a
+    department role, not a technical account) — the people a `Vastutaja` is
+    chosen from — matched on display name or UPN, case-insensitively.
+    """
+    from app.accounts.selectors import department_workers
+
+    return list(
+        department_workers()
+        .filter(Q(display_name__icontains=fragment) | Q(upn__icontains=fragment))
+        .order_by("display_name", "pk")[: MAX_NAME_MATCHES + 1]
+    )
+
+
+def _organisations_named(fragment: str) -> list[Any]:
+    """Organisations whose name or a recorded alias holds ``fragment``."""
+    from app.organisations.models import Organisation
+
+    return list(
+        Organisation.objects.filter(
+            Q(name__icontains=fragment) | Q(aliases__alias__icontains=fragment)
+        )
+        .distinct()
+        .order_by("name", "pk")[: MAX_NAME_MATCHES + 1]
+    )
+
+
+def _open_action_of_kind(user: Any, kind: str) -> Any:
+    """Has an open next action of this kind, through `NextAction.objects.visible_to`."""
+    from django.db.models import Exists, OuterRef
+
+    from app.workflow.enums import ActionStatus
+    from app.workflow.models import NextAction
+
+    actions = NextAction.objects.visible_to(user).filter(
+        status=ActionStatus.OPEN, kind=kind, matter=OuterRef("pk")
+    )
+    return Exists(actions)
+
+
+def _matter_row(user: Any, matter: Any, today: date) -> dict[str, Any]:
+    from app.matters.selectors import current_action_of, response_deadline_of
+
+    current = current_action_of(matter, user)
+    deadline = response_deadline_of(matter, user, today)
+    work_status = matter.work_status
+    return {
+        **_matter_ref(matter),
+        "title": _clip(matter.title, TITLE_CHARS),
+        "is_open": matter.is_open,
+        "record_mode": matter.record_mode,
+        "owner": _person(matter.owner),
+        "stage": (
+            {"key": matter.stage.key, "label": matter.stage.label_et} if matter.stage else None
+        ),
+        "work_status": {"key": work_status.key, "label": work_status.label},
+        "current_next_action": _action(current, today) if current is not None else None,
+        "waiting_for": (
+            _clip(current.text, SUMMARY_CHARS)
+            if current is not None and current.kind == "WAIT"
+            else None
+        ),
+        "opinion_deadline": (
+            {
+                **_dated(deadline.value, "EXACT", CONFIRMED, display=deadline.display),
+                "is_overdue": deadline.is_overdue,
+                "still_owed": deadline.is_active,
+            }
+            if deadline is not None
+            else None
+        ),
+    }
+
+
+def list_matters(
+    user: Any,
+    *,
+    responsible: str | None = None,
+    organisation: str | None = None,
+    next_action_kind: str | None = None,
+    is_open: bool | None = True,
+    record_mode: str = "FULL",
+    page: int = 1,
+) -> dict[str, Any]:
+    """`list_matters`: the register's matters, filtered, 20 per page.
+
+    The register's own population and rules: `matter_list_queryset(user)` — the
+    authorized base every Teemad page starts from — narrowed by
+    `register_filters.status_q` (open / closed), the record mode, the person
+    responsible (`Vastutaja`, the Matter's owner), an organisation (the
+    register's «asutus»: it sent the matter or Koda answered it — or, for a
+    WAIT, the open step's own text names it, which is how «what are we waiting
+    for from X» is recorded), and the current next action's kind
+    (`NONE` asks the register's one next-step rule, `?tegevus=puudub`). Every
+    filter applies before counting and slicing, so ``total`` is the narrowed,
+    authorized population.
+
+    **Default: current work** — open matters in FULL record mode. ARCHIVE rows
+    are the imported historical register: closed files with no working next
+    step, which would drown «what is X responsible for» in decade-old entries.
+    `record_mode="ALL"` and `open=None` widen it.
+
+    A name fragment that matches nobody answers with an empty list and says
+    so; one that matches several people lists every matched name, and the rows
+    of all of them, so the client can tell the reader which they meant.
+    """
+    from app.matters import register_filters, selectors
+
+    _require_reader(user)
+    number = _page_number(page, maximum=MAX_MATTER_PAGES)
+    person = _fragment(responsible, "responsible", limit=100)
+    body = _fragment(organisation, "organisation", limit=200)
+    kind = next_action_kind.strip().upper() if isinstance(next_action_kind, str) else None
+    if kind is not None and kind not in NEXT_ACTION_KINDS:
+        raise InvalidArgument("next_action_kind must be one of: DO, WAIT, MONITOR, NONE.")
+    mode = record_mode.strip().upper() if isinstance(record_mode, str) else "FULL"
+    if mode not in RECORD_MODES:
+        raise InvalidArgument("record_mode must be one of: FULL, ARCHIVE, ALL.")
+    if is_open is not None and not isinstance(is_open, bool):
+        raise InvalidArgument("open must be true, false or omitted.")
+    today = _today()
+
+    queryset = selectors.matter_list_queryset(user)
+    if is_open is not None:
+        queryset = queryset.filter(register_filters.status_q("avatud" if is_open else "suletud"))
+    if mode != "ALL":
+        queryset = queryset.filter(record_mode=mode)
+
+    filters: dict[str, Any] = {}
+    if person is not None:
+        people = _people_named(person)
+        filters["responsible"] = {
+            "query": person,
+            "people_matched": [_person(user_row) for user_row in people[:MAX_NAME_MATCHES]],
+            "too_many_matches": len(people) > MAX_NAME_MATCHES,
+        }
+        queryset = queryset.filter(owner__in=[row.pk for row in people[:MAX_NAME_MATCHES]])
+    if body is not None:
+        bodies = _organisations_named(body)
+        filters["organisation"] = {
+            "query": body,
+            "organisations_matched": [row.name for row in bodies[:MAX_NAME_MATCHES]],
+            "too_many_matches": len(bodies) > MAX_NAME_MATCHES,
+            "also_matches_wait_text": True,
+        }
+        ids_ = [row.pk for row in bodies[:MAX_NAME_MATCHES]]
+        queryset = queryset.filter(
+            Q(source_organisations__in=ids_)
+            | Q(addressee_organisation__in=ids_)
+            | Q(pk__in=_wait_naming(user, body))
+        ).distinct()
+    if kind == "NONE":
+        queryset = selectors.filter_by_next_action(queryset, user, selectors.MISSING, today)
+    elif kind is not None:
+        queryset = queryset.filter(_open_action_of_kind(user, kind))
+
+    total = queryset.count()
+    first = (number - 1) * MATTERS_PER_PAGE
+    rows = list(
+        queryset.order_by("-reference_year", "-reference_number", "pk")[
+            first : first + MATTERS_PER_PAGE
+        ]
+    )
+    return {
+        "filters": {
+            **filters,
+            "next_action_kind": kind,
+            "open": is_open,
+            "record_mode": mode,
+        },
+        "page": number,
+        "per_page": MATTERS_PER_PAGE,
+        "total": total,
+        "has_more": first + len(rows) < total and number < MAX_MATTER_PAGES,
+        "truncated": total > MATTERS_PER_PAGE * MAX_MATTER_PAGES,
+        "matters": [_matter_row(user, matter, today) for matter in rows],
+        "as_of": today.isoformat(),
+    }
+
+
+def _wait_naming(user: Any, fragment: str) -> Any:
+    """Matters whose open WAIT step's text names ``fragment`` — «what we wait for from X»."""
+    from app.workflow.enums import ActionStatus
+    from app.workflow.models import NextAction
+
+    return (
+        NextAction.objects.visible_to(user)
+        .filter(status=ActionStatus.OPEN, kind="WAIT", text__icontains=fragment)
+        .values("matter_id")
+    )
+
+
 __all__ = [
     "CONFIRMED",
     "ESTIMATED",
@@ -2460,6 +2681,7 @@ __all__ = [
     "NotFound",
     "ReaderError",
     "fetch_source",
+    "list_matters",
     "matter_activity",
     "matter_documents",
     "matter_snapshot",

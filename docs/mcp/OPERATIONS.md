@@ -33,8 +33,9 @@ chat, a ticket, a screenshot or a transcript.
 **It can** answer, from a colleague's own ChatGPT conversation in the Chamber's
 workspace, the questions Juristid's pages answer: search the register and the
 documents' extracted text, fetch one record, show a Teema's snapshot, its
-chronology and its documents, and list what enters into force in a window. Seven
-tools, every one read-only, every answer carrying links back to the records.
+chronology and its documents, list what enters into force in a window, and list
+the matters a colleague is responsible for or Koda is waiting on an organisation
+for (`list_matters`). Eight tools, every one read-only, every answer carrying links back to the records.
 Every call runs **as the person who connected**, through the same visibility
 rules as the browser (ADR 0181): nothing they could not open in Juristid comes
 back, and an unknown id and a forbidden one look the same.
@@ -294,7 +295,7 @@ By a workspace admin of **Kaubanduskoda** who has Tunnels **Read** + **Use**
    `https://juristid.orgusaar.ee` as the authorization server and opens it in
    the admin's browser.
 4. Complete the sign-in (step 8 must have been done for the admin's own account
-   first, or this step is refused — correctly). ChatGPT then lists the seven
+   first, or this step is refused — correctly). ChatGPT then lists the eight
    tools; every one should show as read-only.
 5. **Confirm the resource.** If the token step fails with a resource refusal,
    the `web` log names the resource ChatGPT asked for (step *Diagnosing*); put

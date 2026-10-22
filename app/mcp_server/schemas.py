@@ -1,4 +1,4 @@
-"""The seven tools' input and output schemas (docs/adr/0185 §2).
+"""The eight tools' input and output schemas (docs/adr/0185 §2).
 
 Inputs are strict: every model forbids properties it does not name
 (`additionalProperties: false`), every string has a length bound, dates have
@@ -155,6 +155,54 @@ class GetMatterDocumentsArguments(StrictArguments):
     page: Page | None = 1
 
 
+class ListMattersArguments(StrictArguments):
+    responsible: Annotated[
+        str | None,
+        Field(
+            min_length=1,
+            max_length=100,
+            description=(
+                "Only matters this person is responsible for (Vastutaja): their name or part "
+                "of it, e.g. Marko."
+            ),
+        ),
+    ] = None
+    organisation: Annotated[
+        str | None,
+        Field(
+            min_length=1,
+            max_length=200,
+            description=(
+                "Only matters this organisation sent or Koda answered, or whose open WAIT step "
+                "names it: a name or part of it, e.g. Kliimaministeerium."
+            ),
+        ),
+    ] = None
+    next_action_kind: Annotated[
+        Literal["DO", "WAIT", "MONITOR", "NONE"] | None,
+        Field(
+            description=(
+                "Only matters whose current next action is of this kind; NONE for matters "
+                "with no next step recorded."
+            )
+        ),
+    ] = None
+    open: Annotated[
+        bool | None,
+        Field(description="true (default): open matters; false: closed; null: both."),
+    ] = True
+    record_mode: Annotated[
+        Literal["FULL", "ARCHIVE", "ALL"] | None,
+        Field(
+            description=(
+                "FULL (default): current work; ARCHIVE: the imported historical register; "
+                "ALL: both."
+            )
+        ),
+    ] = "FULL"
+    page: Page | None = 1
+
+
 class GetUpcomingCommencementsArguments(StrictArguments):
     # `from` and `to` are Python keywords, so the fields carry them as aliases:
     # the wire and the schema say `from`/`to`, the readers say `start`/`end`.
@@ -228,6 +276,11 @@ class MatterActivityOutput(_ReaderAnswer):
 
 class MatterDocumentsOutput(_ReaderAnswer):
     """One page of the matter's documents' metadata, with fetch ids where text exists."""
+
+
+class ListMattersOutput(_ReaderAnswer):
+    """One page (20) of matters with owner, stage, work status, next action and opinion
+    deadline, the filters as understood, and the total."""
 
 
 class UpcomingCommencementsOutput(_ReaderAnswer):

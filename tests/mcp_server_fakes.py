@@ -118,6 +118,7 @@ CANNED: dict[str, dict[str, Any]] = {
     "matter_activity": {"items": [{"date": "2026-10-01", "text": SECRET_SNIPPET}], "page": 1},
     "matter_documents": {"documents": [{"title": "Eelnõu", "fetch_id": "doc:1"}], "page": 1},
     "upcoming_commencements": {"commencements": [], "planned": [], "window": ["a", "b"]},
+    "list_matters": {"matters": [{"reference": "2026_225", "owner": "Marko"}], "total": 1},
 }
 
 
