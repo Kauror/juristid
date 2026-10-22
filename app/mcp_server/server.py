@@ -52,13 +52,26 @@ from mcp.server import MCPServer
 from mcp.server.auth.middleware.auth_context import AuthContextMiddleware
 from mcp.server.auth.middleware.bearer_auth import BearerAuthBackend
 from mcp.server.auth.provider import TokenVerifier
+from mcp.server.context import CallNext, HandlerResult, ServerRequestContext
 from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.mcpserver.tools import Tool
 from mcp.server.mcpserver.utilities.func_metadata import ArgModelBase, FuncMetadata
 from mcp.server.streamable_http_manager import StreamableHTTPASGIApp
 from mcp.server.transport_security import RequestBodyLimitMiddleware, TransportSecuritySettings
-from mcp.types import CallToolResult, TextContent, ToolAnnotations
+from mcp.shared.exceptions import MCPError
+from mcp.types import (
+    INTERNAL_ERROR,
+    INVALID_PARAMS,
+    INVALID_REQUEST,
+    METHOD_NOT_FOUND,
+    PARSE_ERROR,
+    CallToolResult,
+    GetPromptRequestParams,
+    ReadResourceRequestParams,
+    TextContent,
+    ToolAnnotations,
+)
 from pydantic import BaseModel, ValidationError
 from starlette.applications import Starlette
 from starlette.datastructures import Headers
@@ -555,13 +568,38 @@ async def call_tool(
 # -- the server and the application ---------------------------------------------
 
 
+#: What a tool call naming no tool of ours is told — not the name it sent.
+UNKNOWN_TOOL_TEXT = "Unknown tool."
+
+
+class JuristidMCPServer(MCPServer):
+    """`MCPServer`, except that an unknown tool name is not echoed back (NEW-10).
+
+    The SDK answers ``tools/call`` for a name it does not have with
+    ``Unknown tool: <name>`` — the caller's text, up to the body limit — in
+    the result and in an INFO log line. Juristid's own tools are a fixed list,
+    so a name that is not on it is refused here, before the SDK can quote it.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._juristid_tools = frozenset(spec.name for spec in tool_specs())
+
+    async def call_tool(
+        self, name: str, arguments: dict[str, Any], context: Context[Any, Any] | None = None
+    ) -> Any:
+        if name not in self._juristid_tools:
+            raise ToolError(UNKNOWN_TOOL_TEXT)
+        return await super().call_tool(name, arguments, context)
+
+
 def build_server(
     *, runtime: ReaderRuntime | None = None, token_verifier: TokenVerifier | None = None
 ) -> MCPServer:
     """The MCP server with Juristid's eight read-only tools."""
     runtime = runtime or ReaderRuntime.from_settings()
     verifier = token_verifier or JuristidTokenVerifier(runtime)
-    server = MCPServer(
+    server = JuristidMCPServer(
         name=SERVER_NAME,
         title="Juristid",
         description="The Estonian Chamber of Commerce's legal-policy register, read-only.",
@@ -574,7 +612,80 @@ def build_server(
         subscriptions=False,
     )
     _advertise_tools_only(server)
+    _refuse_resource_and_prompt_reads(server)
+    # Outermost, so it sees every error any later layer raises.
+    server.middleware.insert(0, NoEchoRpcErrors(server))
     return server
+
+
+#: What a JSON-RPC error says, by code, in place of the SDK's text (NEW-10).
+RPC_ERROR_TEXT = {
+    PARSE_ERROR: "Parse error.",
+    INVALID_REQUEST: "Invalid request.",
+    METHOD_NOT_FOUND: "Method not found.",
+    INVALID_PARAMS: "Invalid request parameters.",
+    INTERNAL_ERROR: "Internal error.",
+}
+RPC_ERROR_DEFAULT_TEXT = "The request could not be answered."
+
+
+class NoEchoRpcErrors:
+    """Every JSON-RPC error carries its code and a fixed text — nothing the caller sent.
+
+    EVAL-006 and NEW-10: the SDK's errors can quote the request — ``Unknown
+    resource: <uri>`` with ``data={"uri": …}``, ``Method not found`` with the
+    method name as ``data`` — and they come back with HTTP 200, where
+    `NoEchoErrorsMiddleware` (4xx only) does not look. This server-level
+    middleware wraps every request, so any `MCPError` leaves with
+    `RPC_ERROR_TEXT` for its code and no ``data``; anything else unexpected is
+    logged here by method (a registered one, or ``other``) and answered as
+    an internal error, never with its own text. Tool results are not errors
+    and pass unchanged: `JuristidTool` already writes their text.
+    """
+
+    def __init__(self, server: MCPServer) -> None:
+        self.server = server
+
+    def _method_label(self, method: str) -> str:
+        lowlevel = self.server._lowlevel_server
+        return method if lowlevel.get_request_handler(method) is not None else "other"
+
+    async def __call__(
+        self, ctx: ServerRequestContext[Any, Any], call_next: CallNext
+    ) -> HandlerResult:
+        try:
+            return await call_next(ctx)
+        except MCPError as error:
+            code = error.error.code
+            raise MCPError(
+                code=code, message=RPC_ERROR_TEXT.get(code, RPC_ERROR_DEFAULT_TEXT)
+            ) from None
+        except ValidationError:
+            # The SDK already answers these without pydantic's text; say so here too.
+            raise MCPError(code=INVALID_PARAMS, message=RPC_ERROR_TEXT[INVALID_PARAMS]) from None
+        except Exception:
+            logger.exception("MCP request failed (method %s)", self._method_label(str(ctx.method)))
+            raise MCPError(code=INTERNAL_ERROR, message=RPC_ERROR_TEXT[INTERNAL_ERROR]) from None
+
+
+async def _no_such_resource_or_prompt(ctx: ServerRequestContext[Any, Any], params: Any) -> Any:
+    raise MCPError(code=METHOD_NOT_FOUND, message=RPC_ERROR_TEXT[METHOD_NOT_FOUND])
+
+
+def _refuse_resource_and_prompt_reads(server: MCPServer) -> None:
+    """``resources/read`` and ``prompts/get`` answer method-not-found, quoting nothing (NEW-10).
+
+    Juristid has no resources and no prompts (EVAL-005). The SDK's own
+    handlers look the URI or name up, fail, log it at INFO and answer with it
+    in the error. These replace them (the SDK's public `add_request_handler`),
+    so the lookup, the log line and the echo never happen. The list methods
+    stay, answering empty.
+    """
+    lowlevel = server._lowlevel_server
+    lowlevel.add_request_handler(
+        "resources/read", ReadResourceRequestParams, _no_such_resource_or_prompt
+    )
+    lowlevel.add_request_handler("prompts/get", GetPromptRequestParams, _no_such_resource_or_prompt)
 
 
 def _advertise_tools_only(server: MCPServer) -> None:

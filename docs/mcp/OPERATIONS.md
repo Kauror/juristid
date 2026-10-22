@@ -478,8 +478,11 @@ docker compose -p juristid-main -f deploy/unraid-main/compose.yml logs --tail 20
 
 The `mcp` log goes to stdout and never to the database (ADR 0185 §1): it is
 meant to record each call by tool name, outcome and duration, never the
-question asked or the text returned. A traceback can still carry what the code
-held, so like every log here it stays on this host (OPERATOR.md).
+question asked or the text returned. The MCP SDK's own log is held at WARNING,
+because its INFO lines quote what the caller sent (a resource URI, a prompt or
+tool name; NEW-10), and no JSON-RPC error the server answers carries the
+caller's text either. A traceback can still carry what the code held, so like
+every log here it stays on this host (OPERATOR.md).
 
 **What a refusal means.**
 

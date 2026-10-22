@@ -168,3 +168,78 @@ def test_result_count_is_counted_for_each_tool(
     result = anyio.run(scenario)
     assert result.get("isError") is not True
     assert _logged_count(caplog) == expected
+
+
+# -- NEW-10: no method echoes what it was sent, on the wire or in the log ---------------
+
+
+def _call_raw(name: str) -> Any:
+    async def scenario():
+        async with fx.client(mcp_server.build_app()) as http:
+            return await fx.rpc(http, "tools/call", {"name": name, "arguments": {}})
+
+    return anyio.run(scenario)
+
+
+@pytest.mark.parametrize(
+    ("method", "params"),
+    [
+        ("resources/read", {"uri": f"file:///{MARKER}"}),
+        ("resources/read", {"uri": f"https://juristid.test/teemad/{MARKER}"}),
+        ("prompts/get", {"name": MARKER}),
+        ("prompts/get", {"name": "system", "arguments": {"q": MARKER}}),
+        ("resources/subscribe", {"uri": f"file:///{MARKER}"}),
+        (f"{MARKER}/anything", {"q": MARKER}),
+    ],
+    ids=["read-file", "read-https", "prompt", "prompt-arguments", "subscribe", "unknown-method"],
+)
+def test_a_method_the_server_does_not_serve_quotes_nothing(fakes, caplog, method, params):
+    caplog.set_level(logging.DEBUG)
+    response = _rpc(method, params)
+    assert response.status_code == 200
+    error = response.json()["error"]
+    assert error["code"] in (-32601, -32602)
+    assert "data" not in error or not error["data"]
+    assert MARKER not in response.text
+    assert not [record for record in caplog.records if MARKER in record.getMessage()]
+    assert fakes.calls == []
+
+
+def test_an_unknown_tool_is_refused_without_its_name(fakes, caplog):
+    caplog.set_level(logging.DEBUG)
+    response = _call_raw(f"delete_{MARKER}")
+    result = response.json()["result"]
+    assert result["isError"] is True
+    assert result["content"][0]["text"] == mcp_server.UNKNOWN_TOOL_TEXT
+    assert MARKER not in response.text
+    assert not [record for record in caplog.records if MARKER in record.getMessage()]
+    assert fakes.calls == []
+
+
+def test_the_sdk_logs_only_warnings_and_worse():
+    for name in ("mcp", "mcp.server.mcpserver.server", "mcp.server.lowlevel.server"):
+        assert logging.getLogger(name).getEffectiveLevel() >= logging.WARNING, name
+
+
+def test_an_error_keeps_its_code_and_loses_its_text(fakes):
+    async def failing(ctx: Any) -> Any:
+        from mcp.shared.exceptions import MCPError
+
+        raise MCPError(code=-32602, message=f"Unknown resource: {MARKER}", data={"uri": MARKER})
+
+    async def broken(ctx: Any) -> Any:
+        raise RuntimeError(MARKER)
+
+    from mcp.shared.exceptions import MCPError
+
+    middleware = mcp_server.NoEchoRpcErrors(mcp_server.build_server())
+
+    class Ctx:
+        method = MARKER
+
+    for call_next, code in ((failing, -32602), (broken, -32603)):
+        with pytest.raises(MCPError) as raised:
+            anyio.run(middleware, Ctx(), call_next)
+        assert raised.value.error.code == code
+        assert MARKER not in raised.value.error.message
+        assert raised.value.error.data is None

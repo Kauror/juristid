@@ -1137,5 +1137,10 @@ LOGGING = {
     "root": {"handlers": ["console"], "level": env("DJANGO_LOG_LEVEL", "INFO")},
     "loggers": {
         "django.db.backends": {"level": "WARNING", "handlers": ["console"], "propagate": False},
+        # The MCP SDK's INFO lines quote what the caller sent — a resource URI,
+        # a prompt or tool name, up to the request body limit (NEW-10). The
+        # `mcp` process logs each call itself, by tool name and outcome only
+        # (`app.mcp_server.calls`); the SDK's warnings and errors still show.
+        "mcp": {"level": "WARNING"},
     },
 }
