@@ -508,6 +508,42 @@ name, description or schema is not seen by anybody until a workspace admin:
 
 A release whose notes do not mention the MCP tools needs none of this.
 
+## Residual risks
+
+What the security review (2026-10-22) left open on purpose, so that nobody
+mistakes a known gap for an oversight. MCPSEC-01 to -10, -13, -14 and -16 are
+fixed in code; these are not, and each says what holds instead.
+
+- **Consent phishing (MCPSEC-11).** A colleague can start a connection in their
+  own ChatGPT and send the `/oauth/authorize?…` address to somebody else to
+  approve. Whether that binds the approver's account to the sender's connector
+  depends on how ChatGPT ties `state` to the browser, which Juristid cannot see.
+  What holds: the consent page names the client and the acting persona, and
+  says to continue only if you started this connection yourself, just now, and
+  to press «Keeldu» if somebody sent you the link. Tell colleagues the same
+  when you grant them.
+- **The enrolment link is a bearer secret (MCPSEC-12).** For 30 minutes,
+  whoever holds it and the gate password can enrol their own phone as that
+  person; the real person then only sees «link invalid». So: hand it over in
+  person or read it out by phone, never by e-mail, Teams or a ticket; and
+  after `ENROLMENT_COMPLETED` appears (`mcp_access list` shows `autentija
+  jah`), confirm with the person that it was them before they connect
+  ChatGPT. If they say no: `mcp_access revoke`, then `grant` again.
+- **The audience list, not the arrival resource (MCPSEC-15).** A token minted
+  for any `MCP_RESOURCE_URLS` entry is accepted at every entry. Harmless while
+  the tunnel URL is the only one. Before a public MCP URL is ever added (which
+  needs the owner's approval anyway), bind the token to the resource it
+  arrived at.
+- **Search freshness (MCPSEC-17).** `search` and `search_records` titles and
+  snippets come from the search projection, so a record removed a moment ago
+  can still surface by title until it is reindexed; `fetch` re-checks and
+  answers not-found. `check_search_freshness` covers it as it does for
+  `/otsing/`.
+- **Two factors, not one person (ADR 0185, *Consequences*).** Somebody who
+  knows the gate password and holds a colleague's authenticator can connect as
+  that colleague. The lockout (MCPSEC-01) bounds guessing; it cannot help
+  against a phone that was handed over.
+
 ## What must not be done
 
 - **Never give `mcp` or `mcp-tunnel` a host port**, a Cloudflare hostname or
