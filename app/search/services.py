@@ -53,6 +53,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Collection
 from dataclasses import dataclass
 from typing import Any
 
@@ -491,6 +492,15 @@ class SearchResult:
     submission_id: Any = None
     source_page_id: Any = None
     snippet: tuple[SnippetRun, ...] = ()
+    #: The primary key of the record this row projects — the Matter, entry,
+    #: opinion, fragment, document, Kaasamine, Märge, position, overview, date,
+    #: victory or Matter↔page link, by `source_kind` (`SearchDocument.
+    #: source_object_id`). The page links from the typed ids above; a caller
+    #: that has to *name* the record — the MCP readers' source ids
+    #: (docs/adr/0185) — reads it here rather than resolving it again.
+    source_object_id: Any = None
+    #: The `DocumentTextFragment` a `DOCUMENT_FRAGMENT` row is, else ``None``.
+    fragment_id: Any = None
 
     @property
     def match_label(self) -> str:
@@ -808,19 +818,37 @@ def _build(term: str) -> tuple[Q, Combinable, Combinable]:
     return matched, tier, relevance
 
 
-def search_documents(*, query: str, user: Any) -> QuerySet[SearchDocument]:
+def search_documents(
+    *,
+    query: str,
+    user: Any,
+    source_kinds: Collection[str] | None = None,
+    matter_id: Any = None,
+) -> QuerySet[SearchDocument]:
     """The ranked, authorized queryset. Countable and sliceable as it stands.
 
     Model instances without presentation joins: a caller that renders fetches
     those for the rows it renders (`_present`). Iterating this over a broad
     query is the whole matching set, so the page and the count use
     ``values_list`` and ``count`` on it rather than this.
+
+    ``source_kinds`` and ``matter_id`` narrow the authorized projection in SQL,
+    before anything is ranked, counted or sliced — so a narrowed page is a page
+    of the narrowed results, never a filtered page of the whole ones. Neither
+    widens anything: both are further conditions on `visible_documents`. The
+    search page passes neither; the MCP `search_records` tool passes both
+    (docs/adr/0185 §2).
     """
     term = clean_query(query)
     if not term:
         return visible_documents(user).none()
 
-    scoped = visible_documents(user).annotate(
+    narrowed = visible_documents(user)
+    if source_kinds is not None:
+        narrowed = narrowed.filter(source_kind__in=list(source_kinds))
+    if matter_id is not None:
+        narrowed = narrowed.filter(matter_id=matter_id)
+    scoped = narrowed.annotate(
         # Computed only for Matter rows. PostgreSQL's CASE short-circuits, so
         # `word_similarity` is never called on a document fragment — which
         # matters when the design headroom for that kind is millions of rows.
@@ -918,6 +946,8 @@ def search_page(
     user: Any,
     page_number: Any = None,
     per_page: int = RESULTS_PER_PAGE,
+    source_kinds: Collection[str] | None = None,
+    matter_id: Any = None,
 ) -> SearchPage:
     """A numbered page of the ranked results, every one of them reachable.
 
@@ -945,9 +975,15 @@ def search_page(
     ``LIMIT``, so it is the number the ``COUNT(*)`` gave. A page past the end,
     which returns no rows to carry the total, falls back to counting and then
     reads the last page, exactly as `Paginator.get_page` did.
+
+    ``source_kinds`` and ``matter_id`` are `search_documents`' narrowing, applied
+    before the ranking statement — the page, its total and its numbering are all
+    of the narrowed set.
     """
     term = clean_query(query)
-    page = _counted_page(term, user, page_number, per_page)
+    page = _counted_page(
+        term, user, page_number, per_page, source_kinds=source_kinds, matter_id=matter_id
+    )
     results = _present(list(page.object_list), term=term, user=user)
     page.object_list = results
     return SearchPage(results=results, page=page)
@@ -1022,7 +1058,15 @@ class _CountedPaginator(Paginator):
         self.__dict__["count"] = total  # the `cached_property`, already answered
 
 
-def _counted_page(term: str, user: Any, page_number: Any, per_page: int) -> Page:
+def _counted_page(
+    term: str,
+    user: Any,
+    page_number: Any,
+    per_page: int,
+    *,
+    source_kinds: Collection[str] | None = None,
+    matter_id: Any = None,
+) -> Page:
     """`Paginator(_ranked(...), per_page).get_page(page_number)`, in one statement.
 
     The same page for every input `get_page` accepts: anything that is not a
@@ -1038,7 +1082,7 @@ def _counted_page(term: str, user: Any, page_number: Any, per_page: int) -> Page
         number = int(page_number)
     except (TypeError, ValueError):
         number = 1
-    ranked = _ranked(term, user)
+    ranked = _ranked(term, user, source_kinds=source_kinds, matter_id=matter_id)
     # A page number no corpus reaches — `?leht=99999999999999999999999` — is past
     # the end by definition, and its offset would not fit the database's integer.
     if 1 <= number <= _DIRECT_PAGE_LIMIT:
@@ -1062,7 +1106,13 @@ def search(*, query: str, user: Any, limit: int = RESULTS_PER_PAGE) -> list[Sear
     return _present(list(_ranked(term, user)[:limit]), term=term, user=user)
 
 
-def _ranked(term: str, user: Any) -> Any:
+def _ranked(
+    term: str,
+    user: Any,
+    *,
+    source_kinds: Collection[str] | None = None,
+    matter_id: Any = None,
+) -> Any:
     """``(pk, tier, relevance)`` in rank order — the slim ranking statement.
 
     An empty term, including a refused one, is no results, and asks the
@@ -1071,9 +1121,9 @@ def _ranked(term: str, user: Any) -> Any:
     if not term:
         return []
     # The two annotations are invisible to django-stubs, not to Django.
-    return search_documents(query=term, user=user).values_list(  # type: ignore[misc]
-        "pk", "match_tier", "relevance"
-    )
+    return search_documents(  # type: ignore[misc]
+        query=term, user=user, source_kinds=source_kinds, matter_id=matter_id
+    ).values_list("pk", "match_tier", "relevance")
 
 
 def _present(ranked: list[tuple[Any, Any, Any]], *, term: str, user: Any) -> list[SearchResult]:
@@ -1111,6 +1161,8 @@ def _present(ranked: list[tuple[Any, Any, Any]], *, term: str, user: Any) -> lis
             submission_id=document.submission_id,
             source_page_id=document.matter_source_page_id,
             snippet=snippets.get(document.pk, ()),
+            source_object_id=document.source_object_id,
+            fragment_id=document.fragment_id,
         )
         for document, tier, relevance in ordered
     ]
