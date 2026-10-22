@@ -1504,7 +1504,11 @@ without anybody editing a list.
 **The one exception is AI access.** `mcp`, the read-only MCP server ChatGPT
 reaches (docs/adr/0185), runs the release image too, but it is behind the `mcp`
 profile, so neither form above touches it: a running `mcp` stays on the
-previous image. Look first:
+previous image. The preflight looks for you (MCPSEC-13): where
+`juristid-main-mcp` is running, the plan it prints carries the `mcp` line below
+and then a `test …` line that must print `mcp and web run
+juristid-main-web:<tag>`; where it is stopped, the plan says to leave it
+stopped. To look yourself:
 
 ```bash
 docker ps -a --filter label=com.docker.compose.project=juristid-main --filter 'name=^juristid-main-mcp$' --format '{{.Names}} {{.Image}} {{.Status}}'

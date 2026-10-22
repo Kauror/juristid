@@ -326,7 +326,8 @@ Ready. Nothing has been changed yet. The deployment, in order:
 
 NEXT
 
-deployment_plan "$JURISTID_PROJECT" "$JURISTID_COMPOSE_FILE" "$REPO" "$TARGET"
+deployment_plan "$JURISTID_PROJECT" "$JURISTID_COMPOSE_FILE" "$REPO" "$TARGET" \
+  "$(mcp_container_state "$JURISTID_PROJECT")"
 
 cat <<'NEXT'
 
