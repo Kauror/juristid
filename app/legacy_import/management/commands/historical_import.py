@@ -61,6 +61,14 @@ class Command(BaseCommand):
         )
         parser.add_argument("--expect-manifest-sha256", default="")
         parser.add_argument(
+            "--archive-manifest-absent",
+            action="store_true",
+            help=(
+                "The audit has no archive-manifest.tsv and the operator accepts planning "
+                "without the file-for-file check. Recorded on the batch."
+            ),
+        )
+        parser.add_argument(
             "--expect-plan-sha256",
             default="",
             help="apply: the plan digest `plan` printed and a person reviewed. Required.",
@@ -139,6 +147,7 @@ class Command(BaseCommand):
                 audit_root=audit,
                 expected_excel_sha256=options["expect_excel_sha256"],
                 expected_manifest_sha256=options["expect_manifest_sha256"],
+                archive_manifest_absent=bool(options["archive_manifest_absent"]),
             )
         except (PlanError, ArchiveError, AuditError, SourceLimitExceeded) as error:
             raise CommandError(str(error)) from error
@@ -150,7 +159,7 @@ class Command(BaseCommand):
                 "REAL_DATA_ALLOWED is off in this environment. The historical corpus is real "
                 "Koda material and may only be imported where the deployment says so."
             )
-        fatal = [finding for finding in plan.findings if "reconciles" not in finding]
+        fatal = list(plan.fatal_findings)
         if fatal:
             raise CommandError(
                 "The plan does not reconcile with the audit baseline:\n  "

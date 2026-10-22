@@ -1966,6 +1966,13 @@ class _Writer:
 
         resource = self._resource(page, doc["resource_key"])
         content = self.plan.archive.read_resource(page.page_key, resource)
+        actual = hashlib.sha256(content).hexdigest()
+        if actual != resource.sha256 or actual != doc.get("sha256"):
+            # Before anything is stored, so a refusal leaves no orphan blob.
+            raise EvidencePilotError(
+                f"{resource.resource_key}: the archive's bytes hash to {actual}, not the "
+                f"archive's {resource.sha256} or the reviewed package's {doc.get('sha256')}."
+            )
         filename = resource.original_filename
         document = create_document(
             matter=matter,
