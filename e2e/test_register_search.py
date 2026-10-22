@@ -14,7 +14,7 @@ import re
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, READER, sign_in
+from e2e.conftest import ADMIN, MARTIN, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -196,11 +196,12 @@ def test_the_count_is_announced_politely(page, base_url):
 
 
 def test_a_restricted_matter_reaches_neither_the_rows_nor_the_count(page, base_url):
-    """Martin may not see Sandra's restricted file, by either route.
+    """The administrator may not see Sandra's restricted file, by either route.
 
     The count leaks its existence as surely as the title would (brief 2, 16).
+    The administrator since docs/adr/0181: every business role reads it.
     """
-    sign_in(page, base_url, READER)
+    sign_in(page, base_url, ADMIN)
     open_register(page, base_url)
 
     page.locator("#teemad-otsing").press_sequentially(RESTRICTED_WORD, delay=30)

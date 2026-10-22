@@ -576,35 +576,11 @@ class TestRestrictedMatterIsUnreachable:
         open_register(page, base_url)
         expect(register_row(page, RESTRICTED_TITLE)).to_be_visible()
 
-    def test_a_reader_does_not(self, page, base_url):
+    def test_a_reader_sees_it_too(self, page, base_url):
+        """Every authorized internal user reads all business content (ADR 0181)."""
         sign_in(page, base_url, READER)
-
-        # Not on Minu asjad, which is where signing in lands.
-        expect(page.get_by_role("heading", name="Minu asjad")).to_be_visible()
-        expect(page.get_by_text(RESTRICTED_TITLE)).to_have_count(0)
-
-        # Not on Osakond — not in its attention list, and not in its counts.
-        # Visited explicitly rather than landed on, and still the stronger of
-        # the two checks: a restricted Matter must not reach a total either.
-        # Through the old address, so the redirect is exercised on the way
-        # (docs/adr/0049 §2).
-        page.goto(f"{base_url}/ulevaade/")
-        expect(page.get_by_role("heading", name="Osakond", exact=True)).to_be_visible()
-        expect(page.get_by_text("Konfidentsiaalne järgmine samm")).to_have_count(0)
-        expect(page.get_by_text(RESTRICTED_TITLE)).to_have_count(0)
-
-        # Not in the register.
         open_register(page, base_url)
-        expect(page.get_by_role("link", name=RESTRICTED_TITLE)).to_have_count(0)
-
-        # Not in search, and no snippet leaks. `not_to_contain_text` retries
-        # until the navigation settles; reading `page.content()` outright races
-        # the redirect and reports a Playwright error instead of a verdict.
-        page.get_by_placeholder("Otsi teemat, viidet, asutust…").fill("konfidentsiaalne")
-        page.keyboard.press("Enter")
-        expect(page.get_by_text("Vasteid ei leitud", exact=False)).to_be_visible()
-        expect(page.locator("body")).not_to_contain_text(RESTRICTED_TITLE)
-        expect(page.locator("body")).not_to_contain_text("pakendiaktsiisi")
+        expect(register_row(page, RESTRICTED_TITLE)).to_be_visible()
 
     def test_a_technical_administrator_does_not_either(self, page, base_url):
         """Administering the system is not permission to read the content."""
@@ -625,7 +601,8 @@ class TestRestrictedMatterIsUnreachable:
         restricted_url = page.url
         sign_out(page, base_url)
 
-        sign_in(page, base_url, READER)
+        # The administrator: the one signed-in actor left who may not read it.
+        sign_in(page, base_url, ADMIN)
         response = page.goto(restricted_url)
         assert response is not None
         assert response.status == 404

@@ -28,7 +28,6 @@ from e2e.conftest import (
     DESKTOP_VIEWPORT,
     FEEDBACK_PICKER,
     MARTIN,
-    READER,
     SANDRA,
     choose_organisation,
     chronology,
@@ -423,10 +422,11 @@ def test_journey_restricted_file_is_invisible_from_every_surface(page, base_url)
     expect(page.locator("#teema-pais")).to_contain_text(secret.split(" ")[0])
     expect(_zone(page)).to_contain_text("anonüümitud kokkuvõte")
 
-    # The READER and the ADMINISTRATOR each find nothing, anywhere. Signing in
-    # again replaces the session, so no sign-out is needed between personas —
-    # and the last page visited is a 404 with no nav to sign out from anyway.
-    for outsider in (READER, ADMIN):
+    # The ADMINISTRATOR finds nothing, anywhere. (A READER did not either until
+    # docs/adr/0181; every business role reads the department now.) Signing in
+    # again replaces the session, so no sign-out is needed — and the last page
+    # visited is a 404 with no nav to sign out from anyway.
+    for outsider in (ADMIN,):
         sign_in(page, base_url, outsider)
 
         page.goto(f"{base_url}/minu-asjad/")

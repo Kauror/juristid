@@ -27,7 +27,7 @@ from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import expect
 
 from app.core.management.commands.seed_e2e_data import RESTRICTED_TITLE
-from e2e.conftest import READER, SANDRA, pass_the_gate, sign_in, sign_out, wait_for_htmx
+from e2e.conftest import ADMIN, SANDRA, pass_the_gate, sign_in, sign_out, wait_for_htmx
 
 pytestmark = pytest.mark.e2e
 
@@ -148,7 +148,9 @@ def test_a_later_session_on_the_same_profile_cannot_bring_it_back(page, base_url
     assert HISTORY_KEY not in kept(page)
     assert not holds(page, RESTRICTED_TITLE)
 
-    sign_in(page, base_url, READER)
+    # The administrator: since docs/adr/0181 a READER reads the restricted
+    # Teema, so the one who may not is technical administration.
+    sign_in(page, base_url, ADMIN)
     page.goto(f"{base_url}/teemad/")
     expect(page.get_by_text(RESTRICTED_TITLE)).to_have_count(0)
 
