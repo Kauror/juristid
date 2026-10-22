@@ -81,10 +81,21 @@ branches remain for a hand-built scope and are unreachable from a request.
 `reads_opinion_archive` (0175) calls `may_read_archive`, so the Statistika
 archive metrics follow too. A READER now reads the archive; an administrator
 reads it only through break-glass. Filing a letter onto a Matter
-(`may_manage_archive_links`) and the reconciliation queues
-(`may_use_opinion_queue`, `may_review_historical_matches`) are unchanged — but
-what those administrator surfaces *show* of business content now needs the
-administrator's grant (see Consequences).
+(`may_manage_archive_links`) and who works the reconciliation queues
+(`may_use_opinion_queue`, `may_review_historical_matches`) are unchanged.
+
+**The reconciliation queues are business content too.** Their rows are OneNote
+pages (title, section, size, file count), archive letters (title, recipient,
+date, hash) and the Matters proposed for them. So every queue route — both lists
+and both decision routes — asks two questions: who works the queue (unchanged,
+the administrator), and `may_read_business_content`. An administrator without a
+grant gets a 403 (`QUEUE_NEEDS_A_READER`) before anything is read; with an
+active break-glass grant the queue works as before. The links that offer a
+queue — Statistika's reconciliation rows (`can_open_review_queue` →
+`may_open_historical_review`), the opinion-coverage drill-through and the
+archive's «Ava ülevaatus» (`may_open_opinion_queue`) — ask the same pair, so
+none is a door to a refusal. The queue's own «Ava arhiiv» is offered only when
+the archive would open.
 
 ### 4. A persona is required before any business page
 
@@ -155,14 +166,24 @@ unchanged.
   not even NORMAL records — unless a break-glass grant is active. Under the
   shared gate this changes nothing (an administrator is never a persona, 0034).
   In the dormant modes, the administrator's migration tools (historical and
-  opinion reconciliation queues, archive filing) still open, but the Matters,
-  letters and pages they display or link need a grant or a business role.
-- Choosing *Ilma kasutajata* still drops the persona and records the change; the
-  page it returns to now asks for a persona instead of showing a department
-  view. The label could be retired in a later round (`app/accounts` and the
-  persona templates belong to the authentication workstream).
-- Visual baselines may move: a persona-less Osakond capture becomes the persona
-  chooser, and the restricted banner's sentence changed.
+  opinion reconciliation queues, archive filing) refuse with a 403 until a
+  break-glass grant is active, and then work as before.
+- *Ilma kasutajata* is no longer offered as a choice — neither as a row on the
+  persona page nor in the top-bar popover. Without a persona nothing of the
+  department is shown, so a persona-less "view" would only open the persona
+  page again; offering it as a destination was the one place the interface
+  still claimed otherwise. Selecting a persona is unchanged, and switching
+  between colleagues stays where it was. Ending the session is «Välju». The
+  heading «Praegu: Ilma kasutajata» and the dashed pill still *name* the state
+  while nobody is chosen — a state, not an offer. Template-only: `act_as`
+  still accepts an empty choice (it is the authentication workstream's, and a
+  stale form or bookmark must not 500), and it lands on the persona page.
+- Visual baselines that move: the persona page with somebody selected
+  (`persona-leht-valitud`) and with nobody (`persona-leht-ilma`) lose the
+  dashed row; the open popover (`persona-popover-avatud`,
+  `persona-popover-aktiivne`, `hele-persona-popover-avatud`,
+  `persona-ilma-popover`) loses its last option; the restricted banner's
+  sentence changed on any Teema capture of a RESTRICTED Matter.
 - Tests that asserted the old internal secrecy (READER or a gate visitor
   refused RESTRICTED work; restricted children hidden from a reader) assert the
   new policy; every test of the external perimeter stays.

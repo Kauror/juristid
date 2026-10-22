@@ -83,15 +83,25 @@ def test_a_specialist_reaches_the_archive(page, base_url):
     expect(page.get_by_role("heading", name="Arvamuste arhiiv")).to_be_visible()
 
 
-def test_the_queue_offers_the_archive_only_to_somebody_it_opens_for(page, base_url):
-    """No door to a 403.
+def test_an_administrator_reaches_the_archive_from_the_queue(
+    page, base_url, admin_with_break_glass
+):
+    """Through the interface, not by knowing the URL.
 
-    The queue stays the administrator's, and the archive is business content
-    the administrator reads only through a break-glass grant (ADR 0181), so the
-    queue offers no «Ava arhiiv» without one.
+    The queue and the archive are both business content to an administrator
+    since ADR 0181: without a grant the queue refuses outright, and with one it
+    offers «Ava arhiiv», which opens.
     """
-    sign_in(page, base_url, ADMIN)
+    sign_in(page, base_url, admin_with_break_glass)
     page.goto(f"{base_url}/haldus/arvamuste-ulevaatus/")
+    page.get_by_role("link", name="Ava arhiiv").click()
+    expect(page.get_by_role("heading", name="Arvamuste arhiiv")).to_be_visible()
+
+
+def test_the_queue_refuses_an_administrator_without_a_grant(page, base_url):
+    sign_in(page, base_url, ADMIN)
+    response = page.goto(f"{base_url}/haldus/arvamuste-ulevaatus/")
+    assert response is not None and response.status == 403
     expect(page.get_by_role("link", name="Ava arhiiv")).to_have_count(0)
 
 

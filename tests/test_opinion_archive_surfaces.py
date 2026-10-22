@@ -35,6 +35,7 @@ from app.submissions.enums import (
 )
 from app.submissions.models import SubmissionRecipient
 from tests import factories
+from tests.break_glass import grant_to
 
 pytestmark = pytest.mark.django_db
 
@@ -138,7 +139,7 @@ def test_the_queue_is_administrative_and_a_specialist_is_refused(client, special
 def test_an_administrator_may_open_the_queue(client, administrator):
     batch, item = catalogue()
     candidate(batch, item)
-    client.force_login(administrator)
+    client.force_login(grant_to(administrator))
     response = client.get(reverse("legacy_import:opinion_queue"))
     assert response.status_code == 200
     body = response.content.decode()

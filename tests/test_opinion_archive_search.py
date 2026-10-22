@@ -57,6 +57,7 @@ from app.legacy_import.opinion_search_models import (
     ARCHIVE_INDEX_VERSION,
     OpinionArchiveSearchDocument,
 )
+from tests.break_glass import grant_to
 
 pytestmark = pytest.mark.django_db
 
@@ -720,7 +721,7 @@ def test_a_reviewer_rejecting_a_letter_moves_the_projection_at_once(client, admi
     candidate = a_candidate(first, klass=OpinionMatchClass.REVIEW_REQUIRED)
     assert _row(first).review_state == OpinionCandidateState.PENDING
 
-    client.force_login(administrator)
+    client.force_login(grant_to(administrator))
     response = client.post(
         reverse("legacy_import:opinion_decide", kwargs={"pk": candidate.pk}),
         {"decision": "reject", "note": "Ei ole selle teema kohta."},

@@ -50,6 +50,7 @@ from app.legacy_import.source_pages import (
 from app.matters.enums import MatterOrigin, RecordMode
 from app.matters.models import Matter
 from tests import factories, synthetic_historical
+from tests.break_glass import grant_to
 
 pytestmark = pytest.mark.django_db
 
@@ -473,7 +474,7 @@ def test_a_reviewer_can_link_a_candidate_and_clicking_twice_is_harmless(applied,
 
 
 def test_a_reviewer_can_turn_a_page_into_its_own_matter_once(applied, client):
-    client.force_login(factories.AdministratorFactory())
+    client.force_login(grant_to(factories.AdministratorFactory()))
     candidate = HistoricalMatchCandidate.objects.get(candidate_class=CandidateClass.CONFLICT)
 
     for _ in range(2):
@@ -490,7 +491,7 @@ def test_a_reviewer_can_turn_a_page_into_its_own_matter_once(applied, client):
 
 
 def test_the_review_queue_is_admin_work_not_legal_work(applied, client):
-    client.force_login(factories.AdministratorFactory())
+    client.force_login(grant_to(factories.AdministratorFactory()))
     response = client.get("/haldus/ajaloo-ulevaatus/")
     assert response.status_code == 200
     assert response.context["total"] == 3
