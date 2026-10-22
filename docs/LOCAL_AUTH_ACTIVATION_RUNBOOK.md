@@ -112,7 +112,9 @@ openssl rand -base64 48
 `DJANGO_SECRET_KEY` stays as it is. Rotating it later:
 
 - **ends every session** (session data and the session authentication hash are
-  keyed by it), under either mode;
+  keyed by it), under either mode — including the shared gate's password
+  version and a sign-in still waiting for its second-factor code, both keyed
+  digests under it (docs/adr/0183);
 - **resets every throttle counter**, personal sign-in's and the shared gate's
   alike — they are keyed by an HMAC under it, so a running lockout is forgotten;
 - **forgets every trusted sign-in source** (same HMAC), so the account-wide
