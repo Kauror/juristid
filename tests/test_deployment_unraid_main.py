@@ -310,6 +310,41 @@ def test_no_other_service_receives_the_upload_volume(compose: dict[str, Any]) ->
         assert _upload_mounts(compose, name) == [], f"{name} was given the upload volume"
 
 
+SWEEPER = "intake-sweeper"
+
+
+def test_the_staging_sweeper_is_scheduled_and_reaches_only_the_staging_volume(
+    compose: dict[str, Any], rehearsal: dict[str, Any]
+) -> None:
+    """csf_3942255b466a4e213b958b16, docs/adr/0177: the sweep runs on its own.
+
+    A container running the bounded loop, not a host cron entry (this host's
+    cron is generated from the flash drive). Read-write on the staging volume,
+    because deleting is its job, and nothing else mounted — the evidence tree
+    is not reachable from it at all. Judged by convergence, not by the web
+    image's HTTP probe it could never pass. The same in the rehearsal.
+    """
+    for model in (compose, rehearsal):
+        services = model["services"]
+        sweeper = services[SWEEPER]
+        assert sweeper["image"] == services["web"]["image"], model["name"]
+        assert [str(part) for part in sweeper["command"]] == [
+            "python",
+            "manage.py",
+            "prune_intake_staging",
+            "--loop",
+        ]
+        assert "check_intake_staging" in " ".join(sweeper["healthcheck"]["test"])
+        mounts = [_resolved(volume) for volume in sweeper.get("volumes") or []]
+        assert [m.split(":")[1] for m in mounts] == [UPLOAD_TARGET], model["name"]
+        assert not mounts[0].endswith(":ro"), f"{model['name']}: the sweeper cannot delete"
+        web_source = next(m for m in services["web"]["volumes"] if UPLOAD_TARGET in m)
+        assert mounts[0].split(":", 1)[0] == web_source.split(":", 1)[0], model["name"]
+        assert sweeper["environment"]["SEED_DEV_DATA"] == "0"
+        assert sweeper["environment"]["JURISTID_RUNTIME"] == "deployed"
+        assert sweeper["depends_on"] == {"db": {"condition": "service_healthy"}}
+
+
 def test_the_rehearsal_has_the_same_upload_topology(
     compose: dict[str, Any], rehearsal: dict[str, Any]
 ) -> None:

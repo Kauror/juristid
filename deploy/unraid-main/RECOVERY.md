@@ -105,11 +105,91 @@ this arrangement must not widen.
 One further operational difference from held uploads is worth knowing: staged
 files are **not** swept by the held-upload path, which only looks at the root of
 the directory. A staging session is removed from its own row by `manage.py
-prune_intake_staging`, which an operator runs. Nothing schedules it, and it
-cannot touch evidence — it reads neither the evidence store nor
-`DocumentVersion`. For each session it removes, it deletes everything under that
-session's own `intake/<session id>/` prefix, including an object whose row never
-committed; it never lists or deletes any other session's prefix.
+prune_intake_staging`, and it cannot touch evidence — it reads neither the
+evidence store nor `DocumentVersion`. For each session it removes, it deletes
+everything under that session's own `intake/<session id>/` prefix, including an
+object whose row never committed; it never lists or deletes any other session's
+prefix.
+
+### Staging quotas and the scheduled sweep
+
+Since docs/adr/0177 (csf_3942255b466a4e213b958b16) staging is bounded on the way
+in and swept on a timer, so this volume no longer depends on somebody
+remembering a command.
+
+**On the way in.** Before a staged file is written, under one database lock, the
+application refuses — with a sentence on the form, never a 500 — a file that
+would take a person past their active forms or bytes, staging past its
+deployment-wide forms or bytes, or the volume below its free-space headroom. The
+limits are environment variables with defaults; set them in
+`/mnt/user/appdata/juristid-main/config/juristid.env` only to change a default:
+
+| Variable | Default | What it bounds |
+| --- | --- | --- |
+| `INTAKE_STAGING_MAX_ACTIVE_SESSIONS_PER_OWNER` | 20 | one person's unfinished forms that hold a file |
+| `INTAKE_STAGING_MAX_BYTES_PER_OWNER` | 2147483648 (2 GiB) | one person's staged bytes in unconsumed forms |
+| `INTAKE_STAGING_MAX_ACTIVE_SESSIONS` | 200 | everybody's unfinished forms that hold a file |
+| `INTAKE_STAGING_MAX_BYTES` | 10737418240 (10 GiB) | everybody's staged bytes in unconsumed forms |
+| `INTAKE_STAGING_MIN_FREE_BYTES` | 1073741824 (1 GiB) | free space left on the volume after the write |
+| `INTAKE_STAGING_SWEEP_MAX_SESSIONS` | 500 | sessions one sweep removes |
+| `INTAKE_STAGING_SWEEP_MAX_BYTES` | 5368709120 (5 GiB) | staged bytes one sweep removes |
+| `INTAKE_STAGING_SWEEP_INTERVAL_SECONDS` | 900 | pause between sweeps |
+| `INTAKE_STAGING_SWEEP_STALE_SECONDS` | 3600 | how long a stale session may wait before the probe is red |
+
+The free space is that of the filesystem under `/app/pending-uploads` — on this
+host Docker's own storage, which every container shares. Before the first
+release that carries this, read it, and lower the headroom if 1 GiB is not
+available, or every staged file will be refused:
+
+```bash
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web df -h /app/pending-uploads
+```
+
+**The sweep.** The `intake-sweeper` service runs `prune_intake_staging --loop`:
+one bounded sweep every 15 minutes of forms past their expiry and forms a Teema
+has consumed. A form that is still open and not expired is never touched. The
+container mounts the staging volume read-write and nothing else, so the evidence
+tree is not reachable from it; inside the volume it follows no symbolic link and
+leaves a session whose tree is not what the application wrote — a link, a
+directory where a file belongs, a row naming a key outside its own session —
+untouched and logged as an error. It is a release-image service like `web`, so
+a release replaces it with the others; there is no host cron entry and nothing
+is installed outside Compose.
+
+Installing it is part of the first release that carries it. After the release's
+usual dry run (README, "Deploying a release" — `db` and `tunnel` must not move),
+the named form now lists four services:
+
+```bash
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-reader searchindex intake-sweeper
+```
+
+That starts no extractor — this stack has none — and does not touch `db` or
+`tunnel`. To see it working:
+
+```bash
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml logs --tail 20 intake-sweeper
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T intake-sweeper python manage.py check_intake_staging
+```
+
+`check_intake_staging` is also the container's healthcheck. It is red when a
+stale session has waited longer than `INTAKE_STAGING_SWEEP_STALE_SECONDS` — the
+sweeper is stopped, failing, or refusing an unsafe session — or when staging is
+full or the volume is short of its headroom. A one-off sweep by hand prints one
+summary line and exits 1 if it refused a session:
+
+```bash
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T intake-sweeper python manage.py prune_intake_staging --dry-run
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T intake-sweeper python manage.py prune_intake_staging
+```
+
+A refused session is a staging tree somebody changed by hand. Look at it
+(`ls -la` inside the container, under `/app/pending-uploads/intake/<id>`),
+remove what does not belong there yourself, and the next sweep takes the rest.
+Stopping the service (`stop intake-sweeper`) is safe at any time: nothing is
+half-deleted, and expired forms simply wait for the next run. Every runbook that
+holds the writers (`stop web intake-reader searchindex …`) holds it too, because
+it connects to the database.
 
 ## Backing up
 
@@ -756,7 +836,7 @@ deleted for that to happen.
 ### Then verify, before anything is published
 
 ```bash
-docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build web intake-reader searchindex
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build web intake-reader searchindex intake-sweeper
 ```
 
 Named rather than unqualified, unlike a redeploy: the tunnel is not behind a

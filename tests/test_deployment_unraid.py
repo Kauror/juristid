@@ -254,6 +254,7 @@ def test_the_container_names_do_not_collide_with_anything_on_the_host(
         "juristid-test-db",
         "juristid-test-intake-reader",
         "juristid-test-searchindex",
+        "juristid-test-intake-sweeper",
         "juristid-test-tunnel",
     }
 
