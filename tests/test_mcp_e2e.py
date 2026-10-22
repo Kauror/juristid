@@ -20,15 +20,11 @@ from __future__ import annotations
 
 import io
 import re
-import time
-import uuid
 from datetime import timedelta
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlsplit
 
-import jwt
 import pytest
-from cryptography.hazmat.primitives.asymmetric import rsa
 from django.core.management import call_command
 from django.test import Client
 from django.utils import timezone
@@ -36,7 +32,9 @@ from django.utils import timezone
 from app.mcp_access import oauth
 from app.mcp_access.models import GrantStatus, McpAccessGrant, McpToken, TokenKind
 from app.mcp_access.verification import verify_access_token
+from app.mcp_access.views import GENERIC_REFUSAL
 from tests import factories
+from tests import mcp_access_support as support
 from tests import mcp_eval_world as w
 from tests.gate import PASSWORD, apply_shared_gate
 
@@ -104,8 +102,40 @@ def _authorize(client: Client, code: str, **overrides: Any) -> dict[str, list[st
     return parse_qs(location.query)
 
 
-def _exchange(code: str, *, resource: str = w.TUNNEL_RESOURCE, **auth: str) -> dict[str, Any]:
-    response = _machine(
+@pytest.fixture(autouse=True)
+def chatgpt_keys(monkeypatch) -> support.FakeClientKeys:
+    """ChatGPT's signing key, generated here, and the JWKS it would publish.
+
+    The default ChatGPT client authenticates at /oauth/token with
+    private_key_jwt only (MCPSEC-08), so every machine request signs an
+    assertion unless a test says otherwise.
+    """
+    keys = support.FakeClientKeys(kid="chatgpt-test-1")
+    keys.install(monkeypatch)
+    KEYS["chatgpt"] = keys
+    return keys
+
+
+#: The current test's key, for the helpers below (set by `chatgpt_keys`).
+KEYS: dict[str, support.FakeClientKeys] = {}
+
+
+def _signed() -> dict[str, str]:
+    """`private_key_jwt` client authentication as ChatGPT's backend sends it (RFC 7523)."""
+    return {
+        "client_id": w.CHATGPT_CLIENT,
+        "client_assertion_type": oauth.CLIENT_ASSERTION_TYPE,
+        "client_assertion": KEYS["chatgpt"].assertion(
+            iss=w.CHATGPT_CLIENT, sub=w.CHATGPT_CLIENT, aud=f"{w.ORIGIN}{TOKEN}"
+        ),
+    }
+
+
+PUBLIC_CLIENT_AUTH = {"client_id": w.CHATGPT_CLIENT}
+
+
+def _exchange_response(code: str, *, resource: str = w.TUNNEL_RESOURCE, **auth: str) -> Any:
+    return _machine(
         TOKEN,
         {
             "grant_type": "authorization_code",
@@ -113,9 +143,13 @@ def _exchange(code: str, *, resource: str = w.TUNNEL_RESOURCE, **auth: str) -> d
             "redirect_uri": w.CHATGPT_REDIRECT,
             "code_verifier": w.PKCE_VERIFIER,
             "resource": resource,
-            **(auth or {"client_id": w.CHATGPT_CLIENT}),
+            **(auth or _signed()),
         },
     )
+
+
+def _exchange(code: str, *, resource: str = w.TUNNEL_RESOURCE, **auth: str) -> dict[str, Any]:
+    response = _exchange_response(code, resource=resource, **auth)
     assert response.status_code == 200, response.content
     assert response["Cache-Control"] == "no-store"
     body: dict[str, Any] = response.json()
@@ -129,42 +163,16 @@ def _refresh(refresh_token: str, **auth: str) -> Any:
             "grant_type": "refresh_token",
             "refresh_token": refresh_token,
             "resource": w.TUNNEL_RESOURCE,
-            **(auth or {"client_id": w.CHATGPT_CLIENT}),
+            **(auth or _signed()),
         },
     )
 
 
-class ChatGptKeys:
-    """ChatGPT's signing key, generated here, and the JWKS it would publish."""
-
-    def __init__(self, monkeypatch: Any) -> None:
-        self.kid = "chatgpt-test-1"
-        self.key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        public = jwt.algorithms.RSAAlgorithm.to_jwk(self.key.public_key(), as_dict=True)
-        jwks = {"keys": [{**public, "kid": self.kid, "use": "sig", "alg": "RS256"}]}
-        oauth._jwks_client.cache_clear()
-        monkeypatch.setattr(jwt.PyJWKClient, "fetch_data", lambda client: jwks)
-
-    def auth(self) -> dict[str, str]:
-        now = int(time.time())
-        assertion = jwt.encode(
-            {
-                "iss": w.CHATGPT_CLIENT,
-                "sub": w.CHATGPT_CLIENT,
-                "aud": f"{w.ORIGIN}{TOKEN}",
-                "iat": now,
-                "exp": now + 120,
-                "jti": str(uuid.uuid4()),
-            },
-            self.key,
-            algorithm="RS256",
-            headers={"kid": self.kid},
-        )
-        return {
-            "client_id": w.CHATGPT_CLIENT,
-            "client_assertion_type": oauth.CLIENT_ASSERTION_TYPE,
-            "client_assertion": assertion,
-        }
+def _out_of_grace(user: Any) -> None:
+    """Move every rotation of ``user``'s refresh tokens past the 30-second retry grace."""
+    McpToken.objects.filter(user=user, replaced_by__isnull=False).update(
+        revoked_at=timezone.now() - timedelta(minutes=5)
+    )
 
 
 def _tools_listed(token: str) -> int:
@@ -217,7 +225,11 @@ def test_a_colleague_connects_chatgpt_reads_everything_and_is_disconnected(clien
     assert granted["iss"] == [w.ORIGIN]
     [code] = granted["code"]
 
-    # ChatGPT's backend exchanges it as a public client (PKCE).
+    # As a public client (`none`) the ChatGPT client is refused now (MCPSEC-08),
+    # and the refusal does not spend the code.
+    unsigned = _exchange_response(code, **PUBLIC_CLIENT_AUTH)
+    assert (unsigned.status_code, unsigned.json()["error"]) == (401, "invalid_client")
+    # ChatGPT's backend exchanges it with a signed assertion (private_key_jwt + PKCE).
     pair = _exchange(code)
     assert pair["token_type"] == "Bearer"  # noqa: S105
     assert pair["expires_in"] == 3600
@@ -251,6 +263,7 @@ def test_a_colleague_connects_chatgpt_reads_everything_and_is_disconnected(clien
                     ("get_matter_activity", {"matter": wait}),
                     ("get_matter_documents", {"matter": world.reference("packaging_waste")}),
                     ("get_upcoming_commencements", {}),
+                    ("list_matters", {"responsible": "Marko"}),
                     ("search", {"query": "pakendiseadus"}),
                     ("search_records", {"query": "Kliimaministeerium"}),
                 ]
@@ -264,10 +277,12 @@ def test_a_colleague_connects_chatgpt_reads_everything_and_is_disconnected(clien
     assert facts["get_matter_activity"]["items"][0]["kind"] == "entry"
     assert facts["get_matter_documents"]["documents"][0]["fragment_count"] == 45
     assert len(facts["get_upcoming_commencements"]["commencements"]) == 1
+    assert world.matter_id("wait") in [r["id"] for r in facts["list_matters"]["matters"]]
     assert world.matter_id("packaging") in [r["id"] for r in facts["search"]["results"]]
     assert world.matter_id("wait") in [r["id"] for r in facts["search_records"]["results"]]
 
     # Refresh: a new pair; the old access token stands until it expires.
+    assert _refresh(first_refresh, **PUBLIC_CLIENT_AUTH).status_code == 401
     rotated = _refresh(first_refresh)
     assert rotated.status_code == 200, rotated.content
     second = rotated.json()
@@ -275,21 +290,27 @@ def test_a_colleague_connects_chatgpt_reads_everything_and_is_disconnected(clien
     assert _tools_listed(first_access) == 200
     assert _tools_listed(second["access_token"]) == 200
 
-    # The rotated refresh token comes back: somebody holds a copy, so the family ends.
+    # A retried rotation inside the grace window gets the same successor pair.
+    retried = _refresh(first_refresh)
+    assert retried.status_code == 200, retried.content
+    assert retried.json()["refresh_token"] == second["refresh_token"]
+    assert retried.json()["access_token"] == second["access_token"]
+
+    # Outside it, the rotated token coming back means somebody holds a copy: the family ends.
+    _out_of_grace(mari)
     replayed = _refresh(first_refresh)
     assert (replayed.status_code, replayed.json()["error"]) == (400, "invalid_grant")
     assert _tools_listed(first_access) == 401
     assert _tools_listed(second["access_token"]) == 401
     assert _refresh(second["refresh_token"]).status_code == 400
 
-    # Connect again — the client authenticating with private_key_jwt this time.
+    # Connect again, with a fresh code at a later step.
     later = w.freeze_totp(monkeypatch, moment + timedelta(seconds=90))
-    keys = ChatGptKeys(monkeypatch)
     granted = _authorize(client, w.code_at(secret, later), state="teine-olek")
     assert granted["state"] == ["teine-olek"]
-    signed = _exchange(granted["code"][0], **keys.auth())
+    signed = _exchange(granted["code"][0])
     assert _tools_listed(signed["access_token"]) == 200
-    assertion = keys.auth()
+    assertion = _signed()
     renewed_response = _refresh(signed["refresh_token"], **assertion)
     assert renewed_response.status_code == 200, renewed_response.content
     renewed = renewed_response.json()
@@ -301,7 +322,7 @@ def test_a_colleague_connects_chatgpt_reads_everything_and_is_disconnected(clien
     )
 
     # ChatGPT revokes one access token (RFC 7009): that token ends, nothing else.
-    revoked = _machine(REVOKE, {"token": renewed["access_token"], **keys.auth()})
+    revoked = _machine(REVOKE, {"token": renewed["access_token"], **_signed()})
     assert revoked.status_code == 200
     assert _tools_listed(renewed["access_token"]) == 401
     assert _tools_listed(signed["access_token"]) == 200
@@ -318,7 +339,7 @@ def test_a_colleague_connects_chatgpt_reads_everything_and_is_disconnected(clien
     )
     assert called.status_code == 401
     assert world.matters["wait"].title not in called.text
-    assert _refresh(renewed["refresh_token"], **keys.auth()).status_code == 400
+    assert _refresh(renewed["refresh_token"]).status_code == 400
     assert not McpToken.objects.filter(user=mari, revoked_at=None).exists()
     # Marko, whom nobody revoked, is still connected.
     assert _tools_listed(world.token("marko")) == 200
@@ -440,7 +461,7 @@ class TestConsent:
             f"{AUTHORIZE}?{query}", {"otsus": "luba", "kood": w.code_at(jaans.secret, moment, 1)}
         )
         assert refused.status_code == 400
-        assert "Kood ei sobi" in refused.content.decode()
+        assert refused.context["error"] == GENERIC_REFUSAL
         assert "Location" not in refused
         granted = _authorize(client, w.code_at(maris.secret, moment, 1))
         assert granted["code"]
@@ -452,12 +473,15 @@ class TestConsent:
         _as(client, nobody)
         query = urlencode(w.authorize_params())
         page = client.get(f"{AUTHORIZE}?{query}")
+        # The page says nothing about whether this persona has a grant (MCPSEC-01).
         assert page.status_code == 200
-        assert page.context["may_connect"] is False
+        assert "may_connect" not in page.context
         refused = client.post(
             f"{AUTHORIZE}?{query}", {"otsus": "luba", "kood": w.code_at(enrolled.secret, moment, 1)}
         )
-        assert refused.status_code == 403
+        # The same answer as a wrong code: no grant cannot be told from a typo.
+        assert refused.status_code == 400
+        assert refused.context["error"] == GENERIC_REFUSAL
         assert "Location" not in refused
 
     def test_a_gate_session_without_a_persona_is_sent_to_choose_one(self, client):

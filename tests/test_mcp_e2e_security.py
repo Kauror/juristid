@@ -168,6 +168,7 @@ def test_a_page_outside_one_to_ten_is_refused_by_every_paged_tool(world, mcp, pa
         ("get_matter_activity", {"matter": reference}),
         ("get_matter_documents", {"matter": reference}),
         ("get_upcoming_commencements", {}),
+        ("list_matters", {}),
     ):
         result = mcp.call(name, {**arguments, "page": page})
         if page is None:

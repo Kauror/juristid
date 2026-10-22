@@ -188,6 +188,71 @@ def test_q4_who_is_responsible(world, mcp):
     assert {row["owner"] for row in commencements} == {"Marko Mets"}
 
 
+def test_q4b_what_is_marko_responsible_for(world, mcp):
+    listed = mcp.ok("list_matters", {"responsible": "Marko"})
+    assert listed["filters"]["responsible"]["people_matched"] == ["Marko Mets"]
+    assert listed["filters"]["open"] is True
+    assert {row["id"] for row in listed["matters"]} == {
+        world.matter_id(key)
+        for key in ("wait", "do", "packaging", "packaging_waste", "commencement")
+    }
+    assert listed["total"] == 5 and listed["has_more"] is False
+    for row in listed["matters"]:
+        assert row["owner"] == "Marko Mets" and row["is_open"] is True
+        assert row["url"] == f"{w.ORIGIN}/teemad/{row['id'].removeprefix('matter:')}/"
+    by_id = {row["id"]: row for row in listed["matters"]}
+    assert by_id[world.matter_id("wait")]["current_next_action"]["kind"] == "WAIT"
+    assert by_id[world.matter_id("do")]["current_next_action"]["kind"] == "DO"
+    assert by_id[world.matter_id("packaging")]["current_next_action"] is None
+    # Newest reference first, as the register lists them.
+    order = [row["id"] for row in listed["matters"]]
+    assert order.index(world.matter_id("do")) < order.index(world.matter_id("wait"))
+    # Closed work is there when asked for, and only then.
+    closed = mcp.ok("list_matters", {"responsible": "Liis", "open": False})
+    assert [row["id"] for row in closed["matters"]] == [world.matter_id("closed")]
+    nobody = mcp.ok("list_matters", {"responsible": "Tundmatu Isik"})
+    assert nobody["matters"] == [] and nobody["filters"]["responsible"]["people_matched"] == []
+
+
+def test_example_e_what_are_we_waiting_for_from_the_climate_ministry(world, mcp):
+    listed = mcp.ok(
+        "list_matters", {"organisation": "Kliimaministeerium", "next_action_kind": "WAIT"}
+    )
+    assert listed["filters"]["organisation"]["organisations_matched"] == ["Kliimaministeerium"]
+    [row] = listed["matters"]
+    assert row["id"] == world.matter_id("wait")
+    assert row["waiting_for"] == w.WAITING_FOR
+    assert row["current_next_action"]["kind"] == "WAIT"
+    assert row["current_next_action"]["date"]["certainty"] == "planned"
+    # The opinion deadline beside it is its own, confirmed, fact.
+    assert row["opinion_deadline"]["date"] == _days(world, 14)
+    assert row["opinion_deadline"]["certainty"] == "confirmed"
+    # Nothing is awaited from the Ministry of Finance: an empty answer, not a guess.
+    finance = mcp.ok(
+        "list_matters", {"organisation": "Rahandusministeerium", "next_action_kind": "WAIT"}
+    )
+    assert finance["matters"] == [] and finance["total"] == 0
+
+
+def test_matters_with_no_next_step_are_listed_as_such(world, mcp):
+    listed = mcp.ok("list_matters", {"next_action_kind": "NONE"})
+    assert {row["id"] for row in listed["matters"]} == {
+        world.matter_id(key)
+        for key in ("packaging", "packaging_waste", "commencement", "injection")
+    }
+    for row in listed["matters"]:
+        assert row["current_next_action"] is None and row["waiting_for"] is None
+    kinds = {
+        kind: {row["id"] for row in mcp.ok("list_matters", {"next_action_kind": kind})["matters"]}
+        for kind in ("DO", "WAIT", "MONITOR")
+    }
+    assert kinds == {
+        "DO": {world.matter_id("do")},
+        "WAIT": {world.matter_id("wait")},
+        "MONITOR": {world.matter_id("monitor")},
+    }
+
+
 # -- 5. «Which opinions have we submitted?» ----------------------------------------------
 
 
@@ -225,14 +290,6 @@ def test_q5_which_opinions_have_we_submitted(world, mcp):
     assert sent["sent"]["certainty"] == "confirmed"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "EVAL-001: a search row for an official «no comments» reply is labelled «Arvamus» "
-        "(opinion) — readers.search_records/result_title take the label from the search "
-        "projection's SOURCE_LABELS, which has one label for every SUBMISSION kind."
-    ),
-)
 def test_q5_a_no_comments_reply_found_by_search_is_not_labelled_an_opinion(world, mcp):
     found = mcp.ok(
         "search_records", {"query": "märkusi ja ettepanekuid", "source_kinds": ["SUBMISSION"]}
@@ -483,6 +540,12 @@ def _every_answer(world: w.EvalWorld, mcp: w.Mcp) -> list[tuple[str, dict[str, A
         ("search_records", {"query": "pakend", "source_kinds": ["DOCUMENT_FRAGMENT"]}),
         ("get_upcoming_commencements", {}),
         ("get_upcoming_commencements", {"from": _days(world, -60), "to": _days(world, 60)}),
+        ("list_matters", {}),
+        ("list_matters", {"responsible": "Marko", "next_action_kind": "WAIT"}),
+        (
+            "list_matters",
+            {"organisation": "Kliimaministeerium", "open": None, "record_mode": "ALL"},
+        ),
     ]
     for key in world.matters:
         reference = world.reference(key)

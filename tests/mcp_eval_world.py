@@ -80,6 +80,7 @@ TOOL_NAMES = frozenset(
         "get_matter_activity",
         "get_matter_documents",
         "get_upcoming_commencements",
+        "list_matters",
     }
 )
 
