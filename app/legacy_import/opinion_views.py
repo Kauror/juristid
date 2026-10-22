@@ -31,7 +31,10 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
-from app.legacy_import.opinion_access import require_opinion_queue_operator
+from app.legacy_import.opinion_access import (
+    may_read_archive,
+    require_opinion_queue_operator,
+)
 from app.legacy_import.opinion_archive import OpinionMatchCandidate
 from app.legacy_import.opinion_enums import (
     IRREVERSIBLE_CANDIDATE_STATES,
@@ -91,6 +94,10 @@ def opinion_queue(request: HttpRequest) -> HttpResponse:
             "match_class": match_class,
             "classes": OpinionMatchClass.choices,
             "states": OpinionCandidateState.choices,
+            # The archive is business content (docs/adr/0181): an administrator
+            # reads it only through a break-glass grant, so the link is offered
+            # only to somebody it would open for, never as a door to a 403.
+            "can_read_archive": may_read_archive(request.user),
             "nav_active": "haldus",
         },
     )

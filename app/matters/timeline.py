@@ -40,7 +40,7 @@ from django.utils.html import strip_tags
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.audit.visibility import scope_change_events
-from app.core.authorization import ROLES_WITH_RESTRICTED_ACCESS
+from app.core.authorization import ROLES_WITH_BUSINESS_READ
 from app.core.dates import format_estonian_date, start_of_local_day
 from app.matters import selectors
 from app.matters.entry_enums import EntryKind
@@ -2309,11 +2309,11 @@ def matter_timeline(
     # the Matter's own history, so it is answered once and every later statement
     # filters on the ids. Same rows: the ids come from the same scoped queryset.
     #
-    # Not for the legal-department roles, whose visibility predicate is empty:
+    # Not for the business-read roles (docs/adr/0181), whose predicate is empty:
     # their statements stay small, and the same id list repeated through every
     # statement measured slower than the scope it replaced.
     event_scope = scoped_events
-    if getattr(user, "role", "") not in ROLES_WITH_RESTRICTED_ACCESS:
+    if getattr(user, "role", "") not in ROLES_WITH_BUSINESS_READ:
         event_scope = ChangeEvent.objects.filter(
             matter=matter, pk__in=list(scoped_events.values_list("pk", flat=True))
         )

@@ -18,6 +18,10 @@ the page altogether — a section that is not there, never a zero that reads as 
 measurement — and a surface that asked `services.compute` for one directly gets
 :class:`ArchiveMetricWithheld`, a ``PermissionDenied``, rather than a number.
 
+Since docs/adr/0181 `may_read_archive` is `may_read_business_content`, the one
+internal read predicate: every authorized internal user gets these metrics and
+nobody else gets any of them.
+
 One decision, asked in one place. The archive metrics are not narrowed per row:
 the archive has no Matter to inherit a restriction from, so the only honest
 answer is the all-or-nothing one the archive pages already give.

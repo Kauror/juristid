@@ -44,13 +44,20 @@ def visible_candidates(context: ReportingContext) -> QuerySet[OpinionMatchCandid
     """Archive match candidates a published statistic may count.
 
     A candidate naming no Matter carries no Matter content and is counted for
-    everyone. One naming a Matter counts only when the reader may see that
-    Matter **and the Matter is real data**: a file settled on a TEST Matter is
+    every authorized internal reader — and for nobody else (docs/adr/0181).
+    One naming a Matter counts only when the reader may see that Matter **and
+    the Matter is real data**: a file settled on a TEST Matter is
     a test of the archive flow, not coverage of Koda's archive, and moved the
     published percentage (QA-STATS-04, docs/adr/0024 — reporting opts in to
     real data, it is never the default).
     """
     scope = scope_for_user(context.viewer)
+    if not scope.is_authenticated:
+        # Somebody who may read no business content counts no candidate either
+        # — not even one that names no Matter: an unlinked page or letter is
+        # still the corpus, and its count is a statement about it
+        # (docs/adr/0181).
+        return OpinionMatchCandidate.objects.none()
     with_matter = apply_scope(
         OpinionMatchCandidate.objects.filter(
             matter__isnull=False, matter__data_class=MatterDataClass.REAL

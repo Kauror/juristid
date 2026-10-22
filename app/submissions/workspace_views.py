@@ -3,8 +3,9 @@
 Kept in its own module rather than added to ``app/submissions/views.py``,
 because that file is a set of write actions on one Matter's submission and this
 is a reading destination for the whole department. Mixing them would put a
-``@gate_required`` list beside a ``@login_required`` POST and invite the next
-person to copy whichever decorator was nearest.
+reading list beside a write POST and invite the next person to copy whichever
+decorator was nearest. (Both are ``@login_required`` since docs/adr/0181,
+which retired the persona-less ``@gate_required`` read.)
 
 **Saadetud** is canonical: ``Submission`` rows, ``visible_to`` the reader,
 defaulting to SENT. Production holds zero of them today, and the empty state
@@ -26,11 +27,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
 
-from app.core.decorators import gate_required, viewer_for
+from app.core.decorators import viewer_for
 from app.legacy_import.opinion_access import may_read_archive, require_archive_reader
 from app.legacy_import.opinion_search import (
     ArchiveFilters,
@@ -77,7 +79,7 @@ def _shell(request: HttpRequest, viewer: Any, tab: str) -> dict[str, Any]:
     }
 
 
-@gate_required
+@login_required
 def sent(request: HttpRequest) -> HttpResponse:
     """Saadetud — the canonical record of what Koda sent from this system."""
     viewer = viewer_for(request)
@@ -128,7 +130,7 @@ def sent(request: HttpRequest) -> HttpResponse:
     )
 
 
-@gate_required
+@login_required
 def archive(request: HttpRequest) -> HttpResponse:
     """Arhiivikirjad — the held historical letters, read-only.
 
@@ -188,11 +190,11 @@ def archive(request: HttpRequest) -> HttpResponse:
     )
 
 
-@gate_required
+@login_required
 def embedded_block(request: HttpRequest) -> HttpResponse:
     """The Arvamused section's results, for the Teemad page's live search.
 
-    `gate_required` and nothing else, matching the two tabs above: the block
+    `login_required` and nothing else, matching the two tabs above: the block
     reads exactly what they read, through the same selectors, for the same
     viewer. It is deliberately *not* `require_archive_reader` — the section
     resolves an archive request it may not serve down to Saadetud rather than

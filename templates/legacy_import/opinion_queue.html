@@ -31,7 +31,9 @@
       surfaces over the same corpus, and the only way to find the second one
       was to know its URL.
     {% endcomment %}
-    <a class="button button--quiet" href="{% url 'legacy_import:opinion_archive_browse' %}">Ava arhiiv</a>
+    {% if can_read_archive %}
+      <a class="button button--quiet" href="{% url 'legacy_import:opinion_archive_browse' %}">Ava arhiiv</a>
+    {% endif %}
   </div>
 
   <div class="card card--tight">

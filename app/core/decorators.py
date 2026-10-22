@@ -1,16 +1,16 @@
 """View decorators for the HTTP authorization boundary.
 
-Almost every view in this application is `@login_required`, and should stay
-that way: authoring anything needs somebody to attribute it to. The exception is
-the department landing page, which in shared-gate mode has to be useful to a
-reader who has passed the door and not yet said whose work they are looking at
-(Stage-2D auth brief 4, 6).
+Every view that reads business content is `@login_required`: a session that
+is behind the shared gate but has chosen no persona is not an authorized
+internal user, and `LOGIN_URL` sends it to the persona chooser
+(docs/adr/0181). There used to be an exception, `@gate_required`, which let
+Osakond, Statistika, Arvamused and the document routes render for such a
+session as a department scope of NORMAL records. One internal read policy
+retired it: the shared password proves somebody is behind the door, never that
+an authorized person is reading. `tests/test_business_routes_need_a_reader.py`
+walks every route so that no reading surface can reappear without one.
 
-`@gate_required` is that exception, spelled out. It admits a request that is
-either signed in *or* behind the shared gate, and it hands the view a viewer
-rather than letting it reach for `request.user` — because with no persona
-selected `request.user` is anonymous, and a page that quietly rendered "as
-nobody" would show nothing rather than showing the department.
+`viewer_for` stays, and after `login_required` it is simply the persona.
 
 `@business_write_required` is the other half: the one place a mutating route
 says "and this person may author business content". It holds no rule of its own
@@ -24,40 +24,21 @@ import functools
 from collections.abc import Callable
 from typing import Any
 
-from django.conf import settings
 from django.http import Http404, HttpRequest
 from django.http.response import HttpResponseBase
-from django.shortcuts import redirect
 
 from app.accounts import shared_gate
 from app.core.authorization import may_write_business_content
 
 
-def gate_required[R: HttpResponseBase](
-    view: Callable[..., R],
-) -> Callable[..., R | HttpResponseBase]:
-    """Allow a signed-in user, or anybody past the shared gate.
-
-    In every other mode this is exactly `login_required`: `none` has no gate to
-    be behind, and `cloudflare_access` signs people in before a view ever runs,
-    so a request that reaches here unauthenticated in those modes is one that
-    should be bounced.
-    """
-
-    @functools.wraps(view)
-    def wrapper(request: HttpRequest, *args: Any, **kwargs: Any) -> R | HttpResponseBase:
-        user = getattr(request, "user", None)
-        if user is not None and user.is_authenticated:
-            return view(request, *args, **kwargs)
-        if shared_gate.has_passed(request):
-            return view(request, *args, **kwargs)
-        return redirect(settings.LOGIN_URL)
-
-    return wrapper
-
-
 def viewer_for(request: HttpRequest) -> Any:
-    """Who to authorize this request as: the persona, or the department."""
+    """Who to authorize this request as: the persona.
+
+    Behind `login_required` that is always `request.user`. Without a persona
+    `shared_gate.viewer` answers the `DepartmentViewer` sentinel, which reads
+    nothing since docs/adr/0181 — so a view that forgot its decorator would
+    render empty rather than render the department.
+    """
     return shared_gate.viewer(request)
 
 
