@@ -10,7 +10,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from django.conf import settings
-from django.core.checks import Error, Warning, register
+from django.core.checks import Error, Tags, Warning, register
 
 #: The roles `JURISTID_PROCESS_ROLE` may name (config/settings.py). Empty is the
 #: browser application and its workers; `web` and `worker` say the same thing
@@ -781,3 +781,47 @@ def _process_role_problems() -> list[Error | Warning]:
             )
         )
     return problems
+
+
+@register(Tags.database)
+def check_mcp_database_role(app_configs: Any = None, **kwargs: Any) -> list[Error | Warning]:
+    """juristid.E047: the MCP process is connected as a SELECT-only role (MCPSEC-03).
+
+    `default_transaction_read_only` (E045) is a session default that any code in
+    the process can switch off; the role's privileges are what no code can.
+    So in the `mcp` role the connected role must hold no superuser or
+    role-creating attribute, belong to no other role, own nothing, hold no
+    INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER or CREATE privilege in
+    schema public, read the token tables, not read `django_session`, and start
+    read-only (`app.mcp_server.db_role.privilege_problems`).
+
+    An error wherever real data is allowed; a warning elsewhere, where a laptop
+    or CI connects as the one role it has. A database check: `run_mcp_server`
+    runs it before serving (`manage.py check --database default` does too).
+    Only the catalogue is read.
+    """
+    if _process_role() != "mcp":
+        return []
+    from django.db import connection
+
+    from app.mcp_server.db_role import privilege_problems
+
+    try:
+        with connection.cursor() as cursor:
+            problems = privilege_problems(cursor)
+    except Exception as error:  # pragma: no cover - the database is down: E047 cannot tell
+        problems = [f"the role's privileges could not be read ({type(error).__name__})"]
+    if not problems:
+        return []
+    kind = Error if getattr(settings, "REAL_DATA_ALLOWED", False) else Warning
+    return [
+        kind(
+            "The MCP process's database role is not SELECT-only: " + "; ".join(problems) + ".",
+            hint=(
+                "Create the role from web with `manage.py mcp_db_role --apply --password-stdin` "
+                "and give `mcp` its name and password (POSTGRES_USER=juristid_mcp in "
+                "juristid-mcp.env; docs/mcp/OPERATIONS.md)."
+            ),
+            id="juristid.E047",
+        )
+    ]

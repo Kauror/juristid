@@ -53,11 +53,16 @@ The process is read-only twice over:
 - **No write tool exists.** Seven tools, every one `readOnlyHint: true`,
   `destructiveHint: false`, `openWorldHint: false`, `idempotentHint: true`. No tool
   takes SQL, a path, a URL to fetch, a Python expression or a model name.
-- **The database refuses writes from this process.** Its connections open with
-  `default_transaction_read_only=on`. Any `INSERT/UPDATE/DELETE` — including one a
-  future change adds by mistake, or the cache table — fails with
-  `ReadOnlySqlTransaction`. A test proves it. Access logging goes to stdout, never to
-  the database.
+- **The database refuses writes from this process.** It connects as its own role,
+  `juristid_mcp`, which holds `SELECT` on schema `public` and nothing else — no
+  INSERT/UPDATE/DELETE/TRUNCATE, no CREATE, no membership of the owner role, no
+  `django_session` (created from `web` by `manage.py mcp_db_role`; the process
+  refuses to start on real data under any other kind of role, juristid.E047). As a
+  second lock its connections also open with `default_transaction_read_only=on`, so
+  a write fails with `ReadOnlySqlTransaction` before it reaches the privilege
+  check — but only the role holds against code that switches the session default
+  off (security review MCPSEC-03). Tests prove both. Access logging goes to stdout,
+  never to the database.
 
 ### 2. Tools
 

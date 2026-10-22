@@ -14,7 +14,8 @@ browser's secrets:
 
     JURISTID_PROCESS_ROLE=mcp            read-only database sessions; the MCP checks
     DJANGO_SECRET_KEY=<secret>           its own value is fine; >= 50 chars on real data
-    POSTGRES_DB / POSTGRES_USER / POSTGRES_PASSWORD (>= 16 chars on real data)
+    POSTGRES_DB / POSTGRES_USER=juristid_mcp / POSTGRES_PASSWORD (>= 16 chars on real data)
+                                         the SELECT-only role `mcp_db_role` made (E047)
     POSTGRES_HOST=db  POSTGRES_PORT=5432  POSTGRES_SSLMODE=disable   (or DATABASE_URL)
     REAL_DATA_ALLOWED=1                  on the real-data stack
     AUTH_MODE=shared_gate                the deployment's mode (E006 refuses none on
@@ -86,6 +87,14 @@ class Command(BaseCommand):
                 "JURISTID_PROCESS_ROLE is not 'mcp'. Only that role opens the database "
                 "read-only, so the MCP server does not start in any other."
             )
+
+        # The database checks, which `requires_system_checks` leaves out: among
+        # them juristid.E047, that this process is connected as a SELECT-only
+        # role and not as the owner of the tables (MCPSEC-03). An error stops
+        # the server here; elsewhere than on real data it is a printed warning.
+        from django.core.checks import Tags
+
+        self.check(tags=[Tags.database], databases=["default"])
 
         import uvicorn
 

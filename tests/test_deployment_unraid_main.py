@@ -1038,6 +1038,9 @@ def test_the_mcp_templates_carry_placeholders_and_no_browser_secret() -> None:
     assert mcp["MCP_ENABLED"] == "1"
     for key in ("DJANGO_SECRET_KEY", "POSTGRES_PASSWORD"):
         assert mcp[key].startswith("replace-me"), key
+    # Its own SELECT-only role, never the application's owner role (MCPSEC-03).
+    assert mcp["POSTGRES_USER"] == "juristid_mcp"
+    assert "juristid.env" not in mcp["POSTGRES_PASSWORD"]
     assert mcp["JURISTID_PUBLIC_ORIGIN"].startswith("https://")
     assert all(url.startswith("https://") for url in mcp["MCP_RESOURCE_URLS"].split(","))
     text = MCP_ENV_EXAMPLE.read_text(encoding="utf-8")

@@ -39,8 +39,9 @@ Every call runs **as the person who connected**, through the same visibility
 rules as the browser (ADR 0181): nothing they could not open in Juristid comes
 back, and an unknown id and a forbidden one look the same.
 
-**It cannot** write anything — there is no write tool, and the process's
-database connections refuse writes (`default_transaction_read_only=on`); send
+**It cannot** write anything — there is no write tool, the process connects
+as its own SELECT-only database role `juristid_mcp`, and its connections also
+start read-only (`default_transaction_read_only=on`); send
 mail or notifications; read a stored file's bytes (document text comes from the
 extracted fragments in PostgreSQL); run a query, a path, a URL or a model name a
 caller supplies; or act as anybody other than the person whose token it holds.
@@ -56,18 +57,16 @@ key, the tunnel id and the one origin it may trust. Grants and tokens are rows
 in the Juristid database (`app.mcp_access`), backed up and restored with
 everything else; tokens are stored only as SHA-256 digests.
 
-**Not done in Phase 1, and stated rather than hidden:** the server shares the
-application's database role and relies on read-only transactions as the lock —
-a SELECT-only role would be a second one; and a person who knows the gate
-password **and** holds a colleague's authenticator can connect as that colleague
-(ADR 0185, *Consequences*).
+**Stated rather than hidden:** a person who knows the gate password **and**
+holds a colleague's authenticator can connect as that colleague (ADR 0185,
+*Consequences*). The other residual risks are under *Residual risks* below.
 
 ## The pieces
 
 | Service | Container | Image | Environment | Reaches |
 | --- | --- | --- | --- | --- |
 | `web` (existing) | `juristid-main-web` | the release image | `juristid.env` + `MCP_ENABLED`, `JURISTID_PUBLIC_ORIGIN`, `MCP_RESOURCE_URLS` | serves `/.well-known/oauth-authorization-server`, `/oauth/authorize`, `/oauth/token`, `/oauth/revoke` and the enrolment pages through the Cloudflare tunnel |
-| `mcp` | `juristid-main-mcp` | the release image | `juristid-mcp.env` only | `db` on `internal`; listens on `mcp:8001`, no host port |
+| `mcp` | `juristid-main-mcp` | the release image | `juristid-mcp.env` only; database role `juristid_mcp` (SELECT only) | `db` on `internal`; listens on `mcp:8001`, no host port |
 | `mcp-tunnel` | `juristid-main-mcp-tunnel` | `ghcr.io/openai/tunnel-client:v0.0.17@sha256:67b473b4…` | `juristid-mcp-tunnel.env` only | `http://mcp:8001/mcp` inside; `api.openai.com:443` outbound; the public origin's OAuth metadata |
 
 Both new services are behind the `mcp` profile. A release's `up -d --no-build`,
@@ -112,11 +111,16 @@ install -m 600 -o root -g root deploy/unraid-main/juristid-mcp.env.example /mnt/
 install -m 600 -o root -g root deploy/unraid-main/juristid-mcp-tunnel.env.example /mnt/user/appdata/juristid-main/config/juristid-mcp-tunnel.env
 ```
 
-The MCP server's own signing key, generated straight into its file so it
-reaches neither the terminal nor the shell history:
+The MCP server's own signing key and its own database password, each
+generated straight into its file so it reaches neither the terminal nor the
+shell history:
 
 ```bash
 sed -i "s|^DJANGO_SECRET_KEY=.*|DJANGO_SECRET_KEY=$(openssl rand -base64 64 | tr -d '\n/+=')|" /mnt/user/appdata/juristid-main/config/juristid-mcp.env
+```
+
+```bash
+sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$(openssl rand -base64 48 | tr -d '\n/+=')|" /mnt/user/appdata/juristid-main/config/juristid-mcp.env
 ```
 
 Then fill in the rest **in an editor**, reading the comments in each file as
@@ -124,7 +128,8 @@ you go:
 
 | File | Key | Value |
 | --- | --- | --- |
-| `juristid-mcp.env` | `POSTGRES_PASSWORD` | the same as in `juristid.env` — copied in the editor, never with a command that prints it |
+| `juristid-mcp.env` | `POSTGRES_USER` | `juristid_mcp`, as the template has it — **not** `juristid.env`'s role |
+| `juristid-mcp.env` | `POSTGRES_PASSWORD` | already generated above; its own, never `juristid.env`'s |
 | `juristid-mcp.env` | `JURISTID_PUBLIC_ORIGIN` | `https://juristid.orgusaar.ee` |
 | `juristid-mcp.env` | `MCP_RESOURCE_URLS` | the tunnel's MCP endpoint, `https://api.openai.com/v1/mcp/<tunnel id>` (confirm in step 7) |
 | `juristid-mcp-tunnel.env` | `CONTROL_PLANE_API_KEY` | the restricted runtime key from step 1 |
@@ -183,13 +188,38 @@ scripts/deploy/juristid-deploy-preflight.sh --repo /mnt/user/appdata/juristid-ma
 
 It must say both MCP files are mode 600 and that the AI-access services
 resolve. Then recreate the application services with the new web environment
-and start the MCP server, in one command — every service named, `--no-deps` so
-neither `db` nor `tunnel` moves, `--no-build` so a missing tag is an error and
-never a build:
+— every service named, `--no-deps` so neither `db` nor `tunnel` moves,
+`--no-build` so a missing tag is an error and never a build:
 
 ```bash
-docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-reader searchindex intake-sweeper mcp
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-reader searchindex intake-sweeper
 ```
+
+**Create the MCP server's database role before it ever starts** (MCPSEC-03).
+`web` runs it, because `web`'s role owns the tables; the password goes from
+`juristid-mcp.env` to the command's stdin and is printed nowhere — not by
+`sed`, not by the command, which hands PostgreSQL only its SCRAM verifier:
+
+```bash
+sed -n 's/^POSTGRES_PASSWORD=//p' /mnt/user/appdata/juristid-main/config/juristid-mcp.env | docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py mcp_db_role --apply --password-stdin
+```
+
+It answers `Role juristid_mcp: SELECT only on schema public (owner …), read-only
+by default, 1 table(s) withheld; password set.` It is idempotent: run it again
+whenever in doubt, and after rotating the password. To read the SQL first,
+`… exec -T web python manage.py mcp_db_role --print-sql` prints it and changes
+nothing. A later release's new tables are readable without re-running it (the
+role has a default privilege on the owner's future tables).
+
+Then start the MCP server:
+
+```bash
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps mcp
+```
+
+If it restarts in a loop with `juristid.E047`, it is connected as a role that
+can write — `POSTGRES_USER` in `juristid-mcp.env` is not `juristid_mcp`, or the
+role step above was skipped.
 
 Wait for both to be healthy (`starting` for up to a minute is normal):
 
