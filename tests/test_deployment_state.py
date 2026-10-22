@@ -777,7 +777,7 @@ def _stepped_back_targets() -> dict[str, str]:
     return {
         match.group(1): match.group(2)
         for match in re.finditer(
-            r"manage\.py migrate ([a-z_]+) (\d{4})\b", body[: end if end > 0 else None]
+            r"manage\.py migrate ([a-z_]+) (\d{4}|zero)\b", body[: end if end > 0 else None]
         )
     }
 
@@ -792,6 +792,9 @@ def test_every_stepped_back_target_is_a_migration_that_exists() -> None:
     available = _apps_with_migrations()
     for app_label, number in _stepped_back_targets().items():
         assert app_label in available, f"CI steps back an app with no migrations: {app_label}"
+        if number == "zero":
+            # A new app's first release: the step reverses every migration it has.
+            continue
         assert any(name.startswith(f"{number}_") for name in available[app_label]), (
             f"CI steps {app_label} back to {number}, which is not a migration this repository "
             f"has: {', '.join(available[app_label])}"
