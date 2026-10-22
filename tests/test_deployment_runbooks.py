@@ -28,7 +28,12 @@ ROOT = Path(settings.BASE_DIR)
 DEPLOY = ROOT / "deploy"
 SCRIPTS = ROOT / "scripts" / "deploy"
 
-RUNBOOKS = sorted(DEPLOY.glob("*/*.md"))
+#: The AI-access runbooks (docs/adr/0185) live beside the ADR's other
+#: documents rather than in `deploy/`, and run against the same production
+#: stack, so every rule below about a copyable line holds for them too.
+MCP_RUNBOOKS = sorted((ROOT / "docs" / "mcp").glob("*.md"))
+
+RUNBOOKS = sorted(DEPLOY.glob("*/*.md")) + MCP_RUNBOOKS
 SHELL_SCRIPTS = sorted(SCRIPTS.glob("*.sh"))
 
 #: Not skipped when absent: bash is present on the Linux runner and in the Git
@@ -209,7 +214,18 @@ def test_no_runbook_redeploys_only_some_of_the_application_services(stack: Path)
     import yaml
 
     compose = yaml.safe_load((stack / "compose.yml").read_text(encoding="utf-8"))
-    application = _services_running_the_application_image(compose)
+    # Minus the services behind a profile, deliberately. A profiled service is
+    # opt-in — `mcp` (docs/adr/0185) is AI access, which the owner turns on and
+    # off — and naming one on an `up` line *starts* it, so a release line that
+    # listed it would switch AI access on wherever it had been switched off.
+    # Such a service is replaced by its own conditional step instead, and
+    # `test_the_release_replaces_a_running_mcp_server_in_its_own_step` holds the
+    # README to that step.
+    application = {
+        name
+        for name in _services_running_the_application_image(compose)
+        if not compose["services"][name].get("profiles")
+    }
     # Guards the guard: a stack whose services stopped sharing an image would
     # make every assertion below vacuous.
     assert len(application) >= 2, f"{stack.name}: nothing to keep in step"
@@ -231,6 +247,31 @@ def test_no_runbook_redeploys_only_some_of_the_application_services(stack: Path)
                 f"`up -d` and let Compose start what the file defines.\n  {line}"
             )
     assert examined, f"{stack.name}: no runbook line deploys the application"
+
+
+def test_the_release_replaces_a_running_mcp_server_in_its_own_step() -> None:
+    """The other half of the exclusion above (docs/adr/0185).
+
+    `mcp` runs the release image, and an unqualified `up -d --no-build` leaves
+    it alone because it is behind a profile. A release that said nothing about
+    it would leave the MCP server answering on the previous build — against a
+    schema that build may not know. So the release section must replace it in a
+    step of its own: named, `--no-deps` (so neither `db` nor anything else is
+    touched) and `--no-build`. The tunnel client is not in it: it is a pinned
+    upstream image, like `tunnel`, and a code release has no reason to move it.
+    """
+    readme = (DEPLOY / "unraid-main" / "README.md").read_text(encoding="utf-8")
+    release = readme.split("## Deploying a release", 1)[1].split("\n## ", 1)[0]
+    ups = [line for line in command_lines(release) if "docker compose" in line and " up " in line]
+    mcp = [line for line in ups if _named_services(line) == ["mcp"]]
+    assert mcp, "the release section never replaces a running `mcp` service"
+    for line in mcp:
+        assert "-p juristid-main -f deploy/unraid-main/compose.yml" in line, line
+        assert {"--no-build", "--no-deps"} <= set(line.split()), line
+    for line in ups:
+        assert "mcp-tunnel" not in _named_services(line), (
+            f"a code release recreates the pinned tunnel client\n  {line}"
+        )
 
 
 def test_the_real_data_runbook_does_not_deploy_whatever_main_has_become() -> None:

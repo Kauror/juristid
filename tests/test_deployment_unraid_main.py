@@ -883,3 +883,185 @@ def test_the_search_worker_reaches_no_evidence(compose: dict[str, Any]) -> None:
     assert services["searchindex"]["image"] == services["web"]["image"]
     assert "volumes" not in services["searchindex"]
     assert services["searchindex"]["networks"] == ["internal"]
+
+
+# -- AI access: the MCP server and its tunnel (docs/adr/0185) -----------------
+#
+# Two services that hold a third party's bearer tokens and an OpenAI runtime
+# key beside the Chamber's register. Every property below is one ADR 0185 §6
+# promises; each is asserted positively, so a later edit that drops one fails
+# here rather than in a review nobody does.
+
+MCP = "mcp"
+MCP_TUNNEL = "mcp-tunnel"
+MCP_ENV_EXAMPLE = DEPLOY / "juristid-mcp.env.example"
+MCP_TUNNEL_ENV_EXAMPLE = DEPLOY / "juristid-mcp-tunnel.env.example"
+
+#: The tunnel client, by tag and by digest: the multi-platform index
+#: ghcr.io/openai/tunnel-client:v0.0.17 resolved to on 2026-10-22.
+TUNNEL_CLIENT_IMAGE = (
+    "ghcr.io/openai/tunnel-client:v0.0.17"
+    "@sha256:67b473b4bc23bc984e4a381752e9a2fa75649746edc06e46b27025611835c5c0"
+)
+
+
+def _template_values(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, _, value = line.partition("=")
+            values[key.strip()] = value.strip()
+    return values
+
+
+def test_ai_access_starts_only_when_it_is_named(compose: dict[str, Any]) -> None:
+    """The profile is the switch, and it is on both services and nothing else.
+
+    `up -d --no-build` (a release), `up -d tunnel` (a restore) and the backup
+    scripts leave a profiled service alone; naming it starts it. One profile
+    for both, so `--profile mcp` brings up the pair and nothing more.
+    """
+    gated = {name for name, service in compose["services"].items() if service.get("profiles")}
+    assert gated == {MCP, MCP_TUNNEL}
+    for name in gated:
+        assert compose["services"][name]["profiles"] == ["mcp"], name
+
+
+def test_the_mcp_server_is_the_release_image_running_a_checked_command(
+    compose: dict[str, Any],
+) -> None:
+    services = compose["services"]
+    server = services[MCP]
+    assert server["image"] == services["web"]["image"]
+    assert server["container_name"] == "juristid-main-mcp"
+    assert [str(part) for part in server["command"]] == ["python", "manage.py", "run_mcp_server"]
+    assert server["healthcheck"]["test"] == [
+        "CMD",
+        "python",
+        "manage.py",
+        "check_mcp_server",
+        "--quiet",
+    ]
+    assert "build" not in server, "only `web` carries the build stanza"
+
+
+def test_the_mcp_server_has_its_own_minimal_environment(compose: dict[str, Any]) -> None:
+    """Not `juristid.env`, and read-only database transactions by its role."""
+    server = compose["services"][MCP]
+    assert server["env_file"] == [
+        "${JURISTID_MCP_ENV_FILE:-/mnt/user/appdata/juristid-main/config/juristid-mcp.env}"
+    ]
+    assert "juristid.env" not in str(server["env_file"])
+    environment = server["environment"]
+    assert environment["JURISTID_PROCESS_ROLE"] == "mcp"
+    assert environment["JURISTID_RUNTIME"] == "deployed"
+    assert environment["SEED_DEV_DATA"] == "0"
+    assert environment["POSTGRES_HOST"] == "db"
+    assert environment["POSTGRES_SSLMODE"] == "disable"
+    assert environment["MCP_LISTEN_HOST"] == "0.0.0.0"  # noqa: S104 - the container network
+    assert str(environment["MCP_LISTEN_PORT"]) == "8001"
+    assert server["depends_on"] == {"db": {"condition": "service_healthy"}}
+
+
+def test_the_mcp_server_reaches_no_file_at_all(compose: dict[str, Any]) -> None:
+    """No evidence, no derivatives, no corpus, no staging volume — no volume."""
+    server = compose["services"][MCP]
+    assert "volumes" not in server
+    assert server["networks"] == ["internal"]
+    assert "ports" not in server
+    assert "expose" not in server
+
+
+@pytest.mark.parametrize("name", [MCP, MCP_TUNNEL])
+def test_the_ai_access_containers_are_hardened(compose: dict[str, Any], name: str) -> None:
+    """Read-only root, in-memory /tmp, no capability, no privilege gain, bounded."""
+    service = compose["services"][name]
+    assert service["read_only"] is True
+    assert [entry.split(":", 1)[0] for entry in service["tmpfs"]] == ["/tmp"]  # noqa: S108
+    assert service["security_opt"] == ["no-new-privileges:true"]
+    assert service["cap_drop"] == ["ALL"]
+    assert not service.get("cap_add")
+    assert service["mem_limit"]
+    assert float(service["cpus"]) <= 1.0
+    assert 0 < int(service["pids_limit"]) <= 128
+    assert service["restart"] == "unless-stopped"
+    assert "ports" not in service
+    assert "network_mode" not in service
+
+
+def test_the_tunnel_client_is_pinned_and_holds_only_its_own_file(compose: dict[str, Any]) -> None:
+    client = compose["services"][MCP_TUNNEL]
+    assert client["image"] == TUNNEL_CLIENT_IMAGE
+    assert client["container_name"] == "juristid-main-mcp-tunnel"
+    assert client["env_file"] == [
+        "${JURISTID_MCP_TUNNEL_ENV_FILE:-"
+        "/mnt/user/appdata/juristid-main/config/juristid-mcp-tunnel.env}"
+    ]
+    assert "volumes" not in client
+    assert client["networks"] == ["internal"]
+    # Not root: the image sets no USER, and Alpine's `nobody` is enough.
+    assert client["user"] == "65534:65534"
+
+
+def test_the_tunnel_client_reaches_the_server_on_the_internal_network_only(
+    compose: dict[str, Any],
+) -> None:
+    """Plain HTTP between two containers on one bridge, health on loopback."""
+    client = compose["services"][MCP_TUNNEL]
+    environment = client["environment"]
+    assert environment["MCP_SERVER_URL"] == "http://mcp:8001/mcp"
+    assert environment["HEALTH_LISTEN_ADDR"].startswith("127.0.0.1:")
+    assert "ALLOW_REMOTE_UI" not in environment
+    assert "LOG_HTTP_RAW_UNSAFE" not in environment
+    assert client["depends_on"] == {MCP: {"condition": "service_healthy"}}
+    probe = client["healthcheck"]["test"]
+    assert probe[:2] == ["CMD", "wget"]
+    assert probe[-1] == "http://127.0.0.1:8080/readyz"
+    assert environment["HEALTH_LISTEN_ADDR"] == "127.0.0.1:8080", "the probe asks this port"
+
+
+def test_the_shared_network_can_reach_the_internet(compose: dict[str, Any]) -> None:
+    """`mcp-tunnel` (and `tunnel`) dial out; an `internal: true` network cannot."""
+    assert compose["networks"]["internal"].get("internal") is not True
+    assert compose["networks"]["internal"]["driver"] == "bridge"
+
+
+def test_the_mcp_templates_carry_placeholders_and_no_browser_secret() -> None:
+    mcp = _template_values(MCP_ENV_EXAMPLE)
+    assert mcp["REAL_DATA_ALLOWED"] == "1"
+    # A real mode, so real data is not refused (E006) — and no gate password.
+    assert mcp["AUTH_MODE"] == "shared_gate"
+    # Off by default and never named for this process (E044 refuses debug).
+    assert "DJANGO_DEBUG" not in mcp
+    assert "DEV_LOGIN_ENABLED" not in mcp
+    assert mcp["MCP_ENABLED"] == "1"
+    for key in ("DJANGO_SECRET_KEY", "POSTGRES_PASSWORD"):
+        assert mcp[key].startswith("replace-me"), key
+    assert mcp["JURISTID_PUBLIC_ORIGIN"].startswith("https://")
+    assert all(url.startswith("https://") for url in mcp["MCP_RESOURCE_URLS"].split(","))
+    text = MCP_ENV_EXAMPLE.read_text(encoding="utf-8")
+    for key in (
+        "JURISTID_SHARED_GATE_PASSWORD",
+        "LOCAL_AUTH_MFA_ENCRYPTION_KEY",
+        "DJANGO_EMAIL_HOST_PASSWORD",
+        "CONTROL_PLANE_API_KEY",
+    ):
+        assert f"{key}=" not in text, f"the MCP template names {key}"
+
+    tunnel = _template_values(MCP_TUNNEL_ENV_EXAMPLE)
+    assert set(tunnel) == {
+        "CONTROL_PLANE_API_KEY",
+        "CONTROL_PLANE_TUNNEL_ID",
+        "MCP_OAUTH_TRUSTED_ORIGINS",
+    }
+    assert tunnel["CONTROL_PLANE_API_KEY"].startswith("replace-me")
+    for path in (MCP_ENV_EXAMPLE, MCP_TUNNEL_ENV_EXAMPLE):
+        assert "orgusaar.ee" not in path.read_text(encoding="utf-8"), path.name
+
+
+def test_the_web_template_keeps_ai_access_off(env_example: dict[str, str]) -> None:
+    """A copied template must not switch on an OAuth surface nobody decided on."""
+    assert env_example["MCP_ENABLED"] == "0"
+    assert env_example["JURISTID_PUBLIC_ORIGIN"].startswith("https://replace-me")
+    assert env_example["MCP_RESOURCE_URLS"].startswith("https://")

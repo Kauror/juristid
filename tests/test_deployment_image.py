@@ -335,15 +335,30 @@ def _management_command(name: str) -> Any:
     return load_command_class(get_commands()[name], name)
 
 
-@pytest.mark.parametrize("stack", ["unraid-main", "unraid-test"])
+#: Every service on the application image other than `web`, per stack. Listed
+#: rather than derived, so a new one fails here and somebody reads this test.
+#:
+#: `mcp` (docs/adr/0185) is on the real-data stack only. It runs the release
+#: image like the workers, so it is held to the same rule: a `manage.py`
+#: command that checks first, probed by a `manage.py` command that checks
+#: first — a configuration `juristid.E0xx` refuses must not answer ChatGPT.
+#: The rehearsal does not carry it: it has no tunnel to OpenAI to put in front
+#: of it, and the MCP process's behaviour is proved by its own tests.
+APPLICATION_WORKERS = {
+    "unraid-main": {"intake-reader", "searchindex", "intake-sweeper", "mcp"},
+    "unraid-test": {"intake-reader", "searchindex", "intake-sweeper"},
+}
+
+
+@pytest.mark.parametrize("stack", sorted(APPLICATION_WORKERS))
 def test_the_workers_and_their_healthchecks_already_refuse(stack: str) -> None:
     """The other services on the image are `manage.py` commands, which check first.
 
     Django runs the system checks before any command whose
     `requires_system_checks` is not empty, and exits on an Error. So the intake
-    reader, the search worker and both their healthchecks refuse a refused
-    configuration without a wrapper — which stays true only while each of them
-    is a `manage.py` command that keeps the checks on.
+    reader, the search worker, the MCP server and their healthchecks refuse a
+    refused configuration without a wrapper — which stays true only while each
+    of them is a `manage.py` command that keeps the checks on.
     """
     compose = yaml.safe_load(
         (Path(settings.BASE_DIR) / "deploy" / stack / "compose.yml").read_text(encoding="utf-8")
@@ -354,7 +369,7 @@ def test_the_workers_and_their_healthchecks_already_refuse(stack: str) -> None:
         for name, service in compose["services"].items()
         if name != "web" and service.get("image") == application
     }
-    assert set(workers) == {"intake-reader", "searchindex", "intake-sweeper"}, workers
+    assert set(workers) == APPLICATION_WORKERS[stack], sorted(workers)
     for name, service in workers.items():
         command = [str(part) for part in service["command"]]
         probe = [str(part) for part in service["healthcheck"]["test"]]

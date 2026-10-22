@@ -629,9 +629,14 @@ def test_the_identity_guard_derives_exactly_this_stacks_application_services() -
     compose = yaml.safe_load((MAIN / "compose.yml").read_text(encoding="utf-8"))
     # The raw file rather than a resolved one: `${JURISTID_IMAGE_TAG:-local}`
     # is still inside the image string, and the prefix is what is being matched.
+    # `mcp` (docs/adr/0185) runs the release image and so is one a release
+    # replaces, profile or not: the raw file lists it, and CI resolves the
+    # identity with `--profile mcp` so the resolved model lists it too. Its
+    # tunnel runs a pinned upstream image and is not here, like `tunnel`.
     assert guard.application_services(compose["services"]) == [
         "intake-reader",
         "intake-sweeper",
+        "mcp",
         "searchindex",
         "web",
     ]

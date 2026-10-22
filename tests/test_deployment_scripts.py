@@ -449,7 +449,11 @@ def test_the_preflight_explains_the_plan_in_terms_of_a_loaded_image() -> None:
 # copyable blocks of the two runbooks in deploy/unraid-main/. Prose is not
 # scanned: a runbook has to be able to say "never `docker compose build`".
 
-PRODUCTION_RUNBOOKS = sorted((ROOT / "deploy" / "unraid-main").glob("*.md"))
+#: The AI-access runbooks (docs/adr/0185) start and replace `mcp`, which runs
+#: the release image, on the same host — so they are production runbooks too.
+PRODUCTION_RUNBOOKS = sorted((ROOT / "deploy" / "unraid-main").glob("*.md")) + sorted(
+    (ROOT / "docs" / "mcp").glob("*.md")
+)
 
 
 @pytest.mark.parametrize("runbook", PRODUCTION_RUNBOOKS, ids=lambda path: path.name)
