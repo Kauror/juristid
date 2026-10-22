@@ -96,6 +96,12 @@ opens an image; the warning band below it is filtered. PDF rasterisation was
 already bounded before rendering (`bounded_render_scale`, AUD-045). Pillow
 13.0.0's `open`/`size`/`DecompressionBombError` API is unchanged.
 
+**What a person sees.** An image over 80 MP is still stored as evidence and
+opens and downloads as before; what it no longer gets is a thumbnail and OCR
+text. Its extraction ends `FAILED` with a reason that says so in Estonian —
+the size, the limit, that no thumbnail or recognised text was made and that the
+original is kept — never as a parser crash.
+
 ### 4. OOXML directories are checked from the end records (csf_5fb4e796)
 
 `preflight_zip_directory` runs first in `guard_office_container`. It reads
@@ -127,26 +133,46 @@ line count are the old ones; `tests/test_parser_bounds_round2.py` keeps the
 9a2e834a algorithm as the reference and compares on generated files with chunk
 boundaries forced everywhere.
 
-### 6. DOCX is budgeted before python-docx builds it (csf_eb1ed781)
+### 6. Office XML is budgeted before a library builds it (csf_eb1ed781)
 
-1. Every part python-docx would parse as XML — by **declared content type**
-   from `[Content_Types].xml`, so a part renamed `.png` is still XML — is
-   charged by its uncompressed size against `EXTRACTION_MAX_DOCX_PART_BYTES`
-   and, together, `EXTRACTION_MAX_DOCX_XML_BYTES`, before `docx.Document()`.
-   `zipfile` enforces the declared sizes while inflating, so this bounds what
-   the XML parser can be handed.
+1. **Every XML-bearing member of a DOCX, XLSX or PPTX** is charged by its
+   uncompressed size against `EXTRACTION_MAX_OFFICE_XML_PART_BYTES` and,
+   together, `EXTRACTION_MAX_OFFICE_XML_BYTES`, before `docx.Document()`,
+   `openpyxl.load_workbook()` or `pptx.Presentation()` (`guard_office_xml_parts`).
+   *Which members*: everything named `*.xml`, `*.rels` or `*.vml` — the
+   libraries parse relationship parts by name, and `/_rels/.rels` has no
+   extension a content-type lookup could find (review finding B1: the first
+   version looked types up and let a ~390 MiB `.rels` through) — and every
+   other member unless `[Content_Types].xml` *declares* it a non-XML type (an
+   image, a font, an embedded binary). A part renamed `.png` but declared XML
+   is charged; an undeclared member is charged rather than guessed at. For
+   XLSX this covers worksheets, shared strings, styles and relationships; the
+   round-1 walk budgets (0176) still apply to the rows read. `zipfile`
+   enforces the declared sizes while inflating (a member that inflates past
+   its size fails its CRC), so this bounds what a parser can be handed; the
+   one member read here, the content-type index, is read through a bounded
+   read.
 2. Body paragraphs are counted on the tree (`EXTRACTION_MAX_DOCX_PARAGRAPHS`)
    before one paragraph object exists, then read as a stream.
 3. Table rows are expanded from the XML, one row at a time, without
    recursion: each row's grid width (spans, vertical merges resolved from the
    row above) is charged to 0176's `TableBudget` before the row is listed, and
-   a merged cell's text is read once. A `gridSpan` below one is refused as a
-   malformed table.
+   a merged cell's text is read once. A `gridSpan` below one (and a negative
+   `gridBefore`) is read as one column (zero), as Word draws it, rather than
+   failing the document.
 4. Headers and footers are resolved iteratively over one document-order list
    of every `w:sectPr`, exactly as python-docx's `preceding::w:sectPr[1]`
    would, without writing a part.
 5. Characters are charged before every join. All refusals go through
    `guard_parse_result` as before.
+
+### 7. An `.eml` is refused past its MIME part count while it is parsed
+
+The standard parser builds one message object per MIME part, nested messages
+included. It is now given a counting message factory, and the message is
+refused (`email_part_limit`) the moment the count passes
+`EXTRACTION_MAX_EMAIL_PARTS`, while the parse is still running. The decoded
+input itself is still one copy of the file (bounded by the upload size).
 
 ## Settings (all environment variables)
 
@@ -159,8 +185,9 @@ boundaries forced everywhere.
 | `EXTRACTION_MAX_TEXT_BYTES` | 100 MiB | The upload ceiling: no file that could be uploaded is refused by it. |
 | `EXTRACTION_MAX_TEXT_LINES` | 10 000 000 | The most lines that still fit the 50 000-fragment budget with text in every block. |
 | `EXTRACTION_MAX_ZIP_DIRECTORY_BYTES` | 16 MiB | 8 KiB for each of the 2 000 allowed entries; a real OOXML entry is ~100 bytes. |
-| `EXTRACTION_MAX_DOCX_PART_BYTES` | 64 MiB | A thousand-page draft's `document.xml` is tens of MB. |
-| `EXTRACTION_MAX_DOCX_XML_BYTES` | 128 MiB | All XML parts together (python-docx's own styles parts are ~0.8 MB). |
+| `EXTRACTION_MAX_OFFICE_XML_PART_BYTES` | 64 MiB | One XML part of a DOCX/XLSX/PPTX: a thousand-page `document.xml` is tens of MB; a 64 MiB worksheet is ~2 M cells, twenty times the largest historical register. |
+| `EXTRACTION_MAX_OFFICE_XML_BYTES` | 128 MiB | All XML parts of one package together (python-docx's own styles parts are ~0.8 MB). |
+| `EXTRACTION_MAX_EMAIL_PARTS` | 1 000 | MIME parts of one `.eml`; a real message has a few dozen, and only 50 attachments are kept anyway. |
 | `EXTRACTION_MAX_DOCX_PARAGRAPHS` | 1 000 000 | A thousand-page draft has tens of thousands. |
 
 Unchanged and now load-bearing: `MAX_EVIDENCE_UPLOAD_BYTES` (100 MiB),
@@ -191,8 +218,10 @@ request), `EXTRACTION_MAX_IMAGE_PIXELS` (80 M, now enforced at the limit).
   from the old parser's (the earlier limit now answers); an ordinary file's
   output is identical.
 - **Residual: parser memory is bounded, not capped.** A 64 MiB XML part still
-  becomes an lxml tree several times its size, and PDF, XLSX shared strings,
-  PPTX slides and the email parsers still hold one file in memory. In-process
+  becomes an lxml tree several times its size, and the PDF, Office and email
+  parsers still hold one file (at most the 100 MiB upload ceiling) in memory;
+  Outlook `.msg` parts are not counted (extract-msg reads the compound file
+  whole). In-process
   bounds limit the input each library receives; they cannot cap what it
   allocates. The hard bound is process isolation: run `parse_source` in a
   child with `RLIMIT_AS` and a wall-clock limit, or give `intake-reader` (and a
