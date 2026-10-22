@@ -7,12 +7,12 @@ stayed silent on. Every label here says which of those it means, because the
 alternative is a dashboard that quietly converts an unresolved queue into a
 claim about the department's output (Stage-2H brief 55, 81).
 
-Authorization follows the same rule as every other reporting selector: anything
-that names a Matter is scoped through it. An archive item that has not been
-linked to anything names no Matter and carries no Matter content — only a
-filename, a size and a hash — so it is counted for everyone. The moment a
-candidate names a Matter, the reader has to be allowed to see that Matter
-(brief 71).
+Authorization is two questions, asked in this order. First the archive's own:
+every archive metric here is refused to anybody `may_read_archive` refuses
+(`reads_opinion_archive`, docs/adr/0175). An archive item that names no Matter
+still belongs to the corpus, and its count is the corpus's size. Then, for an
+archive reader, the Matter's: the moment a candidate names a Matter, the reader
+has to be allowed to see that Matter (brief 71).
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ from app.legacy_import.opinion_archive import (
 from app.legacy_import.opinion_enums import OpinionCandidateState
 from app.matters.enums import MatterDataClass
 from app.reporting import metric_catalogue as keys
+from app.reporting.archive_access import reads_opinion_archive
 from app.reporting.context import ReportingContext
 from app.reporting.metric_catalogue import definition
 from app.reporting.metric_types import MetricResult
@@ -96,6 +97,7 @@ def _sent_submissions(context: ReportingContext) -> QuerySet[Submission]:
 # ---------------------------------------------------------------------------
 
 
+@reads_opinion_archive
 def opinion_archive_occurrences(context: ReportingContext) -> MetricResult:
     spec = definition(keys.OPINION_ARCHIVE_OCCURRENCES)
     total = OpinionArchiveItem.objects.count()
@@ -107,6 +109,7 @@ def opinion_archive_occurrences(context: ReportingContext) -> MetricResult:
     )
 
 
+@reads_opinion_archive
 def opinion_archive_distinct_binaries(context: ReportingContext) -> MetricResult:
     """Distinct bytes, which is a different number from occurrences on purpose.
 
@@ -132,6 +135,7 @@ def opinion_archive_distinct_binaries(context: ReportingContext) -> MetricResult
 VISIBLE_MATTERS_ONLY_NOTE = "Loetakse ainult seoseid teemadega, mida sina näed."
 
 
+@reads_opinion_archive
 def opinion_archive_matter_coverage(context: ReportingContext) -> MetricResult:
     """Share of archive files that reached a Matter, resolved or reviewed.
 
@@ -163,6 +167,7 @@ def opinion_archive_matter_coverage(context: ReportingContext) -> MetricResult:
     )
 
 
+@reads_opinion_archive
 def opinion_archive_unresolved(context: ReportingContext) -> MetricResult:
     spec = definition(keys.OPINION_ARCHIVE_UNRESOLVED)
     pending = visible_candidates(context).filter(state=OpinionCandidateState.PENDING)
@@ -175,6 +180,7 @@ def opinion_archive_unresolved(context: ReportingContext) -> MetricResult:
     )
 
 
+@reads_opinion_archive
 def historical_submission_coverage(context: ReportingContext) -> MetricResult:
     """Archive files reconstructed into a submission, as distinct bytes.
 
