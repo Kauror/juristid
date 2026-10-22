@@ -33,6 +33,11 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from app.legacy_import.contracts import EraContract, load_contracts
+from app.legacy_import.limits import (
+    SourceLimitExceeded,
+    check_loaded_workbook,
+    check_workbook_file,
+)
 
 #: Bumped whenever the reader's output changes shape or meaning. Stored on every
 #: batch and every source reference.
@@ -288,10 +293,23 @@ class RegisterWorkbook:
         self.path = Path(path)
         if not self.path.exists():
             raise FileNotFoundError(f"Workbook not found: {self.path}")
+        # Bounded before anything is parsed: size, parts, inflation ratio, sheet
+        # count and every sheet's declared range (docs/adr/0178).
+        check_workbook_file(self.path)
         self.sha256, self.byte_size = file_sha256(self.path)
         # data_only surfaces the values a person saw in the cells rather than
         # the formulas behind them; hyperlinks survive either way.
+        #
+        # Not read_only: that mode drops every hyperlink — the only pointer to
+        # the OneNote page behind a matter — and makes `sheet.cell()` re-scan
+        # the sheet on each call. The parsed rectangle is bounded instead,
+        # before any row loop creates a cell inside it.
         self._workbook = load_workbook(self.path, data_only=True, rich_text=False)
+        try:
+            check_loaded_workbook(self.path.name, self._workbook)
+        except SourceLimitExceeded:
+            self._workbook.close()
+            raise
 
     def close(self) -> None:
         self._workbook.close()
