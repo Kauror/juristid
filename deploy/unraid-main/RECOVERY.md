@@ -130,7 +130,8 @@ limits are environment variables with defaults; set them in
 | `INTAKE_STAGING_MAX_BYTES_PER_OWNER` | 2147483648 (2 GiB) | one person's staged bytes in unconsumed forms |
 | `INTAKE_STAGING_MAX_ACTIVE_SESSIONS` | 200 | everybody's unfinished forms that hold a file |
 | `INTAKE_STAGING_MAX_BYTES` | 10737418240 (10 GiB) | everybody's staged bytes in unconsumed forms |
-| `INTAKE_STAGING_MIN_FREE_BYTES` | 1073741824 (1 GiB) | free space left on the volume after the write |
+| `INTAKE_STAGING_MIN_FREE_BYTES` | 1073741824 (1 GiB) | free space left on the volume after the write (staging and held uploads) |
+| `PENDING_UPLOAD_MAX_HELD_BYTES` | 2147483648 (2 GiB) | everybody's held uploads (a refused form's files, at the volume's root) |
 | `INTAKE_STAGING_SWEEP_MAX_SESSIONS` | 500 | sessions one sweep removes |
 | `INTAKE_STAGING_SWEEP_MAX_BYTES` | 5368709120 (5 GiB) | staged bytes one sweep removes |
 | `INTAKE_STAGING_SWEEP_INTERVAL_SECONDS` | 900 | pause between sweeps |
@@ -147,7 +148,7 @@ docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web df
 
 **The sweep.** The `intake-sweeper` service runs `prune_intake_staging --loop`:
 one bounded sweep every 15 minutes of forms past their expiry and forms a Teema
-has consumed. A form that is still open and not expired is never touched. The
+has consumed, and of held uploads older than `PENDING_UPLOAD_GRACE_HOURS`. A form that is still open and not expired is never touched. The
 container mounts the staging volume read-write and nothing else, so the evidence
 tree is not reachable from it; inside the volume it follows no symbolic link and
 leaves a session whose tree is not what the application wrote — a link, a

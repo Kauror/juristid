@@ -38,6 +38,13 @@ from django.db import DatabaseError
 logger = logging.getLogger(__name__)
 
 
+def _sweep_held() -> int:
+    """Held uploads past their grace period, from the same volume (docs/adr/0177)."""
+    from app.documents.pending import sweep_held
+
+    return sweep_held()
+
+
 class Command(BaseCommand):
     help = "Delete expired and consumed Uus teema staging, and the files it held."
 
@@ -97,6 +104,7 @@ class Command(BaseCommand):
             return
 
         self.stdout.write(self._summary(report))
+        self.stdout.write(f"Aegunud hoitud faile kustutatud: {_sweep_held()}.")
         if report.errors:
             for message in report.errors:
                 self.stderr.write(message)
@@ -150,6 +158,9 @@ class Command(BaseCommand):
                     self.stdout.write(self._summary(report))
                 for message in report.errors:
                     self.stderr.write(message)
+            held = _sweep_held()
+            if held:
+                self.stdout.write(f"Aegunud hoitud faile kustutatud: {held}.")
             deadline = time.monotonic() + interval
             while not stopping["now"] and time.monotonic() < deadline:
                 time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import shutil
 import threading
 from datetime import timedelta
 from io import StringIO
@@ -31,6 +32,7 @@ from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
@@ -223,7 +225,7 @@ def test_too_little_free_space_on_the_volume_refuses_before_writing(
         seen.append(str(path))
         return SimpleNamespace(total=1 << 40, used=1 << 40, free=10 * 1024 * 1024 + 100)
 
-    monkeypatch.setattr(intake_staging.shutil, "disk_usage", disk_usage)
+    monkeypatch.setattr(shutil, "disk_usage", disk_usage)
     session = intake_staging.open_session(owner=specialist)
 
     response = signed_in.post(STAGE, {"intake": str(session.pk), "files": [_pdf("a.pdf")]})
@@ -572,7 +574,7 @@ def test_the_probe_is_red_when_a_stale_session_waits_past_the_threshold(speciali
 def test_the_probe_is_red_when_the_volume_is_short_of_headroom(settings, monkeypatch):
     settings.INTAKE_STAGING_MIN_FREE_BYTES = 1024
     monkeypatch.setattr(
-        intake_staging.shutil,
+        shutil,
         "disk_usage",
         lambda path: SimpleNamespace(total=2048, used=2048, free=10),
     )
@@ -582,3 +584,136 @@ def test_the_probe_is_red_when_the_volume_is_short_of_headroom(settings, monkeyp
         call_command("check_intake_staging", "--quiet", stderr=err)
     assert exit_code.value.code == 1
     assert "Hoidlas on vaba 10 baiti" in err.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# Held uploads share the volume, so they are bounded too
+# ---------------------------------------------------------------------------
+
+CREATE = reverse("matters:matter_create")
+
+
+def _held_objects() -> set[Path]:
+    root = Path(settings.PENDING_UPLOAD_ROOT)
+    return {path for path in root.iterdir() if path.is_file()} if root.exists() else set()
+
+
+def _refused_post(client: Any, *names: str) -> Any:
+    """A `Uus teema` post only the server can refuse, carrying files to hold."""
+    return client.post(
+        CREATE,
+        {
+            "title": "Keeldumise järel",
+            "policy_area_other_selected": "on",
+            "files": [_pdf(name) for name in names],
+        },
+    )
+
+
+def _messages(response: Any) -> list[str]:
+    return [str(message) for message in response.context["messages"]]
+
+
+@pytest.mark.django_db
+def test_a_refused_post_over_the_held_ceiling_holds_nothing_and_says_so(
+    client, specialist, settings
+):
+    """Fresh sessions each time: the per-session file cap bounds nothing here."""
+    from app.documents import pending
+
+    settings.PENDING_UPLOAD_MAX_HELD_BYTES = _size("a.pdf") + _size("b.pdf") - 1
+    first = Client()
+    first.force_login(specialist)
+    assert len(_refused_post(first, "a.pdf").context["held_files"]) == 1
+    before = _held_objects()
+
+    second = Client()
+    second.force_login(specialist)
+    response = _refused_post(second, "b.pdf")
+
+    assert response.status_code == 400
+    assert response.context["held_files"] == []
+    assert pending.HOLD_REFUSED in _messages(response)
+    assert _held_objects() == before
+
+
+@pytest.mark.django_db
+def test_a_hold_is_refused_when_the_volume_is_short_of_headroom(signed_in, settings, monkeypatch):
+    from app.documents import pending
+
+    settings.INTAKE_STAGING_MIN_FREE_BYTES = 10 * 1024 * 1024
+    monkeypatch.setattr(
+        shutil,
+        "disk_usage",
+        lambda path: SimpleNamespace(total=1 << 40, used=1 << 40, free=10 * 1024 * 1024 + 100),
+    )
+
+    response = _refused_post(signed_in, "a.pdf")
+
+    assert response.status_code == 400
+    assert response.context["held_files"] == []
+    assert pending.HOLD_REFUSED in _messages(response)
+    assert _held_objects() == set()
+
+
+@pytest.mark.django_db
+def test_a_hold_that_fails_half_way_leaves_no_file_and_no_500(signed_in, monkeypatch):
+    from app.documents import pending
+
+    real = pending.pending_storage()
+    calls = {"n": 0}
+
+    class FailingOnTheSecondWrite:
+        def __getattr__(self, name: str) -> Any:
+            return getattr(real, name)
+
+        def save(self, name: str, content: Any) -> str:
+            calls["n"] += 1
+            if calls["n"] == 2:
+                Path(real.path(name)).write_bytes(b"%PDF-1.4 half")
+                raise OSError("disk full")
+            return str(real.save(name, content))
+
+    monkeypatch.setattr(pending, "pending_storage", FailingOnTheSecondWrite)
+
+    response = _refused_post(signed_in, "a.pdf", "b.pdf")
+
+    assert response.status_code == 400
+    assert response.context["held_files"] == []
+    assert pending.HOLD_REFUSED in _messages(response)
+    assert _held_objects() == set()
+
+
+@pytest.mark.django_db
+def test_the_sweeper_expires_held_files_and_leaves_fresh_ones_and_staging(
+    specialist, settings, monkeypatch
+):
+    """Age is the object's own creation time, so the cut-off is placed between two."""
+    import time
+
+    from app.documents import pending
+
+    _plant_evidence()
+    evidence_before = _evidence_digest()
+    root = Path(settings.PENDING_UPLOAD_ROOT)
+    root.mkdir(parents=True, exist_ok=True)
+    old = root / "old-held"
+    old.write_bytes(b"%PDF-1.4 vana")
+    time.sleep(0.05)
+    cutoff = timezone.now()
+    time.sleep(0.05)
+    fresh = root / "fresh-held"
+    fresh.write_bytes(b"%PDF-1.4 uus")
+    monkeypatch.setattr(pending, "_expiry", lambda: cutoff)
+    live = _stage(specialist, "live.pdf").session
+
+    out = StringIO()
+    call_command("prune_intake_staging", stdout=out)
+
+    assert "Aegunud hoitud faile kustutatud: 1." in out.getvalue()
+    assert not old.exists()
+    assert fresh.exists()
+    assert len(list((_staging_root() / str(live.pk)).iterdir())) == 1
+    assert _evidence_digest() == evidence_before
+    # Bounded, and a second run finds nothing more to do.
+    assert pending.sweep_held() == 0
