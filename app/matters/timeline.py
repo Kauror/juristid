@@ -802,6 +802,21 @@ class TimelineItem:
         return self.event.actor if self.event is not None else None
 
     @property
+    def actor_qualifier(self) -> str:
+        """«valitud ühisparooliga» when this act was saved behind the shared gate.
+
+        Read off the act's own audit rows — the one the line stands for, and
+        every other its save wrote — because that is where the method is
+        recorded. A line with no rows, or whose rows were written before the
+        method was recorded, says nothing extra, exactly as before
+        (docs/adr/0180 §4).
+        """
+        for event in (self.event, *self.events):
+            if event is not None and event.actor_qualifier:
+                return event.actor_qualifier
+        return ""
+
+    @property
     def excerpt_source(self) -> str:
         """The text the closed accordion quotes. Sanitised HTML from the entry,
         which the template strips — never a summary line, which would quote the

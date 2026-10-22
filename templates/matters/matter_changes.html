@@ -60,8 +60,13 @@ readers, not professional chronology (master specification 16.5).
           {{ row.occurred_at|date:"j.n.Y H:i" }}
         </time>
         <span class="changelog__what">{{ row.get_event_type_display }}</span>
+        {% comment %}
+          A name chosen behind the shared password says so, rather than reading
+          as a personally verified act (docs/adr/0180 §4). Rows written before
+          the method was recorded read as they always did.
+        {% endcomment %}
         {% if row.actor %}
-          <span class="changelog__who">{{ row.actor.display_name }}</span>
+          <span class="changelog__who">{{ row.actor.display_name }}{% if row.actor_qualifier %} ({{ row.actor_qualifier }}){% endif %}</span>
         {% endif %}
         {% if row.summary %}
           <span class="changelog__summary">{{ row.summary }}</span>

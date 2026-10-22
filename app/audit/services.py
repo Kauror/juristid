@@ -10,9 +10,28 @@ from django.db import models
 
 from app.audit.models import ChangeEvent, SecurityAuditEvent
 from app.audit.operations import current_operation_id, pin_stage_episode, pinned_stage_episode
+from app.audit.provenance import current_provenance
 
 #: «Nobody said» for ``stage_episode``, so ``None`` can mean «no period».
 _FROM_CONTEXT: Any = object()
+
+
+def _provenance_fields() -> dict[str, Any]:
+    """The authentication provenance every new row carries (docs/adr/0180).
+
+    Read here, from the execution context, rather than taken as arguments — the
+    same reasoning as ``operation_id``: hundreds of callers, and the day one of
+    them forgot, a row would read as a personally verified act with nothing
+    failing (`app/audit/provenance.py`).
+    """
+    provenance = current_provenance()
+    return {
+        "auth_method": provenance.method,
+        "auth_assurance": provenance.assurance,
+        "authenticated_principal": provenance.principal,
+        "acting_persona": provenance.persona,
+        "correlation_id": provenance.correlation_id,
+    }
 
 
 def _object_reference(instance: models.Model | None) -> tuple[str, uuid.UUID | None]:
@@ -85,6 +104,7 @@ def record_change_event(
         # to pass it on (app/audit/operations.py).
         operation_id=current_operation_id(),
         stage_episode_id=episode_id,
+        **_provenance_fields(),
     )
 
 
@@ -108,4 +128,5 @@ def record_security_event(
         user_agent=user_agent[:400],
         succeeded=succeeded,
         detail=detail or {},
+        **_provenance_fields(),
     )

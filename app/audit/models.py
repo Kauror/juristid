@@ -12,11 +12,72 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
-from app.audit.enums import ChangeEventType, SecurityEventType
+from app.audit.enums import AuthAssurance, AuthMethod, ChangeEventType, SecurityEventType
+from app.audit.provenance import actor_qualifier
 from app.core.models import AppendOnlyModel
 
 
-class ChangeEvent(AppendOnlyModel):
+class AuthProvenance(models.Model):
+    """How the request behind a row was authenticated (docs/adr/0180).
+
+    Written by `app.audit.services` on every new row, from the session the
+    write happened in (`app.audit.provenance`). Every column is empty on a row
+    written before it existed: **not recorded**, never inferred afterwards.
+
+    ``actor`` (on each table) stays the account the work is associated with;
+    nothing here changes it. These columns say how much that association is
+    worth.
+    """
+
+    auth_method = models.CharField(
+        max_length=32,
+        choices=AuthMethod.choices,
+        blank=True,
+        default="",
+        verbose_name="autentimisviis",
+    )
+    auth_assurance = models.CharField(
+        max_length=32,
+        choices=AuthAssurance.choices,
+        blank=True,
+        default="",
+        verbose_name="isikutuvastuse tase",
+    )
+    #: The account an individual sign-in proved. Never set under the shared
+    #: gate, where nothing proves which person is at the keyboard.
+    authenticated_principal = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="tuvastatud isik",
+    )
+    #: Whom the session was acting as when the row was written — under the
+    #: shared gate, the persona somebody picked.
+    acting_persona = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="valitud kasutaja",
+    )
+    #: One value for every row one request (or the job it queued) wrote.
+    correlation_id = models.UUIDField(
+        null=True, blank=True, db_index=True, verbose_name="päringu tunnus"
+    )
+
+    class Meta:
+        abstract = True
+
+    @property
+    def actor_qualifier(self) -> str:
+        """«valitud ühisparooliga» on a shared-gate row; "" otherwise."""
+        return actor_qualifier(self.auth_method)
+
+
+class ChangeEvent(AppendOnlyModel, AuthProvenance):
     matter = models.ForeignKey(
         "matters.Matter",
         on_delete=models.PROTECT,
@@ -100,7 +161,7 @@ class ChangeEvent(AppendOnlyModel):
         return f"{self.event_type} @ {self.occurred_at:%Y-%m-%d %H:%M}"
 
 
-class SecurityAuditEvent(AppendOnlyModel):
+class SecurityAuditEvent(AppendOnlyModel, AuthProvenance):
     actor = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,

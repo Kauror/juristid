@@ -523,3 +523,44 @@ class SecurityEventType(models.TextChoices):
         "MATTER_DELETION_STORAGE_PENDING",
         "Kustutatud teema failide eemaldamine ootab kordamist",
     )
+
+
+class AuthMethod(models.TextChoices):
+    """How the request behind an audit row was authenticated (docs/adr/0180).
+
+    Recorded on every row written from now on, read off the session at the
+    moment the row is written (`app.audit.provenance`). An empty value is a row
+    written before this was recorded: **not recorded** — never guessed later.
+    """
+
+    #: The department's shared password, then a persona picked from a list.
+    #: Authenticates the door, not the person.
+    SHARED_GATE = "shared_gate", "Ühisparool ja valitud kasutaja"
+    #: A personal password signed in here (docs/adr/0145; dormant).
+    LOCAL_PASSWORD = "local_password", "Isiklik parool"
+    #: An individual identity Cloudflare Access proved and signed.
+    CLOUDFLARE_ACCESS = "cloudflare_access", "Cloudflare Access"
+    #: `AUTH_MODE=none`: a developer laptop or CI, the synthetic sign-in.
+    DEV_LOGIN = "dev_login", "Arenduse sisselogimine"
+    #: Outside any request: a management command, an import, a background job.
+    SYSTEM = "system", "Süsteem või haldusskript"
+
+
+class AuthAssurance(models.TextChoices):
+    """How much the method proves about *who* acted (docs/adr/0180).
+
+    Separate from the method because one method proves different things at
+    different moments: a shared-gate request before the password proves
+    nothing, after it proves the door; a personal sign-in with a second factor
+    proves more than one without.
+    """
+
+    #: Nobody was authenticated, or the method proves nothing about a person.
+    NONE = "none", "Isikut ei tuvastatud"
+    #: The shared password was known. Which person typed it is not known.
+    SHARED_SECRET = "shared_secret", "Ühine parool, isikut ei tuvastatud"
+    INDIVIDUAL_PASSWORD = "individual_password", "Isiklik parool"
+    INDIVIDUAL_MFA = "individual_mfa", "Isiklik parool ja teine tegur"
+    EXTERNAL_IDP = "external_idp", "Väline isikutuvastus"
+    #: Not a person's act at all.
+    SYSTEM = "system", "Süsteemi toiming"

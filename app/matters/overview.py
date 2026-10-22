@@ -58,6 +58,7 @@ from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
+from app.audit.provenance import actor_label
 from app.core.authorization import apply as apply_scope
 from app.core.authorization import (
     child_scope_q,
@@ -610,10 +611,20 @@ class FeedItem:
     actor: Any | None
     verb: str
     matter: Matter | None
+    #: How an audit row's actor arrived (`AuthMethod`), for a row read off
+    #: one; "" for a business record or a row written before it was recorded.
+    auth_method: str = ""
 
     @property
     def actor_name(self) -> str:
         return self.actor.display_name if self.actor is not None else "Süsteem"
+
+    @property
+    def actor_label(self) -> str:
+        """The name, saying so when it was chosen behind the shared gate (docs/adr/0180)."""
+        if self.actor is None:
+            return self.actor_name
+        return actor_label(self.actor_name, self.auth_method)
 
     @property
     def initials(self) -> str:
@@ -752,6 +763,7 @@ def activity_feed(user: Any, today: date, kind: str = FEED_ALL) -> list[FeedItem
                 actor=event.actor,
                 verb=_EVENT_VERBS.get(event.event_type, _EVENT_VERB_FALLBACK),
                 matter=event.matter,
+                auth_method=event.auth_method,
             )
             for event in _authorized_change_events(user, since)
         ]

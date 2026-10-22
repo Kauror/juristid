@@ -84,6 +84,11 @@ MIDDLEWARE = [
     "app.core.browser_policy.BrowserPolicyMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
+    # Every audit row written while this request runs records how its actor
+    # arrived and one correlation id for the request. Early, so it wraps every
+    # middleware that writes a row; the provenance itself is read from the
+    # session when the row is written (app/audit/provenance.py, docs/adr/0180).
+    "app.audit.provenance.AuditContextMiddleware",
     "django.middleware.locale.LocaleMiddleware",
     "django.middleware.common.CommonMiddleware",
     # A 405 a view returned with no body gets the Estonian error page; inside
