@@ -182,6 +182,7 @@ consequences and reversibility.
 | [0172](0172-owner-acceptance-fixes-of-2026-10-19.md) | The owner's acceptance fixes of 2026-10-19 | Accepted (owner's corrective brief, 2026-10-19); no migrations; a filed `Kaasamine` supersedes the `website-overview` suggestion (reading only, `proves` and the 0161 alert unchanged; amends 0144 §2); `Tegevused` in every user-facing sentence; the 19.10 note names `+ Lisa tegevus`; `+ Lisa · Muu` `Millal?` defaults to today's Tallinn day, renewed when opened (amends 0097's 2026-10-15 amendment); a day-dated `Muu`/`Kohtumine` sorts at the end of its day and a `Muu` row's closed line carries its first words; watched `Oluline tähtaeg` and `Töövõit` drawn on `Menetluse kulg` as `KIND_EVENT` markers, never stages (amends 0131 §13) |
 | [0173](0173-the-evidence-pilot-imports-reconstructed-history-from-a-reviewed-package.md) | The evidence pilot imports reconstructed history from a reviewed package | Proposed (owner's twelve-topic brief, 2026-10-19); **one additive migration**, `legacy_import/0017` (`EvidencePilotRecord`); `evidence_pilot` (validate, plan, apply, verify) writes a reviewed package (source state + history reconstructed from the OneNote dossier) through the ordinary services with `actor=None` and business dates on the records — Teema, current step, developments, rounds (past ones as history), received and discovered positions, SENT opinions on their real signed letters, overviews/news, notes, commencement, every file re-hashed and accounted; nothing newer than the snapshot, no stage history, closure, follow-up check, unreviewed organisation or person invented; NEEDS_REVIEW held and REJECTED reported apart; §6 (reconciliation round) adds reviewed APPROVED organisations via `get_or_create_organisation` (provenance with no Matter), joint letters filed once, planned milestones as `MatterImportantDate`, and `answered_by`; gated by `JURISTID_EVIDENCE_PILOT`, `REAL_DATA_ALLOWED`, intent, digest, backup set and an empty database; amends `add_engagement`'s one-history-caller statement; amended 2026-10-20 (reviewed step kinds DO/WAIT/MONITOR; organisation aliases and CONTINUATION predecessor links; search reads the link) |
 | [0174](0174-an-official-no-comments-answer-is-a-send-not-an-opinion.md) | An official «no comments» answer is a send, not an opinion | Proposed (owner decision of 2026-10-20); `SubmissionKind.NO_OBJECTION_RESPONSE` — answers a request, keeps its e-mail as evidence, never counted as «arvamus välja», never followed up; one choices-only migration `submissions/0011` |
+| [0179](0179-third-party-code-is-pinned-by-content-and-the-database-gets-only-its-own-variables.md) | Third-party code is pinned by content, and the database gets only its own variables | Proposed (Codex security findings csf_b46bef0c / csf_14aa9cd1, 2026-10-22); every third-party image `tag@sha256:<index digest>` (production's own `postgres:18` 18.6 and `cloudflared:2026.8.2` digests), every Action `@<40-hex> # vX.Y.Z` at the commit its major tag held; `db` loses `env_file:` and gets `POSTGRES_DB`/`POSTGRES_USER`/`POSTGRES_PASSWORD` by interpolation, the password only via `--env-file` when an empty cluster is initialised; tunnel unchanged (no environment); no migrations; deploying recreates `db` and `tunnel` once |
 
 **Numbers with no record on this branch.** `tests/test_architecture_decisions.py`
 requires every gap in the numbering to be named here:
@@ -190,6 +191,14 @@ requires every gap in the numbering to be named here:
   It is on `feature/lovable-mirror` (PR #429, still open), and the owner accepted
   the architecture only on 2026-10-13, with activation not approved. The record
   lands with that PR.
+- 0175 — reserved for another workstream of the 2026-10-22 security remediation
+  (its own branch); reconciled when those branches merge.
+- 0176 — reserved for another workstream of the 2026-10-22 security remediation
+  (its own branch); reconciled when those branches merge.
+- 0177 — reserved for another workstream of the 2026-10-22 security remediation
+  (its own branch); reconciled when those branches merge.
+- 0178 — reserved for another workstream of the 2026-10-22 security remediation
+  (its own branch); reconciled when those branches merge.
 - 0164 — not used. The number was skipped during the QA remediation of
   2026-10-14 (between 0163 and 0165), and no record was ever written under it.
 
