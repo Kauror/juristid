@@ -522,6 +522,14 @@ OPERATIONAL_MODELS = frozenset(
         "matters.MatterIntakeFile",
         # A drawn form's one-time token: spent by its save, read by nothing else.
         "matters.MatterSaveOnce",
+        # An AI client's OAuth state (docs/adr/0185): one-time enrolment links,
+        # one-minute authorization codes and the hour-long access / rotating
+        # refresh tokens. They change on every connection and refresh, and a
+        # restore that lost them would only make each person reconnect. The
+        # grants, the authenticators and the access events stay canonical.
+        "mcp_access.McpEnrolmentLink",
+        "mcp_access.McpAuthorizationCode",
+        "mcp_access.McpToken",
     }
 )
 
