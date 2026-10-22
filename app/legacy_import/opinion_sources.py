@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import datetime
 import hashlib
+import io
 import posixpath
 import re
 import unicodedata
@@ -453,17 +454,29 @@ def read_opinion_archive(path: Path) -> tuple[str, list[ArchiveOccurrence]]:
     try:
         if path.is_dir():
             return _read_directory(path)
-        occurrences = list(_read_zip(path))
+        # One read: the ZIP is copied privately and hashed as it is copied, and
+        # the inventory is read from that copy — the digest an operator pins is
+        # the digest of the bytes inventoried (docs/adr/0184).
+        limits = source_limits.current_limits()
+        # Sized before it is opened at all; the copy counts the bytes again.
+        source_limits.check_file_size(path, limits.max_archive_bytes, what="archive")
+        with source_limits.private_copy(
+            path, max_bytes=limits.max_archive_bytes, what="archive"
+        ) as (digest, copy):
+            occurrences = list(_read_zip(path, copy))
     except (SourceLimitExceeded, UnsafeSourcePath) as error:
         raise OpinionSourceError(str(error)) from error
-    return file_sha256(path), occurrences
+    return digest, occurrences
 
 
-def _open_zip(path: Path, limits: SourceLimits) -> zipfile.ZipFile:
-    """The ZIP, opened only after its size, and checked before a member is read."""
+def _open_zip(path: Path, limits: SourceLimits, source: Any = None) -> zipfile.ZipFile:
+    """The ZIP, opened only after its size, and checked before a member is read.
+
+    `source` is a private copy to read instead of `path`, when the caller has one.
+    """
     source_limits.check_file_size(path, limits.max_archive_bytes, what="archive")
     try:
-        archive = zipfile.ZipFile(path)
+        archive = zipfile.ZipFile(source if source is not None else path)
     except zipfile.BadZipFile as error:
         raise OpinionSourceError(f"{path.name} is not a readable ZIP archive: {error}") from error
     try:
@@ -474,11 +487,11 @@ def _open_zip(path: Path, limits: SourceLimits) -> zipfile.ZipFile:
     return archive
 
 
-def _read_zip(path: Path) -> Iterator[ArchiveOccurrence]:
+def _read_zip(path: Path, source: Any = None) -> Iterator[ArchiveOccurrence]:
     limits = source_limits.current_limits()
     seen: dict[str, str] = {}
     budget = source_limits.archive_budget(limits)
-    with _open_zip(path, limits) as archive:
+    with _open_zip(path, limits, source) as archive:
         for info in archive.infolist():
             entry = _canonical_zip_entry(info, seen)
             if entry is None:
@@ -691,11 +704,14 @@ def read_kodadash_artifact(path: Path) -> tuple[str, list[KodaDashRow]]:
     if not path.exists():
         raise OpinionSourceError(f"{path} does not exist.")
     try:
-        source_limits.check_workbook_file(path)
+        # Read once and parsed from those bytes: the digest returned is the
+        # digest of what was parsed (docs/adr/0184).
+        data = source_limits.read_workbook_bytes(path)
+        source_limits.check_workbook_file(path, data=data)
     except SourceLimitExceeded as error:
         raise OpinionSourceError(str(error)) from error
-    digest = file_sha256(path)
-    book = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    digest = hashlib.sha256(data).hexdigest()
+    book = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
     try:
         source_limits.check_loaded_workbook(path.name, book)
     except SourceLimitExceeded as error:

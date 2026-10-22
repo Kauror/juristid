@@ -107,12 +107,59 @@ Directory enumeration (`safe_paths.scan_directory`, `iter_files`) counts as
 an unbounded list. The migration audit is read once, through `safe_paths`, and
 every CSV and JSON in it within these bounds.
 
+### 4. Every writing legacy command, and how it is bound (review of 2026-10-22)
+
+An independent review of the integrated tree asked for the same contract on
+every command that writes business data from a reviewed input, and found five
+smaller gaps. Each command's disposition:
+
+| Command | Writes from | Binding |
+| --- | --- | --- |
+| `import_legacy_register --apply` | workbook, mapping file | plan digest (§2) |
+| `historical_import apply` | Excel hash, archive, audit | plan digest (§2); an absent `archive-manifest.tsv` refuses unless `--archive-manifest-absent`, which enters the digest and the batch notes |
+| `historical_import materialise` | catalogued resources | each file's SHA-256 checked against the catalogue **before** anything is stored, so a mismatch leaves no orphan blob |
+| `evidence_pilot apply` | package | package digest + plan digest (§2); the writer checks each file's hash before storing it |
+| `backfill_legacy_owners --apply` | stored provenance, mapping file | **new:** `--expect-plan-sha256` over the mapping bytes, the era contracts and every decision with the accounts it resolved; Matter table held; recorded in each assignment's provenance |
+| `resolve_archive_recipients --apply` | stored provenance, alias file | **new:** `--expect-plan-sha256` over the alias bytes and every attachment (Submission, Organisation, source string); recipient and organisation tables held; the apply writes exactly the digested attachments |
+| `opinion_archive apply` | archive, KodaDash, DB | existing `--expect-plan-sha256` (`opinion_apply_gate`) and source pins; both sources now hashed from the bytes parsed |
+| `opinion_archive catalogue` | archive, KodaDash | **new:** `--expect-archive-sha256` required (and `--expect-kodadash-sha256` with `--kodadash`); catalogue rows only, no canonical record |
+| `opinion_archive materialize` | catalogued items | existing `--expect-archive-sha256`; each member re-hashed before storing |
+| `refresh_current_register apply`, `register_next_action_enrichment apply`, `onenote_policy_area_enrichment apply`, `reference_data apply` | workbook / mapping / reviewed data | existing `--expect-plan-sha256` (+ snapshot/mapping pins) — unchanged |
+| `excel_pilot_2026 apply` | workbook, manifest | existing manifest digest; the workbook is re-read through `RegisterWorkbook` (now hashed as parsed) and the manifest re-derived and compared — unchanged |
+| `final_register_cutover`, `historical_cutover_state`, `promote_current_register` `--apply` | database provenance only | no operator file; applies only for a snapshot / year in a reviewed source constant, plan rebuilt in the apply — unchanged |
+| `opinion_archive content-apply`, `supersede`, `derive-links` | database only | review-queue proposals and exact-identity links; no operator input — unchanged |
+| `check_current_register_state`, `register_snapshot_delta`, `inspect_legacy_register`, `check_era_contracts`, `opinion_archive_search` | — | read-only, a repository file, or derived search data — not applicable |
+
+The smaller gaps:
+
+- **One read for the opinions sources.** The ZIP is copied privately
+  (in memory up to 64 MiB, then a temporary file deleted on exit) and hashed
+  as it is copied, and the inventory is read from the copy; the KodaDash
+  workbook is read once and parsed from those bytes. The digest an operator
+  pins is the digest of what was parsed.
+- **Fatal findings are structured.** The historical gate stops on
+  `plan.fatal_findings`, never on whether a finding's text contains
+  «reconciles» — a finding can quote a page key, which is archive text.
+- **Register width.** The register declares `A1:WVP313`: 16,016 columns of
+  formatting, loading at most 34. The declared range is now bounded by rows
+  only; the loaded extent — what every reader walks — is bounded by rows,
+  `LEGACY_IMPORT_MAX_SHEET_COLUMNS` (1,000) and cells. A register past ~1,560
+  rows is no longer refused for its formatting. The row loop still walks the
+  loaded width rather than stopping at the last header: the 2022 sheet keeps
+  data in an unlabelled column and 2020/2021 load stray columns whose blank
+  cells are part of every stored `source_row_raw`, so stopping at the header
+  would change stored provenance's shape and the snapshot delta. Both real
+  registers, the opinions ZIPs and directory and KodaDash read
+  byte-identically before and after.
+
 ## Consequences
 
 - No migration, no new setting required, no new dependency, no service.
 - **Runbook change:** `import_legacy_register --apply`, `historical_import
-  apply` and `evidence_pilot apply` now each need `--expect-plan-sha256` from a
-  plan run against the same sources *and the same database*. A plan made
+  apply`, `evidence_pilot apply`, `backfill_legacy_owners --apply` and
+  `resolve_archive_recipients --apply` now each need `--expect-plan-sha256`
+  from a plan run against the same sources *and the same database*;
+  `opinion_archive catalogue` needs `--expect-archive-sha256`. A plan made
   before another import ran is stale by design; plan again.
 - A historical archive that differs from its audit manifest in any file, or
   whose page XML does not match its claim, no longer plans.

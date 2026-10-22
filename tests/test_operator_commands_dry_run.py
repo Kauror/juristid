@@ -138,7 +138,9 @@ def test_backfill_legacy_owners_dry_run_writes_nothing():
     assert "Dry run: nothing was written to the database." in report
     assert _figure(report, "would update") > 0
 
-    run("backfill_legacy_owners", apply=True)
+    # The apply writes only the reviewed plan: the digest the dry run printed.
+    digest = next(line for line in report.splitlines() if "plan sha256" in line).split()[-1]
+    run("backfill_legacy_owners", apply=True, expect_plan_sha256=digest)
     assert "matters_matter" in changed(before)
 
 

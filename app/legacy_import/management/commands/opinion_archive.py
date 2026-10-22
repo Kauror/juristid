@@ -221,6 +221,19 @@ class Command(BaseCommand):
             require_unchanged_sources,
         )
 
+        # The catalogue records what an archive holds; it is the archive the
+        # operator reviewed only if they named its bytes. The plan above refused
+        # a named digest that does not match the bytes it read (docs/adr/0184).
+        if not (options.get("expect_archive_sha256") or "").strip():
+            raise CommandError(
+                "catalogue needs --expect-archive-sha256: the digest `plan` printed for the "
+                f"archive it read ({plan.archive_sha256})."
+            )
+        if options.get("kodadash") and not (options.get("expect_kodadash_sha256") or "").strip():
+            raise CommandError(
+                "catalogue with --kodadash needs --expect-kodadash-sha256: the digest `plan` "
+                f"printed for the workbook it read ({plan.kodadash_sha256})."
+            )
         try:
             require_unchanged_sources(plan)
         except OpinionApplyError as error:

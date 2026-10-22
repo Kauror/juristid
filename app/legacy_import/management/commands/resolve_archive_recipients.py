@@ -1,8 +1,14 @@
 """Attach historical recipients that the reference data can now resolve.
 
     python manage.py resolve_archive_recipients
-    python manage.py resolve_archive_recipients --apply
-    python manage.py resolve_archive_recipients --mappings reviewed-aliases.toml --apply
+    python manage.py resolve_archive_recipients --apply --expect-plan-sha256 D
+    python manage.py resolve_archive_recipients --mappings reviewed-aliases.toml \\
+        --apply --expect-plan-sha256 D
+
+``--apply`` writes only the pass a person reviewed: the recipient and
+organisation tables are held, the pass is decided again inside the writing
+transaction, and it must hash to the digest the read-only run printed — the
+alias file's bytes and every attachment (docs/adr/0184).
 
 A backfill, deliberately separate from the apply that created the Submissions.
 
@@ -54,6 +60,11 @@ class Command(BaseCommand):
             help="A reviewed alias file. Without it only exact identity resolves.",
         )
         parser.add_argument(
+            "--expect-plan-sha256",
+            default="",
+            help="apply: the plan digest the read-only run printed and a person reviewed.",
+        )
+        parser.add_argument(
             "--show",
             type=int,
             default=25,
@@ -61,17 +72,37 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
-        from app.legacy_import.opinion_recipients import resolve_recipients
-        from app.legacy_import.resolution import MappingTables
+        from django.db import transaction
 
-        mappings = None
-        if options["mappings"]:
-            try:
-                mappings = MappingTables.load(options["mappings"])
-            except Exception as error:
-                raise CommandError(f"Vastendusfaili ei saanud lugeda: {error}") from error
+        from app.legacy_import.integrity import IntegrityError, hold_tables, require_digest
+        from app.legacy_import.opinion_recipients import (
+            apply_recipient_plan,
+            recipient_plan_digest,
+            resolve_recipients,
+        )
+        from app.organisations.models import Organisation, OrganisationAlias
+        from app.submissions.models import SubmissionRecipient
 
-        report = resolve_recipients(apply=bool(options["apply"]), mappings=mappings)
+        if not options["apply"]:
+            report = resolve_recipients(apply=False, mappings=self._mappings(options))
+            digest = recipient_plan_digest(report)
+        else:
+            with transaction.atomic():
+                # Held before deciding: an alias or a recipient added meanwhile
+                # would change what the reviewed pass attaches.
+                hold_tables(SubmissionRecipient, Organisation, OrganisationAlias)
+                report = resolve_recipients(apply=False, mappings=self._mappings(options))
+                digest = recipient_plan_digest(report)
+                try:
+                    require_digest(
+                        digest,
+                        options["expect_plan_sha256"],
+                        flag="--expect-plan-sha256",
+                        what="The recipient resolution plan",
+                    )
+                except IntegrityError as error:
+                    raise CommandError(str(error)) from error
+                apply_recipient_plan(report)
 
         write = self.stdout.write
         write("")
@@ -80,6 +111,7 @@ class Command(BaseCommand):
         write(f"  juba seotud               {report.already_attached}")
         write(f"  lahendus leitud           {report.resolved}")
         write(f"  endiselt lahendamata      {report.still_unresolved}")
+        write(f"  plan sha256 {digest}")
 
         if report.unresolved_values:
             write("")
@@ -101,5 +133,16 @@ class Command(BaseCommand):
         write("")
         if options["apply"]:
             write(self.style.SUCCESS(f"Seotud {report.resolved} saajat. Ajalugu ei muudetud."))
+            write(f"plan-sha256 {digest}")
         else:
             write(self.style.SUCCESS("Ainult arvutus: andmebaasi ei kirjutatud."))
+
+    def _mappings(self, options: dict[str, Any]) -> Any:
+        from app.legacy_import.resolution import MappingTables
+
+        if not options["mappings"]:
+            return None
+        try:
+            return MappingTables.load(options["mappings"])
+        except Exception as error:
+            raise CommandError(f"Vastendusfaili ei saanud lugeda: {error}") from error

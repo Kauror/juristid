@@ -542,3 +542,229 @@ def test_a_register_changed_since_the_plan_is_reported_not_followed(corpus, regi
     assert not MatterSourcePage.objects.filter(
         matter=replacement, match_method=SourceMatchMethod.EXCEL_EXACT_PAGE_ID
     ).exists()
+
+
+def test_a_missing_audit_manifest_refuses_unless_declared_and_is_recorded(
+    corpus, register, settings
+):
+    """Fail closed: no archive-manifest.tsv, no file-for-file check, no plan."""
+    from app.legacy_import.historical_plan import PlanError
+
+    manifest = corpus["audit_root"] / "reports/source-integrity/archive-manifest.tsv"
+    manifest.unlink()
+    summary = corpus["audit_root"] / "assistant-pack/source-summary.json"
+    payload = json.loads(summary.read_text(encoding="utf-8"))
+    payload["onenote"]["manifestSha256"] = ""
+    summary.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(PlanError, match="--archive-manifest-absent"):
+        _plan(corpus)
+
+    settings.REAL_DATA_ALLOWED = True
+    line = next(
+        line
+        for line in _historical("plan", corpus, "--archive-manifest-absent").splitlines()
+        if "plan SHA-256" in line
+    )
+    digest = line.split()[-1]
+    _historical("apply", corpus, "--archive-manifest-absent", "--expect-plan-sha256", digest)
+    assert "archive-manifest declared absent" in ImportBatch.objects.get().notes
+
+
+def test_a_declared_absence_with_a_manifest_present_is_refused(corpus):
+    from app.legacy_import.historical_plan import PlanError
+    from app.legacy_import.historical_plan import build_plan as build_historical_plan
+
+    with pytest.raises(PlanError, match="but the audit holds"):
+        build_historical_plan(
+            excel_path=corpus["excel_path"],
+            archive_root=corpus["archive_root"],
+            audit_root=corpus["audit_root"],
+            archive_manifest_absent=True,
+        )
+
+
+def test_a_fatal_finding_is_fatal_whatever_archive_text_it_quotes(settings):
+    """The gate used to skip any finding containing 'reconciles' — page keys included."""
+    from types import SimpleNamespace
+
+    from app.legacy_import.management.commands.historical_import import Command
+
+    settings.REAL_DATA_ALLOWED = True
+    finding = "p-reconciles: page.source.xml does not hash to the xmlSha256 it claims"
+    plan = SimpleNamespace(findings=[finding], fatal_findings=[finding], warnings=[])
+    with pytest.raises(CommandError, match="does not reconcile with the audit baseline"):
+        Command()._require_gate(plan)
+
+
+def test_materialising_checks_the_bytes_before_storing_anything(corpus, register, monkeypatch):
+    """A mismatch used to be found after the blob was written, leaving an orphan."""
+    from app.legacy_import import historical_apply
+    from app.legacy_import.historical_apply import (
+        apply_structure,
+        materialise_resources,
+        open_batch,
+    )
+    from app.legacy_import.source_pages import LegacySourceResourceImport, ResourceImportState
+
+    plan = _plan(corpus)
+    batch = open_batch(plan, importer_version="test")
+    apply_structure(plan, batch=batch, archive=plan.archive)
+    original = next((corpus["archive_root"] / "pages/p-exact/resources").rglob("*.pdf"))
+    original.write_bytes(original.read_bytes() + b"% changed after cataloguing\n")
+
+    stored = []
+    real = historical_apply.add_evidence_version
+
+    def recording(**kwargs):
+        stored.append(kwargs["source_identifier"])
+        return real(**kwargs)
+
+    monkeypatch.setattr(historical_apply, "add_evidence_version", recording)
+    report = materialise_resources(archive=OneNoteArchive(corpus["archive_root"]), batch=batch)
+
+    failed = LegacySourceResourceImport.objects.get(resource__resource_key="r-exact-1")
+    assert failed.state == ResourceImportState.FAILED
+    assert "nothing was stored" in failed.error_detail
+    assert not any(identifier.endswith("/r-exact-1") for identifier in stored)
+    assert report.failures
+
+
+# ===========================================================================
+# D1 — every legacy command that writes from a reviewed input
+# ===========================================================================
+
+
+def _backfill(*args: str) -> str:
+    out = io.StringIO()
+    call_command("backfill_legacy_owners", *args, stdout=out, stderr=io.StringIO())
+    return out.getvalue()
+
+
+def _backfill_digest(*args: str) -> str:
+    out = _backfill("--dry-run", *args)
+    return next(line for line in out.splitlines() if "plan sha256" in line).split()[-1]
+
+
+def test_the_owner_backfill_writes_only_the_reviewed_plan(tmp_path):
+    from app.audit.models import ChangeEvent
+    from tests.synthetic_portfolio import build_portfolio
+
+    build_portfolio()
+    owners_before = sorted(Matter.all_objects.values_list("pk", "owner_id"))
+
+    with pytest.raises(CommandError, match="needs --expect-plan-sha256"):
+        _backfill("--apply")
+    assert sorted(Matter.all_objects.values_list("pk", "owner_id")) == owners_before
+
+    mapping = tmp_path / "owners.toml"
+    mapping.write_text("[owners]\n", encoding="utf-8")
+    reviewed = _backfill_digest("--mapping-file", str(mapping))
+    mapping.write_text("[owners]\n# muudetud\n", encoding="utf-8")
+    with pytest.raises(CommandError, match="changed since it was approved"):
+        _backfill("--apply", "--mapping-file", str(mapping), "--expect-plan-sha256", reviewed)
+    assert sorted(Matter.all_objects.values_list("pk", "owner_id")) == owners_before
+
+    digest = _backfill_digest("--mapping-file", str(mapping))
+    _backfill("--apply", "--mapping-file", str(mapping), "--expect-plan-sha256", digest)
+    assert sorted(Matter.all_objects.values_list("pk", "owner_id")) != owners_before
+    events = ChangeEvent.objects.filter(payload__operation="backfill_legacy_owners")
+    assert events.exists()
+    assert {event.payload.get("plan_sha256") for event in events} == {digest}
+
+
+# ===========================================================================
+# Register width, and hash-what-you-parse for the opinions sources
+# ===========================================================================
+
+
+def _widen_declared_range(path: Path, ref: bytes) -> None:
+    import re
+    import zipfile
+
+    with zipfile.ZipFile(path) as source:
+        entries = [(info, source.read(info)) for info in source.infolist()]
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as target:
+        for info, data in entries:
+            if info.filename.startswith("xl/worksheets/sheet"):
+                data = re.sub(
+                    rb'<dimension ref="[^"]*"/>', b'<dimension ref="' + ref + b'"/>', data
+                )
+            target.writestr(info, data)
+
+
+def test_a_register_with_stray_declared_width_is_read_whatever_its_length(tmp_path):
+    """The real register declares A1:WVP313; at 1,600 rows that used to exceed the cell limit."""
+    from app.legacy_import.parser import RegisterWorkbook
+
+    rows = [Row(reference=f"2026_{n}", title=f"Eelnõu {n}", owner="Kadri") for n in range(1, 1601)]
+    path = write_workbook(tmp_path / "long.xlsx", [Sheet(2026, rows)], vocabulary=False)
+    _widen_declared_range(path, b"A1:WVP1601")
+    with RegisterWorkbook(path) as workbook:
+        inventory = workbook.inventory()
+    assert inventory.year_sheets[0].data_row_count == 1600
+
+
+def test_real_columns_past_the_limit_are_refused(tmp_path, settings):
+    from openpyxl import Workbook
+
+    from app.legacy_import.limits import SourceLimitExceeded
+    from app.legacy_import.parser import RegisterWorkbook
+
+    settings.LEGACY_IMPORT_MAX_SHEET_COLUMNS = 20
+    book = Workbook()
+    book.active.title = "2026"
+    book.active.cell(row=1, column=21, value="laiem")
+    book.save(tmp_path / "wide.xlsx")
+    with pytest.raises(SourceLimitExceeded, match="holds 21 columns; the limit is 20"):
+        RegisterWorkbook(tmp_path / "wide.xlsx")
+
+
+def test_the_opinions_zip_digest_is_of_the_bytes_inventoried(tmp_path, monkeypatch):
+    import zipfile
+
+    from app.legacy_import import opinion_sources
+    from tests import synthetic_opinions as syn
+
+    path = tmp_path / "opinions.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("Opinions/2023-05-06 - Näidisamet - kiri.pdf", syn.pdf_bytes("a"))
+    opened = []
+    real = zipfile.ZipFile
+
+    def recording(source, *args, **kwargs):
+        opened.append(source)
+        return real(source, *args, **kwargs)
+
+    monkeypatch.setattr(opinion_sources.zipfile, "ZipFile", recording)
+    digest, occurrences = opinion_sources.read_opinion_archive(path)
+    assert digest == hashlib.sha256(path.read_bytes()).hexdigest()
+    assert len(occurrences) == 1
+    assert opened and not isinstance(opened[0], (str, Path)), "parsed from the hashed copy"
+
+
+def test_the_kodadash_digest_is_of_the_bytes_parsed(tmp_path, monkeypatch):
+    import openpyxl
+
+    from app.legacy_import import opinion_sources
+
+    book = openpyxl.Workbook()
+    sheet = book.active
+    sheet.title = opinion_sources.BINDING_SHEET
+    sheet.append(["content_id", "file_sha256"])
+    sheet.append(["c1", hashlib.sha256(b"x").hexdigest()])
+    path = tmp_path / "kodadash.xlsx"
+    book.save(path)
+
+    loaded = []
+    real = openpyxl.load_workbook
+
+    def recording(source, **kwargs):
+        loaded.append(source)
+        return real(source, **kwargs)
+
+    monkeypatch.setattr(openpyxl, "load_workbook", recording)
+    digest, rows = opinion_sources.read_kodadash_artifact(path)
+    assert len(rows) == 1
+    assert isinstance(loaded[0], io.BytesIO)
+    assert hashlib.sha256(loaded[0].getvalue()).hexdigest() == digest

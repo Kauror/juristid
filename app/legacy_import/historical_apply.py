@@ -25,6 +25,7 @@ until the last PDF lands (Stage-2D brief 63).
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -132,7 +133,16 @@ def open_batch(
         contract_version="historical-corpus/1",
         started_at=timezone.now(),
         source_row_count=len(plan.source_pages),
-        notes=f"plan-sha256 {plan_sha256}" if plan_sha256 else "",
+        notes="; ".join(
+            part
+            for part in (
+                f"plan-sha256 {plan_sha256}" if plan_sha256 else "",
+                "archive-manifest declared absent by the operator"
+                if plan.manifest_declared_absent
+                else "",
+            )
+            if part
+        ),
     )
 
 
@@ -621,6 +631,15 @@ def _materialise_one(
     # Through the archive, never a bare join: both strings came from the
     # archive's JSON, and the read refuses traversal and links (docs/adr/0178).
     content = archive.read_resource_at(link.source_page.page_key, resource.archive_relative_path)
+    # Checked before anything is stored: a mismatch used to be found only after
+    # `add_evidence_version` had written the blob, leaving it behind with no
+    # Document once the transaction rolled back (docs/adr/0184).
+    actual = hashlib.sha256(content).hexdigest()
+    if actual != resource.sha256:
+        raise ValueError(
+            f"{resource.resource_key}: the archive's bytes hash to {actual}, not the "
+            f"catalogued {resource.sha256}; nothing was stored"
+        )
 
     filename = resource.original_filename
     mime_type = mime_type_for(filename)

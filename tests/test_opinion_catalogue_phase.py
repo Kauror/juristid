@@ -20,6 +20,7 @@ filename, register row or name appears.
 from __future__ import annotations
 
 import io
+from pathlib import Path
 
 import pytest
 from django.core.management import call_command
@@ -66,6 +67,11 @@ def run(phase: str, archive, **extra) -> str:
         extra["expect_plan_sha256"] = plan_digest(
             build_plan(archive_path=archive, kodadash_path=None)
         )
+    if phase == "catalogue" and "expect_archive_sha256" not in extra:
+        # The catalogue now needs the archive's digest too (docs/adr/0184).
+        from app.legacy_import.opinion_sources import read_opinion_archive
+
+        extra["expect_archive_sha256"] = read_opinion_archive(Path(archive))[0]
     out = io.StringIO()
     call_command(
         "opinion_archive",
@@ -223,6 +229,15 @@ def test_a_wrong_archive_hash_is_refused_before_any_row_is_written(automatic):
     assert catalogue_counts() == (0, 0, 0)
     assert OpinionArchiveBatch.objects.count() == 0
     assert canonical_counts() == (0, 0, 0, 0, 0, 0)
+
+
+def test_an_unnamed_archive_is_refused_before_any_row_is_written(automatic):
+    """The catalogue records the archive the operator reviewed: they name its bytes."""
+    path, _, _ = automatic
+    with pytest.raises(CommandError, match="needs --expect-archive-sha256"):
+        run("catalogue", path, expect_archive_sha256="")
+    assert catalogue_counts() == (0, 0, 0)
+    assert OpinionArchiveBatch.objects.count() == 0
 
 
 def test_a_wrong_kodadash_hash_is_refused_the_same_way(tmp_path, real_data, evidence_root):

@@ -111,6 +111,17 @@ class HistoricalPlan:
 
     warnings: list[str] = field(default_factory=list)
     findings: list[str] = field(default_factory=list)
+    #: The findings that stop an apply, kept apart from the printed list rather
+    #: than recognised by their wording: a finding can quote a page key, and a
+    #: page key is archive-controlled text (docs/adr/0184).
+    fatal_findings: list[str] = field(default_factory=list)
+    #: The operator declared, with ``--archive-manifest-absent``, that the audit
+    #: holds no archive manifest. Without that, a missing manifest refuses.
+    manifest_declared_absent: bool = False
+
+    def fatal(self, finding: str) -> None:
+        self.findings.append(finding)
+        self.fatal_findings.append(finding)
 
     @property
     def onenote_only_matters(self) -> list[SourcePagePlan]:
@@ -220,6 +231,7 @@ def plan_digest(plan: HistoricalPlan) -> str:
             if plan.archive_manifest is not None
             else "",
             "audit_sha256": plan.audit_manifest.digest() if plan.audit_manifest else "",
+            "manifest_declared_absent": plan.manifest_declared_absent,
             "pages": [
                 {
                     "page_key": item.page.page_key,
@@ -251,6 +263,7 @@ def build_plan(
     audit_root: Path,
     expected_excel_sha256: str = "",
     expected_manifest_sha256: str = "",
+    archive_manifest_absent: bool = False,
 ) -> HistoricalPlan:
     """Read the sources and decide. Writes nothing, anywhere.
 
@@ -272,7 +285,21 @@ def build_plan(
         manifest_sha256=archive_digest,
         archive_root=archive_root,
         audit_root=audit_root,
+        manifest_declared_absent=archive_manifest_absent,
     )
+
+    # Fail closed: without the audit's own list the archive cannot be checked
+    # file for file, and that is a decision for a person, not a silent default.
+    if manifest_text is None and not archive_manifest_absent:
+        raise PlanError(
+            f"The audit holds no {ARCHIVE_MANIFEST_REPORT}, so the archive cannot be checked "
+            "file for file. Restore it, or declare its absence with --archive-manifest-absent "
+            "(recorded on the batch)."
+        )
+    if manifest_text is not None and archive_manifest_absent:
+        raise PlanError(
+            f"--archive-manifest-absent was given, but the audit holds {ARCHIVE_MANIFEST_REPORT}."
+        )
 
     # -- the gate ---------------------------------------------------------
     #
@@ -346,9 +373,7 @@ def build_plan(
         if stored is None or stored.sha256 != (page.xml_sha256 or "").lower():
             # Fatal at the gate: the page's identity is the XML hash it claims,
             # and bytes that do not hash to it are not that page.
-            plan.findings.append(
-                f"{page.page_key}: page.source.xml does not hash to the xmlSha256 it claims"
-            )
+            plan.fatal(f"{page.page_key}: page.source.xml does not hash to the xmlSha256 it claims")
         profile = profiles.get(page.page_key)
         if profile is None:
             plan.warnings.append(f"{page.page_key}: archived but absent from the audit summary")
@@ -467,6 +492,6 @@ def _reconcile_against_baseline(plan: HistoricalPlan, baseline) -> None:
     )
     for label, planned, expected in checks:
         if expected and planned != expected:
-            plan.findings.append(f"{label}: planned {planned:,}, audit baseline says {expected:,}")
+            plan.fatal(f"{label}: planned {planned:,}, audit baseline says {expected:,}")
         else:
             plan.findings.append(f"{label}: {planned:,} — reconciles")

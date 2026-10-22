@@ -874,6 +874,64 @@ def test_the_backfill_command_lists_the_blocking_values(archive_path):
     assert "Näidisministeerium" in out.getvalue()
 
 
+# -- the backfill command writes only a reviewed pass (docs/adr/0184) ---------
+
+
+def _recipients(*extra: str) -> str:
+    out = StringIO()
+    call_command("resolve_archive_recipients", *extra, stdout=out)
+    return out.getvalue()
+
+
+def _recipient_digest(*extra: str) -> str:
+    line = next(line for line in _recipients(*extra).splitlines() if "plan sha256" in line)
+    return line.split()[-1]
+
+
+def test_the_backfill_apply_needs_the_reviewed_plan_digest(archive_path):
+    _matter, item = strict_pair()
+    archive = archive_path([item])
+    apply_plan(plan_for(archive), batch=open_batch(plan_for(archive)))
+    factories.OrganisationFactory(name="Näidisministeerium")
+
+    with pytest.raises(CommandError, match="needs --expect-plan-sha256"):
+        _recipients("--apply")
+    assert SubmissionRecipient.objects.count() == 0
+
+    digest = _recipient_digest()
+    out = _recipients("--apply", "--expect-plan-sha256", digest)
+    assert f"plan-sha256 {digest}" in out
+    assert SubmissionRecipient.objects.count() == 1
+
+
+def test_a_backfill_pass_that_changed_since_review_is_refused(archive_path):
+    """Reviewed with nothing to attach; an Organisation appears; the old approval is void."""
+    _matter, item = strict_pair()
+    archive = archive_path([item])
+    apply_plan(plan_for(archive), batch=open_batch(plan_for(archive)))
+    reviewed = _recipient_digest()
+    factories.OrganisationFactory(name="Näidisministeerium")
+
+    with pytest.raises(CommandError, match="changed since it was approved"):
+        _recipients("--apply", "--expect-plan-sha256", reviewed)
+    assert SubmissionRecipient.objects.count() == 0
+
+
+def test_an_alias_file_edited_after_review_is_refused(archive_path, tmp_path):
+    _matter, item = strict_pair()
+    archive = archive_path([item])
+    apply_plan(plan_for(archive), batch=open_batch(plan_for(archive)))
+    factories.OrganisationFactory(name="Näidisamet")
+    mapping = tmp_path / "aliases.toml"
+    mapping.write_text('[organisations]\n"Näidisministeerium" = "Näidisamet"\n', "utf-8")
+    reviewed = _recipient_digest("--mappings", str(mapping))
+
+    mapping.write_text('[organisations]\n"Näidisministeerium" = "Näidisamet"\n# x\n', "utf-8")
+    with pytest.raises(CommandError, match="changed since it was approved"):
+        _recipients("--mappings", str(mapping), "--apply", "--expect-plan-sha256", reviewed)
+    assert SubmissionRecipient.objects.count() == 0
+
+
 # ---------------------------------------------------------------------------
 # 3.7 / 3.8 — idempotence and the APPLIED invariant
 # ---------------------------------------------------------------------------
