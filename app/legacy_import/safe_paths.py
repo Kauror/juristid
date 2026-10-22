@@ -44,7 +44,12 @@ import unicodedata
 from collections.abc import Iterator
 from enum import Enum
 from pathlib import Path
-from typing import BinaryIO
+from typing import TYPE_CHECKING, BinaryIO
+
+from app.legacy_import.limits import SourceLimitExceeded, current_limits
+
+if TYPE_CHECKING:
+    from app.legacy_import.limits import WorkBudget
 
 #: A Windows drive prefix — ``C:``, ``C:/x``, ``C:x``.
 _DRIVE = re.compile(r"^[A-Za-z]:")
@@ -306,41 +311,111 @@ def open_file(root: Path, relative: str) -> BinaryIO:
         raise
 
 
-def read_bytes(root: Path, relative: str, *, max_bytes: int | None = None) -> bytes:
-    """The whole file, through `open_file`. Refuses past `max_bytes`, never truncates."""
+def read_bytes(
+    root: Path,
+    relative: str,
+    *,
+    max_bytes: int | None = None,
+    budget: WorkBudget | None = None,
+) -> bytes:
+    """The whole file, through `open_file`. Refuses past `max_bytes`, never truncates.
+
+    Every byte read is charged to `budget` when one is given, so a run made of
+    many acceptable files still stops at the run's own limit (docs/adr/0184).
+    """
     parts: list[bytes] = []
     size = 0
     with open_file(root, relative) as handle:
+        if budget is not None:
+            budget.open_file()
         # Chunked rather than ``read(max_bytes + 1)``, which would allocate the
         # whole limit up front for every file.
         for block in stream_chunks(handle):
             size += len(block)
             if max_bytes is not None and size > max_bytes:
                 raise _refuse(relative, f"larger than the {max_bytes}-byte limit")
+            if budget is not None:
+                budget.charge(len(block))
             parts.append(block)
     return b"".join(parts)
 
 
-def iter_files(root: Path) -> Iterator[Path]:
+def iter_directory(
+    root: Path, directory: Path, *, max_members: int
+) -> Iterator[tuple[str, Path, Kind]]:
+    """One directory's members as (name, path, kind), refusing at ``max_members + 1``.
+
+    Counted as `os.scandir` yields them and handed on one at a time, so a
+    directory of a million entries costs one more entry than the limit — never
+    a list of a million to hold or sort. A link or a special file is refused,
+    as everywhere below the root.
+    """
+    with os.scandir(directory) as entries:
+        for count, entry in enumerate(entries, start=1):
+            if count > max_members:
+                raise SourceLimitExceeded(
+                    f"{Path(directory).name or directory} holds more than {max_members} "
+                    f"entries; the limit is {max_members}."
+                )
+            path = Path(entry.path)
+            relative = path.relative_to(root).as_posix()
+            info = entry.stat(follow_symlinks=False)
+            yield entry.name, path, _kind_of(info, relative)
+
+
+def scan_directory(
+    root: Path, directory: Path, *, max_members: int
+) -> list[tuple[str, Path, Kind]]:
+    """`iter_directory` as a list: bounded by `max_members`, so safe to sort."""
+    return list(iter_directory(root, directory, max_members=max_members))
+
+
+def iter_files(
+    root: Path,
+    *,
+    max_files: int | None = None,
+    max_directory_members: int | None = None,
+) -> Iterator[Path]:
     """Every regular file below `root`, refusing links and special files.
 
     Absolute paths, each one under `root`; the caller decides the order. A link
     is refused rather than skipped: a directory archive that holds one is not
     the archive that was approved.
+
+    Bounded while it walks (docs/adr/0184): no directory may hold more than
+    `max_directory_members` entries and the walk refuses at the
+    ``max_files + 1``-th file it meets, so a caller can sort what it receives
+    without ever sorting an unbounded list.
     """
+    limits = current_limits()
+    files_allowed = limits.max_source_files if max_files is None else max_files
+    members_allowed = (
+        limits.max_directory_members if max_directory_members is None else max_directory_members
+    )
+    files = 0
+    directories = 0
     pending = [Path(root)]
     while pending:
         directory = pending.pop()
-        with os.scandir(directory) as entries:
-            for entry in entries:
-                path = Path(entry.path)
-                relative = path.relative_to(root).as_posix()
-                info = entry.stat(follow_symlinks=False)
-                kind = _kind_of(info, relative)
-                if kind is Kind.DIRECTORY:
-                    pending.append(path)
-                else:
-                    yield path
+        for _name, path, kind in iter_directory(root, directory, max_members=members_allowed):
+            if kind is Kind.DIRECTORY:
+                # Directories are counted too, against the same number: a tree
+                # of empty folders is as much work to walk as one of files.
+                directories += 1
+                if directories > files_allowed:
+                    raise SourceLimitExceeded(
+                        f"{Path(root).name or root} holds more than {files_allowed} "
+                        f"directories; the limit is {files_allowed}."
+                    )
+                pending.append(path)
+                continue
+            files += 1
+            if files > files_allowed:
+                raise SourceLimitExceeded(
+                    f"{Path(root).name or root} holds more than {files_allowed} files; "
+                    f"the limit is {files_allowed}."
+                )
+            yield path
 
 
 def stream_chunks(handle: BinaryIO, chunk: int = _CHUNK) -> Iterator[bytes]:

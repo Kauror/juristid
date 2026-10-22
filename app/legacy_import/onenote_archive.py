@@ -36,14 +36,19 @@ through a link planted inside it (docs/adr/0178).
 
 from __future__ import annotations
 
-import json
+import hashlib
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path, PurePath
+from typing import TYPE_CHECKING
 
 from app.legacy_import import safe_paths
+from app.legacy_import.limits import WorkBudget, current_limits, load_json_document
 from app.legacy_import.safe_paths import Kind, UnsafeSourcePath
+
+if TYPE_CHECKING:
+    from app.legacy_import.integrity import SourceManifest
 
 #: Only this archive may be imported. The earlier Graph export stored one
 #: page's HTML under 342 other pages and verified itself as PASS throughout, so
@@ -141,8 +146,19 @@ def _parse_moment(raw: str | None) -> datetime | None:
 class OneNoteArchive:
     """The archive on disk, opened once and read many times."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(
+        self,
+        root: Path,
+        *,
+        manifest: SourceManifest | None = None,
+        budget: WorkBudget | None = None,
+    ) -> None:
         self.root = Path(root)
+        #: When given, every file read is checked against it: the bytes parsed
+        #: are the bytes an operator approved (docs/adr/0184).
+        self.manifest = manifest
+        self.limits = current_limits()
+        self.budget = budget or WorkBudget(self.limits)
         if not self.root.is_dir() or self._kind(EXPECTED_ARCHIVE_MARKER) is not Kind.FILE:
             raise ArchiveError(
                 f"{self.root} does not look like a OneNote desktop archive "
@@ -156,25 +172,45 @@ class OneNoteArchive:
 
     def _kind(self, relative: str) -> Kind:
         try:
-            return safe_paths.lookup(self.root, relative)
+            kind = safe_paths.lookup(self.root, relative)
         except UnsafeSourcePath as error:
             raise ArchiveError(str(error)) from error
+        if kind is Kind.MISSING and self.manifest is not None:
+            self.manifest.refuse_absence(relative)
+        return kind
 
-    def _bytes(self, relative: str) -> bytes:
+    def _bytes(self, relative: str, max_bytes: int) -> bytes:
         try:
-            return safe_paths.read_bytes(self.root, relative)
+            data = safe_paths.read_bytes(
+                self.root, relative, max_bytes=max_bytes, budget=self.budget
+            )
         except UnsafeSourcePath as error:
             raise ArchiveError(str(error)) from error
+        if self.manifest is not None:
+            self.manifest.verify(relative, data)
+        return data
 
     def _json(self, relative: str) -> dict:
         if self._kind(relative) is not Kind.FILE:
             return {}
-        return json.loads(self._bytes(relative).decode("utf-8"))
+        payload = load_json_document(
+            self._bytes(relative, self.limits.max_json_bytes), what=relative, limits=self.limits
+        )
+        if not isinstance(payload, dict):
+            raise ArchiveError(f"{relative} is not a JSON object.")
+        return payload
 
     def _text(self, relative: str) -> str:
         if self._kind(relative) is not Kind.FILE:
             return ""
-        return self._bytes(relative).decode("utf-8")
+        return self._bytes(relative, self.limits.max_text_bytes).decode("utf-8")
+
+    def _directories(self, relative: str, maximum: int) -> list[str]:
+        """The subdirectory names of `relative`, counted as listed and refused past `maximum`."""
+        members = safe_paths.scan_directory(
+            self.root, self.root / PurePath(relative), max_members=maximum
+        )
+        return sorted(name for name, _path, kind in members if kind is Kind.DIRECTORY)
 
     @staticmethod
     def _segment(value: object, what: str) -> str:
@@ -191,7 +227,8 @@ class OneNoteArchive:
             raise ArchiveError(f"{what}: {error}") from error
 
     def page_keys(self) -> list[str]:
-        return sorted(p.name for p in self.pages_root.iterdir() if p.is_dir())
+        """Every page directory, refused past ``LEGACY_IMPORT_MAX_PAGES`` while listing."""
+        return self._directories("pages", self.limits.max_pages)
 
     def __len__(self) -> int:
         return len(self.page_keys())
@@ -253,8 +290,8 @@ class OneNoteArchive:
         root = f"{page_directory}/resources"
         if self._kind(root) is not Kind.DIRECTORY:
             return
-        for directory in sorted((self.root / root).iterdir()):
-            name = self._segment(directory.name, f"{page_directory}: resource directory")
+        for directory in self._directories(root, self.limits.max_page_resources):
+            name = self._segment(directory, f"{page_directory}: resource directory")
             record = f"{root}/{name}/resource.json"
             if self._kind(record) is not Kind.FILE:
                 continue
@@ -266,8 +303,8 @@ class OneNoteArchive:
             if relative:
                 self._relative(relative, f"{page_directory}: originalPath")
             yield ArchiveResource(
-                resource_key=payload.get("archiveResourceKey", directory.name),
-                original_filename=payload.get("originalFilename", "") or directory.name,
+                resource_key=payload.get("archiveResourceKey", name),
+                original_filename=payload.get("originalFilename", "") or name,
                 resource_kind=payload.get("resourceKind", "OTHER"),
                 source_block_ordinal=int(payload.get("sourceOrdinal") or 0),
                 sha256=payload.get("sha256", ""),
@@ -295,7 +332,9 @@ class OneNoteArchive:
 
     def read_resource_at(self, page_key: str, relative_path: str) -> bytes:
         """A resource's bytes by the page key and path a catalogue row stored."""
-        return self._bytes(self._resource_relative(page_key, relative_path))
+        return self._bytes(
+            self._resource_relative(page_key, relative_path), self.limits.max_member_bytes
+        )
 
     def page_record(self, page_key: str) -> dict:
         """A page's own ``page.json``, whole, read through the same no-follow path.
@@ -308,14 +347,27 @@ class OneNoteArchive:
         relative = f"pages/{key}/page.json"
         if self._kind(relative) is not Kind.FILE:
             raise ArchiveError(f"{page_key}: page.json is missing.")
-        return json.loads(self._bytes(relative).decode("utf-8"))
+        return self._json(relative)
 
     def read_page_xml(self, page: ArchivePage) -> bytes:
+        """The page's source XML, exactly as stored, and only if it is what `current.json` claims.
+
+        The claim (`xmlSha256`) is what the import records as the page's
+        identity; bytes that do not hash to it are not that page's evidence,
+        whatever else they are (docs/adr/0184).
+        """
         try:
             relative = PurePath(page.xml_path).relative_to(self.root).as_posix()
         except ValueError as error:
             raise ArchiveError(f"{page.page_key}: the page XML is outside the archive.") from error
-        return self._bytes(relative)
+        data = self._bytes(relative, self.limits.max_member_bytes)
+        claimed = (page.xml_sha256 or "").strip().lower()
+        if not claimed or hashlib.sha256(data).hexdigest() != claimed:
+            raise ArchiveError(
+                f"{page.page_key}: page.source.xml does not hash to the xmlSha256 its "
+                "current.json claims."
+            )
+        return data
 
 
 def _blocks(raw: list[dict], by_ordinal: dict[int, ArchiveResource]) -> Iterator[ArchiveBlock]:

@@ -93,7 +93,9 @@ def register(db):
 
 
 @pytest.fixture
-def applied(plan, archive, register):
+def applied(register, plan, archive):
+    # The register first: a plan records which register Matter each exact link
+    # names, and the apply links only to that one (docs/adr/0184).
     batch = open_batch(plan, importer_version="test")
     return apply_structure(plan, batch=batch, archive=archive), batch
 
@@ -288,7 +290,7 @@ def test_every_undecided_candidate_lands_in_the_review_queue(applied):
     assert HistoricalMatchCandidate.objects.filter(state=CandidateState.PENDING).count() == 3
 
 
-def test_applying_twice_changes_nothing(plan, archive, register, applied):
+def test_applying_twice_changes_nothing(register, plan, archive, applied):
     before = (
         LegacySourcePage.objects.count(),
         MatterSourcePage.objects.count(),
@@ -508,6 +510,18 @@ def _command_paths(corpus: dict) -> list[str]:
         "--audit",
         str(corpus["audit_root"]),
     ]
+
+
+def _approved(corpus: dict) -> list[str]:
+    """The plan digest an operator would have reviewed: the current plan's (docs/adr/0184)."""
+    from app.legacy_import.historical_plan import build_plan, plan_digest
+
+    plan = build_plan(
+        excel_path=corpus["excel_path"],
+        archive_root=corpus["archive_root"],
+        audit_root=corpus["audit_root"],
+    )
+    return ["--expect-plan-sha256", plan_digest(plan)]
 
 
 def test_the_importer_refuses_to_run_without_the_real_data_gate(corpus, settings):
@@ -780,7 +794,7 @@ def test_apply_exits_non_zero_when_a_page_fails(corpus, settings, register, monk
         return real(page_plan, **kwargs)
 
     monkeypatch.setattr(historical_apply, "_upsert_source_page", fails_one_page)
-    rc, out = _run("apply", *_command_paths(corpus))
+    rc, out = _run("apply", *_command_paths(corpus), *_approved(corpus))
 
     assert rc == 1
     assert "p-exact: OSError" in out

@@ -404,7 +404,7 @@ C="docker compose -p juristid-main -f deploy/unraid-main/compose.yml run --rm we
 
 $C historical_import plan          # reads everything, writes nothing
 $C historical_import dry-run       # the real apply, rolled back
-$C historical_import apply         # commits pages, links, Matters, the queue
+$C historical_import apply --expect-plan-sha256 D  # D = the digest `plan` printed (ADR 0184); commits pages, links, Matters, the queue
 $C historical_import materialise   # copies originals into evidence; resumable
 $C historical_import status
 $C historical_import verify

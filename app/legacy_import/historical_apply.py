@@ -120,7 +120,10 @@ def legacy_source_storage() -> Any:
     return storages[LEGACY_SOURCE_STORAGE_ALIAS]
 
 
-def open_batch(plan: HistoricalPlan, *, importer_version: str) -> ImportBatch:
+def open_batch(
+    plan: HistoricalPlan, *, importer_version: str, plan_sha256: str = ""
+) -> ImportBatch:
+    """The batch, recording the approved plan digest when there is one (docs/adr/0184)."""
     return ImportBatch.objects.create(
         source_system="ONENOTE_DESKTOP+EXCEL",
         source_file_name=plan.archive_root.name,
@@ -129,6 +132,7 @@ def open_batch(plan: HistoricalPlan, *, importer_version: str) -> ImportBatch:
         contract_version="historical-corpus/1",
         started_at=timezone.now(),
         source_row_count=len(plan.source_pages),
+        notes=f"plan-sha256 {plan_sha256}" if plan_sha256 else "",
     )
 
 
@@ -323,6 +327,14 @@ def _apply_exact_links(plan: HistoricalPlan, *, batch: ImportBatch, report: Appl
             report.failures.append(f"exact link {link.excel_reference}: page not imported")
             continue
         matter = _matter_by_reference(link.excel_reference)
+        if ("" if matter is None else str(matter.pk)) != link.matter_id:
+            # The plan an operator approved linked this page to another Matter
+            # (or to none). Following the register as it is now would apply a
+            # decision nobody reviewed (docs/adr/0184).
+            report.failures.append(
+                f"exact link {link.excel_reference}: the register changed since the plan"
+            )
+            continue
         if matter is None:
             report.exact_links_unmatched.append(link.excel_reference)
             continue

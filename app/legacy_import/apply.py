@@ -162,14 +162,22 @@ def _source_reference_for(
 
 
 @transaction.atomic
-def apply_plan(plan: ImportPlan, *, actor: Any = None, notes: str = "") -> ApplyResult:
-    """Write a plan. One transaction, or nothing at all."""
+def apply_plan(
+    plan: ImportPlan, *, actor: Any = None, notes: str = "", approval_sha256: str = ""
+) -> ApplyResult:
+    """Write a plan. One transaction, or nothing at all.
+
+    `approval_sha256` is the reviewed plan digest the caller checked
+    (docs/adr/0184); it is recorded on the batch and on its audit event.
+    """
     with suspend_indexing():
-        return _apply(plan, actor=actor, notes=notes)
+        return _apply(plan, actor=actor, notes=notes, approval_sha256=approval_sha256)
 
 
-def _apply(plan: ImportPlan, *, actor: Any, notes: str) -> ApplyResult:
+def _apply(plan: ImportPlan, *, actor: Any, notes: str, approval_sha256: str) -> ApplyResult:
     started = timezone.now()
+    if approval_sha256:
+        notes = "\n".join(part for part in (notes, f"plan-sha256 {approval_sha256}") if part)
     batch = ImportBatch.objects.create(
         source_system=SOURCE_SYSTEM,
         source_file_name=plan.inventory.file_name,
@@ -279,6 +287,7 @@ def _apply(plan: ImportPlan, *, actor: Any, notes: str) -> ApplyResult:
             "source_file": plan.inventory.file_name,
             "sha256": plan.inventory.sha256,
             "rows": len(plan.rows),
+            "plan_sha256": approval_sha256,
         },
     )
 

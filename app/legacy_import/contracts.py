@@ -18,6 +18,7 @@ hand, because two hand-maintained descriptions of the same rules diverge.
 
 from __future__ import annotations
 
+import hashlib
 import tomllib
 from dataclasses import dataclass
 from functools import lru_cache
@@ -185,6 +186,9 @@ class EraContract:
     notes: str
     columns: tuple[ColumnContract, ...]
     source_path: Path
+    #: SHA-256 of the exact bytes this contract was parsed from, so a plan that
+    #: read it can say which reading of the sheet it used (docs/adr/0184).
+    source_sha256: str = ""
 
     def column_for(self, canonical_field: str) -> ColumnContract | None:
         for column in self.columns:
@@ -216,8 +220,9 @@ def _require(raw: dict[str, Any], key: str, path: Path) -> Any:
 
 
 def _load_one(path: Path) -> EraContract:
+    data = path.read_bytes()
     try:
-        raw = tomllib.loads(path.read_text(encoding="utf-8"))
+        raw = tomllib.loads(data.decode("utf-8"))
     except tomllib.TOMLDecodeError as error:  # pragma: no cover - message pass-through
         raise ContractError(f"{path.name}: {error}") from error
 
@@ -289,6 +294,7 @@ def _load_one(path: Path) -> EraContract:
         notes=str(raw.get("notes", "")),
         columns=tuple(columns),
         source_path=path,
+        source_sha256=hashlib.sha256(data).hexdigest(),
     )
     _check_internal_consistency(contract)
     return contract

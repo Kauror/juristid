@@ -111,7 +111,7 @@ implied by a deployment.
 
 | | Operation | Plan | Apply | Owner decides |
 | --- | --- | --- | --- | --- |
-| 3.1 | Register import | `import_legacy_register --dry-run` | `--apply` | Source snapshot hash |
+| 3.1 | Register import | `import_legacy_register --dry-run` | `--apply --expect-plan-sha256 …` | The plan digest: workbook, mapping and contract bytes, every row decision and the rows it resolved to (ADR 0184) |
 | 3.2 | Current portfolio | `final_register_cutover --snapshot <sha> --dry-run` | `--apply` | The snapshot digest must be in `REVIEWED_SNAPSHOT_SHA256` |
 | 3.3 | Historical cutover | `historical_cutover_state --cutover-year 2026 --dry-run` | `--apply` | The cutover year is a reviewed constant |
 | 3.4 | Opinion archive catalogue | `opinion_archive plan --opinions … --expect-archive-sha256 …` | `opinion_archive catalogue` | Archive digest |

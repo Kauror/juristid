@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import io
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -37,6 +38,7 @@ from app.legacy_import.limits import (
     SourceLimitExceeded,
     check_loaded_workbook,
     check_workbook_file,
+    read_workbook_bytes,
 )
 
 #: Bumped whenever the reader's output changes shape or meaning. Stored on every
@@ -293,10 +295,15 @@ class RegisterWorkbook:
         self.path = Path(path)
         if not self.path.exists():
             raise FileNotFoundError(f"Workbook not found: {self.path}")
+        # Read once, within the workbook size limit, and everything below works
+        # on these bytes: the hash recorded as the snapshot's identity is the
+        # hash of what was parsed, not of a file that may have changed between
+        # two opens (docs/adr/0184).
+        data = read_workbook_bytes(self.path)
         # Bounded before anything is parsed: size, parts, inflation ratio, sheet
         # count and every sheet's declared range (docs/adr/0178).
-        check_workbook_file(self.path)
-        self.sha256, self.byte_size = file_sha256(self.path)
+        check_workbook_file(self.path, data=data)
+        self.sha256, self.byte_size = hashlib.sha256(data).hexdigest(), len(data)
         # data_only surfaces the values a person saw in the cells rather than
         # the formulas behind them; hyperlinks survive either way.
         #
@@ -304,7 +311,7 @@ class RegisterWorkbook:
         # the OneNote page behind a matter — and makes `sheet.cell()` re-scan
         # the sheet on each call. The parsed rectangle is bounded instead,
         # before any row loop creates a cell inside it.
-        self._workbook = load_workbook(self.path, data_only=True, rich_text=False)
+        self._workbook = load_workbook(io.BytesIO(data), data_only=True, rich_text=False)
         try:
             check_loaded_workbook(self.path.name, self._workbook)
         except SourceLimitExceeded:

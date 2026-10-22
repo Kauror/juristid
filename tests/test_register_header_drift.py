@@ -117,12 +117,19 @@ def test_apply_refuses_a_shifted_sheet_and_never_guesses_its_rows(tmp_path: Path
         )
     assert not Matter.all_objects.exists()
 
-    # Accepting review rows imports the matching sheet and leaves the shifted one out.
+    # Accepting review rows imports the matching sheet and leaves the shifted one out
+    # — with the plan digest the dry run printed (docs/adr/0184).
+    from app.legacy_import.register_approval import register_plan_digest
+    from app.legacy_import.resolution import MappingTables
+
+    digest = register_plan_digest(build_plan(path), MappingTables.empty())
     call_command(
         "import_legacy_register",
         str(path),
         "--apply",
         "--accept-review-rows",
+        "--expect-plan-sha256",
+        digest,
         "--report-dir",
         reports,
         stdout=io.StringIO(),
