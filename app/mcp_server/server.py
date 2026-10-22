@@ -332,7 +332,7 @@ def tool_specs() -> list[ToolSpec]:
                 "(Vastutaja, a name or part of it), by an organisation (it sent the matter, Koda "
                 "answered it, or the open WAIT step names it), by the current next action's kind "
                 "(DO, WAIT, MONITOR, or NONE for no next step), open or closed. Default: open "
-                "current work, real matters only (include_test_data adds TEST matters, titled "
+                "current work, real matters only (include_test_data also lists TEST matters, titled "
                 "[TEST]). Each row: reference (like 2026_225), title, owner, stage "
                 "(Hetkeseis), work status, the next action with its date and certainty, the "
                 "opinion deadline and the Juristid URL. Answers «what is Marko responsible "
