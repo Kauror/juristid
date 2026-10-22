@@ -389,6 +389,58 @@ def test_a_file_replaced_after_the_check_is_refused(walk, onenote, monkeypatch):
         archive.read_resource("p-exact", resource)
 
 
+# -- the page record the evidence pilot reads ---------------------------------
+
+
+def test_the_page_record_is_read_through_the_archive(onenote, opened):
+    """`evidence_pilot` takes `page.json` whole from here, by the archive's own key."""
+    archive = OneNoteArchive(onenote)
+    page = archive.page("p-exact")
+    record = archive.page_record(page.page_key)
+    assert record["archivePageKey"] == "p-exact"
+    assert any(path.endswith("page.json") for path in opened)
+    with pytest.raises(ArchiveError, match="page key: Refusing an unsafe source path"):
+        archive.page_record("../p-exact")
+
+
+@needs_symlink
+def test_a_page_record_swapped_for_a_link_after_the_page_was_read_is_refused(
+    walk, onenote, outside, opened
+):
+    """The second read of ``page.json`` is checked again, not trusted from the first."""
+    (outside / "page.json").write_text(json.dumps({"title": "planted"}), encoding="utf-8")
+    archive = OneNoteArchive(onenote)
+    page = archive.page("p-exact")
+    _symlink(onenote / "pages/p-exact/page.json", outside / "page.json")
+    opened.clear()
+
+    with pytest.raises(ArchiveError, match="a symbolic link inside the source"):
+        archive.page_record(page.page_key)
+    assert opened == []
+
+
+def test_no_legacy_reader_opens_an_archive_page_by_a_bare_path():
+    """Every read under the OneNote pages goes through `safe_paths` (docs/adr/0178).
+
+    A source guard, because the defect it pins is a single line: joining the
+    archive's own `archivePageKey` to `pages_root` and calling ``read_text`` was
+    how `evidence_pilot` read ``page.json`` until 2026-10-22.
+    """
+    import re
+
+    from django.conf import settings
+
+    reader = re.compile(r"(read_text|read_bytes|open)\(")
+    offenders = []
+    for path in sorted((Path(settings.BASE_DIR) / "app" / "legacy_import").rglob("*.py")):
+        if path.name in {"safe_paths.py", "limits.py"}:
+            continue
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            if "pages_root" in line and reader.search(line):
+                offenders.append(f"{path.name}:{number}: {line.strip()}")
+    assert offenders == []
+
+
 # -- legitimate archives still read -------------------------------------------
 
 
