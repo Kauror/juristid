@@ -1269,6 +1269,20 @@ def _no_longer_stands(record: Any) -> bool:
     return status in (FactStatus.CANCELLED, FactStatus.SUPERSEDED)
 
 
+def _shown_in_activity(item: Any) -> bool:
+    """Every chronology row but a work victory the product does not show (MCPSEC-14).
+
+    The chronology draws a victory once it has a `confirmed_at`, which a
+    NOT_REALIZED one keeps; the product shows `VISIBLE_VICTORY_STATUS` alone.
+    """
+    from app.intelligence.selectors import VISIBLE_VICTORY_STATUS
+
+    record = item.record
+    if record is None or type(record).__name__ != "MatterWorkVictory":
+        return True
+    return bool(record.status == VISIBLE_VICTORY_STATUS)
+
+
 def _activity_item(item: Any, matter: Any, today: date) -> dict[str, Any]:
     """One chronology row in words, with its date, precision, kind and link."""
     day = _local_date(item.occurred_at)
@@ -1371,6 +1385,9 @@ def _activity_item(item: Any, matter: Any, today: date) -> dict[str, Any]:
         certainty = record_facts["date"]["certainty"]
     elif _no_longer_stands(item.record):
         certainty = PREVIOUS
+    elif record_name == "MatterWorkVictory":
+        # A confirmed judgement; its period is a reporting label, not a plan.
+        certainty = CONFIRMED
     full_text = "\n".join(part for part in parts if part)
     text = _clip(full_text, ACTIVITY_ITEM_CHARS)
     # Cut, it says so: `fetch` of the item's id returns the record whole.
@@ -1430,6 +1447,8 @@ def matter_activity(
     today = _today()
 
     def inside(item: Any) -> bool:
+        if not _shown_in_activity(item):
+            return False
         day = _local_date(item.occurred_at)
         if day is None:
             return False
@@ -2096,10 +2115,12 @@ def _fetch_simple(
     model: Any,
     label: str,
     describe: Callable[[Any, date], tuple[str, str, dict[str, Any]]],
+    narrow: Callable[[QuerySet[Any]], QuerySet[Any]] | None = None,
 ) -> dict[str, Any]:
-    record = (
-        _live(model.objects.visible_to(user)).select_related("matter").filter(pk=source.pk).first()
-    )
+    rows = _live(model.objects.visible_to(user)).select_related("matter")
+    if narrow is not None:
+        rows = narrow(rows)
+    record = rows.filter(pk=source.pk).first()
     if record is None:
         raise NotFound()
     detail, body, extra = describe(record, _today())
@@ -2236,6 +2257,19 @@ def _describe_effective_date(record: Any, today: date) -> tuple[str, str, dict[s
     return record.description, body, {"kind": "commencement", **facts}
 
 
+def _shown_victories(rows: QuerySet[Any]) -> QuerySet[Any]:
+    """The product's own rule: only a confirmed `Töövõit` is shown (MCPSEC-14).
+
+    `VISIBLE_VICTORY_STATUS` is what the Teema page, the register, Statistika
+    and search read (`app.search.child_indexing.is_shown_work_victory`). A
+    candidate is a proposal read only in the review block, NOT_REALIZED a claim
+    that did not hold; either answers like a record that does not exist.
+    """
+    from app.intelligence.selectors import VISIBLE_VICTORY_STATUS
+
+    return rows.filter(status=VISIBLE_VICTORY_STATUS)
+
+
 def _describe_victory(record: Any, today: date) -> tuple[str, str, dict[str, Any]]:
     del today
     body = _lines(
@@ -2252,7 +2286,9 @@ def _describe_victory(record: Any, today: date) -> tuple[str, str, dict[str, Any
             "kind": "work_victory",
             "status": record.status,
             "confirmed": bool(record.is_confirmed),
-            "certainty": CONFIRMED if record.is_confirmed else PLANNED,
+            # Only shown victories reach here (`_shown_victories`), each a
+            # person's confirmed judgement.
+            "certainty": CONFIRMED,
         },
     )
 
@@ -2295,7 +2331,14 @@ def fetch_source(user: Any, source_id: str) -> dict[str, Any]:
     if source.prefix == ids.HISTORICAL_PAGE:
         return _fetch_historical(user, source)
     model, label, describe = simple[source.prefix]
-    return _fetch_simple(user, source, model=model, label=label, describe=describe)
+    return _fetch_simple(
+        user,
+        source,
+        model=model,
+        label=label,
+        describe=describe,
+        narrow=_shown_victories if source.prefix == ids.WORK_VICTORY else None,
+    )
 
 
 __all__ = [
