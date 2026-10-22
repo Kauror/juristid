@@ -112,5 +112,9 @@ went on working.
 - Deploying ends every open shared-gate session once (one password prompt per
   person). Rotating the shared password ends every open gate session at its
   next request; the runbook says so.
+- Revocation is evaluated lazily, at a session's next request: a session opened
+  under password A that made no request while B was configured would pass again
+  if A were configured once more. The runbook therefore says never to rotate
+  back to an earlier password (2026-10-22 review).
 - A local-password deployment that rotates `SECRET_KEY` also abandons sign-ins
   waiting for their code (they were ended by the session hash already).

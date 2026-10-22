@@ -67,6 +67,11 @@ def as_marko(behind_the_gate, marko):
     return behind_the_gate
 
 
+#: A page a gate pass opens with no persona chosen. Business pages need a persona
+#: since docs/adr/0181, so the persona chooser is what proves the pass itself.
+CHOOSER = "/konto/kasutaja/"
+
+
 def _rotate(settings) -> None:
     settings.SHARED_GATE_PASSWORD = NEW_PASSWORD
 
@@ -80,10 +85,11 @@ def _assert_sent_to_the_gate(response, gate_url) -> None:
 
 
 def test_a_page_asks_for_the_password_again_after_rotation(behind_the_gate, settings, gate_url):
-    assert behind_the_gate.get("/osakond/").status_code == 200
+    assert behind_the_gate.get(CHOOSER).status_code == 200
 
     _rotate(settings)
 
+    _assert_sent_to_the_gate(behind_the_gate.get(CHOOSER), gate_url)
     _assert_sent_to_the_gate(behind_the_gate.get("/osakond/"), gate_url)
 
 
@@ -171,7 +177,7 @@ def test_the_new_password_opens_the_gate_and_the_old_one_does_not(
 
     passed = behind_the_gate.post(gate_url, {"password": NEW_PASSWORD})
     assert passed.status_code == 302
-    assert behind_the_gate.get("/osakond/").status_code == 200
+    assert behind_the_gate.get(CHOOSER).status_code == 200
     assert behind_the_gate.session[shared_gate.GATE_CREDENTIAL] == (
         shared_gate.credential_version()
     )
@@ -199,7 +205,7 @@ def test_a_persona_change_keeps_the_version_it_was_opened_under(behind_the_gate,
 
     behind_the_gate.post(reverse("accounts:act_as"), {"user_id": ""})
     assert behind_the_gate.session[shared_gate.GATE_CREDENTIAL] == before
-    assert behind_the_gate.get("/osakond/").status_code == 200
+    assert behind_the_gate.get(CHOOSER).status_code == 200
 
 
 def _request_with_session(client):

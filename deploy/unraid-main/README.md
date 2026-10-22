@@ -161,6 +161,11 @@ also end every session, and reset the throttles), and changing persona never
 carries a session across a rotation. Each ended session is recorded once as
 `SESSION_ENDED` with `reason = shared_password_changed` (docs/adr/0183).
 
+**Never rotate back to a password used before.** The check is made when a session
+next makes a request, not at the moment of rotation, so a session opened under
+password A that made no request while B was configured would pass again if A
+were set once more. Always choose a new password.
+
 Tell the department the new password before the restart: everybody types it
 once at their next request. The release that introduced this (ADR 0183) did
 the same once by itself — sessions opened before it carry no version and are
