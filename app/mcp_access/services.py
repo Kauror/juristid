@@ -123,7 +123,14 @@ def grant_refusal(user: User) -> str:
 
 
 def may_connect(user: User | None, grant: McpAccessGrant | None) -> bool:
-    """The three questions every step asks again: grant ACTIVE, account active, may read."""
+    """The questions every step asks again: grant ACTIVE, and the account still grantable.
+
+    The same eligibility as `grant_refusal` (MCPSEC-06): an active account
+    acting under a business role, which `may_read_business_content` implies.
+    Asking only that predicate let an administrator holding a temporary
+    break-glass grant — whose grant predated the role change — authorize and
+    refresh as if it were a standing business role.
+    """
     if user is None or grant is None:
         return False
     return (
@@ -131,6 +138,7 @@ def may_connect(user: User | None, grant: McpAccessGrant | None) -> bool:
         and grant.user_id == user.pk
         and bool(user.is_active)
         and may_read_business_content(user)
+        and not grant_refusal(user)
     )
 
 
