@@ -96,16 +96,19 @@ def test_drafting_never_exceeds_the_active_set(applied) -> None:
 
 def test_a_restricted_matter_contributes_to_no_breakdown_it_should_not(applied) -> None:
     from app.core.enums import Visibility
+    from tests import factories
 
     matter = applied.refresh(CURRENT_DRAFTING)
     matter.visibility = Visibility.RESTRICTED
     matter.owner = None
     matter.save(update_fields=["visibility", "owner", "updated_at"])
 
-    # A lawyer reads it since docs/adr/0042; somebody outside the legal team
-    # does not, and that is the scoping this breakdown has to respect.
-    outsider = applied.people.reader
-    assert CURRENT_DRAFTING not in titles(dashboard.drafting_matters(outsider))
+    # A lawyer reads it since docs/adr/0042, and a READER since docs/adr/0181;
+    # an administrator without a business role reads nothing, and that is the
+    # scoping this breakdown has to respect.
+    assert CURRENT_DRAFTING in titles(dashboard.drafting_matters(applied.people.reader))
+    outsider = factories.AdministratorFactory()
+    assert not dashboard.drafting_matters(outsider).exists()
 
 
 # =========================================================================

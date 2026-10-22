@@ -22,9 +22,11 @@ the audit's own probe (`test_b10_idor_sweep.py`):
   that half an id of the wrong kind would 404 for everybody and the sweep would
   pass for the wrong reason.
 
-Each route is then called with GET and an empty POST as a READER, an
-ADMINISTRATOR, a READER who collaborates on *another* restricted Matter, and
-the shared-gate visitor with no persona. A request fails the sweep when:
+Each route is then called with GET and an empty POST as an ADMINISTRATOR and
+the shared-gate visitor with no persona. (A READER — collaborating or not — was
+swept as an outsider until docs/adr/0181 made it an authorized internal user;
+`test_a_reader_reads_every_hidden_record_the_owner_reads` now holds that it
+reads what the owner reads.) A request fails the sweep when:
 
 * the response carries any hidden token, or a file route answers 200;
 * it is a 5xx;
@@ -495,7 +497,7 @@ def test_every_id_route_is_swept_or_named():
     assert {candidate.route for _, candidate in swept} == names - set(NOT_MATTER_DATA)
 
 
-@pytest.mark.parametrize("persona", ["reader", "administrator", "collaborating_reader", "gate"])
+@pytest.mark.parametrize("persona", ["administrator", "gate"])
 def test_no_hidden_id_reaches_anybody_outside(world, hidden, settings, persona):  # noqa: F811
     client = _persona(persona, world, settings)
 
@@ -503,6 +505,49 @@ def test_no_hidden_id_reaches_anybody_outside(world, hidden, settings, persona):
 
     assert requests > 2 * len(_sweep_list(hidden)) - 1
     assert problems == [], "\n".join(map(str, problems))
+
+
+def _is_write_gated(candidate: Candidate) -> bool:
+    """Whether the route's view is wrapped in `business_write_required`."""
+    from urllib.parse import unquote
+
+    from django.urls import resolve
+
+    view = resolve(unquote(reverse(candidate.route, kwargs=candidate.kwargs))).func
+    while view is not None:
+        if view.__code__.co_qualname == "business_write_required.<locals>.wrapper":
+            return True
+        view = getattr(view, "__wrapped__", None)
+    return False
+
+
+@pytest.mark.parametrize("persona", ["reader", "collaborating_reader"])
+def test_a_reader_reads_every_hidden_record_the_owner_reads(world, hidden, settings, persona):  # noqa: F811
+    """docs/adr/0181: a READER is an authorized internal user.
+
+    Every swept GET the owner is answered 200 on, the READER is answered 200 on
+    too, with the same hidden tokens in the body — RESTRICTED is a label, not a
+    boundary between the two. Write routes are not compared — their GET is the
+    edit form, which a READER is refused because it still writes nothing
+    (`business_write_required`) — so they are identified by that decorator.
+    """
+    owner = _signed_in(world["owner"])
+    client = _persona(persona, world, settings)
+    compared, mismatches = 0, []
+    for world_name, candidate in _sweep_list(hidden):
+        if _is_write_gated(candidate):
+            continue
+        as_owner = _call(owner, "get", candidate)
+        if as_owner.status_code != 200:
+            continue
+        as_reader = _call(client, "get", candidate)
+        compared += 1
+        owner_tokens = [token for token in TOKENS if token in _body(as_owner)]
+        reader_tokens = [token for token in TOKENS if token in _body(as_reader)]
+        if as_reader.status_code != 200 or reader_tokens != owner_tokens:
+            mismatches.append((world_name, candidate.route, as_reader.status_code))
+    assert compared > 0
+    assert mismatches == [], "\n".join(map(str, mismatches))
 
 
 def test_the_sweep_ids_reach_their_records(world, hidden):  # noqa: F811

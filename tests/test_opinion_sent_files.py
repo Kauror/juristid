@@ -388,19 +388,27 @@ def test_the_database_refuses_restricting_an_opinion_above_its_further_file(
 # ---------------------------------------------------------------------------
 
 
-def test_a_reader_is_shown_no_file_of_a_restricted_opinion(
-    client, matter, specialist, reader, organisation
+def test_a_restricted_opinions_files_reach_a_reader_and_no_outsider(
+    client, matter, specialist, reader, administrator, organisation
 ):
+    """Since docs/adr/0181 a READER is shown what the specialist is; an outsider nothing."""
     submission, document = _further_document(matter, specialist, organisation)
     Document.objects.filter(pk__in=[document.pk, submission.final_version.document_id]).update(
         visibility_override=Visibility.RESTRICTED
     )
     Submission.objects.filter(pk=submission.pk).update(visibility_override=Visibility.RESTRICTED)
 
-    assert opinion_rail(matter, viewer=reader) == []
+    assert opinion_rail(matter, viewer=reader) == opinion_rail(matter, viewer=specialist)
+    assert opinion_rail(matter, viewer=reader) != []
+    assert opinion_rail(matter, viewer=administrator) == []
     client.force_login(reader)
     body = client.get(
         reverse("matters:matter_documents", kwargs={"pk": matter.pk})
     ).content.decode()
-    assert "Selgitus.pdf" not in body
-    assert "koda_opinion.asice" not in body
+    assert "Selgitus.pdf" in body
+
+    client.force_login(administrator)
+    response = client.get(reverse("matters:matter_documents", kwargs={"pk": matter.pk}))
+    assert response.status_code == 404
+    assert "Selgitus.pdf" not in response.content.decode()
+    assert "koda_opinion.asice" not in response.content.decode()

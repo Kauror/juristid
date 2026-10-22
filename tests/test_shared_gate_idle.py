@@ -45,6 +45,19 @@ def behind_the_gate(client, gate_url):
     return client
 
 
+@pytest.fixture
+def with_a_persona(behind_the_gate):
+    """Past the gate *and* acting as somebody.
+
+    Since docs/adr/0181 `/osakond/` is `@login_required`: a gate session with no
+    persona is sent to the persona chooser before the page renders, so a test
+    that needs the page's 200 chooses a persona first.
+    """
+    person = factories.UserFactory(display_name="Kati Näidisjurist")
+    behind_the_gate.post(reverse("accounts:act_as"), {"user_id": str(person.pk)})
+    return behind_the_gate
+
+
 def _set_clock(client, *, passed_ago: timedelta, seen_ago: timedelta | None) -> None:
     now = timezone.now()
     session = client.session
@@ -71,9 +84,9 @@ def test_opening_the_gate_starts_the_idle_clock(behind_the_gate):
     assert timezone.now() - _last_seen(behind_the_gate) < MINUTE
 
 
-def test_idle_seven_hours_fifty_nine_minutes_is_still_passed(behind_the_gate):
-    _set_clock(behind_the_gate, passed_ago=9 * HOUR, seen_ago=8 * HOUR - MINUTE)
-    response = behind_the_gate.get("/osakond/")
+def test_idle_seven_hours_fifty_nine_minutes_is_still_passed(with_a_persona):
+    _set_clock(with_a_persona, passed_ago=9 * HOUR, seen_ago=8 * HOUR - MINUTE)
+    response = with_a_persona.get("/osakond/")
     assert response.status_code == 200
 
 
@@ -105,25 +118,25 @@ def test_the_twelve_hour_absolute_limit_is_still_enforced(behind_the_gate, gate_
     assert response["Location"] == gate_url
 
 
-def test_activity_refreshes_the_idle_clock(behind_the_gate):
-    _set_clock(behind_the_gate, passed_ago=9 * HOUR, seen_ago=7 * HOUR)
-    assert behind_the_gate.get("/osakond/").status_code == 200
-    assert timezone.now() - _last_seen(behind_the_gate) < MINUTE
+def test_activity_refreshes_the_idle_clock(with_a_persona):
+    _set_clock(with_a_persona, passed_ago=9 * HOUR, seen_ago=7 * HOUR)
+    assert with_a_persona.get("/osakond/").status_code == 200
+    assert timezone.now() - _last_seen(with_a_persona) < MINUTE
 
     # Seven more hours of silence from *that* request: within the limit, where
     # fourteen hours from the old stamp would not have been.
-    session = behind_the_gate.session
+    session = with_a_persona.session
     session[shared_gate.GATE_LAST_SEEN] = (timezone.now() - 7 * HOUR).isoformat()
     session.save()
-    assert behind_the_gate.get("/osakond/").status_code == 200
+    assert with_a_persona.get("/osakond/").status_code == 200
 
 
-def test_the_clock_is_written_at_most_every_few_minutes(behind_the_gate):
-    _set_clock(behind_the_gate, passed_ago=HOUR, seen_ago=MINUTE)
-    stamp = behind_the_gate.session[shared_gate.GATE_LAST_SEEN]
+def test_the_clock_is_written_at_most_every_few_minutes(with_a_persona):
+    _set_clock(with_a_persona, passed_ago=HOUR, seen_ago=MINUTE)
+    stamp = with_a_persona.session[shared_gate.GATE_LAST_SEEN]
 
-    assert behind_the_gate.get("/osakond/").status_code == 200
-    assert behind_the_gate.session[shared_gate.GATE_LAST_SEEN] == stamp
+    assert with_a_persona.get("/osakond/").status_code == 200
+    assert with_a_persona.session[shared_gate.GATE_LAST_SEEN] == stamp
     assert shared_gate.LAST_SEEN_RESOLUTION <= timedelta(minutes=5)
 
 

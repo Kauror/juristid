@@ -81,7 +81,10 @@ def test_a_round_lists_the_answers_linked_to_it(signed_in, specialist):
     assert "Vastuseid 0" not in row
 
 
-def test_a_restricted_answer_is_neither_listed_nor_counted(client, specialist, reader):
+def test_a_restricted_answer_is_listed_and_counted_for_a_reader_and_no_outsider(
+    client, specialist, reader, administrator
+):
+    """Since docs/adr/0181 a READER reads both answers; an outsider gets a 404."""
     matter = factories.MatterFactory(owner=specialist)
     engagement = _round(matter, specialist)
     record_external_position(
@@ -107,8 +110,14 @@ def test_a_restricted_answer_is_neither_listed_nor_counted(client, specialist, r
     client.force_login(reader)
     body = _detail(client, matter)
 
-    assert "Salajane Liit" not in body
-    assert "Seotud seisukohti 1" in body
+    assert "Salajane Liit" in body
+    assert "Seotud seisukohti 2" in body
+
+    client.force_login(administrator)
+    response = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk}))
+    assert response.status_code == 404
+    assert "Salajane Liit" not in response.content.decode()
+    assert "Seotud seisukohti" not in response.content.decode()
 
 
 def test_a_finished_round_keeps_its_reply_by_day(signed_in, specialist):

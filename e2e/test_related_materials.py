@@ -202,7 +202,8 @@ def test_archive_material_opens_through_the_archive_and_files_no_link(page, base
     assert title_f not in page.content()
 
 
-def test_a_manual_link_to_a_restricted_matter_is_invisible_to_a_reader(page, base_url):
+def test_a_manual_link_to_a_restricted_matter_reads_the_same_for_a_reader(page, base_url):
+    """A reader sees the link (docs/adr/0181) and is offered no way to change it."""
     sign_in(page, base_url, MARTIN)
     title_g = "Käsitsi seotud teema (seotud G5)"
     url_g = create_matter(page, base_url, title_g)
@@ -224,9 +225,8 @@ def test_a_manual_link_to_a_restricted_matter_is_invisible_to_a_reader(page, bas
     page.wait_for_load_state("networkidle")
 
     expect(section(page)).to_be_visible()
+    expect(confirmed_row(page, RESTRICTED_TITLE)).to_be_visible()
     body = page.content()
-    assert RESTRICTED_TITLE not in body
-    assert "Seotud teemad" not in body
     # A reader gets no add affordance at all: `Lisa` is a write control.
     for control in ("Seo teemaga", "Ei ole seotud", "Otsi teemat või dokumenti…"):
         assert control not in body

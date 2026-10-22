@@ -10,8 +10,9 @@ GET and POST as:
   account-administration routes (ADR 0145: 404 in every other mode).
 
 Path parameters are filled with a real, NORMAL Matter (and its children) so a
-refusal is a refusal, not a 404 for a missing row. The allowed half is pinned
-too: the gate reader *does* reach the `@gate_required` pages.
+refusal is a refusal, not a 404 for a missing row. Until docs/adr/0181 the gate
+reader *did* reach the `@gate_required` pages; one internal read policy retired
+them, and that visitor now reaches no business page at all.
 """
 
 from __future__ import annotations
@@ -37,27 +38,10 @@ WORKLOG = Path(r"C:\CC\_worklogs\independent-qa-2026-10-14\agents\authz")
 #: Answer with no identity in every mode, by design.
 PUBLIC = {"core:healthz", "core:favicon"}
 
-#: The routes a shared-gate reader with no persona may read (`@gate_required`).
-GATE_READABLE = {
-    "matters:department",
-    "reporting:overview",
-    "reporting:matters",
-    "reporting:activity",
-    "reporting:historical",
-    "reporting:quality",
-    "reporting:submissions",
-    "reporting:materials",
-    "reporting:metric_rows",
-    "reporting:definitions",
-    "reporting:export",
-    "submissions:sent",
-    "submissions:archive",
-    "submissions:embedded_block",
-    "documents:download",
-    "documents:open",
-    "documents:thumbnail",
-    "documents:document_detail",
-}
+#: The routes a shared-gate reader with no persona may read. Empty since
+#: docs/adr/0181: the eighteen `@gate_required` pages (Osakond, Statistika,
+#: Arvamused, the document routes) need a persona like every other.
+GATE_READABLE: set[str] = set()
 
 #: Routes that exist only for ``AUTH_MODE=local_password`` (ADR 0145).
 LOCAL_PASSWORD_ONLY_PREFIXES = (
@@ -203,7 +187,7 @@ def test_before_the_gate_everything_is_the_gate(client, settings, ids):
     assert wrong == {}
 
 
-def test_department_viewer_reads_only_the_gate_pages_and_writes_nothing(client, settings, ids):
+def test_department_viewer_reads_no_business_page_and_writes_nothing(client, settings, ids):
     apply_shared_gate(settings)
     assert client.post(reverse("accounts:shared_gate"), {"password": PASSWORD}).status_code == 302
     rows = _table(client, ids)
@@ -211,18 +195,11 @@ def test_department_viewer_reads_only_the_gate_pages_and_writes_nothing(client, 
 
     read = {name for name, row in rows.items() if row[1] == 200}
     wrote = {name: row for name, row in rows.items() if row[2] in {200, 201, 204}}
-    # The allowed half: every gate page opens for them.
-    # Without parameters `metric_rows` is a 404 (no metric named), the archive is
-    # an administrator's tool (403) and a text PDF has no thumbnail (404).
-    assert (
-        GATE_READABLE
-        - {
-            "reporting:metric_rows",
-            "submissions:archive",
-            "documents:thumbnail",
-        }
-        <= read
-    )
+    # The pages `@gate_required` opened to them before docs/adr/0181 now send
+    # them to choose a persona.
+    chooser = reverse("accounts:choose_persona")
+    for name in ("matters:department", "reporting:overview", "documents:download"):
+        assert rows[name][1] == 302 and rows[name][3].startswith(chooser), rows[name]
     unexpected_reads = (
         read
         - GATE_READABLE

@@ -10,19 +10,20 @@ a line (Stage-2F brief 31).
 
 from __future__ import annotations
 
+from django.contrib.auth.decorators import login_required
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import render
 from django.utils import timezone
 
 from app.core.authorization import may_view_department_management
-from app.core.decorators import gate_required, viewer_for
+from app.core.decorators import viewer_for
 from app.matters import overview as overview_module
 from app.matters.department import build_department
 from app.matters.department_changes import build_changes
 from app.matters.department_dashboard import PERIOD_END_PARAM, PERIOD_START_PARAM, TEAM_COLUMNS
 
 
-@gate_required
+@login_required
 def department(request: HttpRequest) -> HttpResponse:
     """Osakond — where the department stands, in two scopes behind one shell.
 
@@ -32,12 +33,12 @@ def department(request: HttpRequest) -> HttpResponse:
     they asked one question and printed several of the same numbers twice. Both
     old addresses now redirect here permanently (docs/adr/0049).
 
-    **Read access is Ülevaade's, unchanged.** ``gate_required`` rather than
-    ``login_required``: this is the page somebody lands on straight from the
-    shared door, and it has to be worth looking at before they have said who
-    they are. That reader is authorized as the department sentinel
-    ``viewer_for`` resolves — NORMAL visibility, no participation — so nothing
-    RESTRICTED appears because a password was typed (Stage-2D auth brief 6).
+    **Read access needs a persona since docs/adr/0181.** This was the one page
+    that rendered straight from the shared door, before anybody said who was
+    reading, as a department scope of NORMAL records. Under one internal read
+    policy that is not an authorized internal user, so ``login_required`` sends
+    such a session to the persona chooser, and every persona then reads the same
+    department.
 
     **Two sections keep Osakonna töö's stronger boundary.** *Meeskond* and
     *Tehtud* are the department head's, by role and by nothing else: not a name,
@@ -95,7 +96,7 @@ def department(request: HttpRequest) -> HttpResponse:
     )
 
 
-@gate_required
+@login_required
 def department_changes(request: HttpRequest) -> HttpResponse:
     """Muudatused — which states moved in the department's work over a window.
 

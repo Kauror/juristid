@@ -23,6 +23,7 @@ Held here:
 from __future__ import annotations
 
 import pytest
+from django.core.exceptions import EmptyResultSet
 from django.core.paginator import Paginator
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
@@ -65,7 +66,21 @@ def _shape(page):
 @pytest.mark.parametrize("broad", [False, True])
 def test_every_page_is_the_page_the_old_paging_drew(corpus, monkeypatch, broad):
     """Both branches: the single pass, and the two scans a broad term keeps."""
-    monkeypatch.setattr(services, "_broad", lambda ranked: broad)
+
+    def forced(ranked):
+        # `_broad`'s own guard, kept: since docs/adr/0181 an outsider's queryset
+        # is Django's known-empty one, which has no statement to plan or count.
+        try:
+            ranked.order_by().values("pk").query.sql_with_params()
+        except EmptyResultSet:
+            return False
+        return broad
+
+    monkeypatch.setattr(services, "_broad", forced)
+    # Since docs/adr/0181 the administrator and the persona-less gate viewer read
+    # nothing, so their pages are compared but are always empty; the
+    # non-vacuity bound is taken over the personas that read.
+    outsiders = {"administrator", "department_viewer"}
     compared = non_empty = 0
     for persona, user in search_corpus.personas(corpus).items():
         for query in QUERIES:
@@ -75,6 +90,9 @@ def test_every_page_is_the_page_the_old_paging_drew(corpus, monkeypatch, broad):
                     new = services._counted_page(term, user, number, per_page)
                     old = _old_page(query, user, number, per_page)
                     assert _shape(new) == _shape(old), (persona, query, per_page, number)
+                    if persona in outsiders:
+                        assert not old.object_list, (persona, query)
+                        continue
                     compared += 1
                     non_empty += bool(old.object_list)
     assert non_empty > compared // 2

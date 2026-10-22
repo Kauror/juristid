@@ -173,10 +173,14 @@ def test_drafts_are_excluded_until_asked_for(signed_in, specialist, capture_evid
     assert "Pooleli" in everything
 
 
-def test_a_submission_on_a_matter_the_reader_cannot_see_is_not_listed(
-    client, reader, specialist, capture_evidence
+def test_a_submission_on_a_restricted_matter_is_listed_for_a_reader_and_not_an_outsider(
+    client, reader, administrator, specialist, capture_evidence
 ):
-    """Visibility is inherited, never re-derived on this surface."""
+    """Visibility is inherited, never re-derived on this surface.
+
+    Since docs/adr/0181 a READER sees it; the outsider is an administrator
+    without a grant.
+    """
     hidden = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
     sent_submission(
         hidden,
@@ -185,6 +189,9 @@ def test_a_submission_on_a_matter_the_reader_cannot_see_is_not_listed(
     )
 
     client.force_login(reader)
+    assert "Piiratud arvamus" in client.get(SENT_URL).content.decode()
+
+    client.force_login(administrator)
     body = client.get(SENT_URL).content.decode()
 
     assert "Piiratud arvamus" not in body
@@ -426,14 +433,15 @@ def test_the_year_filter_offers_each_year_once(client, shared):
 
 
 def test_the_year_filter_says_nothing_to_a_reader_who_may_not_open_the_archive(
-    reader, department_head
+    reader, administrator, department_head
 ):
     """The set projection still starts from `visible_archive`.
 
     A refused reader must not learn the corpus's date range from a filter
     control, which is why `_archive_years` reads through the authorized queryset
     rather than the manager (ADR 0056). Asserted beside a reader who may, so an
-    empty list cannot pass for the wrong reason.
+    empty list cannot pass for the wrong reason. Since docs/adr/0181 a READER
+    may; the refused reader is an administrator without a grant.
     """
     from app.submissions.workspace_views import _archive_years
 
@@ -441,7 +449,8 @@ def test_the_year_filter_says_nothing_to_a_reader_who_may_not_open_the_archive(
     rebuild_archive_index()
 
     assert _archive_years(department_head) == [2024]
-    assert _archive_years(reader) == []
+    assert _archive_years(reader) == [2024]
+    assert _archive_years(administrator) == []
 
 
 def test_the_archive_tab_offers_no_write_control(client, shared, specialist):
@@ -497,25 +506,29 @@ def test_a_linked_letter_is_visible_from_the_matter_it_concerns(client, shared):
     assert "/haldus/arvamuste-arhiiv/" in letters
 
 
-def test_a_reader_who_may_not_open_the_archive_sees_no_letters_on_the_matter(client, specialist):
-    """A READER reaches a Matter and still reaches none of its letters.
+def test_a_reader_sees_the_matters_letters_and_an_outsider_sees_none(client, specialist):
+    """Since docs/adr/0181 a READER reads the archive, so its letters on a Matter.
 
-    The role that did *not* move in this widening, asserted from both
+    The refusal is now the administrator's without a grant, asserted from both
     directions: the helper returns nothing, and the Matter page does not grow a
-    section naming files the reader may not open.
+    section naming files it may not open (the page itself is a 404).
     """
     head = factories.DepartmentHeadFactory()
     reader = factories.UserFactory(role=UserRole.READER)
+    administrator = factories.UserFactory(role=UserRole.ADMINISTRATOR)
     binary = hold()
     matter = factories.MatterFactory(owner=specialist)
     link_matter(binary=binary, matter=matter, basis=ArchiveLinkBasis.REVIEWED, actor=head)
 
-    assert archive_letters_for_matter(matter, reader=reader) == []
+    assert len(archive_letters_for_matter(matter, reader=reader)) == 1
+    assert archive_letters_for_matter(matter, reader=administrator) == []
 
+    url = reverse("matters:matter_documents", kwargs={"pk": matter.pk})
     client.force_login(reader)
-    body = client.get(
-        reverse("matters:matter_documents", kwargs={"pk": matter.pk})
-    ).content.decode()
+    assert "seotud-arhiivikirjad" in client.get(url).content.decode()
+
+    client.force_login(administrator)
+    body = client.get(url).content.decode()
     # No rows, no count, and no hint that there are any: the section simply does
     # not render (docs/adr/0028, docs/adr/0061 §22).
     assert "Seotud arhiivikirjad" not in body
@@ -525,9 +538,10 @@ def test_a_reader_who_may_not_open_the_archive_sees_no_letters_on_the_matter(cli
 def test_a_linked_letter_never_reveals_a_matter_its_reader_may_not_open(client):
     """Archive access is about the corpus; it says nothing about a Matter.
 
-    An ADMINISTRATOR may read every letter in the corpus and is outside
-    `ROLES_WITH_RESTRICTED_ACCESS`, so a RESTRICTED Matter a letter is filed
-    onto must not become reachable through the linkage.
+    Since docs/adr/0181 nobody reads the corpus and not the Matter: an
+    ADMINISTRATOR without a grant reads neither, so the letter itself is refused
+    and a RESTRICTED Matter it is filed onto cannot be reached through it; a
+    READER reads both.
     """
     head = factories.DepartmentHeadFactory()
     administrator = factories.UserFactory(role=UserRole.ADMINISTRATOR)
@@ -537,12 +551,16 @@ def test_a_linked_letter_never_reveals_a_matter_its_reader_may_not_open(client):
 
     from app.legacy_import.opinion_access import may_read_archive
 
-    assert may_read_archive(administrator)
+    assert not may_read_archive(administrator)
 
+    url = reverse("legacy_import:opinion_archive_detail", kwargs={"pk": binary.pk})
     client.force_login(administrator)
-    detail = client.get(reverse("legacy_import:opinion_archive_detail", kwargs={"pk": binary.pk}))
-    assert detail.status_code == 200
+    detail = client.get(url)
+    assert detail.status_code == 403
     assert restricted.title not in detail.content.decode()
+
+    client.force_login(factories.UserFactory(role=UserRole.READER))
+    assert client.get(url).status_code == 200
 
 
 def test_one_letter_filed_twice_is_listed_once(shared, specialist):
@@ -582,7 +600,9 @@ def test_the_archive_tab_creates_no_submission(client, shared, specialist):
     assert Submission.objects.count() == before == 0
 
 
-def test_a_reader_role_gets_neither_the_archive_nor_somebody_elses_submissions(client, settings):
+def test_a_reader_role_reads_the_archive_and_the_submissions_and_an_administrator_neither(
+    client, settings
+):
     """Signed in directly, because a READER is not a persona any more.
 
     The shared gate offers only the department's work roles, so this account
@@ -590,7 +610,8 @@ def test_a_reader_role_gets_neither_the_archive_nor_somebody_elses_submissions(c
     guarantee than the one below, and asserted where that rule lives. What is
     still worth proving here is the archive's own rule about the role, and that
     is a property of `request.user` however it got there. So this signs in the
-    way a deployment that authenticates individuals does.
+    way a deployment that authenticates individuals does. Since docs/adr/0181
+    the READER reads the archive; an administrator without a grant does not.
     """
     settings.AUTH_MODE = AuthMode.NONE
     settings.LOGIN_URL = "accounts:dev_login"
@@ -599,21 +620,24 @@ def test_a_reader_role_gets_neither_the_archive_nor_somebody_elses_submissions(c
     rebuild_archive_index()
     client.force_login(reader)
 
-    assert client.get(ARCHIVE_URL).status_code == 403
+    assert client.get(ARCHIVE_URL).status_code == 200
     assert client.get(SENT_URL).status_code == 200
+
+    client.force_login(factories.UserFactory(role=UserRole.ADMINISTRATOR))
+    assert client.get(ARCHIVE_URL).status_code == 403
 
 
 def test_a_reader_cannot_be_selected_as_a_persona_at_all(client, shared):
     """And so the case above cannot arise behind the shared gate.
 
-    Arvamused itself stays reachable — it is `gate_required`, and the department
-    scope is what somebody past the password is entitled to before they name
-    anybody. What the refusal changes is *whose* view it is: nobody's.
+    Since docs/adr/0181 Arvamused is `login_required`: a session that has named
+    nobody is sent back to the persona chooser.
     """
     reader = factories.UserFactory(role=UserRole.READER)
     act_as(client, reader)
 
     assert not client.session.get("_auth_user_id")
     response = client.get(SENT_URL)
-    assert response.status_code == 200
+    assert response.status_code == 302
+    assert response["Location"].startswith(reverse("accounts:choose_persona"))
     assert not response.wsgi_request.user.is_authenticated

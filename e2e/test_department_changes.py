@@ -6,11 +6,10 @@ boundary holds for somebody who types the address, whether the head can reach
 the page from where they already are — the *Tehtud* heading — and whether the
 page reads on a laptop and on a phone without scrolling sideways.
 
-The restricted case needs a reader who may open the page and may not see a
-restricted Teema. The department head sees every restricted Teema by role, so
-that reader is the one ADR 0145 allows: a READER lent
-`department.view_management`. The loan is made and taken back around each test
-that needs it, so no other browser file meets a READER with manager sections.
+The restricted case: a READER lent `department.view_management` (ADR 0145)
+opens the page and, since docs/adr/0181, reads the restricted Teema exactly as
+the head does. The loan is made and taken back around each test that needs it,
+so no other browser file meets a READER with manager sections.
 """
 
 from __future__ import annotations
@@ -162,12 +161,11 @@ def test_a_specialist_is_refused_and_offered_no_link(page, base_url):
     expect(page.get_by_role("link", name="Muudatused →")).to_have_count(0)
 
 
-def test_a_restricted_teema_is_absent_for_a_reader_lent_the_view(
+def test_a_restricted_teema_reads_the_same_for_a_reader_lent_the_view(
     page, base_url, planted, lent_reader
 ):
     sign_in(page, base_url, HEAD)
     page.goto(f"{base_url}{PAGE_PATH}?periood=30")
-    # The head sees both, which is what makes the reader's absence mean something.
     expect(stage_rows(page).filter(has_text=planted["hidden"])).to_have_count(1)
 
     sign_out(page, base_url)
@@ -176,7 +174,7 @@ def test_a_restricted_teema_is_absent_for_a_reader_lent_the_view(
 
     assert response is not None and response.status == 200
     expect(stage_rows(page).filter(has_text=planted["open"])).to_have_count(1)
-    expect(page.get_by_text(planted["hidden"])).to_have_count(0)
+    expect(stage_rows(page).filter(has_text=planted["hidden"])).to_have_count(1)
 
 
 def test_an_empty_window_says_so(page, base_url):

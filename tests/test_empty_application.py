@@ -216,7 +216,6 @@ def test_the_department_head_sees_the_same_surfaces_answer(client, empty_world, 
 ADMINISTRATOR_SURFACES = [
     "legacy_import:opinion_queue",
     "legacy_import:review_queue",
-    "legacy_import:opinion_archive_browse",
 ]
 
 
@@ -225,6 +224,16 @@ def test_the_migration_queues_answer_for_an_administrator(client, empty_world, r
     client.force_login(empty_world.administrator)
 
     assert client.get(reverse(route)).status_code == 200, route
+
+
+def test_the_archive_browser_answers_for_a_lawyer_and_not_for_an_administrator(client, empty_world):
+    """docs/adr/0181: the archive is business content, read by every internal user
+    and not by technical administration without a grant."""
+    route = reverse("legacy_import:opinion_archive_browse")
+    client.force_login(empty_world.specialist)
+    assert client.get(route).status_code == 200
+    client.force_login(empty_world.administrator)
+    assert client.get(route).status_code == 403
 
 
 @pytest.mark.parametrize("slug", ["teemad", "arvamused", "materjalid", "andmekvaliteet"])
@@ -502,9 +511,10 @@ def test_the_archive_says_it_is_empty_rather_than_blaming_the_filters(client, em
     loosen filters that were never narrowing anything. The same page's sibling
     in the Arvamused workspace has always split the two
     (templates/submissions/archive.html), and the view itself already draws the
-    distinction for a refused query.
+    distinction for a refused query. Read as a lawyer: since docs/adr/0181 an
+    administrator without a grant does not read the archive.
     """
-    client.force_login(empty_world.administrator)
+    client.force_login(empty_world.specialist)
 
     body = client.get(reverse("legacy_import:opinion_archive_browse")).content.decode()
 

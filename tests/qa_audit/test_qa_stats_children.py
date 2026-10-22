@@ -11,7 +11,8 @@ archive file reconciled onto a TEST Matter — the two child shapes probed here.
 * QA-STATS-03 — `MATTERS_BY_SUBMISSION_COUNT` and
   `MATTERS_WITH_MULTIPLE_SUBMISSIONS` count sent opinions through the
   `submissions` relation with no `Submission.visible_to`: a restricted opinion
-  a reader may not see moves the reader's buckets.
+  a reader may not see moves the reader's buckets. (Since docs/adr/0181 every
+  internal reader sees it; the unauthorized viewer is the administrator.)
 * QA-STATS-04 — `HISTORICAL_SUBMISSION_COVERAGE` and
   `OPINION_ARCHIVE_MATTER_COVERAGE` do not apply `real_data()`: an archive
   file reconstructed onto / settled on a TEST Matter raises the published
@@ -76,44 +77,57 @@ def quiet_matter(world):
     )
 
 
-def test_the_reader_cannot_see_the_restricted_opinion(world, quiet_matter):
-    """Precondition probe: the opinion really is hidden from the reader, visible to head."""
+def test_the_reader_sees_the_restricted_opinion_and_the_administrator_does_not(world, quiet_matter):
+    """Precondition probe: since docs/adr/0181 the reader sees it as the head does;
+    the administrator without a grant sees neither the opinion nor its Matter."""
     opinion = _sent(quiet_matter, "QA piiratud", restricted=True)
-    assert not Submission.objects.visible_to(world.reader).filter(pk=opinion.pk).exists()
+    assert Submission.objects.visible_to(world.reader).filter(pk=opinion.pk).exists()
     assert Submission.objects.visible_to(world.head).filter(pk=opinion.pk).exists()
+    assert not Submission.objects.visible_to(world.admin).filter(pk=opinion.pk).exists()
     assert Matter.objects.visible_to(world.reader).filter(pk=quiet_matter.pk).exists()
+    assert not Matter.objects.visible_to(world.admin).filter(pk=quiet_matter.pk).exists()
 
 
-def test_submissions_sent_hides_a_restricted_opinion_from_the_reader(
+def test_submissions_sent_counts_a_restricted_opinion_for_the_reader_not_the_administrator(
     world, quiet_matter, reporting_context
 ):
-    """Probe (passes): the canonical submission count is authorized per opinion."""
-    context = reporting_context(world.reader)
-    before = compute(keys.SUBMISSIONS_SENT, context).value
+    """The canonical submission count: the reader counts it (docs/adr/0181), an outsider not."""
+    before = compute(keys.SUBMISSIONS_SENT, reporting_context(world.reader)).value
+    outsider_before = compute(keys.SUBMISSIONS_SENT, reporting_context(world.admin)).value
     _sent(quiet_matter, "QA piiratud", restricted=True)
-    assert compute(keys.SUBMISSIONS_SENT, reporting_context(world.reader)).value == before
+    assert compute(keys.SUBMISSIONS_SENT, reporting_context(world.reader)).value == before + 1
+    outsider_after = compute(keys.SUBMISSIONS_SENT, reporting_context(world.admin)).value
+    assert outsider_after == outsider_before == 0
 
 
-def test_submission_count_buckets_hide_a_restricted_opinion_from_the_reader(
+def test_submission_count_buckets_count_a_restricted_opinion_for_the_reader_only(
     world, quiet_matter, reporting_context
 ):
-    context = reporting_context(world.reader)
-    before = _buckets(context)
+    before = _buckets(reporting_context(world.reader))
+    outsider_before = _buckets(reporting_context(world.admin))
     _sent(quiet_matter, "QA piiratud", restricted=True)
-    assert _buckets(reporting_context(world.reader)) == before
+    after = _buckets(reporting_context(world.reader))
+    assert after["Üks arvamus"] == before.get("Üks arvamus", 0) + 1
+    assert _buckets(reporting_context(world.admin)) == outsider_before
 
 
-def test_multiple_submissions_hides_restricted_opinions_from_the_reader(
+def test_multiple_submissions_counts_restricted_opinions_for_the_reader_only(
     world, quiet_matter, reporting_context
 ):
-    context = reporting_context(world.reader)
-    before = compute(keys.MATTERS_WITH_MULTIPLE_SUBMISSIONS, context).value
+    before = compute(keys.MATTERS_WITH_MULTIPLE_SUBMISSIONS, reporting_context(world.reader)).value
+    outsider_before = compute(
+        keys.MATTERS_WITH_MULTIPLE_SUBMISSIONS, reporting_context(world.admin)
+    ).value
     _sent(quiet_matter, "QA avalik", restricted=False)
     _sent(quiet_matter, "QA piiratud", restricted=True)
-    # The reader sees one opinion on this Matter, so it is not «mitu».
+    # The reader sees both opinions on this Matter (docs/adr/0181), so it is «mitu».
     assert (
         compute(keys.MATTERS_WITH_MULTIPLE_SUBMISSIONS, reporting_context(world.reader)).value
-        == before
+        == before + 1
+    )
+    assert (
+        compute(keys.MATTERS_WITH_MULTIPLE_SUBMISSIONS, reporting_context(world.admin)).value
+        == outsider_before
     )
 
 

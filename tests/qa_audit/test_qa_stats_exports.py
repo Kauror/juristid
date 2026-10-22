@@ -4,6 +4,9 @@ Probes (expected to pass): the Teemad CSV behind «Laadi alla CSV» holds the
 same Matters as the `MATTERS_TOTAL` card and its register list, never a TEST
 twin, and the restricted Matter only for an entitled reader; the submission
 CSV holds exactly the submission list's rows.
+
+Since docs/adr/0181 every authorized reader (READER included) gets the
+restricted Matter too, and an administrator without a business role gets no row.
 """
 
 from __future__ import annotations
@@ -44,7 +47,13 @@ def test_teemad_csv_is_the_matters_total_population(
     assert len(rows) == result.value
     assert register_total(client, result.drillthrough_url) == result.value
     assert not [t for t in titles if t.endswith("(TEST)")]
-    assert (world.restricted.title in titles) is (viewer_name == "head")
+    assert world.restricted.title in titles
+
+
+@pytest.mark.parametrize("slug", ["teemad", "arvamused"])
+def test_an_administrator_without_a_business_role_exports_no_row(slug, client, world):
+    client.force_login(world.admin)
+    assert _csv(client, slug, periood="koik") == []
 
 
 @pytest.mark.parametrize("viewer_name", ["head", "reader"])
@@ -56,4 +65,4 @@ def test_arvamused_csv_is_the_submission_list(viewer_name, client, world):
     titles_on_screen = sorted(s.title for s in listed.context["paginator"].object_list)
     titles_in_csv = sorted(row[1] for row in _csv(client, "arvamused", periood="koik"))
     assert titles_in_csv == titles_on_screen
-    assert (world.submissions["restricted"].title in titles_in_csv) is (viewer_name == "head")
+    assert world.submissions["restricted"].title in titles_in_csv

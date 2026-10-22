@@ -413,29 +413,39 @@ def _restricted_opinion(matter, actor, ministry) -> Submission:
     return opinion
 
 
-def test_a_reader_refused_the_opinion_is_refused_its_check(
-    client, normal_matter, specialist, reader, ministry
+def test_the_check_of_a_restricted_opinion_reaches_a_reader_and_no_outsider(
+    client, normal_matter, specialist, reader, administrator, ministry
 ):
+    """It used to be refused to a READER; since docs/adr/0181 a READER reads it as
+    the specialist does, and an administrator without a grant reads none of it."""
     opinion = _restricted_opinion(normal_matter, specialist, ministry)
     check = active_check(opinion)
-    # Scheduled while the opinion was still normal: only the live rule hides it.
+    # Scheduled while the opinion was still normal: only the live rule could hide it.
     assert check.visibility_override == ""
 
-    assert not NextAction.objects.visible_to(reader).filter(pk=check.pk).exists()
-    assert NextAction.objects.visible_to(specialist).filter(pk=check.pk).exists()
-    assert not [item for item in work_items(reader) if item.object_id == check.pk]
     events = ChangeEvent.objects.filter(matter=normal_matter, object_id=check.pk)
     assert events.exists()
-    assert not scope_change_events(events, reader).exists()
+    for user in (specialist, reader):
+        assert NextAction.objects.visible_to(user).filter(pk=check.pk).exists()
+        assert [item for item in work_items(user) if item.object_id == check.pk]
+        assert scope_change_events(events, user).count() == events.count()
     client.force_login(reader)
+    page = _teema(client, normal_matter)
+    assert FOLLOW_UP_TEXT_ONE in page
+
+    assert not NextAction.objects.visible_to(administrator).filter(pk=check.pk).exists()
+    assert not [item for item in work_items(administrator) if item.object_id == check.pk]
+    assert not scope_change_events(events, administrator).exists()
+    client.force_login(administrator)
     page = _teema(client, normal_matter)
     assert FOLLOW_UP_TEXT_ONE not in page
     assert "Sünteetiline ministeerium" not in page
 
 
-def test_a_check_scheduled_for_a_restricted_opinion_is_restricted(
-    normal_matter, specialist, reader, ministry
+def test_a_check_scheduled_for_a_restricted_opinion_carries_the_label(
+    normal_matter, specialist, reader, administrator, ministry
 ):
+    """The label is still copied; since docs/adr/0181 it hides nothing from a READER."""
     document = create_document(
         matter=normal_matter,
         title="Piiratud kiri",
@@ -462,19 +472,22 @@ def test_a_check_scheduled_for_a_restricted_opinion_is_restricted(
 
     check = active_check(opinion)
     assert check.visibility_override == Visibility.RESTRICTED
-    assert not NextAction.objects.visible_to(reader).filter(pk=check.pk).exists()
+    assert NextAction.objects.visible_to(reader).filter(pk=check.pk).exists()
+    assert not NextAction.objects.visible_to(administrator).filter(pk=check.pk).exists()
 
 
 def test_the_opinion_line_is_read_through_the_opinion_s_own_visibility(
-    normal_matter, specialist, reader, ministry
+    normal_matter, specialist, reader, administrator, ministry
 ):
+    """Since docs/adr/0181 the READER gets the line the specialist does; an outsider none."""
     from app.matters.follow_up_display import follow_up_subjects
 
     opinion = _restricted_opinion(normal_matter, specialist, ministry)
     check = active_check(opinion)
 
     assert follow_up_subjects([check], specialist)
-    assert follow_up_subjects([check], reader) == {}
+    assert follow_up_subjects([check], reader) == follow_up_subjects([check], specialist)
+    assert follow_up_subjects([check], administrator) == {}
 
 
 # ---------------------------------------------------------------------------

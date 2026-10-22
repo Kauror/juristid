@@ -17,6 +17,10 @@ name, through the real HTTP routes a lawyer uses:
 The adversary is a READER (and the shared-gate department viewer for the
 document routes, which are `@gate_required`). The allowed half: the lawyers
 still see everything.
+
+Since docs/adr/0181 a READER is an authorized internal user and reads these
+derived records exactly as the lawyer does; the adversary is now an outsider
+(an ADMINISTRATOR without a grant, a persona-less gate session).
 """
 
 from __future__ import annotations
@@ -70,6 +74,13 @@ def restricted_round(db):
     return {"owner": owner, "matter": matter, "round": round_}
 
 
+def _same_for_both(first: Client, second: Client, url: str, *secrets: str) -> None:
+    """Both clients see exactly the same of each secret on this page."""
+    one, two = first.get(url).content.decode(), second.get(url).content.decode()
+    for secret in secrets:
+        assert (secret in one) == (secret in two), (url, secret)
+
+
 def _record_reply(world) -> MatterExternalPosition:
     """The lawyer records what came back from the round, with its file, over HTTP."""
     lawyer = _client(world["owner"])
@@ -100,10 +111,12 @@ def test_the_lawyer_can_record_a_reply_to_a_restricted_round_and_sees_it(restric
     assert reply.summary == SECRET_REPLY
 
 
-def test_a_reply_to_a_restricted_round_is_not_shown_to_a_reader(restricted_round):
+def test_a_reply_to_a_restricted_round_reads_the_same_for_a_reader_and_not_for_an_outsider(
+    restricted_round,
+):
     reader = factories.ReaderFactory()
     _record_reply(restricted_round)
-    client = _client(reader)
+    owner = _client(restricted_round["owner"])
     matter = restricted_round["matter"]
     pages = {
         "detail": reverse("matters:matter_detail", kwargs={"pk": matter.pk}),
@@ -111,6 +124,15 @@ def test_a_reply_to_a_restricted_round_is_not_shown_to_a_reader(restricted_round
         "documents": reverse("matters:matter_documents", kwargs={"pk": matter.pk}),
         "changes": reverse("matters:matter_changes", kwargs={"pk": matter.pk}),
     }
+    # docs/adr/0181: the READER reads the reply and its file exactly as the owner.
+    for url in pages.values():
+        _same_for_both(owner, _client(reader), url, SECRET_REPLY, SECRET_FILE)
+    assert SECRET_REPLY in _client(reader).get(pages["detail"]).content.decode()
+    assert result_count(query=SECRET_REPLY, user=reader) == result_count(
+        query=SECRET_REPLY, user=restricted_round["owner"]
+    )
+    outsider = factories.AdministratorFactory()
+    client = _client(outsider)
     leaked = {
         name: url
         for name, url in pages.items()
@@ -124,7 +146,7 @@ def test_a_reply_to_a_restricted_round_is_not_shown_to_a_reader(restricted_round
     # satisfy.) The file name is never echoed, so it is checked in the body.
     search = reverse("search:search")
     for term in (SECRET_REPLY, "salajane-vastus-5512"):
-        assert result_count(query=term, user=reader) == 0, term
+        assert result_count(query=term, user=outsider) == 0, term
         body = client.get(search, {"q": term}).content.decode()
         assert "0 vastet" in body, term
         assert SECRET_FILE not in body, term
@@ -140,26 +162,35 @@ def test_a_reply_and_its_file_are_never_less_restricted_than_the_round(restricte
     assert {d.effective_visibility for d in documents} == {Visibility.RESTRICTED}
 
 
-def test_the_gate_reader_cannot_download_a_reply_file_of_a_restricted_round(
+def test_a_persona_less_gate_visitor_cannot_download_a_reply_file_of_a_restricted_round(
     restricted_round, settings
 ):
+    """Since docs/adr/0181 the download is `login_required`: no persona, no file."""
     reply = _record_reply(restricted_round)
     version = DocumentVersion.objects.get(document__links__external_position=reply)
+    # An outsider with an account gets the same 404 as for a random id.
+    outsider = _client(factories.AdministratorFactory())
+    assert outsider.get(reverse("documents:download", kwargs={"pk": version.pk})).status_code == 404
+
     apply_shared_gate(settings)
     gate = Client()
     assert gate.post(reverse("accounts:shared_gate"), {"password": PASSWORD}).status_code == 302
-    assert gate.get(reverse("documents:download", kwargs={"pk": version.pk})).status_code == 404
+    response = gate.get(reverse("documents:download", kwargs={"pk": version.pk}))
+    assert response.status_code == 302
+    assert response["Location"].startswith(reverse("accounts:choose_persona"))
+    assert b"vastus" not in response.content
 
 
-def test_the_restricted_round_itself_stays_hidden_from_the_reader(restricted_round):
-    """Control: the round (not the reply) is correctly hidden today."""
-    reader = factories.ReaderFactory()
-    body = (
-        _client(reader)
-        .get(reverse("matters:matter_detail", kwargs={"pk": restricted_round["matter"].pk}))
-        .content.decode()
-    )
-    assert SECRET_ROUND not in body
+def test_the_restricted_round_reads_the_same_for_the_reader_and_not_for_an_outsider(
+    restricted_round,
+):
+    """Control: the round itself — read by every internal user (docs/adr/0181)."""
+    url = reverse("matters:matter_detail", kwargs={"pk": restricted_round["matter"].pk})
+    owner = _client(restricted_round["owner"])
+    _same_for_both(owner, _client(factories.ReaderFactory()), url, SECRET_ROUND)
+    assert SECRET_ROUND in owner.get(url).content.decode()
+    outsider = _client(factories.AdministratorFactory())
+    assert SECRET_ROUND not in outsider.get(url).content.decode()
 
 
 # ---------------------------------------------------------------------------
@@ -169,7 +200,7 @@ def test_the_restricted_round_itself_stays_hidden_from_the_reader(restricted_rou
 SECRET_STEP = "SALAJANE-SAMM-6620"  # noqa: S105
 
 
-def test_a_restricted_step_completed_by_an_opinion_is_not_folded_under_it_for_a_reader(
+def test_a_restricted_step_completed_by_an_opinion_reads_the_same_for_a_reader_not_an_outsider(
     capture_evidence,
 ):
     owner = factories.UserFactory()
@@ -200,14 +231,16 @@ def test_a_restricted_step_completed_by_an_opinion_is_not_folded_under_it_for_a_
     step.refresh_from_db()
     assert step.status == ActionStatus.COMPLETED
 
-    reader = factories.ReaderFactory()
-    client = _client(reader)
+    reader = _client(factories.ReaderFactory())
+    outsider = _client(factories.AdministratorFactory())
     for url in (
         reverse("matters:matter_detail", kwargs={"pk": matter.pk}),
         reverse("matters:timeline_page", kwargs={"pk": matter.pk}),
         reverse("matters:matter_changes", kwargs={"pk": matter.pk}),
     ):
-        assert SECRET_STEP not in client.get(url).content.decode(), url
+        # docs/adr/0181: the READER sees what the owner sees; an outsider nothing.
+        _same_for_both(_client(owner), reader, url, SECRET_STEP)
+        assert SECRET_STEP not in outsider.get(url).content.decode(), url
     # Allowed half.
     owner_body = (
         _client(owner)

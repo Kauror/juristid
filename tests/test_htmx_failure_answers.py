@@ -199,8 +199,10 @@ def test_a_csrf_refusal_still_writes_nothing(strict, specialist):
 # -- 404 and 500 ----------------------------------------------------------------
 
 
-def test_the_404_is_estonian_and_the_same_for_absent_and_invisible(client, reader):
-    client.force_login(reader)
+def test_the_404_is_estonian_and_the_same_for_absent_and_invisible(client, administrator):
+    # docs/adr/0181: a READER reads the restricted Matter; the person it is
+    # invisible to is an outsider (ADMINISTRATOR without a grant).
+    client.force_login(administrator)
     hidden = factories.MatterFactory(visibility=Visibility.RESTRICTED)
     absent = "01a0d351-0000-7000-8000-000000000000"
 

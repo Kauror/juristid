@@ -361,7 +361,7 @@ def test_g_an_empty_picker_is_refused_by_the_form(signed_in, normal_matter, deve
 
 
 def test_h_a_restricted_development_cannot_be_reached_by_guessing_its_url(
-    client, normal_matter, specialist, reader
+    client, normal_matter, specialist, administrator
 ):
     """Requirement 9. The same answer to the GET and to the POST, and no leak.
 
@@ -372,10 +372,13 @@ def test_h_a_restricted_development_cannot_be_reached_by_guessing_its_url(
 
     `reader` is the persona this repository uses for «genuinely not authorized to
     this», because since docs/adr/0042 a second lawyer is not an outsider — every
-    role in `ROLES_WITH_RESTRICTED_ACCESS` sees restricted children by design. The
+    role in `ROLES_WITH_BUSINESS_READ` sees restricted children by design. The
     same persona and the same acceptance the QA-06 module uses for the correction
     route next door, so the two surfaces cannot drift apart on what a stranger is
     told.
+
+    Since docs/adr/0181 a READER reads every restricted child too; the stranger
+    is now an ADMINISTRATOR without a grant.
     """
     hidden = add_procedural_development(
         matter=normal_matter, author=specialist, title="Salajane samm", occurred_on=_days_ago(2)
@@ -383,7 +386,7 @@ def test_h_a_restricted_development_cannot_be_reached_by_guessing_its_url(
     hidden.visibility_override = Visibility.RESTRICTED
     hidden.save(update_fields=["visibility_override"])
 
-    client.force_login(reader)
+    client.force_login(administrator)
     url = _url(normal_matter, hidden)
 
     # Not on the page at all, so there is nothing to press.
@@ -487,8 +490,8 @@ def test_j_a_closed_matter_answers_the_post_without_writing(
 # ---------------------------------------------------------------------------
 
 
-def test_k_evidence_added_later_is_no_more_visible_than_the_step_it_supports(
-    normal_matter, specialist, reader
+def test_k_evidence_added_later_is_exactly_as_visible_as_the_step_it_supports(
+    normal_matter, specialist, reader, administrator
 ):
     """Requirement 11, stated as the comparison that makes it meaningful.
 
@@ -496,6 +499,9 @@ def test_k_evidence_added_later_is_no_more_visible_than_the_step_it_supports(
     file that arrived with it — no more. Both are asserted on one record so that
     a change to the evidence pipeline cannot quietly make the second kind looser
     than the first.
+
+    Since docs/adr/0181 "reachable" means every internal user (the READER as the
+    owner) and no outsider (an ADMINISTRATOR without a grant).
     """
     hidden = add_procedural_development(
         matter=normal_matter,
@@ -509,23 +515,22 @@ def test_k_evidence_added_later_is_no_more_visible_than_the_step_it_supports(
 
     add_development_evidence(development=hidden, author=specialist, uploads=[_pdf(LATER_FILE)])
 
-    # The links are invisible to a reader who may not see the record they name —
-    # both of them, and for the same reason.
-    visible = DocumentLink.objects.visible_to(reader).filter(procedural_development=hidden)
-    assert not visible.exists()
-    assert (
-        DocumentLink.objects.visible_to(specialist).filter(procedural_development=hidden).count()
-        == 2
-    )
+    # Both links reach the READER exactly as the owner, and neither reaches an
+    # outsider — both of them, and for the same reason.
+    for user, expected in ((specialist, 2), (reader, 2), (administrator, 0)):
+        visible = DocumentLink.objects.visible_to(user).filter(procedural_development=hidden)
+        assert visible.count() == expected, user
 
-    # And the row carrying them is not on that reader's chronology at all, so
-    # neither file draws a line of its own there.
+    # And the row carrying them is on the READER's chronology as on the owner's,
+    # and not on the outsider's at all.
     page, _ = matter_timeline(matter=normal_matter, user=reader)
+    assert any(item.record == hidden for item in page)
+    page, _ = matter_timeline(matter=normal_matter, user=administrator)
     assert all(item.record != hidden for item in page)
 
 
 def test_k_a_later_file_is_restricted_with_the_step_and_the_first_is_not_rewritten(
-    normal_matter, specialist, reader
+    normal_matter, specialist, reader, administrator
 ):
     """The gap this file used to pin, closed by docs/adr/0137.
 
@@ -539,6 +544,9 @@ def test_k_a_later_file_is_restricted_with_the_step_and_the_first_is_not_rewritt
     **The file captured before the step was restricted is not rewritten.** It
     stays at the Matter's visibility: rewriting existing documents is the
     owner's decision, not a side effect of this one (docs/adr/0137 §3).
+
+    Since docs/adr/0181 the restriction is a label: the READER lists both files
+    like the owner, an outsider neither.
     """
     hidden = add_procedural_development(
         matter=normal_matter,
@@ -552,13 +560,16 @@ def test_k_a_later_file_is_restricted_with_the_step_and_the_first_is_not_rewritt
 
     add_development_evidence(development=hidden, author=specialist, uploads=[_pdf(LATER_FILE)])
 
-    titles = set(
-        Document.objects.visible_to(reader)
-        .filter(matter=normal_matter)
-        .values_list("title", flat=True)
-    )
-    assert FIRST_FILE in titles
-    assert LATER_FILE not in titles
+    def titles(user) -> set[str]:
+        return set(
+            Document.objects.visible_to(user)
+            .filter(matter=normal_matter)
+            .values_list("title", flat=True)
+        )
+
+    assert {FIRST_FILE, LATER_FILE} <= titles(reader)
+    assert titles(reader) == titles(specialist)
+    assert titles(administrator) == set()
     assert set(
         Document.objects.filter(
             matter=normal_matter, visibility_override=Visibility.RESTRICTED

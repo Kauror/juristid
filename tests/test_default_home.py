@@ -183,35 +183,43 @@ def test_the_department_page_is_still_reachable_for_a_persona(behind_the_gate):
     assert response.resolver_match.view_name == "matters:department"
 
 
-def test_the_department_page_is_still_reachable_with_no_persona(behind_the_gate):
-    """Its no-persona capability is exactly what this change must not remove."""
+def test_the_department_page_asks_who_is_reading_with_no_persona(behind_the_gate):
+    """It used to render for the persona-less gate; since docs/adr/0181 it asks for a persona."""
     owner = factories.UserFactory()
     factories.MatterFactory(owner=owner, title="Avalik teema kõigile", is_open=True)
 
     response = behind_the_gate.get(reverse("matters:department"))
-    assert response.status_code == 200
-    assert not response.wsgi_request.user.is_authenticated
-    assert "Avalik teema kõigile" in response.content.decode()
+    assert response.status_code == 302
+    assert response["Location"].startswith(reverse("accounts:choose_persona"))
+    assert "Avalik teema kõigile" not in response.content.decode()
+
+    htmx = behind_the_gate.get(reverse("matters:department"), HTTP_HX_REQUEST="true")
+    assert htmx.status_code == 401
+    assert "Avalik teema kõigile" not in htmx.content.decode()
 
 
 # -- the explicit department switch still lands where it did ---------------
 
 
-def test_clearing_the_persona_lands_on_the_department_page_and_does_not_loop(behind_the_gate):
+def test_clearing_the_persona_lands_on_the_persona_chooser_and_does_not_loop(behind_the_gate):
     """An explicit choice of *nobody* is not the same as never having chosen.
 
-    The default home asks who is reading; this asks for the department on
-    purpose, and must not be bounced back through `/` into the selector again.
+    It still asks for the department, but since docs/adr/0181 the department
+    page needs a persona, so the chooser answers — once, with no loop, and with
+    the gate still passed.
     """
     marko = factories.UserFactory()
     behind_the_gate.post(reverse("accounts:act_as"), {"user_id": str(marko.pk)})
 
     response = behind_the_gate.post(reverse("accounts:act_as"), {"user_id": ""}, follow=True)
     assert response.status_code == 200
-    assert response.resolver_match.view_name == "matters:department"
+    assert response.resolver_match.view_name == "accounts:choose_persona"
     assert not response.wsgi_request.user.is_authenticated
     assert shared_gate.has_passed(response.wsgi_request)
-    assert reverse("accounts:choose_persona") not in [url for url, _ in response.redirect_chain]
+    chain = [url for url, _ in response.redirect_chain]
+    assert chain[0] == reverse("matters:department")
+    assert len(chain) == 2
+    assert chain[1].startswith(reverse("accounts:choose_persona"))
 
 
 def test_a_contextual_persona_switch_still_returns_to_the_page(behind_the_gate):

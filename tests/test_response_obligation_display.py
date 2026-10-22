@@ -466,8 +466,8 @@ def test_a_deadline_that_is_today_is_stated_without_a_lateness(signed_in, specia
 # ---------------------------------------------------------------------------
 
 
-def test_a_restricted_opinion_does_not_discharge_it_for_a_reader_who_cannot_see_it(
-    client, specialist, reader, today, capture_evidence, extract
+def test_a_restricted_opinion_discharges_it_for_a_reader_and_tells_an_outsider_nothing(
+    client, specialist, reader, administrator, today, capture_evidence, extract
 ):
     """AUTH-003 applied to the new line.
 
@@ -475,16 +475,23 @@ def test_a_restricted_opinion_does_not_discharge_it_for_a_reader_who_cannot_see_
     have been told before the restricted opinion existed. Silence here would be
     the disclosure: a line that disappeared when a colleague sent something
     announces that a colleague sent something.
+
+    Since docs/adr/0181 the READER sees the restricted opinion and so sees the
+    obligation discharged, like the participant; an outsider (ADMINISTRATOR
+    without a grant) sees no row at all.
     """
     matter = _matter(specialist, deadline=today - timedelta(days=10))
     _instruct(matter, specialist, on=today + timedelta(days=30))
     _send_restricted_opinion(matter, capture_evidence, extract)
 
     client.force_login(reader)
-    expected = f"{LABEL} {short_day_month(today - timedelta(days=10))} · 10 p üle"
 
-    assert teema_owed(teema_of(client, matter)) == expected
-    assert secondary_lines(client.get(REGISTER)) == [expected]
+    assert teema_owed(teema_of(client, matter)) == ""
+    assert secondary_lines(client.get(REGISTER)) == []
+
+    client.force_login(administrator)
+    assert teema_of(client, matter).status_code == 404
+    assert titles_on(client.get(REGISTER)) == []
 
 
 def test_a_participant_who_may_see_the_opinion_sees_it_discharged(
@@ -501,27 +508,38 @@ def test_a_participant_who_may_see_the_opinion_sees_it_discharged(
     assert secondary_lines(client.get(REGISTER)) == []
 
 
-def test_the_restricted_opinion_changes_nothing_else_on_the_readers_page(
-    client, specialist, reader, today, capture_evidence, extract
+def test_the_restricted_opinion_gives_the_reader_the_owners_page(
+    client, specialist, reader, administrator, today, capture_evidence, extract
 ):
     """No hidden-child leak: the rows, their order and their primary dates are
-    the ones the reader saw before the restricted Submission existed."""
+    the ones the reader saw before the restricted Submission existed.
+
+    Since docs/adr/0181 the READER sees the Submission, so its page after it is
+    the owner's; an outsider's (ADMINISTRATOR without a grant) is unchanged and
+    empty."""
     matter = _matter(specialist, deadline=today - timedelta(days=10))
     _instruct(matter, specialist, on=today + timedelta(days=30))
     _matter(specialist, deadline=today - timedelta(days=2), title="Teine teema")
 
-    client.force_login(reader)
-    before = client.get(REGISTER)
-    was = (titles_on(before), primary_dates(before), secondary_lines(before))
+    client.force_login(administrator)
+    assert titles_on(client.get(REGISTER)) == []
 
     _send_restricted_opinion(matter, capture_evidence, extract)
 
+    assert titles_on(client.get(REGISTER)) == []
+    client.force_login(specialist)
+    owners = client.get(REGISTER)
+    client.force_login(reader)
     after = client.get(REGISTER)
-    assert (titles_on(after), primary_dates(after), secondary_lines(after)) == was
+    assert (titles_on(after), primary_dates(after), secondary_lines(after)) == (
+        titles_on(owners),
+        primary_dates(owners),
+        secondary_lines(owners),
+    )
 
 
 def test_a_restricted_step_does_not_reveal_itself_through_the_second_line(
-    client, specialist, reader, today
+    client, specialist, reader, administrator, today
 ):
     """The other child that can be restricted.
 
@@ -529,17 +547,25 @@ def test_a_restricted_step_does_not_reveal_itself_through_the_second_line(
     that reader the Kuupäev cell falls back to `Arvamuse tähtaeg` — and the
     secondary line goes quiet with it. A line that appeared only for readers who
     cannot see the step would announce that the step exists.
+
+    Since docs/adr/0181 the READER sees the step and reads the owner's cell; an
+    outsider (ADMINISTRATOR without a grant) has no row to read.
     """
     matter = _matter(specialist, deadline=today - timedelta(days=10))
     action = _instruct(matter, specialist, on=today + timedelta(days=30))
     action.visibility_override = Visibility.RESTRICTED
     action.save(update_fields=["visibility_override"])
 
+    client.force_login(specialist)
+    owners = client.get(REGISTER)
     client.force_login(reader)
     response = client.get(REGISTER)
 
-    assert primary_dates(response) == [format_estonian_date(today - timedelta(days=10))]
-    assert secondary_lines(response) == []
+    assert primary_dates(response) == primary_dates(owners)
+    assert secondary_lines(response) == secondary_lines(owners)
+
+    client.force_login(administrator)
+    assert titles_on(client.get(REGISTER)) == []
 
 
 # ---------------------------------------------------------------------------

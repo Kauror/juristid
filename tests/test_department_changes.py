@@ -358,7 +358,10 @@ def test_tehtuds_own_control_is_unchanged():
 # =========================================================================
 
 
-def test_a_restricted_teemas_changes_reach_no_count_and_no_row(reader, specialist, department_head):
+def test_a_restricted_teemas_changes_count_for_every_reader_and_reach_no_outsider(
+    reader, specialist, department_head, administrator
+):
+    """docs/adr/0181: a READER counts what the owner counts; the outsider nothing."""
     hidden = create_matter(
         title="SALAJANE-TEEMA-311",
         owner=specialist,
@@ -371,32 +374,37 @@ def test_a_restricted_teemas_changes_reach_no_count_and_no_row(reader, specialis
 
     for_reader = dc.build_changes(reader)
     for_owner = dc.build_changes(specialist)
+    for_outsider = dc.build_changes(administrator)
 
-    assert _counts(for_reader) == {
-        "uued": 1,
-        "hetkeseis": 0,
-        "vastutaja": 0,
-        "tegevused": 0,
-        "taasavatud": 0,
-    }
-    titles = {row.matter_title for result in for_reader.categories for row in result.rows}
-    assert "SALAJANE-TEEMA-311" not in titles
     assert _counts(for_owner)["hetkeseis"] == 1
     assert _counts(for_owner)["uued"] == 2
+    assert _counts(for_reader) == _counts(for_owner)
+    titles = {row.matter_title for result in for_reader.categories for row in result.rows}
+    assert "SALAJANE-TEEMA-311" in titles
+
+    assert set(_counts(for_outsider).values()) == {0}
+    assert not [row for result in for_outsider.categories for row in result.rows]
 
 
-def test_a_restricted_step_on_an_ordinary_teema_stays_hidden(reader, specialist):
+def test_a_restricted_step_on_an_ordinary_teema_reaches_every_reader_and_no_outsider(
+    reader, specialist, administrator
+):
+    """docs/adr/0181: the override is a label between authorized readers."""
     matter = create_matter(title="Tavaline teema", owner=specialist, actor=specialist)
     action = set_next_action(matter=matter, text="SALAJANE-SAMM-312", actor=specialist)
     action.visibility_override = Visibility.RESTRICTED
     action.save(update_fields=["visibility_override"])
 
-    assert _counts(dc.build_changes(reader))["tegevused"] == 0
+    assert _counts(dc.build_changes(reader))["tegevused"] == 1
     assert _counts(dc.build_changes(reader))["uued"] == 1
     assert _counts(dc.build_changes(specialist))["tegevused"] == 1
+    assert set(_counts(dc.build_changes(administrator)).values()) == {0}
 
 
-def test_coverage_counts_only_what_the_reader_may_see(reader, specialist):
+def test_coverage_counts_what_every_reader_may_see_and_nothing_for_an_outsider(
+    reader, specialist, administrator
+):
+    """docs/adr/0181: a READER's coverage is the owner's; the outsider's is empty."""
     create_imported_matter(
         title="Peidetud import",
         reference_year=2026,
@@ -406,13 +414,13 @@ def test_coverage_counts_only_what_the_reader_may_see(reader, specialist):
         stage=_stage("government"),
     )
 
-    coverage = dc.build_changes(reader).coverage
+    def figures(user):
+        coverage = dc.build_changes(user).coverage
+        return (coverage.imported_matters, coverage.system_events, coverage.stage_start_unknown)
 
-    assert (coverage.imported_matters, coverage.system_events, coverage.stage_start_unknown) == (
-        0,
-        0,
-        0,
-    )
+    assert figures(reader) == figures(specialist)
+    assert figures(reader)[0] == 1
+    assert figures(administrator) == (0, 0, 0)
 
 
 # =========================================================================
@@ -519,7 +527,10 @@ def test_no_photograph_before_the_window_means_no_comparison(department_head, sp
     assert snapshots.end_date == date(2026, 9, 10)
 
 
-def test_a_snapshot_of_a_restricted_teema_is_not_counted_for_a_reader(reader, specialist):
+def test_a_snapshot_of_a_restricted_teema_is_counted_for_a_reader_and_not_an_outsider(
+    reader, specialist, department_head, administrator
+):
+    """docs/adr/0181: the READER counts what the head counts; the outsider nothing."""
     create_matter(
         title="Peidetud",
         owner=None,
@@ -529,12 +540,19 @@ def test_a_snapshot_of_a_restricted_teema_is_not_counted_for_a_reader(reader, sp
     capture(on=date(2026, 9, 1))
     capture(on=date(2026, 9, 10))
 
-    snapshots = dc.build_changes(
-        reader, {"periood": "vahemik", "alates": "01.09.2026", "kuni": "10.09.2026"}
-    ).snapshots
+    def figures(user):
+        snapshots = dc.build_changes(
+            user, {"periood": "vahemik", "alates": "01.09.2026", "kuni": "10.09.2026"}
+        ).snapshots
+        assert snapshots.available
+        return {figure.label: (figure.start, figure.end) for figure in snapshots.figures}
 
-    assert snapshots.available
-    assert {figure.label: (figure.start, figure.end) for figure in snapshots.figures} == {
+    assert figures(reader) == figures(department_head)
+    assert figures(reader) != {
+        "Avatud teemasid": (0, 0),
+        "Vastutajata teemasid": (0, 0),
+    }
+    assert figures(administrator) == {
         "Avatud teemasid": (0, 0),
         "Vastutajata teemasid": (0, 0),
     }
@@ -629,7 +647,11 @@ def test_nothing_is_built_before_the_refusal(client, specialist, monkeypatch):
     assert client.get(PAGE).status_code == 404
 
 
-def test_a_reader_lent_the_view_opens_it_and_sees_no_restricted_teema(client, reader, specialist):
+def test_a_reader_lent_the_view_opens_it_and_sees_the_restricted_teema_too(
+    client, reader, specialist, administrator
+):
+    """docs/adr/0181: a READER reads RESTRICTED Teemas; an administrator lent the
+    view still reads nothing."""
     create_matter(
         title="SALAJANE-TEEMA-411",
         owner=specialist,
@@ -644,8 +666,13 @@ def test_a_reader_lent_the_view_opens_it_and_sees_no_restricted_teema(client, re
     assert response.status_code == 200
     body = response.content.decode()
     assert "Avalik teema 411" in body
+    assert "SALAJANE-TEEMA-411" in body
+    assert response.context["page"].categories[0].count == 2
+
+    client.force_login(_lend_management_view(administrator))
+    body = client.get(PAGE).content.decode()
+    assert "Avalik teema 411" not in body
     assert "SALAJANE-TEEMA-411" not in body
-    assert response.context["page"].categories[0].count == 1
 
 
 class TestBehindTheSharedGate:
@@ -657,11 +684,16 @@ class TestBehindTheSharedGate:
 
         return apply_shared_gate(settings, self.PASSWORD)
 
-    def test_a_session_with_no_persona_is_refused(self, client):
+    def test_a_session_with_no_persona_is_sent_to_choose_one(self, client):
+        """docs/adr/0181: the page is `@login_required`, so a persona-less gate
+        session is redirected to the persona chooser (it was a 404)."""
         response = client.post(reverse("accounts:shared_gate"), {"password": self.PASSWORD})
         assert response.status_code == 302
 
-        assert client.get(PAGE).status_code == 404
+        refused = client.get(PAGE)
+        assert refused.status_code == 302
+        assert refused["Location"].startswith(reverse("accounts:choose_persona"))
+        assert "Muudatused" not in refused.content.decode()
 
 
 def test_the_empty_state_is_said_in_words(client, department_head):

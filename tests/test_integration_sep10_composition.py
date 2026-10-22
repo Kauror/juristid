@@ -25,6 +25,13 @@ what an unauthorized reader sees *at all*, and "the secret string is absent" is
 much weaker than "the page is the same". A count, a badge, an empty state or a
 blank where a row used to be all answer the question the reader is not entitled
 to ask — whether restricted work is happening on this named file.
+
+Since docs/adr/0181 there is no reader entitled to the Matter and not to its
+restricted step: a READER reads the step as the owner does, and an outsider
+(ADMINISTRATOR without a grant) is refused the whole Matter. The page tests
+assert that; the photograph's blanking is still the builder's rule for a
+narrowed scope, which no request reaches any more, so those tests build that
+scope by hand.
 """
 
 from __future__ import annotations
@@ -37,6 +44,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from app.accounts.enums import UserRole
+from app.core.authorization import Scope
 from app.core.enums import Visibility
 from app.reporting.models import OperationalMatterSnapshot
 from app.reporting.selectors import snapshots as snapshot_selectors
@@ -135,46 +143,44 @@ def test_the_refined_matter_page_is_the_one_under_test(composed):
     assert "curact" in page, "the rebuilt current-action zone is not what rendered"
 
 
-def test_a_restricted_step_changes_nothing_an_unauthorized_reader_sees(composed):
-    """The whole page, byte for byte, in both worlds.
+def _outsider_answer(url: str) -> tuple[int, str]:
+    response = _client_for(factories.AdministratorFactory()).get(url)
+    return response.status_code, response.content.decode()
+
+
+def test_a_restricted_step_changes_nothing_an_outsider_sees(composed):
+    """The whole answer, byte for byte, in both worlds — for an outsider.
 
     Stronger than «the text is absent», and deliberately so. What the defect
     disclosed was not only the words: a row that appears, a label that changes
     from an empty state to a filled one, or a date standing where nothing stood
-    before all say that restricted work is happening on this named file.
+    before all say that restricted work is happening on this named file. Since
+    docs/adr/0181 the outsider is refused the Matter itself, and that refusal
+    must not move either.
     """
-    client = _client_for(composed["reader"])
     url = _detail_url(composed)
 
-    before = _body(client, url)
+    before = _outsider_answer(url)
     restricted_step(composed)
-    after = _body(client, url)
+    after = _outsider_answer(url)
 
-    assert HIDDEN_TEXT not in after, "the restricted step's words reached the page"
-    assert HIDDEN_DATE not in after, "the restricted step's date reached the page"
-    assert before == after, (
-        "the page changed when a restricted step appeared under it, so its "
-        "existence is observable even though its content is not"
-    )
+    assert after[0] == 404
+    assert HIDDEN_TEXT not in after[1], "the restricted step's words reached the page"
+    assert HIDDEN_DATE not in after[1], "the restricted step's date reached the page"
+    assert before == after
 
 
-def test_the_empty_state_is_the_same_empty_state(composed):
-    """The existence oracle stated on its own, because it is the subtle half.
-
-    `before == after` above would also pass if both renderings were broken in
-    the same way. This says what the reader must actually be looking at: the row
-    that says nothing is owed, in a world where something restricted *is*.
-    """
-    client = _client_for(composed["reader"])
+def test_the_reader_sees_the_filled_zone_as_the_owner_does(composed):
+    """docs/adr/0181: the READER is shown the step's text and date, not the
+    empty state it used to get in a world where something restricted was."""
     restricted_step(composed)
-    page = _body(client, _detail_url(composed))
+    page = _body(_client_for(composed["reader"]), _detail_url(composed))
 
-    assert "curact__empty" in page, (
-        "the reader is not being shown the empty current-action zone, so the "
-        "restricted step is changing the shape of what they see"
-    )
-    assert "curact__text" not in page, "a step's text element rendered for a reader"
-    assert "curact__date" not in page, "a step's date element rendered for a reader"
+    assert "curact__empty" not in page
+    assert "curact__text" in page
+    assert "curact__date" in page
+    assert HIDDEN_TEXT in page
+    assert HIDDEN_DATE in page
 
 
 def test_the_owner_still_sees_their_own_restricted_step(composed):
@@ -191,23 +197,31 @@ def test_the_owner_still_sees_their_own_restricted_step(composed):
     assert "curact__text" in page
 
 
-def test_no_other_matter_route_answers_what_the_page_refuses(composed):
+def test_every_matter_route_answers_the_reader_as_the_owner_and_an_outsider_nothing(
+    composed,
+):
     """The same fact is reachable from more than one address.
 
     #160 scoped `_overview_context` and the Järgmiseks row's own context
     together for this reason (the row and its context were retired by ENG-050A).
     These are the reader-reachable `GET`s on a Matter; a scoping
     that covered the page and not its neighbours would leave the answer one URL
-    away.
+    away. Since docs/adr/0181 the READER gets the owner's answer on each, and an
+    outsider gets nothing on any.
     """
-    client = _client_for(composed["reader"])
+    reader = _client_for(composed["reader"])
+    owner = _client_for(composed["owner"])
     restricted_step(composed)
 
     for name in ("matter_detail", "matter_documents", "timeline_page"):
         url = reverse(f"matters:{name}", kwargs={"pk": composed["matter"].pk})
-        body = _body(client, url)
-        assert HIDDEN_TEXT not in body, f"{name} disclosed the restricted step"
-        assert HIDDEN_DATE not in body, f"{name} disclosed the restricted step's date"
+        body, owners = _body(reader, url), _body(owner, url)
+        assert (HIDDEN_TEXT in body) == (HIDDEN_TEXT in owners), name
+        assert (HIDDEN_DATE in body) == (HIDDEN_DATE in owners), name
+        status, outsiders = _outsider_answer(url)
+        assert status == 404, name
+        assert HIDDEN_TEXT not in outsiders, f"{name} disclosed the restricted step"
+        assert HIDDEN_DATE not in outsiders, f"{name} disclosed the restricted step's date"
 
 
 # ---------------------------------------------------------------------------
@@ -231,16 +245,38 @@ def _as_read_by(user, world):
     return snapshot_selectors.visible_snapshots(user).get(matter=world["matter"])
 
 
-def test_restricting_a_step_blanks_the_photograph_that_copied_it(composed):
+def _narrow(monkeypatch, user) -> None:
+    """Make ``visible_snapshots`` read with a narrowed scope for ``user``.
+
+    Since docs/adr/0181 no request builds a scope that reads the Matter but not
+    its restricted step, so the blanking rule is reached through a hand-built
+    one: authenticated, no restricted role, no grant, not a participant.
+    """
+    narrowed = Scope(
+        user=user, is_authenticated=True, sees_restricted_by_role=False, break_glass_grant_id=None
+    )
+    original = snapshot_selectors.scope_for_user
+    monkeypatch.setattr(
+        snapshot_selectors,
+        "scope_for_user",
+        lambda viewer: narrowed if viewer == user else original(viewer),
+    )
+
+
+def test_restricting_a_step_blanks_the_photograph_that_copied_it(composed, monkeypatch):
     """The capture is not re-run; the read simply stops answering.
 
     The pointer records identity, never a visibility decision, so the answer is
     derived live. That is the difference between this and a stored copy, which
     would go stale in the fail-open direction — the reason ADR 0005 removed the
-    last one.
+    last one. Since docs/adr/0181 the READER reads the facts intact; the blanking
+    is asserted for a hand-built narrowed scope.
     """
-    restricted_step(composed)
+    action = restricted_step(composed)
     _photograph(composed)
+    assert _as_read_by(composed["reader"], composed).next_action_facts()[2] == action.target_date
+
+    _narrow(monkeypatch, composed["reader"])
 
     row = _as_read_by(composed["reader"], composed)
     kind, semantics, target = row.next_action_facts()
@@ -263,8 +299,11 @@ def test_the_entitled_reader_still_gets_the_photograph_intact(composed):
     assert row.has_next_action is True
 
 
-def test_relaxing_the_step_restores_the_photograph_without_recapturing(composed):
-    """Derived at read time, so the answer follows the live row both ways."""
+def test_relaxing_the_step_restores_the_photograph_without_recapturing(composed, monkeypatch):
+    """Derived at read time, so the answer follows the live row both ways.
+
+    Through a hand-built narrowed scope (docs/adr/0181: no request has one)."""
+    _narrow(monkeypatch, composed["reader"])
     action = restricted_step(composed)
     _photograph(composed)
     assert _as_read_by(composed["reader"], composed).next_action_facts()[2] is None
@@ -277,7 +316,7 @@ def test_relaxing_the_step_restores_the_photograph_without_recapturing(composed)
     assert kind == action.kind
 
 
-def test_a_row_with_no_pointer_fails_closed(composed):
+def test_a_row_with_no_pointer_fails_closed(composed, monkeypatch):
     """Rows captured before `reporting/0002` recorded no step.
 
     Nothing says which action they copied, so nothing can say whether this
@@ -285,7 +324,11 @@ def test_a_row_with_no_pointer_fails_closed(composed):
     would be the manufactured history the migration refuses. Reproduced by
     clearing the pointer and leaving the copied facts — which is exactly the
     shape of a row the migration added the column to.
+
+    Since docs/adr/0181 every request's scope sees every restricted child, so
+    this is asserted through a hand-built narrowed scope.
     """
+    _narrow(monkeypatch, composed["reader"])
     restricted_step(composed)
     row = _photograph(composed)
     OperationalMatterSnapshot.objects.filter(pk=row.pk).update(next_action=None)

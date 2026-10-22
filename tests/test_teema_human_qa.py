@@ -327,7 +327,7 @@ def test_the_edit_page_is_unreachable_for_a_reader(client, specialist, reader):
     one — but it does mean this route can no longer *demonstrate* the
     visibility rule, because every actor who fails visibility also fails the
     write gate (`ROLES_WITH_BUSINESS_WRITE` is a subset of
-    `ROLES_WITH_RESTRICTED_ACCESS`). The visibility rule itself is asserted
+    `ROLES_WITH_BUSINESS_READ`). The visibility rule itself is asserted
     where it is still observable, in `tests/test_authorization.py`, and
     `tests/test_one_write_gate.py` guards the subset relation that makes this
     reasoning true.

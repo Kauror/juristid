@@ -1261,6 +1261,6 @@ def test_whoever_may_close_a_matter_may_see_every_check_on_it():
     because every role that may write — and so close — also sees restricted
     work. If the two sets ever part, the warning would tell somebody a restricted
     opinion exists, and this fails first."""
-    from app.core.authorization import ROLES_WITH_BUSINESS_WRITE, ROLES_WITH_RESTRICTED_ACCESS
+    from app.core.authorization import ROLES_WITH_BUSINESS_READ, ROLES_WITH_BUSINESS_WRITE
 
-    assert ROLES_WITH_BUSINESS_WRITE <= ROLES_WITH_RESTRICTED_ACCESS
+    assert ROLES_WITH_BUSINESS_WRITE <= ROLES_WITH_BUSINESS_READ

@@ -103,16 +103,23 @@ def test_the_page_renders_that_link_and_it_opens_those_rows(client, desk, specia
     assert "Kuupäevata" in shown
 
 
-def test_the_population_is_scoped_to_what_the_reader_may_see(
-    desk, specialist, other_specialist, reader
+def test_the_population_is_scoped_to_what_the_viewer_may_see(
+    desk, specialist, other_specialist, reader, administrator
 ):
-    hidden = factories.MatterFactory(owner=other_specialist)
-    hidden_step = _undated(hidden, specialist, other_specialist)
-    type(hidden).objects.filter(pk=hidden.pk).update(visibility=Visibility.RESTRICTED)
+    """Since docs/adr/0181 a READER may see the restricted Matter (it counts it as
+    the specialist does); an administrator without a grant counts nothing."""
+    restricted = factories.MatterFactory(owner=other_specialist)
+    step = _undated(restricted, specialist, other_specialist)
+    type(restricted).objects.filter(pk=restricted.pk).update(visibility=Visibility.RESTRICTED)
 
     as_reader = wi.work_population_ids(reader, wi.WORK_UNDATED, responsible=specialist.pk)
-    assert hidden.pk not in as_reader
-    assert hidden_step.matter_id == hidden.pk
+    as_owner = wi.work_population_ids(specialist, wi.WORK_UNDATED, responsible=specialist.pk)
+    assert restricted.pk in as_reader
+    assert as_reader == as_owner
+    assert step.matter_id == restricted.pk
+    assert (
+        wi.work_population_ids(administrator, wi.WORK_UNDATED, responsible=specialist.pk) == set()
+    )
 
 
 def test_unassigned_undated_steps_are_their_own_population(specialist):

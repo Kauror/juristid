@@ -140,13 +140,17 @@ def test_a_matter_with_three_collaborators_is_listed_once_under_minu(client, wor
         assert total == len(seen)
 
 
-def test_a_restricted_matter_reaches_its_participant_once_and_nobody_else(client, world):
+def test_a_restricted_matter_reaches_every_reader_once_and_no_outsider(client, world):
+    """docs/adr/0181: the READER reads it once like a participant; the
+    administrator without a grant is the outsider."""
     restricted = str(world["restricted"].pk)
     sender_a = str(world["senders"][0].pk)
     participant, _ = _walk(client, world["people"]["collaborator"], {"asutus": sender_a})
-    outsider, _ = _walk(client, world["people"]["reader"], {"asutus": sender_a})
+    reader, _ = _walk(client, world["people"]["reader"], {"asutus": sender_a})
+    outsider, _ = _walk(client, world["people"]["administrator"], {"asutus": sender_a})
 
     assert participant.count(restricted) == 1
+    assert reader.count(restricted) == 1
     assert restricted not in outsider
 
 

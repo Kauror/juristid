@@ -243,6 +243,5 @@ def test_rail_rows_open_exactly_the_real_records_they_count(
         assert opened == ids, caption
         assert value == len(ids), caption
         assert not opened & twins, caption
-        assert (world.restricted.pk in opened) is (
-            viewer_name == "head" and caption == "avatud teemat"
-        ), caption
+        # docs/adr/0181: the reader counts and opens the restricted Teema as the head does.
+        assert (world.restricted.pk in opened) is (caption == "avatud teemat"), caption

@@ -22,6 +22,11 @@ The matrix covers the five readers the product actually has:
 * the **technical administrator**, who does *not*. That is not an oversight: the
   specification separates technical administration from business access, and a
   test that let it slide would remove the only thing enforcing it (5.2).
+
+Since docs/adr/0181 there are two answers, not three: the reader, the owner and
+the head read the restricted Matter alike — every figure identical — and the
+department scope and the administrator without a grant read nothing at all,
+NORMAL work included.
 """
 
 from __future__ import annotations
@@ -60,29 +65,27 @@ def _values(viewer, reporting_context) -> dict[str, int]:
 # ---------------------------------------------------------------------------
 
 
-def test_a_reader_sees_none_of_the_restricted_matter(world, reporting_context):
+def test_a_reader_sees_all_of_the_restricted_matter(world, reporting_context):
     """The baseline this matrix is measured against.
 
-    It used to be an unrelated specialist. Since docs/adr/0042 that person reads
-    the department, so the viewer who may *not* see the restricted Matter is
-    somebody outside the legal team — here a reader, who is authenticated, real
-    and deliberately not widened by that decision.
+    It used to be the figures *without* the restricted Matter, read by a
+    READER. Since docs/adr/0181 a READER is an authorized internal user, so
+    these are the department's full figures — one more of everything than the
+    old baseline (11, 5, 3, 3, 1, 2).
     """
     assert _values(world.reader, reporting_context) == {
-        keys.MATTERS_TOTAL: 11,
-        keys.ACTIVE_FULL_MATTERS: 5,
-        keys.MATTERS_WITH_HISTORICAL_SOURCE: 3,
-        keys.SUBMISSIONS_SENT: 3,
-        keys.OVERDUE_DO_DEADLINE: 1,
-        keys.ENTRY_COUNT: 2,
+        keys.MATTERS_TOTAL: 12,
+        keys.ACTIVE_FULL_MATTERS: 6,
+        keys.MATTERS_WITH_HISTORICAL_SOURCE: 4,
+        keys.SUBMISSIONS_SENT: 4,
+        keys.OVERDUE_DO_DEADLINE: 2,
+        keys.ENTRY_COUNT: 3,
     }
 
 
-def test_the_owner_sees_exactly_one_more_of_everything(world, reporting_context):
-    """Participation, not role. Sandra owns it, so it is hers to read."""
-    unrelated = _values(world.reader, reporting_context)
-    owner = _values(world.sandra, reporting_context)
-    assert owner == {key: unrelated[key] + 1 for key in unrelated}
+def test_the_owner_sees_exactly_what_a_reader_sees(world, reporting_context):
+    """Neither participation nor role: every authorized reader (docs/adr/0181)."""
+    assert _values(world.sandra, reporting_context) == _values(world.reader, reporting_context)
 
 
 def test_the_department_head_reads_restricted_content_by_role(world, reporting_context):
@@ -94,21 +97,21 @@ def test_the_technical_administrator_does_not(world, reporting_context):
 
     ADMINISTRATOR is a technical role and carries no business access. A
     time-bounded, audited break-glass grant is the route, and it is not this
-    (master specification 5.2, app/core/authorization.py).
+    (master specification 5.2, app/core/authorization.py). Since docs/adr/0181
+    that means no business content at all — not even NORMAL Matters.
     """
-    assert _values(world.admin, reporting_context) == _values(world.reader, reporting_context)
+    for value in _values(world.admin, reporting_context).values():
+        assert value == 0
 
 
-def test_the_department_scope_works_without_a_persona_and_stays_normal(world, reporting_context):
+def test_the_department_scope_without_a_persona_sees_nothing(world, reporting_context):
     """Somebody past the shared gate who has chosen nobody.
 
-    The page has to be worth looking at — so the numbers are the department's —
-    and it must not become useful by borrowing an arbitrary person's identity
-    (Stage-2D auth brief 6).
+    It used to see the department's NORMAL figures. Since docs/adr/0181 the
+    shared password alone reads nothing: a persona is required first.
     """
-    department = _values(DEPARTMENT_VIEWER, reporting_context)
-    assert department == _values(world.reader, reporting_context)
-    assert department[keys.MATTERS_TOTAL] == 11
+    for value in _values(DEPARTMENT_VIEWER, reporting_context).values():
+        assert value == 0
 
 
 def test_an_unauthenticated_reader_sees_nothing_at_all(world, reporting_context):
@@ -117,35 +120,45 @@ def test_an_unauthenticated_reader_sees_nothing_at_all(world, reporting_context)
 
 
 # ---------------------------------------------------------------------------
-# The shapes that are easy to forget
+# The shapes that are easy to forget — the same for every reader, empty for an
+# outsider
 # ---------------------------------------------------------------------------
 
 
-def test_a_restricted_matter_does_not_appear_in_a_year_bar(world, reporting_context):
+def test_a_restricted_matter_appears_in_a_readers_year_bar_and_no_outsiders(
+    world, reporting_context
+):
     def year_bar(viewer) -> int:
         result = compute(keys.MATTERS_BY_REPORTING_YEAR, reporting_context(viewer))
         return next((s.value for s in result.segments if s.label == str(world.current_year)), 0)
 
-    assert year_bar(world.reader) == 5
+    assert year_bar(world.reader) == 6
     assert year_bar(world.sandra) == 6
+    assert year_bar(world.admin) == 0
 
 
-def test_a_restricted_matter_does_not_appear_in_an_owner_tally(world, reporting_context):
+def test_a_restricted_matter_appears_in_a_readers_owner_tally_and_no_outsiders(
+    world, reporting_context
+):
     def sandra_total(viewer) -> int:
         result = compute(keys.MATTERS_BY_OWNER, reporting_context(viewer))
         return next((s.value for s in result.segments if s.label == "Sandra"), 0)
 
-    assert sandra_total(world.reader) == 2
+    assert sandra_total(world.reader) == 3
     assert sandra_total(world.sandra) == 3
+    assert sandra_total(world.admin) == 0
 
 
-def test_a_restricted_matter_does_not_inflate_a_policy_area(world, reporting_context):
+def test_a_restricted_matter_counts_in_a_readers_policy_area_and_no_outsiders(
+    world, reporting_context
+):
     def tax_total(viewer) -> int:
         result = compute(keys.MATTERS_BY_POLICY_AREA, reporting_context(viewer))
         return next((s.value for s in result.segments if s.label == "Maksud"), 0)
 
-    assert tax_total(world.reader) == 1
+    assert tax_total(world.reader) == 2
     assert tax_total(world.sandra) == 2
+    assert tax_total(world.admin) == 0
 
 
 def test_a_restricted_matter_does_not_reveal_an_organisation_it_alone_names(
@@ -154,40 +167,53 @@ def test_a_restricted_matter_does_not_reveal_an_organisation_it_alone_names(
     """`Näidisliit` sends only the restricted Matter and receives only its opinion.
 
     A top-list built after aggregation would print the organisation's name to a
-    reader with no access to the single record that names it.
+    viewer with no access to the single record that names it. Since
+    docs/adr/0181 that viewer is an administrator without a business role; a
+    READER reads the record and its name like the head does.
     """
     for key in (keys.MATTERS_BY_SOURCE_ORGANISATION, keys.SUBMISSIONS_BY_RECIPIENT):
-        labels = {s.label for s in compute(key, reporting_context(world.reader)).segments}
+        labels = {s.label for s in compute(key, reporting_context(world.admin)).segments}
         assert world.partner.name not in labels
-        privileged = {s.label for s in compute(key, reporting_context(world.head)).segments}
-        assert world.partner.name in privileged
+        for privileged_viewer in (world.reader, world.head):
+            privileged = {
+                s.label for s in compute(key, reporting_context(privileged_viewer)).segments
+            }
+            assert world.partner.name in privileged
 
 
-def test_a_restricted_matter_does_not_move_a_coverage_denominator(world, reporting_context):
-    outsider = compute(keys.MATTERS_BY_POLICY_AREA, reporting_context(world.reader))
+def test_a_restricted_matter_moves_a_readers_coverage_denominator_as_the_owners(
+    world, reporting_context
+):
+    reader = compute(keys.MATTERS_BY_POLICY_AREA, reporting_context(world.reader))
     owner = compute(keys.MATTERS_BY_POLICY_AREA, reporting_context(world.sandra))
-    assert outsider.coverage_denominator == 11
-    assert owner.coverage_denominator == 12
-    assert outsider.coverage_count == 2
-    assert owner.coverage_count == 3
+    outsider = compute(keys.MATTERS_BY_POLICY_AREA, reporting_context(world.admin))
+    assert reader.coverage_denominator == owner.coverage_denominator == 12
+    assert reader.coverage_count == owner.coverage_count == 3
+    assert outsider.coverage_denominator == 0
+    assert outsider.coverage_count == 0
 
 
-def test_a_restricted_matters_files_are_not_in_the_material_totals(world, reporting_context):
+def test_a_restricted_matters_files_are_in_every_readers_material_totals(world, reporting_context):
     """One page and one file behind a restricted Matter, in three metrics."""
-    for viewer, pages, occurrences, byte_gap in (
-        (world.reader, 4, 8, 0),
-        (world.head, 5, 9, 4),
+    for viewer, pages, occurrences, total_bytes in (
+        (world.reader, 5, 9, 54),
+        (world.head, 5, 9, 54),
+        (world.admin, 0, 0, 0),
     ):
         context = reporting_context(viewer)
         assert compute(keys.LEGACY_SOURCE_PAGES, context).value == pages
         assert compute(keys.HISTORICAL_RESOURCE_OCCURRENCES, context).value == occurrences
-        assert compute(keys.HISTORICAL_RESOURCE_BYTES, context).value == 50 + byte_gap
+        assert compute(keys.HISTORICAL_RESOURCE_BYTES, context).value == total_bytes
 
 
-def test_a_restricted_matters_document_is_not_in_the_extraction_totals(world, reporting_context):
-    outsider = compute(keys.EXTRACTION_SUCCESS, reporting_context(world.reader)).value
+def test_a_restricted_matters_document_is_in_every_readers_extraction_totals(
+    world, reporting_context
+):
+    reader = compute(keys.EXTRACTION_SUCCESS, reporting_context(world.reader)).value
     privileged = compute(keys.EXTRACTION_SUCCESS, reporting_context(world.head)).value
-    assert privileged == outsider + 2  # its submission evidence and its material
+    outsider = compute(keys.EXTRACTION_SUCCESS, reporting_context(world.admin)).value
+    assert reader == privileged
+    assert outsider == 0
 
 
 def test_an_other_bucket_cannot_smuggle_a_restricted_row_into_a_total(world, reporting_context):
@@ -195,10 +221,13 @@ def test_an_other_bucket_cannot_smuggle_a_restricted_row_into_a_total(world, rep
 
     Worth asserting rather than assuming: a "Muud" bucket computed as
     `total - shown` from an unscoped total is exactly how a restricted row
-    reappears as an anonymous number.
+    reappears as an anonymous number. Since docs/adr/0181 a READER's total is
+    the department's 12, and an outsider's is nought.
     """
     result = compute(keys.MATTERS_BY_ORIGIN, reporting_context(world.reader))
-    assert result.segment_total == 11
+    assert result.segment_total == 12
+    result = compute(keys.MATTERS_BY_ORIGIN, reporting_context(world.admin))
+    assert result.segment_total == 0
 
 
 # ---------------------------------------------------------------------------
@@ -212,39 +241,53 @@ def _csv(client, url: str) -> str:
     return b"".join(response.streaming_content).decode("utf-8-sig")
 
 
-def test_a_csv_export_carries_no_restricted_row(client, world):
-    client.force_login(world.reader)
-    body = _csv(client, "/statistika/eksport/teemad.csv?periood=koik")
-    assert world.restricted.title not in body
-    assert world.native_open.title in body
+def test_a_csv_export_carries_the_restricted_row_for_a_reader_and_none_for_an_outsider(
+    client, world
+):
+    for viewer in (world.reader, world.head):
+        client.force_login(viewer)
+        body = _csv(client, "/statistika/eksport/teemad.csv?periood=koik")
+        assert world.restricted.title in body
+        assert world.native_open.title in body
 
-    client.force_login(world.head)
-    privileged = _csv(client, "/statistika/eksport/teemad.csv?periood=koik")
-    assert world.restricted.title in privileged
+    client.force_login(world.admin)
+    outsider = _csv(client, "/statistika/eksport/teemad.csv?periood=koik")
+    assert world.restricted.title not in outsider
+    assert world.native_open.title not in outsider
 
 
 def test_a_csv_export_never_says_how_much_it_withheld(client, world):
-    """A file that reports the size of its own omission has not omitted it."""
-    client.force_login(world.reader)
+    """A file that reports the size of its own omission has not omitted it.
+
+    Read by an administrator without a business role, from whom since
+    docs/adr/0181 everything is withheld.
+    """
+    client.force_login(world.admin)
     body = _csv(client, "/statistika/eksport/teemad.csv?periood=koik").lower()
     for word in ("piiratud", "peidetud", "varjatud", "restricted"):
         assert word not in body
 
 
-def test_restricted_material_never_reaches_the_material_export(client, world):
+def test_restricted_material_reaches_a_readers_material_export_and_no_outsiders(client, world):
     client.force_login(world.reader)
     body = _csv(client, "/statistika/eksport/materjalid.csv?periood=koik")
-    assert "liige.pdf" not in body
+    assert "liige.pdf" in body
     assert "eelnou.pdf" in body
+
+    client.force_login(world.admin)
+    body = _csv(client, "/statistika/eksport/materjalid.csv?periood=koik")
+    assert "liige.pdf" not in body
+    assert "eelnou.pdf" not in body
 
 
 def test_restricted_narrative_never_reaches_any_statistika_page(client, world):
     """One word lives only inside the restricted Matter's own content.
 
     Asserting on the word rather than on a count covers labels, chips, chart
-    titles and table cells in one go.
+    titles and table cells in one go. Read by an administrator without a
+    business role, the viewer who may not read it since docs/adr/0181.
     """
-    client.force_login(world.reader)
+    client.force_login(world.admin)
     for path in (
         "/statistika/",
         "/statistika/teemad/",
@@ -269,14 +312,15 @@ def test_a_section_picker_only_offers_sections_the_reader_can_reach(world, repor
     """One OneNote section exists only behind the restricted Matter.
 
     A picker built from the whole corpus would print its name — which is itself
-    a fact about confidential material — to a reader who cannot open a single
-    page in it.
+    a fact about confidential material — to a viewer who cannot open a single
+    page in it. Since docs/adr/0181 a READER opens it; an administrator without
+    a business role is offered no section at all.
     """
     from app.reporting.filters import source_sections
     from tests.synthetic_statistics import SECTION_RESTRICTED
 
-    assert source_sections(reporting_context(world.reader)) == [
-        "ARHIIV keskkond",
-        "ARHIIV maksud ja toll",
-    ]
-    assert SECTION_RESTRICTED in source_sections(reporting_context(world.head))
+    assert source_sections(reporting_context(world.reader)) == source_sections(
+        reporting_context(world.head)
+    )
+    assert SECTION_RESTRICTED in source_sections(reporting_context(world.reader))
+    assert source_sections(reporting_context(world.admin)) == []

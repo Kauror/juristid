@@ -377,7 +377,8 @@ def test_a_missing_original_fails_one_file_and_not_the_run(applied, archive, cor
 
 def test_the_case_file_renders_in_source_order(applied, client, register, archive):
     materialise_resources(archive=archive, batch=applied[1])
-    reader = factories.AdministratorFactory()
+    # A business reader: since docs/adr/0181 an administrator reads no case file.
+    reader = factories.ReaderFactory()
     client.force_login(reader)
 
     link = MatterSourcePage.objects.get(matter=register["2019_1"], source_page__page_key="p-exact")
@@ -392,7 +393,8 @@ def test_the_case_file_renders_in_source_order(applied, client, register, archiv
 
 
 def test_the_page_xml_is_offered_as_a_download_and_never_rendered(applied, client, register):
-    reader = factories.AdministratorFactory()
+    # A business reader: since docs/adr/0181 an administrator reads no case file.
+    reader = factories.ReaderFactory()
     client.force_login(reader)
     link = MatterSourcePage.objects.get(matter=register["2019_1"], source_page__page_key="p-exact")
 
@@ -405,8 +407,14 @@ def test_the_page_xml_is_offered_as_a_download_and_never_rendered(applied, clien
     assert download["X-Content-Type-Options"] == "nosniff"
 
 
-def test_a_historical_page_is_no_less_confidential_for_being_old(applied, client, register):
-    """Read through the Matter's own scope, like everything else."""
+def test_a_historical_page_of_a_restricted_matter_is_read_by_every_reader_and_no_outsider(
+    applied, client, register
+):
+    """Read through the Matter's own scope, like everything else.
+
+    Since docs/adr/0181 a READER reads it exactly as the owner does; an
+    administrator without a grant reads neither the page nor its XML.
+    """
     matter = register["2019_1"]
     matter.visibility = Visibility.RESTRICTED
     matter.owner = factories.UserFactory()
@@ -414,16 +422,35 @@ def test_a_historical_page_is_no_less_confidential_for_being_old(applied, client
 
     link = MatterSourcePage.objects.get(matter=matter, source_page__page_key="p-exact")
 
-    client.force_login(factories.ReaderFactory())
+    client.force_login(factories.AdministratorFactory())
     assert client.get(f"/ajalugu/{link.pk}/").status_code == 404
     assert client.get(f"/ajalugu/{link.pk}/lahtefail/").status_code == 404
 
     client.force_login(matter.owner)
-    assert client.get(f"/ajalugu/{link.pk}/").status_code == 200
+    as_owner = client.get(f"/ajalugu/{link.pk}/")
+    assert as_owner.status_code == 200
+
+    client.force_login(factories.ReaderFactory())
+    as_reader = client.get(f"/ajalugu/{link.pk}/")
+    assert as_reader.status_code == 200
+    assert synthetic_historical.ONLY_ON_EXACT_PAGE in as_reader.content.decode()
+    assert client.get(f"/ajalugu/{link.pk}/lahtefail/").status_code == 200
 
 
 def test_a_reviewer_can_link_a_candidate_and_clicking_twice_is_harmless(applied, client, register):
+    """The queue is still the administrator's; since docs/adr/0181 the Matter it
+    links to needs a break-glass grant, so the reviewer holds one."""
+    import datetime as dt
+
+    from app.accounts.services import grant_break_glass
+
     reviewer = factories.AdministratorFactory()
+    grant_break_glass(
+        user=reviewer,
+        granted_by=factories.DepartmentHeadFactory(),
+        reason="ajaloo ülevaatus",
+        duration=dt.timedelta(hours=2),
+    )
     client.force_login(reviewer)
     candidate = HistoricalMatchCandidate.objects.get(candidate_class=CandidateClass.STRONG)
     candidate.matter = register["2019_1"]
@@ -490,12 +517,16 @@ def test_a_historical_page_is_searchable_as_its_own_row(applied, register):
     from app.search.models import SearchDocument, SearchSourceKind
     from app.search.services import search
 
-    reader = factories.AdministratorFactory()
+    # A business reader finds it; since docs/adr/0181 an administrator finds nothing.
+    reader = factories.ReaderFactory()
     assert SearchDocument.objects.filter(source_kind=SearchSourceKind.LEGACY_SOURCE_PAGE).exists()
 
     results = search(query=synthetic_historical.ONLY_ON_ONENOTE_ONLY_PAGE, user=reader)
     kinds = {result.source_kind for result in results}
     assert SearchSourceKind.LEGACY_SOURCE_PAGE in kinds
+
+    outsider = factories.AdministratorFactory()
+    assert not search(query=synthetic_historical.ONLY_ON_ONENOTE_ONLY_PAGE, user=outsider)
 
 
 # -- the command -----------------------------------------------------------

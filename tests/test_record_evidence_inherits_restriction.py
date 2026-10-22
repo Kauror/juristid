@@ -323,7 +323,7 @@ def _readers_count(reader, matter) -> int:
 
 @pytest.mark.parametrize("door", DOORS.values(), ids=DOORS.keys())
 def test_a_file_on_a_restricted_record_is_restricted_with_it(
-    door, world, client, specialist, reader
+    door, world, client, specialist, reader, administrator
 ):
     before = _readers_count(reader, world.matter)
 
@@ -332,12 +332,22 @@ def test_a_file_on_a_restricted_record_is_restricted_with_it(
     assert document.visibility_override == Visibility.RESTRICTED
     assert document.matter.visibility == Visibility.NORMAL
 
-    # Invisible to a reader who may not see the record: not listed, not counted,
-    # not found.
-    assert not Document.objects.visible_to(reader).filter(pk=document.pk).exists()
-    assert document.title not in _dokumendid(client, reader, world.matter)
-    assert _readers_count(reader, world.matter) == before
-    assert result_count(query=MARKER_WORD, user=reader) == 0
+    # Since docs/adr/0181 the restriction is a label: the READER lists, counts
+    # and finds the file exactly as the owner does.
+    assert Document.objects.visible_to(reader).filter(pk=document.pk).exists()
+    assert document.title in _dokumendid(client, reader, world.matter)
+    assert _readers_count(reader, world.matter) > before
+    assert _readers_count(reader, world.matter) == _readers_count(specialist, world.matter)
+    assert result_count(query=MARKER_WORD, user=reader) == result_count(
+        query=MARKER_WORD, user=specialist
+    )
+
+    # Invisible to an outsider (ADMINISTRATOR without a grant): not listed, not
+    # counted, not found.
+    assert not Document.objects.visible_to(administrator).filter(pk=document.pk).exists()
+    assert document.title not in _dokumendid(client, administrator, world.matter)
+    assert _readers_count(administrator, world.matter) == 0
+    assert result_count(query=MARKER_WORD, user=administrator) == 0
 
     # And still there for somebody who may see it.
     assert document.title in _dokumendid(client, specialist, world.matter)

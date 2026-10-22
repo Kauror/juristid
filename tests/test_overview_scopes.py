@@ -124,9 +124,11 @@ def test_an_ownerless_matter_reaches_the_intervention_list_and_the_count(departm
 # --- C: a restricted Matter is counted for those entitled, masked for the rest
 
 
-def test_a_restricted_title_never_reaches_a_non_participants_page(
-    client, specialist, reader, today
+def test_a_restricted_title_reaches_a_readers_page_and_never_an_outsiders(
+    client, specialist, reader, administrator, today
 ):
+    """docs/adr/0181: a READER is no longer a non-participant who is refused;
+    the outsider is the administrator without a grant."""
     create_matter(
         title="Konkurentsiseaduse järelevalvemenetlus",
         owner=specialist,
@@ -135,9 +137,11 @@ def test_a_restricted_title_never_reaches_a_non_participants_page(
         actor=specialist,
     )
     client.force_login(reader)
-
     body = client.get(reverse(OVERVIEW) + "?vaade=osakond").content.decode()
+    assert "Konkurentsiseaduse" in body
 
+    client.force_login(administrator)
+    body = client.get(reverse(OVERVIEW) + "?vaade=osakond").content.decode()
     assert "Konkurentsiseaduse" not in body
 
 

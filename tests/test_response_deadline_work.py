@@ -359,8 +359,14 @@ def test_an_ownerless_deadline_is_on_nobodys_desk_but_is_department_work(special
 # ---------------------------------------------------------------------------
 
 
-def test_a_restricted_deadline_reaches_only_a_reader_who_may_see_the_matter(specialist, reader):
-    """Inherited from the Matter. No second visibility concept for a column."""
+def test_a_restricted_deadline_reaches_only_a_reader_who_may_see_the_matter(
+    specialist, reader, administrator
+):
+    """Inherited from the Matter. No second visibility concept for a column.
+
+    Since docs/adr/0181 every authorized reader — the READER included — may see
+    the Matter; the one who may not is the administrator without a grant.
+    """
     anchor = _wednesday()
     matter = _matter(
         specialist,
@@ -369,15 +375,20 @@ def test_a_restricted_deadline_reaches_only_a_reader_who_may_see_the_matter(spec
         visibility=Visibility.RESTRICTED,
     )
 
-    authorized = wi.work_items(specialist, today=anchor)
-    assert matter.pk in {item.matter_id for item in authorized}
-    assert matter.pk in wi.work_population_ids(specialist, wi.WORK_DEADLINE_THIS_WEEK, today=anchor)
+    for insider in (specialist, reader):
+        authorized = wi.work_items(insider, today=anchor)
+        assert matter.pk in {item.matter_id for item in authorized}
+        assert matter.pk in wi.work_population_ids(
+            insider, wi.WORK_DEADLINE_THIS_WEEK, today=anchor
+        )
 
-    denied = wi.work_items(reader, today=anchor)
+    denied = wi.work_items(administrator, today=anchor)
     assert matter.pk not in {item.matter_id for item in denied}
-    assert matter.pk not in wi.work_population_ids(reader, wi.WORK_DEADLINE_THIS_WEEK, today=anchor)
+    assert matter.pk not in wi.work_population_ids(
+        administrator, wi.WORK_DEADLINE_THIS_WEEK, today=anchor
+    )
     assert matter.pk not in set(
-        wi.outstanding_response_deadlines(reader).values_list("pk", flat=True)
+        wi.outstanding_response_deadlines(administrator).values_list("pk", flat=True)
     )
 
 
@@ -1421,25 +1432,27 @@ def test_the_header_still_states_the_response_deadline(client, specialist, today
 
 
 def test_a_restricted_matters_instruction_cannot_change_another_readers_counts(
-    specialist, reader, today
+    specialist, administrator, today
 ):
     """Authorization before arithmetic, on both sides of the new rule.
 
-    The suppressed Matter is invisible to the reader either way, so the reader's
-    numbers must be identical before and after the instruction exists — and the
-    subquery must not become a way to learn that a hidden action was written.
+    The suppressed Matter is invisible to the outsider either way, so the
+    outsider's numbers must be identical before and after the instruction
+    exists — and the subquery must not become a way to learn that a hidden
+    action was written. Since docs/adr/0181 the outsider is the administrator
+    without a grant (a READER sees the Matter).
     """
     matter = _matter(
         specialist, deadline=today - timedelta(days=10), visibility=Visibility.RESTRICTED
     )
 
-    before = wi.work_population_ids(reader, wi.WORK_OVERDUE, today=today)
+    before = wi.work_population_ids(administrator, wi.WORK_OVERDUE, today=today)
     assert matter.pk not in before
 
     _instruct(matter, specialist, kind=ActionKind.MONITOR, on=today + timedelta(days=40))
 
-    assert wi.work_population_ids(reader, wi.WORK_OVERDUE, today=today) == before
-    assert _response_items(wi.work_items(reader, today=today)) == []
+    assert wi.work_population_ids(administrator, wi.WORK_OVERDUE, today=today) == before
+    assert _response_items(wi.work_items(administrator, today=today)) == []
     # The owner still sees the precedence applied to their own file.
     assert _response_items(_mine(specialist, today)) == []
 

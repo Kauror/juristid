@@ -723,24 +723,29 @@ def test_closing_a_matter_leaves_its_links_exactly_as_they_were(normal_matter, s
 
 
 def test_a_restricted_matters_links_are_invisible_to_an_unauthorised_reader(
-    client, restricted_matter, specialist, reader
+    client, restricted_matter, specialist, administrator
 ):
-    """Scenario I. Not on the page, and not by name anywhere on it."""
+    """Scenario I. Not on the page, and not by name anywhere on it.
+
+    The unauthorised reader is an administrator without a grant since
+    docs/adr/0181 (a READER reads the restricted Matter).
+    """
     _record(restricted_matter, specialist, url=EIS_URL, label="Eelnõu 123 SE")
 
-    client.force_login(reader)
+    client.force_login(administrator)
     response = client.get(reverse("matters:matter_detail", kwargs={"pk": restricted_matter.pk}))
 
     assert response.status_code == 404
 
 
-def test_a_restricted_link_on_a_visible_matter_is_invisible_to_a_reader(
-    client, normal_matter, specialist, reader
+def test_a_restricted_link_on_a_visible_matter_reaches_a_reader_and_no_outsider(
+    client, normal_matter, specialist, reader, administrator
 ):
     """A child may be more restrictive than its Matter, and this is that case.
 
-    Read through `visible_to` rather than filtered after the fact, so the row
-    never reaches the page to be hidden.
+    Read through `visible_to` rather than filtered after the fact. Since
+    docs/adr/0181 the mark hides nothing from a READER, who sees both links as
+    the owner does; an administrator without a grant gets no page at all.
     """
     _record(normal_matter, specialist, url=REGISTER_URL, label="Avalik")
     _record(
@@ -760,8 +765,14 @@ def test_a_restricted_link_on_a_visible_matter_is_invisible_to_a_reader(
     ).content.decode()
 
     assert "Avalik" in body
-    assert "Piiratud" not in body
-    assert RIIGIKOGU_URL not in body
+    assert "Piiratud" in body
+    assert RIIGIKOGU_URL in body
+
+    client.force_login(administrator)
+    response = client.get(reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk}))
+    assert response.status_code == 404
+    assert RIIGIKOGU_URL not in response.content.decode()
+    assert REGISTER_URL not in response.content.decode()
 
 
 def test_a_link_can_never_be_less_restrictive_than_its_matter(restricted_matter, specialist):

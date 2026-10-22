@@ -597,18 +597,21 @@ def test_a_closed_matter_offers_no_muuda_control(signed_in, normal_matter, speci
 
 
 def test_n_a_restricted_development_cannot_be_corrected_by_an_unauthorised_reader(
-    client, normal_matter, reader, development
+    client, normal_matter, administrator, development
 ):
     """§12.N. Not the control, not the form, not a POST guessing the UUID.
 
     A restricted child inside a Matter somebody may see is indistinguishable here
     from one that does not exist — the same 404 to the GET and to the POST, so
     neither can be used to learn that the row is there (AUTH-003).
+
+    Since docs/adr/0181 a READER reads every restricted child; the unauthorised
+    reader is an ADMINISTRATOR without a grant.
     """
     MatterProceduralDevelopment.objects.filter(pk=development.pk).update(
         visibility_override=Visibility.RESTRICTED
     )
-    client.force_login(reader)
+    client.force_login(administrator)
 
     body = _detail(client, normal_matter)
     assert HEADLINE not in body

@@ -58,7 +58,7 @@ def test_an_administrator_is_not_a_candidate():
     """Technical administration is not business identity.
 
     The role that runs the system is deliberately absent from
-    `ROLES_WITH_RESTRICTED_ACCESS` and `ROLES_WITH_BUSINESS_WRITE` for exactly
+    `ROLES_WITH_BUSINESS_READ` and `ROLES_WITH_BUSINESS_WRITE` for exactly
     this reason; being selectable as a persona would reintroduce through the
     front door what those two sets close.
     """

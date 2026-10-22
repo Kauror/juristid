@@ -304,8 +304,12 @@ def test_an_archive_matter_is_not_flagged_either(specialist):
     assert archive.id not in found
 
 
-def test_the_query_respects_authorization(specialist, reader):
+def test_the_query_respects_authorization(specialist, reader, administrator):
+    """docs/adr/0181: the READER counts the restricted Matter like its owner; an
+    outsider (ADMINISTRATOR without a grant) counts nothing."""
     from app.core.enums import Visibility
 
     factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
-    assert dashboard.without_next_action(reader).count() == 0
+    assert dashboard.without_next_action(reader).count() == 1
+    assert dashboard.without_next_action(specialist).count() == 1
+    assert dashboard.without_next_action(administrator).count() == 0

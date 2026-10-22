@@ -30,8 +30,8 @@ import pytest
 from playwright.sync_api import expect
 
 from e2e.conftest import (
+    ADMIN,
     KAIK_ROW,
-    READER,
     SANDRA,
     create_matter,
     open_add_panel,
@@ -382,7 +382,8 @@ def test_a_restricted_teema_leaks_neither_the_file_nor_its_opinion(page, base_ur
     assert download
 
     sign_out(page, base_url)
-    sign_in(page, base_url, READER)
+    # The administrator: since docs/adr/0181 every business role reads it.
+    sign_in(page, base_url, ADMIN)
     for address in (url, f"{url}dokumendid/", f"{base_url}{download}"):
         response = page.goto(address)
         assert response is not None and response.status == 404, (
@@ -393,4 +394,4 @@ def test_a_restricted_teema_leaks_neither_the_file_nor_its_opinion(page, base_ur
     page.wait_for_load_state("networkidle")
     expect(page.locator("main")).not_to_contain_text(name)
     expect(page.locator("main")).not_to_contain_text("Koja arvamus ·")
-    screenshots(page, "toodokument-piiratud-lugeja")
+    screenshots(page, "toodokument-piiratud-haldur")

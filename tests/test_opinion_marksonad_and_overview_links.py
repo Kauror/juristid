@@ -573,20 +573,28 @@ def restricted_overview(normal_matter, specialist):
     return overview
 
 
-def test_a_restricted_overview_is_not_offered_to_a_reader_who_may_not_see_it(
-    opinion, restricted_overview, published, reader
+def test_a_restricted_overview_is_offered_to_a_reader_and_not_to_an_outsider(
+    opinion, restricted_overview, published, reader, administrator
 ):
-    """Not offered, not counted, not named."""
+    """Not offered, not counted, not named — to whoever may not see it.
+
+    Since docs/adr/0181 a READER sees it; the outsider is an administrator
+    without a grant, who is offered nothing at all.
+    """
     offered = set(selectable_website_overviews(opinion, viewer=reader).values_list("pk", flat=True))
 
-    assert restricted_overview.pk not in offered
+    assert restricted_overview.pk in offered
     assert published.pk in offered
+    assert not selectable_website_overviews(opinion, viewer=administrator).exists()
 
 
-def test_a_restricted_overview_does_not_leak_through_a_visible_opinion(
-    opinion, restricted_overview, specialist, reader
+def test_a_restricted_overview_reaches_a_reader_and_no_outsider_through_an_opinion(
+    opinion, restricted_overview, specialist, reader, administrator
 ):
-    """A reader of the letter is not told which write-ups they may not open."""
+    """A reader of the letter is not told which write-ups they may not open.
+
+    Since docs/adr/0181 a READER may open it; the outsider is the administrator.
+    """
     set_submission_website_overviews(
         submission=opinion, overviews=[restricted_overview], actor=specialist
     )
@@ -594,13 +602,20 @@ def test_a_restricted_overview_does_not_leak_through_a_visible_opinion(
     assert [row.pk for row in linked_website_overviews(opinion, viewer=specialist)] == [
         restricted_overview.pk
     ]
-    assert linked_website_overviews(opinion, viewer=reader) == []
+    assert [row.pk for row in linked_website_overviews(opinion, viewer=reader)] == [
+        restricted_overview.pk
+    ]
+    assert linked_website_overviews(opinion, viewer=administrator) == []
 
 
-def test_a_restricted_opinion_does_not_leak_through_a_visible_overview(
-    normal_matter, published, specialist, reader
+def test_a_restricted_opinion_reaches_a_reader_and_no_outsider_through_an_overview(
+    normal_matter, published, specialist, reader, administrator
 ):
-    """And the other direction, which is the half a one-sided test would miss."""
+    """And the other direction, which is the half a one-sided test would miss.
+
+    Since docs/adr/0181 a READER reads it as the owner does; the outsider is the
+    administrator without a grant.
+    """
     hidden = factories.SubmissionFactory(
         matter=normal_matter,
         title="Piiratud arvamus",
@@ -608,8 +623,10 @@ def test_a_restricted_opinion_does_not_leak_through_a_visible_overview(
     )
     set_submission_website_overviews(submission=hidden, overviews=[published], actor=specialist)
 
-    assert linked_submissions_by_overview(normal_matter, user=specialist)[published.pk]
-    assert linked_submissions_by_overview(normal_matter, user=reader) == {}
+    owner = linked_submissions_by_overview(normal_matter, user=specialist)
+    assert owner[published.pk]
+    assert linked_submissions_by_overview(normal_matter, user=reader) == owner
+    assert linked_submissions_by_overview(normal_matter, user=administrator) == {}
 
 
 def test_a_guessed_identifier_cannot_link_a_hidden_overview(
@@ -775,7 +792,10 @@ def test_a_saved_relation_renders_on_the_opinions_own_row(
 
 
 def test_the_reciprocal_list_filters_visibility(client, normal_matter, planned, specialist):
-    """An opinion's title reaches the strip only for a reader who may see it."""
+    """An opinion's title reaches the strip only for a reader who may see it.
+
+    Since docs/adr/0181 every READER may; an administrator without a grant may not.
+    """
     hidden = factories.SubmissionFactory(
         matter=normal_matter,
         title="Piiratud saadetud arvamus",
@@ -789,7 +809,12 @@ def test_the_reciprocal_list_filters_visibility(client, normal_matter, planned, 
 
     client.force_login(factories.ReaderFactory())
     theirs = client.get(reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk}))
-    assert hidden.title not in theirs.content.decode()
+    assert hidden.title in theirs.content.decode()
+
+    client.force_login(factories.AdministratorFactory())
+    outside = client.get(reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk}))
+    assert outside.status_code == 404
+    assert hidden.title not in outside.content.decode()
 
 
 def test_no_relation_appears_without_somebody_making_one(

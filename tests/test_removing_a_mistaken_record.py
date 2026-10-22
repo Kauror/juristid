@@ -567,27 +567,31 @@ def test_the_removal_reads_in_the_change_log(signed_in, normal_matter, specialis
     assert "Märge lisatud" in body
 
 
-def test_a_removal_on_a_restricted_child_is_not_readable_by_everybody(
-    client, normal_matter, specialist, reader
+def test_a_removal_on_a_restricted_child_is_readable_by_a_reader_and_no_outsider(
+    client, normal_matter, specialist, reader, administrator
 ):
     """The scoping half, asserted rather than assumed.
 
     A reader may open this Matter; the record is restricted below it. The line
     saying somebody removed it names the record, so it is scoped by the
     record's own visibility — which is what classifying the type in
-    `_child_families` buys.
+    `_child_families` buys. Since docs/adr/0181 a READER reads the record, so
+    the line too; an administrator without a grant reads neither.
     """
     development = _note(normal_matter, specialist)
     MatterProceduralDevelopment.objects.filter(pk=development.pk).update(
         visibility_override=Visibility.RESTRICTED
     )
     _remove(normal_matter, "marge", development, specialist)
+    url = reverse("matters:matter_changes", kwargs={"pk": normal_matter.pk})
     client.force_login(reader)
+    assert "Märge eemaldatud" in client.get(url).content.decode()
 
-    body = client.get(
-        reverse("matters:matter_changes", kwargs={"pk": normal_matter.pk})
-    ).content.decode()
+    client.force_login(administrator)
+    response = client.get(url)
+    body = response.content.decode()
 
+    assert response.status_code == 404
     assert "Märge eemaldatud" not in body
     assert NOTE_TITLE not in body
 

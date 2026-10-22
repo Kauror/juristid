@@ -166,8 +166,13 @@ def test_a_colleagues_desk_follows_the_same_capability(client):
     assert client.get(url).status_code == 404
 
 
-def test_a_lent_view_shows_a_reader_nothing_restricted(client):
-    """The sections are built for the reader's own scope, so RESTRICTED stays out."""
+def test_a_lent_view_is_built_for_the_viewers_own_scope(client):
+    """The sections are built for the viewer's own scope.
+
+    Since docs/adr/0181 a READER's scope is everything, RESTRICTED included;
+    an administrator lent the same view reads nothing, so the capability lends
+    a layout and never content.
+    """
     owner = factories.UserFactory()
     factories.MatterFactory(
         owner=owner, visibility=Visibility.RESTRICTED, title="Piiratud juhtimisvaates"
@@ -179,8 +184,16 @@ def test_a_lent_view_shows_a_reader_nothing_restricted(client):
     body = client.get(reverse(PAGE)).content.decode()
 
     assert "uxstat" in body
+    assert "Piiratud juhtimisvaates" in body
+    assert scope_for_user(reader).sees_all_restricted
+
+    outsider = _account(UserRole.ADMINISTRATOR, **{"department.view_management": "allow"})
+    client.force_login(outsider)
+    body = client.get(reverse(PAGE)).content.decode()
+
     assert "Piiratud juhtimisvaates" not in body
-    assert not scope_for_user(reader).sees_all_restricted
+    assert "Tavaline juhtimisvaates" not in body
+    assert not scope_for_user(outsider).is_authenticated
 
 
 def _victory(matter, author):
@@ -345,12 +358,19 @@ def test_account_administration_adds_nothing_to_business_access(role):
     assert not admin.is_staff and not admin.is_superuser
 
 
-def test_a_reader_administrator_still_cannot_read_restricted_work():
+def test_account_administration_neither_grants_nor_removes_business_reading():
+    """Reading follows the role, never `accounts.manage` (docs/adr/0181).
+
+    A READER who administers accounts reads RESTRICTED work because READER
+    reads; an ADMINISTRATOR who holds the same capability reads nothing.
+    """
     owner = factories.UserFactory()
     secret = factories.MatterFactory(owner=owner, visibility=Visibility.RESTRICTED)
     reader_admin = _account(UserRole.READER, **{"accounts.manage": "allow"})
+    administrator = _account(UserRole.ADMINISTRATOR, **{"accounts.manage": "allow"})
 
-    assert not Matter.objects.visible_to(reader_admin).filter(pk=secret.pk).exists()
+    assert Matter.objects.visible_to(reader_admin).filter(pk=secret.pk).exists()
+    assert not Matter.objects.visible_to(administrator).exists()
 
 
 def test_both_lawyer_roles_keep_department_wide_access():

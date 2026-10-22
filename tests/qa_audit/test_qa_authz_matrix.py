@@ -7,6 +7,10 @@ signed-out, and the shared-gate reader with no persona (`DepartmentViewer`).
 
 Every case below asserts both halves: the persona that must be refused is
 refused (and nothing is written), and the persona that must be allowed is.
+
+Since docs/adr/0181 the READER reads every record (RESTRICTED included) and the
+persona-less gate session is sent to the persona chooser; the read perimeter is
+the administrator without a grant.
 """
 
 from __future__ import annotations
@@ -105,8 +109,10 @@ def files(people, capture_evidence):
 # 1. Reading a RESTRICTED Matter and RESTRICTED children, by id (IDOR on reads)
 # ---------------------------------------------------------------------------
 
-ALLOWED_READERS = ("owner", "colleague", "head")
-REFUSED_READERS = ("reader", "administrator")
+# Since docs/adr/0181 a READER is an authorized internal user and reads RESTRICTED
+# content like the lawyers; the perimeter is the administrator without a grant.
+ALLOWED_READERS = ("owner", "colleague", "head", "reader")
+REFUSED_READERS = ("administrator",)
 
 
 def _read_urls(files):
@@ -146,7 +152,7 @@ def test_lawyers_read_restricted_matters_and_children(people, files, who):
 
 
 @pytest.mark.parametrize("who", REFUSED_READERS)
-def test_reader_and_administrator_get_the_same_404_as_a_random_id(people, files, who):
+def test_an_administrator_gets_the_same_404_as_a_random_id(people, files, who):
     client = _client(people[who])
     for name, url in _read_urls(files).items():
         response = client.get(url, HTTP_HX_REQUEST="true")
@@ -156,14 +162,23 @@ def test_reader_and_administrator_get_the_same_404_as_a_random_id(people, files,
         )
 
 
-def test_the_gate_reader_gets_404_on_every_restricted_document_route(settings, files):
+def test_the_gate_reader_is_sent_to_choose_a_persona_on_every_document_route(
+    settings, people, files
+):
+    # docs/adr/0181: document routes are `@login_required`; a gate session with no
+    # persona is sent to the persona chooser, even for the NORMAL file.
     client = _gate_client(settings)
-    for name, url in _read_urls(files).items():
-        if not url.startswith("/dokumendid/"):
-            continue
-        assert client.get(url).status_code == 404, name
-    # Allowed half: the NORMAL file on the same Matter downloads.
-    ok = client.get(reverse("documents:download", kwargs={"pk": files["public"].pk}))
+    chooser = reverse("accounts:choose_persona")
+    urls = [url for url in _read_urls(files).values() if url.startswith("/dokumendid/")]
+    urls.append(reverse("documents:download", kwargs={"pk": files["public"].pk}))
+    for url in urls:
+        response = client.get(url)
+        assert response.status_code == 302, url
+        assert response["Location"].startswith(chooser), url
+    # Allowed half: once a persona is chosen (a READER is never offered as one), the
+    # restricted file downloads — for a lawyer who is not its owner, too.
+    reading = _gate_client(settings, persona=people["colleague"])
+    ok = reading.get(reverse("documents:download", kwargs={"pk": files["hidden_doc"].pk}))
     assert ok.status_code == 200
 
 
@@ -176,20 +191,19 @@ def test_signed_out_is_sent_to_sign_in_never_shown(files):
             assert "/teemad/" not in response.headers["Location"].split("?")[0], name
 
 
-def test_a_reader_collaborating_on_a_restricted_matter_reads_it_and_nothing_else(people, files):
+def test_a_reader_reads_every_restricted_matter_collaborating_or_not_and_writes_none(people, files):
+    # docs/adr/0181: participation no longer decides reading; an outsider reads neither.
     reader = people["reader"]
     own = factories.MatterFactory(
         title="Lugeja oma", owner=people["owner"], visibility=Visibility.RESTRICTED
     )
     own.collaborators.set([reader])
     client = _client(reader)
-    assert client.get(reverse("matters:matter_detail", kwargs={"pk": own.pk})).status_code == 200
-    assert (
-        client.get(
-            reverse("matters:matter_detail", kwargs={"pk": files["restricted"].pk})
-        ).status_code
-        == 404
-    )
+    outsider = _client(people["administrator"])
+    for matter in (own, files["restricted"]):
+        url = reverse("matters:matter_detail", kwargs={"pk": matter.pk})
+        assert client.get(url).status_code == 200
+        assert outsider.get(url).status_code == 404
     # Participation in a Matter is not a write right (READER stays read-only).
     response = client.post(
         reverse("matters:update_summary", kwargs={"pk": own.pk}), {"brief_summary": "x"}
@@ -277,9 +291,14 @@ def test_management_pages_by_persona(people, who, expected):
         assert client.get(url).status_code == expected, (who, url)
 
 
-def test_management_pages_are_404_for_the_gate_reader_and_for_a_denied_head(settings, people):
+def test_management_pages_ask_the_gate_reader_for_a_persona_and_are_404_for_a_denied_head(
+    settings, people
+):
+    # docs/adr/0181: Muudatused is `@login_required`; no persona → the persona chooser.
     client = _gate_client(settings)
-    assert client.get(reverse("matters:department_changes")).status_code == 404
+    response = client.get(reverse("matters:department_changes"))
+    assert response.status_code == 302
+    assert response["Location"].startswith(reverse("accounts:choose_persona"))
     # A head whose view is withdrawn by an individual override loses it.
     head = people["head"]
     head.capability_overrides = {"department.view_management": "deny"}
@@ -288,21 +307,20 @@ def test_management_pages_are_404_for_the_gate_reader_and_for_a_denied_head(sett
     assert _client(head).get(reverse("matters:department_changes")).status_code == 404
 
 
-def test_a_lent_reader_sees_no_restricted_teema_on_a_colleagues_desk(people, files):
+def test_a_lent_reader_sees_the_colleagues_desk_as_the_head_does_and_an_outsider_nothing(
+    people, files
+):
+    # docs/adr/0181: a READER reads RESTRICTED Teemad; the perimeter is the administrator.
+    url = reverse("matters:person_work", kwargs={"pk": people["owner"].pk})
     lent = _lend(factories.ReaderFactory())
-    body = (
-        _client(lent)
-        .get(reverse("matters:person_work", kwargs={"pk": people["owner"].pk}))
-        .content.decode()
-    )
-    assert SECRET not in body
-    # Allowed half: the head sees the restricted file on the same desk.
-    head_body = (
-        _client(people["head"])
-        .get(reverse("matters:person_work", kwargs={"pk": people["owner"].pk}))
-        .content.decode()
-    )
+    body = _client(lent).get(url).content.decode()
+    head_body = _client(people["head"]).get(url).content.decode()
     assert response_mentions_any(head_body, [files["normal"].title, f"{SECRET} teema"])
+    for needle in (files["normal"].title, f"{SECRET} teema"):
+        assert (needle in body) == (needle in head_body), needle
+    outsider = _client(people["administrator"]).get(url)
+    assert outsider.status_code == 404
+    assert SECRET not in outsider.content.decode()
 
 
 def response_mentions_any(body: str, needles: list[str]) -> bool:
@@ -587,16 +605,25 @@ def test_switching_persona_invalidates_a_form_loaded_under_the_previous_one(
         assert event is None or event.actor_id == people["colleague"].pk
 
 
-def test_a_download_link_captured_while_normal_is_404_once_restricted(people, files, settings):
+def test_a_download_link_still_serves_a_reader_once_restricted_and_never_an_outsider(
+    people, files, settings
+):
+    # docs/adr/0181: restricting a file no longer narrows its internal readers; the
+    # administrator without a grant never had it, and a persona-less gate never does.
     url = reverse("documents:download", kwargs={"pk": files["public"].pk})
     reader = _client(people["reader"])
+    outsider = _client(people["administrator"])
     assert reader.get(url).status_code == 200
+    assert outsider.get(url).status_code == 404
     Document.objects.filter(pk=files["public"].document_id).update(
         visibility_override=Visibility.RESTRICTED
     )
-    assert reader.get(url).status_code == 404
+    assert reader.get(url).status_code == 200
+    assert outsider.get(url).status_code == 404
     gate = _gate_client(settings)
-    assert gate.get(url).status_code == 404
+    response = gate.get(url)
+    assert response.status_code == 302
+    assert response["Location"].startswith(reverse("accounts:choose_persona"))
     # Allowed half: the owner still downloads.
     settings.AUTH_MODE = "none"
     assert _client(people["owner"]).get(url).status_code == 200

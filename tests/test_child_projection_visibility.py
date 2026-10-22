@@ -37,6 +37,11 @@ chokepoint refuses any row not carrying the current `INDEX_VERSION`. That makes
 every pre-fix row ineligible the moment the code is deployed, before any
 rebuild. `test_a_contaminated_pre_fix_row_is_not_searchable_without_a_rebuild`
 is the load-bearing proof, and it is written to fail if that gate is removed.
+
+Since docs/adr/0181 every authorized internal user (READER included) reads every
+restricted child, so no request reaches a narrowed scope: the perimeter here is
+the administrator without a grant, and the live-derivation tests read through a
+hand-built participation-narrowed scope (`narrowed`) to keep the builders honest.
 """
 
 from __future__ import annotations
@@ -48,6 +53,8 @@ from django.contrib.postgres.search import SearchQuery
 from django.urls import reverse
 from django.utils import timezone
 
+from app.core import authorization
+from app.core.authorization import Scope
 from app.core.enums import Visibility
 from app.documents.enums import DocumentRole
 from app.matters.enums import EngagementKind
@@ -80,6 +87,38 @@ def _found(query: str, user) -> list[tuple[str, object]]:
     nothing about whether it was refused.
     """
     return [(row.source_kind, row.matter_id) for row in search_documents(query=query, user=user)]
+
+
+@pytest.fixture
+def narrowed(monkeypatch):
+    """Make a user read search and the photograph through a narrowed scope.
+
+    No request builds the participation-narrowed scope an uninvolved reader held
+    before docs/adr/0181, but the projection's builders still implement it and
+    their live derivation is what these tests prove. ``narrowed(user)`` returns
+    the user, who from then on reads through that hand-built scope.
+    """
+    real = authorization.scope_for_user
+    users: set = set()
+
+    def scope(user):
+        if getattr(user, "pk", None) in users:
+            return Scope(
+                user=user,
+                is_authenticated=True,
+                sees_restricted_by_role=False,
+                break_glass_grant_id=None,
+            )
+        return real(user)
+
+    monkeypatch.setattr("app.search.services.scope_for_user", scope)
+    monkeypatch.setattr("app.reporting.selectors.snapshots.scope_for_user", scope)
+
+    def narrow(user):
+        users.add(user.pk)
+        return user
+
+    return narrow
 
 
 def _matter(owner, **kwargs):
@@ -225,16 +264,21 @@ def test_an_engagement_gets_its_own_row_joined_to_the_live_record(specialist):
     assert HIDDEN in row.title
 
 
-def test_a_restricted_engagement_is_invisible_to_a_stranger_after_rebuild(specialist):
-    stranger = factories.ReaderFactory()  # not a lawyer: docs/adr/0042
+def test_a_restricted_engagement_is_found_by_a_reader_and_never_by_an_outsider(specialist):
+    """docs/adr/0181: a READER finds it as the owner does; an administrator finds nothing."""
+    reader = factories.ReaderFactory()
+    outsider = factories.AdministratorFactory()
     matter = _matter(specialist, number=506)
     _restricted_engagement(matter, specialist, title=HIDDEN, note=f"{HIDDEN} märkus")
 
     rebuild_all()
 
-    assert _found(HIDDEN, stranger) == []
-    # And the Matter itself is still perfectly findable by its own words.
-    assert (SearchSourceKind.MATTER, matter.pk) in _found("Harilik", stranger)
+    assert _found(HIDDEN, reader) == _found(HIDDEN, specialist)
+    assert _found(HIDDEN, reader) == [(SearchSourceKind.ENGAGEMENT, matter.pk)]
+    assert _found(HIDDEN, outsider) == []
+    # Not even the Matter by its own words.
+    assert (SearchSourceKind.MATTER, matter.pk) in _found("Harilik", reader)
+    assert _found("Harilik", outsider) == []
 
 
 def test_a_participant_can_still_find_their_own_restricted_engagement(specialist):
@@ -275,14 +319,17 @@ def test_an_ordinary_engagement_stays_searchable_for_everybody(specialist):
     assert _found("AVALIK-KAASAMINE-123", stranger) == [(SearchSourceKind.ENGAGEMENT, matter.pk)]
 
 
-def test_restricting_an_engagement_takes_effect_without_reindexing(specialist):
+def test_restricting_an_engagement_takes_effect_without_reindexing(specialist, narrowed):
     """Live derivation, not a stored flag.
 
     The whole reason the row joins the engagement rather than copying its state:
     restricting a consultation has to remove it from search on the next query,
-    not on the next rebuild.
+    not on the next rebuild. Since docs/adr/0181 only a hand-built narrowed scope
+    is narrowed by it; a real READER keeps finding it and an outsider never does.
     """
-    stranger = factories.ReaderFactory()  # not a lawyer: docs/adr/0042
+    stranger = narrowed(factories.ReaderFactory())
+    reader = factories.ReaderFactory()
+    outsider = factories.AdministratorFactory()
     matter = _matter(specialist, number=510)
     engagement = add_engagement(
         matter=matter,
@@ -299,11 +346,19 @@ def test_restricting_an_engagement_takes_effect_without_reindexing(specialist):
     engagement.save(update_fields=["visibility_override"])
 
     assert _found(HIDDEN, stranger) == []
+    assert _found(HIDDEN, reader) == [(SearchSourceKind.ENGAGEMENT, matter.pk)]
+    assert _found(HIDDEN, outsider) == []
 
 
-def test_restricting_the_matter_hides_its_engagement_row_too(specialist):
-    """The child is bounded by its parent as well as by its own override."""
-    stranger = factories.ReaderFactory()  # not a lawyer: docs/adr/0042
+def test_restricting_the_matter_hides_its_engagement_row_too(specialist, narrowed):
+    """The child is bounded by its parent as well as by its own override.
+
+    Through a hand-built narrowed scope (docs/adr/0181): a real READER keeps
+    finding it, an outsider never does.
+    """
+    stranger = narrowed(factories.ReaderFactory())
+    reader = factories.ReaderFactory()
+    outsider = factories.AdministratorFactory()
     matter = _matter(specialist, number=511)
     add_engagement(
         matter=matter,
@@ -320,6 +375,8 @@ def test_restricting_the_matter_hides_its_engagement_row_too(specialist):
     matter.save(update_fields=["visibility"])
 
     assert _found(HIDDEN, stranger) == []
+    assert _found(HIDDEN, reader) == [(SearchSourceKind.ENGAGEMENT, matter.pk)]
+    assert _found(HIDDEN, outsider) == []
 
 
 # ---------------------------------------------------------------------------
@@ -331,9 +388,10 @@ def test_no_snippet_ever_carries_restricted_engagement_text(client, specialist):
     """Rendered response, not queryset counts.
 
     A Matter a reader may open can still leak a child through `ts_headline`,
-    which is why this asserts the page rather than the population.
+    which is why this asserts the page rather than the population. The outsider
+    is the administrator without a grant since docs/adr/0181 (a READER reads it).
     """
-    stranger = factories.ReaderFactory()  # not a lawyer: docs/adr/0042
+    stranger = factories.AdministratorFactory()
     matter = _matter(specialist, number=512)
     # A second phrase the reader never types, so its appearance anywhere on the
     # page can only have come from the restricted note. Asserting on HIDDEN
@@ -428,24 +486,29 @@ def _matter_with_restricted_document(specialist):
     return matter, document
 
 
-def test_a_restricted_documents_filename_is_not_in_the_timeline(specialist):
+def test_a_restricted_documents_filename_is_in_a_readers_timeline_and_not_an_outsiders(
+    specialist,
+):
     """The reported AUTH-003 defect, reproduced and closed.
 
     `EVIDENCE_VERSION_ADDED` records the original filename as its summary, and
     the timeline templates print `event.summary`. Selecting those rows by Matter
     alone meant a document properly hidden from Dokumendid still announced its
-    own name one tab away.
+    own name one tab away. Since docs/adr/0181 a READER reads it as the owner
+    does; the administrator without a grant gets neither the name nor the row.
     """
     from app.matters.timeline import matter_timeline
 
-    stranger = factories.ReaderFactory()  # not a lawyer: docs/adr/0042
+    def rendered_for(user):
+        items, _ = matter_timeline(matter=matter, user=user, limit=50)
+        return items, " ".join(
+            str((getattr(item, "event", None) and item.event.summary) or "") for item in items
+        )
+
     matter, document = _matter_with_restricted_document(specialist)
+    assert HIDDEN_FILE in rendered_for(factories.ReaderFactory())[1]
 
-    items, _ = matter_timeline(matter=matter, user=stranger, limit=50)
-
-    rendered = " ".join(
-        str((getattr(item, "event", None) and item.event.summary) or "") for item in items
-    )
+    items, rendered = rendered_for(factories.AdministratorFactory())
     assert HIDDEN_FILE not in rendered
     # And the row is absent rather than blanked: the event's existence is itself
     # the disclosure, because only a restricted document produces one here.
@@ -518,11 +581,20 @@ def _hidden_owner_and_matter():
     return hidden, matter
 
 
-def test_a_crafted_owner_filter_does_not_name_a_hidden_colleague_on_teemad(client):
-    stranger = factories.ReaderFactory()  # not a lawyer: docs/adr/0042
+def test_a_crafted_owner_filter_names_a_restricted_owner_to_a_reader_and_not_an_outsider(
+    client,
+):
+    # docs/adr/0181: a READER reads the restricted Teema, so its Vastutaja is
+    # legitimately named; the administrator without a grant learns neither.
     hidden, matter = _hidden_owner_and_matter()
-    client.force_login(stranger)
+    client.force_login(factories.ReaderFactory())
+    body = client.get(
+        reverse("matters:matter_list"), {"vastutaja": str(hidden.pk)}
+    ).content.decode()
+    assert HIDDEN_PERSON in body
+    assert matter.title in body
 
+    client.force_login(factories.AdministratorFactory())
     body = client.get(
         reverse("matters:matter_list"), {"vastutaja": str(hidden.pk)}
     ).content.decode()
@@ -593,19 +665,23 @@ def _matter_with_restricted_action(specialist):
     return matter, action
 
 
-def test_a_restricted_next_action_is_not_printed_on_the_register(client, specialist):
+def test_a_restricted_next_action_is_printed_for_a_reader_and_not_an_outsider(client, specialist):
     """`open_action_prefetch` decorates rows whose Matters are visible.
 
     Unscoped it printed a restricted step's text — and the colleague responsible
-    for it — onto a row anybody could read.
+    for it — onto a row anybody could read. Since docs/adr/0181 a READER reads
+    the step as the owner does; the administrator without a grant sees no row.
     """
-    stranger = factories.ReaderFactory()  # not a lawyer: docs/adr/0042
     matter, _ = _matter_with_restricted_action(specialist)
-    client.force_login(stranger)
+    client.force_login(factories.ReaderFactory())
+    body = client.get(reverse("matters:matter_list"), {"olek": "koik"}).content.decode()
+    assert matter.title in body
+    assert HIDDEN_STEP in body
 
+    client.force_login(factories.AdministratorFactory())
     body = client.get(reverse("matters:matter_list"), {"olek": "koik"}).content.decode()
 
-    assert matter.title in body, "the Matter itself should still be listed"
+    assert matter.title not in body
     assert HIDDEN_STEP not in body
 
 
@@ -634,12 +710,18 @@ def test_current_action_of_refuses_to_guess_without_a_reader(specialist):
 # ---------------------------------------------------------------------------
 
 
-def test_a_restricted_final_evidence_file_is_not_named_on_the_opinion_card(client, specialist):
-    """A filename is frequently the most telling thing about a document."""
+def test_a_restricted_final_evidence_file_is_named_to_a_reader_and_not_an_outsider(
+    client, specialist
+):
+    """A filename is frequently the most telling thing about a document.
+
+    Since docs/adr/0181 a READER reads it as the owner does; the outsider is the
+    administrator without a grant.
+    """
     from app.documents.services import add_evidence_version, create_document
     from app.submissions.enums import SubmissionStatus
 
-    stranger = factories.ReaderFactory()  # not a lawyer: docs/adr/0042
+    stranger = factories.AdministratorFactory()
     matter = _matter(specialist, number=541)
     document = create_document(
         matter=matter,
@@ -663,11 +745,14 @@ def test_a_restricted_final_evidence_file_is_not_named_on_the_opinion_card(clien
     )
     document.visibility_override = Visibility.RESTRICTED
     document.save(update_fields=["visibility_override"])
+    url = reverse("matters:matter_documents", kwargs={"pk": matter.pk})
+    client.force_login(factories.ReaderFactory())
+    assert HIDDEN_FILE in client.get(url).content.decode()
     client.force_login(stranger)
 
-    body = client.get(
-        reverse("matters:matter_documents", kwargs={"pk": matter.pk})
-    ).content.decode()
+    response = client.get(url)
+    assert response.status_code == 404
+    body = response.content.decode()
 
     # Nothing about the restricted file: not its name, not its checksum, and not
     # an `Arvamus` badge or an anchor admitting a row was suppressed. An opinion
@@ -801,11 +886,21 @@ def _world_with_one_restricted_step(specialist):
     return hiding, plain, step
 
 
-def test_a_restricted_steps_dates_are_not_in_the_operational_photograph(specialist):
-    """The regression. Without the fix all three columns come back populated."""
-    stranger = factories.ReaderFactory()
-    hiding, _, _ = _world_with_one_restricted_step(specialist)
+def test_a_restricted_steps_dates_are_blanked_only_for_a_narrowed_scope(specialist, narrowed):
+    """The regression. Without the fix all three columns come back populated.
 
+    Since docs/adr/0181 a READER reads the step as the owner does and an outsider
+    gets no row at all; the blanking is proved through a hand-built narrowed scope.
+    """
+    hiding, _, _ = _world_with_one_restricted_step(specialist)
+    assert _facts(_photographed(factories.ReaderFactory(), hiding)) == _facts(
+        _photographed(specialist, hiding)
+    )
+    from app.reporting.selectors.snapshots import visible_snapshots
+
+    assert not visible_snapshots(factories.AdministratorFactory()).exists()
+
+    stranger = narrowed(factories.ReaderFactory())
     row = _photographed(stranger, hiding)
 
     assert row.next_action_is_visible is False
@@ -831,15 +926,16 @@ def test_the_matter_itself_stays_in_the_photograph(specialist):
     assert visible_snapshots(stranger).count() == visible_snapshots(specialist).count()
 
 
-def test_a_blanked_row_looks_exactly_like_a_day_with_no_step(specialist):
+def test_a_blanked_row_looks_exactly_like_a_day_with_no_step(specialist, narrowed):
     """The property that keeps this from being an existence oracle.
 
     A reader must not be able to tell "there was a step you may not read" from
     "there was no step". Both are three empty columns and a false flag.
+    (Through a hand-built narrowed scope since docs/adr/0181.)
     """
     from app.reporting.selectors.snapshots import capture
 
-    stranger = factories.ReaderFactory()
+    stranger = narrowed(factories.ReaderFactory())
     hiding, _, _ = _world_with_one_restricted_step(specialist)
     quiet = _matter(specialist, number=562, title="Teema ilma sammuta")
     capture(on=timezone.localdate())
@@ -890,18 +986,19 @@ def test_a_participant_who_is_not_a_lawyer_still_reads_their_own_step(specialist
     assert _facts(row) == (ActionKind.DO, DateSemantics.DEADLINE, HIDDEN_DEADLINE)
 
 
-def test_restricting_a_step_today_blanks_yesterdays_photograph(specialist):
+def test_restricting_a_step_today_blanks_yesterdays_photograph(specialist, narrowed):
     """The half that a stored copy of the override would get wrong.
 
     Deciding on Tuesday that Monday's step was sensitive must reach back through
     every photograph already taken. A visibility written at capture time cannot
     do that, and nothing on the resulting chart would look wrong — which is this
-    same defect, moved a day later.
+    same defect, moved a day later. (Through a hand-built narrowed scope since
+    docs/adr/0181.)
     """
     from app.reporting.selectors.snapshots import capture
     from app.workflow.services import set_next_action
 
-    stranger = factories.ReaderFactory()
+    stranger = narrowed(factories.ReaderFactory())
     matter = _matter(specialist, number=563)
     step = set_next_action(
         matter=matter, text=HIDDEN_STEP, target_date=HIDDEN_DEADLINE, actor=specialist
@@ -920,7 +1017,7 @@ def test_restricting_a_step_today_blanks_yesterdays_photograph(specialist):
     assert _facts(_photographed(stranger, matter)) != ("", "", None)
 
 
-def test_the_blanking_survives_an_aggregate(specialist):
+def test_the_blanking_survives_an_aggregate(specialist, narrowed):
     """Where the first real surface will read this table.
 
     A trend is `values(...).annotate(...)`, and a blanking applied in Python
@@ -934,11 +1031,13 @@ def test_the_blanking_survives_an_aggregate(specialist):
     default ordering silently returns one group per row. Clearing it is what any
     correct count over this table has to do, and asserting through a broken
     aggregate would have proved nothing about the blanking either way.
+
+    Through a hand-built narrowed scope since docs/adr/0181.
     """
     from app.core.authorization import scoped_count
     from app.reporting.selectors.snapshots import visible_snapshots
 
-    stranger = factories.ReaderFactory()
+    stranger = narrowed(factories.ReaderFactory())
     _world_with_one_restricted_step(specialist)
 
     def by_kind(user):
@@ -985,11 +1084,13 @@ def test_break_glass_reaches_the_photographed_step_and_expiry_ends_it(specialist
     there when the grant expired.
     """
     from app.accounts.models import BreakGlassGrant
+    from app.reporting.selectors.snapshots import visible_snapshots
 
     administrator = factories.AdministratorFactory()
     hiding, _, _ = _world_with_one_restricted_step(specialist)
 
-    assert _facts(_photographed(administrator, hiding)) == ("", "", None)
+    # docs/adr/0181: without a grant the administrator reads no row at all.
+    assert not visible_snapshots(administrator).filter(matter=hiding).exists()
 
     grant = BreakGlassGrant.objects.create(
         user=administrator,
@@ -1008,4 +1109,4 @@ def test_break_glass_reaches_the_photographed_step_and_expiry_ends_it(specialist
     grant.expires_at = timezone.now() - timedelta(minutes=1)
     grant.save(update_fields=["expires_at"])
 
-    assert _facts(_photographed(administrator, hiding)) == ("", "", None)
+    assert not visible_snapshots(administrator).filter(matter=hiding).exists()

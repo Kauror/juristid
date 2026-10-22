@@ -230,19 +230,42 @@ def test_unlinking_one_matter_leaves_the_other_matters_page_searchable(
     assert first.pk not in locators
 
 
-def test_a_historical_page_on_a_restricted_matter_is_invisible(
-    linked_page, specialist, reader
+def test_a_historical_page_follows_its_matter_live(
+    linked_page, specialist, reader, administrator, monkeypatch
 ) -> None:
     """A source page has no restriction of its own, so its Matter's is the whole
-    answer — and that answer is read live, from the Matter, on every query."""
+    answer — and that answer is read live, from the Matter, on every query.
+
+    Since docs/adr/0181 restricting the Matter hides nothing from a READER (it
+    finds the page as the specialist does) and an administrator without a grant
+    never finds it; the live read is held through a hand-built narrowed scope.
+    """
+    from app.core.authorization import Scope
+    from app.search import services as search_services
+
     matter, _, link = linked_page
     assert [r for r in search(query="koosolekul", user=reader) if r.source_page_id]
+    assert search(query="koosolekul", user=administrator) == []
 
     Matter.objects.filter(pk=matter.pk).update(visibility=Visibility.RESTRICTED)
 
+    assert [r for r in search(query="koosolekul", user=specialist) if r.source_page_id == link.pk]
+    assert [r for r in search(query="koosolekul", user=reader) if r.source_page_id == link.pk]
+    assert result_count(query="koosolekul", user=reader) == result_count(
+        query="koosolekul", user=specialist
+    )
+    assert search(query="koosolekul", user=administrator) == []
+    assert result_count(query="koosolekul", user=administrator) == 0
+
+    narrowed = Scope(
+        user=reader,
+        is_authenticated=True,
+        sees_restricted_by_role=False,
+        break_glass_grant_id=None,
+    )
+    monkeypatch.setattr(search_services, "scope_for_user", lambda user: narrowed)
     assert search(query="koosolekul", user=reader) == []
     assert result_count(query="koosolekul", user=reader) == 0
-    assert [r for r in search(query="koosolekul", user=specialist) if r.source_page_id == link.pk]
 
 
 # ---------------------------------------------------------------------------

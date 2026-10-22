@@ -63,14 +63,15 @@ def test_a_signed_out_reader_is_sent_to_sign_in(client, world):
     assert response.status_code == 302
 
 
-def test_the_shared_gate_reaches_statistika_without_a_persona(client, world, settings):
-    """The department scope has to be useful before anybody has picked a name.
+def test_the_shared_gate_asks_for_a_persona_before_statistika(client, world, settings):
+    """The shared password alone reads nothing; a persona comes first.
 
-    Somebody arrives from the password with `request.user` still anonymous.
-    Reaching for it here would render an empty page to a reader who is entitled
-    to the whole department's statistics; borrowing an arbitrary persona to fill
-    it would show one lawyer's restricted files to whoever knew the password
-    (Stage-2D auth brief 6).
+    This used to render the department's NORMAL figures to a session with no
+    persona. Since docs/adr/0181 every Statistika page is `@login_required`: a
+    persona-less session is sent to the persona chooser (an htmx request gets a
+    401), and once somebody has said who is reading, the page renders that
+    reader's figures — which, for every authorized reader, include the
+    restricted Matter.
     """
     password = "seda-parooli-ei-ole-kusagil-mujal"  # noqa: S105
     settings.AUTH_MODE = AuthMode.SHARED_GATE
@@ -81,21 +82,24 @@ def test_the_shared_gate_reaches_statistika_without_a_persona(client, world, set
     assert client.post(reverse("accounts:shared_gate"), {"password": password}).status_code == 302
 
     response = client.get("/statistika/", {"periood": "koik"})
-    assert response.status_code == 200
-    # The department's numbers, and none of the restricted Matter's. Read off
-    # the strip, which is where the v2 overview puts its figures; the metric
-    # behind the first one is the catalogue's own `ACTIVE_FULL_MATTERS`.
-    #
-    # Five, not six: a reader entitled to the restricted Matter sees it in this
-    # figure and a shared-gate session does not. That difference *is* the test —
-    # a smaller number, never a locked placeholder (01-EHITUSJUHIS §3.4).
-    figure = response.context["seis"][0]
-    assert figure.caption == "avatud teemat"
-    assert figure.value == 5
+    assert response.status_code == 302
+    assert response.url.startswith(reverse("accounts:choose_persona"))
+    body = response.content.decode()
+    assert RESTRICTED_ONLY_WORD not in body
+    assert world.native_open.title not in body
+
+    htmx = client.get("/statistika/", {"periood": "koik"}, HTTP_HX_REQUEST="true")
+    assert htmx.status_code == 401
+    assert world.native_open.title not in htmx.content.decode()
+
+    # Read off the strip, which is where the v2 overview puts its figures; the
+    # metric behind the first one is the catalogue's own `ACTIVE_FULL_MATTERS`.
     client.force_login(world.martin)
     entitled = client.get("/statistika/", {"periood": "koik"})
-    assert entitled.context["seis"][0].value == 6
-    assert RESTRICTED_ONLY_WORD not in response.content.decode()
+    assert entitled.status_code == 200
+    figure = entitled.context["seis"][0]
+    assert figure.caption == "avatud teemat"
+    assert figure.value == 6
 
 
 # ---------------------------------------------------------------------------
@@ -352,8 +356,30 @@ def test_a_reader_who_cannot_open_the_review_queue_is_told_where_it_lives(world,
 
     The queue can create Matters, so it stays administrator-only. What a lawyer
     gets instead is the count and a sentence saying whose job it is.
+
+    Since docs/adr/0181 an administrator without a business role reads no
+    business content, so counts no conflict and is shown no row; the
+    administrator who sees the linked row holds a break-glass grant.
     """
+    from datetime import timedelta
+
+    from app.accounts.services import grant_break_glass
     from app.reporting.selectors.quality import queues
+
+    def conflict_rows(viewer):
+        return [
+            queue
+            for queue in queues(reporting_context(viewer))
+            if queue.key == "reconciliation_conflict"
+        ]
+
+    assert conflict_rows(world.admin) == []
+    grant_break_glass(
+        user=world.admin,
+        granted_by=world.head,
+        reason="Ajaloo sidumise ülevaatus",
+        duration=timedelta(hours=1),
+    )
 
     for viewer, expect_link in ((world.martin, False), (world.admin, True)):
         row = next(
@@ -494,9 +520,12 @@ def test_a_year_that_exists_only_in_restricted_records_is_not_offered(client, wo
         visibility=Visibility.RESTRICTED,
         owner=factories.UserFactory(),
     )
-    # A lawyer may see the restricted record since docs/adr/0042, so the year it
-    # alone occupies is legitimately offered to one. Asked as a reader, for whom
-    # the year would still be a disclosure of a record they cannot open.
+    # A lawyer may see the restricted record since docs/adr/0042, and a READER
+    # since docs/adr/0181, so the year it alone occupies is legitimately offered
+    # to both. Asked as an administrator without a business role, for whom the
+    # year would still be a disclosure of a record they cannot open.
     client.force_login(world.reader)
+    assert "1998" in _year_labels(client.get(reverse("reporting:overview")))
 
+    client.force_login(world.admin)
     assert "1998" not in _year_labels(client.get(reverse("reporting:overview")))

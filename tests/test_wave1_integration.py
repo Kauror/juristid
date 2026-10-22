@@ -21,6 +21,9 @@ only to a development Matter must not count as linked. Both halves are asserted
 below, because fixing one by breaking the other would look like a pass.
 
 Everything is synthetic.
+
+The viewer is the department head. It was the ADMINISTRATOR, who since
+docs/adr/0181 reads no business content without a break-glass grant.
 """
 
 from __future__ import annotations
@@ -83,21 +86,21 @@ def test_the_register_shows_both_kinds_by_default(client, world, real_and_test):
 
     A developer who cannot see the record they just made will make another one.
     """
-    body = _titles(client, world.admin)
+    body = _titles(client, world.head)
 
     assert "Päris teema" in body
     assert "Testandmete teema" in body
 
 
 def test_the_register_can_be_narrowed_to_real_work(client, world, real_and_test):
-    body = _titles(client, world.admin, "andmed=paris")
+    body = _titles(client, world.head, "andmed=paris")
 
     assert "Päris teema" in body
     assert "Testandmete teema" not in body
 
 
 def test_the_register_can_be_narrowed_to_development_records(client, world, real_and_test):
-    body = _titles(client, world.admin, "andmed=test")
+    body = _titles(client, world.head, "andmed=test")
 
     assert "Testandmete teema" in body
     assert "Päris teema" not in body
@@ -109,12 +112,16 @@ def test_authorization_is_not_the_data_class(client, world, real_and_test):
     A restricted Matter is hidden from someone who may not read it. A TEST
     Matter is shown to everyone who may read it and left out of the published
     figures. Merging the two would make one of them silently mean the other.
+
+    Since docs/adr/0181 the one who may not read is an outsider: the
+    ADMINISTRATOR without a grant sees neither kind.
     """
     real, test = real_and_test
+    assert not Matter.objects.visible_to(world.admin).filter(pk__in=[real.pk, test.pk]).exists()
 
-    assert Matter.objects.visible_to(world.admin).filter(pk=test.pk).exists()
-    assert Matter.objects.visible_to(world.admin).real_data().filter(pk=test.pk).exists() is False
-    assert Matter.objects.visible_to(world.admin).real_data().filter(pk=real.pk).exists()
+    assert Matter.objects.visible_to(world.head).filter(pk=test.pk).exists()
+    assert Matter.objects.visible_to(world.head).real_data().filter(pk=test.pk).exists() is False
+    assert Matter.objects.visible_to(world.head).real_data().filter(pk=real.pk).exists()
 
 
 # ---------------------------------------------------------------------------
@@ -131,7 +138,7 @@ def test_the_central_reporting_population_excludes_development_records(
     this is the line every other selector in the package starts from.
     """
     real, test = real_and_test
-    context = reporting_context(world.admin)
+    context = reporting_context(world.head)
 
     population = visible_matters(context)
 
@@ -157,7 +164,7 @@ def test_a_development_record_moves_no_published_number(world, reporting_context
     N" would need rewriting every time the fixture grows — and would pass just
     as happily if the population rule were removed and N updated.
     """
-    context = reporting_context(world.admin)
+    context = reporting_context(world.head)
     before = compute(key, context).value
 
     factories.MatterFactory(
@@ -171,12 +178,12 @@ def test_a_development_record_moves_no_published_number(world, reporting_context
 
     # Asked again as the next request would: a context remembers its own
     # answers for the life of its request (ENG-078), and this one wrote data.
-    assert compute(key, reporting_context(world.admin)).value == before
+    assert compute(key, reporting_context(world.head)).value == before
 
 
 def test_a_real_record_does_move_the_number(world, reporting_context):
     """The premise. Without this the test above passes on a broken metric."""
-    context = reporting_context(world.admin)
+    context = reporting_context(world.head)
     before = compute(keys.ACTIVE_FULL_MATTERS, context).value
 
     factories.MatterFactory(
@@ -190,7 +197,7 @@ def test_a_real_record_does_move_the_number(world, reporting_context):
 
     # Asked again as the next request would: a context remembers its own
     # answers for the life of its request (ENG-078), and this one wrote data.
-    assert compute(keys.ACTIVE_FULL_MATTERS, reporting_context(world.admin)).value == before + 1
+    assert compute(keys.ACTIVE_FULL_MATTERS, reporting_context(world.head)).value == before + 1
 
 
 # ---------------------------------------------------------------------------
@@ -210,7 +217,7 @@ def test_a_letter_linked_only_to_a_development_matter_is_not_linked_work(
     """
     from tests.synthetic_statistics import _archive_binary, _archive_item, _archive_link
 
-    context = reporting_context(world.admin, period="koik")
+    context = reporting_context(world.head, period="koik")
     before = compute(keys.OPINION_ARCHIVE_LINK_COVERAGE, context)
 
     test_matter = factories.MatterFactory(
@@ -233,7 +240,7 @@ def test_a_letter_linked_only_to_a_development_matter_is_not_linked_work(
     # Asked again as the next request would: a context remembers its own
     # answers for the life of its request (ENG-078), and this one wrote data.
     after = compute(
-        keys.OPINION_ARCHIVE_LINK_COVERAGE, reporting_context(world.admin, period="koik")
+        keys.OPINION_ARCHIVE_LINK_COVERAGE, reporting_context(world.head, period="koik")
     )
 
     assert after.coverage_count == before.coverage_count, (
@@ -248,7 +255,7 @@ def test_a_letter_linked_to_a_real_matter_is_linked_work(world, reporting_contex
     """The premise for the test above."""
     from tests.synthetic_statistics import _archive_binary, _archive_item, _archive_link
 
-    context = reporting_context(world.admin, period="koik")
+    context = reporting_context(world.head, period="koik")
     before = compute(keys.OPINION_ARCHIVE_LINK_COVERAGE, context)
 
     payload = "wave1-integration-real-letter"
@@ -263,7 +270,7 @@ def test_a_letter_linked_to_a_real_matter_is_linked_work(world, reporting_contex
     # Asked again as the next request would: a context remembers its own
     # answers for the life of its request (ENG-078), and this one wrote data.
     after = compute(
-        keys.OPINION_ARCHIVE_LINK_COVERAGE, reporting_context(world.admin, period="koik")
+        keys.OPINION_ARCHIVE_LINK_COVERAGE, reporting_context(world.head, period="koik")
     )
 
     assert after.coverage_count == before.coverage_count + 1

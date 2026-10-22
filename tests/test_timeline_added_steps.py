@@ -692,13 +692,17 @@ def test_a_crafted_id_reaches_no_other_files_step(specialist):
     assert MatterTimelineStep.objects.filter(pk=theirs.pk).exists()
 
 
-def test_a_restricted_added_step_is_not_drawn_for_a_reader(specialist, reader):
+def test_a_restricted_added_step_is_drawn_for_a_reader_and_not_an_outsider(
+    specialist, reader, administrator
+):
+    """docs/adr/0181: the READER's rail is the owner's; the outsider's lacks it."""
     matter = _matter(specialist)
     row = _add(matter, specialist, "Piiratud samm")
     MatterTimelineStep.objects.filter(pk=row.pk).update(visibility_override="RESTRICTED")
 
     assert "Piiratud samm" in _labels(matter, specialist)
-    assert "Piiratud samm" not in _labels(matter, reader)
+    assert _labels(matter, reader) == _labels(matter, specialist)
+    assert "Piiratud samm" not in _labels(matter, administrator)
 
 
 # ---------------------------------------------------------------------------

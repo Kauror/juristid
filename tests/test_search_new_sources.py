@@ -32,6 +32,7 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
+from app.core.authorization import Scope
 from app.core.enums import Visibility
 from app.intelligence.services import (
     add_important_date,
@@ -389,40 +390,58 @@ def _restrict(record: Any) -> None:
 
 
 @pytest.mark.parametrize("spec", KINDS, ids=str)
-def test_a_restricted_record_on_a_normal_matter_does_not_reach_a_reader(
-    spec, specialist, reader, client
+def test_a_restricted_record_on_a_normal_matter_reaches_a_reader_and_no_outsider(
+    spec, specialist, reader, administrator, client
 ):
+    """It used to be hidden from a READER; since docs/adr/0181 the READER finds
+    what the specialist finds, and an administrator without a grant finds nothing."""
     matter = factories.MatterFactory(owner=specialist, title=f"{SHARED} avalik teema")
     before = result_count(query=SHARED, user=reader)
     assert before == 1
+    assert result_count(query=SHARED, user=administrator) == 0
 
     record = spec.create(matter, specialist, f"{SHARED} {TITLE_WORD}", f"{BODY_WORD} salajane")
     _restrict(record)
 
-    # No row, no title, no excerpt — and the count is what it was.
-    assert result_count(query=SHARED, user=reader) == before
-    assert result_count(query=TITLE_WORD, user=reader) == 0
-    assert result_count(query=BODY_WORD, user=reader) == 0
-    assert [result.source_kind for result in _results(reader, SHARED)] == [SearchSourceKind.MATTER]
-    client.force_login(reader)
-    page = client.get(reverse("search:search"), {"q": SHARED}).content.decode()
-    assert TITLE_WORD not in page
-    assert "salajane" not in page
-    assert f'<span class="badge badge--source">{spec.label}</span>' not in page
-    for query in (TITLE_WORD, BODY_WORD):
+    # The row exists and every authorized reader finds it alike.
+    assert result_count(query=SHARED, user=specialist) == before + 1
+    assert len(_of_kind(specialist, TITLE_WORD, spec.kind)) == 1
+    for query in (SHARED, TITLE_WORD, BODY_WORD):
+        assert result_count(query=query, user=reader) == result_count(
+            query=query, user=specialist
+        ), query
+    assert len(_of_kind(reader, TITLE_WORD, spec.kind)) == 1
+
+    # No row, no title, no excerpt, no count for the outsider.
+    for query in (SHARED, TITLE_WORD, BODY_WORD):
+        assert result_count(query=query, user=administrator) == 0, query
+    client.force_login(administrator)
+    for query in (SHARED, TITLE_WORD, BODY_WORD):
         page = client.get(reverse("search:search"), {"q": query}).content.decode()
         assert "salajane" not in page
         assert 'class="result"' not in page
 
-    # The row exists and the people entitled to it still find it.
-    assert result_count(query=SHARED, user=specialist) == before + 1
-    assert len(_of_kind(specialist, TITLE_WORD, spec.kind)) == 1
-
 
 @pytest.mark.parametrize("spec", KINDS, ids=str)
-def test_restricting_takes_effect_on_the_next_query_with_no_reindex(spec, specialist, reader):
+def test_restricting_takes_effect_on_the_next_query_with_no_reindex(
+    spec, specialist, reader, monkeypatch
+):
     """Visibility is joined live: an override written behind the indexer's back
-    (a `QuerySet.update()`, which fires no signal) still hides the row."""
+    (a `QuerySet.update()`, which fires no signal) still hides the row.
+
+    Since docs/adr/0181 no request scope narrows on an override (a READER reads
+    the record either way), so the live join is held through a hand-built
+    scope: the reader as a non-participant who does not read RESTRICTED.
+    """
+    from app.search import services as search_services
+
+    narrowed = Scope(
+        user=reader,
+        is_authenticated=True,
+        sees_restricted_by_role=False,
+        break_glass_grant_id=None,
+    )
+    monkeypatch.setattr(search_services, "scope_for_user", lambda user: narrowed)
     matter = factories.MatterFactory(owner=specialist, title="Teine avalik teema")
     record = spec.create(matter, specialist, f"{TITLE_WORD} ajutine", "")
     assert len(_of_kind(reader, TITLE_WORD, spec.kind)) == 1
@@ -438,13 +457,15 @@ def test_restricting_takes_effect_on_the_next_query_with_no_reindex(spec, specia
 
 
 @pytest.mark.parametrize("spec", KINDS, ids=str)
-def test_a_record_on_a_restricted_matter_does_not_reach_a_reader(
-    spec, restricted_matter, specialist, reader
+def test_a_record_on_a_restricted_matter_reaches_a_reader_and_no_outsider(
+    spec, restricted_matter, specialist, reader, administrator
 ):
+    """Since docs/adr/0181 a READER finds it as the specialist does."""
     spec.create(restricted_matter, specialist, f"{TITLE_WORD} piiratud", "")
 
-    assert result_count(query=TITLE_WORD, user=reader) == 0
+    assert result_count(query=TITLE_WORD, user=administrator) == 0
     assert len(_of_kind(specialist, TITLE_WORD, spec.kind)) == 1
+    assert len(_of_kind(reader, TITLE_WORD, spec.kind)) == 1
 
 
 # ---------------------------------------------------------------------------

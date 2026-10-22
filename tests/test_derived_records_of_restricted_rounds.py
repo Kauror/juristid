@@ -16,6 +16,11 @@ Two halves are proved here, for every persona the product has:
 
 The allowed half — the round's lawyers, the head, the Matter's participants and
 a break-glass grant — still see everything.
+
+Since docs/adr/0181 the restriction is a label, not a boundary between
+authorized users: a READER reads the reply and its file like the owner, and the
+perimeter is an administrator without a grant or a persona-less gate visitor,
+who read nothing of the Matter at all. The stored shape (0162) is unchanged.
 """
 
 from __future__ import annotations
@@ -29,6 +34,8 @@ from django.urls import reverse
 from django.utils import timezone
 
 from app.accounts.models import BreakGlassGrant
+from app.core.authorization import Scope
+from app.core.derived_visibility import external_position_visibility_q
 from app.core.enums import Visibility
 from app.documents.links import DocumentLink
 from app.documents.models import Document, DocumentVersion
@@ -166,8 +173,12 @@ def test_every_new_reply_and_its_file_carry_the_rounds_restriction(people):
         documents = Document.objects.filter(links__external_position=reply)
         assert documents.exists()
         assert set(documents.values_list("visibility_override", flat=True)) == {"RESTRICTED"}
+    # docs/adr/0181: the label is kept, and every authorized user reads the replies.
+    for persona in ("owner", "reader"):
+        visible = MatterExternalPosition.objects.visible_to(people[persona])
+        assert visible.filter(engagement=round_).count() == 3, persona
     assert (
-        not MatterExternalPosition.objects.visible_to(people["reader"])
+        not MatterExternalPosition.objects.visible_to(people["administrator"])
         .filter(engagement=round_)
         .exists()
     )
@@ -209,9 +220,12 @@ def test_a_reply_re_pointed_at_a_restricted_round_takes_its_restriction(people):
     )
     corrected.refresh_from_db()
     assert corrected.visibility_override == Visibility.RESTRICTED
-    # The file captured while the round was open is hidden through the round.
+    # The file captured while the round was open is read like the round: by every
+    # authorized user (docs/adr/0181), by no outsider.
     document = Document.objects.get(links__external_position=reply)
-    assert not Document.objects.visible_to(people["reader"]).filter(pk=document.pk).exists()
+    assert Document.objects.visible_to(people["reader"]).filter(pk=document.pk).exists()
+    assert Document.objects.visible_to(people["owner"]).filter(pk=document.pk).exists()
+    assert not Document.objects.visible_to(people["administrator"]).filter(pk=document.pk).exists()
 
 
 # ---------------------------------------------------------------------------
@@ -219,19 +233,18 @@ def test_a_reply_re_pointed_at_a_restricted_round_takes_its_restriction(people):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("persona", ["reader", "administrator"])
-def test_the_reply_and_its_file_reach_no_reader_of_the_matter_alone(world, persona):
-    user = world[persona]
+def test_an_administrator_without_a_grant_reaches_neither_the_matter_nor_the_reply(world):
+    """The perimeter (docs/adr/0181): an outsider reads nothing — not even the NORMAL Matter."""
+    user = world["administrator"]
     reply, document = world["reply"], world["document"]
     assert reply.effective_visibility == Visibility.RESTRICTED
     assert not MatterExternalPosition.objects.visible_to(user).filter(pk=reply.pk).exists()
     assert not Document.objects.visible_to(user).filter(pk=document.pk).exists()
     assert not DocumentLink.objects.visible_to(user).filter(document=document).exists()
-    # The Matter itself stays visible: only the derived records are hidden.
     client = _client(user)
     for name, url in _pages(world["matter"]).items():
         response = client.get(url)
-        assert response.status_code == 200, name
+        assert response.status_code == 404, name
         body = response.content.decode()
         assert REPLY not in body, f"{name} ({world['shape']})"
         assert FILE not in body, f"{name} ({world['shape']})"
@@ -242,14 +255,21 @@ def test_the_reply_and_its_file_reach_no_reader_of_the_matter_alone(world, perso
         assert client.get(url).status_code == 404, name
 
 
-def test_the_gate_visitor_with_no_persona_cannot_reach_the_file(world, settings):
+def test_the_gate_visitor_with_no_persona_is_sent_to_choose_one(world, settings):
+    """It used to get a 404; since docs/adr/0181 every file route asks for a persona first."""
     gate = _gate_client(settings)
     for name, url in _file_routes(world).items():
-        assert gate.get(url).status_code == 404, f"{name} ({world['shape']})"
+        response = gate.get(url)
+        assert response.status_code == 302, f"{name} ({world['shape']})"
+        assert response["Location"].startswith(reverse("accounts:choose_persona")), name
+        assert b"vastus ringile" not in response.content, name
 
 
-@pytest.mark.parametrize("persona", ["owner", "specialist", "head", "collaborating_reader"])
-def test_the_rounds_readers_still_see_the_reply_and_open_its_file(world, persona):
+@pytest.mark.parametrize(
+    "persona", ["owner", "specialist", "head", "collaborating_reader", "reader"]
+)
+def test_every_authorized_reader_sees_the_reply_and_opens_its_file(world, persona):
+    """Since docs/adr/0181 the READER who does not collaborate is one of them."""
     user = world[persona]
     assert MatterExternalPosition.objects.visible_to(user).filter(pk=world["reply"].pk).exists()
     assert Document.objects.visible_to(user).filter(pk=world["document"].pk).exists()
@@ -282,38 +302,56 @@ def test_break_glass_opens_the_reply_and_its_expiry_closes_it(world):
     assert client.get(download).status_code == 404
 
 
-def test_counts_do_not_move_for_a_reader(people):
-    """A count that moves is a disclosure (docs/adr/0038), for either shape."""
-    matter = factories.MatterFactory(owner=people["owner"], visibility=Visibility.NORMAL)
-    reader = people["reader"]
+def test_counts_move_alike_for_every_reader_and_never_for_an_outsider(people):
+    """A count that moves is a disclosure (docs/adr/0038), for either shape.
 
-    def counts():
+    Since docs/adr/0181 the READER's counts move exactly as the owner's do; the
+    outsider whose counts must not move is an administrator without a grant.
+    """
+    matter = factories.MatterFactory(owner=people["owner"], visibility=Visibility.NORMAL)
+
+    def counts(user):
         return (
-            Document.objects.visible_to(reader).filter(matter=matter).count(),
-            MatterExternalPosition.objects.visible_to(reader).filter(matter=matter).count(),
-            DocumentLink.objects.visible_to(reader).filter(document__matter=matter).count(),
-            result_count(query="vastus", user=reader),
+            Document.objects.visible_to(user).filter(matter=matter).count(),
+            MatterExternalPosition.objects.visible_to(user).filter(matter=matter).count(),
+            DocumentLink.objects.visible_to(user).filter(document__matter=matter).count(),
+            result_count(query="vastus", user=user),
         )
 
-    before = counts()
+    outsider_before = counts(people["administrator"])
     new = _reply(matter, people["owner"], _round(matter, people["owner"]))
     legacy = _reply(matter, people["owner"], _round(matter, people["owner"]))
     _make_legacy(legacy)
     assert new.pk != legacy.pk
-    assert counts() == before
+    assert counts(people["administrator"]) == outsider_before == (0, 0, 0, 0)
+    assert counts(people["reader"]) == counts(people["owner"])
+    assert counts(people["reader"])[1] == 2
 
 
 def test_relaxing_the_round_shows_a_legacy_reply_again_but_never_a_copied_one(people):
-    """Live half follows the round; the copied half fails closed (0137 §2, 0162 §3)."""
+    """Live half follows the round; the copied half fails closed (0137 §2, 0162 §3).
+
+    Since docs/adr/0181 no request reaches a narrowed scope, so the builder is
+    exercised through a hand-built one (a non-participant who does not read
+    RESTRICTED by role); every real reader sees both rows.
+    """
     matter = factories.MatterFactory(owner=people["owner"], visibility=Visibility.NORMAL)
     round_ = _round(matter, people["owner"])
     copied = _reply(matter, people["owner"], round_)
     legacy = _reply(matter, people["owner"], round_)
     _make_legacy(legacy)
     MatterEngagement.objects.filter(pk=round_.pk).update(visibility_override="")
-    visible = MatterExternalPosition.objects.visible_to(people["reader"])
+    narrowed = Scope(
+        user=people["reader"],
+        is_authenticated=True,
+        sees_restricted_by_role=False,
+        break_glass_grant_id=None,
+    )
+    visible = MatterExternalPosition.objects.filter(external_position_visibility_q(narrowed))
     assert visible.filter(pk=legacy.pk).exists()
     assert not visible.filter(pk=copied.pk).exists()
+    as_reader = MatterExternalPosition.objects.visible_to(people["reader"])
+    assert as_reader.filter(pk__in=[legacy.pk, copied.pk]).count() == 2
 
 
 # ---------------------------------------------------------------------------
@@ -334,10 +372,12 @@ def test_a_restricted_rounds_overview_is_restricted_and_leaves_the_plan_alone(pe
     assert overview.visibility_override == Visibility.RESTRICTED
     plan.refresh_from_db()
     assert plan.status == "PLANNED"
-    readable = MatterWebsiteOverview.objects.visible_to(people["reader"])
-    assert not readable.filter(pk=overview.pk).exists()
-    assert readable.filter(pk=plan.pk).exists()
-    assert MatterWebsiteOverview.objects.visible_to(people["owner"]).filter(pk=overview.pk).exists()
+    # docs/adr/0181: the READER reads both, as the owner does; an outsider neither.
+    for persona in ("reader", "owner"):
+        readable = MatterWebsiteOverview.objects.visible_to(people[persona])
+        assert readable.filter(pk__in=[overview.pk, plan.pk]).count() == 2, persona
+    outsider = MatterWebsiteOverview.objects.visible_to(people["administrator"])
+    assert not outsider.filter(pk__in=[overview.pk, plan.pk]).exists()
 
 
 def test_an_unrestricted_rounds_overview_still_publishes_the_plan(people):

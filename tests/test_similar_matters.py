@@ -254,9 +254,13 @@ def test_a_named_act_and_an_instrument_type_are_different_claims(specialist):
 
 
 def test_an_instrument_type_never_reaches_a_matter_the_reader_may_not_open(
-    specialist, other_specialist, reader, pakend, ministry
+    specialist, other_specialist, reader, administrator, pakend, ministry
 ):
-    """Authorization runs before the signal does, like every other signal."""
+    """Authorization runs before the signal does, like every other signal.
+
+    Since docs/adr/0181 a READER may open the restricted Matter and is offered
+    it; an administrator without a grant may not and is not.
+    """
     maarus = _instrument("maarus")
     ours = _matter(
         specialist,
@@ -276,7 +280,8 @@ def test_an_instrument_type_never_reaches_a_matter_the_reader_may_not_open(
         visibility=Visibility.RESTRICTED,
     )
 
-    assert hidden not in _suggested(ours, reader)
+    assert hidden in _suggested(ours, reader)
+    assert hidden not in _suggested(ours, administrator)
 
 
 # ===========================================================================
@@ -357,13 +362,17 @@ def test_a_draft_submission_is_not_a_send(specialist, a_pair):
 
 
 def test_an_indicator_never_reports_a_record_the_reader_may_not_open(
-    specialist, other_specialist, reader, pakend, ministry
+    specialist, other_specialist, reader, administrator, pakend, ministry
 ):
     """The sharp one: the Matter is visible and the opinion on it is not.
 
     A pill saying «Arvamus olemas» is an assertion that a record exists. On a
     restricted child it is exactly the existence disclosure ADR 0038 forbids,
     and the Matter being open to this reader does not make it their opinion.
+
+    Since docs/adr/0181 every internal reader may open the restricted opinion,
+    so a READER gets the owner's pill; the viewer who may not — an administrator
+    without a grant — is offered no card at all.
     """
     ours = _matter(
         other_specialist,
@@ -391,8 +400,9 @@ def test_an_indicator_never_reports_a_record_the_reader_may_not_open(
     submission.save(update_fields=["visibility_override"])
 
     outcome = _outcome_for(ours, reader, theirs)
-    assert not outcome.has_opinion
-    assert not outcome.has_sent_submission
+    assert outcome.has_opinion
+    assert outcome.has_sent_submission
+    assert theirs not in _suggested(ours, administrator)
 
     # And the owner, who may open both, still sees them — so the test above is
     # measuring visibility rather than a broken query.
@@ -538,9 +548,13 @@ def test_two_structured_facts_are_enough_without_a_title(client, specialist, pak
 
 
 def test_the_draft_never_suggests_a_matter_the_reader_may_not_open(
-    client, specialist, other_specialist, reader, pakend, ministry
+    client, specialist, other_specialist, administrator, pakend, ministry
 ):
-    """The boundary is the engine's, and a crafted request does not get past it."""
+    """The boundary is the engine's, and a crafted request does not get past it.
+
+    The reader who may not open it is an administrator without a grant since
+    docs/adr/0181; a lawyer who is not on the file is offered it.
+    """
     hidden = _matter(
         other_specialist,
         "Pakendiseaduse muutmise eelnõu",
@@ -549,7 +563,13 @@ def test_the_draft_never_suggests_a_matter_the_reader_may_not_open(
         addressee=ministry,
         visibility=Visibility.RESTRICTED,
     )
-    client.force_login(reader)
+    client.force_login(specialist)
+    assert hidden.title in _draft(
+        client,
+        title="Pakendiseaduse rakendusaktide eelnõu",
+        addressee_organisation=str(ministry.pk),
+    )
+    client.force_login(administrator)
 
     body = _draft(
         client,

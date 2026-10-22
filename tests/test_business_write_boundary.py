@@ -1800,7 +1800,7 @@ def test_an_administrator_keeps_its_technical_reach(client, world):
     [
         (lambda: factories.DepartmentHeadFactory(), 302),
         (lambda: factories.UserFactory(), 403),
-        (_administrator, 403),
+        (_administrator, 404),
         (_reader, 403),
     ],
     ids=["DEPARTMENT_HEAD", "SPECIALIST", "ADMINISTRATOR", "READER"],
@@ -1816,6 +1816,9 @@ def test_confirming_a_work_victory_stays_department_head_only(
     403: a specialist who may write and may see the record is being told about a
     decision boundary inside their own work, which is a different message from
     "this route does not exist for you".
+
+    Since docs/adr/0181 an administrator without a grant may not see the Matter
+    at all, so for it the route does not exist: 404, not 403.
     """
     record = factories.WorkVictoryFactory(matter=world["matter"])
     client.force_login(actor_factory())

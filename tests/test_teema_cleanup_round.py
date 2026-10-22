@@ -550,8 +550,14 @@ def test_a_crafted_phase_outside_the_vocabulary_stores_nothing(specialist):
     assert MatterTimelineStep.objects.filter(matter=matter).count() == 0
 
 
-def test_a_restricted_step_row_hides_no_phase_for_a_reader_who_cannot_see_it(specialist, reader):
-    """Scoped before it is drawn, like every other source on this rail."""
+def test_a_restricted_step_row_hides_no_phase_for_a_reader_who_cannot_see_it(
+    specialist, reader, administrator
+):
+    """Scoped before it is drawn, like every other source on this rail.
+
+    Since docs/adr/0181 a READER sees the row and draws the rail as its owner
+    does; the reader who cannot see it is an administrator without a grant.
+    """
     from app.core.enums import Visibility
 
     matter = _matter(specialist, instruments=("vtk", "seadus"))
@@ -562,4 +568,5 @@ def test_a_restricted_step_row_hides_no_phase_for_a_reader_who_cannot_see_it(spe
     row.save(update_fields=["visibility_override"])
 
     assert "VTK" not in _labels(matter, specialist)
-    assert "VTK" in _labels(matter, reader)
+    assert _labels(matter, reader) == _labels(matter, specialist)
+    assert "VTK" in _labels(matter, administrator)

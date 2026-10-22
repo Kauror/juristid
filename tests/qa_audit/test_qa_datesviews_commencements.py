@@ -191,9 +191,11 @@ def test_half_year_and_year_overlapping_a_month_are_flagged_never_placed(signed_
 # ---------------------------------------------------------------------------
 
 
-def test_a_restricted_record_alone_in_the_window_does_not_select_its_matter(
-    client, reader, specialist
+def test_a_restricted_record_alone_in_the_window_selects_its_matter_for_readers_only(
+    client, reader, specialist, administrator
 ):
+    """Since docs/adr/0181 a READER reads a RESTRICTED record exactly as its
+    owner does; the perimeter is the administrator without a grant."""
     readable = factories.MatterFactory(title="Loetav teema QA")
     commence(readable, datetime.date(2027, 1, 1), description="väljaspool akent")
     commence(
@@ -204,7 +206,16 @@ def test_a_restricted_record_alone_in_the_window_does_not_select_its_matter(
     )
     window = {"joustub_alates": "1.5.2027", "joustub_kuni": "31.5.2027"}
 
-    client.force_login(reader)
+    for insider in (reader, specialist):
+        client.force_login(insider)
+        table = client.get(REGISTER, {"olek": "koik", **window})
+        assert table.context["total"] == 1
+        assert "Loetav teema QA" in table.content.decode()
+        assert descriptions(listing(client, **window)) == ["piiratud aknas"]
+        as_calendar = client.get(REGISTER, {"vaade": "kalender", "kuu": "2027-05", **window})
+        assert "piiratud aknas" in as_calendar.content.decode()
+
+    client.force_login(administrator)
     table = client.get(REGISTER, {"olek": "koik", **window})
     assert table.context["total"] == 0
     assert "Loetav teema QA" not in table.content.decode()
@@ -213,9 +224,6 @@ def test_a_restricted_record_alone_in_the_window_does_not_select_its_matter(
     assert "piiratud aknas" not in as_list.content.decode()
     as_calendar = client.get(REGISTER, {"vaade": "kalender", "kuu": "2027-05", **window})
     assert "piiratud aknas" not in as_calendar.content.decode()
-
-    client.force_login(specialist)
-    assert descriptions(listing(client, **window)) == ["piiratud aknas"]
 
 
 @pytest.mark.parametrize("persona", ["specialist", "department_head", "other_specialist"])

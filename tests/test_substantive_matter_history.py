@@ -94,6 +94,23 @@ def _history(matter, user, **kwargs):
     return items
 
 
+def _outsider():
+    """The viewer who must learn nothing: an administrator without a grant.
+
+    Since docs/adr/0181 every authorized internal user — a READER too — reads
+    every restricted child exactly as its owner does, so the permission tests
+    below hold the READER to the owner's rendering and keep the perimeter
+    against this account. No request reaches a "visible Matter, hidden child"
+    view any more.
+    """
+    return factories.AdministratorFactory()
+
+
+def _changes(client, user, matter):
+    client.force_login(user)
+    return client.get(reverse("matters:matter_changes", kwargs={"pk": matter.pk}))
+
+
 def _headlines(items) -> list[str]:
     return [item.milestone.what for item in items if item.milestone is not None]
 
@@ -575,14 +592,14 @@ def test_records_written_in_the_same_minute_by_one_person_do_not_group(
     assert all(not item.stage_effect for item in items)
 
 
-def test_a_stage_change_saved_beside_a_hidden_development_still_reads_as_itself(
+def test_a_stage_change_saved_beside_a_restricted_development_hides_nothing_inside(
     normal_matter, specialist, reader, consultation
 ):
     """The grouping cannot become a channel for what the grouping hid.
 
-    A reader refused the development sees the stage change exactly as they would
-    see one made from the header — one row, the stage's own label, and not a
-    syllable about the record that moved it.
+    Since docs/adr/0181 a READER is not refused the development: it reads the
+    grouped row exactly as the owner does. The viewer refused it — an
+    administrator without a grant — gets not a syllable about the record.
     """
     development = add_procedural_development(
         matter=normal_matter,
@@ -595,13 +612,15 @@ def test_a_stage_change_saved_beside_a_hidden_development_still_reads_as_itself(
     development.visibility_override = Visibility.RESTRICTED
     development.save(update_fields=["visibility_override"])
 
-    items = _history(normal_matter, reader)
+    rendered = _rendered(_history(normal_matter, reader))
+    assert rendered == _rendered(_history(normal_matter, specialist))
+    assert "salajase" in rendered
+
+    items = _history(normal_matter, _outsider())
     rendered = _rendered(items)
     assert "salajase" not in rendered
     assert "Sisemine hinnang" not in rendered
     assert not [item for item in items if item.procedural_development]
-    # The Matter-level fact stands alone, which is what it is.
-    assert "Hetkeseis: Kooskõlastusringil" in _headlines(items)
     assert all(not item.stage_effect for item in items)
 
 
@@ -738,10 +757,14 @@ def test_a_sent_opinions_final_text_reads_once_under_the_send(
     assert _rendered(items).count("koja-arvamus.pdf") == 1
 
 
-def test_a_restricted_final_text_hides_its_filename_and_leaves_the_send_readable(
+def test_a_restricted_final_text_is_named_to_a_reader_and_to_no_outsider(
     normal_matter, specialist, reader, ministry, evidence_root
 ):
-    """A visible act plus a hidden document must not name the document."""
+    """A visible act plus a hidden document must not name the document.
+
+    Since docs/adr/0181 the READER sees both, as the owner does; the outsider
+    (`_outsider`) sees neither.
+    """
     result = add_matter_koda_opinion(
         matter=normal_matter,
         author=specialist,
@@ -754,12 +777,17 @@ def test_a_restricted_final_text_hides_its_filename_and_leaves_the_send_readable
     document.visibility_override = Visibility.RESTRICTED
     document.save(update_fields=["visibility_override"])
 
-    assert not Document.objects.visible_to(reader).filter(pk=document.pk).exists()
+    assert Document.objects.visible_to(reader).filter(pk=document.pk).exists()
     items = _history(normal_matter, reader)
     rows = [item for item in items if item.submission]
-    assert len(rows) == 1, "the send itself is not restricted and still reads"
-    assert rows[0].files == ()
-    assert "salajane" not in _rendered(items)
+    assert len(rows) == 1
+    assert rows[0].files != ()
+    assert "salajane" in _rendered(items)
+    assert _rendered(items) == _rendered(_history(normal_matter, specialist))
+
+    outsider = _outsider()
+    assert not Document.objects.visible_to(outsider).filter(pk=document.pk).exists()
+    assert "salajane" not in _rendered(_history(normal_matter, outsider))
 
 
 # ---------------------------------------------------------------------------
@@ -770,6 +798,7 @@ def test_a_restricted_final_text_hides_its_filename_and_leaves_the_send_readable
 def test_a_restricted_submission_does_not_reveal_that_an_opinion_exists(
     normal_matter, specialist, reader, ministry, evidence_root
 ):
+    # docs/adr/0181: a READER reads it as the owner does; an outsider learns nothing.
     result = add_matter_koda_opinion(
         matter=normal_matter,
         author=specialist,
@@ -790,7 +819,12 @@ def test_a_restricted_submission_does_not_reveal_that_an_opinion_exists(
     submission.visibility_override = Visibility.RESTRICTED
     submission.save(update_fields=["visibility_override"])
 
-    items = _history(normal_matter, reader)
+    assert SUBMISSION_MILESTONE in _headlines(_history(normal_matter, reader))
+    assert _rendered(_history(normal_matter, reader)) == _rendered(
+        _history(normal_matter, specialist)
+    )
+
+    items = _history(normal_matter, _outsider())
     rendered = _rendered(items)
     assert SUBMISSION_MILESTONE not in _headlines(items)
     assert _et(_days_ago(7)) not in rendered
@@ -813,16 +847,21 @@ def test_a_restricted_position_reveals_no_source_note_date_or_count(
     position.visibility_override = Visibility.RESTRICTED
     position.save(update_fields=["visibility_override"])
 
-    hidden = _rendered(_history(normal_matter, reader))
+    # docs/adr/0181: a READER reads it as the owner does — same rows, same text.
+    shown = _rendered(_history(normal_matter, reader))
+    assert "Metallitööstuse" in shown
+    assert shown == _rendered(_history(normal_matter, specialist))
+    assert len(_history(normal_matter, reader)) == len(_history(normal_matter, specialist))
+
+    hidden = _rendered(_history(normal_matter, _outsider()))
     assert "Metallitööstuse" not in hidden
     assert "väikeettevõtteid" not in hidden
     assert _et(_days_ago(15)) not in hidden
-    # And the visible page is unchanged in *shape*: the reader's count is the
-    # count of what they can read, not one short of somebody else's.
-    assert len(_history(normal_matter, reader)) == len(_history(normal_matter, reader))
 
 
-def test_a_restricted_work_victory_contributes_no_row(normal_matter, specialist, reader):
+def test_a_restricted_work_victory_contributes_no_row_for_an_outsider(
+    normal_matter, specialist, reader
+):
     victory = factories.WorkVictoryFactory(
         matter=normal_matter,
         status=WorkVictoryStatus.CONFIRMED,
@@ -836,7 +875,14 @@ def test_a_restricted_work_victory_contributes_no_row(normal_matter, specialist,
         visibility_override=Visibility.RESTRICTED
     )
 
-    assert "Salajane võit" not in _rendered(_history(normal_matter, reader))
+    # docs/adr/0181: a READER reads the victory row as the owner does.
+    assert WORK_VICTORY_MILESTONE in _headlines(_history(normal_matter, reader))
+    assert _rendered(_history(normal_matter, reader)) == _rendered(
+        _history(normal_matter, specialist)
+    )
+    outsider = _history(normal_matter, _outsider())
+    assert "Salajane võit" not in _rendered(outsider)
+    assert WORK_VICTORY_MILESTONE not in _headlines(outsider)
     assert WORK_VICTORY_MILESTONE in _headlines(_history(normal_matter, specialist))
 
 
@@ -997,9 +1043,12 @@ def test_the_change_log_hides_a_row_about_a_restricted_child(
     development.visibility_override = Visibility.RESTRICTED
     development.save(update_fields=["visibility_override"])
 
-    client.force_login(reader)
-    body = client.get(reverse("matters:matter_changes", kwargs={"pk": matter.pk})).content.decode()
+    # docs/adr/0181: a READER may see it; the outsider is refused the page.
+    assert "Märge lisatud" in _changes(client, reader, matter).content.decode()
+    response = _changes(client, _outsider(), matter)
+    body = response.content.decode()
 
+    assert response.status_code == 404
     assert "salajase" not in body
     assert "Märge lisatud" not in body
     # And the reader who may see it does.
@@ -1011,10 +1060,11 @@ def test_the_change_log_hides_a_row_about_a_restricted_child(
 
 
 def test_the_change_log_refuses_a_matter_this_reader_may_not_open(client, reader, specialist):
+    # docs/adr/0181: a READER may open it; an administrator without a grant may not.
     matter = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
-    client.force_login(reader)
+    assert _changes(client, reader, matter).status_code == 200
 
-    response = client.get(reverse("matters:matter_changes", kwargs={"pk": matter.pk}))
+    response = _changes(client, _outsider(), matter)
     assert response.status_code == 404
 
 
@@ -1139,7 +1189,7 @@ def test_the_send_date_is_the_records_own_and_not_the_day_it_was_withdrawn(
     assert submission.status == SubmissionStatus.WITHDRAWN
 
 
-def test_a_restricted_withdrawn_opinion_stays_hidden(
+def test_a_restricted_withdrawn_opinion_stays_hidden_from_an_outsider(
     normal_matter, specialist, reader, ministry, evidence_root
 ):
     """Widening the population must not widen visibility with it."""
@@ -1163,7 +1213,12 @@ def test_a_restricted_withdrawn_opinion_stays_hidden(
     submission.visibility_override = Visibility.RESTRICTED
     submission.save(update_fields=["visibility_override"])
 
-    body = _rendered(_history(normal_matter, reader))
+    # docs/adr/0181: a READER reads it as the owner does; an outsider learns nothing.
+    shown = _rendered(_history(normal_matter, reader))
+    assert SUBMISSION_MILESTONE in shown
+    assert shown == _rendered(_history(normal_matter, specialist))
+
+    body = _rendered(_history(normal_matter, _outsider()))
     assert "salajane" not in body
     assert SUBMISSION_MILESTONE not in body
     assert "Arvamus tagasi võetud" not in body
@@ -1224,6 +1279,7 @@ def test_an_unclassified_family_is_absent_rather_than_allowed(event_type):
 
 
 def test_a_classified_family_is_allowed_because_it_is_scoped(specialist, reader, client):
+    # (Scoped for the outsider since docs/adr/0181; a READER reads the write-up.)
     """`Ülevaade / uudis`, the family that came off the list above.
 
     A reader may open this Matter; the write-up is restricted below it. The
@@ -1252,13 +1308,18 @@ def test_a_classified_family_is_allowed_because_it_is_scoped(specialist, reader,
         visibility_override=Visibility.RESTRICTED
     )
 
-    client.force_login(reader)
-    body = client.get(reverse("matters:matter_changes", kwargs={"pk": matter.pk})).content.decode()
+    # docs/adr/0181: a READER may read the write-up; the outsider gets no page.
+    assert "Ülevaade / uudis plaanis" in _changes(client, reader, matter).content.decode()
+    response = _changes(client, _outsider(), matter)
+    body = response.content.decode()
 
+    assert response.status_code == 404
     assert "Ülevaade / uudis plaanis" not in body
 
 
-def test_a_restricted_related_matters_title_is_not_in_the_change_log(client, specialist, reader):
+def test_a_restricted_related_matters_title_is_in_a_readers_change_log_only(
+    client, specialist, reader
+):
     """The review's own reproduction.
 
     A reader who receives 404 for a RESTRICTED Matter could read its title out of
@@ -1272,11 +1333,19 @@ def test_a_restricted_related_matters_title_is_not_in_the_change_log(client, spe
     )
     link_related_matters(matter=matter, other=secret, actor=specialist)
 
+    # docs/adr/0181: a READER opens the restricted Matter, so its title is no
+    # disclosure; an administrator without a grant opens neither page.
     client.force_login(reader)
-    # The 404 that makes the disclosure a disclosure.
-    assert client.get(reverse("matters:matter_detail", kwargs={"pk": secret.pk})).status_code == 404
+    assert client.get(reverse("matters:matter_detail", kwargs={"pk": secret.pk})).status_code == 200
+    shown = _changes(client, reader, matter).content.decode()
+    owners = _changes(client, specialist, matter).content.decode()
+    for needle in ("Riigisaladuse", "Teema seotud teise teemaga"):
+        assert (needle in shown) == (needle in owners), needle
 
-    body = client.get(reverse("matters:matter_changes", kwargs={"pk": matter.pk})).content.decode()
+    outsider = _outsider()
+    client.force_login(outsider)
+    assert client.get(reverse("matters:matter_detail", kwargs={"pk": secret.pk})).status_code == 404
+    body = _changes(client, outsider, matter).content.decode()
     assert "Riigisaladuse" not in body
     assert "Teema seotud teise teemaga" not in body
 
@@ -1304,7 +1373,9 @@ def test_a_foreign_submissions_title_is_not_in_the_change_log(
     assert "Taustmaterjal lisatud" not in body
 
 
-def test_a_restricted_website_overview_is_not_named_in_the_change_log(client, specialist, reader):
+def test_a_restricted_website_overview_is_named_in_the_change_log_to_a_reader_only(
+    client, specialist, reader
+):
     """Not even its existence: the event label alone says one was published."""
     matter = factories.MatterFactory(owner=specialist)
     overview = plan_website_overview(matter=matter, actor=specialist)
@@ -1318,15 +1389,18 @@ def test_a_restricted_website_overview_is_not_named_in_the_change_log(client, sp
     overview.visibility_override = Visibility.RESTRICTED
     overview.save(update_fields=["visibility_override"])
 
-    client.force_login(reader)
-    body = client.get(reverse("matters:matter_changes", kwargs={"pk": matter.pk})).content.decode()
+    # docs/adr/0181: a READER reads it as the owner does; the outsider nothing.
+    assert "Ülevaade / uudis avaldatud" in _changes(client, reader, matter).content.decode()
+    body = _changes(client, _outsider(), matter).content.decode()
 
     assert "Ülevaade / uudis avaldatud" not in body
     assert "Ülevaade / uudis plaanis" not in body
     assert "salajane-ulevaade" not in body
 
 
-def test_an_already_classified_restricted_development_is_still_hidden(client, specialist, reader):
+def test_an_already_classified_restricted_development_is_hidden_from_an_outsider(
+    client, specialist, reader
+):
     """The classified half of the union keeps working exactly as it did."""
     matter = factories.MatterFactory(owner=specialist)
     development = add_procedural_development(
@@ -1338,8 +1412,9 @@ def test_an_already_classified_restricted_development_is_still_hidden(client, sp
     development.visibility_override = Visibility.RESTRICTED
     development.save(update_fields=["visibility_override"])
 
-    client.force_login(reader)
-    body = client.get(reverse("matters:matter_changes", kwargs={"pk": matter.pk})).content.decode()
+    # docs/adr/0181: a READER reads it as the owner does; the outsider nothing.
+    assert "Märge lisatud" in _changes(client, reader, matter).content.decode()
+    body = _changes(client, _outsider(), matter).content.decode()
     assert "salajase" not in body
     assert "Märge lisatud" not in body
 
@@ -1625,7 +1700,9 @@ def test_an_external_positions_note_still_renders_exactly_once(signed_in, specia
     assert body.count("uxtl__msnotelabel") == 1
 
 
-def test_a_restricted_developments_note_is_invisible_to_a_reader(client, specialist, reader):
+def test_a_restricted_developments_note_is_read_by_a_reader_and_no_outsider(
+    client, specialist, reader
+):
     """§7. Permission before projection, and the note is inside that boundary.
 
     A development restricted below its Matter contributes no row, so it
@@ -1643,9 +1720,16 @@ def test_a_restricted_developments_note_is_invisible_to_a_reader(client, special
     development.visibility_override = Visibility.RESTRICTED
     development.save(update_fields=["visibility_override"])
 
+    # docs/adr/0181: a READER reads the note as the owner does; the outsider
+    # gets no page at all.
+    url = reverse("matters:matter_detail", kwargs={"pk": matter.pk})
     client.force_login(reader)
-    body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
+    assert "Salajane hinnang" in client.get(url).content.decode()
+    client.force_login(_outsider())
+    response = client.get(url)
+    body = response.content.decode()
 
+    assert response.status_code == 404
     assert "Salajane hinnang" not in body
     assert "salajase versiooni" not in body
     assert LAWYER_NOTE_LABEL not in body

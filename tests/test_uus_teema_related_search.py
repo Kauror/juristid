@@ -145,15 +145,20 @@ def test_synthetic_test_work_is_never_offered(signed_in, specialist):
     assert f'data-related-pick="{target.pk}"' not in search(signed_in, "metsanduse")
 
 
-def test_a_restricted_teema_leaves_no_trace_for_somebody_who_may_not_read_it(specialist, reader):
+def test_a_restricted_teema_leaves_no_trace_for_somebody_who_may_not_read_it(
+    specialist, reader, administrator
+):
     """The search's own boundary — the reader's scope before any ranking."""
     hidden = earlier(specialist, "Metsanduse piiratud kava", 58, visibility=Visibility.RESTRICTED)
 
-    # A lawyer may read restricted work (docs/adr/0042), so it is found…
+    # A lawyer may read restricted work (docs/adr/0042), and so does a READER
+    # since docs/adr/0181, so it is found…
     assert hidden in draft_picker_results(specialist, "metsanduse", exclude=set())
-    # …and somebody who may not read it finds no trace, by title or reference.
-    assert hidden not in draft_picker_results(reader, "metsanduse", exclude=set())
-    assert hidden not in draft_picker_results(reader, "2099_58", exclude=set())
+    assert hidden in draft_picker_results(reader, "metsanduse", exclude=set())
+    # …and somebody who may not read it (an administrator without a grant)
+    # finds no trace, by title or reference.
+    assert hidden not in draft_picker_results(administrator, "metsanduse", exclude=set())
+    assert hidden not in draft_picker_results(administrator, "2099_58", exclude=set())
 
 
 def test_the_search_is_a_writers_control(client, reader):
@@ -247,12 +252,13 @@ def test_synthetic_work_is_refused_at_the_save_too(signed_in, specialist):
     assert not Matter.objects.filter(title="Päris teema").exists()
 
 
-def test_a_teema_the_actor_may_not_read_is_never_linked(specialist, reader):
+def test_a_teema_the_actor_may_not_read_is_never_linked(specialist, administrator):
+    # The actor who may not read it is the administrator since docs/adr/0181.
     hidden = earlier(specialist, "Piiratud", 64, visibility=Visibility.RESTRICTED)
     new = factories.MatterFactory(owner=specialist, title="Uus")
 
     with refused(SIMILAR_LINK_NOT_FOUND):
-        _link_ticked_similar_matters(matter=new, ticked=[str(hidden.pk)], actor=reader)
+        _link_ticked_similar_matters(matter=new, ticked=[str(hidden.pk)], actor=administrator)
     assert relations_of(new) == []
 
 
@@ -290,8 +296,11 @@ def test_a_refused_save_keeps_the_ticked_suggestions_too(signed_in, specialist):
     assert f'name="{LINK_ON_CREATE_FIELD}" value="{target.pk}"' in region
 
 
-def test_a_refused_save_echoes_nothing_the_reader_may_not_see(client, specialist, reader):
-    """Echoed values are re-resolved: a forged or unreadable id is dropped."""
+def test_a_refused_save_echoes_nothing_the_reader_may_not_see(client, specialist, administrator):
+    """Echoed values are re-resolved: a forged or unreadable id is dropped.
+
+    The viewer who may not read it is the administrator since docs/adr/0181.
+    """
     from django.test import RequestFactory
 
     from app.matters.views import _echoed_related_choices
@@ -300,7 +309,7 @@ def test_a_refused_save_echoes_nothing_the_reader_may_not_see(client, specialist
     request = RequestFactory().post(
         CREATE, {LINK_ON_CREATE_CHOSEN_FIELD: [str(hidden.pk), "ei-ole-uuid"]}
     )
-    request.user = reader
+    request.user = administrator
 
     assert _echoed_related_choices(request) == {"related_chosen": [], "similar_ticked": []}
 

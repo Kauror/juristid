@@ -451,7 +451,9 @@ def test_the_window_needs_no_joustumine_parameter_beside_it(signed_in):
 # ---------------------------------------------------------------------------
 
 
-def test_a_restricted_matters_victory_does_not_reach_a_non_participant(client, reader):
+def test_a_restricted_matters_victory_reaches_a_reader_but_not_an_outsider(
+    client, reader, administrator
+):
     """The Matter is invisible, so nothing about it is answerable — including
     "does it carry a work victory".
 
@@ -459,10 +461,17 @@ def test_a_restricted_matters_victory_does_not_reach_a_non_participant(client, r
     docs/adr/0042 a specialist reads RESTRICTED work *by role*, so pointing this
     at one would assert nothing about the filter. `READER` is a real,
     authenticated colleague who genuinely may not (tests/conftest.py).
+
+    Since docs/adr/0181 the READER reads RESTRICTED work too; the colleague who
+    genuinely may not is an ADMINISTRATOR without a grant.
     """
     hidden = factories.MatterFactory(title="Salajane võit", visibility=Visibility.RESTRICTED)
     _victory(hidden)
     client.force_login(reader)
+    assert titles_on(
+        client.get(REGISTER, {register_filters.VICTORY_PARAM: "on", "olek": "koik"})
+    ) == ["Salajane võit"]
+    client.force_login(administrator)
 
     found = client.get(REGISTER, {register_filters.VICTORY_PARAM: "on", "olek": "koik"})
     assert titles_on(found) == []
@@ -471,7 +480,9 @@ def test_a_restricted_matters_victory_does_not_reach_a_non_participant(client, r
     assert titles_on(absent) == []
 
 
-def test_a_child_restricted_below_a_readable_matter_leaks_neither_way(client, reader):
+def test_a_child_restricted_below_a_readable_matter_leaks_neither_way(
+    client, reader, administrator
+):
     """The case the #160/#164 hardening is about, asked of the new filters.
 
     The Matter is readable and the victory on it is not. It must not appear
@@ -479,19 +490,32 @@ def test_a_child_restricted_below_a_readable_matter_leaks_neither_way(client, re
     and it must appear under `?toovoit=puudub`, because for this reader there is
     no visible victory on it and any other answer would be the same disclosure
     read backwards.
+
+    Since docs/adr/0181 no request reads the Matter and not its victory: the
+    READER sees the victory (under `on`, not `puudub`), and an outsider
+    (ADMINISTRATOR without a grant) sees the Matter under neither.
     """
     matter = factories.MatterFactory(title="Avalik teema")
     _victory(matter, visibility_override=Visibility.RESTRICTED)
     client.force_login(reader)
 
     found = client.get(REGISTER, {register_filters.VICTORY_PARAM: "on", "olek": "koik"})
-    assert titles_on(found) == []
+    assert titles_on(found) == ["Avalik teema"]
 
     absent = client.get(REGISTER, {register_filters.VICTORY_PARAM: "puudub", "olek": "koik"})
-    assert titles_on(absent) == ["Avalik teema"]
+    assert titles_on(absent) == []
+
+    client.force_login(administrator)
+    for value in ("on", "puudub"):
+        response = client.get(REGISTER, {register_filters.VICTORY_PARAM: value, "olek": "koik"})
+        assert titles_on(response) == [], value
 
 
-def test_a_restricted_commencement_leaks_through_neither_filter_nor_window(client, reader):
+def test_a_restricted_commencement_leaks_through_neither_filter_nor_window(
+    client, reader, administrator
+):
+    """Since docs/adr/0181 the READER finds it through both, like the owner; an
+    outsider (ADMINISTRATOR without a grant) through neither."""
     matter = factories.MatterFactory(title="Avalik teema")
     _commencement(
         matter,
@@ -499,19 +523,23 @@ def test_a_restricted_commencement_leaks_through_neither_filter_nor_window(clien
         end=datetime.date(2026, 4, 1),
         visibility_override=Visibility.RESTRICTED,
     )
-    client.force_login(reader)
+    window = {
+        register_filters.COMMENCEMENT_START_PARAM: "1.4.2026",
+        register_filters.COMMENCEMENT_END_PARAM: "30.4.2026",
+        "olek": "koik",
+    }
+    flagged = {register_filters.COMMENCEMENT_PARAM: "on", "olek": "koik"}
 
-    found = client.get(REGISTER, {register_filters.COMMENCEMENT_PARAM: "on", "olek": "koik"})
+    client.force_login(reader)
+    assert titles_on(client.get(REGISTER, flagged)) == ["Avalik teema"]
+    assert titles_on(client.get(REGISTER, window)) == ["Avalik teema"]
+
+    client.force_login(administrator)
+
+    found = client.get(REGISTER, flagged)
     assert titles_on(found) == []
 
-    windowed = client.get(
-        REGISTER,
-        {
-            register_filters.COMMENCEMENT_START_PARAM: "1.4.2026",
-            register_filters.COMMENCEMENT_END_PARAM: "30.4.2026",
-            "olek": "koik",
-        },
-    )
+    windowed = client.get(REGISTER, window)
     assert titles_on(windowed) == []
 
 
@@ -527,17 +555,22 @@ def test_a_participant_does_see_their_own_restricted_matters_facts(client, speci
     assert titles_on(response) == ["Minu salajane"]
 
 
-def test_the_victory_year_options_never_name_a_restricted_only_year(client, reader):
+def test_the_victory_year_options_never_name_a_restricted_only_year(client, reader, administrator):
     """A year offered in the control is a year the reader can actually open.
 
     Built from the visible population, so a year only a restricted Matter uses
     is not a filter option somebody can notice the absence of
     (Stage-2G brief 31).
+
+    Since docs/adr/0181 the READER can open the restricted Matter, so its year is
+    offered; an outsider (ADMINISTRATOR without a grant) is offered none.
     """
     hidden = factories.MatterFactory(title="Salajane", visibility=Visibility.RESTRICTED)
     _victory(hidden, year=2019)
     client.force_login(reader)
+    assert 2019 in client.get(REGISTER).context["victory_years"]
 
+    client.force_login(administrator)
     response = client.get(REGISTER)
     assert 2019 not in response.context["victory_years"]
 

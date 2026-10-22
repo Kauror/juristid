@@ -205,6 +205,20 @@ def behind_the_gate(client, settings):
     return client
 
 
+#: A page a persona-less gate session still renders. Since docs/adr/0181 Osakond
+#: is ``login_required`` like every business page and sends that session to the
+#: persona chooser; product release notes hold no business data and stay open.
+NO_PERSONA_PAGE = "core:release_notes"
+
+
+def test_the_department_page_sends_a_session_with_no_persona_to_the_chooser(behind_the_gate):
+    """docs/adr/0181: a persona is required before any business page."""
+    response = behind_the_gate.get(reverse("matters:department"))
+
+    assert response.status_code == 302
+    assert response.url.startswith(reverse("accounts:choose_persona"))
+
+
 def test_a_reader_with_no_persona_is_not_offered_minu_asjad(behind_the_gate):
     """Preserved deliberately, and not weakened to make the order literal.
 
@@ -212,8 +226,9 @@ def test_a_reader_with_no_persona_is_not_offered_minu_asjad(behind_the_gate):
     ``login_required`` on that surface would bounce the reader straight back to
     the persona page. An item that can only fail is worse than no item
     (Vali kasutaja brief 23). The remaining three keep their relative order.
+    Read on a page that still renders without a persona (docs/adr/0181).
     """
-    navigation = navigation_of(behind_the_gate.get(reverse("matters:department")))
+    navigation = navigation_of(behind_the_gate.get(reverse(NO_PERSONA_PAGE)))
 
     assert ">Minu asjad</a>" not in navigation
     assert labels_of(navigation) == ["Osakond", "Teemad", "Statistika"]
@@ -222,7 +237,7 @@ def test_a_reader_with_no_persona_is_not_offered_minu_asjad(behind_the_gate):
 @pytest.mark.parametrize("retired", RETIRED_LABELS)
 def test_the_retired_item_is_absent_behind_the_gate_too(behind_the_gate, retired):
     """Its removal is not conditional on being signed in as somebody."""
-    assert retired not in navigation_of(behind_the_gate.get(reverse("matters:department")))
+    assert retired not in navigation_of(behind_the_gate.get(reverse(NO_PERSONA_PAGE)))
 
 
 # ---------------------------------------------------------------------------

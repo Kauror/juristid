@@ -27,7 +27,7 @@ from app.core.management.commands.seed_e2e_data import (
     OPEN_TITLE,
     RESTRICTED_TITLE,
 )
-from e2e.conftest import ADMIN, MARTIN, READER, SANDRA, sign_in, sign_out
+from e2e.conftest import ADMIN, MARTIN, SANDRA, sign_in, sign_out
 
 pytestmark = pytest.mark.e2e
 
@@ -122,7 +122,8 @@ def test_a_restricted_matters_history_is_as_unreachable_as_the_matter(page, base
     expect(page.get_by_role("link", name=RESTRICTED_TITLE).first).to_be_visible()
     sign_out(page, base_url)
 
-    sign_in(page, base_url, READER)
+    # The administrator, who reads no business content (docs/adr/0181).
+    sign_in(page, base_url, ADMIN)
     # `?kaupa=koik`: the v2 design set the default page size to twelve, so a
     # seeded row is on page one only until some other test files a thirteenth
     # Matter (02-EKRAANID §C).
@@ -147,7 +148,9 @@ def test_an_operator_settles_a_match_with_the_evidence_in_front_of_them(
 
     card = page.locator(".reviewcard").filter(has_text=CANDIDATE_PAGE_TITLE)
     expect(card).to_be_visible()
-    expect(card).to_contain_text("Alkoholiaktsiisi eelnõu")  # the register side
+    # The register side names a Matter, which the administrator reads only
+    # through a break-glass grant (docs/adr/0181): withheld, and said so.
+    expect(card).to_contain_text("selles kasutajavaates ei kuvata")
     expect(card).to_contain_text("2019_44")
     screenshots(page, "historical-review-queue")
 

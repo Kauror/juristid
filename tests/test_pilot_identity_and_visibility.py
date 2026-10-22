@@ -30,7 +30,7 @@ from django.urls import reverse
 
 from app.accounts.enums import UserRole
 from app.accounts.naming import disambiguated_names, name_among
-from app.core.authorization import ROLES_WITH_RESTRICTED_ACCESS
+from app.core.authorization import ROLES_WITH_BUSINESS_READ
 from app.core.enums import Visibility
 from app.core.visibility_help import RESTRICTED_VISIBILITY_HELP
 from app.matters.forms import IncomingIntakeForm, MatterEditForm
@@ -48,25 +48,27 @@ ROOT = Path(settings.BASE_DIR)
 
 
 def test_the_wording_names_the_population_the_authorization_actually_uses():
-    """The rule is `SPECIALIST` + `DEPARTMENT_HEAD`, department-wide.
+    """Every authorized internal user reads it (docs/adr/0181).
 
-    Asserted against `ROLES_WITH_RESTRICTED_ACCESS` rather than against a string
+    Asserted against `ROLES_WITH_BUSINESS_READ` rather than against a string
     somebody typed, so widening or narrowing the rule without revisiting the
-    sentence fails here instead of misleading a lawyer.
+    sentence fails here instead of misleading a lawyer. Until docs/adr/0181
+    the sentence named «kõik osakonna juristid ja osakonnajuht», which was the
+    whole population then; READER has joined it, and the sentence now says
+    every user of the application.
     """
-    assert ROLES_WITH_RESTRICTED_ACCESS == frozenset(
-        {UserRole.SPECIALIST.value, UserRole.DEPARTMENT_HEAD.value}
+    assert ROLES_WITH_BUSINESS_READ == frozenset(
+        {UserRole.SPECIALIST.value, UserRole.DEPARTMENT_HEAD.value, UserRole.READER.value}
     )
-    # The whole legal team, said in the department's own words …
-    assert "kõik osakonna juristid" in RESTRICTED_VISIBILITY_HELP
-    assert "osakonnajuht" in RESTRICTED_VISIBILITY_HELP
+    assert "kõik rakenduse kasutajad" in RESTRICTED_VISIBILITY_HELP
+    # `Piiratud` is a label, and the sentence says so …
+    assert "mitte ligipääsupiirang" in RESTRICTED_VISIBILITY_HELP
     # … and never the claim that put the pilot wrong.
     assert "ainult" not in RESTRICTED_VISIBILITY_HELP
 
 
 def test_the_wording_still_says_where_the_boundary_is():
-    assert "Väljapoole osakonda" in RESTRICTED_VISIBILITY_HELP
-    assert "pärivad sama piirangu" in RESTRICTED_VISIBILITY_HELP
+    assert "Väljapoole rakendust" in RESTRICTED_VISIBILITY_HELP
 
 
 @pytest.mark.parametrize(
@@ -150,12 +152,17 @@ def test_the_shared_wording_is_reachable_from_a_template():
     assert rendered == RESTRICTED_VISIBILITY_HELP
 
 
-def test_nothing_here_widened_who_may_read_a_restricted_matter(client, restricted_matter):
-    """The copy changed; the boundary did not."""
+def test_the_copy_names_exactly_who_reads_a_restricted_matter(client, restricted_matter):
+    """The copy and the boundary say the same thing (docs/adr/0181).
+
+    Until docs/adr/0181 a READER was refused here; every authorized internal
+    user reads it now, and an administrator without a business role still does
+    not.
+    """
     from app.matters.models import Matter
 
     reader = factories.ReaderFactory()
-    assert not Matter.objects.visible_to(reader).filter(pk=restricted_matter.pk).exists()
+    assert Matter.objects.visible_to(reader).filter(pk=restricted_matter.pk).exists()
 
     lawyer = factories.UserFactory()
     assert Matter.objects.visible_to(lawyer).filter(pk=restricted_matter.pk).exists()

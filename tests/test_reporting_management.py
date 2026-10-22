@@ -409,10 +409,15 @@ def test_preparation_time_follows_the_arrival_date_across_the_year_edge(mgmt):
     assert previous.distribution.median == 10
 
 
-def test_preparation_time_hides_a_restricted_matter_from_a_reader(mgmt):
+def test_preparation_time_counts_a_restricted_matter_for_a_reader_not_an_outsider(
+    mgmt, administrator
+):
+    """docs/adr/0181: the READER's figure is the head's; the outsider has none."""
     result = compute(keys.RESPONSE_PREPARATION_TIME, ctx(mgmt.reader))
-    assert result.value == 3
-    assert groups(result)["0–7 päeva"] == 1
+    for_head = compute(keys.RESPONSE_PREPARATION_TIME, ctx(mgmt.head))
+    assert result.value == for_head.value == 4
+    assert groups(result) == groups(for_head)
+    assert management.preparation_rows(ctx(administrator)) == []
 
 
 def test_preparation_time_declines_when_nothing_is_measured(mgmt):
@@ -478,13 +483,18 @@ def test_on_time_names_answers_without_a_sent_opinion_and_unnamed_opinions(mgmt)
     assert "Perioodil saadetud 3 arvamust ei ole ühegi tähtaja vastuseks" in notes
 
 
-def test_on_time_hides_restricted_matters_and_restricted_opinions(mgmt):
+def test_on_time_counts_restricted_material_for_a_reader_and_nothing_for_an_outsider(
+    mgmt, administrator
+):
+    """docs/adr/0181: the READER's figure is the head's; the outsider has none."""
     result = compute(keys.OPINIONS_ON_TIME, ctx(mgmt.reader))
     by = groups(result)
-    assert by["Tähtajaks"] == 1
+    assert by["Tähtajaks"] == 3
     assert by["Pärast tähtaega"] == 1
-    assert result.value == 50
-    assert result.coverage_denominator == 6
+    assert result.value == 75
+    assert result.coverage_denominator == 8
+    assert by == groups(compute(keys.OPINIONS_ON_TIME, ctx(mgmt.head)))
+    assert management.answer_rows(ctx(administrator)) == []
 
 
 def test_on_time_reads_the_send_date_in_tallinn_at_the_year_edge(mgmt):
@@ -522,8 +532,14 @@ def test_the_comparison_cuts_both_years_on_the_same_day_in_tallinn(mgmt):
     assert result.status == MetricStatus.AVAILABLE
 
 
-def test_the_comparison_hides_restricted_material(mgmt):
-    assert compute(keys.SUBMISSIONS_SENT_YOY_CHANGE, ctx(mgmt.reader)).comparison.current_value == 8
+def test_the_comparison_counts_restricted_material_for_a_reader_not_an_outsider(
+    mgmt, administrator
+):
+    """docs/adr/0181: the READER counts the head's ten; the outsider counts nothing."""
+    for_reader = compute(keys.SUBMISSIONS_SENT_YOY_CHANGE, ctx(mgmt.reader)).comparison
+    assert for_reader.current_value == 10
+    for_outsider = compute(keys.SUBMISSIONS_SENT_YOY_CHANGE, ctx(administrator)).comparison
+    assert not for_outsider.current_value
 
 
 def test_the_comparison_declines_when_last_year_was_never_measured(mgmt):
@@ -585,9 +601,15 @@ def test_eu_share_reads_only_the_reviewed_instrument_group(mgmt):
     assert (result.coverage_count, result.coverage_denominator) == (5, 12)
 
 
-def test_eu_share_hides_a_restricted_matter(mgmt):
+def test_eu_share_counts_a_restricted_matter_for_a_reader_not_an_outsider(mgmt, administrator):
+    """docs/adr/0181: the READER's cells are the head's; the outsider's list is empty."""
     cells = _matrix(compute(keys.EU_RELATED_MATTERS_BY_YEAR, ctx(mgmt.reader)))["2026"]
-    assert cells["ELiga seotud õigusakti järgi"] == 2
+    assert cells["ELiga seotud õigusakti järgi"] == 3
+    assert cells == _matrix(compute(keys.EU_RELATED_MATTERS_BY_YEAR, ctx(mgmt.head)))["2026"]
+    listing = management.metric_rows(
+        ctx(administrator), keys.EU_RELATED_MATTERS_BY_YEAR, management.EU_RELATED, "2026"
+    )
+    assert list(listing.rows) == []
 
 
 def test_eu_share_shows_the_unknown_year_only_over_all_years(mgmt):
@@ -681,12 +703,21 @@ def test_the_headline_links_open_the_population_the_number_is_about(mgmt, client
     assert total_at(client, on_time.drillthrough_url) == on_time.coverage_count
 
 
-def test_the_list_never_names_a_restricted_matter_to_a_reader(mgmt, client):
-    client.force_login(mgmt.reader)
+def test_the_list_names_a_restricted_matter_to_a_reader_and_never_to_an_outsider(
+    mgmt, client, administrator
+):
+    """docs/adr/0181: the READER's list is the head's; the outsider's names nothing."""
     url = management.metric_list_url(ctx(mgmt.reader), keys.OPINIONS_ON_TIME, management.ON_TIME)
     parsed = urlparse(url)
-    response = client.get(parsed.path, {k: v[0] for k, v in parse_qs(parsed.query).items()})
-    body = response.content.decode()
+    query = {k: v[0] for k, v in parse_qs(parsed.query).items()}
+
+    client.force_login(mgmt.reader)
+    body = client.get(parsed.path, query).content.decode()
+    assert "Näidisteema piiratud" in body
+    assert "Konfidentsiaalne vastus" in body
+
+    client.force_login(administrator)
+    body = client.get(parsed.path, query).content.decode()
     assert "Näidisteema piiratud" not in body
     assert "Konfidentsiaalne vastus" not in body
 
@@ -847,9 +878,16 @@ def test_eu_basis_cells_open_exactly_their_matters(mgmt, eu_bases):
         assert {row.title for row in listing.rows} == {f"Näidisteema {n}" for n in names}, group
 
 
-def test_eu_bases_hide_a_restricted_matter_from_a_reader(mgmt, eu_bases):
+def test_eu_bases_count_a_restricted_matter_for_a_reader_not_an_outsider(
+    mgmt, eu_bases, administrator
+):
+    """docs/adr/0181: the READER's cells are the head's; the outsider's list is empty."""
     cells = _matrix(compute(keys.EU_RELATED_MATTERS_BY_YEAR, ctx(mgmt.reader, "2027")))["2027"]
-    assert cells["ELiga seotud ainult menetlusliigi järgi"] == 2
+    assert cells["ELiga seotud ainult menetlusliigi järgi"] == 3
+    listing = management.metric_rows(
+        ctx(administrator, "2027"), keys.EU_RELATED_MATTERS_BY_YEAR, management.EU_BY_TRACK, "2027"
+    )
+    assert list(listing.rows) == []
 
 
 def _add_test_matters() -> None:

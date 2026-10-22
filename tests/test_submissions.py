@@ -255,13 +255,21 @@ def test_superseding_is_recorded(normal_matter, specialist):
 # -- visibility -------------------------------------------------------------
 
 
-def test_submissions_inherit_matter_visibility(restricted_matter, specialist, reader):
+def test_submissions_inherit_matter_visibility(
+    restricted_matter, specialist, reader, administrator
+):
+    """docs/adr/0181: every authorized reader reads it; the outsider does not."""
     _draft(restricted_matter, specialist)
-    assert Submission.objects.visible_to(reader).count() == 0
+    assert Submission.objects.visible_to(reader).count() == 1
     assert Submission.objects.visible_to(specialist).count() == 1
+    assert Submission.objects.visible_to(administrator).count() == 0
 
 
-def test_a_submission_can_be_more_restrictive_than_its_matter(normal_matter, specialist, reader):
+def test_a_submission_can_be_more_restrictive_than_its_matter(
+    normal_matter, specialist, reader, administrator
+):
+    """The override is kept as a label; since docs/adr/0181 it divides no two
+    authorized readers, and the outsider reads neither submission."""
     _draft(normal_matter, specialist, title="Avalik")
     create_submission(
         matter=normal_matter,
@@ -269,8 +277,10 @@ def test_a_submission_can_be_more_restrictive_than_its_matter(normal_matter, spe
         actor=specialist,
         visibility_override=Visibility.RESTRICTED,
     )
-    assert Submission.objects.visible_to(reader).count() == 1
+    assert Submission.objects.get(title="Tundlik").visibility_override == Visibility.RESTRICTED
+    assert Submission.objects.visible_to(reader).count() == 2
     assert Submission.objects.visible_to(specialist).count() == 2
+    assert Submission.objects.visible_to(administrator).count() == 0
 
 
 def test_department_head_sees_restricted_submissions(

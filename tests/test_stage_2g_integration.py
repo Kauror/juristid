@@ -82,8 +82,8 @@ def test_a_technical_administrator_is_refused_both_stages_controls(
 
     Osakond is a reading surface and opens — it replaced the page every reader
     could open — but its manager-only sections are not built for an
-    administrator, and Stage 2G's confirmation route 403s. What an administrator
-    must not get is the ability to *act* (docs/adr/0049 §3).
+    administrator, and Stage 2G's confirmation route refuses it. What an
+    administrator must not get is the ability to *act* (docs/adr/0049 §3).
     """
     matter = factories.MatterFactory(owner=specialist)
     record = add_work_victory_candidate(matter=matter, title="Sünteetiline võit", actor=specialist)
@@ -100,7 +100,9 @@ def test_a_technical_administrator_is_refused_both_stages_controls(
             kwargs={"matter_id": matter.pk, "pk": record.pk},
         )
     )
-    assert refused.status_code == 403
+    # Since docs/adr/0181 the administrator cannot even read the Matter, so the
+    # refusal comes before the review check: the 404 of a record it may not see.
+    assert refused.status_code == 404
     record.refresh_from_db()
     assert record.status == WorkVictoryStatus.CANDIDATE
 
@@ -149,11 +151,14 @@ def test_a_promoted_matter_can_carry_structured_facts(specialist):
     assert matter.important_dates.count() == 1
 
 
-def test_restoring_an_archive_owner_does_not_widen_fact_authorization(specialist, reader):
+def test_restoring_an_archive_owner_changes_no_fact_authorization(
+    specialist, reader, administrator
+):
     """Stage 2F's backfill sets owners. Visibility still decides who reads.
 
-    An unrelated specialist must not reach a restricted Matter's facts merely
-    because somebody now owns it.
+    Since docs/adr/0181 ownership decides nothing about reading: a READER
+    reaches a restricted Matter's facts before and after an owner is restored,
+    and an administrator without a grant reaches them at neither point.
     """
     from app.core.enums import Visibility
     from app.intelligence.models import MatterImportantDate
@@ -163,11 +168,15 @@ def test_restoring_an_archive_owner_does_not_widen_fact_authorization(specialist
         matter=matter, title="Piiratud tähtaeg", date_value=FUTURE, period_end=FUTURE
     )
 
+    def reachable(user):
+        return MatterImportantDate.objects.visible_to(user).filter(matter=matter).exists()
+
+    assert reachable(reader) and not reachable(administrator)
+
     matter.owner = specialist
     matter.save(update_fields=["owner", "updated_at"])
 
-    reachable = MatterImportantDate.objects.visible_to(reader)
-    assert not reachable.filter(matter=matter).exists()
+    assert reachable(reader) and not reachable(administrator)
 
 
 # -- navigation -------------------------------------------------------------

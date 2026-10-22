@@ -363,25 +363,32 @@ def test_dated_work_that_is_not_an_opinion_moves_only_the_week_figure(specialist
 
 
 def test_a_restricted_matter_counts_only_for_a_reader_who_may_open_it(
-    specialist, department_head, reader
+    specialist, department_head, reader, administrator
 ) -> None:
+    # docs/adr/0181: a READER may open it (counts as the head does); an
+    # administrator without a grant may not.
     hidden = drafted(specialist, deadline=FRIDAY, visibility=Visibility.RESTRICTED)
 
     assert pair(specialist) == (1, 1)
     assert pair(department_head, subject=specialist) == (1, 1)
-    assert pair(reader, subject=specialist) == (0, 0)
+    assert pair(reader, subject=specialist) == (1, 1)
     reading = figures(reader, subject=specialist)
     for url in (reading.due_url, reading.preparation_url):
-        assert hidden.pk not in listed(reader, url)
+        assert hidden.pk in listed(reader, url)
+    assert pair(administrator, subject=specialist) == (0, 0)
+    outside = figures(administrator, subject=specialist)
+    for url in (outside.due_url, outside.preparation_url):
+        assert hidden.pk not in listed(administrator, url)
 
 
-def test_a_draft_restricted_below_its_matter_moves_no_figure_for_a_reader(
-    specialist, department_head, reader
+def test_a_draft_restricted_below_its_matter_counts_for_a_reader_not_an_outsider(
+    specialist, department_head, reader, administrator
 ) -> None:
-    """The Matter is readable to both; the opinion being written is not.
+    """The Matter is readable to both; so, since docs/adr/0181, is the draft.
 
-    Counting it for a reader who may not open it would disclose that a draft
-    exists on a named file (AUTH-003).
+    Counting it for somebody who may not open it would disclose that a draft
+    exists on a named file (AUTH-003) — that somebody is now the administrator
+    without a grant, who reads neither the Matter nor the draft.
     """
     matter = a_matter(specialist, deadline=FRIDAY)
     create_submission(
@@ -393,7 +400,9 @@ def test_a_draft_restricted_below_its_matter_moves_no_figure_for_a_reader(
 
     assert matter.pk in set(Matter.objects.visible_to(reader).values_list("pk", flat=True))
     assert pair(department_head, subject=specialist) == (1, 1)
-    assert pair(reader, subject=specialist) == (0, 0)
+    assert pair(reader, subject=specialist) == (1, 1)
+    assert not Matter.objects.visible_to(administrator).filter(pk=matter.pk).exists()
+    assert pair(administrator, subject=specialist) == (0, 0)
 
 
 def test_the_head_reads_a_colleagues_desk_through_their_own_entitlement(

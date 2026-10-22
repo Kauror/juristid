@@ -31,8 +31,8 @@ from app.audit.enums import SecurityEventType
 from app.audit.models import SecurityAuditEvent
 from app.core.authorization import (
     DEPARTMENT_VIEWER,
-    department_scope,
     matter_visibility_q,
+    no_scope,
     restricted_participation_q,
     scope_for_user,
 )
@@ -220,29 +220,32 @@ def test_the_client_key_is_not_the_address(client, gate_url):
 # -- D, E. what the correct password opens ---------------------------------
 
 
-def test_the_department_page_is_readable_once_the_password_is_correct(behind_the_gate):
+def test_the_department_page_is_readable_once_a_persona_is_chosen(behind_the_gate):
     """Explicitly requested, which is now the only way anybody arrives here.
 
     The password no longer *lands* somebody on the department view — `/` chooses
     the persona selector, and a chosen persona chooses Minu asjad
-    (tests/test_default_home.py). What this asserts is unchanged: the page is
-    reachable behind the gate, with or without a persona — and it is reachable
-    from the address it had before the merge (docs/adr/0049 §2).
+    (tests/test_default_home.py). The page is reachable behind the gate once a
+    persona is chosen — no longer without one (docs/adr/0181) — and from the
+    address it had before the merge (docs/adr/0049 §2).
     """
+    behind_the_gate.post(reverse("accounts:act_as"), {"user_id": str(factories.UserFactory().pk)})
     response = behind_the_gate.get("/ulevaade/", follow=True)
     assert response.status_code == 200
     assert response.request["PATH_INFO"] == "/osakond/"
     assert response.resolver_match.view_name == "matters:department"
 
 
-def test_the_dashboard_works_with_no_persona_selected(behind_the_gate):
+def test_the_dashboard_asks_for_a_persona_before_it_shows_anything(behind_the_gate):
+    """It rendered every NORMAL Teema with no persona selected until docs/adr/0181."""
     owner = factories.UserFactory()
     factories.MatterFactory(owner=owner, title="Avalik teema kõigile", is_open=True)
 
     response = behind_the_gate.get("/osakond/")
-    assert response.status_code == 200
+    assert response.status_code == 302
+    assert response["Location"].startswith(reverse("accounts:choose_persona"))
     assert not response.wsgi_request.user.is_authenticated
-    assert "Avalik teema kõigile" in response.content.decode()
+    assert "Avalik teema kõigile" not in response.content.decode()
 
 
 def test_the_session_identifier_changes_when_the_gate_opens(client, gate_url):
@@ -369,27 +372,31 @@ def test_the_persona_selector_will_not_redirect_off_site(behind_the_gate):
     assert "mujal.invalid" not in response["Location"]
 
 
-# -- I. restricted material does not leak through the department scope -----
+# -- I. nothing at all is read before a persona is chosen (docs/adr/0181) ---
 
 
-def test_the_department_scope_sees_normal_and_nothing_else(behind_the_gate):
+def test_the_department_view_without_a_persona_reads_nothing(behind_the_gate):
+    """It read every NORMAL record until docs/adr/0181; now it asks who is reading."""
     owner = factories.UserFactory()
     factories.MatterFactory(owner=owner, title="Tavaline teema", visibility=Visibility.NORMAL)
     factories.MatterFactory(
         owner=owner, title="Konfidentsiaalne teema", visibility=Visibility.RESTRICTED
     )
 
-    body = behind_the_gate.get("/osakond/").content.decode()
+    response = behind_the_gate.get("/osakond/")
+    assert response.status_code == 302
+    assert response["Location"].startswith(reverse("accounts:choose_persona"))
+    body = response.content.decode()
+    assert "Tavaline teema" not in body
     assert "Konfidentsiaalne teema" not in body
 
 
-def test_an_ownerless_restricted_matter_is_not_visible_to_the_department():
-    """The trap this scope was built around.
+def test_an_ownerless_archive_row_is_not_visible_to_the_department_sentinel():
+    """The trap this scope was built around, and now nothing at all.
 
     `Q(owner=None)` compiles to `owner IS NULL`, which matches every ownerless
-    archive row — and the historical import creates thousands of them. A
-    participation clause built for a scope with no user would hand the whole
-    archive to anybody who typed the shared password.
+    archive row — and the historical import creates thousands of them. The
+    sentinel's scope reads nothing (docs/adr/0181), restricted or not.
     """
     hidden = factories.ArchiveMatterFactory(
         title="Omanikuta piiratud arhiivikirje", visibility=Visibility.RESTRICTED
@@ -397,45 +404,58 @@ def test_an_ownerless_restricted_matter_is_not_visible_to_the_department():
     factories.ArchiveMatterFactory(title="Omanikuta tavaline arhiivikirje")
 
     visible = set(Matter.objects.visible_to(DEPARTMENT_VIEWER).values_list("title", flat=True))
-    assert "Omanikuta tavaline arhiivikirje" in visible
+    assert visible == set()
     assert hidden.title not in visible
 
 
 def test_participation_is_nothing_when_the_scope_knows_nobody():
-    """`NOTHING`, not an owner clause. The clause is what would leak."""
-    from app.core.authorization import NOTHING
+    """`NOTHING`, not an owner clause. The clause is what would leak.
 
-    assert restricted_participation_q(department_scope()) == NOTHING
+    Asked of a hand-built scope that claims to read but names nobody — the
+    shape the department scope had before docs/adr/0181 — because the guard
+    is what keeps any such scope from matching every ownerless row.
+    """
+    from app.core.authorization import NOTHING, Scope
+
+    nobody = Scope(
+        user=None, is_authenticated=True, sees_restricted_by_role=False, break_glass_grant_id=None
+    )
+    assert restricted_participation_q(nobody) == NOTHING
+    assert restricted_participation_q(no_scope()) == NOTHING
 
 
 def test_the_department_viewer_is_not_a_user_and_cannot_own_anything():
     """It has no primary key, so it cannot be written to a foreign key."""
     assert DEPARTMENT_VIEWER.pk is None
     assert not hasattr(DEPARTMENT_VIEWER, "_meta")
-    assert scope_for_user(DEPARTMENT_VIEWER) == department_scope()
+    assert scope_for_user(DEPARTMENT_VIEWER) == no_scope()
 
 
-def test_the_department_scope_never_sees_restricted_by_role():
-    scope = department_scope()
+def test_the_department_viewer_reads_nothing():
+    from app.core.authorization import NOTHING
+
+    scope = scope_for_user(DEPARTMENT_VIEWER)
+    assert not scope.is_authenticated
     assert not scope.sees_all_restricted
-    assert matter_visibility_q(scope).children  # a real filter, not "everything"
+    assert matter_visibility_q(scope) == NOTHING
 
 
-def test_a_persona_still_sees_only_what_that_persona_may_see(behind_the_gate):
-    """The gate changes who is asked, not what authorization answers.
+def test_every_persona_reads_the_same_department(behind_the_gate):
+    """The gate changes who is asked; under one internal read policy the answer is the same.
 
-    Marko is a reader rather than a second lawyer: since docs/adr/0042 two
-    lawyers see the same department, so only a persona from outside the legal
-    team can show that the switch is answered by authorization at all.
+    Until docs/adr/0181 this showed a READER persona refused a colleague's
+    restricted Teema. Every authorized internal user now reads it, so the
+    persona decides whose desk is shown and who is attributed for a write,
+    never what may be read.
     """
-    marko = factories.ReaderFactory()
+    marko = factories.UserFactory()
     ireen = factories.UserFactory()
     factories.MatterFactory(
         owner=ireen, title="Ireeni piiratud teema", visibility=Visibility.RESTRICTED
     )
 
     behind_the_gate.post(reverse("accounts:act_as"), {"user_id": str(marko.pk)})
-    assert "Ireeni piiratud teema" not in behind_the_gate.get("/teemad/").content.decode()
+    assert "Ireeni piiratud teema" in behind_the_gate.get("/teemad/").content.decode()
 
     behind_the_gate.post(reverse("accounts:act_as"), {"user_id": str(ireen.pk)})
     assert "Ireeni piiratud teema" in behind_the_gate.get("/teemad/").content.decode()

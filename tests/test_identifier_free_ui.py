@@ -755,14 +755,17 @@ def test_the_old_query_value_still_selects_that_bucket(signed_in, specialist, ma
 # ---------------------------------------------------------------------------
 
 
-def test_a_restricted_matter_a_reader_cannot_open_is_not_in_their_feed(reader, specialist):
-    """No row, so no title, no reference and no description of the activity.
+def test_a_restricted_matter_is_in_a_readers_feed_and_in_no_outsiders(
+    reader, administrator, specialist
+):
+    """No row for an outsider, so no title, no reference and no description.
 
     The rule the change relies on: `activity_feed` builds items *from* the
     reader's authorized population, so a Matter they may not open produces
     nothing to render. It never resolves a title afterwards by primary key,
     which is the shape that would have turned a safer identifier into a leak
-    (human QA §21).
+    (human QA §21). Since docs/adr/0181 a READER may open a restricted Matter,
+    so the outsider is an administrator without a business role.
     """
     hidden = factories.MatterFactory(
         owner=specialist,
@@ -771,14 +774,16 @@ def test_a_restricted_matter_a_reader_cannot_open_is_not_in_their_feed(reader, s
     )
     factories.EntryFactory(matter=hidden, author=specialist, body="<p>Piiratud märkus.</p>")
 
-    rows = _feed(reader)
+    assert hidden.title in {row.matter_title for row in _feed(reader)}
+
+    rows = _feed(administrator)
 
     assert all(row.matter is None or row.matter.pk != hidden.pk for row in rows)
     assert all(hidden.title not in row.matter_title for row in rows)
 
 
-def test_the_rendered_feed_never_mentions_a_matter_the_reader_cannot_open(
-    client, reader, specialist
+def test_the_rendered_feed_mentions_a_restricted_matter_to_a_reader_and_no_outsider(
+    client, reader, administrator, specialist
 ):
     hidden = factories.MatterFactory(
         owner=specialist,
@@ -790,11 +795,14 @@ def test_the_rendered_feed_never_mentions_a_matter_the_reader_cannot_open(
     factories.EntryFactory(matter=hidden, author=specialist)
     client.force_login(reader)
 
+    assert hidden.title in _get(client, OVERVIEW, "?vaade=osakond")
+
+    client.force_login(administrator)
     body = _get(client, OVERVIEW, "?vaade=osakond")
 
     assert hidden.title not in body
     assert REFERENCE not in body
-    assert str(hidden.pk) not in body
+    assert f"/teemad/{hidden.pk}/" not in body
 
 
 def test_a_participant_sees_the_restricted_topic_by_name(signed_in, specialist):
@@ -816,13 +824,15 @@ def test_a_participant_sees_the_restricted_topic_by_name(signed_in, specialist):
     assert mine.title in titles
 
 
-def test_a_restricted_matters_engagement_is_not_in_a_strangers_feed(reader, specialist):
+def test_a_restricted_matters_engagement_is_in_a_readers_feed_and_no_outsiders(
+    reader, administrator, specialist
+):
     """A newly-carried event family, checked at the same boundary as the rest.
 
     `Kaasamine` reached the feed in this round. It is a child record, so the
     question it has to answer is not only "may this reader open the Matter" but
-    "may this reader know this record exists" - and here the answer to both is
-    no (review §16).
+    "may this reader know this record exists" (review §16). Since docs/adr/0181
+    both answers are yes for a READER and no for an outsider.
     """
     hidden = factories.MatterFactory(
         owner=specialist,
@@ -837,12 +847,13 @@ def test_a_restricted_matters_engagement_is_not_in_a_strangers_feed(reader, spec
         actor=specialist,
     )
 
-    rows = _feed(reader)
+    assert hidden.title in {row.matter_title for row in _feed(reader)}
+    assert _feed(administrator) == []
 
-    assert rows == []
 
-
-def test_a_restricted_matters_important_date_is_not_in_a_strangers_feed(client, reader, specialist):
+def test_a_restricted_matters_important_date_is_in_a_readers_feed_and_no_outsiders(
+    client, reader, administrator, specialist
+):
     hidden = factories.MatterFactory(
         owner=specialist,
         title="Salajane ettevalmistus konkurentsiameti menetluseks",
@@ -857,19 +868,26 @@ def test_a_restricted_matters_important_date_is_not_in_a_strangers_feed(client, 
         period_end=timezone.localdate(),
         actor=specialist,
     )
-    client.force_login(reader)
+    assert "lisas olulise tähtaja" in [row.verb for row in _feed(reader)]
 
+    client.force_login(administrator)
     body = _get(client, OVERVIEW, "?vaade=osakond")
 
     assert hidden.title not in body
     assert "Konfidentsiaalne" not in body
     assert REFERENCE not in body
-    assert str(hidden.pk) not in body
+    assert f"/teemad/{hidden.pk}/" not in body
     assert "lisas olulise tähtaja" not in body
 
 
-def test_a_restricted_child_on_an_ordinary_matter_is_not_announced(client, reader, specialist):
-    """The case that makes the child scoping load-bearing rather than decorative.
+def test_a_restricted_child_on_an_ordinary_matter_is_announced_only_to_readers(
+    client, reader, administrator, specialist
+):
+    """The case that made the child scoping load-bearing rather than decorative.
+
+    Since docs/adr/0181 the child's own RESTRICTED mark is a label: a READER gets
+    the row its owner gets, and an administrator without a business role gets
+    neither the Matter nor the row. The text below is the pre-0181 reasoning.
 
     The Matter is NORMAL and every colleague can open it. One deadline on it is
     restricted by its own `visibility_override`, which is exactly what that
@@ -901,8 +919,14 @@ def test_a_restricted_child_on_an_ordinary_matter_is_not_announced(client, reade
     # The reader may open the Matter, and the register still lists it.
     assert open_matter.title in _get(client, "matters:matter_list")
 
-    # The feed says nothing about the deadline.
-    assert _feed(reader) == []
+    # The feed announces the deadline exactly as it does to its owner.
+    assert [row.verb for row in _feed(reader)] == [row.verb for row in _feed(specialist)]
+    assert [row.verb for row in _feed(reader)] == ["lisas olulise tähtaja"]
+
+    # An outsider gets neither the Matter nor the row.
+    client.force_login(administrator)
+    assert open_matter.title not in _get(client, "matters:matter_list")
+    assert _feed(administrator) == []
 
 
 def test_the_owner_of_a_restricted_child_still_sees_the_humanised_row(specialist):

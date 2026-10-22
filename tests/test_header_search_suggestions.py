@@ -131,10 +131,10 @@ def test_a_full_dropdown_offers_the_way_to_the_rest(crowd, client, specialist) -
 
 
 def test_a_short_result_set_does_not_claim_there_is_more(world, client, reader) -> None:
-    """One visible matter, nothing else in the corpus that matches."""
+    """Two matters (both readable to a READER since docs/adr/0181), nothing else."""
     client.force_login(reader)
     payload = suggest(client, SUBJECT)
-    assert titles(payload) == [OPEN_TITLE]
+    assert sorted(titles(payload)) == sorted([OPEN_TITLE, RESTRICTED_TITLE])
     assert payload["has_more"] is False
 
 
@@ -148,9 +148,9 @@ def test_a_matching_entry_the_dropdown_cannot_show_counts_as_more(
     to that page is offered — the one case where "more" is not simply "a sixth
     matter".
 
-    Read as the READER, for whom the restricted matter does not exist at all:
-    that keeps the visible corpus at one matter, so the flag can only have come
-    from the entry.
+    Read as the READER, who since docs/adr/0181 sees both matters: two is
+    still under the five-row bound, so the flag can only have come from the
+    entry.
     """
     factories.EntryFactory(
         matter=world["visible"],
@@ -160,7 +160,7 @@ def test_a_matching_entry_the_dropdown_cannot_show_counts_as_more(
     rebuild_all()
     client.force_login(reader)
     payload = suggest(client, SUBJECT)
-    assert titles(payload) == [OPEN_TITLE]
+    assert sorted(titles(payload)) == sorted([OPEN_TITLE, RESTRICTED_TITLE])
     assert payload["has_more"] is True
 
 
@@ -237,28 +237,33 @@ def test_a_department_head_finds_a_restricted_matter(world, client, department_h
     assert RESTRICTED_TITLE in titles(suggest(client, SUBJECT))
 
 
-def test_a_reader_does_not(world, client, reader) -> None:
-    """A colleague outside the legal business scope sees the open matter only.
+def test_a_reader_finds_a_restricted_matter_too(world, client, reader, other_specialist) -> None:
+    """Since docs/adr/0181 a READER is an authorized internal user.
 
-    And the count beside it agrees: `has_more` must not go true because of
-    something they may not have, or the flag becomes the disclosure the title
-    was not.
+    It gets exactly the lawyer's answer — titles, context and the flag. The
+    perimeter is the administrator below, who gets nothing.
     """
+    client.force_login(other_specialist)
+    for_lawyer = suggest(client, SUBJECT)
     client.force_login(reader)
     payload = suggest(client, SUBJECT)
-    assert titles(payload) == [OPEN_TITLE]
-    assert payload["has_more"] is False
-    assert "Salaministeerium" not in json.dumps(payload)
+    assert RESTRICTED_TITLE in titles(payload)
+    assert payload == for_lawyer
+    assert "Salaministeerium" in json.dumps(payload)
 
 
 def test_a_technical_administrator_gains_nothing_here(world, client, administrator) -> None:
     """Technical administration is not business access (specification 5.2).
 
-    The archive is the one thing an ADMINISTRATOR may read that a lawyer may
-    not, and it is deliberately not what this endpoint answers with.
+    Since docs/adr/0181 an ADMINISTRATOR without a grant reads no business
+    content at all — not the open matter either — and the flag does not
+    disclose what the titles do not.
     """
     client.force_login(administrator)
-    assert titles(suggest(client, SUBJECT)) == [OPEN_TITLE]
+    payload = suggest(client, SUBJECT)
+    assert payload["results"] == []
+    assert payload["has_more"] is False
+    assert "Salaministeerium" not in json.dumps(payload)
 
 
 def test_a_superuser_alone_gains_nothing_here(world, client, superuser) -> None:
@@ -278,28 +283,42 @@ def test_an_anonymous_caller_is_sent_to_sign_in(world, client) -> None:
     assert "sisselogimine" in response["Location"] or "konto" in response["Location"]
 
 
-def test_a_restricted_matters_reference_does_not_resolve_for_a_reader(
-    world, client, reader
+def test_a_restricted_matters_reference_does_not_resolve_for_an_outsider(
+    world, client, reader, administrator
 ) -> None:
-    """No navigation shortcut either. A hit would confirm the file exists."""
-    client.force_login(reader)
+    """No navigation shortcut either. A hit would confirm the file exists.
+
+    The outsider is the administrator without a grant since docs/adr/0181; a
+    READER resolves it like any lawyer.
+    """
+    client.force_login(administrator)
     assert suggest(client, world["restricted"].display_reference)["results"] == []
+    client.force_login(reader)
+    assert titles(suggest(client, world["restricted"].display_reference)) == [RESTRICTED_TITLE]
 
 
-def test_restricting_a_matter_takes_effect_without_reindexing(world, client, reader) -> None:
+def test_restricting_a_matter_changes_no_readers_suggestions(
+    world, client, reader, administrator
+) -> None:
     """Visibility is read from the live row, never from the projection.
 
-    The projection is not touched between the two calls: a matter restricted a
-    second ago must be gone from the next keystroke's suggestions, without
-    waiting for `rebuild_search_index` (docs/adr/0005, 0013).
+    The projection is not touched between the two calls. Since docs/adr/0181
+    restricting is a label: the READER's next keystroke still finds the matter,
+    and the administrator without a grant found nothing before or after
+    (docs/adr/0005, 0013).
     """
     from app.matters.services import set_matter_visibility
 
     client.force_login(reader)
-    assert titles(suggest(client, SUBJECT)) == [OPEN_TITLE]
+    before = sorted(titles(suggest(client, SUBJECT)))
+    assert before == sorted([OPEN_TITLE, RESTRICTED_TITLE])
+    client.force_login(administrator)
+    assert suggest(client, SUBJECT)["results"] == []
 
     set_matter_visibility(matter=world["visible"], visibility=Visibility.RESTRICTED)
     assert suggest(client, SUBJECT)["results"] == []
+    client.force_login(reader)
+    assert sorted(titles(suggest(client, SUBJECT))) == before
 
 
 # -- the same search, not a second one ---------------------------------------
@@ -462,52 +481,55 @@ def test_the_bar_no_longer_offers_arvamused(client, specialist) -> None:
     assert reverse("matters:matter_list") in navigation
 
 
-def test_the_bar_no_longer_offers_a_separate_archive(client, administrator) -> None:
+def test_the_bar_no_longer_offers_a_separate_archive(client, reader) -> None:
     """Removed for the reader who could see it, not hidden from the rest.
 
-    An ADMINISTRATOR is the persona `may_read_archive` admits, so this is the
-    session that used to get the second item. If the link is gone for them it
-    is gone.
+    A READER is a persona `may_read_archive` admits since docs/adr/0181 (the
+    ADMINISTRATOR was, before it). If the link is gone for them it is gone.
     """
-    assert may_read_archive(administrator)
-    client.force_login(administrator)
+    assert may_read_archive(reader)
+    client.force_login(reader)
     navigation = navigation_of(client.get(reverse("matters:department")))
     assert "Arvamuste arhiiv" not in navigation
     assert reverse("legacy_import:opinion_archive_browse") not in navigation
 
 
-def test_the_workspace_still_has_both_tabs(client, administrator) -> None:
+def test_the_workspace_still_has_both_tabs(client, reader) -> None:
     """Saadetud and Arhiivikirjad, which is where the archive now lives."""
-    client.force_login(administrator)
+    client.force_login(reader)
     body = client.get(reverse("submissions:sent")).content.decode()
     assert ">Saadetud" in body
     assert ">Arhiivikirjad" in body
     assert reverse("submissions:archive") in body
 
 
-def test_the_arhiiv_tab_reaches_the_archive(client, administrator) -> None:
-    client.force_login(administrator)
+def test_the_arhiiv_tab_reaches_the_archive(client, reader) -> None:
+    client.force_login(reader)
     response = client.get(reverse("submissions:archive"))
     assert response.status_code == 200
     assert response.context["active_tab"] == "arhiiv"
 
 
-def test_the_administrative_archive_route_still_works(client, administrator) -> None:
-    """The direct URL is unchanged; only the link to it left the bar."""
-    client.force_login(administrator)
+def test_the_administrative_archive_route_still_works(client, reader) -> None:
+    """The direct URL is unchanged; only the link to it left the bar.
+
+    Opened by a READER: since docs/adr/0181 reading it is `may_read_archive`,
+    which an administrator without a grant no longer passes.
+    """
+    client.force_login(reader)
     response = client.get(reverse("legacy_import:opinion_archive_browse"))
     assert response.status_code == 200
     assert "Arvamuste arhiiv" in response.content.decode()
 
 
-def test_the_archive_still_refuses_a_reader_who_may_not_open_it(client, reader) -> None:
+def test_the_archive_still_refuses_a_reader_who_may_not_open_it(client, administrator) -> None:
     """Nothing about access moved with the link.
 
-    `reader` rather than `specialist` since ADR 0056: the two lawyer roles read
-    the corpus, and READER is the role deliberately left outside it — which is
-    what makes this still a boundary rather than a formality.
+    `administrator` since docs/adr/0181: every business-read role reads the
+    corpus, and an administrator without a grant is the persona left outside
+    it — which is what makes this still a boundary rather than a formality.
     """
-    assert not may_read_archive(reader)
-    client.force_login(reader)
+    assert not may_read_archive(administrator)
+    client.force_login(administrator)
     assert client.get(reverse("legacy_import:opinion_archive_browse")).status_code == 403
     assert client.get(reverse("submissions:archive")).status_code == 403

@@ -22,7 +22,15 @@ from datetime import date
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, READER, SANDRA, document_overflows, sign_in, wait_for_htmx
+from e2e.conftest import (
+    ADMIN,
+    MARTIN,
+    READER,
+    SANDRA,
+    document_overflows,
+    sign_in,
+    wait_for_htmx,
+)
 
 pytestmark = pytest.mark.e2e
 
@@ -88,16 +96,17 @@ def test_the_list_buckets_and_precision(page, base_url):
 
 
 def test_a_restricted_commencement_reaches_only_those_who_may_read_it(page, base_url):
-    sign_in(page, base_url, SANDRA)
-    page.goto(f"{base_url}{SEPTEMBER}")
-    expect(results(page)).to_contain_text("konfidentsiaalne jõustumine")
+    """Every authorized internal user, and not the administrator (docs/adr/0181)."""
+    for persona in (SANDRA, READER):
+        sign_in(page, base_url, persona)
+        page.goto(f"{base_url}{SEPTEMBER}")
+        expect(results(page)).to_contain_text("konfidentsiaalne jõustumine")
 
-    sign_in(page, base_url, READER)
+    sign_in(page, base_url, ADMIN)
     page.goto(f"{base_url}{SEPTEMBER}")
-    expect(page.locator(".jcal")).to_be_visible()
-    expect(results(page)).not_to_contain_text("konfidentsiaalne jõustumine")
+    expect(page.locator("body")).not_to_contain_text("konfidentsiaalne jõustumine")
     page.goto(f"{base_url}{LIST}")
-    expect(results(page)).not_to_contain_text("konfidentsiaalne jõustumine")
+    expect(page.locator("body")).not_to_contain_text("konfidentsiaalne jõustumine")
 
 
 def test_the_live_search_keeps_the_view(page, base_url):

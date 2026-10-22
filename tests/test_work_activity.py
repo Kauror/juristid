@@ -449,25 +449,55 @@ HIDDEN: list[tuple[str, Callable[..., Any], Any]] = [
 @pytest.mark.parametrize(
     ("act", "model"), [case[1:] for case in HIDDEN], ids=[case[0] for case in HIDDEN]
 )
-def test_a_hidden_record_moves_nothing_for_the_reader(
-    matter, specialist, reader, organisation, evidence_root, act, model
+def test_a_hidden_record_moves_nothing_for_an_outsider(
+    matter, specialist, reader, administrator, organisation, evidence_root, act, model
 ):
+    """Since docs/adr/0181 the READER reads the restricted record, so for it the
+    record is the last work exactly as for the specialist; the reader it moves
+    nothing for is an outsider (ADMINISTRATOR without a grant)."""
+    window = (_day(-2), _today())
+    outsider_before = (
+        _last(matter, administrator),
+        _quiet(matter, administrator),
+        _osakond(matter, administrator, *window),
+    )
     act(matter, specialist, organisation=organisation)
     _restrict(model, matter)
-    window = (_day(-2), _today())
 
-    assert _last(matter, reader) == (OLD, ActivityBasis.ENTRY)
-    assert _quiet(matter, reader)
-    assert not _osakond(matter, reader, *window)
-    # The specialist may read it, so for them it is the last work.
+    assert (
+        _last(matter, administrator),
+        _quiet(matter, administrator),
+        _osakond(matter, administrator, *window),
+    ) == outsider_before
+    assert not _osakond(matter, administrator, *window)
+    # The specialist may read it, so for them it is the last work — and for the
+    # READER, the same.
     assert _last(matter, specialist)[0] != OLD
     assert _osakond(matter, specialist, *window)
+    assert _last(matter, reader) == _last(matter, specialist)
+    assert _quiet(matter, reader) == _quiet(matter, specialist)
+    assert _osakond(matter, reader, *window)
 
 
-def test_a_hidden_next_action_moves_nothing_for_the_reader(matter, specialist, reader):
+def test_a_hidden_next_action_moves_nothing_for_an_outsider(
+    matter, specialist, reader, administrator
+):
+    """docs/adr/0181: the READER sees what the specialist sees; an outsider's
+    answers do not move."""
+    outsider_before = (
+        _last(matter, administrator),
+        _quiet(matter, administrator),
+        _osakond_today(matter, administrator),
+    )
     _human_action(matter, specialist)
     _restrict(NextAction, matter)
 
-    assert _last(matter, reader) == (OLD, ActivityBasis.ENTRY)
-    assert _quiet(matter, reader)
-    assert not _osakond_today(matter, reader)
+    assert (
+        _last(matter, administrator),
+        _quiet(matter, administrator),
+        _osakond_today(matter, administrator),
+    ) == outsider_before
+    assert not _osakond_today(matter, administrator)
+    assert _last(matter, reader) == _last(matter, specialist)
+    assert _quiet(matter, reader) == _quiet(matter, specialist)
+    assert _osakond_today(matter, reader) == _osakond_today(matter, specialist)

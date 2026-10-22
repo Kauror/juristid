@@ -458,14 +458,17 @@ def test_a_removed_round_is_neither_offered_nor_accepted(signed_in, normal_matte
 
 
 def test_a_restricted_round_is_offered_only_to_whom_it_is_visible(
-    normal_matter, specialist, reader
+    normal_matter, specialist, other_specialist, administrator
 ):
+    # docs/adr/0181: every internal user sees it (a colleague not on the file
+    # too); the administrator without a grant does not.
     round_ = _round(normal_matter, specialist)
     complete_engagement_feedback(engagement=round_, actor=specialist)
     MatterEngagement.objects.filter(pk=round_.pk).update(visibility_override=Visibility.RESTRICTED)
 
     assert answerable_rounds(specialist, normal_matter).filter(pk=round_.pk).exists()
-    assert not answerable_rounds(reader, normal_matter).filter(pk=round_.pk).exists()
+    assert answerable_rounds(other_specialist, normal_matter).filter(pk=round_.pk).exists()
+    assert not answerable_rounds(administrator, normal_matter).filter(pk=round_.pk).exists()
 
 
 def test_every_later_answer_to_a_restricted_round_is_restricted(
@@ -518,7 +521,10 @@ def test_a_correction_of_the_round_feedback_moves_its_search_row(normal_matter, 
     assert search_documents(query="Ninasarvikuline", user=specialist).exists()
 
 
-def test_a_restricted_round_feedback_is_not_found_by_a_reader(normal_matter, specialist, reader):
+def test_a_restricted_round_feedback_is_found_by_a_reader_and_not_an_outsider(
+    normal_matter, specialist, reader, administrator
+):
+    # docs/adr/0181: a READER finds it as the owner does; an administrator never.
     round_ = _round(normal_matter, specialist)
     complete_engagement_feedback(
         engagement=round_, actor=specialist, feedback_received="Kaelkirjakuline vastus"
@@ -526,7 +532,8 @@ def test_a_restricted_round_feedback_is_not_found_by_a_reader(normal_matter, spe
     MatterEngagement.objects.filter(pk=round_.pk).update(visibility_override=Visibility.RESTRICTED)
 
     assert search_documents(query="Kaelkirjakuline", user=specialist).exists()
-    assert not search_documents(query="Kaelkirjakuline", user=reader).exists()
+    assert search_documents(query="Kaelkirjakuline", user=reader).exists()
+    assert not search_documents(query="Kaelkirjakuline", user=administrator).exists()
 
 
 def test_every_answer_reads_on_the_round_row_in_the_order_stated(

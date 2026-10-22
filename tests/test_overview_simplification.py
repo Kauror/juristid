@@ -316,11 +316,19 @@ def counted_for(user, when):
     }
 
 
-def test_a_restricted_child_is_absent_from_all_three_counts_for_a_stranger(specialist, midweek):
-    stranger = factories.ReaderFactory()
+def test_a_restricted_child_is_counted_for_a_reader_and_absent_for_an_outsider(
+    specialist, administrator, midweek
+):
+    """docs/adr/0181: a READER is no stranger — it counts what the owner counts.
+
+    The stranger now is the administrator without a grant, who counts nothing.
+    """
+    reader = factories.ReaderFactory()
     restricted_pair(specialist, midweek)
 
-    counts = counted_for(stranger, midweek)
+    assert counted_for(reader, midweek) == counted_for(specialist, midweek)
+
+    counts = counted_for(administrator, midweek)
 
     assert counts["entries"] == 0
     assert counts["sent"] == 0
@@ -338,19 +346,33 @@ def test_the_same_children_are_counted_for_the_colleague_entitled_to_them(specia
     assert counts["deadlines"] == 1
 
 
-def test_the_stranger_still_sees_the_matter_itself(client, specialist, midweek):
-    """The restriction is on the children, so hiding the Matter would prove nothing."""
+def test_a_reader_sees_the_matter_and_its_children_as_the_owner_does(
+    client, specialist, administrator, midweek
+):
+    """The restriction is on the children, so hiding the Matter would prove nothing.
+
+    Since docs/adr/0181 a READER is an authorized internal user: it sees the
+    Matter and its RESTRICTED children exactly where the owner does. The
+    administrator without a grant sees neither.
+    """
     from app.matters.models import Matter
 
-    stranger = factories.ReaderFactory()  # not a lawyer: docs/adr/0042
+    reader = factories.ReaderFactory()
     matter = restricted_pair(specialist, midweek)
-    client.force_login(stranger)
 
-    body = client.get(reverse(OVERVIEW)).content.decode()
+    def body_for(user):
+        client.force_login(user)
+        return client.get(reverse(OVERVIEW)).content.decode()
 
-    assert Matter.objects.visible_to(stranger).filter(pk=matter.pk).exists()
-    assert "Piiratud tähtaeg" not in body
-    assert "Piiratud arvamus" not in body
+    for_owner, for_reader = body_for(specialist), body_for(reader)
+    assert Matter.objects.visible_to(reader).filter(pk=matter.pk).exists()
+    for text in ("Piiratud tähtaeg", "Piiratud arvamus"):
+        assert (text in for_reader) == (text in for_owner), text
+
+    for_outsider = body_for(administrator)
+    assert not Matter.objects.visible_to(administrator).filter(pk=matter.pk).exists()
+    assert "Piiratud tähtaeg" not in for_outsider
+    assert "Piiratud arvamus" not in for_outsider
 
 
 def test_the_department_head_reads_the_restricted_children_by_role(
@@ -365,15 +387,21 @@ def test_the_department_head_reads_the_restricted_children_by_role(
     assert counts["deadlines"] == 1
 
 
-def test_a_restricted_matters_children_are_hidden_from_the_counts_too(specialist, midweek):
-    """The parent path, since the child rule derives from it every time."""
-    stranger = factories.ReaderFactory()
+def test_a_restricted_matters_children_are_counted_for_a_reader_and_hidden_from_an_outsider(
+    specialist, administrator, midweek
+):
+    """The parent path, since the child rule derives from it every time.
+
+    docs/adr/0181: a READER counts it like the owner; the administrator not.
+    """
+    reader = factories.ReaderFactory()
     matter = a_matter(specialist, title="Piiratud teema")
     matter.visibility = Visibility.RESTRICTED
     matter.save(update_fields=["visibility"])
     entry_on(matter, midweek, author=specialist)
 
-    assert counted_for(stranger, midweek)["entries"] == 0
+    assert counted_for(administrator, midweek)["entries"] == 0
+    assert counted_for(reader, midweek)["entries"] == 1
     assert counted_for(specialist, midweek)["entries"] == 1
 
 

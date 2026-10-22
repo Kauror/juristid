@@ -405,8 +405,10 @@ def test_each_file_is_on_exactly_one_row_even_with_identical_bytes(normal_matter
 
 
 def test_a_restricted_file_is_neither_counted_nor_linked_nor_dates_a_row(
-    normal_matter, specialist, reader
+    normal_matter, specialist, reader, administrator
 ):
+    # docs/adr/0181: a READER reads the restricted file and gets the owner's rows;
+    # an administrator without a grant gets no import row at all.
     _import(
         normal_matter,
         FILES,
@@ -416,10 +418,15 @@ def test_a_restricted_file_is_neither_counted_nor_linked_nor_dates_a_row(
     theirs = _imports(_rows(normal_matter, specialist))
     assert sorted(row.milestone.display_date for row in theirs) == ["2.1.2019", "30.8.2021"]
 
-    (readers,) = _imports(_rows(normal_matter, reader))
-    assert readers.imported_documents == 2
-    assert readers.milestone.sub.startswith("2 faili")
-    assert "Liikme vastus.pdf" not in [file.label for file in readers.files]
+    readers = _imports(_rows(normal_matter, reader))
+    assert sorted(row.milestone.display_date for row in readers) == ["2.1.2019", "30.8.2021"]
+    assert sorted(row.imported_documents for row in readers) == sorted(
+        row.imported_documents for row in theirs
+    )
+    assert "Liikme vastus.pdf" in [file.label for row in readers for file in row.files]
+
+    outsiders = _imports(_rows(normal_matter, administrator))
+    assert outsiders == []
 
 
 def test_a_page_boundary_never_splits_a_day_and_drops_nothing(normal_matter, specialist):

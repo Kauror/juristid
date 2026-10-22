@@ -275,8 +275,14 @@ def test_the_database_refuses_restricting_a_submission_past_its_evidence(normal_
 # ---------------------------------------------------------------------------
 
 
-def test_a_restricted_submissions_evidence_does_not_leak(client, normal_matter, specialist, reader):
-    """The Matter is visible to everyone; the submission and its text are not."""
+def test_a_restricted_submissions_evidence_reaches_every_reader_and_no_outsider(
+    client, normal_matter, specialist, reader, administrator
+):
+    """The Matter, the submission and its text reach every authorized reader.
+
+    Since docs/adr/0181 a READER reads the restricted submission as its owner
+    does; an administrator without a business role reaches none of it.
+    """
     submission = create_submission(
         matter=normal_matter,
         title="Tundlik arvamus",
@@ -299,29 +305,29 @@ def test_a_restricted_submissions_evidence_does_not_leak(client, normal_matter, 
     detail = client.get(reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk}))
     assert detail.status_code == 200
 
-    # Neither the submission nor its evidence is listed on Dokumendid, which is
-    # where both now live (docs/adr/0061). One page, one assertion: an opinion
-    # is a file here, so a submission whose file this reader may not see has no
-    # row at all — not a masked one, and not a placeholder admitting it exists.
+    # The submission and its evidence are listed on Dokumendid, where both now
+    # live (docs/adr/0061), and the file downloads.
     documents = client.get(reverse("matters:matter_documents", kwargs={"pk": normal_matter.pk}))
     assert documents.status_code == 200
-    assert "Tundlik arvamus" not in documents.content.decode()
-    assert "tundlik.pdf" not in documents.content.decode()
+    assert "Tundlik arvamus" in documents.content.decode()
+    assert client.get(reverse("documents:download", kwargs={"pk": version.pk})).status_code == 200
 
-    # And the old address still reaches the Matter rather than 404ing.
-    position = client.get(
-        reverse("matters:matter_position", kwargs={"pk": normal_matter.pk}), follow=True
-    )
-    assert position.status_code == 200
-    assert "tundlik.pdf" not in position.content.decode()
-
-    # And it cannot be downloaded by guessing the URL.
-    download = client.get(reverse("documents:download", kwargs={"pk": version.pk}))
-    assert download.status_code == 404
-
-    # The owner reaches all three.
+    # The owner reaches the same.
     client.force_login(specialist)
     assert client.get(reverse("documents:download", kwargs={"pk": version.pk})).status_code == 200
+
+    # An outsider reaches nothing: not the Matter, not the list, not the file
+    # by guessing the URL.
+    client.force_login(administrator)
+    for url in (
+        reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk}),
+        reverse("matters:matter_documents", kwargs={"pk": normal_matter.pk}),
+        reverse("documents:download", kwargs={"pk": version.pk}),
+    ):
+        refused_page = client.get(url)
+        assert refused_page.status_code == 404, url
+        assert b"tundlik.pdf" not in refused_page.content
+        assert "Tundlik arvamus" not in refused_page.content.decode()
 
 
 # ---------------------------------------------------------------------------
@@ -370,7 +376,7 @@ def test_relaxing_a_matter_over_weaker_final_evidence_is_refused(restricted_matt
 
 
 def test_a_refused_relaxation_leaves_the_matter_and_its_evidence_alone(
-    client, restricted_matter, specialist, reader
+    client, restricted_matter, specialist, administrator
 ):
     _submission, version = _stranded_pair(restricted_matter, specialist)
 
@@ -382,7 +388,8 @@ def test_a_refused_relaxation_leaves_the_matter_and_its_evidence_alone(
     restricted_matter.refresh_from_db()
     assert restricted_matter.visibility == Visibility.RESTRICTED
 
-    client.force_login(reader)
+    # The outsider (docs/adr/0181: a READER now reads restricted evidence).
+    client.force_login(administrator)
     assert client.get(reverse("documents:download", kwargs={"pk": version.pk})).status_code == 404
 
 

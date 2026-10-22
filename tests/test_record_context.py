@@ -269,7 +269,10 @@ def test_an_overlong_title_is_refused_beside_the_box_and_nothing_is_written(
     assert not MatterWebsiteOverview.objects.filter(matter=normal_matter, status="PUBLISHED")
 
 
-def test_a_restricted_overviews_title_reaches_no_reader(client, specialist, reader):
+def test_a_restricted_overviews_title_reaches_every_reader_and_no_outsider(
+    client, specialist, reader, administrator
+):
+    """docs/adr/0181: the READER reads it as the owner does; the outsider not."""
     matter = factories.MatterFactory(owner=specialist)
     overview = _published(matter, url=VTK_PAGE, title="Salajane pealkiri")
     MatterWebsiteOverview.objects.filter(pk=overview.pk).update(
@@ -280,8 +283,15 @@ def test_a_restricted_overviews_title_reaches_no_reader(client, specialist, read
     response = client.get(_teema(matter))
     body = response.content.decode()
 
-    # The reader is on the page — otherwise the absences below prove nothing.
     assert response.status_code == 200 and matter.title in body
+    assert "Salajane pealkiri" in body
+    assert VTK_PAGE in body
+
+    client.force_login(administrator)
+    response = client.get(_teema(matter))
+    body = response.content.decode()
+
+    assert response.status_code == 404
     assert "Salajane pealkiri" not in body
     assert VTK_PAGE not in body
 
@@ -468,7 +478,10 @@ def test_a_round_without_page_or_note_reads_exactly_as_before(normal_matter, spe
     assert milestone.what == "Kaasamine: liikmed"
 
 
-def test_a_restricted_rounds_page_and_note_reach_no_reader(client, specialist, reader):
+def test_a_restricted_rounds_page_and_note_reach_every_reader_and_no_outsider(
+    client, specialist, reader, administrator
+):
+    """docs/adr/0181: the READER reads it as the owner does; the outsider not."""
     matter = factories.MatterFactory(owner=specialist)
     engagement = add_engagement(
         matter=matter,
@@ -487,6 +500,14 @@ def test_a_restricted_rounds_page_and_note_reach_no_reader(client, specialist, r
     body = response.content.decode()
 
     assert response.status_code == 200 and matter.title in body
+    assert "SALAJANE MÄRKUS" in body
+    assert KODA_PAGE in body
+
+    client.force_login(administrator)
+    response = client.get(_teema(matter))
+    body = response.content.decode()
+
+    assert response.status_code == 404
     assert "SALAJANE MÄRKUS" not in body
     assert KODA_PAGE not in body
 
