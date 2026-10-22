@@ -32,7 +32,6 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
-import shutil
 import uuid
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -42,13 +41,14 @@ from typing import Any
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import storages
-from django.db import connection, transaction
+from django.db import transaction
 from django.db.models import Exists, Max, OuterRef, Q, Sum
 from django.db.models.functions import Coalesce, Least
 from django.utils import timezone
 
 from app.core.errors import DomainError
 from app.core.ids import uuid7
+from app.documents import pending
 from app.documents.enums import ExtractionState
 from app.documents.uploads import AcceptedUpload
 from app.matters.intake import MAX_INTAKE_FILES, file_incoming, role_for
@@ -80,7 +80,7 @@ def staging_storage() -> Any:
 #: `app.search.indexing` (24601), `app.organisations.services` (24602) and
 #: `app.matters.duplicate_intake` (24603) use. One key: the quotas are checked
 #: and the bytes written under a single deployment-wide lock (docs/adr/0177).
-STAGING_QUOTA_LOCK = (24604, 1)
+STAGING_QUOTA_LOCK = pending.STORAGE_QUOTA_LOCK
 
 #: What the person is told when staging is full. The global sentence is one
 #: sentence for three causes — other people's forms, the deployment's ceiling
@@ -146,14 +146,7 @@ def staging_usage(*, owner: Any, excluding: Any = None) -> StagingUsage:
 
 def staging_free_bytes(storage: Any = None) -> int | None:
     """Free space on the staging volume, or ``None`` for a non-filesystem store."""
-    location = getattr(storage or staging_storage(), "location", None)
-    if not location:
-        return None
-    path = Path(location)
-    # The root is created on first write; until then ask the volume it will be on.
-    while not path.exists() and path.parent != path:
-        path = path.parent
-    return int(shutil.disk_usage(path).free)
+    return pending.free_bytes(storage or staging_storage())
 
 
 def quota_refusal(*, owner: Any, session: MatterIntakeSession | None, incoming_bytes: int) -> str:
@@ -196,8 +189,8 @@ def quota_refusal(*, owner: Any, session: MatterIntakeSession | None, incoming_b
 
 
 def _lock_staging_quotas() -> None:
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", list(STAGING_QUOTA_LOCK))
+    # The same lock `app.documents.pending.hold` takes: both write to one volume.
+    pending.lock_storage_quota()
 
 
 def _expiry() -> Any:
@@ -383,7 +376,9 @@ def stage_uploads(
             incoming_bytes=sum(len(upload.content) for upload in uploads),
         )
         if over:
-            return StagingResult(session=session, staged=(), refusal=over)
+            return StagingResult(
+                session=session, staged=(), refusal=" ".join(filter(None, (refusal, over)))
+            )
 
     storage = staging_storage()
     staged: list[MatterIntakeFile] = []

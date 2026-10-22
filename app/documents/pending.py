@@ -32,24 +32,36 @@ Three properties this deliberately has:
   a checksum. It holds bytes that have passed ``read_upload`` and hands them
   back unchanged; every evidence rule still runs at save time.
 
-Objects that no save ever claimed are swept on the next hold, by age. There is
-no management command and deliberately so: unlike the evidence store, where
-being unreferenced might mean a transaction is still in flight and deciding
-otherwise needs an operator, an object here that is older than the grace
-period is a form somebody walked away from and the only correct thing to do
-with it is delete it.
+Objects that no save ever claimed are swept by age: on the next hold, and by
+the `intake-sweeper` service on every turn (`sweep_held`, docs/adr/0177).
+Unlike the evidence store, where being unreferenced might mean a transaction is
+still in flight and deciding otherwise needs an operator, an object here that is
+older than the grace period is a form somebody walked away from and the only
+correct thing to do with it is delete it.
+
+**Bounded before a byte is written** (csf_3942255b466a4e213b958b16, docs/adr/0177).
+This store shares its volume with `Uus teema` staging, and a refused post from a
+fresh session holds up to `MAX_HELD_FILES` files each time, so the per-session
+cap bounds nothing. `hold` therefore takes the same advisory lock staging takes
+and refuses (holding nothing, with a sentence) when the held bytes would pass
+``PENDING_UPLOAD_MAX_HELD_BYTES`` or the volume would fall below
+``INTAKE_STAGING_MIN_FREE_BYTES``.
 """
 
 from __future__ import annotations
 
 import logging
+import os
+import shutil
 from dataclasses import dataclass
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import storages
+from django.db import connection, transaction
 from django.utils import timezone
 
 from app.core.ids import uuid7
@@ -67,6 +79,77 @@ SESSION_KEY = "pending_uploads"
 #: that a client submitting refusals in a loop cannot grow the session record or
 #: the holding area without bound.
 MAX_HELD_FILES = 25
+
+#: The advisory lock every writer to the pending-upload volume takes before it
+#: checks a quota: held uploads here, `Uus teema` staging in
+#: `app.matters.intake_staging`. One key, in the two-integer form
+#: `app.search.indexing` (24601) and its neighbours use, so a hold and a staged
+#: upload cannot both pass the free-space check (docs/adr/0177).
+STORAGE_QUOTA_LOCK = (24604, 1)
+
+#: What the person is told when a refused form's files cannot be kept.
+HOLD_REFUSED = (
+    "Valitud faile ei saanud vormi juurde hoida, sest failide ajutine hoidla on "
+    "täis. Vali failid salvestamisel uuesti."
+)
+
+#: Most held objects one sweep deletes.
+SWEEP_LIMIT = 1000
+
+
+def lock_storage_quota() -> None:
+    """Take `STORAGE_QUOTA_LOCK` until the surrounding transaction ends."""
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", list(STORAGE_QUOTA_LOCK))
+
+
+def free_bytes(storage: Any) -> int | None:
+    """Free space under a filesystem store, or ``None`` for any other backend."""
+    location = getattr(storage, "location", None)
+    if not location:
+        return None
+    path = Path(location)
+    # The root is created on first write; until then ask the volume it will be on.
+    while not path.exists() and path.parent != path:
+        path = path.parent
+    return int(shutil.disk_usage(path).free)
+
+
+def _held_objects(storage: Any) -> list[os.DirEntry[str]]:
+    """The regular files at the root of the store: held uploads, nothing else.
+
+    `Uus teema` staging is one directory down (`intake/`) and is not listed; a
+    symbolic link is not a held upload and is neither counted nor followed.
+    """
+    location = getattr(storage, "location", None)
+    if not location or not os.path.isdir(location):
+        return []
+    with os.scandir(location) as listing:
+        return [entry for entry in listing if entry.is_file(follow_symlinks=False)]
+
+
+def held_bytes(storage: Any = None) -> int:
+    """Bytes held for refused forms right now, read from the store itself."""
+    total = 0
+    for entry in _held_objects(storage or pending_storage()):
+        try:
+            total += entry.stat(follow_symlinks=False).st_size
+        except FileNotFoundError:
+            continue
+    return total
+
+
+def _hold_refusal(storage: Any, incoming: int) -> str:
+    held = held_bytes(storage)
+    if held + incoming > settings.PENDING_UPLOAD_MAX_HELD_BYTES:
+        reason = f"held bytes {held} + {incoming}"
+    else:
+        free = free_bytes(storage)
+        if free is None or free - incoming >= settings.INTAKE_STAGING_MIN_FREE_BYTES:
+            return ""
+        reason = f"free bytes {free} - {incoming}"
+    logger.warning("pending upload hold refused at the deployment limit: %s", reason)
+    return HOLD_REFUSED
 
 
 def human_size(size: int) -> str:
@@ -118,41 +201,95 @@ def _expiry() -> Any:
     return timezone.now() - timedelta(hours=settings.PENDING_UPLOAD_GRACE_HOURS)
 
 
-def hold(session: Any, uploads: list[AcceptedUpload]) -> list[HeldUpload]:
+def hold(
+    session: Any, uploads: list[AcceptedUpload], *, refusals: list[str] | None = None
+) -> list[HeldUpload]:
     """Keep these validated files for the next attempt at the same form.
 
     Called on the refusal path and nowhere else. Returns what is now held, in
     the order it was given, so the caller can render it back.
+
+    All or nothing against the volume's limits: under `STORAGE_QUOTA_LOCK` the
+    files this call would hold are checked against
+    ``PENDING_UPLOAD_MAX_HELD_BYTES`` and the free-space headroom before any is
+    written, and a write that fails part-way removes what this call wrote. A
+    refusal holds nothing and appends `HOLD_REFUSED` to ``refusals`` for the
+    caller to show; the save was already refused, so this never raises.
     """
     manifest = _manifest(session)
     _forget_expired(session, manifest)
     _sweep()
 
-    held: list[HeldUpload] = []
+    room = max(0, MAX_HELD_FILES - len(manifest))
+    if len(uploads) > room:
+        # Silently, and on purpose. The alternative is refusing a save
+        # because of a limit on a convenience, which would make the
+        # convenience worse than not having it.
+        #
+        # Type and size, never the name. A filename is business text — it
+        # is often the subject of the letter — and nothing of that kind
+        # goes to the container log (ENG-071). The file has no row yet, so
+        # there is no identifier to give instead.
+        dropped = uploads[room]
+        logger.warning(
+            "pending upload hold is full (%d held); a %s file of %d bytes was not held",
+            len(manifest),
+            dropped.mime_type,
+            len(dropped.content),
+        )
+        uploads = uploads[:room]
+
     storage = pending_storage()
+    held: list[HeldUpload] = []
+    written: list[str] = []
+    if uploads:
+        with transaction.atomic():
+            lock_storage_quota()
+            refusal = _hold_refusal(storage, sum(len(upload.content) for upload in uploads))
+            if not refusal:
+                try:
+                    _hold_each(storage, uploads, manifest, held, written)
+                except OSError:
+                    logger.warning("holding uploads failed; nothing was held", exc_info=True)
+                    for key in written:
+                        manifest.pop(key, None)
+                        _delete_quietly(storage, key)
+                    held = []
+                    refusal = HOLD_REFUSED
+        if refusal and refusals is not None:
+            refusals.append(refusal)
+
+    _write(session, manifest)
+    return held
+
+
+def _delete_quietly(storage: Any, key: str) -> None:
+    try:
+        if storage.exists(key):
+            storage.delete(key)
+    except OSError:  # pragma: no cover - best effort
+        logger.warning("could not delete held upload %s", key, exc_info=True)
+
+
+def _hold_each(
+    storage: Any,
+    uploads: list[AcceptedUpload],
+    manifest: dict[str, dict[str, Any]],
+    held: list[HeldUpload],
+    written: list[str],
+) -> None:
+    """Write each file; ``written`` names each object before its bytes land."""
     for upload in uploads:
-        if len(manifest) >= MAX_HELD_FILES:
-            # Silently, and on purpose. The alternative is refusing a save
-            # because of a limit on a convenience, which would make the
-            # convenience worse than not having it.
-            #
-            # Type and size, never the name. A filename is business text — it
-            # is often the subject of the letter — and nothing of that kind
-            # goes to the container log (ENG-071). The file has no row yet, so
-            # there is no identifier to give instead.
-            logger.warning(
-                "pending upload hold is full (%d held); a %s file of %d bytes was not held",
-                len(manifest),
-                upload.mime_type,
-                len(upload.content),
-            )
-            break
+        name = str(uuid7())
+        written.append(name)
         # The name the backend actually used, not the one it was asked for: a
         # storage that sanitised or de-duplicated the key would otherwise leave
         # the manifest pointing at an object that is not there. A UUIDv7 never
         # collides, so in practice these are the same string — reading the
         # answer back is what makes that a fact rather than an assumption.
-        key = storage.save(str(uuid7()), ContentFile(upload.content))
+        key = storage.save(name, ContentFile(upload.content))
+        if key != name:  # pragma: no cover - a uuid7 name is never taken
+            written.append(key)
         manifest[key] = {
             "filename": upload.filename,
             "mime_type": upload.mime_type,
@@ -167,9 +304,6 @@ def hold(session: Any, uploads: list[AcceptedUpload]) -> list[HeldUpload]:
                 size=len(upload.content),
             )
         )
-
-    _write(session, manifest)
-    return held
 
 
 def describe(session: Any, keys: list[str]) -> list[HeldUpload]:
@@ -252,7 +386,11 @@ def release(session: Any, keys: list[str]) -> None:
 
 
 def _sweep() -> None:
-    """Delete held objects nobody came back for.
+    sweep_held()
+
+
+def sweep_held(*, limit: int = SWEEP_LIMIT) -> int:
+    """Delete held objects nobody came back for. Returns how many went.
 
     Opportunistic rather than a management command, and that is a deliberate
     choice about what this data is. The evidence store gets
@@ -269,15 +407,28 @@ def _sweep() -> None:
 
     Every failure here is swallowed. Sweeping is housekeeping, and a save must
     never be refused because a directory could not be listed.
+
+    Also run by the `intake-sweeper` service on every turn (docs/adr/0177), so
+    held bytes expire whether or not anybody holds again, and bounded by
+    ``limit`` per run. Only regular files at the root are considered: staging
+    under `intake/` is not this function's, and a symbolic link is neither
+    followed nor deleted.
     """
     storage = pending_storage()
     cutoff = _expiry()
-    try:
-        _directories, names = storage.listdir("")
-    except (FileNotFoundError, NotImplementedError, OSError):  # pragma: no cover - defensive
-        return
+    names: list[str]
+    if getattr(storage, "location", None):
+        names = [entry.name for entry in _held_objects(storage)]
+    else:  # pragma: no cover - every configured store is a filesystem
+        try:
+            _directories, names = storage.listdir("")
+        except (FileNotFoundError, NotImplementedError, OSError):
+            return 0
 
-    for name in names:
+    removed = 0
+    for name in sorted(names):
+        if removed >= limit:
+            break
         try:
             created = storage.get_created_time(name)
         except (FileNotFoundError, NotImplementedError, OSError):  # pragma: no cover - defensive
@@ -290,6 +441,9 @@ def _sweep() -> None:
             storage.delete(name)
         except OSError:  # pragma: no cover - defensive
             logger.warning("could not sweep held upload %s", name, exc_info=True)
+            continue
+        removed += 1
+    return removed
 
 
 def _forget_expired(session: Any, manifest: dict[str, dict[str, Any]]) -> None:

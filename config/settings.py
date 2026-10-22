@@ -503,6 +503,10 @@ INTAKE_STAGING_MAX_BYTES = env_int("INTAKE_STAGING_MAX_BYTES", 10 * 1024**3)
 # (`shutil.disk_usage` on PENDING_UPLOAD_ROOT). On the production host this is
 # Docker's own storage, which every container shares.
 INTAKE_STAGING_MIN_FREE_BYTES = env_int("INTAKE_STAGING_MIN_FREE_BYTES", 1024**3)
+# Held uploads (a refused form's files, `app.documents.pending`) share the volume
+# and have no rows, so they get a ceiling of their own, measured on disk and
+# checked under the same lock as staging; the headroom above applies to both.
+PENDING_UPLOAD_MAX_HELD_BYTES = env_int("PENDING_UPLOAD_MAX_HELD_BYTES", 2 * 1024**3)
 
 # The scheduled sweep of expired and consumed staging (`prune_intake_staging
 # --loop`, the `intake-sweeper` service). Bounded per run by sessions and by

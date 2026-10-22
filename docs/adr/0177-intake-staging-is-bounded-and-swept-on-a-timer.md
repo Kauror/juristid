@@ -32,11 +32,23 @@ volume lives in Docker's own storage, shared by every container.
    files are read. A refusal is a sentence on the form, like the file cap; the
    three deployment-wide causes share one sentence and are logged for the
    operator.
+   **Held uploads too.** A refused `Uus teema` post holds its files at the
+   root of the same volume (`app.documents.pending`), up to 25 per gate
+   session, and a fresh session can do it again. `hold` takes the same lock and
+   refuses — holding nothing, with «Valitud faile ei saanud vormi juurde hoida…»
+   among the form's messages — when the held bytes, measured on disk, would pass
+   `PENDING_UPLOAD_MAX_HELD_BYTES` (2 GiB) or the volume would fall below the
+   same headroom; a write that fails part-way removes what it wrote. A ceiling
+   of its own rather than a share of the staging one, because held uploads have
+   no rows: counting them into the row-based staging quota would put a
+   directory scan on every staged upload for no stronger bound.
 2. **A scheduled, bounded sweep.** A fourth release-image service,
    `intake-sweeper`, runs `prune_intake_staging --loop`: every 900 s, at most
    500 sessions and 5 GiB per run, each session locked (`SKIP LOCKED`),
    re-checked as stale and deleted in its own transaction. Only expired or
-   consumed sessions are eligible. It mounts the staging volume read-write and
+   consumed sessions are eligible. Each turn also deletes held uploads past
+   `PENDING_UPLOAD_GRACE_HOURS` (at most 1000, regular files at the root only),
+   which before were swept only when somebody held again. It mounts the staging volume read-write and
    nothing else; it is a container, not a host cron entry, for the reason 0041
    gives. Its healthcheck, `check_intake_staging`, measures convergence: red
    when a stale session has waited over 3600 s, when staging is at its byte
