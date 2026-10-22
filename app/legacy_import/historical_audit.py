@@ -25,9 +25,19 @@ not a legislative matter — and the archive itself has no opinion about that
 
 from __future__ import annotations
 
-import csv
+import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from app.legacy_import import safe_paths
+from app.legacy_import.integrity import ManifestEntry, SourceManifest
+from app.legacy_import.limits import (
+    WorkBudget,
+    current_limits,
+    load_json_document,
+    read_csv_document,
+)
+from app.legacy_import.safe_paths import Kind, UnsafeSourcePath
 
 
 class AuditError(RuntimeError):
@@ -107,25 +117,72 @@ class AuditBaseline:
 
 
 class MigrationAudit:
-    """The audit output directory, read once."""
+    """The audit output directory, read once.
 
-    def __init__(self, root: Path) -> None:
+    Every report this importer consults is read here exactly once, through
+    `safe_paths` and within `limits` (docs/adr/0184), and kept: the bytes a
+    decision is parsed from are the bytes `consumed()` reports, so a plan's
+    digest covers the decisions it acted on rather than the files' names.
+    """
+
+    def __init__(self, root: Path, *, budget: WorkBudget | None = None) -> None:
         self.root = Path(root)
-        missing = [name for name in REQUIRED_REPORTS if not (self.root / name).is_file()]
+        self.limits = current_limits()
+        self.budget = budget or WorkBudget(self.limits)
+        self._data: dict[str, bytes] = {}
+        missing = [name for name in REQUIRED_REPORTS if self._kind(name) is not Kind.FILE]
         if missing:
             raise AuditError(
                 f"{self.root} is missing {len(missing)} required report(s): "
                 + ", ".join(missing[:4])
             )
+        for name in REQUIRED_REPORTS:
+            self._read(name)
+
+    # -- reading -----------------------------------------------------------
+
+    def _kind(self, relative: str) -> Kind:
+        try:
+            return safe_paths.lookup(self.root, relative)
+        except UnsafeSourcePath as error:
+            raise AuditError(str(error)) from error
+
+    def _read(self, relative: str) -> bytes | None:
+        """A report's bytes, read once and kept; None if the audit does not hold it."""
+        if relative in self._data:
+            return self._data[relative]
+        if self._kind(relative) is not Kind.FILE:
+            return None
+        maximum = (
+            self.limits.max_json_bytes if relative.endswith(".json") else self.limits.max_csv_bytes
+        )
+        try:
+            data = safe_paths.read_bytes(self.root, relative, max_bytes=maximum, budget=self.budget)
+        except UnsafeSourcePath as error:
+            raise AuditError(str(error)) from error
+        self._data[relative] = data
+        return data
+
+    def read_text(self, relative: str) -> str | None:
+        """An audit file's text, through the same once-only, bounded read."""
+        data = self._read(relative)
+        return None if data is None else data.decode("utf-8")
+
+    def consumed(self) -> SourceManifest:
+        """Every audit file this reader parsed: path, size and SHA-256 of those bytes."""
+        return SourceManifest(
+            ManifestEntry(path, len(data), hashlib.sha256(data).hexdigest())
+            for path, data in self._data.items()
+        )
 
     # -- the baseline ------------------------------------------------------
 
     def baseline(self) -> AuditBaseline:
-        import json
-
-        payload = json.loads(
-            (self.root / "assistant-pack/source-summary.json").read_text(encoding="utf-8")
-        )
+        relative = "assistant-pack/source-summary.json"
+        data = self._read(relative)
+        payload = load_json_document(data or b"{}", what=relative, limits=self.limits)
+        if not isinstance(payload, dict):
+            raise AuditError(f"{relative} is not a JSON object.")
         excel = payload.get("excel", {})
         onenote = payload.get("onenote", {})
         return AuditBaseline(
@@ -227,13 +284,12 @@ class MigrationAudit:
         )
 
     def _rows(self, relative: str) -> list[dict]:
-        path = self.root / relative
-        if not path.is_file():
+        data = self._read(relative)
+        if data is None:
             return []
-        # utf-8-sig: the audit's CSVs open in Excel, so they carry a BOM, and a
-        # BOM on the first header turns `page_key` into `﻿page_key`.
-        with path.open(encoding="utf-8-sig", newline="") as handle:
-            return list(csv.DictReader(handle))
+        # Bounded in bytes, rows and field length; utf-8-sig, because the
+        # audit's CSVs open in Excel and carry a BOM.
+        return read_csv_document(data, what=relative, limits=self.limits)
 
 
 def _integer(raw: object) -> int:

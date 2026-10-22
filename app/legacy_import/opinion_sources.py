@@ -512,11 +512,15 @@ def _read_directory(root: Path) -> tuple[str, list[ArchiveOccurrence]]:
     and every file is opened without following one (docs/adr/0178).
     """
     limits = source_limits.current_limits()
-    entries = sorted(safe_paths.iter_files(root))
-    if len(entries) > limits.max_archive_members:
-        raise SourceLimitExceeded(
-            f"The archive has {len(entries)} files; the limit is {limits.max_archive_members}."
+    # Counted while the folder is walked, and refused at one past the limit —
+    # never collected whole and then sorted (docs/adr/0184).
+    entries = sorted(
+        safe_paths.iter_files(
+            root,
+            max_files=limits.max_archive_members,
+            max_directory_members=limits.max_directory_members,
         )
+    )
     total = 0
     occurrences: list[ArchiveOccurrence] = []
     for entry in entries:
