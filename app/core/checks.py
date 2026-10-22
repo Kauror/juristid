@@ -7,9 +7,31 @@ running with a development shortcut enabled.
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.core.checks import Error, Warning, register
+
+#: The roles `JURISTID_PROCESS_ROLE` may name (config/settings.py). Empty is the
+#: browser application and its workers; `web` and `worker` say the same thing
+#: explicitly; `mcp` is the read-only MCP server (docs/adr/0185).
+KNOWN_PROCESS_ROLES = frozenset({"", "web", "worker", "mcp"})
+
+
+def _process_role() -> str:
+    return (getattr(settings, "JURISTID_PROCESS_ROLE", "") or "").strip().lower()
+
+
+def _is_mcp_process() -> bool:
+    """The read-only MCP server, which serves no browser and holds no browser secret.
+
+    Only the checks about what the *browser* depends on — the gate password and
+    its throttle, the second factor's key — are skipped for it, because it has
+    neither a gate nor a sign-in page: it answers bearer tokens and nothing else.
+    Every other check still applies, and `_process_role_problems` adds what this
+    process depends on instead (docs/adr/0185 §6).
+    """
+    return _process_role() == "mcp"
 
 
 @register()
@@ -58,6 +80,7 @@ def check_runtime_safety(app_configs: Any, **kwargs: Any) -> list[Error | Warnin
     problems.extend(_authentication_problems())
     problems.extend(_real_data_secret_problems())
     problems.extend(_environment_hygiene_problems())
+    problems.extend(_process_role_problems())
 
     engine = settings.DATABASES["default"]["ENGINE"]
     if engine != "django.db.backends.postgresql":
@@ -276,13 +299,17 @@ def _authentication_problems() -> list[Error | Warning]:
             )
         )
 
-    if mode == AuthMode.SHARED_GATE:
+    # The gate and its per-client throttle live in the browser application. The
+    # MCP process serves neither, holds no gate password (juristid.E046 refuses
+    # one) and is reached only through bearer tokens, so neither set applies.
+    if mode == AuthMode.SHARED_GATE and not _is_mcp_process():
         problems.extend(_shared_gate_problems())
 
     if mode == AuthMode.LOCAL_PASSWORD:
         problems.extend(_local_password_problems())
 
-    problems.extend(_client_address_problems(mode))
+    if not _is_mcp_process():
+        problems.extend(_client_address_problems(mode))
     problems.extend(_account_email_problems(mode))
 
     return problems
@@ -405,7 +432,13 @@ def _local_password_problems() -> list[Error | Warning]:
             )
         )
 
-    if settings.REAL_DATA_ALLOWED and not getattr(settings, "LOCAL_AUTH_MFA_ENCRYPTION_KEY", ""):
+    # The MCP process never reads or writes a second factor, and must not hold
+    # the key that decrypts them (juristid.E046).
+    if (
+        settings.REAL_DATA_ALLOWED
+        and not getattr(settings, "LOCAL_AUTH_MFA_ENCRYPTION_KEY", "")
+        and not _is_mcp_process()
+    ):
         problems.append(
             Error(
                 "LOCAL_AUTH_MFA_ENCRYPTION_KEY is empty on a real-data deployment.",
@@ -621,4 +654,130 @@ def _shared_gate_problems() -> list[Error | Warning]:
             )
         )
 
+    return problems
+
+
+#: The browser's secrets, which the MCP process must not hold (docs/adr/0185 §6):
+#: the gate password, the key second factors are encrypted under, and the mail
+#: password. By environment variable, so a refusal names the variable and never
+#: its value.
+MCP_FORBIDDEN_SECRETS = {
+    "JURISTID_SHARED_GATE_PASSWORD": "SHARED_GATE_PASSWORD",
+    "LOCAL_AUTH_MFA_ENCRYPTION_KEY": "LOCAL_AUTH_MFA_ENCRYPTION_KEY",
+    "DJANGO_EMAIL_HOST_PASSWORD": "EMAIL_HOST_PASSWORD",
+}
+
+
+def _is_https_url(value: str, *, origin_only: bool) -> bool:
+    parts = urlsplit(value or "")
+    if parts.scheme != "https" or not parts.hostname:
+        return False
+    if parts.username or parts.password or parts.query or parts.fragment:
+        return False
+    return not (origin_only and parts.path not in ("", "/"))
+
+
+def _process_role_problems() -> list[Error | Warning]:
+    """The process role is one this application has, and the MCP role is configured.
+
+    The MCP process answers an AI client on a colleague's behalf, outside the
+    browser, so what it depends on is different and is refused here rather than
+    discovered on the first call (docs/adr/0185):
+
+    - E040: a role nobody wrote — a typo would otherwise run as the browser;
+    - E041: MCP_ENABLED off — a release carrying the code changes nothing;
+    - E042: JURISTID_PUBLIC_ORIGIN, the OAuth issuer and the base of every link
+      the tools return, is not one https origin;
+    - E043: MCP_RESOURCE_URLS, the audiences a token may carry, is empty or not
+      all https;
+    - E044: DEBUG, whose error pages would answer a tool's failure with the
+      code and the data around it;
+    - E045: the database connection would not start read-only;
+    - E046: the process holds a browser secret it has no use for.
+    """
+    role = _process_role()
+    if role not in KNOWN_PROCESS_ROLES:
+        return [
+            Error(
+                f"JURISTID_PROCESS_ROLE={role!r} is not a role this application has.",
+                hint="Leave it empty for the browser application and its workers, or set mcp.",
+                id="juristid.E040",
+            )
+        ]
+    if role != "mcp":
+        return []
+
+    problems: list[Error | Warning] = []
+    if not getattr(settings, "MCP_ENABLED", False):
+        problems.append(
+            Error(
+                "The MCP process is starting with MCP_ENABLED off.",
+                hint=(
+                    "Set MCP_ENABLED=1 in its environment, and on `web` too — or do not start "
+                    "the `mcp` service. Off is the default (docs/adr/0185)."
+                ),
+                id="juristid.E041",
+            )
+        )
+    if not _is_https_url(getattr(settings, "JURISTID_PUBLIC_ORIGIN", ""), origin_only=True):
+        problems.append(
+            Error(
+                "JURISTID_PUBLIC_ORIGIN is not an https origin.",
+                hint=(
+                    "The OAuth issuer and every link the tools return are built from it, never "
+                    "from a request's Host header: e.g. https://juristid.orgusaar.ee, no path."
+                ),
+                id="juristid.E042",
+            )
+        )
+    resources = list(getattr(settings, "MCP_RESOURCE_URLS", []) or [])
+    if not resources or not all(_is_https_url(url, origin_only=False) for url in resources):
+        problems.append(
+            Error(
+                "MCP_RESOURCE_URLS is empty or names a URL that is not https.",
+                hint=(
+                    "List the MCP endpoint URL(s) a token may be issued for — the Secure MCP "
+                    "Tunnel URL and/or the public one — comma-separated, each https."
+                ),
+                id="juristid.E043",
+            )
+        )
+    if settings.DEBUG:
+        problems.append(
+            Error(
+                "The MCP process is starting with DJANGO_DEBUG on.",
+                hint="It answers outside the browser, on a colleague's behalf; never in debug.",
+                id="juristid.E044",
+            )
+        )
+    database: dict[str, Any] = settings.DATABASES["default"]
+    connection_options = database.get("OPTIONS") or {}
+    options = (
+        str(connection_options.get("options") or "") if isinstance(connection_options, dict) else ""
+    )
+    if "default_transaction_read_only=on" not in options.replace(" ", ""):
+        problems.append(
+            Error(
+                "The MCP process's database connection does not start read-only.",
+                hint=(
+                    "config/settings.py adds `-c default_transaction_read_only=on` in the mcp "
+                    "role; something replaced DATABASES['default']['OPTIONS'] after it."
+                ),
+                id="juristid.E045",
+            )
+        )
+    held = sorted(
+        name for name, setting in MCP_FORBIDDEN_SECRETS.items() if getattr(settings, setting, "")
+    )
+    if held:
+        problems.append(
+            Error(
+                f"The MCP process holds browser secrets it has no use for: {', '.join(held)}.",
+                hint=(
+                    "Give the `mcp` service its own minimal environment file, not the web's "
+                    "(docs/adr/0185 §6)."
+                ),
+                id="juristid.E046",
+            )
+        )
     return problems
