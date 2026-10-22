@@ -244,9 +244,9 @@ services:
       # The staged `Uus teema` files, READ-ONLY — the same volume `web` writes.
       #
       # Read-only because that is the whole of what this process does with
-      # them. Staging bytes are written by the upload view, deleted by
-      # `consume_session` after `Loo teema` and swept by
-      # `prune_intake_staging` — all three in `web`. Nothing on this side needs
+      # them. Staging bytes are written by the upload view and deleted by
+      # `consume_session` after `Loo teema`, both in `web`, and swept by
+      # `intake-sweeper` (docs/adr/0177). Nothing on this side needs
       # to change the source it is reading, so nothing on this side is given
       # the ability to.
       - pending_uploads:/app/pending-uploads:ro
@@ -284,6 +284,41 @@ services:
         condition: service_healthy
     # No evidence or derivative mounts: this rebuilds a projection out of
     # PostgreSQL and reads no stored file.
+    networks:
+      - internal
+
+  # The `Uus teema` staging sweeper. The rehearsal counterpart of the main
+  # stack's service; see deploy/unraid-main/compose.yml and docs/adr/0177. It
+  # mounts the staging volume read-write and nothing else.
+  intake-sweeper:
+    image: juristid-test-web:${JURISTID_IMAGE_TAG:-local}
+    container_name: juristid-test-intake-sweeper
+    restart: unless-stopped
+    logging: *bounded-logs
+    healthcheck:
+      test: ["CMD", "python", "manage.py", "check_intake_staging", "--quiet"]
+      interval: 300s
+      timeout: 15s
+      start_period: 60s
+      retries: 3
+    command:
+      - python
+      - manage.py
+      - prune_intake_staging
+      - --loop
+    env_file:
+      - ${JURISTID_ENV_FILE:-/mnt/user/appdata/juristid-test/config/juristid.env}
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      SEED_DEV_DATA: "0"
+      JURISTID_RUNTIME: deployed
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - pending_uploads:/app/pending-uploads
     networks:
       - internal
 
@@ -335,7 +370,8 @@ networks:
     driver: bridge
 
 volumes:
-  # Temporary upload bytes, shared by `web` and `intake-reader` and by nothing else.
+  # Temporary upload bytes, shared by `web`, `intake-reader` and `intake-sweeper`
+  # and by nothing else.
   #
   # Declared exactly as the main stack declares it, with no explicit `name:`, so
   # Compose scopes it to this project: this one is `juristid-test_pending_uploads`

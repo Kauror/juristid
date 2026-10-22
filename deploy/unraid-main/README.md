@@ -9,7 +9,7 @@ to it, in one system. This is the environment that holds the real thing.
 | Auth mode | `shared_gate` (temporary; see below) |
 | Public URL | `https://juristid.orgusaar.ee` — behind the shared gate |
 | Compose project | `juristid-main` |
-| Containers | `juristid-main-web`, `juristid-main-db`, `juristid-main-intake-reader`, `juristid-main-searchindex`, `juristid-main-tunnel` |
+| Containers | `juristid-main-web`, `juristid-main-db`, `juristid-main-intake-reader`, `juristid-main-searchindex`, `juristid-main-intake-sweeper`, `juristid-main-tunnel` |
 | Network | `juristid-main-internal` (its own bridge) |
 | Appdata | `/mnt/user/appdata/juristid-main/` |
 | Evidence | `…/evidence` — **back this up** |
@@ -1455,10 +1455,11 @@ docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-bui
 
 If it would recreate `db` or `tunnel`, name the services that run the release
 image instead — every one of them, read off `compose.yml` (today `web`,
-`intake-reader` and `searchindex`), so none is left on the old image:
+`intake-reader`, `searchindex` and `intake-sweeper`), so none is left on the
+old image:
 
 ```bash
-docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-reader searchindex
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-reader searchindex intake-sweeper
 ```
 
 `--no-build` is not decoration. `compose.yml` has a `build:` stanza, and a plain
@@ -1466,8 +1467,8 @@ docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-bui
 happen — would build the image on this host, silently, from whatever the
 checkout holds. With `--no-build` the same mistake is an error naming the
 missing image, which is the honest outcome. Unqualified when the dry run allows
-it: `web`, `intake-reader` and `searchindex` all run the release image and all
-move together, and a fourth application service added later moves with them
+it: `web`, `intake-reader`, `searchindex` and `intake-sweeper` all run the
+release image and all move together, and a fourth application service added later moves with them
 without anybody editing a list.
 
 Migrations are a deliberate step, never container start-up work: on boot they

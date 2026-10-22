@@ -213,7 +213,7 @@ mode), `E037` (link base not https / no sender), `E038` (non-delivering backend)
    way the release runbook does (never an unqualified `up -d`; db and tunnel stay):
 
    ```bash
-   JURISTID_IMAGE_TAG=<current tag> docker compose -p juristid-main -f /mnt/user/appdata/juristid-main/repo/deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-reader searchindex
+   JURISTID_IMAGE_TAG=<current tag> docker compose -p juristid-main -f /mnt/user/appdata/juristid-main/repo/deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-reader searchindex intake-sweeper
    ```
 
 4. Confirm the mode from the wire: `/konto/sisene/` → 200 with the e-mail and

@@ -2943,6 +2943,16 @@ def intake_stage(request: HttpRequest) -> HttpResponse:
     gate, in its own process (docs/adr/0014, docs/adr/0064).
     """
     session = _requested_intake_session(request, request.POST)
+    # The staging quotas, asked first with the sizes the request declared, so
+    # a request that cannot fit is answered before its files are read and
+    # validated. `stage_uploads` asks again under its lock with the bytes that
+    # arrived, and that answer is the one that decides (docs/adr/0177).
+    declared = sum(handle.size or 0 for handle in request.FILES.getlist("files") if handle)
+    over_quota = intake_staging.quota_refusal(
+        owner=request.user, session=session, incoming_bytes=declared
+    )
+    if over_quota:
+        return _intake_fragment(request, session, errors=(over_quota,))
     accepted, refusals = _read_new_matter_files(request)
     if not accepted and session is None:
         # Nothing to keep and nothing to keep it in. Answered rather than

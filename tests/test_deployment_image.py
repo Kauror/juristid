@@ -354,7 +354,7 @@ def test_the_workers_and_their_healthchecks_already_refuse(stack: str) -> None:
         for name, service in compose["services"].items()
         if name != "web" and service.get("image") == application
     }
-    assert set(workers) == {"intake-reader", "searchindex"}, workers
+    assert set(workers) == {"intake-reader", "searchindex", "intake-sweeper"}, workers
     for name, service in workers.items():
         command = [str(part) for part in service["command"]]
         probe = [str(part) for part in service["healthcheck"]["test"]]

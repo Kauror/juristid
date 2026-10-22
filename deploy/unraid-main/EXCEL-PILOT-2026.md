@@ -45,7 +45,7 @@ is the same folder as the container sees it (mounted read-only).
 1. **Inventory the old world, read-only** (counts only): Matters by class,
    origin and mode; Submissions; follow-ups; documents; every `accounts_*`
    table's row count. Record it beside the backup.
-2. **Hold the writers:** `$C stop web intake-reader searchindex`
+2. **Hold the writers:** `$C stop web intake-reader searchindex intake-sweeper`
    (db and tunnel stay up).
 3. **The dedicated backup**, writers held:
    `scripts/deploy/juristid-backup.sh --project juristid-main --compose-file
@@ -109,15 +109,15 @@ is the same folder as the container sees it (mounted read-only).
 
    The apply's own report prints the same lines (`drafting actions 20`).
 10. **Serve:** `$C up -d --no-build --no-deps --dry-run web intake-reader
-    searchindex` (db and tunnel must not move), then without `--dry-run`; then
+    searchindex intake-sweeper` (db and tunnel must not move), then without `--dry-run`; then
     healthz, the gate page, the persona list, Minu asjad, Osakond, a Teema, search.
 
 ## Rollback
 
-`$C stop web intake-reader searchindex`; rename the fresh database to
+`$C stop web intake-reader searchindex intake-sweeper`; rename the fresh database to
 `juristid_pilot_failed_<stamp>` and `juristid_pre_pilot_<stamp>` back to
 `juristid`; move the evidence trees back; `up -d --no-build --no-deps web
-intake-reader searchindex`. The step-3 backup set is the second line of
+intake-reader searchindex intake-sweeper`. The step-3 backup set is the second line of
 defence; `juristid-restore.sh` the third.
 
 ## Notes
