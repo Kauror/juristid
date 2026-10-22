@@ -64,7 +64,7 @@ from django.db import connection, transaction
 from django.utils import timezone
 
 from app.core.ids import uuid7
-from app.documents.upload_body import StoredBody, store_body
+from app.documents.upload_body import BodyChanged, StoredBody, store_body
 from app.documents.uploads import AcceptedUpload
 
 logger = logging.getLogger(__name__)
@@ -249,7 +249,7 @@ def hold(
             if not refusal:
                 try:
                     _hold_each(storage, uploads, manifest, held, written)
-                except OSError:
+                except (OSError, BodyChanged):
                     logger.warning("holding uploads failed; nothing was held", exc_info=True)
                     for key in written:
                         manifest.pop(key, None)
