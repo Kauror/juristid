@@ -169,7 +169,11 @@ model).
   challenge (S256 only), scope and resource. Responses carry `iss` (RFC 9207).
 - Access token: opaque, 256 bits, **1 hour**, stored only as SHA-256, bound to user,
   grant, client, scope and resource (audience). Refresh token: opaque, **30 days**,
-  rotated on every use; reuse of a rotated refresh token revokes the whole family. A
+  rotated on every use; reuse of a rotated refresh token revokes the whole family —
+  except that the same client presenting the just-rotated token again within 30 s,
+  while its replacement is unused (a retry after a timeout, two refreshes in flight),
+  gets the same new pair back, derived from the presented token under the server's
+  key so nothing raw is stored (MCPSEC-09). A
   family has an **absolute lifetime of 90 days** from the authorization
   (`MCP_REFRESH_FAMILY_MAX_SECONDS`), however often it is refreshed, after which the
   person types their authenticator code again; and a refresh must authenticate the way

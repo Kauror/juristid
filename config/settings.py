@@ -1046,6 +1046,10 @@ MCP_REFRESH_TOKEN_SECONDS = env_int("MCP_REFRESH_TOKEN_SECONDS", 30 * 24 * 3600)
 # connection ends this long after the person typed their authenticator code,
 # and they authorize again (MCPSEC-08).
 MCP_REFRESH_FAMILY_MAX_SECONDS = env_int("MCP_REFRESH_FAMILY_MAX_SECONDS", 90 * 24 * 3600)
+# How long after a rotation the same client may present the just-rotated
+# refresh token again — a retry after a timeout, or two refreshes in flight —
+# and get the same new pair instead of a revoked family (MCPSEC-09).
+MCP_REFRESH_GRACE_SECONDS = env_int("MCP_REFRESH_GRACE_SECONDS", 30)
 MCP_AUTHORIZATION_CODE_SECONDS = 60
 MCP_ENROLMENT_LINK_SECONDS = env_int("MCP_ENROLMENT_LINK_SECONDS", 30 * 60)
 # The key the personal MCP authenticators' TOTP secrets are sealed under, on

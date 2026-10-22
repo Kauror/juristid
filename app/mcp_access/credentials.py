@@ -48,6 +48,34 @@ def new_opaque() -> str:
     return secrets.token_urlsafe(32)
 
 
+#: The HKDF label of the key a rotated refresh token's successor is derived
+#: under (MCPSEC-09). Not a secret store: the successor is recomputed from the
+#: token the client presents, so nothing raw is kept to answer a retry.
+SUCCESSOR_PURPOSE = b"mcp-access-refresh-successor-v1"
+
+
+def successor_pair(refresh_token: str) -> tuple[str, str]:
+    """The access and refresh token a rotation of ``refresh_token`` issues.
+
+    Deterministic under the deployment's key, so the same presented token
+    yields the same pair: a retried refresh can be answered with what the
+    first attempt issued, although only digests are stored. 256 bits each,
+    base64url without padding — the shape `new_opaque` mints.
+    """
+    key = HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=b"juristid-mcp-access",
+        info=SUCCESSOR_PURPOSE,
+    ).derive(settings.SECRET_KEY.encode("utf-8"))
+
+    def derive(label: bytes) -> str:
+        raw = hmac.new(key, label + b"|" + refresh_token.encode("ascii"), hashlib.sha256).digest()
+        return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+
+    return derive(b"access"), derive(b"refresh")
+
+
 def digest(raw: str) -> str:
     return hashlib.sha256(raw.encode("ascii", "ignore")).hexdigest()
 

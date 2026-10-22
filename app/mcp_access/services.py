@@ -880,9 +880,9 @@ def _issue_pair(
     now: datetime,
     family_started_at: datetime,
     auth_method: str = "",
+    raw_pair: tuple[str, str] | None = None,
 ) -> tuple[IssuedTokens, McpToken]:
-    access_raw = credentials.new_opaque()
-    refresh_raw = credentials.new_opaque()
+    access_raw, refresh_raw = raw_pair or (credentials.new_opaque(), credentials.new_opaque())
     access_seconds = int(settings.MCP_ACCESS_TOKEN_SECONDS)
     common = {
         "family_id": family_id,
@@ -1104,6 +1104,18 @@ def _refresh(
     if not credentials.same(token.client_id, client_id or ""):
         return refuse("client_mismatch")
     if token.replaced_by_id is not None:
+        retried = _retried_rotation(token, refresh_token, now=now)
+        if retried is not None:
+            record(
+                McpAccessEventType.TOKEN_REFRESHED,
+                user=token.user,
+                grant=token.grant,
+                client_id=client_id,
+                ip_address=ip_address,
+                family=str(token.family_id),
+                retry_within_grace=True,
+            )
+            return retried
         # A rotated refresh token came back. One of the two holders is not
         # the client it was issued to, and nothing says which: the whole
         # family ends, and the legitimate client authorizes again.
@@ -1119,6 +1131,10 @@ def _refresh(
             ip_address=ip_address,
             family=str(token.family_id),
             tokens_revoked=revoked,
+            # A retry and a theft look alike but for the delay (MCPSEC-09).
+            seconds_since_rotation=(
+                round((now - token.revoked_at).total_seconds()) if token.revoked_at else None
+            ),
         )
         return invalid
     if token.revoked_at is not None:
@@ -1161,6 +1177,9 @@ def _refresh(
         now=now,
         family_started_at=family_started,
         auth_method=token.auth_method or auth_method,
+        # Derived from the presented token, so a retry can be answered with
+        # this very pair (`_retried_rotation`).
+        raw_pair=credentials.successor_pair(refresh_token),
     )
     token.replaced_by = new_refresh
     token.revoked_at = now
@@ -1178,6 +1197,53 @@ def _refresh(
         family=str(token.family_id),
     )
     return issued
+
+
+def _retried_rotation(token: McpToken, refresh_token: str, *, now: datetime) -> IssuedTokens | None:
+    """The pair this token's rotation issued, when presenting it again is a retry (MCPSEC-09).
+
+    Only within `MCP_REFRESH_GRACE_SECONDS` of the rotation, only while the
+    replacement refresh token is unused and live, and only for the client the
+    token belongs to (checked before this is asked). The row is held under
+    `select_for_update` by the caller, so two refreshes in flight take turns:
+    the second finds the first's rotation and is answered with its pair.
+    Anything else is reuse, and the caller ends the family.
+    """
+    grace = timedelta(seconds=int(getattr(settings, "MCP_REFRESH_GRACE_SECONDS", 30)))
+    if token.revoked_at is None or now - token.revoked_at > grace:
+        return None
+    if token.replaced_by_id is None:
+        return None
+    successor = McpToken.objects.select_for_update().filter(pk=token.replaced_by_id).first()
+    if (
+        successor is None
+        or successor.replaced_by_id is not None
+        or successor.revoked_at is not None
+        or successor.expires_at <= now
+    ):
+        return None
+    access_raw, refresh_raw = credentials.successor_pair(refresh_token)
+    if not credentials.same(successor.digest, credentials.digest(refresh_raw)):
+        return None  # derived under another key: not this rotation's pair
+    access = (
+        McpToken.objects.filter(
+            digest=credentials.digest(access_raw),
+            kind=TokenKind.ACCESS,
+            family_id=token.family_id,
+            revoked_at__isnull=True,
+        )
+        .only("expires_at")
+        .first()
+    )
+    if access is None or access.expires_at <= now:
+        return None
+    return IssuedTokens(
+        access_token=access_raw,
+        refresh_token=refresh_raw,
+        expires_in=max(1, int((access.expires_at - now).total_seconds())),
+        scope=successor.scopes,
+        family_id=token.family_id,
+    )
 
 
 @transaction.atomic

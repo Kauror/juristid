@@ -261,9 +261,17 @@ def test_a_refresh_rotates_the_refresh_token(client, person, moment):
 
 
 def test_reusing_a_rotated_refresh_token_revokes_the_whole_family(client, person, moment):
+    """Past the retry grace window (MCPSEC-09, tests/test_mcp_access_refresh_grace.py)."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
     user, secret = person
     first = _exchange(client, support.code_for(user, secret, moment)).json()
     second = _refresh(client, first["refresh_token"]).json()
+    McpToken.objects.filter(replaced_by__isnull=False).update(
+        revoked_at=timezone.now() - timedelta(minutes=5)
+    )
 
     reuse = _refresh(client, first["refresh_token"])
 
