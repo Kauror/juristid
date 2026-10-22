@@ -28,6 +28,7 @@ the module keeps four things true about it:
 
 from __future__ import annotations
 
+import hmac
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -38,8 +39,9 @@ from django.contrib.auth.hashers import make_password
 from django.db import transaction
 from django.http import Http404, HttpRequest
 from django.utils import timezone
+from django.utils.crypto import salted_hmac
 
-from app.accounts import email_policy, mfa, passwords, throttle
+from app.accounts import email_policy, mfa, passwords, throttle, tokens
 from app.accounts.enums import AuthMode, Capability, ProvisioningState, ThrottleScope
 from app.accounts.models import User
 from app.audit.enums import SecurityEventType
@@ -233,17 +235,69 @@ def attempt_sign_in(request: HttpRequest, *, email: str, password: str) -> SignI
     return SignInOutcome("signed_in")
 
 
+#: The HMAC's purpose string for a pending sign-in's credential binding.
+_PENDING_BINDING_SALT = "app.accounts.local_auth.pending_binding"
+
+
+def pending_binding(user: User) -> str:
+    """The account's credential state, as a pending sign-in may keep it.
+
+    What the password step proved is "the password *as it was then*". The
+    binding is `tokens.credential_stamp` — the password hash, the login address
+    and the active flag, the same stamp a one-time link is bound to — together
+    with the account's `security_epoch`, which also moves when a second factor
+    is enrolled, removed or reset and on every role or capability change. Any
+    of those between the password and the code means the code completes
+    nothing (csf_c366770b, docs/adr/0183).
+
+    Keyed under the deployment's secret, so the session row holds nothing a
+    password hash could be compared against offline.
+    """
+    material = f"{tokens.credential_stamp(user)}\x1f{int(user.security_epoch or 0)}"
+    return salted_hmac(_PENDING_BINDING_SALT, material, algorithm="sha256").hexdigest()
+
+
 def _begin_pending(request: HttpRequest, user: User) -> None:
     """A correct password, waiting for its second factor. Not a sign-in."""
     next_path = request.session.get(SESSION_NEXT)
     request.session.cycle_key()
-    request.session[SESSION_PENDING] = {"user": str(user.pk), "at": timezone.now().isoformat()}
+    request.session[SESSION_PENDING] = {
+        "user": str(user.pk),
+        "at": timezone.now().isoformat(),
+        "binding": pending_binding(user),
+    }
     if next_path:
         request.session[SESSION_NEXT] = next_path
 
 
+def _binding_holds(pending: dict[str, Any], user: User) -> bool:
+    stored = pending.get("binding")
+    if not isinstance(stored, str) or not stored:
+        return False
+    return hmac.compare_digest(stored, pending_binding(user))
+
+
+def _abandon_pending(request: HttpRequest, user: User, *, reason: str) -> None:
+    """Drop a pending sign-in the account's credentials have moved on from."""
+    request.session.pop(SESSION_PENDING, None)
+    record_security_event(
+        event_type=SecurityEventType.AUTHENTICATION_FAILED,
+        succeeded=False,
+        subject=user,
+        detail={"path": "local_password", "stage": "second_factor", "reason": reason},
+        **_client(request),
+    )
+
+
 def pending_user(request: HttpRequest) -> User | None:
-    """The account whose second factor this session is waiting for, if still waiting."""
+    """The account whose second factor this session is waiting for, if still waiting.
+
+    Still waiting means: inside `PENDING_SECONDS`, the account still eligible,
+    and its credential state what it was when the password was proved
+    (`pending_binding`). A password set, changed or reset, a deactivation, an
+    address change or a security-epoch bump in between ends the wait, and the
+    person starts again from the password.
+    """
     pending = request.session.get(SESSION_PENDING)
     if not isinstance(pending, dict):
         return None
@@ -261,6 +315,9 @@ def pending_user(request: HttpRequest) -> User | None:
     )
     if user is None or _ineligibility(user):
         request.session.pop(SESSION_PENDING, None)
+        return None
+    if not _binding_holds(pending, user):
+        _abandon_pending(request, user, reason="credentials_changed")
         return None
     return user
 
@@ -311,8 +368,21 @@ def verify_second_factor(request: HttpRequest, *, code: str, kind: str) -> SignI
             detail={"remaining": mfa.remaining_recovery_codes(user)},
             **_client(request),
         )
+    # Asked once more after the code, with the account read afresh: a password
+    # changed while this request was checking the code must not be outrun by
+    # it. `login` then stores the session hash of the account as it is now.
+    pending = request.session.get(SESSION_PENDING)
+    current = User.objects.filter(pk=user.pk).first()
+    if (
+        current is None
+        or not isinstance(pending, dict)
+        or _ineligibility(current)
+        or not _binding_holds(pending, current)
+    ):
+        _abandon_pending(request, user, reason="credentials_changed")
+        return SignInOutcome("refused")
     request.session.pop(SESSION_PENDING, None)
-    complete_sign_in(request, user, second_factor=kind)
+    complete_sign_in(request, current, second_factor=kind)
     return SignInOutcome("signed_in")
 
 
