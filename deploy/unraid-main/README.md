@@ -9,7 +9,7 @@ to it, in one system. This is the environment that holds the real thing.
 | Auth mode | `shared_gate` (temporary; see below) |
 | Public URL | `https://juristid.orgusaar.ee` — behind the shared gate |
 | Compose project | `juristid-main` |
-| Containers | `juristid-main-web`, `juristid-main-db`, `juristid-main-intake-reader`, `juristid-main-searchindex`, `juristid-main-tunnel` |
+| Containers | `juristid-main-web`, `juristid-main-db`, `juristid-main-intake-reader`, `juristid-main-searchindex`, `juristid-main-intake-sweeper`, `juristid-main-tunnel` |
 | Network | `juristid-main-internal` (its own bridge) |
 | Appdata | `/mnt/user/appdata/juristid-main/` |
 | Evidence | `…/evidence` — **back this up** |
@@ -248,10 +248,21 @@ in this shell.
 ### 5. Start
 
 ```bash
-docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d db
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml --env-file /mnt/user/appdata/juristid-main/config/juristid.env up -d db
 docker compose -p juristid-main -f deploy/unraid-main/compose.yml run --rm web python manage.py migrate
 docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build
 ```
+
+`--env-file` on this one command, and only here (ADR 0179). The database no
+longer reads the application's environment file: it is given `POSTGRES_DB`,
+`POSTGRES_USER` and `POSTGRES_PASSWORD` by interpolation, and the password is
+needed only while an empty cluster is initialised. `--env-file` lends the
+file's values to that interpolation without passing the file into any
+container. Leave it out and the image refuses to initialise («superuser
+password is not specified») — run the line again with it. The next command
+that starts `db` without `--env-file` recreates it once with the password
+empty, which is the day-to-day shape and harmless: the cluster already holds
+the password, and the data is on the bind mount.
 
 `JURISTID_GIT_SHA` and `JURISTID_IMAGE_TAG` must still be exported here.
 Without them `run --rm web` resolves `juristid-main-web:local`, and since no
@@ -1444,10 +1455,11 @@ docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-bui
 
 If it would recreate `db` or `tunnel`, name the services that run the release
 image instead — every one of them, read off `compose.yml` (today `web`,
-`intake-reader` and `searchindex`), so none is left on the old image:
+`intake-reader`, `searchindex` and `intake-sweeper`), so none is left on the
+old image:
 
 ```bash
-docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-reader searchindex
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-reader searchindex intake-sweeper
 ```
 
 `--no-build` is not decoration. `compose.yml` has a `build:` stanza, and a plain
@@ -1455,8 +1467,8 @@ docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-bui
 happen — would build the image on this host, silently, from whatever the
 checkout holds. With `--no-build` the same mistake is an error naming the
 missing image, which is the honest outcome. Unqualified when the dry run allows
-it: `web`, `intake-reader` and `searchindex` all run the release image and all
-move together, and a fourth application service added later moves with them
+it: `web`, `intake-reader`, `searchindex` and `intake-sweeper` all run the
+release image and all move together, and a fourth application service added later moves with them
 without anybody editing a list.
 
 Migrations are a deliberate step, never container start-up work: on boot they

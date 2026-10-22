@@ -2273,15 +2273,20 @@ def matter_create(request: HttpRequest) -> HttpResponse:
             # One message per refused file. The messages block renders each as
             # its own paragraph, so four chosen files with three problems reads
             # as three named problems rather than as one unnamed one (QA-02).
-            for refusal in upload_refusals:
-                messages.error(request, refusal)
+            hold_refusals: list[str] = []
             # Everything that passed validation survives the refusal, including
             # the good half of a batch whose other half was rejected. Files
             # already held stay held — `resume` reads without consuming — so
-            # only what arrived on this request has to be added.
+            # only what arrived on this request has to be added. Unless the
+            # volume is full: then nothing is held and the person is told
+            # (docs/adr/0177).
             newly_held = pending_uploads.hold(
-                request.session, _not_already_staged(chosen, intake_session)
+                request.session,
+                _not_already_staged(chosen, intake_session),
+                refusals=hold_refusals,
             )
+            for refusal in [*upload_refusals, *hold_refusals]:
+                messages.error(request, refusal)
             held_keys = [*held_keys, *(item.key for item in newly_held)]
             return render(
                 request,
@@ -2500,9 +2505,14 @@ def matter_create(request: HttpRequest) -> HttpResponse:
             recent = getattr(error, "existing", None)
             if recent is None:
                 form.add_error(None, str(error))
+            hold_refusals = []
             newly_held = pending_uploads.hold(
-                request.session, _not_already_staged(chosen, intake_session)
+                request.session,
+                _not_already_staged(chosen, intake_session),
+                refusals=hold_refusals,
             )
+            for refusal in hold_refusals:
+                messages.error(request, refusal)
             context = _create_context(
                 request,
                 form,
@@ -2943,6 +2953,16 @@ def intake_stage(request: HttpRequest) -> HttpResponse:
     gate, in its own process (docs/adr/0014, docs/adr/0064).
     """
     session = _requested_intake_session(request, request.POST)
+    # The staging quotas, asked first with the sizes the request declared, so
+    # a request that cannot fit is answered before its files are read and
+    # validated. `stage_uploads` asks again under its lock with the bytes that
+    # arrived, and that answer is the one that decides (docs/adr/0177).
+    declared = sum(handle.size or 0 for handle in request.FILES.getlist("files") if handle)
+    over_quota = intake_staging.quota_refusal(
+        owner=request.user, session=session, incoming_bytes=declared
+    )
+    if over_quota:
+        return _intake_fragment(request, session, errors=(over_quota,))
     accepted, refusals = _read_new_matter_files(request)
     if not accepted and session is None:
         # Nothing to keep and nothing to keep it in. Answered rather than

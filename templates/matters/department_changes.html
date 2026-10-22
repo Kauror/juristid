@@ -116,9 +116,9 @@ know (both in the rail). Everything is computed by
                   shares `.uxdg__row` and keeps its single line.
                 {% endcomment %}
                 <span class="uxdg__text uxdg__text--wrap"><span>{{ row.matter_title }}</span> <span class="uxdg__change" data-change>— {{ row.verb }}{% if row.detail %}: {{ row.detail }}{% endif %}</span></span>
-                <span class="uxav" title="{{ row.actor_name|default:'Teadmata' }}">
+                <span class="uxav" title="{{ row.actor_label|default:'Teadmata' }}">
                   <span aria-hidden="true">{{ row.initials }}</span>
-                  <span class="visually-hidden">{{ row.actor_name|default:'Teadmata' }}</span>
+                  <span class="visually-hidden">{{ row.actor_label|default:'Teadmata' }}</span>
                 </span>
               </a>
             {% empty %}

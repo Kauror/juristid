@@ -70,8 +70,9 @@ from django.db.models import Count, Max, Min, Q, QuerySet
 from django.urls import reverse
 from django.utils import timezone
 
-from app.audit.enums import ChangeEventType
+from app.audit.enums import AuthMethod, ChangeEventType
 from app.audit.models import ChangeEvent
+from app.audit.provenance import actor_label
 from app.audit.visibility import scope_change_events
 from app.core.authorization import apply as apply_scope
 from app.core.authorization import matter_visibility_q, scope_for_user
@@ -188,10 +189,18 @@ class ChangeRow:
     initials: str
     matter_title: str
     url: str
+    #: How the row's actor arrived (`AuthMethod`); "" on a row written before
+    #: that was recorded (docs/adr/0180).
+    auth_method: str = ""
 
     @property
     def when(self) -> date:
         return timezone.localtime(self.at).date()
+
+    @property
+    def actor_label(self) -> str:
+        """The name, and — for a persona chosen behind the shared gate — that it was chosen."""
+        return actor_label(self.actor_name, self.auth_method)
 
 
 @dataclass
@@ -582,6 +591,7 @@ def _row(event: ChangeEvent) -> ChangeRow:
         initials=actor.initials if actor is not None else "··",
         matter_title=matter.title if matter is not None else "",
         url=reverse("matters:matter_detail", kwargs={"pk": matter.pk}) if matter else "",
+        auth_method=event.auth_method,
     )
 
 
@@ -604,7 +614,9 @@ def _closure_rows(closure_acts: QuerySet[ChangeEvent]) -> list[ChangeRow]:
     from django.contrib.auth import get_user_model
 
     cancels = list(
-        closure_acts.order_by().values("pk", "matter", "actor", "object_id", "occurred_at")
+        closure_acts.order_by().values(
+            "pk", "matter", "actor", "object_id", "occurred_at", "auth_method"
+        )
     )
     if not cancels:
         return []
@@ -637,9 +649,20 @@ def _closure_rows(closure_acts: QuerySet[ChangeEvent]) -> list[ChangeRow]:
     for cancel in cancels:
         key = (closure_of(cancel), cancel["matter"], cancel["actor"])
         group = grouped.setdefault(
-            key, {"matter": cancel["matter"], "actor": cancel["actor"], "n": 0, "at": None}
+            key,
+            {
+                "matter": cancel["matter"],
+                "actor": cancel["actor"],
+                "n": 0,
+                "at": None,
+                "auth_method": "",
+            },
         )
         group["n"] += 1
+        # One closure is one request, so its cancellations share a method; a
+        # shared-gate one anywhere in the group is enough to say so.
+        if cancel["auth_method"] == AuthMethod.SHARED_GATE or not group["auth_method"]:
+            group["auth_method"] = cancel["auth_method"]
         if group["at"] is None or cancel["occurred_at"] > group["at"]:
             group["at"] = cancel["occurred_at"]
     groups = sorted(grouped.values(), key=lambda group: group["at"], reverse=True)
@@ -663,6 +686,7 @@ def _closure_rows(closure_acts: QuerySet[ChangeEvent]) -> list[ChangeRow]:
                 initials=actor.initials if actor is not None else "··",
                 matter_title=matter.title if matter is not None else "",
                 url=(reverse("matters:matter_detail", kwargs={"pk": matter.pk}) if matter else ""),
+                auth_method=group["auth_method"],
             )
         )
     return rows

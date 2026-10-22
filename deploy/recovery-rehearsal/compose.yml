@@ -34,7 +34,8 @@ services:
     # PostgreSQL 18 is restored by PostgreSQL 18. A rehearsal on an older major
     # would prove the procedure against a server that could not run it
     # (docs/adr/0022).
-    image: postgres:18
+    # Same digest as deploy/unraid-main/compose.yml (ADR 0179; PostgreSQL 18.6).
+    image: postgres:18@sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941
     container_name: juristid-recovery-rehearsal-db
     # JIT off for this OLTP workload (AUD-039, docs/adr/0153): it fires on the
     # planner's estimated cost and spent 150-350 ms compiling statements that

@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       # What this run is testing, named by the tree it checked out.
       #
@@ -51,14 +51,14 @@ jobs:
           cat tested/tested-tree.txt
 
       - name: Upload the tested tree
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: tested-tree
           path: tested/tested-tree.txt
           if-no-files-found: error
           retention-days: 30
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           enable-cache: true
 
@@ -88,7 +88,7 @@ jobs:
       # docs/adr/0171). Node is set up for this check only: the application
       # and its image have none. Both versions are exact so the check cannot
       # change under a run nobody edited; the rules are `eslint.config.mjs`.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "24.18.1"
 
@@ -206,7 +206,7 @@ jobs:
     # the `tests` job, with their reasoning intact.
     services:
       postgres:
-        image: postgres:18
+        image: postgres:18@sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941
         env:
           POSTGRES_DB: juristid
           POSTGRES_USER: juristid
@@ -233,9 +233,9 @@ jobs:
       POSTGRES_SSLMODE: disable
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           enable-cache: true
 
@@ -256,7 +256,7 @@ jobs:
         run: echo "key=${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
 
       - name: Cache the OCR packages
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/ocr-debs
           key: ocr-debs-${{ steps.runner-image.outputs.key }}-v1
@@ -420,7 +420,7 @@ jobs:
     # job and the recovery rehearsal keep a disk.
     services:
       postgres:
-        image: postgres:18
+        image: postgres:18@sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941
         env:
           POSTGRES_DB: juristid
           POSTGRES_USER: juristid
@@ -448,9 +448,9 @@ jobs:
       POSTGRES_SSLMODE: disable
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           enable-cache: true
 
@@ -471,7 +471,7 @@ jobs:
         run: echo "key=${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
 
       - name: Cache the OCR packages
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/ocr-debs
           key: ocr-debs-${{ steps.runner-image.outputs.key }}-v1
@@ -529,7 +529,7 @@ jobs:
       # a report to read when a shard is red.
       - name: Upload this runner's reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: test-report-tests-runner-${{ matrix.runner }}
           path: |
@@ -574,14 +574,14 @@ jobs:
           done
           echo "all 14 shards (7 runners) and the safety checks passed"
 
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           enable-cache: true
       - run: uv sync --frozen
 
       - name: Collect the coverage fragments
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: test-report-tests-*
           path: fragments
@@ -624,7 +624,7 @@ jobs:
 
       - name: Upload the combined coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: coverage-combined
           path: .coverage
@@ -648,9 +648,9 @@ jobs:
     env:
       PIP_AUDIT: pip-audit==2.9.0
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           enable-cache: true
 
@@ -686,7 +686,7 @@ jobs:
     # same server, same configuration, same semantics.
     services:
       postgres:
-        image: postgres:18
+        image: postgres:18@sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941
         env:
           POSTGRES_DB: juristid
           POSTGRES_USER: juristid
@@ -751,9 +751,9 @@ jobs:
       E2E_UPDATE_BASELINES: "0"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           enable-cache: true
 
@@ -765,7 +765,7 @@ jobs:
       # browser binary is all that has to be fetched, and it is cached between
       # runs.
       - name: Cache the browser binary
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ hashFiles('uv.lock') }}
@@ -812,7 +812,7 @@ jobs:
       # screenshots and traces beside them.
       - name: Upload this runner's shard reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: shard-reports-browser-runner-${{ matrix.runner }}
           path: |
@@ -823,7 +823,7 @@ jobs:
 
       - name: Upload screenshots and traces
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: test-report-browser-runner-${{ matrix.runner }}
           path: |
@@ -853,7 +853,7 @@ jobs:
     # only thing that changed is what ran before the first screenshot: nothing.
     services:
       postgres:
-        image: postgres:18
+        image: postgres:18@sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941
         env:
           POSTGRES_DB: juristid
           POSTGRES_USER: juristid
@@ -907,9 +907,9 @@ jobs:
       E2E_UPDATE_BASELINES: "0"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           enable-cache: true
 
@@ -921,7 +921,7 @@ jobs:
       # browser binary is all that has to be fetched, and it is cached between
       # runs.
       - name: Cache the browser binary
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ hashFiles('uv.lock') }}
@@ -988,7 +988,7 @@ jobs:
 
       - name: Upload renderings and traces
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: test-report-visual
           path: |
@@ -1030,7 +1030,7 @@ jobs:
       # 1..N. `SHARD_COUNT` is held to the workflow's --shard-count by
       # tests/test_ci_sharding.py.
       - name: Collect the shard reports
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: shard-reports-browser-*
           path: reports
@@ -1077,8 +1077,8 @@ jobs:
       # This run's own job and step times. Nothing else.
       actions: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           enable-cache: true
       - run: uv sync --frozen
@@ -1089,14 +1089,14 @@ jobs:
       # informational report that crashed would block a release.
       - name: This run's PostgreSQL shard reports
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: test-report-tests-*
           path: junit
 
       - name: This run's browser shard reports
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: shard-reports-browser-*
           path: junit
@@ -1114,7 +1114,7 @@ jobs:
       - name: Upload the numbers
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: shard-health
           path: shard-health.json
@@ -1167,9 +1167,9 @@ jobs:
       LEGACY_SOURCE_ROOT: /tmp/juristid-rehearsal/data/legacy-source
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           enable-cache: true
 
@@ -1869,7 +1869,7 @@ jobs:
     needs: [dependency-scan]
     if: ${{ !cancelled() }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Build the production image
         id: build
@@ -2002,6 +2002,27 @@ jobs:
           unset JURISTID_GIT_SHA JURISTID_IMAGE_TAG
           resolve > untagged.json
           python3 scripts/ci/assert_deployment_identity.py untagged.json --fallback
+
+      # ADR 0179: the database receives POSTGRES_DB/USER/PASSWORD and nothing
+      # else of the application's environment file, and the tunnel receives
+      # nothing at all — resolved by Compose itself, in both shapes the runbooks
+      # use: day to day (no --env-file, the password empty because the cluster
+      # holds it) and initialising an empty cluster (--env-file, which feeds
+      # interpolation only). Every value in the file is a synthetic sentinel;
+      # the script prints key names, never values.
+      # tests/test_service_secret_isolation.py is the Docker-free half.
+      - name: The database and the tunnel receive none of the application's secrets
+        run: |
+          set -euo pipefail
+          SENTINELS="$(mktemp)"
+          python3 scripts/ci/assert_service_env_isolation.py --write-sentinels "$SENTINELS"
+          export JURISTID_ENV_FILE="$SENTINELS"
+          resolve() { docker compose "$@" -p juristid-main -f deploy/unraid-main/compose.yml config --format json; }
+          resolve > routine.json
+          python3 scripts/ci/assert_service_env_isolation.py routine.json "$SENTINELS"
+          resolve --env-file "$SENTINELS" > initialising.json
+          python3 scripts/ci/assert_service_env_isolation.py initialising.json "$SENTINELS" --initialising
+          rm -f routine.json initialising.json "$SENTINELS"
 
       # Two containers, one set of bytes — the property `Uus teema` staging
       # actually needs, proved by crossing the boundary rather than by reading
@@ -2178,7 +2199,7 @@ jobs:
 
       - name: Upload the image scan
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: image-scan
           path: image-scan/

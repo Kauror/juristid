@@ -10,7 +10,7 @@ public hostname.
 | LAN URL | <http://192.168.1.133:3020> |
 | Public URL | <https://juristid.orgusaar.ee> — **the PIN is the only gate** |
 | Compose project | `juristid-test` |
-| Containers | `juristid-test-web`, `juristid-test-db`, `juristid-test-intake-reader`, `juristid-test-searchindex`, `juristid-test-tunnel` |
+| Containers | `juristid-test-web`, `juristid-test-db`, `juristid-test-intake-reader`, `juristid-test-searchindex`, `juristid-test-intake-sweeper`, `juristid-test-tunnel` |
 | Network | `juristid-test-internal` (its own bridge) |
 | Appdata | `/mnt/user/appdata/juristid-test/` |
 | Evidence | `…/evidence` — **back this up** |
@@ -160,7 +160,7 @@ docker compose -p juristid-test -f compose.yml run --rm web python manage.py reb
 Finally:
 
 ```bash
-docker compose -p juristid-test -f compose.yml up -d web intake-reader searchindex
+docker compose -p juristid-test -f compose.yml up -d web intake-reader searchindex intake-sweeper
 ```
 
 ## The `Uus teema` intake reader
@@ -277,9 +277,9 @@ docker compose -p juristid-test -f compose.yml run --rm web python manage.py mig
 docker compose -p juristid-test -f compose.yml up -d
 ```
 
-Unqualified, not `up -d web`. Three services run the application image — `web`,
-`intake-reader` and `searchindex` — and naming one of them leaves the other two
-running the build this deployment replaced. `searchindex` made that visible
+Unqualified, not `up -d web`. Four services run the application image — `web`,
+`intake-reader`, `searchindex` and `intake-sweeper` — and naming one of them
+leaves the others running the build this deployment replaced. `searchindex` made that visible
 rather than new: before it existed, a redeploy that said `up -d web` left the
 worker on the old image, and now it also leaves the search worker not running
 at all on a stack deployed after ADR 0041. The tunnel is behind a profile, so

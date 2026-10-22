@@ -13,7 +13,20 @@ What the rest of the module holds, and why:
   same link cannot both succeed.
 * **Superseded.** Issuing a link invalidates every older outstanding link of
   the same purpose for that person, so "send it again" never leaves two live
-  credentials in two mailboxes.
+  credentials in two mailboxes. Issuing takes the account's row lock first, so
+  two issues for one person take turns rather than both invalidating nothing
+  and both inserting, and a partial unique index holds "one live link per
+  person and purpose" whatever the code does (docs/adr/0180 §5).
+* **Bound to the account's credential state.** A link records a stamp of the
+  account's password hash, login address and active flag at issue
+  (`credential_stamp`) and is good only while it is unchanged, checked when it
+  is opened and again, under the locks, when it is spent. A password change
+  moves the stamp, so a link minted by a delayed mail job after the change —
+  or any link from before it — sets nothing. A job that was queued under one
+  stamp refuses to issue under another (`issue(expected_stamp=…)`). Not the
+  `security_epoch`: that also moves on every role and permission change, and an
+  invitation must survive the administrator adjusting the new colleague's
+  rights before they activate.
 * **Short-lived and configurable.** `LOCAL_AUTH_ACTIVATION_LINK_SECONDS` and
   `LOCAL_AUTH_RESET_LINK_SECONDS`.
 * **Never logged.** No function here logs, and none returns the link except
@@ -86,9 +99,56 @@ def _split(proof: str) -> tuple[str, str] | None:
     return selector, digest
 
 
+class StaleIssuance(Exception):
+    """The account's credentials moved since the link was asked for.
+
+    Raised by `issue` when ``expected_stamp`` no longer matches: a password was
+    set or changed, the login address changed, the account switched off,
+    between the request and the job that would have minted the link. Nothing
+    was written.
+    """
+
+
+def credential_stamp(user: User) -> str:
+    """A digest of what a one-time link is a credential *for*.
+
+    The password hash (any set, change or clear moves it), the login address
+    (a link mailed to an address the account no longer signs in with) and the
+    active flag. Derived, not a counter, so no code path that changes a
+    credential can forget to bump it.
+    """
+    material = f"{user.password}\x1f{user.upn}\x1f{int(user.is_active)}"
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
 @transaction.atomic
-def issue(*, user: User, purpose: str, issued_by: User | None = None) -> IssuedLink:
-    """A fresh link for ``purpose``, superseding any that was still outstanding."""
+def issue(
+    *,
+    user: User,
+    purpose: str,
+    issued_by: User | None = None,
+    expected_stamp: str | None = None,
+) -> IssuedLink:
+    """A fresh link for ``purpose``, superseding any that was still outstanding.
+
+    **Under the account's row lock**, taken before anything is invalidated. Two
+    issues for one person used to run invalidate-then-insert side by side: each
+    invalidated the links committed before it, neither saw the other's, and
+    both inserted — two live links in two mailboxes. Now the second waits for
+    the first to commit and then supersedes it; the partial unique index
+    ``accounts_token_one_live_per_purpose`` is the backstop.
+
+    The lock is also what makes ``expected_stamp`` mean something: the stamp is
+    read under it, so a password change either committed before this read (and
+    the link is refused with `StaleIssuance`) or waits for this transaction and
+    then invalidates the link it issued.
+    """
+    locked = (
+        User.objects.select_for_update().only("pk", "password", "upn", "is_active").get(pk=user.pk)
+    )
+    stamp = credential_stamp(locked)
+    if expected_stamp is not None and stamp != expected_stamp:
+        raise StaleIssuance("the account's credentials changed after the link was requested")
     invalidate_outstanding(user=user, purpose=purpose, reason="superseded")
     selector = secrets.token_hex(16)
     verifier = secrets.token_urlsafe(32)
@@ -100,8 +160,14 @@ def issue(*, user: User, purpose: str, issued_by: User | None = None) -> IssuedL
         verifier_digest=_digest(verifier),
         expires_at=now + lifetime(purpose),
         issued_by=issued_by,
+        credential_stamp=stamp,
     )
     return IssuedLink(record=record, token=f"{selector}.{verifier}")
+
+
+def is_current(record: AccountCredentialToken, holder: User) -> bool:
+    """Whether the link was issued under the account's present credentials."""
+    return hmac.compare_digest(record.credential_stamp, credential_stamp(holder))
 
 
 def peek(proof: str, *, purpose: str) -> AccountCredentialToken | None:
@@ -122,6 +188,8 @@ def peek(proof: str, *, purpose: str) -> AccountCredentialToken | None:
     )
     if record is None or not hmac.compare_digest(record.verifier_digest, digest):
         return None
+    if not is_current(record, record.user):
+        return None
     return record if record.is_usable_at(timezone.now()) else None
 
 
@@ -139,15 +207,26 @@ def consume(proof: str, *, purpose: str) -> AccountCredentialToken | None:
     if parts is None:
         return None
     selector, digest = parts
+    # The account first, then the link: the order `issue` takes them in, so a
+    # link being spent and one being issued for the same person cannot each
+    # hold the lock the other is waiting for.
+    owner_id = (
+        AccountCredentialToken.objects.filter(selector=selector, purpose=purpose)
+        .values_list("user_id", flat=True)
+        .first()
+    )
+    if owner_id is None:
+        return None
+    holder = User.objects.select_for_update().filter(pk=owner_id).first()
     record = (
         AccountCredentialToken.objects.select_for_update()
         .filter(selector=selector, purpose=purpose)
         .first()
     )
-    if record is None or not hmac.compare_digest(record.verifier_digest, digest):
+    if holder is None or record is None or not hmac.compare_digest(record.verifier_digest, digest):
         return None
     now = timezone.now()
-    if not record.is_usable_at(now):
+    if not record.is_usable_at(now) or not is_current(record, holder):
         return None
     record.used_at = now
     record.save(update_fields=["used_at", "updated_at"])
@@ -164,6 +243,32 @@ def invalidate_outstanding(*, user: User, purpose: str | None = None, reason: st
     return outstanding.update(
         invalidated_at=timezone.now(), invalidation_reason=reason[:64], updated_at=timezone.now()
     )
+
+
+def invalidate_link(record: AccountCredentialToken, *, reason: str) -> bool:
+    """End this one link if it is still live; ``True`` when it was.
+
+    For a link whose message could not be sent. Deliberately not
+    `invalidate_outstanding`: the message is sent after the issuing transaction
+    has committed, so by the time it fails a newer link may already exist for
+    the same person, and that one was not this failure's to end.
+    """
+    return bool(
+        AccountCredentialToken.objects.filter(
+            pk=record.pk, used_at__isnull=True, invalidated_at__isnull=True
+        ).update(
+            invalidated_at=timezone.now(),
+            invalidation_reason=reason[:64],
+            updated_at=timezone.now(),
+        )
+    )
+
+
+def is_live(record: AccountCredentialToken) -> bool:
+    """Whether this link is still unused and not invalidated, read afresh."""
+    return AccountCredentialToken.objects.filter(
+        pk=record.pk, used_at__isnull=True, invalidated_at__isnull=True
+    ).exists()
 
 
 def has_outstanding(*, user: User, purpose: str) -> bool:

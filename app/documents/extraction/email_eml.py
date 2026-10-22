@@ -24,12 +24,13 @@ from app.documents.extraction.email_common import (
     ParsedEmail,
     address_list,
     decode_mime_header,
+    guard_body_input,
     html_body_to_text,
     parse_date,
     split_attachments,
 )
 from app.documents.extraction.errors import ExtractionFailed
-from app.documents.extraction.limits import current_limits
+from app.documents.extraction.limits import CharacterBudget, Limits, current_limits
 
 
 class EmlParser:
@@ -48,23 +49,28 @@ class EmlParser:
         if not isinstance(message, EmailMessage):  # pragma: no cover - policy guarantees it
             raise ExtractionFailed("unreadable_eml", "E-kirja struktuur on ootamatu.")
 
+        # Every decoded header and the flattened body are charged to one
+        # budget as they are made, so an oversized message is refused while
+        # its text is being assembled rather than after (csf_8da83d23).
+        budget = CharacterBudget(limits)
         parsed = ParsedEmail()
-        parsed.subject = decode_mime_header(message.get("Subject"))
+        parsed.subject = budget.charge(decode_mime_header(message.get("Subject")))
         senders = address_list(message.get("From"))
         if senders:
-            parsed.from_name, parsed.from_email = _split_sender(senders[0])
-        parsed.to = address_list(message.get("To"))
-        parsed.cc = address_list(message.get("Cc"))
+            parsed.from_name, parsed.from_email = _split_sender(budget.charge(senders[0]))
+        parsed.to = budget.charge_all(address_list(message.get("To")))
+        parsed.cc = budget.charge_all(address_list(message.get("Cc")))
         # Only if it is genuinely present. A Bcc header on a received message is
         # rare and interesting; manufacturing an empty one would suggest we
         # looked and found nobody, which is a different claim.
-        parsed.bcc = address_list(message.get("Bcc"))
+        parsed.bcc = budget.charge_all(address_list(message.get("Bcc")))
         parsed.sent_at = parse_date(message.get("Date"))
-        parsed.message_id = (message.get("Message-ID") or "").strip()
-        parsed.in_reply_to = (message.get("In-Reply-To") or "").strip()
-        parsed.references = (message.get("References") or "").split()
+        parsed.message_id = budget.charge((message.get("Message-ID") or "").strip())
+        parsed.in_reply_to = budget.charge((message.get("In-Reply-To") or "").strip())
+        parsed.references = budget.charge_all((message.get("References") or "").split())
 
-        parsed.body_text, parsed.body_was_html = _body(message)
+        parsed.body_text, parsed.body_was_html = _body(message, limits)
+        budget.charge(parsed.body_text)
         attachments = _attachments(message, limits.max_email_depth)
         parsed.attachments, notes = split_attachments(attachments, limits.max_email_attachments)
         parsed.notes.extend(notes)
@@ -86,7 +92,7 @@ def _split_sender(display: str) -> tuple[str, str]:
     return ("", display) if "@" in display else (display, "")
 
 
-def _body(message: EmailMessage) -> tuple[str, bool]:
+def _body(message: EmailMessage, limits: Limits) -> tuple[str, bool]:
     """Prefer what the sender wrote as text over what their client rendered.
 
     `text/plain` is the author's own line breaks and no markup at all. Falling
@@ -99,14 +105,14 @@ def _body(message: EmailMessage) -> tuple[str, bool]:
     except Exception:
         plain = None
     if plain is not None:
-        return normalise(_content(plain)), False
+        return normalise(guard_body_input(_content(plain), limits)), False
 
     try:
         html = message.get_body(preferencelist=("html",))
     except Exception:
         html = None
     if html is not None:
-        return html_body_to_text(_content(html)), True
+        return html_body_to_text(guard_body_input(_content(html), limits)), True
     return "", False
 
 

@@ -310,6 +310,41 @@ def test_no_other_service_receives_the_upload_volume(compose: dict[str, Any]) ->
         assert _upload_mounts(compose, name) == [], f"{name} was given the upload volume"
 
 
+SWEEPER = "intake-sweeper"
+
+
+def test_the_staging_sweeper_is_scheduled_and_reaches_only_the_staging_volume(
+    compose: dict[str, Any], rehearsal: dict[str, Any]
+) -> None:
+    """csf_3942255b466a4e213b958b16, docs/adr/0177: the sweep runs on its own.
+
+    A container running the bounded loop, not a host cron entry (this host's
+    cron is generated from the flash drive). Read-write on the staging volume,
+    because deleting is its job, and nothing else mounted — the evidence tree
+    is not reachable from it at all. Judged by convergence, not by the web
+    image's HTTP probe it could never pass. The same in the rehearsal.
+    """
+    for model in (compose, rehearsal):
+        services = model["services"]
+        sweeper = services[SWEEPER]
+        assert sweeper["image"] == services["web"]["image"], model["name"]
+        assert [str(part) for part in sweeper["command"]] == [
+            "python",
+            "manage.py",
+            "prune_intake_staging",
+            "--loop",
+        ]
+        assert "check_intake_staging" in " ".join(sweeper["healthcheck"]["test"])
+        mounts = [_resolved(volume) for volume in sweeper.get("volumes") or []]
+        assert [m.split(":")[1] for m in mounts] == [UPLOAD_TARGET], model["name"]
+        assert not mounts[0].endswith(":ro"), f"{model['name']}: the sweeper cannot delete"
+        web_source = next(m for m in services["web"]["volumes"] if UPLOAD_TARGET in m)
+        assert mounts[0].split(":", 1)[0] == web_source.split(":", 1)[0], model["name"]
+        assert sweeper["environment"]["SEED_DEV_DATA"] == "0"
+        assert sweeper["environment"]["JURISTID_RUNTIME"] == "deployed"
+        assert sweeper["depends_on"] == {"db": {"condition": "service_healthy"}}
+
+
 def test_the_rehearsal_has_the_same_upload_topology(
     compose: dict[str, Any], rehearsal: dict[str, Any]
 ) -> None:
@@ -453,7 +488,11 @@ def test_the_database_publishes_nothing_and_has_no_password_in_the_file(
 ) -> None:
     database = compose["services"]["db"]
     assert "ports" not in database
-    assert "POSTGRES_PASSWORD" not in database.get("environment", {})
+    # Named, since ADR 0179, but only as an interpolation the operator fills from
+    # the environment file when a cluster is initialised — never a value.
+    assert database.get("environment", {}).get("POSTGRES_PASSWORD", "${POSTGRES_PASSWORD:-}") == (
+        "${POSTGRES_PASSWORD:-}"
+    )
 
 
 # -- how it runs -----------------------------------------------------------
@@ -683,9 +722,12 @@ def test_the_database_image_pins_its_major(compose: dict[str, Any]) -> None:
 
     A dump taken from PostgreSQL 18 needs an 18 server to read it, and a
     silently newer major would be discovered on the day a backup is needed.
-    Minor versions inside 18 are welcome; the tag stops the major from moving.
+    Minor versions inside 18 are welcome; the tag stops the major from moving,
+    and the digest beside it (ADR 0179) stops anything moving without an edit.
     """
-    assert compose["services"]["db"]["image"] == "postgres:18"
+    image = compose["services"]["db"]["image"]
+    assert image.partition("@")[0] == "postgres:18"
+    assert image.partition("@")[2].startswith("sha256:")
 
 
 def test_the_tunnel_waits_for_a_web_process_that_answers(

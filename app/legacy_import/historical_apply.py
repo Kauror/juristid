@@ -606,8 +606,9 @@ def _materialise_one(
         report.materialisations_skipped += 1
         return
 
-    path = Path(archive.pages_root) / link.source_page.page_key / resource.archive_relative_path
-    content = path.read_bytes()
+    # Through the archive, never a bare join: both strings came from the
+    # archive's JSON, and the read refuses traversal and links (docs/adr/0178).
+    content = archive.read_resource_at(link.source_page.page_key, resource.archive_relative_path)
 
     filename = resource.original_filename
     mime_type = mime_type_for(filename)

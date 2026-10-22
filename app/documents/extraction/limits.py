@@ -27,6 +27,7 @@ from typing import IO
 
 from django.conf import settings
 
+from app.documents.extraction.base import ParseResult
 from app.documents.extraction.errors import ExtractionFailed
 
 
@@ -43,6 +44,14 @@ class Limits:
     max_email_attachments: int
     max_email_depth: int
     max_xlsx_fragments_per_sheet: int
+    max_table_rows: int
+    max_table_columns: int
+    max_table_cells: int
+    max_table_cell_characters: int
+    max_csv_bytes: int
+    max_csv_record_characters: int
+    max_email_body_characters: int
+    max_fragments: int
 
     @classmethod
     def from_settings(cls) -> Limits:
@@ -56,6 +65,14 @@ class Limits:
             max_email_attachments=settings.EXTRACTION_MAX_EMAIL_ATTACHMENTS,
             max_email_depth=settings.EXTRACTION_MAX_EMAIL_DEPTH,
             max_xlsx_fragments_per_sheet=settings.EXTRACTION_MAX_XLSX_FRAGMENTS_PER_SHEET,
+            max_table_rows=settings.EXTRACTION_MAX_TABLE_ROWS,
+            max_table_columns=settings.EXTRACTION_MAX_TABLE_COLUMNS,
+            max_table_cells=settings.EXTRACTION_MAX_TABLE_CELLS,
+            max_table_cell_characters=settings.EXTRACTION_MAX_TABLE_CELL_CHARACTERS,
+            max_csv_bytes=settings.EXTRACTION_MAX_CSV_BYTES,
+            max_csv_record_characters=settings.EXTRACTION_MAX_CSV_RECORD_CHARACTERS,
+            max_email_body_characters=settings.EXTRACTION_MAX_EMAIL_BODY_CHARACTERS,
+            max_fragments=settings.EXTRACTION_MAX_FRAGMENTS,
         )
 
 
@@ -124,6 +141,143 @@ def guard_character_budget(total: int, limits: Limits) -> None:
             "character_limit",
             f"Eraldatud tekst ületab {limits.max_characters} märgi piiri.",
         )
+
+
+class CharacterBudget:
+    """One running total for a parser that builds its text from many pieces.
+
+    ``guard_character_budget`` checks a total the caller keeps; this keeps it,
+    so a parser assembling a message from a subject, four address lists and a
+    body charges each piece as it is made rather than adding them up at the
+    end, after the allocation the budget exists to prevent (csf_8da83d23).
+    """
+
+    def __init__(self, limits: Limits) -> None:
+        self._limits = limits
+        self.used = 0
+
+    def charge(self, text: str) -> str:
+        self.used += len(text)
+        guard_character_budget(self.used, self._limits)
+        return text
+
+    def charge_all(self, texts: list[str]) -> list[str]:
+        for text in texts:
+            self.charge(text)
+        return texts
+
+
+class TableBudget:
+    """What reading a spreadsheet or a CSV may *visit*, empty cells included.
+
+    The character budget only counts text that comes out, and a used range of
+    a million blank rows produces none — so a workbook declaring
+    ``A1:XFD1048576`` around one styled cell cost seventeen billion cell
+    visits and no budget at all (csf_a74bfe6e). This counts the walk itself:
+    rows per sheet, cells per row, and cells across the whole file.
+
+    ``declared`` is the cheap check, made from the worksheet's own dimension
+    record before a single row is read; ``visit`` is the one that holds when
+    the record is absent or understates the sheet.
+    """
+
+    def __init__(self, limits: Limits) -> None:
+        self._limits = limits
+        self.cells = 0
+
+    def declared(self, rows: int | None, columns: int | None, where: str) -> None:
+        limits = self._limits
+        rows = rows or 0
+        columns = columns or 0
+        if (
+            rows > limits.max_table_rows
+            or columns > limits.max_table_columns
+            or rows * columns > limits.max_table_cells - self.cells
+        ):
+            raise ExtractionFailed(
+                "sheet_dimension_limit",
+                f"{where} kasutatud ala on {rows} rida × {columns} veergu, mis ületab "
+                f"lubatud piiri ({limits.max_table_rows} rida, {limits.max_table_columns} "
+                f"veergu, {limits.max_table_cells} lahtrit). Originaal on alles.",
+            )
+
+    def visit(self, row_number: int, width: int, where: str) -> None:
+        limits = self._limits
+        if row_number > limits.max_table_rows:
+            raise ExtractionFailed(
+                "table_row_limit",
+                f"{where} on üle {limits.max_table_rows} rea. Originaal on alles.",
+            )
+        if width > limits.max_table_columns:
+            raise ExtractionFailed(
+                "table_column_limit",
+                f"{where} reas {row_number} on {width} lahtrit, lubatud on "
+                f"{limits.max_table_columns}. Originaal on alles.",
+            )
+        # An empty row is still a step of the walk, so it is charged one cell.
+        self.cells += max(width, 1)
+        if self.cells > limits.max_table_cells:
+            raise ExtractionFailed(
+                "table_cell_limit",
+                f"Tabelis on üle {limits.max_table_cells} lahtri. Originaal on alles.",
+            )
+
+    def cell(self, text: str, where: str) -> str:
+        if len(text) > self._limits.max_table_cell_characters:
+            raise ExtractionFailed(
+                "cell_character_limit",
+                f"{where} lahter on pikem kui {self._limits.max_table_cell_characters} märki.",
+            )
+        return text
+
+
+def guard_parse_result(result: ParseResult, limits: Limits) -> None:
+    """The limits every parser's *output* must fit, whichever parser made it.
+
+    Each parser charges its own budgets while it works, because that is where
+    an allocation can still be avoided. This is the second line: one check on
+    the finished result, in the one path every parse goes through
+    (``orchestrator.parse_source``), so a parser that forgets — or one written
+    next year — cannot hand the database more text, more fragment rows or
+    more metadata than the limits allow. It refuses; it never trims.
+    """
+    fragments = 0
+    characters = 0
+    described = 0
+    for payload in result.derivatives:
+        described += _metadata_characters(payload.metadata)
+        for fragment in payload.fragments:
+            fragments += 1
+            characters += len(fragment.text)
+            described += len(fragment.locator_label) + _metadata_characters(fragment.locator)
+    if fragments > limits.max_fragments:
+        raise ExtractionFailed(
+            "fragment_limit",
+            f"Eraldatud tekst koosneb {fragments} osast, lubatud on {limits.max_fragments}.",
+        )
+    guard_character_budget(characters, limits)
+    if described > limits.max_characters:
+        raise ExtractionFailed(
+            "metadata_limit",
+            f"Eraldatud metaandmed ületavad {limits.max_characters} märgi piiri.",
+        )
+
+
+def _metadata_characters(value: object) -> int:
+    """Characters in a JSON-shaped value, walked without recursion."""
+    total = 0
+    stack = [value]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, str):
+            total += len(item)
+        elif isinstance(item, dict):
+            for key, nested in item.items():
+                total += len(str(key))
+                stack.append(nested)
+        elif isinstance(item, list | tuple | set | frozenset):
+            stack.extend(item)
+    return total
 
 
 def configure_image_safety(limits: Limits) -> None:

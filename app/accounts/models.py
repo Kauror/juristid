@@ -504,6 +504,18 @@ class AccountCredentialToken(BaseModel):
         related_name="credential_tokens_issued",
         verbose_name="väljastas",
     )
+    #: A digest of the account's credential state when the link was issued —
+    #: its password hash, login address and active flag — read under the
+    #: account's row lock (`tokens.credential_stamp`). A link is good only
+    #: while the stamp is unchanged: a password set or changed, a new login
+    #: address or a deactivation all move it, and every link issued before that
+    #: is dead — including one a delayed mail job minted after the change. A
+    #: role or permission change does not move it: an invitation sent before an
+    #: administrator adjusts the new colleague's rights stays good
+    #: (`app.accounts.tokens`, docs/adr/0180 §5).
+    credential_stamp = models.CharField(
+        max_length=64, blank=True, default="", db_default="", verbose_name="volituste jäljend"
+    )
 
     class Meta:
         verbose_name = "ühekordne link"
@@ -516,6 +528,17 @@ class AccountCredentialToken(BaseModel):
             models.CheckConstraint(
                 condition=models.Q(expires_at__gt=models.F("created_at")),
                 name="accounts_token_expires_after_issue",
+            ),
+            # At most one live link per person and purpose. `tokens.issue`
+            # supersedes the old one under the account's lock; this is the
+            # guarantee if anything ever inserts without it. "Live" is unused
+            # and not invalidated — expiry is a moment, not a column a partial
+            # index can read, and an expired link is invalidated by the next
+            # issue anyway.
+            models.UniqueConstraint(
+                fields=["user", "purpose"],
+                condition=models.Q(used_at__isnull=True, invalidated_at__isnull=True),
+                name="accounts_token_one_live_per_purpose",
             ),
         ]
 

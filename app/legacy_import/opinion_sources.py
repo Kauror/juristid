@@ -46,6 +46,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from app.legacy_import import limits as source_limits
+from app.legacy_import import safe_paths
+from app.legacy_import.limits import InflationBudget, SourceLimitExceeded, SourceLimits
+from app.legacy_import.safe_paths import UnsafeSourcePath
+
 #: `YYYY-MM-DD - Recipient - Title.pdf`, the opinions archive's own convention.
 ARCHIVE_NAME = re.compile(r"^(\d{4})-(\d{2})-(\d{2})\s+-\s+(.*?)\s+-\s+(.+)\.pdf$", re.DOTALL)
 
@@ -359,6 +364,11 @@ def _safe_relative_path(name: str) -> str:
     ``Opinions/./x.pdf`` and ``Opinions/x.pdf`` become one identity while
     remaining two entries, and `archive_relative_path` is part of an
     occurrence's identity.
+
+    A ZIP member name is an identity here, never a file-system path: anything
+    that opens a file by one goes through `safe_paths`, which applies the full
+    rules (docs/adr/0178). The rules here stay exactly what catalogued
+    archives were planned under, so no stored identity changes meaning.
     """
     if not name or name.startswith("/") or "\\" in name:
         raise OpinionSourceError(f"Refusing an unsafe archive entry name: {name!r}")
@@ -434,32 +444,57 @@ def read_opinion_archive(path: Path) -> tuple[str, list[ArchiveOccurrence]]:
     Accepts a ZIP or a directory. Neither is modified and nothing is extracted:
     the reconciliation needs hashes and names, and the bytes are read again
     later, once, only for the occurrences that become evidence.
+
+    Both are read within `limits.current_limits` — member count, declared and
+    actual inflated sizes, compression ratio — and refused past them.
     """
     if not path.exists():
         raise OpinionSourceError(f"{path} does not exist.")
-    if path.is_dir():
-        return _read_directory(path)
-    return file_sha256(path), list(_read_zip(path))
+    try:
+        if path.is_dir():
+            return _read_directory(path)
+        occurrences = list(_read_zip(path))
+    except (SourceLimitExceeded, UnsafeSourcePath) as error:
+        raise OpinionSourceError(str(error)) from error
+    return file_sha256(path), occurrences
+
+
+def _open_zip(path: Path, limits: SourceLimits) -> zipfile.ZipFile:
+    """The ZIP, opened only after its size, and checked before a member is read."""
+    source_limits.check_file_size(path, limits.max_archive_bytes, what="archive")
+    try:
+        archive = zipfile.ZipFile(path)
+    except zipfile.BadZipFile as error:
+        raise OpinionSourceError(f"{path.name} is not a readable ZIP archive: {error}") from error
+    try:
+        source_limits.check_opinion_zip(path, archive, limits)
+    except BaseException:
+        archive.close()
+        raise
+    return archive
 
 
 def _read_zip(path: Path) -> Iterator[ArchiveOccurrence]:
+    limits = source_limits.current_limits()
     seen: dict[str, str] = {}
-    with zipfile.ZipFile(path) as archive:
+    budget = source_limits.archive_budget(limits)
+    with _open_zip(path, limits) as archive:
         for info in archive.infolist():
             entry = _canonical_zip_entry(info, seen)
             if entry is None:
                 continue
             relative, encoding = entry
-            data = archive.read(info)
+            # Streamed and counted, never trusted to its declared size.
+            digest, size, head = budget.digest(archive, info)
             base = posixpath.basename(relative)
             parsed_date, recipient, title = _parse_archive_name(base)
             yield ArchiveOccurrence(
                 relative_path=relative,
                 original_filename=base,
                 filename_encoding=encoding,
-                sha256=hashlib.sha256(data).hexdigest(),
-                size_bytes=len(data),
-                detected_type=detect_type(data[:8]),
+                sha256=digest,
+                size_bytes=size,
+                detected_type=detect_type(head),
                 filename_date=parsed_date,
                 filename_recipient=recipient,
                 filename_title=title,
@@ -472,14 +507,27 @@ def _read_directory(root: Path) -> tuple[str, list[ArchiveOccurrence]]:
     The manifest hash is over (path, sha256) pairs in sorted order, which is the
     same identity a ZIP's hash provides: change any file and the plan will
     refuse to apply (Stage-2H brief 48).
+
+    A link or a special file anywhere in the folder is refused, not skipped,
+    and every file is opened without following one (docs/adr/0178).
     """
+    limits = source_limits.current_limits()
+    entries = sorted(safe_paths.iter_files(root))
+    if len(entries) > limits.max_archive_members:
+        raise SourceLimitExceeded(
+            f"The archive has {len(entries)} files; the limit is {limits.max_archive_members}."
+        )
+    total = 0
     occurrences: list[ArchiveOccurrence] = []
-    for entry in sorted(p for p in root.rglob("*") if p.is_file()):
+    for entry in entries:
         relative = entry.relative_to(root).as_posix()
         _safe_relative_path(relative)
-        digest = file_sha256(entry)
-        with entry.open("rb") as handle:
-            head = handle.read(8)
+        digest, size, head = _digest_contained(root, relative, limits.max_member_bytes)
+        total += size
+        if total > limits.max_total_uncompressed_bytes:
+            raise SourceLimitExceeded(
+                f"The archive holds more than {limits.max_total_uncompressed_bytes} bytes."
+            )
         parsed_date, recipient, title = _parse_archive_name(entry.name)
         occurrences.append(
             ArchiveOccurrence(
@@ -487,7 +535,7 @@ def _read_directory(root: Path) -> tuple[str, list[ArchiveOccurrence]]:
                 original_filename=entry.name,
                 filename_encoding="filesystem",
                 sha256=digest,
-                size_bytes=entry.stat().st_size,
+                size_bytes=size,
                 detected_type=detect_type(head),
                 filename_date=parsed_date,
                 filename_recipient=recipient,
@@ -496,6 +544,24 @@ def _read_directory(root: Path) -> tuple[str, list[ArchiveOccurrence]]:
         )
     manifest = "\n".join(f"{o.relative_path}\t{o.sha256}" for o in occurrences)
     return hashlib.sha256(manifest.encode("utf-8")).hexdigest(), occurrences
+
+
+def _digest_contained(root: Path, relative: str, maximum: int) -> tuple[str, int, bytes]:
+    """(SHA-256, size, first 8 bytes) of one file in a directory archive, in one pass."""
+    digest = hashlib.sha256()
+    size = 0
+    head = b""
+    with safe_paths.open_file(root, relative) as handle:
+        for block in safe_paths.stream_chunks(handle):
+            size += len(block)
+            if size > maximum:
+                raise SourceLimitExceeded(
+                    f"The archive file {relative!r} is larger than {maximum} bytes."
+                )
+            if len(head) < 8:
+                head = (head + block)[:8]
+            digest.update(block)
+    return digest.hexdigest(), size, head
 
 
 # ---------------------------------------------------------------------------
@@ -595,8 +661,13 @@ def _sheet_rows(book: Any, name: str) -> list[dict[str, Any]]:
         header = [str(cell) if cell is not None else "" for cell in next(rows)]
     except StopIteration:
         return []
+    # read_only streams rows, so the row cap is enforced as they arrive: a
+    # sheet without a declared range has no extent to check in advance.
+    maximum = source_limits.current_limits().max_sheet_rows
     out: list[dict[str, Any]] = []
-    for values in rows:
+    for count, values in enumerate(rows, start=2):
+        if count > maximum:
+            raise OpinionSourceError(f"Sheet {name!r} has more than {maximum} rows, the limit.")
         record = dict(zip(header, values, strict=False))
         if any(value not in (None, "") for value in record.values()):
             out.append(record)
@@ -615,8 +686,17 @@ def read_kodadash_artifact(path: Path) -> tuple[str, list[KodaDashRow]]:
 
     if not path.exists():
         raise OpinionSourceError(f"{path} does not exist.")
+    try:
+        source_limits.check_workbook_file(path)
+    except SourceLimitExceeded as error:
+        raise OpinionSourceError(str(error)) from error
     digest = file_sha256(path)
     book = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    try:
+        source_limits.check_loaded_workbook(path.name, book)
+    except SourceLimitExceeded as error:
+        book.close()
+        raise OpinionSourceError(str(error)) from error
 
     binding = _sheet_rows(book, BINDING_SHEET)
     if not binding:
@@ -701,8 +781,13 @@ class ArchiveReader:
         self._path = path
         self._zip: zipfile.ZipFile | None = None
         self._entries: dict[str, zipfile.ZipInfo] = {}
+        self._limits = source_limits.current_limits()
+        self._budget: InflationBudget = source_limits.archive_budget(self._limits)
         if path.is_file():
-            self._zip = zipfile.ZipFile(path)
+            try:
+                self._zip = _open_zip(path, self._limits)
+            except SourceLimitExceeded as error:
+                raise OpinionSourceError(str(error)) from error
             seen: dict[str, str] = {}
             for info in self._zip.infolist():
                 entry = _canonical_zip_entry(info, seen)
@@ -710,12 +795,22 @@ class ArchiveReader:
                     self._entries[entry[0]] = info
 
     def read(self, relative_path: str) -> bytes | None:
-        if self._zip is not None:
-            info = self._entries.get(relative_path)
-            if info is None:
+        """One occurrence's bytes, or None if the archive does not hold it.
+
+        A ZIP member is inflated in chunks against the run's budget; a file in
+        a directory archive is opened without following links, and a path
+        that is unsafe, or a link, is refused rather than reported as absent.
+        """
+        try:
+            if self._zip is not None:
+                info = self._entries.get(relative_path)
+                if info is None:
+                    return None
+                return self._budget.read(self._zip, info)
+            if safe_paths.lookup(self._path, relative_path) is not safe_paths.Kind.FILE:
                 return None
-            return self._zip.read(info)
-        candidate = self._path / relative_path
-        if not candidate.is_file():
-            return None
-        return candidate.read_bytes()
+            return safe_paths.read_bytes(
+                self._path, relative_path, max_bytes=self._limits.max_member_bytes
+            )
+        except (SourceLimitExceeded, UnsafeSourcePath) as error:
+            raise OpinionSourceError(str(error)) from error

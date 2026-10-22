@@ -243,6 +243,14 @@ check_one_membership() {
       ;;
   esac
 
+  # Covered by the set's checksums, or level 1 said nothing about it. The
+  # inventory decides what a restore writes, so a list SHA256SUMS does not name
+  # could be edited in place without breaking a single checksum.
+  case "$CHECKSUMMED" in
+    *" $inventory_name "*) : ;;
+    *) die "$label's membership inventory '$inventory_name' is not covered by SHA256SUMS. The backup always checksums it; a list that is not covered can be changed without any check noticing, so what this set would restore is unproven." ;;
+  esac
+
   inventory="$SET_DIR/$inventory_name"
   require_file "$inventory" "$label membership inventory"
 
@@ -278,6 +286,41 @@ check_one_membership() {
   note "  $label: $actual_files member(s), $actual_bytes byte(s), every one present."
 }
 
+# --------------------------------------------------------------------------
+# What kind of objects the pools hold
+# --------------------------------------------------------------------------
+#
+# Every check above asks about *regular files*, and `[ -f ]` and `find -type f`
+# are both satisfied by — or blind to — a symbolic link. A pool holding a link
+# named like a member passes membership by pointing at any regular file on the
+# host, and a restore would carry it into the immutable evidence tree, where the
+# application follows it (#14). The backup writes regular files in directories
+# and nothing else, so anything else in a pool is refused, wherever it is: a
+# pre-membership restore copies the whole pool, and a link to a directory makes
+# every path beneath it a path somewhere else.
+#
+# This is about the *kind* of object and not about its bytes. Somebody able to
+# rewrite both a pool and the set's SHA256SUMS can still forge content; see
+# deploy/unraid-main/RECOVERY.md, "What a restore refuses to copy".
+check_one_pool_objects() {
+  local label="$1" pool="$2" offender
+  # Absence is the mirror and membership checks' to report, with their own words.
+  if [ ! -e "$pool" ] && [ ! -L "$pool" ]; then
+    return 0
+  fi
+  [ ! -L "$pool" ] ||
+    die "the $label byte pool at $pool is a symbolic link. The backup creates it as a directory; a link there makes every object this set names an object somewhere else. Do not restore from this backup root."
+  if offender="$(tree_first_unsafe_object "$pool")"; then
+    die "the $label byte pool holds '$offender', which is not a regular file or a directory — a symbolic link, FIFO, socket or device. The backup writes none of these, so something else put it there, and a restore must not carry it into the evidence store. Do not restore from this backup root until it has been investigated."
+  fi
+  note "  $label: regular files and directories only"
+}
+
+check_pool_objects() {
+  check_one_pool_objects "evidence" "$BACKUP_ROOT/evidence"
+  check_one_pool_objects "legacy-source" "$BACKUP_ROOT/legacy-source"
+}
+
 check_mirrors() {
   check_one_mirror "evidence" "evidence_mirror" "$BACKUP_ROOT/evidence"
   check_one_mirror "legacy-source" "legacy_source_mirror" "$BACKUP_ROOT/legacy-source"
@@ -302,6 +345,44 @@ step "Level 1 — the files are intact"
 
 looks_like_custom_dump "$SET_DIR/database.dump" ||
   die "database.dump is empty or is not a PostgreSQL custom-format archive."
+
+# The set's own files are regular files, not links. `sha256sum` and `[ -f ]`
+# both follow a link, so a set whose dump or inventory is a link to a file
+# elsewhere would verify against whatever that file holds today (#14).
+if offender="$(tree_first_unsafe_object "$SET_DIR")"; then
+  die "the set holds '$offender', which is not a regular file — a symbolic link, FIFO, socket or device. The backup writes regular files only. Do not restore from this set."
+fi
+
+# SHA256SUMS is read for shape before anything trusts it. Every line the backup
+# writes is `<sha256>  <name>` for a plain name inside the set, and it always
+# names the dump and the manifest. An absolute path or a `..` would make the
+# check vouch for a file outside the set, and a list that leaves out the dump
+# makes "checksums match" a statement about nothing.
+#
+# This is shape, not authenticity. SHA256SUMS sits inside the set it describes,
+# so whoever can rewrite the set can rewrite it too; see
+# deploy/unraid-main/RECOVERY.md, "What a restore refuses to copy".
+CHECKSUMMED=" "
+read_checksum_list() {
+  local line name shape='^[0-9a-f]{64} [ *]([A-Za-z0-9._-]+)$'
+  while IFS= read -r line || [ -n "$line" ]; do
+    if ! [[ "$line" =~ $shape ]]; then
+      die "SHA256SUMS holds a line that is not '<sha256>  <plain file name>': '$line'. The backup writes nothing else — never a path, never a name outside the set — so this list was not written by it. Do not restore from this set."
+    fi
+    name="${BASH_REMATCH[1]}"
+    case "$name" in
+      . | ..) die "SHA256SUMS names '$name', which is not a file inside the set. Do not restore from this set." ;;
+    esac
+    CHECKSUMMED="$CHECKSUMMED$name "
+  done <"$SET_DIR/SHA256SUMS"
+  for name in database.dump manifest.json; do
+    case "$CHECKSUMMED" in
+      *" $name "*) : ;;
+      *) die "SHA256SUMS does not cover $name. The backup always checksums it, so a passing check would say nothing about the file a restore depends on. Do not restore from this set." ;;
+    esac
+  done
+}
+read_checksum_list
 
 (
   cd "$SET_DIR"
@@ -339,6 +420,8 @@ fi
 # start a container to be told the evidence is missing.
 
 if [ "$CHECK_MIRRORS" -eq 1 ]; then
+  step "Level 2 — the byte pools hold regular files and nothing else"
+  check_pool_objects
   step "Level 2 — the byte pools still hold what the manifest recorded"
   check_mirrors
   step "Level 2 — every object this set names is still in the pool"

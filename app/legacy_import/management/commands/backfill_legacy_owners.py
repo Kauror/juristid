@@ -21,6 +21,7 @@ from typing import Any
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 
+from app.core.csv_safety import csv_safe_row
 from app.legacy_import.contracts import ContractError
 from app.legacy_import.owner_backfill import (
     Outcome,
@@ -162,9 +163,13 @@ class Command(BaseCommand):
         # utf-8-sig and semicolons, because the person reviewing this opens it
         # in Excel in Tallinn, where plain UTF-8 and commas both read wrongly.
         with path.open("w", encoding="utf-8-sig", newline="") as handle:
+            # Every cell through `csv_safe_row`: the values are the register's
+            # own text, and Excel is what opens this (csf_1cecc4b5be8fb1a7be4fe125).
             writer = csv.writer(handle, delimiter=";")
-            writer.writerow(["vastutaja allikas", "esinemisi"])
-            writer.writerows(sorted(plan.unresolved_values.items()))
+            writer.writerow(csv_safe_row(["vastutaja allikas", "esinemisi"]))
+            writer.writerows(
+                csv_safe_row(list(row)) for row in sorted(plan.unresolved_values.items())
+            )
         self.stdout.write("")
         self.stdout.write(f"Unidentified owner values written to {path}")
         self.stdout.write("This file contains source content and stays in local storage.")

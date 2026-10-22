@@ -31,20 +31,24 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import storages
 from django.db import transaction
-from django.db.models import Max, Q
+from django.db.models import Exists, Max, OuterRef, Q, Sum
+from django.db.models.functions import Coalesce, Least
 from django.utils import timezone
 
 from app.core.errors import DomainError
 from app.core.ids import uuid7
+from app.documents import pending
 from app.documents.enums import ExtractionState
 from app.documents.uploads import AcceptedUpload
 from app.matters.intake import MAX_INTAKE_FILES, file_incoming, role_for
@@ -70,6 +74,123 @@ STORAGE_PREFIX = "intake"
 
 def staging_storage() -> Any:
     return storages[settings.PENDING_UPLOAD_STORAGE_ALIAS]
+
+
+#: The advisory-lock namespace for staging quotas, in the two-integer form
+#: `app.search.indexing` (24601), `app.organisations.services` (24602) and
+#: `app.matters.duplicate_intake` (24603) use. One key: the quotas are checked
+#: and the bytes written under a single deployment-wide lock (docs/adr/0177).
+STAGING_QUOTA_LOCK = pending.STORAGE_QUOTA_LOCK
+
+#: What the person is told when staging is full. The global sentence is one
+#: sentence for three causes — other people's forms, the deployment's ceiling
+#: and the disk itself — because which of them it was is the operator's to know
+#: (logged), not something a refusal should describe to whoever asks.
+OWNER_SESSIONS_FULL = (
+    "Sul on juba {limit} pooleli «Uus teema» vormi, kuhu on faile lisatud. "
+    "Lõpeta mõni neist või oota, kuni see aegub, ja lisa fail siis uuesti."
+)
+OWNER_BYTES_FULL = (
+    "Sinu pooleli vormidele lisatud failide maht on täis (kuni {limit_mb} MB). "
+    "Lõpeta pooleli teema või proovi mõne tunni pärast uuesti."
+)
+STAGING_FULL = (
+    "Failide ajutine hoidla on praegu täis. Proovi hiljem uuesti; kui see kordub, "
+    "anna teada süsteemi haldajale."
+)
+
+
+@dataclass(frozen=True)
+class StagingUsage:
+    """What staging holds now, for one person and for everybody."""
+
+    owner_active_sessions: int
+    owner_bytes: int
+    active_sessions: int
+    bytes: int
+
+
+def _holding_files() -> Any:
+    return Exists(MatterIntakeFile.objects.filter(session=OuterRef("pk")))
+
+
+def staging_usage(*, owner: Any, excluding: Any = None) -> StagingUsage:
+    """Counted from the rows, which is what makes the answer transactional.
+
+    *Active* is a form that can still be used and already holds a file: an
+    empty render is a row and no bytes (`open_session` makes one per render),
+    and counting those would refuse somebody for having reloaded a page.
+    *Bytes* are every staged file of a form not yet consumed — taken back off
+    the form and expired ones included, because their bytes stay on the volume
+    until the sweep removes them. A consumed form's bytes are deleted after its
+    commit (`consume_session`), so they are not counted.
+
+    ``excluding`` is the form the caller is staging into, so that a form is not
+    counted against itself when it becomes active.
+    """
+    active = MatterIntakeSession.objects.usable().filter(_holding_files())
+    if excluding is not None:
+        active = active.exclude(pk=excluding.pk)
+    unconsumed = MatterIntakeFile.objects.filter(session__consumed_at__isnull=True)
+
+    def total(files: Any) -> int:
+        return int(files.aggregate(total=Coalesce(Sum("size_bytes"), 0))["total"])
+
+    return StagingUsage(
+        owner_active_sessions=active.filter(owner=owner).count(),
+        owner_bytes=total(unconsumed.filter(session__owner=owner)),
+        active_sessions=active.count(),
+        bytes=total(unconsumed),
+    )
+
+
+def staging_free_bytes(storage: Any = None) -> int | None:
+    """Free space on the staging volume, or ``None`` for a non-filesystem store."""
+    return pending.free_bytes(storage or staging_storage())
+
+
+def quota_refusal(*, owner: Any, session: MatterIntakeSession | None, incoming_bytes: int) -> str:
+    """The refusal for staging ``incoming_bytes`` more into ``session``, or ``""``.
+
+    Authoritative only under `STAGING_QUOTA_LOCK`, which `stage_uploads` holds;
+    the upload view also asks it once, unlocked, with the sizes the request
+    *declared*, so a request that cannot fit is answered before its files are
+    read (csf_3942255b466a4e213b958b16).
+    """
+    if incoming_bytes <= 0:
+        return ""
+    usage = staging_usage(owner=owner, excluding=session)
+    becomes_active = session is None or not session.files.exists()
+
+    if becomes_active and usage.owner_active_sessions >= (
+        settings.INTAKE_STAGING_MAX_ACTIVE_SESSIONS_PER_OWNER
+    ):
+        return OWNER_SESSIONS_FULL.format(
+            limit=settings.INTAKE_STAGING_MAX_ACTIVE_SESSIONS_PER_OWNER
+        )
+    if usage.owner_bytes + incoming_bytes > settings.INTAKE_STAGING_MAX_BYTES_PER_OWNER:
+        return OWNER_BYTES_FULL.format(
+            limit_mb=settings.INTAKE_STAGING_MAX_BYTES_PER_OWNER // (1024 * 1024)
+        )
+
+    reason = ""
+    if becomes_active and usage.active_sessions >= settings.INTAKE_STAGING_MAX_ACTIVE_SESSIONS:
+        reason = f"active sessions {usage.active_sessions}"
+    elif usage.bytes + incoming_bytes > settings.INTAKE_STAGING_MAX_BYTES:
+        reason = f"staged bytes {usage.bytes} + {incoming_bytes}"
+    else:
+        free = staging_free_bytes()
+        if free is not None and free - incoming_bytes < settings.INTAKE_STAGING_MIN_FREE_BYTES:
+            reason = f"free bytes {free} - {incoming_bytes}"
+    if reason:
+        logger.warning("intake staging refused at the deployment limit: %s", reason)
+        return STAGING_FULL
+    return ""
+
+
+def _lock_staging_quotas() -> None:
+    # The same lock `app.documents.pending.hold` takes: both write to one volume.
+    pending.lock_storage_quota()
 
 
 def _expiry() -> Any:
@@ -221,18 +342,49 @@ def stage_uploads(
     error propagates. What still escapes — a rollback *after* this returns —
     sits under the session's own prefix, and the sweeper removes that prefix
     whole (:func:`_discard_objects`).
+
+    **Quotas before bytes** (csf_3942255b466a4e213b958b16, docs/adr/0177). The
+    twenty-file cap is per form, and a form is one render, so it bounded
+    nothing on its own. Every stager first takes one deployment-wide advisory
+    lock (`STAGING_QUOTA_LOCK`), then the session row; under both it counts what
+    staging already holds — per person and in total — checks the free space on
+    the volume, and only then writes. The rows this transaction inserts are the
+    reservation: the next stager waits on the lock until they are committed and
+    counts them, and a write that fails takes them with it on rollback, its
+    bytes discarded below. A request that does not fit writes nothing and is
+    answered with a sentence, like the twenty-file cap.
     """
+    _lock_staging_quotas()
     session = session or MatterIntakeSession.objects.create(owner=owner, expires_at=_expiry())
     MatterIntakeSession.objects.select_for_update(no_key=True).filter(pk=session.pk).exists()
 
     existing = session.files.count()
     next_ordinal = (session.files.aggregate(top=Max("ordinal"))["top"] or 0) + 1
+    refusal = ""
+    room = max(0, MAX_INTAKE_FILES - existing)
+    if len(uploads) > room:
+        # The same ceiling `validate_uploads` enforces, applied to the running
+        # total rather than to one request, because staging accepts files a few
+        # at a time. Said rather than silently dropped: a file that vanished
+        # without a word is the defect the held-upload work was about.
+        refusal = f"Korraga saab lisada kuni {MAX_INTAKE_FILES} faili."
+        uploads = uploads[:room]
+    if uploads:
+        over = quota_refusal(
+            owner=owner,
+            session=session,
+            incoming_bytes=sum(len(upload.content) for upload in uploads),
+        )
+        if over:
+            return StagingResult(
+                session=session, staged=(), refusal=" ".join(filter(None, (refusal, over)))
+            )
+
     storage = staging_storage()
     staged: list[MatterIntakeFile] = []
     written: list[str] = []
-    refusal = ""
     try:
-        refusal = _stage_each(session, uploads, existing, next_ordinal, storage, staged, written)
+        _stage_each(session, uploads, next_ordinal, storage, staged, written)
     except BaseException:
         for key in written:
             _discard_key(storage, key)
@@ -244,28 +396,23 @@ def stage_uploads(
 def _stage_each(
     session: MatterIntakeSession,
     uploads: list[AcceptedUpload],
-    existing: int,
     next_ordinal: int,
     storage: Any,
     staged: list[MatterIntakeFile],
     written: list[str],
-) -> str:
-    """Write each file and its row; ``written`` records every key as it lands."""
-    refusal = ""
+) -> None:
+    """Write each file and its row; ``written`` records every key before it lands.
 
+    Before, not after: a save that fails half-way leaves a partial object under
+    the name it was given and returns nothing, and the caller can only discard
+    what it was told about.
+    """
     for upload in uploads:
-        if existing + len(staged) >= MAX_INTAKE_FILES:
-            # The same ceiling `validate_uploads` enforces, applied to the
-            # running total rather than to one request, because staging accepts
-            # files a few at a time. Said rather than silently dropped: a file
-            # that vanished without a word is the defect the held-upload work
-            # was about.
-            if not refusal:
-                refusal = f"Korraga saab lisada kuni {MAX_INTAKE_FILES} faili."
-            break
-
-        key = storage.save(f"{STORAGE_PREFIX}/{session.pk}/{uuid7()}", ContentFile(upload.content))
-        written.append(key)
+        name = f"{STORAGE_PREFIX}/{session.pk}/{uuid7()}"
+        written.append(name)
+        key = storage.save(name, ContentFile(upload.content))
+        if key != name:  # pragma: no cover - a uuid7 name is never taken
+            written.append(key)
         staged.append(
             MatterIntakeFile.objects.create(
                 session=session,
@@ -278,7 +425,6 @@ def _stage_each(
                 role=role_for(upload.filename),
             )
         )
-    return refusal
 
 
 def remove_file(*, session: MatterIntakeSession, file_id: Any) -> bool:
@@ -565,8 +711,9 @@ def consume_session(session: MatterIntakeSession) -> None:
     caller will ever read them again: promotion carries the bytes and not the
     reading, and the form they were for is gone. Deleting only the bytes left
     that copy in the database until an operator ran `prune_intake_staging`,
-    which nothing schedules (AUD-025). The rows themselves stay for the sweeper,
-    so a repeated submission still finds a closed door rather than an empty one.
+    which nothing scheduled then (AUD-025; docs/adr/0177 schedules it). The
+    rows themselves stay for the sweeper, so a repeated submission still finds
+    a closed door rather than an empty one.
     """
     now = timezone.now()
     MatterIntakeSession.objects.filter(pk=session.pk, consumed_at__isnull=True).update(
@@ -575,7 +722,8 @@ def consume_session(session: MatterIntakeSession) -> None:
     MatterIntakeFile.objects.filter(session_id=session.pk).filter(_still_holding_text()).update(
         **_EXTRACTED_PAYLOAD_CLEARED, updated_at=now
     )
-    _discard_objects(session)
+    for message in _discard_objects(session).errors:
+        logger.error("consumed intake staging left in place: %s", message)
 
 
 def clear_expired_intake_text() -> int:
@@ -588,8 +736,8 @@ def clear_expired_intake_text() -> int:
     text's lifetime the session's own rather than an operator's memory.
 
     **One ``UPDATE``, and only of text.** Rows, bytes, stamps and states are left
-    exactly as they were — deleting is `sweep_stale_sessions`' decision and stays
-    an operator's (task §25). The scope is the sessions `stale()` already names
+    exactly as they were — deleting is `sweep_stale_sessions`' decision, run by
+    the `intake-sweeper` service (docs/adr/0177). The scope is the sessions `stale()` already names
     — expired, or consumed but somehow still holding text because the
     after-commit clear in `consume_session` never ran — and within them only
     rows that still hold something, so a turn with nothing to clear writes
@@ -610,8 +758,25 @@ def clear_expired_intake_text() -> int:
     return holding.update(**_EXTRACTED_PAYLOAD_CLEARED, updated_at=timezone.now())
 
 
-def _discard_objects(session: MatterIntakeSession) -> int:
-    """Delete this session's stored bytes, best effort. Rows are untouched.
+@dataclass
+class Discarded:
+    """What deleting one session's staged bytes did, and what it refused to do."""
+
+    objects: int = 0
+    bytes: int = 0
+    #: Each a sentence for an operator. Non-empty means nothing of this session
+    #: was deleted: an unsafe session is left exactly as found, for a person.
+    errors: list[str] = field(default_factory=list)
+
+
+def _own_key(key: str, prefix: str) -> bool:
+    """A key directly under this session's prefix, and nothing cleverer."""
+    head, _, name = key.rpartition("/")
+    return head == prefix and name not in ("", ".", "..") and "\\" not in name
+
+
+def _discard_objects(session: MatterIntakeSession) -> Discarded:
+    """Delete this session's stored bytes. Rows are untouched.
 
     Everything under the session's own prefix, not only the keys its rows
     name. An object whose row never committed — a write whose transaction
@@ -619,23 +784,82 @@ def _discard_objects(session: MatterIntakeSession) -> int:
     it in the store for good (ENG-087). The prefix is this one session's and
     nobody else's: the scope is exactly the sessions the caller already chose,
     never a scan of the whole staging area.
+
+    **Refuses rather than follows** (csf_3942255b466a4e213b958b16). Now that a
+    timer runs this, a staging tree somebody tampered with must not become a
+    way to delete something else. A row naming a key outside its own prefix,
+    a session or ``intake`` directory that is a symbolic link or resolves
+    elsewhere, and an entry in the session's directory that is a link or not a
+    regular file are each reported, and the whole session is left untouched:
+    nothing is followed, nothing is deleted through a link, and the evidence
+    store, which this module never opens for writing, stays out of reach.
     """
     storage = staging_storage()
     prefix = f"{STORAGE_PREFIX}/{session.pk}"
+    result = Discarded()
     keys = set(session.files.exclude(storage_key="").values_list("storage_key", flat=True))
-    try:
-        _directories, names = storage.listdir(prefix)
-    except FileNotFoundError:
-        names = []
-    keys.update(f"{prefix}/{name}" for name in names)
-
-    removed = 0
     for key in sorted(keys):
-        if _discard_key(storage, key):
-            removed += 1
-    # The emptied directory itself, where the backend has directories.
-    _discard_key(storage, prefix)
-    return removed
+        if not _own_key(key, prefix):
+            result.errors.append(f"{session.pk}: a row names {key!r}, outside {prefix}/")
+    if result.errors:
+        return result
+
+    location = getattr(storage, "location", None)
+    if not location:  # pragma: no cover - every configured store is a filesystem
+        try:
+            _directories, names = storage.listdir(prefix)
+        except FileNotFoundError:
+            names = []
+        keys.update(f"{prefix}/{name}" for name in names)
+        for key in sorted(keys):
+            if _own_key(key, prefix) and _discard_key(storage, key):
+                result.objects += 1
+        return result
+
+    return _discard_directory(Path(os.path.realpath(location)), session, result)
+
+
+def _discard_directory(root: Path, session: MatterIntakeSession, result: Discarded) -> Discarded:
+    """The filesystem half of `_discard_objects`: one flat directory, no links."""
+    intake = root / STORAGE_PREFIX
+    directory = intake / str(session.pk)
+    for path in (intake, directory):
+        if path.is_symlink():
+            result.errors.append(f"{session.pk}: {path} is a symbolic link; not followed")
+            return result
+    if not os.path.lexists(directory):
+        return result
+    if not directory.is_dir() or os.path.realpath(directory) != str(directory):
+        result.errors.append(f"{session.pk}: {directory} is not a directory under {root}")
+        return result
+
+    with os.scandir(directory) as listing:
+        entries = list(listing)
+    for entry in entries:
+        if entry.is_symlink():
+            result.errors.append(f"{session.pk}: {entry.path} is a symbolic link; not followed")
+        elif not entry.is_file(follow_symlinks=False):
+            result.errors.append(f"{session.pk}: {entry.path} is not a regular file")
+    if result.errors:
+        return result
+
+    for entry in sorted(entries, key=lambda item: item.name):
+        try:
+            size = entry.stat(follow_symlinks=False).st_size
+            os.unlink(entry.path)
+        except FileNotFoundError:
+            continue
+        except OSError as error:
+            result.errors.append(f"{session.pk}: could not delete {entry.path}: {error}")
+            continue
+        result.objects += 1
+        result.bytes += size
+    if not result.errors:
+        try:
+            os.rmdir(directory)
+        except OSError:  # pragma: no cover - best effort; the rows still go
+            logger.warning("could not remove staging directory %s", directory, exc_info=True)
+    return result
 
 
 def _discard_key(storage: Any, key: str) -> bool:
@@ -659,9 +883,16 @@ class SweepReport:
     sessions: int
     files: int
     objects: int
+    bytes: int = 0
+    #: Sessions found unsafe or failing, left in place, one sentence each.
+    errors: tuple[str, ...] = ()
+    #: Stale sessions still waiting after this run: the bound, made visible.
+    remaining: int = 0
 
 
-def sweep_stale_sessions(*, limit: int = 500) -> SweepReport:
+def sweep_stale_sessions(
+    *, limit: int | None = None, max_bytes: int | None = None, dry_run: bool = False
+) -> SweepReport:
     """Delete staging nobody will ask for again: expired, or already consumed.
 
     Rows drive this, not a directory listing, and that is the difference
@@ -670,27 +901,111 @@ def sweep_stale_sessions(*, limit: int = 500) -> SweepReport:
     file has a row that says who owns it, when it expires and whether a Matter
     took it. Deciding from the row means the sweeper can never delete an object
     a live session is still pointing at, whatever the clock on the filesystem
-    says.
+    says: an unfinished form survives until its own expiry.
 
     Bytes first, then rows. An object outliving its row is a few kilobytes in a
     store that is not backed up; a row outliving its object is a form that
     offers somebody a file which is no longer there.
 
-    Deliberately *not* scheduled by this change. It is a management command an
-    operator runs, and `deploy/unraid-main/RECOVERY.md` says so — putting a
-    deletion loop into a production timer is a separate decision from writing
-    one (task §25).
+    **Bounded, idempotent and scheduled** (docs/adr/0177). One run takes at most
+    ``limit`` sessions and stops before the staged bytes it has taken would pass
+    ``max_bytes`` (it always takes one, so a single large session cannot stall
+    it). Each session is locked, re-checked as stale and deleted in its own
+    short transaction, skipping one a request holds: `stage_uploads` locks the
+    session row first, so a sweep and an upload into the same form take turns.
+    A second run over the same state finds nothing and deletes nothing. A
+    session `_discard_objects` refuses is left whole and reported in
+    ``errors``. The `intake-sweeper` service runs this every
+    ``INTAKE_STAGING_SWEEP_INTERVAL_SECONDS`` (`prune_intake_staging --loop`).
     """
-    stale = list(MatterIntakeSession.objects.stale().order_by("expires_at")[:limit])
-    if not stale:
-        return SweepReport(sessions=0, files=0, objects=0)
+    if limit is None:
+        limit = settings.INTAKE_STAGING_SWEEP_MAX_SESSIONS
+    if max_bytes is None:
+        max_bytes = settings.INTAKE_STAGING_SWEEP_MAX_BYTES
+    candidates = list(
+        MatterIntakeSession.objects.stale()
+        .annotate(staged_bytes=Coalesce(Sum("files__size_bytes"), 0))
+        .order_by("expires_at", "pk")
+        .values_list("pk", "staged_bytes")[: max(0, limit)]
+    )
+    chosen: list[Any] = []
+    planned = 0
+    for pk, staged_bytes in candidates:
+        if chosen and planned + staged_bytes > max_bytes:
+            break
+        chosen.append(pk)
+        planned += staged_bytes
 
-    objects = 0
-    files = 0
-    for session in stale:
-        objects += _discard_objects(session)
-        files += session.files.count()
+    if dry_run:
+        return SweepReport(
+            sessions=len(chosen),
+            files=MatterIntakeFile.objects.filter(session_id__in=chosen).count(),
+            objects=0,
+            bytes=planned,
+            remaining=MatterIntakeSession.objects.stale().count() - len(chosen),
+        )
 
-    MatterIntakeSession.objects.filter(pk__in=[session.pk for session in stale]).delete()
-    logger.info("swept %d stale intake sessions (%d files, %d objects)", len(stale), files, objects)
-    return SweepReport(sessions=len(stale), files=files, objects=objects)
+    sessions = files = objects = removed_bytes = 0
+    errors: list[str] = []
+    for pk in chosen:
+        with transaction.atomic():
+            session = (
+                MatterIntakeSession.objects.stale()
+                .select_for_update(skip_locked=True)
+                .filter(pk=pk)
+                .first()
+            )
+            if session is None:
+                # Already gone (another sweep), or in a request's hands now.
+                continue
+            discarded = _discard_objects(session)
+            if discarded.errors:
+                errors.extend(discarded.errors)
+                for message in discarded.errors:
+                    logger.error("intake staging sweep refused: %s", message)
+                continue
+            files += session.files.count()
+            session.delete()
+        sessions += 1
+        objects += discarded.objects
+        removed_bytes += discarded.bytes
+
+    remaining = MatterIntakeSession.objects.stale().count()
+    logger.info(
+        "swept %d stale intake sessions (%d files, %d objects, %d bytes); %d remain, %d refused",
+        sessions,
+        files,
+        objects,
+        removed_bytes,
+        remaining,
+        len(errors),
+    )
+    return SweepReport(
+        sessions=sessions,
+        files=files,
+        objects=objects,
+        bytes=removed_bytes,
+        errors=tuple(errors),
+        remaining=remaining,
+    )
+
+
+def oldest_stale_seconds() -> float | None:
+    """How long the longest-waiting stale session has been stale, or ``None``.
+
+    Stale since its consumption or its expiry, whichever came first. This is
+    what `check_intake_staging` measures: convergence, like
+    `check_search_freshness`. A sweeper with nothing to do is healthy, and one
+    that has stopped, or keeps refusing an unsafe session, goes red once
+    anything has waited too long.
+    """
+    since = (
+        MatterIntakeSession.objects.stale()
+        .annotate(since=Least("consumed_at", "expires_at"))
+        .order_by("since")
+        .values_list("since", flat=True)
+        .first()
+    )
+    if since is None:
+        return None
+    return max(0.0, (timezone.now() - since).total_seconds())

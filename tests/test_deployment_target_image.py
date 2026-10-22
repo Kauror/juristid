@@ -631,6 +631,7 @@ def test_the_identity_guard_derives_exactly_this_stacks_application_services() -
     # is still inside the image string, and the prefix is what is being matched.
     assert guard.application_services(compose["services"]) == [
         "intake-reader",
+        "intake-sweeper",
         "searchindex",
         "web",
     ]

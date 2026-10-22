@@ -136,6 +136,7 @@ def _extract_one(binary: OpinionArchiveBinary, storage: Any, report: TextReport)
     from app.documents.enums import DerivativeKind
     from app.documents.extraction.base import SourceFile
     from app.documents.extraction.errors import ExtractionFailed
+    from app.documents.extraction.limits import current_limits, guard_parse_result
     from app.documents.extraction.pdf import PdfParser
 
     try:
@@ -154,6 +155,10 @@ def _extract_one(binary: OpinionArchiveBinary, storage: Any, report: TextReport)
     )
     try:
         parsed = PdfParser().parse(source)
+        # The same postcondition `parse_source` applies to every parser's
+        # output. This path calls the parser directly, so it states the check
+        # itself rather than inheriting it (docs/adr/0176).
+        guard_parse_result(parsed, current_limits())
     except ExtractionFailed as error:
         report.failed += 1
         _record(binary, state=ArchiveTextState.FAILED, note=str(error))

@@ -84,6 +84,11 @@ MIDDLEWARE = [
     "app.core.browser_policy.BrowserPolicyMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
+    # Every audit row written while this request runs records how its actor
+    # arrived and one correlation id for the request. Early, so it wraps every
+    # middleware that writes a row; the provenance itself is read from the
+    # session when the row is written (app/audit/provenance.py, docs/adr/0180).
+    "app.audit.provenance.AuditContextMiddleware",
     "django.middleware.locale.LocaleMiddleware",
     "django.middleware.common.CommonMiddleware",
     # A 405 a view returned with no body gets the Estonian error page; inside
@@ -483,6 +488,40 @@ PENDING_UPLOAD_ROOT = Path(env("PENDING_UPLOAD_ROOT", str(BASE_DIR / "pending-up
 # that an abandoned form is not still on disk tomorrow.
 PENDING_UPLOAD_GRACE_HOURS = env_int("PENDING_UPLOAD_GRACE_HOURS", 12)
 
+# What `Uus teema` staging may hold before it refuses another file
+# (csf_3942255b466a4e213b958b16, docs/adr/0177). The twenty-file cap is per form,
+# and a form is one render, so without these one person could fill the volume
+# with fresh forms. Checked under one transaction-scoped lock before a byte is
+# written (`app.matters.intake_staging.stage_uploads`).
+#
+# "Active" is an unconsumed, unexpired form that already holds a file; an empty
+# render is a row and no bytes, and refusing it would refuse the page itself.
+# Bytes are every staged file of an unconsumed form, removed ones and expired
+# ones included, because their bytes stay on the volume until the sweep.
+INTAKE_STAGING_MAX_ACTIVE_SESSIONS_PER_OWNER = env_int(
+    "INTAKE_STAGING_MAX_ACTIVE_SESSIONS_PER_OWNER", 20
+)
+INTAKE_STAGING_MAX_BYTES_PER_OWNER = env_int("INTAKE_STAGING_MAX_BYTES_PER_OWNER", 2 * 1024**3)
+INTAKE_STAGING_MAX_ACTIVE_SESSIONS = env_int("INTAKE_STAGING_MAX_ACTIVE_SESSIONS", 200)
+INTAKE_STAGING_MAX_BYTES = env_int("INTAKE_STAGING_MAX_BYTES", 10 * 1024**3)
+# Free space the staging volume must still have *after* the file is written
+# (`shutil.disk_usage` on PENDING_UPLOAD_ROOT). On the production host this is
+# Docker's own storage, which every container shares.
+INTAKE_STAGING_MIN_FREE_BYTES = env_int("INTAKE_STAGING_MIN_FREE_BYTES", 1024**3)
+# Held uploads (a refused form's files, `app.documents.pending`) share the volume
+# and have no rows, so they get a ceiling of their own, measured on disk and
+# checked under the same lock as staging; the headroom above applies to both.
+PENDING_UPLOAD_MAX_HELD_BYTES = env_int("PENDING_UPLOAD_MAX_HELD_BYTES", 2 * 1024**3)
+
+# The scheduled sweep of expired and consumed staging (`prune_intake_staging
+# --loop`, the `intake-sweeper` service). Bounded per run by sessions and by
+# staged bytes; the health probe (`check_intake_staging`) goes red when a
+# stale session has waited longer than the last setting.
+INTAKE_STAGING_SWEEP_MAX_SESSIONS = env_int("INTAKE_STAGING_SWEEP_MAX_SESSIONS", 500)
+INTAKE_STAGING_SWEEP_MAX_BYTES = env_int("INTAKE_STAGING_SWEEP_MAX_BYTES", 5 * 1024**3)
+INTAKE_STAGING_SWEEP_INTERVAL_SECONDS = env_int("INTAKE_STAGING_SWEEP_INTERVAL_SECONDS", 900)
+INTAKE_STAGING_SWEEP_STALE_SECONDS = env_int("INTAKE_STAGING_SWEEP_STALE_SECONDS", 3600)
+
 # Where the read-only historical source material lives on the server. The
 # importer reads from here and never writes to it (Stage-2D brief 54).
 HISTORICAL_SOURCE_ROOT = env("HISTORICAL_SOURCE_ROOT", "")
@@ -544,6 +583,42 @@ EXTRACTION_MAX_IMAGE_PIXELS = env_int("EXTRACTION_MAX_IMAGE_PIXELS", 80_000_000)
 EXTRACTION_MAX_EMAIL_ATTACHMENTS = env_int("EXTRACTION_MAX_EMAIL_ATTACHMENTS", 50)
 EXTRACTION_MAX_EMAIL_DEPTH = env_int("EXTRACTION_MAX_EMAIL_DEPTH", 3)
 EXTRACTION_MAX_XLSX_FRAGMENTS_PER_SHEET = env_int("EXTRACTION_MAX_XLSX_FRAGMENTS_PER_SHEET", 500)
+
+# What reading a table may *visit*, empty cells included (docs/adr/0176). The
+# character budget above only counts text that comes out, and a worksheet whose
+# used range is a million blank rows produces none, so the walk is charged on
+# its own. Declared XLSX dimensions are checked against these before the first
+# row is read; CSV and XLSX rows are charged as they are read.
+#
+# Sized against the corpus with room to spare: the historical registers are a
+# few thousand rows by a few dozen columns (~0.1 M cells), and the existing
+# 500-fragments-per-sheet cap already stops a sheet at 25 000 rows *with text*.
+# Rows stop at Excel's own last row, so no sheet Excel can save is refused on
+# its height alone — a sheet somebody Ctrl+Down-ed to row 1 048 576 and touched
+# there still reads. The walk budget is what bounds it: 100 M visited cells is
+# about fifteen seconds of one worker, and a declared range past it (the
+# A1:XFD1048576 attack is 17 000 M) is refused before the first row. 2 000
+# columns is twice what LibreOffice writes for a full-width sheet (AMJ = 1 024).
+EXTRACTION_MAX_TABLE_ROWS = env_int("EXTRACTION_MAX_TABLE_ROWS", 1_048_576)
+EXTRACTION_MAX_TABLE_COLUMNS = env_int("EXTRACTION_MAX_TABLE_COLUMNS", 2_000)
+EXTRACTION_MAX_TABLE_CELLS = env_int("EXTRACTION_MAX_TABLE_CELLS", 100_000_000)
+# Excel itself stops a cell at 32 767 characters; 131 072 is the csv module's
+# own long-standing field limit, so no file that read before is refused by it.
+EXTRACTION_MAX_TABLE_CELL_CHARACTERS = env_int("EXTRACTION_MAX_TABLE_CELL_CHARACTERS", 131_072)
+# A CSV is decoded whole, so its size is checked before decoding. Four times the
+# character budget: a CSV larger than that cannot fit the budget unless three
+# quarters of it are separators and blanks.
+EXTRACTION_MAX_CSV_BYTES = env_int("EXTRACTION_MAX_CSV_BYTES", 32 * 1024 * 1024)
+# Raw characters one CSV record may span, quoted line breaks included. Bounds
+# the row the csv module builds before any of it can be inspected.
+EXTRACTION_MAX_CSV_RECORD_CHARACTERS = env_int("EXTRACTION_MAX_CSV_RECORD_CHARACTERS", 1_000_000)
+# The decoded body of one email, before it is flattened to text. The HTML
+# sanitiser reads about 1 MB a second, so this caps one message at ~15 s; a real
+# message body, quoted thread included, is a few hundred kilobytes.
+EXTRACTION_MAX_EMAIL_BODY_CHARACTERS = env_int("EXTRACTION_MAX_EMAIL_BODY_CHARACTERS", 16_000_000)
+# Fragment rows one file may produce, whatever parser made them. A 500-page PDF
+# is 500; a register workbook of 30 full sheets is 15 000.
+EXTRACTION_MAX_FRAGMENTS = env_int("EXTRACTION_MAX_FRAGMENTS", 50_000)
 
 # A page whose native text layer is thinner than this is treated as scanned.
 # Not zero: real government PDFs carry a header, a page number and a stamp on an

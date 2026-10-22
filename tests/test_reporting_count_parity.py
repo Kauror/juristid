@@ -53,7 +53,14 @@ def _normalised(result) -> Any:
 
 
 def _everything(context) -> dict[str, Any]:
-    return {key: _normalised(services.compute(key, context)) for key in sorted(CATALOGUE)}
+    # A metric withheld from this viewer (the archive, docs/adr/0175) is
+    # compared as withheld: it must stay withheld, and it has no number.
+    return {
+        key: "WITHHELD"
+        if services.withheld(key, context)
+        else _normalised(services.compute(key, context))
+        for key in sorted(CATALOGUE)
+    }
 
 
 @pytest.fixture

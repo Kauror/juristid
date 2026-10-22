@@ -32,7 +32,8 @@ x-logging: &bounded-logs
 
 services:
   db:
-    image: postgres:18
+    # Same digest as deploy/unraid-main/compose.yml (ADR 0179; PostgreSQL 18.6).
+    image: postgres:18@sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941
     container_name: juristid-test-db
     # JIT off for this OLTP workload (AUD-039, docs/adr/0153): it fires on the
     # planner's estimated cost and spent 150-350 ms compiling statements that
@@ -243,9 +244,9 @@ services:
       # The staged `Uus teema` files, READ-ONLY — the same volume `web` writes.
       #
       # Read-only because that is the whole of what this process does with
-      # them. Staging bytes are written by the upload view, deleted by
-      # `consume_session` after `Loo teema` and swept by
-      # `prune_intake_staging` — all three in `web`. Nothing on this side needs
+      # them. Staging bytes are written by the upload view and deleted by
+      # `consume_session` after `Loo teema`, both in `web`, and swept by
+      # `intake-sweeper` (docs/adr/0177). Nothing on this side needs
       # to change the source it is reading, so nothing on this side is given
       # the ability to.
       - pending_uploads:/app/pending-uploads:ro
@@ -286,6 +287,41 @@ services:
     networks:
       - internal
 
+  # The `Uus teema` staging sweeper. The rehearsal counterpart of the main
+  # stack's service; see deploy/unraid-main/compose.yml and docs/adr/0177. It
+  # mounts the staging volume read-write and nothing else.
+  intake-sweeper:
+    image: juristid-test-web:${JURISTID_IMAGE_TAG:-local}
+    container_name: juristid-test-intake-sweeper
+    restart: unless-stopped
+    logging: *bounded-logs
+    healthcheck:
+      test: ["CMD", "python", "manage.py", "check_intake_staging", "--quiet"]
+      interval: 300s
+      timeout: 15s
+      start_period: 60s
+      retries: 3
+    command:
+      - python
+      - manage.py
+      - prune_intake_staging
+      - --loop
+    env_file:
+      - ${JURISTID_ENV_FILE:-/mnt/user/appdata/juristid-test/config/juristid.env}
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      SEED_DEV_DATA: "0"
+      JURISTID_RUNTIME: deployed
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - pending_uploads:/app/pending-uploads
+    networks:
+      - internal
+
   # Public access for juristid.orgusaar.ee, behind the shared sign-in PIN.
   #
   # Opt-in, because the LAN deployment must work without it:
@@ -309,7 +345,9 @@ services:
   # and the PIN is not remotely enough, which is what REAL_DATA_ALLOWED=0 is
   # for.
   tunnel:
-    image: cloudflare/cloudflared:latest
+    # Pinned like production's (ADR 0179): the same release and digest, not
+    # `latest`, so a pull for something else cannot change this stack's tunnel.
+    image: cloudflare/cloudflared:2026.8.2@sha256:0aa26e284f05e6c77ae375b8c9c11d9eb6a448fb7bcd8d40f31cb6176189eb38
     container_name: juristid-test-tunnel
     restart: unless-stopped
     logging: *bounded-logs
@@ -332,7 +370,8 @@ networks:
     driver: bridge
 
 volumes:
-  # Temporary upload bytes, shared by `web` and `intake-reader` and by nothing else.
+  # Temporary upload bytes, shared by `web`, `intake-reader` and `intake-sweeper`
+  # and by nothing else.
   #
   # Declared exactly as the main stack declares it, with no explicit `name:`, so
   # Compose scopes it to this project: this one is `juristid-test_pending_uploads`

@@ -95,6 +95,12 @@ says so (master specification 18.8).
     </div>
   </section>
 
+  {% comment %}
+    Absent, not empty, for a reader who may not read the opinion archive: the
+    archive metrics are withheld from them (docs/adr/0175), and a heading over
+    nothing would still say the archive exists and is being kept from them.
+  {% endcomment %}
+  {% if archive_trends or archive_compositions or archive_matrices %}
   <section aria-labelledby="tegevus-arhiiv-heading">
     <h2 class="sectionlabel" id="tegevus-arhiiv-heading">Arvamuste arhiiv ajas</h2>
     <p class="chart__summary">
@@ -114,6 +120,7 @@ says so (master specification 18.8).
       {% include "reporting/_matrix.html" with item=item %}
     {% endfor %}
   </section>
+  {% endif %}
 
   <section aria-labelledby="tegevus-jaotus-heading">
     <h2 class="sectionlabel" id="tegevus-jaotus-heading">Jaotused</h2>

@@ -112,9 +112,14 @@ def test_a_malformed_value_is_refused_without_a_query(value, django_assert_num_q
 
 def test_a_link_spent_between_the_form_and_the_save_sets_no_password(monkeypatch):
     """The window `consume` re-checks for: peek said yes, then the link was used."""
-    user, _link, proof = _issued()
+    user = _invited()
+    # A known password to prove unchanged afterwards. Set before the link is
+    # issued: a link is bound to the credentials it was issued under, and
+    # setting one afterwards would kill it for a reason this test is not about.
     user.set_password(PASSWORD)
     user.save(update_fields=["password"])
+    link = tokens.issue(user=user, purpose=ACTIVATION)
+    proof = tokens.proof_of(link.token)
     seen = tokens.peek(proof, purpose=ACTIVATION)
     assert seen is not None
     tokens.consume(proof, purpose=ACTIVATION)  # the other tab got there first

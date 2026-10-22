@@ -62,7 +62,18 @@ x-logging: &bounded-logs
 
 services:
   db:
-    image: postgres:18
+    # The tag for the reader, the digest for Docker (ADR 0179). `postgres:18`
+    # alone is a moving pointer: Docker Hub re-pushes it for every minor and
+    # every Debian rebuild, so an unrelated pull on this host could change the
+    # server under the register with nobody deciding to. The digest is the
+    # multi-platform index production was already running on 2026-10-22
+    # (`docker image inspect` RepoDigests, read-only), verified against
+    # docker.io/library/postgres: PostgreSQL 18.6 (`PG_VERSION=18.6-1.pgdg13+2`),
+    # Debian 13, built 2026-08-13. Moving it is a deliberate change: resolve the
+    # new tag's index digest from the registry, replace it here and in the other
+    # Compose files and CI services (tests/test_supply_chain_pinning.py keeps
+    # them equal), and recreate `db` as an announced maintenance step.
+    image: postgres:18@sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941
     container_name: juristid-main-db
     # JIT off for this OLTP workload (AUD-039, docs/adr/0153): it fires on the
     # planner's estimated cost and spent 150-350 ms compiling statements that
@@ -71,13 +82,25 @@ services:
     command: ["postgres", "-c", "jit=off"]
     restart: unless-stopped
     logging: *bounded-logs
-    env_file:
-      - ${JURISTID_ENV_FILE:-/mnt/user/appdata/juristid-main/config/juristid.env}
+    # No `env_file:`, deliberately (ADR 0179). The application's environment
+    # file holds the Django signing key, the shared-gate password and the
+    # mail/MFA settings; PostgreSQL reads none of them, and a container that is
+    # handed them can leak them (`docker inspect`, `/proc/1/environ`, a crash
+    # dump) for no benefit. The database is given exactly the three variables
+    # its image reads, and tests/test_service_secret_isolation.py holds it there.
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-juristid}
       POSTGRES_USER: ${POSTGRES_USER:-juristid}
-      # No POSTGRES_PASSWORD here: it comes from the env file above, which lives
-      # outside Git with restrictive permissions.
+      # Read by the image ONCE, when it initialises an empty cluster; on every
+      # later start the password already lives in the cluster and this value is
+      # ignored. So day to day it is empty — Compose interpolates it, and no
+      # file beside this one supplies it (the preflight refuses a `.env` here).
+      # Initialising a new cluster (disaster recovery onto an empty `postgres/`)
+      # is the one time it is needed, and the runbook passes it then with
+      # `--env-file <the environment file>`, which feeds interpolation only and
+      # sends nothing else into a container (RECOVERY.md). Forgetting it fails
+      # closed: the image refuses to initialise without a password.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
     volumes:
       # PostgreSQL 18 keeps its cluster in a major-version subdirectory
       # (/var/lib/postgresql/18/docker), so the persistent mount belongs one
@@ -279,9 +302,9 @@ services:
       # The staged `Uus teema` files, READ-ONLY — the same volume `web` writes.
       #
       # Read-only because that is the whole of what this process does with
-      # them. Staging bytes are written by the upload view, deleted by
-      # `consume_session` after `Loo teema` and swept by
-      # `prune_intake_staging` — all three in `web`. Nothing on this side needs
+      # them. Staging bytes are written by the upload view and deleted by
+      # `consume_session` after `Loo teema`, both in `web`, and swept by
+      # `intake-sweeper` (docs/adr/0177). Nothing on this side needs
       # to change the source it is reading, so nothing on this side is given
       # the ability to.
       - pending_uploads:/app/pending-uploads:ro
@@ -347,6 +370,63 @@ services:
     networks:
       - internal
 
+  # The `Uus teema` staging sweeper (docs/adr/0177, csf_3942255b466a4e213b958b16).
+  #
+  # Deletes staging nobody will ask for again — forms past their expiry and
+  # forms a Teema has consumed — every INTAKE_STAGING_SWEEP_INTERVAL_SECONDS,
+  # bounded per run by INTAKE_STAGING_SWEEP_MAX_SESSIONS and
+  # INTAKE_STAGING_SWEEP_MAX_BYTES. An unfinished form survives until its own
+  # expiry. Before this it was `prune_intake_staging` run by hand, which nothing
+  # scheduled, so the volume below was bounded by an operator's memory.
+  #
+  # A container rather than a cron entry, for the reason `searchindex` gives:
+  # this host's cron is generated from the flash drive. Its own container
+  # rather than a turn of the intake reader's loop, because the reader mounts
+  # the staged files read-only on purpose and deleting them needs write access.
+  #
+  # **It mounts the staging volume and nothing else.** No evidence, no
+  # derivatives, no corpus: the immutable evidence tree is not reachable from
+  # this process at all, and inside the volume the sweep follows no symbolic
+  # link and refuses a session whose tree is not what it wrote.
+  #
+  # Convergence, not liveness, like `searchindex`: the probe is red when a stale
+  # session has waited longer than INTAKE_STAGING_SWEEP_STALE_SECONDS, or when
+  # staging is full or the volume is short of INTAKE_STAGING_MIN_FREE_BYTES.
+  intake-sweeper:
+    image: juristid-main-web:${JURISTID_IMAGE_TAG:-local}
+    container_name: juristid-main-intake-sweeper
+    restart: unless-stopped
+    logging: *bounded-logs
+    healthcheck:
+      test: ["CMD", "python", "manage.py", "check_intake_staging", "--quiet"]
+      interval: 300s
+      timeout: 15s
+      start_period: 60s
+      retries: 3
+    command:
+      - python
+      - manage.py
+      - prune_intake_staging
+      - --loop
+    env_file:
+      - ${JURISTID_ENV_FILE:-/mnt/user/appdata/juristid-main/config/juristid.env}
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      SEED_DEV_DATA: "0"
+      # As on every other service in this file: `config/test_safety.py` refuses
+      # to run the test suite in a process that inherits this marker.
+      JURISTID_RUNTIME: deployed
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # READ-WRITE, because deleting is what this process is for.
+      - pending_uploads:/app/pending-uploads
+    networks:
+      - internal
+
   # The only route in.
   #
   # Not opt-in, unlike the rehearsal's: there is no host port here, so without
@@ -367,10 +447,20 @@ services:
     # means an unrelated `docker pull` on this host can change the ingress of a
     # real-data system without anyone deciding to. Update it deliberately:
     # read the release notes at https://github.com/cloudflare/cloudflared/releases,
-    # change the tag here, redeploy, and confirm the hostname still answers.
-    # A version tag rather than a digest, so the next person can see what they
-    # are moving from and to.
-    image: cloudflare/cloudflared:2026.8.2
+    # change the tag and the digest here, redeploy, and confirm the hostname
+    # still answers.
+    #
+    # The version tag so the next person can see what they are moving from and
+    # to; the digest because a tag is only a name the publisher can re-push
+    # (ADR 0179). It is the index production was running on 2026-10-22, and it
+    # is what docker.io/cloudflare/cloudflared:2026.8.2 resolves to: its amd64
+    # image carries `CI_GIT_COMMIT=733bfb93…`, the commit GitHub's 2026.8.2
+    # release tag names.
+    #
+    # No `env_file:` and no `environment:`: the tunnel's credential is the
+    # locally managed one in the volume below, and it needs nothing of the
+    # application's (tests/test_service_secret_isolation.py).
+    image: cloudflare/cloudflared:2026.8.2@sha256:0aa26e284f05e6c77ae375b8c9c11d9eb6a448fb7bcd8d40f31cb6176189eb38
     container_name: juristid-main-tunnel
     restart: unless-stopped
     logging: *bounded-logs
@@ -396,7 +486,8 @@ networks:
     driver: bridge
 
 volumes:
-  # Temporary upload bytes, shared by `web` and `intake-reader` and by nothing else.
+  # Temporary upload bytes, shared by `web`, `intake-reader` and `intake-sweeper`
+  # and by nothing else.
   #
   # Deliberately left for Compose to name. A volume declared like this becomes
   # `juristid-main_pending_uploads`, scoped by the project name at the top of
@@ -409,6 +500,7 @@ volumes:
   # not backed up, not in the recovery fingerprint. `juristid-backup.sh` does
   # not know about it and must not learn. It may outlive a container
   # replacement, which is convenient and means nothing — what bounds this data
-  # is expiry and `prune_intake_staging`, not the lifetime of a container
+  # is expiry, the staging quotas and the `intake-sweeper` service (docs/adr/0177),
+  # not the lifetime of a container
   # (deploy/unraid-main/RECOVERY.md, docs/adr/0064).
   pending_uploads:

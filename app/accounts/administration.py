@@ -333,7 +333,22 @@ class LinkOutcome:
 
 
 def _deliver(*, user: User, purpose: str, actor: User | None) -> LinkOutcome:
-    """Issue a link and send it — or, if it cannot be sent, invalidate it at once."""
+    """Issue a link and send it inside the caller's transaction.
+
+    Only `bootstrap_first_administrator` sends this way, deliberately: a
+    message that cannot be sent must undo the whole appointment, which is the
+    transaction's rollback. It is an operator's one-time command on an account
+    nobody can sign in to yet, so the locks it holds across the send keep
+    nobody out. Every other link is sent after its transaction commits
+    (`send_setup_link`).
+    """
+    issued = _issue_for_mail(user=user, purpose=purpose, actor=actor)
+    delivery = _mail_issued(user=user, purpose=purpose, issued=issued, actor=actor)
+    return LinkOutcome(delivery=delivery, purpose=str(purpose))
+
+
+def _issue_for_mail(*, user: User, purpose: str, actor: User | None) -> tokens.IssuedLink:
+    """Issue a link inside the caller's transaction and audit that it was issued."""
     issued = tokens.issue(user=user, purpose=purpose, issued_by=actor)
     record_security_event(
         event_type=SecurityEventType.CREDENTIAL_LINK_ISSUED,
@@ -341,6 +356,13 @@ def _deliver(*, user: User, purpose: str, actor: User | None) -> LinkOutcome:
         subject=user,
         detail={"purpose": str(purpose), "expires_at": issued.record.expires_at.isoformat()},
     )
+    return issued
+
+
+def _mail_issued(
+    *, user: User, purpose: str, issued: tokens.IssuedLink, actor: User | None
+) -> mail.Delivery:
+    """Send a committed link, outside any lock; end that link if it did not leave."""
     delivery = mail.send_credential_link(
         user=user,
         purpose=purpose,
@@ -349,13 +371,10 @@ def _deliver(*, user: User, purpose: str, actor: User | None) -> LinkOutcome:
         expires_at=issued.record.expires_at,
     )
     if not delivery.delivered:
-        tokens.invalidate_outstanding(
-            user=user, purpose=purpose, reason=f"not_delivered:{delivery.reason}"
-        )
-    return LinkOutcome(delivery=delivery, purpose=str(purpose))
+        tokens.invalidate_link(issued.record, reason=f"not_delivered:{delivery.reason}")
+    return delivery
 
 
-@transaction.atomic
 def send_setup_link(*, actor: User, user: User) -> LinkOutcome:
     """Approve and invite a pending account, or send a password-setting link.
 
@@ -370,40 +389,68 @@ def send_setup_link(*, actor: User, user: User) -> LinkOutcome:
 
     The administrator sees whether the message was sent. They never see the
     link.
-    """
-    actor = _begin(actor, Capability.MANAGE_ACCOUNTS, subject=user, action="send_setup_link")
-    user = User.objects.select_for_update().get(pk=user.pk)
-    if _touches_administration(user):
-        _require_actor(
-            actor, Capability.DELEGATE_ADMINISTRATION, subject=user, action="send_setup_link"
-        )
 
-    if user.provisioning_state in (ProvisioningState.PENDING, ProvisioningState.INVITED):
-        now = timezone.now()
-        if user.approved_at is None:
-            user.approved_at = now
-            user.approved_by = actor
-        outcome = _deliver(user=user, purpose=CredentialTokenPurpose.ACTIVATION, actor=actor)
-        if outcome.delivery.delivered:
+    **Three steps, and the message is sent between transactions, not inside
+    one.** The decision, the approval and the link are written under the
+    administration lock and the account's row lock, and committed. Then the
+    message goes out with no lock held: an SMTP conversation can take as long
+    as the transport's timeout, and holding the locks for it would hold up
+    every other administration change and the person's own sign-in for as
+    long (docs/adr/0180 §5). Then, for an invitation, the outcome is written:
+    INVITED only if the message left and its link is still live — an
+    invitation cancelled or a newer link sent meanwhile is not overwritten. A
+    message that did not leave ends its own link.
+    """
+    with transaction.atomic():
+        actor = _begin(actor, Capability.MANAGE_ACCOUNTS, subject=user, action="send_setup_link")
+        user = User.objects.select_for_update().get(pk=user.pk)
+        if _touches_administration(user):
+            _require_actor(
+                actor, Capability.DELEGATE_ADMINISTRATION, subject=user, action="send_setup_link"
+            )
+
+        inviting = user.provisioning_state in (
+            ProvisioningState.PENDING,
+            ProvisioningState.INVITED,
+        )
+        if inviting:
+            if user.approved_at is None:
+                user.approved_at = timezone.now()
+                user.approved_by = actor
+                user.save(update_fields=["approved_at", "approved_by", "updated_at"])
+            purpose = CredentialTokenPurpose.ACTIVATION
+        else:
+            if not user.is_active:
+                raise AdministrationRefused(ALREADY_INACTIVE)
+            purpose = (
+                CredentialTokenPurpose.PASSWORD_RESET
+                if user.has_local_password
+                else CredentialTokenPurpose.ACTIVATION
+            )
+        issued = _issue_for_mail(user=user, purpose=purpose, actor=actor)
+
+    delivery = _mail_issued(user=user, purpose=purpose, issued=issued, actor=actor)
+    outcome = LinkOutcome(delivery=delivery, purpose=str(purpose))
+    if not inviting:
+        return outcome
+
+    with transaction.atomic():
+        user = User.objects.select_for_update().get(pk=user.pk)
+        if (
+            delivery.delivered
+            and user.provisioning_state == ProvisioningState.PENDING
+            and tokens.is_live(issued.record)
+        ):
             user.provisioning_state = ProvisioningState.INVITED
-        user.save(update_fields=["approved_at", "approved_by", "provisioning_state", "updated_at"])
+            user.save(update_fields=["provisioning_state", "updated_at"])
         record_security_event(
             event_type=SecurityEventType.ACCOUNT_INVITED,
             actor=actor,
             subject=user,
-            succeeded=outcome.delivery.delivered,
-            detail={"delivered": outcome.delivery.delivered, "outcome": outcome.delivery.reason},
+            succeeded=delivery.delivered,
+            detail={"delivered": delivery.delivered, "outcome": delivery.reason},
         )
-        return outcome
-
-    if not user.is_active:
-        raise AdministrationRefused(ALREADY_INACTIVE)
-    purpose = (
-        CredentialTokenPurpose.PASSWORD_RESET
-        if user.has_local_password
-        else CredentialTokenPurpose.ACTIVATION
-    )
-    return _deliver(user=user, purpose=purpose, actor=actor)
+    return outcome
 
 
 @transaction.atomic
