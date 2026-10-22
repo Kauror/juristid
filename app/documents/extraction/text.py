@@ -14,7 +14,6 @@ assumption produced the characters they are reading.
 from __future__ import annotations
 
 import csv
-import io
 
 from app.documents.enums import DerivativeKind, LocatorKind, TextSource
 from app.documents.extraction.base import (
@@ -26,7 +25,11 @@ from app.documents.extraction.base import (
     registry,
 )
 from app.documents.extraction.errors import ExtractionFailed
-from app.documents.extraction.limits import current_limits, guard_character_budget
+from app.documents.extraction.limits import (
+    TableBudget,
+    current_limits,
+    guard_character_budget,
+)
 from app.documents.extraction.ocr import (
     OcrUnavailable,
     ocr_engine_version,
@@ -145,7 +148,22 @@ class CsvParser:
     mime_types = frozenset({"text/csv"})
 
     def parse(self, source: SourceFile) -> ParseResult:
+        """Read the rows as a stream, charging every limit as each row arrives.
+
+        This used to be ``list(csv.reader(...))``: the whole row graph built
+        first and the character budget applied afterwards, by which point a
+        file of one enormous row, or of millions of empty ones, had already
+        had its allocation (csf_5fa01ed3, docs/adr/0176). Now the size is
+        checked before decoding, the raw length of each record before the csv
+        module builds it, and rows, cells and cell length as they are read.
+        The output — fragments, locators, metadata — is what it always was.
+        """
         limits = current_limits()
+        if len(source.content) > limits.max_csv_bytes:
+            raise ExtractionFailed(
+                "csv_size_limit",
+                f"CSV-fail on suurem kui {limits.max_csv_bytes} baiti. Originaal on alles.",
+            )
         text, encoding = decode_text(source.content)
 
         # Sniffed rather than assumed. Estonian exports are semicolon-delimited
@@ -157,23 +175,22 @@ class CsvParser:
         except csv.Error:
             delimiter = ","
 
-        rows = list(csv.reader(io.StringIO(text), delimiter=delimiter))
+        lines = _RecordLines(text, limits.max_csv_record_characters)
+        budget = TableBudget(limits)
         fragments: list[Fragment] = []
         total = 0
-        for start in range(0, len(rows), LINES_PER_FRAGMENT):
-            chunk = rows[start : start + LINES_PER_FRAGMENT]
-            body = normalise(
-                "\n".join(
-                    " | ".join(cell.strip() for cell in row if cell.strip())
-                    for row in chunk
-                    if any(cell.strip() for cell in row)
-                )
-            )
+        row_count = 0
+        chunk: list[str] = []
+        chunk_rows = 0
+
+        def flush() -> None:
+            nonlocal total
+            body = normalise("\n".join(chunk))
             if not body:
-                continue
+                return
             total += len(body)
             guard_character_budget(total, limits)
-            first, last = start + 1, start + len(chunk)
+            first, last = row_count - chunk_rows + 1, row_count
             fragments.append(
                 Fragment(
                     text=body,
@@ -182,6 +199,37 @@ class CsvParser:
                     locator_label=f"read {first}–{last}",
                 )
             )
+
+        try:
+            for row in csv.reader(lines, delimiter=delimiter):
+                lines.record_read()
+                row_count += 1
+                budget.visit(row_count, len(row), "CSV-fail")
+                cells = [
+                    stripped
+                    for stripped in (budget.cell(cell, "CSV-faili").strip() for cell in row)
+                    if stripped
+                ]
+                if cells:
+                    chunk.append(" | ".join(cells))
+                chunk_rows += 1
+                if chunk_rows == LINES_PER_FRAGMENT:
+                    flush()
+                    chunk, chunk_rows = [], 0
+        except csv.Error as error:
+            # The module's own message names the defect and never the content.
+            # Its field limit (131 072 by default) is the cell-length limit
+            # arriving first, and is reported as that.
+            if "field larger than field limit" in str(error):
+                raise ExtractionFailed(
+                    "cell_character_limit",
+                    f"CSV-faili lahter on pikem kui {csv.field_size_limit()} märki.",
+                ) from error
+            raise ExtractionFailed(
+                "unreadable_csv", f"CSV-faili ei õnnestunud lugeda ({error})."
+            ) from error
+        if chunk_rows:
+            flush()
 
         if not fragments:
             raise ExtractionFailed("no_text", "CSV ei sisalda ridu.")
@@ -197,11 +245,54 @@ class CsvParser:
                     metadata={
                         "encoding": encoding,
                         "delimiter": delimiter,
-                        "row_count": len(rows),
+                        "row_count": row_count,
                     },
                 ),
             )
         )
+
+
+class _RecordLines:
+    """The decoded text, one line at a time, refusing a record that runs on.
+
+    The csv module asks for a line whenever a record needs more input and
+    builds the whole record before handing it over, so a record of thirty
+    million separators is thirty million cells before anything here sees it.
+    Counting the raw characters each record has consumed, and refusing once
+    one record has consumed too many, is the only point at which that row is
+    still a length rather than an allocation. ``record_read`` is called after
+    each row, so the count is per record — quoted line breaks included.
+    """
+
+    def __init__(self, text: str, limit: int) -> None:
+        self._text = text
+        self._position = 0
+        self._limit = limit
+        self._pending = 0
+
+    def __iter__(self) -> _RecordLines:
+        return self
+
+    def __next__(self) -> str:
+        # The lines ``iter(io.StringIO(text))`` would give — split after each
+        # "\n" and nowhere else — measured before the slice is made, so an
+        # over-long line is refused without being copied.
+        start = self._position
+        if start >= len(self._text):
+            raise StopIteration
+        end = self._text.find("\n", start)
+        end = len(self._text) if end == -1 else end + 1
+        self._pending += end - start
+        if self._pending > self._limit:
+            raise ExtractionFailed(
+                "csv_record_limit",
+                f"CSV-faili üks kirje on pikem kui {self._limit} märki. Originaal on alles.",
+            )
+        self._position = end
+        return self._text[start:end]
+
+    def record_read(self) -> None:
+        self._pending = 0
 
 
 class ImageParser:

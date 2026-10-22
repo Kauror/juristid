@@ -17,6 +17,7 @@ display as text rather than to resolve (Stage-2B brief 23).
 
 from __future__ import annotations
 
+import bisect
 import re
 from dataclasses import dataclass, field
 from email.header import decode_header, make_header
@@ -30,6 +31,8 @@ from app.documents.extraction.base import (
     ParsedAttachment,
     normalise,
 )
+from app.documents.extraction.errors import ExtractionFailed
+from app.documents.extraction.limits import Limits
 
 #: Headers worth keeping verbatim. Message-ID, In-Reply-To and References are
 #: here despite Stage 2B building no thread model: they are the only evidence
@@ -187,7 +190,73 @@ def parse_date(raw: str | None) -> str:
         return ""
 
 
-_STYLE_AND_SCRIPT = re.compile(r"<(script|style)\b[^>]*>.*?</\1>", re.IGNORECASE | re.DOTALL)
+def guard_body_input(body: str, limits: Limits) -> str:
+    """Refuse a body too large to flatten, before flattening it.
+
+    The decoded body is the one part of a message whose processing cost grows
+    with whatever the sender chose to put in it — the HTML sanitiser reads
+    about a megabyte a second — so it is measured before it is processed, and
+    what comes out is then charged to the message's character budget like
+    every header (csf_8da83d23, docs/adr/0176).
+    """
+    if len(body) > limits.max_email_body_characters:
+        raise ExtractionFailed(
+            "email_body_limit",
+            f"Kirja sisu on pikem kui {limits.max_email_body_characters} märki. "
+            "Originaal on alles.",
+        )
+    return body
+
+
+#: The opening of a script or style element: what the old single expression
+#: matched up to its ``[^>]*>``, without the backtracking.
+_SCRIPT_OR_STYLE_OPEN = re.compile(r"<(script|style)\b", re.IGNORECASE)
+_SCRIPT_OR_STYLE_CLOSE = re.compile(r"</(script|style)>", re.IGNORECASE)
+
+
+def _strip_script_and_style(html: str) -> str:
+    """Remove ``<script>``/``<style>`` elements, contents included, in linear time.
+
+    Replaces ``re.sub(r"<(script|style)\\b[^>]*>.*?</\\1>", " ", html, flags=I|S)``
+    and removes exactly what it removed. That expression backtracked: every
+    opening tag with no matching close re-scanned the rest of the body, so 64 KB
+    of ``<script>`` took seven seconds and a few hundred kilobytes would have
+    held the worker for hours. Here each opening finds its ``>`` and its
+    closing tag by lookup, never by rescanning.
+
+    The two names differ in length (6 and 5), which is what keys the closing
+    tags: a case-insensitive match of either name is always its own length.
+    """
+    closes: dict[int, list[int]] = {5: [], 6: []}
+    for match in _SCRIPT_OR_STYLE_CLOSE.finditer(html):
+        closes[len(match.group(1))].append(match.start())
+
+    out: list[str] = []
+    kept_from = 0
+    search_from = 0
+    tag_end = -1
+    while True:
+        opening = _SCRIPT_OR_STYLE_OPEN.search(html, search_from)
+        if opening is None:
+            break
+        # The first ">" after the name ends the tag. Remembered, because the
+        # openings before it all end at the same one.
+        if tag_end < opening.end():
+            tag_end = html.find(">", opening.end())
+        if tag_end == -1:
+            break
+        width = len(opening.group(1))
+        candidates = closes[width]
+        index = bisect.bisect_left(candidates, tag_end + 1)
+        if index == len(candidates):
+            search_from = opening.start() + 1
+            continue
+        close_end = candidates[index] + width + 3  # "</" + name + ">"
+        out.append(html[kept_from : opening.start()])
+        out.append(" ")
+        kept_from = search_from = close_end
+    out.append(html[kept_from:])
+    return "".join(out)
 
 
 def html_body_to_text(html: str) -> str:
@@ -203,7 +272,7 @@ def html_body_to_text(html: str) -> str:
     inserted as markup, and never used to render the message
     (Stage-2B brief 23, 70).
     """
-    stripped = _STYLE_AND_SCRIPT.sub(" ", html or "")
+    stripped = _strip_script_and_style(html or "")
     return normalise(plain_text(stripped))
 
 

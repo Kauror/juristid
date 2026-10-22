@@ -28,12 +28,13 @@ from app.documents.extraction.base import (
 from app.documents.extraction.email_common import (
     ParsedEmail,
     address_list,
+    guard_body_input,
     html_body_to_text,
     parse_date,
     split_attachments,
 )
 from app.documents.extraction.errors import ExtractionFailed
-from app.documents.extraction.limits import current_limits
+from app.documents.extraction.limits import CharacterBudget, Limits, current_limits
 
 logger = logging.getLogger(__name__)
 
@@ -74,34 +75,37 @@ class MsgParser:
             note=" ".join(parsed.notes),
         )
 
-    def _read(self, message: object, limits: object) -> ParsedEmail:
+    def _read(self, message: object, limits: Limits) -> ParsedEmail:
+        # The same budget as the EML path, charged the same way: each decoded
+        # property as it is read, the body measured before it is flattened and
+        # charged after (csf_8da83d23).
+        budget = CharacterBudget(limits)
         parsed = ParsedEmail()
-        parsed.subject = normalise(_text(message, "subject"))
-        parsed.from_name, parsed.from_email = _sender(message)
-        parsed.to = address_list(_text(message, "to"))
-        parsed.cc = address_list(_text(message, "cc"))
-        parsed.bcc = address_list(_text(message, "bcc"))
+        parsed.subject = budget.charge(normalise(_text(message, "subject")))
+        from_name, from_email = _sender(message)
+        parsed.from_name, parsed.from_email = budget.charge(from_name), budget.charge(from_email)
+        parsed.to = budget.charge_all(address_list(_text(message, "to")))
+        parsed.cc = budget.charge_all(address_list(_text(message, "cc")))
+        parsed.bcc = budget.charge_all(address_list(_text(message, "bcc")))
         parsed.sent_at = _sent_at(message)
-        parsed.message_id = normalise(_text(message, "messageId"))
-        parsed.in_reply_to = normalise(_text(message, "inReplyTo"))
+        parsed.message_id = budget.charge(normalise(_text(message, "messageId")))
+        parsed.in_reply_to = budget.charge(normalise(_text(message, "inReplyTo")))
         references = _text(message, "references")
-        parsed.references = references.split() if references else []
+        parsed.references = budget.charge_all(references.split() if references else [])
 
         body = _text(message, "body")
         if body:
-            parsed.body_text = normalise(body)
+            parsed.body_text = normalise(guard_body_input(body, limits))
         else:
             html = _text(message, "htmlBody")
             if html:
-                parsed.body_text = html_body_to_text(html)
+                parsed.body_text = html_body_to_text(guard_body_input(html, limits))
                 parsed.body_was_html = True
+        budget.charge(parsed.body_text)
 
         attachments, export_notes = _attachments(message)
         parsed.notes.extend(export_notes)
-        parsed.attachments, notes = split_attachments(
-            attachments,
-            limits.max_email_attachments,  # type: ignore[attr-defined]
-        )
+        parsed.attachments, notes = split_attachments(attachments, limits.max_email_attachments)
         parsed.notes.extend(notes)
         return parsed
 
