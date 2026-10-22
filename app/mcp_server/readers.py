@@ -1469,7 +1469,13 @@ def upcoming_commencements(
     first_day = _parse_iso_date(start, "from") or today
     last_day = _parse_iso_date(end, "to")
     if last_day is None:
-        last_day = soon_last_day(first_day) if start is not None else soon_last_day(today)
+        try:
+            last_day = soon_last_day(first_day) if start is not None else soon_last_day(today)
+        except OverflowError:
+            # 9999-12-31 + 29 days is past the end of the calendar.
+            raise InvalidArgument(
+                "from is too late for a default window; give to as well."
+            ) from None
     if last_day < first_day:
         raise InvalidArgument("to must not be before from.")
     if (last_day - first_day).days > MAX_COMMENCEMENT_SPAN_DAYS:
