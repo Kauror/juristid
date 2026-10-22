@@ -192,6 +192,11 @@ half-deleted, and expired forms simply wait for the next run. Every runbook that
 holds the writers (`stop web intake-reader searchindex …`) holds it too, because
 it connects to the database.
 
+The MCP server (`mcp`, docs/adr/0185) is not a writer and need not be held: its
+connections are read-only transactions, so a backup taken while it runs is the
+same backup. During a *restore* stop it anyway (`stop mcp-tunnel mcp`), so that
+nobody's ChatGPT is answered from a database that is being replaced.
+
 ## Backing up
 
 **Every command in this file runs from the checkout.** The scripts are named
@@ -993,6 +998,17 @@ Only then:
 ```bash
 docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d tunnel
 ```
+
+**AI access stays off through all of this** (docs/adr/0185). `mcp` and
+`mcp-tunnel` are behind the `mcp` profile, so nothing above starts them, and
+they hold no state of their own: there is nothing of theirs in a backup set and
+nothing to restore. Their two environment files live beside `juristid.env` in
+the config directory and come back, or are recreated, the same way. Start them
+— if they were running before — only after everything above has passed, by
+[`docs/mcp/OPERATIONS.md`](../../docs/mcp/OPERATIONS.md) "Starting and
+restarting only the MCP component". The grants and tokens are rows in the
+restored database: a token issued after the backup was taken is simply unknown
+now, and that colleague reconnects.
 
 ### PostgreSQL major versions
 

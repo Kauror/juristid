@@ -9,6 +9,7 @@ them. Everything here is about the *channel*; nothing here is a deployment step.
 | The release procedure, in order | [`README.md`](README.md) §"Deploying a release" |
 | Backup, restore, rollback, disaster recovery | [`RECOVERY.md`](RECOVERY.md) |
 | The gates a real-data step passes, as a checklist | [`../../docs/production-readiness.md`](../../docs/production-readiness.md) |
+| AI access through ChatGPT (the MCP server and its tunnel) | [`../../docs/mcp/OPERATIONS.md`](../../docs/mcp/OPERATIONS.md) |
 | Access, host identity, safe remote execution, transcript safety | **this file** |
 
 This file is the canonical one for the four things in its last row, and it does
@@ -243,6 +244,16 @@ below.
 
 The commands themselves, and why each one is shaped the way it is, are
 [`README.md`](README.md) under *9. Migrate, then replace*.
+
+**AI access is the exception on both sides** (docs/adr/0185). `mcp` runs the
+release image but sits behind the `mcp` profile, so the unqualified replacement
+leaves it on the previous image: where `juristid-main-mcp` is running, step 9
+replaces it with its own named `--no-deps` command, and where it is stopped
+nothing in a release may start it — naming a profiled service starts it.
+`mcp-tunnel` runs a pinned upstream image, like `tunnel`, and is left alone by
+every code release. Both are switched on, off and diagnosed by
+[`../../docs/mcp/OPERATIONS.md`](../../docs/mcp/OPERATIONS.md), never as a side
+effect of anything here.
 
 ## What must not reach the transcript
 
