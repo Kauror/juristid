@@ -220,9 +220,9 @@ def request_password_reset(request: HttpRequest, *, email: str) -> None:
         detail=detail,
     )
     user_id = user.pk
-    epoch = user.security_epoch
+    stamp = tokens.credential_stamp(user)
     correlation = provenance.current_correlation_id()
-    after_the_response(lambda: _send_reset_link(user_id, epoch, correlation))
+    after_the_response(lambda: _send_reset_link(user_id, stamp, correlation))
 
 
 def _reset_eligible(user: User | None) -> bool:
@@ -236,20 +236,21 @@ def _reset_eligible(user: User | None) -> bool:
     )
 
 
-def _send_reset_link(user_id: uuid.UUID, epoch: int, correlation: uuid.UUID | None = None) -> None:
+def _send_reset_link(user_id: uuid.UUID, stamp: str, correlation: uuid.UUID | None = None) -> None:
     """Issue and mail the link the request asked for — if it is still due.
 
     This runs after the response, possibly much later: a worker can be slow or
     paused. So the request's decision is not trusted here. Under the account's
-    row lock the account must **still** be eligible and its security epoch
-    must **still** be the one the request saw; a password changed, a factor
-    reset or an account switched off in between means no link is minted
+    row lock the account must **still** be eligible and its credentials
+    must **still** be the ones the request saw (`tokens.credential_stamp`); a
+    password changed, a new login address or an account switched off in
+    between means no link is minted
     (docs/adr/0180 §5). The audit rows it writes carry the request's
     correlation id, and say they are the system's.
     """
     with provenance.correlated(correlation), transaction.atomic():
         user = User.objects.select_for_update().filter(pk=user_id).first()
-        if not _reset_eligible(user) or user is None or user.security_epoch != epoch:
+        if not _reset_eligible(user) or user is None or tokens.credential_stamp(user) != stamp:
             record_security_event(
                 event_type=SecurityEventType.PASSWORD_RESET_REQUESTED,
                 succeeded=False,
@@ -259,7 +260,7 @@ def _send_reset_link(user_id: uuid.UUID, epoch: int, correlation: uuid.UUID | No
             return
         try:
             issued = tokens.issue(
-                user=user, purpose=CredentialTokenPurpose.PASSWORD_RESET, expected_epoch=epoch
+                user=user, purpose=CredentialTokenPurpose.PASSWORD_RESET, expected_stamp=stamp
             )
         except tokens.StaleIssuance:  # pragma: no cover - the lock above already decided
             return

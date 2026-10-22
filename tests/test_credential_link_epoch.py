@@ -1,11 +1,12 @@
-"""One-time links are bound to the account's security epoch (docs/adr/0180 §5).
+"""One-time links are bound to the account's credentials (docs/adr/0180 §5).
 
 csf_42d9970ac23d6f55f4b19163: the password-reset link is minted by a job that
 runs after the response, possibly much later. It used to issue a link for
 whatever the account then was, so a job delayed past a password change put a
 fresh, usable reset link in the mailbox for credentials that had already
-moved on. These tests hold the binding — a link records the epoch it was issued
-under and is refused once that moves — the job's own re-check, the database's
+moved on. These tests hold the binding — a link records a stamp of the
+credentials it was issued under and is refused once they move, but survives a
+role or permission change — the job's own re-check, the database's
 «one live link per person and purpose», and that the ordinary reset path still
 works end to end with an in-memory outbox. Personal sign-in stays dormant: every
 test here sets `local_password` for itself.
@@ -58,7 +59,15 @@ def _live(user: User) -> list[AccountCredentialToken]:
 
 
 def _bump(user: User) -> None:
+    """Move the session epoch the way a role or permission change does."""
     User.objects.filter(pk=user.pk).update(security_epoch=F("security_epoch") + 1)
+
+
+def _move_credentials(user: User) -> None:
+    """Change the password hash behind the link's back, as a concurrent write would."""
+    fresh = User.objects.get(pk=user.pk)
+    fresh.set_password(OTHER_PASSWORD)
+    fresh.save(update_fields=["password"])
 
 
 @pytest.fixture
@@ -84,17 +93,37 @@ def test_the_reset_path_still_sends_one_link_that_sets_the_password(client):
     assert user.check_password(OTHER_PASSWORD)
     issued = AccountCredentialToken.objects.get(user=user, purpose=RESET)
     assert issued.used_at is not None
-    assert issued.credential_epoch == 0
+    assert len(issued.credential_stamp) == 64
 
 
-def test_a_link_records_the_epoch_it_was_issued_under():
+def test_a_link_records_the_credentials_it_was_issued_under():
     user, _ = person()
-    _bump(user)
-    _bump(user)
 
     link = tokens.issue(user=user, purpose=RESET)
 
-    assert link.record.credential_epoch == 2
+    assert link.record.credential_stamp == tokens.credential_stamp(user)
+
+
+def test_a_permission_change_leaves_an_outstanding_link_good():
+    """An administrator may adjust a new colleague's rights before they activate.
+
+    The session epoch moves on every role or permission change; the link must
+    not die with it (e2e/test_local_auth.py invites, then grants a permission,
+    then activates).
+    """
+    user, _ = person()
+    link = tokens.issue(user=user, purpose=RESET)
+    _bump(user)
+
+    assert tokens.peek(tokens.proof_of(link.token), purpose=RESET) is not None
+
+
+def test_a_new_login_address_kills_an_outstanding_link():
+    user, _ = person()
+    link = tokens.issue(user=user, purpose=RESET)
+    User.objects.filter(pk=user.pk).update(upn="uus.aadress@koda.ee")
+
+    assert tokens.peek(tokens.proof_of(link.token), purpose=RESET) is None
 
 
 # -- the delayed job -------------------------------------------------------------------
@@ -154,12 +183,13 @@ def test_a_job_that_is_still_due_sends_its_link_under_the_requests_correlation(c
     assert delivery.correlation_id == requested.correlation_id
 
 
-def test_issue_refuses_an_epoch_that_moved():
+def test_issue_refuses_credentials_that_moved():
     user, _ = person()
-    _bump(user)
+    requested = tokens.credential_stamp(user)
+    _move_credentials(user)
 
-    with pytest.raises(tokens.StaleIssuance, match="security epoch changed"):
-        tokens.issue(user=user, purpose=RESET, expected_epoch=0)
+    with pytest.raises(tokens.StaleIssuance, match="credentials changed"):
+        tokens.issue(user=user, purpose=RESET, expected_stamp=requested)
 
     assert _live(user) == []
 
@@ -170,22 +200,24 @@ def test_issue_refuses_an_epoch_that_moved():
 def test_a_link_from_before_a_credential_change_is_refused_when_opened_and_when_spent():
     """Fails on 4818203e: a link the change's invalidation missed stayed good.
 
-    The change here moves the epoch the way a concurrent password write does —
-    without `invalidate_outstanding` having seen this link — which is the
+    The change here moves the password hash the way a concurrent password write
+    does — without `invalidate_outstanding` having seen this link — which is the
     window issue-after-invalidate left open.
     """
     user, _ = person()
     link = tokens.issue(user=user, purpose=RESET)
     proof = tokens.proof_of(link.token)
-    User.objects.filter(pk=user.pk).update(security_epoch=F("security_epoch") + 1)
+    _move_credentials(user)
 
     assert tokens.peek(proof, purpose=RESET) is None
     assert (
-        credentials.set_password_with_link(proof=proof, purpose=RESET, password=OTHER_PASSWORD)
+        credentials.set_password_with_link(
+            proof=proof, purpose=RESET, password=PASSWORD + " kolmas"
+        )
         is None
     )
     user.refresh_from_db()
-    assert user.check_password(PASSWORD)
+    assert user.check_password(OTHER_PASSWORD)
     record = AccountCredentialToken.objects.get(pk=link.record.pk)
     assert record.used_at is None
 
@@ -248,7 +280,7 @@ def test_another_purpose_is_a_separate_live_link():
 # -- the migration over rows ---------------------------------------------------------
 
 BEFORE = ("accounts", "0004_local_authentication")
-AFTER = ("accounts", "0005_credential_link_epoch_and_one_live")
+AFTER = ("accounts", "0005_credential_link_stamp_and_one_live")
 
 
 def _migrate_to(target: tuple[str, str]) -> None:
@@ -298,7 +330,7 @@ def test_the_migration_supersedes_duplicate_live_links_and_keeps_the_newest(
     for older in ("a" * 32, "b" * 32):
         assert rows[older].invalidated_at is not None
         assert rows[older].invalidation_reason == "superseded_by_migration"
-    assert {row.credential_epoch for row in rows.values()} == {0}
+    assert {row.credential_stamp for row in rows.values()} == {""}
     assert len(rows) == 4
 
 

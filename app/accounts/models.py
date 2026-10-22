@@ -504,14 +504,17 @@ class AccountCredentialToken(BaseModel):
         related_name="credential_tokens_issued",
         verbose_name="väljastas",
     )
-    #: The account's `security_epoch` when the link was issued, read under the
-    #: account's row lock. A link is good only while the epoch is unchanged: a
-    #: password set or changed, a second factor replaced, a role changed or a
-    #: deactivation all bump it, and every link issued before that is dead —
-    #: including one a delayed mail job minted after the change
+    #: A digest of the account's credential state when the link was issued —
+    #: its password hash, login address and active flag — read under the
+    #: account's row lock (`tokens.credential_stamp`). A link is good only
+    #: while the stamp is unchanged: a password set or changed, a new login
+    #: address or a deactivation all move it, and every link issued before that
+    #: is dead — including one a delayed mail job minted after the change. A
+    #: role or permission change does not move it: an invitation sent before an
+    #: administrator adjusts the new colleague's rights stays good
     #: (`app.accounts.tokens`, docs/adr/0180 §5).
-    credential_epoch = models.PositiveIntegerField(
-        default=0, db_default=0, verbose_name="turvaversioon väljastamisel"
+    credential_stamp = models.CharField(
+        max_length=64, blank=True, default="", db_default="", verbose_name="volituste jäljend"
     )
 
     class Meta:

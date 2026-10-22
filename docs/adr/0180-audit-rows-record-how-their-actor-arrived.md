@@ -56,18 +56,21 @@ credentials had changed since the request.
    reader text on the initials). Old rows render as they did. Business-record
    authorship (`Entry.author`, `Submission.sent_by`, an owner) is workflow
    association and is not an audit claim; it is unchanged.
-5. **One-time links are serialised and bound to the security epoch.**
+5. **One-time links are serialised and bound to the account's credentials.**
    `tokens.issue` locks the account row before invalidating and inserting, and a
    partial unique index `accounts_token_one_live_per_purpose` (unused and not
    invalidated) allows one live link per person and purpose (migration
    `accounts/0005`, which first invalidates — never deletes — any older
-   duplicate). Each link stores the account's `security_epoch` at issue
-   (`credential_epoch`); `peek` and `consume` refuse a link whose epoch is no
-   longer the account's, and `consume` locks the account before the link, the
-   order `issue` uses. The reset job re-checks eligibility and the epoch the
-   request saw under the lock and issues nothing otherwise. Because the epoch
-   also moves on a role, capability or activation change, an invitation
-   outstanding across such a change must be sent again — deliberate and dormant.
+   duplicate). Each link stores `credential_stamp`, a digest of the account's
+   password hash, login address and active flag at issue; `peek` and `consume`
+   refuse a link whose stamp is no longer the account's, and `consume` locks the
+   account before the link, the order `issue` uses. The reset job re-checks
+   eligibility and the stamp the request saw under the lock and issues nothing
+   otherwise. Deliberately **not** the session `security_epoch`: that also moves
+   on every role and permission change, and an administrator adjusting a new
+   colleague's rights before they activate must not kill the invitation. A
+   derived stamp also cannot be forgotten by a future code path that changes a
+   password.
 
 ## Accepted risk recorded (finding #1, csf_8dbe9b434cfd0c1d12e79d27)
 

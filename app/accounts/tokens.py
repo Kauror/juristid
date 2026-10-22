@@ -17,12 +17,16 @@ What the rest of the module holds, and why:
   two issues for one person take turns rather than both invalidating nothing
   and both inserting, and a partial unique index holds "one live link per
   person and purpose" whatever the code does (docs/adr/0180 §5).
-* **Bound to the account's security epoch.** A link records the account's
-  `security_epoch` at issue and is good only while it is unchanged, checked
-  when it is opened and again, under the locks, when it is spent. A password
-  change bumps the epoch, so a link minted by a delayed mail job after the
-  change — or any link from before it — sets nothing. A job that was queued
-  under one epoch refuses to issue under another (`issue(expected_epoch=…)`).
+* **Bound to the account's credential state.** A link records a stamp of the
+  account's password hash, login address and active flag at issue
+  (`credential_stamp`) and is good only while it is unchanged, checked when it
+  is opened and again, under the locks, when it is spent. A password change
+  moves the stamp, so a link minted by a delayed mail job after the change —
+  or any link from before it — sets nothing. A job that was queued under one
+  stamp refuses to issue under another (`issue(expected_stamp=…)`). Not the
+  `security_epoch`: that also moves on every role and permission change, and an
+  invitation must survive the administrator adjusting the new colleague's
+  rights before they activate.
 * **Short-lived and configurable.** `LOCAL_AUTH_ACTIVATION_LINK_SECONDS` and
   `LOCAL_AUTH_RESET_LINK_SECONDS`.
 * **Never logged.** No function here logs, and none returns the link except
@@ -96,12 +100,25 @@ def _split(proof: str) -> tuple[str, str] | None:
 
 
 class StaleIssuance(Exception):
-    """The account's security epoch moved since the link was asked for.
+    """The account's credentials moved since the link was asked for.
 
-    Raised by `issue` when ``expected_epoch`` no longer matches: a password was
-    set or changed, a factor replaced, the account switched off, between the
-    request and the job that would have minted the link. Nothing was written.
+    Raised by `issue` when ``expected_stamp`` no longer matches: a password was
+    set or changed, the login address changed, the account switched off,
+    between the request and the job that would have minted the link. Nothing
+    was written.
     """
+
+
+def credential_stamp(user: User) -> str:
+    """A digest of what a one-time link is a credential *for*.
+
+    The password hash (any set, change or clear moves it), the login address
+    (a link mailed to an address the account no longer signs in with) and the
+    active flag. Derived, not a counter, so no code path that changes a
+    credential can forget to bump it.
+    """
+    material = f"{user.password}{user.upn}{int(user.is_active)}"
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
 @transaction.atomic
@@ -110,7 +127,7 @@ def issue(
     user: User,
     purpose: str,
     issued_by: User | None = None,
-    expected_epoch: int | None = None,
+    expected_stamp: str | None = None,
 ) -> IssuedLink:
     """A fresh link for ``purpose``, superseding any that was still outstanding.
 
@@ -121,14 +138,17 @@ def issue(
     the first to commit and then supersedes it; the partial unique index
     ``accounts_token_one_live_per_purpose`` is the backstop.
 
-    The lock is also what makes ``expected_epoch`` mean something: the epoch is
+    The lock is also what makes ``expected_stamp`` mean something: the stamp is
     read under it, so a password change either committed before this read (and
     the link is refused with `StaleIssuance`) or waits for this transaction and
     then invalidates the link it issued.
     """
-    locked = User.objects.select_for_update().only("pk", "security_epoch").get(pk=user.pk)
-    if expected_epoch is not None and locked.security_epoch != expected_epoch:
-        raise StaleIssuance("the account's security epoch changed after the link was requested")
+    locked = (
+        User.objects.select_for_update().only("pk", "password", "upn", "is_active").get(pk=user.pk)
+    )
+    stamp = credential_stamp(locked)
+    if expected_stamp is not None and stamp != expected_stamp:
+        raise StaleIssuance("the account's credentials changed after the link was requested")
     invalidate_outstanding(user=user, purpose=purpose, reason="superseded")
     selector = secrets.token_hex(16)
     verifier = secrets.token_urlsafe(32)
@@ -140,14 +160,14 @@ def issue(
         verifier_digest=_digest(verifier),
         expires_at=now + lifetime(purpose),
         issued_by=issued_by,
-        credential_epoch=locked.security_epoch,
+        credential_stamp=stamp,
     )
     return IssuedLink(record=record, token=f"{selector}.{verifier}")
 
 
 def is_current(record: AccountCredentialToken, holder: User) -> bool:
-    """Whether the link was issued under the account's present security epoch."""
-    return record.credential_epoch == holder.security_epoch
+    """Whether the link was issued under the account's present credentials."""
+    return hmac.compare_digest(record.credential_stamp, credential_stamp(holder))
 
 
 def peek(proof: str, *, purpose: str) -> AccountCredentialToken | None:
