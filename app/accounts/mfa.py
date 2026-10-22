@@ -62,7 +62,12 @@ ISSUER = "Koda Õigusloome"
 # -- the encryption key -------------------------------------------------------
 
 
-def _fernet() -> Fernet:
+#: The HKDF label the personal sign-in's authenticator secrets have always been
+#: encrypted under. Changing it would make every enrolled device unreadable.
+LOCAL_AUTH_PURPOSE = b"totp-secret-encryption-v1"
+
+
+def _fernet(purpose: bytes = LOCAL_AUTH_PURPOSE) -> Fernet:
     """Fernet keyed from the deployment's MFA key, through HKDF.
 
     A dedicated key rather than `SECRET_KEY` itself, because the two rotate for
@@ -71,6 +76,12 @@ def _fernet() -> Fernet:
     dedicated key is configured — a laptop, CI — `SECRET_KEY` stands in, under
     its own HKDF label; `juristid.E033` refuses that on a real-data
     local-password deployment.
+
+    ``purpose`` is the HKDF ``info``: the same key material under another label
+    is another, unrelated key. The MCP authenticator (`app.mcp_access`,
+    docs/adr/0185 §3) encrypts under its own label, so a secret sealed for one
+    can never be opened as the other. The default is the personal sign-in's
+    label, which every existing caller has always used.
     """
     material = (
         getattr(settings, "LOCAL_AUTH_MFA_ENCRYPTION_KEY", "") or settings.SECRET_KEY
@@ -79,18 +90,18 @@ def _fernet() -> Fernet:
         algorithm=hashes.SHA256(),
         length=32,
         salt=b"juristid-local-auth",
-        info=b"totp-secret-encryption-v1",
+        info=purpose,
     ).derive(material)
     return Fernet(base64.urlsafe_b64encode(derived))
 
 
-def _encrypt(secret: str) -> str:
-    return _fernet().encrypt(secret.encode("ascii")).decode("ascii")
+def _encrypt(secret: str, purpose: bytes = LOCAL_AUTH_PURPOSE) -> str:
+    return _fernet(purpose).encrypt(secret.encode("ascii")).decode("ascii")
 
 
-def _decrypt(token: str) -> str | None:
+def _decrypt(token: str, purpose: bytes = LOCAL_AUTH_PURPOSE) -> str | None:
     try:
-        return _fernet().decrypt(token.encode("ascii")).decode("ascii")
+        return _fernet(purpose).decrypt(token.encode("ascii")).decode("ascii")
     except (InvalidToken, ValueError):
         # A device enrolled under a key that is no longer configured cannot
         # verify anything. Answering "no" is the only safe reading. The device
@@ -99,6 +110,25 @@ def _decrypt(token: str) -> str | None:
         # code, then replacing the authenticator; or an administrator's reset;
         # or `manage.py reset_second_factor` (docs/LOCAL_AUTH_ACTIVATION_RUNBOOK.md §15).
         return None
+
+
+def seal(secret: str, *, purpose: bytes) -> str:
+    """Encrypt a TOTP secret for a purpose other than the personal sign-in.
+
+    For another authenticator that must not be interchangeable with this
+    module's devices (docs/adr/0185 §3). The personal sign-in's own label is
+    refused, so this cannot be used to mint something `verify_totp` would open.
+    """
+    if purpose == LOCAL_AUTH_PURPOSE:
+        raise ValueError("seal() is for a purpose other than the personal sign-in")
+    return _encrypt(secret, purpose)
+
+
+def unseal(token: str, *, purpose: bytes) -> str | None:
+    """The secret `seal` encrypted under ``purpose``, or None for anything else."""
+    if purpose == LOCAL_AUTH_PURPOSE:
+        raise ValueError("unseal() is for a purpose other than the personal sign-in")
+    return _decrypt(token or "", purpose)
 
 
 def secret_is_readable(device: TotpDevice) -> bool:
@@ -169,6 +199,11 @@ def _enrolment(user: User, secret: str) -> Enrolment:
     return Enrolment(secret=secret, uri=uri, qr_svg=_qr_svg(uri), sealed=_encrypt(secret))
 
 
+def qr_svg(uri: str) -> str:
+    """A provisioning URI as inline SVG, for another authenticator's enrolment page."""
+    return _qr_svg(uri)
+
+
 def _qr_svg(uri: str) -> str:
     """The provisioning URI as inline SVG — no image request, no third party."""
     buffer = io.BytesIO()
@@ -176,6 +211,11 @@ def _qr_svg(uri: str) -> str:
         buffer, kind="svg", scale=4, border=2, xmldecl=False, svgns=True, dark="#000", light="#fff"
     )
     return buffer.getvalue().decode("utf-8")
+
+
+def matching_step(secret: str, code: str, *, after_step: int) -> int | None:
+    """The public name of `_matching_step`, for another authenticator's checks."""
+    return _matching_step(secret, code, after_step=after_step)
 
 
 def _matching_step(secret: str, code: str, *, after_step: int) -> int | None:
