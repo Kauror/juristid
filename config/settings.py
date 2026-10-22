@@ -483,6 +483,36 @@ PENDING_UPLOAD_ROOT = Path(env("PENDING_UPLOAD_ROOT", str(BASE_DIR / "pending-up
 # that an abandoned form is not still on disk tomorrow.
 PENDING_UPLOAD_GRACE_HOURS = env_int("PENDING_UPLOAD_GRACE_HOURS", 12)
 
+# What `Uus teema` staging may hold before it refuses another file
+# (csf_3942255b466a4e213b958b16, docs/adr/0177). The twenty-file cap is per form,
+# and a form is one render, so without these one person could fill the volume
+# with fresh forms. Checked under one transaction-scoped lock before a byte is
+# written (`app.matters.intake_staging.stage_uploads`).
+#
+# "Active" is an unconsumed, unexpired form that already holds a file; an empty
+# render is a row and no bytes, and refusing it would refuse the page itself.
+# Bytes are every staged file of an unconsumed form, removed ones and expired
+# ones included, because their bytes stay on the volume until the sweep.
+INTAKE_STAGING_MAX_ACTIVE_SESSIONS_PER_OWNER = env_int(
+    "INTAKE_STAGING_MAX_ACTIVE_SESSIONS_PER_OWNER", 20
+)
+INTAKE_STAGING_MAX_BYTES_PER_OWNER = env_int("INTAKE_STAGING_MAX_BYTES_PER_OWNER", 2 * 1024**3)
+INTAKE_STAGING_MAX_ACTIVE_SESSIONS = env_int("INTAKE_STAGING_MAX_ACTIVE_SESSIONS", 200)
+INTAKE_STAGING_MAX_BYTES = env_int("INTAKE_STAGING_MAX_BYTES", 10 * 1024**3)
+# Free space the staging volume must still have *after* the file is written
+# (`shutil.disk_usage` on PENDING_UPLOAD_ROOT). On the production host this is
+# Docker's own storage, which every container shares.
+INTAKE_STAGING_MIN_FREE_BYTES = env_int("INTAKE_STAGING_MIN_FREE_BYTES", 1024**3)
+
+# The scheduled sweep of expired and consumed staging (`prune_intake_staging
+# --loop`, the `intake-sweeper` service). Bounded per run by sessions and by
+# staged bytes; the health probe (`check_intake_staging`) goes red when a
+# stale session has waited longer than the last setting.
+INTAKE_STAGING_SWEEP_MAX_SESSIONS = env_int("INTAKE_STAGING_SWEEP_MAX_SESSIONS", 500)
+INTAKE_STAGING_SWEEP_MAX_BYTES = env_int("INTAKE_STAGING_SWEEP_MAX_BYTES", 5 * 1024**3)
+INTAKE_STAGING_SWEEP_INTERVAL_SECONDS = env_int("INTAKE_STAGING_SWEEP_INTERVAL_SECONDS", 900)
+INTAKE_STAGING_SWEEP_STALE_SECONDS = env_int("INTAKE_STAGING_SWEEP_STALE_SECONDS", 3600)
+
 # Where the read-only historical source material lives on the server. The
 # importer reads from here and never writes to it (Stage-2D brief 54).
 HISTORICAL_SOURCE_ROOT = env("HISTORICAL_SOURCE_ROOT", "")
