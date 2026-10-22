@@ -147,6 +147,7 @@ def test_every_input_schema_is_strict_and_names_no_identity(fakes):
             "next_action_kind",
             "open",
             "record_mode",
+            "include_test_data",
             "page",
         },
     }
@@ -285,6 +286,7 @@ def test_fetch_returns_the_company_knowledge_shape_twice(fakes):
                 "next_action_kind": "WAIT",
                 "is_open": True,
                 "record_mode": "FULL",
+                "include_test_data": False,
                 "page": 1,
             },
         ),

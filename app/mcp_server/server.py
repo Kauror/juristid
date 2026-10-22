@@ -332,7 +332,8 @@ def tool_specs() -> list[ToolSpec]:
                 "(Vastutaja, a name or part of it), by an organisation (it sent the matter, Koda "
                 "answered it, or the open WAIT step names it), by the current next action's kind "
                 "(DO, WAIT, MONITOR, or NONE for no next step), open or closed. Default: open "
-                "current work. Each row: reference (like 2026_225), title, owner, stage "
+                "current work, real matters only (include_test_data adds TEST matters, titled "
+                "[TEST]). Each row: reference (like 2026_225), title, owner, stage "
                 "(Hetkeseis), work status, the next action with its date and certainty, the "
                 "opinion deadline and the Juristid URL. Answers «what is Marko responsible "
                 "for?» and «what are we waiting for from the ministry?». 20 per page, pages 1 to "
@@ -349,6 +350,7 @@ def tool_specs() -> list[ToolSpec]:
                 next_action_kind=a.get("next_action_kind"),
                 is_open=a.get("open", True),
                 record_mode=a.get("record_mode") or "FULL",
+                include_test_data=bool(a.get("include_test_data", False)),
                 page=_page(a),
             ),
             count=_length_of("matters"),

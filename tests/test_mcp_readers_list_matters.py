@@ -159,3 +159,43 @@ def test_bad_arguments_are_refused(people, arguments, message):
     marko, _ = people
     with pytest.raises(InvalidArgument, match=message):
         readers.list_matters(marko, **arguments)
+
+
+# -- NEW-03: real matters by default, TEST ones only when asked and marked --------------
+
+
+def test_test_matters_are_left_out_by_default_and_marked_when_asked_for(people):
+    from app.matters.enums import MatterDataClass
+
+    marko, kati = people
+    real = factories.MatterFactory(owner=marko, title="Päris teema")
+    test = factories.MatterFactory(
+        owner=marko, title="Arenduse proovimuutmine", data_class=MatterDataClass.TEST
+    )
+
+    default = readers.list_matters(kati, responsible="Marko")
+    assert _references(default) == {real.display_reference}
+    assert default["total"] == 1
+    assert default["filters"]["include_test_data"] is False
+
+    widened = readers.list_matters(kati, responsible="Marko", include_test_data=True)
+    assert _references(widened) == {real.display_reference, test.display_reference}
+    assert widened["total"] == 2
+    titles = {row["reference"]: row["title"] for row in widened["matters"]}
+    assert titles[test.display_reference] == "[TEST] Arenduse proovimuutmine"
+    assert titles[real.display_reference] == "Päris teema"
+    rows = {row["reference"]: row for row in widened["matters"]}
+    assert rows[test.display_reference]["is_test_data"] is True
+
+
+def test_include_test_data_must_be_a_boolean(people):
+    marko, _ = people
+    with pytest.raises(InvalidArgument, match="include_test_data must be true or false"):
+        readers.list_matters(marko, include_test_data="yes")  # type: ignore[arg-type]
+
+
+def test_the_tool_schema_defaults_to_real_matters():
+    from app.mcp_server import schemas
+
+    field = schemas.ListMattersArguments.model_json_schema()["properties"]["include_test_data"]
+    assert field["default"] is False

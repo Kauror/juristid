@@ -2531,9 +2531,11 @@ def _matter_row(user: Any, matter: Any, today: date) -> dict[str, Any]:
     current = current_action_of(matter, user)
     deadline = response_deadline_of(matter, user, today)
     work_status = matter.work_status
+    title = _clip(matter.title, TITLE_CHARS)
     return {
         **_matter_ref(matter),
-        "title": _clip(matter.title, TITLE_CHARS),
+        # «[TEST] » as in every search and fetch title (MCPSEC-16, NEW-03).
+        "title": f"{TEST_DATA_PREFIX}{title}" if matter.is_test_data else title,
         "is_open": matter.is_open,
         "record_mode": matter.record_mode,
         "owner": _person(matter.owner),
@@ -2567,6 +2569,7 @@ def list_matters(
     next_action_kind: str | None = None,
     is_open: bool | None = True,
     record_mode: str = "FULL",
+    include_test_data: bool = False,
     page: int = 1,
 ) -> dict[str, Any]:
     """`list_matters`: the register's matters, filtered, 20 per page.
@@ -2587,6 +2590,11 @@ def list_matters(
     step, which would drown «what is X responsible for» in decade-old entries.
     `record_mode="ALL"` and `open=None` widen it.
 
+    **Real matters only by default** (NEW-03): «what is Marko responsible
+    for» must not count the TEST Matters made while building the system, the
+    trap Statistika closed with ``andmed=paris``. ``include_test_data=True``
+    adds them, each title starting «[TEST] » as in `search` and `fetch`.
+
     A name fragment that matches nobody answers with an empty list and says
     so; one that matches several people lists every matched name, and the rows
     of all of them, so the client can tell the reader which they meant.
@@ -2605,9 +2613,14 @@ def list_matters(
         raise InvalidArgument("record_mode must be one of: FULL, ARCHIVE, ALL.")
     if is_open is not None and not isinstance(is_open, bool):
         raise InvalidArgument("open must be true, false or omitted.")
+    if not isinstance(include_test_data, bool):
+        raise InvalidArgument("include_test_data must be true or false.")
     today = _today()
 
     queryset = selectors.matter_list_queryset(user)
+    if not include_test_data:
+        # After authorization, as the register's `?andmed=paris` (selectors).
+        queryset = selectors.filter_by_data_class(queryset, selectors.DATA_CLASS_REAL)
     if is_open is not None:
         queryset = queryset.filter(register_filters.status_q("avatud" if is_open else "suletud"))
     if mode != "ALL":
@@ -2654,6 +2667,7 @@ def list_matters(
             "next_action_kind": kind,
             "open": is_open,
             "record_mode": mode,
+            "include_test_data": include_test_data,
         },
         "page": number,
         "per_page": MATTERS_PER_PAGE,

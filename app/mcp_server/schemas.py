@@ -200,6 +200,15 @@ class ListMattersArguments(StrictArguments):
             )
         ),
     ] = "FULL"
+    include_test_data: Annotated[
+        bool,
+        Field(
+            description=(
+                "false (default): real matters only. true also lists the TEST matters made "
+                "while building the system; their titles start with [TEST]."
+            )
+        ),
+    ] = False
     page: Page | None = 1
 
 
