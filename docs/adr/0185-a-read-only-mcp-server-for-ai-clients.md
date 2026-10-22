@@ -184,15 +184,20 @@ ChatGPT (workspace Kaubanduskoda)
    │ HTTPS, OAuth bearer
    ▼
 OpenAI Secure MCP Tunnel ◄── outbound HTTPS ── mcp-tunnel (tunnel-client, KOCORP)
-                                                   │ http://mcp:8001/mcp (internal network only)
+                                                   │ http://mcp:8001/mcp (network mcp_edge only)
                                                    ▼
-                                               mcp (this ADR) ── PostgreSQL (read-only transactions)
+                                               mcp (this ADR) ── internal ── PostgreSQL (SELECT-only role)
 
 user's browser ── https://juristid.orgusaar.ee/oauth/authorize ── Cloudflare tunnel ── web
 OpenAI backend ── https://juristid.orgusaar.ee/oauth/token     ── Cloudflare tunnel ── web
 ```
 
-The `mcp` service publishes no port and joins only the `internal` network. It holds
+Two networks, so the third-party tunnel client reaches `mcp` and nothing else
+(security review MCPSEC-02): `mcp-tunnel` joins only `mcp_edge`, a bridge that holds
+`mcp` and `mcp-tunnel` and no other service; `mcp` joins `mcp_edge` and `internal`
+(for `db`). The tunnel client can therefore dial neither `db` nor `web` — where it
+could otherwise bypass Cloudflare and choose its own `CF-Connecting-IP` — nor
+`tunnel` or a worker. The `mcp` service publishes no port. It holds
 no evidence mount and none of the browser's secrets (no gate password, no MFA key, no
 mail credentials): it gets its own minimal environment. The tunnel client holds only
 its OpenAI runtime key and tunnel id. Neither starts unless named; both are stopped by

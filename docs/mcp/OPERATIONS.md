@@ -66,8 +66,8 @@ holds a colleague's authenticator can connect as that colleague (ADR 0185,
 | Service | Container | Image | Environment | Reaches |
 | --- | --- | --- | --- | --- |
 | `web` (existing) | `juristid-main-web` | the release image | `juristid.env` + `MCP_ENABLED`, `JURISTID_PUBLIC_ORIGIN`, `MCP_RESOURCE_URLS` | serves `/.well-known/oauth-authorization-server`, `/oauth/authorize`, `/oauth/token`, `/oauth/revoke` and the enrolment pages through the Cloudflare tunnel |
-| `mcp` | `juristid-main-mcp` | the release image | `juristid-mcp.env` only; database role `juristid_mcp` (SELECT only) | `db` on `internal`; listens on `mcp:8001`, no host port |
-| `mcp-tunnel` | `juristid-main-mcp-tunnel` | `ghcr.io/openai/tunnel-client:v0.0.17@sha256:67b473b4…` | `juristid-mcp-tunnel.env` only | `http://mcp:8001/mcp` inside; `api.openai.com:443` outbound; the public origin's OAuth metadata |
+| `mcp` | `juristid-main-mcp` | the release image | `juristid-mcp.env` only; database role `juristid_mcp` (SELECT only) | `db` on `internal`; listens on `mcp:8001` on `mcp_edge`, no host port |
+| `mcp-tunnel` | `juristid-main-mcp-tunnel` | `ghcr.io/openai/tunnel-client:v0.0.17@sha256:67b473b4…` | `juristid-mcp-tunnel.env` only | only `mcp_edge`: `http://mcp:8001/mcp`; `api.openai.com:443` outbound; the public origin's OAuth metadata — never `db`, `web` or `tunnel` |
 
 Both new services are behind the `mcp` profile. A release's `up -d --no-build`,
 a restore's `up -d tunnel` and the backup scripts neither start, replace nor
@@ -490,8 +490,10 @@ A release whose notes do not mention the MCP tools needs none of this.
 
 ## What must not be done
 
-- **Never give `mcp` or `mcp-tunnel` a host port**, a Cloudflare hostname or a
-  second network. The fallback ADR 0185 names — a public MCP hostname — widens
+- **Never give `mcp` or `mcp-tunnel` a host port**, a Cloudflare hostname or
+  another network, and never put any other service on `mcp_edge`: the tunnel
+  client must reach `mcp` and nothing else (MCPSEC-02,
+  `tests/test_deployment_unraid_main.py`). The fallback ADR 0185 names — a public MCP hostname — widens
   the surface and needs the owner's explicit approval first.
 - **Never put `juristid.env` in either service**, and never copy the gate
   password, the MFA key or a mail credential into `juristid-mcp.env`.

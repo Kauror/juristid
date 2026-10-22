@@ -546,7 +546,7 @@ services:
       # to run the test suite in a process that inherits this marker.
       JURISTID_RUNTIME: deployed
       # The container-network address, so `mcp-tunnel` can reach it as
-      # http://mcp:8001/mcp. Still no host port: `internal` is the only network.
+      # http://mcp:8001/mcp over `mcp_edge`. Still no host port.
       MCP_LISTEN_HOST: 0.0.0.0
       MCP_LISTEN_PORT: "8001"
       SEED_DEV_DATA: "0"
@@ -557,8 +557,12 @@ services:
     # staging volume: every answer comes out of PostgreSQL, document text
     # included (its extracted fragments), and a process that holds a bearer
     # token from a third party has no reason to reach a stored file.
+    # `internal` for `db`, and `mcp_edge` — the one network the tunnel client
+    # is on — so the tunnel reaches this service and nothing else of the stack
+    # (MCPSEC-02).
     networks:
       - internal
+      - mcp_edge
     # Nothing in this container is written to: Python runs with
     # PYTHONDONTWRITEBYTECODE, logs go to stdout, sessions and caches are in
     # PostgreSQL (and read-only from here). `/tmp` is the one scratch
@@ -580,8 +584,11 @@ services:
   # api.openai.com:443 that carries ChatGPT's MCP requests to `mcp` and nothing
   # else. No inbound port, no Cloudflare hostname, no public MCP URL.
   #
-  # `internal` is an ordinary bridge (not `internal: true`), which is what lets
-  # this and `tunnel` reach the internet at all.
+  # It is on `mcp_edge` and nothing else (MCPSEC-02): a third-party binary,
+  # steered by a third party's control plane, that can reach `mcp:8001` and the
+  # internet — and not `db`, not `web` (where it could set CF-Connecting-IP and
+  # bypass Cloudflare), not `tunnel`, not a worker. `mcp_edge` is an ordinary
+  # bridge (not `internal: true`), which is what lets it reach api.openai.com.
   mcp-tunnel:
     # Tag for the reader, digest for Docker (ADR 0179). v0.0.17 is the
     # multi-platform OCI index ghcr.io/openai/tunnel-client:v0.0.17 resolved to
@@ -605,8 +612,8 @@ services:
     env_file:
       - ${JURISTID_MCP_TUNNEL_ENV_FILE:-/mnt/user/appdata/juristid-main/config/juristid-mcp-tunnel.env}
     environment:
-      # Plain HTTP, and only on the internal network: the bearer token in it
-      # never leaves this host's bridge between the two containers.
+      # Plain HTTP, and only on `mcp_edge`: the bearer token in it never
+      # leaves this host's bridge between the two containers.
       MCP_SERVER_URL: http://mcp:8001/mcp
       # At start the client reads the server's protected-resource metadata
       # (RFC 9728) from that same origin and registers it as a target, under
@@ -638,7 +645,7 @@ services:
       mcp:
         condition: service_healthy
     networks:
-      - internal
+      - mcp_edge
     read_only: true
     tmpfs:
       - /tmp:size=8m,mode=1777
@@ -653,6 +660,12 @@ services:
 networks:
   internal:
     name: juristid-main-internal
+    driver: bridge
+  # `mcp` and `mcp-tunnel`, and nothing else (MCPSEC-02, docs/adr/0185 §6) —
+  # both behind the `mcp` profile. A bridge that reaches the internet, because
+  # the tunnel client dials out to api.openai.com.
+  mcp_edge:
+    name: juristid-main-mcp-edge
     driver: bridge
 
 volumes:
