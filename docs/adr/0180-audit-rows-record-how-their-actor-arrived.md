@@ -72,6 +72,17 @@ credentials had changed since the request.
    derived stamp also cannot be forgotten by a future code path that changes a
    password.
 
+   **The message is sent after the commit, never under a lock.** The reset job
+   and `send_setup_link` decide and issue under the locks, commit, and only then
+   hold the SMTP conversation (up to the transport's timeout) — so a slow mail
+   server holds up neither the person's sign-in nor other administration
+   changes. A password change committed while the message is in flight kills
+   the link by its stamp. A message that does not leave invalidates its own
+   link (only that one); an invitation becomes INVITED afterwards only if the
+   message left and its link is still live. `bootstrap_first_administrator`
+   alone still sends inside its transaction, because a failed send must roll
+   back the whole appointment, on an account nobody can sign in to yet.
+
 ## Accepted risk recorded (finding #1, csf_8dbe9b434cfd0c1d12e79d27)
 
 Choosing a persona behind the shared gate — including the department head's —
