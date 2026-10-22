@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Ühenda {{ client_name }} · {{ application_name }}{% endblock %}
+
+{% comment %}
+  The OAuth consent step (docs/adr/0185 §3). The shared gate and the persona
+  only say which work is being looked at; the code from this persona's own
+  «Juristidi MCP autentija» is what makes the connection personal. The form
+  posts back to this same address, query string included, so what «Luba»
+  re-validates is exactly what was shown.
+{% endcomment %}
+
+{% block content %}
+<div class="page page--narrow">
+  <h1>Ühenda {{ client_name }}</h1>
+
+  {% if error %}
+    <div class="formerror" role="alert"><p>{{ error }}</p></div>
+  {% endif %}
+
+  <section class="panel acctenrol">
+    <p><strong>{{ client_name }}</strong> soovib ligipääsu Juristidile.</p>
+    <p>{{ description }}.</p>
+    <p class="acctnote">Tegutsed kasutajana <strong>{{ persona.display_name }}</strong>.</p>
+  </section>
+
+  {% if not may_connect %}
+    <p class="message message--warning" role="status">
+      Kasutajal {{ persona.display_name }} ei ole MCP ligipääsu. Ligipääsu annab Juristidi haldaja.
+    </p>
+    <form method="post" class="card card--form form">
+      {% csrf_token %}
+      <div class="form__actions">
+        <button type="submit" name="otsus" value="keeldu" class="button button--quiet">Keeldu</button>
+        {% if switch_url %}<a class="acctlink" href="{{ switch_url }}">Vaheta kasutajat</a>{% endif %}
+      </div>
+    </form>
+  {% elif locked_minutes %}
+    <p class="message message--warning" role="status">
+      Liiga palju valesid koode. Proovi umbes {{ locked_minutes }} minuti pärast uuesti.
+    </p>
+    <form method="post" class="card card--form form">
+      {% csrf_token %}
+      <div class="form__actions">
+        <button type="submit" name="otsus" value="keeldu" class="button button--quiet">Keeldu</button>
+      </div>
+    </form>
+  {% else %}
+    <form method="post" class="card card--form form" novalidate>
+      {% csrf_token %}
+      <label class="field">
+        <span class="field__label">Kood rakendusest «Juristidi MCP autentija»</span>
+        <input class="field__input mono"
+               type="text"
+               name="kood"
+               inputmode="numeric"
+               autocomplete="one-time-code"
+               pattern="[0-9]{6}"
+               maxlength="6"
+               autocapitalize="off"
+               spellcheck="false"
+               autofocus>
+      </label>
+      <div class="form__actions">
+        <button type="submit" name="otsus" value="luba" class="button button--primary">Luba</button>
+        <button type="submit" name="otsus" value="keeldu" class="button button--quiet">Keeldu</button>
+        {% if switch_url %}<a class="acctlink" href="{{ switch_url }}">Vaheta kasutajat</a>{% endif %}
+      </div>
+    </form>
+  {% endif %}
+</div>
+{% endblock %}

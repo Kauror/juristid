@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Ühendust ei saa luua · {{ application_name }}{% endblock %}
+
+{% comment %}
+  An authorization request too wrong to answer at its redirect address: an
+  unknown client or a redirect address that client never registered. Nothing
+  is sent anywhere, because the address may not be the client's
+  (RFC 6749 §4.1.2.1).
+{% endcomment %}
+
+{% block content %}
+<div class="page page--narrow">
+  <h1>Ühendust ei saa luua</h1>
+  <div class="formerror" role="alert"><p>{{ message }}</p></div>
+</div>
+{% endblock %}

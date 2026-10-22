@@ -12,3 +12,6 @@ class McpAccessConfig(AppConfig):
     name = "app.mcp_access"
     label = "mcp_access"
     verbose_name = "MCP ligipääs"
+
+    def ready(self) -> None:
+        from app.mcp_access import checks  # noqa: F401  (registers system checks)

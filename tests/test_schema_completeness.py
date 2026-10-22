@@ -169,6 +169,8 @@ EXPECTED_TRIGGERS: dict[str, str] = {
     "audit_securityauditevent_append_only": "audit_securityauditevent",
     "matters_entryrevision_append_only": "matters_entryrevision",
     "legacy_import_importrowledger_append_only": "legacy_import_importrowledger",
+    # MCP access events (docs/adr/0185): the authorization server's audit trail.
+    "mcp_access_mcpaccessevent_append_only": "mcp_access_mcpaccessevent",
     # Immutable evidence. A stored version is a fixed artefact, and the raw
     # provenance of an imported row is what proves nothing was invented.
     "documents_documentversion_immutable": "documents_documentversion",
