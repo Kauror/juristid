@@ -122,6 +122,25 @@ class ToolSpec:
     invoked: str
     read: Callable[[Any, Any, Mapping[str, Any]], Any]
     project: Callable[[dict[str, Any]], dict[str, Any]] = lambda answer: answer
+    #: How many results the answer holds, for the call log (EVAL-007). Named per
+    #: tool: "the first list in the answer" was a matter's alternate titles.
+    count: Callable[[dict[str, Any]], int | None] = lambda answer: None
+
+
+def _length_of(*keys: str) -> Callable[[dict[str, Any]], int | None]:
+    """The summed length of the named lists in an answer."""
+
+    def count(answer: dict[str, Any]) -> int | None:
+        values = [answer.get(key) for key in keys]
+        if not any(isinstance(value, list) for value in values):
+            return None
+        return sum(len(value) for value in values if isinstance(value, list))
+
+    return count
+
+
+def _one(answer: dict[str, Any]) -> int | None:
+    return 1
 
 
 def _text(value: Any) -> str:
@@ -181,6 +200,7 @@ def tool_specs() -> list[ToolSpec]:
                 user, a["query"], limit=SEARCH_RESULT_LIMIT
             ),
             project=_project_search,
+            count=_length_of("results"),
         ),
         ToolSpec(
             name="fetch",
@@ -200,6 +220,7 @@ def tool_specs() -> list[ToolSpec]:
             invoked="Read the source",
             read=lambda readers, user, a: readers.fetch_source(user, a["id"]),
             project=_project_fetch,
+            count=_one,
         ),
         ToolSpec(
             name="search_records",
@@ -224,6 +245,7 @@ def tool_specs() -> list[ToolSpec]:
                 matter=a.get("matter"),
                 page=_page(a),
             ),
+            count=_length_of("results"),
         ),
         ToolSpec(
             name="get_matter",
@@ -243,6 +265,7 @@ def tool_specs() -> list[ToolSpec]:
             invoking="Opening the matter…",
             invoked="Opened the matter",
             read=lambda readers, user, a: readers.matter_snapshot(user, a["matter"]),
+            count=_one,
         ),
         ToolSpec(
             name="get_matter_activity",
@@ -267,6 +290,7 @@ def tool_specs() -> list[ToolSpec]:
                 kind=a.get("kind") or "all",
                 page=_page(a),
             ),
+            count=_length_of("items"),
         ),
         ToolSpec(
             name="get_matter_documents",
@@ -285,6 +309,7 @@ def tool_specs() -> list[ToolSpec]:
             read=lambda readers, user, a: readers.matter_documents(
                 user, a["matter"], page=_page(a)
             ),
+            count=_length_of("documents"),
         ),
         ToolSpec(
             name="get_upcoming_commencements",
@@ -306,6 +331,7 @@ def tool_specs() -> list[ToolSpec]:
             read=lambda readers, user, a: readers.upcoming_commencements(
                 user, start=a.get("from"), end=a.get("to"), page=_page(a)
             ),
+            count=_length_of("commencements", "informational"),
         ),
     ]
 
@@ -398,15 +424,6 @@ def _jsonable(value: Any) -> Any:
     return json.loads(json.dumps(value, default=default))
 
 
-def _result_count(structured: dict[str, Any], tool: str) -> int | None:
-    if tool == "fetch":
-        return 1
-    for value in structured.values():
-        if isinstance(value, list):
-            return len(value)
-    return None
-
-
 def _request_of(ctx: Context) -> Request | None:
     try:
         request = ctx.request_context.request
@@ -479,7 +496,7 @@ async def call_tool(
         if not isinstance(answer, Mapping):
             raise TypeError(f"{spec.name}: the reader answered {type(answer).__name__}, not a dict")
         structured = spec.project(_jsonable(dict(answer)))
-        count = _result_count(structured, spec.name)
+        count = spec.count(structured)
         outcome = "ok"
         return CallToolResult(
             content=[TextContent(type="text", text=json.dumps(structured, ensure_ascii=False))],
@@ -515,7 +532,7 @@ def build_server(
     """The MCP server with Juristid's seven read-only tools."""
     runtime = runtime or ReaderRuntime.from_settings()
     verifier = token_verifier or JuristidTokenVerifier(runtime)
-    return MCPServer(
+    server = MCPServer(
         name=SERVER_NAME,
         title="Juristid",
         description="The Estonian Chamber of Commerce's legal-policy register, read-only.",
@@ -527,6 +544,30 @@ def build_server(
         tools=[_make_tool(spec, runtime) for spec in tool_specs()],
         subscriptions=False,
     )
+    _advertise_tools_only(server)
+    return server
+
+
+def _advertise_tools_only(server: MCPServer) -> None:
+    """``initialize`` names the capability this server has: tools (EVAL-005, ADR 0185 §1).
+
+    `MCPServer` always registers the resource and prompt list handlers and so
+    advertises both. Juristid has neither; a client that reads the advertised
+    capabilities must not go looking. The list methods stay served and empty —
+    an unadvertised method answering `[]` is harmless, and refusing them would
+    change nothing a client may rely on. Pinned SDK (`mcp` 2.3.0): the
+    capabilities come from the low-level server's `get_capabilities`.
+    """
+    lowlevel = server._lowlevel_server
+    advertised = lowlevel.get_capabilities
+
+    def tools_only(*args: Any, **kwargs: Any) -> Any:
+        capabilities = advertised(*args, **kwargs)
+        return capabilities.model_copy(
+            update={"prompts": None, "resources": None, "logging": None, "completions": None}
+        )
+
+    lowlevel.get_capabilities = tools_only  # type: ignore[method-assign]
 
 
 class AllowedHostsMiddleware:
@@ -555,6 +596,72 @@ class AllowedHostsMiddleware:
             await PlainTextResponse("Invalid Host header", status_code=421)(scope, receive, send)
             return
         await self.app(scope, receive, send)
+
+
+#: What a refused JSON-RPC message is told, in place of the SDK's parser text.
+INVALID_MESSAGE_TEXT = "Invalid JSON-RPC message."
+
+
+class NoEchoErrorsMiddleware:
+    """A refused request's error says what was wrong, never what was sent (EVAL-006).
+
+    The SDK answers a message it cannot parse or validate — a JSON-RPC batch, a
+    wrong type, a missing field — with 400 and pydantic's full text, which
+    quotes the request body back (`input_value=…`). That is the caller's own
+    text, and not ours to put into a transcript or a log, the rule
+    `JuristidTool` already applies to tool arguments. Any 4xx JSON answer from
+    the transport has its ``error.message`` replaced; the JSON-RPC code stays.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        held: dict[str, Any] = {}
+        body = bytearray()
+
+        async def filtered(message: Any) -> None:
+            if message["type"] == "http.response.start":
+                status = int(message["status"])
+                content_type = Headers(raw=message.get("headers") or []).get("content-type", "")
+                if 400 <= status < 500 and content_type.startswith("application/json"):
+                    held["start"] = message
+                    return
+                await send(message)
+                return
+            if message["type"] == "http.response.body" and "start" in held:
+                body.extend(message.get("body", b""))
+                if message.get("more_body"):
+                    return
+                await self._send_scrubbed(held["start"], bytes(body), send)
+                return
+            await send(message)
+
+        await self.app(scope, receive, filtered)
+
+    @staticmethod
+    async def _send_scrubbed(start: Any, body: bytes, send: Send) -> None:
+        try:
+            payload = json.loads(body or b"null")
+        except ValueError:
+            payload = None
+        if isinstance(payload, dict) and isinstance(payload.get("error"), dict):
+            payload["error"] = {
+                "code": payload["error"].get("code", -32600),
+                "message": INVALID_MESSAGE_TEXT,
+            }
+            body = json.dumps(payload).encode()
+        headers = [
+            (name, value)
+            for name, value in (start.get("headers") or [])
+            if name.lower() != b"content-length"
+        ]
+        headers.append((b"content-length", str(len(body)).encode()))
+        await send({**start, "headers": headers})
+        await send({"type": "http.response.body", "body": body, "more_body": False})
 
 
 async def healthz(request: Request) -> Response:
@@ -606,7 +713,7 @@ def build_app(*, runtime: ReaderRuntime | None = None) -> Starlette:
         # there is no session for a DELETE to end: both are 405.
         Route(
             MCP_PATH,
-            endpoint=RequireBearer(StreamableHTTPASGIApp(session_manager)),
+            endpoint=RequireBearer(NoEchoErrorsMiddleware(StreamableHTTPASGIApp(session_manager))),
             methods=["POST"],
         ),
     ]
