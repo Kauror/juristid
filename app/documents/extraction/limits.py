@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import io
 import math
+import re
 import struct
 import warnings
 import zipfile
@@ -58,9 +59,10 @@ class Limits:
     max_text_bytes: int
     max_text_lines: int
     max_zip_directory_bytes: int
-    max_docx_part_bytes: int
-    max_docx_xml_bytes: int
+    max_office_xml_part_bytes: int
+    max_office_xml_bytes: int
     max_docx_paragraphs: int
+    max_email_parts: int
 
     @classmethod
     def from_settings(cls) -> Limits:
@@ -85,9 +87,10 @@ class Limits:
             max_text_bytes=settings.EXTRACTION_MAX_TEXT_BYTES,
             max_text_lines=settings.EXTRACTION_MAX_TEXT_LINES,
             max_zip_directory_bytes=settings.EXTRACTION_MAX_ZIP_DIRECTORY_BYTES,
-            max_docx_part_bytes=settings.EXTRACTION_MAX_DOCX_PART_BYTES,
-            max_docx_xml_bytes=settings.EXTRACTION_MAX_DOCX_XML_BYTES,
+            max_office_xml_part_bytes=settings.EXTRACTION_MAX_OFFICE_XML_PART_BYTES,
+            max_office_xml_bytes=settings.EXTRACTION_MAX_OFFICE_XML_BYTES,
             max_docx_paragraphs=settings.EXTRACTION_MAX_DOCX_PARAGRAPHS,
+            max_email_parts=settings.EXTRACTION_MAX_EMAIL_PARTS,
         )
 
 
@@ -482,8 +485,19 @@ def configure_image_safety(limits: Limits) -> None:
     warnings.filterwarnings("ignore", category=Image.DecompressionBombWarning)
 
 
-def image_too_large() -> ExtractionFailed:
-    return ExtractionFailed("image_too_large", "Pildi mõõtmed ületavad lubatud piiri.")
+def image_too_large(limits: Limits, measured: str = "") -> ExtractionFailed:
+    """The one refusal for an image over the pixel ceiling, said so a person can act on it.
+
+    The file itself is stored and opens as it always did; what is not made is
+    its thumbnail and its OCR text, and the reason says that.
+    """
+    limit_mp = limits.max_image_pixels / 1_000_000
+    said = f"{measured} pikslit, " if measured else ""
+    return ExtractionFailed(
+        "image_too_large",
+        f"Pilt on liiga suur ({said}lubatud kuni {limit_mp:g} megapikslit). "
+        "Pisipilti ja pildilt loetud teksti ei tehtud; originaal on salvestatud ja avatav.",
+    )
 
 
 def open_bounded_image(content: bytes, limits: Limits) -> Any:
@@ -501,13 +515,15 @@ def open_bounded_image(content: bytes, limits: Limits) -> Any:
     try:
         image = Image.open(io.BytesIO(content))
     except Image.DecompressionBombError as error:
-        raise image_too_large() from error
+        # Pillow's own refusal names the pixel count; the header is not ours here.
+        counted = re.search(r"\((\d+) pixels\)", str(error))
+        raise image_too_large(limits, counted.group(1) if counted else "") from error
     except UnidentifiedImageError as error:
         raise ExtractionFailed("unreadable_image", "Pilti ei õnnestunud avada.") from error
     width, height = image.size
     if max(1, width) * max(1, height) > limits.max_image_pixels:
         image.close()
-        raise image_too_large()
+        raise image_too_large(limits, f"{width} × {height}")
     return image
 
 
