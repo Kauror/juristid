@@ -58,6 +58,12 @@ dependencies = [
     # The enrolment QR code, rendered server-side as inline SVG: pure Python,
     # no dependencies, and no image request to anybody's server.
     "segno>=1.6",
+    # -- read-only MCP server for AI clients (docs/adr/0185) -----------------
+    # The official Model Context Protocol SDK: the Streamable HTTP transport,
+    # tool schemas and the bearer-token resource-server plumbing ChatGPT
+    # speaks. Pinned to the 2.x line; it brings starlette, uvicorn and httpx,
+    # which only the `mcp` service process imports.
+    "mcp>=2.3,<3",
 ]
 
 [dependency-groups]

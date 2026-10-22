@@ -71,6 +71,7 @@ LOCAL_APPS = [
     "app.reporting",
     "app.intelligence",
     "app.related_materials",
+    "app.mcp_access",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + LOCAL_APPS
@@ -989,6 +990,44 @@ EVIDENCE_PILOT_ENABLED = env_bool("JURISTID_EVIDENCE_PILOT", default=False)
 # deployment ends up with an authenticator that is configured and not running.
 CF_ACCESS_TEAM_DOMAIN = env("CF_ACCESS_TEAM_DOMAIN", "")
 CF_ACCESS_AUDIENCE = env("CF_ACCESS_AUDIENCE", "")
+
+# -- Read-only MCP server for AI clients (docs/adr/0185) ---------------------
+#
+# Off unless a deployment turns it on. With it off the OAuth routes answer 404,
+# no grant can be made and the `mcp` process refuses to start, so a release
+# that carries this code changes nothing until an operator decides otherwise.
+MCP_ENABLED = env_bool("MCP_ENABLED", False)
+# The origin colleagues open Juristid at. Every link the MCP server returns and
+# the OAuth issuer are built from it, never from a request's Host header.
+JURISTID_PUBLIC_ORIGIN = env("JURISTID_PUBLIC_ORIGIN", "").rstrip("/")
+# The resource (audience) values a token may be issued for and accepted at:
+# the public MCP URL and/or the Secure MCP Tunnel URL OpenAI rewrites
+# discovery to. A token for any other resource is refused.
+MCP_RESOURCE_URLS = env_list("MCP_RESOURCE_URLS")
+MCP_SCOPE = "juristid.read"
+MCP_ACCESS_TOKEN_SECONDS = env_int("MCP_ACCESS_TOKEN_SECONDS", 3600)
+MCP_REFRESH_TOKEN_SECONDS = env_int("MCP_REFRESH_TOKEN_SECONDS", 30 * 24 * 3600)
+MCP_AUTHORIZATION_CODE_SECONDS = 60
+MCP_ENROLMENT_LINK_SECONDS = env_int("MCP_ENROLMENT_LINK_SECONDS", 30 * 60)
+# Pre-registered OAuth clients, by client id (a client metadata document URL).
+# Only ChatGPT's own metadata document by default; there is no open dynamic
+# client registration.
+MCP_OAUTH_CLIENTS: dict[str, dict[str, object]] = {
+    "https://chatgpt.com/oauth/client.json": {
+        "client_name": "ChatGPT",
+        "redirect_uris": ["https://chatgpt.com/connector_platform_oauth_redirect"],
+        "token_endpoint_auth_methods": ["private_key_jwt", "none"],
+        "jwks_uri": "https://chatgpt.com/oauth/jwks.json",
+    },
+}
+# The `mcp` process: where it listens inside the container network, how much
+# it does at once and how much it returns.
+MCP_LISTEN_HOST = env("MCP_LISTEN_HOST", "0.0.0.0")
+MCP_LISTEN_PORT = env_int("MCP_LISTEN_PORT", 8001)
+MCP_MAX_CONCURRENT_CALLS = env_int("MCP_MAX_CONCURRENT_CALLS", 4)
+MCP_CALL_TIMEOUT_SECONDS = env_int("MCP_CALL_TIMEOUT_SECONDS", 60)
+MCP_FETCH_MAX_CHARS = env_int("MCP_FETCH_MAX_CHARS", 20_000)
+MCP_MAX_REQUEST_BYTES = env_int("MCP_MAX_REQUEST_BYTES", 64 * 1024)
 
 LOGGING = {
     "version": 1,
