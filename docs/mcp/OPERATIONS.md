@@ -367,6 +367,7 @@ must be refused at the authorization step. Record both in the enablement report.
 | What has the tunnel client observed? | `docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T mcp-tunnel wget -q -O - 'http://127.0.0.1:8080/health?details=true'` | `"ready": true`; per-component detail |
 | Who holds access? | `docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py mcp_access list` | the people you granted, nobody else; `lukus kuni` `-` and `valesid koode` small |
 | Is anybody guessing authenticator codes? | `docker compose -p juristid-main -f deploy/unraid-main/compose.yml logs --since 24h web \| grep 'MCP grant'` | nothing. Every lock and every suspension prints one WARNING line naming the grant and the account (never a code); a suspension means twenty wrong codes without a success |
+| Is anybody locked or suspended right now? | the `mcp_access list` command above | `lukus kuni` is `-` for everybody, no `PEATATUD`, `valesid koode` small. Nothing pages anybody (NEW-04): this and the WARNING line are the alert, so look at both at every release and whenever a colleague says connecting fails |
 
 The tunnel client's health and admin endpoints listen on the container's
 loopback only (`HEALTH_LISTEN_ADDR=127.0.0.1:8080`): they are reachable through
@@ -599,6 +600,43 @@ fixed in code; these are not, and each says what holds instead.
   `REVOKE TEMPORARY ON DATABASE juristid FROM PUBLIC` plus a `GRANT` to the
   owner role — a database-wide change, deliberately not made by
   `mcp_db_role`, and the owner's decision.
+- **Locks and suspensions page nobody (NEW-04).** A lock or a suspension
+  writes an `McpAccessEvent` (`GRANT_LOCKED`, `GRANT_SUSPENDED`) and one
+  WARNING line in the `web` log, and `mcp_access list` shows it (`lukus kuni`,
+  `PEATATUD`). It is not also a `SecurityAuditEvent`: a new event type there
+  is a migration in `app.audit`, outside this app. So a suspended colleague
+  may learn of it from the consent page before an operator does — the two
+  *Health* rows above are the check.
+- **Anybody with the gate password can suspend a colleague's MCP access
+  (NEW-05, by design).** Twenty wrong codes across the throttle windows, or
+  from two gate sessions, suspend that person's grant until
+  `mcp_access unlock`. Tokens already issued keep working — a suspension
+  signals guessing, not theft — so the colleague loses only *new*
+  connections. Thirty failures from the office's one shared address throttle
+  everybody there for 15 minutes. What holds: the WARNING line and
+  `mcp_access list` say who; talk to the person, then unlock.
+- **A timing difference between «no grant» and «wrong code» (NEW-06).** The
+  no-grant answer skips one or two local database round trips that a wrong
+  code costs. Through Cloudflare that is hard to measure, every sample costs a
+  throttle unit, and it reveals only whether a persona holds an MCP grant —
+  the message and the status are identical.
+- **`mcp` could reach `web` and choose its own client address (NEW-07a).**
+  `web` believes `CF-Connecting-IP` from any peer once `TRUST_CF_CONNECTING_IP`
+  is on (`app/core/client_ip.py` checks the header, not where it came from),
+  and `mcp` shares the `internal` network with `web` because it needs `db`.
+  `mcp` has no reason to call `web` at all, so code running inside `mcp` (a
+  compromise of that process) could call `web:8000` directly with an address
+  of its choosing for the audit rows and the throttles — never an identity
+  and never an authorization input (ADR 0016). Closing it is a network
+  change — `db` on a network of its own that `mcp` joins instead of
+  `internal` — not made in this release.
+- **The tunnel client's own egress (NEW-07b).** `mcp-tunnel` reaches only
+  `mcp` by name, but its bridge's default route still reaches the Docker host
+  and the office LAN, as every container's here does. Pre-existing, generic.
+- **A release moves `mcp`, never `mcp-tunnel` (NEW-07c).** A future change to
+  `mcp-tunnel`'s network or configuration takes effect only when somebody
+  recreates it by name (*Starting and restarting only the MCP component*).
+  First enablement creates both fresh.
 - **Two factors, not one person (ADR 0185, *Consequences*).** Somebody who
   knows the gate password and holds a colleague's authenticator can connect as
   that colleague. The lockout (MCPSEC-01) bounds guessing; it cannot help
