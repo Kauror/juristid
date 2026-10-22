@@ -268,7 +268,7 @@ def accounts_back_at_the_end():
 def test_the_migration_supersedes_duplicate_live_links_and_keeps_the_newest(
     accounts_back_at_the_end,
 ):
-    """The populated proof for `accounts/0005` (tests/test_migration_data_proof.py)."""
+    """`accounts/0005` over rows: duplicates superseded, nothing deleted, newest kept."""
     user, _ = person()
     other, _ = person()
     _migrate_to(BEFORE)
