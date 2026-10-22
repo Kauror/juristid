@@ -297,6 +297,19 @@ class OneNoteArchive:
         """A resource's bytes by the page key and path a catalogue row stored."""
         return self._bytes(self._resource_relative(page_key, relative_path))
 
+    def page_record(self, page_key: str) -> dict:
+        """A page's own ``page.json``, whole, read through the same no-follow path.
+
+        For a caller that needs a field `ArchivePage` does not carry. The file
+        is opened again here rather than trusted from an earlier `page` call, so
+        the read is checked again and cannot be redirected by a later swap.
+        """
+        key = self._segment(page_key, "page key")
+        relative = f"pages/{key}/page.json"
+        if self._kind(relative) is not Kind.FILE:
+            raise ArchiveError(f"{page_key}: page.json is missing.")
+        return json.loads(self._bytes(relative).decode("utf-8"))
+
     def read_page_xml(self, page: ArchivePage) -> bytes:
         try:
             relative = PurePath(page.xml_path).relative_to(self.root).as_posix()

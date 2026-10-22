@@ -1444,9 +1444,9 @@ class _Writer:
 
         archive = self.plan.archive
         page = archive.page(topic["source_page"]["page_key"])
-        identity = json.loads(
-            (archive.pages_root / page.page_key / "page.json").read_text(encoding="utf-8")
-        )
+        # Through the archive's no-follow reader, never a bare path: the key is
+        # the archive's own `archivePageKey` (docs/adr/0178).
+        identity = archive.page_record(page.page_key)
         now = timezone.now()
         values = {
             "page_key": page.page_key,
