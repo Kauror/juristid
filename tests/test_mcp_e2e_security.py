@@ -146,7 +146,10 @@ def test_a_ten_thousand_character_id_is_refused_by_the_schema(mcp, unchanged):
         "2026_0",
         "9999_2000000001",
         "0000_1",
-        str(uuid.uuid4()),
+        # A well-formed UUID nobody has. Fixed, not uuid4(): a parameter is part
+        # of the test id, and CI's shard plan needs ids that are the same on
+        # every collection.
+        "8c0d5c3e-6b0f-4b7a-9d55-3f1e2a7c9b10",
     ],
 )
 def test_a_crafted_matter_reference_is_refused(mcp, matter, unchanged):
