@@ -240,9 +240,20 @@ def _matter_ref(matter: Any) -> dict[str, Any]:
     }
 
 
+#: What starts every title built from a TEST Matter's heading (MCPSEC-16).
+TEST_DATA_PREFIX = "[TEST] "
+
+
 def _matter_heading(matter: Any) -> str:
+    """«2026_225 · Title», or «[TEST] 2026_225 · Title» for a TEST Matter.
+
+    `search` answers ``id``, ``title`` and ``url`` only, so the title is where
+    a client learns that a hit is development data, not the department's work
+    (MCPSEC-16). Every search title and every fetch title is built from here.
+    """
     reference = matter.display_reference
-    return f"{reference} · {matter.title}" if reference else matter.title
+    heading = f"{reference} · {matter.title}" if reference else matter.title
+    return f"{TEST_DATA_PREFIX}{heading}" if matter.is_test_data else heading
 
 
 def _page_number(page: Any, *, maximum: int = MAX_PAGE) -> int:
