@@ -78,9 +78,9 @@ def bell_count(request: HttpRequest) -> HttpResponse:
     """The bell's number, fetched after the page has rendered.
 
     Its own request so that adding the bell to the top bar adds no query to any
-    page: the count is one `COUNT` asked when the bell scrolls into view
-    (``hx-trigger="intersect once"``), not one more statement in the budget of
-    every page the bar is drawn on.
+    page's own render: the count is one `COUNT` asked once the page has loaded
+    (``hx-trigger="load"``), not one more statement in the query budget of every
+    page the bar is drawn on.
     """
     return render(
         request,

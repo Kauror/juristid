@@ -95,7 +95,7 @@ and the two sections that were genuinely the head's are decided on the page
 {% comment %}
   R1-C (docs/adr/0188): «Kontrolli jõustumist» — a minimal include so the bell
   can be tested on this branch. The integrator places it in `base.html` beside
-  the theme toggle instead; this file is rendered twice (bar and «Veel»), and
-  the bell's `intersect once` trigger is what keeps the hidden copy quiet.
+  the theme toggle instead: this file is rendered twice (bar and «Veel»), so
+  here the bell — and its count request — appears twice.
 {% endcomment %}
 {% load notifications %}{% commencement_bell %}
