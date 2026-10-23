@@ -922,13 +922,21 @@ def change_planned_action(
     _refuse_a_follow_up_check(previous)
     if (previous.text, previous.target_date) == (text, target_date):
         return previous
+    # The form offers a day and is pre-filled with the stored one. A row known
+    # only to a period — «oktoober 2026», anchored on the 1st (docs/adr/0079)
+    # — whose day comes back unchanged had only its words changed; reading the
+    # anchor as a chosen day would invent an exact date nobody gave. A day the
+    # person did change is a day they chose.
+    precision = (
+        previous.date_precision if target_date == previous.target_date else DatePrecision.EXACT
+    )
     action = NextAction.objects.create(
         matter=locked_matter,
         text=text,
         kind=previous.kind,
         date_semantics=previous.date_semantics,
         target_date=target_date,
-        date_precision=DatePrecision.EXACT,
+        date_precision=precision,
         status=ActionStatus.PLANNED,
         responsible=previous.responsible,
         created_by=actor,
