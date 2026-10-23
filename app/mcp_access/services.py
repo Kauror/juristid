@@ -108,13 +108,21 @@ def grant_refusal(user: User) -> str:
 
     Stricter than `may_read_business_content`: a business *role* is required,
     so an administrator holding a temporary break-glass grant is not given a
-    standing AI connection on the strength of it. Synthetic rehearsal accounts
-    are refused wherever real data is allowed.
+    standing AI connection on the strength of it; a technical account
+    (``is_staff`` / ``is_superuser``) is refused even with a business role, as
+    the persona list refuses it. Synthetic rehearsal accounts are refused
+    wherever real data is allowed.
     """
     if not user.is_active:
         return "konto ei ole aktiivne"
     if acting_role(user) not in ROLES_WITH_BUSINESS_READ:
         return "kontol ei ole sisu lugemise rolli (SPECIALIST, DEPARTMENT_HEAD või READER)"
+    if user.is_staff or user.is_superuser:
+        # Technical access is not business identity (app/accounts/selectors.py).
+        # The persona rule used to keep these accounts off the consent page;
+        # since the page asks for the account's own address instead (docs/adr/0185
+        # §3), the refusal is said here, where every step asks it.
+        return "tehnilisele kontole (is_staff / is_superuser) ei anta ligipääsu"
     if not may_read_business_content(user):  # pragma: no cover - implied by the role today
         return "konto ei tohi sisu lugeda"
     if user.is_synthetic and getattr(settings, "REAL_DATA_ALLOWED", False):
@@ -434,11 +442,27 @@ def peek_link(proof: str) -> McpEnrolmentLink | None:
 
 
 def link_for(proof: str, user: User) -> McpEnrolmentLink | None:
-    """The usable link, only if it is this persona's. Otherwise indistinguishable from none."""
+    """The usable link, only if it is this account's. Otherwise indistinguishable from none."""
     link = peek_link(proof)
     if link is None or link.grant.user_id != user.pk or grant_refusal(user):
         return None
     return link
+
+
+def enrolment_account(proof: str) -> User | None:
+    """The account a usable link was issued to, while it may still be granted; else None.
+
+    Read from the link, never from the request: the link (with the gate in
+    front of it) is the proof of possession, and the address typed on the page
+    must then name this very account (`check_enrolment_address`).
+    """
+    link = peek_link(proof) if proof else None
+    if link is None:
+        return None
+    account = User.objects.filter(pk=link.grant.user_id).first()
+    if account is None or grant_refusal(account):
+        return None
+    return account
 
 
 def account_label(user: User) -> str:
@@ -777,9 +801,60 @@ def _held_throttle(key: str, *, now: datetime) -> McpAuthorizeThrottle:
     return McpAuthorizeThrottle.objects.select_for_update().get(key=key)
 
 
+def _throttle_window() -> timedelta:
+    return timedelta(seconds=int(settings.MCP_AUTHORIZE_THROTTLE_SECONDS))
+
+
+def _hold_throttles(
+    throttle: Sequence[ThrottleKey], *, now: datetime
+) -> tuple[list[McpAuthorizeThrottle], int]:
+    """Every key's row under its own lock, in a fixed order; and the wait if one is spent.
+
+    Taken before anything is checked, and charged (`_charge_throttles`) after
+    a failure in the same transaction, so parallel attempts cannot all read
+    "under the limit". A wait above zero means nothing may be checked at all.
+    """
+    window = _throttle_window()
+    rows: list[McpAuthorizeThrottle] = []
+    blocked: list[McpAuthorizeThrottle] = []
+    for item in sorted(throttle, key=lambda entry: entry.key):
+        row = _held_throttle(item.key, now=now)
+        if row.window_started_at + window <= now:
+            row.failures = 0
+            row.window_started_at = now
+        rows.append(row)
+        if row.failures >= item.limit:
+            blocked.append(row)
+    wait = max((_seconds_until(row.window_started_at + window, now) for row in blocked), default=0)
+    return rows, wait
+
+
+def _charge_throttles(rows: Sequence[McpAuthorizeThrottle], *, failed: bool) -> None:
+    for row in rows:
+        if failed:
+            row.failures += 1
+        row.save(update_fields=["failures", "window_started_at", "updated_at"])
+
+
+def account_for_address(address: str) -> User | None:
+    """The one account whose sign-in address (``upn``) this is, normalised; else None.
+
+    The accounts app's own normal form (`app.accounts.email_policy.normalise`).
+    Says nothing about whether the account may connect — every step asks that
+    itself — and an address two accounts could answer to is nobody's.
+    """
+    from app.accounts import email_policy
+
+    normal = email_policy.normalise(address)[:320]
+    if not normal or "@" not in normal:
+        return None
+    matches = list(User.objects.filter(upn__iexact=normal).order_by("pk")[:2])
+    return matches[0] if len(matches) == 1 else None
+
+
 def authorize_attempt(
     *,
-    user: User,
+    user: User | None,
     request: AuthorizationRequest,
     totp_code: str,
     ip_address: str | None,
@@ -787,43 +862,104 @@ def authorize_attempt(
 ) -> AuthorizationOutcome:
     """`authorize`, unless this session or address has already failed too often.
 
+    ``user`` is the account the typed address names (`account_for_address`),
+    or None when it names nobody — which is answered like a wrong code and
+    counted like one, so the throttle bounds guessing addresses as much as
+    guessing codes (docs/adr/0185 §3).
+
     The per-grant lock bounds the guesses at one colleague's code; this bounds
-    one gate session — and one client address — across *every* persona it can
-    choose (MCPSEC-01). Each key's row is taken under its own lock, in a fixed
-    order, before anything is checked, and charged after a failure in the same
-    transaction, so parallel attempts cannot all read "under the limit". A
-    refused attempt has no code checked and charges no grant. The window is
-    fixed (`MCP_AUTHORIZE_THROTTLE_SECONDS`) and a success resets nothing: a
-    colleague's own right code must not buy another round of guesses.
+    one gate session — and one client address — across *every* account it can
+    name (MCPSEC-01). A refused attempt has no code checked and charges no
+    grant. The window is fixed (`MCP_AUTHORIZE_THROTTLE_SECONDS`) and a success
+    resets nothing: a colleague's own right code must not buy another round of
+    guesses.
     """
-    window = timedelta(seconds=int(settings.MCP_AUTHORIZE_THROTTLE_SECONDS))
     with transaction.atomic():
         now = timezone.now()
-        rows: list[tuple[McpAuthorizeThrottle, int]] = []
-        for item in sorted(throttle, key=lambda entry: entry.key):
-            row = _held_throttle(item.key, now=now)
-            if row.window_started_at + window <= now:
-                row.failures = 0
-                row.window_started_at = now
-            rows.append((row, item.limit))
-        blocked = [row for row, limit in rows if row.failures >= limit]
-        if blocked:
+        rows, wait = _hold_throttles(throttle, now=now)
+        if wait:
             record(
                 McpAccessEventType.AUTHORIZATION_REFUSED,
                 succeeded=False,
-                user=user if user.is_authenticated else None,
+                user=user,
                 client_id=request.client.client_id,
                 ip_address=ip_address,
                 reason="throttled",
             )
-            wait = max(_seconds_until(row.window_started_at + window, now) for row in blocked)
             return AuthorizationOutcome(status="throttled", wait=wait)
-        outcome = authorize(user=user, request=request, totp_code=totp_code, ip_address=ip_address)
-        for row, _limit in rows:
-            if outcome.status != "ok":
-                row.failures += 1
-            row.save(update_fields=["failures", "window_started_at", "updated_at"])
+        if user is None:
+            # Nothing is said about which address was typed: the audit row is
+            # not a list of guesses at colleagues' addresses.
+            record(
+                McpAccessEventType.AUTHORIZATION_REFUSED,
+                succeeded=False,
+                client_id=request.client.client_id,
+                ip_address=ip_address,
+                reason="unknown_account",
+            )
+            outcome = AuthorizationOutcome(status="no_grant")
+        else:
+            outcome = authorize(
+                user=user, request=request, totp_code=totp_code, ip_address=ip_address
+            )
+        _charge_throttles(rows, failed=outcome.status != "ok")
         return outcome
+
+
+@dataclass(frozen=True)
+class EnrolmentAddressOutcome:
+    """The enrolment page's address step: ``"ok"`` with the account, or a refusal.
+
+    ``"throttled"`` when this session or address has failed too often; else
+    ``"refused"``, which covers an unknown address, another account's and a link that
+    stopped being usable meanwhile, alike.
+    """
+
+    status: str
+    user: User | None = None
+    wait: int = 0
+
+
+def check_enrolment_address(
+    *,
+    proof: str,
+    address: str,
+    ip_address: str | None,
+    throttle: Sequence[ThrottleKey],
+) -> EnrolmentAddressOutcome:
+    """Whether the typed address is the account the link was issued to (docs/adr/0185 §3).
+
+    Counted by the consent page's own throttle (the same keys), so a gate
+    session cannot try addresses here that it could not try there. A wrong
+    address, an unknown one and a link that stopped being usable get one answer.
+    """
+    with transaction.atomic():
+        now = timezone.now()
+        rows, wait = _hold_throttles(throttle, now=now)
+        if wait:
+            record(
+                McpAccessEventType.ENROLMENT_REFUSED,
+                succeeded=False,
+                ip_address=ip_address,
+                reason="throttled",
+            )
+            return EnrolmentAddressOutcome(status="throttled", wait=wait)
+        account = enrolment_account(proof)
+        typed = account_for_address(address)
+        matched = account is not None and typed is not None and typed.pk == account.pk
+        if not matched:
+            record(
+                McpAccessEventType.ENROLMENT_REFUSED,
+                succeeded=False,
+                user=account,
+                grant=open_grant(account) if account is not None else None,
+                ip_address=ip_address,
+                reason="address_mismatch" if account is not None else "link_not_usable",
+            )
+        _charge_throttles(rows, failed=not matched)
+        if not matched:
+            return EnrolmentAddressOutcome(status="refused")
+        return EnrolmentAddressOutcome(status="ok", user=account)
 
 
 def record_denied(

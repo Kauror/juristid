@@ -9,10 +9,13 @@
 
 * **grant** makes a PENDING grant for one account and prints its one-time
   enrolment link, built from `JURISTID_PUBLIC_ORIGIN`. Refused for an inactive
-  account, one without a business-read role (SPECIALIST, DEPARTMENT_HEAD,
-  READER), one that already has a grant, and a synthetic account wherever real
-  data is allowed. Hand the link to the person yourself; it is printed once and
-  stored only as a digest.
+  account, a technical one (``is_staff`` / ``is_superuser``), one without a
+  business-read role (SPECIALIST, DEPARTMENT_HEAD, READER), one that already
+  has a grant, and a synthetic account wherever real data is allowed. Hand the
+  link to the person yourself; it is printed once and stored only as a digest.
+  They open it behind the shared gate — no persona is needed, so a READER
+  enrols like anybody else — and type their own account's e-mail address
+  before the authenticator is shown.
 * **enrolment-link** prints a new link for a grant still waiting for its
   authenticator; the outstanding one stops working.
 * **revoke** ends the grant and every token, code and link it has, at once.
@@ -114,6 +117,12 @@ class Command(BaseCommand):
             "Ühekordne seadistuslink (anna see isikule ise, see ei ole kusagil salvestatud):"
         )
         self.stdout.write(issued.url)
+        # Since docs/adr/0185 §3 the link needs the shared gate and nothing else
+        # behind it: a READER, who is never offered as a persona, enrols too.
+        self.stdout.write(
+            "Isik avab lingi jagatud värava taga (ühisparool); kasutajat (personat) valima ei "
+            "pea. Lehel küsitakse tema konto e-posti aadressi, siis seadistab ta autentija."
+        )
 
     def _list(self) -> None:
         rows = services.grant_rows()
