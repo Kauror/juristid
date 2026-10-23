@@ -965,3 +965,43 @@ def test_an_excluded_word_is_never_matched_back_in(signed_in, specialist):
     # A quoted phrase still finds exactly its title, first, as a title phrase.
     quoted = search_matters(query='"alfa beeta"', user=specialist)
     assert [result.matter.pk for result in quoted] == [excluded.pk]
+
+
+# ---------------------------------------------------------------------------
+# A query the search refuses is said to be refused (E-07)
+# ---------------------------------------------------------------------------
+
+
+def test_an_overlong_query_is_refused_in_the_words_otsing_uses(signed_in):
+    """Not «0 teemat … ei andnud tulemusi»: the query was never run."""
+    from app.search.services import MAX_QUERY_CHARACTERS
+
+    indexed(factories.MatterFactory(title="Pakendiseaduse eelnõu"))
+    overlong = "pakendiseaduse " * 40
+    assert len(overlong.strip()) > MAX_QUERY_CHARACTERS
+
+    response = signed_in.get(REGISTER, {"q": overlong, "olek": "koik"})
+
+    assert response.status_code == 200
+    body = html.unescape(response.content.decode())
+    assert "Päringut ei tehtud." in body
+    assert f"Proovi kuni {MAX_QUERY_CHARACTERS} tähemärgiga otsingut." in body
+    assert "ei andnud selle filtriga tulemusi" not in body
+    assert total_of(response) == 0
+    # Nor is the refused text echoed back into the box as if it had been searched.
+    assert response.context["query"] == ""
+    # And the box itself stops at the limit.
+    assert f'maxlength="{MAX_QUERY_CHARACTERS}"' in body
+
+
+def test_a_query_at_the_limit_is_still_searched(signed_in):
+    from app.search.services import MAX_QUERY_CHARACTERS
+
+    wanted = indexed(factories.MatterFactory(title="Pakendiseaduse eelnõu"))
+    at_limit = ("pakendiseaduse " * 40)[:MAX_QUERY_CHARACTERS].strip()
+
+    response = signed_in.get(REGISTER, {"q": at_limit, "olek": "koik"})
+
+    assert "Päringut ei tehtud." not in html.unescape(response.content.decode())
+    assert response.context["query"] == at_limit
+    assert titles_on(response) == [wanted.title]

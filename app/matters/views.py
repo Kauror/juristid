@@ -1732,7 +1732,15 @@ def matter_list(request: HttpRequest) -> HttpResponse:
 
     # Applied first, so everything below narrows an already-searched population
     # and the count beside the box is the count of the list under it.
-    query = (params.get("q") or "").strip()
+    # Through the search module's own gate (E-07): a query it refuses — longer
+    # than `MAX_QUERY_CHARACTERS` — is never run, and the page says so in the
+    # words `/otsing/` uses rather than «0 teemat … ei andnud tulemusi», which
+    # would claim the register holds nothing for a question nobody asked it.
+    raw_query = params.get("q") or ""
+    query = search_services.clean_query(raw_query)
+    query_was_refused = bool(raw_query.strip()) and not query
+    if query_was_refused:
+        queryset = queryset.none()
     if query:
         # **Searched once per request** (QRY-06). Composed as a subquery, the
         # search ran inside every statement that read the register — the rows,
@@ -1807,6 +1815,8 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         "paginator": paginator,
         "total": paginator.count,
         "query": query,
+        "query_was_refused": query_was_refused,
+        "max_query_characters": search_services.MAX_QUERY_CHARACTERS,
         "query_string": query_without_page.urlencode(),
         "cleared_query": cleared.urlencode(),
         # The free-text chip's own `×`, built like every sibling chip's rather
