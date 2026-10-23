@@ -927,3 +927,41 @@ def test_the_reader_is_the_same_one_the_filter_uses(specialist):
     assert read_reporting_year("2026-2020") is None
     assert read_reporting_year("eelmine aasta") is None
     assert read_reporting_year("") is None
+
+
+# ---------------------------------------------------------------------------
+# Websearch syntax is obeyed by every tier (E-01)
+# ---------------------------------------------------------------------------
+
+
+def test_an_excluded_word_is_never_matched_back_in(signed_in, specialist):
+    """``alfa -beeta`` excludes «Alfa beeta» from every surface.
+
+    The title-phrase tier read the query through `phraseto_tsquery`, which drops
+    the minus, and the fuzzy tier through trigram similarity, which never sees
+    it: the title containing the excluded word came first, as «pealkirja fraas»,
+    on /otsing/, in the header suggestions and on /teemad/?q=.
+    """
+    import json
+
+    from app.search.services import search
+
+    excluded = indexed(factories.MatterFactory(title="Alfa beeta"))
+    wanted = indexed(factories.MatterFactory(title="Alfa gamma"))
+
+    assert [
+        result.matter.pk for result in search_matters(query="alfa -beeta", user=specialist)
+    ] == [wanted.pk]
+    assert {result.matter.pk for result in search(query="alfa -beeta", user=specialist)} == {
+        wanted.pk
+    }
+
+    payload = json.loads(signed_in.get(reverse("search:suggestions"), {"q": "alfa -beeta"}).content)
+    assert [row["title"] for row in payload["results"]] == ["Alfa gamma"]
+
+    response = signed_in.get(REGISTER, {"q": "alfa -beeta", "olek": "koik"})
+    assert titles_on(response) == ["Alfa gamma"]
+
+    # A quoted phrase still finds exactly its title, first, as a title phrase.
+    quoted = search_matters(query='"alfa beeta"', user=specialist)
+    assert [result.matter.pk for result in quoted] == [excluded.pk]
