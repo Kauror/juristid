@@ -19,6 +19,7 @@ from django.utils import timezone
 
 from app.accounts import admin_session, administration, capabilities, mfa
 from app.accounts.admin_session import VerifiedActor
+from app.accounts.admin_views import UNSAVED_NOTICE
 from app.accounts.enums import Capability, UserRole
 from app.accounts.models import TotpDevice, User
 from app.audit.enums import AuthAssurance, AuthMethod, SecurityEventType
@@ -427,6 +428,65 @@ def test_switching_persona_keeps_the_administrator_and_the_actor(client):
     assert client.get(reverse(LIST)).status_code == 200
 
 
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [("nobody", "persona"), ("persona", "persona"), ("persona", "nobody")],
+    ids=["first-persona", "switch", "drop"],
+)
+def test_a_pending_step_up_does_not_survive_a_persona_change(client, before, after):
+    """ADR 0186 §1 «Persona changes»; bounty H-05 was the first choice.
+
+    `login` keeps the session's data when the session had no user yet, so the
+    password-only step was carried into the first persona and a code then
+    opened the administrator session. Every change now starts it again from
+    the password — the code page and the enrolment page alike.
+    """
+    admin, secret = full_admin()
+    pass_gate(client)
+    if before == "persona":
+        choose(client, factories.UserFactory(role=UserRole.SPECIALIST))
+    password_only = client.post(
+        reverse("haldus:sign_in"), {"email": admin.upn, "password": PASSWORD}
+    )
+    assert password_only["Location"] == reverse("haldus:sign_in_code")
+
+    if after == "persona":
+        choose(client, factories.UserFactory(role=UserRole.SPECIALIST))
+    else:
+        client.post(reverse("accounts:act_as"), {"user_id": ""})
+
+    assert client.get(reverse("haldus:sign_in_code"))["Location"] == reverse("haldus:sign_in")
+    client.post(reverse("haldus:sign_in_code"), {"code": code(secret, admin)})
+    assert admin_session.SESSION_STATE not in client.session
+    assert client.get(reverse(LIST)).status_code == 404
+
+
+def test_a_password_waiting_for_enrolment_does_not_survive_the_first_persona(client):
+    unenrolled, _ = person(manage=True, delegate=True)
+    pass_gate(client)
+    client.post(reverse("haldus:sign_in"), {"email": unenrolled.upn, "password": PASSWORD})
+    assert client.get(reverse("haldus:enrol")).status_code == 200
+    assert admin_session.SESSION_SEALED_ENROLMENT in client.session
+
+    choose(client, factories.UserFactory(role=UserRole.SPECIALIST))
+
+    assert client.get(reverse("haldus:enrol"))["Location"] == reverse("haldus:sign_in")
+    assert admin_session.SESSION_PENDING not in client.session
+    assert admin_session.SESSION_SEALED_ENROLMENT not in client.session
+
+
+def test_choosing_a_first_persona_keeps_an_open_administrator_session(client):
+    """Defined: only the pending step goes; an open session carries on unchanged."""
+    admin, secret = full_admin()
+    verified(client, admin, secret)
+    state = client.session[admin_session.SESSION_STATE]
+
+    choose(client, factories.UserFactory(role=UserRole.SPECIALIST))
+
+    assert client.session[admin_session.SESSION_STATE] == state
+    assert client.get(reverse(LIST)).status_code == 200
+
+
 def test_choosing_the_head_persona_is_not_verification(client):
     head = factories.DepartmentHeadFactory(
         capability_overrides={"accounts.manage": "allow", "accounts.delegate": "allow"}
@@ -549,6 +609,94 @@ def test_a_change_after_the_window_asks_for_password_and_code(client):
     assert _events(
         SecurityEventType.REAUTHENTICATED, actor=admin, detail__path="administrator_session"
     ).exists()
+
+
+def _reprove(client, admin, secret, back):
+    proved = client.post(
+        reverse("haldus:reauthenticate"),
+        {"password": PASSWORD, "code": code(secret, admin), "next": back},
+    )
+    assert proved.status_code == 302 and proved["Location"] == back
+    return proved
+
+
+def test_a_change_stopped_for_a_fresh_proof_says_it_was_not_saved(client):
+    """Bounty H-01: the proof gates the change, it does not make it — and the page says so.
+
+    «Lülita välja» with a stale proof asks for password and code; after them the
+    administrator lands on the account page, which must not look as if the
+    account were switched off. Nothing is replayed: the account is still on,
+    the page says the change was not saved, and the reason typed is offered
+    again. The same POST with a fresh proof switches it off at once.
+    """
+    admin, secret = full_admin()
+    target, _ = person()
+    verified(client, admin, secret)
+    _age(client, strong_at=timedelta(seconds=601))
+    detail = reverse("account_admin:detail", kwargs={"pk": target.pk})
+    deactivate = reverse("account_admin:deactivate", kwargs={"pk": target.pk})
+
+    asked = client.post(deactivate, {"reason": "Lahkus Kojast"})
+
+    assert asked.status_code == 302
+    assert asked["Location"].startswith(reverse("haldus:reauthenticate"))
+    # Not before the proof is fresh again: «Kinnitasid oma isiku» would be untrue.
+    assert UNSAVED_NOTICE not in client.get(detail).content.decode()
+
+    _reprove(client, admin, secret, detail)
+    landing = client.get(detail).content.decode()
+
+    target.refresh_from_db()
+    assert target.is_active
+    assert UNSAVED_NOTICE in landing
+    assert 'value="Lahkus Kojast"' in landing
+    assert UNSAVED_NOTICE not in client.get(detail).content.decode()  # once
+
+    done = client.post(deactivate, {"reason": "Lahkus Kojast"})
+
+    assert done["Location"] == detail
+    target.refresh_from_db()
+    assert not target.is_active
+    assert UNSAVED_NOTICE not in client.get(detail).content.decode()
+
+
+def test_an_account_form_stopped_for_a_fresh_proof_is_offered_again(client):
+    from app.accounts.forms import field_name
+
+    admin, secret = full_admin()
+    target, _ = person()
+    verified(client, admin, secret)
+    _age(client, strong_at=timedelta(seconds=601))
+    detail = reverse("account_admin:detail", kwargs={"pk": target.pk})
+
+    client.post(
+        detail,
+        {"display_name": "Uus Nimi", "role": target.role, field_name("work.assign"): "on"},
+    )
+    _reprove(client, admin, secret, detail)
+    landing = client.get(detail).content.decode()
+
+    target.refresh_from_db()
+    assert target.display_name != "Uus Nimi"
+    assert UNSAVED_NOTICE in landing
+    assert 'value="Uus Nimi"' in landing
+
+
+def test_a_kept_change_is_only_for_the_administrator_who_made_it(client):
+    admin, secret = full_admin()
+    other, other_secret = full_admin()
+    target, _ = person()
+    verified(client, admin, secret)
+    _age(client, strong_at=timedelta(seconds=601))
+    detail = reverse("account_admin:detail", kwargs={"pk": target.pk})
+    client.post(reverse("account_admin:deactivate", kwargs={"pk": target.pk}), {"reason": "Lahkus"})
+    client.post(reverse("haldus:sign_out"))
+    step_up(client, other, other_secret)
+
+    landing = client.get(detail).content.decode()
+
+    assert UNSAVED_NOTICE not in landing
+    assert 'value="Lahkus"' not in landing
 
 
 def test_an_unauthorized_direct_post_changes_nothing(client):

@@ -20,16 +20,20 @@ below it.
 from __future__ import annotations
 
 import functools
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any
 
+from django import forms
 from django.contrib import messages
 from django.db.models import Q
 from django.http import Http404, HttpRequest, HttpResponse, HttpResponseRedirect
 from django.http.response import HttpResponseBase
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_http_methods
 
@@ -66,25 +70,95 @@ def account_admin_required[R: HttpResponseBase](view: Callable[..., R]) -> Calla
     return wrapper
 
 
+#: The change a stale proof stopped, kept for the page the person comes back to.
+#: Never a secret: only the named fields of the page's own form, none of which
+#: is a password or a code.
+SESSION_UNSAVED = "account_admin:unsaved"
+#: What that page then says, so nobody believes the change was made: the proof
+#: gates the change, it does not make it (docs/adr/0186 §1, «Fresh proof»).
+UNSAVED_NOTICE = "Muudatust ei salvestatud. Kinnitasid oma isiku — tee muudatus uuesti."
+#: How long the kept change waits for the person to come back.
+UNSAVED_SECONDS = 900
+_UNSAVED_FIELD_LENGTH = 1000
+
+
+def ask_for_fresh_proof(
+    request: HttpRequest, back: str, *, message: str, keep: Iterable[str] = ()
+) -> HttpResponseRedirect:
+    """Send the administrator to prove themselves again; the change is **not** made.
+
+    Nothing of the request is replayed afterwards — a privileged POST is never
+    resubmitted on the strength of a proof. What is kept, one-shot, for the
+    page ``back`` and this verified principal only, is that a change was
+    stopped and the non-secret values typed into it, so that page can say the
+    change was not saved and offer the values again.
+    """
+    principal = admin_session.verified_administrator(request)
+    if principal is not None:
+        request.session[SESSION_UNSAVED] = {
+            "path": back,
+            "principal": str(principal.pk),
+            "at": timezone.now().isoformat(),
+            "fields": {
+                name: str(request.POST[name])[:_UNSAVED_FIELD_LENGTH]
+                for name in keep
+                if name in request.POST
+            },
+        }
+    messages.info(request, message)
+    return HttpResponseRedirect(reauthenticate_url(back))
+
+
+def take_unsaved_change(request: HttpRequest) -> dict[str, str] | None:
+    """The change a stale proof stopped on this page, once — and the notice that says so.
+
+    Only for the same page and the same verified principal, only once the
+    proof is fresh again (so the notice's «Kinnitasid oma isiku» is true), and
+    only for a while. Answers the kept fields, or None.
+    """
+    kept = request.session.get(SESSION_UNSAVED)
+    if not isinstance(kept, dict) or kept.get("path") != request.path:
+        return None
+    if admin_session.needs_fresh_proof(request):
+        return None
+    request.session.pop(SESSION_UNSAVED, None)
+    principal = admin_session.verified_administrator(request)
+    at = parse_datetime(str(kept.get("at") or ""))
+    if (
+        principal is None
+        or kept.get("principal") != str(principal.pk)
+        or at is None
+        or timezone.now() - at > timedelta(seconds=UNSAVED_SECONDS)
+    ):
+        return None
+    messages.warning(request, UNSAVED_NOTICE)
+    fields = kept.get("fields")
+    return {str(k): str(v) for k, v in fields.items()} if isinstance(fields, dict) else {}
+
+
 def fresh_proof_required[R: HttpResponseBase](
-    view: Callable[..., R],
-) -> Callable[..., R | HttpResponseBase]:
+    *, keep: Iterable[str] = ()
+) -> Callable[[Callable[..., R]], Callable[..., R | HttpResponseBase]]:
     """Every administrative change asks for a proof no older than the re-auth window."""
 
-    @functools.wraps(view)
-    def wrapper(request: HttpRequest, *args: Any, **kwargs: Any) -> R | HttpResponseBase:
-        if admin_session.needs_fresh_proof(request):
-            pk = kwargs.get("pk")
-            back = (
-                reverse("account_admin:detail", kwargs={"pk": pk})
-                if pk
-                else reverse("account_admin:list")
-            )
-            messages.info(request, "Kinnita enne muutmist uuesti oma isik.")
-            return HttpResponseRedirect(reauthenticate_url(back))
-        return view(request, *args, **kwargs)
+    def decorator(view: Callable[..., R]) -> Callable[..., R | HttpResponseBase]:
+        @functools.wraps(view)
+        def wrapper(request: HttpRequest, *args: Any, **kwargs: Any) -> R | HttpResponseBase:
+            if admin_session.needs_fresh_proof(request):
+                pk = kwargs.get("pk")
+                back = (
+                    reverse("account_admin:detail", kwargs={"pk": pk})
+                    if pk
+                    else reverse("account_admin:list")
+                )
+                return ask_for_fresh_proof(
+                    request, back, message="Kinnita enne muutmist uuesti oma isik.", keep=keep
+                )
+            return view(request, *args, **kwargs)
 
-    return wrapper
+        return wrapper
+
+    return decorator
 
 
 def _refused(request: HttpRequest, error: administration.AdministrationRefused) -> None:
@@ -193,8 +267,12 @@ def user_create(request: HttpRequest) -> HttpResponse | HttpResponseBase:
     may_delegate = has_capability(actor.user, Capability.DELEGATE_ADMINISTRATION)
     if request.method == "POST":
         if admin_session.needs_fresh_proof(request):
-            messages.info(request, "Kinnita enne konto loomist uuesti oma isik.")
-            return HttpResponseRedirect(reauthenticate_url(reverse("account_admin:create")))
+            return ask_for_fresh_proof(
+                request,
+                reverse("account_admin:create"),
+                message="Kinnita enne konto loomist uuesti oma isik.",
+                keep=CreateAccountForm.base_fields,
+            )
         form = CreateAccountForm(request.POST, include_technical=may_delegate)
         if form.is_valid():
             try:
@@ -221,11 +299,29 @@ def user_create(request: HttpRequest) -> HttpResponse | HttpResponseBase:
             {"form": form, "nav_active": "haldus"},
             status=400,
         )
-    return render(
-        request,
-        "accounts/admin/create.html",
-        {"form": CreateAccountForm(include_technical=may_delegate), "nav_active": "haldus"},
-    )
+    form = CreateAccountForm(include_technical=may_delegate)
+    _offer_again(form, take_unsaved_change(request))
+    return render(request, "accounts/admin/create.html", {"form": form, "nav_active": "haldus"})
+
+
+def _offer_again(form: Any, kept: dict[str, str] | None) -> None:
+    """Show the values of a change a stale proof stopped, in the controls the reader may use.
+
+    Only as the form's initial values — nothing is submitted — and never in a
+    disabled control, which shows what the account holds now. A choice that is
+    not on offer is left as it was.
+    """
+    if kept is None:
+        return
+    for name, field in form.fields.items():
+        if field.disabled:
+            continue
+        if isinstance(field, forms.BooleanField):
+            form.initial[name] = name in kept
+        elif name in kept and (
+            not isinstance(field, forms.ChoiceField) or field.valid_value(kept[name])
+        ):
+            form.initial[name] = kept[name]
 
 
 # -- one account ------------------------------------------------------------------------------
@@ -411,12 +507,19 @@ def _context(request: HttpRequest, person: User, form: AccountForm | None = None
 def user_detail(request: HttpRequest, pk: Any) -> HttpResponse | HttpResponseBase:
     person = get_object_or_404(User, pk=pk)
     if request.method == "GET":
-        return render(request, "accounts/admin/detail.html", _context(request, person))
+        kept = take_unsaved_change(request)
+        form = _account_form(_actor(request), person)
+        _offer_again(form, kept if kept is not None and "display_name" in kept else None)
+        context = _context(request, person, form)
+        context["deactivation_reason"] = (kept or {}).get("reason", "")
+        return render(request, "accounts/admin/detail.html", context)
 
     if admin_session.needs_fresh_proof(request):
-        messages.info(request, "Kinnita enne muutmist uuesti oma isik.")
-        return HttpResponseRedirect(
-            reauthenticate_url(reverse("account_admin:detail", kwargs={"pk": person.pk}))
+        return ask_for_fresh_proof(
+            request,
+            reverse("account_admin:detail", kwargs={"pk": person.pk}),
+            message="Kinnita enne muutmist uuesti oma isik.",
+            keep=["display_name", "role", *map(field_name, capabilities.ALL_CAPABILITIES)],
         )
     actor = _actor(request)
     form = _account_form(actor, person, request.POST)
@@ -447,13 +550,15 @@ def user_detail(request: HttpRequest, pk: Any) -> HttpResponse | HttpResponseBas
 
 def _account_action(
     perform: Callable[[VerifiedActor, User, HttpRequest], str],
+    *,
+    keep: Iterable[str] = (),
 ) -> Callable[..., HttpResponseBase]:
     """A POST-only change on one account, refused or confirmed with a message."""
 
     @never_cache
     @account_admin_required
     @require_http_methods(["POST"])
-    @fresh_proof_required
+    @fresh_proof_required(keep=keep)
     @functools.wraps(perform)
     def view(request: HttpRequest, pk: Any) -> HttpResponseBase:
         person = get_object_or_404(User, pk=pk)
@@ -508,7 +613,7 @@ def _reset_second_factor(actor: VerifiedActor, person: User, request: HttpReques
 
 send_link = _account_action(_send_link)
 cancel_invitation = _account_action(_cancel_invitation)
-deactivate = _account_action(_deactivate)
+deactivate = _account_action(_deactivate, keep=DeactivateForm.base_fields)
 reactivate = _account_action(_reactivate)
 reset_second_factor = _account_action(_reset_second_factor)
 
@@ -523,15 +628,19 @@ def change_email(request: HttpRequest, pk: Any) -> HttpResponse | HttpResponseBa
     if not has_capability(actor.user, Capability.DELEGATE_ADMINISTRATION):
         raise Http404(NOT_HERE)
     if request.method == "GET":
+        form = ChangeEmailForm()
+        _offer_again(form, take_unsaved_change(request))
         return render(
             request,
             "accounts/admin/change_email.html",
-            {"person": person, "form": ChangeEmailForm(), "nav_active": "haldus"},
+            {"person": person, "form": form, "nav_active": "haldus"},
         )
     if admin_session.needs_fresh_proof(request):
-        messages.info(request, "Kinnita enne muutmist uuesti oma isik.")
-        return HttpResponseRedirect(
-            reauthenticate_url(reverse("account_admin:change_email", kwargs={"pk": person.pk}))
+        return ask_for_fresh_proof(
+            request,
+            reverse("account_admin:change_email", kwargs={"pk": person.pk}),
+            message="Kinnita enne muutmist uuesti oma isik.",
+            keep=ChangeEmailForm.base_fields,
         )
     form = ChangeEmailForm(request.POST)
     if form.is_valid():
