@@ -168,7 +168,33 @@ Account e-mail stays impossible beside the gate (`juristid.E036`, unchanged). So
   session and comes back to the bare page after the password; the secret never
   travels in the gate's `next`.
 
-### 6. How this amends 0016 and 0145
+- `bootstrap_account_admin` appoints an **existing** activated account too (it
+  keeps its role and `is_staff`; only the two administrative capabilities are
+  added). An address outside `ACCOUNT_ALLOWED_EMAIL_DOMAINS` needs
+  `--external-address-reason`, recorded on the account as its external-address
+  exception (approved by the operator, since no administrator exists yet) and
+  audited as `EMAIL_EXCEPTION_APPROVED`.
+- A placeholder sign-in address (the shared-gate period's `marko`) is corrected
+  by the first administrator on Haldus → Kasutajad («Muuda sisselogimise
+  aadressi»): allowed exactly because the account has no personal password or
+  second factor yet (0145 §4); after that the address is fixed.
+
+### 7. The keys and the link base on the real-data stack
+
+- **`LOCAL_AUTH_MFA_ENCRYPTION_KEY` is required beside the gate on real data**
+  (`juristid.E048`, at least 32 characters; E033 kept covering personal sign-in
+  only). Without it administrators' TOTP secrets would be sealed under a key
+  derived from `SECRET_KEY`, and a routine `SECRET_KEY` rotation would lock both
+  administrators out. The release kit generates it on the host before the swap
+  (`openssl rand -base64 48` into `juristid.env`); the template carries a
+  `replace-me` placeholder that `juristid.E016` refuses until then. The `mcp`
+  process must not hold it (E046) and is not asked for it.
+- **`ACCOUNT_LINK_BASE_URL` should be `https://juristid.orgusaar.ee`** on the
+  production stack, so the link the operator prints is absolute; without it the
+  printed link is a bare path. (The template names it without the host: the
+  repository is public.)
+
+### 8. How this amends 0016 and 0145
 
 - *One mode in force* still holds: `AUTH_MODE` is unchanged and the step-up
   establishes nobody's identity for the application. It is a narrowly scoped

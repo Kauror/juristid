@@ -240,3 +240,115 @@ def test_without_a_link_the_pages_are_still_absent_under_the_gate():
         assert client.post(reverse(name), {}).status_code == 404
     for name in ("accounts:sign_in", "accounts:forgot_password", "accounts:security"):
         assert client.get(reverse(name)).status_code == 404
+
+
+# -- the production shape: four existing accounts, no passwords, no administrators -----------
+
+
+def _production_world():
+    """Synthetic stand-ins for the four accounts production holds today."""
+    technical = factories.UserFactory(
+        upn="tehnik@valisdomeen.example",
+        email="tehnik@valisdomeen.example",
+        display_name="Tehniline Haldur",
+        role=UserRole.ADMINISTRATOR,
+        is_staff=True,
+    )
+    head = factories.DepartmentHeadFactory(upn="osakonnajuht", email="", display_name="Pea Jurist")
+    factories.UserFactory(upn="jurist1", email="")
+    factories.UserFactory(upn="jurist2", email="")
+    for account in User.objects.all():
+        account.set_unusable_password()  # as production's accounts are: none has one
+        account.save(update_fields=["password"])
+        assert account.provisioning_state == ProvisioningState.ACTIVATED and account.is_active
+        assert not account.has_local_password
+    return technical, head
+
+
+def test_an_existing_external_administrator_needs_an_exception_reason(terminal):
+    technical, _ = _production_world()
+    with pytest.raises(
+        CommandError, match=re.escape(administration.BOOTSTRAP_EXTERNAL_NEEDS_A_REASON)
+    ):
+        _command(
+            "bootstrap_account_admin",
+            email=technical.upn,
+            confirm_email=technical.upn,
+            role=UserRole.ADMINISTRATOR,
+            note="test",
+            print_activation_link=True,
+        )
+    technical.refresh_from_db()
+    assert technical.capability_overrides in ({}, None)
+    assert not technical.email_exception_reason
+
+
+def test_the_production_shape_enrols_both_administrators(terminal):
+    technical, head = _production_world()
+
+    # (a) The technical administrator: an existing, activated, external account.
+    printed = _command(
+        "bootstrap_account_admin",
+        email=technical.upn,
+        confirm_email=technical.upn,
+        role=UserRole.ADMINISTRATOR,
+        note="Paigaldus, operaator Test",
+        external_address_reason="Tehnilise halduri oma aadress; Koja kontot tal ei ole",
+        print_activation_link=True,
+    )
+    technical.refresh_from_db()
+    assert technical.role == UserRole.ADMINISTRATOR and technical.is_staff
+    assert technical.provisioning_state == ProvisioningState.ACTIVATED and technical.is_active
+    assert technical.email_exception_reason.startswith("Tehnilise halduri")
+    assert SecurityAuditEvent.objects.filter(
+        event_type=SecurityEventType.EMAIL_EXCEPTION_APPROVED, subject_id=technical.pk
+    ).exists()
+
+    kaur = Client()
+    _set_password_through(kaur, _printed_link(printed))
+    technical.refresh_from_db()
+    _enrol_and_open(kaur, technical)
+    assert kaur.get(reverse("account_admin:list")).status_code == 200
+
+    # (b) The department head's placeholder address, corrected in Haldus.
+    corrected = kaur.post(
+        reverse("account_admin:change_email", kwargs={"pk": head.pk}),
+        {"email": "pea.jurist@koda.ee", "external_reason": ""},
+    )
+    assert corrected.status_code == 302, corrected.content.decode()[:500]
+    head.refresh_from_db()
+    assert head.upn == "pea.jurist@koda.ee"
+
+    from app.accounts.forms import field_name
+
+    granted = kaur.post(
+        reverse("account_admin:detail", kwargs={"pk": head.pk}),
+        {
+            "display_name": head.display_name,
+            "role": head.role,
+            field_name("department.view_management"): "on",
+            field_name("work.assign"): "on",
+            field_name("work_victory.review"): "on",
+            field_name("matter.delete_permanently"): "on",
+            field_name("accounts.manage"): "on",
+            field_name("accounts.delegate"): "on",
+        },
+    )
+    assert granted.status_code == 302
+    head.refresh_from_db()
+    assert head.role == UserRole.DEPARTMENT_HEAD
+
+    printed = _command(
+        "issue_administrator_link",
+        email=head.upn,
+        confirm_email=head.upn,
+        note="Teine haldur, operaator Test",
+    )
+    marko = Client()
+    _set_password_through(marko, _printed_link(printed))
+    head.refresh_from_db()
+    _enrol_and_open(marko, head)
+
+    status = administration.continuity_status()
+    assert status.satisfied
+    assert {admin.pk for admin in status.usable} == {technical.pk, head.pk}

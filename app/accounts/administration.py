@@ -133,6 +133,9 @@ BOOTSTRAP_NEEDS_A_CHANNEL = (
     "E-kirjade saatmine on välja lülitatud ja aktiveerimislinki ei palutud terminali printida "
     "(--print-activation-link). Midagi ei muudetud."
 )
+BOOTSTRAP_EXTERNAL_NEEDS_A_REASON = (
+    "Väline aadress vajab erandi põhjust (--external-address-reason). Midagi ei muudetud."
+)
 BOOTSTRAP_NOT_DELIVERED = "Aktiveerimislinki ei õnnestunud saata, seega midagi ei muudetud."
 ADDRESS_FIXED_AFTER_ACTIVATION = (
     "Konto on juba isikliku parooliga kasutusel, seega selle aadressi siit muuta ei saa. "
@@ -1119,8 +1122,17 @@ def bootstrap_first_administrator(
     role: str,
     operator_note: str,
     print_link: bool = False,
+    external_reason: str = "",
 ) -> Bootstrapped:
     """Make the very first account administrator. Once, and only by an operator.
+
+    An address outside `ACCOUNT_ALLOWED_EMAIL_DOMAINS` — the technical
+    administrator's own, say — is accepted only with ``external_reason``, which
+    is recorded on the account as its external-address exception (approved by
+    the operator: no administrator exists yet to approve it) and audited as
+    `EMAIL_EXCEPTION_APPROVED`, exactly as an administrator's exception would be
+    (docs/adr/0145 §4, docs/adr/0186). An existing account keeps its role and
+    its `is_staff`; only the two administrative capabilities are added.
 
     Refused when any account can already delegate administration — after the
     first, administrators appoint administrators, through the page and its
@@ -1184,6 +1196,34 @@ def bootstrap_first_administrator(
         user.is_synthetic and settings.REAL_DATA_ALLOWED
     ):
         raise AdministrationRefused(BOOTSTRAP_ACCOUNT_UNUSABLE)
+
+    exception = not email_policy.is_allowed_domain(address)
+    if exception and not user.email_exception_reason:
+        if not external_reason.strip():
+            raise AdministrationRefused(
+                email_policy.domain_refusal() + " " + BOOTSTRAP_EXTERNAL_NEEDS_A_REASON
+            )
+        user.email_exception_reason = external_reason.strip()[:500]
+        user.email_exception_approved_at = timezone.now()
+        user.email_exception_approved_by = None
+        user.save(
+            update_fields=[
+                "email_exception_reason",
+                "email_exception_approved_at",
+                "email_exception_approved_by",
+                "updated_at",
+            ]
+        )
+        record_security_event(
+            event_type=SecurityEventType.EMAIL_EXCEPTION_APPROVED,
+            subject=user,
+            detail={
+                "email": address,
+                "reason": external_reason.strip()[:500],
+                "by": "operator",
+                "via": "manage.py bootstrap_account_admin",
+            },
+        )
 
     overrides = capabilities.clean_overrides(user.capability_overrides)
     overrides[Capability.MANAGE_ACCOUNTS.value] = capabilities.ALLOW
