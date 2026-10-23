@@ -80,6 +80,16 @@ UNSENT_SUBMISSION = "Vastuseks saab valida ainult välja saadetud Koja arvamuse.
 UNKNOWN_OUTCOME = "Tundmatu tulemus."
 
 
+class StaleDeadline(DomainError):
+    """The deadline changed after the form was drawn (`STALE_DEADLINE_REFUSAL`).
+
+    Its own type so the header can tell it from a refusal of what was typed:
+    those reopen the editor with the posted choices, and this one must not — a
+    reopened editor carries a fresh revision, and one more click would apply
+    choices made about the old deadline to a colleague's new one.
+    """
+
+
 def deadline_revision(matter: Matter) -> str:
     """A token for the current deadline as a form saw it.
 
@@ -96,7 +106,7 @@ def _check_revision(locked: Matter, expected_revision: str | None) -> None:
     # (an importer, a test) states the change directly, as `set_matter_dates`
     # always allowed.
     if expected_revision and deadline_revision(locked) != expected_revision:
-        raise DomainError(STALE_DEADLINE_REFUSAL)
+        raise StaleDeadline(STALE_DEADLINE_REFUSAL)
 
 
 def _checked_submission(locked: Matter, submission: Any) -> Any:

@@ -239,6 +239,7 @@ from app.matters.removal import (
     remove_matter_record,
 )
 from app.matters.response_deadlines import (
+    StaleDeadline,
     answerable_submissions,
     change_response_deadline,
     deadline_revision,
@@ -6208,6 +6209,15 @@ def response_deadline_view(request: HttpRequest, pk: Any) -> HttpResponse:
                 previous_note=data.get("previous_note") or "",
                 expected_revision=data.get("revision") or None,
             )
+    except StaleDeadline as error:
+        # The deadline moved under this form. Redrawn from what is stored, the
+        # editor closed and nothing posted echoed: reopening it with the choices
+        # made about the old deadline, under a fresh revision, would let one more
+        # click apply them to a deadline this person never saw.
+        matter.refresh_from_db()
+        context = _header_context(request, matter)
+        context["field_error"] = str(error)
+        return render(request, "matters/partials/header.html", context, status=400)
     except DomainError as error:
         matter.refresh_from_db()
         context = _header_context(request, matter)
