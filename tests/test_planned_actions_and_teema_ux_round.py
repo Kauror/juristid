@@ -122,7 +122,7 @@ def test_adding_beside_a_current_action_plans_and_supersedes_nothing(
     ).latest("occurred_at")
     assert event.payload["planned"] is True
     zone = _zone(response.content.decode())
-    assert "Planeeritud tegevused" in zone
+    assert "Tegevused kuupäeva järgi" in zone
     assert "Kaasa liikmeid" in zone
     assert 'aria-label="Kustuta planeeritud tegevus"' in zone
 

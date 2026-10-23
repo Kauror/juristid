@@ -1,0 +1,157 @@
+{% comment %}
+`PRAEGUNE TEGEVUS`'s work, as one list in date order (#525).
+
+**Earlier days before later ones, whatever the row is.** The current step, the
+rounds still waiting for feedback and the planned future actions are
+interleaved by the day each one shows; rows with no day follow, each saying so
+(«Kuupäev määramata», «Tähtaeg määramata»). On an equal day the current step
+comes first, then the rounds, then the planned actions — the order the zone's
+former blocks had. The order is decided once, in `app/matters/current_work.py`;
+it is the DOM's order, so a screen reader and the keyboard meet the rows as
+they are seen.
+
+**Display only.** Which step is current, what a planned action becomes and
+when, what is late and what is waiting are read exactly as before, through each
+source's own visibility: a restricted step or round never reaches this list for
+a reader who may not open it (AUTH-003, docs/adr/0086 §4).
+
+**One stable box, so a round's own answer can refresh it.** `Lõpeta kaasamine`,
+`Ootan tagasisidet` and a round's `Muuda` swap only the round's chronology row;
+the row's response carries this list again, out of band (`oob`), re-read after
+the write, so a finished round leaves and a moved deadline takes its new place.
+**The rows that carry forms are not replaced by it**: the current step and each
+planned action are sent as a read-only line marked `hx-preserve`, and htmx keeps
+the element already on the page — with whatever is typed in it — in the new
+position. The read-only line is shown only where the page has no such element
+(somebody else changed the file since it was drawn); the next full render
+brings its controls. The id stays `praegune-ootused`, the box's name since the
+waits were its only rows.
+
+Nothing renders on a closed Matter: `close_matter` ends every open wait and the
+zone draws no work there (docs/adr/0086 §7).
+{% endcomment %}
+{% if matter.is_open %}
+  {% if open_panel == "planeeritud" and workspace_error %}
+    <p class="formerror" role="alert">{{ workspace_error }}</p>
+  {% endif %}
+  <ul id="praegune-ootused" class="curact__rows" aria-label="Tegevused kuupäeva järgi"{% if oob %} hx-swap-oob="true"{% endif %}{% if not work_rows %} hidden{% endif %}>
+    {% for row in work_rows %}
+      {% if row.is_current %}
+        {% with current_action=row.record %}
+          <li id="{{ row.dom_id }}"{% if oob %} hx-preserve{% endif %} data-work-row="current">
+            {% if oob %}
+              <div class="curact__task">
+                <span class="curact__date{% if current_action.is_overdue %} curact__date--overdue{% elif not current_action.target_date %} curact__date--unset{% endif %}">{{ current_action.date_display }}</span>
+                <span class="curact__text">{{ current_action.text }}</span>
+              </div>
+            {% else %}
+              {% include "matters/partials/current_action_task.html" %}
+            {% endif %}
+          </li>
+        {% endwith %}
+      {% elif row.is_wait %}
+        {% with wait=row.record %}
+          {% comment %}
+            **A round waiting for feedback** (owner's round, 2026-10-07): the
+            day — or «Tähtaeg määramata», never in the overdue colour and never
+            as today (docs/adr/0132) — then «Ootame tagasisidet», the round's
+            `Smaily` and `Alchemer` pages where they are stored, and `Tehtud`.
+            The wording's colour changes at the deadline: on the day and after,
+            the answers are sitting unread (docs/adr/0086 §4).
+
+            `Tehtud` opens the one `Lisa tagasiside` form — `+ Kaasamine` in
+            `LISA TEEMALE` — with this round chosen (static/js/ux.js
+            `data-open-feedback`); saving it records the feedback and finishes
+            the round in one operation. Opening it writes nothing. Without
+            scripting it is the Teema page with that form open and this round
+            chosen (`?ava=tagasiside&kaasamine=…`, docs/adr/0168 §2).
+          {% endcomment %}
+          <li id="{{ row.dom_id }}" data-work-row="wait">
+            <p class="curact__owed curact__owed--wait" data-feedback-wait="{{ wait.pk }}">
+              {% if wait.feedback_deadline %}
+                <span class="curact__oweddate{% if wait.feedback_wait_is_due %} curact__oweddate--overdue{% endif %}">{{ wait.feedback_deadline|date:"j.n.Y" }}</span>
+              {% else %}
+                <span class="curact__oweddate curact__oweddate--unset">Tähtaeg määramata</span>
+              {% endif %}
+              <span class="curact__waittext">Ootame tagasisidet</span>
+              {% if wait.smaily_url %}
+                <a class="curact__owedlink" href="{{ wait.smaily_url }}" target="_blank" rel="noopener noreferrer">Smaily<span class="visually-hidden"> — avaneb uues aknas</span></a>
+              {% endif %}
+              {% if wait.alchemer_url %}
+                <a class="curact__owedlink" href="{{ wait.alchemer_url }}" target="_blank" rel="noopener noreferrer">Alchemer<span class="visually-hidden"> — avaneb uues aknas</span></a>
+              {% endif %}
+              {% if can_write %}
+                <a class="disclosure-chip disclosure-chip--quiet curact__waitdone"
+                   href="{% url 'matters:matter_detail' pk=matter.pk %}?ava=tagasiside&amp;kaasamine={{ wait.pk }}#kaasamine-tagasiside"
+                   data-open-feedback="{{ wait.pk }}">Tehtud</a>
+              {% endif %}
+            </p>
+          </li>
+        {% endwith %}
+      {% else %}
+        {% with planned=row.record %}
+          {% comment %}
+            **A planned future action** (docs/adr/0143): the day, the words and
+            three controls for that exact action — `✓ Tehtud` (what happened;
+            done on any day, docs/adr/0144 §1), `Muuda` (its words or its day)
+            and `×` (`Kustuta planeeritud tegevus`: off the plan, cancelled and
+            kept in the history). The earliest becomes the current action when
+            the current one is done; finishing a planned one promotes nothing.
+            A refused `✓ Tehtud` or `Muuda` comes back into its own row, opened,
+            with what was typed and the field's own message
+            (`_workspace_refusal`).
+
+            **An `Arvamuse järelkontroll` keeps the row and changes its
+            controls** (docs/adr/0146 §7): `✓ Tehtud` asks what the check found,
+            `Muuda` moves its day and nothing else, and there is no `×`. A quiet
+            line under it names the opinion. A planned check whose day has
+            passed reads late, as the current action does; any other planned
+            row does not (docs/adr/0143).
+          {% endcomment %}
+          <li class="curact__plannedrow" id="{{ row.dom_id }}"{% if oob %} hx-preserve{% endif %} data-work-row="planned">
+            <span class="curact__planneddate{% if planned.is_overdue %} curact__planneddate--overdue{% endif %}">{{ planned.date_display }}{% if planned.is_overdue %} · {{ planned.days_late }} p{% endif %}</span>
+            <span class="curact__plannedtext">{{ planned.text }}</span>
+            {% if oob %}
+            {% elif planned.follow_up_id %}
+              {% if can_write %}
+                <details class="cx-panel curact__edit" id="jarelkontroll-tehtud-{{ planned.pk }}" data-addpanel{% if planned.open_check %} open{% endif %}>
+                  <summary class="disclosure-chip disclosure-chip--quiet">✓ Tehtud</summary>
+                  <div class="cx-panel__body">
+                    {% include "matters/partials/follow_up_check_form.html" with form=planned.check_form action=planned %}
+                  </div>
+                </details>
+                <details class="cx-panel curact__edit" id="jarelkontroll-kuupaev-{{ planned.pk }}" data-addpanel{% if planned.open_date %} open{% endif %}>
+                  <summary class="disclosure-chip disclosure-chip--quiet">Muuda</summary>
+                  <div class="cx-panel__body">
+                    {% include "matters/partials/follow_up_date_form.html" with form=planned.date_form action=planned %}
+                  </div>
+                </details>
+              {% endif %}
+              {% include "matters/partials/follow_up_subject.html" with subject=planned.follow_up_subject %}
+            {% elif can_write %}
+              <details class="cx-panel curact__edit" id="planeeritud-tehtud-{{ planned.pk }}" data-addpanel{% if planned.open_done %} open{% endif %}>
+                <summary class="disclosure-chip disclosure-chip--quiet">✓ Tehtud</summary>
+                <div class="cx-panel__body">
+                  {% include "matters/partials/planned_done_form.html" with form=planned.done_form action=planned %}
+                </div>
+              </details>
+              <details class="cx-panel curact__edit" id="planeeritud-{{ planned.pk }}" data-addpanel{% if planned.open_edit %} open{% endif %}>
+                <summary class="disclosure-chip disclosure-chip--quiet">Muuda</summary>
+                <div class="cx-panel__body">
+                  {% include "matters/partials/planned_action_form.html" with form=planned.edit_form action=planned submit_label="Salvesta" %}
+                </div>
+              </details>
+              <form class="curact__dismiss"
+                    hx-post="{% url 'matters:cancel_planned_action' pk=matter.pk action_id=planned.pk %}"
+                    hx-target="#teema-vaade" hx-swap="outerHTML">
+                {% csrf_token %}
+                <button class="quietbutton" type="submit"
+                        aria-label="Kustuta planeeritud tegevus" title="Kustuta planeeritud tegevus">×</button>
+              </form>
+            {% endif %}
+          </li>
+        {% endwith %}
+      {% endif %}
+    {% endfor %}
+  </ul>
+{% endif %}

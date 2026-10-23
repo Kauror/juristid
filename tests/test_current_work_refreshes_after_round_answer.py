@@ -8,7 +8,9 @@ replay and in production QA.
 
 The answer now carries those lines again, out of band, read after the write:
 the finished round leaves them, every other open round stays, and nothing else
-in the zone is replaced. The ticked path still answers with the whole column.
+in the zone is replaced. Since #525 the lines are the zone's one date-ordered
+list, and the step and planned rows in it ride as `hx-preserve` placeholders.
+The ticked path still answers with the whole column.
 """
 
 from __future__ import annotations
@@ -28,9 +30,7 @@ from tests import factories
 
 pytestmark = pytest.mark.django_db
 
-OOB_BOX = re.compile(
-    r'<div id="praegune-ootused" class="curact__waits" hx-swap-oob="true">(.*?)</div>', re.S
-)
+OOB_BOX = re.compile(r'<ul id="praegune-ootused"[^>]*hx-swap-oob="true"[^>]*>(.*?)</ul>', re.S)
 
 
 def _round(matter, title, *, actor, deadline_days: int | None = 7):
@@ -81,7 +81,7 @@ def test_finishing_a_round_removes_its_wait_from_current_work(signed_in, special
     # audience text left the line (owner's round, 2026-10-07).
     line = f'data-feedback-wait="{engagement.pk}"'
     assert 'id="praegune-ootused"' in page
-    assert line in page.split('id="praegune-ootused"', 1)[1].split("</div>", 1)[0]
+    assert line in page.split('id="praegune-ootused"', 1)[1].split("</ul>", 1)[0]
 
     response = _finish(signed_in, engagement)
 
@@ -125,9 +125,13 @@ def test_finishing_without_the_step_leaves_the_step_open(signed_in, specialist):
 
     action.refresh_from_db()
     assert action.status == "OPEN"
-    # Only the waiting lines ride along: the task and its forms are not resent,
-    # so nothing typed into them can be replaced.
-    assert "Koondan vastused" not in _waiting_lines(response)
+    # The date-ordered list rides along (#525), but the task's own element is
+    # kept by the page (`hx-preserve`): its forms are not resent, so nothing
+    # typed into them can be replaced.
+    lines = _waiting_lines(response)
+    assert f'id="tegevus-{action.pk}" hx-preserve' in lines
+    assert "<form" not in lines
+    assert 'id="tehtud"' not in lines
     assert 'id="praegune-tegevus"' not in response.content.decode()
 
 

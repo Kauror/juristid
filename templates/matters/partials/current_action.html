@@ -73,177 +73,15 @@ background sequence — which can be started (`Alusta`) or dismissed (`×`);
     </p>
   {% elif current_action %}
     {% comment %}
-      A `<div>`, not a `<p>`, and that is load-bearing rather than a style
-      preference: the parser closes an open `<p>` at a `<details>` start tag, so
-      a task line built on one would be three boxes in the DOM and `Muuda` would
-      not be inside it at all (templates/matters/partials/rail.html,
-      tests/test_teema_rail.py).
+      **The zone's work in one list, earliest day first** (#525). The current
+      step, the rounds waiting for feedback and the planned actions used to be
+      three blocks in that fixed order, so a round due on 02.11 read under a
+      step due on 04.11. The owner's rule is that an earlier day comes first,
+      whatever the row is; each row keeps its own words, state and controls,
+      and which step is current is decided exactly as before
+      (`app/matters/current_work.py`).
     {% endcomment %}
-    <div class="curact__task"{% if current_action.follow_up_id %} id="jarelkontroll-{{ current_action.pk }}"{% endif %}>
-      {% comment %}
-        **The date first, then the words** (owner's round, 2026-10-07): a work
-        row is scanned «when?» before «what?», so every dated row in this zone
-        opens on its day — or on «Kuupäev määramata», muted — in a column of
-        its own; the text takes the rest and wraps under itself.
-      {% endcomment %}
-      <span class="curact__date{% if current_action.is_overdue %} curact__date--overdue{% elif not current_action.target_date %} curact__date--unset{% endif %}">
-        {{ current_action.date_display }}{% if current_action.is_overdue %} · {{ current_action.days_late }} p{% endif %}
-      </span>
-      <span class="curact__text">{{ current_action.text }}</span>
-      {% comment %}
-        Rendered at its stored precision, with `days_late` riding on the date
-        rather than standing alone — a number of days is only readable once you
-        know what it is counting from (app/workflow/models.py).
-      {% endcomment %}
-      {% comment %}
-        **A step with no day says so, in the same cell.** `date_display` is the
-        date or «Kuupäev määramata», and a lawyer may record one without the
-        other since docs/adr/0106 — «vaatan ministeeriumi vastuse üle» is a
-        whole instruction, and the day is a second fact.
-
-        Rendered `--unset`, which is the muted grammar and deliberately **not**
-        `--overdue`: a step with no deadline recorded cannot be late, and a
-        warning colour here would be the page inventing a problem out of a
-        blank. `is_overdue` is `False` on a `None` date, so the number of days
-        never appears either (app/workflow/models.py).
-      {% endcomment %}
-
-      {% if current_action.follow_up_id %}
-        {% comment %}
-          **A current `Arvamuse järelkontroll`** (docs/adr/0146 §7): the same
-          two controls its planned row has — `✓ Tehtud` asks what the check
-          found, `Muuda` moves its day — and the line naming its opinion. The
-          generic `Mida tegid?` and `Muuda` below are not drawn for it.
-        {% endcomment %}
-        {% if can_write %}
-              <details class="cx-panel curact__edit" id="jarelkontroll-tehtud-{{ current_action.pk }}" data-addpanel{% if current_action.open_check %} open{% endif %}>
-                <summary class="disclosure-chip disclosure-chip--quiet">✓ Tehtud</summary>
-                <div class="cx-panel__body">
-                  {% include "matters/partials/follow_up_check_form.html" with form=current_action.check_form action=current_action %}
-                </div>
-              </details>
-              <details class="cx-panel curact__edit" id="jarelkontroll-kuupaev-{{ current_action.pk }}" data-addpanel{% if current_action.open_date %} open{% endif %}>
-                <summary class="disclosure-chip disclosure-chip--quiet">Muuda</summary>
-                <div class="cx-panel__body">
-                  {% include "matters/partials/follow_up_date_form.html" with form=current_action.date_form action=current_action %}
-                </div>
-              </details>
-            {% endif %}
-            {% include "matters/partials/follow_up_subject.html" with subject=current_action.follow_up_subject %}
-      {% endif %}
-      {% if can_write and not current_action.follow_up_id %}
-        {% comment %}
-          `✓ Tehtud` — the step is done, and this says what was done.
-
-          An explicit act rather than a box that is always open (docs/adr/0133
-          §4): the step is the line above, finishing it is this control, and
-          opening it reveals the one completion form there has always been —
-          `Mida tegid?` required, files, `Uus hetkeseis` and `Järgmine tegevus`.
-          Not a bare checkbox: a result nobody wrote is a history that says only
-          that a button was pressed (docs/adr/0075 §3).
-
-          **A toggle that never moves** (docs/adr/0140 §1). The `LISA TEEMALE`
-          construction, for the same reason: a `<details>` that opens takes the
-          whole line, so the control just pressed jumped to the head of the next
-          one. Here the checkbox holds the state, the chip stays on this row in
-          its place, and only the form takes `order: 1` and the line below the
-          row. Pressing `✓ Tehtud` again closes it — natively, with scripting off
-          too. The panel id stays `tehtud`, so a refusal, a draft carried across
-          a save and Minu asjad's arrival reopen it exactly as before.
-        {% endcomment %}
-        {% if current_launch %}
-          {% comment %}
-            **A current structured step is finished through its canonical
-            form** (docs/adr/0168 §4): a step started from «Saada Koja
-            arvamus» before `Alusta` opened the form, or carried over by
-            `Muuda`. `✓ Tehtud` opens that form, naming this step; its save
-            records the work and completes the step and its action in one
-            transaction. Not drawn while the record already shows the work
-            done — the alert below then asks for the plain `✓ Tehtud`, and
-            `current_launch` is empty.
-          {% endcomment %}
-          <a class="disclosure-chip curact__donechip"
-             href="{% url 'matters:matter_detail' pk=matter.pk %}{{ current_launch.query }}"
-             data-open-canonical="{{ current_launch.form.panel }}"
-             data-launch-step="{{ current_launch.step.pk }}"
-             data-launch-title="{{ current_launch.step.title }}">✓ Tehtud</a>
-        {% else %}
-        <input class="addpick" type="checkbox" id="tehtud-valik"
-               aria-controls="tehtud"
-               {% if open_panel == "tehtud" %}checked{% endif %}>
-        <label class="disclosure-chip curact__donechip" for="tehtud-valik">✓ Tehtud</label>
-        <div class="cx-panel curact__donepanel" id="tehtud" data-addpanel
-             data-draft-host data-draft-state="{{ current_action.pk }}">
-          <div class="cx-panel__body">
-            {% include "matters/partials/current_action_form.html" %}
-          </div>
-        </div>
-        {% endif %}
-      {% endif %}
-      {% if can_write and current_action.is_review_kind %}
-        {% comment %}
-          `Vaatasin üle` — only beside a step that waits on somebody else.
-
-          The one act such a step needs and the page did not offer. Completing
-          it says the wait is over, and `Muuda` says the plan changed; somebody
-          who checked whether the ministry has answered and found it has not did
-          neither. They looked, and the step stays what it is with a later
-          review date (`acknowledge_review`, ENG-021). Minu asjad's
-          `Vaatasin üle…` lands here, and `ux.js` opens it on arrival.
-
-          The words are the product's own — «Vaatan üle» is what the date is
-          labelled on every work surface — and the stored kind is never printed:
-          a WAIT and a MONITOR get the same control (ADR 0054). First on the
-          line, before `Muuda`, because for a step like this it is the ordinary
-          thing to do.
-        {% endcomment %}
-        <details class="cx-panel curact__edit" id="vaatasin-ule" data-addpanel
-                 {% if open_panel == "vaatasin-ule" %}open{% endif %}>
-          <summary class="disclosure-chip disclosure-chip--quiet">Vaatasin üle</summary>
-          <div class="cx-panel__body">
-            {% if open_panel == "vaatasin-ule" and workspace_error %}
-              <p class="formerror" role="alert">{{ workspace_error }}</p>
-            {% endif %}
-            {% include "matters/partials/review_action_form.html" %}
-          </div>
-        </details>
-      {% endif %}
-      {% if can_write and not current_action.follow_up_id %}
-        {% comment %}
-          `Muuda` — change what the task is or when it is due. **Beside the
-          task**, quiet, and **not** a way to record that it was done:
-          completion happens through `Mida tegid?` → `Salvesta` and nowhere
-          else. Combining the two meanings into one control is what this round
-          exists to undo (brief §9).
-
-          Open, it claims the whole line and its form takes the next one —
-          `.cx-panel[open] { flex: 1 1 100%; order: 1 }`, so an editor never
-          pushes the sentence it belongs to sideways.
-
-          It stays a `<details>` where the `LISA TEEMALE` panels stopped being
-          one on 2026-09-14. That change exists because a chip in a row of seven
-          moved when its own panel grew; this control is alone on its line, has
-          no siblings to displace and nothing to be chosen *instead of*, so a
-          native disclosure is still the honest markup for it.
-        {% endcomment %}
-        {% include "matters/partials/next_action_panel.html" with summary="Muuda" quiet=True extra_class="" draft_state=current_action.pk %}
-      {% endif %}
-    </div>
-
-    {% for alert in consistency_alerts %}
-      {% comment %}
-        A read-only workflow-consistency alert about the step above, and only
-        here (docs/adr/0161): why it appears, from structured records this
-        reader may see, and what the controls already on the row can do.
-        Nothing is completed or changed by it.
-      {% endcomment %}
-      <div class="notice notice--warning" role="note" data-consistency-alert="{{ alert.key }}">
-        <p><strong>{{ alert.title }}.</strong> {{ alert.reason }}</p>
-        {% if can_write %}
-          <p>{{ alert.remedy }}</p>
-        {% endif %}
-      </div>
-    {% endfor %}
+    {% include "matters/partials/current_work_rows.html" %}
 
     {% comment %}
       **No `Arvamuse tähtaeg` line here** (owner's compact round, 2026-10-07).
@@ -254,15 +92,11 @@ background sequence — which can be started (`Alusta`) or dismissed (`×`);
       (`work_items.secondary_response_obligation`).
     {% endcomment %}
 
-    {% include "matters/partials/feedback_waits.html" %}
-
-    {% include "matters/partials/planned_actions.html" %}
-
     {% comment %}
       **`+ Lisa tegevus` stays on the page while work is current, and comes
-      last** (docs/adr/0143; owner's rounds of 2026-10-07): the current action,
-      then the dated planned rows, then the control that adds another. It never
-      replaces the current row.
+      last** (docs/adr/0143; owner's rounds of 2026-10-07): the dated rows
+      above, then the control that adds another — outside the sorted list,
+      because it is not a row of work. It never replaces the current row.
     {% endcomment %}
     {% if can_write %}
       <details class="cx-panel curact__edit curact__set" id="lisa-planeeritud" data-addpanel
@@ -321,12 +155,15 @@ background sequence — which can be started (`Alusta`) or dismissed (`×`);
       <p class="curact__empty">Järgmine samm on määramata</p>
     {% endif %}
     {% comment %}
-      The waits again, and this is the branch they were added for: a Matter whose
-      only live work is «ootame vastuseid» used to end here, at «Järgmine samm on
-      määramata», with the round drawn on the strip below the fold and on no work
-      surface at all (matters/partials/feedback_waits.html, docs/adr/0086 §3).
+      The waits and the planned actions, in one date-ordered list (#525) — and
+      this is the branch the waits were added for: a Matter whose only live
+      work is «ootame vastuseid» used to end here, at «Järgmine samm on
+      määramata», with the round drawn on the strip below the fold and on no
+      work surface at all (docs/adr/0086 §3). The suggestion below is drawn
+      only while nothing is planned, so the list then holds rounds alone and
+      reads above it as before.
     {% endcomment %}
-    {% include "matters/partials/feedback_waits.html" %}
+    {% include "matters/partials/current_work_rows.html" %}
 
     {% if can_write and recommendation %}
       {% comment %}
@@ -410,7 +247,6 @@ background sequence — which can be started (`Alusta`) or dismissed (`×`);
       </div>
     {% endif %}
 
-    {% include "matters/partials/planned_actions.html" %}
     {% if can_write %}
       {% comment %}
         `+ Lisa tegevus` — the direct way to say what comes next. Last in the

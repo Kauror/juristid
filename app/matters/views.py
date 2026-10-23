@@ -111,6 +111,7 @@ from app.matters import (
     workspace,
 )
 from app.matters import person_work as person_workspace
+from app.matters.current_work import chronological_rows
 from app.matters.deletion import (
     DELETION_CONFIRMATION_STALE,
     DeletionConfirmationStale,
@@ -3306,6 +3307,15 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "launch": None,
         "recommendation": recommendation,
         "planned_actions": planned_actions,
+        # The current step, the waiting rounds and the planned actions as one
+        # list, earliest day first — the order `PRAEGUNE TEGEVUS` draws them in
+        # (#525). The same records as the three entries around it, interleaved
+        # for display only.
+        "work_rows": chronological_rows(
+            current_action=current_action,
+            feedback_waits=feedback_waits,
+            planned_actions=planned_actions,
+        ),
         # «Planeeri järelkontroll» — each check this reopened Teema's closure
         # ended, offered to be planned again; never revived on its own (owner
         # decision D9, `app.matters.follow_up_restart`).
@@ -4523,18 +4533,25 @@ def _engagement_row(
     )
     # The round's answer changes what `PRAEGUNE TEGEVUS` says it is waiting on:
     # finished, given a reply-by day, or a deadline moved or cleared. Only the
-    # row is swapped, so the waiting lines above the task ride along out of band
-    # (`matters/partials/feedback_waits.html`) — re-read now, after the write,
-    # for every open round on the file, so a second open round stays listed.
-    # Nothing else in the zone is replaced, so text typed in another form is
-    # kept. A closed file draws no such box, so nothing is sent for one.
+    # row is swapped, so the zone's date-ordered list rides along out of band
+    # (`matters/partials/current_work_rows.html`) — re-read now, after the
+    # write, for every open round on the file, so a second open round stays
+    # listed and a moved deadline takes its new place among the steps (#525).
+    # The current step and the planned rows go as read-only lines marked
+    # `hx-preserve`: the page keeps its own elements for them, forms and
+    # anything typed in them included, and only their position is new. A closed
+    # file draws no such list, so nothing is sent for one.
     if matter.is_open and request.headers.get("HX-Request"):
         response.content += render_to_string(
-            "matters/partials/feedback_waits.html",
+            "matters/partials/current_work_rows.html",
             {
                 "matter": matter,
-                "feedback_waits": _feedback_waits_of(request, matter),
-                # `Tehtud` on each line is a write control (feedback_waits.html).
+                "work_rows": chronological_rows(
+                    current_action=selectors.current_action_of(matter, request.user),
+                    feedback_waits=_feedback_waits_of(request, matter),
+                    planned_actions=selectors.planned_actions_of(matter, request.user),
+                ),
+                # `Tehtud` on each waiting line is a write control.
                 "can_write": may_write_business_content(request.user),
                 "oob": True,
             },
