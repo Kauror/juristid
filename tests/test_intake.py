@@ -9,18 +9,22 @@ what was supposed to be there.
 from __future__ import annotations
 
 import re
+from datetime import timedelta
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
 from app.core.enums import Visibility
 from app.documents.enums import DocumentRole
 from app.documents.models import Document, DocumentVersion
+from app.matters import intake_staging
 from app.matters.intake import register_incoming, role_for, title_from_filename, validate_uploads
 from app.matters.models import Matter
 from app.matters.services import set_matter_visibility
+from app.matters.staging import MatterIntakeSession
 from app.organisations.models import Organisation, OrganisationType
 from app.search.services import search_matters
 from tests import factories
@@ -374,6 +378,70 @@ def test_the_same_saabunud_form_posted_twice_files_one_teema(client, specialist)
     assert Document.objects.filter(matter=matter).count() == 1
     shown = [str(m) for m in client.get(second["Location"]).context["messages"]]
     assert CREATE_FORM_ALREADY_SUBMITTED in shown
+
+
+def test_a_saved_saabunud_form_replayed_after_the_sweeper_ran_files_nothing(
+    client, specialist
+) -> None:
+    """The spent token outlives the scheduled sweep (docs/adr/0112 amendment).
+
+    Before, the intake-sweeper deleted the consumed session within fifteen
+    minutes, and the same drawn form posted again — Back, a retry — filed a
+    second Teema with a second register number.
+    """
+    from app.matters.views import CREATE_FORM_ALREADY_SUBMITTED
+
+    client.force_login(specialist)
+    token = _drawn_token(client.get(reverse("matters:intake")))
+    first = _post(client, [_file("kiri.pdf", PDF)], title="Hiljem uuesti", intake=token)
+    MatterIntakeSession.objects.filter(pk=token).update(
+        consumed_at=timezone.now() - timedelta(days=1),
+        expires_at=timezone.now() - timedelta(hours=12),
+    )
+    intake_staging.sweep_stale_sessions()
+
+    second = _post(client, [_file("kiri.pdf", PDF)], title="Hiljem uuesti", intake=token)
+
+    assert second.status_code == 302
+    assert second["Location"] == first["Location"]
+    assert Matter.objects.filter(title="Hiljem uuesti").count() == 1
+    assert Matter.objects.filter(reference_number__isnull=False).count() == 1
+    shown = [str(m) for m in client.get(second["Location"]).context["messages"]]
+    assert CREATE_FORM_ALREADY_SUBMITTED in shown
+
+
+def test_another_persons_saabunud_token_reveals_nothing(
+    client, specialist, other_specialist
+) -> None:
+    """A token is claimed only by its owner (`owned_by`), so a stranger's is no token.
+
+    Posting somebody else's spent token neither lands on their Teema nor
+    names it: it files the poster's own Teema, as a POST with no token would.
+    """
+    from app.matters.views import CREATE_FORM_ALREADY_SUBMITTED
+
+    client.force_login(specialist)
+    token = _drawn_token(client.get(reverse("matters:intake")))
+    theirs = _post(client, [_file("kiri.pdf", PDF)], title="Sandra salajane", intake=token)
+    their_matter = Matter.objects.get(title="Sandra salajane")
+    assert theirs["Location"] == reverse("matters:matter_detail", kwargs={"pk": their_matter.pk})
+
+    stranger = Client()
+    stranger.force_login(other_specialist)
+    mine = _post(stranger, [_file("kiri.pdf", PDF)], title="Minu oma", intake=token)
+
+    assert mine.status_code == 302
+    assert mine["Location"] != theirs["Location"]
+    my_matter = Matter.objects.get(title="Minu oma")
+    assert mine["Location"] == reverse("matters:matter_detail", kwargs={"pk": my_matter.pk})
+    shown = stranger.get(mine["Location"])
+    page = shown.content.decode()
+    assert "Sandra salajane" not in page
+    assert their_matter.display_reference not in page
+    assert str(their_matter.pk) not in page
+    assert CREATE_FORM_ALREADY_SUBMITTED not in [str(m) for m in shown.context["messages"]]
+    # Their token is untouched: still consumed by their Teema.
+    assert MatterIntakeSession.objects.get(pk=token).matter_id == their_matter.pk
 
 
 def test_a_refused_saabunud_save_keeps_its_token(client, specialist) -> None:

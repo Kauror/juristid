@@ -40,8 +40,20 @@ from typing import Any
 from django.conf import settings
 from django.core.files.storage import storages
 from django.db import transaction
-from django.db.models import Exists, Max, OuterRef, Q, Sum
-from django.db.models.functions import Coalesce, Least
+from django.db.models import (
+    Case,
+    DateTimeField,
+    Exists,
+    ExpressionWrapper,
+    F,
+    Max,
+    OuterRef,
+    Q,
+    Sum,
+    Value,
+    When,
+)
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from app.core.errors import DomainError
@@ -761,7 +773,7 @@ def clear_expired_intake_text() -> int:
 
     **One ``UPDATE``, and only of text.** Rows, bytes, stamps and states are left
     exactly as they were — deleting is `sweep_stale_sessions`' decision, run by
-    the `intake-sweeper` service (docs/adr/0177). The scope is the sessions `stale()` already names
+    the `intake-sweeper` service (docs/adr/0177). The scope is the sessions `finished()` names
     — expired, or consumed but somehow still holding text because the
     after-commit clear in `consume_session` never ran — and within them only
     rows that still hold something, so a turn with nothing to clear writes
@@ -773,7 +785,7 @@ def clear_expired_intake_text() -> int:
     of rows cleared.
     """
     holding = MatterIntakeFile.objects.filter(
-        session__in=MatterIntakeSession.objects.stale()
+        session__in=MatterIntakeSession.objects.finished()
     ).filter(_still_holding_text())
     # Asked before written, so the usual answer — nothing to clear — is one
     # read and no statement a write-counting test or the array would see.
@@ -912,12 +924,29 @@ class SweepReport:
     errors: tuple[str, ...] = ()
     #: Stale sessions still waiting after this run: the bound, made visible.
     remaining: int = 0
+    #: Consumed sessions kept as a spent token whose file rows (and any bytes
+    #: the after-commit discard missed) this run released; their rows stay.
+    released: int = 0
+
+
+def _sweepable() -> Q:
+    """What a sweep takes: a stale session whole, or a retained one's files.
+
+    A consumed session inside its token retention (`retained`) is kept as a
+    row so that a repeated submission of its form still finds it spent
+    (docs/adr/0112 amendment, 2026-10-24) — but its staged files have been
+    evidence since the commit, so their rows, and any bytes `consume_session`
+    could not delete, go on the next sweep like a stale session's.
+    """
+    return Q(pk__in=MatterIntakeSession.objects.stale().values("pk")) | (
+        Q(consumed_at__isnull=False) & Q(_holding_files())
+    )
 
 
 def sweep_stale_sessions(
     *, limit: int | None = None, max_bytes: int | None = None, dry_run: bool = False
 ) -> SweepReport:
-    """Delete staging nobody will ask for again: expired, or already consumed.
+    """Delete staging nobody will ask for again: expired, or consumed long ago.
 
     Rows drive this, not a directory listing, and that is the difference
     between this and ``pending._sweep``. A held upload is a bare object with no
@@ -926,6 +955,12 @@ def sweep_stale_sessions(
     took it. Deciding from the row means the sweeper can never delete an object
     a live session is still pointing at, whatever the clock on the filesystem
     says: an unfinished form survives until its own expiry.
+
+    **A saved form's token survives too** (docs/adr/0112 amendment). A consumed
+    session is deleted only once it is past
+    ``INTAKE_FORM_TOKEN_RETENTION_SECONDS``; before that a sweep releases its
+    files — rows and any leftover bytes — and keeps the row, so a retry or a
+    Back-restored page of that form is still answered with its Teema.
 
     Bytes first, then rows. An object outliving its row is a few kilobytes in a
     store that is not backed up; a row outliving its object is a form that
@@ -947,7 +982,7 @@ def sweep_stale_sessions(
     if max_bytes is None:
         max_bytes = settings.INTAKE_STAGING_SWEEP_MAX_BYTES
     candidates = list(
-        MatterIntakeSession.objects.stale()
+        MatterIntakeSession.objects.filter(_sweepable())
         .annotate(staged_bytes=Coalesce(Sum("files__size_bytes"), 0))
         .order_by("expires_at", "pk")
         .values_list("pk", "staged_bytes")[: max(0, limit)]
@@ -966,15 +1001,15 @@ def sweep_stale_sessions(
             files=MatterIntakeFile.objects.filter(session_id__in=chosen).count(),
             objects=0,
             bytes=planned,
-            remaining=MatterIntakeSession.objects.stale().count() - len(chosen),
+            remaining=MatterIntakeSession.objects.filter(_sweepable()).count() - len(chosen),
         )
 
-    sessions = files = objects = removed_bytes = 0
+    sessions = files = objects = removed_bytes = released = 0
     errors: list[str] = []
     for pk in chosen:
         with transaction.atomic():
             session = (
-                MatterIntakeSession.objects.stale()
+                MatterIntakeSession.objects.filter(_sweepable())
                 .select_for_update(skip_locked=True)
                 .filter(pk=pk)
                 .first()
@@ -982,6 +1017,7 @@ def sweep_stale_sessions(
             if session is None:
                 # Already gone (another sweep), or in a request's hands now.
                 continue
+            whole = MatterIntakeSession.objects.stale().filter(pk=pk).exists()
             discarded = _discard_objects(session)
             if discarded.errors:
                 errors.extend(discarded.errors)
@@ -989,15 +1025,24 @@ def sweep_stale_sessions(
                     logger.error("intake staging sweep refused: %s", message)
                 continue
             files += session.files.count()
-            session.delete()
-        sessions += 1
+            if whole:
+                session.delete()
+            else:
+                # The spent token stays; only what it held goes.
+                session.files.all().delete()
+        if whole:
+            sessions += 1
+        else:
+            released += 1
         objects += discarded.objects
         removed_bytes += discarded.bytes
 
-    remaining = MatterIntakeSession.objects.stale().count()
+    remaining = MatterIntakeSession.objects.filter(_sweepable()).count()
     logger.info(
-        "swept %d stale intake sessions (%d files, %d objects, %d bytes); %d remain, %d refused",
+        "swept %d stale intake sessions, released %d spent tokens' files "
+        "(%d files, %d objects, %d bytes); %d remain, %d refused",
         sessions,
+        released,
         files,
         objects,
         removed_bytes,
@@ -1011,21 +1056,33 @@ def sweep_stale_sessions(
         bytes=removed_bytes,
         errors=tuple(errors),
         remaining=remaining,
+        released=released,
     )
 
 
 def oldest_stale_seconds() -> float | None:
-    """How long the longest-waiting stale session has been stale, or ``None``.
+    """How long the longest-waiting sweepable session has waited, or ``None``.
 
-    Stale since its consumption or its expiry, whichever came first. This is
+    An unconsumed session waits from its expiry; a consumed one holding files
+    from its consumption — the files were due then — and an empty one from the
+    end of its token retention. This is
     what `check_intake_staging` measures: convergence, like
     `check_search_freshness`. A sweeper with nothing to do is healthy, and one
     that has stopped, or keeps refusing an unsafe session, goes red once
     anything has waited too long.
     """
+    retention = timedelta(seconds=settings.INTAKE_FORM_TOKEN_RETENTION_SECONDS)
     since = (
-        MatterIntakeSession.objects.stale()
-        .annotate(since=Least("consumed_at", "expires_at"))
+        MatterIntakeSession.objects.filter(_sweepable())
+        .annotate(
+            since=Case(
+                When(consumed_at__isnull=True, then=F("expires_at")),
+                When(_holding_files(), then=F("consumed_at")),
+                default=ExpressionWrapper(
+                    F("consumed_at") + Value(retention), output_field=DateTimeField()
+                ),
+            )
+        )
         .order_by("since")
         .values_list("since", flat=True)
         .first()

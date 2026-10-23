@@ -233,3 +233,19 @@ the removal holds). A round a person finished with `Lõpeta kaasamine`, one the
 Matter's closure ended, one that still has a live answer, and one closed before
 this amendment (whose closure names no answer) are left as they are. **No
 migration**: the key lives in the existing audit payload.
+
+## Amendment of 2026-10-24 — moving the answer that finished the wait (bug-bounty R2-02)
+
+`Muuda` on an answer may change `Seotud kaasamine` to another round or to «Ei
+ole seotud kaasamisega». Seen from the round it left that is the same as the
+removal above, so it has the same effect: when the round's latest closure names
+an answer (`closing_reply`) that is no longer a live answer on the round —
+removed **or moved** — and no live answer is left there, the wait is reopened
+(`ENGAGEMENT_CHANGED`, `wait_reopened`, `reason: reply_moved`;
+`engagement_replies.reopen_wait_after_reply_moved`, called by
+`correct_external_position` under the Matter's lock it holds). The round the
+answer now names is treated as §2.2 treats any recorded answer to it: if it is
+open, this is its first answer and finishes its wait through
+`finish_wait_on_reply` (the closure naming this answer, so moving it back
+reopens it); a finished round keeps its closure. A round a person finished,
+and one with another live answer, are left as they are. No migration.

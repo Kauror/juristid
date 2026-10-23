@@ -373,7 +373,8 @@ services:
   # The `Uus teema` staging sweeper (docs/adr/0177, csf_3942255b466a4e213b958b16).
   #
   # Deletes staging nobody will ask for again — forms past their expiry and
-  # forms a Teema has consumed — every INTAKE_STAGING_SWEEP_INTERVAL_SECONDS,
+  # the files of forms a Teema has consumed (their spent-token rows stay for
+  # INTAKE_FORM_TOKEN_RETENTION_SECONDS, docs/adr/0112) — every INTAKE_STAGING_SWEEP_INTERVAL_SECONDS,
   # bounded per run by INTAKE_STAGING_SWEEP_MAX_SESSIONS and
   # INTAKE_STAGING_SWEEP_MAX_BYTES. An unfinished form survives until its own
   # expiry. Before this it was `prune_intake_staging` run by hand, which nothing

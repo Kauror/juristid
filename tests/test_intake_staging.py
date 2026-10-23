@@ -854,8 +854,12 @@ def test_sweeping_removes_consumed_and_expired_staging_and_touches_no_evidence(
 
     report = intake_staging.sweep_stale_sessions()
 
-    assert report.sessions == 2
-    assert not MatterIntakeSession.objects.filter(pk__in=[consumed.pk, abandoned.pk]).exists()
+    # The abandoned form goes whole; the consumed one gives up its files and
+    # keeps its row, the saved form's spent token (docs/adr/0112 amendment).
+    assert (report.sessions, report.released) == (1, 1)
+    assert not MatterIntakeSession.objects.filter(pk=abandoned.pk).exists()
+    assert MatterIntakeSession.objects.filter(pk=consumed.pk).exists()
+    assert not MatterIntakeFile.objects.filter(session_id=consumed.pk).exists()
     assert MatterIntakeSession.objects.filter(pk=live.pk).exists()
     # Canonical evidence is untouched, including the evidence the consumed
     # session produced.

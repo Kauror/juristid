@@ -114,6 +114,7 @@ def finish_wait_on_reply(
 
 #: Why a wait was reopened, in the `ENGAGEMENT_CHANGED` payload.
 WAIT_REOPENED_REPLY_REMOVED = "reply_removed"
+WAIT_REOPENED_REPLY_MOVED = "reply_moved"
 
 
 @transaction.atomic
@@ -127,28 +128,65 @@ def reopen_wait_after_reply_removed(*, position: Any, matter: Matter, actor: Any
     answer on the round, nothing came back, and the round is open again — on
     `PRAEGUNE TEGEVUS` and every work list as «Ootame tagasisidet» — instead of
     finished with nothing to show and unrestartable (`Ootan tagasisidet`
-    refuses a tracked round).
+    refuses a tracked round). The rules are :func:`_reopen_wait_left_unanswered`'s.
+    """
+    return _reopen_wait_left_unanswered(
+        engagement_id=getattr(position, "engagement_id", None),
+        position=position,
+        matter=matter,
+        actor=actor,
+        reason=WAIT_REOPENED_REPLY_REMOVED,
+    )
 
-    **Only a closure an answer caused, and only once that answer is gone.**
-    The round's latest `ENGAGEMENT_FEEDBACK_CLOSED` row must name its
-    ``closing_reply``, and that answer must now be removed — this one, or one
-    removed earlier while a later answer still stood. A round a person
+
+@transaction.atomic
+def reopen_wait_after_reply_moved(
+    *, position: Any, from_engagement_id: Any, matter: Matter, actor: Any = None
+) -> bool:
+    """Reopen the wait an answer finished, when `Muuda` ties it to another round or none.
+
+    The same act as removing it, seen from the round it left (bug-bounty
+    R2-02): the answer that came back to round E now answers round F, or no
+    round, so E has nothing to show for its finish. Called by
+    `correct_external_position` after the correction is saved, under the
+    Matter's lock it holds, with the round the answer was on before.
+    """
+    return _reopen_wait_left_unanswered(
+        engagement_id=from_engagement_id,
+        position=position,
+        matter=matter,
+        actor=actor,
+        reason=WAIT_REOPENED_REPLY_MOVED,
+    )
+
+
+def _reopen_wait_left_unanswered(
+    *, engagement_id: Any, position: Any, matter: Matter, actor: Any, reason: str
+) -> bool:
+    """Reopen round ``engagement_id`` if the answer that finished it is no longer on it.
+
+    **Only a closure an answer caused, and only once that answer has left the
+    round.** The round's latest `ENGAGEMENT_FEEDBACK_CLOSED` row must name its
+    ``closing_reply``, and that answer must no longer be a live answer on this
+    round — removed, or moved by `Muuda` to another round or to none; this one,
+    or one that left earlier while a later answer still stood. A round a person
     finished (`Lõpeta kaasamine`), one the Matter's closure ended and one
     closed before closures named their answer are all left as they are.
     **Not while another live answer remains**: the round then still has what
-    came back. Runs under the Matter's lock the removal holds; the round row is
-    locked too. Writes `ENGAGEMENT_CHANGED` naming the reopening, so the
+    came back. Runs under the Matter's lock the caller holds; the round row is
+    locked too (Matter, then answer, then round — the removal's order and the
+    correction's). Writes `ENGAGEMENT_CHANGED` naming the reopening, so the
     history says why the round is open again. Returns whether it reopened.
     """
     from app.audit.enums import ChangeEventType
     from app.audit.models import ChangeEvent
     from app.audit.services import record_change_event
 
-    if getattr(position, "engagement_id", None) is None:
+    if engagement_id is None:
         return False
     current = (
         MatterEngagement.objects.select_for_update(no_key=True)
-        .filter(pk=position.engagement_id, matter=matter)
+        .filter(pk=engagement_id, matter=matter)
         .first()
     )
     if current is None or not current.lifecycle_tracked or current.feedback_closed_at is None:
@@ -171,12 +209,12 @@ def reopen_wait_after_reply_removed(*, position: Any, matter: Matter, actor: Any
         .first()
     )
     closing_reply = (closure.payload or {}).get("closing_reply") if closure is not None else None
-    # The answer that finished it must itself be gone — this one, or one
-    # removed earlier while another answer still stood.
+    # The answer that finished it must itself have left the round — removed or
+    # moved, this one or one that left earlier while another answer still stood.
     if (
         not closing_reply
-        or not MatterExternalPosition.objects.filter(
-            pk=closing_reply, engagement=current, removed_at__isnull=False
+        or MatterExternalPosition.objects.filter(
+            pk=closing_reply, engagement=current, removed_at__isnull=True
         ).exists()
     ):
         return False
@@ -193,7 +231,7 @@ def reopen_wait_after_reply_removed(*, position: Any, matter: Matter, actor: Any
         payload={
             "fields": ["feedback_closed_at"],
             "wait_reopened": True,
-            "reason": WAIT_REOPENED_REPLY_REMOVED,
+            "reason": reason,
             "reply": str(position.pk),
         },
     )
