@@ -15,7 +15,7 @@ needs its own approval:
 1. *The release* — this file, then the README. With `MCP_ENABLED` unset (the
    template says `0`) and no `juristid-mcp.env` on the host, it changes nothing
    anybody can see: every OAuth route stays behind the shared gate (an
-   anonymous request is sent to `/varav/`; a gate-passed persona gets 404), no
+   anonymous request is sent to `/konto/varav/`; a gate-passed session gets 404), no
    grant can be made, and neither new service starts. It is a code release with
    one migration that only creates the new app's tables.
 2. *The enablement* — [`OPERATIONS.md`](OPERATIONS.md) §"First-time
@@ -73,9 +73,9 @@ all of which must hold:
 curl -s -o /dev/null -w '%{http_code}\n' https://juristid.orgusaar.ee/.well-known/oauth-authorization-server
 ```
 
-prints `302` with `Location: /varav/` and no `next` — with AI access off the
-OAuth paths are not exempt from the gate. (Behind the gate, as a persona, the
-same path answers 404.)
+prints `302` with `Location: /konto/varav/` and no `next` — with AI access off the
+OAuth paths are not exempt from the gate. (Behind the gate, with or without a
+persona, the same path answers 404.)
 
 ```bash
 docker ps -a --filter label=com.docker.compose.project=juristid-main --format '{{.Names}}'
@@ -102,7 +102,7 @@ and restricted runtime key on Platform; the two environment files, root's and
 600; the three web lines; the running release named in the shell; preflight;
 
 ```bash
-docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-reader searchindex intake-sweeper mcp
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-reader searchindex intake-sweeper notifications mcp
 ```
 
 once both are healthy and `check_mcp_server` passes,
