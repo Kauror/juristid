@@ -70,7 +70,9 @@ def answerable_rounds(viewer: Any, matter: Matter) -> QuerySet[MatterEngagement]
     return MatterEngagement.objects.visible_to(viewer).answerable().filter(matter=matter)
 
 
-def finish_wait_on_reply(*, engagement: MatterEngagement, actor: Any = None) -> bool:
+def finish_wait_on_reply(
+    *, engagement: MatterEngagement, actor: Any = None, reply: Any = None
+) -> bool:
     """Finish the round's wait if this reply is its first answer; say whether it did.
 
     **The contract `Lisa tagasiside` — and `Ootame tagasisidet → Tehtud`,
@@ -90,6 +92,10 @@ def finish_wait_on_reply(*, engagement: MatterEngagement, actor: Any = None) -> 
 
     The feedback text the round itself holds (`feedback_received`) is never
     touched here: the reply's words are on the reply.
+
+    ``reply`` is the answer just recorded. The closure's audit row names it
+    (`closing_reply`), so that removing this answer as a mistake can reopen the
+    wait it finished (:func:`reopen_wait_after_reply_removed`).
     """
     from app.matters.services import complete_engagement_feedback
 
@@ -99,9 +105,96 @@ def finish_wait_on_reply(*, engagement: MatterEngagement, actor: Any = None) -> 
     )
     if not current.has_open_feedback_wait:
         return False
-    complete_engagement_feedback(engagement=current, actor=actor)
+    complete_engagement_feedback(engagement=current, actor=actor, closing_reply=reply)
     engagement.feedback_closed_at = current.feedback_closed_at
     engagement.feedback_closed_by = current.feedback_closed_by
+    return True
+
+
+#: Why a wait was reopened, in the `ENGAGEMENT_CHANGED` payload.
+WAIT_REOPENED_REPLY_REMOVED = "reply_removed"
+
+
+def reopen_wait_after_reply_removed(*, position: Any, matter: Matter, actor: Any = None) -> bool:
+    """Reopen the wait an answer finished, when that answer is removed as a mistake.
+
+    docs/adr/0102 §1: a removed record «never belonged on this file», so what
+    its recording did is undone where it can be said exactly. The first answer
+    to an open round finished its wait in the same transaction
+    (:func:`finish_wait_on_reply`); with that answer gone and no other live
+    answer on the round, nothing came back, and the round is open again — on
+    `PRAEGUNE TEGEVUS` and every work list as «Ootame tagasisidet» — instead of
+    finished with nothing to show and unrestartable (`Ootan tagasisidet`
+    refuses a tracked round).
+
+    **Only a closure an answer caused, and only once that answer is gone.**
+    The round's latest `ENGAGEMENT_FEEDBACK_CLOSED` row must name its
+    ``closing_reply``, and that answer must now be removed — this one, or one
+    removed earlier while a later answer still stood. A round a person
+    finished (`Lõpeta kaasamine`), one the Matter's closure ended and one
+    closed before closures named their answer are all left as they are.
+    **Not while another live answer remains**: the round then still has what
+    came back. Runs under the Matter's lock the removal holds; the round row is
+    locked too. Writes `ENGAGEMENT_CHANGED` naming the reopening, so the
+    history says why the round is open again. Returns whether it reopened.
+    """
+    from app.audit.enums import ChangeEventType
+    from app.audit.models import ChangeEvent
+    from app.audit.services import record_change_event
+
+    if getattr(position, "engagement_id", None) is None:
+        return False
+    current = (
+        MatterEngagement.objects.select_for_update(no_key=True)
+        .filter(pk=position.engagement_id, matter=matter)
+        .first()
+    )
+    if current is None or not current.lifecycle_tracked or current.feedback_closed_at is None:
+        return False
+    if (
+        MatterExternalPosition.objects.filter(engagement=current, removed_at__isnull=True)
+        .exclude(pk=position.pk)
+        .exists()
+    ):
+        return False
+    meta = MatterEngagement._meta
+    closure = (
+        ChangeEvent.objects.filter(
+            matter=matter,
+            event_type=ChangeEventType.ENGAGEMENT_FEEDBACK_CLOSED,
+            object_type=f"{meta.app_label}.{meta.object_name}",
+            object_id=current.pk,
+        )
+        .order_by("-occurred_at", "-created_at")
+        .first()
+    )
+    closing_reply = (closure.payload or {}).get("closing_reply") if closure is not None else None
+    # The answer that finished it must itself be gone — this one, or one
+    # removed earlier while another answer still stood.
+    if (
+        not closing_reply
+        or not MatterExternalPosition.objects.filter(
+            pk=closing_reply, engagement=current, removed_at__isnull=False
+        ).exists()
+    ):
+        return False
+
+    current.feedback_closed_at = None
+    current.feedback_closed_by = None
+    current.save(update_fields=["feedback_closed_at", "feedback_closed_by", "updated_at"])
+    record_change_event(
+        event_type=ChangeEventType.ENGAGEMENT_CHANGED,
+        matter=matter,
+        actor=actor,
+        obj=current,
+        summary=current.title[:200],
+        payload={
+            "fields": ["feedback_closed_at"],
+            "wait_reopened": True,
+            "reason": WAIT_REOPENED_REPLY_REMOVED,
+            "reply": str(position.pk),
+        },
+    )
     return True
 
 

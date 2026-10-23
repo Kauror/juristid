@@ -1443,7 +1443,7 @@ def record_position_reply(
     )
     if engagement is not None:
         result.wait_finished = engagement_replies.finish_wait_on_reply(
-            engagement=engagement, actor=author
+            engagement=engagement, actor=author, reply=result.record
         )
     return result
 
