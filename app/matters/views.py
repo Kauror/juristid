@@ -242,6 +242,8 @@ from app.matters.removal import (
     remove_matter_record,
 )
 from app.matters.response_deadlines import (
+    OUTCOME_REFUSALS,
+    StaleDeadline,
     answerable_submissions,
     change_response_deadline,
     deadline_revision,
@@ -6103,7 +6105,7 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
     if not form.is_valid():
         context = _header_context(request, matter)
         context["field_error"] = "Vigane väärtus."
-        if field in _REOPENED_ON_REFUSAL:
+        if _reopens_on_refusal(field, matter):
             _reopen_header_editor(context, request, editor=field, error=_first_error(form, field))
         return render(request, surface, context, status=400)
 
@@ -6166,7 +6168,7 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
         matter.refresh_from_db()
         context = _header_context(request, matter)
         context["field_error"] = str(error)
-        if field in _REOPENED_ON_REFUSAL:
+        if _reopens_on_refusal(field, matter):
             _reopen_header_editor(context, request, editor=field, error=str(error))
         return render(request, surface, context, status=400)
 
@@ -6260,11 +6262,26 @@ def response_deadline_view(request: HttpRequest, pk: Any) -> HttpResponse:
                 previous_note=data.get("previous_note") or "",
                 expected_revision=data.get("revision") or None,
             )
+    except StaleDeadline as error:
+        # The deadline moved under this form. Redrawn from what is stored, the
+        # editor closed and nothing posted echoed: reopening it with the choices
+        # made about the old deadline, under a fresh revision, would let one more
+        # click apply them to a deadline this person never saw.
+        matter.refresh_from_db()
+        context = _header_context(request, matter)
+        context["field_error"] = str(error)
+        return render(request, "matters/partials/header.html", context, status=400)
     except DomainError as error:
         matter.refresh_from_db()
         context = _header_context(request, matter)
         context["field_error"] = str(error)
-        _reopen_header_editor(context, request, editor="response_deadline", error=str(error))
+        _reopen_header_editor(
+            context,
+            request,
+            editor="response_deadline",
+            error=str(error),
+            about="outcome" if str(error) in OUTCOME_REFUSALS else "date",
+        )
         return render(request, "matters/partials/header.html", context, status=400)
     matter.refresh_from_db()
     if _on_documents_tab(request):
@@ -6288,6 +6305,20 @@ def response_deadline_view(request: HttpRequest, pk: Any) -> HttpResponse:
 _REOPENED_ON_REFUSAL = frozenset({"received_date"})
 
 
+def _reopens_on_refusal(field: str, matter: Matter) -> bool:
+    """Whether ``field``'s header editor is drawn, and so can carry the refusal.
+
+    `Saabus` is not drawn on a Chamber initiative that holds no date
+    (docs/adr/0151 §3): there the refusal stays in the banner, or nobody would
+    see it.
+    """
+    if field not in _REOPENED_ON_REFUSAL:
+        return False
+    if field == "received_date":
+        return not is_koda_initiative(matter) or matter.received_date is not None
+    return True
+
+
 def _first_error(form: Any, field: str | None = None) -> str:
     """The form's own words for what it refused, or the generic refusal."""
     errors = form.errors.get(field, []) if field else [e for v in form.errors.values() for e in v]
@@ -6295,7 +6326,12 @@ def _first_error(form: Any, field: str | None = None) -> str:
 
 
 def _reopen_header_editor(
-    context: dict[str, Any], request: HttpRequest, *, editor: str, error: str
+    context: dict[str, Any],
+    request: HttpRequest,
+    *,
+    editor: str,
+    error: str,
+    about: str = "date",
 ) -> None:
     """Draw ``editor`` open again, filled with what was posted, the error beside it.
 
@@ -6303,9 +6339,11 @@ def _reopen_header_editor(
     here renders ``<details open>`` with ``reopen.values`` (the POST) in its
     controls — the date, and for `Arvamuse tähtaeg` the change, outcome,
     opinion and note too — and the reason inside the form instead of the
-    detached banner above the band.
+    detached banner above the band. ``about`` names the control the reason is
+    about: ``"date"``, or ``"outcome"`` for a refusal of «Mis sai tähtajast»,
+    which then carries the error and ``aria-invalid`` instead of the date box.
     """
-    context["reopen"] = {"editor": editor, "error": error, "values": request.POST}
+    context["reopen"] = {"editor": editor, "error": error, "values": request.POST, "about": about}
 
 
 def _apply_inline_field(

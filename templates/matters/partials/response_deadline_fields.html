@@ -33,13 +33,16 @@ Koda, and the service refuses a new request on one (docs/adr/0151, amendment of
 </fieldset>
 <label class="field" for="{{ prefix }}-previous-outcome">
   <span class="field__label field__label--plain">Mis sai tähtajast {{ matter.response_deadline|date:"j.n.Y" }} (uue küsimise, tühjendamise või lõpetamise korral)</span>
-  <select class="field__input field__input--compact" name="previous_outcome" id="{{ prefix }}-previous-outcome">
+  <select class="field__input field__input--compact" name="previous_outcome" id="{{ prefix }}-previous-outcome"{% if reopen.about == "outcome" %} aria-invalid="true" aria-describedby="{{ prefix }}-outcome-error"{% endif %}>
     <option value="">— vali —</option>
     <option value="ANSWERED"{% if reopen.values.previous_outcome == "ANSWERED" %} selected{% endif %}>Vastatud</option>
     <option value="NOT_ANSWERING"{% if reopen.values.previous_outcome == "NOT_ANSWERING" %} selected{% endif %}>Otsustati mitte vastata</option>
     <option value="SUPERSEDED"{% if reopen.values.previous_outcome == "SUPERSEDED" %} selected{% endif %}>Jääb vastamata (asendub uue küsimisega)</option>
     <option value="CANCELLED"{% if reopen.values.previous_outcome == "CANCELLED" %} selected{% endif %}>Tühistatud</option>
   </select>
+  {% if reopen.about == "outcome" %}
+    <span class="field__error" id="{{ prefix }}-outcome-error" role="alert">{{ reopen.error }}</span>
+  {% endif %}
 </label>
 {% with options=answerable_submissions %}
   {% if options %}

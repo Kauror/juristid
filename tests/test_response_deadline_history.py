@@ -27,6 +27,7 @@ What is protected here:
 from __future__ import annotations
 
 import datetime as dt
+import re
 
 import pytest
 from django.urls import reverse
@@ -42,6 +43,7 @@ from app.matters.response_deadlines import (
     CHANGE_NEEDS_A_MEANING,
     FOREIGN_SUBMISSION,
     REPLACED_NEEDS_AN_OUTCOME,
+    RESOLVE_NEEDS_AN_OUTCOME,
     STALE_DEADLINE_REFUSAL,
     UNSENT_SUBMISSION,
     change_response_deadline,
@@ -547,6 +549,103 @@ def test_a_header_deadline_refused_for_its_meaning_offers_the_choice_open(signed
     assert f'value="{new_date}"' in editor
     assert 'name="change" value="MOVED"' in editor
     assert f'role="alert">{CHANGE_NEEDS_A_MEANING}</span>' in editor
+
+
+@pytest.mark.parametrize(
+    ("posted", "refusal"),
+    [
+        (
+            {
+                "tegevus": "muuda",
+                "change": ResponseDeadlineChange.REPLACED,
+                "response_deadline": "NEW",
+            },
+            REPLACED_NEEDS_AN_OUTCOME,
+        ),
+        ({"tegevus": "lopeta"}, RESOLVE_NEEDS_AN_OUTCOME),
+    ],
+)
+def test_an_outcome_refusal_is_wired_to_the_outcome_not_the_date(
+    signed_in, specialist, posted, refusal
+):
+    """The reason, and `aria-invalid`, sit on «Mis sai tähtajast» — what is missing."""
+    matter = _requested(specialist, _days(3))
+    data = {**posted, "revision": deadline_revision(matter)}
+    if data.get("response_deadline") == "NEW":
+        data["response_deadline"] = _days(30).strftime("%d.%m.%Y")
+
+    response = signed_in.post(
+        reverse("matters:response_deadline", kwargs={"pk": matter.pk}),
+        data,
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == 400
+    editor = _deadline_editor(response.content.decode())
+    outcome = re.search(r'<select[^>]*name="previous_outcome"[^>]*>', editor).group(0)
+    date_box = re.search(r'<input[^>]*name="response_deadline"[^>]*>', editor, re.S).group(0)
+    assert 'aria-invalid="true"' in outcome
+    assert 'aria-describedby="paise-tahtaeg-outcome-error"' in outcome
+    assert f'id="paise-tahtaeg-outcome-error" role="alert">{refusal}</span>' in editor
+    assert "aria-invalid" not in date_box
+    assert "paise-tahtaeg-error" not in editor
+
+
+@pytest.mark.parametrize("act", ["replace", "resolve"])
+def test_a_stale_header_deadline_is_redrawn_closed_from_what_is_stored(
+    signed_in, specialist, send, act
+):
+    """A colleague moved the deadline under the form: nothing posted comes back.
+
+    Reopened with the posted choices under a fresh revision, one more click
+    would have applied an outcome chosen for the old deadline to the new one.
+    """
+    matter = _requested(specialist, _days(3))
+    opinion = send(matter)
+    stale = deadline_revision(matter)
+    change_response_deadline(
+        matter=matter,
+        deadline=_days(12),
+        actor=specialist,
+        change=ResponseDeadlineChange.MOVED,
+        expected_revision=stale,
+    )
+    posted = {
+        "replace": {
+            "tegevus": "muuda",
+            "response_deadline": _days(40).strftime("%d.%m.%Y"),
+            "change": ResponseDeadlineChange.REPLACED,
+            "previous_outcome": ResponseDeadlineOutcome.SUPERSEDED,
+            "previous_note": "Kolleegi muudatust ei näinud",
+        },
+        "resolve": {
+            "tegevus": "lopeta",
+            "previous_outcome": ResponseDeadlineOutcome.ANSWERED,
+            "previous_submission": str(opinion.pk),
+            "previous_note": "Kolleegi muudatust ei näinud",
+        },
+    }[act]
+    history = MatterResponseDeadline.objects.filter(matter=matter).count()
+
+    response = signed_in.post(
+        reverse("matters:response_deadline", kwargs={"pk": matter.pk}),
+        {"revision": stale, **posted},
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == 400
+    body = response.content.decode()
+    assert f'<p class="formerror" role="alert">{STALE_DEADLINE_REFUSAL}</p>' in body
+    editor = _deadline_editor(body)
+    assert editor.startswith('<details class="inlineedit" data-deadline-editor>')
+    assert f'value="{_days(12).day}.{_days(12).month}.{_days(12).year}"' in editor
+    assert "Kolleegi muudatust ei näinud" not in body
+    assert " checked" not in editor
+    assert " selected" not in editor
+    assert 'aria-invalid="true"' not in editor
+    matter.refresh_from_db()
+    assert matter.response_deadline == _days(12)
+    assert MatterResponseDeadline.objects.filter(matter=matter).count() == history
 
 
 def test_the_header_deadline_editor_is_drawn_closed_and_unchosen(signed_in, specialist):
