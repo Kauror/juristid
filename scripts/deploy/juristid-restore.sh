@@ -17,7 +17,8 @@
 #      link or special file in a pool or in the target
 #   2. verify the set (levels 1 and 2) — a restore from a corrupt archive
 #      leaves a half-populated database that looks like a working one
-#   3. refuse a database that still holds a register
+#   3. refuse a database that still holds a register, and a dump that grants
+#      to a role this cluster does not have
 #   4. evidence and page XML into the data root, never overwriting, regular
 #      files only — and proved to be exactly that before step 5 (#14)
 #   5. the database, in one transaction
@@ -316,6 +317,36 @@ fi
 
 note "  the target database is empty"
 
+# Every role the dump grants to, revokes from, or hands an object to must
+# already exist in this cluster. Roles are cluster-wide and a database dump does
+# not carry them; the production dump grants to the MCP server's and the write
+# gateway's own roles (`juristid_mcp`, `juristid_mcp_writer` — docs/adr/0185,
+# 0189). On a fresh cluster the first such GRANT fails, and because step 5 runs
+# as one transaction the whole restore rolls back — after step 4 has already
+# filled the storage trees. So the roles are checked here, before anything is
+# written, and the refusal says how to create them.
+CONTAINER_PATH="/tmp/juristid-restore-$$.dump"
+cleanup() {
+  juristid_compose exec -T db rm -f "$CONTAINER_PATH" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+juristid_compose cp "$SET_DIR/database.dump" "db:$CONTAINER_PATH"
+
+dump_sql="$(juristid_compose exec -T db pg_restore --schema-only --file=- "$CONTAINER_PATH")" ||
+  die "pg_restore could not read the dump's schema to list the roles it needs. Nothing has been written."
+needed_roles="$(dump_roles <<<"$dump_sql")"
+present_roles="$(juristid_compose exec -T db psql --no-password -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT rolname FROM pg_roles" | tr -d '\r')"
+missing_roles=""
+while IFS= read -r role; do
+  [ -n "$role" ] || continue
+  grep -Fxq -- "$role" <<<"$present_roles" || missing_roles="$missing_roles $role"
+done <<<"$needed_roles"
+if [ -n "$missing_roles" ]; then
+  die "the dump grants to role(s) this cluster does not have:$missing_roles. Restoring would fail at the first such GRANT and roll the whole database back. Create each one first, without privileges — for example, inside the db container: psql -U $DB_USER -d postgres -c 'CREATE ROLE juristid_mcp LOGIN' — and set its password afterwards with manage.py mcp_db_role / mcp_writer_db_role --apply --password-stdin (deploy/unraid-main/RECOVERY.md, \"The steps\"). Nothing has been written."
+fi
+note "  every role the dump names exists in this cluster"
+
 # --------------------------------------------------------------------------
 # 4. Evidence and page XML
 # --------------------------------------------------------------------------
@@ -438,13 +469,8 @@ fi
 
 step "Database"
 
-CONTAINER_PATH="/tmp/juristid-restore-$$.dump"
-cleanup() {
-  juristid_compose exec -T db rm -f "$CONTAINER_PATH" >/dev/null 2>&1 || true
-}
-trap cleanup EXIT
-
-juristid_compose cp "$SET_DIR/database.dump" "db:$CONTAINER_PATH"
+# The dump has been in the db container since step 3, where its roles were
+# checked; `cleanup` removes it on every exit.
 
 # --exit-on-error, so a restore stops at the first failure rather than
 # continuing and reporting a count of errors at the end that nobody reads. A

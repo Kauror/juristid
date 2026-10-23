@@ -485,6 +485,8 @@ def test_the_restore_proves_the_trees_before_it_restores_the_database() -> None:
     text = RESTORE.read_text(encoding="utf-8")
     copy = text.index('restore_tree "evidence"')
     proof = text.index('prove_restored_tree "evidence"')
-    database = text.index("juristid_compose exec -T db pg_restore")
+    # The restoring call, not step 3's read-only `pg_restore --schema-only`
+    # listing of the roles the dump needs.
+    database = text.index("juristid_compose exec -T db pg_restore \\\n")
 
     assert copy < proof < database
