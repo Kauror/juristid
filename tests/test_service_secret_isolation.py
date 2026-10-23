@@ -549,9 +549,13 @@ def test_ci_resolves_both_shapes_with_compose_itself() -> None:
     scripts = [step.get("run", "") for step in steps]
     joined = "\n".join(scripts)
     assert "assert_service_env_isolation.py --write-sentinels" in joined
+    assert '"$TUNNEL_SENTINELS" "$WRITER_SENTINELS"' in joined
     # Both shapes with the MCP files (docs/adr/0185): resolved with
     # `--profile mcp`, so the two new services are in the model to be checked.
-    mcp = r"--mcp \"\$MCP_SENTINELS\" --mcp-tunnel \"\$TUNNEL_SENTINELS\""
+    mcp = (
+        r"--mcp \"\$MCP_SENTINELS\" --mcp-tunnel \"\$TUNNEL_SENTINELS\""
+        r" --mcp-writer \"\$WRITER_SENTINELS\""
+    )
     assert re.search(rf"assert_service_env_isolation\.py {mcp} \S+ \"\$SENTINELS\"\n", joined)
     assert re.search(
         rf"assert_service_env_isolation\.py {mcp} \S+ \"\$SENTINELS\" --initialising", joined
