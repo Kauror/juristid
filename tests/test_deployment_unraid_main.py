@@ -126,15 +126,22 @@ def test_it_shares_nothing_with_the_rehearsal(
 
 #: Which network each service joins (MCPSEC-02). Every service is on
 #: `internal` except the OpenAI tunnel client, which is on `mcp_edge` alone:
-#: it reaches `mcp` and the internet, never `db`, `web` or `tunnel`.
-EXPECTED_NETWORKS = {"mcp": ["internal", "mcp_edge"], "mcp-tunnel": ["mcp_edge"]}
+#: it reaches `mcp` and the internet, never `db`, `web` or `tunnel`. The write
+#: gateway (docs/adr/0189) is on `internal` for `db` and `mcp_write` for `mcp`,
+#: never `mcp_edge`; `mcp` is on all three.
+EXPECTED_NETWORKS = {
+    "mcp": ["internal", "mcp_edge", "mcp_write"],
+    "mcp-tunnel": ["mcp_edge"],
+    "mcp-writer": ["internal", "mcp_write"],
+}
 
 
 def test_the_stack_uses_its_own_networks_and_joins_no_other(compose: dict[str, Any]) -> None:
     networks = compose["networks"]
-    assert sorted(networks) == ["internal", "mcp_edge"]
+    assert sorted(networks) == ["internal", "mcp_edge", "mcp_write"]
     assert networks["internal"]["name"] == "juristid-main-internal"
     assert networks["mcp_edge"]["name"] == "juristid-main-mcp-edge"
+    assert networks["mcp_write"]["name"] == "juristid-main-mcp-write"
     for network in networks.values():
         assert network.get("external") is not True
     for name, service in compose["services"].items():
@@ -159,8 +166,25 @@ def test_only_mcp_shares_a_network_with_the_tunnel_client(compose: dict[str, Any
     assert reachable == {MCP}
     on_edge = {name for name, service in services.items() if "mcp_edge" in service["networks"]}
     assert on_edge == {MCP, MCP_TUNNEL}
-    for name in ("db", "web", "tunnel"):
+    for name in ("db", "web", "tunnel", "mcp-writer"):
         assert "mcp_edge" not in services[name]["networks"], name
+
+
+def test_the_write_network_holds_the_mcp_server_and_the_gateway_only(
+    compose: dict[str, Any],
+) -> None:
+    """`mcp_write` is internal (no route off the host) and the tunnel client is not on it.
+
+    So the tunnel client — on `mcp_edge` alone — can neither resolve nor reach
+    `mcp-writer`: the two share no network (docs/adr/0189, CONTRACT §1).
+    """
+    services = compose["services"]
+    assert compose["networks"]["mcp_write"]["internal"] is True
+    assert compose["networks"]["mcp_write"]["driver"] == "bridge"
+    on_write = {name for name, service in services.items() if "mcp_write" in service["networks"]}
+    assert on_write == {MCP, MCP_WRITER}
+    shared = set(services[MCP_TUNNEL]["networks"]) & set(services[MCP_WRITER]["networks"])
+    assert shared == set(), "the tunnel client shares a network with the write gateway"
 
 
 #: `${NAME:-default}`. The default has to be substituted *before* the volume
@@ -956,7 +980,9 @@ def test_the_search_worker_reaches_no_evidence(compose: dict[str, Any]) -> None:
 
 MCP = "mcp"
 MCP_TUNNEL = "mcp-tunnel"
+MCP_WRITER = "mcp-writer"
 MCP_ENV_EXAMPLE = DEPLOY / "juristid-mcp.env.example"
+MCP_WRITER_ENV_EXAMPLE = DEPLOY / "juristid-mcp-writer.env.example"
 MCP_TUNNEL_ENV_EXAMPLE = DEPLOY / "juristid-mcp-tunnel.env.example"
 
 #: The tunnel client, by tag and by digest: the multi-platform index
@@ -985,7 +1011,7 @@ def test_ai_access_starts_only_when_it_is_named(compose: dict[str, Any]) -> None
     for both, so `--profile mcp` brings up the pair and nothing more.
     """
     gated = {name for name, service in compose["services"].items() if service.get("profiles")}
-    assert gated == {MCP, MCP_TUNNEL}
+    assert gated == {MCP, MCP_TUNNEL, MCP_WRITER}
     for name in gated:
         assert compose["services"][name]["profiles"] == ["mcp"], name
 
@@ -1030,12 +1056,12 @@ def test_the_mcp_server_reaches_no_file_at_all(compose: dict[str, Any]) -> None:
     """No evidence, no derivatives, no corpus, no staging volume — no volume."""
     server = compose["services"][MCP]
     assert "volumes" not in server
-    assert server["networks"] == ["internal", "mcp_edge"]
+    assert server["networks"] == ["internal", "mcp_edge", "mcp_write"]
     assert "ports" not in server
     assert "expose" not in server
 
 
-@pytest.mark.parametrize("name", [MCP, MCP_TUNNEL])
+@pytest.mark.parametrize("name", [MCP, MCP_TUNNEL, MCP_WRITER])
 def test_the_ai_access_containers_are_hardened(compose: dict[str, Any], name: str) -> None:
     """Read-only root, in-memory /tmp, no capability, no privilege gain, bounded."""
     service = compose["services"][name]
@@ -1146,3 +1172,96 @@ def test_the_web_template_keeps_ai_access_off(env_example: dict[str, str]) -> No
     assert env_example["MCP_ENABLED"] == "0"
     assert env_example["JURISTID_PUBLIC_ORIGIN"].startswith("https://replace-me")
     assert env_example["MCP_RESOURCE_URLS"].startswith("https://")
+
+
+# -- the MCP write gateway (docs/adr/0189) -------------------------------------
+
+
+def test_the_write_gateway_is_the_release_image_running_a_checked_command(
+    compose: dict[str, Any],
+) -> None:
+    services = compose["services"]
+    writer = services[MCP_WRITER]
+    assert writer["image"] == services["web"]["image"]
+    assert writer["container_name"] == "juristid-main-mcp-writer"
+    assert writer["profiles"] == ["mcp"]
+    assert [str(part) for part in writer["command"]] == [
+        "python",
+        "manage.py",
+        "run_mcp_write_gateway",
+    ]
+    assert writer["healthcheck"]["test"] == [
+        "CMD",
+        "python",
+        "manage.py",
+        "check_mcp_write_gateway",
+        "--quiet",
+    ]
+    assert "build" not in writer
+
+
+def test_the_write_gateway_has_its_own_file_and_no_port_mount_or_edge(
+    compose: dict[str, Any],
+) -> None:
+    writer = compose["services"][MCP_WRITER]
+    assert writer["env_file"] == [
+        "${JURISTID_MCP_WRITER_ENV_FILE:-"
+        "/mnt/user/appdata/juristid-main/config/juristid-mcp-writer.env}"
+    ]
+    environment = writer["environment"]
+    assert environment["JURISTID_PROCESS_ROLE"] == "mcp_writer"
+    assert environment["JURISTID_RUNTIME"] == "deployed"
+    assert environment["SEED_DEV_DATA"] == "0"
+    assert environment["POSTGRES_HOST"] == "db"
+    assert environment["MCP_WRITE_LISTEN_HOST"] == "0.0.0.0"  # noqa: S104 - the container network
+    assert str(environment["MCP_WRITE_LISTEN_PORT"]) == "8002"
+    assert writer["depends_on"] == {"db": {"condition": "service_healthy"}}
+    assert writer["networks"] == ["internal", "mcp_write"]
+    for absent in ("ports", "expose", "volumes", "network_mode", "cap_add", "privileged"):
+        assert absent not in writer, absent
+
+
+def test_mcp_reaches_the_gateway_by_name_and_nothing_depends_on_it(
+    compose: dict[str, Any],
+) -> None:
+    """Stopping `mcp-writer` must leave reading untouched: nobody waits for it."""
+    services = compose["services"]
+    assert services[MCP]["environment"]["MCP_WRITE_GATEWAY_URL"] == "http://mcp-writer:8002"
+    for name, service in services.items():
+        assert MCP_WRITER not in (service.get("depends_on") or {}), name
+
+
+def test_the_writer_template_carries_placeholders_and_no_browser_secret() -> None:
+    writer = _template_values(MCP_WRITER_ENV_EXAMPLE)
+    assert writer["REAL_DATA_ALLOWED"] == "1"
+    assert writer["AUTH_MODE"] == "shared_gate"
+    assert writer["POSTGRES_USER"] == "juristid_mcp_writer"
+    assert writer["MCP_ENABLED"] == "1"
+    assert writer["MCP_WRITES_ENABLED"] == "1"
+    for key in ("DJANGO_SECRET_KEY", "POSTGRES_PASSWORD", "MCP_WRITE_GATEWAY_KEY"):
+        assert writer[key].startswith("replace-me"), key
+    assert "DJANGO_DEBUG" not in writer and "DEV_LOGIN_ENABLED" not in writer
+    text = MCP_WRITER_ENV_EXAMPLE.read_text(encoding="utf-8")
+    for key in (
+        "JURISTID_SHARED_GATE_PASSWORD",
+        "LOCAL_AUTH_MFA_ENCRYPTION_KEY",
+        "MCP_AUTHENTICATOR_KEY",
+        "MCP_TOKEN_DERIVATION_KEY",
+        "DJANGO_EMAIL_HOST_PASSWORD",
+        "DJANGO_EMAIL_HOST_USER",
+        "CONTROL_PLANE_API_KEY",
+    ):
+        assert f"{key}=" not in text, f"the writer template names {key}"
+    assert "orgusaar.ee" not in text
+
+    mcp = _template_values(MCP_ENV_EXAMPLE)
+    assert mcp["MCP_WRITES_ENABLED"] == "0"
+    assert mcp["MCP_WRITE_GATEWAY_KEY"].startswith("replace-me")
+    assert mcp["POSTGRES_USER"] == "juristid_mcp"
+
+
+def test_the_web_template_keeps_ai_writes_off_and_holds_no_gateway_key(
+    env_example: dict[str, str],
+) -> None:
+    assert env_example["MCP_WRITES_ENABLED"] == "0"
+    assert "MCP_WRITE_GATEWAY_KEY=" not in ENV_EXAMPLE.read_text(encoding="utf-8")

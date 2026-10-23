@@ -1539,6 +1539,23 @@ like `tunnel`, and a release has no reason to move it. The first release that
 carries AI access has its own steps in
 [`docs/mcp/RELEASE-NOTES-FOR-OPERATORS.md`](../../docs/mcp/RELEASE-NOTES-FOR-OPERATORS.md).
 
+**The MCP write gateway follows the same rule** (docs/adr/0189). `mcp-writer`
+runs the release image behind the `mcp` profile; the preflight reads
+`juristid-main-mcp-writer` too, and where it is running the plan carries this
+line and a `test …` line that must print `mcp-writer runs
+juristid-main-web:<tag>`:
+
+```bash
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps mcp-writer
+```
+
+Where it is stopped or absent, **do not run it**: a stopped `mcp-writer` is AI
+writes switched off, and only the activation steps in
+[`docs/mcp/OPERATIONS.md`](../../docs/mcp/OPERATIONS.md) ("Phase 2") start it.
+A release whose migrations add a table the write operations need re-runs
+`mcp_writer_db_role --apply` from `web` before replacing `mcp-writer` (its
+startup check, juristid.E050, names a table it cannot write).
+
 Migrations are a deliberate step, never container start-up work: on boot they
 would run on every restart, including the restart that happens at three in the
 morning because the host rebooted.
@@ -1695,8 +1712,9 @@ docker compose -p juristid-main -f deploy/unraid-main/compose.yml ps
 ```
 
 Nothing should be owed, and `ps` should show `juristid-main-searchindex`
-running beside the other five (and, where AI access is on, `ps mcp mcp-tunnel`
-— named, because they are behind a profile — shows those two healthy as well).
+running beside the other five (and, where AI access is on, `ps mcp mcp-tunnel
+mcp-writer` — named, because they are behind a profile — shows those healthy as
+well; `mcp-writer` only where AI writes are on).
 From here on the worker keeps the index fresh on
 its own, and this step is not part of an ordinary release again until something
 changes `INDEX_VERSION` a second time.
@@ -1789,6 +1807,16 @@ and read-only database transactions, and `mcp-tunnel`, OpenAI's Secure MCP
 Tunnel client — plus OAuth routes on `web` that are off until `MCP_ENABLED=1`.
 Neither service publishes a port, mounts a volume or reads `juristid.env`, and
 neither starts unless it is named.
+
+AI *writes* (docs/adr/0189) add a third service behind the same profile,
+`mcp-writer`: the write gateway that executes a change only after the person
+approved it on Juristid's own page with their own authenticator. It has its
+own environment file (`juristid-mcp-writer.env`) and its own least-privilege
+database role (`juristid_mcp_writer`), sits on `internal` and the internal-only
+`mcp_write` network (never `mcp_edge`, so the tunnel client cannot reach it),
+and publishes no port. `docker compose -p juristid-main -f
+deploy/unraid-main/compose.yml stop mcp-writer` switches every AI write off
+while reading goes on.
 
 Everything about it is in [`docs/mcp/OPERATIONS.md`](../../docs/mcp/OPERATIONS.md):
 first-time enablement, granting and revoking a person, health checks, and how
