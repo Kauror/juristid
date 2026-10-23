@@ -21,6 +21,7 @@ real `pg_dump` where one is on PATH.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import uuid
@@ -47,6 +48,16 @@ def _dump_roles(sql: str) -> list[str]:
         check=True,
     )
     return [line for line in result.stdout.splitlines() if line]
+
+
+def _client_major(tool: str) -> int:
+    """The major version of a PostgreSQL client tool — «pg_dump (PostgreSQL) 16.10 …» is 16."""
+    out = subprocess.run(  # noqa: S603 - a fixed client tool
+        [tool, "--version"], capture_output=True, text=True, timeout=30, check=True
+    ).stdout
+    match = re.search(r"\(PostgreSQL\)\s+(\d+)", out)
+    assert match is not None, f"unexpected version line: {out!r}"
+    return int(match.group(1))
 
 
 def test_every_role_the_listing_names_is_found():
@@ -110,7 +121,17 @@ def test_the_restore_asks_before_it_writes_anything():
     reason="needs the PostgreSQL client tools on PATH",
 )
 def test_a_real_dump_names_the_roles_it_grants_to():
-    """Against the real `pg_dump` / `pg_restore --schema-only` output."""
+    """Against the real `pg_dump` / `pg_restore --schema-only` output.
+
+    `pg_dump` refuses a server newer than itself, and the runner's own client
+    (Ubuntu's) is older than the PostgreSQL 18 service the suite runs against;
+    there the listing parser is still pinned by the tests above, and this one
+    runs wherever the client matches the server.
+    """
+    pg_dump = shutil.which("pg_dump") or "pg_dump"
+    server_major: int = connection.pg_version // 10000  # type: ignore[attr-defined]
+    if _client_major(pg_dump) < server_major:
+        pytest.skip(f"pg_dump on PATH is older than the PostgreSQL {server_major} server")
     params = connection.get_connection_params()
     role = f"wsd_probe_{uuid.uuid4().hex[:8]}"
     table = f"wsd_probe_table_{uuid.uuid4().hex[:8]}"
@@ -122,7 +143,7 @@ def test_a_real_dump_names_the_roles_it_grants_to():
         env = {**os.environ, "PGPASSWORD": str(params.get("password") or "")}
         dump = subprocess.run(  # noqa: S603 - fixed client tools, generated arguments
             [
-                shutil.which("pg_dump") or "pg_dump",
+                pg_dump,
                 "-h",
                 str(params.get("host") or "127.0.0.1"),
                 "-p",
