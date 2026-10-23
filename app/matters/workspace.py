@@ -1759,7 +1759,14 @@ def add_matter_koda_opinion(
                 engagement=engagement, actor=author, expected_revision=revision or None
             )
         if named is not None:
-            result.action = complete_next_action(action=named, actor=author)
+            # Promotes the earliest planned row unless this save's stage closes
+            # the Matter: the closure cancels every planned row on the way out
+            # (docs/adr/0143 §A7), and promoting one first wrote a
+            # «→ Järgmine samm» under the save that ended the file — the rule
+            # `complete_current_action` follows.
+            result.action = complete_next_action(
+                action=named, actor=author, promote=not move.closes
+            )
         return result
 
 

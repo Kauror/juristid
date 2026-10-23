@@ -399,6 +399,49 @@ def test_the_rendered_row_shows_only_the_missing_deadline(signed_in, marked_matt
     assert REFERENCE not in body
 
 
+def test_a_stepless_matter_with_an_arvamuse_tahtaeg_shows_that_deadline(specialist, signed_in):
+    """«tähtaeg puudub» is untrue of a file that still owes its opinion.
+
+    `tähtaeg` is the `Arvamuse tähtaeg`'s word (ADR 0054), and the same page's
+    `Eesolev` lists this file's deadline. The row is here because no next step
+    is set, so it says that and shows the deadline as the list's other rows
+    show one — `ARVAMUSE TÄHTAEG 12.11` (bounty A-04).
+    """
+    today = timezone.localdate()
+    deadline = today + timedelta(days=20)
+    matter = factories.MatterFactory(
+        owner=specialist, title="Tähtajaga vaikiv teema", response_deadline=deadline
+    )
+
+    (row,) = [row for row in _no_action_rows(specialist, today) if row.matter.pk == matter.pk]
+
+    shown = f"ARVAMUSE TÄHTAEG {deadline.day:02d}.{deadline.month:02d}"
+    assert row.value == "samm puudub"
+    assert row.meaning == shown
+    assert row.detail == "järgmine samm määramata"
+
+    body = _get(signed_in, OVERVIEW, "?vaade=osakond&sekkumine=sammuta")
+    cell = body.split("Tähtajaga vaikiv teema", 1)[0].rsplit('class="interrow__reason"', 1)[1]
+    assert "tähtaeg puudub" not in cell
+    assert shown in cell
+
+
+def test_a_discharged_arvamuse_tahtaeg_is_not_shown_as_owed(specialist):
+    """A legacy deadline answered by a sent opinion is owed no more (docs/adr/0050)."""
+    today = timezone.localdate()
+    matter = factories.MatterFactory(
+        owner=specialist,
+        title="Vastatud tähtajaga teema",
+        response_deadline=today + timedelta(days=20),
+    )
+    _sent_submission(matter, title="Koja arvamus", sent=today)
+
+    (row,) = [row for row in _no_action_rows(specialist, today) if row.matter.pk == matter.pk]
+
+    assert row.value == "tähtaeg puudub"
+    assert row.meaning == ""
+
+
 def test_the_silence_age_still_decides_where_the_row_sits(specialist):
     """Ranking is unchanged. Only the label was ever the complaint.
 

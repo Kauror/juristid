@@ -86,6 +86,15 @@
      to `PRAEGUNE TEGEVUS` like the others (ENG-021). */
   var NEXT_STEP_TARGETS = ["praegune-tegevus", "lisa-jargmine", "vaatasin-ule"];
 
+  /* A planned action's own `✓ Tehtud` (`planeeritud-tehtud-<pk>`) and `Muuda`
+     (`planeeritud-<pk>`) in `PRAEGUNE TEGEVUS` — Minu asjad's `Lisa tulemus…`
+     and `Muuda` on a planned row (docs/adr/0143, 0144 §1). Opened and focused
+     like the others; where the panel is not drawn (the action has since been
+     finished, or the reader may not write) arrival lands on the zone and opens
+     nothing, because the current step's `✓ Tehtud` would finish a different
+     step. */
+  var PLANNED_TARGET = /^planeeritud-(?:tehtud-)?[0-9a-f-]{36}$/;
+
   /* Open whatever kind of disclosure this destination is, and say whether it
    * was one.
    *
@@ -137,11 +146,17 @@
 
   function arriveAtNextStep() {
     var wanted = (window.location.hash || "").slice(1);
-    if (NEXT_STEP_TARGETS.indexOf(wanted) === -1) {
+    var planned = PLANNED_TARGET.test(wanted);
+    if (!planned && NEXT_STEP_TARGETS.indexOf(wanted) === -1) {
       return;
     }
     var target = document.getElementById(wanted) || document.getElementById("praegune-tegevus");
     if (!target) {
+      return;
+    }
+    if (planned && target.id !== wanted) {
+      target.scrollIntoView({ block: "center", behavior: "auto" });
+      focusQuietly(target);
       return;
     }
     if (revealDisclosure(target)) {
