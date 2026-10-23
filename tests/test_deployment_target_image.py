@@ -637,6 +637,7 @@ def test_the_identity_guard_derives_exactly_this_stacks_application_services() -
         "intake-reader",
         "intake-sweeper",
         "mcp",
+        "notifications",
         "searchindex",
         "web",
     ]

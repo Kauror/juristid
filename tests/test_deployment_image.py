@@ -344,8 +344,11 @@ def _management_command(name: str) -> Any:
 #: first — a configuration `juristid.E0xx` refuses must not answer ChatGPT.
 #: The rehearsal does not carry it: it has no tunnel to OpenAI to put in front
 #: of it, and the MCP process's behaviour is proved by its own tests.
+#:
+#: `notifications` (docs/adr/0188) is the commencement-reminder reconcile loop,
+#: on the real-data stack only, like `mcp`: the rehearsal needs no reminders.
 APPLICATION_WORKERS = {
-    "unraid-main": {"intake-reader", "searchindex", "intake-sweeper", "mcp"},
+    "unraid-main": {"intake-reader", "searchindex", "intake-sweeper", "mcp", "notifications"},
     "unraid-test": {"intake-reader", "searchindex", "intake-sweeper"},
 }
 

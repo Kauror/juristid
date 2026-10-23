@@ -231,6 +231,12 @@
             browser rather than a place to go. Left of them, so the persona and
             «Välju» keep the positions they have always had.
           {% endcomment %}
+          {% comment %}
+            «Kontrolli jõustumist» (docs/adr/0188): a count of the reader's open
+            commencement checks, fetched after the page has drawn, so no page's
+            own queries change. Renders nothing for a reader with none to see.
+          {% endcomment %}
+          {% load notifications %}{% commencement_bell %}
           {% include "components/theme_toggle.html" %}
 
           {% comment %}

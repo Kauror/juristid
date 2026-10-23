@@ -427,6 +427,42 @@ services:
     networks:
       - internal
 
+  # «Kontrolli jõustumist» (docs/adr/0188): one idempotent, advisory-locked
+  # reconcile of the commencement reminders every 600 s. The same shape as the
+  # intake sweeper: no host cron, no mounts, nothing published. If it is not
+  # running, no new reminder appears and nothing else is affected.
+  notifications:
+    image: juristid-main-web:${JURISTID_IMAGE_TAG:-local}
+    container_name: juristid-main-notifications
+    restart: unless-stopped
+    logging: *bounded-logs
+    healthcheck:
+      test: ["CMD", "python", "manage.py", "generate_commencement_reminders", "--check", "--quiet"]
+      interval: 600s
+      timeout: 30s
+      start_period: 120s
+      retries: 3
+    command:
+      - python
+      - manage.py
+      - generate_commencement_reminders
+      - --loop
+    env_file:
+      - ${JURISTID_ENV_FILE:-/mnt/user/appdata/juristid-main/config/juristid.env}
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      SEED_DEV_DATA: "0"
+      # As on every other service in this file: `config/test_safety.py` refuses
+      # to run the test suite in a process that inherits this marker.
+      JURISTID_RUNTIME: deployed
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal
+
   # The only route in.
   #
   # Not opt-in, unlike the rehearsal's: there is no host port here, so without
