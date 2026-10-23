@@ -159,6 +159,49 @@ def _plan_revision(matter) -> str:
     return plan_revision(plan_steps_of(matter))
 
 
+def _reminder_state(world) -> tuple:
+    from app.notifications.models import CommencementReminder
+
+    return tuple(
+        CommencementReminder.objects.filter(pk=world["reminder"].pk).values_list(
+            "status", "deferred_until", "resolution_note"
+        )
+    )
+
+
+def _defer_payload() -> dict:
+    until = timezone.localdate() + timedelta(days=2)
+    return {"until": format_estonian_date(until)}
+
+
+#: «Kontrolli jõustumist» (docs/adr/0188). Answering a reminder is a business
+#: write on a Matter's record, so it is behind the one write gate like every
+#: other: a READER sees the prompt and cannot answer it.
+REMINDER_ROUTES: tuple[WriteRoute, ...] = (
+    WriteRoute(
+        name="notifications:acknowledge",
+        label="Jõustumise kontroll tehtud",
+        request=lambda w: ({"pk": w["reminder"].pk}, {}),
+        probe=_reminder_state,
+        events=(ChangeEventType.COMMENCEMENT_CHECK_ACKNOWLEDGED,),
+    ),
+    WriteRoute(
+        name="notifications:defer",
+        label="Jõustumise kontrolli edasilükkamine",
+        request=lambda w: ({"pk": w["reminder"].pk}, _defer_payload()),
+        probe=_reminder_state,
+        events=(ChangeEventType.COMMENCEMENT_CHECK_DEFERRED,),
+    ),
+    WriteRoute(
+        name="notifications:dismiss",
+        label="Jõustumise meeldetuletuse sulgemine",
+        request=lambda w: ({"pk": w["reminder"].pk}, {"reason": "Loata sulgemine"}),
+        probe=_reminder_state,
+        events=(ChangeEventType.COMMENCEMENT_CHECK_DISMISSED,),
+    ),
+)
+
+
 WRITE_ROUTES: tuple[WriteRoute, ...] = (
     WriteRoute(
         name="matters:matter_create",
@@ -1123,6 +1166,7 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         ),
         probe=lambda w: RelatedSuggestionDismissal.objects.count(),
     ),
+    *REMINDER_ROUTES,
 )
 
 
@@ -1336,7 +1380,23 @@ def _build_world():
     reopen_matter(matter=restart_matter, actor=author)
     restart_follow_up = restart_check.follow_up
 
+    # «Kontrolli jõustumist» (docs/adr/0188): a commencement three days ahead,
+    # on a Matter of its own, and the open prompt the generator owes for it.
+    from app.notifications.models import CommencementReminder
+    from app.notifications.services import reconcile_commencement_reminders
+
+    reminder_matter = factories.MatterFactory(
+        owner=author, title="Jõustumisega teema", reference_year=2099, reference_number=915
+    )
+    commencement_day = timezone.localdate() + timedelta(days=3)
+    commencement = factories.EffectiveDateFactory(
+        matter=reminder_matter, date_value=commencement_day, period_end=commencement_day
+    )
+    reconcile_commencement_reminders()
+    reminder = CommencementReminder.objects.get(effective_date=commencement)
+
     return {
+        "reminder": reminder,
         "matter": matter,
         "planned": planned,
         "planned_action": planned_action,
