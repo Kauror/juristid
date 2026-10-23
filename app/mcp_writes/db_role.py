@@ -126,6 +126,13 @@ WRITE_ALLOWLIST: dict[str, tuple[str, ...]] = {
     # The current step: a new one, the one it supersedes, the one completed
     # (`set_next_action`, `change_current_action`, `complete_current_action`).
     "workflow_nextaction": ("INSERT", "UPDATE"),
+    # The Matter's plan (docs/adr/0142): a new Matter in a stage gets its
+    # planned steps (`create_matter`), and completing a plan-derived step marks
+    # that step done (`complete_current_action`); both lock the row first.
+    "workflow_matterplanstep": ("INSERT", "UPDATE"),
+    # An opinion's follow-up check: completing it records its outcome
+    # (`complete_current_action` on a follow-up action). Never created here.
+    "workflow_opinionfollowup": ("UPDATE",),
     # `add_important_date`.
     "intelligence_matterimportantdate": ("INSERT",),
     # The change history every canonical service appends to (append-only:

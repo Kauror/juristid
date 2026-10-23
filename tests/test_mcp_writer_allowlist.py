@@ -389,11 +389,33 @@ def test_the_allowlist_holds_nothing_the_operations_do_not_need(
     for scenario in SCENARIOS:
         for table, verbs in _record(scenario, django_capture_on_commit_callbacks).items():
             used.setdefault(table, set()).update(verbs)
-    for table, verbs in db_role.GATEWAY_WRITES.items():
+    for table, verbs in {**db_role.GATEWAY_WRITES, **PROVEN_BY_THE_OPERATION_SUITES}.items():
         used.setdefault(table, set()).update(verbs)
     for table, granted in db_role.WRITE_ALLOWLIST.items():
         unused = set(granted) - used.get(table, set())
         assert not unused, f"{table}: {sorted(unused)} granted but no operation uses it"
+
+
+#: Grants whose proof is the operations' own suites rather than a scenario
+#: here: the plan the operation seeds beside `create_matter`, a plan-derived
+#: step and an opinion follow-up check completed by `complete_action`. Agent B's
+#: tests record them (`WRITE_TABLES`) and
+#: tests/test_mcp_writer_role_runs_operations.py runs those tests as the role.
+PROVEN_BY_THE_OPERATION_SUITES: dict[str, tuple[str, ...]] = {
+    "workflow_matterplanstep": ("INSERT", "UPDATE"),
+    "workflow_opinionfollowup": ("UPDATE",),
+}
+
+
+def test_the_grants_proven_elsewhere_are_recorded_by_the_operation_suites():
+    support = pytest.importorskip(
+        "tests.test_mcp_write_operations_support",
+        reason="INTEGRATION: agent B's operation suites are not on this branch",
+    )
+    recorded = set().union(*support.WRITE_TABLES.values())
+    assert set(PROVEN_BY_THE_OPERATION_SUITES) <= recorded
+    granted = set(db_role.WRITE_ALLOWLIST) | {"audit_changeevent"}
+    assert recorded <= granted, sorted(recorded - granted)
 
 
 def test_the_role_run_bites_when_a_grant_is_missing(django_capture_on_commit_callbacks):
