@@ -10,7 +10,7 @@
 [[day]]
 date = 2026-10-23
 basis = "deployment"
-prs = [506, 507, 508, 509, 510, 511, 512, 513, 514, 515, 516, 517, 518, 519, 520, 521, 522, 523]
+prs = [506, 507, 508, 509, 510, 511, 512, 513, 514, 515, 516, 517, 518, 519, 520, 521, 522, 524]
 # Turvaparanduste kaks vooru üheks väljalaskeks: 1. voor #506–#513 (ühendatud
 # #514, audit/0038 + accounts/0005, uus teenus intake-sweeper) ja 2. voor
 # #515–#518 (ühendatud #519, ADR 0181–0184, migratsioonideta). Otsinguindeksit
