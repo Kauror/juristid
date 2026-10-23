@@ -94,9 +94,10 @@ PERIOD_CHOICES: tuple[tuple[str, str], ...] = (
 #: period's, always; this bounds only what is rendered.
 ROW_LIMIT = 50
 
-CUSTOM_RANGE_INCOMPLETE = "Vali vahemiku algus- ja lõppkuupäev."
-CUSTOM_RANGE_UNREADABLE = "Vahemiku kuupäev ei ole loetav. Kasuta kuju pp.kk.aaaa."
-CUSTOM_RANGE_REVERSED = "Vahemiku algus on pärast selle lõppu."
+#: Tehtud's words for a refused range (`department_dashboard.custom_range_refusal`).
+CUSTOM_RANGE_INCOMPLETE = dd.CUSTOM_RANGE_INCOMPLETE
+CUSTOM_RANGE_UNREADABLE = dd.CUSTOM_RANGE_UNREADABLE
+CUSTOM_RANGE_REVERSED = dd.CUSTOM_RANGE_REVERSED
 
 
 @dataclass(frozen=True)
@@ -370,13 +371,7 @@ def changes_period(params: Any, today: date | None = None) -> tuple[dd.Period, s
     if key == dd.PERIOD_CUSTOM:
         start = read_flexible_date(params.get(dd.PERIOD_START_PARAM))
         end = read_flexible_date(params.get(dd.PERIOD_END_PARAM))
-        error = ""
-        if start.invalid or end.invalid:
-            error = CUSTOM_RANGE_UNREADABLE
-        elif start.value is None or end.value is None:
-            error = CUSTOM_RANGE_INCOMPLETE
-        elif start.value > end.value:
-            error = CUSTOM_RANGE_REVERSED
+        error = dd.custom_range_refusal(start, end)
         if error or start.value is None or end.value is None:
             return dd.period_from({}, today), error
         return dd.Period(dd.PERIOD_CUSTOM, start.value, end.value), ""
