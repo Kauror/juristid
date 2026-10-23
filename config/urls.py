@@ -45,6 +45,12 @@ urlpatterns = [
         "haldus/kasutajad/",
         include(("app.accounts.admin_urls", "account_admin"), namespace="account_admin"),
     ),
+    # Haldus → Klassifikaatorid: the institution catalogue and the tag
+    # vocabulary, behind `reference.manage` (docs/adr/0187).
+    path(
+        "haldus/klassifikaatorid/",
+        include(("app.reference_data.urls", "reference_data"), namespace="reference_data"),
+    ),
     path(
         "organisatsioonid/",
         include(("app.organisations.urls", "organisations"), namespace="organisations"),

@@ -1,0 +1,12 @@
+{% comment %}
+  Klassifikaatorid' own sub-navigation: the overview, the two vocabularies
+  managed here and the three shown read-only. `current` is the page's key.
+{% endcomment %}
+<nav class="tabs" aria-label="Klassifikaatorid">
+  <a class="tabs__tab{% if current == 'ulevaade' %} is-active{% endif %}" href="{% url 'reference_data:index' %}"{% if current == 'ulevaade' %} aria-current="page"{% endif %}>Ülevaade</a>
+  <a class="tabs__tab{% if current == 'organisatsioonid' %} is-active{% endif %}" href="{% url 'reference_data:organisations' %}"{% if current == 'organisatsioonid' %} aria-current="page"{% endif %}>Organisatsioonid</a>
+  <a class="tabs__tab{% if current == 'sildid' %} is-active{% endif %}" href="{% url 'reference_data:tags' %}"{% if current == 'sildid' %} aria-current="page"{% endif %}>Sildid</a>
+  <a class="tabs__tab{% if current == 'valdkonnad' %} is-active{% endif %}" href="{% url 'reference_data:vocabulary' 'valdkonnad' %}"{% if current == 'valdkonnad' %} aria-current="page"{% endif %}>Valdkonnad</a>
+  <a class="tabs__tab{% if current == 'oigusaktid' %} is-active{% endif %}" href="{% url 'reference_data:vocabulary' 'oigusaktid' %}"{% if current == 'oigusaktid' %} aria-current="page"{% endif %}>Õigusakti liigid</a>
+  <a class="tabs__tab{% if current == 'etapid' %} is-active{% endif %}" href="{% url 'reference_data:vocabulary' 'etapid' %}"{% if current == 'etapid' %} aria-current="page"{% endif %}>Hetkeseisud</a>
+</nav>

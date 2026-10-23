@@ -1,0 +1,64 @@
+{% extends "haldus/base.html" %}
+{% block title %}Organisatsioonid · Klassifikaatorid · {{ application_name }}{% endblock %}
+
+{% comment %}
+  The institution catalogue: search by name, spelling or registry code, open a
+  row, or add a body. Adding refuses a name the catalogue already answers to
+  and says which row it is (app/organisations/administration.py).
+{% endcomment %}
+
+{% block haldus_content %}
+<div class="pagehead">
+  <h1 class="pagehead__title">Organisatsioonid</h1>
+  <span class="pagehead__context"><a href="{% url 'reference_data:index' %}">Klassifikaatorid</a></span>
+  <div class="pagehead__actions">
+    <a class="button button--secondary" href="{% url 'reference_data:organisation_duplicates' %}">Võimalikud topeltkirjed</a>
+  </div>
+</div>
+{% include "reference_data/_nav.html" with current="organisatsioonid" %}
+
+<form method="get" class="filterbar" role="search" action="{% url 'reference_data:organisations' %}">
+  <label class="visually-hidden" for="organisatsiooni-otsing">Otsi nime, nimekuju või registrikoodi järgi</label>
+  <input class="field__input field__input--compact acctsearch" id="organisatsiooni-otsing" type="search"
+         name="q" value="{{ query }}" placeholder="Nimi, nimekuju või registrikood" maxlength="200">
+  <button type="submit" class="button button--secondary">Otsi</button>
+</form>
+
+{% if rows %}
+  <div class="accttable">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th scope="col">Nimi</th>
+          <th scope="col">Tüüp</th>
+          <th scope="col">Registrikood</th>
+          <th scope="col">Nimekujud</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <th scope="row"><a href="{% url 'reference_data:organisation' row.pk %}">{{ row.name }}</a></th>
+            <td>{{ row.get_organisation_type_display }}</td>
+            <td class="mono">{{ row.registry_code|default:"—" }}</td>
+            <td>{% for alias in row.aliases.all %}{{ alias.alias }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% elif query %}
+  <div class="empty"><p>Ühtegi organisatsiooni ei leitud.</p></div>
+{% endif %}
+
+<form method="post" action="{% url 'reference_data:organisation_create' %}" class="card card--form form" novalidate>
+  {% csrf_token %}
+  <h2 class="acctsection__title">Lisa organisatsioon</h2>
+  {% include "accounts/partials/field.html" with field=form.name %}
+  {% include "accounts/partials/field.html" with field=form.organisation_type %}
+  {% include "accounts/partials/field.html" with field=form.registry_code %}
+  <div class="form__actions">
+    <button type="submit" class="button button--primary">Lisa</button>
+  </div>
+</form>
+{% endblock %}

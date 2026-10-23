@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% comment %}
+  Minimal placeholder for the Haldus shell (Admin & Workflow R1 contract). The
+  Haldus workstream owns this file and its section navigation; the integrator
+  keeps theirs. Pages extend it and fill `haldus_content`; `haldus_active`
+  names the current section.
+{% endcomment %}
+{% block content %}
+<div class="page">
+  {% block haldus_content %}{% endblock %}
+</div>
+{% endblock %}

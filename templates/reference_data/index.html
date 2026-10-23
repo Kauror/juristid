@@ -1,0 +1,52 @@
+{% extends "haldus/base.html" %}
+{% block title %}Klassifikaatorid · Haldus · {{ application_name }}{% endblock %}
+
+{% comment %}
+  Haldus → Klassifikaatorid. One row per reference vocabulary: what may be
+  changed here, where it comes from, what depends on it and what never
+  happens to it — the inventory of docs/adr/0187, read from
+  `app.reference_data.inventory` so the page and the record agree.
+{% endcomment %}
+
+{% block haldus_content %}
+<div class="pagehead">
+  <h1 class="pagehead__title">Klassifikaatorid</h1>
+  <span class="pagehead__context">Haldus</span>
+</div>
+{% include "reference_data/_nav.html" with current="ulevaade" %}
+
+<p class="acctnote">Organisatsioone ja silte saab siin hallata. Valdkonnad, õigusakti liigid ja hetkeseisud on kinnitatud sõnastikud: neid saab vaadata, aga muuta ainult arendaja kaudu ülevaadatud muudatusega.</p>
+
+<div class="accttable">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th scope="col">Sõnastik</th>
+        <th scope="col">Muudetav siin</th>
+        <th scope="col">Päritolu</th>
+        <th scope="col">Sellele viitavad</th>
+        <th scope="col">Otsingu uuendus</th>
+        <th scope="col">Kustutamine</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for vocabulary in vocabularies %}
+        <tr>
+          <th scope="row">
+            {% if vocabulary.url_name %}
+              <a href="{% url vocabulary.url_name %}">{{ vocabulary.label }}</a>
+            {% else %}
+              <a href="{% url 'reference_data:vocabulary' vocabulary.key %}">{{ vocabulary.label }}</a>
+            {% endif %}
+          </th>
+          <td>{{ vocabulary.editable_here }}</td>
+          <td>{{ vocabulary.source }}</td>
+          <td>{{ vocabulary.referenced_by }}</td>
+          <td>{{ vocabulary.reindex }}</td>
+          <td>{{ vocabulary.delete_policy }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

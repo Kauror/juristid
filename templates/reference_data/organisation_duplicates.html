@@ -1,0 +1,46 @@
+{% extends "haldus/base.html" %}
+{% block title %}Võimalikud topeltkirjed · Organisatsioonid · {{ application_name }}{% endblock %}
+
+{% comment %}
+  The identity report `manage.py check_organisation_duplicates` prints, as a
+  page: rows the catalogue's key calls one institution. Read-only — merging
+  is a decision about years of filing and needs a reviewed change.
+{% endcomment %}
+
+{% block haldus_content %}
+<div class="pagehead">
+  <h1 class="pagehead__title">Võimalikud topeltkirjed</h1>
+  <span class="pagehead__context"><a href="{% url 'reference_data:organisations' %}">Organisatsioonid</a></span>
+</div>
+{% include "reference_data/_nav.html" with current="organisatsioonid" %}
+
+<p class="notice" role="note">Siin ei liideta midagi. Kumb rida on õige asutus, otsustab inimene; liitmine vajab arendaja kaudu ülevaadatud muudatust, sest sellest sõltuvad teemade saatjad, adressaadid ja arvamuste saajad.</p>
+
+{% if report.ok %}
+  <div class="empty"><p>Kattuvusi ei leitud ({{ report.organisations }} organisatsiooni, {{ report.aliases }} nimekuju).</p></div>
+{% else %}
+  {% for collision in report.by_name %}
+    <section class="panel">
+      <h2 class="acctsection__title">Sama nimi</h2>
+      <ul>
+        {% for item in collision.organisations %}
+          <li><a href="{% url 'reference_data:organisation' item.pk %}">{{ item.name }}</a>{% if shows_usage %} · {{ item.reference_total }} viidet{% endif %}</li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endfor %}
+  {% for collision in report.by_alias %}
+    <section class="panel">
+      <h2 class="acctsection__title">Sama nimekuju</h2>
+      <ul>
+        {% for item in collision.organisations %}
+          <li><a href="{% url 'reference_data:organisation' item.pk %}">{{ item.name }}</a>{% if shows_usage %} · {{ item.reference_total }} viidet{% endif %}</li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endfor %}
+  {% if report.stale %}
+    <p class="acctnote">{{ report.stale|length }} rea võrdlusvõti on aegunud; see parandatakse migratsiooniga.</p>
+  {% endif %}
+{% endif %}
+{% endblock %}
