@@ -200,17 +200,9 @@ def test_an_unknown_role_is_still_refused(settings):
     assert "juristid.E040" in _ids()
 
 
-# -- integration: agent A's checks must let the writer start --------------------------
+# -- agent A's checks let the writer start without the browser's keys ------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "INTEGRATION: app/mcp_access/checks.py (agent A) still asks every process but `mcp` "
-        "for MCP_AUTHENTICATOR_KEY / MCP_TOKEN_DERIVATION_KEY (mcp_access.E004/E005); it must "
-        "skip `mcp_writer` too. Remove this marker when that lands."
-    ),
-)
 def test_mcp_access_checks_do_not_ask_the_writer_for_the_browsers_keys(writer_process):
     from app.mcp_access.checks import mcp_access_settings
 

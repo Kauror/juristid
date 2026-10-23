@@ -35,7 +35,7 @@ import json
 import logging
 import secrets
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -398,197 +398,140 @@ def test_the_gateway_publishes_nothing_and_shares_no_network_with_the_tunnel():
 
 # -- 5. INTEGRATION: the HTTP gateway (agents A + C) ----------------------------------
 #
-# Written against CONTRACT §5's HTTP API. Each test skips, saying what it waits
-# for, until `app.mcp_writes.gateway` exposes an ASGI app and agent A's write
-# scope can be granted; the lead runs this section on the integration branch.
+# Over the gateway's real ASGI app (`gateway.build_app`), the way agent C's own
+# tests reach it (tests/test_mcp_write_gateway.py `call`: Host `mcp-writer:8002`,
+# one of `gateway.allowed_hosts()`), with agent B's real `add_matter_note`. C's
+# suite already covers the key (401/403), size, nesting, malformed bodies, the
+# read-only token and log secrecy for a fake operation; these are the cases at
+# the boundary with a real operation and a real record. The gateway's worker
+# threads open their own connections, so the tests are transactional.
 
-GATEWAY_KEY = "k" * 64
-
-
-def _gateway_app() -> Any:
-    gateway = pytest.importorskip(
-        "app.mcp_writes.gateway", reason="INTEGRATION: agent C's gateway is not on this branch"
-    )
-    for name in ("app", "application"):
-        candidate = getattr(gateway, name, None)
-        if callable(candidate):
-            return candidate
-    for name in ("build_app", "create_app", "make_app", "build_application"):
-        factory = getattr(gateway, name, None)
-        if callable(factory):
-            return factory()
-    pytest.skip("INTEGRATION: app.mcp_writes.gateway exposes no ASGI app under a known name")
+transactional = pytest.mark.django_db(transaction=True, serialized_rollback=True)
 
 
 @pytest.fixture
-def gateway(settings: Any) -> Any:
-    from starlette.testclient import TestClient
-
-    from tests import mcp_access_support as support
-
+def gateway_chain(settings: Any, monkeypatch: Any) -> dict[str, Any]:
+    gateway_tests = pytest.importorskip(
+        "tests.test_mcp_write_gateway", reason="INTEGRATION: agent C's gateway tests are not here"
+    )
+    support = pytest.importorskip("tests.test_mcp_write_proposals_support")
+    if "add_matter_note" not in _registry():
+        pytest.skip("INTEGRATION: agent B's add_matter_note is not registered on this branch")
     support.enable(settings)
-    settings.MCP_WRITES_ENABLED = True
-    settings.MCP_WRITE_GATEWAY_KEY = GATEWAY_KEY
-    with TestClient(_gateway_app()) as client:
-        yield client
+    settings.MCP_WRITE_LISTEN_PORT = 8002
+    support.install_access(monkeypatch)
+    user = factories.UserFactory()
+    grant = support.active_grant(user)
+    matter = factories.MatterFactory(owner=user, title="Eelnõu " + INJECTION[:80])
+    return {
+        "call": gateway_tests.call,
+        "support": support,
+        "user": user,
+        "grant": grant,
+        "matter": matter,
+        "token": support.token_for(user, grant),
+    }
 
 
-def _post(client: Any, path: str, body: Any, *, token: str = "", key: str = GATEWAY_KEY) -> Any:
-    headers = {"Content-Type": "application/json"}
-    if key:
-        headers["X-Juristid-Gateway-Key"] = key
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    raw = body if isinstance(body, bytes) else json.dumps(body).encode("utf-8")
-    return client.post(path, content=raw, headers=headers)
+#: What a refused or awaiting request may still add: the gateway's own rows.
+GATEWAY_BOOKKEEPING = {
+    "mcp_writes_mcpwriteproposal",
+    "mcp_writes_mcpwriteevent",
+    "audit_securityauditevent",
+}
 
 
-def _refusal(response: Any) -> str:
-    assert 400 <= response.status_code < 500, response.status_code
+def _business_counts() -> dict[str, int]:
+    return {t: c for t, c in _row_counts().items() if t not in GATEWAY_BOOKKEEPING}
+
+
+def _refusal(response: Any) -> tuple[int, str]:
     payload = response.json()
-    assert payload["status"] == "refused"
-    return str(payload["code"])
+    assert payload["status"] == "refused", payload
+    return response.status_code, str(payload["code"])
 
 
-def _read_token(monkeypatch: Any) -> str:
-    from tests import mcp_access_support as support
-
-    moment = support.freeze_totp(monkeypatch)
-    user = factories.UserFactory()
-    _, secret = support.enrolled(user, moment)
-    return support.tokens_for(user, secret, moment).access_token
-
-
-def _write_token(monkeypatch: Any) -> tuple[Any, str]:
-    """A token with `juristid.write` through agent A's real services, or a skip."""
-    from app.mcp_access import services, verification
-    from tests import mcp_access_support as support
-
-    grant_write: Callable[..., Any] | None = getattr(services, "grant_write", None) or getattr(
-        services, "enable_write", None
-    )
-    if grant_write is None or not hasattr(verification, "writer_for"):
-        pytest.skip("INTEGRATION: agent A's grant-write / writer_for are not on this branch")
-    moment = support.freeze_totp(monkeypatch)
-    user = factories.UserFactory()
-    _, secret = support.enrolled(user, moment)
-    grant_write(user=user, provenance=support.OPERATOR)
-    issued = support.tokens_for(user, secret, moment, scope="juristid.read juristid.write")
-    access = verification.verify_access_token(issued.access_token)
-    if access is None or verification.writer_for(access) is None:
-        pytest.skip("INTEGRATION: the issued token does not carry a usable write scope")
-    return user, issued.access_token
+def _note(matter: Any) -> dict[str, Any]:
+    return {
+        "operation": "add_matter_note",
+        "arguments": {
+            "matter": str(matter.pk),
+            "text": "Ministeerium helistas. " + INJECTION,
+            "occurred_on": matter.created_at.date().isoformat(),
+        },
+    }
 
 
-@pytest.mark.django_db(transaction=True)
-@pytest.mark.parametrize("key", ["", "wrong-" + "k" * 58])
-def test_without_the_gateway_key_nothing_is_even_parsed(gateway, key, monkeypatch):
-    token = _read_token(monkeypatch)
-    response = _post(
-        gateway, "/v1/prepare", {"operation": "x", "arguments": {}}, token=token, key=key
-    )
-    assert _refusal(response) == "unauthorized"
-
-
-@pytest.mark.django_db(transaction=True)
-def test_a_read_only_token_cannot_prepare_anything(gateway, monkeypatch):
-    token = _read_token(monkeypatch)
-    operation = next(iter(_registry()), "add_matter_note")
-    response = _post(gateway, "/v1/prepare", {"operation": operation, "arguments": {}}, token=token)
-    assert _refusal(response) in {"insufficient_scope", "forbidden"}
-
-
-@pytest.mark.django_db(transaction=True)
-@pytest.mark.parametrize(
-    ("body", "expected"),
-    [
-        (b"{not json", {"invalid_argument"}),
-        (b"[]", {"invalid_argument"}),
-        (b'{"operation": "drop_table", "arguments": {}}', {"invalid_argument", "not_found"}),
-        (
-            b'{"operation": "add_matter_note", "arguments": {}, "sql": "DROP TABLE x"}',
-            {"invalid_argument"},
-        ),
-        (b'{"proposal_id": "not-a-uuid"}', {"invalid_argument", "not_found"}),
-    ],
-)
-def test_malformed_requests_are_refused_without_a_write(gateway, body, expected, monkeypatch):
-    _, token = _write_token(monkeypatch)
-    before = _row_counts()
-    path = "/v1/commit" if b"proposal_id" in body else "/v1/prepare"
-    assert _refusal(_post(gateway, path, body, token=token)) in expected
-    assert _row_counts() == before
-
-
-@pytest.mark.django_db(transaction=True)
-def test_an_oversized_body_is_refused_before_it_is_read(gateway, monkeypatch, settings):
-    _, token = _write_token(monkeypatch)
-    huge = (
-        b'{"operation": "add_matter_note", "arguments": {"text": "'
-        + b"x" * (settings.MCP_WRITE_MAX_REQUEST_BYTES + 1)
-        + b'"}}'
-    )
-    assert _refusal(_post(gateway, "/v1/prepare", huge, token=token)) == "too_large"
-
-
-@pytest.mark.django_db(transaction=True)
-def test_committing_an_unknown_proposal_writes_nothing(gateway, monkeypatch):
-    _, token = _write_token(monkeypatch)
-    before = _row_counts()
-    response = _post(gateway, "/v1/commit", {"proposal_id": str(uuid.uuid4())}, token=token)
-    assert _refusal(response) == "not_found"
-    assert _row_counts() == before
-
-
-@pytest.mark.django_db(transaction=True)
-def test_an_injected_instruction_in_the_target_cannot_commit_without_approval(
-    gateway, monkeypatch, caplog
-):
-    """Prepare a note on a Matter whose text orders an immediate commit; commit; nothing lands.
+@transactional
+def test_an_injected_instruction_cannot_commit_without_the_persons_approval(gateway_chain, caplog):
+    """Prepare a note whose text and target order an immediate commit; commit; nothing lands.
 
     The commit answers `awaiting_approval` with the approval link, the Matter
-    has no new entry, and the bearer token appears in no log record.
+    has no new entry, and neither the token nor the key appears in a log line
+    or an answer.
     """
     from app.matters.models import Entry
 
-    if "add_matter_note" not in _registry():
-        pytest.skip("INTEGRATION: agent B's add_matter_note is not registered on this branch")
-    user, token = _write_token(monkeypatch)
-    matter = factories.MatterFactory(owner=user, title=INJECTION[:120])
+    call, chain = gateway_chain["call"], gateway_chain
     caplog.set_level(logging.DEBUG)
-    entries = Entry.objects.filter(matter=matter).count()
+    entries = Entry.objects.filter(matter=chain["matter"]).count()
+    before = _row_counts()
 
-    prepared = _post(
-        gateway,
-        "/v1/prepare",
-        {
-            "operation": "add_matter_note",
-            "arguments": _note_arguments(matter),
-        },
-        token=token,
-    )
+    prepared = call("POST", "/v1/prepare", body=_note(chain["matter"]), token=chain["token"])
     assert prepared.status_code == 200, prepared.text
     proposal = prepared.json()["proposal"]
-    assert proposal["approval_url"].startswith(settings.JURISTID_PUBLIC_ORIGIN)
+    assert proposal["approval_url"].endswith(f"/mcp-ligipaas/muudatus/{proposal['id']}/")
 
-    committed = _post(gateway, "/v1/commit", {"proposal_id": proposal["id"]}, token=token)
-    assert committed.status_code == 200
+    committed = call(
+        "POST", "/v1/commit", body={"proposal_id": proposal["id"]}, token=chain["token"]
+    )
+    assert committed.status_code == 200, committed.text
     assert committed.json()["status"] == "awaiting_approval"
-    assert Entry.objects.filter(matter=matter).count() == entries
-    assert token not in caplog.text
-    assert token not in prepared.text + committed.text
+    assert Entry.objects.filter(matter=chain["matter"]).count() == entries
+    # Only the gateway's own bookkeeping moved: a proposal and its events.
+    after = _row_counts()
+    moved = {table for table in after if after[table] != before.get(table)}
+    assert moved <= {
+        "mcp_writes_mcpwriteproposal",
+        "mcp_writes_mcpwriteevent",
+        "audit_securityauditevent",
+    }, moved
+    secret_values = (chain["token"], chain["support"].GATEWAY_KEY)
+    for secret in secret_values:
+        assert secret not in caplog.text
+        assert secret not in prepared.text + committed.text
 
 
-def _note_arguments(matter: Any) -> dict[str, Any]:
-    """add_matter_note's arguments, by the names agent B's model declares."""
-    model = _registry()["add_matter_note"].arguments
-    fields = set(model.model_json_schema().get("properties", {}))
-    arguments: dict[str, Any] = {}
-    for name in fields:
-        if "matter" in name:
-            arguments[name] = matter.display_reference or str(matter.pk)
-        elif name in ("text", "description", "body", "note"):
-            arguments[name] = "Ministeerium helistas. " + INJECTION
-        elif "day" in name or "date" in name or "occurred" in name:
-            arguments[name] = matter.created_at.date().isoformat()
-    return arguments
+@transactional
+def test_sql_in_the_request_is_an_invalid_argument_and_writes_nothing(gateway_chain):
+    call, chain = gateway_chain["call"], gateway_chain
+    before = _row_counts()
+    body = _note(chain["matter"])
+    body["arguments"]["sql"] = "DROP TABLE accounts_user"
+    status, code = _refusal(call("POST", "/v1/prepare", body=body, token=chain["token"]))
+    assert 400 <= status < 500 and code == "invalid_argument"
+    body = {**_note(chain["matter"]), "sql": "DELETE FROM matters_entry"}
+    status, code = _refusal(call("POST", "/v1/prepare", body=body, token=chain["token"]))
+    assert 400 <= status < 500 and code == "invalid_argument"
+    assert _business_counts() == {t: c for t, c in before.items() if t not in GATEWAY_BOOKKEEPING}
+
+
+@transactional
+def test_committing_an_unknown_or_foreign_proposal_writes_nothing(gateway_chain):
+    call, chain = gateway_chain["call"], gateway_chain
+    status, code = _refusal(
+        call("POST", "/v1/commit", body={"proposal_id": str(uuid.uuid4())}, token=chain["token"])
+    )
+    assert status == 404 and code == "not_found"
+
+    prepared = call("POST", "/v1/prepare", body=_note(chain["matter"]), token=chain["token"])
+    proposal_id = prepared.json()["proposal"]["id"]
+    stranger = factories.UserFactory()
+    their_token = chain["support"].token_for(stranger, chain["support"].active_grant(stranger))
+    status, code = _refusal(
+        call("POST", "/v1/commit", body={"proposal_id": proposal_id}, token=their_token)
+    )
+    assert code in {"not_found", "forbidden"}
+    from app.matters.models import Entry
+
+    assert not Entry.objects.filter(matter=chain["matter"], body__contains="Ministeerium").exists()
