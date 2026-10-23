@@ -30,7 +30,7 @@ otherwise (master specification 18.8, brief 18).
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 from django.db.models import QuerySet
 
@@ -49,6 +49,7 @@ from app.reporting.selectors.base import (
     in_reporting_year,
     known_year_q,
     population_for,
+    received_url,
     register_url,
     simple_result,
 )
@@ -364,10 +365,10 @@ def new_native_full_matters_by_month(context: ReportingContext) -> MetricResult:
     """New native work by the month it arrived.
 
     The same population and the same clock as ``NEW_NATIVE_FULL_MATTERS``, drawn
-    as a series rather than as one number. No month segment carries a link: the
-    register filters by year and there is no month filter to open, and a link to
-    the whole year would open a longer list than the bar it came from
-    (brief 58).
+    as a series rather than as one number. Each bar opens its month on the
+    register's `?saabus_alates=` / `?saabus_kuni=`, clipped to the period, and
+    the headline the whole measured span — the column the bars were counted on,
+    not the reporting year (brief 58, E-06).
     """
     spec = definition(keys.NEW_NATIVE_FULL_MATTERS_BY_MONTH)
     population = _native_intake(context, keys.NEW_NATIVE_FULL_MATTERS_BY_MONTH)
@@ -397,6 +398,7 @@ def new_native_full_matters_by_month(context: ReportingContext) -> MetricResult:
         Segment(
             label=month_label(year, month, single_year=single_year),
             value=counted.get((year, month), 0),
+            url=received_url(context, spec, *_month_in_window(year, month, start, end)),
         )
         for year, month in months
     )
@@ -408,16 +410,26 @@ def new_native_full_matters_by_month(context: ReportingContext) -> MetricResult:
         population_count=count(population),
         eligible_count=sum(segment.value for segment in segments),
         segments=segments,
-        # No link, for the reason ``NEW_NATIVE_FULL_MATTERS`` carries none: the
-        # register has no "has an arrival date" filter, so the list it opened
-        # would be longer than the number above it.
-        url="",
+        # The measured window: every bar's rows lie inside it, and a date range
+        # admits only rows that have a date.
+        url=received_url(context, spec, start, end),
         notes=(
             f"Mõõdetud vahemik: {start.isoformat()} – {end.isoformat()}.",
             "Imporditud registriridadel on ainult aruandlusaasta, mitte kuu, "
             "seega neid siin ei ole.",
         ),
     )
+
+
+def _month_in_window(year: int, month: int, start: date, end: date) -> tuple[date, date]:
+    """One month's days, clipped to the measured window the bars are drawn over.
+
+    The window already lies inside the period, so a bar opens exactly the rows
+    it counted even when the period begins or ends mid-month.
+    """
+    first = date(year, month, 1)
+    last = date(year + month // 12, month % 12 + 1, 1) - timedelta(days=1)
+    return max(first, start), min(last, end)
 
 
 def _in_period(queryset: QuerySet[Matter], context: ReportingContext) -> QuerySet[Matter]:
