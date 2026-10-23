@@ -3,13 +3,17 @@
 Pure validation — nothing here writes, except the replay cache a client
 assertion's ``jti`` is remembered in.
 
-**Scopes.** The only scope this server grants is `MCP_SCOPE` (``juristid.read``),
-and it is the only one the metadata advertises. A client may also ask for
-``offline_access``, ``openid``, ``profile`` or ``email`` — generic clients add
-them by habit — and those are ignored rather than refused: none of them would
-be honoured (there is no ID token and no user-info endpoint), and the granted
-scope, ``juristid.read``, is what the token response states (RFC 6749 §3.3).
-Any other scope is refused with ``invalid_scope``.
+**Scopes** (docs/mcp/OAUTH-SCOPES.md). Every connection is granted `MCP_SCOPE`
+(``juristid.read``). ``juristid.write`` (`MCP_WRITE_SCOPE`) is *accepted* in a
+request; while `MCP_WRITES_ENABLED` is off it is narrowed away here, and
+otherwise it is kept in the request and decided at the consent step, under the
+grant's lock (`services.authorize`): granted only if `services.may_write` holds
+then, narrowed to read if not. A client may also ask for ``offline_access``,
+``openid``, ``profile`` or ``email`` — generic clients add them by habit — and
+those are ignored rather than refused: none of them would be honoured (there is
+no ID token and no user-info endpoint). The granted scope is what the token
+response states (RFC 6749 §3.3). Any other scope is refused with
+``invalid_scope``.
 """
 
 from __future__ import annotations
@@ -21,10 +25,11 @@ from dataclasses import dataclass
 from typing import Any
 
 import jwt
+from django.conf import settings
 from django.core.cache import cache
 from django.http import QueryDict
 
-from app.mcp_access import config, credentials
+from app.mcp_access import config, credentials, services
 from app.mcp_access.services import AuthorizationRequest, OAuthError
 
 #: Scopes a client may ask for that are dropped rather than refused.
@@ -61,12 +66,24 @@ class RedirectError:
 
 
 def granted_scope(raw: str | None) -> str | None:
-    """The scope this request is granted, or None when it asks for something unknown."""
+    """The most this request can be granted, or None when it asks for something unknown.
+
+    The read scope always; plus the write scope when it was asked for and
+    `MCP_WRITES_ENABLED` is on. Whether *this persona* gets write is decided
+    later, at the consent step (`services.authorize`), which can only narrow.
+    """
     requested = {part for part in (raw or "").split() if part}
-    unknown = requested - IGNORED_SCOPES - {config.scope()}
+    write = services.write_scope()
+    unknown = requested - IGNORED_SCOPES - {config.scope(), write}
     if unknown:
         return None
-    return config.scope()
+    writes_on = bool(getattr(settings, "MCP_WRITES_ENABLED", False))
+    return services.narrow_scope(" ".join(requested), write_allowed=writes_on)
+
+
+def asks_for_write(scope: str) -> bool:
+    """Whether this scope includes the write scope: what the consent page shows."""
+    return services.write_scope() in scope.split()
 
 
 def parse_authorization(params: QueryDict) -> AuthorizationRequest | EarlyError | RedirectError:

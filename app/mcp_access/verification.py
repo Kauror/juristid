@@ -1,4 +1,4 @@
-"""Bearer-token verification for the `mcp` process (docs/adr/0185 §5; CONTRACT "C → B").
+"""Bearer-token verification for the `mcp` and `mcp-writer` processes (docs/adr/0185 §5).
 
 Pure reads. The `mcp` process opens its database connections with
 ``default_transaction_read_only=on`` and these functions work there: they
@@ -21,7 +21,11 @@ from django.utils import timezone
 from app.accounts.models import User
 from app.mcp_access import config, credentials
 from app.mcp_access.models import GrantStatus, McpAccessGrant, McpToken, TokenKind
-from app.mcp_access.services import may_connect
+from app.mcp_access.services import may_connect, may_write, write_scope
+
+#: What `VerifiedAccess.family_id` holds when a caller built one by hand
+#: (test fakes): no token has it, so `writer_for` refuses such an access.
+NO_FAMILY = uuid.UUID(int=0)
 
 
 @dataclass(frozen=True)
@@ -33,6 +37,10 @@ class VerifiedAccess:
     scopes: frozenset[str]
     resource: str
     expires_at: datetime  # aware UTC
+    #: The token family (one authorization and its rotations). A write
+    #: proposal is bound to it, so a token from another connection of the same
+    #: person cannot commit it.
+    family_id: uuid.UUID = NO_FAMILY
 
 
 def _token_passes(token: McpToken, *, now: datetime) -> bool:
@@ -86,16 +94,12 @@ def verify_access_token(raw_token: str, *, now: datetime | None = None) -> Verif
         scopes=token.scope_set,
         resource=token.resource,
         expires_at=token.expires_at,
+        family_id=token.family_id,
     )
 
 
-def reader_for(access: VerifiedAccess) -> User | None:
-    """The account to pass to the readers, with every check above applied afresh.
-
-    Re-reads the token, the grant and the account rather than trusting the
-    `VerifiedAccess` it was handed, so a revocation, a role change or a
-    deactivation between verifying a token and running a tool is honoured.
-    """
+def _afresh(access: VerifiedAccess) -> tuple[McpToken, McpAccessGrant, User] | None:
+    """The token, grant and account re-read, if every check still passes for them."""
     if not config.is_enabled():
         return None
     token = McpToken.objects.filter(pk=access.token_id, kind=TokenKind.ACCESS).first()
@@ -105,6 +109,41 @@ def reader_for(access: VerifiedAccess) -> User | None:
         return None
     grant = McpAccessGrant.objects.filter(pk=access.grant_id).first()
     user = User.objects.filter(pk=access.user_id).first()
-    if not _account_passes(token, grant, user):
+    if grant is None or user is None or not _account_passes(token, grant, user):
+        return None
+    return token, grant, user
+
+
+def reader_for(access: VerifiedAccess) -> User | None:
+    """The account to pass to the readers, with every check above applied afresh.
+
+    Re-reads the token, the grant and the account rather than trusting the
+    `VerifiedAccess` it was handed, so a revocation, a role change or a
+    deactivation between verifying a token and running a tool is honoured.
+    """
+    fresh = _afresh(access)
+    return fresh[2] if fresh is not None else None
+
+
+def writer_for(access: VerifiedAccess) -> User | None:
+    """The account a write step may act for, or None. Pure reads; asked at every call.
+
+    Everything `reader_for` asks, re-read now, and: the token's family is the
+    one `access` names, the token itself carries `MCP_WRITE_SCOPE` (granted only
+    at consent, never widened), and `services.may_write` holds — the grant's
+    write decision stands, the account has a business-write role, and
+    `MCP_WRITES_ENABLED` is on in *this* process. Nothing is cached, so
+    ``revoke-write``, ``revoke-all-writes``, a revoked grant, a deactivation,
+    a role change or a security-epoch bump answer None at the very next call.
+    """
+    fresh = _afresh(access)
+    if fresh is None:
+        return None
+    token, grant, user = fresh
+    if token.family_id != access.family_id:
+        return None
+    if write_scope() not in token.scope_set:
+        return None
+    if not may_write(user, grant):
         return None
     return user

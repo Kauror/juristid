@@ -51,6 +51,11 @@ class McpAccessEventType(models.TextChoices):
     REFRESH_REUSE_DETECTED = "REFRESH_REUSE_DETECTED", "Uuendusvõtit kasutati korduvalt"
     TOKEN_REVOKED = "TOKEN_REVOKED", "Võti tühistatud"
     GRANT_REVOKED = "GRANT_REVOKED", "Ligipääs tühistatud"
+    WRITE_ENABLED = "WRITE_ENABLED", "Muudatuste ettevalmistamine lubatud"
+    WRITE_REFUSED = "WRITE_REFUSED", "Muudatuste lubamisest keelduti"
+    WRITE_REVOKED = "WRITE_REVOKED", "Muudatuste ettevalmistamise luba tühistatud"
+    WRITE_CONFIRMED = "WRITE_CONFIRMED", "Muudatus kinnitati autentija koodiga"
+    WRITE_CONFIRMATION_REFUSED = "WRITE_CONFIRMATION_REFUSED", "Muudatuse kinnitamisest keelduti"
 
 
 class McpAccessGrant(BaseModel):
@@ -114,6 +119,24 @@ class McpAccessGrant(BaseModel):
         default=0, verbose_name="valed koodid pärast viimast õnnestumist"
     )
     suspended_at = models.DateTimeField(null=True, blank=True, verbose_name="peatatud")
+    #: The separate decision that this grant may also *prepare changes*
+    #: (`juristid.write`, docs/mcp/OAUTH-SCOPES.md). Made only by
+    #: ``mcp_access grant-write``; ended by ``revoke-write`` or
+    #: ``revoke-all-writes``, which leave reading untouched. Write is live while
+    #: ``write_enabled_at`` is set and ``write_revoked_at`` is not; enabling it
+    #: again clears the revocation, and the events keep the history.
+    write_enabled_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="muudatuste ettevalmistamine lubatud"
+    )
+    write_enabled_via = models.CharField(
+        max_length=300, blank=True, default="", verbose_name="muutmisloa päritolu"
+    )
+    write_revoked_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="muutmisluba tühistatud"
+    )
+    write_revoke_reason = models.CharField(
+        max_length=300, blank=True, default="", verbose_name="muutmisloa tühistamise põhjus"
+    )
 
     class Meta:
         verbose_name = "MCP ligipääs"
@@ -142,6 +165,11 @@ class McpAccessGrant(BaseModel):
     @property
     def is_suspended(self) -> bool:
         return self.suspended_at is not None
+
+    @property
+    def write_is_enabled(self) -> bool:
+        """The operator's write decision alone; `services.may_write` asks everything else."""
+        return self.write_enabled_at is not None and self.write_revoked_at is None
 
 
 class McpAuthenticator(BaseModel):
