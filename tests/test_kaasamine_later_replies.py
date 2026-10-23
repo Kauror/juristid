@@ -711,6 +711,27 @@ def test_moving_the_answer_that_finished_the_wait_off_its_round_reopens_it(
     assert reopened.payload["reply"] == str(answer.pk)
 
 
+def test_the_correction_redraws_praegune_tegevus_with_the_reopened_wait(
+    signed_in, normal_matter, specialist
+):
+    """Only the answer's row is swapped, so the zone's list rides along out of band.
+
+    Without it the reopened «Ootame tagasisidet» appeared only on the next page
+    load, though the round was already waiting again — the list the round's own
+    row sends out of band for the same reason (#525).
+    """
+    round_ = _round(normal_matter, specialist)
+    _reply(signed_in, normal_matter, round_, "Toetame.")
+    answer = MatterExternalPosition.objects.get(engagement=round_)
+
+    body = _move_answer(signed_in, normal_matter, answer, None).content.decode()
+
+    assert 'id="praegune-ootused"' in body
+    oob = body[body.index('id="praegune-ootused"') :]
+    assert oob.split(">", 1)[0].count('hx-swap-oob="true"') == 1
+    assert "Ootame tagasisidet" in oob
+
+
 def test_moving_it_to_another_open_round_reopens_the_first_and_finishes_the_second(
     signed_in, normal_matter, specialist
 ):

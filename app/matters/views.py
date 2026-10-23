@@ -4595,6 +4595,13 @@ def _engagement_row(
         },
         status=status,
     )
+    return _with_current_work_rows(request, matter, response)
+
+
+def _with_current_work_rows(
+    request: HttpRequest, matter: Matter, response: HttpResponse
+) -> HttpResponse:
+    """`response` with `PRAEGUNE TEGEVUS`'s date-ordered list out of band."""
     # The round's answer changes what `PRAEGUNE TEGEVUS` says it is waiting on:
     # finished, given a reply-by day, or a deadline moved or cleared. Only the
     # row is swapped, so the zone's date-ordered list rides along out of band
@@ -8841,7 +8848,13 @@ def update_external_position_view(request: HttpRequest, pk: Any, position_id: An
             request, matter, position, form=form, error=str(error), status=400
         )
 
-    return _external_position_row(request, matter, corrected)
+    # A correction can move the answer that finished a round's wait off that
+    # round, which reopens it (docs/adr/0167, amendment of 2026-10-24), or onto
+    # an open one, which finishes it — so the zone's list rides along exactly
+    # as it does for the round's own row.
+    return _with_current_work_rows(
+        request, matter, _external_position_row(request, matter, corrected)
+    )
 
 
 def _koda_opinion_recipients(form: Any) -> list[Any]:
