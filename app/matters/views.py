@@ -737,6 +737,13 @@ def intake(request: HttpRequest) -> HttpResponse:
         # row or reference number is written. A refused save re-renders with
         # the same token, so the corrected save is protected like the first.
         posted_token = (request.POST.get("intake") or "").strip()
+        # A form already saved is answered with its Teema before anything it
+        # carries is checked: the first save released the files it held, so a
+        # replay of a corrected save names none and would otherwise be refused
+        # «Vali vähemalt üks fail.» right after the Teema was filed (V-02).
+        spent = intake_staging.spent_token(owner=request.user, session_id=posted_token)
+        if spent is not None:
+            return _answer_repeated_create(request, spent)
         # What an earlier refusal is holding and this attempt still wants. A
         # key this session is not holding is simply not there.
         asked = [key for key in request.POST.getlist("pending") if key]

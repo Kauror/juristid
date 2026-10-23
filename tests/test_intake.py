@@ -520,6 +520,46 @@ def test_a_refused_saabunud_save_holds_its_files_for_the_corrected_save(client, 
     assert "ministeeriumi-kiri" in documents.get().title
 
 
+def test_a_corrected_save_of_held_files_replayed_lands_on_its_teema(client, specialist) -> None:
+    """The corrected save, posted again, is a replay — not «Vali vähemalt üks fail.».
+
+    Its only files were the held ones, and the first save released them; the
+    replay then named no file it could still have, and the file-count check
+    refused it before the spent token was ever read, right after the Teema
+    had been filed (2026-10-23 bug-bounty, V-02).
+    """
+    from app.matters.views import CREATE_FORM_ALREADY_SUBMITTED
+
+    client.force_login(specialist)
+    token = _drawn_token(client.get(reverse("matters:intake")))
+    refused_save = _post(
+        client,
+        [_file("kiri.pdf", PDF)],
+        title="Hoitud ja kaks korda",
+        response_deadline="31.02.2026",
+        intake=token,
+    )
+    assert refused_save.status_code == 400
+    corrected = {
+        "title": "Hoitud ja kaks korda",
+        "response_deadline": "28.02.2026",
+        "intake": token,
+        "pending": [item.key for item in refused_save.context["held_files"]],
+    }
+
+    saved = client.post(reverse("matters:intake"), corrected)
+    again = client.post(reverse("matters:intake"), corrected)
+
+    assert saved.status_code == 302
+    assert again.status_code == 302
+    assert again["Location"] == saved["Location"]
+    matter = Matter.objects.get(title="Hoitud ja kaks korda")
+    assert Document.objects.filter(matter=matter).count() == 1
+    shown = [str(m) for m in client.get(again["Location"]).context["messages"]]
+    assert CREATE_FORM_ALREADY_SUBMITTED in shown
+    assert "Vali vähemalt üks fail." not in shown
+
+
 def test_a_refused_file_is_named_and_the_good_one_is_held(client, specialist) -> None:
     """One bad file among good ones: the bad one is named, the good one is kept."""
     client.force_login(specialist)
