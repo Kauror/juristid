@@ -4687,6 +4687,7 @@ def correct_external_position(
         payload["engagement_to"] = str(related.pk) if related is not None else None
 
     url_from = current.url
+    engagement_from_id = current.engagement_id
     # `Allikas` and `Juristi märkus` are in `fields` by name and nowhere else in
     # this payload, deliberately. The first is short enough to copy and is still
     # the record's to correct; the second is this office's own words, and an
@@ -4720,6 +4721,25 @@ def correct_external_position(
             summary=current.link_label[:200],
             payload={"url_from": url_from or None, "url_to": current.url or None},
         )
+    if "engagement_id" in changed:
+        # **An answer moved between rounds takes its effect on the waits with
+        # it** (bug-bounty R2-02, docs/adr/0167 §2 and its 2026-10-23
+        # amendment). The round it left is reopened exactly as `Kustuta` would
+        # reopen it — only if this answer (or one that left earlier) finished
+        # it and no live answer is left there. The round it now answers is
+        # treated as `Lisa tagasiside` treats it: the first answer to an open
+        # round finishes its wait; a finished one keeps its closure. Under the
+        # Matter's lock taken above, then the round rows: the removal's order.
+        from app.matters import engagement_replies
+
+        engagement_replies.reopen_wait_after_reply_moved(
+            position=current,
+            from_engagement_id=engagement_from_id,
+            matter=locked_matter,
+            actor=actor,
+        )
+        if related is not None and current.removed_at is None:
+            engagement_replies.finish_wait_on_reply(engagement=related, actor=actor, reply=current)
     return current
 
 
