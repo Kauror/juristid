@@ -12,6 +12,14 @@ Valdkonniti keeps the current approved area-scope blocks, included whole from
 the object that builds them, and shares the Aruandlus block below.
 {% endcomment %}
 
+{% comment %}
+  R1-C (docs/adr/0188 §5): «Kontrolli jõustumist» on Teemad with nobody
+  responsible. The tag returns rows only for `department.view_management`, so
+  for everybody else this renders nothing, and for the head nothing when there
+  is nothing unowned to check.
+{% endcomment %}
+{% load notifications %}{% department_commencement_reminders %}
+
 {% if page.is_areas %}
   {% with page=page.area_page %}
     {% include "matters/partials/overview_rail.html" %}
