@@ -2770,12 +2770,31 @@
     });
   });
 
+  /* Escape closes the disclosure the focus is in — and the floating menus
+     from anywhere — and puts the focus on its trigger.
+
+     The inline editors' handler above answers Escape only from inside their
+     form, so a disclosure opened with Enter, the focus still on its
+     `<summary>`, stayed open: the header's inline editors, its ⋯ menu (missing
+     here although the click-outside above closes it) and `Täpsem otsing`,
+     which had no handler at all (2026-10-23 bug-bounty, B-05).
+
+     Only the innermost open `<details>` around the focus, and only when it is
+     one of these: Escape inside something else open in them — a calendar, a
+     nested editor — belongs to that, and a key something closer already
+     handled is left alone (JUX-007). */
+  var ESCAPABLE = "details.topnav__more, details.headmenu, details.inlineedit, details.filterpanel";
+
   document.addEventListener("keydown", function (event) {
-    if (event.key !== "Escape") {
+    if (event.key !== "Escape" || event.defaultPrevented) {
       return;
     }
-    var open = document.querySelector("details.topnav__more[open]");
+    var inner = event.target.closest ? event.target.closest("details[open]") : null;
+    var open = inner && inner.matches(ESCAPABLE)
+      ? inner
+      : document.querySelector("details.topnav__more[open], details.headmenu[open]");
     if (open) {
+      event.preventDefault();
       open.open = false;
       var trigger = open.querySelector("summary");
       if (trigger) {
