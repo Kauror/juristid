@@ -287,9 +287,7 @@ def test_every_page_answers_a_holder(client, world, make):
 # -- the pages -------------------------------------------------------------------------
 
 
-def test_a_rename_through_the_page_keeps_the_old_name_and_audits_the_actor(
-    client, department_head
-):
+def test_a_rename_through_the_page_keeps_the_old_name_and_audits_the_actor(client, department_head):
     body = factories.OrganisationFactory(name="Vana Ametinimi")
     client.force_login(department_head)
 
@@ -375,9 +373,7 @@ def test_a_refused_alias_removal_says_why(client, department_head):
     )
 
     assert response.status_code == 302
-    assert [str(m) for m in get_messages(response.wsgi_request)] == [
-        catalogue.HISTORICAL_NAME_KEPT
-    ]
+    assert [str(m) for m in get_messages(response.wsgi_request)] == [catalogue.HISTORICAL_NAME_KEPT]
     assert OrganisationAlias.objects.filter(pk=alias.pk).exists()
 
 
