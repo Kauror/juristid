@@ -101,6 +101,14 @@ control on this row: the row itself is the link.
           {% endcomment %}
           <a class="rowmenu__item" href="{{ item.record_url }}">Lisa tulemus…</a>
           <a class="rowmenu__item" href="{{ item.record_url }}">Muuda</a>
+        {% elif item.is_planned %}
+          {% comment %}
+            A planned action is not the current step: its result and its words
+            are its own row's `✓ Tehtud` and `Muuda` (docs/adr/0143, 0144 §1).
+            The current step's forms would finish or rewrite a different step.
+          {% endcomment %}
+          <a class="rowmenu__item" href="{{ item.record_url }}">Lisa tulemus…</a>
+          <a class="rowmenu__item" href="{{ item.planned_edit_url }}">Muuda</a>
         {% else %}
           <a class="rowmenu__item" href="{{ item.matter_url }}#praegune-tegevus">Lisa tulemus…</a>
           <a class="rowmenu__item" href="{{ item.matter_url }}#lisa-jargmine">Muuda</a>
