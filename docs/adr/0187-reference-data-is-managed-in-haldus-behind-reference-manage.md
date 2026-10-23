@@ -58,7 +58,8 @@ and any capability for this work.
    to is *refused, naming the row*, under the identity lock); correct the name (old name kept
    as a `HISTORICAL_NAME` spelling unless the person says it was a typo; a name another body
    answers to is refused); add a spelling (refused when it is the body's own name, already
-   its spelling, or another body's name or spelling); remove a mistaken spelling (never a
+   its spelling, or another body's name or spelling); remove a mistaken spelling (the institution locked first and the spelling re-read under
+   the lock, so two concurrent removals audit once; never a
    historical name). References are shown per relation before anybody decides anything.
 4. **The reviewed baseline is not edited here.** A body that *is* a baseline entry (by name
    or recorded spelling, the way `verify_reference_data` finds it) cannot be renamed and
@@ -74,10 +75,14 @@ and any capability for this work.
    (key slug, folded-name duplicate refusal); edit name and guidance (old name kept as a
    spelling by default; the key never changes); add/remove spellings; **merge** through
    `merged_into` + `is_active=False` + `deprecated_at`, into an active canonical tag only,
-   both rows locked in primary-key order; **deactivate / reactivate** through `is_active`.
+   both rows locked in primary-key order, after a **confirmation page** (GET) that names both
+   tags and — for readers of Teemad — how many records carry the retiring one;
+   **deactivate / reactivate** through `is_active`, refused for a tag others were merged into
+   (a retired canonical would strand them).
    No assignment is moved and nothing is deleted: a record keeps the word it was classified
    with, and search finds it through the canonical tag. A merged tag is frozen. All writes
-   serialise on one transaction-scoped advisory lock (namespace 24603), taken first.
+   serialise on one transaction-scoped advisory lock (namespace 24606; 24601–24605 belong to search, identity, intake titles, storage quotas
+   and notifications, and a test keeps every namespace unique), taken first.
 7. **Controlled vocabularies are read-only.** Valdkonnad, Õigusakti liigid and Hetkeseisud are
    listed with status and (for readers of Teemad) usage, under the sentence «Muudatus vajab
    arendaja kaudu ülevaadatud muudatust». Their changes stay migrations and reviewed seeds.
@@ -88,7 +93,8 @@ and any capability for this work.
    `ORGANISATION_ALIAS_ADDED`, `ORGANISATION_ALIAS_REMOVED`, `TAG_CREATED`, `TAG_CHANGED`,
    `TAG_ALIAS_ADDED`, `TAG_ALIAS_REMOVED`, `TAG_MERGED`, `TAG_DEACTIVATED`,
    `TAG_REACTIVATED`; migration `audit/0039_r1b_reference_data_events`, choices only) with no
-   Matter, the vocabulary row as `obj`, and identifiers plus before/after names in the payload.
+   Matter, the vocabulary row as `obj`, and identifiers plus before/after names in the payload — never usage counts, which the pages
+   hide from non-business readers.
 9. **Usage counts are business information.** The number of Teemad and opinions carrying a
    value is shown only to somebody `may_read_business_content`; a technical administrator
    manages the words without seeing how the work is distributed (ADR 0181).
