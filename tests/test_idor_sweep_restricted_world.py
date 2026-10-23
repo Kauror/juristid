@@ -118,6 +118,20 @@ NOT_MATTER_DATA = {
     "matters:person_work": "person",
     # A metric slug, not an id (tests/test_reporting_*).
     "reporting:export": "metric",
+    # Reference data: an institution, a tag or a vocabulary key — rows with no
+    # visibility of their own, behind `reference.manage`, 404 for everybody
+    # without it (docs/adr/0187, tests/test_reference_data_views.py).
+    "reference_data:organisation": "reference data",
+    "reference_data:organisation_rename": "reference data",
+    "reference_data:organisation_alias_add": "reference data",
+    "reference_data:organisation_alias_remove": "reference data",
+    "reference_data:tag": "reference data",
+    "reference_data:tag_edit": "reference data",
+    "reference_data:tag_alias_add": "reference data",
+    "reference_data:tag_alias_remove": "reference data",
+    "reference_data:tag_merge": "reference data",
+    "reference_data:tag_status": "reference data",
+    "reference_data:vocabulary": "reference data",
 }
 
 #: `<kind>` of `matters:remove_record` -> the world's key for a record of it.
