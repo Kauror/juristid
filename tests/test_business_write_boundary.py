@@ -1683,6 +1683,10 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     # tests/test_mcp_access_enrolment.py).
     "mcp_access:authorize": "D: OAuth consent for an AI client; grant + personal code",
     "mcp_access:enrol": "D: confirms the person's own MCP authenticator",
+    "mcp_writes:approve": (
+        "D: approves the person's own AI-prepared change; gate + own persona + may_write + "
+        "personal code; writes no business row"
+    ),
     # B — stricter than business write, and already stricter. DEPARTMENT_HEAD is
     # a subset of the business writers, so `may_review_work_victory` implies the
     # business-write rule and cannot be satisfied by a READER or ADMINISTRATOR.

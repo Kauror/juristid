@@ -63,6 +63,12 @@ urlpatterns = [
     # OAuth endpoints and the authenticator enrolment page. Exact paths that no
     # other app claims; every one is a 404 unless MCP_ENABLED (docs/adr/0185).
     path("", include(("app.mcp_access.urls", "mcp_access"), namespace="mcp_access")),
+    # The approval page for an AI-prepared change (docs/adr/0189): behind the
+    # gate, the person's own persona and their personal code.
+    path(
+        "mcp-ligipaas/muudatus/",
+        include(("app.mcp_writes.urls", "mcp_writes"), namespace="mcp_writes"),
+    ),
     path(
         "teavitused/",
         include(("app.notifications.urls", "notifications"), namespace="notifications"),
