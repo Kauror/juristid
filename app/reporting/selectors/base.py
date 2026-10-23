@@ -422,13 +422,17 @@ def received_url(
 def received_span_url(
     context: ReportingContext, definition: MetricDefinition, counted: QuerySet[Matter]
 ) -> str:
-    """`received_url` over the arrival dates ``counted`` actually holds.
+    """`received_url` over the period ``counted`` was narrowed to.
 
-    The first and last measured day rather than the period's calendar bounds,
-    because «Kogu aeg» has none and because a range is exact either way: every
-    row counted lies inside it, and no row outside the count can. Empty when
-    nothing was counted.
+    A bounded period is its own range, with no query: every row counted lies
+    inside it and no row outside the count can (the Statistika page's query
+    budget, tests/test_work_pages_at_scale.py). «Kogu aeg» has no bounds, so
+    there the range is the first and last measured arrival day, one aggregate;
+    empty when nothing was counted.
     """
+    start, end = context.period.start_date, context.period.end_date
+    if not context.period.is_all and start is not None and end is not None:
+        return received_url(context, definition, start, end)
     span = counted.order_by().aggregate(first=Min("received_date"), last=Max("received_date"))
     if span["first"] is None or span["last"] is None:
         return ""
