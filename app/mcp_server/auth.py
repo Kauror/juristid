@@ -145,12 +145,28 @@ def metadata_url_for(resource: str) -> str:
     return f"{parts.scheme}://{parts.netloc}{PROTECTED_RESOURCE_PATH}{path}"
 
 
+def scopes_supported() -> list[str]:
+    """The read scope, and the write scope only while `MCP_WRITES_ENABLED` is on (OAUTH-SCOPES.md).
+
+    The same list the authorization server's metadata gives on `web`.
+    """
+    scopes = [str(settings.MCP_SCOPE)]
+    if bool(getattr(settings, "MCP_WRITES_ENABLED", False)):
+        scopes.append(str(settings.MCP_WRITE_SCOPE))
+    return scopes
+
+
+def write_step_up_scope() -> str:
+    """The scope a write tool's ``insufficient_scope`` challenge asks for: read and write."""
+    return f"{settings.MCP_SCOPE} {settings.MCP_WRITE_SCOPE}"
+
+
 def protected_resource_metadata(resource: str) -> dict[str, Any]:
     document = ProtectedResourceMetadata.model_validate(
         {
             "resource": resource,
             "authorization_servers": [settings.JURISTID_PUBLIC_ORIGIN],
-            "scopes_supported": [settings.MCP_SCOPE],
+            "scopes_supported": scopes_supported(),
             "bearer_methods_supported": ["header"],
             "resource_name": "Juristid",
         }
@@ -182,11 +198,35 @@ def protected_resource_routes() -> list[Route]:
     return [Route(path, endpoint=endpoint, methods=["GET", "OPTIONS"]) for path in paths]
 
 
-def challenge(resource: str, *, error: str = "invalid_token", description: str = "") -> str:
-    """The `WWW-Authenticate` value that sends a client to the metadata and the scope."""
+def _is_scope_list(value: str) -> bool:
+    """RFC 6749 §3.3 scope tokens, one space apart: nothing that could break out of the quotes."""
+    tokens = value.split(" ")
+    return bool(value) and all(
+        token and all(char == "!" or "#" <= char <= "[" or "]" <= char <= "~" for char in token)
+        for token in tokens
+    )
+
+
+def challenge(
+    resource: str,
+    *,
+    error: str = "invalid_token",
+    description: str = "",
+    scope: str | None = None,
+) -> str:
+    """The `WWW-Authenticate` value that sends a client to the metadata and the scope.
+
+    ``scope`` defaults to `MCP_SCOPE`, what `/mcp` itself requires. A write
+    tool called with a read-only token passes `write_step_up_scope()` with
+    ``error="insufficient_scope"`` (RFC 6750 §3.1), so the client asks the
+    person to connect again with write.
+    """
+    named = scope if scope is not None else str(settings.MCP_SCOPE)
+    if not _is_scope_list(named):
+        raise ValueError("challenge scope must be space-separated RFC 6749 scope tokens")
     parts = [
         f'resource_metadata="{metadata_url_for(resource)}"',
-        f'scope="{settings.MCP_SCOPE}"',
+        f'scope="{named}"',
         f'error="{error}"',
     ]
     if description:

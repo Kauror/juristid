@@ -5,6 +5,9 @@
     manage.py mcp_access revoke --user <upn> --reason "<why>"
     manage.py mcp_access revoke-all --reason "<why>"
     manage.py mcp_access unlock --user <upn>
+    manage.py mcp_access grant-write --user <upn>
+    manage.py mcp_access revoke-write --user <upn> --reason "<why>"
+    manage.py mcp_access revoke-all-writes --reason "<why>"
     manage.py mcp_access list
 
 * **grant** makes a PENDING grant for one account and prints its one-time
@@ -20,13 +23,25 @@
 * **unlock** clears the lock wrong authenticator codes put on a grant, and the
   suspension the fourth consecutive lock puts on it (MCPSEC-01). The count of
   wrong codes since the last success is kept: only a success resets it.
+* **grant-write** additionally lets one account's open grant *prepare
+  changes* (the ``juristid.write`` scope, docs/mcp/OAUTH-SCOPES.md). Refused for
+  an inactive account, one without a business-write role (SPECIALIST,
+  DEPARTMENT_HEAD — never a READER or a technical ADMINISTRATOR), one that
+  could not be granted access at all, and one without an open grant. Takes
+  effect only while `MCP_WRITES_ENABLED` is on, and only for a connection made
+  after it; every change still needs the person's own approval in Juristid.
+* **revoke-write** ends one account's write permission at once; reading and
+  its tokens stay.
+* **revoke-all-writes** is the write kill switch: every grant's write
+  permission ends, every read connection keeps working.
 * **list** prints every grant: account, status, whether enrolled, live tokens,
-  the last token issue or refresh, the lock or suspension, and the wrong codes
-  since the last success. No secret, no digest.
+  the last token issue or refresh, the lock or suspension, the wrong codes
+  since the last success, and the write permission. No secret, no digest.
 
-With `MCP_ENABLED` off, only `list`, `revoke` and `revoke-all` run: turning
-access *off* must never depend on it being on. Every change records an
-`McpAccessEvent` naming the command, the OS user and the host.
+With `MCP_ENABLED` off, only `list`, `revoke`, `revoke-all`, `revoke-write` and
+`revoke-all-writes` run: turning access *off* must never depend on it being
+on. Every change records an `McpAccessEvent` naming the command, the OS user
+and the host.
 """
 
 from __future__ import annotations
@@ -40,7 +55,7 @@ from app.accounts.models import User
 from app.mcp_access import config, services
 
 #: The subcommands that may run while MCP access is switched off.
-WHILE_DISABLED = frozenset({"list", "revoke", "revoke-all"})
+WHILE_DISABLED = frozenset({"list", "revoke", "revoke-all", "revoke-write", "revoke-all-writes"})
 
 
 class Command(BaseCommand):
@@ -61,12 +76,28 @@ class Command(BaseCommand):
         revoke_all.add_argument("--reason", required=True, help="Why. Kept in the audit.")
         unlock = sub.add_parser("unlock", help="Clear a grant's wrong-code lock or suspension.")
         unlock.add_argument("--user", required=True, help="The account's UPN.")
+        grant_write = sub.add_parser(
+            "grant-write", help="Also let one account's grant prepare changes (juristid.write)."
+        )
+        grant_write.add_argument("--user", required=True, help="The account's UPN.")
+        revoke_write = sub.add_parser(
+            "revoke-write", help="End one account's write permission; reading stays."
+        )
+        revoke_write.add_argument("--user", required=True, help="The account's UPN.")
+        revoke_write.add_argument("--reason", required=True, help="Why. Kept in the audit.")
+        revoke_all_writes = sub.add_parser(
+            "revoke-all-writes", help="End every grant's write permission; reading stays."
+        )
+        revoke_all_writes.add_argument("--reason", required=True, help="Why. Kept in the audit.")
         sub.add_parser("list", help="Every grant, without secrets.")
 
     def handle(self, *args: Any, **options: Any) -> None:
         action = options["action"]
         if action not in WHILE_DISABLED and not bool(getattr(settings, "MCP_ENABLED", False)):
-            raise CommandError("MCP_ENABLED is off: only list, revoke and revoke-all run.")
+            raise CommandError(
+                "MCP_ENABLED is off: only list, revoke, revoke-all, revoke-write and "
+                "revoke-all-writes run."
+            )
         if action in ("grant", "enrolment-link") and not config.issuer():
             raise CommandError("JURISTID_PUBLIC_ORIGIN is not set: no enrolment link can be built.")
         provenance = services.operator_provenance(action)
@@ -96,6 +127,27 @@ class Command(BaseCommand):
             elif action == "unlock":
                 was_locked = services.unlock(user=self._user(options), provenance=provenance)
                 self.stdout.write("Lukk eemaldatud." if was_locked else "Ligipääs ei olnud lukus.")
+            elif action == "grant-write":
+                services.grant_write(user=self._user(options), provenance=provenance)
+                self.stdout.write(
+                    "Muudatuste ettevalmistamine lubatud. Iga muudatus vajab isiku enda kinnitust "
+                    "Juristidis; kehtib ühendustele, mis luuakse pärast seda."
+                )
+                if not bool(getattr(settings, "MCP_WRITES_ENABLED", False)):
+                    self.stdout.write(
+                        "NB: MCP_WRITES_ENABLED on välja lülitatud — luba hakkab toimima alles "
+                        "siis, kui see sisse lülitatakse."
+                    )
+            elif action == "revoke-write":
+                services.revoke_write(
+                    user=self._user(options), reason=options["reason"], provenance=provenance
+                )
+                self.stdout.write("Muudatuste ettevalmistamise luba tühistatud. Lugemine jääb.")
+            elif action == "revoke-all-writes":
+                count = services.revoke_all_writes(reason=options["reason"], provenance=provenance)
+                self.stdout.write(
+                    f"Kõigi muudatuste ettevalmistamise load tühistatud: {count}. Lugemine jääb."
+                )
         except services.GrantRefused as error:
             raise CommandError(f"Keeldutud: {error}. Midagi ei muudetud.") from error
 
@@ -122,6 +174,7 @@ class Command(BaseCommand):
             return
         self.stdout.write(
             "upn\tolek\tautentija\taktiivseid võtmeid\tviimane kasutus\tlukus kuni\tvalesid koode"
+            "\tmuutmine"
         )
         for row in rows:
             last = f"{row.last_used:%Y-%m-%d %H:%M}" if row.last_used else "-"
@@ -131,5 +184,5 @@ class Command(BaseCommand):
                 locked = f"{row.locked_until:%Y-%m-%d %H:%M}" if row.locked_until else "-"
             self.stdout.write(
                 f"{row.upn}\t{row.status}\t{'jah' if row.enrolled else 'ei'}\t"
-                f"{row.active_tokens}\t{last}\t{locked}\t{row.total_failed_attempts}"
+                f"{row.active_tokens}\t{last}\t{locked}\t{row.total_failed_attempts}\t{row.write}"
             )
