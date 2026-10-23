@@ -26,6 +26,7 @@ from django.urls import reverse
 from django.views.decorators.http import require_GET, require_http_methods
 
 from app.core.authorization import may_view_department_management, may_write_business_content
+from app.core.dates import format_estonian_date
 from app.core.decorators import business_write_required
 from app.core.errors import DomainError
 from app.notifications import selectors, services
@@ -115,13 +116,17 @@ def defer(request: HttpRequest, pk: Any) -> HttpResponse:
                 messages.error(request, str(error))
         return _back(request)
     try:
-        services.defer_reminder(
+        deferred = services.defer_reminder(
             reminder=reminder, actor=request.user, until=form.cleaned_data["until"]
         )
     except DomainError as refusal:
         messages.error(request, str(refusal))
     else:
-        messages.success(request, "Meeldetuletus lükati edasi.")
+        # The stored date, which a seven-day prompt caps at the commencement day.
+        messages.success(
+            request,
+            f"Meeldetuletus lükati edasi kuni {format_estonian_date(deferred.deferred_until)}.",
+        )
     return _back(request)
 
 
