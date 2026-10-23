@@ -39,6 +39,8 @@ decides it, not a field every filer meets (docs/adr/0096 §3).
   <form class="form createform" method="post" enctype="multipart/form-data"
         action="{% url 'matters:intake' %}">
     {% csrf_token %}
+    {# The form's one-time token: saved at most once (ENG-074, docs/adr/0112). #}
+    {% if intake_token %}<input type="hidden" name="intake" value="{{ intake_token }}">{% endif %}
 
     {# 1 — the files, which are the whole reason this page exists. #}
     <div class="createform__row createform__row--first">

@@ -336,3 +336,69 @@ def test_the_seeded_factories_are_untouched_by_intake(client, specialist) -> Non
     _post(client, [_file("x.pdf", PDF)], title="Uus")
     existing.refresh_from_db()
     assert existing.title
+
+
+# -- one drawn form files one Teema (ENG-074, docs/adr/0112) ------------------
+
+
+def _drawn_token(response) -> str:
+    import re
+
+    match = re.search(r'name="intake" value="([0-9a-f-]{36})"', response.content.decode())
+    assert match, "every rendered Saabunud form carries its one-time token"
+    return match.group(1)
+
+
+def test_the_same_saabunud_form_posted_twice_files_one_teema(client, specialist) -> None:
+    """A replayed, retried or double-sent POST is not a second arrival.
+
+    The second submission of the same drawn form writes nothing — no second
+    Teema, no second register number, no second document — and lands on the
+    Teema the first one filed, saying why.
+    """
+    from app.matters.views import CREATE_FORM_ALREADY_SUBMITTED
+
+    client.force_login(specialist)
+    token = _drawn_token(client.get(reverse("matters:intake")))
+
+    first = _post(client, [_file("kiri.pdf", PDF)], title="Saabunud kord", intake=token)
+    second = _post(client, [_file("kiri.pdf", PDF)], title="Saabunud kord", intake=token)
+
+    matter = Matter.objects.get(title="Saabunud kord")
+    assert first.status_code == 302
+    assert second.status_code == 302
+    assert second["Location"] == first["Location"]
+    assert second["Location"] == reverse("matters:matter_detail", kwargs={"pk": matter.pk})
+    assert Matter.objects.filter(title="Saabunud kord").count() == 1
+    assert Matter.objects.filter(reference_number__isnull=False).count() == 1
+    assert Document.objects.filter(matter=matter).count() == 1
+    shown = [str(m) for m in client.get(second["Location"]).context["messages"]]
+    assert CREATE_FORM_ALREADY_SUBMITTED in shown
+
+
+def test_a_refused_saabunud_save_keeps_its_token(client, specialist) -> None:
+    """The corrected save is protected by the same token, and still saves once."""
+    client.force_login(specialist)
+    token = _drawn_token(client.get(reverse("matters:intake")))
+
+    refused_save = _post(client, [_file("virus.exe", b"MZ")], title="Parandatud", intake=token)
+    assert refused_save.status_code == 400
+    assert _drawn_token(refused_save) == token
+    assert Matter.objects.count() == 0
+
+    saved = _post(client, [_file("kiri.pdf", PDF)], title="Parandatud", intake=token)
+    again = _post(client, [_file("kiri.pdf", PDF)], title="Parandatud", intake=token)
+    assert saved.status_code == 302
+    assert again["Location"] == saved["Location"]
+    assert Matter.objects.filter(title="Parandatud").count() == 1
+
+
+def test_two_drawn_saabunud_forms_file_two_teemad(client, specialist) -> None:
+    """Per form, not per content: the same words from a new form are a new Teema."""
+    client.force_login(specialist)
+    for _ in range(2):
+        token = _drawn_token(client.get(reverse("matters:intake")))
+        assert (
+            _post(client, [_file("kiri.pdf", PDF)], title="Kaks", intake=token).status_code == 302
+        )
+    assert Matter.objects.filter(title="Kaks").count() == 2

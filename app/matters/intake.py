@@ -143,6 +143,21 @@ class IntakeResult:
     documents: int
 
 
+class IncomingFormAlreadySubmitted(Exception):
+    """A `Saabunud → Lisa` form that has already filed its Teema, posted again.
+
+    Raised inside `register_incoming`'s transaction before anything is written,
+    so the replay leaves nothing behind. ``session`` is the form's consumed
+    token, which names the Teema the first submission created (ENG-074,
+    docs/adr/0112). Not a `DomainError`: nothing was refused — what the person
+    wanted already exists.
+    """
+
+    def __init__(self, session: Any) -> None:
+        super().__init__("incoming form already submitted")
+        self.session = session
+
+
 def validate_uploads(files: list[Any]) -> list[AcceptedUpload]:
     """Read and check every file up front.
 
@@ -309,6 +324,7 @@ def register_incoming(
     brief_summary: str = "",
     handover_note: str = "",
     seed_plan: bool = False,
+    form_token: Any = None,
 ) -> IntakeResult:
     """Create the Matter and capture every arriving file as evidence.
 
@@ -332,9 +348,24 @@ def register_incoming(
     arrived is starting real work, and the faint standard plan is copied onto
     the new Matter in this same transaction. Nothing infers it from the Matter's
     origin or mode — a caller recording history leaves it off, and gets no plan.
+
+    ``form_token`` is the drawn form's one-time token (`intake`, a
+    `MatterIntakeSession` from `intake_staging.open_session`), exactly as on
+    `Uus teema` (ENG-074, docs/adr/0112): claimed here first, before any row is
+    written and before a reference number is allocated, so a replayed, retried
+    or parallel POST of the same form files nothing and raises
+    `IncomingFormAlreadySubmitted` naming the Teema the first one created. A
+    call naming no session of the actor's carries no token and files as before.
     """
     if not uploads:
         raise DomainError("Vali vähemalt üks fail.")
+
+    # Imported here: `intake_staging` builds on this module.
+    from app.matters import intake_staging
+
+    claim = intake_staging.claim_for_create(owner=actor, session_id=form_token)
+    if claim.replayed:
+        raise IncomingFormAlreadySubmitted(claim.session)
 
     def attach_uploads(matter: Matter) -> None:
         for upload in uploads:
@@ -365,4 +396,8 @@ def register_incoming(
         attach_files=attach_uploads,
         seed_plan=seed_plan,
     )
+    # Remembered in the same transaction, so a repeated submission of this
+    # form finds the Teema this one created.
+    if claim.session is not None:
+        intake_staging.record_created_matter(session=claim.session, matter=matter)
     return IntakeResult(matter=matter, documents=len(uploads))

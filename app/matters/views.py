@@ -192,6 +192,7 @@ from app.matters.initiative import (
     names_koda_proposal,
 )
 from app.matters.intake import (
+    IncomingFormAlreadySubmitted,
     file_incoming,
     file_new_matter,
     register_incoming,
@@ -722,6 +723,11 @@ def intake(request: HttpRequest) -> HttpResponse:
     form = IncomingIntakeForm(request.POST or None, viewer=request.user)
 
     if request.method == "POST":
+        # **This form, exactly once** (ENG-074, docs/adr/0112): the drawn
+        # form's `intake` token is claimed by `register_incoming` before any
+        # row or reference number is written. A refused save re-renders with
+        # the same token, so the corrected save is protected like the first.
+        posted_token = (request.POST.get("intake") or "").strip()
         files = request.FILES.getlist("uploads")
         if form.is_valid():
             try:
@@ -753,7 +759,11 @@ def intake(request: HttpRequest) -> HttpResponse:
                     # background sequence behind `Soovitatud järgmisena` is
                     # seeded, as on `Uus teema` (docs/adr/0133 §5, 0141).
                     seed_plan=True,
+                    form_token=posted_token,
                 )
+            except IncomingFormAlreadySubmitted as replay:
+                # The Teema the first submission filed, never a second one.
+                return _answer_repeated_create(request, replay.session)
             except DomainError as error:
                 messages.error(request, str(error))
             else:
@@ -766,11 +776,26 @@ def intake(request: HttpRequest) -> HttpResponse:
         return render(
             request,
             "matters/intake.html",
-            {"form": form, "nav_active": "saabunud"},
+            {
+                "form": form,
+                "nav_active": "saabunud",
+                "intake_token": intake_staging.kept_token(
+                    owner=request.user, session_id=posted_token
+                ).pk,
+            },
             status=400,
         )
 
-    return render(request, "matters/intake.html", {"form": form, "nav_active": "saabunud"})
+    # Every rendered form carries its own one-time token (ENG-074).
+    return render(
+        request,
+        "matters/intake.html",
+        {
+            "form": form,
+            "nav_active": "saabunud",
+            "intake_token": intake_staging.open_session(owner=request.user).pk,
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
