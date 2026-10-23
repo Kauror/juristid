@@ -17,6 +17,7 @@ is where an operator can act on it.
 from __future__ import annotations
 
 import logging
+import uuid
 from dataclasses import dataclass
 from typing import Any
 
@@ -50,6 +51,7 @@ from app.documents.models import Document, DocumentDerivative, DocumentVersion
 from app.documents.preview import build_preview
 from app.documents.services import (
     DOCUMENT_REMOVED_MESSAGE,
+    DocumentFormAlreadySaved,
     add_version_on_open_matter,
     capture_evidence_on_open_matter,
     change_document_role,
@@ -151,6 +153,7 @@ def upload_evidence(request: HttpRequest, matter_id: Any) -> HttpResponse:
         return back
 
     try:
+        once_token = posted_once_token(request)
         upload = read_upload(form.cleaned_data["upload"])
         # Through the interactive use case, which asks under the Matter's own
         # row lock whether the file is still open. The panel this posted from
@@ -165,12 +168,28 @@ def upload_evidence(request: HttpRequest, matter_id: Any) -> HttpResponse:
             original_filename=upload.filename,
             mime_type=upload.mime_type,
             actor=request.user,
+            # One drawn form, one Document: a replayed or retried POST lands
+            # here on the page that already lists the first one.
+            once_token=once_token,
         )
         messages.success(request, "Tõend on salvestatud.")
+    except DocumentFormAlreadySaved as replay:
+        messages.info(request, str(replay))
     except DomainError as error:
         messages.error(request, str(error))
 
     return back
+
+
+def posted_once_token(request: HttpRequest) -> Any:
+    """The drawn form's `salvestus` token, ``None`` when absent, a refusal when garbled."""
+    raw = (request.POST.get("salvestus") or "").strip()
+    if not raw:
+        return None
+    try:
+        return uuid.UUID(raw)
+    except ValueError as error:
+        raise DomainError("Vigane valik.") from error
 
 
 def _after_upload(request: HttpRequest, matter: Any) -> HttpResponse:

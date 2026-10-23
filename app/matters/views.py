@@ -80,6 +80,7 @@ from app.documents.filenames import NFC
 from app.documents.models import Document
 from app.documents.pending import human_size
 from app.documents.services import (
+    DocumentFormAlreadySaved,
     link_working_document,
     offered_document_roles,
 )
@@ -4193,6 +4194,10 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
                 applied_filters, roll_labels=dict(_role_filter_choices())
             ),
             "working_document_form": WorkingDocumentForm(),
+            # Each add form's one-time token (`salvestus`): a replayed or
+            # double-sent save of the same drawn form adds no second Document
+            # (`documents.services.spend_document_form`).
+            "document_save_once_tokens": {"dokument": uuid.uuid4(), "toodokument": uuid.uuid4()},
             "can_write": may_write_business_content(request.user),
             # Two different questions, and this page has to ask both.
             #
@@ -6467,8 +6472,12 @@ def add_working_document(request: HttpRequest, pk: Any) -> HttpResponse:
                 web_url=form.cleaned_data["web_url"],
                 site_path=form.cleaned_data.get("site_path") or "",
                 created_by=request.user,
+                # One drawn form, one reference (`spend_document_form`).
+                once_token=_posted_once_token(request),
             )
             messages.success(request, "Töödokumendi viide on lisatud.")
+        except DocumentFormAlreadySaved as replay:
+            messages.info(request, str(replay))
         except DomainError as error:
             messages.error(request, str(error))
     else:
