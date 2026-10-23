@@ -1690,6 +1690,21 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     "account_admin:detail": "G: account administration, may_administer_accounts",
     "account_admin:deactivate": "G: account administration, may_administer_accounts",
     "account_admin:change_email": "G: account administration, delegation only",
+    # H — reference data (docs/adr/0187). Not business authorship: these write
+    # the institution catalogue and the tag vocabulary, never a Teema, behind
+    # `reference.manage` (`reference_actor`; 404 for everybody else) and the
+    # services' own stale-page, duplicate and baseline refusals. Every one is
+    # fired by every refused caller in tests/test_reference_data_views.py.
+    "reference_data:organisation_create": "H: reference data, reference.manage",
+    "reference_data:organisation_rename": "H: reference data, reference.manage",
+    "reference_data:organisation_alias_add": "H: reference data, reference.manage",
+    "reference_data:organisation_alias_remove": "H: reference data, reference.manage",
+    "reference_data:tag_create": "H: reference data, reference.manage",
+    "reference_data:tag_edit": "H: reference data, reference.manage",
+    "reference_data:tag_alias_add": "H: reference data, reference.manage",
+    "reference_data:tag_alias_remove": "H: reference data, reference.manage",
+    "reference_data:tag_merge": "H: reference data, reference.manage",
+    "reference_data:tag_status": "H: reference data, reference.manage",
 }
 
 

@@ -1,0 +1,70 @@
+{% extends "haldus/base.html" %}
+{% block title %}Sildid · Klassifikaatorid · {{ application_name }}{% endblock %}
+
+{% comment %}
+  The tag vocabulary with its usage guidance: active words first, then the
+  retired and merged ones, which stay on every record that carries them.
+  Usage counts Teemad and opinions, so it is shown only to somebody who may
+  read them.
+{% endcomment %}
+
+{% block haldus_content %}
+<div class="pagehead">
+  <h1 class="pagehead__title">Sildid</h1>
+  <span class="pagehead__context"><a href="{% url 'reference_data:index' %}">Klassifikaatorid</a></span>
+</div>
+{% include "reference_data/_nav.html" with current="sildid" %}
+
+<form method="get" class="filterbar" role="search" action="{% url 'reference_data:tags' %}">
+  <label class="visually-hidden" for="sildi-otsing">Otsi nime, võtme või nimekuju järgi</label>
+  <input class="field__input field__input--compact acctsearch" id="sildi-otsing" type="search"
+         name="q" value="{{ query }}" placeholder="Nimi, võti või nimekuju" maxlength="200">
+  <button type="submit" class="button button--secondary">Otsi</button>
+</form>
+
+{% if rows %}
+  <div class="accttable">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th scope="col">Silt</th>
+          <th scope="col">Tähendus</th>
+          <th scope="col">Nimekujud</th>
+          <th scope="col">Seis</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <th scope="row"><a href="{% url 'reference_data:tag' row.pk %}">{{ row.name_et }}</a> <span class="mono">{{ row.key }}</span></th>
+            <td>{{ row.definition|truncatechars:140|default:"—" }}</td>
+            <td>{% for alias in row.aliases.all %}{{ alias.alias }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</td>
+            <td>
+              {% if row.merged_into %}
+                <span class="badge badge--inactive">liidetud: {{ row.merged_into.name_et }}</span>
+              {% elif row.is_active %}
+                <span class="badge badge--active">kasutusel</span>
+              {% else %}
+                <span class="badge badge--inactive">aegunud</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="empty"><p>{% if query %}Ühtegi silti ei leitud.{% else %}Sõnastikus pole veel ühtegi silti.{% endif %}</p></div>
+{% endif %}
+
+<form method="post" action="{% url 'reference_data:tag_create' %}" class="card card--form form" novalidate>
+  {% csrf_token %}
+  <h2 class="acctsection__title">Lisa silt</h2>
+  {% include "accounts/partials/field.html" with field=form.name %}
+  {% include "accounts/partials/field.html" with field=form.key %}
+  {% include "accounts/partials/field.html" with field=form.definition %}
+  <div class="form__actions">
+    <button type="submit" class="button button--primary">Lisa</button>
+  </div>
+</form>
+{% endblock %}
